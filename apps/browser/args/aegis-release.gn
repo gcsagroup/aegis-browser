@@ -1,0 +1,19 @@
+# GCSA-aegis release / distributable build (self-contained .app).
+# Usage:
+#   gn gen out/AegisRelease --args="$(cat apps/browser/args/aegis-release.gn)"
+#   autoninja -C out/AegisRelease chrome
+#   OUT_DIR=.../out/AegisRelease pnpm --filter @gcsa-aegis/browser package
+
+is_debug = false
+is_component_build = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+
+target_cpu = "arm64"
+
+proprietary_codecs = false
+ffmpeg_branding = "Chromium"
+
+# Keep false unless you have branding / licensing lined up.
+is_official_build = false

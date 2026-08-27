@@ -1,0 +1,7 @@
+# Copyright 2026 GCSA
+# Policy snapshot data exported from packages/core.
+
+copy("policy_snapshot") {
+  sources = [ "policy_snapshot.json" ]
+  outputs = [ "$root_out_dir/aegis_policy/{{source_file_part}}" ]
+}

@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GCSA-aegis — 本地优先的隐私安全浏览器</title>
+    <meta
+      name="description"
+      content="GCSA-aegis 是本地优先的隐私安全浏览器。AI 摘要不出机器，钓鱼拦截会说明原因，跟踪在引擎里处理。"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1410;
+        --bg-2: #182019;
+        --ink: #e7f0e6;
+        --muted: #9aaf9c;
+        --line: rgba(231, 240, 230, 0.12);
+        --accent: #6fbf73;
+        --accent-2: #c4a35a;
+        --font: "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.55 var(--font);
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .wrap {
+        width: min(1080px, calc(100% - 2.4rem));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.1rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 0.65rem;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+
+      .brand small {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 0.78rem;
+      }
+
+      .langs {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .langs button {
+        appearance: none;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.8rem;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+
+      .langs button[aria-pressed="true"] {
+        color: var(--ink);
+        border-color: var(--line);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 2.4rem;
+        align-items: center;
+        padding: 3.4rem 0 3rem;
+      }
+
+      h1 {
+        margin: 0 0 0.8rem;
+        font-size: clamp(1.8rem, 3.4vw, 2.5rem);
+        line-height: 1.18;
+        letter-spacing: -0.03em;
+        font-weight: 650;
+      }
+
+      .lede {
+        margin: 0 0 1.4rem;
+        color: var(--muted);
+        font-size: 1.05rem;
+        max-width: 36rem;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.7rem;
+        margin-bottom: 1.2rem;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid rgba(111, 191, 115, 0.45);
+        background: rgba(111, 191, 115, 0.16);
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 0.55rem 0.95rem;
+        font: inherit;
+        font-size: 0.92rem;
+      }
+
+      .btn.secondary {
+        background: transparent;
+        border-color: var(--line);
+        color: var(--muted);
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .panel {
+        background: var(--bg-2);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.7rem 0.85rem;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 0.75rem;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #3a4a3c;
+      }
+
+      .dot:first-child {
+        background: #6fbf73;
+      }
+
+      .panel-body {
+        padding: 1rem 1.1rem 1.15rem;
+      }
+
+      .panel-body h2 {
+        margin: 0 0 0.2rem;
+        font-size: 0.82rem;
+        font-weight: 650;
+      }
+
+      .kicker {
+        margin: 0 0 0.85rem;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      .log {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      .log li {
+        display: grid;
+        gap: 0.1rem;
+        padding: 0.55rem 0;
+        border-top: 1px solid var(--line);
+        font-size: 0.86rem;
+      }
+
+      .log li:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .tag {
+        color: var(--accent-2);
+        font-size: 0.72rem;
+        font-family: var(--mono);
+      }
+
+      .pillars {
+        display: grid;
+        grid-template-columns: 4.5rem 1fr;
+        gap: 0.2rem 1.1rem;
+        padding: 0.4rem 0 2.6rem;
+        border-top: 1px solid var(--line);
+      }
+
+      .pillars h2 {
+        grid-column: 1 / -1;
+        margin: 1.6rem 0 0.8rem;
+        font-size: 1.15rem;
+      }
+
+      .num {
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        padding-top: 0.35rem;
+      }
+
+      .pillars h3 {
+        margin: 0.15rem 0 0.2rem;
+        font-size: 1rem;
+      }
+
+      .pillars p {
+        margin: 0 0 1.15rem;
+        color: var(--muted);
+        max-width: 42rem;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2.4rem;
+        padding: 0 0 2.8rem;
+      }
+
+      .split h2,
+      .compare h2,
+      .limits h2,
+      .get h2 {
+        margin: 0 0 0.85rem;
+        font-size: 1.15rem;
+      }
+
+      .feat {
+        display: grid;
+        gap: 0.85rem;
+      }
+
+      .feat dt {
+        font-weight: 650;
+        font-size: 0.92rem;
+      }
+
+      .feat dd {
+        margin: 0.15rem 0 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .steps {
+        counter-reset: step;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 0.9rem;
+      }
+
+      .steps li {
+        counter-increment: step;
+        padding-left: 2.2rem;
+        position: relative;
+        color: var(--muted);
+      }
+
+      .steps li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 1.45rem;
+        height: 1.45rem;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        color: var(--accent);
+        font-size: 0.72rem;
+        font-family: var(--mono);
+      }
+
+      .steps strong {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .compare {
+        padding-bottom: 2.6rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 0.7rem 0.6rem;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 0.78rem;
+      }
+
+      td:first-child {
+        width: 28%;
+        color: var(--muted);
+      }
+
+      .limits {
+        padding-bottom: 2.4rem;
+      }
+
+      .limits ul {
+        margin: 0;
+        padding-left: 1.1rem;
+        color: var(--muted);
+      }
+
+      .limits li {
+        margin-bottom: 0.45rem;
+      }
+
+      .get p {
+        color: var(--muted);
+        max-width: 40rem;
+      }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.84em;
+        color: var(--accent);
+      }
+
+      footer {
+        margin-top: 2.2rem;
+        padding: 1.2rem 0 2.4rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.8rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      @media (max-width: 840px) {
+        .hero,
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .pillars {
+          grid-template-columns: 3.2rem 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand">
+          GCSA-aegis
+          <small data-i18n="navTag">隐私安全浏览器</small>
+        </div>
+        <div class="langs" role="group" aria-label="Language">
+          <button type="button" data-lang="zh-CN" aria-pressed="true">简体</button>
+          <button type="button" data-lang="zh-TW" aria-pressed="false">繁體</button>
+          <button type="button" data-lang="en" aria-pressed="false">EN</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <h1 data-i18n="hero">本地优先的隐私安全浏览器</h1>
+          <p class="lede" data-i18n="lede">
+            AI 摘要不出机器，钓鱼拦截会说明原因，跟踪在引擎里处理。不是扩展，也不是套了一层壳的 Chrome。
+          </p>
+          <div class="actions">
+            <a class="btn" href="#try" data-i18n="ctaTry">如何试用</a>
+            <a class="btn secondary" href="#check" data-i18n="ctaCheck">当场核对</a>
+          </div>
+          <p class="meta" data-i18n="heroMeta">
+            基于 Chromium 151 · 当前分发包为 macOS arm64 · Apache-2.0
+          </p>
+        </div>
+        <aside class="panel" aria-label="chrome://aegis">
+          <div class="chrome">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+            chrome://aegis
+          </div>
+          <div class="panel-body">
+            <h2 data-i18n="panelTitle">本次会话</h2>
+            <p class="kicker" data-i18n="panelKicker">清掉的跟踪，可以打开设置页核对。</p>
+            <ul class="log">
+              <li>
+                <span class="tag" data-i18n="log1Tag">参数</span>
+                <span data-i18n="log1">去掉 utm_source、fbclid、gbraid</span>
+              </li>
+              <li>
+                <span class="tag" data-i18n="log2Tag">Cookie</span>
+                <span data-i18n="log2">删除 _ga、_fbp；登录 Cookie 保留</span>
+              </li>
+              <li>
+                <span class="tag" data-i18n="log3Tag">摘要</span>
+                <span data-i18n="log3">启发式 · 本机 · 未出网 · 842 字</span>
+              </li>
+            </ul>
+          </div>
+        </aside>
+      </section>
+
+      <section class="pillars">
+        <h2 data-i18n="pillarsTitle">三件事</h2>
+        <div class="num">01</div>
+        <div>
+          <h3 data-i18n="p1Title">页面不上传</h3>
+          <p data-i18n="p1Body">
+            隐私摘要在你电脑里完成。文本先脱敏；有本机 Ollama 时只连 127.0.0.1，没有则走启发式。网页内容默认不上云。
+          </p>
+        </div>
+        <div class="num">02</div>
+        <div>
+          <h3 data-i18n="p2Title">拦截讲得清</h3>
+          <p data-i18n="p2Body">
+            高风险仿冒站会先拦住，用人话说明像谁、依据是什么、分数怎么加到阈值。你可以选择继续访问。
+          </p>
+        </div>
+        <div class="num">03</div>
+        <div>
+          <h3 data-i18n="p3Title">写进引擎，不是再装扩展</h3>
+          <p data-i18n="p3Body">
+            广告与分析请求、跟踪参数、伪装域名、广告 Cookie，在 Chromium 内核处理。不受扩展规则上限限制。
+          </p>
+        </div>
+      </section>
+
+      <section class="split">
+        <div>
+          <h2 data-i18n="featTitle">引擎里在做的</h2>
+          <dl class="feat">
+            <div>
+              <dt data-i18n="f1t">跟踪器拦截</dt>
+              <dd data-i18n="f1d">EasyList / EasyPrivacy，加上第一方 /g/collect、gtm.js 等收集路径。不拦你主动打开的网页。</dd>
+            </div>
+            <div>
+              <dt data-i18n="f2t">链接与 Cookie</dt>
+              <dd data-i18n="f2d">导航时去掉 utm、fbclid、gclid、gbraid 等。按名称查表删除广告／分析 Cookie，登录 Cookie 留下。</dd>
+            </div>
+            <div>
+              <dt data-i18n="f3t">伪装与跳转</dt>
+              <dd data-i18n="f3d">揭开子资源 CNAME；识别 bounce tracking 并立即清对应 Cookie。</dd>
+            </div>
+            <div>
+              <dt data-i18n="f4t">指纹稳定化</dt>
+              <dd data-i18n="f4d">对 Canvas、WebGL、Audio、WebGPU 做稳定化。打开 chrome://aegis 点「检测本页指纹」，防护开着时 WebGL/WebGPU 会出现 Aegis，maxBufferSize 会随开关变化。不是「无法指纹」。</dd>
+            </div>
+            <div>
+              <dt data-i18n="f5t">本机 AI 控制</dt>
+              <dd data-i18n="f5d">默认关闭。打开后只允许 127.0.0.1 上的 CDP；连上后顶部出现横幅。远程列表不暴露 chrome:// / file://。</dd>
+            </div>
+          </dl>
+        </div>
+        <div id="check">
+          <h2 data-i18n="checkTitle">你可以当场核对</h2>
+          <ol class="steps">
+            <li data-i18n="s1"><strong>打开带跟踪尾巴的链接。</strong> 地址栏里 utm_source、fbclid 会被拿掉。</li>
+            <li data-i18n="s2"><strong>打开高风险仿冒登录页。</strong> 拦截页写出为什么拦，并可继续访问。</li>
+            <li data-i18n="s3"><strong>打开 chrome://aegis。</strong> 看拦截与 Cookie。打开 AI 控制后，本机 agent 连上会出现顶部横幅。</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="compare">
+        <h2 data-i18n="cmpTitle">和常见做法的差别</h2>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th data-i18n="cmpUs">GCSA-aegis</th>
+              <th data-i18n="cmpOther">常见做法</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-i18n="c1l">形态</td>
+              <td data-i18n="c1a">Chromium fork，能力写在引擎</td>
+              <td data-i18n="c1b">Chrome + 扩展，或套壳浏览器</td>
+            </tr>
+            <tr>
+              <td data-i18n="c2l">页面 AI</td>
+              <td data-i18n="c2a">本机启发式或本机 Ollama，默认不上云</td>
+              <td data-i18n="c2b">不少助手把整页送到云端</td>
+            </tr>
+            <tr>
+              <td data-i18n="c3l">钓鱼</td>
+              <td data-i18n="c3a">拦截并解释原因，可继续</td>
+              <td data-i18n="c3b">只给警告，或完全交给云端扫描</td>
+            </tr>
+            <tr>
+              <td data-i18n="c4l">跟踪</td>
+              <td data-i18n="c4a">内核拦请求、清参数、揭 CNAME</td>
+              <td data-i18n="c4b">扩展声明式规则，深度有限</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="limits">
+        <h2 data-i18n="limTitle">现在不这样说</h2>
+        <ul>
+          <li data-i18n="lim1">安装后不会自带大模型。没有本机 Ollama 时，摘要走启发式。</li>
+          <li data-i18n="lim2">指纹防护是降低跨站识别，不是让网站无法识别你。</li>
+          <li data-i18n="lim3">第一方收集按已知路径拦截，不宣称挡住所有服务端埋点。</li>
+          <li data-i18n="lim4">打开 AI 控制后，本机 agent 仍可能经 CDP 读到网页 DOM。远程列表不包含 chrome:// 与 file://。</li>
+        </ul>
+      </section>
+
+      <section class="get" id="try">
+        <h2 data-i18n="getTitle">如何试用</h2>
+        <p data-i18n="getBody">
+          本机分发包在 <code>apps/browser/dist/GCSA-aegis.app</code>。第一次用 Finder 打开可能需要右键 → 打开。浏览器内打开 <code>chrome://aegis</code> 开关模块、看会话记录、做本机摘要。
+        </p>
+      </section>
+
+      <footer>
+        <span>GCSA-aegis · Chromium 151.0.7922.77</span>
+        <span data-i18n="footer">Apache-2.0 · 页面内容默认不上云，无遥测</span>
+      </footer>
+    </div>
+    <script>
+      const COPY = {
+        "zh-CN": {
+          title: "GCSA-aegis — 本地优先的隐私安全浏览器",
+          navTag: "隐私安全浏览器",
+          hero: "本地优先的隐私安全浏览器",
+          lede: "AI 摘要不出机器，钓鱼拦截会说明原因，跟踪在引擎里处理。不是扩展，也不是套了一层壳的 Chrome。",
+          ctaTry: "如何试用",
+          ctaCheck: "当场核对",
+          heroMeta: "基于 Chromium 151 · 当前分发包为 macOS arm64 · Apache-2.0",
+          panelTitle: "本次会话",
+          panelKicker: "清掉的跟踪，可以打开设置页核对。",
+          log1Tag: "参数",
+          log1: "去掉 utm_source、fbclid、gbraid",
+          log2Tag: "Cookie",
+          log2: "删除 _ga、_fbp；登录 Cookie 保留",
+          log3Tag: "摘要",
+          log3: "启发式 · 本机 · 未出网 · 842 字",
+          pillarsTitle: "三件事",
+          p1Title: "页面不上传",
+          p1Body:
+            "隐私摘要在你电脑里完成。文本先脱敏；有本机 Ollama 时只连 127.0.0.1，没有则走启发式。网页内容默认不上云。",
+          p2Title: "拦截讲得清",
+          p2Body:
+            "高风险仿冒站会先拦住，用人话说明像谁、依据是什么、分数怎么加到阈值。你可以选择继续访问。",
+          p3Title: "写进引擎，不是再装扩展",
+          p3Body:
+            "广告与分析请求、跟踪参数、伪装域名、广告 Cookie，在 Chromium 内核处理。不受扩展规则上限限制。",
+          featTitle: "引擎里在做的",
+          f1t: "跟踪器拦截",
+          f1d: "EasyList / EasyPrivacy，加上第一方 /g/collect、gtm.js 等收集路径。不拦你主动打开的网页。",
+          f2t: "链接与 Cookie",
+          f2d: "导航时去掉 utm、fbclid、gclid、gbraid 等。按名称查表删除广告／分析 Cookie，登录 Cookie 留下。",
+          f3t: "伪装与跳转",
+          f3d: "揭开子资源 CNAME；识别 bounce tracking 并立即清对应 Cookie。",
+          f4t: "指纹稳定化",
+          f4d: "对 Canvas、WebGL、Audio、WebGPU 做稳定化。打开 chrome://aegis 点「检测本页指纹」，防护开着时 WebGL/WebGPU 会出现 Aegis，maxBufferSize 会随开关变化。不是「无法指纹」。",
+          f5t: "本机 AI 控制",
+          f5d: "默认关闭。打开后只允许 127.0.0.1 上的 CDP；连上后顶部出现横幅。远程列表不暴露 chrome:// / file://。",
+          checkTitle: "你可以当场核对",
+          s1: "<strong>打开带跟踪尾巴的链接。</strong> 地址栏里 utm_source、fbclid 会被拿掉。",
+          s2: "<strong>打开高风险仿冒登录页。</strong> 拦截页写出为什么拦，并可继续访问。",
+          s3: "<strong>打开 chrome://aegis。</strong> 看拦截与 Cookie。打开 AI 控制后，本机 agent 连上会出现顶部横幅。",
+          cmpTitle: "和常见做法的差别",
+          cmpUs: "GCSA-aegis",
+          cmpOther: "常见做法",
+          c1l: "形态",
+          c1a: "Chromium fork，能力写在引擎",
+          c1b: "Chrome + 扩展，或套壳浏览器",
+          c2l: "页面 AI",
+          c2a: "本机启发式或本机 Ollama，默认不上云",
+          c2b: "不少助手把整页送到云端",
+          c3l: "钓鱼",
+          c3a: "拦截并解释原因，可继续",
+          c3b: "只给警告，或完全交给云端扫描",
+          c4l: "跟踪",
+          c4a: "内核拦请求、清参数、揭 CNAME",
+          c4b: "扩展声明式规则，深度有限",
+          limTitle: "现在不这样说",
+          lim1: "安装后不会自带大模型。没有本机 Ollama 时，摘要走启发式。",
+          lim2: "指纹防护是降低跨站识别，不是让网站无法识别你。",
+          lim3: "第一方收集按已知路径拦截，不宣称挡住所有服务端埋点。",
+          lim4: "打开 AI 控制后，本机 agent 仍可能经 CDP 读到网页 DOM。远程列表不包含 chrome:// 与 file://。",
+          getTitle: "如何试用",
+          getBody:
+            "本机分发包在 <code>apps/browser/dist/GCSA-aegis.app</code>。第一次用 Finder 打开可能需要右键 → 打开。浏览器内打开 <code>chrome://aegis</code> 开关模块、看会话记录、做本机摘要。AI 控制默认关闭。",
+          footer: "Apache-2.0 · 页面内容默认不上云，无遥测",
+        },
+        "zh-TW": {
+          title: "GCSA-aegis — 本地優先的隱私安全瀏覽器",
+          navTag: "隱私安全瀏覽器",
+          hero: "本地優先的隱私安全瀏覽器",
+          lede: "AI 摘要不出機器，釣魚攔截會說明原因，追蹤在引擎裡處理。不是擴充功能，也不是套了一層殼的 Chrome。",
+          ctaTry: "如何試用",
+          ctaCheck: "當場核對",
+          heroMeta: "基於 Chromium 151 · 目前分發包為 macOS arm64 · Apache-2.0",
+          panelTitle: "本次工作階段",
+          panelKicker: "清掉的追蹤，可以打開設定頁核對。",
+          log1Tag: "參數",
+          log1: "去掉 utm_source、fbclid、gbraid",
+          log2Tag: "Cookie",
+          log2: "刪除 _ga、_fbp；登入 Cookie 保留",
+          log3Tag: "摘要",
+          log3: "啟發式 · 本機 · 未出網 · 842 字",
+          pillarsTitle: "三件事",
+          p1Title: "頁面不上傳",
+          p1Body:
+            "隱私摘要在你的電腦裡完成。文字先脫敏；有本機 Ollama 時只連 127.0.0.1，沒有則走啟發式。網頁內容預設不上雲。",
+          p2Title: "攔截講得清",
+          p2Body:
+            "高風險仿冒站會先攔住，用人話說明像誰、依據是什麼、分數怎麼加到閾值。你可以選擇繼續造訪。",
+          p3Title: "寫進引擎，不是再裝擴充功能",
+          p3Body:
+            "廣告與分析請求、追蹤參數、偽裝網域、廣告 Cookie，在 Chromium 核心處理。不受擴充功能規則上限限制。",
+          featTitle: "引擎裡在做的",
+          f1t: "追蹤器攔截",
+          f1d: "EasyList / EasyPrivacy，加上第一方 /g/collect、gtm.js 等收集路徑。不攔你主動打開的網頁。",
+          f2t: "連結與 Cookie",
+          f2d: "導覽時去掉 utm、fbclid、gclid、gbraid 等。按名稱查表刪除廣告／分析 Cookie，登入 Cookie 留下。",
+          f3t: "偽裝與跳轉",
+          f3d: "揭開子資源 CNAME；識別 bounce tracking 並立即清對應 Cookie。",
+          f4t: "指紋穩定化",
+          f4d: "對 Canvas、WebGL、Audio、WebGPU 做穩定化。打開 chrome://aegis 點「檢測本頁指紋」，防護開著時 WebGL/WebGPU 會出現 Aegis，maxBufferSize 會隨開關變化。不是「無法指紋」。",
+          f5t: "本機 AI 控制",
+          f5d: "預設關閉。打開後只允許 127.0.0.1 上的 CDP；連上後頂部出現橫幅。遠端列表不暴露 chrome:// / file://。",
+          checkTitle: "你可以當場核對",
+          s1: "<strong>打開帶追蹤尾巴的連結。</strong> 網址列裡 utm_source、fbclid 會被拿掉。",
+          s2: "<strong>打開高風險仿冒登入頁。</strong> 攔截頁寫出為什麼攔，並可繼續造訪。",
+          s3: "<strong>打開 chrome://aegis。</strong> 看攔截與 Cookie。打開 AI 控制後，本機 agent 連上會出現頂部橫幅。",
+          cmpTitle: "和常見做法的差別",
+          cmpUs: "GCSA-aegis",
+          cmpOther: "常見做法",
+          c1l: "形態",
+          c1a: "Chromium fork，能力寫在引擎",
+          c1b: "Chrome + 擴充功能，或套殼瀏覽器",
+          c2l: "頁面 AI",
+          c2a: "本機啟發式或本機 Ollama，預設不上雲",
+          c2b: "不少助手把整頁送到雲端",
+          c3l: "釣魚",
+          c3a: "攔截並解釋原因，可繼續",
+          c3b: "只給警告，或完全交給雲端掃描",
+          c4l: "追蹤",
+          c4a: "核心攔請求、清參數、揭 CNAME",
+          c4b: "擴充功能宣告式規則，深度有限",
+          limTitle: "現在不這樣說",
+          lim1: "安裝後不會自帶大型模型。沒有本機 Ollama 時，摘要走啟發式。",
+          lim2: "指紋防護是降低跨站識別，不是讓網站無法識別你。",
+          lim3: "第一方收集按已知路徑攔截，不宣稱擋住所有伺服器端埋點。",
+          lim4: "打開 AI 控制後，本機 agent 仍可能經 CDP 讀到網頁 DOM。遠端列表不包含 chrome:// 與 file://。",
+          getTitle: "如何試用",
+          getBody:
+            "本機分發包在 <code>apps/browser/dist/GCSA-aegis.app</code>。第一次用 Finder 打開可能需要右鍵 → 打開。瀏覽器內打開 <code>chrome://aegis</code> 開關模組、看工作階段紀錄、做本機摘要。AI 控制預設關閉。",
+          footer: "Apache-2.0 · 頁面內容預設不上雲，無遙測",
+        },
+        en: {
+          title: "GCSA-aegis — a local-first privacy browser",
+          navTag: "privacy browser",
+          hero: "A local-first privacy and security browser",
+          lede: "Summaries stay on the machine. Phish blocks explain why. Tracking is handled in the engine — not by an extension, and not by a Chrome wrapper.",
+          ctaTry: "Try it",
+          ctaCheck: "Check for yourself",
+          heroMeta: "Chromium 151 · current package is macOS arm64 · Apache-2.0",
+          panelTitle: "This session",
+          panelKicker: "What was stripped is visible on the settings page.",
+          log1Tag: "params",
+          log1: "Removed utm_source, fbclid, gbraid",
+          log2Tag: "cookies",
+          log2: "Deleted _ga and _fbp; login cookies kept",
+          log3Tag: "summary",
+          log3: "heuristic · on-device · not sent · 842 chars",
+          pillarsTitle: "Three claims",
+          p1Title: "The page does not leave the device",
+          p1Body:
+            "Privacy summaries run on your computer. Text is redacted first. Ollama, if present, is loopback-only; otherwise a heuristic is used. Page content is not uploaded by default.",
+          p2Title: "Blocks that explain themselves",
+          p2Body:
+            "High-risk lookalikes are stopped first, with a human reason, evidence, and a score versus the threshold. You can continue anyway.",
+          p3Title: "In the engine, not another extension",
+          p3Body:
+            "Ad and analytics requests, tracking parameters, cloaked hosts, and ad cookies are handled inside Chromium. No extension rule-count ceiling.",
+          featTitle: "What the engine does",
+          f1t: "Tracker blocking",
+          f1d: "EasyList / EasyPrivacy, plus first-party collect paths such as /g/collect and gtm.js. Pages you open are not blocked.",
+          f2t: "Links and cookies",
+          f2d: "Strips utm, fbclid, gclid, gbraid and similar on navigation. Deletes ads/analytics cookies by name; keeps login cookies.",
+          f3t: "Cloaking and bounces",
+          f3d: "Uncloaks subresource CNAMEs. Detects bounce tracking and clears matching cookies immediately.",
+          f4t: "Fingerprint stabilization",
+          f4d: "Stabilizes Canvas, WebGL, Audio, and WebGPU. On chrome://aegis, tap Probe this page fingerprints; with the guard on, WebGL/WebGPU show Aegis and maxBufferSize changes with the switch. Not fingerprint-proof.",
+          f5t: "Local AI control",
+          f5d: "Off by default. When on, CDP binds only to 127.0.0.1. A banner appears while an agent is connected. Remote lists hide chrome:// and file://.",
+          checkTitle: "Check it yourself",
+          s1: "<strong>Open a link with tracking tails.</strong> utm_source and fbclid disappear from the address bar.",
+          s2: "<strong>Open a high-risk lookalike login page.</strong> The interstitial says why, and you can continue.",
+          s3: "<strong>Open chrome://aegis.</strong> Check blocks and cookies. Turn on AI control, connect a local agent, and a banner appears.",
+          cmpTitle: "How it differs",
+          cmpUs: "GCSA-aegis",
+          cmpOther: "Typical approach",
+          c1l: "Form",
+          c1a: "Chromium fork; capability lives in the engine",
+          c1b: "Chrome plus an extension, or a wrapped shell",
+          c2l: "Page AI",
+          c2a: "On-device heuristic or local Ollama; not uploaded by default",
+          c2b: "Many assistants send the full page to the cloud",
+          c3l: "Phishing",
+          c3a: "Blocks with reasons; continue is allowed",
+          c3b: "A generic warning, or a cloud scan",
+          c4l: "Tracking",
+          c4a: "Engine blocks requests, strips params, uncloaks CNAME",
+          c4b: "Declarative extension rules, limited depth",
+          limTitle: "What we do not claim",
+          lim1: "No bundled large model. Without local Ollama, summaries are heuristic.",
+          lim2: "Fingerprint Guard reduces cross-site identification; it does not make you unidentifiable.",
+          lim3: "First-party collect is blocked on known paths. We do not claim to stop all server-side tagging.",
+          lim4: "With AI control on, a local agent can still read page DOM over CDP. chrome:// and file:// are not listed as remote targets.",
+          getTitle: "How to try it",
+          getBody:
+            "The local package is at <code>apps/browser/dist/GCSA-aegis.app</code>. The first Finder launch may need right-click → Open. In the browser, open <code>chrome://aegis</code> to toggle modules, review the session log, and summarize on-device. AI control is off by default.",
+          footer: "Apache-2.0 · page content stays local by default; no telemetry",
+        },
+      };
+
+      const htmlKeys = new Set(["s1", "s2", "s3", "getBody"]);
+
+      function applyLang(lang) {
+        const pack = COPY[lang] || COPY["zh-CN"];
+        document.documentElement.lang = lang;
+        document.title = pack.title;
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-i18n");
+          const value = pack[key];
+          if (!value) return;
+          if (htmlKeys.has(key)) {
+            el.innerHTML = value;
+          } else {
+            el.textContent = value;
+          }
+        });
+        document.querySelectorAll(".langs button").forEach((btn) => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.lang === lang));
+        });
+        try {
+          localStorage.setItem("aegis-product-lang", lang);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      document.querySelectorAll(".langs button").forEach((btn) => {
+        btn.addEventListener("click", () => applyLang(btn.dataset.lang));
+      });
+
+      let initial = "zh-CN";
+      try {
+        initial = localStorage.getItem("aegis-product-lang") || "zh-CN";
+      } catch {
+        initial = "zh-CN";
+      }
+      applyLang(initial);
+    </script>
+  </body>
+</html>

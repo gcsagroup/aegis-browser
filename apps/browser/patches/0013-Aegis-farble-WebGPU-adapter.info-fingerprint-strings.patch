@@ -1,0 +1,128 @@
+From 39ce095f9ab7e0900cfa434c2a91bc62168d8258 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 07:15:38 +0800
+Subject: [PATCH 13/13] Aegis: farble WebGPU adapter.info fingerprint strings
+
+Stabilize GPUAdapter vendor/architecture/device/driver per eTLD+1 so
+WebGPU cannot undo FingerprintGuard the way canvas and WebGL already
+cannot.
+---
+ .../blink/renderer/core/aegis/farbling.cc     | 34 +++++++++++++++++++
+ .../blink/renderer/core/aegis/farbling.h      |  8 +++++
+ .../renderer/modules/webgpu/gpu_adapter.cc    | 18 ++++++++--
+ 3 files changed, 57 insertions(+), 3 deletions(-)
+
+diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
+index 5a282beeab..6b89d058e9 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.cc
++++ b/third_party/blink/renderer/core/aegis/farbling.cc
+@@ -147,5 +147,39 @@ String FarbledWebGLRenderer(ExecutionContext* context) {
+   return builder.ToString();
+ }
+ 
++void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
++                                     String& vendor,
++                                     String& architecture,
++                                     String& device,
++                                     String& description,
++                                     String& driver) {
++  if (!IsFingerprintGuardEnabled()) {
++    return;
++  }
++  const uint64_t token = TokenForContext(context);
++  vendor = String("aegis");
++
++  StringBuilder arch;
++  arch.Append("aegis-");
++  arch.AppendNumber(token & 0xFFFFu);
++  architecture = arch.ToString();
++
++  StringBuilder dev;
++  dev.Append("0x");
++  dev.AppendNumber((token >> 16) & 0xFFFFu);
++  device = dev.ToString();
++
++  StringBuilder desc;
++  desc.Append("ANGLE (Aegis Renderer ");
++  desc.AppendNumber((token >> 32) & 0xFFFFu);
++  desc.Append(")");
++  description = desc.ToString();
++
++  StringBuilder drv;
++  drv.Append("Aegis ");
++  drv.AppendNumber((token >> 48) & 0xFFFFu);
++  driver = drv.ToString();
++}
++
+ }  // namespace aegis
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
+index b50851081f..3bf4619784 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.h
++++ b/third_party/blink/renderer/core/aegis/farbling.h
+@@ -34,6 +34,14 @@ CORE_EXPORT void MaybeFarbleAudioChannel(ExecutionContext* context,
+ CORE_EXPORT String FarbledWebGLVendor(ExecutionContext* context);
+ CORE_EXPORT String FarbledWebGLRenderer(ExecutionContext* context);
+ 
++// Stable farbled WebGPU adapter.info strings.
++CORE_EXPORT void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
++                                                 String& vendor,
++                                                 String& architecture,
++                                                 String& device,
++                                                 String& description,
++                                                 String& driver);
++
+ }  // namespace aegis
+ }  // namespace blink
+ 
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+index 44527d0a7b..ee707ce4f1 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+@@ -10,6 +10,7 @@
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_device_descriptor.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_queue_descriptor.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_request_adapter_options.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/inspector/console_message.h"
+ #include "third_party/blink/renderer/modules/webgpu/dawn_enum_conversions.h"
+@@ -125,13 +126,24 @@ GPUAdapter::GPUAdapter(
+ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
+   bool is_fallback_adapter = adapter_type_ == wgpu::AdapterType::CPU;
+ 
++  String vendor = vendor_;
++  String architecture = architecture_;
++  String device = device_;
++  String description = description_;
++  String driver = driver_;
++  if (ExecutionContext* context =
++          gpu_ ? gpu_->GetExecutionContext() : nullptr) {
++    aegis::MaybeFarbleWebGPUAdapterStrings(context, vendor, architecture,
++                                           device, description, driver);
++  }
++
+   GPUAdapterInfo* info;
+   if (RuntimeEnabledFeatures::WebGPUDeveloperFeaturesEnabled()) {
+     // If WebGPU developer features have been enabled then provide all available
+     // adapter info values.
+     info = MakeGarbageCollected<GPUAdapterInfo>(
+-        vendor_, architecture_, subgroup_min_size_, subgroup_max_size_,
+-        is_fallback_adapter, device_, description_, driver_,
++        vendor, architecture, subgroup_min_size_, subgroup_max_size_,
++        is_fallback_adapter, device, description, driver,
+         FromDawnEnum(backend_type_), FromDawnEnum(adapter_type_),
+         d3d_shader_model_, vk_driver_version_, FromDawnEnum(power_preference_));
+ 
+@@ -144,7 +156,7 @@ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
+     }
+   } else {
+     info = MakeGarbageCollected<GPUAdapterInfo>(
+-        vendor_, architecture_, subgroup_min_size_, subgroup_max_size_,
++        vendor, architecture, subgroup_min_size_, subgroup_max_size_,
+         is_fallback_adapter);
+   }
+ 
+-- 
+2.52.0
+

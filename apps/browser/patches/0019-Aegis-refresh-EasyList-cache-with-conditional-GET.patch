@@ -1,0 +1,601 @@
+From 84e48a98a5cb548388d685bb2c96248af8afb71e Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 00:37:31 +0800
+Subject: [PATCH] Aegis: refresh EasyList cache with conditional GET
+
+Keep serving compiled.json while checking for updates every 24h, skip
+recompile on HTTP 304, and retry failed fetches after a backoff instead
+of wiping the on-disk cache.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ chrome/browser/aegis/aegis_prefs.cc         |   2 +
+ chrome/browser/aegis/aegis_service.cc       |   3 +
+ chrome/browser/aegis/filter_list_updater.cc | 234 +++++++++++++++++---
+ chrome/browser/aegis/filter_list_updater.h  |  26 ++-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc   |   8 +-
+ chrome/common/aegis/filter_list.cc          |   5 +
+ chrome/common/aegis/filter_list.h           |   3 +
+ chrome/common/aegis/pref_names.h            |   4 +
+ 8 files changed, 251 insertions(+), 34 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index fc5fb366a0..b857da29cb 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -21,6 +21,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterIntegerPref(prefs::kFilterListHostCount, 0);
+   registry->RegisterIntegerPref(prefs::kFilterListGeneration, 0);
+   registry->RegisterStringPref(prefs::kFilterListLastError, std::string());
++  registry->RegisterInt64Pref(prefs::kFilterListLastAttempt, 0);
++  registry->RegisterDictionaryPref(prefs::kFilterListHttpValidators);
+   registry->RegisterBooleanPref(prefs::kLinkSanitizeEnabled, true);
+   registry->RegisterBooleanPref(prefs::kCookieJanitorEnabled, true);
+   registry->RegisterBooleanPref(prefs::kCnameUncloakEnabled, true);
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 7cd380f95e..fbd22ac225 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -167,6 +167,9 @@ void AegisService::SetFilterListAutoUpdateEnabled(bool enabled) {
+   if (prefs_) {
+     prefs_->SetBoolean(prefs::kFilterListAutoUpdateEnabled, enabled);
+   }
++  if (filter_list_updater_) {
++    filter_list_updater_->OnAutoUpdateEnabledChanged();
++  }
+ }
+ 
+ bool AegisService::IsLinkSanitizeEnabled() const {
+diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
+index 85fe9f0053..99912aef6b 100644
+--- a/chrome/browser/aegis/filter_list_updater.cc
++++ b/chrome/browser/aegis/filter_list_updater.cc
+@@ -8,12 +8,14 @@
+ 
+ #include "base/files/file.h"
+ #include "base/files/file_util.h"
++#include "base/files/important_file_writer.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
++#include "base/values.h"
+ #include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -22,10 +24,14 @@
+ #include "components/prefs/pref_service.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
++#include "net/http/http_request_headers.h"
++#include "net/http/http_response_headers.h"
++#include "net/http/http_status_code.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+@@ -37,6 +43,7 @@ constexpr char kEasyPrivacyUrl[] =
+ constexpr char kCompiledFile[] = "compiled.json";
+ constexpr char kFilterDir[] = "AegisFilterLists";
+ constexpr int64_t kAutoUpdateIntervalSeconds = 24 * 60 * 60;
++constexpr int64_t kRetryAfterFailureSeconds = 60 * 60;
+ // SimpleURLLoader::DownloadToString DCHECKs above this bound (5 MiB).
+ constexpr size_t kMaxBodyBytes =
+     network::SimpleURLLoader::kMaxBoundedStringDownloadSize;
+@@ -50,7 +57,8 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+           "rules used by AegisNetThrottle."
+         trigger:
+           "When the local compiled cache is missing or older than one day, "
+-          "or when the user clicks Update on chrome://aegis."
++          "on a 24-hour timer while the browser is running, or when the user "
++          "clicks Update on chrome://aegis."
+         data: "None. Only the public filter-list URL is requested."
+         destination: WEBSITE
+         internal {
+@@ -61,7 +69,7 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+         user_data {
+           type: NONE
+         }
+-        last_reviewed: "2026-08-13"
++        last_reviewed: "2026-08-14"
+       }
+       policy {
+         cookies_allowed: NO
+@@ -121,6 +129,9 @@ void FilterListUpdater::LoadFromDisk() {
+             if (!CompiledFilterListFromJson(json, &list)) {
+               return cache;
+             }
++            if (list.hosts.empty() && list.path_rules.empty()) {
++              return cache;
++            }
+             cache.list = std::move(list);
+             cache.file_mtime_unix = TimeToUnixSeconds(info.last_modified);
+             return cache;
+@@ -146,24 +157,69 @@ void FilterListUpdater::OnLoadedFromDisk(LoadedCache cache) {
+   MaybeAutoUpdate();
+ }
+ 
++void FilterListUpdater::OnAutoUpdateEnabledChanged() {
++  refresh_timer_.Stop();
++  MaybeAutoUpdate();
++}
++
+ void FilterListUpdater::MaybeAutoUpdate() {
++  refresh_timer_.Stop();
+   if (!prefs_ || !prefs_->GetBoolean(prefs::kFilterListAutoUpdateEnabled)) {
+     return;
+   }
++  if (updating_) {
++    return;
++  }
++
++  const int64_t now = NowUnixSeconds();
+   const int64_t last = prefs_->GetInt64(prefs::kFilterListLastUpdated);
+   if (CacheIsFresh(last)) {
++    const int64_t remaining = kAutoUpdateIntervalSeconds - (now - last);
+     VLOG(1) << "Aegis: filter list cache is fresh, skip download";
++    ScheduleNextAutoUpdate(base::Seconds(remaining > 0 ? remaining
++                                                       : kAutoUpdateIntervalSeconds));
+     return;
+   }
++
++  const int64_t last_attempt = prefs_->GetInt64(prefs::kFilterListLastAttempt);
++  const std::string last_error = prefs_->GetString(prefs::kFilterListLastError);
++  if (!last_error.empty() && last_attempt > 0) {
++    const int64_t elapsed = now - last_attempt;
++    if (elapsed >= 0 && elapsed < kRetryAfterFailureSeconds) {
++      LOG(INFO) << "Aegis: filter list update backing off after failure";
++      ScheduleNextAutoUpdate(base::Seconds(kRetryAfterFailureSeconds - elapsed));
++      return;
++    }
++  }
++
+   LOG(INFO) << "Aegis: filter list cache missing or stale, "
+                "will fetch after startup";
+-  // 等首屏起来再拉 EasyList，避免启动时编译上万条规则卡住窗口。
+   AfterStartupTaskUtils::PostTask(
+       FROM_HERE, base::SequencedTaskRunner::GetCurrentDefault(),
+       base::BindOnce(&FilterListUpdater::UpdateNow, weak_factory_.GetWeakPtr(),
+                      base::DoNothing()));
+ }
+ 
++void FilterListUpdater::ScheduleNextAutoUpdate(base::TimeDelta delay) {
++  if (!prefs_ || !prefs_->GetBoolean(prefs::kFilterListAutoUpdateEnabled)) {
++    return;
++  }
++  if (delay < base::Minutes(1)) {
++    delay = base::Minutes(1);
++  }
++  if (delay > base::Hours(24)) {
++    delay = base::Hours(24);
++  }
++  refresh_timer_.Start(
++      FROM_HERE, delay,
++      base::BindOnce(&FilterListUpdater::OnScheduledRefresh,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void FilterListUpdater::OnScheduledRefresh() {
++  MaybeAutoUpdate();
++}
++
+ void FilterListUpdater::UpdateNow(UpdateCallback callback) {
+   if (updating_) {
+     if (callback) {
+@@ -179,40 +235,82 @@ void FilterListUpdater::UpdateNow(UpdateCallback callback) {
+   }
+   updating_ = true;
+   pending_ = std::move(callback);
+-  fetched_.clear();
++  skip_validators_ = false;
+   fetch_index_ = 0;
+   urls_ = {kEasyListUrl, kEasyPrivacyUrl};
++  compiled_by_index_.assign(urls_.size(), std::nullopt);
+   FetchNext();
+ }
+ 
++void FilterListUpdater::AttachValidators(network::ResourceRequest* request) {
++  if (skip_validators_ || !prefs_ || !request) {
++    return;
++  }
++  const base::DictValue* entry =
++      prefs_->GetDict(prefs::kFilterListHttpValidators)
++          .FindDict(request->url.spec());
++  if (!entry) {
++    return;
++  }
++  if (const std::string* etag = entry->FindString("etag")) {
++    if (!etag->empty()) {
++      request->headers.SetHeader(net::HttpRequestHeaders::kIfNoneMatch, *etag);
++    }
++  }
++  if (const std::string* last_modified = entry->FindString("lastModified")) {
++    if (!last_modified->empty()) {
++      request->headers.SetHeader(net::HttpRequestHeaders::kIfModifiedSince,
++                                 *last_modified);
++    }
++  }
++}
++
++void FilterListUpdater::RememberValidators(
++    const std::string& url,
++    const net::HttpResponseHeaders* headers) {
++  if (!prefs_ || !headers || url.empty()) {
++    return;
++  }
++  base::DictValue entry;
++  if (std::optional<std::string> etag = headers->GetNormalizedHeader("etag")) {
++    if (!etag->empty()) {
++      entry.Set("etag", std::move(*etag));
++    }
++  }
++  // last-modified 是 non-coalescing header，不能用 GetNormalizedHeader（DCHECK 会崩）。
++  std::string last_modified;
++  if (headers->EnumerateHeader(nullptr, "last-modified", &last_modified) &&
++      !last_modified.empty()) {
++    entry.Set("lastModified", std::move(last_modified));
++  }
++  if (entry.empty()) {
++    return;
++  }
++  base::DictValue validators =
++      prefs_->GetDict(prefs::kFilterListHttpValidators).Clone();
++  validators.Set(url, std::move(entry));
++  prefs_->SetDict(prefs::kFilterListHttpValidators, std::move(validators));
++}
++
+ void FilterListUpdater::FetchNext() {
++  while (fetch_index_ < urls_.size() && compiled_by_index_[fetch_index_]) {
++    fetch_index_++;
++  }
+   if (fetch_index_ >= urls_.size()) {
+-    auto fetched = std::move(fetched_);
+-    fetched_.clear();
+-    base::ThreadPool::PostTaskAndReplyWithResult(
+-        FROM_HERE, {base::TaskPriority::BEST_EFFORT},
+-        base::BindOnce(
+-            [](std::vector<CompiledFilterList> fetched,
+-               int64_t now) -> CompiledFilterList {
+-              CompiledFilterList merged =
+-                  MergeCompiledFilterLists(fetched, "easylist+easyprivacy");
+-              merged.generated_at = base::NumberToString(now);
+-              return merged;
+-            },
+-            std::move(fetched), NowUnixSeconds()),
+-        base::BindOnce(&FilterListUpdater::OnMerged,
+-                       weak_factory_.GetWeakPtr()));
++    BeginMergeOrRefetchMissing();
+     return;
+   }
+ 
+   auto request = std::make_unique<network::ResourceRequest>();
+   request->url = GURL(urls_[fetch_index_]);
+-  request->load_flags = net::LOAD_DISABLE_CACHE | net::LOAD_BYPASS_CACHE;
++  request->load_flags = net::LOAD_DISABLE_CACHE;
+   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+   request->priority = net::IDLE;
++  AttachValidators(request.get());
+ 
+   loader_ = network::SimpleURLLoader::Create(std::move(request),
+                                              kTrafficAnnotation);
++  loader_->SetAllowHttpErrorResults(true);
+   loader_->SetRetryOptions(
+       2, network::SimpleURLLoader::RetryMode::RETRY_ON_NETWORK_CHANGE);
+   loader_->DownloadToString(
+@@ -223,12 +321,28 @@ void FilterListUpdater::FetchNext() {
+ 
+ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
+   const int net_error = loader_ ? loader_->NetError() : net::ERR_FAILED;
++  const net::HttpResponseHeaders* headers = nullptr;
++  if (loader_ && loader_->ResponseInfo()) {
++    headers = loader_->ResponseInfo()->headers.get();
++  }
++  const int status = headers ? headers->response_code() : 0;
++  const std::string source = urls_[fetch_index_];
++  RememberValidators(source, headers);
+   loader_.reset();
+-  if (!body || net_error != net::OK) {
++
++  if (net_error != net::OK) {
+     Finish(false, "fetch failed (" + base::NumberToString(net_error) + ")");
+     return;
+   }
+-  const std::string source = urls_[fetch_index_];
++  if (status == net::HTTP_NOT_MODIFIED) {
++    fetch_index_++;
++    FetchNext();
++    return;
++  }
++  if (status != net::HTTP_OK || !body) {
++    Finish(false, "fetch failed (HTTP " + base::NumberToString(status) + ")");
++    return;
++  }
+   base::ThreadPool::PostTaskAndReplyWithResult(
+       FROM_HERE, {base::TaskPriority::BEST_EFFORT},
+       base::BindOnce(
+@@ -241,15 +355,75 @@ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
+ }
+ 
+ void FilterListUpdater::OnCompiled(CompiledFilterList list) {
+-  fetched_.push_back(std::move(list));
++  compiled_by_index_[fetch_index_] = std::move(list);
+   fetch_index_++;
+   FetchNext();
+ }
+ 
++void FilterListUpdater::BeginMergeOrRefetchMissing() {
++  size_t have_body = 0;
++  for (const auto& compiled : compiled_by_index_) {
++    if (compiled) {
++      have_body++;
++    }
++  }
++  if (have_body == urls_.size()) {
++    std::vector<CompiledFilterList> fetched;
++    fetched.reserve(compiled_by_index_.size());
++    for (auto& compiled : compiled_by_index_) {
++      fetched.push_back(std::move(*compiled));
++    }
++    compiled_by_index_.clear();
++    base::ThreadPool::PostTaskAndReplyWithResult(
++        FROM_HERE, {base::TaskPriority::BEST_EFFORT},
++        base::BindOnce(
++            [](std::vector<CompiledFilterList> fetched,
++               int64_t now) -> CompiledFilterList {
++              CompiledFilterList merged =
++                  MergeCompiledFilterLists(fetched, "easylist+easyprivacy");
++              merged.generated_at = base::NumberToString(now);
++              return merged;
++            },
++            std::move(fetched), NowUnixSeconds()),
++        base::BindOnce(&FilterListUpdater::OnMerged,
++                       weak_factory_.GetWeakPtr()));
++    return;
++  }
++  if (have_body == 0) {
++    if (FilterListMatcher::GetInstance()->compiled_host_count() > 0) {
++      OnNotModified();
++      return;
++    }
++    if (!skip_validators_) {
++      skip_validators_ = true;
++      fetch_index_ = 0;
++      FetchNext();
++      return;
++    }
++    Finish(false, "empty 304 without cache");
++    return;
++  }
++  if (!skip_validators_) {
++    skip_validators_ = true;
++    fetch_index_ = 0;
++    FetchNext();
++    return;
++  }
++  Finish(false, "incomplete fetch");
++}
++
+ void FilterListUpdater::OnMerged(CompiledFilterList merged) {
+   Persist(merged);
+   ApplyList(std::move(merged));
+   BumpGeneration();
++  LOG(INFO) << "Aegis: filter list compiled and saved, hosts="
++            << FilterListMatcher::GetInstance()->compiled_host_count();
++  Finish(true, std::string());
++}
++
++void FilterListUpdater::OnNotModified() {
++  LOG(INFO) << "Aegis: filter list not modified, keep cache, hosts="
++            << FilterListMatcher::GetInstance()->compiled_host_count();
+   Finish(true, std::string());
+ }
+ 
+@@ -257,20 +431,23 @@ void FilterListUpdater::Finish(bool ok, const std::string& error) {
+   updating_ = false;
+   loader_.reset();
+   if (prefs_) {
++    prefs_->SetInt64(prefs::kFilterListLastAttempt, NowUnixSeconds());
+     prefs_->SetString(prefs::kFilterListLastError, error);
+     if (ok) {
+       prefs_->SetInt64(prefs::kFilterListLastUpdated, NowUnixSeconds());
+     }
+   }
+-  if (ok) {
+-    LOG(INFO) << "Aegis: filter list updated, hosts="
+-              << FilterListMatcher::GetInstance()->compiled_host_count();
+-  } else {
++  if (!ok) {
+     LOG(WARNING) << "Aegis: filter list update failed: " << error;
+   }
+   if (pending_) {
+     std::move(pending_).Run(ok);
+   }
++  if (ok) {
++    ScheduleNextAutoUpdate(base::Seconds(kAutoUpdateIntervalSeconds));
++  } else {
++    ScheduleNextAutoUpdate(base::Seconds(kRetryAfterFailureSeconds));
++  }
+ }
+ 
+ void FilterListUpdater::ApplyList(CompiledFilterList list) {
+@@ -291,7 +468,8 @@ void FilterListUpdater::Persist(const CompiledFilterList& list) {
+             if (!base::CreateDirectory(path.DirName())) {
+               return;
+             }
+-            base::WriteFile(path, CompiledFilterListToJson(list));
++            base::ImportantFileWriter::WriteFileAtomically(
++                path, CompiledFilterListToJson(list));
+           },
+           path, list));
+ }
+diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
+index fdbb9db36a..9bc9be8116 100644
+--- a/chrome/browser/aegis/filter_list_updater.h
++++ b/chrome/browser/aegis/filter_list_updater.h
+@@ -12,20 +12,32 @@
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
+ #include "chrome/common/aegis/filter_list.h"
+ 
+ class PrefService;
+ class Profile;
+ 
++namespace net {
++class HttpResponseHeaders;
++}
++
+ namespace network {
+ class SimpleURLLoader;
++struct ResourceRequest;
+ }
+ 
+ namespace aegis {
+ 
+ // Downloads EasyList/EasyPrivacy, compiles host tables, persists them under
+ // the profile dir, and publishes them to FilterListMatcher.
+-// 启动时先读 compiled.json；缓存新鲜（pref 或文件 mtime < 24h）则不再联网。
++//
++// 更新策略：
++// - 启动先读 compiled.json，立刻用于拦截。
++// - 缓存未满 24h：不联网，到点再后台检查。
++// - 缓存过期或缺失：窗口起来后条件请求（ETag / Last-Modified）。
++// - 远端 304：只刷新时间戳，不重新编译。
++// - 失败：继续用旧缓存，1 小时后再试；不删盘上的 compiled.json。
+ class FilterListUpdater {
+  public:
+   using UpdateCallback = base::OnceCallback<void(bool ok)>;
+@@ -38,6 +50,7 @@ class FilterListUpdater {
+   // 读盘后自动调用 MaybeAutoUpdate，避免在缓存尚未加载时误判过期。
+   void LoadFromDisk();
+   void MaybeAutoUpdate();
++  void OnAutoUpdateEnabledChanged();
+   void UpdateNow(UpdateCallback callback);
+ 
+   bool updating() const { return updating_; }
+@@ -52,20 +65,29 @@ class FilterListUpdater {
+   void OnFetched(std::optional<std::string> body);
+   void OnCompiled(CompiledFilterList list);
+   void OnLoadedFromDisk(LoadedCache cache);
++  void BeginMergeOrRefetchMissing();
+   void OnMerged(CompiledFilterList merged);
++  void OnNotModified();
+   void Finish(bool ok, const std::string& error);
+   void ApplyList(CompiledFilterList list);
+   void Persist(const CompiledFilterList& list);
+   void BumpGeneration();
++  void RememberValidators(const std::string& url,
++                          const net::HttpResponseHeaders* headers);
++  void AttachValidators(network::ResourceRequest* request);
++  void ScheduleNextAutoUpdate(base::TimeDelta delay);
++  void OnScheduledRefresh();
+ 
+   raw_ptr<Profile> profile_;
+   raw_ptr<PrefService> prefs_;
+   bool updating_ = false;
++  bool skip_validators_ = false;
+   size_t fetch_index_ = 0;
+   std::vector<std::string> urls_;
+-  std::vector<CompiledFilterList> fetched_;
++  std::vector<std::optional<CompiledFilterList>> compiled_by_index_;
+   UpdateCallback pending_;
+   std::unique_ptr<network::SimpleURLLoader> loader_;
++  base::OneShotTimer refresh_timer_;
+   base::WeakPtrFactory<FilterListUpdater> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index f553893e8f..56dd6b1152 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -71,7 +71,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+         .filter_list_auto_update_hint =
+-            "啟動讀本地編譯快取；僅在快取缺失或超過約 24 小時才重新拉取。",
++            "啟動用本地快取。約每 24 小時後台檢查；未變化不重編譯，失敗保留舊快取。",
+         .filter_list_update_now = "立即更新",
+         .filter_list_meta =
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
+@@ -122,7 +122,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+         .filter_list_auto_update_hint =
+-            "启动读本地编译缓存；仅在缓存缺失或超过约 24 小时才重新拉取。",
++            "启动用本地缓存。约每 24 小时后台检查；未变化不重编译，失败保留旧缓存。",
+         .filter_list_update_now = "立即更新",
+         .filter_list_meta =
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
+@@ -173,8 +173,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+       .filter_list_auto_update_hint =
+-          "Loads the local compiled cache on startup. Fetches EasyList / "
+-          "EasyPrivacy only when the cache is missing or older than ~24h.",
++          "Uses the local cache on startup. Rechecks about every 24h in the "
++          "background; unchanged lists skip recompile, failures keep the cache.",
+       .filter_list_update_now = "Update now",
+       .filter_list_meta =
+           "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
+diff --git a/chrome/common/aegis/filter_list.cc b/chrome/common/aegis/filter_list.cc
+index bed097884f..62e85a2f75 100644
+--- a/chrome/common/aegis/filter_list.cc
++++ b/chrome/common/aegis/filter_list.cc
+@@ -184,6 +184,7 @@ CompiledFilterList MergeCompiledFilterLists(
+ 
+ std::string CompiledFilterListToJson(const CompiledFilterList& list) {
+   base::DictValue dict;
++  dict.Set("cacheFormat", kCompiledCacheFormat);
+   dict.Set("version", list.version);
+   dict.Set("source", list.source);
+   dict.Set("generatedAt", list.generated_at);
+@@ -222,6 +223,10 @@ bool CompiledFilterListFromJson(std::string_view json,
+     return false;
+   }
+   const base::DictValue& dict = parsed->GetDict();
++  const int cache_format = dict.FindInt("cacheFormat").value_or(1);
++  if (cache_format != kCompiledCacheFormat) {
++    return false;
++  }
+   list->version = dict.FindInt("version").value_or(1);
+   list->source = dict.FindString("source") ? *dict.FindString("source") : "";
+   list->generated_at =
+diff --git a/chrome/common/aegis/filter_list.h b/chrome/common/aegis/filter_list.h
+index f67a013494..4b1c4d3994 100644
+--- a/chrome/common/aegis/filter_list.h
++++ b/chrome/common/aegis/filter_list.h
+@@ -11,6 +11,9 @@
+ 
+ namespace aegis {
+ 
++// Profile 磁盘缓存格式。升级此值会让旧 compiled.json 失效并重新拉取。
++inline constexpr int kCompiledCacheFormat = 1;
++
+ struct CompiledFilterList {
+   int version = 1;
+   std::string source;
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index 78be0b3a4d..94972c1f14 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -20,6 +20,10 @@ inline constexpr char kFilterListLastUpdated[] =
+ inline constexpr char kFilterListHostCount[] = "aegis.filter_list_host_count";
+ inline constexpr char kFilterListGeneration[] = "aegis.filter_list_generation";
+ inline constexpr char kFilterListLastError[] = "aegis.filter_list_last_error";
++inline constexpr char kFilterListLastAttempt[] =
++    "aegis.filter_list_last_attempt";
++inline constexpr char kFilterListHttpValidators[] =
++    "aegis.filter_list_http_validators";
+ inline constexpr char kLinkSanitizeEnabled[] = "aegis.link_sanitize_enabled";
+ inline constexpr char kCookieJanitorEnabled[] = "aegis.cookie_janitor_enabled";
+ inline constexpr char kCnameUncloakEnabled[] = "aegis.cname_uncloak_enabled";
+-- 
+2.52.0
+

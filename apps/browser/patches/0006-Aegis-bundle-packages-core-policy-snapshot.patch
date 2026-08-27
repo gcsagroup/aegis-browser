@@ -1,0 +1,470 @@
+From 6098d6e9e85236aea8c2e6aa124181a14954302e Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Wed, 12 Aug 2026 18:23:06 +0800
+Subject: [PATCH] Aegis: bundle packages/core policy snapshot into the tree
+
+Generate tracker/phish/query-param tables from core and ship the JSON
+snapshot under third_party/aegis_policy for a single source of truth.
+---
+ chrome/common/aegis/BUILD.gn                  |   3 +
+ chrome/common/aegis/builtin_phish_hosts.cc    |  14 +--
+ chrome/common/aegis/builtin_tracker_hosts.cc  |  36 +-----
+ .../aegis/generated/phish_brand_keywords.inc  |  23 ++++
+ chrome/common/aegis/generated/phish_hosts.inc |  11 ++
+ .../aegis/generated/suspicious_phish_tlds.inc |  16 +++
+ .../common/aegis/generated/tracker_hosts.inc  |  35 ++++++
+ .../aegis/generated/tracking_query_params.inc |  28 +++++
+ chrome/common/aegis/tracking_query_params.cc  |  24 ++++
+ chrome/common/aegis/tracking_query_params.h   |  17 +++
+ third_party/aegis_policy/BUILD.gn             |   7 ++
+ third_party/aegis_policy/README.md            |  16 +++
+ third_party/aegis_policy/policy_snapshot.json | 108 ++++++++++++++++++
+ 13 files changed, 292 insertions(+), 46 deletions(-)
+ create mode 100644 chrome/common/aegis/generated/phish_brand_keywords.inc
+ create mode 100644 chrome/common/aegis/generated/phish_hosts.inc
+ create mode 100644 chrome/common/aegis/generated/suspicious_phish_tlds.inc
+ create mode 100644 chrome/common/aegis/generated/tracker_hosts.inc
+ create mode 100644 chrome/common/aegis/generated/tracking_query_params.inc
+ create mode 100644 chrome/common/aegis/tracking_query_params.cc
+ create mode 100644 chrome/common/aegis/tracking_query_params.h
+ create mode 100644 third_party/aegis_policy/BUILD.gn
+ create mode 100644 third_party/aegis_policy/README.md
+ create mode 100644 third_party/aegis_policy/policy_snapshot.json
+
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 4ad8a9ce67..8e61fb7d41 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -12,9 +12,12 @@ source_set("aegis") {
+     "features.cc",
+     "features.h",
+     "pref_names.h",
++    "tracking_query_params.cc",
++    "tracking_query_params.h",
+   ]
+   deps = [
+     "//base",
++    "//third_party/aegis_policy:policy_snapshot",
+     "//net",
+     "//services/network/public/cpp",
+     "//third_party/blink/public/common",
+diff --git a/chrome/common/aegis/builtin_phish_hosts.cc b/chrome/common/aegis/builtin_phish_hosts.cc
+index 09dc3adb6f..17a47b2d79 100644
+--- a/chrome/common/aegis/builtin_phish_hosts.cc
++++ b/chrome/common/aegis/builtin_phish_hosts.cc
+@@ -11,18 +11,8 @@
+ namespace aegis {
+ namespace {
+ 
+-// Seed list for local phishing interstitial demos. Not a production blocklist.
+-// includes Google's Safe Browsing test phishing path plus obvious brand-spoof
+-// hosts used for manual verification.
+-constexpr std::string_view kBuiltinPhishRules[] = {
+-    "testsafebrowsing.appspot.com/s/phishing",
+-    "paypal-secure-login.com",
+-    "appleid-verify-account.com",
+-    "microsoft-account-security.com",
+-    "ic1oud-login.com",
+-    "google-secure-signin.com",
+-    "aegis-phish-demo.test",
+-};
++// Generated from packages/core — regenerate via sync-core-snapshot.sh.
++#include "chrome/common/aegis/generated/phish_hosts.inc"
+ 
+ bool RuleMatches(std::string_view rule, const GURL& url) {
+   if (!url.is_valid() || !url.has_host()) {
+diff --git a/chrome/common/aegis/builtin_tracker_hosts.cc b/chrome/common/aegis/builtin_tracker_hosts.cc
+index 8f6c7cc56e..7b9f0ce829 100644
+--- a/chrome/common/aegis/builtin_tracker_hosts.cc
++++ b/chrome/common/aegis/builtin_tracker_hosts.cc
+@@ -11,40 +11,8 @@
+ namespace aegis {
+ namespace {
+ 
+-// Keep in sync with packages/core/src/tracker/builtin-rules.ts.
+-constexpr std::string_view kBuiltinTrackerRules[] = {
+-    "doubleclick.net",
+-    "googleadservices.com",
+-    "googlesyndication.com",
+-    "google-analytics.com",
+-    "googletagmanager.com",
+-    "facebook.net",
+-    "facebook.com/tr",
+-    "connect.facebook.net",
+-    "adservice.google.com",
+-    "adsystem.amazon.com",
+-    "amazon-adsystem.com",
+-    "adnxs.com",
+-    "adsrvr.org",
+-    "advertising.com",
+-    "scorecardresearch.com",
+-    "hotjar.com",
+-    "clarity.ms",
+-    "taboola.com",
+-    "outbrain.com",
+-    "criteo.com",
+-    "pubmatic.com",
+-    "openx.net",
+-    "rubiconproject.com",
+-    "moatads.com",
+-    "quantserve.com",
+-    "chartbeat.com",
+-    "segment.io",
+-    "segment.com",
+-    "mixpanel.com",
+-    "amplitude.com",
+-    "sentry-cdn.com",
+-};
++// Generated from packages/core — regenerate via sync-core-snapshot.sh.
++#include "chrome/common/aegis/generated/tracker_hosts.inc"
+ 
+ bool RuleMatches(std::string_view rule, const GURL& url) {
+   if (!url.is_valid() || !url.has_host()) {
+diff --git a/chrome/common/aegis/generated/phish_brand_keywords.inc b/chrome/common/aegis/generated/phish_brand_keywords.inc
+new file mode 100644
+index 0000000000..98405483d5
+--- /dev/null
++++ b/chrome/common/aegis/generated/phish_brand_keywords.inc
+@@ -0,0 +1,23 @@
++// Generated by apps/browser/scripts/sync-core-snapshot.sh — do not edit.
++// Source: packages/core → phish_brand_keywords.inc
++constexpr std::string_view kPhishBrandKeywords[] = {
++    "paypal",
++    "apple",
++    "microsoft",
++    "google",
++    "amazon",
++    "facebook",
++    "instagram",
++    "netflix",
++    "bank",
++    "chase",
++    "wellsfargo",
++    "icloud",
++    "outlook",
++    "office365",
++    "binance",
++    "coinbase",
++    "alipay",
++    "taobao",
++    "wechat",
++};
+diff --git a/chrome/common/aegis/generated/phish_hosts.inc b/chrome/common/aegis/generated/phish_hosts.inc
+new file mode 100644
+index 0000000000..a9c0060b61
+--- /dev/null
++++ b/chrome/common/aegis/generated/phish_hosts.inc
+@@ -0,0 +1,11 @@
++// Generated by apps/browser/scripts/sync-core-snapshot.sh — do not edit.
++// Source: packages/core → phish_hosts.inc
++constexpr std::string_view kBuiltinPhishRules[] = {
++    "testsafebrowsing.appspot.com/s/phishing",
++    "paypal-secure-login.com",
++    "appleid-verify-account.com",
++    "microsoft-account-security.com",
++    "ic1oud-login.com",
++    "google-secure-signin.com",
++    "aegis-phish-demo.test",
++};
+diff --git a/chrome/common/aegis/generated/suspicious_phish_tlds.inc b/chrome/common/aegis/generated/suspicious_phish_tlds.inc
+new file mode 100644
+index 0000000000..1ddd07f22b
+--- /dev/null
++++ b/chrome/common/aegis/generated/suspicious_phish_tlds.inc
+@@ -0,0 +1,16 @@
++// Generated by apps/browser/scripts/sync-core-snapshot.sh — do not edit.
++// Source: packages/core → suspicious_phish_tlds.inc
++constexpr std::string_view kSuspiciousPhishTlds[] = {
++    "zip",
++    "mov",
++    "tk",
++    "ml",
++    "ga",
++    "cf",
++    "gq",
++    "top",
++    "xyz",
++    "icu",
++    "click",
++    "country",
++};
+diff --git a/chrome/common/aegis/generated/tracker_hosts.inc b/chrome/common/aegis/generated/tracker_hosts.inc
+new file mode 100644
+index 0000000000..2f0644ddff
+--- /dev/null
++++ b/chrome/common/aegis/generated/tracker_hosts.inc
+@@ -0,0 +1,35 @@
++// Generated by apps/browser/scripts/sync-core-snapshot.sh — do not edit.
++// Source: packages/core → tracker_hosts.inc
++constexpr std::string_view kBuiltinTrackerRules[] = {
++    "doubleclick.net",
++    "googleadservices.com",
++    "googlesyndication.com",
++    "google-analytics.com",
++    "googletagmanager.com",
++    "facebook.net",
++    "facebook.com/tr",
++    "connect.facebook.net",
++    "adservice.google.com",
++    "adsystem.amazon.com",
++    "amazon-adsystem.com",
++    "adnxs.com",
++    "adsrvr.org",
++    "advertising.com",
++    "scorecardresearch.com",
++    "hotjar.com",
++    "clarity.ms",
++    "taboola.com",
++    "outbrain.com",
++    "criteo.com",
++    "pubmatic.com",
++    "openx.net",
++    "rubiconproject.com",
++    "moatads.com",
++    "quantserve.com",
++    "chartbeat.com",
++    "segment.io",
++    "segment.com",
++    "mixpanel.com",
++    "amplitude.com",
++    "sentry-cdn.com",
++};
+diff --git a/chrome/common/aegis/generated/tracking_query_params.inc b/chrome/common/aegis/generated/tracking_query_params.inc
+new file mode 100644
+index 0000000000..fa11c1803c
+--- /dev/null
++++ b/chrome/common/aegis/generated/tracking_query_params.inc
+@@ -0,0 +1,28 @@
++// Generated by apps/browser/scripts/sync-core-snapshot.sh — do not edit.
++// Source: packages/core → tracking_query_params.inc
++constexpr std::string_view kTrackingQueryParams[] = {
++    "fbclid",
++    "gclid",
++    "gclsrc",
++    "dclid",
++    "msclkid",
++    "mc_eid",
++    "mc_cid",
++    "igshid",
++    "twclid",
++    "ttclid",
++    "yclid",
++    "ybclid",
++    "utm_source",
++    "utm_medium",
++    "utm_campaign",
++    "utm_term",
++    "utm_content",
++    "utm_id",
++    "_ga",
++    "_gl",
++    "vero_id",
++    "wickedid",
++    "oly_anon_id",
++    "oly_enc_id",
++};
+diff --git a/chrome/common/aegis/tracking_query_params.cc b/chrome/common/aegis/tracking_query_params.cc
+new file mode 100644
+index 0000000000..78b8eab877
+--- /dev/null
++++ b/chrome/common/aegis/tracking_query_params.cc
+@@ -0,0 +1,24 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/tracking_query_params.cc
++
++#include "chrome/common/aegis/tracking_query_params.h"
++
++#include "base/strings/string_util.h"
++
++namespace aegis {
++namespace {
++
++#include "chrome/common/aegis/generated/tracking_query_params.inc"
++
++}  // namespace
++
++bool IsTrackingQueryParam(std::string_view name) {
++  for (std::string_view param : kTrackingQueryParams) {
++    if (base::EqualsCaseInsensitiveASCII(name, param)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/tracking_query_params.h b/chrome/common/aegis/tracking_query_params.h
+new file mode 100644
+index 0000000000..ae66c7f38c
+--- /dev/null
++++ b/chrome/common/aegis/tracking_query_params.h
+@@ -0,0 +1,17 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/tracking_query_params.h
++
++#ifndef CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
++#define CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
++
++#include <string_view>
++
++namespace aegis {
++
++// Returns true when |name| is a known tracking query parameter
++// (from packages/core TRACKING_QUERY_PARAMS).
++bool IsTrackingQueryParam(std::string_view name);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
+diff --git a/third_party/aegis_policy/BUILD.gn b/third_party/aegis_policy/BUILD.gn
+new file mode 100644
+index 0000000000..f43e75194e
+--- /dev/null
++++ b/third_party/aegis_policy/BUILD.gn
+@@ -0,0 +1,7 @@
++# Copyright 2026 GCSA
++# Policy snapshot data exported from packages/core.
++
++copy("policy_snapshot") {
++  sources = [ "policy_snapshot.json" ]
++  outputs = [ "$root_out_dir/aegis_policy/{{source_file_part}}" ]
++}
+diff --git a/third_party/aegis_policy/README.md b/third_party/aegis_policy/README.md
+new file mode 100644
+index 0000000000..27ea501d28
+--- /dev/null
++++ b/third_party/aegis_policy/README.md
+@@ -0,0 +1,16 @@
++# third_party/aegis_policy
++
++Policy snapshot exported from `packages/core`.
++
++| File | Role |
++|------|------|
++| `policy_snapshot.json` | Portable JSON (trackers / phish seeds / params) |
++| `../chrome/common/aegis/generated/*.inc` | C++ string tables included by builtin_*.cc |
++
++Regenerate:
++
++```bash
++pnpm --filter @gcsa-aegis/browser sync-core-snapshot
++```
++
++Do not hand-edit generated `.inc` files — edit TypeScript under `packages/core` instead.
+diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
+new file mode 100644
+index 0000000000..f0ff867c34
+--- /dev/null
++++ b/third_party/aegis_policy/policy_snapshot.json
+@@ -0,0 +1,108 @@
++{
++  "version": 1,
++  "generatedAt": "2026-08-12T10:21:53.784Z",
++  "source": "@gcsa-aegis/core",
++  "trackerHosts": [
++    "doubleclick.net",
++    "googleadservices.com",
++    "googlesyndication.com",
++    "google-analytics.com",
++    "googletagmanager.com",
++    "facebook.net",
++    "facebook.com/tr",
++    "connect.facebook.net",
++    "adservice.google.com",
++    "adsystem.amazon.com",
++    "amazon-adsystem.com",
++    "adnxs.com",
++    "adsrvr.org",
++    "advertising.com",
++    "scorecardresearch.com",
++    "hotjar.com",
++    "clarity.ms",
++    "taboola.com",
++    "outbrain.com",
++    "criteo.com",
++    "pubmatic.com",
++    "openx.net",
++    "rubiconproject.com",
++    "moatads.com",
++    "quantserve.com",
++    "chartbeat.com",
++    "segment.io",
++    "segment.com",
++    "mixpanel.com",
++    "amplitude.com",
++    "sentry-cdn.com"
++  ],
++  "trackingQueryParams": [
++    "fbclid",
++    "gclid",
++    "gclsrc",
++    "dclid",
++    "msclkid",
++    "mc_eid",
++    "mc_cid",
++    "igshid",
++    "twclid",
++    "ttclid",
++    "yclid",
++    "ybclid",
++    "utm_source",
++    "utm_medium",
++    "utm_campaign",
++    "utm_term",
++    "utm_content",
++    "utm_id",
++    "_ga",
++    "_gl",
++    "vero_id",
++    "wickedid",
++    "oly_anon_id",
++    "oly_enc_id"
++  ],
++  "phishHosts": [
++    "testsafebrowsing.appspot.com/s/phishing",
++    "paypal-secure-login.com",
++    "appleid-verify-account.com",
++    "microsoft-account-security.com",
++    "ic1oud-login.com",
++    "google-secure-signin.com",
++    "aegis-phish-demo.test"
++  ],
++  "suspiciousTlds": [
++    "zip",
++    "mov",
++    "tk",
++    "ml",
++    "ga",
++    "cf",
++    "gq",
++    "top",
++    "xyz",
++    "icu",
++    "click",
++    "country"
++  ],
++  "phishBrandKeywords": [
++    "paypal",
++    "apple",
++    "microsoft",
++    "google",
++    "amazon",
++    "facebook",
++    "instagram",
++    "netflix",
++    "bank",
++    "chase",
++    "wellsfargo",
++    "icloud",
++    "outlook",
++    "office365",
++    "binance",
++    "coinbase",
++    "alipay",
++    "taobao",
++    "wechat"
++  ]
++}
+-- 
+2.52.0
+

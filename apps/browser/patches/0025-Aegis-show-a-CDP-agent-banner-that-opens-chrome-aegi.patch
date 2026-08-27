@@ -1,0 +1,218 @@
+From c431572ee1a9f841da0d9108da0238898d1ba403 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 17:19:59 +0800
+Subject: [PATCH] Aegis: show a CDP agent banner that opens chrome://aegis
+
+Replace the stock automation infobar copy so a loopback agent
+connection is visible, and send the action to chrome://aegis.
+---
+ ...tools_remote_server_infobar_browsertest.cc | 10 +++----
+ ...devtools_remote_server_infobar_delegate.cc | 14 +++++----
+ chrome/common/aegis/BUILD.gn                  |  7 ++++-
+ chrome/common/aegis/cdp_infobar_copy.cc       | 29 ++++++++++++++++++
+ chrome/common/aegis/cdp_infobar_copy.h        | 18 +++++++++++
+ .../common/aegis/cdp_infobar_copy_unittest.cc | 30 +++++++++++++++++++
+ 6 files changed, 96 insertions(+), 12 deletions(-)
+ create mode 100644 chrome/common/aegis/cdp_infobar_copy.cc
+ create mode 100644 chrome/common/aegis/cdp_infobar_copy.h
+ create mode 100644 chrome/common/aegis/cdp_infobar_copy_unittest.cc
+
+diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
+index 6272231ab7..5a2c8763d7 100644
+--- a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
++++ b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
+@@ -63,7 +63,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
+   ASSERT_EQ(1u, manager->infobars().size());
+ 
+   content::TestNavigationObserver navigation_observer(
+-      GURL("chrome://inspect#remote-debugging"));
++      GURL("chrome://aegis/"));
+   navigation_observer.StartWatchingNewWebContents();
+ 
+   auto* confirm =
+@@ -74,8 +74,8 @@ IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
+ 
+   navigation_observer.Wait();
+   EXPECT_EQ(2, second_browser->tab_strip_model()->count());
+-  EXPECT_EQ(GURL("chrome://inspect#remote-debugging"),
+-            second_browser->tab_strip_model()
+-                ->GetActiveWebContents()
+-                ->GetVisibleURL());
++  EXPECT_EQ("aegis", second_browser->tab_strip_model()
++                         ->GetActiveWebContents()
++                         ->GetVisibleURL()
++                         .host());
+ }
+diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
+index 4880c68434..8325ef79da 100644
+--- a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
++++ b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
+@@ -20,12 +20,12 @@
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
+ #include "chrome/browser/ui/navigator/browser_navigator_params.h"
+-#include "chrome/grit/generated_resources.h"
++#include "chrome/common/aegis/cdp_infobar_copy.h"
++#include "chrome/common/webui_url_constants.h"
+ #include "components/infobars/core/confirm_infobar_delegate.h"
+ #include "components/infobars/core/infobar_delegate.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "ui/gfx/text_constants.h"
+-#include "ui/strings/grit/ui_strings.h"
+ 
+ DevToolsRemoteServerInfobarDelegate::DevToolsRemoteServerInfobarDelegate() =
+     default;
+@@ -44,7 +44,9 @@ bool DevToolsRemoteServerInfobarDelegate::ShouldExpire(
+ }
+ 
+ std::u16string DevToolsRemoteServerInfobarDelegate::GetMessageText() const {
+-  return l10n_util::GetStringUTF16(IDS_CONTROLLED_BY_AUTOMATION);
++  // Aegis：写明是本机 CDP agent，而不是 Chromium 默认的「自动化测试」。
++  return aegis::CdpInfobarMessage(
++      l10n_util::GetApplicationLocale(std::string()));
+ }
+ 
+ int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
+@@ -59,8 +61,8 @@ int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
+ 
+ std::u16string DevToolsRemoteServerInfobarDelegate::GetButtonLabel(
+     InfoBarButton button) const {
+-  return l10n_util::GetStringUTF16(
+-      IDS_DEV_TOOLS_CONNECTION_DIALOG_DISABLE_TEXT);
++  return aegis::CdpInfobarButton(
++      l10n_util::GetApplicationLocale(std::string()));
+ }
+ 
+ bool DevToolsRemoteServerInfobarDelegate::Accept() {
+@@ -71,7 +73,7 @@ bool DevToolsRemoteServerInfobarDelegate::Accept() {
+   if (!browser) {
+     return ConfirmInfoBarDelegate::Accept();
+   }
+-  GURL internal_url("chrome://inspect#remote-debugging");
++  GURL internal_url(chrome::kChromeUIAegisURL);
+   NavigateParams params(browser, internal_url, ui::PAGE_TRANSITION_LINK);
+   params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+   Navigate(&params);
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 6704252420..de071f16de 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -15,6 +15,8 @@ source_set("aegis") {
+     "builtin_phish_hosts.h",
+     "builtin_tracker_hosts.cc",
+     "builtin_tracker_hosts.h",
++    "cdp_infobar_copy.cc",
++    "cdp_infobar_copy.h",
+     "cdp_target_filter.cc",
+     "cdp_target_filter.h",
+     "cdp_ws_hook.cc",
+@@ -46,7 +48,10 @@ source_set("aegis") {
+ }
+ 
+ test("aegis_unittests") {
+-  sources = [ "cdp_target_filter_unittest.cc" ]
++  sources = [
++    "cdp_infobar_copy_unittest.cc",
++    "cdp_target_filter_unittest.cc",
++  ]
+   deps = [
+     ":aegis",
+     "//base/test:run_all_unittests",
+diff --git a/chrome/common/aegis/cdp_infobar_copy.cc b/chrome/common/aegis/cdp_infobar_copy.cc
+new file mode 100644
+index 0000000000..a94abaed8a
+--- /dev/null
++++ b/chrome/common/aegis/cdp_infobar_copy.cc
+@@ -0,0 +1,29 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_infobar_copy.cc
++
++#include "chrome/common/aegis/cdp_infobar_copy.h"
++
++namespace aegis {
++
++std::u16string CdpInfobarMessage(std::string_view locale) {
++  if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
++    return u"本機 AI agent 已透過 CDP 連線。網頁內容仍可被讀取。";
++  }
++  if (locale.starts_with("zh")) {
++    return u"本机 AI agent 已通过 CDP 连接。网页内容仍可被读取。";
++  }
++  return u"A local AI agent is connected over CDP. Page content can still "
++         u"be read.";
++}
++
++std::u16string CdpInfobarButton(std::string_view locale) {
++  if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
++    return u"打開設定";
++  }
++  if (locale.starts_with("zh")) {
++    return u"打开设置";
++  }
++  return u"Open settings";
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/cdp_infobar_copy.h b/chrome/common/aegis/cdp_infobar_copy.h
+new file mode 100644
+index 0000000000..6a570e99b3
+--- /dev/null
++++ b/chrome/common/aegis/cdp_infobar_copy.h
+@@ -0,0 +1,18 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_infobar_copy.h
++
++#ifndef CHROME_COMMON_AEGIS_CDP_INFOBAR_COPY_H_
++#define CHROME_COMMON_AEGIS_CDP_INFOBAR_COPY_H_
++
++#include <string>
++#include <string_view>
++
++namespace aegis {
++
++// 远程 CDP 已连接时，浏览器横幅的文案。|locale| 如 zh-CN / zh-TW / en。
++std::u16string CdpInfobarMessage(std::string_view locale);
++std::u16string CdpInfobarButton(std::string_view locale);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_CDP_INFOBAR_COPY_H_
+diff --git a/chrome/common/aegis/cdp_infobar_copy_unittest.cc b/chrome/common/aegis/cdp_infobar_copy_unittest.cc
+new file mode 100644
+index 0000000000..7e9b99290c
+--- /dev/null
++++ b/chrome/common/aegis/cdp_infobar_copy_unittest.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_infobar_copy_unittest.cc
++
++#include "chrome/common/aegis/cdp_infobar_copy.h"
++
++#include <string>
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis {
++
++TEST(CdpInfobarCopyTest, SimplifiedChinese) {
++  EXPECT_NE(CdpInfobarMessage("zh-CN").find(u"本机 AI agent"),
++            std::u16string::npos);
++  EXPECT_EQ(CdpInfobarButton("zh-CN"), u"打开设置");
++}
++
++TEST(CdpInfobarCopyTest, TraditionalChinese) {
++  EXPECT_NE(CdpInfobarMessage("zh-TW").find(u"本機 AI agent"),
++            std::u16string::npos);
++  EXPECT_EQ(CdpInfobarButton("zh-HK"), u"打開設定");
++}
++
++TEST(CdpInfobarCopyTest, English) {
++  EXPECT_NE(CdpInfobarMessage("en-US").find(u"local AI agent"),
++            std::u16string::npos);
++  EXPECT_EQ(CdpInfobarButton("en"), u"Open settings");
++}
++
++}  // namespace aegis
+-- 
+2.52.0
+

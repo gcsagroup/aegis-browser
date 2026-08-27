@@ -1,0 +1,12 @@
+# Local Chromium checkout (tens of GB) — never commit
+.chromium-root
+chromium/
+out/
+dist/
+android/*.keystore
+android/*.jks
+android/*.pepk
+*.pyc
+.gclient
+.gclient_entries
+depot_tools/

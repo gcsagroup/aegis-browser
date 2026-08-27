@@ -1,0 +1,253 @@
+From ed749044b0e0afb27293e34380e0d751a2d8d7ab Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Mon, 17 Aug 2026 16:21:36 +0800
+Subject: [PATCH] Aegis: open chrome://aegis from Android settings
+
+Add a Privacy row that launches the modules page, hide CDP/Ollama
+on Android, and keep heuristic summarize available on the phone.
+---
+ .../java/res/xml/privacy_preferences.xml      |  4 ++
+ .../privacy/settings/PrivacySettings.java     | 21 ++++++++++
+ chrome/browser/aegis/aegis_service.cc         | 13 +++++-
+ chrome/browser/resources/aegis/aegis.html     |  4 +-
+ chrome/browser/resources/aegis/aegis.ts       | 40 +++++++++++++------
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  5 +++
+ 6 files changed, 72 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
+index 1f4c79ab79..e8240e0303 100644
+--- a/chrome/android/java/res/xml/privacy_preferences.xml
++++ b/chrome/android/java/res/xml/privacy_preferences.xml
+@@ -10,6 +10,10 @@ found in the LICENSE file.
+     <PreferenceCategory
+         android:key="privacy_section"
+         android:title="@string/privacy_section_title" />
++    <Preference
++        android:key="aegis_modules"
++        android:title="GCSA-aegis"
++        android:summary="Tracker blocking, fingerprint guard, and local privacy modules" />
+     <Preference
+         android:key="clear_browsing_data"
+         android:title="@string/clear_browsing_data_title"
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+index 7105205ab3..9d9c468d9b 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
+@@ -9,6 +9,7 @@ import static org.chromium.components.content_settings.PrefNames.COOKIE_CONTROLS
+ 
+ import android.content.Context;
+ import android.content.Intent;
++import android.net.Uri;
+ import android.graphics.drawable.Drawable;
+ import android.os.Bundle;
+ import android.text.SpannableString;
+@@ -33,6 +34,7 @@ import org.chromium.base.supplier.SettableMonotonicObservableSupplier;
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.IntentHandler;
+ import org.chromium.chrome.browser.enterprise.util.ManagedBrowserUtils;
+ import org.chromium.chrome.browser.flags.ChromeFeatureList;
+ import org.chromium.chrome.browser.incognito.reauth.IncognitoReauthSettingSwitchPreference;
+@@ -89,6 +91,7 @@ import java.util.function.Consumer;
+ public class PrivacySettings extends ChromeBaseSettingsFragment
+         implements Preference.OnPreferenceChangeListener {
+     private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
++    private static final String PREF_AEGIS_MODULES = "aegis_modules";
+     private static final String PREF_PRELOAD_PAGES = "preload_pages";
+     private static final String PREF_HTTPS_FIRST_MODE = "https_first_mode";
+     // TODO(crbug.com/349860796): Remove once new settings are fully rolled out.
+@@ -145,6 +148,24 @@ public class PrivacySettings extends ChromeBaseSettingsFragment
+ 
+         SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
+ 
++        Preference aegisPreference = findPreference(PREF_AEGIS_MODULES);
++        if (aegisPreference != null) {
++            final boolean zh =
++                    java.util.Locale.getDefault().getLanguage().startsWith("zh");
++            aegisPreference.setTitle("GCSA-aegis");
++            aegisPreference.setSummary(
++                    zh ? "跟踪拦截、指纹防护与本地隐私模块"
++                       : "Tracker blocking, fingerprint guard, and local privacy modules");
++            aegisPreference.setOnPreferenceClickListener(
++                    preference -> {
++                        Intent intent =
++                                new Intent(Intent.ACTION_VIEW, Uri.parse("chrome://aegis"));
++                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++                        IntentHandler.startChromeLauncherActivityForTrustedIntent(intent);
++                        return true;
++                    });
++        }
++
+         Preference sandboxPreference = findPreference(PREF_PRIVACY_SANDBOX);
+         // Overwrite the click listener to pass a correct referrer to the fragment.
+         sandboxPreference.setOnPreferenceClickListener(
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 0f0b0db49a..ec586b2993 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -15,6 +15,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/time/time.h"
+ #include "base/values.h"
++#include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_ai_control.h"
+ #include "chrome/browser/aegis/aegis_bounce_observer.h"
+ #include "chrome/browser/aegis/aegis_cookie_janitor.h"
+@@ -77,11 +78,13 @@ void AegisService::InitializeForProfile(Profile* profile) {
+     PolicyWorker::GetInstance()->Start();
+   }
+   ollama_ = std::make_unique<OllamaSidecar>();
+-  ai_control_ = std::make_unique<AiControl>();
+   InstallReporterCallbacks();
++#if !BUILDFLAG(IS_ANDROID)
++  ai_control_ = std::make_unique<AiControl>();
+   if (IsAiControlEnabled()) {
+     ai_control_->Start();
+   }
++#endif
+   LOG(INFO) << "GCSA-aegis initialized for profile"
+             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
+                                            : " (tracker blocking off)");
+@@ -307,6 +310,9 @@ void AegisService::SetPrivacyAiEnabled(bool enabled) {
+ }
+ 
+ bool AegisService::IsAiControlEnabled() const {
++#if BUILDFLAG(IS_ANDROID)
++  return false;
++#else
+   if (!IsEnabled() ||
+       !base::FeatureList::IsEnabled(features::kAegisAiControl)) {
+     return false;
+@@ -315,9 +321,13 @@ bool AegisService::IsAiControlEnabled() const {
+     return false;
+   }
+   return prefs_->GetBoolean(prefs::kAiControlEnabled);
++#endif
+ }
+ 
+ void AegisService::SetAiControlEnabled(bool enabled) {
++#if BUILDFLAG(IS_ANDROID)
++  (void)enabled;
++#else
+   if (prefs_) {
+     prefs_->SetBoolean(prefs::kAiControlEnabled, enabled);
+   }
+@@ -329,6 +339,7 @@ void AegisService::SetAiControlEnabled(bool enabled) {
+     return;
+   }
+   ai_control_->Stop();
++#endif
+ }
+ 
+ int AegisService::AiControlPort() const {
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index c9dcab2150..16f7e453a4 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -100,6 +100,7 @@
+       <section class="privacy" aria-label="privacy ai">
+         <h2>$i18n{privacyAiTitle}</h2>
+         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
++        <div id="ollama-fields">
+         <p class="meta">$i18n{ollamaHint}</p>
+         <p class="meta">$i18n{casperNote}</p>
+         <label class="field">
+@@ -114,6 +115,7 @@
+           <datalist id="ollama-models"></datalist>
+         </label>
+         <p class="meta" id="ollama-status"></p>
++        </div>
+         <div class="actions">
+           <button id="ollama-probe" type="button">$i18n{ollamaProbe}</button>
+           <button id="ollama-save" type="button">$i18n{ollamaSave}</button>
+@@ -121,7 +123,7 @@
+         </div>
+         <pre class="result" id="privacy-result" hidden></pre>
+       </section>
+-      <section class="ai-control" aria-label="ai control">
++      <section class="ai-control" id="ai-control-section" aria-label="ai control">
+         <h2>$i18n{aiControlTitle}</h2>
+         <label class="row">
+           <span class="copy">
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 9568aa43b5..6c73f87545 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -36,6 +36,7 @@ interface AegisStatus {
+   aiControlClients?: number;
+   ollamaUrl?: string;
+   ollamaModel?: string;
++  isAndroid?: boolean;
+   recentEvents?: PrivacyEvent[];
+   ok?: boolean;
+   error?: string;
+@@ -182,23 +183,36 @@ function applyStatus(status: AegisStatus) {
+   checkbox('bounce-tracking').checked = status.bounceTracking;
+   checkbox('policy-worker').checked = status.policyWorker;
+   checkbox('privacy-ai').checked = status.privacyAi;
+-  checkbox('ai-control').checked = !!status.aiControl;
+-  checkbox('filter-auto').checked = status.filterListAutoUpdate;
+-  if (status.ollamaUrl) {
+-    textField('ollama-url').value = status.ollamaUrl;
+-  }
+-  if (status.ollamaModel) {
+-    textField('ollama-model').value = status.ollamaModel;
++  const android = !!status.isAndroid;
++  const ollamaFields = document.getElementById('ollama-fields');
++  if (ollamaFields instanceof HTMLElement) {
++    ollamaFields.hidden = android;
++  }
++  const aiSection = document.getElementById('ai-control-section');
++  if (aiSection instanceof HTMLElement) {
++    aiSection.hidden = android;
++  }
++  actionButton('ollama-probe').hidden = android;
++  actionButton('ollama-save').hidden = android;
++  if (!android) {
++    checkbox('ai-control').checked = !!status.aiControl;
++    if (status.ollamaUrl) {
++      textField('ollama-url').value = status.ollamaUrl;
++    }
++    if (status.ollamaModel) {
++      textField('ollama-model').value = status.ollamaModel;
++    }
++    const aiOn = status.privacyAi;
++    textField('ollama-url').disabled = !aiOn;
++    textField('ollama-model').disabled = !aiOn;
++    actionButton('ollama-probe').disabled = !aiOn;
++    actionButton('ollama-save').disabled = !aiOn;
++    fillAiControl(status);
+   }
+-  const aiOn = status.privacyAi;
+-  textField('ollama-url').disabled = !aiOn;
+-  textField('ollama-model').disabled = !aiOn;
+-  actionButton('ollama-probe').disabled = !aiOn;
+-  actionButton('ollama-save').disabled = !aiOn;
++  checkbox('filter-auto').checked = status.filterListAutoUpdate;
+   getRequiredElement('filter-meta').textContent = formatMeta(status);
+   getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(status);
+   fillActivityLog(status.recentEvents || []);
+-  fillAiControl(status);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+   actionButton('summarize').disabled = !status.privacyAi;
+ }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 1951137b66..4261451f48 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -151,6 +151,11 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("policyWorkerReady", service->IsPolicyWorkerReady());
+   status.Set("policyWorkerError", service->PolicyWorkerError());
+   status.Set("privacyAi", service->IsPrivacyAiEnabled());
++#if BUILDFLAG(IS_ANDROID)
++  status.Set("isAndroid", true);
++#else
++  status.Set("isAndroid", false);
++#endif
+   status.Set("aiControl", service->IsAiControlEnabled());
+   status.Set("aiControlRunning", service->AiControlRunning());
+   status.Set("aiControlPort", service->AiControlPort());
+-- 
+2.52.0
+

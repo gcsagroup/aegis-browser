@@ -1,0 +1,698 @@
+From 726273c00ed7592876d7f965c4a52952be245420 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 00:56:23 +0800
+Subject: [PATCH] Aegis: make phish, AI, and cleanup actions visible
+
+Show human-readable phish reasons with a score breakdown, prove
+summaries stayed on-device, and list stripped params and deleted
+cookies in chrome://aegis so the privacy claims can be checked.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ chrome/browser/aegis/aegis_cookie_janitor.cc  |   2 +
+ ...aegis_link_sanitize_navigation_throttle.cc |   8 +-
+ .../aegis/aegis_phish_blocking_page.cc        | 102 +++++++++++++-----
+ chrome/browser/aegis/aegis_service.cc         |  51 +++++++++
+ chrome/browser/aegis/aegis_service.h          |  20 ++++
+ chrome/browser/resources/aegis/aegis.css      |  30 +++++-
+ chrome/browser/resources/aegis/aegis.html     |   6 ++
+ chrome/browser/resources/aegis/aegis.ts       |  77 +++++++++++--
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  18 ++++
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  13 +++
+ chrome/common/aegis/cookie_classify.cc        |  16 +++
+ chrome/common/aegis/cookie_classify.h         |   2 +
+ 12 files changed, 313 insertions(+), 32 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
+index 8a964067ed..9d569541b1 100644
+--- a/chrome/browser/aegis/aegis_cookie_janitor.cc
++++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
+@@ -93,6 +93,8 @@ void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
+     return;
+   }
+   VLOG(1) << "Aegis: deleting " << cookie.Name() << " on " << cookie.Domain();
++  AegisService::GetInstance()->RecordDeletedCookie(
++      cookie.Name(), cookie.Domain(), CookieCategoryToString(category));
+   manager->DeleteCanonicalCookie(cookie, base::DoNothing());
+ }
+ 
+diff --git a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
+index a607440cd1..6c6b3c3bf4 100644
+--- a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
++++ b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
+@@ -4,6 +4,8 @@
+ #include "chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h"
+ 
+ #include <memory>
++#include <string>
++#include <vector>
+ 
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+@@ -52,10 +54,14 @@ AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
+     return content::NavigationThrottle::PROCEED;
+   }
+ 
+-  const GURL cleaned = SanitizeTrackingDecorations(url);
++  std::vector<std::string> removed;
++
++  const GURL cleaned = SanitizeTrackingDecorations(url, &removed);
+   if (cleaned == url) {
+     return content::NavigationThrottle::PROCEED;
+   }
++  AegisService::GetInstance()->RecordStrippedParams(std::string(url.host()),
++                                                    removed);
+ 
+   content::WebContents* web_contents = handle->GetWebContents();
+   if (!web_contents) {
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+index 9cf31add42..a35ca50943 100644
+--- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+@@ -24,47 +24,96 @@ bool IsChineseLocale(const std::string& locale) {
+                           base::CompareCase::INSENSITIVE_ASCII);
+ }
+ 
++std::u16string WithWeight(std::u16string label, int weight) {
++  if (weight <= 0) {
++    return label;
++  }
++  label += u"  (+";
++  label += base::UTF8ToUTF16(base::NumberToString(weight));
++  label += u")";
++  return label;
++}
++
+ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
++  const std::u16string detail = base::UTF8ToUTF16(reason.detail);
+   if (reason.code == "seed_host") {
+-    return zh ? u"匹配内置钓鱼种子规则" : u"Matches a built-in phishing seed";
++    return WithWeight(zh ? u"命中内置钓鱼名单" : u"Listed in the built-in phishing set",
++                      reason.weight);
+   }
+   if (reason.code == "insecure_http") {
+-    return zh ? u"未使用 HTTPS" : u"Not using HTTPS";
++    return WithWeight(
++        zh ? u"没有使用 HTTPS，连接可能被篡改" : u"Not using HTTPS",
++        reason.weight);
+   }
+   if (reason.code == "ip_hostname") {
+-    return zh ? u"使用 IP 地址作为主机名" : u"Hostname is an IP address";
++    return WithWeight(zh ? u"用 IP 地址当网址，仿冒站常用这一招"
++                         : u"Uses a raw IP address instead of a normal domain",
++                      reason.weight);
+   }
+   if (reason.code == "punycode_host") {
+-    return zh ? u"国际化域名（Punycode）" : u"Punycode / IDN hostname";
++    return WithWeight(
++        zh ? u"域名含国际化编码，可能在用相似字符仿冒品牌"
++           : u"Internationalized domain that may mimic a brand",
++        reason.weight);
+   }
+   if (reason.code == "deep_subdomain") {
+-    return zh ? u"过深的子域名" : u"Unusually deep subdomain";
++    return WithWeight(
++        zh ? u"子域名层数异常多，用来把真域名藏在后面"
++           : u"Unusually deep subdomain, often used to hide the real site",
++        reason.weight);
+   }
+   if (reason.code == "suspicious_tld") {
+-    return zh ? u"高风险顶级域" : u"High-risk top-level domain";
++    std::u16string label =
++        zh ? u"顶级域风险较高" : u"High-risk top-level domain";
++    if (!detail.empty()) {
++      label += u" (.";
++      label += detail;
++      label += u")";
++    }
++    return WithWeight(std::move(label), reason.weight);
+   }
+   if (reason.code == "brand_spoof_host") {
+-    return zh ? u"主机名仿冒品牌" : u"Brand spoof in hostname";
++    std::u16string label;
++    if (zh) {
++      label = u"看起来像「";
++      label += detail.empty() ? u"知名品牌" : detail;
++      label += u"」，但不是该品牌的正站";
++    } else {
++      label = u"Looks like \"";
++      label += detail.empty() ? u"a known brand" : detail;
++      label += u"\", but this is not the official site";
++    }
++    return WithWeight(std::move(label), reason.weight);
+   }
+   if (reason.code == "at_symbol_trick") {
+-    return zh ? u"URL 含 @ 欺骗" : u"@ trick in the URL";
++    return WithWeight(
++        zh ? u"网址含 @，用来掩盖真实去向" : u"URL uses @ to hide the real destination",
++        reason.weight);
+   }
+   if (reason.code == "invalid_url") {
+-    return zh ? u"无效地址" : u"Invalid URL";
++    return WithWeight(zh ? u"地址无效" : u"Invalid URL", reason.weight);
+   }
+   if (reason.code == "urgency_language") {
+-    return zh ? u"页面含紧迫/威胁文案" : u"Urgent or threatening page copy";
++    return WithWeight(
++        zh ? u"页面催你马上登录，或声称账号异常"
++           : u"Page copy urges you to sign in immediately",
++        reason.weight);
+   }
+   if (reason.code == "password_on_risky_origin") {
+-    return zh ? u"风险来源上的密码框" : u"Password field on a risky origin";
++    return WithWeight(
++        zh ? u"在可疑网站上出现了密码框" : u"Password field on a risky site",
++        reason.weight);
+   }
+   if (reason.code == "credential_form") {
+-    return zh ? u"凭据表单" : u"Credential form";
++    return WithWeight(
++        zh ? u"页面在收集账号或密码" : u"Page is collecting credentials",
++        reason.weight);
+   }
+   if (reason.code == "lightweight_model_blend") {
+-    return zh ? u"本地轻量模型加分" : u"Local lightweight model nudge";
++    return WithWeight(
++        zh ? u"本地规则额外加分" : u"Extra local-rule score", reason.weight);
+   }
+-  return base::UTF8ToUTF16(reason.code);
++  return WithWeight(base::UTF8ToUTF16(reason.code), reason.weight);
+ }
+ 
+ std::u16string FormatReasons(const PhishAssessment& assessment, bool zh) {
+@@ -75,12 +124,15 @@ std::u16string FormatReasons(const PhishAssessment& assessment, bool zh) {
+     }
+     text += u"• ";
+     text += ReasonLabel(reason, zh);
+-    if (!reason.detail.empty()) {
+-      text += u" (";
+-      text += base::UTF8ToUTF16(reason.detail);
+-      text += u")";
+-    }
+   }
++  if (!text.empty()) {
++    text += u"<br><br>";
++  }
++  text += zh ? u"合计 " : u"Total ";
++  text += base::UTF8ToUTF16(base::NumberToString(assessment.score));
++  text += zh ? u" 分，达到 " : u" / block at ";
++  text += base::UTF8ToUTF16(base::NumberToString(kPhishBlockThreshold));
++  text += zh ? u" 分即拦截。" : u".";
+   return text;
+ }
+ 
+@@ -168,13 +220,15 @@ void AegisPhishBlockingPage::PopulateInterstitialStrings(
+ 
+   load_time_data.Set("tabTitle", zh ? u"疑似钓鱼网站" : u"Suspected phishing");
+   load_time_data.Set("heading",
+-                     zh ? u"Aegis 已拦截疑似钓鱼网站"
+-                        : u"Aegis blocked a suspected phishing site");
++                     zh ? u"这个网站可能在仿冒别人"
++                        : u"This site may be impersonating another");
+   std::u16string primary =
+-      zh ? u"该地址的启发式风险评分为 " : u"Heuristic risk score: ";
++      zh ? u"风险分 " : u"Risk score ";
+   primary += score_text;
+-  primary += zh ? u"。继续访问可能泄露账号或支付信息。"
+-                : u". Continuing may expose account or payment details.";
++  primary += zh ? u"（达到 " : u" (block at ";
++  primary += base::UTF8ToUTF16(base::NumberToString(kPhishBlockThreshold));
++  primary += zh ? u" 即拦截）。下面是加分原因。继续访问可能泄露账号或支付信息。"
++                : u"). Reasons below. Continuing may expose account or payment details.";
+   load_time_data.Set("primaryParagraph", primary);
+   load_time_data.Set("explanationParagraph", FormatReasons(assessment_, zh));
+   load_time_data.Set("primaryButtonText",
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index fbd22ac225..9ac6debafd 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -10,6 +10,7 @@
+ #include "base/json/json_writer.h"
+ #include "base/memory/singleton.h"
+ #include "base/strings/string_util.h"
++#include "base/time/time.h"
+ #include "base/values.h"
+ #include "chrome/browser/aegis/aegis_bounce_observer.h"
+ #include "chrome/browser/aegis/aegis_cookie_janitor.h"
+@@ -326,6 +327,15 @@ std::vector<std::string> StringList(const base::DictValue& dict,
+   return out;
+ }
+ 
++void AttachLocalProvenance(SummarizeResult* result,
++                           const PageSnapshot& snapshot) {
++  result->chars_in = static_cast<int>(snapshot.text_sample.size());
++  result->stayed_on_device = true;
++  if (result->destination.empty()) {
++    result->destination = "local";
++  }
++}
++
+ SummarizeResult FallbackSummary(const PageSnapshot& snapshot,
+                                 const std::string& locale) {
+   SummarizeResult result;
+@@ -345,6 +355,7 @@ SummarizeResult FallbackSummary(const PageSnapshot& snapshot,
+                                  "domain before signing in."
+                                : "页面含密码字段，登录前请确认域名。");
+   }
++  AttachLocalProvenance(&result, snapshot);
+   return result;
+ }
+ 
+@@ -375,6 +386,7 @@ SummarizeResult ParseHeuristic(const std::string& json,
+   result.model_ready = dict.FindBool("modelReady").value_or(true);
+   result.bullets = StringList(dict, "bullets");
+   result.risks = StringList(dict, "risks");
++  AttachLocalProvenance(&result, snapshot);
+   return result;
+ }
+ 
+@@ -519,6 +531,9 @@ void AegisService::OnOllamaReady(
+     std::move(done).Run(std::move(heuristic));
+     return;
+   }
++  heuristic.chars_sent = static_cast<int>(user.size());
++  heuristic.destination = prefs_->GetString(prefs::kOllamaBaseUrl);
++  heuristic.stayed_on_device = true;
+   (void)body;
+   ollama_->Chat(prefs_->GetString(prefs::kOllamaBaseUrl),
+                 prefs_->GetString(prefs::kOllamaModel), system, user,
+@@ -734,4 +749,40 @@ bool AegisService::IsPhishHostAllowedForSession(
+   return session_allowed_phish_hosts_.contains(base::ToLowerASCII(host));
+ }
+ 
++void AegisService::PushPrivacyEvent(PrivacyEvent event) {
++  privacy_events_.push_front(std::move(event));
++  while (privacy_events_.size() > 40) {
++    privacy_events_.pop_back();
++  }
++}
++
++void AegisService::RecordStrippedParams(const std::string& host,
++                                        const std::vector<std::string>& keys) {
++  if (keys.empty()) {
++    return;
++  }
++  PrivacyEvent event;
++  event.kind = "param";
++  event.label = host.empty() ? base::JoinString(keys, ", ")
++                             : host + ": " + base::JoinString(keys, ", ");
++  event.unix_seconds =
++      (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  PushPrivacyEvent(std::move(event));
++}
++
++void AegisService::RecordDeletedCookie(const std::string& name,
++                                       const std::string& domain,
++                                       const std::string& category) {
++  PrivacyEvent event;
++  event.kind = "cookie";
++  event.label = name + " @ " + domain + " (" + category + ")";
++  event.unix_seconds =
++      (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  PushPrivacyEvent(std::move(event));
++}
++
++std::vector<PrivacyEvent> AegisService::RecentPrivacyEvents() const {
++  return {privacy_events_.begin(), privacy_events_.end()};
++}
++
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 0357ea5c4b..f70862e27c 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -5,6 +5,7 @@
+ #define CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ 
+ #include <cstdint>
++#include <deque>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -44,6 +45,16 @@ struct SummarizeResult {
+   std::string backend;
+   bool model_ready = false;
+   bool worker_ready = false;
++  int chars_in = 0;
++  int chars_sent = 0;
++  bool stayed_on_device = true;
++  std::string destination;
++};
++
++struct PrivacyEvent {
++  std::string kind;
++  std::string label;
++  int64_t unix_seconds = 0;
+ };
+ 
+ class AegisService {
+@@ -117,6 +128,13 @@ class AegisService {
+   void AllowPhishHostForSession(const std::string& host);
+   bool IsPhishHostAllowedForSession(const std::string& host) const;
+ 
++  void RecordStrippedParams(const std::string& host,
++                            const std::vector<std::string>& keys);
++  void RecordDeletedCookie(const std::string& name,
++                           const std::string& domain,
++                           const std::string& category);
++  std::vector<PrivacyEvent> RecentPrivacyEvents() const;
++
+   PrefService* prefs() const { return prefs_; }
+ 
+  private:
+@@ -128,6 +146,7 @@ class AegisService {
+   raw_ptr<PrefService> prefs_ = nullptr;
+   raw_ptr<Profile> profile_ = nullptr;
+   base::flat_set<std::string> session_allowed_phish_hosts_;
++  std::deque<PrivacyEvent> privacy_events_;
+   std::unique_ptr<FilterListUpdater> filter_list_updater_;
+   std::unique_ptr<CookieJanitor> cookie_janitor_;
+   std::unique_ptr<OllamaSidecar> ollama_;
+@@ -155,6 +174,7 @@ class AegisService {
+           done,
+       bool ok,
+       std::string body);
++  void PushPrivacyEvent(PrivacyEvent event);
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index b51d859ac0..ebbe4c8159 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -101,12 +101,40 @@ h1 {
+ }
+ 
+ .privacy h2,
+-.filters h2 {
++.filters h2,
++.activity h2 {
+   margin: 0 0 0.4rem;
+   font-size: 1.15rem;
+   font-weight: 600;
+ }
+ 
++.activity {
++  margin-top: 2.4rem;
++}
++
++.log {
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  border: 1px solid var(--line);
++}
++
++.log li {
++  padding: 0.55rem 0.8rem;
++  border-bottom: 1px solid var(--line);
++  font-size: 0.88rem;
++}
++
++.log li:last-child {
++  border-bottom: 0;
++}
++
++.log .kind {
++  color: var(--accent);
++  font-weight: 600;
++  margin-right: 0.5rem;
++}
++
+ .meta {
+   margin: 0 0 1rem;
+   color: var(--muted);
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index bf46813897..3b4bc1ccf9 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -74,6 +74,12 @@
+           <input id="privacy-ai" type="checkbox">
+         </label>
+       </section>
++      <section class="activity" aria-label="session activity">
++        <h2>$i18n{activityTitle}</h2>
++        <p class="meta">$i18n{activityHint}</p>
++        <ul id="activity-log" class="log"></ul>
++        <p class="meta" id="activity-empty">$i18n{activityEmpty}</p>
++      </section>
+       <section class="filters" aria-label="filter lists">
+         <h2>$i18n{filterListTitle}</h2>
+         <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 98fd69f668..f53afe98ab 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -4,6 +4,12 @@ import {sendWithPromise} from 'chrome://resources/js/cr.js';
+ import {getRequiredElement} from 'chrome://resources/js/util.js';
+ import './policy_worker.js';
+ 
++interface PrivacyEvent {
++  kind: string;
++  label: string;
++  time: number;
++}
++
+ interface AegisStatus {
+   enabled: boolean;
+   trackerBlocking: boolean;
+@@ -24,6 +30,7 @@ interface AegisStatus {
+   privacyAi: boolean;
+   ollamaUrl?: string;
+   ollamaModel?: string;
++  recentEvents?: PrivacyEvent[];
+   ok?: boolean;
+   error?: string;
+ }
+@@ -53,6 +60,10 @@ interface SummarizeResult {
+   backend?: string;
+   modelReady?: boolean;
+   workerReady?: boolean;
++  charsIn?: number;
++  charsSent?: number;
++  stayedOnDevice?: boolean;
++  destination?: string;
+ }
+ 
+ interface OllamaProbeResult {
+@@ -179,6 +190,7 @@ function applyStatus(status: AegisStatus) {
+   actionButton('ollama-save').disabled = !aiOn;
+   getRequiredElement('filter-meta').textContent = formatMeta(status);
+   getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(status);
++  fillActivityLog(status.recentEvents || []);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+   actionButton('summarize').disabled = !status.privacyAi;
+ }
+@@ -206,17 +218,66 @@ function showResult(text: string) {
+ }
+ 
+ function formatSummary(result: SummarizeResult): string {
++  const lang = document.documentElement.lang || 'zh-CN';
++  const zh = lang.startsWith('zh');
+   if (!result.ok) {
+     return result.error || 'error';
+   }
++  const onDevice = result.stayedOnDevice !== false;
++  const backend = result.backend === 'ollama' ?
++      (zh ? '本机 Ollama' : 'Local Ollama') :
++      (zh ? '启发式摘要（未调用模型）' : 'Heuristic summary (no model)');
+   const lines = [
+-    result.url ? `URL: ${result.url}` : '',
+-    result.backend ? `backend: ${result.backend}` : '',
+-    result.summary || '',
+-    ...(result.bullets || []).map((b) => `• ${b}`),
+-    ...(result.risks || []).map((r) => `! ${r}`),
++    onDevice ? (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
++               (zh ? '已离开本机' : 'Left this device'),
++    (zh ? '后端：' : 'Backend: ') + backend,
+   ];
+-  return lines.filter(Boolean).join('\n');
++  if (result.destination && result.destination !== 'local') {
++    lines.push((zh ? '目标：' : 'Destination: ') + result.destination);
++  }
++  if (result.charsIn) {
++    lines.push((zh ? '处理字数：' : 'Characters read: ') + String(result.charsIn));
++  }
++  if (result.charsSent) {
++    lines.push((zh ? '发给模型：' : 'Sent to model: ') + String(result.charsSent));
++  }
++  lines.push('');
++  if (result.url) {
++    lines.push(`URL: ${result.url}`);
++  }
++  if (result.summary) {
++    lines.push(result.summary);
++  }
++  for (const b of result.bullets || []) {
++    lines.push(`• ${b}`);
++  }
++  for (const r of result.risks || []) {
++    lines.push(`! ${r}`);
++  }
++  return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '').join('\n');
++}
++
++function fillActivityLog(events: PrivacyEvent[]) {
++  const list = getRequiredElement('activity-log');
++  const empty = getRequiredElement('activity-empty');
++  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
++  list.replaceChildren();
++  if (!events.length) {
++    empty.hidden = false;
++    return;
++  }
++  empty.hidden = true;
++  for (const event of events) {
++    const li = document.createElement('li');
++    const kind = document.createElement('span');
++    kind.className = 'kind';
++    kind.textContent = event.kind === 'cookie' ?
++        (zh ? 'Cookie' : 'Cookie') :
++        (zh ? '参数' : 'Param');
++    li.appendChild(kind);
++    li.appendChild(document.createTextNode(event.label));
++    list.appendChild(li);
++  }
+ }
+ 
+ function workerEvaluate(op: string, payload: Record<string, unknown>):
+@@ -269,6 +330,10 @@ async function summarizeActiveTab() {
+       backend: String(local['backend'] ?? 'mock'),
+       modelReady: Boolean(local['modelReady'] ?? true),
+       workerReady: true,
++      charsIn: snapshot.textSample.length,
++      charsSent: 0,
++      stayedOnDevice: true,
++      destination: 'local',
+     };
+     showResult(formatSummary(result));
+     const prompt =
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 56dd6b1152..56426b38fb 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -51,6 +51,9 @@ struct AegisStrings {
+   const char* ollama_probe;
+   const char* ollama_save;
+   const char* ollama_hint;
++  const char* activity_title;
++  const char* activity_hint;
++  const char* activity_empty;
+   const char* note;
+ };
+ 
+@@ -103,6 +106,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .ollama_save = "保存模型設定",
+         .ollama_hint =
+             "只允許 127.0.0.1 / localhost。未啟動 Ollama 時自動回退啟發式摘要。",
++        .activity_title = "本次會話",
++        .activity_hint = "剛才清掉的追蹤參數與廣告／分析 Cookie，可當場核對。",
++        .activity_empty = "還沒有清理記錄。打開帶 utm_ 的連結或含廣告 Cookie 的網站後會出現在這裡。",
+         .note = "模組狀態會立即套用；過濾列表約每天自動更新一次。",
+     };
+   }
+@@ -154,6 +160,10 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .ollama_save = "保存模型设置",
+         .ollama_hint =
+             "只允许 127.0.0.1 / localhost。未启动 Ollama 时自动回退启发式摘要。",
++        .activity_title = "本次会话",
++        .activity_hint = "刚才清掉的跟踪参数与广告／分析 Cookie，可当场核对。",
++        .activity_empty =
++            "还没有清理记录。打开带 utm_ 的链接或含广告 Cookie 的网站后会出现在这里。",
+         .note = "模块状态会立即生效；过滤列表大约每天自动更新一次。",
+     };
+   }
+@@ -210,6 +220,11 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .ollama_hint =
+           "Only 127.0.0.1 / localhost. Falls back to heuristics if Ollama is "
+           "not running.",
++      .activity_title = "This session",
++      .activity_hint =
++          "Tracking parameters and ads/analytics cookies stripped just now.",
++      .activity_empty =
++          "Nothing recorded yet. Open a link with utm_ or a site that sets ads cookies.",
+       .note =
+           "Changes apply immediately. Filter lists refresh about once a day.",
+   };
+@@ -258,6 +273,9 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("ollamaProbe", strings.ollama_probe);
+   source->AddString("ollamaSave", strings.ollama_save);
+   source->AddString("ollamaHint", strings.ollama_hint);
++  source->AddString("activityTitle", strings.activity_title);
++  source->AddString("activityHint", strings.activity_hint);
++  source->AddString("activityEmpty", strings.activity_empty);
+   source->AddString("note", strings.note);
+ 
+   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 1b404d276f..fcab89c4e6 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -64,6 +64,10 @@ base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
+   dict.Set("backend", result.backend);
+   dict.Set("modelReady", result.model_ready);
+   dict.Set("workerReady", result.worker_ready);
++  dict.Set("charsIn", result.chars_in);
++  dict.Set("charsSent", result.chars_sent);
++  dict.Set("stayedOnDevice", result.stayed_on_device);
++  dict.Set("destination", result.destination);
+   base::ListValue bullets;
+   for (const std::string& item : result.bullets) {
+     bullets.Append(item);
+@@ -140,6 +144,15 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("privacyAi", service->IsPrivacyAiEnabled());
+   status.Set("ollamaUrl", service->OllamaBaseUrl());
+   status.Set("ollamaModel", service->OllamaModel());
++  base::ListValue events;
++  for (const auto& event : service->RecentPrivacyEvents()) {
++    base::DictValue row;
++    row.Set("kind", event.kind);
++    row.Set("label", event.label);
++    row.Set("time", static_cast<double>(event.unix_seconds));
++    events.Append(std::move(row));
++  }
++  status.Set("recentEvents", std::move(events));
+   return status;
+ }
+ 
+diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
+index cebffddd25..9a76f38269 100644
+--- a/chrome/common/aegis/cookie_classify.cc
++++ b/chrome/common/aegis/cookie_classify.cc
+@@ -97,4 +97,20 @@ bool ShouldRejectCookie(CookieCategory category) {
+          category == CookieCategory::kAdvertising;
+ }
+ 
++const char* CookieCategoryToString(CookieCategory category) {
++  switch (category) {
++    case CookieCategory::kNecessary:
++      return "necessary";
++    case CookieCategory::kFunctionality:
++      return "functionality";
++    case CookieCategory::kAnalytics:
++      return "analytics";
++    case CookieCategory::kAdvertising:
++      return "advertising";
++    case CookieCategory::kUnknown:
++      return "unknown";
++  }
++  return "unknown";
++}
++
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/cookie_classify.h b/chrome/common/aegis/cookie_classify.h
+index 05d0aac23c..0e89a6783c 100644
+--- a/chrome/common/aegis/cookie_classify.h
++++ b/chrome/common/aegis/cookie_classify.h
+@@ -28,6 +28,8 @@ CookieCategory ClassifyCookie(std::string_view name,
+ // Default policy matches packages/core DEFAULT_SETTINGS.rejectedCookieCategories.
+ bool ShouldRejectCookie(CookieCategory category);
+ 
++const char* CookieCategoryToString(CookieCategory category);
++
+ }  // namespace aegis
+ 
+ #endif  // CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
+-- 
+2.52.0
+

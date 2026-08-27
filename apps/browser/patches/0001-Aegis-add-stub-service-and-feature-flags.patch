@@ -1,0 +1,225 @@
+From fb44c5950299377f52a6140352deeb692eddd71c Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Wed, 12 Aug 2026 00:59:48 +0800
+Subject: [PATCH] Aegis: add stub service and feature flags
+
+Land chrome/browser/aegis + chrome/common/aegis and initialize the
+browser-process service once the startup Profile is ready.
+---
+ chrome/browser/BUILD.gn               |  1 +
+ chrome/browser/aegis/BUILD.gn         | 13 ++++++++++
+ chrome/browser/aegis/aegis_service.cc | 35 ++++++++++++++++++++++++++
+ chrome/browser/aegis/aegis_service.h  | 36 +++++++++++++++++++++++++++
+ chrome/browser/chrome_browser_main.cc |  5 ++++
+ chrome/common/aegis/BUILD.gn          | 10 ++++++++
+ chrome/common/aegis/features.cc       | 14 +++++++++++
+ chrome/common/aegis/features.h        | 19 ++++++++++++++
+ 8 files changed, 133 insertions(+)
+ create mode 100644 chrome/browser/aegis/BUILD.gn
+ create mode 100644 chrome/browser/aegis/aegis_service.cc
+ create mode 100644 chrome/browser/aegis/aegis_service.h
+ create mode 100644 chrome/common/aegis/BUILD.gn
+ create mode 100644 chrome/common/aegis/features.cc
+ create mode 100644 chrome/common/aegis/features.h
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index bfc8555485..a8eeef8ec5 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -399,6 +399,7 @@ source_set("startup_data") {
+ source_set("chrome_browser_main") {
+   public = [ "chrome_browser_main.h" ]
+   deps = [
++    "//chrome/browser/aegis",
+     ":buildflags",
+     "//base",
+     "//build:buildflag_header_h",
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+new file mode 100644
+index 0000000000..cdc61302ba
+--- /dev/null
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -0,0 +1,13 @@
++# Copyright 2026 GCSA
++# Intended path: chrome/browser/aegis/BUILD.gn
++
++source_set("aegis") {
++  sources = [
++    "aegis_service.cc",
++    "aegis_service.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/common/aegis",
++  ]
++}
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+new file mode 100644
+index 0000000000..6e2ccb30ce
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -0,0 +1,35 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_service.cc
++
++#include "chrome/browser/aegis/aegis_service.h"
++
++#include "base/logging.h"
++#include "base/memory/singleton.h"
++#include "chrome/common/aegis/features.h"
++
++namespace aegis {
++
++// static
++AegisService* AegisService::GetInstance() {
++  return base::Singleton<AegisService>::get();
++}
++
++AegisService::AegisService() = default;
++AegisService::~AegisService() = default;
++
++void AegisService::InitializeForProfile(Profile* profile) {
++  if (!IsEnabled()) {
++    VLOG(1) << "Aegis disabled by feature flag";
++    return;
++  }
++  initialized_ = true;
++  LOG(INFO) << "GCSA-aegis initialized for profile";
++  // TODO(aegis): register URLLoaderThrottle factory, cookie observer, WebUI.
++  (void)profile;
++}
++
++bool AegisService::IsEnabled() const {
++  return base::FeatureList::IsEnabled(features::kAegisEnabled);
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+new file mode 100644
+index 0000000000..fb76c457df
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -0,0 +1,36 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_service.h
++// Browser-process service that will host NetPolicy / StoragePolicy bridges.
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
++
++#include "base/memory/singleton.h"
++
++class Profile;
++
++namespace aegis {
++
++class AegisService {
++ public:
++  static AegisService* GetInstance();
++
++  AegisService(const AegisService&) = delete;
++  AegisService& operator=(const AegisService&) = delete;
++
++  // Called from browser startup once Profile is ready.
++  void InitializeForProfile(Profile* profile);
++
++  bool IsEnabled() const;
++
++ private:
++  friend struct base::DefaultSingletonTraits<AegisService>;
++  AegisService();
++  ~AegisService();
++
++  bool initialized_ = false;
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index a32949ed04..1565069ff7 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_browser_main.h"
++#include "chrome/browser/aegis/aegis_service.h"
+ 
+ #include <memory>
+ #include <string>
+@@ -1906,6 +1907,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+   // Call `PostProfileInit()`and set it up for profiles created later.
+   profile_init_manager_ = std::make_unique<ProfileInitManager>(this, profile);
+ 
++  if (profile) {
++    aegis::AegisService::GetInstance()->InitializeForProfile(profile);
++  }
++
+ #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+   // Execute first run specific code after the PrefService has been initialized
+   // and preferences have been registered since some of the import code depends
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+new file mode 100644
+index 0000000000..c79bd53317
+--- /dev/null
++++ b/chrome/common/aegis/BUILD.gn
+@@ -0,0 +1,10 @@
++# Copyright 2026 GCSA
++# Intended path: chrome/common/aegis/BUILD.gn
++
++source_set("aegis") {
++  sources = [
++    "features.cc",
++    "features.h",
++  ]
++  deps = [ "//base" ]
++}
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+new file mode 100644
+index 0000000000..0199b4faaa
+--- /dev/null
++++ b/chrome/common/aegis/features.cc
+@@ -0,0 +1,14 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/features.cc
++
++#include "chrome/common/aegis/features.h"
++
++namespace aegis::features {
++
++// Chromium 120+ uses the 2-arg BASE_FEATURE form (name derived from identifier).
++BASE_FEATURE(kAegisEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisPhishInterstitial, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_DISABLED_BY_DEFAULT);
++
++}  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+new file mode 100644
+index 0000000000..42366027db
+--- /dev/null
++++ b/chrome/common/aegis/features.h
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++// Intended path in Chromium: chrome/common/aegis/features.h
++// This file is an overlay template — applied via patches after fetch.
++
++#ifndef CHROME_COMMON_AEGIS_FEATURES_H_
++#define CHROME_COMMON_AEGIS_FEATURES_H_
++
++#include "base/feature_list.h"
++
++namespace aegis::features {
++
++BASE_DECLARE_FEATURE(kAegisEnabled);
++BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
++BASE_DECLARE_FEATURE(kAegisPhishInterstitial);
++BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
++
++}  // namespace aegis::features
++
++#endif  // CHROME_COMMON_AEGIS_FEATURES_H_
+-- 
+2.52.0
+

@@ -1,0 +1,31 @@
+{
+  "name": "@gcsa-aegis/browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GCSA-aegis Chromium fork host — product browser, not Electron and not an extension.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "bootstrap": "bash ./scripts/bootstrap-depot-tools.sh",
+    "fetch": "bash ./scripts/fetch-chromium.sh",
+    "sync": "bash ./scripts/fetch-chromium.sh --sync-only",
+    "apply-patches": "bash ./scripts/apply-patches.sh",
+    "seed-patch": "bash ./scripts/seed-overlay-patch.sh",
+    "build": "bash ./scripts/build.sh",
+    "build:release": "bash ./scripts/build-release.sh",
+    "build:android": "bash ./scripts/build-android.sh",
+    "package": "bash ./scripts/package.sh",
+    "package:android": "bash ./scripts/package-android.sh",
+    "android:gclient": "bash ./scripts/enable-android-gclient.sh",
+    "android:keystore": "bash ./scripts/android-keystore.sh",
+    "sign": "bash ./scripts/sign-chromium-app.sh",
+    "sync-core-snapshot": "bash ./scripts/sync-core-snapshot.sh",
+    "sync-easylist": "bash ./scripts/sync-easylist.sh",
+    "sync-policy-worker": "bash ./scripts/sync-policy-worker.sh",
+    "run": "bash ./scripts/run.sh",
+    "run:release": "bash ./scripts/run-release.sh",
+    "status": "bash ./scripts/status.sh",
+    "typecheck": "echo 'Chromium fork package: no TS typecheck'",
+    "lint": "echo 'Chromium fork package: see scripts/'",
+    "test": "bash ./scripts/status.sh"
+  }
+}

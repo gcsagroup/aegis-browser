@@ -1,0 +1,232 @@
+From 9f699d4c09ac312ee27a39a973f3acf398f6788b Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 19:58:49 +0800
+Subject: [PATCH] Aegis: defer filter-list and cookie work until after startup
+
+Compile EasyList off the UI thread, load compiled rules at BEST_EFFORT,
+and skip first-run / default-browser prompts so the first window can
+appear without waiting on those jobs.
+---
+ chrome/browser/aegis/BUILD.gn                |  1 +
+ chrome/browser/aegis/aegis_cookie_janitor.cc |  7 +-
+ chrome/browser/aegis/filter_list_updater.cc  | 76 ++++++++++++++------
+ chrome/browser/aegis/filter_list_updater.h   |  4 +-
+ chrome/browser/chrome_browser_main.cc        |  9 +++
+ 5 files changed, 74 insertions(+), 23 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 71db5f64f8..01eaeed6bf 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -30,6 +30,7 @@ source_set("aegis") {
+   ]
+   deps = [
+     "//base",
++    "//chrome/browser:after_startup_task_utils",
+     "//chrome/browser:browser_process",
+     "//chrome/browser/preloading/prefetch/no_state_prefetch",
+     "//chrome/browser/profiles:profile",
+diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
+index ede6325bcd..8a964067ed 100644
+--- a/chrome/browser/aegis/aegis_cookie_janitor.cc
++++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
+@@ -8,7 +8,9 @@
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/cookie_classify.h"
+ #include "content/public/browser/storage_partition.h"
+@@ -22,7 +24,10 @@ CookieJanitor::~CookieJanitor() = default;
+ 
+ void CookieJanitor::Start() {
+   BindListener();
+-  SweepExisting();
++  AfterStartupTaskUtils::PostTask(
++      FROM_HERE, base::SequencedTaskRunner::GetCurrentDefault(),
++      base::BindOnce(&CookieJanitor::SweepExisting,
++                     weak_factory_.GetWeakPtr()));
+ }
+ 
+ void CookieJanitor::Stop() {
+diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
+index 266884ca7a..12d45c372d 100644
+--- a/chrome/browser/aegis/filter_list_updater.cc
++++ b/chrome/browser/aegis/filter_list_updater.cc
+@@ -10,15 +10,17 @@
+ #include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+-#include "net/base/net_errors.h"
++#include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
+ #include "net/base/load_flags.h"
++#include "net/base/net_errors.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+@@ -85,30 +87,30 @@ FilterListUpdater::~FilterListUpdater() = default;
+ void FilterListUpdater::LoadFromDisk() {
+   const base::FilePath path = CompiledPath(profile_);
+   base::ThreadPool::PostTaskAndReplyWithResult(
+-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+       base::BindOnce(
+-          [](base::FilePath path) -> std::optional<std::string> {
++          [](base::FilePath path) -> std::optional<CompiledFilterList> {
+             std::string json;
+             if (!base::ReadFileToString(path, &json)) {
+               return std::nullopt;
+             }
+-            return json;
++            CompiledFilterList list;
++            if (!CompiledFilterListFromJson(json, &list)) {
++              return std::nullopt;
++            }
++            return list;
+           },
+           path),
+       base::BindOnce(&FilterListUpdater::OnLoadedFromDisk,
+                      weak_factory_.GetWeakPtr()));
+ }
+ 
+-void FilterListUpdater::OnLoadedFromDisk(std::optional<std::string> json) {
+-  if (!json) {
+-    return;
+-  }
+-  CompiledFilterList list;
+-  if (!CompiledFilterListFromJson(*json, &list)) {
+-    LOG(WARNING) << "Aegis: failed to parse compiled filter list";
++void FilterListUpdater::OnLoadedFromDisk(
++    std::optional<CompiledFilterList> list) {
++  if (!list) {
+     return;
+   }
+-  ApplyList(std::move(list));
++  ApplyList(std::move(*list));
+ }
+ 
+ void FilterListUpdater::MaybeAutoUpdate() {
+@@ -119,7 +121,11 @@ void FilterListUpdater::MaybeAutoUpdate() {
+   if (last > 0 && NowUnixSeconds() - last < kAutoUpdateIntervalSeconds) {
+     return;
+   }
+-  UpdateNow(base::DoNothing());
++  // 等首屏起来再拉 EasyList，避免启动时编译上万条规则卡住窗口。
++  AfterStartupTaskUtils::PostTask(
++      FROM_HERE, base::SequencedTaskRunner::GetCurrentDefault(),
++      base::BindOnce(&FilterListUpdater::UpdateNow, weak_factory_.GetWeakPtr(),
++                     base::DoNothing()));
+ }
+ 
+ void FilterListUpdater::UpdateNow(UpdateCallback callback) {
+@@ -145,13 +151,21 @@ void FilterListUpdater::UpdateNow(UpdateCallback callback) {
+ 
+ void FilterListUpdater::FetchNext() {
+   if (fetch_index_ >= urls_.size()) {
+-    CompiledFilterList merged =
+-        MergeCompiledFilterLists(fetched_, "easylist+easyprivacy");
+-    merged.generated_at = base::NumberToString(NowUnixSeconds());
+-    Persist(merged);
+-    ApplyList(std::move(merged));
+-    BumpGeneration();
+-    Finish(true, std::string());
++    auto fetched = std::move(fetched_);
++    fetched_.clear();
++    base::ThreadPool::PostTaskAndReplyWithResult(
++        FROM_HERE, {base::TaskPriority::BEST_EFFORT},
++        base::BindOnce(
++            [](std::vector<CompiledFilterList> fetched,
++               int64_t now) -> CompiledFilterList {
++              CompiledFilterList merged =
++                  MergeCompiledFilterLists(fetched, "easylist+easyprivacy");
++              merged.generated_at = base::NumberToString(now);
++              return merged;
++            },
++            std::move(fetched), NowUnixSeconds()),
++        base::BindOnce(&FilterListUpdater::OnMerged,
++                       weak_factory_.GetWeakPtr()));
+     return;
+   }
+ 
+@@ -178,11 +192,31 @@ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
+     Finish(false, "fetch failed (" + base::NumberToString(net_error) + ")");
+     return;
+   }
+-  fetched_.push_back(CompileEasyList(*body, urls_[fetch_index_]));
++  const std::string source = urls_[fetch_index_];
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::TaskPriority::BEST_EFFORT},
++      base::BindOnce(
++          [](std::string text, std::string source) {
++            return CompileEasyList(text, source);
++          },
++          std::move(*body), source),
++      base::BindOnce(&FilterListUpdater::OnCompiled,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void FilterListUpdater::OnCompiled(CompiledFilterList list) {
++  fetched_.push_back(std::move(list));
+   fetch_index_++;
+   FetchNext();
+ }
+ 
++void FilterListUpdater::OnMerged(CompiledFilterList merged) {
++  Persist(merged);
++  ApplyList(std::move(merged));
++  BumpGeneration();
++  Finish(true, std::string());
++}
++
+ void FilterListUpdater::Finish(bool ok, const std::string& error) {
+   updating_ = false;
+   loader_.reset();
+diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
+index a66e8f96cd..1d92d45069 100644
+--- a/chrome/browser/aegis/filter_list_updater.h
++++ b/chrome/browser/aegis/filter_list_updater.h
+@@ -42,7 +42,9 @@ class FilterListUpdater {
+  private:
+   void FetchNext();
+   void OnFetched(std::optional<std::string> body);
+-  void OnLoadedFromDisk(std::optional<std::string> json);
++  void OnCompiled(CompiledFilterList list);
++  void OnLoadedFromDisk(std::optional<CompiledFilterList> list);
++  void OnMerged(CompiledFilterList merged);
+   void Finish(bool ok, const std::string& error);
+   void ApplyList(CompiledFilterList list);
+   void Persist(const CompiledFilterList& list);
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index 1565069ff7..5e726f47b0 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -973,6 +973,15 @@ DLLEXPORT void __cdecl RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
+ 
+ int ChromeBrowserMainParts::PreEarlyInitialization() {
+   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreEarlyInitialization");
++  // GCSA-aegis: skip first-run import and default-browser prompts so the
++  // window appears without waiting on Chromium's first-run pipeline.
++  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kNoFirstRun)) {
++    command_line->AppendSwitch(switches::kNoFirstRun);
++  }
++  if (!command_line->HasSwitch(switches::kNoDefaultBrowserCheck)) {
++    command_line->AppendSwitch(switches::kNoDefaultBrowserCheck);
++  }
+   for (auto& chrome_extra_part : chrome_extra_parts_) {
+     chrome_extra_part->PreEarlyInitialization();
+   }
+-- 
+2.52.0
+

@@ -1,0 +1,1624 @@
+From 8f7c01d58fb12ea2c9c95a37774ed14cc2c42bdc Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 04:36:41 +0800
+Subject: [PATCH] Aegis: add EasyList compiler and runtime filter-list updater
+
+Compile EasyList/EasyPrivacy into host tables, persist per profile, and
+push the snapshot to renderer throttles. chrome://aegis can update now.
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ chrome/browser/aegis/aegis_prefs.cc           |   7 +
+ chrome/browser/aegis/aegis_service.cc         |  61 ++++-
+ chrome/browser/aegis/aegis_service.h          |  17 +-
+ chrome/browser/aegis/filter_list_updater.cc   | 213 +++++++++++++++
+ chrome/browser/aegis/filter_list_updater.h    |  63 +++++
+ chrome/browser/profiles/renderer_updater.cc   |  31 +++
+ chrome/browser/profiles/renderer_updater.h    |   5 +
+ chrome/browser/resources/aegis/aegis.css      |  36 +++
+ chrome/browser/resources/aegis/aegis.html     |   9 +
+ chrome/browser/resources/aegis/aegis.ts       |  51 +++-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  47 +++-
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  53 +++-
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   6 +
+ chrome/common/aegis/BUILD.gn                  |   4 +
+ chrome/common/aegis/aegis_net_throttle.cc     |   5 +-
+ chrome/common/aegis/aegis_net_throttle.h      |   2 +-
+ chrome/common/aegis/features.cc               |   1 +
+ chrome/common/aegis/features.h                |   1 +
+ chrome/common/aegis/filter_list.cc            | 246 ++++++++++++++++++
+ chrome/common/aegis/filter_list.h             |  48 ++++
+ chrome/common/aegis/filter_list_matcher.cc    | 112 ++++++++
+ chrome/common/aegis/filter_list_matcher.h     |  59 +++++
+ chrome/common/aegis/pref_names.h              |   7 +
+ chrome/common/renderer_configuration.mojom    |   3 +
+ .../renderer/chrome_render_thread_observer.cc |  13 +
+ .../renderer/chrome_render_thread_observer.h  |   4 +
+ third_party/aegis_policy/README.md            |   2 +
+ 28 files changed, 1082 insertions(+), 27 deletions(-)
+ create mode 100644 chrome/browser/aegis/filter_list_updater.cc
+ create mode 100644 chrome/browser/aegis/filter_list_updater.h
+ create mode 100644 chrome/common/aegis/filter_list.cc
+ create mode 100644 chrome/common/aegis/filter_list.h
+ create mode 100644 chrome/common/aegis/filter_list_matcher.cc
+ create mode 100644 chrome/common/aegis/filter_list_matcher.h
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 76ca9ea201..e311e638e0 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -13,6 +13,8 @@ source_set("aegis") {
+     "aegis_prefs.h",
+     "aegis_service.cc",
+     "aegis_service.h",
++    "filter_list_updater.cc",
++    "filter_list_updater.h",
+   ]
+   deps = [
+     "//base",
+@@ -28,6 +30,7 @@ source_set("aegis") {
+     "//components/security_interstitials/core",
+     "//content/public/browser",
+     "//net",
++    "//services/network/public/cpp",
+     "//url",
+   ]
+ }
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 75ab3cc2de..308a3728fa 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -3,6 +3,8 @@
+ 
+ #include "chrome/browser/aegis/aegis_prefs.h"
+ 
++#include <string>
++
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/pref_registry/pref_registry_syncable.h"
+@@ -14,6 +16,11 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
+   // FingerprintGuard on by default when the feature is enabled.
+   registry->RegisterBooleanPref(prefs::kFingerprintGuardEnabled, true);
++  registry->RegisterBooleanPref(prefs::kFilterListAutoUpdateEnabled, true);
++  registry->RegisterInt64Pref(prefs::kFilterListLastUpdated, 0);
++  registry->RegisterIntegerPref(prefs::kFilterListHostCount, 0);
++  registry->RegisterIntegerPref(prefs::kFilterListGeneration, 0);
++  registry->RegisterStringPref(prefs::kFilterListLastError, std::string());
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index aaad1710ca..5840fa9063 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -6,10 +6,11 @@
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
+ #include "base/strings/string_util.h"
++#include "chrome/browser/aegis/filter_list_updater.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
+-#include "chrome/common/aegis/builtin_tracker_hosts.h"
+ #include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
+ #include "url/gurl.h"
+@@ -31,6 +32,11 @@ void AegisService::InitializeForProfile(Profile* profile) {
+   }
+   prefs_ = profile->GetPrefs();
+   initialized_ = true;
++  if (base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
++    filter_list_updater_ = std::make_unique<FilterListUpdater>(profile);
++    filter_list_updater_->LoadFromDisk();
++    filter_list_updater_->MaybeAutoUpdate();
++  }
+   LOG(INFO) << "GCSA-aegis initialized for profile"
+             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
+                                            : " (tracker blocking off)");
+@@ -91,11 +97,62 @@ void AegisService::SetFingerprintGuardEnabled(bool enabled) {
+   }
+ }
+ 
++bool AegisService::IsFilterListAutoUpdateEnabled() const {
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kFilterListAutoUpdateEnabled);
++}
++
++bool AegisService::IsFilterListUpdating() const {
++  return filter_list_updater_ && filter_list_updater_->updating();
++}
++
++int AegisService::FilterListHostCount() const {
++  if (prefs_) {
++    return prefs_->GetInteger(prefs::kFilterListHostCount);
++  }
++  return static_cast<int>(
++      FilterListMatcher::GetInstance()->compiled_host_count());
++}
++
++int64_t AegisService::FilterListLastUpdated() const {
++  if (!prefs_) {
++    return 0;
++  }
++  return prefs_->GetInt64(prefs::kFilterListLastUpdated);
++}
++
++std::string AegisService::FilterListLastError() const {
++  if (!prefs_) {
++    return std::string();
++  }
++  return prefs_->GetString(prefs::kFilterListLastError);
++}
++
++void AegisService::SetFilterListAutoUpdateEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kFilterListAutoUpdateEnabled, enabled);
++  }
++}
++
++void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
++  if (!filter_list_updater_) {
++    std::move(done).Run(false);
++    return;
++  }
++  filter_list_updater_->UpdateNow(std::move(done));
++}
++
+ bool AegisService::ShouldBlockUrl(const GURL& url) const {
+   if (!IsTrackerBlockingEnabled()) {
+     return false;
+   }
+-  return MatchesBuiltinTrackerRule(url);
++  return FilterListMatcher::GetInstance()->ShouldBlock(url);
+ }
+ 
+ bool AegisService::ShouldShowPhishInterstitial(const GURL& url) const {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 33028ff532..ca83ce1882 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -4,9 +4,12 @@
+ #ifndef CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ #define CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ 
++#include <cstdint>
++#include <memory>
+ #include <string>
+ 
+ #include "base/containers/flat_set.h"
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/singleton.h"
+ 
+@@ -16,6 +19,8 @@ class Profile;
+ 
+ namespace aegis {
+ 
++class FilterListUpdater;
++
+ class AegisService {
+  public:
+   static AegisService* GetInstance();
+@@ -30,13 +35,20 @@ class AegisService {
+   bool IsTrackerBlockingEnabled() const;
+   bool IsPhishInterstitialEnabled() const;
+   bool IsFingerprintGuardEnabled() const;
++  bool IsFilterListAutoUpdateEnabled() const;
++  bool IsFilterListUpdating() const;
++  int FilterListHostCount() const;
++  int64_t FilterListLastUpdated() const;
++  std::string FilterListLastError() const;
+ 
+   void SetTrackerBlockingEnabled(bool enabled);
+   void SetPhishInterstitialEnabled(bool enabled);
+   void SetFingerprintGuardEnabled(bool enabled);
++  void SetFilterListAutoUpdateEnabled(bool enabled);
++  void UpdateFilterLists(base::OnceCallback<void(bool)> done);
+ 
+-  // Host-rule match against the built-in tracker seed. Callers should skip
+-  // main-document navigations (RequestDestination::kDocument).
++  // Host-rule match against builtin seed + compiled EasyList. Callers should
++  // skip main-document navigations (RequestDestination::kDocument).
+   bool ShouldBlockUrl(const GURL& url) const;
+ 
+   // Main-frame phishing interstitial decision (seed rules + session allow).
+@@ -54,6 +66,7 @@ class AegisService {
+   bool initialized_ = false;
+   raw_ptr<PrefService> prefs_ = nullptr;
+   base::flat_set<std::string> session_allowed_phish_hosts_;
++  std::unique_ptr<FilterListUpdater> filter_list_updater_;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
+new file mode 100644
+index 0000000000..50a378ffce
+--- /dev/null
++++ b/chrome/browser/aegis/filter_list_updater.cc
+@@ -0,0 +1,213 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/filter_list_updater.cc
++
++#include "chrome/browser/aegis/filter_list_updater.h"
++
++#include <optional>
++#include <utility>
++
++#include "base/files/file_util.h"
++#include "base/functional/callback_helpers.h"
++#include "base/logging.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/time/time.h"
++#include "net/base/net_errors.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
++#include "chrome/common/aegis/pref_names.h"
++#include "components/prefs/pref_service.h"
++#include "net/base/load_flags.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++constexpr char kEasyListUrl[] = "https://easylist.to/easylist/easylist.txt";
++constexpr char kEasyPrivacyUrl[] =
++    "https://easylist.to/easylist/easyprivacy.txt";
++constexpr char kCompiledFile[] = "compiled.json";
++constexpr char kFilterDir[] = "AegisFilterLists";
++constexpr int64_t kAutoUpdateIntervalSeconds = 24 * 60 * 60;
++constexpr size_t kMaxBodyBytes = 8 * 1024 * 1024;
++
++constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("aegis_filter_list_update", R"(
++      semantics {
++        sender: "GCSA-aegis"
++        description:
++          "Downloads EasyList and EasyPrivacy to compile tracker/ad host "
++          "rules used by AegisNetThrottle."
++        trigger:
++          "Once per day after profile init when auto-update is enabled, or "
++          "when the user clicks Update on chrome://aegis."
++        data: "None. Only the public filter-list URL is requested."
++        destination: WEBSITE
++        internal {
++          contacts {
++            email: "aegis@gcsa.local"
++          }
++        }
++        user_data {
++          type: NONE
++        }
++        last_reviewed: "2026-08-13"
++      }
++      policy {
++        cookies_allowed: NO
++        setting:
++          "Users can disable filter-list auto-update on chrome://aegis."
++        policy_exception_justification: "Not yet implemented."
++      })");
++
++base::FilePath CompiledPath(Profile* profile) {
++  return profile->GetPath().AppendASCII(kFilterDir).AppendASCII(kCompiledFile);
++}
++
++int64_t NowUnixSeconds() {
++  return (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++}
++
++}  // namespace
++
++FilterListUpdater::FilterListUpdater(Profile* profile)
++    : profile_(profile), prefs_(profile->GetPrefs()) {}
++
++FilterListUpdater::~FilterListUpdater() = default;
++
++void FilterListUpdater::LoadFromDisk() {
++  std::string json;
++  if (!base::ReadFileToString(CompiledPath(profile_), &json)) {
++    return;
++  }
++  CompiledFilterList list;
++  if (!CompiledFilterListFromJson(json, &list)) {
++    LOG(WARNING) << "Aegis: failed to parse compiled filter list";
++    return;
++  }
++  ApplyList(std::move(list));
++}
++
++void FilterListUpdater::MaybeAutoUpdate() {
++  if (!prefs_ || !prefs_->GetBoolean(prefs::kFilterListAutoUpdateEnabled)) {
++    return;
++  }
++  const int64_t last = prefs_->GetInt64(prefs::kFilterListLastUpdated);
++  if (last > 0 && NowUnixSeconds() - last < kAutoUpdateIntervalSeconds) {
++    return;
++  }
++  UpdateNow(base::DoNothing());
++}
++
++void FilterListUpdater::UpdateNow(UpdateCallback callback) {
++  if (updating_) {
++    if (callback) {
++      std::move(callback).Run(false);
++    }
++    return;
++  }
++  if (!g_browser_process || !g_browser_process->shared_url_loader_factory()) {
++    if (callback) {
++      std::move(callback).Run(false);
++    }
++    return;
++  }
++  updating_ = true;
++  pending_ = std::move(callback);
++  fetched_.clear();
++  fetch_index_ = 0;
++  urls_ = {kEasyListUrl, kEasyPrivacyUrl};
++  FetchNext();
++}
++
++void FilterListUpdater::FetchNext() {
++  if (fetch_index_ >= urls_.size()) {
++    CompiledFilterList merged =
++        MergeCompiledFilterLists(fetched_, "easylist+easyprivacy");
++    merged.generated_at = base::NumberToString(NowUnixSeconds());
++    Persist(merged);
++    ApplyList(std::move(merged));
++    BumpGeneration();
++    Finish(true, std::string());
++    return;
++  }
++
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = GURL(urls_[fetch_index_]);
++  request->load_flags = net::LOAD_DISABLE_CACHE | net::LOAD_BYPASS_CACHE;
++  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++  request->priority = net::IDLE;
++
++  loader_ = network::SimpleURLLoader::Create(std::move(request),
++                                             kTrafficAnnotation);
++  loader_->SetRetryOptions(
++      2, network::SimpleURLLoader::RetryMode::RETRY_ON_NETWORK_CHANGE);
++  loader_->DownloadToString(
++      g_browser_process->shared_url_loader_factory().get(),
++      base::BindOnce(&FilterListUpdater::OnFetched, weak_factory_.GetWeakPtr()),
++      kMaxBodyBytes);
++}
++
++void FilterListUpdater::OnFetched(std::optional<std::string> body) {
++  const int net_error = loader_ ? loader_->NetError() : net::ERR_FAILED;
++  loader_.reset();
++  if (!body || net_error != net::OK) {
++    Finish(false, "fetch failed (" + base::NumberToString(net_error) + ")");
++    return;
++  }
++  fetched_.push_back(CompileEasyList(*body, urls_[fetch_index_]));
++  fetch_index_++;
++  FetchNext();
++}
++
++void FilterListUpdater::Finish(bool ok, const std::string& error) {
++  updating_ = false;
++  loader_.reset();
++  if (prefs_) {
++    prefs_->SetString(prefs::kFilterListLastError, error);
++    if (ok) {
++      prefs_->SetInt64(prefs::kFilterListLastUpdated, NowUnixSeconds());
++    }
++  }
++  if (ok) {
++    LOG(INFO) << "Aegis: filter list updated, hosts="
++              << FilterListMatcher::GetInstance()->compiled_host_count();
++  } else {
++    LOG(WARNING) << "Aegis: filter list update failed: " << error;
++  }
++  if (pending_) {
++    std::move(pending_).Run(ok);
++  }
++}
++
++void FilterListUpdater::ApplyList(CompiledFilterList list) {
++  if (prefs_) {
++    prefs_->SetInteger(
++        prefs::kFilterListHostCount,
++        static_cast<int>(list.hosts.size() + list.path_rules.size()));
++  }
++  FilterListMatcher::GetInstance()->ReplaceCompiledList(std::move(list));
++}
++
++void FilterListUpdater::Persist(const CompiledFilterList& list) {
++  const base::FilePath path = CompiledPath(profile_);
++  if (!base::CreateDirectory(path.DirName())) {
++    return;
++  }
++  const std::string json = CompiledFilterListToJson(list);
++  base::WriteFile(path, json);
++}
++
++void FilterListUpdater::BumpGeneration() {
++  if (!prefs_) {
++    return;
++  }
++  prefs_->SetInteger(prefs::kFilterListGeneration,
++                     prefs_->GetInteger(prefs::kFilterListGeneration) + 1);
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
+new file mode 100644
+index 0000000000..e40894e24e
+--- /dev/null
++++ b/chrome/browser/aegis/filter_list_updater.h
+@@ -0,0 +1,63 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/filter_list_updater.h
++
++#ifndef CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
++#define CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "chrome/common/aegis/filter_list.h"
++
++class PrefService;
++class Profile;
++
++namespace network {
++class SimpleURLLoader;
++}
++
++namespace aegis {
++
++// Downloads EasyList/EasyPrivacy, compiles host tables, persists them under
++// the profile dir, and publishes them to FilterListMatcher.
++class FilterListUpdater {
++ public:
++  using UpdateCallback = base::OnceCallback<void(bool ok)>;
++
++  explicit FilterListUpdater(Profile* profile);
++  FilterListUpdater(const FilterListUpdater&) = delete;
++  FilterListUpdater& operator=(const FilterListUpdater&) = delete;
++  ~FilterListUpdater();
++
++  void LoadFromDisk();
++  void MaybeAutoUpdate();
++  void UpdateNow(UpdateCallback callback);
++
++  bool updating() const { return updating_; }
++
++ private:
++  void FetchNext();
++  void OnFetched(std::optional<std::string> body);
++  void Finish(bool ok, const std::string& error);
++  void ApplyList(CompiledFilterList list);
++  void Persist(const CompiledFilterList& list);
++  void BumpGeneration();
++
++  raw_ptr<Profile> profile_;
++  raw_ptr<PrefService> prefs_;
++  bool updating_ = false;
++  size_t fetch_index_ = 0;
++  std::vector<std::string> urls_;
++  std::vector<CompiledFilterList> fetched_;
++  UpdateCallback pending_;
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++  base::WeakPtrFactory<FilterListUpdater> weak_factory_{this};
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
+diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
+index a9607d3d6f..f2b7e9c980 100644
+--- a/chrome/browser/profiles/renderer_updater.cc
++++ b/chrome/browser/profiles/renderer_updater.cc
+@@ -15,6 +15,8 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/aegis/pref_names.h"
++#include "chrome/common/aegis/filter_list.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/renderer_configuration.mojom.h"
+ #include "components/content_settings/common/content_settings_manager.mojom.h"
+ #include "components/content_settings/core/browser/content_settings_utils.h"
+@@ -101,6 +103,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+       aegis::prefs::kFingerprintGuardEnabled,
+       base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
+                           base::Unretained(this)));
++  pref_change_registrar_.Add(
++      aegis::prefs::kFilterListGeneration,
++      base::BindRepeating(&RendererUpdater::PushAegisFilterList,
++                          base::Unretained(this)));
+ }
+ 
+ RendererUpdater::~RendererUpdater() {
+@@ -161,6 +167,7 @@ void RendererUpdater::InitializeRenderer(
+       std::move(bound_session_request_throttled_handler));
+ 
+   renderer_configuration->SetConfiguration(CreateRendererDynamicParams());
++  PushAegisFilterListTo(renderer_configuration);
+ }
+ 
+ RendererUpdater::RendererConfigurations
+@@ -237,6 +244,30 @@ void RendererUpdater::UpdateAllRenderers() {
+   }
+ }
+ 
++void RendererUpdater::PushAegisFilterList() {
++  auto renderer_configurations = GetRendererConfigurations();
++  for (auto& renderer_configuration : renderer_configurations) {
++    content::RenderProcessHost* render_process_host =
++        renderer_configuration.first;
++    if (!render_process_host->IsInitializedAndNotDead()) {
++      continue;
++    }
++    PushAegisFilterListTo(renderer_configuration.second);
++  }
++}
++
++void RendererUpdater::PushAegisFilterListTo(
++    mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>& remote) {
++  if (!remote) {
++    return;
++  }
++  const aegis::CompiledFilterList list =
++      aegis::FilterListMatcher::GetInstance()->CurrentList();
++  remote->SetAegisFilterList(aegis::JoinNewline(list.hosts),
++                             aegis::JoinNewline(list.path_rules),
++                             aegis::JoinNewline(list.exceptions));
++}
++
+ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+     const {
+   return chrome::mojom::DynamicParams::New(
+diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
+index 07b177b264..3236d383bb 100644
+--- a/chrome/browser/profiles/renderer_updater.h
++++ b/chrome/browser/profiles/renderer_updater.h
+@@ -73,6 +73,11 @@ class RendererUpdater : public KeyedService
+   // Update all renderers due to a configuration change.
+   void UpdateAllRenderers();
+ 
++  // Push the current compiled EasyList snapshot to every renderer.
++  void PushAegisFilterList();
++  void PushAegisFilterListTo(
++      mojo::AssociatedRemote<chrome::mojom::RendererConfiguration>& remote);
++
+ #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+   // Creates bound session throttler parameters that are subset of the dynamic
+   // renderer parameters.
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index f3e830b6d2..f9cd2758eb 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -72,3 +72,39 @@ h1 {
+   color: var(--muted);
+   font-size: 0.92rem;
+ }
++
++.filters {
++  margin-top: 2.4rem;
++}
++
++.filters h2 {
++  margin: 0 0 0.4rem;
++  font-size: 1.15rem;
++  font-weight: 600;
++}
++
++.meta {
++  margin: 0 0 1rem;
++  color: var(--muted);
++  font-size: 0.92rem;
++}
++
++button {
++  margin-top: 0.75rem;
++  padding: 0.55rem 1rem;
++  border: 1px solid var(--line);
++  background: transparent;
++  color: var(--fg);
++  font: inherit;
++  cursor: pointer;
++}
++
++button:hover {
++  border-color: var(--accent);
++  color: var(--accent);
++}
++
++button:disabled {
++  opacity: 0.55;
++  cursor: default;
++}
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 2ecc152911..22c97237fa 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -23,6 +23,15 @@
+           <input id="fingerprint" type="checkbox">
+         </label>
+       </section>
++      <section class="filters" aria-label="filter lists">
++        <h2>$i18n{filterListTitle}</h2>
++        <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
++        <label class="row">
++          <span>$i18n{filterListAutoUpdate}</span>
++          <input id="filter-auto" type="checkbox">
++        </label>
++        <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
++      </section>
+       <p class="note">$i18n{note}</p>
+     </main>
+     <script type="module" src="aegis.js"></script>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index b74beb6519..3303ca085d 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -8,6 +8,12 @@ interface AegisStatus {
+   trackerBlocking: boolean;
+   phishInterstitial: boolean;
+   fingerprintGuard: boolean;
++  filterListAutoUpdate: boolean;
++  filterListUpdating: boolean;
++  filterListHostCount: number;
++  filterListLastUpdated: number;
++  filterListLastError: string;
++  ok?: boolean;
+ }
+ 
+ function checkbox(id: string): HTMLInputElement {
+@@ -18,14 +24,46 @@ function checkbox(id: string): HTMLInputElement {
+   return el;
+ }
+ 
++function actionButton(id: string): HTMLButtonElement {
++  const el = getRequiredElement(id);
++  if (!(el instanceof HTMLButtonElement)) {
++    throw new Error(`Missing button #${id}`);
++  }
++  return el;
++}
++
++function formatMeta(status: AegisStatus): string {
++  const lang = document.documentElement.lang || 'zh-CN';
++  const count = status.filterListHostCount || 0;
++  const zh = lang.startsWith('zh');
++  if (!status.filterListLastUpdated) {
++    if (count) {
++      return zh ? `已编译 ${count} 条主机规则。` :
++                  `Compiled ${count} host rules.`;
++    }
++    return zh ? '尚未下载过滤列表。' : 'No compiled filter list yet.';
++  }
++  const when = new Date(status.filterListLastUpdated * 1000).toLocaleString();
++  const err = status.filterListLastError
++      ? (zh ? ` 上次错误：${status.filterListLastError}` :
++              ` Last error: ${status.filterListLastError}`)
++      : '';
++  return zh ? `已编译 ${count} 条主机规则 · 更新于 ${when}${err}` :
++              `Compiled ${count} host rules · updated ${when}${err}`;
++}
++
+ function applyStatus(status: AegisStatus) {
+   checkbox('tracker').checked = status.trackerBlocking;
+   checkbox('phish').checked = status.phishInterstitial;
+   checkbox('fingerprint').checked = status.fingerprintGuard;
++  checkbox('filter-auto').checked = status.filterListAutoUpdate;
++  getRequiredElement('filter-meta').textContent = formatMeta(status);
++  actionButton('filter-update').disabled = status.filterListUpdating;
+ }
+ 
+ async function setModule(
+-    module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard',
++    module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
++    'filterListAutoUpdate',
+     enabled: boolean) {
+   const status: AegisStatus =
+       await sendWithPromise('setModuleEnabled', module, enabled);
+@@ -34,7 +72,8 @@ async function setModule(
+ 
+ function bindToggle(
+     id: string,
+-    module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard') {
++    module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
++    'filterListAutoUpdate') {
+   const el = checkbox(id);
+   el.addEventListener('change', () => {
+     void setModule(module, el.checked);
+@@ -47,6 +86,14 @@ async function init() {
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+   bindToggle('fingerprint', 'fingerprintGuard');
++  bindToggle('filter-auto', 'filterListAutoUpdate');
++  actionButton('filter-update').addEventListener('click', () => {
++    void (async () => {
++      actionButton('filter-update').disabled = true;
++      const next: AegisStatus = await sendWithPromise('updateFilterLists');
++      applyStatus(next);
++    })();
++  });
+ }
+ 
+ document.addEventListener('DOMContentLoaded', () => {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index cf45fccc24..09c0c88e8e 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -3,6 +3,8 @@
+ 
+ #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
+ 
++#include <string>
++
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
+ #include "chrome/common/webui_url_constants.h"
+@@ -21,21 +23,48 @@ struct AegisStrings {
+   const char* tracker_label;
+   const char* phish_label;
+   const char* fingerprint_label;
++  const char* filter_list_title;
++  const char* filter_list_auto_update;
++  const char* filter_list_update_now;
++  const char* filter_list_meta;
+   const char* note;
+ };
+ 
+ AegisStrings StringsForLocale(const std::string& locale) {
+   if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
+-    return {"GCSA-aegis", "隱私與安全模組", "追蹤器攔截", "釣魚攔截頁",
+-            "指紋防護", "模組狀態會立即套用；部分能力仍在開發中。"};
++    return {"GCSA-aegis",
++            "隱私與安全模組",
++            "追蹤器攔截",
++            "釣魚攔截頁",
++            "指紋防護",
++            "EasyList 規則",
++            "自動更新過濾列表",
++            "立即更新",
++            "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
++            "模組狀態會立即套用；過濾列表約每天自動更新一次。"};
+   }
+   if (locale.starts_with("zh")) {
+-    return {"GCSA-aegis", "隐私与安全模块", "跟踪器拦截", "钓鱼拦截页",
+-            "指纹防护", "模块状态会立即生效；部分能力仍在开发中。"};
++    return {"GCSA-aegis",
++            "隐私与安全模块",
++            "跟踪器拦截",
++            "钓鱼拦截页",
++            "指纹防护",
++            "EasyList 规则",
++            "自动更新过滤列表",
++            "立即更新",
++            "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
++            "模块状态会立即生效；过滤列表大约每天自动更新一次。"};
+   }
+-  return {"GCSA-aegis", "Privacy & security modules", "Tracker blocking",
+-          "Phish interstitial", "Fingerprint Guard",
+-          "Changes apply immediately. Some modules are still under development."};
++  return {"GCSA-aegis",
++          "Privacy & security modules",
++          "Tracker blocking",
++          "Phish interstitial",
++          "Fingerprint Guard",
++          "EasyList rules",
++          "Auto-update filter lists",
++          "Update now",
++          "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
++          "Changes apply immediately. Filter lists refresh about once a day."};
+ }
+ 
+ }  // namespace
+@@ -52,6 +81,10 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("trackerLabel", strings.tracker_label);
+   source->AddString("phishLabel", strings.phish_label);
+   source->AddString("fingerprintLabel", strings.fingerprint_label);
++  source->AddString("filterListTitle", strings.filter_list_title);
++  source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
++  source->AddString("filterListUpdateNow", strings.filter_list_update_now);
++  source->AddString("filterListMeta", strings.filter_list_meta);
+   source->AddString("note", strings.note);
+ 
+   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index b98282f33d..b45dd443e3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -3,6 +3,8 @@
+ 
+ #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
+ 
++#include <string>
++
+ #include "base/functional/bind.h"
+ #include "base/values.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+@@ -20,20 +22,32 @@ void AegisUIHandler::RegisterMessages() {
+       "setModuleEnabled",
+       base::BindRepeating(&AegisUIHandler::HandleSetModuleEnabled,
+                           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "updateFilterLists",
++      base::BindRepeating(&AegisUIHandler::HandleUpdateFilterLists,
++                          base::Unretained(this)));
+ }
+ 
+-void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
+-  AllowJavascript();
+-  const base::Value& callback_id = args[0];
+-
++base::DictValue AegisUIHandler::BuildStatus() const {
+   auto* service = aegis::AegisService::GetInstance();
+   base::DictValue status;
+   status.Set("enabled", service->IsEnabled());
+   status.Set("trackerBlocking", service->IsTrackerBlockingEnabled());
+   status.Set("phishInterstitial", service->IsPhishInterstitialEnabled());
+   status.Set("fingerprintGuard", service->IsFingerprintGuardEnabled());
++  status.Set("filterListAutoUpdate", service->IsFilterListAutoUpdateEnabled());
++  status.Set("filterListUpdating", service->IsFilterListUpdating());
++  status.Set("filterListHostCount", service->FilterListHostCount());
++  status.Set("filterListLastUpdated",
++             static_cast<double>(service->FilterListLastUpdated()));
++  status.Set("filterListLastError", service->FilterListLastError());
++  return status;
++}
+ 
+-  ResolveJavascriptCallback(callback_id, status);
++void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
++  AllowJavascript();
++  const base::Value& callback_id = args[0];
++  ResolveJavascriptCallback(callback_id, BuildStatus());
+ }
+ 
+ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+@@ -52,12 +66,29 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+     service->SetPhishInterstitialEnabled(enabled);
+   } else if (module == "fingerprintGuard") {
+     service->SetFingerprintGuardEnabled(enabled);
++  } else if (module == "filterListAutoUpdate") {
++    service->SetFilterListAutoUpdateEnabled(enabled);
+   }
+ 
+-  base::DictValue status;
+-  status.Set("enabled", service->IsEnabled());
+-  status.Set("trackerBlocking", service->IsTrackerBlockingEnabled());
+-  status.Set("phishInterstitial", service->IsPhishInterstitialEnabled());
+-  status.Set("fingerprintGuard", service->IsFingerprintGuardEnabled());
+-  ResolveJavascriptCallback(callback_id, status);
++  ResolveJavascriptCallback(callback_id, BuildStatus());
++}
++
++void AegisUIHandler::HandleUpdateFilterLists(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.empty() || !args[0].is_string()) {
++    return;
++  }
++  const std::string callback_id = args[0].GetString();
++  aegis::AegisService::GetInstance()->UpdateFilterLists(base::BindOnce(
++      &AegisUIHandler::OnFilterListsUpdated, weak_factory_.GetWeakPtr(),
++      callback_id));
++}
++
++void AegisUIHandler::OnFilterListsUpdated(std::string callback_id, bool ok) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  base::DictValue status = BuildStatus();
++  status.Set("ok", ok);
++  ResolveJavascriptCallback(base::Value(callback_id), status);
+ }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 2a26d77cd2..a4d6f556b6 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -4,6 +4,7 @@
+ #ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
+ #define CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
+ 
++#include "base/memory/weak_ptr.h"
+ #include "base/values.h"
+ #include "content/public/browser/web_ui_message_handler.h"
+ 
+@@ -18,8 +19,13 @@ class AegisUIHandler : public content::WebUIMessageHandler {
+   void RegisterMessages() override;
+ 
+  private:
++  base::DictValue BuildStatus() const;
+   void HandleGetStatus(const base::ListValue& args);
+   void HandleSetModuleEnabled(const base::ListValue& args);
++  void HandleUpdateFilterLists(const base::ListValue& args);
++  void OnFilterListsUpdated(std::string callback_id, bool ok);
++
++  base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
+ };
+ 
+ #endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 8e61fb7d41..ed4c8aafb8 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -11,6 +11,10 @@ source_set("aegis") {
+     "builtin_tracker_hosts.h",
+     "features.cc",
+     "features.h",
++    "filter_list.cc",
++    "filter_list.h",
++    "filter_list_matcher.cc",
++    "filter_list_matcher.h",
+     "pref_names.h",
+     "tracking_query_params.cc",
+     "tracking_query_params.h",
+diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
+index fa99c9916e..6c45621d74 100644
+--- a/chrome/common/aegis/aegis_net_throttle.cc
++++ b/chrome/common/aegis/aegis_net_throttle.cc
+@@ -4,7 +4,7 @@
+ #include "chrome/common/aegis/aegis_net_throttle.h"
+ 
+ #include "base/feature_list.h"
+-#include "chrome/common/aegis/builtin_tracker_hosts.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/aegis/features.h"
+ #include "net/base/net_errors.h"
+ #include "net/url_request/redirect_info.h"
+@@ -62,7 +62,8 @@ void AegisNetThrottle::WillRedirectRequest(
+ }
+ 
+ void AegisNetThrottle::MaybeBlock(const GURL& url) {
+-  if (!tracker_blocking_enabled_ || !MatchesBuiltinTrackerRule(url)) {
++  if (!tracker_blocking_enabled_ ||
++      !FilterListMatcher::GetInstance()->ShouldBlock(url)) {
+     return;
+   }
+   delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
+diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
+index 9b5b5565cf..b9eb7134c9 100644
+--- a/chrome/common/aegis/aegis_net_throttle.h
++++ b/chrome/common/aegis/aegis_net_throttle.h
+@@ -12,7 +12,7 @@ class GURL;
+ 
+ namespace aegis {
+ 
+-// Cancels subresource requests that match the built-in tracker host rules.
++// Cancels subresource requests that match builtin + compiled EasyList hosts.
+ // Registered from both browser and renderer throttle providers.
+ class AegisNetThrottle : public blink::URLLoaderThrottle {
+  public:
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index 96c08c1ce5..5dbc31e768 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -10,5 +10,6 @@ BASE_FEATURE(kAegisEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPhishInterstitial, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisFilterListUpdater, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index 42366027db..f8cbe9a4e6 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -13,6 +13,7 @@ BASE_DECLARE_FEATURE(kAegisEnabled);
+ BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
+ BASE_DECLARE_FEATURE(kAegisPhishInterstitial);
+ BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
++BASE_DECLARE_FEATURE(kAegisFilterListUpdater);
+ 
+ }  // namespace aegis::features
+ 
+diff --git a/chrome/common/aegis/filter_list.cc b/chrome/common/aegis/filter_list.cc
+new file mode 100644
+index 0000000000..0f77dd29d8
+--- /dev/null
++++ b/chrome/common/aegis/filter_list.cc
+@@ -0,0 +1,246 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/filter_list.cc
++
++#include "chrome/common/aegis/filter_list.h"
++
++#include <algorithm>
++#include <optional>
++#include <set>
++#include <utility>
++
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/values.h"
++
++namespace aegis {
++namespace {
++
++bool IsPlausibleHost(std::string_view host) {
++  if (host.size() < 3 || host.size() > 253) {
++    return false;
++  }
++  if (host.find('.') == std::string_view::npos) {
++    return false;
++  }
++  if (host.front() == '.' || host.back() == '.' ||
++      host.find("..") != std::string_view::npos) {
++    return false;
++  }
++  for (char c : host) {
++    if (!base::IsAsciiAlphaNumeric(c) && c != '.' && c != '-') {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool LooksCosmetic(std::string_view line) {
++  return line.find("##") != std::string_view::npos ||
++         line.find("#@#") != std::string_view::npos ||
++         line.find("#?#") != std::string_view::npos;
++}
++
++void UniqueSorted(std::vector<std::string>* values) {
++  std::sort(values->begin(), values->end());
++  values->erase(std::unique(values->begin(), values->end()), values->end());
++}
++
++std::vector<std::string> ListToStrings(const base::ListValue* list) {
++  std::vector<std::string> out;
++  if (!list) {
++    return out;
++  }
++  out.reserve(list->size());
++  for (const base::Value& value : *list) {
++    if (value.is_string()) {
++      out.push_back(value.GetString());
++    }
++  }
++  return out;
++}
++
++}  // namespace
++
++bool ParseEasyListRule(std::string_view line,
++                       bool* is_exception,
++                       std::string* rule,
++                       bool* is_path) {
++  std::string_view s = base::TrimWhitespaceASCII(line, base::TRIM_ALL);
++  if (s.empty() || s.front() == '!' || s.front() == '[' || s.front() == '#') {
++    return false;
++  }
++  if (LooksCosmetic(s)) {
++    return false;
++  }
++
++  bool exception = false;
++  if (s.starts_with("@@")) {
++    exception = true;
++    s.remove_prefix(2);
++  }
++  if (!s.starts_with("||")) {
++    return false;
++  }
++  s.remove_prefix(2);
++
++  const size_t dollar = s.find('$');
++  if (dollar != std::string_view::npos) {
++    const std::string_view options = s.substr(dollar + 1);
++    s = s.substr(0, dollar);
++    for (std::string_view opt :
++         base::SplitStringPiece(options, ",", base::TRIM_WHITESPACE,
++                                base::SPLIT_WANT_NONEMPTY)) {
++      if (opt.starts_with("domain=") || opt.starts_with("~domain=")) {
++        return false;
++      }
++    }
++  }
++
++  if (s.ends_with("^")) {
++    s.remove_suffix(1);
++  }
++  if (s.find('*') != std::string_view::npos ||
++      s.find('^') != std::string_view::npos ||
++      s.find('|') != std::string_view::npos) {
++    return false;
++  }
++
++  const size_t slash = s.find('/');
++  const std::string_view host = slash == std::string_view::npos
++                                    ? s
++                                    : s.substr(0, slash);
++  std::string host_lower = base::ToLowerASCII(host);
++  if (!IsPlausibleHost(host_lower)) {
++    return false;
++  }
++  const bool path = slash != std::string_view::npos;
++  *is_exception = exception;
++  *is_path = path;
++  *rule = path ? host_lower + std::string(s.substr(slash)) : host_lower;
++  return true;
++}
++
++CompiledFilterList CompileEasyList(std::string_view text,
++                                   std::string_view source) {
++  CompiledFilterList out;
++  out.source = std::string(source);
++  std::set<std::string> hosts;
++  std::set<std::string> path_rules;
++  std::set<std::string> exceptions;
++
++  for (std::string_view line : base::SplitStringPiece(
++           text, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++    if (!line.empty() && line.back() == '\r') {
++      line.remove_suffix(1);
++    }
++    bool is_exception = false;
++    bool is_path = false;
++    std::string rule;
++    if (!ParseEasyListRule(line, &is_exception, &rule, &is_path)) {
++      out.skipped++;
++      continue;
++    }
++    out.parsed++;
++    if (is_exception) {
++      const size_t slash = rule.find('/');
++      exceptions.insert(slash == std::string::npos ? rule
++                                                   : rule.substr(0, slash));
++      continue;
++    }
++    if (is_path) {
++      path_rules.insert(std::move(rule));
++    } else {
++      hosts.insert(std::move(rule));
++    }
++  }
++
++  out.hosts.assign(hosts.begin(), hosts.end());
++  out.path_rules.assign(path_rules.begin(), path_rules.end());
++  out.exceptions.assign(exceptions.begin(), exceptions.end());
++  return out;
++}
++
++CompiledFilterList MergeCompiledFilterLists(
++    const std::vector<CompiledFilterList>& lists,
++    std::string_view source) {
++  CompiledFilterList out;
++  out.source = std::string(source);
++  for (const CompiledFilterList& list : lists) {
++    out.hosts.insert(out.hosts.end(), list.hosts.begin(), list.hosts.end());
++    out.path_rules.insert(out.path_rules.end(), list.path_rules.begin(),
++                          list.path_rules.end());
++    out.exceptions.insert(out.exceptions.end(), list.exceptions.begin(),
++                          list.exceptions.end());
++    out.parsed += list.parsed;
++    out.skipped += list.skipped;
++  }
++  UniqueSorted(&out.hosts);
++  UniqueSorted(&out.path_rules);
++  UniqueSorted(&out.exceptions);
++  return out;
++}
++
++std::string CompiledFilterListToJson(const CompiledFilterList& list) {
++  base::DictValue dict;
++  dict.Set("version", list.version);
++  dict.Set("source", list.source);
++  dict.Set("generatedAt", list.generated_at);
++  dict.Set("parsed", list.parsed);
++  dict.Set("skipped", list.skipped);
++
++  base::ListValue hosts;
++  for (const std::string& host : list.hosts) {
++    hosts.Append(host);
++  }
++  dict.Set("hosts", std::move(hosts));
++
++  base::ListValue path_rules;
++  for (const std::string& rule : list.path_rules) {
++    path_rules.Append(rule);
++  }
++  dict.Set("pathRules", std::move(path_rules));
++
++  base::ListValue exceptions;
++  for (const std::string& host : list.exceptions) {
++    exceptions.Append(host);
++  }
++  dict.Set("exceptions", std::move(exceptions));
++
++  std::string json;
++  base::JSONWriter::WriteWithOptions(
++      dict, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
++  return json;
++}
++
++bool CompiledFilterListFromJson(std::string_view json,
++                                CompiledFilterList* list) {
++  std::optional<base::Value> parsed = base::JSONReader::Read(
++      json, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
++  if (!parsed || !parsed->is_dict()) {
++    return false;
++  }
++  const base::DictValue& dict = parsed->GetDict();
++  list->version = dict.FindInt("version").value_or(1);
++  list->source = dict.FindString("source") ? *dict.FindString("source") : "";
++  list->generated_at =
++      dict.FindString("generatedAt") ? *dict.FindString("generatedAt") : "";
++  list->parsed = dict.FindInt("parsed").value_or(0);
++  list->skipped = dict.FindInt("skipped").value_or(0);
++  list->hosts = ListToStrings(dict.FindList("hosts"));
++  list->path_rules = ListToStrings(dict.FindList("pathRules"));
++  list->exceptions = ListToStrings(dict.FindList("exceptions"));
++  return true;
++}
++
++std::string JoinNewline(const std::vector<std::string>& values) {
++  return base::JoinString(values, "\n");
++}
++
++std::vector<std::string> SplitNewline(std::string_view blob) {
++  return base::SplitString(blob, "\n", base::TRIM_WHITESPACE,
++                           base::SPLIT_WANT_NONEMPTY);
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/filter_list.h b/chrome/common/aegis/filter_list.h
+new file mode 100644
+index 0000000000..f67a013494
+--- /dev/null
++++ b/chrome/common/aegis/filter_list.h
+@@ -0,0 +1,48 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/filter_list.h
++// Keep the parser aligned with packages/core/src/tracker/easylist.ts.
++
++#ifndef CHROME_COMMON_AEGIS_FILTER_LIST_H_
++#define CHROME_COMMON_AEGIS_FILTER_LIST_H_
++
++#include <string>
++#include <string_view>
++#include <vector>
++
++namespace aegis {
++
++struct CompiledFilterList {
++  int version = 1;
++  std::string source;
++  std::string generated_at;
++  std::vector<std::string> hosts;
++  std::vector<std::string> path_rules;
++  std::vector<std::string> exceptions;
++  int parsed = 0;
++  int skipped = 0;
++};
++
++// Parse a single EasyList network rule. Returns false for cosmetics / regex /
++// site-specific rules.
++bool ParseEasyListRule(std::string_view line,
++                       bool* is_exception,
++                       std::string* rule,
++                       bool* is_path);
++
++CompiledFilterList CompileEasyList(std::string_view text,
++                                   std::string_view source);
++
++CompiledFilterList MergeCompiledFilterLists(
++    const std::vector<CompiledFilterList>& lists,
++    std::string_view source);
++
++std::string CompiledFilterListToJson(const CompiledFilterList& list);
++bool CompiledFilterListFromJson(std::string_view json,
++                                CompiledFilterList* list);
++
++std::string JoinNewline(const std::vector<std::string>& values);
++std::vector<std::string> SplitNewline(std::string_view blob);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_FILTER_LIST_H_
+diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
+new file mode 100644
+index 0000000000..81c033a544
+--- /dev/null
++++ b/chrome/common/aegis/filter_list_matcher.cc
+@@ -0,0 +1,112 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/filter_list_matcher.cc
++
++#include "chrome/common/aegis/filter_list_matcher.h"
++
++#include "base/strings/string_util.h"
++#include "chrome/common/aegis/builtin_tracker_hosts.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++bool PathRuleMatches(std::string_view rule, const GURL& url) {
++  if (!url.is_valid() || !url.has_host()) {
++    return false;
++  }
++  const size_t slash = rule.find('/');
++  if (slash == std::string_view::npos) {
++    return false;
++  }
++  const std::string_view host = rule.substr(0, slash);
++  if (host.empty() || !url.DomainIs(host)) {
++    return false;
++  }
++  return base::StartsWith(url.path(), rule.substr(slash));
++}
++
++}  // namespace
++
++// static
++FilterListMatcher* FilterListMatcher::GetInstance() {
++  return base::Singleton<FilterListMatcher>::get();
++}
++
++FilterListMatcher::FilterListMatcher() = default;
++FilterListMatcher::~FilterListMatcher() = default;
++
++void FilterListMatcher::ReplaceCompiledList(CompiledFilterList list) {
++  base::AutoLock lock(lock_);
++  hosts_.clear();
++  exceptions_.clear();
++  hosts_.insert(list.hosts.begin(), list.hosts.end());
++  exceptions_.insert(list.exceptions.begin(), list.exceptions.end());
++  list_ = std::move(list);
++}
++
++CompiledFilterList FilterListMatcher::CurrentList() const {
++  base::AutoLock lock(lock_);
++  return list_;
++}
++
++bool FilterListMatcher::ShouldBlock(const GURL& url) const {
++  if (!url.is_valid() || !url.has_host()) {
++    return false;
++  }
++  if (MatchesBuiltinTrackerRule(url)) {
++    return true;
++  }
++
++  const std::string host = base::ToLowerASCII(url.host());
++  base::AutoLock lock(lock_);
++  if (MatchesException(host)) {
++    return false;
++  }
++  return MatchesCompiledHost(host) || MatchesPathRule(url);
++}
++
++size_t FilterListMatcher::compiled_host_count() const {
++  base::AutoLock lock(lock_);
++  return list_.hosts.size() + list_.path_rules.size();
++}
++
++bool FilterListMatcher::MatchesCompiledHost(std::string_view host) const {
++  std::string current(host);
++  while (!current.empty()) {
++    if (hosts_.contains(current)) {
++      return true;
++    }
++    const size_t dot = current.find('.');
++    if (dot == std::string::npos) {
++      break;
++    }
++    current = current.substr(dot + 1);
++  }
++  return false;
++}
++
++bool FilterListMatcher::MatchesException(std::string_view host) const {
++  std::string current(host);
++  while (!current.empty()) {
++    if (exceptions_.contains(current)) {
++      return true;
++    }
++    const size_t dot = current.find('.');
++    if (dot == std::string::npos) {
++      break;
++    }
++    current = current.substr(dot + 1);
++  }
++  return false;
++}
++
++bool FilterListMatcher::MatchesPathRule(const GURL& url) const {
++  for (const std::string& rule : list_.path_rules) {
++    if (PathRuleMatches(rule, url)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/filter_list_matcher.h b/chrome/common/aegis/filter_list_matcher.h
+new file mode 100644
+index 0000000000..7ef0d87e3d
+--- /dev/null
++++ b/chrome/common/aegis/filter_list_matcher.h
+@@ -0,0 +1,59 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/filter_list_matcher.h
++
++#ifndef CHROME_COMMON_AEGIS_FILTER_LIST_MATCHER_H_
++#define CHROME_COMMON_AEGIS_FILTER_LIST_MATCHER_H_
++
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/containers/flat_set.h"
++#include "base/memory/singleton.h"
++#include "base/synchronization/lock.h"
++#include "base/thread_annotations.h"
++#include "chrome/common/aegis/filter_list.h"
++
++class GURL;
++
++namespace aegis {
++
++// Process-wide compiled EasyList matcher. Browser and renderer both consult
++// this after the browser pushes a snapshot over mojo.
++class FilterListMatcher {
++ public:
++  static FilterListMatcher* GetInstance();
++
++  FilterListMatcher(const FilterListMatcher&) = delete;
++  FilterListMatcher& operator=(const FilterListMatcher&) = delete;
++
++  void ReplaceCompiledList(CompiledFilterList list);
++  CompiledFilterList CurrentList() const;
++
++  // True when |url| matches builtin tracker rules or compiled EasyList, and
++  // is not covered by an EasyList exception. Builtin seed always wins over
++  // exceptions so product defaults stay on.
++  bool ShouldBlock(const GURL& url) const;
++
++  size_t compiled_host_count() const;
++
++ private:
++  friend struct base::DefaultSingletonTraits<FilterListMatcher>;
++  FilterListMatcher();
++  ~FilterListMatcher();
++
++  bool MatchesCompiledHost(std::string_view host) const
++      EXCLUSIVE_LOCKS_REQUIRED(lock_);
++  bool MatchesException(std::string_view host) const
++      EXCLUSIVE_LOCKS_REQUIRED(lock_);
++  bool MatchesPathRule(const GURL& url) const EXCLUSIVE_LOCKS_REQUIRED(lock_);
++
++  mutable base::Lock lock_;
++  CompiledFilterList list_ GUARDED_BY(lock_);
++  base::flat_set<std::string> hosts_ GUARDED_BY(lock_);
++  base::flat_set<std::string> exceptions_ GUARDED_BY(lock_);
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_FILTER_LIST_MATCHER_H_
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index 77d70a5d62..c631daf621 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -13,6 +13,13 @@ inline constexpr char kPhishInterstitialEnabled[] =
+     "aegis.phish_interstitial_enabled";
+ inline constexpr char kFingerprintGuardEnabled[] =
+     "aegis.fingerprint_guard_enabled";
++inline constexpr char kFilterListAutoUpdateEnabled[] =
++    "aegis.filter_list_auto_update";
++inline constexpr char kFilterListLastUpdated[] =
++    "aegis.filter_list_last_updated";
++inline constexpr char kFilterListHostCount[] = "aegis.filter_list_host_count";
++inline constexpr char kFilterListGeneration[] = "aegis.filter_list_generation";
++inline constexpr char kFilterListLastError[] = "aegis.filter_list_last_error";
+ 
+ }  // namespace aegis::prefs
+ 
+diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
+index 75098fa6a6..3f33b331d0 100644
+--- a/chrome/common/renderer_configuration.mojom
++++ b/chrome/common/renderer_configuration.mojom
+@@ -101,6 +101,9 @@ interface RendererConfiguration {
+   // Update renderer configuration with settings that can change.
+   SetConfiguration(DynamicParams params);
+ 
++  // Push compiled EasyList host tables into the renderer-side matcher.
++  SetAegisFilterList(string hosts, string path_rules, string exceptions);
++
+   // Update the renderer configuration with settings that won't
+   // change after being set.
+   [EnableIfNot=is_android]
+diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
+index a07c9a9956..dc5442edca 100644
+--- a/chrome/renderer/chrome_render_thread_observer.cc
++++ b/chrome/renderer/chrome_render_thread_observer.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/renderer/chrome_render_thread_observer.h"
+ #include "third_party/blink/public/common/aegis/fingerprint_guard.h"
++#include "chrome/common/aegis/filter_list.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
+ 
+ #include <stddef.h>
+ 
+@@ -220,6 +222,17 @@ void ChromeRenderThreadObserver::SetConfiguration(
+   dynamic_params_ = std::move(params);
+ }
+ 
++void ChromeRenderThreadObserver::SetAegisFilterList(
++    const std::string& hosts,
++    const std::string& path_rules,
++    const std::string& exceptions) {
++  aegis::CompiledFilterList list;
++  list.hosts = aegis::SplitNewline(hosts);
++  list.path_rules = aegis::SplitNewline(path_rules);
++  list.exceptions = aegis::SplitNewline(exceptions);
++  aegis::FilterListMatcher::GetInstance()->ReplaceCompiledList(std::move(list));
++}
++
+ #if !BUILDFLAG(IS_ANDROID)
+ void ChromeRenderThreadObserver::SetConfigurationOnProcessLockUpdate(
+     chrome::mojom::StaticParamsPtr params) {
+diff --git a/chrome/renderer/chrome_render_thread_observer.h b/chrome/renderer/chrome_render_thread_observer.h
+index a03714c550..cb3e12ef92 100644
+--- a/chrome/renderer/chrome_render_thread_observer.h
++++ b/chrome/renderer/chrome_render_thread_observer.h
+@@ -6,6 +6,7 @@
+ #define CHROME_RENDERER_CHROME_RENDER_THREAD_OBSERVER_H_
+ 
+ #include <memory>
++#include <string>
+ 
+ #include "base/memory/ref_counted.h"
+ #include "base/synchronization/lock.h"
+@@ -137,6 +138,9 @@ class ChromeRenderThreadObserver : public content::RenderThreadObserver,
+       mojo::PendingRemote<chrome::mojom::BoundSessionRequestThrottledHandler>
+           bound_session_request_throttled_handler) override;
+   void SetConfiguration(chrome::mojom::DynamicParamsPtr params) override;
++  void SetAegisFilterList(const std::string& hosts,
++                          const std::string& path_rules,
++                          const std::string& exceptions) override;
+ #if !BUILDFLAG(IS_ANDROID)
+   void SetConfigurationOnProcessLockUpdate(
+       chrome::mojom::StaticParamsPtr params) override;
+diff --git a/third_party/aegis_policy/README.md b/third_party/aegis_policy/README.md
+index 27ea501d28..5555470acf 100644
+--- a/third_party/aegis_policy/README.md
++++ b/third_party/aegis_policy/README.md
+@@ -5,12 +5,14 @@ Policy snapshot exported from `packages/core`.
+ | File | Role |
+ |------|------|
+ | `policy_snapshot.json` | Portable JSON (trackers / phish seeds / params) |
++| `easylist_compiled.json` | Optional local compile of EasyList (gitignored, GPL/CC) |
+ | `../chrome/common/aegis/generated/*.inc` | C++ string tables included by builtin_*.cc |
+ 
+ Regenerate:
+ 
+ ```bash
+ pnpm --filter @gcsa-aegis/browser sync-core-snapshot
++pnpm --filter @gcsa-aegis/browser sync-easylist   # optional; runtime updater also fetches
+ ```
+ 
+ Do not hand-edit generated `.inc` files — edit TypeScript under `packages/core` instead.
+-- 
+2.50.1 (Apple Git-155)
+

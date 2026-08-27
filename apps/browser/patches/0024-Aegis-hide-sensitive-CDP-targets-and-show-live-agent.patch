@@ -1,0 +1,595 @@
+From fe10a690f52d7dfdd28fd8def3304e0899865b64 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 16:59:10 +0800
+Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
+ connections
+
+Remote CDP lists only the browser target and http(s) pages. Loopback
+agent WebSocket counts appear on chrome://aegis.
+---
+ chrome/browser/aegis/aegis_service.cc         | 39 +++++++++++++++-
+ chrome/browser/aegis/aegis_service.h          |  3 ++
+ chrome/browser/devtools/BUILD.gn              |  1 +
+ .../chrome_devtools_manager_delegate.cc       | 19 ++++++++
+ .../chrome_devtools_manager_delegate.h        |  2 +
+ chrome/browser/resources/aegis/aegis.ts       | 14 +++++-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 25 ++++++-----
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  2 +
+ chrome/common/aegis/BUILD.gn                  | 16 +++++++
+ chrome/common/aegis/cdp_target_filter.cc      | 19 ++++++++
+ chrome/common/aegis/cdp_target_filter.h       | 20 +++++++++
+ .../aegis/cdp_target_filter_unittest.cc       | 37 ++++++++++++++++
+ chrome/common/aegis/cdp_ws_hook.cc            | 44 +++++++++++++++++++
+ chrome/common/aegis/cdp_ws_hook.h             | 25 +++++++++++
+ .../browser/devtools/devtools_http_handler.cc | 11 ++---
+ 15 files changed, 256 insertions(+), 21 deletions(-)
+ create mode 100644 chrome/common/aegis/cdp_target_filter.cc
+ create mode 100644 chrome/common/aegis/cdp_target_filter.h
+ create mode 100644 chrome/common/aegis/cdp_target_filter_unittest.cc
+ create mode 100644 chrome/common/aegis/cdp_ws_hook.cc
+ create mode 100644 chrome/common/aegis/cdp_ws_hook.h
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 9c6887281a..0f0b0db49a 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -11,6 +11,7 @@
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+ #include "base/memory/singleton.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/time/time.h"
+ #include "base/values.h"
+@@ -23,11 +24,13 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/aegis_block_reporter.h"
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
++#include "chrome/common/aegis/cdp_ws_hook.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/aegis/phish_score.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
++#include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/btm_service.h"
+ #include "url/gurl.h"
+ 
+@@ -39,7 +42,10 @@ AegisService* AegisService::GetInstance() {
+ }
+ 
+ AegisService::AegisService() = default;
+-AegisService::~AegisService() = default;
++
++AegisService::~AegisService() {
++  CdpWsHook::SetClientCountCallback({});
++}
+ 
+ void AegisService::InitializeForProfile(Profile* profile) {
+   if (!IsEnabled()) {
+@@ -347,6 +353,33 @@ bool AegisService::AiControlRunning() const {
+   return ai_control_ && ai_control_->running();
+ }
+ 
++size_t AegisService::CdpWebSocketClientCount() const {
++  return cdp_ws_clients_;
++}
++
++void AegisService::SetCdpWebSocketClientCount(size_t count) {
++  if (!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
++    content::GetUIThreadTaskRunner({})->PostTask(
++        FROM_HERE, base::BindOnce(&AegisService::SetCdpWebSocketClientCount,
++                                  base::Unretained(this), count));
++    return;
++  }
++  if (cdp_ws_clients_ == count) {
++    return;
++  }
++  cdp_ws_clients_ = count;
++  PrivacyEvent event;
++  event.kind = "cdp";
++  if (count == 0) {
++    event.label = "agent disconnected";
++  } else {
++    event.label = "agent connected (" + base::NumberToString(count) + ")";
++  }
++  event.unix_seconds =
++      (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  PushPrivacyEvent(std::move(event));
++}
++
+ void AegisService::BindAegisHost(
+     mojo::PendingReceiver<chrome::mojom::AegisHost> receiver) {
+   host_receivers_.Add(this, std::move(receiver));
+@@ -385,6 +418,10 @@ void AegisService::InstallReporterCallbacks() {
+       [](const std::string& host, const std::vector<std::string>& keys) {
+         AegisService::GetInstance()->RecordStrippedParams(host, keys);
+       }));
++  CdpWsHook::SetClientCountCallback(base::BindRepeating(
++      [](size_t count) {
++        AegisService::GetInstance()->SetCdpWebSocketClientCount(count);
++      }));
+ }
+ 
+ bool AegisService::IsPolicyWorkerReady() const {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 8a64464ded..03b752f493 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -119,6 +119,8 @@ class AegisService : public chrome::mojom::AegisHost {
+   std::string AiControlAddress() const;
+   bool AiControlLoopbackOnly() const;
+   bool AiControlRunning() const;
++  size_t CdpWebSocketClientCount() const;
++  void SetCdpWebSocketClientCount(size_t count);
+ 
+   // Renderer → browser：把拦截记到会话清单。
+   void BindAegisHost(
+@@ -182,6 +184,7 @@ class AegisService : public chrome::mojom::AegisHost {
+   std::unique_ptr<OllamaSidecar> ollama_;
+   std::unique_ptr<AiControl> ai_control_;
+   mojo::ReceiverSet<chrome::mojom::AegisHost> host_receivers_;
++  size_t cdp_ws_clients_ = 0;
+ 
+   void InstallReporterCallbacks();
+   void OnHeuristicSummary(PageSnapshot snapshot,
+diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
+index f2a7f5db9e..d75f6a0401 100644
+--- a/chrome/browser/devtools/BUILD.gn
++++ b/chrome/browser/devtools/BUILD.gn
+@@ -275,6 +275,7 @@ static_library("devtools") {
+       "//chrome/browser/user_education",
+       "//chrome/browser/web_applications",
+       "//chrome/common",
++      "//chrome/common/aegis",
+       "//components/guest_view/browser",
+       "//components/input",
+       "//components/keep_alive_registry",
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+index c9f49cd198..3994a5ac2b 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+@@ -43,6 +43,8 @@
+ #include "chrome/browser/web_applications/web_app_registrar.h"
+ #include "chrome/browser/web_applications/web_app_tab_helper.h"
+ #include "chrome/browser/web_applications/web_app_utils.h"
++#include "chrome/common/aegis/cdp_target_filter.h"
++#include "chrome/common/aegis/cdp_ws_hook.h"
+ #include "chrome/common/chrome_switches.h"
+ #include "chrome/grit/browser_resources.h"
+ #include "components/guest_view/browser/guest_view_base.h"
+@@ -418,6 +420,22 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
+   return IsInspectionAllowed(profile, agent_host);
+ }
+ 
++content::DevToolsAgentHost::List
++ChromeDevToolsManagerDelegate::RemoteDebuggingTargets(
++    DevToolsManagerDelegate::TargetType target_type) {
++  DevToolsAgentHost::List list =
++      DevToolsManagerDelegate::RemoteDebuggingTargets(target_type);
++  DevToolsAgentHost::List filtered;
++  filtered.reserve(list.size());
++  for (auto& host : list) {
++    if (host && aegis::ShouldExposeRemoteCdpTarget(host->GetType(),
++                                                   host->GetURL())) {
++      filtered.push_back(std::move(host));
++    }
++  }
++  return filtered;
++}
++
+ void ChromeDevToolsManagerDelegate::ClientAttached(
+     content::DevToolsAgentHostClientChannel* channel) {
+   DCHECK(sessions_.find(channel) == sessions_.end());
+@@ -540,6 +558,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
+ 
+ void ChromeDevToolsManagerDelegate::SetActiveWebSocketConnections(
+     size_t count) {
++  aegis::CdpWsHook::NotifyClientCount(count);
+   if (count == 0 && infobar_) {
+     // We need to reset the pointer to the infobar before closing it because
+     // closing the infobar deletes it.
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
+index a48b3a9ebd..c4559270a9 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
+@@ -87,6 +87,8 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
+ 
+   bool AllowInspectingRenderFrameHost(content::RenderFrameHost* rfh) override;
+   bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;
++  content::DevToolsAgentHost::List RemoteDebuggingTargets(
++      TargetType target_type) override;
+   void ClientAttached(
+       content::DevToolsAgentHostClientChannel* channel) override;
+   void ClientDetached(
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index d3e154780c..daad9a4c8f 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -33,6 +33,7 @@ interface AegisStatus {
+   aiControlPort?: number;
+   aiControlAddress?: string;
+   aiControlLoopbackOnly?: boolean;
++  aiControlClients?: number;
+   ollamaUrl?: string;
+   ollamaModel?: string;
+   recentEvents?: PrivacyEvent[];
+@@ -277,6 +278,9 @@ function kindLabel(kind: string, zh: boolean): string {
+   if (kind === 'phish') {
+     return zh ? '钓鱼' : 'Phish';
+   }
++  if (kind === 'cdp') {
++    return zh ? '控制' : 'CDP';
++  }
+   return zh ? '参数' : 'Param';
+ }
+ 
+@@ -288,17 +292,23 @@ function fillAiControl(status: AegisStatus) {
+   const port = status.aiControlPort || 9222;
+   const address = status.aiControlAddress || `127.0.0.1:${port}`;
+   const loopback = status.aiControlLoopbackOnly !== false;
++  const clients = status.aiControlClients || 0;
+   if (!status.aiControl) {
+     statusEl.textContent = zh ? 'AI 控制已关闭（默认）。' :
+                                 'AI control is off (default).';
+     connectEl.hidden = true;
+     return;
+   }
++  const clientsText = zh ?
++      (clients ? `当前 ${clients} 个本机 agent 已连接` :
++                 '当前没有 agent 连接') :
++      (clients ? `${clients} local agent(s) connected` :
++                 'no agent connected');
+   statusEl.textContent = zh ?
+       `调试端口 ${port} · 绑定 ${address} · ${
+-          loopback ? '仅 loopback' : '绑定范围未知'}` :
++          loopback ? '仅 loopback' : '绑定范围未知'} · ${clientsText}` :
+       `Port ${port} · bind ${address} · ${
+-          loopback ? 'loopback only' : 'bind scope unknown'}`;
++          loopback ? 'loopback only' : 'bind scope unknown'} · ${clientsText}`;
+   connectEl.hidden = !on;
+   if (on) {
+     connectEl.textContent =
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 391f974cf6..8e10165872 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -120,18 +120,20 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "發給 Ollama 的是脫敏後文本，且僅發往 127.0.0.1。",
+         .activity_title = "本次會話",
+         .activity_hint =
+-            "攔截（EasyList / 第一方 collect / CNAME）、Referer 去參、廣告 Cookie 與 bounce 會自動更新。",
++            "攔截（EasyList / 第一方 collect / CNAME）、Referer 去參、廣告 Cookie、bounce 與本機 CDP 連線會自動更新。",
+         .activity_empty =
+             "還沒有記錄。打開帶廣告請求或 utm_ 的頁面後，攔截與清理會出現在這裡。",
+         .ai_control_title = "AI 控制",
+         .ai_control_label = "允許本機 AI agent 經 CDP 控制",
+         .ai_control_hint =
+-            "預設關閉。開啟後只在 127.0.0.1 / localhost 提供 DevTools，不綁 0.0.0.0。",
++            "預設關閉。開啟後只在 127.0.0.1 / localhost 提供 DevTools，不綁 0.0.0.0。"
++            "遠端 CDP 不列出 chrome://、file:// 等內部頁。",
+         .ai_control_status = "調試埠與綁定",
+         .ai_control_connect =
+             "Playwright：chromium.connectOverCDP('http://127.0.0.1:PORT')",
+         .ai_control_limit =
+-            "限制：CDP 仍可能讀到頁面 DOM。這是你主動打開的能力；chrome://aegis 摘要路徑會先脫敏，CDP 讀 DOM 不會自動脫敏。",
++            "限制：遠端 CDP 不列出 chrome:// 與 file://，但網頁 DOM 仍可讀。"
++            "這是你主動打開的能力；chrome://aegis 摘要會先脫敏，CDP 讀 DOM 不會自動脫敏。",
+         .note = "模組狀態會立即套用；過濾列表約每天自動更新一次。",
+     };
+   }
+@@ -189,18 +191,20 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "发给 Ollama 的是脱敏后文本，且仅发往 127.0.0.1。",
+         .activity_title = "本次会话",
+         .activity_hint =
+-            "拦截（EasyList / 第一方 collect / CNAME）、Referer 去参、广告 Cookie 与 bounce 会自动更新。",
++            "拦截（EasyList / 第一方 collect / CNAME）、Referer 去参、广告 Cookie、bounce 与本机 CDP 连接会自动更新。",
+         .activity_empty =
+             "还没有记录。打开带广告请求或 utm_ 的页面后，拦截与清理会出现在这里。",
+         .ai_control_title = "AI 控制",
+         .ai_control_label = "允许本机 AI agent 经 CDP 控制",
+         .ai_control_hint =
+-            "默认关闭。开启后只在 127.0.0.1 / localhost 提供 DevTools，不绑 0.0.0.0。",
++            "默认关闭。开启后只在 127.0.0.1 / localhost 提供 DevTools，不绑 0.0.0.0。"
++            "远程 CDP 不列出 chrome://、file:// 等内部页。",
+         .ai_control_status = "调试端口与绑定",
+         .ai_control_connect =
+             "Playwright：chromium.connectOverCDP('http://127.0.0.1:PORT')",
+         .ai_control_limit =
+-            "限制：CDP 仍可能读到页面 DOM。这是你主动打开的能力；chrome://aegis 摘要路径会先脱敏，CDP 读 DOM 不会自动脱敏。",
++            "限制：远程 CDP 不列出 chrome:// 与 file://，但网页 DOM 仍可读。"
++            "这是你主动打开的能力；chrome://aegis 摘要会先脱敏，CDP 读 DOM 不会自动脱敏。",
+         .note = "模块状态会立即生效；过滤列表大约每天自动更新一次。",
+     };
+   }
+@@ -267,20 +271,21 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .activity_title = "This session",
+       .activity_hint =
+           "Blocks (EasyList / first-party collect / CNAME), Referer stripping, "
+-          "ads cookies, and bounce clears update live.",
++          "ads cookies, bounce clears, and local CDP connections update live.",
+       .activity_empty =
+           "Nothing recorded yet. Open a page with ad requests or a utm_ link.",
+       .ai_control_title = "AI control",
+       .ai_control_label = "Allow a local AI agent over CDP",
+       .ai_control_hint =
+           "Off by default. When on, DevTools binds only 127.0.0.1 / localhost, "
+-          "never 0.0.0.0.",
++          "never 0.0.0.0. Remote CDP does not list chrome:// or file:// pages.",
+       .ai_control_status = "Debug port and bind",
+       .ai_control_connect =
+           "Playwright: chromium.connectOverCDP('http://127.0.0.1:PORT')",
+       .ai_control_limit =
+-          "Limit: CDP can still read page DOM. That is an explicit user "
+-          "choice. chrome://aegis summaries are redacted; CDP DOM reads are not.",
++          "Limit: remote CDP hides chrome:// and file://, but page DOM is still "
++          "readable. That is an explicit user choice. chrome://aegis summaries "
++          "are redacted; CDP DOM reads are not.",
+       .note =
+           "Changes apply immediately. Filter lists refresh about once a day.",
+   };
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 31e3eda2bd..04a45b1a41 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -147,6 +147,8 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("aiControlPort", service->AiControlPort());
+   status.Set("aiControlAddress", service->AiControlAddress());
+   status.Set("aiControlLoopbackOnly", service->AiControlLoopbackOnly());
++  status.Set("aiControlClients",
++             static_cast<double>(service->CdpWebSocketClientCount()));
+   status.Set("ollamaUrl", service->OllamaBaseUrl());
+   status.Set("ollamaModel", service->OllamaModel());
+   base::ListValue events;
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 15a47fc245..6704252420 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -1,6 +1,8 @@
+ # Copyright 2026 GCSA
+ # Intended path: chrome/common/aegis/BUILD.gn
+ 
++import("//testing/test.gni")
++
+ source_set("aegis") {
+   sources = [
+     "aegis_block_reporter.cc",
+@@ -13,6 +15,10 @@ source_set("aegis") {
+     "builtin_phish_hosts.h",
+     "builtin_tracker_hosts.cc",
+     "builtin_tracker_hosts.h",
++    "cdp_target_filter.cc",
++    "cdp_target_filter.h",
++    "cdp_ws_hook.cc",
++    "cdp_ws_hook.h",
+     "features.cc",
+     "features.h",
+     "filter_list.cc",
+@@ -38,3 +44,13 @@ source_set("aegis") {
+     "//url",
+   ]
+ }
++
++test("aegis_unittests") {
++  sources = [ "cdp_target_filter_unittest.cc" ]
++  deps = [
++    ":aegis",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++    "//url",
++  ]
++}
+diff --git a/chrome/common/aegis/cdp_target_filter.cc b/chrome/common/aegis/cdp_target_filter.cc
+new file mode 100644
+index 0000000000..1b0e31324a
+--- /dev/null
++++ b/chrome/common/aegis/cdp_target_filter.cc
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_target_filter.cc
++
++#include "chrome/common/aegis/cdp_target_filter.h"
++
++#include "url/gurl.h"
++
++namespace aegis {
++
++bool ShouldExposeRemoteCdpTarget(std::string_view type, const GURL& url) {
++  // Playwright 需要 browser target；其 URL 常为空。
++  if (type == "browser") {
++    return true;
++  }
++  // 只暴露普通网页。隐藏 chrome://、file://、data:、扩展页等。
++  return url.is_valid() && url.SchemeIsHTTPOrHTTPS();
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/cdp_target_filter.h b/chrome/common/aegis/cdp_target_filter.h
+new file mode 100644
+index 0000000000..9b474a1ba5
+--- /dev/null
++++ b/chrome/common/aegis/cdp_target_filter.h
+@@ -0,0 +1,20 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_target_filter.h
++
++#ifndef CHROME_COMMON_AEGIS_CDP_TARGET_FILTER_H_
++#define CHROME_COMMON_AEGIS_CDP_TARGET_FILTER_H_
++
++#include <string_view>
++
++class GURL;
++
++namespace aegis {
++
++// 远程 CDP（Playwright /json/list、Target.getTargets）可见的 target。
++// 本地 F12 不走这条路径，因此不会挡住检查 chrome://aegis。
++// |type| 与 content::DevToolsAgentHost::kType* 字符串一致（"browser" 等）。
++bool ShouldExposeRemoteCdpTarget(std::string_view type, const GURL& url);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_CDP_TARGET_FILTER_H_
+diff --git a/chrome/common/aegis/cdp_target_filter_unittest.cc b/chrome/common/aegis/cdp_target_filter_unittest.cc
+new file mode 100644
+index 0000000000..c117fd63e6
+--- /dev/null
++++ b/chrome/common/aegis/cdp_target_filter_unittest.cc
+@@ -0,0 +1,37 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_target_filter_unittest.cc
++
++#include "chrome/common/aegis/cdp_target_filter.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++TEST(CdpTargetFilterTest, KeepsBrowserTarget) {
++  EXPECT_TRUE(ShouldExposeRemoteCdpTarget("browser", GURL()));
++  EXPECT_TRUE(ShouldExposeRemoteCdpTarget("browser", GURL("chrome://aegis")));
++}
++
++TEST(CdpTargetFilterTest, KeepsHttpPages) {
++  EXPECT_TRUE(ShouldExposeRemoteCdpTarget(
++      "page", GURL("https://example.com/path")));
++  EXPECT_TRUE(ShouldExposeRemoteCdpTarget("tab", GURL("http://127.0.0.1:8080")));
++  EXPECT_TRUE(ShouldExposeRemoteCdpTarget(
++      "iframe", GURL("https://shop.example/checkout")));
++}
++
++TEST(CdpTargetFilterTest, HidesInternalAndLocalFiles) {
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget("page", GURL("chrome://aegis")));
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget("page", GURL("chrome://settings")));
++  EXPECT_FALSE(
++      ShouldExposeRemoteCdpTarget("browser_ui", GURL("chrome://inspect")));
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget("page", GURL("file:///tmp/x.html")));
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget("page", GURL("about:blank")));
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget("page", GURL("data:text/html,hi")));
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget(
++      "page", GURL("chrome-extension://abc/popup.html")));
++  EXPECT_FALSE(ShouldExposeRemoteCdpTarget("other", GURL()));
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/cdp_ws_hook.cc b/chrome/common/aegis/cdp_ws_hook.cc
+new file mode 100644
+index 0000000000..5eb46d006e
+--- /dev/null
++++ b/chrome/common/aegis/cdp_ws_hook.cc
+@@ -0,0 +1,44 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_ws_hook.cc
++
++#include "chrome/common/aegis/cdp_ws_hook.h"
++
++#include "base/no_destructor.h"
++#include "base/synchronization/lock.h"
++
++namespace aegis {
++namespace {
++
++struct State {
++  base::Lock lock;
++  CdpWsHook::ClientCountCallback callback;
++};
++
++State& GetState() {
++  static base::NoDestructor<State> state;
++  return *state;
++}
++
++}  // namespace
++
++// static
++void CdpWsHook::SetClientCountCallback(ClientCountCallback callback) {
++  State& state = GetState();
++  base::AutoLock lock(state.lock);
++  state.callback = std::move(callback);
++}
++
++// static
++void CdpWsHook::NotifyClientCount(size_t count) {
++  ClientCountCallback callback;
++  {
++    State& state = GetState();
++    base::AutoLock lock(state.lock);
++    callback = state.callback;
++  }
++  if (callback) {
++    callback.Run(count);
++  }
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/cdp_ws_hook.h b/chrome/common/aegis/cdp_ws_hook.h
+new file mode 100644
+index 0000000000..8407761169
+--- /dev/null
++++ b/chrome/common/aegis/cdp_ws_hook.h
+@@ -0,0 +1,25 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cdp_ws_hook.h
++
++#ifndef CHROME_COMMON_AEGIS_CDP_WS_HOOK_H_
++#define CHROME_COMMON_AEGIS_CDP_WS_HOOK_H_
++
++#include <cstddef>
++
++#include "base/functional/callback.h"
++
++namespace aegis {
++
++// chrome/common 不能依赖 chrome/browser。DevTools delegate 经此回调
++// 把远程 WebSocket 客户端数量交给 AegisService。
++class CdpWsHook {
++ public:
++  using ClientCountCallback = base::RepeatingCallback<void(size_t count)>;
++
++  static void SetClientCountCallback(ClientCountCallback callback);
++  static void NotifyClientCount(size_t count);
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_CDP_WS_HOOK_H_
+diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
+index fbfe1abebb..2827a0ec55 100644
+--- a/content/browser/devtools/devtools_http_handler.cc
++++ b/content/browser/devtools/devtools_http_handler.cc
+@@ -403,9 +403,7 @@ net::IPEndPoint DevToolsHttpHandler::GetServerIpAddress() const {
+ }
+ 
+ DevToolsHttpHandler::~DevToolsHttpHandler() {
+-  if (delegate_ &&
+-      mode_ ==
+-          DevToolsAgentHost::RemoteDebuggingServerMode::kWithApprovalOnly) {
++  if (delegate_) {
+     delegate_->SetActiveWebSocketConnections(0);
+   }
+   // Disconnecting sessions might lead to the last minute messages generated
+@@ -892,9 +890,7 @@ void DevToolsHttpHandler::OnWebSocketMessage(int connection_id,
+ 
+ void DevToolsHttpHandler::OnClose(int connection_id) {
+   auto removed_count = connection_to_client_.erase(connection_id);
+-  if (delegate_ && removed_count > 0 &&
+-      mode_ ==
+-          DevToolsAgentHost::RemoteDebuggingServerMode::kWithApprovalOnly) {
++  if (delegate_ && removed_count > 0) {
+     delegate_->SetActiveWebSocketConnections(connection_to_client_.size());
+   }
+ }
+@@ -1021,8 +1017,7 @@ void DevToolsHttpHandler::AcceptWebSocket(
+     const net::HttpServerRequestInfo& request) {
+   if (!thread_)
+     return;
+-  if (mode_ ==
+-      DevToolsAgentHost::RemoteDebuggingServerMode::kWithApprovalOnly) {
++  if (delegate_) {
+     delegate_->SetActiveWebSocketConnections(connection_to_client_.size());
+   }
+   thread_->task_runner()->PostTask(
+-- 
+2.52.0
+

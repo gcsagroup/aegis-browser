@@ -1,0 +1,143 @@
+<!doctype html>
+<html dir="$i18n{textdirection}" lang="$i18n{language}">
+  <head>
+    <meta charset="utf-8">
+    <title>$i18n{title}</title>
+    <link rel="stylesheet" href="aegis.css">
+  </head>
+  <body>
+    <main class="page">
+      <h1>$i18n{title}</h1>
+      <p class="subtitle">$i18n{subtitle}</p>
+      <section class="modules" aria-label="modules">
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{trackerLabel}</span>
+            <span class="hint">$i18n{trackerHint}</span>
+          </span>
+          <input id="tracker" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{phishLabel}</span>
+            <span class="hint">$i18n{phishHint}</span>
+          </span>
+          <input id="phish" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{fingerprintLabel}</span>
+            <span class="hint">$i18n{fingerprintHint}</span>
+          </span>
+          <input id="fingerprint" type="checkbox">
+        </label>
+        <div class="probe">
+          <button id="fp-probe" type="button">$i18n{fingerprintProbe}</button>
+          <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
+          <p class="meta" id="fp-result"></p>
+        </div>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{linkSanitizeLabel}</span>
+            <span class="hint">$i18n{linkSanitizeHint}</span>
+          </span>
+          <input id="link-sanitize" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{cookieJanitorLabel}</span>
+            <span class="hint">$i18n{cookieJanitorHint}</span>
+          </span>
+          <input id="cookie-janitor" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{cnameUncloakLabel}</span>
+            <span class="hint">$i18n{cnameUncloakHint}</span>
+          </span>
+          <input id="cname-uncloak" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{bounceTrackingLabel}</span>
+            <span class="hint">$i18n{bounceTrackingHint}</span>
+          </span>
+          <input id="bounce-tracking" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{policyWorkerLabel}</span>
+            <span class="hint">$i18n{policyWorkerHint}</span>
+          </span>
+          <input id="policy-worker" type="checkbox">
+        </label>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{privacyAiLabel}</span>
+            <span class="hint">$i18n{privacyAiHint}</span>
+          </span>
+          <input id="privacy-ai" type="checkbox">
+        </label>
+      </section>
+      <section class="activity" aria-label="session activity">
+        <h2>$i18n{activityTitle}</h2>
+        <p class="meta">$i18n{activityHint}</p>
+        <ul id="activity-log" class="log"></ul>
+        <p class="meta" id="activity-empty">$i18n{activityEmpty}</p>
+      </section>
+      <section class="filters" aria-label="filter lists">
+        <h2>$i18n{filterListTitle}</h2>
+        <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{filterListAutoUpdate}</span>
+            <span class="hint">$i18n{filterListAutoUpdateHint}</span>
+          </span>
+          <input id="filter-auto" type="checkbox">
+        </label>
+        <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
+      </section>
+      <section class="privacy" aria-label="privacy ai">
+        <h2>$i18n{privacyAiTitle}</h2>
+        <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
+        <div id="ollama-fields">
+        <p class="meta">$i18n{ollamaHint}</p>
+        <p class="meta">$i18n{casperNote}</p>
+        <label class="field">
+          <span class="name">$i18n{ollamaUrlLabel}</span>
+          <input id="ollama-url" type="url" spellcheck="false"
+                 placeholder="http://127.0.0.1:11434">
+        </label>
+        <label class="field">
+          <span class="name">$i18n{ollamaModelLabel}</span>
+          <input id="ollama-model" type="text" spellcheck="false"
+                 list="ollama-models" placeholder="llama3.2:3b">
+          <datalist id="ollama-models"></datalist>
+        </label>
+        <p class="meta" id="ollama-status"></p>
+        </div>
+        <div class="actions">
+          <button id="ollama-probe" type="button">$i18n{ollamaProbe}</button>
+          <button id="ollama-save" type="button">$i18n{ollamaSave}</button>
+          <button id="summarize" type="button">$i18n{privacyAiSummarize}</button>
+        </div>
+        <pre class="result" id="privacy-result" hidden></pre>
+      </section>
+      <section class="ai-control" id="ai-control-section" aria-label="ai control">
+        <h2>$i18n{aiControlTitle}</h2>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{aiControlLabel}</span>
+            <span class="hint">$i18n{aiControlHint}</span>
+          </span>
+          <input id="ai-control" type="checkbox">
+        </label>
+        <p class="meta" id="ai-control-status">$i18n{aiControlStatus}</p>
+        <pre class="result" id="ai-control-connect" hidden></pre>
+        <p class="meta">$i18n{aiControlLimit}</p>
+      </section>
+      <p class="note">$i18n{note}</p>
+    </main>
+    <script type="module" src="aegis.js"></script>
+  </body>
+</html>

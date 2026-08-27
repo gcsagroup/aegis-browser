@@ -1,0 +1,925 @@
+From 53fe5a21f929c0f8374205c2206be01fbee3d842 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 18:46:02 +0800
+Subject: [PATCH] Aegis: explain module toggles and expose Ollama model
+ settings
+
+chrome://aegis now describes each privacy control and lets users set
+the loopback Ollama URL/model, probe installed models, and save prefs.
+---
+ chrome/browser/aegis/aegis_service.cc         | 106 ++++++++
+ chrome/browser/aegis/aegis_service.h          |  14 ++
+ chrome/browser/resources/aegis/aegis.css      |  52 +++-
+ chrome/browser/resources/aegis/aegis.html     |  69 +++++-
+ chrome/browser/resources/aegis/aegis.ts       | 100 ++++++++
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 232 ++++++++++++++----
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  57 +++++
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   7 +
+ 8 files changed, 571 insertions(+), 66 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 3836e1bff3..2869561d87 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -566,6 +566,112 @@ void AegisService::ChatWithOllama(
+                      std::move(empty), system, user, std::move(done)));
+ }
+ 
++namespace {
++
++bool IsLoopbackOllamaUrl(const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    return false;
++  }
++  const std::string host(url.host());
++  return host == "127.0.0.1" || host == "localhost" || host == "::1" ||
++         host == "[::1]";
++}
++
++std::vector<std::string> ParseOllamaModels(const std::string& body) {
++  std::vector<std::string> models;
++  std::optional<base::Value> parsed =
++      base::JSONReader::Read(body, base::JSON_PARSE_CHROMIUM_EXTENSIONS);
++  if (!parsed || !parsed->is_dict()) {
++    return models;
++  }
++  const base::ListValue* list = parsed->GetDict().FindList("models");
++  if (!list) {
++    return models;
++  }
++  for (const base::Value& value : *list) {
++    if (!value.is_dict()) {
++      continue;
++    }
++    const std::string* name = value.GetDict().FindString("name");
++    if (name && !name->empty()) {
++      models.push_back(*name);
++    }
++  }
++  return models;
++}
++
++}  // namespace
++
++std::string AegisService::OllamaBaseUrl() const {
++  if (!prefs_) {
++    return "http://127.0.0.1:11434";
++  }
++  return prefs_->GetString(prefs::kOllamaBaseUrl);
++}
++
++std::string AegisService::OllamaModel() const {
++  if (!prefs_) {
++    return "llama3.2:3b";
++  }
++  return prefs_->GetString(prefs::kOllamaModel);
++}
++
++bool AegisService::SetOllamaSettings(const std::string& url,
++                                    const std::string& model) {
++  if (!prefs_) {
++    return false;
++  }
++  std::string trimmed_url(base::TrimWhitespaceASCII(url, base::TRIM_ALL));
++  if (trimmed_url.empty()) {
++    trimmed_url = "http://127.0.0.1:11434";
++  }
++  const GURL parsed(trimmed_url);
++  if (!IsLoopbackOllamaUrl(parsed)) {
++    return false;
++  }
++  prefs_->SetString(prefs::kOllamaBaseUrl, parsed.spec());
++  std::string trimmed_model(base::TrimWhitespaceASCII(model, base::TRIM_ALL));
++  if (trimmed_model.empty()) {
++    trimmed_model = "llama3.2:3b";
++  }
++  prefs_->SetString(prefs::kOllamaModel, trimmed_model);
++  return true;
++}
++
++void AegisService::ProbeOllama(
++    const std::string& url,
++    base::OnceCallback<void(bool, std::string, std::vector<std::string>)>
++        done) {
++  if (!ollama_) {
++    std::move(done).Run(false, "ollama sidecar missing", {});
++    return;
++  }
++  std::string trimmed(base::TrimWhitespaceASCII(url, base::TRIM_ALL));
++  if (trimmed.empty()) {
++    trimmed = OllamaBaseUrl();
++  }
++  const GURL parsed(trimmed);
++  if (!IsLoopbackOllamaUrl(parsed)) {
++    std::move(done).Run(false, "ollama url must be loopback", {});
++    return;
++  }
++  ollama_->Probe(parsed.spec(),
++                 base::BindOnce(&AegisService::OnOllamaProbed,
++                                base::Unretained(this), std::move(done)));
++}
++
++void AegisService::OnOllamaProbed(
++    base::OnceCallback<void(bool, std::string, std::vector<std::string>)> done,
++    bool ok,
++    std::string body) {
++  if (!ok) {
++    std::move(done).Run(false, body.empty() ? "ollama not reachable" : body,
++                        {});
++    return;
++  }
++  std::move(done).Run(true, std::string(), ParseOllamaModels(body));
++}
++
+ void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
+   if (!filter_list_updater_) {
+     std::move(done).Run(false);
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 22d8ed9129..0357ea5c4b 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -94,6 +94,15 @@ class AegisService {
+   void ChatWithOllama(const std::string& system,
+                       const std::string& user,
+                       base::OnceCallback<void(SummarizeResult)> done);
++  std::string OllamaBaseUrl() const;
++  std::string OllamaModel() const;
++  // |url| 必须是 loopback；空字符串回退到默认值。
++  bool SetOllamaSettings(const std::string& url, const std::string& model);
++  void ProbeOllama(
++      const std::string& url,
++      base::OnceCallback<void(bool ok,
++                              std::string error,
++                              std::vector<std::string> models)> done);
+   bool IsPolicyWorkerReady() const;
+   std::string PolicyWorkerError() const;
+ 
+@@ -141,6 +150,11 @@ class AegisService {
+                     base::OnceCallback<void(SummarizeResult)> done,
+                     bool ok,
+                     std::string body);
++  void OnOllamaProbed(
++      base::OnceCallback<void(bool, std::string, std::vector<std::string>)>
++          done,
++      bool ok,
++      std::string body);
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index c0259622d9..b51d859ac0 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -54,16 +54,35 @@ h1 {
+ 
+ .row {
+   display: flex;
+-  align-items: center;
++  align-items: flex-start;
+   justify-content: space-between;
+   gap: 1rem;
+-  padding: 0.9rem 1rem;
++  padding: 0.9rem 0;
+   border-bottom: 1px solid var(--line);
+ }
+ 
+-.row input {
++.copy {
++  display: flex;
++  flex-direction: column;
++  gap: 0.2rem;
++  min-width: 0;
++}
++
++.name {
++  font-weight: 600;
++}
++
++.hint {
++  color: var(--muted);
++  font-size: 0.85rem;
++  line-height: 1.45;
++}
++
++.row input[type='checkbox'] {
+   width: 1.15rem;
+   height: 1.15rem;
++  margin-top: 0.2rem;
++  flex-shrink: 0;
+   accent-color: var(--accent);
+ }
+ 
+@@ -114,6 +133,33 @@ button:disabled {
+   cursor: default;
+ }
+ 
++.field {
++  display: grid;
++  gap: 0.35rem;
++  margin-top: 1rem;
++}
++
++.field input[type='text'],
++.field input[type='url'] {
++  padding: 0.55rem 0.7rem;
++  border: 1px solid var(--line);
++  background: transparent;
++  color: inherit;
++  font: inherit;
++  border-radius: 6px;
++}
++
++.actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 0.5rem;
++  margin-top: 0.75rem;
++}
++
++.actions button {
++  margin-top: 0;
++}
++
+ .result {
+   margin-top: 1rem;
+   padding: 0.9rem 1rem;
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 986b3a6c35..bf46813897 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -11,39 +11,66 @@
+       <p class="subtitle">$i18n{subtitle}</p>
+       <section class="modules" aria-label="modules">
+         <label class="row">
+-          <span>$i18n{trackerLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{trackerLabel}</span>
++            <span class="hint">$i18n{trackerHint}</span>
++          </span>
+           <input id="tracker" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{phishLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{phishLabel}</span>
++            <span class="hint">$i18n{phishHint}</span>
++          </span>
+           <input id="phish" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{fingerprintLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{fingerprintLabel}</span>
++            <span class="hint">$i18n{fingerprintHint}</span>
++          </span>
+           <input id="fingerprint" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{linkSanitizeLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{linkSanitizeLabel}</span>
++            <span class="hint">$i18n{linkSanitizeHint}</span>
++          </span>
+           <input id="link-sanitize" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{cookieJanitorLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{cookieJanitorLabel}</span>
++            <span class="hint">$i18n{cookieJanitorHint}</span>
++          </span>
+           <input id="cookie-janitor" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{cnameUncloakLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{cnameUncloakLabel}</span>
++            <span class="hint">$i18n{cnameUncloakHint}</span>
++          </span>
+           <input id="cname-uncloak" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{bounceTrackingLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{bounceTrackingLabel}</span>
++            <span class="hint">$i18n{bounceTrackingHint}</span>
++          </span>
+           <input id="bounce-tracking" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{policyWorkerLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{policyWorkerLabel}</span>
++            <span class="hint">$i18n{policyWorkerHint}</span>
++          </span>
+           <input id="policy-worker" type="checkbox">
+         </label>
+         <label class="row">
+-          <span>$i18n{privacyAiLabel}</span>
++          <span class="copy">
++            <span class="name">$i18n{privacyAiLabel}</span>
++            <span class="hint">$i18n{privacyAiHint}</span>
++          </span>
+           <input id="privacy-ai" type="checkbox">
+         </label>
+       </section>
+@@ -51,7 +78,10 @@
+         <h2>$i18n{filterListTitle}</h2>
+         <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
+         <label class="row">
+-          <span>$i18n{filterListAutoUpdate}</span>
++          <span class="copy">
++            <span class="name">$i18n{filterListAutoUpdate}</span>
++            <span class="hint">$i18n{filterListAutoUpdateHint}</span>
++          </span>
+           <input id="filter-auto" type="checkbox">
+         </label>
+         <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
+@@ -59,7 +89,24 @@
+       <section class="privacy" aria-label="privacy ai">
+         <h2>$i18n{privacyAiTitle}</h2>
+         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
+-        <button id="summarize" type="button">$i18n{privacyAiSummarize}</button>
++        <p class="meta">$i18n{ollamaHint}</p>
++        <label class="field">
++          <span class="name">$i18n{ollamaUrlLabel}</span>
++          <input id="ollama-url" type="url" spellcheck="false"
++                 placeholder="http://127.0.0.1:11434">
++        </label>
++        <label class="field">
++          <span class="name">$i18n{ollamaModelLabel}</span>
++          <input id="ollama-model" type="text" spellcheck="false"
++                 list="ollama-models" placeholder="llama3.2:3b">
++          <datalist id="ollama-models"></datalist>
++        </label>
++        <p class="meta" id="ollama-status"></p>
++        <div class="actions">
++          <button id="ollama-probe" type="button">$i18n{ollamaProbe}</button>
++          <button id="ollama-save" type="button">$i18n{ollamaSave}</button>
++          <button id="summarize" type="button">$i18n{privacyAiSummarize}</button>
++        </div>
+         <pre class="result" id="privacy-result" hidden></pre>
+       </section>
+       <p class="note">$i18n{note}</p>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 4bcb943b2e..98fd69f668 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -22,7 +22,10 @@ interface AegisStatus {
+   policyWorkerReady: boolean;
+   policyWorkerError: string;
+   privacyAi: boolean;
++  ollamaUrl?: string;
++  ollamaModel?: string;
+   ok?: boolean;
++  error?: string;
+ }
+ 
+ interface PageSnapshot {
+@@ -52,6 +55,14 @@ interface SummarizeResult {
+   workerReady?: boolean;
+ }
+ 
++interface OllamaProbeResult {
++  ok: boolean;
++  error?: string;
++  ollamaUrl?: string;
++  ollamaModel?: string;
++  models?: string[];
++}
++
+ type ModuleName =
+     'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+     'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
+@@ -65,6 +76,14 @@ function checkbox(id: string): HTMLInputElement {
+   return el;
+ }
+ 
++function textField(id: string): HTMLInputElement {
++  const el = getRequiredElement(id);
++  if (!(el instanceof HTMLInputElement)) {
++    throw new Error(`Missing input #${id}`);
++  }
++  return el;
++}
++
+ function actionButton(id: string): HTMLButtonElement {
+   const el = getRequiredElement(id);
+   if (!(el instanceof HTMLButtonElement)) {
+@@ -108,6 +127,34 @@ function formatPrivacyMeta(status: AegisStatus): string {
+               `Policy worker not ready; using C++ fallback.${err}`;
+ }
+ 
++function fillModelList(models: string[]) {
++  const list = getRequiredElement('ollama-models');
++  list.replaceChildren();
++  for (const name of models) {
++    const option = document.createElement('option');
++    option.value = name;
++    list.appendChild(option);
++  }
++}
++
++function formatOllamaStatus(probe: OllamaProbeResult): string {
++  const lang = document.documentElement.lang || 'zh-CN';
++  const zh = lang.startsWith('zh');
++  if (!probe.ok) {
++    return zh ? `未检测到 Ollama，将使用启发式摘要。${
++                    probe.error ? `（${probe.error}）` : ''}` :
++                `Ollama not found; using heuristics.${
++                    probe.error ? ` (${probe.error})` : ''}`;
++  }
++  const models = probe.models || [];
++  if (models.length === 0) {
++    return zh ? '已连接 Ollama，但还没有已安装的模型。' :
++                'Connected to Ollama, but no models are installed.';
++  }
++  return zh ? `已连接 Ollama，可用模型：${models.join('、')}` :
++              `Connected to Ollama. Models: ${models.join(', ')}`;
++}
++
+ function applyStatus(status: AegisStatus) {
+   checkbox('tracker').checked = status.trackerBlocking;
+   checkbox('phish').checked = status.phishInterstitial;
+@@ -119,6 +166,17 @@ function applyStatus(status: AegisStatus) {
+   checkbox('policy-worker').checked = status.policyWorker;
+   checkbox('privacy-ai').checked = status.privacyAi;
+   checkbox('filter-auto').checked = status.filterListAutoUpdate;
++  if (status.ollamaUrl) {
++    textField('ollama-url').value = status.ollamaUrl;
++  }
++  if (status.ollamaModel) {
++    textField('ollama-model').value = status.ollamaModel;
++  }
++  const aiOn = status.privacyAi;
++  textField('ollama-url').disabled = !aiOn;
++  textField('ollama-model').disabled = !aiOn;
++  actionButton('ollama-probe').disabled = !aiOn;
++  actionButton('ollama-save').disabled = !aiOn;
+   getRequiredElement('filter-meta').textContent = formatMeta(status);
+   getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(status);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+@@ -129,6 +187,9 @@ async function setModule(module: ModuleName, enabled: boolean) {
+   const status: AegisStatus =
+       await sendWithPromise('setModuleEnabled', module, enabled);
+   applyStatus(status);
++  if (module === 'privacyAi' && enabled) {
++    void probeOllama();
++  }
+ }
+ 
+ function bindToggle(id: string, module: ModuleName) {
+@@ -259,6 +320,45 @@ async function init() {
+       applyStatus(next);
+     })();
+   });
++  actionButton('ollama-save').addEventListener('click', () => {
++    void (async () => {
++      const next: AegisStatus = await sendWithPromise(
++          'setOllamaSettings', textField('ollama-url').value.trim(),
++          textField('ollama-model').value.trim());
++      applyStatus(next);
++      if (next.ok === false) {
++        const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
++        getRequiredElement('ollama-status').textContent =
++            next.error ||
++            (zh ? '地址必须是本机 loopback。' : 'URL must be loopback.');
++        return;
++      }
++      await probeOllama();
++    })();
++  });
++  actionButton('ollama-probe').addEventListener('click', () => {
++    void probeOllama();
++  });
++  if (status.privacyAi) {
++    void probeOllama();
++  }
++}
++
++async function probeOllama() {
++  actionButton('ollama-probe').disabled = true;
++  try {
++    const probe: OllamaProbeResult = await sendWithPromise(
++        'probeOllama', textField('ollama-url').value.trim());
++    getRequiredElement('ollama-status').textContent = formatOllamaStatus(probe);
++    fillModelList(probe.models || []);
++    if (probe.ok && probe.ollamaModel && !textField('ollama-model').value) {
++      textField('ollama-model').value = probe.ollamaModel;
++    }
++  } catch (err) {
++    getRequiredElement('ollama-status').textContent = String(err);
++  }
++  const next: AegisStatus = await sendWithPromise('getStatus');
++  applyStatus(next);
+ }
+ 
+ document.addEventListener('DOMContentLoaded', () => {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index c3d63e1f5b..692f3c1a5e 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -21,86 +21,198 @@ struct AegisStrings {
+   const char* title;
+   const char* subtitle;
+   const char* tracker_label;
++  const char* tracker_hint;
+   const char* phish_label;
++  const char* phish_hint;
+   const char* fingerprint_label;
++  const char* fingerprint_hint;
+   const char* filter_list_title;
+   const char* filter_list_auto_update;
++  const char* filter_list_auto_update_hint;
+   const char* filter_list_update_now;
+   const char* filter_list_meta;
+   const char* link_sanitize_label;
++  const char* link_sanitize_hint;
+   const char* cookie_janitor_label;
++  const char* cookie_janitor_hint;
+   const char* cname_uncloak_label;
++  const char* cname_uncloak_hint;
+   const char* bounce_tracking_label;
++  const char* bounce_tracking_hint;
+   const char* policy_worker_label;
++  const char* policy_worker_hint;
+   const char* privacy_ai_label;
++  const char* privacy_ai_hint;
+   const char* privacy_ai_title;
+   const char* privacy_ai_meta;
+   const char* privacy_ai_summarize;
++  const char* ollama_url_label;
++  const char* ollama_model_label;
++  const char* ollama_probe;
++  const char* ollama_save;
++  const char* ollama_hint;
+   const char* note;
+ };
+ 
+ AegisStrings StringsForLocale(const std::string& locale) {
+   if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
+-    return {"GCSA-aegis",
+-            "隱私與安全模組",
+-            "追蹤器攔截",
+-            "釣魚攔截頁",
+-            "指紋防護",
+-            "EasyList 規則",
+-            "自動更新過濾列表",
+-            "立即更新",
++    return {
++        .title = "GCSA-aegis",
++        .subtitle = "隱私與安全模組",
++        .tracker_label = "追蹤器攔截",
++        .tracker_hint =
++            "攔截廣告／分析域名的子資源，不會攔截你主動打開的網頁。",
++        .phish_label = "釣魚攔截頁",
++        .phish_hint =
++            "打開高風險仿冒站前顯示攔截頁，可選擇繼續造訪。",
++        .fingerprint_label = "指紋防護",
++        .fingerprint_hint =
++            "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。",
++        .filter_list_title = "EasyList 規則",
++        .filter_list_auto_update = "自動更新過濾列表",
++        .filter_list_auto_update_hint =
++            "大約每天從 EasyList / EasyPrivacy 拉取並編譯主機規則。",
++        .filter_list_update_now = "立即更新",
++        .filter_list_meta =
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
+-            "清洗追蹤參數",
+-            "清理廣告/分析 Cookie",
+-            "揭開 CNAME 偽裝追蹤",
+-            "攔截跳轉追蹤並立即清 Cookie",
+-            "JS 策略 worker（packages/core）",
+-            "本地隱私摘要",
+-            "隱私 AI",
++        .link_sanitize_label = "清洗追蹤參數",
++        .link_sanitize_hint =
++            "導覽時去掉 utm_、fbclid、gclid 等追蹤參數。",
++        .cookie_janitor_label = "清理廣告/分析 Cookie",
++        .cookie_janitor_hint =
++            "分類並刪除廣告／分析 Cookie，登入與必要 Cookie 會保留。",
++        .cname_uncloak_label = "揭開 CNAME 偽裝追蹤",
++        .cname_uncloak_hint =
++            "解析子資源 CNAME，命中追蹤域名則攔截。",
++        .bounce_tracking_label = "攔截跳轉追蹤並立即清 Cookie",
++        .bounce_tracking_hint =
++            "識別 bounce tracking 跳轉，並立即清掉對應 Cookie。",
++        .policy_worker_label = "JS 策略 worker（packages/core）",
++        .policy_worker_hint =
++            "在 chrome://aegis 執行 packages/core：釣魚評分、PII 脫敏與摘要。",
++        .privacy_ai_label = "本地隱私摘要",
++        .privacy_ai_hint =
++            "用本機啟發式或 Ollama 總結當前網頁。文本先脫敏，不上傳雲端。",
++        .privacy_ai_title = "隱私 AI",
++        .privacy_ai_meta =
+             "對目前網頁做本地摘要。有 Ollama 時走 loopback，否則用啟發式。",
+-            "摘要目前分頁",
+-            "模組狀態會立即套用；過濾列表約每天自動更新一次。"};
++        .privacy_ai_summarize = "摘要目前分頁",
++        .ollama_url_label = "Ollama 地址（僅本機）",
++        .ollama_model_label = "模型",
++        .ollama_probe = "檢測本機模型",
++        .ollama_save = "保存模型設定",
++        .ollama_hint =
++            "只允許 127.0.0.1 / localhost。未啟動 Ollama 時自動回退啟發式摘要。",
++        .note = "模組狀態會立即套用；過濾列表約每天自動更新一次。",
++    };
+   }
+   if (locale.starts_with("zh")) {
+-    return {"GCSA-aegis",
+-            "隐私与安全模块",
+-            "跟踪器拦截",
+-            "钓鱼拦截页",
+-            "指纹防护",
+-            "EasyList 规则",
+-            "自动更新过滤列表",
+-            "立即更新",
++    return {
++        .title = "GCSA-aegis",
++        .subtitle = "隐私与安全模块",
++        .tracker_label = "跟踪器拦截",
++        .tracker_hint =
++            "拦截广告／分析域名的子资源，不会拦截你主动打开的网页。",
++        .phish_label = "钓鱼拦截页",
++        .phish_hint =
++            "打开高风险仿冒站前显示拦截页，可选择继续访问。",
++        .fingerprint_label = "指纹防护",
++        .fingerprint_hint =
++            "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。",
++        .filter_list_title = "EasyList 规则",
++        .filter_list_auto_update = "自动更新过滤列表",
++        .filter_list_auto_update_hint =
++            "大约每天从 EasyList / EasyPrivacy 拉取并编译主机规则。",
++        .filter_list_update_now = "立即更新",
++        .filter_list_meta =
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
+-            "清洗跟踪参数",
+-            "清理广告/分析 Cookie",
+-            "揭开 CNAME 伪装跟踪",
+-            "拦截跳转跟踪并立即清 Cookie",
+-            "JS 策略 worker（packages/core）",
+-            "本地隐私摘要",
+-            "隐私 AI",
++        .link_sanitize_label = "清洗跟踪参数",
++        .link_sanitize_hint =
++            "导航时去掉 utm_、fbclid、gclid 等跟踪参数。",
++        .cookie_janitor_label = "清理广告/分析 Cookie",
++        .cookie_janitor_hint =
++            "分类并删除广告／分析 Cookie，登录与必要 Cookie 会保留。",
++        .cname_uncloak_label = "揭开 CNAME 伪装跟踪",
++        .cname_uncloak_hint =
++            "解析子资源 CNAME，命中跟踪域名则拦截。",
++        .bounce_tracking_label = "拦截跳转跟踪并立即清 Cookie",
++        .bounce_tracking_hint =
++            "识别 bounce tracking 跳转，并立即清掉对应 Cookie。",
++        .policy_worker_label = "JS 策略 worker（packages/core）",
++        .policy_worker_hint =
++            "在 chrome://aegis 运行 packages/core：钓鱼评分、PII 脱敏与摘要。",
++        .privacy_ai_label = "本地隐私摘要",
++        .privacy_ai_hint =
++            "用本机启发式或 Ollama 总结当前网页。文本先脱敏，不上传云端。",
++        .privacy_ai_title = "隐私 AI",
++        .privacy_ai_meta =
+             "对当前网页做本地摘要。有 Ollama 时走 loopback，否则用启发式。",
+-            "摘要当前标签页",
+-            "模块状态会立即生效；过滤列表大约每天自动更新一次。"};
++        .privacy_ai_summarize = "摘要当前标签页",
++        .ollama_url_label = "Ollama 地址（仅本机）",
++        .ollama_model_label = "模型",
++        .ollama_probe = "检测本机模型",
++        .ollama_save = "保存模型设置",
++        .ollama_hint =
++            "只允许 127.0.0.1 / localhost。未启动 Ollama 时自动回退启发式摘要。",
++        .note = "模块状态会立即生效；过滤列表大约每天自动更新一次。",
++    };
+   }
+-  return {"GCSA-aegis",
+-          "Privacy & security modules",
+-          "Tracker blocking",
+-          "Phish interstitial",
+-          "Fingerprint Guard",
+-          "EasyList rules",
+-          "Auto-update filter lists",
+-          "Update now",
++  return {
++      .title = "GCSA-aegis",
++      .subtitle = "Privacy & security modules",
++      .tracker_label = "Tracker blocking",
++      .tracker_hint =
++          "Blocks ad/analytics subresources. Does not block pages you open.",
++      .phish_label = "Phish interstitial",
++      .phish_hint =
++          "Shows a warning before high-risk lookalike sites. You can continue.",
++      .fingerprint_label = "Fingerprint Guard",
++      .fingerprint_hint =
++          "Stabilizes Canvas, WebGL, Audio, and WebGPU to reduce cross-site "
++          "fingerprinting.",
++      .filter_list_title = "EasyList rules",
++      .filter_list_auto_update = "Auto-update filter lists",
++      .filter_list_auto_update_hint =
++          "About once a day, fetch EasyList / EasyPrivacy and compile host "
++          "rules.",
++      .filter_list_update_now = "Update now",
++      .filter_list_meta =
+           "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
+-          "Strip tracking parameters",
+-          "Clear ads/analytics cookies",
+-          "Uncloak CNAME tracker aliases",
+-          "Clear bounce-tracker cookies immediately",
+-          "JS policy worker (packages/core)",
+-          "Local privacy summary",
+-          "Privacy AI",
+-          "Summarize the current page locally. Uses loopback Ollama when available, otherwise heuristics.",
+-          "Summarize current tab",
+-          "Changes apply immediately. Filter lists refresh about once a day."};
++      .link_sanitize_label = "Strip tracking parameters",
++      .link_sanitize_hint =
++          "Removes utm_, fbclid, gclid and similar tracking query params.",
++      .cookie_janitor_label = "Clear ads/analytics cookies",
++      .cookie_janitor_hint =
++          "Deletes advertising/analytics cookies. Login cookies are kept.",
++      .cname_uncloak_label = "Uncloak CNAME tracker aliases",
++      .cname_uncloak_hint =
++          "Resolves subresource CNAMEs and blocks aliases of tracker hosts.",
++      .bounce_tracking_label = "Clear bounce-tracker cookies immediately",
++      .bounce_tracking_hint =
++          "Detects bounce-tracking hops and clears matching cookies at once.",
++      .policy_worker_label = "JS policy worker (packages/core)",
++      .policy_worker_hint =
++          "Runs packages/core on chrome://aegis for phish scoring, PII "
++          "redaction, and summaries.",
++      .privacy_ai_label = "Local privacy summary",
++      .privacy_ai_hint =
++          "Summarizes the current page locally with heuristics or Ollama. "
++          "Text is redacted first and never sent to the cloud.",
++      .privacy_ai_title = "Privacy AI",
++      .privacy_ai_meta =
++          "Summarize the current page locally. Uses loopback Ollama when "
++          "available, otherwise heuristics.",
++      .privacy_ai_summarize = "Summarize current tab",
++      .ollama_url_label = "Ollama URL (loopback only)",
++      .ollama_model_label = "Model",
++      .ollama_probe = "Detect local models",
++      .ollama_save = "Save model settings",
++      .ollama_hint =
++          "Only 127.0.0.1 / localhost. Falls back to heuristics if Ollama is "
++          "not running.",
++      .note =
++          "Changes apply immediately. Filter lists refresh about once a day.",
++  };
+ }
+ 
+ }  // namespace
+@@ -115,21 +227,37 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("title", strings.title);
+   source->AddString("subtitle", strings.subtitle);
+   source->AddString("trackerLabel", strings.tracker_label);
++  source->AddString("trackerHint", strings.tracker_hint);
+   source->AddString("phishLabel", strings.phish_label);
++  source->AddString("phishHint", strings.phish_hint);
+   source->AddString("fingerprintLabel", strings.fingerprint_label);
++  source->AddString("fingerprintHint", strings.fingerprint_hint);
+   source->AddString("filterListTitle", strings.filter_list_title);
+   source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
++  source->AddString("filterListAutoUpdateHint",
++                    strings.filter_list_auto_update_hint);
+   source->AddString("filterListUpdateNow", strings.filter_list_update_now);
+   source->AddString("filterListMeta", strings.filter_list_meta);
+   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
++  source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
+   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
++  source->AddString("cookieJanitorHint", strings.cookie_janitor_hint);
+   source->AddString("cnameUncloakLabel", strings.cname_uncloak_label);
++  source->AddString("cnameUncloakHint", strings.cname_uncloak_hint);
+   source->AddString("bounceTrackingLabel", strings.bounce_tracking_label);
++  source->AddString("bounceTrackingHint", strings.bounce_tracking_hint);
+   source->AddString("policyWorkerLabel", strings.policy_worker_label);
++  source->AddString("policyWorkerHint", strings.policy_worker_hint);
+   source->AddString("privacyAiLabel", strings.privacy_ai_label);
++  source->AddString("privacyAiHint", strings.privacy_ai_hint);
+   source->AddString("privacyAiTitle", strings.privacy_ai_title);
+   source->AddString("privacyAiMeta", strings.privacy_ai_meta);
+   source->AddString("privacyAiSummarize", strings.privacy_ai_summarize);
++  source->AddString("ollamaUrlLabel", strings.ollama_url_label);
++  source->AddString("ollamaModelLabel", strings.ollama_model_label);
++  source->AddString("ollamaProbe", strings.ollama_probe);
++  source->AddString("ollamaSave", strings.ollama_save);
++  source->AddString("ollamaHint", strings.ollama_hint);
+   source->AddString("note", strings.note);
+ 
+   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index d44565668c..1b404d276f 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -107,6 +107,14 @@ void AegisUIHandler::RegisterMessages() {
+       "ollamaChat",
+       base::BindRepeating(&AegisUIHandler::HandleOllamaChat,
+                           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "setOllamaSettings",
++      base::BindRepeating(&AegisUIHandler::HandleSetOllamaSettings,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "probeOllama",
++      base::BindRepeating(&AegisUIHandler::HandleProbeOllama,
++                          base::Unretained(this)));
+ }
+ 
+ base::DictValue AegisUIHandler::BuildStatus() const {
+@@ -130,6 +138,8 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("policyWorkerReady", service->IsPolicyWorkerReady());
+   status.Set("policyWorkerError", service->PolicyWorkerError());
+   status.Set("privacyAi", service->IsPrivacyAiEnabled());
++  status.Set("ollamaUrl", service->OllamaBaseUrl());
++  status.Set("ollamaModel", service->OllamaModel());
+   return status;
+ }
+ 
+@@ -352,4 +362,51 @@ void AegisUIHandler::HandleOllamaChat(const base::ListValue& args) {
+                      callback_id));
+ }
+ 
++void AegisUIHandler::HandleSetOllamaSettings(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() < 3 || !args[0].is_string() || !args[1].is_string() ||
++      !args[2].is_string()) {
++    return;
++  }
++  const base::Value& callback_id = args[0];
++  const bool ok = aegis::AegisService::GetInstance()->SetOllamaSettings(
++      args[1].GetString(), args[2].GetString());
++  base::DictValue status = BuildStatus();
++  status.Set("ok", ok);
++  if (!ok) {
++    status.Set("error", "ollama url must be loopback");
++  }
++  ResolveJavascriptCallback(callback_id, status);
++}
++
++void AegisUIHandler::HandleProbeOllama(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() < 2 || !args[0].is_string() || !args[1].is_string()) {
++    return;
++  }
++  const std::string callback_id = args[0].GetString();
++  aegis::AegisService::GetInstance()->ProbeOllama(
++      args[1].GetString(),
++      base::BindOnce(&AegisUIHandler::OnOllamaProbed,
++                     weak_factory_.GetWeakPtr(), callback_id));
++}
++
++void AegisUIHandler::OnOllamaProbed(std::string callback_id,
++                                   bool ok,
++                                   std::string error,
++                                   std::vector<std::string> models) {
++  auto* service = aegis::AegisService::GetInstance();
++  base::DictValue dict;
++  dict.Set("ok", ok);
++  dict.Set("error", error);
++  dict.Set("ollamaUrl", service->OllamaBaseUrl());
++  dict.Set("ollamaModel", service->OllamaModel());
++  base::ListValue list;
++  for (const std::string& name : models) {
++    list.Append(name);
++  }
++  dict.Set("models", std::move(list));
++  ResolveJavascriptCallback(base::Value(callback_id), dict);
++}
++
+ 
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index a18deb434d..a9668fbb2a 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -6,6 +6,7 @@
+ 
+ #include <cstdint>
+ #include <string>
++#include <vector>
+ 
+ #include "base/memory/weak_ptr.h"
+ #include "base/values.h"
+@@ -30,6 +31,8 @@ class AegisUIHandler : public content::WebUIMessageHandler {
+   void HandleSummarizeActiveTab(const base::ListValue& args);
+   void HandleCaptureActiveTab(const base::ListValue& args);
+   void HandleOllamaChat(const base::ListValue& args);
++  void HandleSetOllamaSettings(const base::ListValue& args);
++  void HandleProbeOllama(const base::ListValue& args);
+   void OnFilterListsUpdated(std::string callback_id, bool ok);
+   void OnPageSignals(std::string callback_id,
+                      std::string url,
+@@ -44,6 +47,10 @@ class AegisUIHandler : public content::WebUIMessageHandler {
+                   const std::string& title,
+                   const std::string& text_sample);
+   void OnSummarized(std::string callback_id, aegis::SummarizeResult result);
++  void OnOllamaProbed(std::string callback_id,
++                      bool ok,
++                      std::string error,
++                      std::vector<std::string> models);
+ 
+   base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
+ };
+-- 
+2.52.0
+

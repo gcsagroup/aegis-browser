@@ -1,0 +1,529 @@
+From 3f3e5e56603daac956ca6fd1065220ee9bafa0e0 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 05:25:25 +0800
+Subject: [PATCH] Aegis: score phishing URLs with explainable heuristics
+
+Port packages/core scorePhishingUrl() into C++ so the interstitial
+blocks brand-spoof / suspicious-TLD / punycode hosts, not only seed
+rules, and show reason codes on the warning page.
+---
+ .../aegis/aegis_phish_blocking_page.cc        |  68 +++++++++-
+ .../browser/aegis/aegis_phish_blocking_page.h |   8 +-
+ .../aegis/aegis_phish_navigation_throttle.cc  |  15 ++-
+ .../aegis/aegis_phish_navigation_throttle.h   |   8 +-
+ chrome/browser/aegis/aegis_service.cc         |  27 +++-
+ chrome/browser/aegis/aegis_service.h          |   6 +-
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/phish_score.cc            | 127 ++++++++++++++++++
+ chrome/common/aegis/phish_score.h             |  35 +++++
+ 9 files changed, 275 insertions(+), 21 deletions(-)
+ create mode 100644 chrome/common/aegis/phish_score.cc
+ create mode 100644 chrome/common/aegis/phish_score.h
+
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+index c9f06c47b8..73d90e9bea 100644
+--- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+@@ -8,6 +8,7 @@
+ #include "base/notreached.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "base/values.h"
+ #include "chrome/browser/browser_process.h"
+ #include "components/security_interstitials/content/security_interstitial_controller_client.h"
+@@ -23,6 +24,54 @@ bool IsChineseLocale(const std::string& locale) {
+                           base::CompareCase::INSENSITIVE_ASCII);
+ }
+ 
++std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
++  if (reason.code == "seed_host") {
++    return zh ? u"匹配内置钓鱼种子规则" : u"Matches a built-in phishing seed";
++  }
++  if (reason.code == "insecure_http") {
++    return zh ? u"未使用 HTTPS" : u"Not using HTTPS";
++  }
++  if (reason.code == "ip_hostname") {
++    return zh ? u"使用 IP 地址作为主机名" : u"Hostname is an IP address";
++  }
++  if (reason.code == "punycode_host") {
++    return zh ? u"国际化域名（Punycode）" : u"Punycode / IDN hostname";
++  }
++  if (reason.code == "deep_subdomain") {
++    return zh ? u"过深的子域名" : u"Unusually deep subdomain";
++  }
++  if (reason.code == "suspicious_tld") {
++    return zh ? u"高风险顶级域" : u"High-risk top-level domain";
++  }
++  if (reason.code == "brand_spoof_host") {
++    return zh ? u"主机名仿冒品牌" : u"Brand spoof in hostname";
++  }
++  if (reason.code == "at_symbol_trick") {
++    return zh ? u"URL 含 @ 欺骗" : u"@ trick in the URL";
++  }
++  if (reason.code == "invalid_url") {
++    return zh ? u"无效地址" : u"Invalid URL";
++  }
++  return base::UTF8ToUTF16(reason.code);
++}
++
++std::u16string FormatReasons(const PhishAssessment& assessment, bool zh) {
++  std::u16string text;
++  for (const PhishReason& reason : assessment.reasons) {
++    if (!text.empty()) {
++      text += u"<br>";
++    }
++    text += u"• ";
++    text += ReasonLabel(reason, zh);
++    if (!reason.detail.empty()) {
++      text += u" (";
++      text += base::UTF8ToUTF16(reason.detail);
++      text += u")";
++    }
++  }
++  return text;
++}
++
+ }  // namespace
+ 
+ // static
+@@ -33,13 +82,15 @@ const security_interstitials::SecurityInterstitialPage::TypeID
+ AegisPhishBlockingPage::AegisPhishBlockingPage(
+     content::WebContents* web_contents,
+     const GURL& request_url,
++    PhishAssessment assessment,
+     std::unique_ptr<
+         security_interstitials::SecurityInterstitialControllerClient>
+         controller_client)
+     : security_interstitials::SecurityInterstitialPage(
+           web_contents,
+           request_url,
+-          std::move(controller_client)) {
++          std::move(controller_client)),
++      assessment_(std::move(assessment)) {
+   controller()->metrics_helper()->RecordUserDecision(
+       security_interstitials::MetricsHelper::SHOW);
+ }
+@@ -100,16 +151,20 @@ void AegisPhishBlockingPage::PopulateInterstitialStrings(
+ 
+   const std::string locale = g_browser_process->GetApplicationLocale();
+   const bool zh = IsChineseLocale(locale);
++  const std::u16string score_text = base::UTF8ToUTF16(
++      base::NumberToString(assessment_.score));
+ 
+   load_time_data.Set("tabTitle", zh ? u"疑似钓鱼网站" : u"Suspected phishing");
+   load_time_data.Set("heading",
+                      zh ? u"Aegis 已拦截疑似钓鱼网站"
+                         : u"Aegis blocked a suspected phishing site");
+-  load_time_data.Set(
+-      "primaryParagraph",
+-      zh ? u"该地址匹配内置钓鱼种子规则。继续访问可能泄露账号或支付信息。"
+-         : u"This address matches a built-in phishing seed rule. Continuing "
+-           u"may expose account or payment details.");
++  std::u16string primary =
++      zh ? u"该地址的启发式风险评分为 " : u"Heuristic risk score: ";
++  primary += score_text;
++  primary += zh ? u"。继续访问可能泄露账号或支付信息。"
++                : u". Continuing may expose account or payment details.";
++  load_time_data.Set("primaryParagraph", primary);
++  load_time_data.Set("explanationParagraph", FormatReasons(assessment_, zh));
+   load_time_data.Set("primaryButtonText",
+                      zh ? u"返回安全页面" : u"Back to safety");
+   load_time_data.Set("proceedButtonText",
+@@ -126,7 +181,6 @@ void AegisPhishBlockingPage::PopulateValuesForSharedHTML(
+   load_time_data.Set("overridable", false);
+   load_time_data.Set("hide_primary_button", false);
+   load_time_data.Set("openDetails", "");
+-  load_time_data.Set("explanationParagraph", "");
+   load_time_data.Set("finalParagraph", "");
+ }
+ 
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.h b/chrome/browser/aegis/aegis_phish_blocking_page.h
+index 1176e52409..f0d45fa38a 100644
+--- a/chrome/browser/aegis/aegis_phish_blocking_page.h
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.h
+@@ -7,6 +7,7 @@
+ #include <memory>
+ #include <string>
+ 
++#include "chrome/common/aegis/phish_score.h"
+ #include "components/security_interstitials/content/security_interstitial_page.h"
+ #include "url/gurl.h"
+ 
+@@ -16,7 +17,9 @@ class WebContents;
+ 
+ namespace aegis {
+ 
+-// Full-page warning when navigation matches a built-in phishing seed rule.
++// Full-page warning when navigation matches a phishing seed rule or URL
++// heuristic score. Reason codes are shown on the page (explain, don't just
++// warn).
+ class AegisPhishBlockingPage
+     : public security_interstitials::SecurityInterstitialPage {
+  public:
+@@ -26,6 +29,7 @@ class AegisPhishBlockingPage
+   AegisPhishBlockingPage(
+       content::WebContents* web_contents,
+       const GURL& request_url,
++      PhishAssessment assessment,
+       std::unique_ptr<
+           security_interstitials::SecurityInterstitialControllerClient>
+           controller_client);
+@@ -46,6 +50,8 @@ class AegisPhishBlockingPage
+ 
+  private:
+   void PopulateValuesForSharedHTML(base::DictValue& load_time_data);
++
++  const PhishAssessment assessment_;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+index 58354b8151..a441bef9e4 100644
+--- a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
++++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+@@ -49,23 +49,28 @@ AegisPhishNavigationThrottle::MaybeIntercept() {
+   }
+ 
+   const GURL& url = handle->GetURL();
+-  if (!AegisService::GetInstance()->ShouldShowPhishInterstitial(url)) {
++  std::optional<PhishAssessment> assessment =
++      AegisService::GetInstance()->EvaluatePhish(url);
++  if (!assessment) {
+     return content::NavigationThrottle::PROCEED;
+   }
+ 
+-  LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url;
+-  return ShowInterstitial(url);
++  LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url
++            << " score=" << assessment->score;
++  return ShowInterstitial(url, *assessment);
+ }
+ 
+ content::NavigationThrottle::ThrottleCheckResult
+-AegisPhishNavigationThrottle::ShowInterstitial(const GURL& request_url) {
++AegisPhishNavigationThrottle::ShowInterstitial(
++    const GURL& request_url,
++    const PhishAssessment& assessment) {
+   content::NavigationHandle* handle = navigation_handle();
+   content::WebContents* web_contents = handle->GetWebContents();
+ 
+   auto controller =
+       std::make_unique<AegisPhishControllerClient>(web_contents, request_url);
+   auto blocking_page = std::make_unique<AegisPhishBlockingPage>(
+-      web_contents, request_url, std::move(controller));
++      web_contents, request_url, assessment, std::move(controller));
+ 
+   std::optional<std::string> error_page_contents =
+       blocking_page->GetHTMLContents();
+diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.h b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
+index 574459db4d..5275d1007b 100644
+--- a/chrome/browser/aegis/aegis_phish_navigation_throttle.h
++++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
+@@ -4,6 +4,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_AEGIS_PHISH_NAVIGATION_THROTTLE_H_
+ #define CHROME_BROWSER_AEGIS_AEGIS_PHISH_NAVIGATION_THROTTLE_H_
+ 
++#include "chrome/common/aegis/phish_score.h"
+ #include "content/public/browser/navigation_throttle.h"
+ #include "url/gurl.h"
+ 
+@@ -13,8 +14,8 @@ class NavigationThrottleRegistry;
+ 
+ namespace aegis {
+ 
+-// Cancels main-frame navigations that match built-in phishing seed rules and
+-// shows a security interstitial (gated by Aegis phish prefs/features).
++// Cancels main-frame navigations that match built-in phishing seed rules or
++// URL heuristics, and shows an explainable security interstitial.
+ class AegisPhishNavigationThrottle : public content::NavigationThrottle {
+  public:
+   explicit AegisPhishNavigationThrottle(
+@@ -34,7 +35,8 @@ class AegisPhishNavigationThrottle : public content::NavigationThrottle {
+ 
+  private:
+   ThrottleCheckResult MaybeIntercept();
+-  ThrottleCheckResult ShowInterstitial(const GURL& request_url);
++  ThrottleCheckResult ShowInterstitial(const GURL& request_url,
++                                       const PhishAssessment& assessment);
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index a8b3def1a6..bd6f4bb971 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -3,6 +3,8 @@
+ 
+ #include "chrome/browser/aegis/aegis_service.h"
+ 
++#include <algorithm>
++
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
+ #include "base/strings/string_util.h"
+@@ -13,6 +15,7 @@
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/filter_list_matcher.h"
++#include "chrome/common/aegis/phish_score.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
+ #include "content/public/browser/btm_service.h"
+@@ -251,16 +254,32 @@ bool AegisService::ShouldBlockUrl(const GURL& url) const {
+ }
+ 
+ bool AegisService::ShouldShowPhishInterstitial(const GURL& url) const {
++  return EvaluatePhish(url).has_value();
++}
++
++std::optional<PhishAssessment> AegisService::EvaluatePhish(
++    const GURL& url) const {
+   if (!IsPhishInterstitialEnabled()) {
+-    return false;
++    return std::nullopt;
+   }
+   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_host()) {
+-    return false;
++    return std::nullopt;
+   }
+   if (IsPhishHostAllowedForSession(std::string(url.host()))) {
+-    return false;
++    return std::nullopt;
++  }
++
++  PhishAssessment assessment = AssessPhishingUrl(url);
++  if (MatchesBuiltinPhishRule(url)) {
++    assessment.reasons.push_back(
++        {"seed_host", 100, std::string(url.host())});
++    assessment.score = std::min(100, assessment.score + 100);
++    assessment.should_block = true;
++  }
++  if (!assessment.should_block) {
++    return std::nullopt;
+   }
+-  return MatchesBuiltinPhishRule(url);
++  return assessment;
+ }
+ 
+ void AegisService::AllowPhishHostForSession(const std::string& host) {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index ebecb7d954..4a5e37acd9 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -6,12 +6,14 @@
+ 
+ #include <cstdint>
+ #include <memory>
++#include <optional>
+ #include <string>
+ 
+ #include "base/containers/flat_set.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/singleton.h"
++#include "chrome/common/aegis/phish_score.h"
+ 
+ class GURL;
+ class PrefService;
+@@ -60,7 +62,9 @@ class AegisService {
+   // skip main-document navigations (RequestDestination::kDocument).
+   bool ShouldBlockUrl(const GURL& url) const;
+ 
+-  // Main-frame phishing interstitial decision (seed rules + session allow).
++  // Main-frame phishing interstitial decision (seed rules + URL heuristics +
++  // session allow). Returns the assessment when the page should be blocked.
++  std::optional<PhishAssessment> EvaluatePhish(const GURL& url) const;
+   bool ShouldShowPhishInterstitial(const GURL& url) const;
+   void AllowPhishHostForSession(const std::string& host);
+   bool IsPhishHostAllowedForSession(const std::string& host) const;
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 205d06d0e3..16950a65cc 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -19,6 +19,8 @@ source_set("aegis") {
+     "filter_list_matcher.h",
+     "cookie_classify.cc",
+     "cookie_classify.h",
++    "phish_score.cc",
++    "phish_score.h",
+     "pref_names.h",
+     "tracking_query_params.cc",
+     "tracking_query_params.h",
+diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
+new file mode 100644
+index 0000000000..91c16aa6ed
+--- /dev/null
++++ b/chrome/common/aegis/phish_score.cc
+@@ -0,0 +1,127 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/phish_score.cc
++// Keep in lockstep with packages/core/src/phish/detector.ts scorePhishingUrl().
++
++#include "chrome/common/aegis/phish_score.h"
++
++#include <algorithm>
++#include <iterator>
++#include <string_view>
++#include <vector>
++
++#include "base/strings/strcat.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++#include "chrome/common/aegis/generated/suspicious_phish_tlds.inc"
++#include "chrome/common/aegis/generated/phish_brand_keywords.inc"
++
++bool HasSuspiciousTld(std::string_view tld) {
++  for (std::string_view candidate : kSuspiciousPhishTlds) {
++    if (base::EqualsCaseInsensitiveASCII(candidate, tld)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool LabelSpoofsBrand(std::string_view label, std::string_view brand) {
++  if (label == brand) {
++    return true;
++  }
++  if (base::StartsWith(label, base::StrCat({brand, "-"}))) {
++    return true;
++  }
++  if (base::EndsWith(label, base::StrCat({"-", brand}))) {
++    return true;
++  }
++  return label.find(base::StrCat({"-", brand, "-"})) != std::string_view::npos;
++}
++
++std::string BrandSpoofInHost(std::string_view host) {
++  const std::vector<std::string_view> labels = base::SplitStringPiece(
++      host, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  if (labels.empty()) {
++    return std::string();
++  }
++  const std::string_view sld =
++      labels.size() >= 2 ? *std::next(labels.rbegin()) : labels.back();
++  for (std::string_view brand : kPhishBrandKeywords) {
++    if (sld == brand) {
++      continue;
++    }
++    for (std::string_view label : labels) {
++      if (LabelSpoofsBrand(label, brand)) {
++        return std::string(brand);
++      }
++    }
++  }
++  return std::string();
++}
++
++}  // namespace
++
++PhishAssessment AssessPhishingUrl(const GURL& url) {
++  PhishAssessment out;
++  if (!url.is_valid()) {
++    out.score = 100;
++    out.should_block = true;
++    out.reasons.push_back({"invalid_url", 100, url.possibly_invalid_spec()});
++    return out;
++  }
++
++  const std::string host = base::ToLowerASCII(url.host());
++  int score = 0;
++
++  if (url.SchemeIs("http")) {
++    score += 12;
++    out.reasons.push_back({"insecure_http", 12, std::string()});
++  }
++
++  if (url.HostIsIPAddress()) {
++    score += 35;
++    out.reasons.push_back({"ip_hostname", 35, host});
++  }
++
++  if (host.find("xn--") != std::string::npos) {
++    score += 25;
++    out.reasons.push_back({"punycode_host", 25, host});
++  }
++
++  const std::vector<std::string_view> labels = base::SplitStringPiece(
++      host, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  if (labels.size() >= 5) {
++    score += 15;
++    out.reasons.push_back({"deep_subdomain", 15, host});
++  }
++
++  if (!labels.empty()) {
++    const std::string_view tld = labels.back();
++    if (HasSuspiciousTld(tld)) {
++      score += 18;
++      out.reasons.push_back({"suspicious_tld", 18, std::string(tld)});
++    }
++  }
++
++  const std::string spoof = BrandSpoofInHost(host);
++  if (!spoof.empty()) {
++    score += 30;
++    out.reasons.push_back({"brand_spoof_host", 30, spoof});
++  }
++
++  const std::string spec = url.possibly_invalid_spec();
++  if (url.has_username() || spec.find('@') != std::string::npos) {
++    score += 20;
++    out.reasons.push_back({"at_symbol_trick", 20, std::string()});
++  }
++
++  out.score = std::min(100, score);
++  out.should_block = out.score >= kPhishBlockThreshold;
++  return out;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/phish_score.h b/chrome/common/aegis/phish_score.h
+new file mode 100644
+index 0000000000..c4d97a08ac
+--- /dev/null
++++ b/chrome/common/aegis/phish_score.h
+@@ -0,0 +1,35 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/phish_score.h
++// Mirrors packages/core/src/phish/detector.ts scorePhishingUrl().
++
++#ifndef CHROME_COMMON_AEGIS_PHISH_SCORE_H_
++#define CHROME_COMMON_AEGIS_PHISH_SCORE_H_
++
++#include <string>
++#include <vector>
++
++class GURL;
++
++namespace aegis {
++
++inline constexpr int kPhishBlockThreshold = 55;
++
++struct PhishReason {
++  std::string code;
++  int weight = 0;
++  std::string detail;
++};
++
++struct PhishAssessment {
++  int score = 0;
++  bool should_block = false;
++  std::vector<PhishReason> reasons;
++};
++
++// URL-only heuristic score (no page body). Seed-host matching is applied by
++// the caller. |should_block| is true when score >= kPhishBlockThreshold.
++PhishAssessment AssessPhishingUrl(const GURL& url);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_PHISH_SCORE_H_
+-- 
+2.50.1 (Apple Git-155)
+

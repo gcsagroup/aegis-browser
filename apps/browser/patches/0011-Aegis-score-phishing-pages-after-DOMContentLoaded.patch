@@ -1,0 +1,603 @@
+From 1103fc88efbab01427295e896798cff758182733 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 07:03:12 +0800
+Subject: [PATCH] Aegis: score phishing pages after DOMContentLoaded
+
+Collect password fields and page copy from the renderer, blend them
+with the URL heuristic, and reload into the interstitial when the
+combined score crosses the block threshold.
+---
+ .../actor/execution_engine_unittest.cc        |   4 +
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ .../aegis/aegis_phish_blocking_page.cc        |  12 ++
+ .../aegis/aegis_phish_navigation_throttle.cc  |  11 ++
+ .../browser/aegis/aegis_phish_tab_helper.cc   | 138 ++++++++++++++++++
+ chrome/browser/aegis/aegis_phish_tab_helper.h |  59 ++++++++
+ .../actor_login_siwg_controller_unittest.cc   |   4 +
+ ...d_change_page_stability_waiter_unittest.cc |   4 +
+ chrome/browser/ui/tab_helpers.cc              |   2 +
+ chrome/common/aegis/phish_score.cc            |  92 ++++++++++++
+ chrome/common/aegis/phish_score.h             |  12 ++
+ chrome/common/chrome_render_frame.mojom       |   5 +
+ .../renderer/chrome_render_frame_observer.cc  |  39 +++++
+ .../renderer/chrome_render_frame_observer.h   |   2 +
+ 14 files changed, 387 insertions(+)
+ create mode 100644 chrome/browser/aegis/aegis_phish_tab_helper.cc
+ create mode 100644 chrome/browser/aegis/aegis_phish_tab_helper.h
+
+diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
+index f1e00d84be..8f0960753f 100644
+--- a/chrome/browser/actor/execution_engine_unittest.cc
++++ b/chrome/browser/actor/execution_engine_unittest.cc
+@@ -159,6 +159,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+       RequestImageForContextNodeCallback callback) override {}
+   void ExecuteWebUIJavaScript(const std::u16string& javascript) override {}
+   void GetMediaFeedURL(GetMediaFeedURLCallback callback) override {}
++  void CollectAegisPageSignals(CollectAegisPageSignalsCallback callback)
++      override {
++    std::move(callback).Run(0, 0, "", "");
++  }
+   void LoadBlockedPlugins(const std::string& identifier) override {}
+   void SetShouldDeferMediaLoad(bool should_defer) override {}
+ 
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index c18d4021e0..a611cbe110 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -9,6 +9,8 @@ source_set("aegis") {
+     "aegis_phish_controller_client.h",
+     "aegis_phish_navigation_throttle.cc",
+     "aegis_phish_navigation_throttle.h",
++    "aegis_phish_tab_helper.cc",
++    "aegis_phish_tab_helper.h",
+     "aegis_link_sanitize_navigation_throttle.cc",
+     "aegis_link_sanitize_navigation_throttle.h",
+     "aegis_cookie_janitor.cc",
+@@ -40,5 +42,6 @@ source_set("aegis") {
+     "//services/network/public/cpp",
+     "//services/network/public/mojom",
+     "//url",
++    "//ui/base",
+   ]
+ }
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+index 73d90e9bea..9cf31add42 100644
+--- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+@@ -52,6 +52,18 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
+   if (reason.code == "invalid_url") {
+     return zh ? u"无效地址" : u"Invalid URL";
+   }
++  if (reason.code == "urgency_language") {
++    return zh ? u"页面含紧迫/威胁文案" : u"Urgent or threatening page copy";
++  }
++  if (reason.code == "password_on_risky_origin") {
++    return zh ? u"风险来源上的密码框" : u"Password field on a risky origin";
++  }
++  if (reason.code == "credential_form") {
++    return zh ? u"凭据表单" : u"Credential form";
++  }
++  if (reason.code == "lightweight_model_blend") {
++    return zh ? u"本地轻量模型加分" : u"Local lightweight model nudge";
++  }
+   return base::UTF8ToUTF16(reason.code);
+ }
+ 
+diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+index a441bef9e4..7f5b419e17 100644
+--- a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
++++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+@@ -10,6 +10,7 @@
+ #include "base/logging.h"
+ #include "chrome/browser/aegis/aegis_phish_blocking_page.h"
+ #include "chrome/browser/aegis/aegis_phish_controller_client.h"
++#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+ #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
+@@ -49,6 +50,16 @@ AegisPhishNavigationThrottle::MaybeIntercept() {
+   }
+ 
+   const GURL& url = handle->GetURL();
++  if (content::WebContents* web_contents = handle->GetWebContents()) {
++    if (PhishTabHelper* helper = PhishTabHelper::FromWebContents(web_contents)) {
++      if (std::optional<PhishAssessment> stashed =
++              helper->TakeStashedAssessment(url)) {
++        LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url
++                  << " score=" << stashed->score << " (page-sense)";
++        return ShowInterstitial(url, *stashed);
++      }
++    }
++  }
+   std::optional<PhishAssessment> assessment =
+       AegisService::GetInstance()->EvaluatePhish(url);
+   if (!assessment) {
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
+new file mode 100644
+index 0000000000..447408991e
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_tab_helper.cc
+@@ -0,0 +1,138 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_tab_helper.cc
++
++#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
++
++#include <cstdint>
++#include <memory>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/common/aegis/builtin_phish_hosts.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
++#include "ui/base/page_transition_types.h"
++
++namespace aegis {
++
++PhishTabHelper::PhishTabHelper(content::WebContents* web_contents)
++    : content::WebContentsObserver(web_contents),
++      content::WebContentsUserData<PhishTabHelper>(*web_contents) {}
++
++PhishTabHelper::~PhishTabHelper() = default;
++
++std::optional<PhishAssessment> PhishTabHelper::TakeStashedAssessment(
++    const GURL& url) {
++  if (!stashed_ || stashed_url_ != url) {
++    return std::nullopt;
++  }
++  std::optional<PhishAssessment> out = std::move(stashed_);
++  stashed_.reset();
++  stashed_url_ = GURL();
++  return out;
++}
++
++void PhishTabHelper::DOMContentLoaded(
++    content::RenderFrameHost* render_frame_host) {
++  if (!render_frame_host || !render_frame_host->IsInPrimaryMainFrame()) {
++    return;
++  }
++  if (checking_) {
++    return;
++  }
++
++  AegisService* service = AegisService::GetInstance();
++  if (!service->IsPhishInterstitialEnabled()) {
++    return;
++  }
++
++  const GURL url = render_frame_host->GetLastCommittedURL();
++  if (!url.SchemeIsHTTPOrHTTPS() || !url.has_host()) {
++    return;
++  }
++  if (service->IsPhishHostAllowedForSession(std::string(url.host()))) {
++    return;
++  }
++
++  PhishAssessment url_score = AssessPhishingUrl(url);
++  if (MatchesBuiltinPhishRule(url) || url_score.should_block ||
++      url_score.score == 0) {
++    return;
++  }
++
++  checking_ = true;
++  auto client = std::make_unique<
++      mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame>>();
++  render_frame_host->GetRemoteAssociatedInterfaces()->GetInterface(
++      client.get());
++  if (!client->is_bound()) {
++    checking_ = false;
++    return;
++  }
++  chrome::mojom::ChromeRenderFrame* raw = client->get();
++  const GURL url_copy = url;
++  raw->CollectAegisPageSignals(base::BindOnce(
++      [](std::unique_ptr<
++             mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame>>
++             keep_alive,
++         base::WeakPtr<PhishTabHelper> self, const GURL& url,
++         int32_t password_fields, int32_t forms, const std::string& title,
++         const std::string& text_sample) {
++        if (!self) {
++          return;
++        }
++        self->checking_ = false;
++        self->OnPageSignals(url, password_fields, forms, title, text_sample);
++      },
++      std::move(client), weak_factory_.GetWeakPtr(), url_copy));
++}
++
++void PhishTabHelper::OnPageSignals(const GURL& url,
++                                   int32_t password_fields,
++                                   int32_t forms,
++                                   const std::string& title,
++                                   const std::string& text_sample) {
++  content::WebContents* contents = web_contents();
++  if (!contents) {
++    return;
++  }
++  if (contents->GetLastCommittedURL() != url) {
++    return;
++  }
++
++  AegisService* service = AegisService::GetInstance();
++  if (!service->IsPhishInterstitialEnabled() ||
++      service->IsPhishHostAllowedForSession(std::string(url.host()))) {
++    return;
++  }
++
++  PhishAssessment assessment = ApplyPageSignals(AssessPhishingUrl(url),
++                                                PageSignals{
++                                                    .title = title,
++                                                    .text_sample = text_sample,
++                                                    .password_fields =
++                                                        password_fields,
++                                                    .forms = forms,
++                                                });
++  if (!assessment.should_block) {
++    return;
++  }
++
++  LOG(INFO) << "Aegis: page-sense phishing score=" << assessment.score
++            << " url=" << url;
++  stashed_ = std::move(assessment);
++  stashed_url_ = url;
++
++  content::NavigationController::LoadURLParams params(url);
++  params.transition_type = ui::PAGE_TRANSITION_RELOAD;
++  params.should_replace_current_entry = true;
++  contents->GetController().LoadURLWithParams(params);
++}
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(PhishTabHelper);
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.h b/chrome/browser/aegis/aegis_phish_tab_helper.h
+new file mode 100644
+index 0000000000..1e65f7a86f
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_tab_helper.h
+@@ -0,0 +1,59 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_tab_helper.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_PHISH_TAB_HELPER_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_PHISH_TAB_HELPER_H_
++
++#include <optional>
++#include <string>
++
++#include "chrome/common/aegis/phish_score.h"
++#include "chrome/common/chrome_render_frame.mojom.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++#include "base/memory/weak_ptr.h"
++#include "mojo/public/cpp/bindings/associated_remote.h"
++#include "url/gurl.h"
++
++namespace content {
++class RenderFrameHost;
++}  // namespace content
++
++namespace aegis {
++
++// After the main frame finishes loading, asks the renderer for password/form
++// counts and page text, then reloads into the phishing interstitial if the
++// combined score crosses the block threshold.
++class PhishTabHelper : public content::WebContentsObserver,
++                       public content::WebContentsUserData<PhishTabHelper> {
++ public:
++  PhishTabHelper(const PhishTabHelper&) = delete;
++  PhishTabHelper& operator=(const PhishTabHelper&) = delete;
++  ~PhishTabHelper() override;
++
++  std::optional<PhishAssessment> TakeStashedAssessment(const GURL& url);
++
++  // content::WebContentsObserver:
++  void DOMContentLoaded(content::RenderFrameHost* render_frame_host) override;
++
++ private:
++  friend class content::WebContentsUserData<PhishTabHelper>;
++  explicit PhishTabHelper(content::WebContents* web_contents);
++
++  void OnPageSignals(const GURL& url,
++                     int32_t password_fields,
++                     int32_t forms,
++                     const std::string& title,
++                     const std::string& text_sample);
++
++  std::optional<PhishAssessment> stashed_;
++  GURL stashed_url_;
++  bool checking_ = false;
++  base::WeakPtrFactory<PhishTabHelper> weak_factory_{this};
++
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_TAB_HELPER_H_
+diff --git a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
+index ac48709dc1..650d160899 100644
+--- a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
++++ b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
+@@ -108,6 +108,10 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+               (const std::u16string&),
+               (override));
+   MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
++  MOCK_METHOD(void,
++              CollectAegisPageSignals,
++              (CollectAegisPageSignalsCallback),
++              (override));
+   MOCK_METHOD(void, LoadBlockedPlugins, (const std::string&), (override));
+   MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
+   MOCK_METHOD(void,
+diff --git a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
+index d7e92c9c73..8c540d59a5 100644
+--- a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
++++ b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
+@@ -99,6 +99,10 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+               (const std::u16string&),
+               (override));
+   MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
++  MOCK_METHOD(void,
++              CollectAegisPageSignals,
++              (CollectAegisPageSignalsCallback),
++              (override));
+   MOCK_METHOD(void, LoadBlockedPlugins, (const std::string&), (override));
+   MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
+   MOCK_METHOD(void,
+diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
+index 229fe0b443..5932777fb1 100644
+--- a/chrome/browser/ui/tab_helpers.cc
++++ b/chrome/browser/ui/tab_helpers.cc
+@@ -15,6 +15,7 @@
+ #include "base/time/default_tick_clock.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
+ #include "chrome/browser/browser_process.h"
+@@ -442,6 +443,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
+       web_contents,
+       std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
+   CoreTabHelper::CreateForWebContents(web_contents);
++  aegis::PhishTabHelper::CreateForWebContents(web_contents);
+   ExternalProtocolObserver::CreateForWebContents(web_contents);
+   favicon::CreateContentFaviconDriverForWebContents(web_contents);
+   FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
+diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
+index 91c16aa6ed..440a996587 100644
+--- a/chrome/common/aegis/phish_score.cc
++++ b/chrome/common/aegis/phish_score.cc
+@@ -5,11 +5,13 @@
+ #include "chrome/common/aegis/phish_score.h"
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <iterator>
+ #include <string_view>
+ #include <vector>
+ 
+ #include "base/strings/strcat.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
+ #include "url/gurl.h"
+@@ -124,4 +126,94 @@ PhishAssessment AssessPhishingUrl(const GURL& url) {
+   return out;
+ }
+ 
++namespace {
++
++constexpr std::string_view kUrgencyPhrases[] = {
++    "verify your account", "confirm your identity", "suspend",
++    "unusual activity",    "act now",               "password expired",
++    "login immediately",   "账户异常",              "立即验证",
++    "密码过期",            "異常登入",              "立即驗證",
++};
++
++bool HasReason(const PhishAssessment& assessment, std::string_view code) {
++  for (const PhishReason& reason : assessment.reasons) {
++    if (reason.code == code) {
++      return true;
++    }
++  }
++  return false;
++}
++
++int LightweightNudge(std::string_view haystack) {
++  int nudge = 0;
++  if (haystack.find("password") != std::string_view::npos ||
++      haystack.find("passwd") != std::string_view::npos ||
++      haystack.find("验证码") != std::string_view::npos ||
++      haystack.find("驗證") != std::string_view::npos ||
++      haystack.find("otp") != std::string_view::npos ||
++      haystack.find("wallet") != std::string_view::npos ||
++      haystack.find("seed phrase") != std::string_view::npos) {
++    nudge += 8;
++  }
++  if (haystack.find("urgent") != std::string_view::npos ||
++      haystack.find("immediately") != std::string_view::npos ||
++      haystack.find("suspend") != std::string_view::npos ||
++      haystack.find("立即") != std::string_view::npos ||
++      haystack.find("異常") != std::string_view::npos ||
++      haystack.find("异常") != std::string_view::npos) {
++    nudge += 6;
++  }
++  return nudge;
++}
++
++}  // namespace
++
++PhishAssessment ApplyPageSignals(PhishAssessment assessment,
++                                 const PageSignals& page) {
++  if (HasReason(assessment, "allowlisted") ||
++      HasReason(assessment, "invalid_url")) {
++    return assessment;
++  }
++
++  int score = assessment.score;
++  const std::string haystack =
++      base::ToLowerASCII(page.title + "\n" + page.text_sample);
++
++  for (std::string_view phrase : kUrgencyPhrases) {
++    if (haystack.find(base::ToLowerASCII(phrase)) != std::string::npos) {
++      score += 10;
++      assessment.reasons.push_back(
++          {"urgency_language", 10, std::string(phrase)});
++      break;
++    }
++  }
++
++  const bool risky = HasReason(assessment, "brand_spoof_host") ||
++                     HasReason(assessment, "ip_hostname") ||
++                     HasReason(assessment, "insecure_http");
++  if (page.password_fields > 0 && risky) {
++    score += 25;
++    assessment.reasons.push_back(
++        {"password_on_risky_origin", 25,
++         base::StrCat({"passwordFields=",
++                       base::NumberToString(page.password_fields)})});
++  } else if (page.password_fields > 0 && page.forms > 0 && score >= 20) {
++    score += 12;
++    assessment.reasons.push_back({"credential_form", 12, std::string()});
++  }
++
++  score = std::min(100, score);
++  const int nudge = LightweightNudge(haystack);
++  if (nudge > 0) {
++    const int blended =
++        std::min(100, static_cast<int>(std::round(score + nudge * 0.3)));
++    assessment.reasons.push_back({"lightweight_model_blend", nudge, std::string()});
++    score = blended;
++  }
++
++  assessment.score = score;
++  assessment.should_block = score >= kPhishBlockThreshold;
++  return assessment;
++}
++
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/phish_score.h b/chrome/common/aegis/phish_score.h
+index c4d97a08ac..8b1891d675 100644
+--- a/chrome/common/aegis/phish_score.h
++++ b/chrome/common/aegis/phish_score.h
+@@ -26,10 +26,22 @@ struct PhishAssessment {
+   std::vector<PhishReason> reasons;
+ };
+ 
++struct PageSignals {
++  std::string title;
++  std::string text_sample;
++  int password_fields = 0;
++  int forms = 0;
++};
++
+ // URL-only heuristic score (no page body). Seed-host matching is applied by
+ // the caller. |should_block| is true when score >= kPhishBlockThreshold.
+ PhishAssessment AssessPhishingUrl(const GURL& url);
+ 
++// Adds page-body features (urgency copy, password forms) and a lightweight
++// model nudge. Mirrors packages/core assessPhishing() + assessWithModel().
++PhishAssessment ApplyPageSignals(PhishAssessment assessment,
++                                 const PageSignals& page);
++
+ }  // namespace aegis
+ 
+ #endif  // CHROME_COMMON_AEGIS_PHISH_SCORE_H_
+diff --git a/chrome/common/chrome_render_frame.mojom b/chrome/common/chrome_render_frame.mojom
+index c5b742e2fe..efaa533860 100644
+--- a/chrome/common/chrome_render_frame.mojom
++++ b/chrome/common/chrome_render_frame.mojom
+@@ -91,6 +91,11 @@ interface ChromeRenderFrame {
+   // Requests the Media Feed Url from the renderer (if the page has one).
+   GetMediaFeedURL() => (url.mojom.Url? url);
+ 
++  // Collects password/form counts and a short text sample for Aegis phishing
++  // page-sense scoring. Main-frame only; subframes return zeros.
++  CollectAegisPageSignals() =>
++      (int32 password_fields, int32 forms, string title, string text_sample);
++
+   // Tells the render frame to load any blocked plugins matching the given
+   // identifier (empty string matches all).
+   LoadBlockedPlugins(string identifier);
+diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
+index 8055ed9158..9cbb78c72a 100644
+--- a/chrome/renderer/chrome_render_frame_observer.cc
++++ b/chrome/renderer/chrome_render_frame_observer.cc
+@@ -64,7 +64,9 @@
+ #include "third_party/blink/public/web/web_document.h"
+ #include "third_party/blink/public/web/web_document_loader.h"
+ #include "third_party/blink/public/web/web_element.h"
++#include "third_party/blink/public/web/web_element_collection.h"
+ #include "third_party/blink/public/web/web_frame_content_dumper.h"
++#include "third_party/blink/public/web/web_input_element.h"
+ #include "third_party/blink/public/web/web_local_frame.h"
+ #include "third_party/blink/public/web/web_local_frame_client.h"
+ #include "third_party/blink/public/web/web_node.h"
+@@ -613,6 +615,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+   std::move(callback).Run(MediaFeeds::GetMediaFeedURL(render_frame()));
+ }
+ 
++void ChromeRenderFrameObserver::CollectAegisPageSignals(
++    CollectAegisPageSignalsCallback callback) {
++  int32_t password_fields = 0;
++  int32_t forms = 0;
++  std::string title;
++  std::string text_sample;
++
++  WebLocalFrame* frame = render_frame() ? render_frame()->GetWebFrame() : nullptr;
++  if (frame && !frame->Parent() && !frame->IsInFencedFrameTree()) {
++    blink::WebDocument doc = frame->GetDocument();
++    title = doc.Title().Utf8();
++    forms = static_cast<int32_t>(doc.Forms().size());
++    blink::WebElement body = doc.Body();
++    if (!body.IsNull()) {
++      text_sample = body.TextContentAbridged(2048).Utf8();
++    }
++    blink::WebElement root = doc.DocumentElement();
++    if (!root.IsNull()) {
++      blink::WebElementCollection inputs =
++          root.GetElementsByHTMLTagName("input");
++      for (blink::WebElement el = inputs.FirstItem(); !el.IsNull();
++           el = inputs.NextItem()) {
++        const blink::WebInputElement input =
++            el.DynamicTo<blink::WebInputElement>();
++        if (input.IsNull()) {
++          continue;
++        }
++        if (input.FormControlType() ==
++            blink::mojom::FormControlType::kInputPassword) {
++          ++password_fields;
++        }
++      }
++    }
++  }
++  std::move(callback).Run(password_fields, forms, title, text_sample);
++}
++
+ void ChromeRenderFrameObserver::LoadBlockedPlugins(
+     const std::string& identifier) {
+   // Record that this plugin is temporarily allowed and notify all placeholders.
+diff --git a/chrome/renderer/chrome_render_frame_observer.h b/chrome/renderer/chrome_render_frame_observer.h
+index 7b68302d1f..a56470f053 100644
+--- a/chrome/renderer/chrome_render_frame_observer.h
++++ b/chrome/renderer/chrome_render_frame_observer.h
+@@ -127,6 +127,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
+   void SetCCTClientHeader(const std::string& header) override;
+ #endif
+   void GetMediaFeedURL(GetMediaFeedURLCallback callback) override;
++  void CollectAegisPageSignals(CollectAegisPageSignalsCallback callback)
++      override;
+   void LoadBlockedPlugins(const std::string& identifier) override;
+   void SetShouldDeferMediaLoad(bool should_defer) override;
+ 
+-- 
+2.52.0
+

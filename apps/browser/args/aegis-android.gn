@@ -1,0 +1,22 @@
+# GCSA-aegis Android（侧载 APK + Play 预留包名）。
+# 必须在 Linux 上 gn gen / autoninja。Chromium 151 不支持 macOS 编 Android。
+#
+#   gn gen out/AegisAndroid --args="$(cat apps/browser/args/aegis-android.gn)"
+#   autoninja -C out/AegisAndroid chrome_public_apk
+
+target_os = "android"
+target_cpu = "arm64"
+
+is_debug = false
+is_component_build = false
+is_official_build = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+
+proprietary_codecs = false
+ffmpeg_branding = "Chromium"
+
+# Play / 侧载 applicationId。不要用 org.chromium.chrome。
+chrome_public_manifest_package = "app.gcsa.aegis"
+android_channel = "default"

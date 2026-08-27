@@ -1,0 +1,238 @@
+From e67abdb14aad5d40b1c42108124d7bc01921f67b Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 17:47:47 +0800
+Subject: [PATCH] Aegis: probe Canvas, WebGL, Audio, and WebGPU on
+ chrome://aegis
+
+One button reads all four Fingerprint Guard surfaces so a user can
+see Aegis-stable WebGL/WebGPU strings when the guard is on.
+---
+ chrome/browser/resources/aegis/aegis.css  |   4 +
+ chrome/browser/resources/aegis/aegis.ts   | 143 +++++++++++++++++++---
+ chrome/browser/ui/webui/aegis/aegis_ui.cc |   6 +-
+ 3 files changed, 136 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index 0bc988854e..5c12744442 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -157,6 +157,10 @@ h1 {
+   border-radius: 6px;
+ }
+ 
++#fp-result {
++  white-space: pre-wrap;
++}
++
+ .meta {
+   margin: 0 0 1rem;
+   color: var(--muted);
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index daad9a4c8f..f8f6eb21c3 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -346,33 +346,148 @@ function hashText(text: string): string {
+   return (h >>> 0).toString(16).padStart(8, '0');
+ }
+ 
+-function probeFingerprint() {
++function probeCanvas(): string {
+   const canvasEl = getRequiredElement('fp-canvas');
+   if (!(canvasEl instanceof HTMLCanvasElement)) {
+-    throw new Error('Missing canvas #fp-canvas');
++    return '';
+   }
+   const canvas = canvasEl;
+-  const result = getRequiredElement('fp-result');
+-  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   canvas.hidden = false;
+   const ctx = canvas.getContext('2d');
+   if (!ctx) {
+-    result.textContent = zh ? '无法读取 Canvas。' : 'Canvas is unavailable.';
+-    return;
++    return '';
+   }
+   ctx.fillStyle = '#0b6e4f';
+   ctx.fillRect(0, 0, canvas.width, canvas.height);
+   ctx.fillStyle = '#e8eef3';
+   ctx.font = '16px sans-serif';
+   ctx.fillText('GCSA-aegis ' + window.location.host, 10, 30);
+-  const digest = hashText(canvas.toDataURL());
++  return hashText(canvas.toDataURL());
++}
++
++function asText(value: unknown): string {
++  return typeof value === 'string' ? value : '';
++}
++
++function probeWebGL(): {line: string, marked: boolean} {
++  const canvas = document.createElement('canvas');
++  const gl = canvas.getContext('webgl');
++  if (!gl) {
++    return {line: '', marked: false};
++  }
++  const ext = gl.getExtension('WEBGL_debug_renderer_info');
++  if (!ext) {
++    return {line: 'WebGL —', marked: false};
++  }
++  const vendor = asText(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL));
++  const renderer = asText(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
++  const blob = `${vendor} ${renderer}`;
++  return {
++    line: `WebGL ${vendor} / ${renderer}`,
++    marked: blob.toLowerCase().includes('aegis'),
++  };
++}
++
++async function probeAudio(): Promise<string> {
++  const Offline = window.OfflineAudioContext;
++  if (!Offline) {
++    return '';
++  }
++  const ctx = new Offline(1, 44100, 44100);
++  const osc = ctx.createOscillator();
++  osc.type = 'triangle';
++  osc.frequency.value = 10000;
++  osc.connect(ctx.destination);
++  osc.start(0);
++  const buf = await ctx.startRendering();
++  const data = buf.getChannelData(0);
++  let raw = '';
++  const n = Math.min(data.length, 512);
++  for (let i = 0; i < n; i++) {
++    const sample = data[i];
++    if (sample === undefined) {
++      continue;
++    }
++    raw += sample.toFixed(6);
++  }
++  return hashText(raw);
++}
++
++async function probeWebGPU(): Promise<{line: string, marked: boolean}> {
++  const gpu = Reflect.get(navigator, 'gpu');
++  if (!gpu || typeof gpu !== 'object') {
++    return {line: '', marked: false};
++  }
++  const requestAdapter = Reflect.get(gpu, 'requestAdapter');
++  if (typeof requestAdapter !== 'function') {
++    return {line: '', marked: false};
++  }
++  const adapter = await requestAdapter.call(gpu);
++  if (!adapter || typeof adapter !== 'object') {
++    return {line: 'WebGPU —', marked: false};
++  }
++  const info = Reflect.get(adapter, 'info');
++  if (!info || typeof info !== 'object') {
++    return {line: 'WebGPU —', marked: false};
++  }
++  const vendor = asText(Reflect.get(info, 'vendor'));
++  const architecture = asText(Reflect.get(info, 'architecture'));
++  const blob = `${vendor} ${architecture}`;
++  return {
++    line: `WebGPU vendor=${vendor} arch=${architecture}`,
++    marked: blob.toLowerCase().includes('aegis'),
++  };
++}
++
++async function probeFingerprint() {
++  const result = getRequiredElement('fp-result');
++  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   const on = checkbox('fingerprint').checked;
+-  result.textContent = zh ?
+-      `本页 Canvas 读数 ${digest}。Fingerprint Guard ${
+-          on ? '开着：读数按站点稳定化' : '关着：这是浏览器原始读数'}。关开后请刷新本页再测。` :
+-      `Canvas digest ${digest}. Fingerprint Guard is ${
+-          on ? 'on: reading is stabilized per site' :
+-               'off: this is the raw browser reading'}. Toggle, reload, then probe again.`;
++  actionButton('fp-probe').disabled = true;
++  result.textContent = zh ? '正在读取本页指纹…' : 'Reading this page…';
++  try {
++    const canvas = probeCanvas();
++    const webgl = probeWebGL();
++    const audio = await probeAudio();
++    const webgpu = await probeWebGPU();
++    const lines: string[] = [];
++    if (on) {
++      lines.push(
++          zh ? 'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。' :
++               'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
++    } else {
++      lines.push(
++          zh ? 'Fingerprint Guard 关着：这是浏览器原始读数。关开后请刷新本页再测。' :
++               'Fingerprint Guard is off: this is the raw browser reading. Toggle, reload, then probe again.');
++    }
++    if (canvas) {
++      lines.push(zh ? `Canvas 读数 ${canvas}` : `Canvas ${canvas}`);
++    }
++    if (webgl.line) {
++      lines.push(webgl.line);
++    }
++    if (audio) {
++      lines.push(zh ? `Audio 读数 ${audio}` : `Audio ${audio}`);
++    }
++    if (webgpu.line) {
++      lines.push(webgpu.line);
++    }
++    if (on && (webgl.marked || webgpu.marked)) {
++      lines.push(
++          zh ? 'WebGL / WebGPU 已换成带 Aegis 的稳定化字符串。' :
++               'WebGL / WebGPU strings are replaced with Aegis-stable values.');
++    } else if (on && (webgl.line || webgpu.line)) {
++      lines.push(
++          zh ? '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。' :
++               'No Aegis marker yet. Toggle the guard, reload, then probe again.');
++    }
++    result.textContent = lines.filter(Boolean).join('\n');
++  } catch (err) {
++    result.textContent =
++        zh ? `读取失败：${String(err)}` : `Probe failed: ${String(err)}`;
++  } finally {
++    actionButton('fp-probe').disabled = false;
++  }
+ }
+ 
+ function piiLine(text: string, zh: boolean): string {
+@@ -530,7 +645,7 @@ async function init() {
+     void probeOllama();
+   });
+   actionButton('fp-probe').addEventListener('click', () => {
+-    probeFingerprint();
++    void probeFingerprint();
+   });
+   if (status.privacyAi) {
+     void probeOllama();
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 8e10165872..a52a292dfe 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -79,7 +79,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指紋防護",
+         .fingerprint_hint =
+             "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。",
+-        .fingerprint_probe = "檢測本頁 Canvas",
++        .fingerprint_probe = "檢測本頁指紋",
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+         .filter_list_auto_update_hint =
+@@ -150,7 +150,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指纹防护",
+         .fingerprint_hint =
+             "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。",
+-        .fingerprint_probe = "检测本页 Canvas",
++        .fingerprint_probe = "检测本页指纹",
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+         .filter_list_auto_update_hint =
+@@ -222,7 +222,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .fingerprint_hint =
+           "Stabilizes Canvas, WebGL, Audio, and WebGPU to reduce cross-site "
+           "fingerprinting.",
+-      .fingerprint_probe = "Probe this page Canvas",
++      .fingerprint_probe = "Probe this page fingerprints",
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+       .filter_list_auto_update_hint =
+-- 
+2.52.0
+

@@ -1,0 +1,209 @@
+From a572696fd3e2309986a08be7f99e773008246530 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 18:41:38 +0800
+Subject: [PATCH] Aegis: farble WebGPU numeric limits per site
+
+Lower a few enumerable adapter limits toward spec minima using the
+same host seed as adapter.info, without raising hardware or breaking
+power-of-two subgroup sizes.
+---
+ chrome/browser/resources/aegis/aegis.ts       | 19 ++++-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  7 +-
+ .../blink/renderer/core/aegis/farbling.cc     | 71 +++++++++++++++++++
+ .../blink/renderer/core/aegis/farbling.h      | 10 +++
+ .../renderer/modules/webgpu/gpu_adapter.cc    |  6 ++
+ 5 files changed, 109 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index ff1be2266e..9568aa43b5 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -440,9 +440,26 @@ async function probeWebGPU(): Promise<{line: string, marked: boolean}> {
+   }
+   const vendor = asText(Reflect.get(info, 'vendor'));
+   const architecture = asText(Reflect.get(info, 'architecture'));
++  const subgroupMax = Reflect.get(info, 'subgroupMaxSize');
++  const limitsObj = Reflect.get(adapter, 'limits');
++  let maxBuffer = '';
++  if (limitsObj && typeof limitsObj === 'object') {
++    const value = Reflect.get(limitsObj, 'maxBufferSize');
++    if (typeof value === 'number' || typeof value === 'bigint') {
++      maxBuffer = String(value);
++    }
++  }
+   const blob = `${vendor} ${architecture}`;
++  const extras: string[] = [];
++  if (maxBuffer) {
++    extras.push(`maxBufferSize=${maxBuffer}`);
++  }
++  if (typeof subgroupMax === 'number') {
++    extras.push(`subgroupMax=${subgroupMax}`);
++  }
+   return {
+-    line: `WebGPU vendor=${vendor} arch=${architecture}`,
++    line: `WebGPU vendor=${vendor} arch=${architecture}${
++        extras.length ? ' ' + extras.join(' ') : ''}`,
+     marked: blob.toLowerCase().includes('aegis'),
+   };
+ }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 650951eb57..1d2a5f959a 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -79,7 +79,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指紋防護",
+         .fingerprint_hint =
+             "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。"
+-            "檢測兩次，同一頁的 Audio 讀數應相同。",
++            "檢測兩次，同一頁的 Audio 讀數應相同；WebGPU 的 maxBufferSize 會隨開關變化。",
+         .fingerprint_probe = "檢測本頁指紋",
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+@@ -151,7 +151,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指纹防护",
+         .fingerprint_hint =
+             "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。"
+-            "检测两次，同一页的 Audio 读数应相同。",
++            "检测两次，同一页的 Audio 读数应相同；WebGPU 的 maxBufferSize 会随开关变化。",
+         .fingerprint_probe = "检测本页指纹",
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+@@ -223,7 +223,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .fingerprint_label = "Fingerprint Guard",
+       .fingerprint_hint =
+           "Stabilizes Canvas, WebGL, Audio, and WebGPU to reduce cross-site "
+-          "fingerprinting. Probe twice; Audio on this page should stay the same.",
++          "fingerprinting. Probe twice; Audio on this page should stay the "
++          "same. WebGPU maxBufferSize changes with the guard.",
+       .fingerprint_probe = "Probe this page fingerprints",
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
+index 23c1976aff..4bf5bfe3b3 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.cc
++++ b/third_party/blink/renderer/core/aegis/farbling.cc
+@@ -181,5 +181,76 @@ void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
+   driver = drv.ToString();
+ }
+ 
++namespace {
++
++// WebGPU 规范要求的下限。只往下收，不抬高，避免报出硬件没有的能力。
++constexpr uint64_t kMinMaxBufferSize = 268435456ULL;
++constexpr uint32_t kMinMaxWorkgroupStorage = 16384u;
++constexpr uint32_t kMinMaxTexture3d = 2048u;
++constexpr uint32_t kMinSubgroupMin = 4u;
++
++void AdvanceToken(uint64_t* token) {
++  *token = *token * 6364136223846793005ULL + 1ULL;
++}
++
++template <typename T>
++T FarbleTowardMin(T actual, T spec_min, uint64_t* token) {
++  AdvanceToken(token);
++  if (actual <= spec_min) {
++    return actual;
++  }
++  const uint64_t headroom = static_cast<uint64_t>(actual - spec_min);
++  const uint64_t drop = (headroom * ((*token >> 33) & 15u)) / 64u;
++  const T out = actual - static_cast<T>(drop);
++  return out < spec_min ? spec_min : out;
++}
++
++// subgroupMinSize / subgroupMaxSize 必须是 2 的幂，不能按任意整数收档。
++uint32_t FarblePowerOfTwoTowardMin(uint32_t actual,
++                                   uint32_t spec_min,
++                                   uint64_t* token) {
++  AdvanceToken(token);
++  if (actual <= spec_min || (actual & (actual - 1u)) != 0u) {
++    return actual;
++  }
++  uint32_t floor_min = spec_min;
++  if (floor_min == 0u || (floor_min & (floor_min - 1u)) != 0u) {
++    return actual;
++  }
++  uint32_t steps = 0u;
++  for (uint32_t v = actual; v > floor_min; v >>= 1u) {
++    ++steps;
++  }
++  const uint32_t drop_steps =
++      static_cast<uint32_t>((steps * ((*token >> 33) & 15u)) / 64u);
++  const uint32_t out = actual >> drop_steps;
++  return out < floor_min ? floor_min : out;
++}
++
++}  // namespace
++
++void MaybeFarbleWebGPUNumericLimits(ExecutionContext* context,
++                                    uint64_t& max_buffer_size,
++                                    uint32_t& max_workgroup_storage,
++                                    uint32_t& max_texture_3d,
++                                    uint32_t& subgroup_min_size,
++                                    uint32_t& subgroup_max_size) {
++  if (!IsFingerprintGuardEnabled()) {
++    return;
++  }
++  uint64_t token = TokenForContext(context);
++  max_buffer_size =
++      FarbleTowardMin(max_buffer_size, kMinMaxBufferSize, &token);
++  max_workgroup_storage =
++      FarbleTowardMin(max_workgroup_storage, kMinMaxWorkgroupStorage, &token);
++  max_texture_3d = FarbleTowardMin(max_texture_3d, kMinMaxTexture3d, &token);
++  subgroup_min_size =
++      FarblePowerOfTwoTowardMin(subgroup_min_size, kMinSubgroupMin, &token);
++  if (subgroup_max_size > subgroup_min_size) {
++    subgroup_max_size = FarblePowerOfTwoTowardMin(
++        subgroup_max_size, subgroup_min_size, &token);
++  }
++}
++
+ }  // namespace aegis
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
+index e51cf04fe1..6a84f03cb1 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.h
++++ b/third_party/blink/renderer/core/aegis/farbling.h
+@@ -4,6 +4,8 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
+ #define THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
+ 
++#include <cstdint>
++
+ #include "base/memory/scoped_refptr.h"
+ #include "third_party/blink/renderer/core/core_export.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+@@ -43,6 +45,14 @@ CORE_EXPORT void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
+                                                  String& description,
+                                                  String& driver);
+ 
++// 把若干高识别度 WebGPU 数值向规范下限收一档，按 host 稳定，且不超过硬件原值。
++CORE_EXPORT void MaybeFarbleWebGPUNumericLimits(ExecutionContext* context,
++                                                uint64_t& max_buffer_size,
++                                                uint32_t& max_workgroup_storage,
++                                                uint32_t& max_texture_3d,
++                                                uint32_t& subgroup_min_size,
++                                                uint32_t& subgroup_max_size);
++
+ }  // namespace aegis
+ }  // namespace blink
+ 
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+index ee707ce4f1..3621aada46 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+@@ -118,6 +118,12 @@ GPUAdapter::GPUAdapter(
+ 
+   GPUSupportedLimits::ComboLimits limits;
+   GetHandle().GetLimits(limits.GetLinked());
++  if (ExecutionContext* context =
++          gpu_ ? gpu_->GetExecutionContext() : nullptr) {
++    aegis::MaybeFarbleWebGPUNumericLimits(
++        context, limits.maxBufferSize, limits.maxComputeWorkgroupStorageSize,
++        limits.maxTextureDimension3D, subgroup_min_size_, subgroup_max_size_);
++  }
+   limits_ = MakeGarbageCollected<GPUSupportedLimits>(limits);
+ 
+   info_ = CreateAdapterInfoForAdapter();
+-- 
+2.52.0
+

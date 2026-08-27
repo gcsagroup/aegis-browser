@@ -1,0 +1,21 @@
+# Prefer these GN args for GCSA-aegis developer builds.
+# Usage: gn gen out/Aegis --args="$(cat apps/browser/args/aegis.gn)"
+#
+# Release packaging tip: set is_component_build = false, re-gen + rebuild,
+# then `pnpm --filter @gcsa-aegis/browser package` for a self-contained .app.
+
+is_debug = false
+is_component_build = true
+symbol_level = 1
+blink_symbol_level = 0
+v8_symbol_level = 0
+
+# Faster local iteration on Apple Silicon
+target_cpu = "arm64"
+
+# Keep proprietary codecs off unless you have a licensing plan
+proprietary_codecs = false
+ffmpeg_branding = "Chromium"
+
+# Enable official-ish optimizations without claiming Google branding
+is_official_build = false

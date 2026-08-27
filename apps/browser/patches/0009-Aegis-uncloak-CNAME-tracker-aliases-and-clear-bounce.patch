@@ -1,0 +1,984 @@
+From 9c3cf71836a4c867ef2f6106e148c5b45f08c851 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 05:16:20 +0800
+Subject: [PATCH] Aegis: uncloak CNAME tracker aliases and clear bounce-tracker
+ cookies
+
+Block first-party subresources whose DNS CNAME chain points at a known
+tracker, and immediately delete cookies on BTM bounce hops that match
+Aegis tracker rules instead of waiting for the default grace period.
+---
+ chrome/browser/aegis/BUILD.gn                 |   2 +
+ chrome/browser/aegis/aegis_bounce_observer.cc | 106 ++++++++++++++++++
+ chrome/browser/aegis/aegis_bounce_observer.h  |  49 ++++++++
+ chrome/browser/aegis/aegis_prefs.cc           |   2 +
+ chrome/browser/aegis/aegis_service.cc         |  43 ++++++-
+ chrome/browser/aegis/aegis_service.h          |   4 +
+ .../browser/chrome_content_browser_client.cc  |  14 ++-
+ chrome/browser/profiles/renderer_updater.cc   |   8 +-
+ chrome/browser/profiles/renderer_updater.h    |   1 +
+ chrome/browser/resources/aegis/aegis.html     |   8 ++
+ chrome/browser/resources/aegis/aegis.ts       |  12 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  10 ++
+ .../ui/webui/aegis/aegis_ui_handler.cc        |   6 +
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/aegis_net_throttle.cc     |  64 +++++++++--
+ chrome/common/aegis/aegis_net_throttle.h      |  25 +++--
+ chrome/common/aegis/cname_uncloak.cc          |  93 +++++++++++++++
+ chrome/common/aegis/cname_uncloak.h           |  50 +++++++++
+ chrome/common/aegis/features.cc               |   2 +
+ chrome/common/aegis/features.h                |   2 +
+ chrome/common/aegis/pref_names.h              |   3 +
+ chrome/common/renderer_configuration.mojom    |   1 +
+ .../url_loader_throttle_provider_impl.cc      |   6 +-
+ 23 files changed, 490 insertions(+), 23 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_bounce_observer.cc
+ create mode 100644 chrome/browser/aegis/aegis_bounce_observer.h
+ create mode 100644 chrome/common/aegis/cname_uncloak.cc
+ create mode 100644 chrome/common/aegis/cname_uncloak.h
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 77140ce2db..c18d4021e0 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -13,6 +13,8 @@ source_set("aegis") {
+     "aegis_link_sanitize_navigation_throttle.h",
+     "aegis_cookie_janitor.cc",
+     "aegis_cookie_janitor.h",
++    "aegis_bounce_observer.cc",
++    "aegis_bounce_observer.h",
+     "aegis_prefs.cc",
+     "aegis_prefs.h",
+     "aegis_service.cc",
+diff --git a/chrome/browser/aegis/aegis_bounce_observer.cc b/chrome/browser/aegis/aegis_bounce_observer.cc
+new file mode 100644
+index 0000000000..08bc56e356
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_bounce_observer.cc
+@@ -0,0 +1,106 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_bounce_observer.cc
++
++#include "chrome/browser/aegis/aegis_bounce_observer.h"
++
++#include <memory>
++
++#include "base/functional/callback_helpers.h"
++#include "base/logging.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
++#include "content/public/browser/storage_partition.h"
++#include "services/network/public/mojom/cookie_manager.mojom.h"
++
++namespace aegis {
++namespace {
++
++bool RedirectUsedStorage(content::BtmDataAccessType access) {
++  switch (access) {
++    case content::BtmDataAccessType::kRead:
++    case content::BtmDataAccessType::kWrite:
++    case content::BtmDataAccessType::kReadWrite:
++      return true;
++    case content::BtmDataAccessType::kUnknown:
++    case content::BtmDataAccessType::kNone:
++      return false;
++  }
++}
++
++bool HadUserActivation(const content::BtmRedirect& redirect) {
++  if (redirect.has_sticky_activation) {
++    return true;
++  }
++  return redirect.site_had_user_activation.value_or(false);
++}
++
++}  // namespace
++
++BounceObserver::BounceObserver(PassKey,
++                               content::BtmService* btm_service,
++                               Profile* profile)
++    : btm_service_(btm_service), profile_(profile) {
++  btm_service_->AddObserver(this);
++}
++
++BounceObserver::~BounceObserver() {
++  btm_service_->RemoveObserver(this);
++}
++
++// static
++void BounceObserver::CreateFor(content::BtmService* btm_service,
++                               Profile* profile) {
++  if (!btm_service || btm_service->GetUserData(&kUserDataKey)) {
++    return;
++  }
++  btm_service->SetUserData(&kUserDataKey, std::make_unique<BounceObserver>(
++                                              PassKey(), btm_service, profile));
++}
++
++void BounceObserver::OnChainHandled(
++    const std::vector<content::BtmRedirectPtr>& redirects,
++    const content::BtmRedirectChainPtr& chain) {
++  if (!AegisService::GetInstance()->IsBounceTrackingEnabled()) {
++    return;
++  }
++  if (!chain || chain->is_partial_chain) {
++    return;
++  }
++
++  for (const content::BtmRedirectPtr& redirect : redirects) {
++    if (!redirect) {
++      continue;
++    }
++    if (HadUserActivation(*redirect) ||
++        !RedirectUsedStorage(redirect->access_type)) {
++      continue;
++    }
++    if (!FilterListMatcher::GetInstance()->ShouldBlock(
++            redirect->redirector_url)) {
++      continue;
++    }
++    LOG(INFO) << "Aegis: clearing cookies for bounce tracker "
++              << redirect->site;
++    DeleteSiteCookies(redirect->site);
++  }
++}
++
++void BounceObserver::DeleteSiteCookies(const std::string& site) {
++  if (site.empty() || !profile_) {
++    return;
++  }
++  network::mojom::CookieManager* manager =
++      profile_->GetDefaultStoragePartition()
++          ->GetCookieManagerForBrowserProcess();
++  if (!manager) {
++    return;
++  }
++  auto filter = network::mojom::CookieDeletionFilter::New();
++  filter->including_domains = std::vector<std::string>{site};
++  manager->DeleteCookies(std::move(filter), base::DoNothing());
++}
++
++const int BounceObserver::kUserDataKey;
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_bounce_observer.h b/chrome/browser/aegis/aegis_bounce_observer.h
+new file mode 100644
+index 0000000000..4c44693820
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_bounce_observer.h
+@@ -0,0 +1,49 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_bounce_observer.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_BOUNCE_OBSERVER_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_BOUNCE_OBSERVER_H_
++
++#include <string>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "base/supports_user_data.h"
++#include "base/types/pass_key.h"
++#include "content/public/browser/btm_redirect.h"
++#include "content/public/browser/btm_service.h"
++
++class Profile;
++
++namespace aegis {
++
++// Observes Chromium BTM redirect chains and immediately deletes cookies for
++// bounce hops that match Aegis tracker rules, instead of waiting for BTM's
++// default grace period. Lifetime is tied to BtmService via UserData.
++class BounceObserver : public content::BtmService::Observer,
++                       public base::SupportsUserData::Data {
++ public:
++  using PassKey = base::PassKey<BounceObserver>;
++
++  BounceObserver(PassKey, content::BtmService* btm_service, Profile* profile);
++  BounceObserver(const BounceObserver&) = delete;
++  BounceObserver& operator=(const BounceObserver&) = delete;
++  ~BounceObserver() override;
++
++  static void CreateFor(content::BtmService* btm_service, Profile* profile);
++
++  // content::BtmService::Observer:
++  void OnChainHandled(const std::vector<content::BtmRedirectPtr>& redirects,
++                      const content::BtmRedirectChainPtr& chain) override;
++
++ private:
++  void DeleteSiteCookies(const std::string& site);
++
++  raw_ptr<content::BtmService> btm_service_;
++  raw_ptr<Profile> profile_;
++  static const int kUserDataKey = 0;
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_BOUNCE_OBSERVER_H_
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 6fe365a89e..2498e7319d 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -23,6 +23,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterStringPref(prefs::kFilterListLastError, std::string());
+   registry->RegisterBooleanPref(prefs::kLinkSanitizeEnabled, true);
+   registry->RegisterBooleanPref(prefs::kCookieJanitorEnabled, true);
++  registry->RegisterBooleanPref(prefs::kCnameUncloakEnabled, true);
++  registry->RegisterBooleanPref(prefs::kBounceTrackingEnabled, true);
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index d86edc09dc..a8b3def1a6 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -6,14 +6,16 @@
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
+ #include "base/strings/string_util.h"
+-#include "chrome/browser/aegis/filter_list_updater.h"
++#include "chrome/browser/aegis/aegis_bounce_observer.h"
+ #include "chrome/browser/aegis/aegis_cookie_janitor.h"
++#include "chrome/browser/aegis/filter_list_updater.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
++#include "content/public/browser/btm_service.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+@@ -44,6 +46,11 @@ void AegisService::InitializeForProfile(Profile* profile) {
+     cookie_janitor_ = std::make_unique<CookieJanitor>(profile);
+     cookie_janitor_->Start();
+   }
++  if (base::FeatureList::IsEnabled(features::kAegisBounceTracking)) {
++    if (content::BtmService* btm = content::BtmService::Get(profile)) {
++      BounceObserver::CreateFor(btm, profile);
++    }
++  }
+   LOG(INFO) << "GCSA-aegis initialized for profile"
+             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
+                                            : " (tracker blocking off)");
+@@ -194,6 +201,40 @@ void AegisService::SetCookieJanitorEnabled(bool enabled) {
+   }
+ }
+ 
++bool AegisService::IsCnameUncloakEnabled() const {
++  if (!IsTrackerBlockingEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisCnameUncloak)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kCnameUncloakEnabled);
++}
++
++bool AegisService::IsBounceTrackingEnabled() const {
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisBounceTracking)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kBounceTrackingEnabled);
++}
++
++void AegisService::SetCnameUncloakEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kCnameUncloakEnabled, enabled);
++  }
++}
++
++void AegisService::SetBounceTrackingEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kBounceTrackingEnabled, enabled);
++  }
++}
++
+ void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
+   if (!filter_list_updater_) {
+     std::move(done).Run(false);
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index bcc72edff8..ebecb7d954 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -39,6 +39,8 @@ class AegisService {
+   bool IsFilterListAutoUpdateEnabled() const;
+   bool IsLinkSanitizeEnabled() const;
+   bool IsCookieJanitorEnabled() const;
++  bool IsCnameUncloakEnabled() const;
++  bool IsBounceTrackingEnabled() const;
+   bool IsFilterListUpdating() const;
+   int FilterListHostCount() const;
+   int64_t FilterListLastUpdated() const;
+@@ -50,6 +52,8 @@ class AegisService {
+   void SetFilterListAutoUpdateEnabled(bool enabled);
+   void SetLinkSanitizeEnabled(bool enabled);
+   void SetCookieJanitorEnabled(bool enabled);
++  void SetCnameUncloakEnabled(bool enabled);
++  void SetBounceTrackingEnabled(bool enabled);
+   void UpdateFilterLists(base::OnceCallback<void(bool)> done);
+ 
+   // Host-rule match against builtin seed + compiled EasyList. Callers should
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 1085e9aee9..b915ad9e27 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/chrome_content_browser_client.h"
+ #include "chrome/common/aegis/aegis_net_throttle.h"
++#include "chrome/browser/aegis/aegis_bounce_observer.h"
+ 
+ #include <algorithm>
+ #include <iterator>
+@@ -6048,7 +6049,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+           profile->GetPrefs()->GetBoolean(
+               aegis::prefs::kTrackerBlockingEnabled),
+           profile->GetPrefs()->GetBoolean(
+-              aegis::prefs::kFingerprintGuardEnabled));
++              aegis::prefs::kFingerprintGuardEnabled),
++          profile->GetPrefs()->GetBoolean(
++              aegis::prefs::kCnameUncloakEnabled));
+   return std::make_unique<GoogleURLLoaderThrottle>(
+ #if BUILDFLAG(IS_ANDROID)
+       client_data_header,
+@@ -6155,8 +6158,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+ 
+   const bool aegis_tracker_blocking =
+       profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
+-  if (auto aegis_throttle =
+-          aegis::AegisNetThrottle::MaybeCreate(aegis_tracker_blocking);
++  const bool aegis_cname_uncloak =
++      profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled);
++  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate(
++          aegis_tracker_blocking, aegis_cname_uncloak);
+       aegis_throttle) {
+     result.push_back(std::move(aegis_throttle));
+   }
+@@ -9212,6 +9217,9 @@ void ChromeContentBrowserClient::OnBtmServiceCreated(
+   // Create BtmBrowserSigninDetector.
+   CHECK(BtmBrowserSigninDetector::Get(browser_context));
+   btm::StatefulBounceCounter::CreateFor(btm_service);
++  if (Profile* profile = Profile::FromBrowserContext(browser_context)) {
++    aegis::BounceObserver::CreateFor(btm_service, profile);
++  }
+ }
+ 
+ static_assert(content::ContentBrowserClient::kDefaultBtmRemoveMask ==
+diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
+index f2b7e9c980..fc82f8cf70 100644
+--- a/chrome/browser/profiles/renderer_updater.cc
++++ b/chrome/browser/profiles/renderer_updater.cc
+@@ -81,6 +81,7 @@ RendererUpdater::RendererUpdater(Profile* profile)
+                                pref_service);
+   aegis_fingerprint_guard_.Init(aegis::prefs::kFingerprintGuardEnabled,
+                                 pref_service);
++  aegis_cname_uncloak_.Init(aegis::prefs::kCnameUncloakEnabled, pref_service);
+ 
+   pref_change_registrar_.Init(pref_service);
+   pref_change_registrar_.Add(
+@@ -103,6 +104,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+       aegis::prefs::kFingerprintGuardEnabled,
+       base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
+                           base::Unretained(this)));
++  pref_change_registrar_.Add(
++      aegis::prefs::kCnameUncloakEnabled,
++      base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
++                          base::Unretained(this)));
+   pref_change_registrar_.Add(
+       aegis::prefs::kFilterListGeneration,
+       base::BindRepeating(&RendererUpdater::PushAegisFilterList,
+@@ -277,5 +282,6 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+       force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
+       allowed_domains_for_apps_.GetValue(),
+       aegis_tracker_blocking_.GetValue(),
+-      aegis_fingerprint_guard_.GetValue());
++      aegis_fingerprint_guard_.GetValue(),
++      aegis_cname_uncloak_.GetValue());
+ }
+diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
+index 3236d383bb..b8df9968f5 100644
+--- a/chrome/browser/profiles/renderer_updater.h
++++ b/chrome/browser/profiles/renderer_updater.h
+@@ -111,6 +111,7 @@ class RendererUpdater : public KeyedService
+   StringPrefMember allowed_domains_for_apps_;
+   BooleanPrefMember aegis_tracker_blocking_;
+   BooleanPrefMember aegis_fingerprint_guard_;
++  BooleanPrefMember aegis_cname_uncloak_;
+ };
+ 
+ #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 5456e1ca72..6101ac3377 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -30,6 +30,14 @@
+           <span>$i18n{cookieJanitorLabel}</span>
+           <input id="cookie-janitor" type="checkbox">
+         </label>
++        <label class="row">
++          <span>$i18n{cnameUncloakLabel}</span>
++          <input id="cname-uncloak" type="checkbox">
++        </label>
++        <label class="row">
++          <span>$i18n{bounceTrackingLabel}</span>
++          <input id="bounce-tracking" type="checkbox">
++        </label>
+       </section>
+       <section class="filters" aria-label="filter lists">
+         <h2>$i18n{filterListTitle}</h2>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 2fc5492e0e..d0a93b8980 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -15,6 +15,8 @@ interface AegisStatus {
+   filterListLastError: string;
+   linkSanitize: boolean;
+   cookieJanitor: boolean;
++  cnameUncloak: boolean;
++  bounceTracking: boolean;
+   ok?: boolean;
+ }
+ 
+@@ -60,6 +62,8 @@ function applyStatus(status: AegisStatus) {
+   checkbox('fingerprint').checked = status.fingerprintGuard;
+   checkbox('link-sanitize').checked = status.linkSanitize;
+   checkbox('cookie-janitor').checked = status.cookieJanitor;
++  checkbox('cname-uncloak').checked = status.cnameUncloak;
++  checkbox('bounce-tracking').checked = status.bounceTracking;
+   checkbox('filter-auto').checked = status.filterListAutoUpdate;
+   getRequiredElement('filter-meta').textContent = formatMeta(status);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+@@ -67,7 +71,8 @@ function applyStatus(status: AegisStatus) {
+ 
+ async function setModule(
+     module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+-    'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor',
++    'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
++    'bounceTracking',
+     enabled: boolean) {
+   const status: AegisStatus =
+       await sendWithPromise('setModuleEnabled', module, enabled);
+@@ -77,7 +82,8 @@ async function setModule(
+ function bindToggle(
+     id: string,
+     module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+-    'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor') {
++    'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
++    'bounceTracking') {
+   const el = checkbox(id);
+   el.addEventListener('change', () => {
+     void setModule(module, el.checked);
+@@ -92,6 +98,8 @@ async function init() {
+   bindToggle('fingerprint', 'fingerprintGuard');
+   bindToggle('link-sanitize', 'linkSanitize');
+   bindToggle('cookie-janitor', 'cookieJanitor');
++  bindToggle('cname-uncloak', 'cnameUncloak');
++  bindToggle('bounce-tracking', 'bounceTracking');
+   bindToggle('filter-auto', 'filterListAutoUpdate');
+   actionButton('filter-update').addEventListener('click', () => {
+     void (async () => {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 9b612e6fb3..43925c81b2 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -29,6 +29,8 @@ struct AegisStrings {
+   const char* filter_list_meta;
+   const char* link_sanitize_label;
+   const char* cookie_janitor_label;
++  const char* cname_uncloak_label;
++  const char* bounce_tracking_label;
+   const char* note;
+ };
+ 
+@@ -45,6 +47,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
+             "清洗追蹤參數",
+             "清理廣告/分析 Cookie",
++            "揭開 CNAME 偽裝追蹤",
++            "攔截跳轉追蹤並立即清 Cookie",
+             "模組狀態會立即套用；過濾列表約每天自動更新一次。"};
+   }
+   if (locale.starts_with("zh")) {
+@@ -59,6 +63,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
+             "清洗跟踪参数",
+             "清理广告/分析 Cookie",
++            "揭开 CNAME 伪装跟踪",
++            "拦截跳转跟踪并立即清 Cookie",
+             "模块状态会立即生效；过滤列表大约每天自动更新一次。"};
+   }
+   return {"GCSA-aegis",
+@@ -72,6 +78,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
+           "Strip tracking parameters",
+           "Clear ads/analytics cookies",
++          "Uncloak CNAME tracker aliases",
++          "Clear bounce-tracker cookies immediately",
+           "Changes apply immediately. Filter lists refresh about once a day."};
+ }
+ 
+@@ -95,6 +103,8 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("filterListMeta", strings.filter_list_meta);
+   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
+   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
++  source->AddString("cnameUncloakLabel", strings.cname_uncloak_label);
++  source->AddString("bounceTrackingLabel", strings.bounce_tracking_label);
+   source->AddString("note", strings.note);
+ 
+   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 151d236858..9ccee830c3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -43,6 +43,8 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("filterListLastError", service->FilterListLastError());
+   status.Set("linkSanitize", service->IsLinkSanitizeEnabled());
+   status.Set("cookieJanitor", service->IsCookieJanitorEnabled());
++  status.Set("cnameUncloak", service->IsCnameUncloakEnabled());
++  status.Set("bounceTracking", service->IsBounceTrackingEnabled());
+   return status;
+ }
+ 
+@@ -74,6 +76,10 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+     service->SetLinkSanitizeEnabled(enabled);
+   } else if (module == "cookieJanitor") {
+     service->SetCookieJanitorEnabled(enabled);
++  } else if (module == "cnameUncloak") {
++    service->SetCnameUncloakEnabled(enabled);
++  } else if (module == "bounceTracking") {
++    service->SetBounceTrackingEnabled(enabled);
+   }
+ 
+   ResolveJavascriptCallback(callback_id, BuildStatus());
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 0378207497..205d06d0e3 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -5,6 +5,8 @@ source_set("aegis") {
+   sources = [
+     "aegis_net_throttle.cc",
+     "aegis_net_throttle.h",
++    "cname_uncloak.cc",
++    "cname_uncloak.h",
+     "builtin_phish_hosts.cc",
+     "builtin_phish_hosts.h",
+     "builtin_tracker_hosts.cc",
+diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
+index 6c45621d74..c748ba2236 100644
+--- a/chrome/common/aegis/aegis_net_throttle.cc
++++ b/chrome/common/aegis/aegis_net_throttle.cc
+@@ -4,12 +4,14 @@
+ #include "chrome/common/aegis/aegis_net_throttle.h"
+ 
+ #include "base/feature_list.h"
+-#include "chrome/common/aegis/filter_list_matcher.h"
++#include "chrome/common/aegis/cname_uncloak.h"
+ #include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
+ #include "net/base/net_errors.h"
+ #include "net/url_request/redirect_info.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+@@ -22,6 +24,11 @@ bool FeatureAllowsTrackerBlocking() {
+          base::FeatureList::IsEnabled(features::kAegisTrackerBlocking);
+ }
+ 
++bool FeatureAllowsCnameUncloak() {
++  return FeatureAllowsTrackerBlocking() &&
++         base::FeatureList::IsEnabled(features::kAegisCnameUncloak);
++}
++
+ bool IsMainDocumentRequest(const network::ResourceRequest& request) {
+   return request.destination ==
+          network::mojom::RequestDestination::kDocument;
+@@ -31,15 +38,20 @@ bool IsMainDocumentRequest(const network::ResourceRequest& request) {
+ 
+ // static
+ std::unique_ptr<blink::URLLoaderThrottle> AegisNetThrottle::MaybeCreate(
+-    bool tracker_blocking_enabled) {
++    bool tracker_blocking_enabled,
++    bool cname_uncloak_enabled) {
+   if (!FeatureAllowsTrackerBlocking() || !tracker_blocking_enabled) {
+     return nullptr;
+   }
+-  return std::make_unique<AegisNetThrottle>(tracker_blocking_enabled);
++  const bool cname =
++      FeatureAllowsCnameUncloak() && cname_uncloak_enabled;
++  return std::make_unique<AegisNetThrottle>(tracker_blocking_enabled, cname);
+ }
+ 
+-AegisNetThrottle::AegisNetThrottle(bool tracker_blocking_enabled)
+-    : tracker_blocking_enabled_(tracker_blocking_enabled) {}
++AegisNetThrottle::AegisNetThrottle(bool tracker_blocking_enabled,
++                                   bool cname_uncloak_enabled)
++    : tracker_blocking_enabled_(tracker_blocking_enabled),
++      cname_uncloak_enabled_(cname_uncloak_enabled) {}
+ 
+ AegisNetThrottle::~AegisNetThrottle() = default;
+ 
+@@ -47,18 +59,41 @@ void AegisNetThrottle::DetachFromCurrentSequence() {}
+ 
+ void AegisNetThrottle::WillStartRequest(network::ResourceRequest* request,
+                                         bool* /*defer*/) {
+-  if (IsMainDocumentRequest(*request)) {
++  current_url_ = request->url;
++  is_main_document_ = IsMainDocumentRequest(*request);
++  if (is_main_document_) {
+     return;
+   }
+   MaybeBlock(request->url);
++  if (cname_uncloak_enabled_ && request->url.has_host() &&
++      CnameUncloakCache::GetInstance()->IsCloakedHost(request->url.host())) {
++    delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
++  }
+ }
+ 
+ void AegisNetThrottle::WillRedirectRequest(
+     net::RedirectInfo* redirect_info,
+-    const network::mojom::URLResponseHead& /*response_head*/,
++    const network::mojom::URLResponseHead& response_head,
+     bool* /*defer*/,
+     network::HttpRequestHeadersUpdateParams* /*headers_update_params*/) {
++  MaybeBlockCloaked(current_url_, response_head.dns_aliases);
++  current_url_ = redirect_info->new_url;
+   MaybeBlock(redirect_info->new_url);
++  if (cname_uncloak_enabled_ && redirect_info->new_url.has_host() &&
++      CnameUncloakCache::GetInstance()->IsCloakedHost(
++          redirect_info->new_url.host())) {
++    delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
++  }
++}
++
++void AegisNetThrottle::WillProcessResponse(
++    const GURL& response_url,
++    network::mojom::URLResponseHead* response_head,
++    bool* /*defer*/) {
++  if (!response_head) {
++    return;
++  }
++  MaybeBlockCloaked(response_url, response_head->dns_aliases);
+ }
+ 
+ void AegisNetThrottle::MaybeBlock(const GURL& url) {
+@@ -69,4 +104,19 @@ void AegisNetThrottle::MaybeBlock(const GURL& url) {
+   delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
+ }
+ 
++void AegisNetThrottle::MaybeBlockCloaked(
++    const GURL& url,
++    const std::vector<std::string>& dns_aliases) {
++  if (is_main_document_ || !cname_uncloak_enabled_) {
++    return;
++  }
++  if (!AliasesRevealTracker(url, dns_aliases)) {
++    return;
++  }
++  if (url.has_host()) {
++    CnameUncloakCache::GetInstance()->RememberCloakedHost(url.host());
++  }
++  delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
++}
++
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
+index b9eb7134c9..29f762ef64 100644
+--- a/chrome/common/aegis/aegis_net_throttle.h
++++ b/chrome/common/aegis/aegis_net_throttle.h
+@@ -5,23 +5,26 @@
+ #define CHROME_COMMON_AEGIS_AEGIS_NET_THROTTLE_H_
+ 
+ #include <memory>
++#include <vector>
+ 
+ #include "third_party/blink/public/common/loader/url_loader_throttle.h"
+-
+-class GURL;
++#include "url/gurl.h"
+ 
+ namespace aegis {
+ 
+-// Cancels subresource requests that match builtin + compiled EasyList hosts.
++// Cancels subresource requests that match builtin + compiled EasyList hosts,
++// including first-party hosts whose DNS CNAME chain points at a tracker.
+ // Registered from both browser and renderer throttle providers.
+ class AegisNetThrottle : public blink::URLLoaderThrottle {
+  public:
+-  // |tracker_blocking_enabled| comes from profile prefs (browser) or
+-  // DynamicParams (renderer). Feature kill-switches are still checked here.
++  // |tracker_blocking_enabled| / |cname_uncloak_enabled| come from profile
++  // prefs (browser) or DynamicParams (renderer). Feature kill-switches are
++  // still checked here.
+   static std::unique_ptr<blink::URLLoaderThrottle> MaybeCreate(
+-      bool tracker_blocking_enabled);
++      bool tracker_blocking_enabled,
++      bool cname_uncloak_enabled);
+ 
+-  explicit AegisNetThrottle(bool tracker_blocking_enabled);
++  AegisNetThrottle(bool tracker_blocking_enabled, bool cname_uncloak_enabled);
+   AegisNetThrottle(const AegisNetThrottle&) = delete;
+   AegisNetThrottle& operator=(const AegisNetThrottle&) = delete;
+   ~AegisNetThrottle() override;
+@@ -35,11 +38,19 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
+       const network::mojom::URLResponseHead& response_head,
+       bool* defer,
+       network::HttpRequestHeadersUpdateParams* headers_update_params) override;
++  void WillProcessResponse(const GURL& response_url,
++                           network::mojom::URLResponseHead* response_head,
++                           bool* defer) override;
+ 
+  private:
+   void MaybeBlock(const GURL& url);
++  void MaybeBlockCloaked(const GURL& url,
++                         const std::vector<std::string>& dns_aliases);
+ 
+   const bool tracker_blocking_enabled_;
++  const bool cname_uncloak_enabled_;
++  bool is_main_document_ = false;
++  GURL current_url_;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/cname_uncloak.cc b/chrome/common/aegis/cname_uncloak.cc
+new file mode 100644
+index 0000000000..c8cbcd0b04
+--- /dev/null
++++ b/chrome/common/aegis/cname_uncloak.cc
+@@ -0,0 +1,93 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cname_uncloak.cc
++
++#include "chrome/common/aegis/cname_uncloak.h"
++
++#include "base/memory/singleton.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_util.h"
++#include "chrome/common/aegis/filter_list_matcher.h"
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++constexpr size_t kMaxCachedHosts = 4096;
++
++std::string NormalizeDnsAlias(std::string_view alias) {
++  std::string host = base::ToLowerASCII(alias);
++  while (base::EndsWith(host, ".")) {
++    host.pop_back();
++  }
++  return host;
++}
++
++std::string RegistrableDomain(std::string_view host) {
++  return net::registry_controlled_domains::GetDomainAndRegistry(
++      host, net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
++}
++
++}  // namespace
++
++// static
++CnameUncloakCache* CnameUncloakCache::GetInstance() {
++  return base::Singleton<CnameUncloakCache>::get();
++}
++
++CnameUncloakCache::CnameUncloakCache() = default;
++CnameUncloakCache::~CnameUncloakCache() = default;
++
++void CnameUncloakCache::RememberCloakedHost(std::string_view host) {
++  const std::string normalized = NormalizeDnsAlias(host);
++  if (normalized.empty()) {
++    return;
++  }
++  base::AutoLock lock(lock_);
++  if (hosts_.size() >= kMaxCachedHosts) {
++    hosts_.clear();
++  }
++  hosts_.insert(normalized);
++}
++
++bool CnameUncloakCache::IsCloakedHost(std::string_view host) const {
++  const std::string normalized = NormalizeDnsAlias(host);
++  if (normalized.empty()) {
++    return false;
++  }
++  base::AutoLock lock(lock_);
++  return hosts_.contains(normalized);
++}
++
++bool AliasesRevealTracker(const GURL& request_url,
++                          const std::vector<std::string>& dns_aliases) {
++  if (!request_url.is_valid() || !request_url.has_host() ||
++      dns_aliases.empty()) {
++    return false;
++  }
++
++  const std::string request_host = NormalizeDnsAlias(request_url.host());
++  const std::string request_reg = RegistrableDomain(request_host);
++  if (request_reg.empty()) {
++    return false;
++  }
++
++  for (const std::string& alias : dns_aliases) {
++    const std::string host = NormalizeDnsAlias(alias);
++    if (host.empty() || host == request_host) {
++      continue;
++    }
++    const std::string alias_reg = RegistrableDomain(host);
++    if (alias_reg.empty() ||
++        base::EqualsCaseInsensitiveASCII(alias_reg, request_reg)) {
++      continue;
++    }
++    const GURL alias_url(base::StrCat({"https://", host, "/"}));
++    if (FilterListMatcher::GetInstance()->ShouldBlock(alias_url)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/cname_uncloak.h b/chrome/common/aegis/cname_uncloak.h
+new file mode 100644
+index 0000000000..928ff6bd28
+--- /dev/null
++++ b/chrome/common/aegis/cname_uncloak.h
+@@ -0,0 +1,50 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cname_uncloak.h
++
++#ifndef CHROME_COMMON_AEGIS_CNAME_UNCLOAK_H_
++#define CHROME_COMMON_AEGIS_CNAME_UNCLOAK_H_
++
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/containers/flat_set.h"
++#include "base/memory/singleton.h"
++#include "base/synchronization/lock.h"
++#include "base/thread_annotations.h"
++
++class GURL;
++
++namespace aegis {
++
++// Process-wide cache of first-party hosts whose DNS CNAME chain pointed at a
++// known tracker. Subsequent subresource requests to those hosts are blocked
++// at WillStartRequest without waiting for DNS.
++class CnameUncloakCache {
++ public:
++  static CnameUncloakCache* GetInstance();
++
++  CnameUncloakCache(const CnameUncloakCache&) = delete;
++  CnameUncloakCache& operator=(const CnameUncloakCache&) = delete;
++
++  void RememberCloakedHost(std::string_view host);
++  bool IsCloakedHost(std::string_view host) const;
++
++ private:
++  friend struct base::DefaultSingletonTraits<CnameUncloakCache>;
++  CnameUncloakCache();
++  ~CnameUncloakCache();
++
++  mutable base::Lock lock_;
++  base::flat_set<std::string> hosts_ GUARDED_BY(lock_);
++};
++
++// True when |dns_aliases| contains a tracker host on a different registrable
++// domain than |request_url|. Same-site CNAMEs (www → apex, first-party CDN)
++// are ignored to limit false positives.
++bool AliasesRevealTracker(const GURL& request_url,
++                          const std::vector<std::string>& dns_aliases);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_CNAME_UNCLOAK_H_
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index 461df7e4e6..f89ed56183 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -13,5 +13,7 @@ BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFilterListUpdater, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisLinkSanitize, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisCookieJanitor, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisCnameUncloak, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisBounceTracking, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index 4e072516cc..73052c48a9 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -16,6 +16,8 @@ BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
+ BASE_DECLARE_FEATURE(kAegisFilterListUpdater);
+ BASE_DECLARE_FEATURE(kAegisLinkSanitize);
+ BASE_DECLARE_FEATURE(kAegisCookieJanitor);
++BASE_DECLARE_FEATURE(kAegisCnameUncloak);
++BASE_DECLARE_FEATURE(kAegisBounceTracking);
+ 
+ }  // namespace aegis::features
+ 
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index b445aea546..93b81d0401 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -22,6 +22,9 @@ inline constexpr char kFilterListGeneration[] = "aegis.filter_list_generation";
+ inline constexpr char kFilterListLastError[] = "aegis.filter_list_last_error";
+ inline constexpr char kLinkSanitizeEnabled[] = "aegis.link_sanitize_enabled";
+ inline constexpr char kCookieJanitorEnabled[] = "aegis.cookie_janitor_enabled";
++inline constexpr char kCnameUncloakEnabled[] = "aegis.cname_uncloak_enabled";
++inline constexpr char kBounceTrackingEnabled[] =
++    "aegis.bounce_tracking_enabled";
+ 
+ }  // namespace aegis::prefs
+ 
+diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
+index 3f33b331d0..cecaf01ebb 100644
+--- a/chrome/common/renderer_configuration.mojom
++++ b/chrome/common/renderer_configuration.mojom
+@@ -32,6 +32,7 @@ struct DynamicParams {
+   string allowed_domains_for_apps;
+   bool aegis_tracker_blocking = true;
+   bool aegis_fingerprint_guard = true;
++  bool aegis_cname_uncloak = true;
+ };
+ 
+ // The renderer configuration parameters are set during the process lock update
+diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
+index 05787cbd78..ed0897db8a 100644
+--- a/chrome/renderer/url_loader_throttle_provider_impl.cc
++++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
+@@ -251,13 +251,15 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+ 
+ 
+   bool aegis_tracker_blocking = true;
++  bool aegis_cname_uncloak = true;
+   if (auto* observer = chrome_content_renderer_client_->GetChromeObserver()) {
+     if (auto params = observer->GetDynamicParams(); params) {
+       aegis_tracker_blocking = params->aegis_tracker_blocking;
++      aegis_cname_uncloak = params->aegis_cname_uncloak;
+     }
+   }
+-  if (auto aegis_throttle =
+-          aegis::AegisNetThrottle::MaybeCreate(aegis_tracker_blocking);
++  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate(
++          aegis_tracker_blocking, aegis_cname_uncloak);
+       aegis_throttle) {
+     throttles.emplace_back(std::move(aegis_throttle));
+   }
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,0 +1,12 @@
+[Adblock Plus 2.0]
+! Title: Aegis fixture
+! Comment lines and cosmetics are ignored
+||doubleclick.net^
+||ads.example.com^$third-party
+||tracker.example.com/pixel
+@@||cdn.example.com^
+example.com##.ad-banner
+/ads.js$script
+||skip-this.com^$domain=news.example
+||not a host
+||ok-host.co.uk^

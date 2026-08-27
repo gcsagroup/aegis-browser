@@ -1,0 +1,23 @@
+{
+  "name": "gcsa-aegis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GCSA-aegis: Chromium-fork privacy/security browser with local AI, phishing defense, and tracker blocking",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm --filter @gcsa-aegis/extension dev",
+    "browser:bootstrap": "pnpm --filter @gcsa-aegis/browser bootstrap",
+    "browser:fetch": "pnpm --filter @gcsa-aegis/browser fetch",
+    "browser:build": "pnpm --filter @gcsa-aegis/browser build",
+    "browser:run": "pnpm --filter @gcsa-aegis/browser run",
+    "browser:status": "pnpm --filter @gcsa-aegis/browser status",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

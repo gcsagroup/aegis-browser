@@ -1,0 +1,630 @@
+From 4ed9b9dac6fdc93af634d2d09c5e3c2d3276d68b Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Wed, 12 Aug 2026 17:56:06 +0800
+Subject: [PATCH] Aegis: add FingerprintGuard canvas/WebGL/audio farbling
+
+Seed farbling from session salt + host, sync the toggle via
+DynamicParams, and apply Chromium NoisePixels on canvas readbacks.
+---
+ chrome/browser/aegis/aegis_prefs.cc           |   4 +-
+ chrome/browser/aegis/aegis_service.cc         |   2 +-
+ .../browser/chrome_content_browser_client.cc  |   4 +-
+ chrome/browser/profiles/renderer_updater.cc   |   9 +-
+ chrome/browser/profiles/renderer_updater.h    |   1 +
+ chrome/common/aegis/features.cc               |   2 +-
+ chrome/common/renderer_configuration.mojom    |   1 +
+ .../renderer/chrome_render_thread_observer.cc |   4 +
+ third_party/blink/common/BUILD.gn             |   1 +
+ .../blink/common/aegis/fingerprint_guard.cc   |  49 ++++++
+ third_party/blink/public/common/BUILD.gn      |   1 +
+ .../public/common/aegis/fingerprint_guard.h   |  24 +++
+ third_party/blink/renderer/core/BUILD.gn      |   4 +
+ .../blink/renderer/core/aegis/build.gni       |   7 +
+ .../blink/renderer/core/aegis/farbling.cc     | 151 ++++++++++++++++++
+ .../blink/renderer/core/aegis/farbling.h      |  40 +++++
+ .../core/html/canvas/html_canvas_element.cc   |   5 +
+ .../canvas2d/base_rendering_context_2d.cc     |   2 +
+ .../renderer/modules/webaudio/audio_buffer.cc |   9 +-
+ .../webgl/webgl_rendering_context_base.cc     |  10 ++
+ 20 files changed, 323 insertions(+), 7 deletions(-)
+ create mode 100644 third_party/blink/common/aegis/fingerprint_guard.cc
+ create mode 100644 third_party/blink/public/common/aegis/fingerprint_guard.h
+ create mode 100644 third_party/blink/renderer/core/aegis/build.gni
+ create mode 100644 third_party/blink/renderer/core/aegis/farbling.cc
+ create mode 100644 third_party/blink/renderer/core/aegis/farbling.h
+
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 66ed177ba7..75ab3cc2de 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -12,8 +12,8 @@ namespace aegis {
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kTrackerBlockingEnabled, true);
+   registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
+-  // FingerprintGuard stays off by default (matches feature default).
+-  registry->RegisterBooleanPref(prefs::kFingerprintGuardEnabled, false);
++  // FingerprintGuard on by default when the feature is enabled.
++  registry->RegisterBooleanPref(prefs::kFingerprintGuardEnabled, true);
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index dbb575ae3e..aaad1710ca 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -68,7 +68,7 @@ bool AegisService::IsFingerprintGuardEnabled() const {
+     return false;
+   }
+   if (!prefs_) {
+-    return false;
++    return true;
+   }
+   return prefs_->GetBoolean(prefs::kFingerprintGuardEnabled);
+ }
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index ae768f38a3..1085e9aee9 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6046,7 +6046,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+               policy::policy_prefs::kForceYouTubeRestrict),
+           profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
+           profile->GetPrefs()->GetBoolean(
+-              aegis::prefs::kTrackerBlockingEnabled));
++              aegis::prefs::kTrackerBlockingEnabled),
++          profile->GetPrefs()->GetBoolean(
++              aegis::prefs::kFingerprintGuardEnabled));
+   return std::make_unique<GoogleURLLoaderThrottle>(
+ #if BUILDFLAG(IS_ANDROID)
+       client_data_header,
+diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
+index e0dd3d9bf2..a9607d3d6f 100644
+--- a/chrome/browser/profiles/renderer_updater.cc
++++ b/chrome/browser/profiles/renderer_updater.cc
+@@ -77,6 +77,8 @@ RendererUpdater::RendererUpdater(Profile* profile)
+   allowed_domains_for_apps_.Init(prefs::kAllowedDomainsForApps, pref_service);
+   aegis_tracker_blocking_.Init(aegis::prefs::kTrackerBlockingEnabled,
+                                pref_service);
++  aegis_fingerprint_guard_.Init(aegis::prefs::kFingerprintGuardEnabled,
++                                pref_service);
+ 
+   pref_change_registrar_.Init(pref_service);
+   pref_change_registrar_.Add(
+@@ -95,6 +97,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+       aegis::prefs::kTrackerBlockingEnabled,
+       base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
+                           base::Unretained(this)));
++  pref_change_registrar_.Add(
++      aegis::prefs::kFingerprintGuardEnabled,
++      base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
++                          base::Unretained(this)));
+ }
+ 
+ RendererUpdater::~RendererUpdater() {
+@@ -239,5 +245,6 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+ #endif
+       force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
+       allowed_domains_for_apps_.GetValue(),
+-      aegis_tracker_blocking_.GetValue());
++      aegis_tracker_blocking_.GetValue(),
++      aegis_fingerprint_guard_.GetValue());
+ }
+diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
+index b24bf26ca3..07b177b264 100644
+--- a/chrome/browser/profiles/renderer_updater.h
++++ b/chrome/browser/profiles/renderer_updater.h
+@@ -105,6 +105,7 @@ class RendererUpdater : public KeyedService
+   IntegerPrefMember force_youtube_restrict_;
+   StringPrefMember allowed_domains_for_apps_;
+   BooleanPrefMember aegis_tracker_blocking_;
++  BooleanPrefMember aegis_fingerprint_guard_;
+ };
+ 
+ #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index 0199b4faaa..96c08c1ce5 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -9,6 +9,6 @@ namespace aegis::features {
+ BASE_FEATURE(kAegisEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPhishInterstitial, base::FEATURE_ENABLED_BY_DEFAULT);
+-BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_DISABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ }  // namespace aegis::features
+diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
+index 94a8d402ce..75098fa6a6 100644
+--- a/chrome/common/renderer_configuration.mojom
++++ b/chrome/common/renderer_configuration.mojom
+@@ -31,6 +31,7 @@ struct DynamicParams {
+   int32 youtube_restrict = 0;
+   string allowed_domains_for_apps;
+   bool aegis_tracker_blocking = true;
++  bool aegis_fingerprint_guard = true;
+ };
+ 
+ // The renderer configuration parameters are set during the process lock update
+diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
+index d2653b3bb2..a07c9a9956 100644
+--- a/chrome/renderer/chrome_render_thread_observer.cc
++++ b/chrome/renderer/chrome_render_thread_observer.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/renderer/chrome_render_thread_observer.h"
++#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
+ 
+ #include <stddef.h>
+ 
+@@ -213,6 +214,9 @@ void ChromeRenderThreadObserver::SetInitialConfiguration(
+ void ChromeRenderThreadObserver::SetConfiguration(
+     chrome::mojom::DynamicParamsPtr params) {
+   base::AutoLock lock(dynamic_params_lock_);
++  if (params) {
++    blink::aegis::SetFingerprintGuardEnabled(params->aegis_fingerprint_guard);
++  }
+   dynamic_params_ = std::move(params);
+ }
+ 
+diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
+index c34a848099..3276459e88 100644
+--- a/third_party/blink/common/BUILD.gn
++++ b/third_party/blink/common/BUILD.gn
+@@ -127,6 +127,7 @@ source_set("common") {
+   sources = [
+     # NOTE: Please do not add public headers that need to be referenced from
+     # outside WebKit, add them in public/common instead.
++    "aegis/fingerprint_guard.cc",
+     "associated_interfaces/associated_interface_provider.cc",
+     "associated_interfaces/associated_interface_registry.cc",
+     "blob/blob_utils.cc",
+diff --git a/third_party/blink/common/aegis/fingerprint_guard.cc b/third_party/blink/common/aegis/fingerprint_guard.cc
+new file mode 100644
+index 0000000000..f35769ddd3
+--- /dev/null
++++ b/third_party/blink/common/aegis/fingerprint_guard.cc
+@@ -0,0 +1,49 @@
++// Copyright 2026 GCSA
++// Intended path: third_party/blink/common/aegis/fingerprint_guard.cc
++
++#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
++
++#include <atomic>
++
++#include "base/hash/hash.h"
++#include "base/rand_util.h"
++
++namespace blink::aegis {
++namespace {
++
++std::atomic<bool> g_fingerprint_guard_enabled{false};
++std::atomic<uint64_t> g_session_salt{0};
++
++uint64_t SessionSalt() {
++  uint64_t salt = g_session_salt.load(std::memory_order_relaxed);
++  if (salt != 0) {
++    return salt;
++  }
++  uint64_t generated = base::RandUint64();
++  if (generated == 0) {
++    generated = 1;
++  }
++  uint64_t expected = 0;
++  if (g_session_salt.compare_exchange_strong(expected, generated,
++                                             std::memory_order_relaxed)) {
++    return generated;
++  }
++  return expected;
++}
++
++}  // namespace
++
++void SetFingerprintGuardEnabled(bool enabled) {
++  g_fingerprint_guard_enabled.store(enabled, std::memory_order_relaxed);
++}
++
++bool IsFingerprintGuardEnabled() {
++  return g_fingerprint_guard_enabled.load(std::memory_order_relaxed);
++}
++
++uint64_t FarblingTokenForHost(std::string_view host) {
++  const uint64_t host_hash = base::PersistentHash(host);
++  return SessionSalt() ^ (host_hash << 1) ^ host_hash;
++}
++
++}  // namespace blink::aegis
+diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
+index 06c6d2dad6..9f06c6d4e8 100644
+--- a/third_party/blink/public/common/BUILD.gn
++++ b/third_party/blink/public/common/BUILD.gn
+@@ -149,6 +149,7 @@ source_set("headers") {
+     "fetch/fetch_api_request_headers_map.h",
+     "fetch/fetch_api_request_headers_mojom_traits.h",
+     "fingerprinting_protection/noise_token.h",
++    "aegis/fingerprint_guard.h",
+     "fingerprinting_protection/noise_token_mojom_traits.h",
+     "frame/delegated_capability_request_token.h",
+     "frame/fenced_frame_sandbox_flags.h",
+diff --git a/third_party/blink/public/common/aegis/fingerprint_guard.h b/third_party/blink/public/common/aegis/fingerprint_guard.h
+new file mode 100644
+index 0000000000..5fb108a04a
+--- /dev/null
++++ b/third_party/blink/public/common/aegis/fingerprint_guard.h
+@@ -0,0 +1,24 @@
++// Copyright 2026 GCSA
++// Intended path: third_party/blink/public/common/aegis/fingerprint_guard.h
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
++#define THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
++
++#include <cstdint>
++#include <string_view>
++
++#include "third_party/blink/public/common/common_export.h"
++
++namespace blink::aegis {
++
++// Process-wide FingerprintGuard switch, synced from profile prefs via
++// chrome.mojom.DynamicParams.
++BLINK_COMMON_EXPORT void SetFingerprintGuardEnabled(bool enabled);
++BLINK_COMMON_EXPORT bool IsFingerprintGuardEnabled();
++
++// Stable-per-session, varies-by-host farbling seed (eTLD+1 / host scoped).
++BLINK_COMMON_EXPORT uint64_t FarblingTokenForHost(std::string_view host);
++
++}  // namespace blink::aegis
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
+diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
+index a4a53a9003..6c8724eba2 100644
+--- a/third_party/blink/renderer/core/BUILD.gn
++++ b/third_party/blink/renderer/core/BUILD.gn
+@@ -24,6 +24,7 @@ import("//third_party/blink/renderer/core/animation/build.gni")
+ import("//third_party/blink/renderer/core/animation_frame/build.gni")
+ import("//third_party/blink/renderer/core/annotation/build.gni")
+ import("//third_party/blink/renderer/core/canvas_interventions/build.gni")
++import("//third_party/blink/renderer/core/aegis/build.gni")
+ import("//third_party/blink/renderer/core/clipboard/build.gni")
+ import("//third_party/blink/renderer/core/content_capture/build.gni")
+ import("//third_party/blink/renderer/core/context_features/build.gni")
+@@ -279,6 +280,9 @@ component("core") {
+   sources += rebase_path(blink_core_sources_canvas_interventions,
+                          "",
+                          "canvas_interventions")
++  sources += rebase_path(blink_core_sources_aegis,
++                         "",
++                         "aegis")
+   sources += rebase_path(blink_core_sources_clipboard, "", "clipboard")
+   sources +=
+       rebase_path(blink_core_sources_content_capture, "", "content_capture")
+diff --git a/third_party/blink/renderer/core/aegis/build.gni b/third_party/blink/renderer/core/aegis/build.gni
+new file mode 100644
+index 0000000000..1ff31dc83a
+--- /dev/null
++++ b/third_party/blink/renderer/core/aegis/build.gni
+@@ -0,0 +1,7 @@
++# Copyright 2026 GCSA
++# Intended path: third_party/blink/renderer/core/aegis/build.gni
++
++blink_core_sources_aegis = [
++  "farbling.cc",
++  "farbling.h",
++]
+diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
+new file mode 100644
+index 0000000000..5a282beeab
+--- /dev/null
++++ b/third_party/blink/renderer/core/aegis/farbling.cc
+@@ -0,0 +1,151 @@
++// Copyright 2026 GCSA
++// Intended path: third_party/blink/renderer/core/aegis/farbling.cc
++
++#include "third_party/blink/renderer/core/aegis/farbling.h"
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
++#include "third_party/blink/public/common/fingerprinting_protection/noise_token.h"
++#include "third_party/blink/renderer/core/canvas_interventions/noise_hash.h"
++#include "third_party/blink/renderer/core/canvas_interventions/noise_helper.h"
++#include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/html/canvas/image_data.h"
++#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
++#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkImage.h"
++
++namespace blink {
++namespace aegis {
++namespace {
++
++std::string HostForContext(ExecutionContext* context) {
++  if (!context) {
++    return std::string();
++  }
++  const SecurityOrigin* origin = context->GetSecurityOrigin();
++  if (!origin) {
++    return std::string();
++  }
++  return origin->Host().Utf8();
++}
++
++uint64_t TokenForContext(ExecutionContext* context) {
++  return FarblingTokenForHost(HostForContext(context));
++}
++
++}  // namespace
++
++void MaybeFarbleImageData(ExecutionContext* context, ImageData* image_data) {
++  if (!IsFingerprintGuardEnabled() || !image_data ||
++      image_data->IsBufferBaseDetached()) {
++    return;
++  }
++
++  if (image_data->GetSkColorType() != kRGBA_8888_SkColorType &&
++      image_data->GetSkColorType() != kBGRA_8888_SkColorType) {
++    return;
++  }
++
++  base::span<uint8_t> pixels = image_data->RawByteSpan();
++  const int width = image_data->width();
++  const int height = image_data->height();
++  const size_t expected =
++      static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
++  if (width <= 0 || height <= 0 || pixels.size() != expected) {
++    return;
++  }
++
++  NoiseHash hash(NoiseToken(TokenForContext(context)));
++  NoisePixels(hash, pixels, width, height);
++}
++
++scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
++    ExecutionContext* context,
++    scoped_refptr<StaticBitmapImage> image) {
++  if (!IsFingerprintGuardEnabled() || !image) {
++    return image;
++  }
++
++  const gfx::Size size = image->Size();
++  if (size.IsEmpty()) {
++    return image;
++  }
++
++  SkImageInfo info =
++      SkImageInfo::Make(size.width(), size.height(), kRGBA_8888_SkColorType,
++                        kUnpremul_SkAlphaType);
++  SkBitmap bitmap;
++  if (!bitmap.tryAllocPixels(info)) {
++    return image;
++  }
++
++  const bool read_ok = image->PaintImageForCurrentFrame().readPixels(
++      bitmap.info(), bitmap.getPixels(), bitmap.rowBytes(), 0, 0);
++  if (!read_ok) {
++    return image;
++  }
++
++  const size_t row_bytes = static_cast<size_t>(size.width()) * 4u;
++  if (bitmap.rowBytes() != row_bytes) {
++    return image;
++  }
++
++  const size_t nbytes = row_bytes * static_cast<size_t>(size.height());
++  auto bitmap_span =
++      UNSAFE_TODO(base::span(static_cast<uint8_t*>(bitmap.getPixels()), nbytes));
++  std::vector<uint8_t> packed(nbytes);
++  base::span<uint8_t>(packed).copy_from(bitmap_span);
++  NoiseHash hash(NoiseToken(TokenForContext(context)));
++  NoisePixels(hash, packed, size.width(), size.height());
++  bitmap_span.copy_from(packed);
++
++  return UnacceleratedStaticBitmapImage::Create(
++      SkImages::RasterFromBitmap(bitmap), image->Orientation());
++}
++
++void MaybeFarbleAudioChannel(ExecutionContext* context,
++                             float* data,
++                             size_t length) {
++  if (!IsFingerprintGuardEnabled() || !data || length == 0) {
++    return;
++  }
++
++  auto samples = UNSAFE_TODO(base::span(data, length));
++  // Deterministic tiny amplitude noise (<= ~0.05%) keyed by host+index.
++  uint64_t token = TokenForContext(context);
++  for (size_t i = 0; i < samples.size(); ++i) {
++    token = token * 6364136223846793005ULL + 1ULL;
++    const float delta =
++        (static_cast<float>((token >> 33) & 0xFFFF) / 65535.f - 0.5f) *
++        0.0005f;
++    samples[i] += samples[i] * delta;
++  }
++}
++
++String FarbledWebGLVendor(ExecutionContext* context) {
++  const uint64_t token = TokenForContext(context);
++  StringBuilder builder;
++  builder.Append("Google Inc. (Aegis ");
++  builder.AppendNumber(token & 0xFFFFu);
++  builder.Append(")");
++  return builder.ToString();
++}
++
++String FarbledWebGLRenderer(ExecutionContext* context) {
++  const uint64_t token = TokenForContext(context);
++  StringBuilder builder;
++  builder.Append("ANGLE (Aegis, Aegis Renderer ");
++  builder.AppendNumber((token >> 16) & 0xFFFFu);
++  builder.Append(" Direct3D11)");
++  return builder.ToString();
++}
++
++}  // namespace aegis
++}  // namespace blink
+diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
+new file mode 100644
+index 0000000000..b50851081f
+--- /dev/null
++++ b/third_party/blink/renderer/core/aegis/farbling.h
+@@ -0,0 +1,40 @@
++// Copyright 2026 GCSA
++// Intended path: third_party/blink/renderer/core/aegis/farbling.h
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
++#define THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
++
++#include "base/memory/scoped_refptr.h"
++#include "third_party/blink/renderer/core/core_export.h"
++#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++
++namespace blink {
++
++class ExecutionContext;
++class ImageData;
++class StaticBitmapImage;
++
++namespace aegis {
++
++// Applies canvas pixel farbling when FingerprintGuard is enabled.
++CORE_EXPORT void MaybeFarbleImageData(ExecutionContext* context,
++                                      ImageData* image_data);
++
++// Farble a canvas snapshot used by toDataURL / toBlob serialization.
++CORE_EXPORT scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
++    ExecutionContext* context,
++    scoped_refptr<StaticBitmapImage> image);
++
++// Light Web Audio sample perturbation.
++CORE_EXPORT void MaybeFarbleAudioChannel(ExecutionContext* context,
++                                         float* data,
++                                         size_t length);
++
++// Stable farbled WebGL debug strings for UNMASKED_* parameters.
++CORE_EXPORT String FarbledWebGLVendor(ExecutionContext* context);
++CORE_EXPORT String FarbledWebGLRenderer(ExecutionContext* context);
++
++}  // namespace aegis
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 4c784e3285..fd2e825430 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -26,6 +26,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
+ 
+ #include <math.h>
+ 
+@@ -1291,6 +1292,8 @@ String HTMLCanvasElement::ToDataURLInternal(
+           mime_type, ImageEncoderUtils::kEncodeReasonToDataURL);
+ 
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
++  image_bitmap = aegis::MaybeFarbleStaticBitmapImage(GetExecutionContext(),
++                                                     std::move(image_bitmap));
+   if (image_bitmap) {
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+@@ -1396,6 +1399,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+ 
+   CanvasAsyncBlobCreator* async_creator = nullptr;
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
++  image_bitmap = aegis::MaybeFarbleStaticBitmapImage(GetExecutionContext(),
++                                                     std::move(image_bitmap));
+   if (image_bitmap) {
+     auto* options = ImageEncodeOptions::Create();
+     options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index fd13b97510..fdd3af88f3 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
+ 
+ #include <cmath>
+ #include <cstdint>
+@@ -513,6 +514,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+     }
+   }
+ 
++  aegis::MaybeFarbleImageData(GetTopExecutionContext(), image_data);
+   return image_data;
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index bc4c0c6ca0..3a683be0da 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -27,6 +27,7 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
+ 
+ #include <memory>
+ 
+@@ -221,7 +222,13 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
+     return NotShared<DOMFloat32Array>(nullptr);
+   }
+ 
+-  return NotShared<DOMFloat32Array>(channels_[channel_index].Get());
++  NotShared<DOMFloat32Array> array(channels_[channel_index].Get());
++  if (array && array->Data() && array->length() > 0) {
++    // Session-scoped farbling (no ExecutionContext on this overload).
++    aegis::MaybeFarbleAudioChannel(/*context=*/nullptr, array->Data(),
++                                   array->length());
++  }
++  return array;
+ }
+ 
+ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 319e17ecde..e0d3aeec63 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -24,6 +24,8 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
++#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
+ 
+ #include <inttypes.h>
+ 
+@@ -4191,6 +4193,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        if (aegis::IsFingerprintGuardEnabled()) {
++          return WebGLAny(script_state,
++                          aegis::FarbledWebGLRenderer(ExecutionContext::From(script_state)));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_RENDERER)));
+       }
+@@ -4200,6 +4206,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        if (aegis::IsFingerprintGuardEnabled()) {
++          return WebGLAny(script_state,
++                          aegis::FarbledWebGLVendor(ExecutionContext::From(script_state)));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_VENDOR)));
+       }
+-- 
+2.52.0
+

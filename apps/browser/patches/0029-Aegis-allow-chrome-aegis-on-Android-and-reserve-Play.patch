@@ -1,0 +1,156 @@
+From 7f02ebc07921b2399122ed5a6fb2f54647490b6f Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 18:56:53 +0800
+Subject: [PATCH] Aegis: allow chrome://aegis on Android and reserve Play
+ identity
+
+Ship the settings WebUI in the Android pak, skip desktop tab-strip
+lookups, and show GCSA-aegis instead of Chromium on the launcher.
+---
+ .../values/channel_constants.xml                  | 15 +++++++--------
+ chrome/browser/resources/BUILD.gn                 |  4 ++--
+ chrome/browser/resources/aegis/BUILD.gn           |  2 --
+ chrome/browser/ui/webui/aegis/BUILD.gn            |  8 ++++++--
+ chrome/browser/ui/webui/aegis/aegis_ui_handler.cc |  9 +++++++++
+ 5 files changed, 24 insertions(+), 14 deletions(-)
+
+diff --git a/chrome/android/java/res_chromium_base/values/channel_constants.xml b/chrome/android/java/res_chromium_base/values/channel_constants.xml
+index cc1f2a30cb..d5270195b1 100644
+--- a/chrome/android/java/res_chromium_base/values/channel_constants.xml
++++ b/chrome/android/java/res_chromium_base/values/channel_constants.xml
+@@ -1,14 +1,13 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <!--
+-Copyright 2015 The Chromium Authors
+-Use of this source code is governed by a BSD-style license that can be
+-found in the LICENSE file.
++Copyright 2026 GCSA
++Intended path: chrome/android/java/res_chromium_base/values/channel_constants.xml
++Play / 侧载显示名。不要写成 Chrome。
+ -->
+ 
+ <resources xmlns:android="http://schemas.android.com/apk/res/android">
+-    <!-- The application name displayed to the user. -->
+-    <string name="app_name" translatable="false">Chromium</string>
+-    <string name="bookmark_widget_title" translatable="false">Chromium bookmarks</string>
+-    <string name="search_widget_title" translatable="false">Chromium search</string>
+-    <string name="quick_action_search_widget_title" translatable="false">Chromium quick action search</string>
++    <string name="app_name" translatable="false">GCSA-aegis</string>
++    <string name="bookmark_widget_title" translatable="false">GCSA-aegis bookmarks</string>
++    <string name="search_widget_title" translatable="false">GCSA-aegis search</string>
++    <string name="quick_action_search_widget_title" translatable="false">GCSA-aegis quick action search</string>
+ </resources>
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index 518a4100dd..dfcbf3d751 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -340,6 +340,7 @@ group("dev_ui_resources") {
+     "predictors:resources",
+     "subresource_filter:resources",
+     "usb_internals:resources",
++    "aegis:resources",
+     "//components/actor/core/internals/resources",
+     "//components/commerce/core/internals/resources",
+     "//components/data_sharing/data_sharing_internals/resources",
+@@ -383,7 +384,6 @@ group("dev_ui_resources") {
+       "user_education_internals:resources",
+       "webnn_internals:resources",
+       "webui_js_error:resources",
+-      "aegis:resources",
+     ]
+   }
+ 
+@@ -422,6 +422,7 @@ repack("dev_ui_paks") {
+     "$root_gen_dir/chrome/predictors_resources.pak",
+     "$root_gen_dir/chrome/subresource_filter_internals_resources.pak",
+     "$root_gen_dir/chrome/usb_internals_resources.pak",
++    "$root_gen_dir/chrome/aegis_resources.pak",
+     "$root_gen_dir/components/actor_internals_resources.pak",
+     "$root_gen_dir/components/commerce_internals_resources.pak",
+     "$root_gen_dir/components/data_sharing_internals_resources.pak",
+@@ -464,7 +465,6 @@ repack("dev_ui_paks") {
+       "$root_gen_dir/chrome/personal_context_notice_resources.pak",
+       "$root_gen_dir/chrome/user_education_internals_resources.pak",
+       "$root_gen_dir/chrome/webui_js_error_resources.pak",
+-      "$root_gen_dir/chrome/aegis_resources.pak",
+     ]
+   }
+ 
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index cc5e116333..f55f9a940a 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -3,8 +3,6 @@
+ 
+ import("//ui/webui/resources/tools/build_webui.gni")
+ 
+-assert(!is_android)
+-
+ build_webui("build") {
+   grd_prefix = "aegis"
+   static_files = [
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 45409b9713..d5d5325d42 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -13,8 +13,6 @@ source_set("aegis") {
+     "//chrome/browser/aegis",
+     "//chrome/browser/profiles:profile",
+     "//chrome/browser/resources/aegis:resources",
+-    "//chrome/browser/ui/browser_window",
+-    "//chrome/browser/ui/tabs:tab_strip",
+     "//chrome/common",
+     "//content/public/browser",
+     "//mojo/public/cpp/bindings",
+@@ -22,4 +20,10 @@ source_set("aegis") {
+     "//ui/base",
+     "//ui/webui",
+   ]
++  if (!is_android) {
++    deps += [
++      "//chrome/browser/ui/browser_window",
++      "//chrome/browser/ui/tabs:tab_strip",
++    ]
++  }
+ }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 04a45b1a41..1951137b66 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -8,10 +8,13 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/values.h"
++#include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service.h"
++#if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
++#endif
+ #include "chrome/common/chrome_render_frame.mojom.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+@@ -24,6 +27,11 @@
+ namespace {
+ 
+ content::WebContents* FindHttpTab(content::WebContents* skip) {
++#if BUILDFLAG(IS_ANDROID)
++  // Android 没有桌面 TabStrip。摘要/截图先只用当前 WebUI 页；设置页本身不是 http。
++  (void)skip;
++  return nullptr;
++#else
+   content::WebContents* found = nullptr;
+   GlobalBrowserCollection* collection = GlobalBrowserCollection::GetInstance();
+   if (!collection) {
+@@ -53,6 +61,7 @@ content::WebContents* FindHttpTab(content::WebContents* skip) {
+       },
+       BrowserCollection::Order::kActivation);
+   return found;
++#endif
+ }
+ 
+ base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
+-- 
+2.52.0
+

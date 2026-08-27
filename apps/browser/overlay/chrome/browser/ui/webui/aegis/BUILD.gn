@@ -1,0 +1,29 @@
+# Copyright 2026 GCSA
+# Intended path: chrome/browser/ui/webui/aegis/BUILD.gn
+
+source_set("aegis") {
+  sources = [
+    "aegis_ui.cc",
+    "aegis_ui.h",
+    "aegis_ui_handler.cc",
+    "aegis_ui_handler.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/aegis",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/resources/aegis:resources",
+    "//chrome/common",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//third_party/blink/public/common",
+    "//ui/base",
+    "//ui/webui",
+  ]
+  if (!is_android) {
+    deps += [
+      "//chrome/browser/ui/browser_window",
+      "//chrome/browser/ui/tabs:tab_strip",
+    ]
+  }
+}

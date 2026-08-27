@@ -1,0 +1,451 @@
+From ac223073ebd6b148512c358a431e97e898c513ce Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 01:27:39 +0800
+Subject: [PATCH] Aegis: tighten cookie lookup and block first-party collect
+
+Classify cookies by exact names so login cookies stay, block first-party
+GA/GTM collect copies, and strip more click-id query params.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  14 +-
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/cookie_classify.cc        | 132 ++++++++++++++----
+ chrome/common/aegis/filter_list_matcher.cc    |   4 +
+ chrome/common/aegis/first_party_collect.cc    |  43 ++++++
+ chrome/common/aegis/first_party_collect.h     |  19 +++
+ .../generated/first_party_collect_paths.inc   |  15 ++
+ .../aegis/generated/tracking_query_params.inc |   9 ++
+ third_party/aegis_policy/policy_snapshot.json |  26 +++-
+ 9 files changed, 232 insertions(+), 32 deletions(-)
+ create mode 100644 chrome/common/aegis/first_party_collect.cc
+ create mode 100644 chrome/common/aegis/first_party_collect.h
+ create mode 100644 chrome/common/aegis/generated/first_party_collect_paths.inc
+
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 56426b38fb..7b11bd3bae 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -64,7 +64,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .subtitle = "隱私與安全模組",
+         .tracker_label = "追蹤器攔截",
+         .tracker_hint =
+-            "攔截廣告／分析域名的子資源，不會攔截你主動打開的網頁。",
++            "攔截廣告／分析域名的子資源，以及第一方 /g/collect、gtm.js 等收集路徑。",
+         .phish_label = "釣魚攔截頁",
+         .phish_hint =
+             "打開高風險仿冒站前顯示攔截頁，可選擇繼續造訪。",
+@@ -83,7 +83,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "導覽時去掉 utm_、fbclid、gclid 等追蹤參數。",
+         .cookie_janitor_label = "清理廣告/分析 Cookie",
+         .cookie_janitor_hint =
+-            "分類並刪除廣告／分析 Cookie，登入與必要 Cookie 會保留。",
++            "按 Cookie 名稱查表分類，刪除廣告／分析 Cookie；登入 Cookie 會保留。",
+         .cname_uncloak_label = "揭開 CNAME 偽裝追蹤",
+         .cname_uncloak_hint =
+             "解析子資源 CNAME，命中追蹤域名則攔截。",
+@@ -118,7 +118,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .subtitle = "隐私与安全模块",
+         .tracker_label = "跟踪器拦截",
+         .tracker_hint =
+-            "拦截广告／分析域名的子资源，不会拦截你主动打开的网页。",
++            "拦截广告／分析域名的子资源，以及第一方 /g/collect、gtm.js 等收集路径。",
+         .phish_label = "钓鱼拦截页",
+         .phish_hint =
+             "打开高风险仿冒站前显示拦截页，可选择继续访问。",
+@@ -137,7 +137,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "导航时去掉 utm_、fbclid、gclid 等跟踪参数。",
+         .cookie_janitor_label = "清理广告/分析 Cookie",
+         .cookie_janitor_hint =
+-            "分类并删除广告／分析 Cookie，登录与必要 Cookie 会保留。",
++            "按 Cookie 名称查表分类，删除广告／分析 Cookie；登录 Cookie 会保留。",
+         .cname_uncloak_label = "揭开 CNAME 伪装跟踪",
+         .cname_uncloak_hint =
+             "解析子资源 CNAME，命中跟踪域名则拦截。",
+@@ -172,7 +172,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .subtitle = "Privacy & security modules",
+       .tracker_label = "Tracker blocking",
+       .tracker_hint =
+-          "Blocks ad/analytics subresources. Does not block pages you open.",
++          "Blocks ad/analytics subresources and first-party collect paths "
++          "such as /g/collect and gtm.js. Does not block pages you open.",
+       .phish_label = "Phish interstitial",
+       .phish_hint =
+           "Shows a warning before high-risk lookalike sites. You can continue.",
+@@ -193,7 +194,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "Removes utm_, fbclid, gclid and similar tracking query params.",
+       .cookie_janitor_label = "Clear ads/analytics cookies",
+       .cookie_janitor_hint =
+-          "Deletes advertising/analytics cookies. Login cookies are kept.",
++          "Looks up cookie names, deletes ads/analytics cookies, and keeps "
++          "login cookies.",
+       .cname_uncloak_label = "Uncloak CNAME tracker aliases",
+       .cname_uncloak_hint =
+           "Resolves subresource CNAMEs and blocks aliases of tracker hosts.",
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 16950a65cc..e7fa5da4ce 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -19,6 +19,8 @@ source_set("aegis") {
+     "filter_list_matcher.h",
+     "cookie_classify.cc",
+     "cookie_classify.h",
++    "first_party_collect.cc",
++    "first_party_collect.h",
+     "phish_score.cc",
+     "phish_score.h",
+     "pref_names.h",
+diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
+index 9a76f38269..ff7f8a039c 100644
+--- a/chrome/common/aegis/cookie_classify.cc
++++ b/chrome/common/aegis/cookie_classify.cc
+@@ -11,15 +11,68 @@
+ namespace aegis {
+ namespace {
+ 
++constexpr std::string_view kExactAdvertising[] = {
++    "ide",
++    "dsid",
++    "anid",
++    "fr",
++    "_fbp",
++    "_fbc",
++    "personalization_id",
++    "muc_ads",
++    "muid",
++    "muidb",
++    "tuuid",
++    "tuuid_lu",
++    "cto_bundle",
++    "_gcl_au",
++    "_gcl_aw",
++};
++
++constexpr std::string_view kExactAnalytics[] = {
++    "_ga",
++    "_gid",
++    "_gat",
++    "__utma",
++    "__utmb",
++    "__utmc",
++    "__utmz",
++    "__utmt",
++    "_hjid",
++    "ajs_anonymous_id",
++    "ajs_user_id",
++    "ajs_group_id",
++    "_clck",
++    "_clsk",
++    "_pk_id",
++    "_pk_ses",
++    "_ym_uid",
++    "_ym_d",
++    "_vwo_uuid",
++};
++
++constexpr std::string_view kPrefixAdvertising[] = {"_gcl_"};
++
++constexpr std::string_view kPrefixAnalytics[] = {
++    "_ga_", "_gat_", "__utm", "mp_", "_hj", "amp_",
++};
++
++constexpr std::string_view kAdNetworkDomains[] = {
++    "doubleclick.net",      "googlesyndication.com", "adnxs.com",
++    "criteo.com",           "taboola.com",           "outbrain.com",
++    "amazon-adsystem.com",  "adsrvr.org",            "pubmatic.com",
++    "casalemedia.com",      "scorecardresearch.com", "quantserve.com",
++    "moatads.com",          "openx.net",             "rubiconproject.com",
++};
++
+ constexpr std::string_view kAdHints[] = {
+-    "ads", "ad_", "_ad", "advert", "doubleclick", "ide",
+-    "personalization_id", "muc_ads",
++    "ads", "ad_", "_ad", "advert", "doubleclick", "personalization_id",
++    "muc_ads",
+ };
+ 
+ constexpr std::string_view kAnalyticsHints[] = {
+-    "_ga", "_gid", "_gat", "_gcl", "amp_", "ajs_", "mp_", "mixpanel",
+-    "amplitude", "hotjar", "_hj", "optimizely", "segment", "s_cc", "s_sq",
+-    "utm", "analytics",
++    "_ga", "_gid", "_gat", "mixpanel", "amplitude", "hotjar", "optimizely",
++    "segment", "analytics",
+ };
+ 
+ constexpr std::string_view kFunctionalityHints[] = {
+@@ -42,31 +95,68 @@ int ScoreHints(std::string_view blob, base::span<const std::string_view> hints)
+   return score;
+ }
+ 
++bool NameIn(std::string_view name, base::span<const std::string_view> exact) {
++  for (std::string_view item : exact) {
++    if (name == item) {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool NameHasPrefix(std::string_view name,
++                   base::span<const std::string_view> prefixes) {
++  for (std::string_view prefix : prefixes) {
++    if (base::StartsWith(name, prefix)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool IsAdNetworkDomain(std::string_view domain) {
++  if (!domain.empty() && domain.front() == '.') {
++    domain.remove_prefix(1);
++  }
++  for (std::string_view suffix : kAdNetworkDomains) {
++    if (domain == suffix) {
++      return true;
++    }
++    if (domain.size() > suffix.size() && base::EndsWith(domain, suffix) &&
++        domain[domain.size() - suffix.size() - 1] == '.') {
++      return true;
++    }
++  }
++  return false;
++}
++
+ }  // namespace
+ 
+ CookieCategory ClassifyCookie(std::string_view name,
+                               std::string_view domain,
+-                              bool session,
+-                              std::optional<base::Time> expiry) {
++                              [[maybe_unused]] bool session,
++                              [[maybe_unused]] std::optional<base::Time> expiry) {
+   const std::string name_l = base::ToLowerASCII(name);
+   const std::string domain_l = base::ToLowerASCII(domain);
+-  const std::string blob = name_l + " " + domain_l;
+ 
++  if (NameIn(name_l, kExactAdvertising) ||
++      NameHasPrefix(name_l, kPrefixAdvertising)) {
++    return CookieCategory::kAdvertising;
++  }
++  if (NameIn(name_l, kExactAnalytics) ||
++      NameHasPrefix(name_l, kPrefixAnalytics)) {
++    return CookieCategory::kAnalytics;
++  }
++  if (IsAdNetworkDomain(domain_l)) {
++    return CookieCategory::kAdvertising;
++  }
++
++  const std::string blob = name_l + " " + domain_l;
+   int necessary = ScoreHints(blob, kNecessaryHints);
+   int functionality = ScoreHints(blob, kFunctionalityHints);
+   int analytics = ScoreHints(blob, kAnalyticsHints);
+   int advertising = ScoreHints(blob, kAdHints);
+ 
+-  if (domain_l.find("doubleclick") != std::string::npos ||
+-      domain_l.find("googlesyndication") != std::string::npos ||
+-      domain_l.find("facebook") != std::string::npos ||
+-      domain_l.find("adnxs") != std::string::npos ||
+-      domain_l.find("criteo") != std::string::npos ||
+-      domain_l.find("taboola") != std::string::npos ||
+-      domain_l.find("outbrain") != std::string::npos) {
+-    advertising += 2;
+-  }
+-
+   CookieCategory best = CookieCategory::kUnknown;
+   int best_score = 0;
+   auto consider = [&](CookieCategory cat, int score) {
+@@ -81,12 +171,6 @@ CookieCategory ClassifyCookie(std::string_view name,
+   consider(CookieCategory::kAdvertising, advertising);
+ 
+   if (best_score == 0) {
+-    if (!session && expiry.has_value() && !expiry->is_null()) {
+-      const base::TimeDelta remaining = *expiry - base::Time::Now();
+-      if (remaining > base::Days(365)) {
+-        return CookieCategory::kAdvertising;
+-      }
+-    }
+     return CookieCategory::kUnknown;
+   }
+   return best;
+diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
+index 81c033a544..2d64414486 100644
+--- a/chrome/common/aegis/filter_list_matcher.cc
++++ b/chrome/common/aegis/filter_list_matcher.cc
+@@ -5,6 +5,7 @@
+ 
+ #include "base/strings/string_util.h"
+ #include "chrome/common/aegis/builtin_tracker_hosts.h"
++#include "chrome/common/aegis/first_party_collect.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+@@ -56,6 +57,9 @@ bool FilterListMatcher::ShouldBlock(const GURL& url) const {
+   if (MatchesBuiltinTrackerRule(url)) {
+     return true;
+   }
++  if (IsFirstPartyCollectUrl(url)) {
++    return true;
++  }
+ 
+   const std::string host = base::ToLowerASCII(url.host());
+   base::AutoLock lock(lock_);
+diff --git a/chrome/common/aegis/first_party_collect.cc b/chrome/common/aegis/first_party_collect.cc
+new file mode 100644
+index 0000000000..f3eeb289fd
+--- /dev/null
++++ b/chrome/common/aegis/first_party_collect.cc
+@@ -0,0 +1,43 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/first_party_collect.cc
++
++#include "chrome/common/aegis/first_party_collect.h"
++
++#include <string_view>
++
++#include "base/strings/string_util.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++#include "chrome/common/aegis/generated/first_party_collect_paths.inc"
++
++bool PathMatchesCollect(std::string_view path, std::string_view rule) {
++  if (path == rule) {
++    return true;
++  }
++  if (path.size() > rule.size() && base::StartsWith(path, rule) &&
++      path[rule.size()] == '/') {
++    return true;
++  }
++  return (base::EndsWith(rule, ".js") || base::EndsWith(rule, ".php")) &&
++         base::EndsWith(path, rule);
++}
++
++}  // namespace
++
++bool IsFirstPartyCollectUrl(const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_path()) {
++    return false;
++  }
++  const std::string path = base::ToLowerASCII(url.path());
++  for (std::string_view rule : kFirstPartyCollectPaths) {
++    if (PathMatchesCollect(path, rule)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/first_party_collect.h b/chrome/common/aegis/first_party_collect.h
+new file mode 100644
+index 0000000000..07c6fc57b3
+--- /dev/null
++++ b/chrome/common/aegis/first_party_collect.h
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/first_party_collect.h
++// Keep aligned with packages/core FIRST_PARTY_COLLECT_PATHS.
++
++#ifndef CHROME_COMMON_AEGIS_FIRST_PARTY_COLLECT_H_
++#define CHROME_COMMON_AEGIS_FIRST_PARTY_COLLECT_H_
++
++class GURL;
++
++namespace aegis {
++
++// True for first-party copies of known measurement endpoints (GA4 /g/collect,
++// gtm.js, gtag/js, Meta fbevents, etc.). Main-document navigations should not
++// use this; it is for subresource blocking.
++bool IsFirstPartyCollectUrl(const GURL& url);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_FIRST_PARTY_COLLECT_H_
+diff --git a/chrome/common/aegis/generated/first_party_collect_paths.inc b/chrome/common/aegis/generated/first_party_collect_paths.inc
+new file mode 100644
+index 0000000000..31409d2044
+--- /dev/null
++++ b/chrome/common/aegis/generated/first_party_collect_paths.inc
+@@ -0,0 +1,15 @@
++// Generated by apps/browser/scripts/sync-core-snapshot.sh — do not edit.
++// Source: packages/core → first_party_collect_paths.inc
++constexpr std::string_view kFirstPartyCollectPaths[] = {
++    "/g/collect",
++    "/j/collect",
++    "/r/collect",
++    "/ccm/collect",
++    "/amp/collect",
++    "/gtag/js",
++    "/gtm.js",
++    "/analytics.js",
++    "/ga.js",
++    "/fbevents.js",
++    "/fbevents.php",
++};
+diff --git a/chrome/common/aegis/generated/tracking_query_params.inc b/chrome/common/aegis/generated/tracking_query_params.inc
+index fa11c1803c..6d304db53f 100644
+--- a/chrome/common/aegis/generated/tracking_query_params.inc
++++ b/chrome/common/aegis/generated/tracking_query_params.inc
+@@ -25,4 +25,13 @@ constexpr std::string_view kTrackingQueryParams[] = {
+     "wickedid",
+     "oly_anon_id",
+     "oly_enc_id",
++    "gbraid",
++    "wbraid",
++    "gad_source",
++    "gad_campaignid",
++    "srsltid",
++    "li_fat_id",
++    "_hsenc",
++    "_hsmi",
++    "mkt_tok",
+ };
+diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
+index f0ff867c34..397444673f 100644
+--- a/third_party/aegis_policy/policy_snapshot.json
++++ b/third_party/aegis_policy/policy_snapshot.json
+@@ -1,6 +1,6 @@
+ {
+   "version": 1,
+-  "generatedAt": "2026-08-12T10:21:53.784Z",
++  "generatedAt": "2026-08-13T17:26:37.333Z",
+   "source": "@gcsa-aegis/core",
+   "trackerHosts": [
+     "doubleclick.net",
+@@ -59,7 +59,29 @@
+     "vero_id",
+     "wickedid",
+     "oly_anon_id",
+-    "oly_enc_id"
++    "oly_enc_id",
++    "gbraid",
++    "wbraid",
++    "gad_source",
++    "gad_campaignid",
++    "srsltid",
++    "li_fat_id",
++    "_hsenc",
++    "_hsmi",
++    "mkt_tok"
++  ],
++  "firstPartyCollectPaths": [
++    "/g/collect",
++    "/j/collect",
++    "/r/collect",
++    "/ccm/collect",
++    "/amp/collect",
++    "/gtag/js",
++    "/gtm.js",
++    "/analytics.js",
++    "/ga.js",
++    "/fbevents.js",
++    "/fbevents.php"
+   ],
+   "phishHosts": [
+     "testsafebrowsing.appspot.com/s/phishing",
+-- 
+2.52.0
+

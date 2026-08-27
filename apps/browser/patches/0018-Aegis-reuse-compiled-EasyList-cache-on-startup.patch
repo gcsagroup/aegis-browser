@@ -1,0 +1,263 @@
+From c07f0b748423f019ca4e33cfc63469b2bcd8c682 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 00:18:01 +0800
+Subject: [PATCH] Aegis: reuse compiled EasyList cache on startup
+
+Load compiled.json before deciding to auto-update, backfill last-updated
+from file mtime, and skip the network fetch when the cache is fresh.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ chrome/browser/aegis/aegis_service.cc       |  2 +-
+ chrome/browser/aegis/filter_list_updater.cc | 69 ++++++++++++++++-----
+ chrome/browser/aegis/filter_list_updater.h  | 10 ++-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc   |  8 +--
+ chrome/common/aegis/filter_list.cc          |  4 +-
+ 5 files changed, 68 insertions(+), 25 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 2869561d87..7cd380f95e 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -46,8 +46,8 @@ void AegisService::InitializeForProfile(Profile* profile) {
+   initialized_ = true;
+   if (base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
+     filter_list_updater_ = std::make_unique<FilterListUpdater>(profile);
++    // LoadFromDisk 完成后再决定是否自动更新，避免缓存未读完就重新下载。
+     filter_list_updater_->LoadFromDisk();
+-    filter_list_updater_->MaybeAutoUpdate();
+   }
+   if (base::FeatureList::IsEnabled(features::kAegisCookieJanitor) &&
+       IsCookieJanitorEnabled()) {
+diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
+index 12d45c372d..85fe9f0053 100644
+--- a/chrome/browser/aegis/filter_list_updater.cc
++++ b/chrome/browser/aegis/filter_list_updater.cc
+@@ -6,6 +6,7 @@
+ #include <optional>
+ #include <utility>
+ 
++#include "base/files/file.h"
+ #include "base/files/file_util.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
+@@ -48,8 +49,8 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+           "Downloads EasyList and EasyPrivacy to compile tracker/ad host "
+           "rules used by AegisNetThrottle."
+         trigger:
+-          "Once per day after profile init when auto-update is enabled, or "
+-          "when the user clicks Update on chrome://aegis."
++          "When the local compiled cache is missing or older than one day, "
++          "or when the user clicks Update on chrome://aegis."
+         data: "None. Only the public filter-list URL is requested."
+         destination: WEBSITE
+         internal {
+@@ -77,6 +78,25 @@ int64_t NowUnixSeconds() {
+   return (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
+ }
+ 
++int64_t TimeToUnixSeconds(base::Time time) {
++  if (time.is_null()) {
++    return 0;
++  }
++  return (time - base::Time::UnixEpoch()).InSeconds();
++}
++
++bool CacheIsFresh(int64_t last_unix) {
++  if (last_unix <= 0) {
++    return false;
++  }
++  const int64_t now = NowUnixSeconds();
++  // 时钟回拨时当作仍新鲜，避免每次启动都重新下载。
++  if (now < last_unix) {
++    return true;
++  }
++  return now - last_unix < kAutoUpdateIntervalSeconds;
++}
++
+ }  // namespace
+ 
+ FilterListUpdater::FilterListUpdater(Profile* profile)
+@@ -89,28 +109,41 @@ void FilterListUpdater::LoadFromDisk() {
+   base::ThreadPool::PostTaskAndReplyWithResult(
+       FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+       base::BindOnce(
+-          [](base::FilePath path) -> std::optional<CompiledFilterList> {
++          [](base::FilePath path) -> FilterListUpdater::LoadedCache {
++            FilterListUpdater::LoadedCache cache;
++            base::File::Info info;
+             std::string json;
+-            if (!base::ReadFileToString(path, &json)) {
+-              return std::nullopt;
++            if (!base::GetFileInfo(path, &info) ||
++                !base::ReadFileToString(path, &json)) {
++              return cache;
+             }
+             CompiledFilterList list;
+             if (!CompiledFilterListFromJson(json, &list)) {
+-              return std::nullopt;
++              return cache;
+             }
+-            return list;
++            cache.list = std::move(list);
++            cache.file_mtime_unix = TimeToUnixSeconds(info.last_modified);
++            return cache;
+           },
+           path),
+       base::BindOnce(&FilterListUpdater::OnLoadedFromDisk,
+                      weak_factory_.GetWeakPtr()));
+ }
+ 
+-void FilterListUpdater::OnLoadedFromDisk(
+-    std::optional<CompiledFilterList> list) {
+-  if (!list) {
+-    return;
++void FilterListUpdater::OnLoadedFromDisk(LoadedCache cache) {
++  if (cache.list) {
++    ApplyList(std::move(*cache.list));
++    if (prefs_) {
++      const int64_t last = prefs_->GetInt64(prefs::kFilterListLastUpdated);
++      // pref 丢失时用文件 mtime 回填，避免已有缓存仍被当成首次启动。
++      if (last <= 0 && cache.file_mtime_unix > 0) {
++        prefs_->SetInt64(prefs::kFilterListLastUpdated, cache.file_mtime_unix);
++      }
++    }
++    LOG(INFO) << "Aegis: using cached filter list, hosts="
++              << FilterListMatcher::GetInstance()->compiled_host_count();
+   }
+-  ApplyList(std::move(*list));
++  MaybeAutoUpdate();
+ }
+ 
+ void FilterListUpdater::MaybeAutoUpdate() {
+@@ -118,9 +151,12 @@ void FilterListUpdater::MaybeAutoUpdate() {
+     return;
+   }
+   const int64_t last = prefs_->GetInt64(prefs::kFilterListLastUpdated);
+-  if (last > 0 && NowUnixSeconds() - last < kAutoUpdateIntervalSeconds) {
++  if (CacheIsFresh(last)) {
++    VLOG(1) << "Aegis: filter list cache is fresh, skip download";
+     return;
+   }
++  LOG(INFO) << "Aegis: filter list cache missing or stale, "
++               "will fetch after startup";
+   // 等首屏起来再拉 EasyList，避免启动时编译上万条规则卡住窗口。
+   AfterStartupTaskUtils::PostTask(
+       FROM_HERE, base::SequencedTaskRunner::GetCurrentDefault(),
+@@ -248,17 +284,16 @@ void FilterListUpdater::ApplyList(CompiledFilterList list) {
+ 
+ void FilterListUpdater::Persist(const CompiledFilterList& list) {
+   const base::FilePath path = CompiledPath(profile_);
+-  const std::string json = CompiledFilterListToJson(list);
+   base::ThreadPool::PostTask(
+       FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+       base::BindOnce(
+-          [](base::FilePath path, std::string json) {
++          [](base::FilePath path, CompiledFilterList list) {
+             if (!base::CreateDirectory(path.DirName())) {
+               return;
+             }
+-            base::WriteFile(path, json);
++            base::WriteFile(path, CompiledFilterListToJson(list));
+           },
+-          path, json));
++          path, list));
+ }
+ 
+ void FilterListUpdater::BumpGeneration() {
+diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
+index 1d92d45069..fdbb9db36a 100644
+--- a/chrome/browser/aegis/filter_list_updater.h
++++ b/chrome/browser/aegis/filter_list_updater.h
+@@ -4,6 +4,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
+ #define CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
+ 
++#include <cstdint>
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -24,6 +25,7 @@ namespace aegis {
+ 
+ // Downloads EasyList/EasyPrivacy, compiles host tables, persists them under
+ // the profile dir, and publishes them to FilterListMatcher.
++// 启动时先读 compiled.json；缓存新鲜（pref 或文件 mtime < 24h）则不再联网。
+ class FilterListUpdater {
+  public:
+   using UpdateCallback = base::OnceCallback<void(bool ok)>;
+@@ -33,6 +35,7 @@ class FilterListUpdater {
+   FilterListUpdater& operator=(const FilterListUpdater&) = delete;
+   ~FilterListUpdater();
+ 
++  // 读盘后自动调用 MaybeAutoUpdate，避免在缓存尚未加载时误判过期。
+   void LoadFromDisk();
+   void MaybeAutoUpdate();
+   void UpdateNow(UpdateCallback callback);
+@@ -40,10 +43,15 @@ class FilterListUpdater {
+   bool updating() const { return updating_; }
+ 
+  private:
++  struct LoadedCache {
++    std::optional<CompiledFilterList> list;
++    int64_t file_mtime_unix = 0;
++  };
++
+   void FetchNext();
+   void OnFetched(std::optional<std::string> body);
+   void OnCompiled(CompiledFilterList list);
+-  void OnLoadedFromDisk(std::optional<CompiledFilterList> list);
++  void OnLoadedFromDisk(LoadedCache cache);
+   void OnMerged(CompiledFilterList merged);
+   void Finish(bool ok, const std::string& error);
+   void ApplyList(CompiledFilterList list);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 692f3c1a5e..f553893e8f 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -71,7 +71,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+         .filter_list_auto_update_hint =
+-            "大約每天從 EasyList / EasyPrivacy 拉取並編譯主機規則。",
++            "啟動讀本地編譯快取；僅在快取缺失或超過約 24 小時才重新拉取。",
+         .filter_list_update_now = "立即更新",
+         .filter_list_meta =
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
+@@ -122,7 +122,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+         .filter_list_auto_update_hint =
+-            "大约每天从 EasyList / EasyPrivacy 拉取并编译主机规则。",
++            "启动读本地编译缓存；仅在缓存缺失或超过约 24 小时才重新拉取。",
+         .filter_list_update_now = "立即更新",
+         .filter_list_meta =
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
+@@ -173,8 +173,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+       .filter_list_auto_update_hint =
+-          "About once a day, fetch EasyList / EasyPrivacy and compile host "
+-          "rules.",
++          "Loads the local compiled cache on startup. Fetches EasyList / "
++          "EasyPrivacy only when the cache is missing or older than ~24h.",
+       .filter_list_update_now = "Update now",
+       .filter_list_meta =
+           "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
+diff --git a/chrome/common/aegis/filter_list.cc b/chrome/common/aegis/filter_list.cc
+index 0f77dd29d8..bed097884f 100644
+--- a/chrome/common/aegis/filter_list.cc
++++ b/chrome/common/aegis/filter_list.cc
+@@ -209,8 +209,8 @@ std::string CompiledFilterListToJson(const CompiledFilterList& list) {
+   dict.Set("exceptions", std::move(exceptions));
+ 
+   std::string json;
+-  base::JSONWriter::WriteWithOptions(
+-      dict, base::JSONWriter::OPTIONS_PRETTY_PRINT, &json);
++  // 紧凑 JSON：profile 缓存每次启动都要解析，不必 pretty-print。
++  base::JSONWriter::Write(dict, &json);
+   return json;
+ }
+ 
+-- 
+2.52.0
+

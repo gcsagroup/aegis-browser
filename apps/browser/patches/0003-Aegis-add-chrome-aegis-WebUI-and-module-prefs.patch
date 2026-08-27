@@ -1,0 +1,1073 @@
+From 525b20a12737ee8db23bcc33a5f3bf57745ebd78 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Wed, 12 Aug 2026 17:06:36 +0800
+Subject: [PATCH] Aegis: add chrome://aegis WebUI and module prefs
+
+Expose tracker/phish/fingerprint toggles via chrome://aegis, persist
+prefs, and sync tracker blocking to renderers through DynamicParams.
+---
+ chrome/browser/aegis/BUILD.gn                 |  5 ++
+ chrome/browser/aegis/aegis_prefs.cc           | 19 +++++
+ chrome/browser/aegis/aegis_prefs.h            | 19 +++++
+ chrome/browser/aegis/aegis_service.cc         | 56 +++++++++++++-
+ chrome/browser/aegis/aegis_service.h          | 12 ++-
+ .../browser/chrome_content_browser_client.cc  | 10 ++-
+ chrome/browser/prefs/browser_prefs.cc         |  2 +
+ chrome/browser/profiles/BUILD.gn              |  1 +
+ chrome/browser/profiles/renderer_updater.cc   | 10 ++-
+ chrome/browser/profiles/renderer_updater.h    |  1 +
+ chrome/browser/resources/BUILD.gn             |  2 +
+ chrome/browser/resources/aegis/BUILD.gn       | 19 +++++
+ chrome/browser/resources/aegis/aegis.css      | 74 +++++++++++++++++++
+ chrome/browser/resources/aegis/aegis.html     | 30 ++++++++
+ chrome/browser/resources/aegis/aegis.ts       | 54 ++++++++++++++
+ chrome/browser/ui/webui/BUILD.gn              |  1 +
+ chrome/browser/ui/webui/aegis/BUILD.gn        | 21 ++++++
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 63 ++++++++++++++++
+ chrome/browser/ui/webui/aegis/aegis_ui.h      | 37 ++++++++++
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 63 ++++++++++++++++
+ .../browser/ui/webui/aegis/aegis_ui_handler.h | 25 +++++++
+ .../browser/ui/webui/chrome_web_ui_configs.cc |  2 +
+ chrome/common/aegis/BUILD.gn                  |  1 +
+ chrome/common/aegis/aegis_net_throttle.cc     | 17 +++--
+ chrome/common/aegis/aegis_net_throttle.h      |  9 ++-
+ chrome/common/aegis/pref_names.h              | 19 +++++
+ chrome/common/renderer_configuration.mojom    |  1 +
+ chrome/common/webui_url_constants.cc          |  1 +
+ chrome/common/webui_url_constants.h           |  2 +
+ .../url_loader_throttle_provider_impl.cc      |  9 ++-
+ tools/gritsettings/resource_ids.spec          |  4 +
+ ui/webui/resources/tools/build_webui.gni      |  1 +
+ 32 files changed, 571 insertions(+), 19 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_prefs.cc
+ create mode 100644 chrome/browser/aegis/aegis_prefs.h
+ create mode 100644 chrome/browser/resources/aegis/BUILD.gn
+ create mode 100644 chrome/browser/resources/aegis/aegis.css
+ create mode 100644 chrome/browser/resources/aegis/aegis.html
+ create mode 100644 chrome/browser/resources/aegis/aegis.ts
+ create mode 100644 chrome/browser/ui/webui/aegis/BUILD.gn
+ create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui.cc
+ create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui.h
+ create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+ create mode 100644 chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+ create mode 100644 chrome/common/aegis/pref_names.h
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 7af9ba3664..1ef0295be6 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -3,12 +3,17 @@
+ 
+ source_set("aegis") {
+   sources = [
++    "aegis_prefs.cc",
++    "aegis_prefs.h",
+     "aegis_service.cc",
+     "aegis_service.h",
+   ]
+   deps = [
+     "//base",
++    "//chrome/browser/profiles:profile",
+     "//chrome/common/aegis",
++    "//components/pref_registry",
++    "//components/prefs",
+     "//url",
+   ]
+ }
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+new file mode 100644
+index 0000000000..66ed177ba7
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_prefs.cc
++
++#include "chrome/browser/aegis/aegis_prefs.h"
++
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/pref_names.h"
++#include "components/pref_registry/pref_registry_syncable.h"
++
++namespace aegis {
++
++void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
++  registry->RegisterBooleanPref(prefs::kTrackerBlockingEnabled, true);
++  registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
++  // FingerprintGuard stays off by default (matches feature default).
++  registry->RegisterBooleanPref(prefs::kFingerprintGuardEnabled, false);
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_prefs.h b/chrome/browser/aegis/aegis_prefs.h
+new file mode 100644
+index 0000000000..b29d5cbaf9
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_prefs.h
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_prefs.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_PREFS_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_PREFS_H_
++
++class PrefRegistrySimple;
++
++namespace user_prefs {
++class PrefRegistrySyncable;
++}
++
++namespace aegis {
++
++void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_PREFS_H_
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 91cf7c4ddf..d1ef3720cd 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -5,8 +5,11 @@
+ 
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/builtin_tracker_hosts.h"
+ #include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/pref_names.h"
++#include "components/prefs/pref_service.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+@@ -24,12 +27,11 @@ void AegisService::InitializeForProfile(Profile* profile) {
+     VLOG(1) << "Aegis disabled by feature flag";
+     return;
+   }
++  prefs_ = profile->GetPrefs();
+   initialized_ = true;
+   LOG(INFO) << "GCSA-aegis initialized for profile"
+             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
+                                            : " (tracker blocking off)");
+-  // TODO(aegis): cookie observer, WebUI, phish interstitial.
+-  (void)profile;
+ }
+ 
+ bool AegisService::IsEnabled() const {
+@@ -37,8 +39,54 @@ bool AegisService::IsEnabled() const {
+ }
+ 
+ bool AegisService::IsTrackerBlockingEnabled() const {
+-  return IsEnabled() &&
+-         base::FeatureList::IsEnabled(features::kAegisTrackerBlocking);
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisTrackerBlocking)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kTrackerBlockingEnabled);
++}
++
++bool AegisService::IsPhishInterstitialEnabled() const {
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisPhishInterstitial)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kPhishInterstitialEnabled);
++}
++
++bool AegisService::IsFingerprintGuardEnabled() const {
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisFingerprintGuard)) {
++    return false;
++  }
++  if (!prefs_) {
++    return false;
++  }
++  return prefs_->GetBoolean(prefs::kFingerprintGuardEnabled);
++}
++
++void AegisService::SetTrackerBlockingEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kTrackerBlockingEnabled, enabled);
++  }
++}
++
++void AegisService::SetPhishInterstitialEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kPhishInterstitialEnabled, enabled);
++  }
++}
++
++void AegisService::SetFingerprintGuardEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kFingerprintGuardEnabled, enabled);
++  }
+ }
+ 
+ bool AegisService::ShouldBlockUrl(const GURL& url) const {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 1cb917885c..5d2e3d6bc1 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -1,13 +1,14 @@
+ // Copyright 2026 GCSA
+ // Intended path: chrome/browser/aegis/aegis_service.h
+-// Browser-process service that hosts NetPolicy / StoragePolicy bridges.
+ 
+ #ifndef CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ #define CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ 
++#include "base/memory/raw_ptr.h"
+ #include "base/memory/singleton.h"
+ 
+ class GURL;
++class PrefService;
+ class Profile;
+ 
+ namespace aegis {
+@@ -24,17 +25,26 @@ class AegisService {
+ 
+   bool IsEnabled() const;
+   bool IsTrackerBlockingEnabled() const;
++  bool IsPhishInterstitialEnabled() const;
++  bool IsFingerprintGuardEnabled() const;
++
++  void SetTrackerBlockingEnabled(bool enabled);
++  void SetPhishInterstitialEnabled(bool enabled);
++  void SetFingerprintGuardEnabled(bool enabled);
+ 
+   // Host-rule match against the built-in tracker seed. Callers should skip
+   // main-document navigations (RequestDestination::kDocument).
+   bool ShouldBlockUrl(const GURL& url) const;
+ 
++  PrefService* prefs() const { return prefs_; }
++
+  private:
+   friend struct base::DefaultSingletonTraits<AegisService>;
+   AegisService();
+   ~AegisService();
+ 
+   bool initialized_ = false;
++  raw_ptr<PrefService> prefs_ = nullptr;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 6a52ac0d66..ae768f38a3 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -216,6 +216,7 @@
+ #include "chrome/common/google_url_loader_throttle.h"
+ #include "chrome/common/logging_chrome.h"
+ #include "chrome/common/pref_names.h"
++#include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
+ #include "chrome/common/profiler/process_type.h"
+ #include "chrome/common/profiler/thread_profiler_configuration.h"
+@@ -6043,7 +6044,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+               policy::policy_prefs::kForceGoogleSafeSearch),
+           profile->GetPrefs()->GetInteger(
+               policy::policy_prefs::kForceYouTubeRestrict),
+-          profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps));
++          profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
++          profile->GetPrefs()->GetBoolean(
++              aegis::prefs::kTrackerBlockingEnabled));
+   return std::make_unique<GoogleURLLoaderThrottle>(
+ #if BUILDFLAG(IS_ANDROID)
+       client_data_header,
+@@ -6148,7 +6151,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+   }
+ 
+ 
+-  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate();
++  const bool aegis_tracker_blocking =
++      profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
++  if (auto aegis_throttle =
++          aegis::AegisNetThrottle::MaybeCreate(aegis_tracker_blocking);
+       aegis_throttle) {
+     result.push_back(std::move(aegis_throttle));
+   }
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 48394ef7d6..7f7b08d894 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -19,6 +19,7 @@
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/about_flags.h"
++#include "chrome/browser/aegis/aegis_prefs.h"
+ #include "chrome/browser/accessibility/accessibility_labels_service.h"
+ #include "chrome/browser/accessibility/invert_bubble_prefs.h"
+ #include "chrome/browser/accessibility/page_colors_controller.h"
+@@ -1711,6 +1712,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
+   TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
+   // User prefs. Please keep this list alphabetized.
+   AccessibilityLabelsService::RegisterProfilePrefs(registry);
++  aegis::RegisterProfilePrefs(registry);
+   AccessibilityUIMessageHandler::RegisterProfilePrefs(registry);
+   accessibility_annotator::prefs::RegisterProfilePrefs(registry);
+   AimEligibilityService::RegisterProfilePrefs(registry);
+diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
+index 51dd488bf5..e28785b4ab 100644
+--- a/chrome/browser/profiles/BUILD.gn
++++ b/chrome/browser/profiles/BUILD.gn
+@@ -130,6 +130,7 @@ source_set("misc") {
+     "//chrome/browser/ui/zoom",
+     "//chrome/browser/updates/announcement_notification",
+     "//chrome/browser/webid",
++    "//chrome/common/aegis",
+     "//chrome/common",
+     "//chrome/common:buildflags",
+     "//chrome/common:constants",
+diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
+index 78a14905c7..e0dd3d9bf2 100644
+--- a/chrome/browser/profiles/renderer_updater.cc
++++ b/chrome/browser/profiles/renderer_updater.cc
+@@ -14,6 +14,7 @@
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/pref_names.h"
++#include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/renderer_configuration.mojom.h"
+ #include "components/content_settings/common/content_settings_manager.mojom.h"
+ #include "components/content_settings/core/browser/content_settings_utils.h"
+@@ -74,6 +75,8 @@ RendererUpdater::RendererUpdater(Profile* profile)
+   force_youtube_restrict_.Init(policy::policy_prefs::kForceYouTubeRestrict,
+                                pref_service);
+   allowed_domains_for_apps_.Init(prefs::kAllowedDomainsForApps, pref_service);
++  aegis_tracker_blocking_.Init(aegis::prefs::kTrackerBlockingEnabled,
++                               pref_service);
+ 
+   pref_change_registrar_.Init(pref_service);
+   pref_change_registrar_.Add(
+@@ -88,6 +91,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+       prefs::kAllowedDomainsForApps,
+       base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
+                           base::Unretained(this)));
++  pref_change_registrar_.Add(
++      aegis::prefs::kTrackerBlockingEnabled,
++      base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
++                          base::Unretained(this)));
+ }
+ 
+ RendererUpdater::~RendererUpdater() {
+@@ -231,5 +238,6 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+       GetBoundSessionThrottlerParams(),
+ #endif
+       force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
+-      allowed_domains_for_apps_.GetValue());
++      allowed_domains_for_apps_.GetValue(),
++      aegis_tracker_blocking_.GetValue());
+ }
+diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
+index fcf8832d21..b24bf26ca3 100644
+--- a/chrome/browser/profiles/renderer_updater.h
++++ b/chrome/browser/profiles/renderer_updater.h
+@@ -104,6 +104,7 @@ class RendererUpdater : public KeyedService
+   BooleanPrefMember force_google_safesearch_;
+   IntegerPrefMember force_youtube_restrict_;
+   StringPrefMember allowed_domains_for_apps_;
++  BooleanPrefMember aegis_tracker_blocking_;
+ };
+ 
+ #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index 11c3e254f5..518a4100dd 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -383,6 +383,7 @@ group("dev_ui_resources") {
+       "user_education_internals:resources",
+       "webnn_internals:resources",
+       "webui_js_error:resources",
++      "aegis:resources",
+     ]
+   }
+ 
+@@ -463,6 +464,7 @@ repack("dev_ui_paks") {
+       "$root_gen_dir/chrome/personal_context_notice_resources.pak",
+       "$root_gen_dir/chrome/user_education_internals_resources.pak",
+       "$root_gen_dir/chrome/webui_js_error_resources.pak",
++      "$root_gen_dir/chrome/aegis_resources.pak",
+     ]
+   }
+ 
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+new file mode 100644
+index 0000000000..b3adfd7999
+--- /dev/null
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -0,0 +1,19 @@
++# Copyright 2026 GCSA
++# Intended path: chrome/browser/resources/aegis/BUILD.gn
++
++import("//ui/webui/resources/tools/build_webui.gni")
++
++assert(!is_android)
++
++build_webui("build") {
++  grd_prefix = "aegis"
++  static_files = [
++    "aegis.css",
++    "aegis.html",
++  ]
++  ts_files = [ "aegis.ts" ]
++
++  ts_deps = [ "//ui/webui/resources/js:build_ts" ]
++  ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
++  webui_context_type = "trusted"
++}
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+new file mode 100644
+index 0000000000..f3e830b6d2
+--- /dev/null
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -0,0 +1,74 @@
++:root {
++  color-scheme: light dark;
++  --bg: #f4f6f8;
++  --fg: #1a1f24;
++  --muted: #5b6570;
++  --line: #d5dde3;
++  --accent: #0b6e4f;
++}
++
++@media (prefers-color-scheme: dark) {
++  :root {
++    --bg: #12161a;
++    --fg: #e8eef3;
++    --muted: #9aa7b2;
++    --line: #2a333b;
++    --accent: #3ecf8e;
++  }
++}
++
++* {
++  box-sizing: border-box;
++}
++
++body {
++  margin: 0;
++  font: 15px/1.5 'Segoe UI', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
++  background:
++    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
++    var(--bg);
++  color: var(--fg);
++}
++
++.page {
++  max-width: 42rem;
++  margin: 0 auto;
++  padding: 3rem 1.5rem 4rem;
++}
++
++h1 {
++  margin: 0;
++  font-size: 2.2rem;
++  letter-spacing: -0.02em;
++}
++
++.subtitle {
++  margin: 0.4rem 0 2rem;
++  color: var(--muted);
++}
++
++.modules {
++  display: grid;
++  gap: 0.75rem;
++}
++
++.row {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 1rem;
++  padding: 0.9rem 1rem;
++  border-bottom: 1px solid var(--line);
++}
++
++.row input {
++  width: 1.15rem;
++  height: 1.15rem;
++  accent-color: var(--accent);
++}
++
++.note {
++  margin-top: 2rem;
++  color: var(--muted);
++  font-size: 0.92rem;
++}
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+new file mode 100644
+index 0000000000..2ecc152911
+--- /dev/null
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -0,0 +1,30 @@
++<!doctype html>
++<html dir="$i18n{textdirection}" lang="$i18n{language}">
++  <head>
++    <meta charset="utf-8">
++    <title>$i18n{title}</title>
++    <link rel="stylesheet" href="aegis.css">
++  </head>
++  <body>
++    <main class="page">
++      <h1>$i18n{title}</h1>
++      <p class="subtitle">$i18n{subtitle}</p>
++      <section class="modules" aria-label="modules">
++        <label class="row">
++          <span>$i18n{trackerLabel}</span>
++          <input id="tracker" type="checkbox">
++        </label>
++        <label class="row">
++          <span>$i18n{phishLabel}</span>
++          <input id="phish" type="checkbox">
++        </label>
++        <label class="row">
++          <span>$i18n{fingerprintLabel}</span>
++          <input id="fingerprint" type="checkbox">
++        </label>
++      </section>
++      <p class="note">$i18n{note}</p>
++    </main>
++    <script type="module" src="aegis.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+new file mode 100644
+index 0000000000..b74beb6519
+--- /dev/null
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -0,0 +1,54 @@
++// Copyright 2026 GCSA
++
++import {sendWithPromise} from 'chrome://resources/js/cr.js';
++import {getRequiredElement} from 'chrome://resources/js/util.js';
++
++interface AegisStatus {
++  enabled: boolean;
++  trackerBlocking: boolean;
++  phishInterstitial: boolean;
++  fingerprintGuard: boolean;
++}
++
++function checkbox(id: string): HTMLInputElement {
++  const el = getRequiredElement(id);
++  if (!(el instanceof HTMLInputElement)) {
++    throw new Error(`Missing checkbox #${id}`);
++  }
++  return el;
++}
++
++function applyStatus(status: AegisStatus) {
++  checkbox('tracker').checked = status.trackerBlocking;
++  checkbox('phish').checked = status.phishInterstitial;
++  checkbox('fingerprint').checked = status.fingerprintGuard;
++}
++
++async function setModule(
++    module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard',
++    enabled: boolean) {
++  const status: AegisStatus =
++      await sendWithPromise('setModuleEnabled', module, enabled);
++  applyStatus(status);
++}
++
++function bindToggle(
++    id: string,
++    module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard') {
++  const el = checkbox(id);
++  el.addEventListener('change', () => {
++    void setModule(module, el.checked);
++  });
++}
++
++async function init() {
++  const status: AegisStatus = await sendWithPromise('getStatus');
++  applyStatus(status);
++  bindToggle('tracker', 'trackerBlocking');
++  bindToggle('phish', 'phishInterstitial');
++  bindToggle('fingerprint', 'fingerprintGuard');
++}
++
++document.addEventListener('DOMContentLoaded', () => {
++  void init();
++});
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index 9ad30f708e..1c5c10b380 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -61,6 +61,7 @@ source_set("configs") {
+     "//chrome/browser/ui",
+     "//chrome/browser/ui/webui/about",
+     "//chrome/browser/ui/webui/accessibility",
++    "//chrome/browser/ui/webui/aegis",
+     "//chrome/browser/ui/webui/actor_internals",
+     "//chrome/browser/ui/webui/autofill_and_password_manager_internals",
+     "//chrome/browser/ui/webui/browsing_topics",
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+new file mode 100644
+index 0000000000..59d20f368a
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -0,0 +1,21 @@
++# Copyright 2026 GCSA
++# Intended path: chrome/browser/ui/webui/aegis/BUILD.gn
++
++source_set("aegis") {
++  sources = [
++    "aegis_ui.cc",
++    "aegis_ui.h",
++    "aegis_ui_handler.cc",
++    "aegis_ui_handler.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/aegis",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/resources/aegis:resources",
++    "//chrome/common",
++    "//content/public/browser",
++    "//ui/base",
++    "//ui/webui",
++  ]
++}
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+new file mode 100644
+index 0000000000..cf45fccc24
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -0,0 +1,63 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/ui/webui/aegis/aegis_ui.cc
++
++#include "chrome/browser/ui/webui/aegis/aegis_ui.h"
++
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
++#include "chrome/common/webui_url_constants.h"
++#include "chrome/grit/aegis_resources.h"
++#include "chrome/grit/aegis_resources_map.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_data_source.h"
++#include "ui/base/l10n/l10n_util.h"
++#include "ui/webui/webui_util.h"
++
++namespace {
++
++struct AegisStrings {
++  const char* title;
++  const char* subtitle;
++  const char* tracker_label;
++  const char* phish_label;
++  const char* fingerprint_label;
++  const char* note;
++};
++
++AegisStrings StringsForLocale(const std::string& locale) {
++  if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
++    return {"GCSA-aegis", "隱私與安全模組", "追蹤器攔截", "釣魚攔截頁",
++            "指紋防護", "模組狀態會立即套用；部分能力仍在開發中。"};
++  }
++  if (locale.starts_with("zh")) {
++    return {"GCSA-aegis", "隐私与安全模块", "跟踪器拦截", "钓鱼拦截页",
++            "指纹防护", "模块状态会立即生效；部分能力仍在开发中。"};
++  }
++  return {"GCSA-aegis", "Privacy & security modules", "Tracker blocking",
++          "Phish interstitial", "Fingerprint Guard",
++          "Changes apply immediately. Some modules are still under development."};
++}
++
++}  // namespace
++
++AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
++  Profile* profile = Profile::FromWebUI(web_ui);
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      profile, chrome::kChromeUIAegisHost);
++
++  const AegisStrings strings =
++      StringsForLocale(l10n_util::GetApplicationLocale(std::string()));
++  source->AddString("title", strings.title);
++  source->AddString("subtitle", strings.subtitle);
++  source->AddString("trackerLabel", strings.tracker_label);
++  source->AddString("phishLabel", strings.phish_label);
++  source->AddString("fingerprintLabel", strings.fingerprint_label);
++  source->AddString("note", strings.note);
++
++  webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
++  web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
++}
++
++AegisUI::~AegisUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(AegisUI)
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.h b/chrome/browser/ui/webui/aegis/aegis_ui.h
+new file mode 100644
+index 0000000000..f31cbff396
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.h
+@@ -0,0 +1,37 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/ui/webui/aegis/aegis_ui.h
++
++#ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_H_
++
++#include "chrome/common/webui_url_constants.h"
++#include "content/public/browser/web_ui_controller.h"
++#include "content/public/browser/webui_config.h"
++#include "content/public/common/url_constants.h"
++
++namespace content {
++class WebUI;
++}
++
++class AegisUI;
++
++class AegisUIConfig : public content::DefaultWebUIConfig<AegisUI> {
++ public:
++  AegisUIConfig()
++      : DefaultWebUIConfig(content::kChromeUIScheme,
++                           chrome::kChromeUIAegisHost) {}
++};
++
++// chrome://aegis — GCSA-aegis module status and toggles.
++class AegisUI : public content::WebUIController {
++ public:
++  explicit AegisUI(content::WebUI* web_ui);
++  ~AegisUI() override;
++  AegisUI(const AegisUI&) = delete;
++  AegisUI& operator=(const AegisUI&) = delete;
++
++ private:
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_H_
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+new file mode 100644
+index 0000000000..b98282f33d
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -0,0 +1,63 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++
++#include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
++
++#include "base/functional/bind.h"
++#include "base/values.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "content/public/browser/web_ui.h"
++
++AegisUIHandler::AegisUIHandler() = default;
++AegisUIHandler::~AegisUIHandler() = default;
++
++void AegisUIHandler::RegisterMessages() {
++  web_ui()->RegisterMessageCallback(
++      "getStatus",
++      base::BindRepeating(&AegisUIHandler::HandleGetStatus,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "setModuleEnabled",
++      base::BindRepeating(&AegisUIHandler::HandleSetModuleEnabled,
++                          base::Unretained(this)));
++}
++
++void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
++  AllowJavascript();
++  const base::Value& callback_id = args[0];
++
++  auto* service = aegis::AegisService::GetInstance();
++  base::DictValue status;
++  status.Set("enabled", service->IsEnabled());
++  status.Set("trackerBlocking", service->IsTrackerBlockingEnabled());
++  status.Set("phishInterstitial", service->IsPhishInterstitialEnabled());
++  status.Set("fingerprintGuard", service->IsFingerprintGuardEnabled());
++
++  ResolveJavascriptCallback(callback_id, status);
++}
++
++void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() < 3 || !args[1].is_string() || !args[2].is_bool()) {
++    return;
++  }
++  const base::Value& callback_id = args[0];
++  const std::string& module = args[1].GetString();
++  const bool enabled = args[2].GetBool();
++
++  auto* service = aegis::AegisService::GetInstance();
++  if (module == "trackerBlocking") {
++    service->SetTrackerBlockingEnabled(enabled);
++  } else if (module == "phishInterstitial") {
++    service->SetPhishInterstitialEnabled(enabled);
++  } else if (module == "fingerprintGuard") {
++    service->SetFingerprintGuardEnabled(enabled);
++  }
++
++  base::DictValue status;
++  status.Set("enabled", service->IsEnabled());
++  status.Set("trackerBlocking", service->IsTrackerBlockingEnabled());
++  status.Set("phishInterstitial", service->IsPhishInterstitialEnabled());
++  status.Set("fingerprintGuard", service->IsFingerprintGuardEnabled());
++  ResolveJavascriptCallback(callback_id, status);
++}
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+new file mode 100644
+index 0000000000..2a26d77cd2
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -0,0 +1,25 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++
++#ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
++
++#include "base/values.h"
++#include "content/public/browser/web_ui_message_handler.h"
++
++class AegisUIHandler : public content::WebUIMessageHandler {
++ public:
++  AegisUIHandler();
++  AegisUIHandler(const AegisUIHandler&) = delete;
++  AegisUIHandler& operator=(const AegisUIHandler&) = delete;
++  ~AegisUIHandler() override;
++
++  // content::WebUIMessageHandler:
++  void RegisterMessages() override;
++
++ private:
++  void HandleGetStatus(const base::ListValue& args);
++  void HandleSetModuleEnabled(const base::ListValue& args);
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+index 184305a45a..4ff80b0ac7 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/ui/webui/chrome_web_ui_configs.h"
++#include "chrome/browser/ui/webui/aegis/aegis_ui.h"
+ 
+ #include "build/android_buildflags.h"
+ #include "build/branding_buildflags.h"
+@@ -253,6 +254,7 @@ void RegisterChromeWebUIConfigs() {
+ 
+   auto& map = content::WebUIConfigMap::GetInstance();
+   map.AddWebUIConfig(std::make_unique<AccessibilityUIConfig>());
++  map.AddWebUIConfig(std::make_unique<AegisUIConfig>());
+   map.AddWebUIConfig(std::make_unique<AutofillInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<BluetoothInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<BrowsingTopicsInternalsUIConfig>());
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index c568ce8ade..8a39ff200a 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -9,6 +9,7 @@ source_set("aegis") {
+     "builtin_tracker_hosts.h",
+     "features.cc",
+     "features.h",
++    "pref_names.h",
+   ]
+   deps = [
+     "//base",
+diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
+index d910e6fcc0..fa99c9916e 100644
+--- a/chrome/common/aegis/aegis_net_throttle.cc
++++ b/chrome/common/aegis/aegis_net_throttle.cc
+@@ -17,13 +17,11 @@ namespace {
+ 
+ constexpr char kCancelReason[] = "AegisNetThrottle";
+ 
+-bool TrackerBlockingEnabled() {
++bool FeatureAllowsTrackerBlocking() {
+   return base::FeatureList::IsEnabled(features::kAegisEnabled) &&
+          base::FeatureList::IsEnabled(features::kAegisTrackerBlocking);
+ }
+ 
+-// is_outermost_main_frame is true for subresources of the main frame too —
+-// only skip actual main-document navigations.
+ bool IsMainDocumentRequest(const network::ResourceRequest& request) {
+   return request.destination ==
+          network::mojom::RequestDestination::kDocument;
+@@ -32,14 +30,17 @@ bool IsMainDocumentRequest(const network::ResourceRequest& request) {
+ }  // namespace
+ 
+ // static
+-std::unique_ptr<blink::URLLoaderThrottle> AegisNetThrottle::MaybeCreate() {
+-  if (!TrackerBlockingEnabled()) {
++std::unique_ptr<blink::URLLoaderThrottle> AegisNetThrottle::MaybeCreate(
++    bool tracker_blocking_enabled) {
++  if (!FeatureAllowsTrackerBlocking() || !tracker_blocking_enabled) {
+     return nullptr;
+   }
+-  return std::make_unique<AegisNetThrottle>();
++  return std::make_unique<AegisNetThrottle>(tracker_blocking_enabled);
+ }
+ 
+-AegisNetThrottle::AegisNetThrottle() = default;
++AegisNetThrottle::AegisNetThrottle(bool tracker_blocking_enabled)
++    : tracker_blocking_enabled_(tracker_blocking_enabled) {}
++
+ AegisNetThrottle::~AegisNetThrottle() = default;
+ 
+ void AegisNetThrottle::DetachFromCurrentSequence() {}
+@@ -61,7 +62,7 @@ void AegisNetThrottle::WillRedirectRequest(
+ }
+ 
+ void AegisNetThrottle::MaybeBlock(const GURL& url) {
+-  if (!MatchesBuiltinTrackerRule(url)) {
++  if (!tracker_blocking_enabled_ || !MatchesBuiltinTrackerRule(url)) {
+     return;
+   }
+   delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
+diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
+index 1e66344881..9b5b5565cf 100644
+--- a/chrome/common/aegis/aegis_net_throttle.h
++++ b/chrome/common/aegis/aegis_net_throttle.h
+@@ -16,9 +16,12 @@ namespace aegis {
+ // Registered from both browser and renderer throttle providers.
+ class AegisNetThrottle : public blink::URLLoaderThrottle {
+  public:
+-  static std::unique_ptr<blink::URLLoaderThrottle> MaybeCreate();
++  // |tracker_blocking_enabled| comes from profile prefs (browser) or
++  // DynamicParams (renderer). Feature kill-switches are still checked here.
++  static std::unique_ptr<blink::URLLoaderThrottle> MaybeCreate(
++      bool tracker_blocking_enabled);
+ 
+-  AegisNetThrottle();
++  explicit AegisNetThrottle(bool tracker_blocking_enabled);
+   AegisNetThrottle(const AegisNetThrottle&) = delete;
+   AegisNetThrottle& operator=(const AegisNetThrottle&) = delete;
+   ~AegisNetThrottle() override;
+@@ -35,6 +38,8 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
+ 
+  private:
+   void MaybeBlock(const GURL& url);
++
++  const bool tracker_blocking_enabled_;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+new file mode 100644
+index 0000000000..77d70a5d62
+--- /dev/null
++++ b/chrome/common/aegis/pref_names.h
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/pref_names.h
++
++#ifndef CHROME_COMMON_AEGIS_PREF_NAMES_H_
++#define CHROME_COMMON_AEGIS_PREF_NAMES_H_
++
++namespace aegis::prefs {
++
++// Profile prefs for chrome://aegis module toggles.
++inline constexpr char kTrackerBlockingEnabled[] =
++    "aegis.tracker_blocking_enabled";
++inline constexpr char kPhishInterstitialEnabled[] =
++    "aegis.phish_interstitial_enabled";
++inline constexpr char kFingerprintGuardEnabled[] =
++    "aegis.fingerprint_guard_enabled";
++
++}  // namespace aegis::prefs
++
++#endif  // CHROME_COMMON_AEGIS_PREF_NAMES_H_
+diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
+index 94e265c86a..94a8d402ce 100644
+--- a/chrome/common/renderer_configuration.mojom
++++ b/chrome/common/renderer_configuration.mojom
+@@ -30,6 +30,7 @@ struct DynamicParams {
+   bool force_safe_search = true;
+   int32 youtube_restrict = 0;
+   string allowed_domains_for_apps;
++  bool aegis_tracker_blocking = true;
+ };
+ 
+ // The renderer configuration parameters are set during the process lock update
+diff --git a/chrome/common/webui_url_constants.cc b/chrome/common/webui_url_constants.cc
+index 4c12bc6429..1011737e39 100644
+--- a/chrome/common/webui_url_constants.cc
++++ b/chrome/common/webui_url_constants.cc
+@@ -122,6 +122,7 @@ bool IsSystemWebUIHost(std::string_view host) {
+ base::span<const base::cstring_view> ChromeURLHosts() {
+   static constexpr auto kChromeURLHosts = std::to_array<base::cstring_view>({
+       kChromeUIAboutHost,
++      kChromeUIAegisHost,
+       kChromeUIAccessibilityHost,
+       kChromeUIActorInternalsHost,
+ #if !BUILDFLAG(IS_ANDROID)
+diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
+index 497865b225..d82c74a6ac 100644
+--- a/chrome/common/webui_url_constants.h
++++ b/chrome/common/webui_url_constants.h
+@@ -378,6 +378,8 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
+ inline constexpr char kChromeUIUserEducationInternalsURL[] =
+     "chrome://user-education-internals";
+ inline constexpr char kChromeUIVersionHost[] = "version";
++inline constexpr char kChromeUIAegisHost[] = "aegis";
++inline constexpr char kChromeUIAegisURL[] = "chrome://aegis/";
+ inline constexpr char kChromeUIVersionURL[] = "chrome://version/";
+ inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
+ inline constexpr char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
+diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
+index 974ae2758f..05787cbd78 100644
+--- a/chrome/renderer/url_loader_throttle_provider_impl.cc
++++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
+@@ -250,7 +250,14 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+           ->GetDynamicParams()));
+ 
+ 
+-  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate();
++  bool aegis_tracker_blocking = true;
++  if (auto* observer = chrome_content_renderer_client_->GetChromeObserver()) {
++    if (auto params = observer->GetDynamicParams(); params) {
++      aegis_tracker_blocking = params->aegis_tracker_blocking;
++    }
++  }
++  if (auto aegis_throttle =
++          aegis::AegisNetThrottle::MaybeCreate(aegis_tracker_blocking);
+       aegis_throttle) {
+     throttles.emplace_back(std::move(aegis_throttle));
+   }
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+index e1f3030f0c..5e9d0920e5 100644
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -868,6 +868,10 @@
+    "META": {"sizes": {"includes": [10],}},
+    "includes": [5160],
+   },
++  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis/resources.grd": {
++    "META": {"sizes": {"includes": [10]}},
++    "includes": [5170],
++  },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/whats_new/resources.grd": {
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [5200],
+diff --git a/ui/webui/resources/tools/build_webui.gni b/ui/webui/resources/tools/build_webui.gni
+index 8225e812d3..25aa79c88c 100644
+--- a/ui/webui/resources/tools/build_webui.gni
++++ b/ui/webui/resources/tools/build_webui.gni
+@@ -582,6 +582,7 @@ template("build_webui") {
+         "//ios/chrome/app/resources/profile_internals",
+         "//chrome/browser/resources/about_sys",
+         "//chrome/browser/resources/access_code_cast",
++        "//chrome/browser/resources/aegis",
+         "//chrome/browser/resources/accessibility",
+         "//chrome/browser/resources/bookmarks",
+         "//chrome/browser/resources/browser_switch",
+-- 
+2.52.0
+

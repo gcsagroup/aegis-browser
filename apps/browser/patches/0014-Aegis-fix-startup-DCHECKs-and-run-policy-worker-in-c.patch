@@ -1,0 +1,548 @@
+From cab8d61a1456054282bf5469c452e2be8a7ee739 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 17:03:00 +0800
+Subject: [PATCH] Aegis: fix startup DCHECKs and run policy worker in
+ chrome://aegis
+
+Skip gin V8 init in the browser process (no snapshot_blob.bin) and
+evaluate packages/core in the WebUI renderer instead. Move filter-list
+disk IO off the UI thread and cap EasyList downloads at 5 MiB.
+---
+ chrome/browser/aegis/aegis_service.cc         | 25 +++++-
+ chrome/browser/aegis/aegis_service.h          |  4 +
+ chrome/browser/aegis/filter_list_updater.cc   | 41 +++++++--
+ chrome/browser/aegis/filter_list_updater.h    |  3 +-
+ chrome/browser/aegis/policy_worker.cc         | 39 +++-----
+ chrome/browser/resources/aegis/BUILD.gn       |  5 +-
+ chrome/browser/resources/aegis/aegis.ts       | 89 +++++++++++++++++-
+ .../browser/resources/aegis/policy_worker.ts  |  7 ++
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 90 +++++++++++++++++++
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |  8 ++
+ 10 files changed, 268 insertions(+), 43 deletions(-)
+ create mode 100644 chrome/browser/resources/aegis/policy_worker.ts
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index fd97df38b0..3836e1bff3 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -61,6 +61,8 @@ void AegisService::InitializeForProfile(Profile* profile) {
+   }
+   if (base::FeatureList::IsEnabled(features::kAegisPolicyWorker) &&
+       IsPolicyWorkerEnabled()) {
++    // JS bundle is evaluated in chrome://aegis. Do not boot V8 in the browser
++    // process — LoadV8Snapshot() is fatal when the snapshot file is absent.
+     PolicyWorker::GetInstance()->Start();
+   }
+   ollama_ = std::make_unique<OllamaSidecar>();
+@@ -286,7 +288,8 @@ void AegisService::SetPrivacyAiEnabled(bool enabled) {
+ }
+ 
+ bool AegisService::IsPolicyWorkerReady() const {
+-  return PolicyWorker::GetInstance()->ready();
++  // Renderer-side bundle is always packed with chrome://aegis.
++  return IsPolicyWorkerEnabled();
+ }
+ 
+ std::string AegisService::PolicyWorkerError() const {
+@@ -543,6 +546,26 @@ void AegisService::OnOllamaChat(SummarizeResult heuristic,
+   std::move(done).Run(std::move(result));
+ }
+ 
++void AegisService::ChatWithOllama(
++    const std::string& system,
++    const std::string& user,
++    base::OnceCallback<void(SummarizeResult)> done) {
++  SummarizeResult empty;
++  empty.ok = true;
++  empty.backend = "mock";
++  if (!IsPrivacyAiEnabled() || !ollama_ || !prefs_ || system.empty() ||
++      user.empty()) {
++    empty.ok = false;
++    empty.error = "privacy ai disabled";
++    std::move(done).Run(std::move(empty));
++    return;
++  }
++  ollama_->Probe(
++      prefs_->GetString(prefs::kOllamaBaseUrl),
++      base::BindOnce(&AegisService::OnOllamaReady, base::Unretained(this),
++                     std::move(empty), system, user, std::move(done)));
++}
++
+ void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
+   if (!filter_list_updater_) {
+     std::move(done).Run(false);
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index e1b622b6fe..22d8ed9129 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -90,6 +90,10 @@ class AegisService {
+   void SummarizePage(PageSnapshot snapshot,
+                      const std::string& locale,
+                      base::OnceCallback<void(SummarizeResult)> done);
++  // Loopback Ollama only. |system|/|user| must already be PII-redacted.
++  void ChatWithOllama(const std::string& system,
++                      const std::string& user,
++                      base::OnceCallback<void(SummarizeResult)> done);
+   bool IsPolicyWorkerReady() const;
+   std::string PolicyWorkerError() const;
+ 
+diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
+index 50a378ffce..266884ca7a 100644
+--- a/chrome/browser/aegis/filter_list_updater.cc
++++ b/chrome/browser/aegis/filter_list_updater.cc
+@@ -10,6 +10,7 @@
+ #include "base/functional/callback_helpers.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+ #include "net/base/net_errors.h"
+ #include "chrome/browser/browser_process.h"
+@@ -33,7 +34,9 @@ constexpr char kEasyPrivacyUrl[] =
+ constexpr char kCompiledFile[] = "compiled.json";
+ constexpr char kFilterDir[] = "AegisFilterLists";
+ constexpr int64_t kAutoUpdateIntervalSeconds = 24 * 60 * 60;
+-constexpr size_t kMaxBodyBytes = 8 * 1024 * 1024;
++// SimpleURLLoader::DownloadToString DCHECKs above this bound (5 MiB).
++constexpr size_t kMaxBodyBytes =
++    network::SimpleURLLoader::kMaxBoundedStringDownloadSize;
+ 
+ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+     net::DefineNetworkTrafficAnnotation("aegis_filter_list_update", R"(
+@@ -80,12 +83,28 @@ FilterListUpdater::FilterListUpdater(Profile* profile)
+ FilterListUpdater::~FilterListUpdater() = default;
+ 
+ void FilterListUpdater::LoadFromDisk() {
+-  std::string json;
+-  if (!base::ReadFileToString(CompiledPath(profile_), &json)) {
++  const base::FilePath path = CompiledPath(profile_);
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(
++          [](base::FilePath path) -> std::optional<std::string> {
++            std::string json;
++            if (!base::ReadFileToString(path, &json)) {
++              return std::nullopt;
++            }
++            return json;
++          },
++          path),
++      base::BindOnce(&FilterListUpdater::OnLoadedFromDisk,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void FilterListUpdater::OnLoadedFromDisk(std::optional<std::string> json) {
++  if (!json) {
+     return;
+   }
+   CompiledFilterList list;
+-  if (!CompiledFilterListFromJson(json, &list)) {
++  if (!CompiledFilterListFromJson(*json, &list)) {
+     LOG(WARNING) << "Aegis: failed to parse compiled filter list";
+     return;
+   }
+@@ -195,11 +214,17 @@ void FilterListUpdater::ApplyList(CompiledFilterList list) {
+ 
+ void FilterListUpdater::Persist(const CompiledFilterList& list) {
+   const base::FilePath path = CompiledPath(profile_);
+-  if (!base::CreateDirectory(path.DirName())) {
+-    return;
+-  }
+   const std::string json = CompiledFilterListToJson(list);
+-  base::WriteFile(path, json);
++  base::ThreadPool::PostTask(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
++      base::BindOnce(
++          [](base::FilePath path, std::string json) {
++            if (!base::CreateDirectory(path.DirName())) {
++              return;
++            }
++            base::WriteFile(path, json);
++          },
++          path, json));
+ }
+ 
+ void FilterListUpdater::BumpGeneration() {
+diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
+index e40894e24e..a66e8f96cd 100644
+--- a/chrome/browser/aegis/filter_list_updater.h
++++ b/chrome/browser/aegis/filter_list_updater.h
+@@ -4,7 +4,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
+ #define CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
+ 
+-#include <memory>
++#include <optional>
+ #include <string>
+ #include <vector>
+ 
+@@ -42,6 +42,7 @@ class FilterListUpdater {
+  private:
+   void FetchNext();
+   void OnFetched(std::optional<std::string> body);
++  void OnLoadedFromDisk(std::optional<std::string> json);
+   void Finish(bool ok, const std::string& error);
+   void ApplyList(CompiledFilterList list);
+   void Persist(const CompiledFilterList& list);
+diff --git a/chrome/browser/aegis/policy_worker.cc b/chrome/browser/aegis/policy_worker.cc
+index a4a7bebcff..b3a794efa8 100644
+--- a/chrome/browser/aegis/policy_worker.cc
++++ b/chrome/browser/aegis/policy_worker.cc
+@@ -8,18 +8,13 @@
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
+-#include "base/strings/string_util.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "chrome/browser/aegis/generated/policy_worker_source.inc"
+-#include "gin/array_buffer.h"
+ #include "gin/converter.h"
+ #include "gin/public/isolate_holder.h"
+ #include "gin/try_catch.h"
+-#include "gin/v8_initializer.h"
+ #include "v8/include/v8-context.h"
+-#include "v8/include/v8-exception.h"
+ #include "v8/include/v8-function.h"
+-#include "v8/include/v8-initialization.h"
+ #include "v8/include/v8-isolate.h"
+ #include "v8/include/v8-local-handle.h"
+ #include "v8/include/v8-message.h"
+@@ -28,29 +23,6 @@
+ #include "v8/include/v8-script.h"
+ 
+ namespace aegis {
+-namespace {
+-
+-void EnsureV8Initialized() {
+-  static bool attempted = false;
+-  if (attempted) {
+-    return;
+-  }
+-  attempted = true;
+-
+-  if (!gin::IsolateHolder::Initialized()) {
+-#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+-    gin::V8Initializer::LoadV8Snapshot();
+-#endif
+-    // Untrusted network PAC uses jitless; this script is our own bundle.
+-    static const char kJitless[] = "--jitless";
+-    v8::V8::SetFlagsFromString(kJitless, sizeof(kJitless) - 1);
+-    gin::IsolateHolder::Initialize(
+-        gin::IsolateHolder::kNonStrictMode,
+-        gin::ArrayBufferAllocator::SharedInstance());
+-  }
+-}
+-
+-}  // namespace
+ 
+ // static
+ PolicyWorker* PolicyWorker::GetInstance() {
+@@ -72,6 +44,16 @@ void PolicyWorker::Start() {
+   if (thread_) {
+     return;
+   }
++  // The browser process does not load V8's external snapshot.
++  // gin::V8Initializer::LoadV8Snapshot() is LOG(FATAL) on failure, so never
++  // call it here. The JS bundle instead runs in chrome://aegis (renderer V8).
++  // If this process already initialized gin (utility / tests), reuse it.
++  if (!gin::IsolateHolder::Initialized()) {
++    last_error_ =
++        "browser process has no V8 snapshot; JS worker runs in chrome://aegis";
++    VLOG(1) << "Aegis: " << last_error_;
++    return;
++  }
+   thread_ = std::make_unique<base::Thread>("AegisPolicyWorker");
+   if (!thread_->Start()) {
+     last_error_ = "failed to start policy worker thread";
+@@ -98,7 +80,6 @@ void PolicyWorker::Evaluate(std::string request_json, EvaluateCallback done) {
+ }
+ 
+ void PolicyWorker::InitOnWorker() {
+-  EnsureV8Initialized();
+   if (!gin::IsolateHolder::Initialized()) {
+     last_error_ = "gin isolate holder not initialized";
+     LOG(ERROR) << "Aegis: " << last_error_;
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index b3adfd7999..cc5e116333 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -11,7 +11,10 @@ build_webui("build") {
+     "aegis.css",
+     "aegis.html",
+   ]
+-  ts_files = [ "aegis.ts" ]
++  ts_files = [
++    "aegis.ts",
++    "policy_worker.ts",
++  ]
+ 
+   ts_deps = [ "//ui/webui/resources/js:build_ts" ]
+   ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 209d9698b1..4bcb943b2e 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -2,6 +2,7 @@
+ 
+ import {sendWithPromise} from 'chrome://resources/js/cr.js';
+ import {getRequiredElement} from 'chrome://resources/js/util.js';
++import './policy_worker.js';
+ 
+ interface AegisStatus {
+   enabled: boolean;
+@@ -24,6 +25,21 @@ interface AegisStatus {
+   ok?: boolean;
+ }
+ 
++interface PageSnapshot {
++  url?: string;
++  title?: string;
++  textSample?: string;
++  passwordFields?: number;
++  forms?: number;
++  error?: string;
++}
++
++declare global {
++  interface Window {
++    aegisEvaluate?: (requestJson: string) => string;
++  }
++}
++
+ interface SummarizeResult {
+   ok: boolean;
+   error?: string;
+@@ -142,6 +158,75 @@ function formatSummary(result: SummarizeResult): string {
+   return lines.filter(Boolean).join('\n');
+ }
+ 
++function workerEvaluate(op: string, payload: Record<string, unknown>):
++    Record<string, unknown>|null {
++  const fn = window.aegisEvaluate;
++  if (!fn) {
++    return null;
++  }
++  try {
++    return JSON.parse(fn(JSON.stringify({op, ...payload}))) as
++        Record<string, unknown>;
++  } catch {
++    return null;
++  }
++}
++
++function localeCode(): 'zh-CN'|'zh-TW'|'en' {
++  const lang = document.documentElement.lang || 'zh-CN';
++  if (lang.startsWith('zh-TW') || lang.startsWith('zh-HK')) {
++    return 'zh-TW';
++  }
++  if (lang.startsWith('zh')) {
++    return 'zh-CN';
++  }
++  return 'en';
++}
++
++async function summarizeActiveTab() {
++  const snap: PageSnapshot = await sendWithPromise('captureActiveTab');
++  if (snap.error) {
++    showResult(snap.error);
++    return;
++  }
++  const snapshot = {
++    url: snap.url ?? '',
++    title: snap.title ?? '',
++    textSample: snap.textSample ?? '',
++    passwordFields: snap.passwordFields ?? 0,
++    forms: snap.forms ?? 0,
++  };
++  const local = workerEvaluate('summarize', {locale: localeCode(), snapshot});
++  if (local && !local['error']) {
++    const result: SummarizeResult = {
++      ok: true,
++      url: snap.url,
++      summary: String(local['summary'] ?? ''),
++      bullets: Array.isArray(local['bullets']) ? local['bullets'] as string[] :
++                                                [],
++      risks: Array.isArray(local['risks']) ? local['risks'] as string[] : [],
++      backend: String(local['backend'] ?? 'mock'),
++      modelReady: Boolean(local['modelReady'] ?? true),
++      workerReady: true,
++    };
++    showResult(formatSummary(result));
++    const prompt =
++        workerEvaluate('buildPrompt', {locale: localeCode(), snapshot});
++    if (prompt && prompt['system'] && prompt['user']) {
++      const refined: SummarizeResult = await sendWithPromise(
++          'ollamaChat', String(prompt['system']), String(prompt['user']));
++      if (refined.ok && refined.backend === 'ollama' && refined.summary) {
++        refined.url = snap.url;
++        showResult(formatSummary(refined));
++      }
++    }
++    return;
++  }
++  const fallback: SummarizeResult =
++      await sendWithPromise('summarizeActiveTab');
++  showResult(formatSummary(fallback));
++}
++
+ async function init() {
+   const status: AegisStatus = await sendWithPromise('getStatus');
+   applyStatus(status);
+@@ -166,9 +251,7 @@ async function init() {
+     void (async () => {
+       actionButton('summarize').disabled = true;
+       try {
+-        const result: SummarizeResult =
+-            await sendWithPromise('summarizeActiveTab');
+-        showResult(formatSummary(result));
++        await summarizeActiveTab();
+       } catch (err) {
+         showResult(String(err));
+       }
+diff --git a/chrome/browser/resources/aegis/policy_worker.ts b/chrome/browser/resources/aegis/policy_worker.ts
+new file mode 100644
+index 0000000000..a361b82723
+--- /dev/null
++++ b/chrome/browser/resources/aegis/policy_worker.ts
+@@ -0,0 +1,7 @@
++// Copyright 2026 GCSA
++// @ts-nocheck
++"use strict";(()=>{var g=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],h=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var T=g,A=h,L=55,z=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function I(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function O(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function N(e){return e.includes("xn--")}function E(e){let o=e.toLowerCase().split("."),t=o.length>=2?o[o.length-2]:o[0];for(let s of A){if(t===s)continue;if(o.some(i=>i===s||i.startsWith(`${s}-`)||i.endsWith(`-${s}`)||i.includes(`-${s}-`)))return s}return null}function f(e,o,t){let s=Math.min(100,o);return{score:s,severity:I(s),reasons:t,shouldBlock:s>=L,url:e}}function p(e,o=[]){let t;try{t=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let s=t.hostname.toLowerCase();if(o.some(c=>s===c.toLowerCase()||s.endsWith(`.${c.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],i=0;t.protocol==="http:"&&(i+=12,n.push({code:"insecure_http",weight:12})),O(s)&&(i+=35,n.push({code:"ip_hostname",weight:35,detail:s})),N(s)&&(i+=25,n.push({code:"punycode_host",weight:25,detail:s})),s.split(".").length>=5&&(i+=15,n.push({code:"deep_subdomain",weight:15,detail:s}));let r=s.split(".").pop()??"";T.includes(r)&&(i+=18,n.push({code:"suspicious_tld",weight:18,detail:r}));let a=E(s);return a&&(i+=30,n.push({code:"brand_spoof_host",weight:30,detail:a})),(t.username||e.includes("@"))&&(i+=20,n.push({code:"at_symbol_trick",weight:20})),f(e,i,n)}function y(e,o=[]){let t=p(e.url,o);if(t.reasons[0]?.code==="allowlisted"||t.reasons[0]?.code==="invalid_url")return t;let s=t.score,n=[...t.reasons],i=t.reasons.find(l=>l.code==="brand_spoof_host")?.detail??null,r=t.reasons.some(l=>l.code==="ip_hostname"),a=null;try{a=new URL(e.url)}catch{a=null}let c=a?.protocol==="http:",C=`${e.title}
++${e.textSample}`.toLowerCase();for(let l of z)if(C.includes(l.toLowerCase())){s+=10,n.push({code:"urgency_language",weight:10,detail:l});break}let m=e.passwordFields??0,v=e.forms??0;return m>0&&(i||r||c)?(s+=25,n.push({code:"password_on_risky_origin",weight:25,detail:`passwordFields=${m}`})):m>0&&v>0&&s>=20&&(s+=12,n.push({code:"credential_form",weight:12})),f(e.url,s,n)}var k=[{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[o,t]=e.split("@");return`${o.slice(0,1)}***@${t}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let o=e.replace(/\D/g,"");return o.length<13||o.length>19?e:`${o.slice(0,4)} **** **** ${o.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function H(e){let o=0,t=!1;for(let s=e.length-1;s>=0;s--){let n=Number(e[s]);t&&(n*=2,n>9&&(n-=9)),o+=n,t=!t}return o%10===0}function u(e){let o=[];for(let i of k){i.regex.lastIndex=0;let r;for(;(r=i.regex.exec(e))!==null;){let a=r[0];if(i.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!H(c))continue}o.push({kind:i.kind,value:a,start:r.index,end:r.index+a.length})}}o.sort((i,r)=>i.start-r.start);let t=[],s=-1;for(let i of o)i.start<s||(t.push(i),s=i.end);let n=e;for(let i=t.length-1;i>=0;i--){let r=t[i],a=k.find(c=>c.kind===r.kind);n=n.slice(0,r.start)+a.mask(r.value)+n.slice(r.end)}return{matches:t,redacted:n,blocked:t.length>0}}function b(e,o){let t=u(e);return t.blocked?o?{allowed:!0,payload:t.redacted,scan:t}:{allowed:!1,payload:t.redacted,scan:t}:{allowed:!0,payload:e,scan:t}}var D={"zh-CN":"\u4F60\u662F GCSA-aegis \u672C\u5730\u9690\u79C1\u52A9\u624B\u3002\u6839\u636E\u9875\u9762\u6458\u5F55\u7ED9\u51FA\u7B80\u6D01\u6458\u8981\u3001\u8981\u70B9\u5217\u8868\u548C\u9690\u79C1/\u5B89\u5168\u98CE\u9669\u3002\u4E0D\u8981\u7F16\u9020\u9875\u9762\u4E2D\u6CA1\u6709\u7684\u4E8B\u5B9E\u3002\u7528\u7B80\u4F53\u4E2D\u6587\u56DE\u7B54\u3002","zh-TW":"\u4F60\u662F GCSA-aegis \u672C\u5730\u96B1\u79C1\u52A9\u624B\u3002\u6839\u64DA\u9801\u9762\u6458\u9304\u7D66\u51FA\u7C21\u6F54\u6458\u8981\u3001\u8981\u9EDE\u5217\u8868\u8207\u96B1\u79C1/\u5B89\u5168\u98A8\u96AA\u3002\u4E0D\u8981\u7DE8\u9020\u9801\u9762\u4E2D\u6C92\u6709\u7684\u4E8B\u5BE6\u3002\u7528\u7E41\u9AD4\u4E2D\u6587\u56DE\u7B54\u3002",en:"You are the GCSA-aegis local privacy assistant. Summarize the page excerpt, list key points, and note privacy/security risks. Do not invent facts. Answer in English."};function S(e){let o=e.locale,t=e.snapshot,n=u(t.textSample).redacted.slice(0,6e3);return{system:D[o],user:[`URL: ${t.url}`,`Title: ${t.title}`,`Forms: ${t.forms??0}, password fields: ${t.passwordFields??0}`,"--- Page excerpt (PII redacted) ---",n||"(empty)","---",'Respond as JSON: {"summary":string,"bullets":string[],"risks":string[]}'].join(`
++`)}}function _(e,o){let t=e.textSample.replace(/\s+/g," ").trim(),s=t.slice(0,220)||(o==="en"?"No readable page text was captured.":o==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),n=[];(e.passwordFields??0)>0&&n.push(o==="en"?"Page contains password fields \u2014 verify the domain before signing in.":o==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(e.url).protocol==="http:"&&n.push(o==="en"?"Connection is not HTTPS.":o==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=t.split(/[.。！？!?]/).map(r=>r.trim()).filter(r=>r.length>20).slice(0,3);return{summary:s,bullets:i.length>0?i:[o==="en"?"Open the side panel on a content-heavy page for better results.":o==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:n,backend:"mock",modelReady:!0}}function x(e){try{let o=new URL(e),t=o.hostname.toLowerCase();return o.protocol==="chrome:"||o.protocol==="edge:"||o.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(t)}catch{return!0}}var w=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id"];function P(e,o=[]){let t;try{t=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let s=new Set([...w,...o].map(r=>r.toLowerCase())),n=[];for(let r of[...t.searchParams.keys()])s.has(r.toLowerCase())&&(n.push(r),t.searchParams.delete(r));t.hash&&/utm_|fbclid|gclid/i.test(t.hash)&&(t.hash="",n.push("#tracking-hash"));let i=t.toString();return{original:e,cleaned:i,removed:n,changed:i!==e}}var $=["ads","ad_","_ad","advert","doubleclick","ide","fr","tr","personalization_id","muc_ads"],U=["_ga","_gid","_gat","_gcl","amp_","ajs_","mp_","mixpanel","amplitude","hotjar","_hj","optimizely","segment","s_cc","s_sq","utm","analytics"],B=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],j=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function d(e,o){let t=e.toLowerCase();return o.reduce((s,n)=>t.includes(n)?s+1:s,0)}function R(e){let o=e.name.toLowerCase(),t=e.domain.toLowerCase(),s=`${o} ${t}`,n={necessary:d(s,j),functionality:d(s,B),analytics:d(s,U),advertising:d(s,$)};/doubleclick|googlesyndication|facebook|adnxs|criteo|taboola|outbrain/.test(t)&&(n.advertising+=2);let i="unknown",r=0;for(let[a,c]of Object.entries(n))c>r&&(i=a,r=c);return r===0?!e.session&&e.expirationDate&&(e.expirationDate*1e3-Date.now())/31536e6>1?"advertising":"unknown":i}function M(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return p(e.url??"");case"assessPhish":return y(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return u(e.text??"");case"gateOutbound":return b(e.text??"",!!e.userApproved);case"sanitizeUrl":return P(e.url??"");case"classifyCookie":return{category:R({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:x(e.url??"")};case"summarize":{let o=e.locale??"zh-CN",t=e.snapshot??{url:e.url??"",title:"",textSample:e.text??""};return _(t,o)}case"buildPrompt":{let o=e.locale??"zh-CN",t=e.snapshot??{url:e.url??"",title:"",textSample:e.text??""};return S({locale:o,snapshot:t})}default:return{error:`unknown op: ${e.op}`}}}function W(e){try{let o=JSON.parse(e);return!o||typeof o.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(M(o))}catch(o){let t=o instanceof Error?o.message:String(o);return JSON.stringify({error:t})}}var Y=globalThis;Y.aegisEvaluate=W;})();
++
++export {};
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 77f5aeb8ad..d44565668c 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -99,6 +99,14 @@ void AegisUIHandler::RegisterMessages() {
+       "summarizeActiveTab",
+       base::BindRepeating(&AegisUIHandler::HandleSummarizeActiveTab,
+                           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "captureActiveTab",
++      base::BindRepeating(&AegisUIHandler::HandleCaptureActiveTab,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "ollamaChat",
++      base::BindRepeating(&AegisUIHandler::HandleOllamaChat,
++                          base::Unretained(this)));
+ }
+ 
+ base::DictValue AegisUIHandler::BuildStatus() const {
+@@ -263,3 +271,85 @@ void AegisUIHandler::OnSummarized(std::string callback_id,
+                             SummarizeToDict(result));
+ }
+ 
++void AegisUIHandler::HandleCaptureActiveTab(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.empty() || !args[0].is_string()) {
++    return;
++  }
++  const std::string callback_id = args[0].GetString();
++  content::WebContents* skip = web_ui()->GetWebContents();
++  content::WebContents* target = FindHttpTab(skip);
++  if (!target) {
++    base::DictValue dict;
++    dict.Set("error", "no http(s) tab");
++    ResolveJavascriptCallback(base::Value(callback_id), dict);
++    return;
++  }
++  content::RenderFrameHost* rfh = target->GetPrimaryMainFrame();
++  if (!rfh) {
++    base::DictValue dict;
++    dict.Set("error", "no render frame");
++    ResolveJavascriptCallback(base::Value(callback_id), dict);
++    return;
++  }
++  const std::string url(target->GetLastCommittedURL().spec());
++  auto client = std::make_unique<
++      mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame>>();
++  rfh->GetRemoteAssociatedInterfaces()->GetInterface(client.get());
++  if (!client->is_bound()) {
++    base::DictValue dict;
++    dict.Set("error", "renderer unavailable");
++    ResolveJavascriptCallback(base::Value(callback_id), dict);
++    return;
++  }
++  chrome::mojom::ChromeRenderFrame* raw = client->get();
++  raw->CollectAegisPageSignals(base::BindOnce(
++      [](std::unique_ptr<
++             mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame>>
++             keep_alive,
++         base::WeakPtr<AegisUIHandler> self, std::string callback_id,
++         std::string url, int32_t password_fields, int32_t forms,
++         const std::string& title, const std::string& text_sample) {
++        if (!self) {
++          return;
++        }
++        self->OnCaptured(std::move(callback_id), std::move(url),
++                         password_fields, forms, title, text_sample);
++      },
++      std::move(client), weak_factory_.GetWeakPtr(), callback_id, url));
++}
++
++void AegisUIHandler::OnCaptured(std::string callback_id,
++                               std::string url,
++                               int32_t password_fields,
++                               int32_t forms,
++                               const std::string& title,
++                               const std::string& text_sample) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  base::DictValue dict;
++  dict.Set("url", url);
++  dict.Set("title", title);
++  dict.Set("textSample", text_sample);
++  dict.Set("passwordFields", password_fields);
++  dict.Set("forms", forms);
++  ResolveJavascriptCallback(base::Value(callback_id), dict);
++}
++
++void AegisUIHandler::HandleOllamaChat(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() < 3 || !args[0].is_string() || !args[1].is_string() ||
++      !args[2].is_string()) {
++    return;
++  }
++  const std::string callback_id = args[0].GetString();
++  const std::string system = args[1].GetString();
++  const std::string user = args[2].GetString();
++  aegis::AegisService::GetInstance()->ChatWithOllama(
++      system, user,
++      base::BindOnce(&AegisUIHandler::OnSummarized, weak_factory_.GetWeakPtr(),
++                     callback_id));
++}
++
++
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 7e2f2aedbc..a18deb434d 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -28,6 +28,8 @@ class AegisUIHandler : public content::WebUIMessageHandler {
+   void HandleSetModuleEnabled(const base::ListValue& args);
+   void HandleUpdateFilterLists(const base::ListValue& args);
+   void HandleSummarizeActiveTab(const base::ListValue& args);
++  void HandleCaptureActiveTab(const base::ListValue& args);
++  void HandleOllamaChat(const base::ListValue& args);
+   void OnFilterListsUpdated(std::string callback_id, bool ok);
+   void OnPageSignals(std::string callback_id,
+                      std::string url,
+@@ -35,6 +37,12 @@ class AegisUIHandler : public content::WebUIMessageHandler {
+                      int32_t forms,
+                      const std::string& title,
+                      const std::string& text_sample);
++  void OnCaptured(std::string callback_id,
++                  std::string url,
++                  int32_t password_fields,
++                  int32_t forms,
++                  const std::string& title,
++                  const std::string& text_sample);
+   void OnSummarized(std::string callback_id, aegis::SummarizeResult result);
+ 
+   base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
+-- 
+2.52.0
+

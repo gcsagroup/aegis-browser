@@ -1,0 +1,238 @@
+From 327ebda7fe7088c9e7aa9eb355f35837636ba34c Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 18:30:27 +0800
+Subject: [PATCH] Aegis: farble Audio fingerprints once per buffer and per site
+
+Stop stacking noise on every getChannelData, key the perturbation
+by page host, and apply the same pass on copyFromChannel.
+---
+ chrome/browser/resources/aegis/aegis.ts       | 48 +++++++++++++------
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  8 ++--
+ .../blink/renderer/core/aegis/farbling.cc     |  2 +-
+ .../blink/renderer/core/aegis/farbling.h      |  3 +-
+ .../renderer/modules/webaudio/audio_buffer.cc | 31 +++++++++---
+ .../renderer/modules/webaudio/audio_buffer.h  |  4 ++
+ 6 files changed, 69 insertions(+), 27 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index f8f6eb21c3..ff1be2266e 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -388,19 +388,9 @@ function probeWebGL(): {line: string, marked: boolean} {
+   };
+ }
+ 
+-async function probeAudio(): Promise<string> {
+-  const Offline = window.OfflineAudioContext;
+-  if (!Offline) {
+-    return '';
+-  }
+-  const ctx = new Offline(1, 44100, 44100);
+-  const osc = ctx.createOscillator();
+-  osc.type = 'triangle';
+-  osc.frequency.value = 10000;
+-  osc.connect(ctx.destination);
+-  osc.start(0);
+-  const buf = await ctx.startRendering();
+-  const data = buf.getChannelData(0);
++let lastAudioHash = '';
++
++function hashAudioSamples(data: Float32Array): string {
+   let raw = '';
+   const n = Math.min(data.length, 512);
+   for (let i = 0; i < n; i++) {
+@@ -413,6 +403,24 @@ async function probeAudio(): Promise<string> {
+   return hashText(raw);
+ }
+ 
++async function probeAudio(): Promise<{hash: string, sameRead: boolean}> {
++  const Offline = window.OfflineAudioContext;
++  if (!Offline) {
++    return {hash: '', sameRead: true};
++  }
++  const ctx = new Offline(1, 44100, 44100);
++  const osc = ctx.createOscillator();
++  osc.type = 'triangle';
++  osc.frequency.value = 10000;
++  osc.connect(ctx.destination);
++  osc.start(0);
++  const buf = await ctx.startRendering();
++  const first = buf.getChannelData(0);
++  const hash = hashAudioSamples(first);
++  const second = buf.getChannelData(0);
++  return {hash, sameRead: hash === hashAudioSamples(second)};
++}
++
+ async function probeWebGPU(): Promise<{line: string, marked: boolean}> {
+   const gpu = Reflect.get(navigator, 'gpu');
+   if (!gpu || typeof gpu !== 'object') {
+@@ -466,8 +474,18 @@ async function probeFingerprint() {
+     if (webgl.line) {
+       lines.push(webgl.line);
+     }
+-    if (audio) {
+-      lines.push(zh ? `Audio 读数 ${audio}` : `Audio ${audio}`);
++    if (audio.hash) {
++      let note = '';
++      if (!audio.sameRead) {
++        note = zh ? '（同一缓冲读两次不一致）' :
++                    ' (same buffer changed on second read)';
++      } else if (lastAudioHash && lastAudioHash === audio.hash) {
++        note = zh ? '（与上次相同，已按站点稳定）' :
++                    ' (same as last probe; stable per site)';
++      }
++      lastAudioHash = audio.hash;
++      lines.push(
++          (zh ? `Audio 读数 ${audio.hash}` : `Audio ${audio.hash}`) + note);
+     }
+     if (webgpu.line) {
+       lines.push(webgpu.line);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index a52a292dfe..650951eb57 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -78,7 +78,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "打開高風險仿冒站前顯示攔截頁，可選擇繼續造訪。",
+         .fingerprint_label = "指紋防護",
+         .fingerprint_hint =
+-            "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。",
++            "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。"
++            "檢測兩次，同一頁的 Audio 讀數應相同。",
+         .fingerprint_probe = "檢測本頁指紋",
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+@@ -149,7 +150,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "打开高风险仿冒站前显示拦截页，可选择继续访问。",
+         .fingerprint_label = "指纹防护",
+         .fingerprint_hint =
+-            "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。",
++            "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。"
++            "检测两次，同一页的 Audio 读数应相同。",
+         .fingerprint_probe = "检测本页指纹",
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+@@ -221,7 +223,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .fingerprint_label = "Fingerprint Guard",
+       .fingerprint_hint =
+           "Stabilizes Canvas, WebGL, Audio, and WebGPU to reduce cross-site "
+-          "fingerprinting.",
++          "fingerprinting. Probe twice; Audio on this page should stay the same.",
+       .fingerprint_probe = "Probe this page fingerprints",
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
+index 6b89d058e9..23c1976aff 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.cc
++++ b/third_party/blink/renderer/core/aegis/farbling.cc
+@@ -118,7 +118,7 @@ void MaybeFarbleAudioChannel(ExecutionContext* context,
+   }
+ 
+   auto samples = UNSAFE_TODO(base::span(data, length));
+-  // Deterministic tiny amplitude noise (<= ~0.05%) keyed by host+index.
++  // 幅度约 0.05%，由当前页面 host 与采样下标决定，同一站点稳定。
+   uint64_t token = TokenForContext(context);
+   for (size_t i = 0; i < samples.size(); ++i) {
+     token = token * 6364136223846793005ULL + 1ULL;
+diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
+index 3bf4619784..e51cf04fe1 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.h
++++ b/third_party/blink/renderer/core/aegis/farbling.h
+@@ -25,7 +25,8 @@ CORE_EXPORT scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
+     ExecutionContext* context,
+     scoped_refptr<StaticBitmapImage> image);
+ 
+-// Light Web Audio sample perturbation.
++// Light Web Audio sample perturbation. 按 host 稳定；调用方应对每个
++// AudioBuffer 只调用一次，避免重复叠加。
+ CORE_EXPORT void MaybeFarbleAudioChannel(ExecutionContext* context,
+                                          float* data,
+                                          size_t length);
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index 3a683be0da..53b9f17834 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -33,13 +33,16 @@
+ 
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
++#include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
+ #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/wtf/text/strcat.h"
++#include "v8/include/v8-isolate.h"
+ 
+ namespace blink {
+ 
+@@ -214,21 +217,33 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+     return NotShared<DOMFloat32Array>(nullptr);
+   }
+ 
++  MaybeFarbleChannelsForScript();
+   return getChannelData(channel_index);
+ }
+ 
++void AudioBuffer::MaybeFarbleChannelsForScript() {
++  if (script_audio_farbled_) {
++    return;
++  }
++  script_audio_farbled_ = true;
++  ExecutionContext* context = nullptr;
++  if (v8::Isolate* isolate = v8::Isolate::GetCurrent()) {
++    context = CurrentExecutionContext(isolate);
++  }
++  for (Member<DOMFloat32Array>& channel : channels_) {
++    if (channel && channel->Data() && channel->length() > 0) {
++      aegis::MaybeFarbleAudioChannel(context, channel->Data(),
++                                     channel->length());
++    }
++  }
++}
++
+ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
+   if (channel_index >= channels_.size()) {
+     return NotShared<DOMFloat32Array>(nullptr);
+   }
+ 
+-  NotShared<DOMFloat32Array> array(channels_[channel_index].Get());
+-  if (array && array->Data() && array->length() > 0) {
+-    // Session-scoped farbling (no ExecutionContext on this overload).
+-    aegis::MaybeFarbleAudioChannel(/*context=*/nullptr, array->Data(),
+-                                   array->length());
+-  }
+-  return array;
++  return NotShared<DOMFloat32Array>(channels_[channel_index].Get());
+ }
+ 
+ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+@@ -258,6 +273,8 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+     return;
+   }
+ 
++  MaybeFarbleChannelsForScript();
++
+   base::span<const float> src = channels_[channel_number].Get()->AsSpan();
+   base::span<float> dst = destination->AsSpan();
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+index 4bbf70b439..bb6e330ff0 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+@@ -123,6 +123,10 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {
+   uint32_t length_;
+ 
+   HeapVector<Member<DOMFloat32Array>> channels_;
++  // 脚本第一次读通道数据后为 true，避免每次 getChannelData 再叠噪声。
++  bool script_audio_farbled_ = false;
++
++  void MaybeFarbleChannelsForScript();
+ };
+ 
+ // Shared data that audio threads can hold onto.
+-- 
+2.52.0
+

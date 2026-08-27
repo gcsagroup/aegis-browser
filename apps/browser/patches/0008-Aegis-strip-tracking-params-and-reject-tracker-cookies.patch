@@ -1,0 +1,993 @@
+From 9d6b670867ab1dd5afae2999b5ec7ff438ebe30e Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 05:01:50 +0800
+Subject: [PATCH] Aegis: strip tracking query params and reject tracker cookies
+
+Rewrite main-frame navigations to drop known tracking decorations, and
+delete analytics/advertising cookies as they are written.
+---
+ chrome/browser/aegis/BUILD.gn                 |   6 +
+ chrome/browser/aegis/aegis_cookie_janitor.cc  | 102 +++++++++++++++++
+ chrome/browser/aegis/aegis_cookie_janitor.h   |  46 ++++++++
+ ...aegis_link_sanitize_navigation_throttle.cc | 104 ++++++++++++++++++
+ .../aegis_link_sanitize_navigation_throttle.h |  39 +++++++
+ chrome/browser/aegis/aegis_prefs.cc           |   2 +
+ chrome/browser/aegis/aegis_service.cc         |  54 +++++++++
+ chrome/browser/aegis/aegis_service.h          |   7 ++
+ ...ent_browser_client_navigation_throttles.cc |   2 +
+ chrome/browser/resources/aegis/aegis.html     |   8 ++
+ chrome/browser/resources/aegis/aegis.ts       |  10 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  10 ++
+ .../ui/webui/aegis/aegis_ui_handler.cc        |   6 +
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/cookie_classify.cc        | 100 +++++++++++++++++
+ chrome/common/aegis/cookie_classify.h         |  33 ++++++
+ chrome/common/aegis/features.cc               |   2 +
+ chrome/common/aegis/features.h                |   2 +
+ chrome/common/aegis/pref_names.h              |   2 +
+ chrome/common/aegis/tracking_query_params.cc  |  65 +++++++++++
+ chrome/common/aegis/tracking_query_params.h   |   9 ++
+ 21 files changed, 609 insertions(+), 2 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_cookie_janitor.cc
+ create mode 100644 chrome/browser/aegis/aegis_cookie_janitor.h
+ create mode 100644 chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
+ create mode 100644 chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
+ create mode 100644 chrome/common/aegis/cookie_classify.cc
+ create mode 100644 chrome/common/aegis/cookie_classify.h
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index e311e638e0..77140ce2db 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -9,6 +9,10 @@ source_set("aegis") {
+     "aegis_phish_controller_client.h",
+     "aegis_phish_navigation_throttle.cc",
+     "aegis_phish_navigation_throttle.h",
++    "aegis_link_sanitize_navigation_throttle.cc",
++    "aegis_link_sanitize_navigation_throttle.h",
++    "aegis_cookie_janitor.cc",
++    "aegis_cookie_janitor.h",
+     "aegis_prefs.cc",
+     "aegis_prefs.h",
+     "aegis_service.cc",
+@@ -29,8 +33,10 @@ source_set("aegis") {
+     "//components/security_interstitials/content:security_interstitial_page",
+     "//components/security_interstitials/core",
+     "//content/public/browser",
++    "//mojo/public/cpp/bindings",
+     "//net",
+     "//services/network/public/cpp",
++    "//services/network/public/mojom",
+     "//url",
+   ]
+ }
+diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
+new file mode 100644
+index 0000000000..ede6325bcd
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
+@@ -0,0 +1,102 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_cookie_janitor.cc
++
++#include "chrome/browser/aegis/aegis_cookie_janitor.h"
++
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/logging.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/cookie_classify.h"
++#include "content/public/browser/storage_partition.h"
++#include "net/cookies/canonical_cookie.h"
++
++namespace aegis {
++
++CookieJanitor::CookieJanitor(Profile* profile) : profile_(profile) {}
++
++CookieJanitor::~CookieJanitor() = default;
++
++void CookieJanitor::Start() {
++  BindListener();
++  SweepExisting();
++}
++
++void CookieJanitor::Stop() {
++  receiver_.reset();
++}
++
++void CookieJanitor::BindListener() {
++  network::mojom::CookieManager* manager = cookie_manager();
++  if (!manager || receiver_.is_bound()) {
++    return;
++  }
++  manager->AddGlobalChangeListener(receiver_.BindNewPipeAndPassRemote());
++  receiver_.set_disconnect_handler(base::BindOnce(
++      [](base::WeakPtr<CookieJanitor> self) {
++        if (!self) {
++          return;
++        }
++        self->receiver_.reset();
++        self->BindListener();
++      },
++      weak_factory_.GetWeakPtr()));
++}
++
++void CookieJanitor::SweepExisting() {
++  network::mojom::CookieManager* manager = cookie_manager();
++  if (!manager) {
++    return;
++  }
++  manager->GetAllCookies(base::BindOnce(&CookieJanitor::OnGotAllCookies,
++                                        weak_factory_.GetWeakPtr()));
++}
++
++void CookieJanitor::OnGotAllCookies(
++    const std::vector<net::CanonicalCookie>& cookies) {
++  for (const net::CanonicalCookie& cookie : cookies) {
++    MaybeDelete(cookie);
++  }
++}
++
++void CookieJanitor::OnCookieChange(const net::CookieChangeInfo& change) {
++  if (change.cause != net::CookieChangeCause::INSERTED) {
++    return;
++  }
++  MaybeDelete(change.cookie);
++}
++
++void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
++  if (!AegisService::GetInstance()->IsCookieJanitorEnabled()) {
++    return;
++  }
++  const bool session = !cookie.IsPersistent();
++  std::optional<base::Time> expiry;
++  if (cookie.IsPersistent()) {
++    expiry = cookie.ExpiryDate();
++  }
++  const CookieCategory category =
++      ClassifyCookie(cookie.Name(), cookie.Domain(), session, expiry);
++  if (!ShouldRejectCookie(category)) {
++    return;
++  }
++  network::mojom::CookieManager* manager = cookie_manager();
++  if (!manager) {
++    return;
++  }
++  VLOG(1) << "Aegis: deleting " << cookie.Name() << " on " << cookie.Domain();
++  manager->DeleteCanonicalCookie(cookie, base::DoNothing());
++}
++
++network::mojom::CookieManager* CookieJanitor::cookie_manager() const {
++  if (!profile_) {
++    return nullptr;
++  }
++  return profile_->GetDefaultStoragePartition()
++      ->GetCookieManagerForBrowserProcess();
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_cookie_janitor.h b/chrome/browser/aegis/aegis_cookie_janitor.h
+new file mode 100644
+index 0000000000..ec4b06e272
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_cookie_janitor.h
+@@ -0,0 +1,46 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_cookie_janitor.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_COOKIE_JANITOR_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_COOKIE_JANITOR_H_
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "net/cookies/cookie_change_dispatcher.h"
++#include "services/network/public/mojom/cookie_manager.mojom.h"
++
++class Profile;
++
++namespace aegis {
++
++// Deletes analytics/advertising cookies as they are written, and sweeps the
++// existing jar once when started.
++class CookieJanitor : public network::mojom::CookieChangeListener {
++ public:
++  explicit CookieJanitor(Profile* profile);
++  CookieJanitor(const CookieJanitor&) = delete;
++  CookieJanitor& operator=(const CookieJanitor&) = delete;
++  ~CookieJanitor() override;
++
++  void Start();
++  void Stop();
++
++  // network::mojom::CookieChangeListener:
++  void OnCookieChange(const net::CookieChangeInfo& change) override;
++
++ private:
++  void BindListener();
++  void SweepExisting();
++  void OnGotAllCookies(const std::vector<net::CanonicalCookie>& cookies);
++  void MaybeDelete(const net::CanonicalCookie& cookie);
++  network::mojom::CookieManager* cookie_manager() const;
++
++  raw_ptr<Profile> profile_;
++  mojo::Receiver<network::mojom::CookieChangeListener> receiver_{this};
++  base::WeakPtrFactory<CookieJanitor> weak_factory_{this};
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_COOKIE_JANITOR_H_
+diff --git a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
+new file mode 100644
+index 0000000000..a607440cd1
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
+@@ -0,0 +1,104 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
++
++#include "chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h"
++
++#include <memory>
++
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "base/task/sequenced_task_runner.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
++#include "chrome/common/aegis/tracking_query_params.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/navigation_throttle_registry.h"
++#include "content/public/browser/page_navigator.h"
++#include "content/public/browser/web_contents.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++AegisLinkSanitizeNavigationThrottle::AegisLinkSanitizeNavigationThrottle(
++    content::NavigationThrottleRegistry& registry)
++    : content::NavigationThrottle(registry) {}
++
++AegisLinkSanitizeNavigationThrottle::~AegisLinkSanitizeNavigationThrottle() =
++    default;
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisLinkSanitizeNavigationThrottle::WillStartRequest() {
++  return MaybeRewrite();
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisLinkSanitizeNavigationThrottle::WillRedirectRequest() {
++  return MaybeRewrite();
++}
++
++const char* AegisLinkSanitizeNavigationThrottle::GetNameForLogging() {
++  return "AegisLinkSanitizeNavigationThrottle";
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
++  content::NavigationHandle* handle = navigation_handle();
++  if (!handle->IsInOutermostMainFrame()) {
++    return content::NavigationThrottle::PROCEED;
++  }
++
++  const GURL& url = handle->GetURL();
++  if (!url.SchemeIsHTTPOrHTTPS()) {
++    return content::NavigationThrottle::PROCEED;
++  }
++
++  const GURL cleaned = SanitizeTrackingDecorations(url);
++  if (cleaned == url) {
++    return content::NavigationThrottle::PROCEED;
++  }
++
++  content::WebContents* web_contents = handle->GetWebContents();
++  if (!web_contents) {
++    return content::NavigationThrottle::PROCEED;
++  }
++
++  content::OpenURLParams params =
++      content::OpenURLParams::FromNavigationHandle(handle);
++  params.url = cleaned;
++
++  LOG(INFO) << "Aegis: sanitizing navigation " << url << " -> " << cleaned;
++  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(
++          [](base::WeakPtr<content::WebContents> contents,
++             content::OpenURLParams params) {
++            if (!contents) {
++              return;
++            }
++            contents->OpenURL(std::move(params),
++                              /*navigation_handle_callback=*/{});
++          },
++          web_contents->GetWeakPtr(), std::move(params)));
++  return content::NavigationThrottle::CANCEL_AND_IGNORE;
++}
++
++// static
++void AegisLinkSanitizeNavigationThrottle::MaybeCreateAndAdd(
++    content::NavigationThrottleRegistry& registry) {
++  auto& navigation_handle = registry.GetNavigationHandle();
++  content::WebContents* web_contents = navigation_handle.GetWebContents();
++  if (prerender::ChromeNoStatePrefetchContentsDelegate::FromWebContents(
++          web_contents)) {
++    return;
++  }
++  if (!navigation_handle.IsInOutermostMainFrame()) {
++    return;
++  }
++  if (!AegisService::GetInstance()->IsLinkSanitizeEnabled()) {
++    return;
++  }
++  registry.AddThrottle(
++      std::make_unique<AegisLinkSanitizeNavigationThrottle>(registry));
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
+new file mode 100644
+index 0000000000..0723cfc1b7
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
+@@ -0,0 +1,39 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_LINK_SANITIZE_NAVIGATION_THROTTLE_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_LINK_SANITIZE_NAVIGATION_THROTTLE_H_
++
++#include "content/public/browser/navigation_throttle.h"
++
++namespace content {
++class NavigationThrottleRegistry;
++}  // namespace content
++
++namespace aegis {
++
++// Rewrites main-frame navigations to strip known tracking query decorations.
++class AegisLinkSanitizeNavigationThrottle : public content::NavigationThrottle {
++ public:
++  explicit AegisLinkSanitizeNavigationThrottle(
++      content::NavigationThrottleRegistry& registry);
++  ~AegisLinkSanitizeNavigationThrottle() override;
++
++  AegisLinkSanitizeNavigationThrottle(
++      const AegisLinkSanitizeNavigationThrottle&) = delete;
++  AegisLinkSanitizeNavigationThrottle& operator=(
++      const AegisLinkSanitizeNavigationThrottle&) = delete;
++
++  ThrottleCheckResult WillStartRequest() override;
++  ThrottleCheckResult WillRedirectRequest() override;
++  const char* GetNameForLogging() override;
++
++  static void MaybeCreateAndAdd(content::NavigationThrottleRegistry& registry);
++
++ private:
++  ThrottleCheckResult MaybeRewrite();
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_LINK_SANITIZE_NAVIGATION_THROTTLE_H_
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 308a3728fa..6fe365a89e 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -21,6 +21,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterIntegerPref(prefs::kFilterListHostCount, 0);
+   registry->RegisterIntegerPref(prefs::kFilterListGeneration, 0);
+   registry->RegisterStringPref(prefs::kFilterListLastError, std::string());
++  registry->RegisterBooleanPref(prefs::kLinkSanitizeEnabled, true);
++  registry->RegisterBooleanPref(prefs::kCookieJanitorEnabled, true);
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 5840fa9063..d86edc09dc 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -7,6 +7,7 @@
+ #include "base/memory/singleton.h"
+ #include "base/strings/string_util.h"
+ #include "chrome/browser/aegis/filter_list_updater.h"
++#include "chrome/browser/aegis/aegis_cookie_janitor.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
+ #include "chrome/common/aegis/features.h"
+@@ -31,12 +32,18 @@ void AegisService::InitializeForProfile(Profile* profile) {
+     return;
+   }
+   prefs_ = profile->GetPrefs();
++  profile_ = profile;
+   initialized_ = true;
+   if (base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
+     filter_list_updater_ = std::make_unique<FilterListUpdater>(profile);
+     filter_list_updater_->LoadFromDisk();
+     filter_list_updater_->MaybeAutoUpdate();
+   }
++  if (base::FeatureList::IsEnabled(features::kAegisCookieJanitor) &&
++      IsCookieJanitorEnabled()) {
++    cookie_janitor_ = std::make_unique<CookieJanitor>(profile);
++    cookie_janitor_->Start();
++  }
+   LOG(INFO) << "GCSA-aegis initialized for profile"
+             << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
+                                            : " (tracker blocking off)");
+@@ -140,6 +147,53 @@ void AegisService::SetFilterListAutoUpdateEnabled(bool enabled) {
+   }
+ }
+ 
++bool AegisService::IsLinkSanitizeEnabled() const {
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisLinkSanitize)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kLinkSanitizeEnabled);
++}
++
++bool AegisService::IsCookieJanitorEnabled() const {
++  if (!IsEnabled() ||
++      !base::FeatureList::IsEnabled(features::kAegisCookieJanitor)) {
++    return false;
++  }
++  if (!prefs_) {
++    return true;
++  }
++  return prefs_->GetBoolean(prefs::kCookieJanitorEnabled);
++}
++
++void AegisService::SetLinkSanitizeEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kLinkSanitizeEnabled, enabled);
++  }
++}
++
++void AegisService::SetCookieJanitorEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kCookieJanitorEnabled, enabled);
++  }
++  if (!enabled) {
++    if (cookie_janitor_) {
++      cookie_janitor_->Stop();
++    }
++    return;
++  }
++  if (!cookie_janitor_ && profile_ &&
++      base::FeatureList::IsEnabled(features::kAegisCookieJanitor)) {
++    cookie_janitor_ = std::make_unique<CookieJanitor>(profile_);
++  }
++  if (cookie_janitor_) {
++    cookie_janitor_->Start();
++  }
++}
++
+ void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
+   if (!filter_list_updater_) {
+     std::move(done).Run(false);
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index ca83ce1882..bcc72edff8 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -20,6 +20,7 @@ class Profile;
+ namespace aegis {
+ 
+ class FilterListUpdater;
++class CookieJanitor;
+ 
+ class AegisService {
+  public:
+@@ -36,6 +37,8 @@ class AegisService {
+   bool IsPhishInterstitialEnabled() const;
+   bool IsFingerprintGuardEnabled() const;
+   bool IsFilterListAutoUpdateEnabled() const;
++  bool IsLinkSanitizeEnabled() const;
++  bool IsCookieJanitorEnabled() const;
+   bool IsFilterListUpdating() const;
+   int FilterListHostCount() const;
+   int64_t FilterListLastUpdated() const;
+@@ -45,6 +48,8 @@ class AegisService {
+   void SetPhishInterstitialEnabled(bool enabled);
+   void SetFingerprintGuardEnabled(bool enabled);
+   void SetFilterListAutoUpdateEnabled(bool enabled);
++  void SetLinkSanitizeEnabled(bool enabled);
++  void SetCookieJanitorEnabled(bool enabled);
+   void UpdateFilterLists(base::OnceCallback<void(bool)> done);
+ 
+   // Host-rule match against builtin seed + compiled EasyList. Callers should
+@@ -65,8 +70,10 @@ class AegisService {
+ 
+   bool initialized_ = false;
+   raw_ptr<PrefService> prefs_ = nullptr;
++  raw_ptr<Profile> profile_ = nullptr;
+   base::flat_set<std::string> session_allowed_phish_hosts_;
+   std::unique_ptr<FilterListUpdater> filter_list_updater_;
++  std::unique_ptr<CookieJanitor> cookie_janitor_;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
+index 3dbd0f1c60..63a540d4fc 100644
+--- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
++++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
+@@ -21,6 +21,7 @@
+ #include "chrome/browser/interstitials/enterprise_util.h"
+ #include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
+ #include "chrome/browser/aegis/aegis_phish_navigation_throttle.h"
++#include "chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h"
+ #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
+ #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
+ #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
+@@ -401,6 +402,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+ 
+   LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
+   aegis::AegisPhishNavigationThrottle::MaybeCreateAndAdd(registry);
++  aegis::AegisLinkSanitizeNavigationThrottle::MaybeCreateAndAdd(registry);
+ 
+   PDFIFrameNavigationThrottle::MaybeCreateAndAdd(registry);
+ 
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 22c97237fa..5456e1ca72 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -22,6 +22,14 @@
+           <span>$i18n{fingerprintLabel}</span>
+           <input id="fingerprint" type="checkbox">
+         </label>
++        <label class="row">
++          <span>$i18n{linkSanitizeLabel}</span>
++          <input id="link-sanitize" type="checkbox">
++        </label>
++        <label class="row">
++          <span>$i18n{cookieJanitorLabel}</span>
++          <input id="cookie-janitor" type="checkbox">
++        </label>
+       </section>
+       <section class="filters" aria-label="filter lists">
+         <h2>$i18n{filterListTitle}</h2>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 3303ca085d..2fc5492e0e 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -13,6 +13,8 @@ interface AegisStatus {
+   filterListHostCount: number;
+   filterListLastUpdated: number;
+   filterListLastError: string;
++  linkSanitize: boolean;
++  cookieJanitor: boolean;
+   ok?: boolean;
+ }
+ 
+@@ -56,6 +58,8 @@ function applyStatus(status: AegisStatus) {
+   checkbox('tracker').checked = status.trackerBlocking;
+   checkbox('phish').checked = status.phishInterstitial;
+   checkbox('fingerprint').checked = status.fingerprintGuard;
++  checkbox('link-sanitize').checked = status.linkSanitize;
++  checkbox('cookie-janitor').checked = status.cookieJanitor;
+   checkbox('filter-auto').checked = status.filterListAutoUpdate;
+   getRequiredElement('filter-meta').textContent = formatMeta(status);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+@@ -63,7 +67,7 @@ function applyStatus(status: AegisStatus) {
+ 
+ async function setModule(
+     module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+-    'filterListAutoUpdate',
++    'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor',
+     enabled: boolean) {
+   const status: AegisStatus =
+       await sendWithPromise('setModuleEnabled', module, enabled);
+@@ -73,7 +77,7 @@ async function setModule(
+ function bindToggle(
+     id: string,
+     module: 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+-    'filterListAutoUpdate') {
++    'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor') {
+   const el = checkbox(id);
+   el.addEventListener('change', () => {
+     void setModule(module, el.checked);
+@@ -86,6 +90,8 @@ async function init() {
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+   bindToggle('fingerprint', 'fingerprintGuard');
++  bindToggle('link-sanitize', 'linkSanitize');
++  bindToggle('cookie-janitor', 'cookieJanitor');
+   bindToggle('filter-auto', 'filterListAutoUpdate');
+   actionButton('filter-update').addEventListener('click', () => {
+     void (async () => {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 09c0c88e8e..9b612e6fb3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -27,6 +27,8 @@ struct AegisStrings {
+   const char* filter_list_auto_update;
+   const char* filter_list_update_now;
+   const char* filter_list_meta;
++  const char* link_sanitize_label;
++  const char* cookie_janitor_label;
+   const char* note;
+ };
+ 
+@@ -41,6 +43,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "自動更新過濾列表",
+             "立即更新",
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
++            "清洗追蹤參數",
++            "清理廣告/分析 Cookie",
+             "模組狀態會立即套用；過濾列表約每天自動更新一次。"};
+   }
+   if (locale.starts_with("zh")) {
+@@ -53,6 +57,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "自动更新过滤列表",
+             "立即更新",
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
++            "清洗跟踪参数",
++            "清理广告/分析 Cookie",
+             "模块状态会立即生效；过滤列表大约每天自动更新一次。"};
+   }
+   return {"GCSA-aegis",
+@@ -64,6 +70,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "Auto-update filter lists",
+           "Update now",
+           "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
++          "Strip tracking parameters",
++          "Clear ads/analytics cookies",
+           "Changes apply immediately. Filter lists refresh about once a day."};
+ }
+ 
+@@ -85,6 +93,8 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
+   source->AddString("filterListUpdateNow", strings.filter_list_update_now);
+   source->AddString("filterListMeta", strings.filter_list_meta);
++  source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
++  source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
+   source->AddString("note", strings.note);
+ 
+   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index b45dd443e3..151d236858 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -41,6 +41,8 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("filterListLastUpdated",
+              static_cast<double>(service->FilterListLastUpdated()));
+   status.Set("filterListLastError", service->FilterListLastError());
++  status.Set("linkSanitize", service->IsLinkSanitizeEnabled());
++  status.Set("cookieJanitor", service->IsCookieJanitorEnabled());
+   return status;
+ }
+ 
+@@ -68,6 +70,10 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+     service->SetFingerprintGuardEnabled(enabled);
+   } else if (module == "filterListAutoUpdate") {
+     service->SetFilterListAutoUpdateEnabled(enabled);
++  } else if (module == "linkSanitize") {
++    service->SetLinkSanitizeEnabled(enabled);
++  } else if (module == "cookieJanitor") {
++    service->SetCookieJanitorEnabled(enabled);
+   }
+ 
+   ResolveJavascriptCallback(callback_id, BuildStatus());
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index ed4c8aafb8..0378207497 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -15,6 +15,8 @@ source_set("aegis") {
+     "filter_list.h",
+     "filter_list_matcher.cc",
+     "filter_list_matcher.h",
++    "cookie_classify.cc",
++    "cookie_classify.h",
+     "pref_names.h",
+     "tracking_query_params.cc",
+     "tracking_query_params.h",
+diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
+new file mode 100644
+index 0000000000..cebffddd25
+--- /dev/null
++++ b/chrome/common/aegis/cookie_classify.cc
+@@ -0,0 +1,100 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cookie_classify.cc
++
++#include "chrome/common/aegis/cookie_classify.h"
++
++#include <string>
++
++#include "base/containers/span.h"
++#include "base/strings/string_util.h"
++
++namespace aegis {
++namespace {
++
++constexpr std::string_view kAdHints[] = {
++    "ads", "ad_", "_ad", "advert", "doubleclick", "ide",
++    "personalization_id", "muc_ads",
++};
++
++constexpr std::string_view kAnalyticsHints[] = {
++    "_ga", "_gid", "_gat", "_gcl", "amp_", "ajs_", "mp_", "mixpanel",
++    "amplitude", "hotjar", "_hj", "optimizely", "segment", "s_cc", "s_sq",
++    "utm", "analytics",
++};
++
++constexpr std::string_view kFunctionalityHints[] = {
++    "lang", "locale", "theme", "timezone", "prefs", "preference", "sidebar",
++    "consent", "cookie_consent",
++};
++
++constexpr std::string_view kNecessaryHints[] = {
++    "session", "sess", "csrf", "xsrf", "auth", "token", "sid", "login",
++    "secure", "__host-", "__secure-",
++};
++
++int ScoreHints(std::string_view blob, base::span<const std::string_view> hints) {
++  int score = 0;
++  for (std::string_view hint : hints) {
++    if (blob.find(hint) != std::string_view::npos) {
++      ++score;
++    }
++  }
++  return score;
++}
++
++}  // namespace
++
++CookieCategory ClassifyCookie(std::string_view name,
++                              std::string_view domain,
++                              bool session,
++                              std::optional<base::Time> expiry) {
++  const std::string name_l = base::ToLowerASCII(name);
++  const std::string domain_l = base::ToLowerASCII(domain);
++  const std::string blob = name_l + " " + domain_l;
++
++  int necessary = ScoreHints(blob, kNecessaryHints);
++  int functionality = ScoreHints(blob, kFunctionalityHints);
++  int analytics = ScoreHints(blob, kAnalyticsHints);
++  int advertising = ScoreHints(blob, kAdHints);
++
++  if (domain_l.find("doubleclick") != std::string::npos ||
++      domain_l.find("googlesyndication") != std::string::npos ||
++      domain_l.find("facebook") != std::string::npos ||
++      domain_l.find("adnxs") != std::string::npos ||
++      domain_l.find("criteo") != std::string::npos ||
++      domain_l.find("taboola") != std::string::npos ||
++      domain_l.find("outbrain") != std::string::npos) {
++    advertising += 2;
++  }
++
++  CookieCategory best = CookieCategory::kUnknown;
++  int best_score = 0;
++  auto consider = [&](CookieCategory cat, int score) {
++    if (score > best_score) {
++      best = cat;
++      best_score = score;
++    }
++  };
++  consider(CookieCategory::kNecessary, necessary);
++  consider(CookieCategory::kFunctionality, functionality);
++  consider(CookieCategory::kAnalytics, analytics);
++  consider(CookieCategory::kAdvertising, advertising);
++
++  if (best_score == 0) {
++    if (!session && expiry.has_value() && !expiry->is_null()) {
++      const base::TimeDelta remaining = *expiry - base::Time::Now();
++      if (remaining > base::Days(365)) {
++        return CookieCategory::kAdvertising;
++      }
++    }
++    return CookieCategory::kUnknown;
++  }
++  return best;
++}
++
++bool ShouldRejectCookie(CookieCategory category) {
++  return category == CookieCategory::kAnalytics ||
++         category == CookieCategory::kAdvertising;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/cookie_classify.h b/chrome/common/aegis/cookie_classify.h
+new file mode 100644
+index 0000000000..05d0aac23c
+--- /dev/null
++++ b/chrome/common/aegis/cookie_classify.h
+@@ -0,0 +1,33 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/cookie_classify.h
++// Keep aligned with packages/core/src/tracker/cookie-classify.ts.
++
++#ifndef CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
++#define CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
++
++#include <optional>
++#include <string_view>
++
++#include "base/time/time.h"
++
++namespace aegis {
++
++enum class CookieCategory {
++  kNecessary,
++  kFunctionality,
++  kAnalytics,
++  kAdvertising,
++  kUnknown,
++};
++
++CookieCategory ClassifyCookie(std::string_view name,
++                              std::string_view domain,
++                              bool session,
++                              std::optional<base::Time> expiry);
++
++// Default policy matches packages/core DEFAULT_SETTINGS.rejectedCookieCategories.
++bool ShouldRejectCookie(CookieCategory category);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index 5dbc31e768..461df7e4e6 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -11,5 +11,7 @@ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPhishInterstitial, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFilterListUpdater, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisLinkSanitize, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisCookieJanitor, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index f8cbe9a4e6..4e072516cc 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -14,6 +14,8 @@ BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
+ BASE_DECLARE_FEATURE(kAegisPhishInterstitial);
+ BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
+ BASE_DECLARE_FEATURE(kAegisFilterListUpdater);
++BASE_DECLARE_FEATURE(kAegisLinkSanitize);
++BASE_DECLARE_FEATURE(kAegisCookieJanitor);
+ 
+ }  // namespace aegis::features
+ 
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index c631daf621..b445aea546 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -20,6 +20,8 @@ inline constexpr char kFilterListLastUpdated[] =
+ inline constexpr char kFilterListHostCount[] = "aegis.filter_list_host_count";
+ inline constexpr char kFilterListGeneration[] = "aegis.filter_list_generation";
+ inline constexpr char kFilterListLastError[] = "aegis.filter_list_last_error";
++inline constexpr char kLinkSanitizeEnabled[] = "aegis.link_sanitize_enabled";
++inline constexpr char kCookieJanitorEnabled[] = "aegis.cookie_janitor_enabled";
+ 
+ }  // namespace aegis::prefs
+ 
+diff --git a/chrome/common/aegis/tracking_query_params.cc b/chrome/common/aegis/tracking_query_params.cc
+index 78b8eab877..47cdd59fec 100644
+--- a/chrome/common/aegis/tracking_query_params.cc
++++ b/chrome/common/aegis/tracking_query_params.cc
+@@ -3,13 +3,28 @@
+ 
+ #include "chrome/common/aegis/tracking_query_params.h"
+ 
++#include <string>
++#include <vector>
++
+ #include "base/strings/string_util.h"
++#include "net/base/url_util.h"
++#include "url/gurl.h"
+ 
+ namespace aegis {
+ namespace {
+ 
+ #include "chrome/common/aegis/generated/tracking_query_params.inc"
+ 
++bool LooksLikeTrackingHash(std::string_view ref) {
++  return base::StartsWith(ref, "utm_", base::CompareCase::INSENSITIVE_ASCII) ||
++         base::StartsWith(ref, "fbclid",
++                          base::CompareCase::INSENSITIVE_ASCII) ||
++         base::StartsWith(ref, "gclid", base::CompareCase::INSENSITIVE_ASCII) ||
++         ref.find("utm_") != std::string_view::npos ||
++         ref.find("fbclid") != std::string_view::npos ||
++         ref.find("gclid") != std::string_view::npos;
++}
++
+ }  // namespace
+ 
+ bool IsTrackingQueryParam(std::string_view name) {
+@@ -21,4 +36,54 @@ bool IsTrackingQueryParam(std::string_view name) {
+   return false;
+ }
+ 
++GURL SanitizeTrackingDecorations(const GURL& url,
++                                 std::vector<std::string>* removed) {
++  if (!url.is_valid() || (!url.has_query() && !url.has_ref())) {
++    return url;
++  }
++
++  std::string kept_query;
++  for (net::QueryIterator it(url); !it.IsAtEnd(); it.Advance()) {
++    const std::string_view key = it.GetKey();
++    if (IsTrackingQueryParam(key)) {
++      if (removed) {
++        removed->emplace_back(key);
++      }
++      continue;
++    }
++    if (!kept_query.empty()) {
++      kept_query += "&";
++    }
++    kept_query.append(key);
++    const std::string_view value = it.GetValue();
++    if (!value.empty()) {
++      kept_query += "=";
++      kept_query.append(value);
++    }
++  }
++
++  GURL::Replacements replacements;
++  if (url.has_query()) {
++    if (kept_query.empty()) {
++      replacements.ClearQuery();
++    } else {
++      replacements.SetQueryStr(kept_query);
++    }
++  }
++
++  bool clear_ref = false;
++  if (url.has_ref() && LooksLikeTrackingHash(url.ref())) {
++    clear_ref = true;
++    replacements.ClearRef();
++    if (removed) {
++      removed->emplace_back("#tracking-hash");
++    }
++  }
++
++  if (!url.has_query() && !clear_ref) {
++    return url;
++  }
++  return url.ReplaceComponents(replacements);
++}
++
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/tracking_query_params.h b/chrome/common/aegis/tracking_query_params.h
+index ae66c7f38c..cd27c9ac0d 100644
+--- a/chrome/common/aegis/tracking_query_params.h
++++ b/chrome/common/aegis/tracking_query_params.h
+@@ -4,7 +4,11 @@
+ #ifndef CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
+ #define CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
+ 
++#include <string>
+ #include <string_view>
++#include <vector>
++
++class GURL;
+ 
+ namespace aegis {
+ 
+@@ -12,6 +16,11 @@ namespace aegis {
+ // (from packages/core TRACKING_QUERY_PARAMS).
+ bool IsTrackingQueryParam(std::string_view name);
+ 
++// Strips known tracking query params and hash decorations. |removed|
++// (optional) receives the stripped keys.
++GURL SanitizeTrackingDecorations(const GURL& url,
++                                 std::vector<std::string>* removed = nullptr);
++
+ }  // namespace aegis
+ 
+ #endif  // CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
+-- 
+2.50.1 (Apple Git-155)
+

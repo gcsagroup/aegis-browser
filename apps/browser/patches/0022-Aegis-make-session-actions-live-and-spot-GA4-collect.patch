@@ -1,0 +1,415 @@
+From c7a06623ee788756d8c5eda30817bbe59cf96aa0 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 14 Aug 2026 16:09:16 +0800
+Subject: [PATCH] Aegis: make session actions live and spot GA4 collect
+
+Refresh chrome://aegis while it stays open, log bounce clears, add a
+Canvas probe, show PII redaction counts, and block first-party GA4
+collect copies that use custom paths or v=2+tid=G- query artifacts.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ chrome/browser/aegis/aegis_bounce_observer.cc |  1 +
+ chrome/browser/aegis/aegis_service.cc         | 12 +++
+ chrome/browser/aegis/aegis_service.h          |  1 +
+ chrome/browser/resources/aegis/aegis.css      | 17 ++++
+ chrome/browser/resources/aegis/aegis.html     |  5 +
+ chrome/browser/resources/aegis/aegis.ts       | 97 +++++++++++++++++--
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 14 ++-
+ chrome/common/aegis/first_party_collect.cc    | 17 ++++
+ .../generated/first_party_collect_paths.inc   |  1 +
+ third_party/aegis_policy/policy_snapshot.json |  5 +-
+ 10 files changed, 159 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_bounce_observer.cc b/chrome/browser/aegis/aegis_bounce_observer.cc
+index 08bc56e356..31edfdf865 100644
+--- a/chrome/browser/aegis/aegis_bounce_observer.cc
++++ b/chrome/browser/aegis/aegis_bounce_observer.cc
+@@ -82,6 +82,7 @@ void BounceObserver::OnChainHandled(
+     }
+     LOG(INFO) << "Aegis: clearing cookies for bounce tracker "
+               << redirect->site;
++    AegisService::GetInstance()->RecordBounceClear(redirect->site);
+     DeleteSiteCookies(redirect->site);
+   }
+ }
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 9ac6debafd..bc4e1e05c6 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -781,6 +781,18 @@ void AegisService::RecordDeletedCookie(const std::string& name,
+   PushPrivacyEvent(std::move(event));
+ }
+ 
++void AegisService::RecordBounceClear(const std::string& site) {
++  if (site.empty()) {
++    return;
++  }
++  PrivacyEvent event;
++  event.kind = "bounce";
++  event.label = site;
++  event.unix_seconds =
++      (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  PushPrivacyEvent(std::move(event));
++}
++
+ std::vector<PrivacyEvent> AegisService::RecentPrivacyEvents() const {
+   return {privacy_events_.begin(), privacy_events_.end()};
+ }
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index f70862e27c..0afc1143a1 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -133,6 +133,7 @@ class AegisService {
+   void RecordDeletedCookie(const std::string& name,
+                            const std::string& domain,
+                            const std::string& category);
++  void RecordBounceClear(const std::string& site);
+   std::vector<PrivacyEvent> RecentPrivacyEvents() const;
+ 
+   PrefService* prefs() const { return prefs_; }
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index ebbe4c8159..1422ce2807 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -135,6 +135,23 @@ h1 {
+   margin-right: 0.5rem;
+ }
+ 
++.probe {
++  display: grid;
++  gap: 0.35rem;
++  padding: 0 0 0.9rem;
++  border-bottom: 1px solid var(--line);
++}
++
++.probe button {
++  margin-top: 0;
++  justify-self: start;
++}
++
++#fp-canvas {
++  border: 1px solid var(--line);
++  border-radius: 6px;
++}
++
+ .meta {
+   margin: 0 0 1rem;
+   color: var(--muted);
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 3b4bc1ccf9..1cc7f61d17 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -31,6 +31,11 @@
+           </span>
+           <input id="fingerprint" type="checkbox">
+         </label>
++        <div class="probe">
++          <button id="fp-probe" type="button">$i18n{fingerprintProbe}</button>
++          <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
++          <p class="meta" id="fp-result"></p>
++        </div>
+         <label class="row">
+           <span class="copy">
+             <span class="name">$i18n{linkSanitizeLabel}</span>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index f53afe98ab..d1ecddad37 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -257,6 +257,19 @@ function formatSummary(result: SummarizeResult): string {
+   return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '').join('\n');
+ }
+ 
++function kindLabel(kind: string, zh: boolean): string {
++  if (kind === 'cookie') {
++    return 'Cookie';
++  }
++  if (kind === 'bounce') {
++    return zh ? '跳转' : 'Bounce';
++  }
++  if (kind === 'block') {
++    return zh ? '拦截' : 'Block';
++  }
++  return zh ? '参数' : 'Param';
++}
++
+ function fillActivityLog(events: PrivacyEvent[]) {
+   const list = getRequiredElement('activity-log');
+   const empty = getRequiredElement('activity-empty');
+@@ -271,15 +284,72 @@ function fillActivityLog(events: PrivacyEvent[]) {
+     const li = document.createElement('li');
+     const kind = document.createElement('span');
+     kind.className = 'kind';
+-    kind.textContent = event.kind === 'cookie' ?
+-        (zh ? 'Cookie' : 'Cookie') :
+-        (zh ? '参数' : 'Param');
++    kind.textContent = kindLabel(event.kind, zh);
+     li.appendChild(kind);
+     li.appendChild(document.createTextNode(event.label));
+     list.appendChild(li);
+   }
+ }
+ 
++function hashText(text: string): string {
++  let h = 2166136261;
++  for (let i = 0; i < text.length; i++) {
++    h ^= text.charCodeAt(i);
++    h = Math.imul(h, 16777619);
++  }
++  return (h >>> 0).toString(16).padStart(8, '0');
++}
++
++function probeFingerprint() {
++  const canvasEl = getRequiredElement('fp-canvas');
++  if (!(canvasEl instanceof HTMLCanvasElement)) {
++    throw new Error('Missing canvas #fp-canvas');
++  }
++  const canvas = canvasEl;
++  const result = getRequiredElement('fp-result');
++  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
++  canvas.hidden = false;
++  const ctx = canvas.getContext('2d');
++  if (!ctx) {
++    result.textContent = zh ? '无法读取 Canvas。' : 'Canvas is unavailable.';
++    return;
++  }
++  ctx.fillStyle = '#0b6e4f';
++  ctx.fillRect(0, 0, canvas.width, canvas.height);
++  ctx.fillStyle = '#e8eef3';
++  ctx.font = '16px sans-serif';
++  ctx.fillText('GCSA-aegis ' + window.location.host, 10, 30);
++  const digest = hashText(canvas.toDataURL());
++  const on = checkbox('fingerprint').checked;
++  result.textContent = zh ?
++      `本页 Canvas 读数 ${digest}。Fingerprint Guard ${
++          on ? '开着：读数按站点稳定化' : '关着：这是浏览器原始读数'}。关开后请刷新本页再测。` :
++      `Canvas digest ${digest}. Fingerprint Guard is ${
++          on ? 'on: reading is stabilized per site' :
++               'off: this is the raw browser reading'}. Toggle, reload, then probe again.`;
++}
++
++function piiLine(text: string, zh: boolean): string {
++  const scan = workerEvaluate('scanPii', {text});
++  const raw = scan && Array.isArray(scan['matches']) ? scan['matches'] : [];
++  const matches: string[] = [];
++  for (const item of raw) {
++    if (item && typeof item === 'object' && 'kind' in item &&
++        typeof (item as {kind: unknown}).kind === 'string') {
++      matches.push((item as {kind: string}).kind);
++    }
++  }
++  if (!matches.length) {
++    return zh ? '脱敏：未发现邮箱/电话等' : 'Redaction: no email/phone found';
++  }
++  const counts = new Map<string, number>();
++  for (const kind of matches) {
++    counts.set(kind, (counts.get(kind) || 0) + 1);
++  }
++  const parts = [...counts.entries()].map(([kind, n]) => `${kind}×${n}`);
++  return (zh ? '脱敏：' : 'Redacted: ') + parts.join('、');
++}
++
+ function workerEvaluate(op: string, payload: Record<string, unknown>):
+     Record<string, unknown>|null {
+   const fn = window.aegisEvaluate;
+@@ -335,7 +405,8 @@ async function summarizeActiveTab() {
+       stayedOnDevice: true,
+       destination: 'local',
+     };
+-    showResult(formatSummary(result));
++    const zh = localeCode().startsWith('zh');
++    showResult(piiLine(snapshot.textSample, zh) + '\n' + formatSummary(result));
+     const prompt =
+         workerEvaluate('buildPrompt', {locale: localeCode(), snapshot});
+     if (prompt && prompt['system'] && prompt['user']) {
+@@ -343,14 +414,18 @@ async function summarizeActiveTab() {
+           'ollamaChat', String(prompt['system']), String(prompt['user']));
+       if (refined.ok && refined.backend === 'ollama' && refined.summary) {
+         refined.url = snap.url;
+-        showResult(formatSummary(refined));
++        showResult(
++            piiLine(snapshot.textSample, localeCode().startsWith('zh')) + '\n' +
++            formatSummary(refined));
+       }
+     }
+     return;
+   }
+   const fallback: SummarizeResult =
+       await sendWithPromise('summarizeActiveTab');
+-  showResult(formatSummary(fallback));
++  showResult(
++      piiLine(snapshot.textSample, localeCode().startsWith('zh')) + '\n' +
++      formatSummary(fallback));
+ }
+ 
+ async function init() {
+@@ -404,9 +479,19 @@ async function init() {
+   actionButton('ollama-probe').addEventListener('click', () => {
+     void probeOllama();
+   });
++  actionButton('fp-probe').addEventListener('click', () => {
++    probeFingerprint();
++  });
+   if (status.privacyAi) {
+     void probeOllama();
+   }
++  window.setInterval(() => {
++    void (async () => {
++      const next: AegisStatus = await sendWithPromise('getStatus');
++      fillActivityLog(next.recentEvents || []);
++      getRequiredElement('filter-meta').textContent = formatMeta(next);
++    })();
++  }, 2000);
+ }
+ 
+ async function probeOllama() {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 7b11bd3bae..7e992a4712 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -26,6 +26,7 @@ struct AegisStrings {
+   const char* phish_hint;
+   const char* fingerprint_label;
+   const char* fingerprint_hint;
++  const char* fingerprint_probe;
+   const char* filter_list_title;
+   const char* filter_list_auto_update;
+   const char* filter_list_auto_update_hint;
+@@ -71,6 +72,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指紋防護",
+         .fingerprint_hint =
+             "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。",
++        .fingerprint_probe = "檢測本頁 Canvas",
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+         .filter_list_auto_update_hint =
+@@ -107,7 +109,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .ollama_hint =
+             "只允許 127.0.0.1 / localhost。未啟動 Ollama 時自動回退啟發式摘要。",
+         .activity_title = "本次會話",
+-        .activity_hint = "剛才清掉的追蹤參數與廣告／分析 Cookie，可當場核對。",
++        .activity_hint =
++            "剛才清掉的追蹤參數、廣告 Cookie 與 bounce 記錄會自動更新，可當場核對。",
+         .activity_empty = "還沒有清理記錄。打開帶 utm_ 的連結或含廣告 Cookie 的網站後會出現在這裡。",
+         .note = "模組狀態會立即套用；過濾列表約每天自動更新一次。",
+     };
+@@ -125,6 +128,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指纹防护",
+         .fingerprint_hint =
+             "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。",
++        .fingerprint_probe = "检测本页 Canvas",
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+         .filter_list_auto_update_hint =
+@@ -161,7 +165,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .ollama_hint =
+             "只允许 127.0.0.1 / localhost。未启动 Ollama 时自动回退启发式摘要。",
+         .activity_title = "本次会话",
+-        .activity_hint = "刚才清掉的跟踪参数与广告／分析 Cookie，可当场核对。",
++        .activity_hint =
++            "刚才清掉的跟踪参数、广告 Cookie 与 bounce 记录会自动更新，可当场核对。",
+         .activity_empty =
+             "还没有清理记录。打开带 utm_ 的链接或含广告 Cookie 的网站后会出现在这里。",
+         .note = "模块状态会立即生效；过滤列表大约每天自动更新一次。",
+@@ -181,6 +186,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .fingerprint_hint =
+           "Stabilizes Canvas, WebGL, Audio, and WebGPU to reduce cross-site "
+           "fingerprinting.",
++      .fingerprint_probe = "Probe this page Canvas",
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+       .filter_list_auto_update_hint =
+@@ -224,7 +230,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "not running.",
+       .activity_title = "This session",
+       .activity_hint =
+-          "Tracking parameters and ads/analytics cookies stripped just now.",
++          "Stripped params, ads cookies, and bounce clears update live so you "
++          "can check them here.",
+       .activity_empty =
+           "Nothing recorded yet. Open a link with utm_ or a site that sets ads cookies.",
+       .note =
+@@ -249,6 +256,7 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("phishHint", strings.phish_hint);
+   source->AddString("fingerprintLabel", strings.fingerprint_label);
+   source->AddString("fingerprintHint", strings.fingerprint_hint);
++  source->AddString("fingerprintProbe", strings.fingerprint_probe);
+   source->AddString("filterListTitle", strings.filter_list_title);
+   source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
+   source->AddString("filterListAutoUpdateHint",
+diff --git a/chrome/common/aegis/first_party_collect.cc b/chrome/common/aegis/first_party_collect.cc
+index f3eeb289fd..03d4458b67 100644
+--- a/chrome/common/aegis/first_party_collect.cc
++++ b/chrome/common/aegis/first_party_collect.cc
+@@ -6,6 +6,7 @@
+ #include <string_view>
+ 
+ #include "base/strings/string_util.h"
++#include "net/base/url_util.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+@@ -25,12 +26,28 @@ bool PathMatchesCollect(std::string_view path, std::string_view rule) {
+          base::EndsWith(path, rule);
+ }
+ 
++bool LooksLikeGa4CollectQuery(const GURL& url) {
++  std::string v;
++  std::string tid;
++  if (!net::GetValueForKeyInQuery(url, "v", &v) || v != "2") {
++    return false;
++  }
++  if (!net::GetValueForKeyInQuery(url, "tid", &tid)) {
++    return false;
++  }
++  const std::string tid_l = base::ToLowerASCII(tid);
++  return base::StartsWith(tid_l, "g-") || base::StartsWith(tid_l, "gt-");
++}
++
+ }  // namespace
+ 
+ bool IsFirstPartyCollectUrl(const GURL& url) {
+   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_path()) {
+     return false;
+   }
++  if (LooksLikeGa4CollectQuery(url)) {
++    return true;
++  }
+   const std::string path = base::ToLowerASCII(url.path());
+   for (std::string_view rule : kFirstPartyCollectPaths) {
+     if (PathMatchesCollect(path, rule)) {
+diff --git a/chrome/common/aegis/generated/first_party_collect_paths.inc b/chrome/common/aegis/generated/first_party_collect_paths.inc
+index 31409d2044..1b0c58be02 100644
+--- a/chrome/common/aegis/generated/first_party_collect_paths.inc
++++ b/chrome/common/aegis/generated/first_party_collect_paths.inc
+@@ -12,4 +12,5 @@ constexpr std::string_view kFirstPartyCollectPaths[] = {
+     "/ga.js",
+     "/fbevents.js",
+     "/fbevents.php",
++    "/ag/g/c",
+ };
+diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
+index 397444673f..797ade05d5 100644
+--- a/third_party/aegis_policy/policy_snapshot.json
++++ b/third_party/aegis_policy/policy_snapshot.json
+@@ -1,6 +1,6 @@
+ {
+   "version": 1,
+-  "generatedAt": "2026-08-13T17:26:37.333Z",
++  "generatedAt": "2026-08-14T08:08:07.728Z",
+   "source": "@gcsa-aegis/core",
+   "trackerHosts": [
+     "doubleclick.net",
+@@ -81,7 +81,8 @@
+     "/analytics.js",
+     "/ga.js",
+     "/fbevents.js",
+-    "/fbevents.php"
++    "/fbevents.php",
++    "/ag/g/c"
+   ],
+   "phishHosts": [
+     "testsafebrowsing.appspot.com/s/phishing",
+-- 
+2.52.0
+

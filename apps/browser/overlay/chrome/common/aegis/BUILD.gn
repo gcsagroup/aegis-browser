@@ -1,0 +1,61 @@
+# Copyright 2026 GCSA
+# Intended path: chrome/common/aegis/BUILD.gn
+
+import("//testing/test.gni")
+
+source_set("aegis") {
+  sources = [
+    "aegis_block_reporter.cc",
+    "aegis_block_reporter.h",
+    "aegis_net_throttle.cc",
+    "aegis_net_throttle.h",
+    "cname_uncloak.cc",
+    "cname_uncloak.h",
+    "builtin_phish_hosts.cc",
+    "builtin_phish_hosts.h",
+    "builtin_tracker_hosts.cc",
+    "builtin_tracker_hosts.h",
+    "cdp_infobar_copy.cc",
+    "cdp_infobar_copy.h",
+    "cdp_target_filter.cc",
+    "cdp_target_filter.h",
+    "cdp_ws_hook.cc",
+    "cdp_ws_hook.h",
+    "features.cc",
+    "features.h",
+    "filter_list.cc",
+    "filter_list.h",
+    "filter_list_matcher.cc",
+    "filter_list_matcher.h",
+    "cookie_classify.cc",
+    "cookie_classify.h",
+    "first_party_collect.cc",
+    "first_party_collect.h",
+    "phish_score.cc",
+    "phish_score.h",
+    "pref_names.h",
+    "tracking_query_params.cc",
+    "tracking_query_params.h",
+  ]
+  deps = [
+    "//base",
+    "//third_party/aegis_policy:policy_snapshot",
+    "//net",
+    "//services/network/public/cpp",
+    "//third_party/blink/public/common",
+    "//url",
+  ]
+}
+
+test("aegis_unittests") {
+  sources = [
+    "cdp_infobar_copy_unittest.cc",
+    "cdp_target_filter_unittest.cc",
+  ]
+  deps = [
+    ":aegis",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+    "//url",
+  ]
+}

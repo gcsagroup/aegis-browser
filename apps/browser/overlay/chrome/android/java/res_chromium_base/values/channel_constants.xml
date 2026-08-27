@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Copyright 2026 GCSA
+Intended path: chrome/android/java/res_chromium_base/values/channel_constants.xml
+Play / 侧载显示名。不要写成 Chrome。
+-->
+
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+    <string name="app_name" translatable="false">GCSA-aegis</string>
+    <string name="bookmark_widget_title" translatable="false">GCSA-aegis bookmarks</string>
+    <string name="search_widget_title" translatable="false">GCSA-aegis search</string>
+    <string name="quick_action_search_widget_title" translatable="false">GCSA-aegis quick action search</string>
+</resources>

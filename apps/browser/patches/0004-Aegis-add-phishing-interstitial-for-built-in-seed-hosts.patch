@@ -1,0 +1,733 @@
+From a133f22f313b5d3c685c1620d31aa3f63340d6bd Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Wed, 12 Aug 2026 17:24:05 +0800
+Subject: [PATCH] Aegis: add phishing interstitial for built-in seed hosts
+
+Show a Lookalike/Insecure-Form style warning on main-frame navigations
+that match the Aegis phishing seed list, gated by module prefs.
+---
+ chrome/browser/aegis/BUILD.gn                 |  14 ++
+ .../aegis/aegis_phish_blocking_page.cc        | 133 ++++++++++++++++++
+ .../browser/aegis/aegis_phish_blocking_page.h |  53 +++++++
+ .../aegis/aegis_phish_controller_client.cc    |  53 +++++++
+ .../aegis/aegis_phish_controller_client.h     |  41 ++++++
+ .../aegis/aegis_phish_navigation_throttle.cc  | 103 ++++++++++++++
+ .../aegis/aegis_phish_navigation_throttle.h   |  42 ++++++
+ chrome/browser/aegis/aegis_service.cc         |  30 ++++
+ chrome/browser/aegis/aegis_service.h          |   9 ++
+ ...ent_browser_client_navigation_throttles.cc |   2 +
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/builtin_phish_hosts.cc    |  58 ++++++++
+ chrome/common/aegis/builtin_phish_hosts.h     |  18 +++
+ 13 files changed, 558 insertions(+)
+ create mode 100644 chrome/browser/aegis/aegis_phish_blocking_page.cc
+ create mode 100644 chrome/browser/aegis/aegis_phish_blocking_page.h
+ create mode 100644 chrome/browser/aegis/aegis_phish_controller_client.cc
+ create mode 100644 chrome/browser/aegis/aegis_phish_controller_client.h
+ create mode 100644 chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+ create mode 100644 chrome/browser/aegis/aegis_phish_navigation_throttle.h
+ create mode 100644 chrome/common/aegis/builtin_phish_hosts.cc
+ create mode 100644 chrome/common/aegis/builtin_phish_hosts.h
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 1ef0295be6..76ca9ea201 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -3,6 +3,12 @@
+ 
+ source_set("aegis") {
+   sources = [
++    "aegis_phish_blocking_page.cc",
++    "aegis_phish_blocking_page.h",
++    "aegis_phish_controller_client.cc",
++    "aegis_phish_controller_client.h",
++    "aegis_phish_navigation_throttle.cc",
++    "aegis_phish_navigation_throttle.h",
+     "aegis_prefs.cc",
+     "aegis_prefs.h",
+     "aegis_service.cc",
+@@ -10,10 +16,18 @@ source_set("aegis") {
+   ]
+   deps = [
+     "//base",
++    "//chrome/browser:browser_process",
++    "//chrome/browser/preloading/prefetch/no_state_prefetch",
+     "//chrome/browser/profiles:profile",
++    "//chrome/common",
+     "//chrome/common/aegis",
+     "//components/pref_registry",
+     "//components/prefs",
++    "//components/resources",
++    "//components/security_interstitials/content:security_interstitial_page",
++    "//components/security_interstitials/core",
++    "//content/public/browser",
++    "//net",
+     "//url",
+   ]
+ }
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+new file mode 100644
+index 0000000000..c9f06c47b8
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+@@ -0,0 +1,133 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_blocking_page.cc
++
++#include "chrome/browser/aegis/aegis_phish_blocking_page.h"
++
++#include <utility>
++
++#include "base/notreached.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/values.h"
++#include "chrome/browser/browser_process.h"
++#include "components/security_interstitials/content/security_interstitial_controller_client.h"
++#include "components/security_interstitials/core/metrics_helper.h"
++#include "content/public/browser/web_contents.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++bool IsChineseLocale(const std::string& locale) {
++  return base::StartsWith(locale, "zh",
++                          base::CompareCase::INSENSITIVE_ASCII);
++}
++
++}  // namespace
++
++// static
++const security_interstitials::SecurityInterstitialPage::TypeID
++    AegisPhishBlockingPage::kTypeForTesting =
++        &AegisPhishBlockingPage::kTypeForTesting;
++
++AegisPhishBlockingPage::AegisPhishBlockingPage(
++    content::WebContents* web_contents,
++    const GURL& request_url,
++    std::unique_ptr<
++        security_interstitials::SecurityInterstitialControllerClient>
++        controller_client)
++    : security_interstitials::SecurityInterstitialPage(
++          web_contents,
++          request_url,
++          std::move(controller_client)) {
++  controller()->metrics_helper()->RecordUserDecision(
++      security_interstitials::MetricsHelper::SHOW);
++}
++
++AegisPhishBlockingPage::~AegisPhishBlockingPage() = default;
++
++security_interstitials::SecurityInterstitialPage::TypeID
++AegisPhishBlockingPage::GetTypeForTesting() {
++  return AegisPhishBlockingPage::kTypeForTesting;
++}
++
++bool AegisPhishBlockingPage::ShouldDisplayURL() const {
++  return true;
++}
++
++void AegisPhishBlockingPage::CommandReceived(const std::string& command) {
++  if (command == "\"pageLoadComplete\"") {
++    return;
++  }
++
++  int cmd = 0;
++  bool retval = base::StringToInt(command, &cmd);
++  DCHECK(retval);
++
++  switch (cmd) {
++    case security_interstitials::CMD_DONT_PROCEED:
++      controller()->metrics_helper()->RecordUserDecision(
++          security_interstitials::MetricsHelper::DONT_PROCEED);
++      controller()->GoBack();
++      break;
++    case security_interstitials::CMD_PROCEED:
++      controller()->metrics_helper()->RecordUserDecision(
++          security_interstitials::MetricsHelper::PROCEED);
++      controller()->Proceed();
++      break;
++    case security_interstitials::CMD_DO_REPORT:
++    case security_interstitials::CMD_DONT_REPORT:
++    case security_interstitials::CMD_SHOW_MORE_SECTION:
++    case security_interstitials::CMD_OPEN_DATE_SETTINGS:
++    case security_interstitials::CMD_OPEN_REPORTING_PRIVACY:
++    case security_interstitials::CMD_OPEN_WHITEPAPER:
++    case security_interstitials::CMD_OPEN_HELP_CENTER:
++    case security_interstitials::CMD_RELOAD:
++    case security_interstitials::CMD_OPEN_DIAGNOSTIC:
++    case security_interstitials::CMD_OPEN_LOGIN:
++    case security_interstitials::CMD_REPORT_PHISHING_ERROR:
++      NOTREACHED() << "Unsupported command: " << command;
++    case security_interstitials::CMD_ERROR:
++    case security_interstitials::CMD_TEXT_FOUND:
++    case security_interstitials::CMD_TEXT_NOT_FOUND:
++      break;
++  }
++}
++
++void AegisPhishBlockingPage::PopulateInterstitialStrings(
++    base::DictValue& load_time_data) {
++  PopulateValuesForSharedHTML(load_time_data);
++
++  const std::string locale = g_browser_process->GetApplicationLocale();
++  const bool zh = IsChineseLocale(locale);
++
++  load_time_data.Set("tabTitle", zh ? u"疑似钓鱼网站" : u"Suspected phishing");
++  load_time_data.Set("heading",
++                     zh ? u"Aegis 已拦截疑似钓鱼网站"
++                        : u"Aegis blocked a suspected phishing site");
++  load_time_data.Set(
++      "primaryParagraph",
++      zh ? u"该地址匹配内置钓鱼种子规则。继续访问可能泄露账号或支付信息。"
++         : u"This address matches a built-in phishing seed rule. Continuing "
++           u"may expose account or payment details.");
++  load_time_data.Set("primaryButtonText",
++                     zh ? u"返回安全页面" : u"Back to safety");
++  load_time_data.Set("proceedButtonText",
++                     zh ? u"仍然访问" : u"Visit this site");
++  load_time_data.Set("optInLink", std::u16string());
++  load_time_data.Set("enhancedProtectionMessage", std::u16string());
++}
++
++void AegisPhishBlockingPage::PopulateValuesForSharedHTML(
++    base::DictValue& load_time_data) {
++  // Reuse INSECURE_FORM UI wiring (primary + proceed buttons) without
++  // modifying interstitial_large.js.
++  load_time_data.Set("type", "INSECURE_FORM");
++  load_time_data.Set("overridable", false);
++  load_time_data.Set("hide_primary_button", false);
++  load_time_data.Set("openDetails", "");
++  load_time_data.Set("explanationParagraph", "");
++  load_time_data.Set("finalParagraph", "");
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.h b/chrome/browser/aegis/aegis_phish_blocking_page.h
+new file mode 100644
+index 0000000000..1176e52409
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_blocking_page.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_PHISH_BLOCKING_PAGE_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_PHISH_BLOCKING_PAGE_H_
++
++#include <memory>
++#include <string>
++
++#include "components/security_interstitials/content/security_interstitial_page.h"
++#include "url/gurl.h"
++
++namespace content {
++class WebContents;
++}  // namespace content
++
++namespace aegis {
++
++// Full-page warning when navigation matches a built-in phishing seed rule.
++class AegisPhishBlockingPage
++    : public security_interstitials::SecurityInterstitialPage {
++ public:
++  static const security_interstitials::SecurityInterstitialPage::TypeID
++      kTypeForTesting;
++
++  AegisPhishBlockingPage(
++      content::WebContents* web_contents,
++      const GURL& request_url,
++      std::unique_ptr<
++          security_interstitials::SecurityInterstitialControllerClient>
++          controller_client);
++
++  AegisPhishBlockingPage(const AegisPhishBlockingPage&) = delete;
++  AegisPhishBlockingPage& operator=(const AegisPhishBlockingPage&) = delete;
++
++  ~AegisPhishBlockingPage() override;
++
++  security_interstitials::SecurityInterstitialPage::TypeID GetTypeForTesting()
++      override;
++
++ protected:
++  void CommandReceived(const std::string& command) override;
++  void PopulateInterstitialStrings(base::DictValue& load_time_data) override;
++  void OnInterstitialClosing() override {}
++  bool ShouldDisplayURL() const override;
++
++ private:
++  void PopulateValuesForSharedHTML(base::DictValue& load_time_data);
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_BLOCKING_PAGE_H_
+diff --git a/chrome/browser/aegis/aegis_phish_controller_client.cc b/chrome/browser/aegis/aegis_phish_controller_client.cc
+new file mode 100644
+index 0000000000..4f7d440f9d
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_controller_client.cc
+@@ -0,0 +1,53 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_controller_client.cc
++
++#include "chrome/browser/aegis/aegis_phish_controller_client.h"
++
++#include <string>
++#include <utility>
++
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/webui_url_constants.h"
++#include "components/security_interstitials/content/settings_page_helper.h"
++#include "components/security_interstitials/core/metrics_helper.h"
++#include "content/public/browser/web_contents.h"
++
++namespace aegis {
++
++// static
++std::unique_ptr<security_interstitials::MetricsHelper>
++AegisPhishControllerClient::GetMetricsHelper(const GURL& url) {
++  security_interstitials::MetricsHelper::ReportDetails settings;
++  settings.metric_prefix = "aegis_phish";
++  return std::make_unique<security_interstitials::MetricsHelper>(url, settings,
++                                                                 nullptr);
++}
++
++AegisPhishControllerClient::AegisPhishControllerClient(
++    content::WebContents* web_contents,
++    const GURL& request_url)
++    : SecurityInterstitialControllerClient(
++          web_contents,
++          GetMetricsHelper(request_url),
++          Profile::FromBrowserContext(web_contents->GetBrowserContext())
++              ->GetPrefs(),
++          g_browser_process->GetApplicationLocale(),
++          chrome::ChromeUINewTabURLAsGURL(),
++          /*settings_page_helper=*/nullptr),
++      request_url_(request_url) {}
++
++AegisPhishControllerClient::~AegisPhishControllerClient() = default;
++
++void AegisPhishControllerClient::GoBack() {
++  SecurityInterstitialControllerClient::GoBackAfterNavigationCommitted();
++}
++
++void AegisPhishControllerClient::Proceed() {
++  AegisService::GetInstance()->AllowPhishHostForSession(
++      std::string(request_url_.host()));
++  Reload();
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_phish_controller_client.h b/chrome/browser/aegis/aegis_phish_controller_client.h
+new file mode 100644
+index 0000000000..948152d953
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_controller_client.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_controller_client.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_PHISH_CONTROLLER_CLIENT_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_PHISH_CONTROLLER_CLIENT_H_
++
++#include <memory>
++
++#include "components/security_interstitials/content/security_interstitial_controller_client.h"
++#include "url/gurl.h"
++
++namespace content {
++class WebContents;
++}  // namespace content
++
++namespace aegis {
++
++class AegisPhishControllerClient
++    : public security_interstitials::SecurityInterstitialControllerClient {
++ public:
++  static std::unique_ptr<security_interstitials::MetricsHelper>
++  GetMetricsHelper(const GURL& url);
++
++  AegisPhishControllerClient(content::WebContents* web_contents,
++                             const GURL& request_url);
++  ~AegisPhishControllerClient() override;
++
++  AegisPhishControllerClient(const AegisPhishControllerClient&) = delete;
++  AegisPhishControllerClient& operator=(const AegisPhishControllerClient&) =
++      delete;
++
++  void GoBack() override;
++  void Proceed() override;
++
++ private:
++  const GURL request_url_;
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_CONTROLLER_CLIENT_H_
+diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+new file mode 100644
+index 0000000000..58354b8151
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
+@@ -0,0 +1,103 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_navigation_throttle.cc
++
++#include "chrome/browser/aegis/aegis_phish_navigation_throttle.h"
++
++#include <memory>
++#include <optional>
++#include <utility>
++
++#include "base/logging.h"
++#include "chrome/browser/aegis/aegis_phish_blocking_page.h"
++#include "chrome/browser/aegis/aegis_phish_controller_client.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
++#include "components/security_interstitials/content/security_interstitial_tab_helper.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/navigation_throttle_registry.h"
++#include "content/public/browser/web_contents.h"
++#include "net/base/net_errors.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++AegisPhishNavigationThrottle::AegisPhishNavigationThrottle(
++    content::NavigationThrottleRegistry& registry)
++    : content::NavigationThrottle(registry) {}
++
++AegisPhishNavigationThrottle::~AegisPhishNavigationThrottle() = default;
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisPhishNavigationThrottle::WillStartRequest() {
++  return MaybeIntercept();
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisPhishNavigationThrottle::WillRedirectRequest() {
++  return MaybeIntercept();
++}
++
++const char* AegisPhishNavigationThrottle::GetNameForLogging() {
++  return "AegisPhishNavigationThrottle";
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisPhishNavigationThrottle::MaybeIntercept() {
++  content::NavigationHandle* handle = navigation_handle();
++  if (!handle->IsInOutermostMainFrame()) {
++    return content::NavigationThrottle::PROCEED;
++  }
++
++  const GURL& url = handle->GetURL();
++  if (!AegisService::GetInstance()->ShouldShowPhishInterstitial(url)) {
++    return content::NavigationThrottle::PROCEED;
++  }
++
++  LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url;
++  return ShowInterstitial(url);
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++AegisPhishNavigationThrottle::ShowInterstitial(const GURL& request_url) {
++  content::NavigationHandle* handle = navigation_handle();
++  content::WebContents* web_contents = handle->GetWebContents();
++
++  auto controller =
++      std::make_unique<AegisPhishControllerClient>(web_contents, request_url);
++  auto blocking_page = std::make_unique<AegisPhishBlockingPage>(
++      web_contents, request_url, std::move(controller));
++
++  std::optional<std::string> error_page_contents =
++      blocking_page->GetHTMLContents();
++
++  security_interstitials::SecurityInterstitialTabHelper::AssociateBlockingPage(
++      handle, std::move(blocking_page));
++
++  return ThrottleCheckResult(content::NavigationThrottle::CANCEL,
++                             net::ERR_BLOCKED_BY_CLIENT, error_page_contents);
++}
++
++// static
++void AegisPhishNavigationThrottle::MaybeCreateAndAdd(
++    content::NavigationThrottleRegistry& registry) {
++  auto& navigation_handle = registry.GetNavigationHandle();
++  content::WebContents* web_contents = navigation_handle.GetWebContents();
++
++  if (prerender::ChromeNoStatePrefetchContentsDelegate::FromWebContents(
++          web_contents)) {
++    return;
++  }
++
++  if (!navigation_handle.IsInOutermostMainFrame()) {
++    return;
++  }
++
++  if (!AegisService::GetInstance()->IsPhishInterstitialEnabled()) {
++    return;
++  }
++
++  registry.AddThrottle(
++      std::make_unique<AegisPhishNavigationThrottle>(registry));
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.h b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
+new file mode 100644
+index 0000000000..574459db4d
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
+@@ -0,0 +1,42 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/browser/aegis/aegis_phish_navigation_throttle.h
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_PHISH_NAVIGATION_THROTTLE_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_PHISH_NAVIGATION_THROTTLE_H_
++
++#include "content/public/browser/navigation_throttle.h"
++#include "url/gurl.h"
++
++namespace content {
++class NavigationThrottleRegistry;
++}  // namespace content
++
++namespace aegis {
++
++// Cancels main-frame navigations that match built-in phishing seed rules and
++// shows a security interstitial (gated by Aegis phish prefs/features).
++class AegisPhishNavigationThrottle : public content::NavigationThrottle {
++ public:
++  explicit AegisPhishNavigationThrottle(
++      content::NavigationThrottleRegistry& registry);
++  ~AegisPhishNavigationThrottle() override;
++
++  AegisPhishNavigationThrottle(const AegisPhishNavigationThrottle&) = delete;
++  AegisPhishNavigationThrottle& operator=(const AegisPhishNavigationThrottle&) =
++      delete;
++
++  // content::NavigationThrottle:
++  ThrottleCheckResult WillStartRequest() override;
++  ThrottleCheckResult WillRedirectRequest() override;
++  const char* GetNameForLogging() override;
++
++  static void MaybeCreateAndAdd(content::NavigationThrottleRegistry& registry);
++
++ private:
++  ThrottleCheckResult MaybeIntercept();
++  ThrottleCheckResult ShowInterstitial(const GURL& request_url);
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_NAVIGATION_THROTTLE_H_
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index d1ef3720cd..dbb575ae3e 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -5,7 +5,9 @@
+ 
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
++#include "base/strings/string_util.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/builtin_phish_hosts.h"
+ #include "chrome/common/aegis/builtin_tracker_hosts.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -96,4 +98,32 @@ bool AegisService::ShouldBlockUrl(const GURL& url) const {
+   return MatchesBuiltinTrackerRule(url);
+ }
+ 
++bool AegisService::ShouldShowPhishInterstitial(const GURL& url) const {
++  if (!IsPhishInterstitialEnabled()) {
++    return false;
++  }
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_host()) {
++    return false;
++  }
++  if (IsPhishHostAllowedForSession(std::string(url.host()))) {
++    return false;
++  }
++  return MatchesBuiltinPhishRule(url);
++}
++
++void AegisService::AllowPhishHostForSession(const std::string& host) {
++  if (host.empty()) {
++    return;
++  }
++  session_allowed_phish_hosts_.insert(base::ToLowerASCII(host));
++}
++
++bool AegisService::IsPhishHostAllowedForSession(
++    const std::string& host) const {
++  if (host.empty()) {
++    return false;
++  }
++  return session_allowed_phish_hosts_.contains(base::ToLowerASCII(host));
++}
++
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 5d2e3d6bc1..33028ff532 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -4,6 +4,9 @@
+ #ifndef CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ #define CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ 
++#include <string>
++
++#include "base/containers/flat_set.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/singleton.h"
+ 
+@@ -36,6 +39,11 @@ class AegisService {
+   // main-document navigations (RequestDestination::kDocument).
+   bool ShouldBlockUrl(const GURL& url) const;
+ 
++  // Main-frame phishing interstitial decision (seed rules + session allow).
++  bool ShouldShowPhishInterstitial(const GURL& url) const;
++  void AllowPhishHostForSession(const std::string& host);
++  bool IsPhishHostAllowedForSession(const std::string& host) const;
++
+   PrefService* prefs() const { return prefs_; }
+ 
+  private:
+@@ -45,6 +53,7 @@ class AegisService {
+ 
+   bool initialized_ = false;
+   raw_ptr<PrefService> prefs_ = nullptr;
++  base::flat_set<std::string> session_allowed_phish_hosts_;
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
+index ce2651e9aa..3dbd0f1c60 100644
+--- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
++++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/history/history_service_factory.h"
+ #include "chrome/browser/interstitials/enterprise_util.h"
+ #include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
++#include "chrome/browser/aegis/aegis_phish_navigation_throttle.h"
+ #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
+ #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
+ #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
+@@ -399,6 +400,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+   }
+ 
+   LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
++  aegis::AegisPhishNavigationThrottle::MaybeCreateAndAdd(registry);
+ 
+   PDFIFrameNavigationThrottle::MaybeCreateAndAdd(registry);
+ 
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 8a39ff200a..4ad8a9ce67 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -5,6 +5,8 @@ source_set("aegis") {
+   sources = [
+     "aegis_net_throttle.cc",
+     "aegis_net_throttle.h",
++    "builtin_phish_hosts.cc",
++    "builtin_phish_hosts.h",
+     "builtin_tracker_hosts.cc",
+     "builtin_tracker_hosts.h",
+     "features.cc",
+diff --git a/chrome/common/aegis/builtin_phish_hosts.cc b/chrome/common/aegis/builtin_phish_hosts.cc
+new file mode 100644
+index 0000000000..09dc3adb6f
+--- /dev/null
++++ b/chrome/common/aegis/builtin_phish_hosts.cc
+@@ -0,0 +1,58 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/builtin_phish_hosts.cc
++
++#include "chrome/common/aegis/builtin_phish_hosts.h"
++
++#include <string_view>
++
++#include "base/strings/string_util.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++// Seed list for local phishing interstitial demos. Not a production blocklist.
++// includes Google's Safe Browsing test phishing path plus obvious brand-spoof
++// hosts used for manual verification.
++constexpr std::string_view kBuiltinPhishRules[] = {
++    "testsafebrowsing.appspot.com/s/phishing",
++    "paypal-secure-login.com",
++    "appleid-verify-account.com",
++    "microsoft-account-security.com",
++    "ic1oud-login.com",
++    "google-secure-signin.com",
++    "aegis-phish-demo.test",
++};
++
++bool RuleMatches(std::string_view rule, const GURL& url) {
++  if (!url.is_valid() || !url.has_host()) {
++    return false;
++  }
++
++  const size_t slash = rule.find('/');
++  const std::string_view host =
++      slash == std::string_view::npos ? rule : rule.substr(0, slash);
++  if (host.empty() || !url.DomainIs(host)) {
++    return false;
++  }
++
++  if (slash == std::string_view::npos) {
++    return true;
++  }
++
++  const std::string_view path_suffix = rule.substr(slash);
++  return base::StartsWith(url.path(), path_suffix);
++}
++
++}  // namespace
++
++bool MatchesBuiltinPhishRule(const GURL& url) {
++  for (std::string_view rule : kBuiltinPhishRules) {
++    if (RuleMatches(rule, url)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/builtin_phish_hosts.h b/chrome/common/aegis/builtin_phish_hosts.h
+new file mode 100644
+index 0000000000..dc7a0bb3d2
+--- /dev/null
++++ b/chrome/common/aegis/builtin_phish_hosts.h
+@@ -0,0 +1,18 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/builtin_phish_hosts.h
++
++#ifndef CHROME_COMMON_AEGIS_BUILTIN_PHISH_HOSTS_H_
++#define CHROME_COMMON_AEGIS_BUILTIN_PHISH_HOSTS_H_
++
++class GURL;
++
++namespace aegis {
++
++// Returns true when |url| matches a built-in phishing seed rule.
++// Rules are bare hosts ("paypal-secure-login.com") or host/path
++// ("testsafebrowsing.appspot.com/s/phishing").
++bool MatchesBuiltinPhishRule(const GURL& url);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_BUILTIN_PHISH_HOSTS_H_
+-- 
+2.52.0
+
