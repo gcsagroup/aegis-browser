@@ -5,9 +5,8 @@
 import { scorePhishingUrl, assessPhishing } from "./phish/detector.js";
 import { scanPii, gateOutboundText } from "./privacy/pii.js";
 import {
-  buildSummarizePrompt,
-  heuristicSummary,
   isSensitiveOrigin,
+  prepareSummary,
 } from "./privacy/orchestrator.js";
 import { sanitizeUrlDecorations } from "./tracker/link-sanitize.js";
 import { classifyCookie } from "./tracker/cookie-classify.js";
@@ -30,6 +29,42 @@ export interface WorkerRequest {
     expirationDate?: number;
   };
   userApproved?: boolean;
+}
+
+const MAX_WORKER_URL_CHARS = 8192;
+const MAX_WORKER_TITLE_CHARS = 4096;
+const MAX_WORKER_TEXT_CHARS = 64 * 1024;
+
+function isStructuredSnapshot(value: unknown): value is PageSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Record<string, unknown>;
+  if (
+    typeof snapshot.url !== "string" ||
+    typeof snapshot.title !== "string" ||
+    typeof snapshot.textSample !== "string" ||
+    snapshot.url.length > MAX_WORKER_URL_CHARS ||
+    snapshot.title.length > MAX_WORKER_TITLE_CHARS ||
+    snapshot.textSample.length > MAX_WORKER_TEXT_CHARS
+  ) {
+    return false;
+  }
+  for (const key of ["forms", "passwordFields"] as const) {
+    const count = snapshot[key];
+    if (
+      count !== undefined &&
+      (typeof count !== "number" ||
+        !Number.isSafeInteger(count) ||
+        count < 0 ||
+        count > 1_000_000)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function workerLocale(value: unknown): Exclude<LocaleCode, "auto"> {
+  return value === "zh-TW" || value === "en" ? value : "zh-CN";
 }
 
 export function evaluateRequest(req: WorkerRequest): unknown {
@@ -67,23 +102,11 @@ export function evaluateRequest(req: WorkerRequest): unknown {
       };
     case "isSensitive":
       return { sensitive: isSensitiveOrigin(req.url ?? "") };
-    case "summarize": {
-      const locale = req.locale ?? "zh-CN";
-      const snapshot = req.snapshot ?? {
-        url: req.url ?? "",
-        title: "",
-        textSample: req.text ?? "",
-      };
-      return heuristicSummary(snapshot, locale);
-    }
-    case "buildPrompt": {
-      const locale = req.locale ?? "zh-CN";
-      const snapshot = req.snapshot ?? {
-        url: req.url ?? "",
-        title: "",
-        textSample: req.text ?? "",
-      };
-      return buildSummarizePrompt({ locale, snapshot });
+    case "prepareSummary": {
+      if (!isStructuredSnapshot(req.snapshot)) {
+        return { error: "valid structured snapshot required" };
+      }
+      return prepareSummary(req.snapshot, workerLocale(req.locale));
     }
     default:
       return { error: `unknown op: ${req.op}` };

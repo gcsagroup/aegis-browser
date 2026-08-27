@@ -1,0 +1,19 @@
+Name: libtorrent-rasterbar
+Version: 2.1.1
+Upstream: https://www.libtorrent.org/
+Local source mirror: https://sourceforge.net/projects/libtorrent.mirror/files/v2.1.1/
+Source archive SHA-256: 0f163516ecef2e3331500266751de3098835a3c3ae0c2290448046c632bc0e93
+License: BSD-3-Clause (see LICENSE)
+
+This directory is an Aegis local-development integration. Generated source and
+archive directories are intentionally ignored. Reproduce the dependency with:
+
+  pnpm browser:bootstrap:libtorrent
+
+GN compiles libtorrent with Chromium's compiler and libc++ ABI. The current
+local build omits OpenSSL, GnuTLS and Libgcrypt to avoid mixing Homebrew OpenSSL
+with Chromium's BoringSSL in one Utility process. HTTP/UDP trackers, DHT and
+encrypted peer transport remain available; HTTPS trackers are a
+release-blocking integration item. This mirror is not an official libtorrent
+distribution channel, so production_qualified and release_eligible remain
+false until the upstream provenance/signature gate is closed.

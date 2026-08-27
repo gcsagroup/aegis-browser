@@ -1,11 +1,30 @@
 # GCSA-aegis 修复与发布准备开发计划
 
-- 版本：Draft v0.2（Browser-only 修订）
+- 版本：Approved v0.4（Browser-only 本地实施进度更新）
 - 日期：2026-08-24
-- 状态：**待用户确认，尚未授权实施**
+- 最后更新：2026-08-28
+- 状态：**用户已确认，正在实施**
+- 实施约束：原计划先只使用本地 Git；2026-08-28 用户已单独授权将净化后的源码与三语文档通过 GCSA GitHub SSH 账户同步到指定仓库
 - 首个目标：形成可审计、可复现、可内部分发的 macOS + Android RC
 - 产品边界：只交付集成式 Chromium Browser，不保留、不构建、不分发 Extension
 - 非目标：本计划不自动部署、不公开发布、不使用生产签名密钥、不上传 Play Store
+
+> 2026-08-28 授权变更：仅允许提交并推送源码与文档；不包含 GitHub Release、tag、二进制上传、正式签名、公证、Play Store、远程 CI 或生产部署。此前“未使用 GitHub”的记录仍是对应历史阶段的事实，不代表当前同步结果已通过发布门。
+
+> 本文保留已批准的完整开发计划和实施前基线；实时证据与剩余阻塞以
+> [本地实施进度](./audit/implementation-progress-2026-08-24.md) 为准。
+> 本轮 CPU 根因、修复边界与论文驱动优化见
+> [CPU 根因与论文驱动优化](./audit/cpu-and-research-optimization-2026-08-25.md)。
+> 下方任务框保留批准时的计划结构，不作为实时完成度记录。
+
+## 当前实施快照
+
+- M0、M1 已完成；Extension 产品线已移除，当前代码只集成到 Browser。
+- 当前 44 补丁序列已从固定 base 离线 44/44 重放通过，tree、稳定 patch-id、全部 103 个 overlay 文件与干净 checkout 一致。
+- macOS `out/AegisLocalDev` component 构建与 non-component official 语义 Release build-tree App 已按当前 HEAD 构建；连续增量构建、Release `aegis_unittests` 43/43、桌面 CDP、退出生命周期、`ip.gcsa.org` CPU/崩溃门和 Release UI 子门已通过。
+- 当前 Release 默认全开与 Aegis 全关的 6 站点稳定性门均为 6/6，Tracker、Filter List updater、Link Sanitize 单关和三者组合关闭各为 3/3；全部为 0 dump、0 FATAL。该结果是生命周期稳定性证据，不替代开关功能行为矩阵。
+- 默认 `about:blank` 启动 20 秒仍观察到 5 个 URL 请求主机，包括 EasyList、Component Update、ListAccounts 与时间服务候选；因此项目整体仍为 **No-Go**，“无遥测/全部出站关闭”未验证。Release 仍是 stock Chromium 身份；本地 ad-hoc 严格结构签名虽通过，但没有产品身份、TeamIdentifier、公证、ZIP/DMG 或安装后稳定性证据；Android 当前源码 APK 也尚未完成。
+- 源码与三语文档已获准同步到指定 GitHub 仓库；M2–M6 的发布门仍未关闭，不能据此创建 Release、上传二进制或宣称可分发。
 
 ## 1. 目标、假设与完成标准
 
@@ -28,7 +47,7 @@
 ### 最终完成标准
 
 - 根仓库具有明确 commit，所有剩余工作区改动都有说明。
-- 能从固定 Chromium base commit 干净应用 0030 个补丁，生成与记录一致的 patched HEAD。
+- 能从固定 Chromium base commit 干净应用当前完整补丁序列（批准时快照为 0038，实时数量见实施进度），生成与记录一致的 patched HEAD。
 - 全新环境可通过 frozen install、build、lint、typecheck 和测试。
 - `apps/extension` 及其专用脚本、依赖、测试、产物和文档入口已移除；产品验证只针对 Browser。
 - macOS 开发版与非 component release build 均由当前源码构建成功。
@@ -40,7 +59,7 @@
 
 ## 2. 当前基线与实施边界
 
-### 已确认基线
+### 已确认基线（实施前快照）
 
 - 根仓库尚无 commit，当前文件全部未跟踪。
 - 外部 Chromium checkout 已有 0030 个补丁提交，但另有 5 个修改文件和 63 个删除的测试资源。
@@ -55,9 +74,11 @@
 
 ### 本计划的批准边界
 
-用户确认本计划后，默认只授权本地源码修改、测试、构建和内部 RC 制作。以下动作仍必须单独确认：
+用户已确认按本计划开始实施，当前只授权本地源码修改、测试、构建和内部 RC 制作。以下动作仍必须单独确认：
 
-其中，删除 `apps/extension` 属于本计划 M1 的明确范围，但必须在 M0 生成可恢复基线之后执行；本次修订计划不实施删除。
+其中，删除 `apps/extension` 属于本计划 M1 的明确范围，已在 M0 生成可恢复基线之后执行。
+
+当前额外硬边界：本地构建、测试、安装 App 与实机验收未全部跑通前，不添加 GitHub remote，不 fetch/pull/push，不创建 GitHub CI、PR、Release 或 tag。
 
 - 使用 Developer ID、Apple 公证服务或生产签名密钥。
 - 使用 Play upload key、上传 Play Console 或开放测试轨。
@@ -133,10 +154,10 @@
 - [ ] 将 Linux ARM64/qemu 的 Rust host-tool workaround 与 macOS Apple Silicon 构建路径分离。
 - [ ] 修复 `serde_json` 缺少 `fast_arithmetic` cfg 的根因；避免继续逐 crate 硬编码 synthetic build-script 输出。
 - [ ] 核对并处理 63 个删除的 Chromium 测试资源，确保不会由脏 checkout 掩盖构建问题。
-- [ ] 在固定 base commit 的干净 checkout 中应用全部补丁，验证 0030 个补丁无人工干预完成。
+- [ ] 在固定 base commit 的干净 checkout 中应用当前完整补丁序列，并验证全部补丁无人工干预完成。
 - [ ] 对齐 repository overlay、patch series 和实际 Chromium 源码；所有必要修改最终回写为可重放补丁。
-- [ ] 完成 `out/Aegis` 开发构建、受影响 C++ 单测和 `out/AegisRelease` 非 component 构建。
-- [ ] Release 构建同时覆盖 `chrome` 与 macOS installer 目标，避免只有中间 framework 而没有完整 App。
+- [ ] 完成 `out/AegisLocalDev` 开发构建、受影响 C++ 单测和 `out/AegisRelease` 非 component 构建。
+- [ ] Release 构建完成 non-component `chrome` App，并构建 macOS installer 支持工具；ZIP/DMG 由 M6 的独立本地打包流程生成和验证，不把 GN installer group 误当成发行包。
 - [ ] 强化 `browser:status`：校验 base/patched SHA、dirty 状态、补丁完整性、产物类型和新鲜度，而不只检查目录存在。
 
 验证与退出条件：
@@ -194,6 +215,8 @@
 
 #### Chromium 出站与“无遥测”声明
 
+- [ ] 保持 Omnibox AIM eligibility 生产 factory 的服务端请求 fail-closed，并分开验证禁用路径与测试 factory 的正向请求路径。
+- [ ] `UserFmRegistrationTokenUploader` 只在企业策略客户端确认注册后创建 listener；不把该局部门禁扩大表述为全局 GCM 关闭。
 - [ ] 建立启动、普通浏览、Safe Browsing、崩溃报告、更新、Variations 和过滤列表更新的出站清单。
 - [ ] 用受控代理或 DNS 记录实际流量；明确哪些请求被关闭、保留或替代。
 - [ ] Safe Browsing 等安全能力若保留联网，必须精确披露，不能继续用笼统“无遥测”覆盖。
@@ -259,7 +282,7 @@
 步骤：
 
 - [ ] 更新根 README：补上 `apply-patches`，给出真实冷构建顺序。
-- [ ] 更新 Browser README：补丁范围从 0023 改为 0030，产物路径与命令以实测为准。
+- [ ] 更新 Browser README：补丁数量从固定旧值改为读取当前完整 series，产物路径与命令以实测为准。
 - [ ] 删除 README、架构、research map 和产品页中将 Extension 描述为参考实现、研究工具或可选交付物的内容，统一为 Browser-only。
 - [ ] 更新 `packages/core` 中“Extension today / Browser later”等过时注释，明确 core 只服务当前 Browser 集成。
 - [ ] 更新 Roadmap：分开记录源码、构建、自动测试、实机、内部分发和公开发布状态。
@@ -301,6 +324,8 @@
 
 ### 建议 CI 作业
 
+> 以下仅是未来建议。当前未创建或使用 GitHub/远程 CI，启用前必须再次获得用户确认。
+
 - `quality-fast`：Linux，JS workspace 快速门。
 - `patch-integrity`：固定 base 上应用补丁并检查生成物。
 - `chromium-macos`：自托管 macOS runner，native build、单测和冒烟。
@@ -313,7 +338,7 @@
 
 - 根仓库和 Chromium checkout 身份明确。
 - 当前 dirty work 已封存；无未说明删除。
-- 0030 个补丁可干净重放。
+- 当前完整补丁序列可从固定 base 干净重放（批准时快照为 0038，实时数量见实施进度）。
 
 ### G1：可复现质量
 
@@ -384,10 +409,8 @@
 - 签名、公证、Play 上传和公开发布保持关闭，直到用户单独授权。
 - 任何身份不明、PII 出站、非 loopback CDP、稳定崩溃或产物无法对应源码的情况立即停线。
 
-## 9. 建议的确认方式
+## 9. 确认记录
 
-推荐确认范围：
+用户已确认开始实施本计划，并明确两项边界：产品只做集成式 Browser，不保留 Extension；先使用本地 Git 跑通全部本地门禁，再单独确认是否使用 GitHub。
 
-> 确认按本计划实施到 G5，目标为内部 RC；允许本地源码修改、测试和构建，但不使用生产签名密钥、不公证、不上传 Play、不公开发布、不删除现有证据。
-
-若只希望先降低风险，可先批准 M0–M2；完成基线与冷构建恢复后，再根据实测结果确认 M3–M7。
+生产签名、公证、Play 上传、公开发布和不可恢复的数据清理仍未获授权，继续保持关闭。

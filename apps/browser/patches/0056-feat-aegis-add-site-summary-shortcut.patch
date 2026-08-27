@@ -1,0 +1,2870 @@
+From 910672213c5fcd18167b5ee26f690cf0023415e6 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 27 Aug 2026 22:17:13 +0800
+Subject: [PATCH 56/56] feat(aegis): add site summary shortcut
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   9 +
+ chrome/browser/aegis/aegis_service.cc         |  54 ++-
+ chrome/browser/aegis/aegis_service.h          |  22 +-
+ .../browser/aegis/aegis_service_unittest.cc   | 106 ++++-
+ chrome/browser/aegis/model_provider_client.cc |  75 +++-
+ chrome/browser/aegis/model_provider_client.h  |  22 +-
+ .../aegis/model_provider_client_unittest.cc   |  51 +++
+ chrome/browser/aegis/summary_policy.cc        | 216 +++++++++-
+ chrome/browser/aegis/summary_policy.h         |  13 +-
+ .../browser/aegis/summary_policy_unittest.cc  | 110 ++++-
+ chrome/browser/aegis/summary_session.cc       | 285 ++++++++++++
+ chrome/browser/aegis/summary_session.h        | 104 +++++
+ .../browser/aegis/summary_session_unittest.cc |  59 +++
+ chrome/browser/resources/aegis/aegis.ts       |  97 ++++-
+ .../ui/views/toolbar/aegis_toolbar_button.cc  | 408 ++++++++++++++++--
+ .../ui/views/toolbar/aegis_toolbar_button.h   |   1 +
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 270 +++++++++---
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   5 +
+ 18 files changed, 1703 insertions(+), 204 deletions(-)
+ create mode 100644 chrome/browser/aegis/summary_session.cc
+ create mode 100644 chrome/browser/aegis/summary_session.h
+ create mode 100644 chrome/browser/aegis/summary_session_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 8f8c5cbee2..69006853b4 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -72,6 +72,12 @@ source_set("aegis") {
+     "//ui/base",
+     "//url",
+   ]
++  if (!is_android) {
++    sources += [
++      "summary_session.cc",
++      "summary_session.h",
++    ]
++  }
+   if (is_mac) {
+     sources += [
+       "aegis_torrent_client.cc",
+@@ -111,4 +117,7 @@ test("aegis_browser_unittests") {
+     "//testing/gtest",
+     "//url",
+   ]
++  if (!is_android) {
++    sources += [ "summary_session_unittest.cc" ]
++  }
+ }
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 65f0bbb738..c18ce8b681 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -232,6 +232,11 @@ AegisService::~AegisService() {
+ 
+ void AegisService::InitializeForProfile(Profile* profile) {
+   CHECK(profile);
++  if (profile->IsOffTheRecord()) {
++    LOG(WARNING) << "Refusing to initialize Aegis for an off-the-record "
++                    "profile";
++    return;
++  }
+   if (!IsEnabled()) {
+     VLOG(1) << "Aegis disabled by feature flag";
+     return;
+@@ -280,6 +285,11 @@ void AegisService::InitializeForProfile(Profile* profile) {
+                                            : " (tracker blocking off)");
+ }
+ 
++bool AegisService::IsInitializedForProfile(const Profile* profile) const {
++  return initialized_ && profile && !profile->IsOffTheRecord() &&
++         profile_ == profile;
++}
++
+ void AegisService::OnProfileWillBeDestroyed(Profile* profile) {
+   if (profile_ == profile) {
+     ShutdownForProfile();
+@@ -972,16 +982,19 @@ bool ParseModelJson(const std::string& raw, SummarizeResult* result) {
+ 
+ }  // namespace
+ 
+-void AegisService::SummarizePreparedPage(
++std::optional<std::string> AegisService::SummarizePreparedPage(
+     PageSnapshot original,
+     PreparedSummary prepared,
+     const std::string& locale,
++    const std::string& provider_id,
++    const std::string& base_url,
++    const std::string& model,
+     base::OnceCallback<void(SummarizeResult)> done) {
+   if (!IsPrivacyAiEnabled() || !IsPolicyWorkerEnabled()) {
+     SummarizeResult result = RejectedPreparedSummary(
+-        original, "privacy summary or renderer policy worker disabled");
++        original, "privacy summary or policy worker disabled");
+     std::move(done).Run(std::move(result));
+-    return;
++    return std::nullopt;
+   }
+ 
+   std::string validation_error;
+@@ -989,65 +1002,64 @@ void AegisService::SummarizePreparedPage(
+     SummarizeResult result = RejectedPreparedSummary(
+         original, "prepared summary rejected: " + validation_error);
+     std::move(done).Run(std::move(result));
+-    return;
++    return std::nullopt;
+   }
+ 
+   SummarizeResult heuristic = ValidatedHeuristic(original, prepared);
++  std::string model_error;
++  if (!IsModelSummaryAllowed(original, &model_error)) {
++    heuristic.error = std::move(model_error);
++    std::move(done).Run(std::move(heuristic));
++    return std::nullopt;
++  }
+   const std::string normalized_locale = NormalizeLocale(locale);
+   std::optional<ModelPrompt> prompt = BuildValidatedModelPrompt(
+       original, prepared, normalized_locale, &validation_error);
+   if (!prompt) {
+     heuristic.error = "outbound prompt rejected: " + validation_error;
+     std::move(done).Run(std::move(heuristic));
+-    return;
++    return std::nullopt;
+   }
+   if (!model_client_ || !prefs_) {
+     heuristic.error = "model provider unavailable";
+     std::move(done).Run(std::move(heuristic));
+-    return;
++    return std::nullopt;
+   }
+-  const std::string provider_id = ConfiguredModelProvider();
+   const std::optional<ModelProvider> provider = ParseModelProvider(provider_id);
+-  const std::string base_url = ConfiguredModelBaseUrl();
+-  const std::string model = ConfiguredModelName();
+   const GURL parsed_base_url(base_url);
+   if (!provider || !IsAllowedModelBaseUrl(*provider, parsed_base_url) ||
+       !IsValidModelName(*provider, model)) {
+     heuristic.error = "invalid model provider configuration";
+     std::move(done).Run(std::move(heuristic));
+-    return;
++    return std::nullopt;
+   }
+   const bool local = IsLocalModelEndpoint(*provider, parsed_base_url);
+-  if (!local) {
+-    std::string cloud_error;
+-    if (!IsCloudSummaryAllowed(original, &cloud_error)) {
+-      heuristic.error = std::move(cloud_error);
+-      std::move(done).Run(std::move(heuristic));
+-      return;
+-    }
+-  }
+   const std::string api_key =
+       EffectiveModelApiKey(provider_id, base_url, std::string());
+   if (ModelProviderRequiresApiKey(*provider) && api_key.empty()) {
+     heuristic.error = "model provider API key is not configured";
+     std::move(done).Run(std::move(heuristic));
+-    return;
++    return std::nullopt;
+   }
+   if (model_client_->busy()) {
+     heuristic.error = "model request already in progress";
+     std::move(done).Run(std::move(heuristic));
+-    return;
++    return std::nullopt;
+   }
+ 
+   heuristic.chars_sent = static_cast<int>(prompt->user.size());
+   heuristic.destination = base_url;
+   heuristic.stayed_on_device = local;
+-  model_client_->Chat(
++  return model_client_->Chat(
+       *provider, base_url, api_key, model, prompt->system, prompt->user,
+       base::BindOnce(&AegisService::OnModelChat, weak_ptr_factory_.GetWeakPtr(),
+                      provider_id, std::move(heuristic), std::move(done)));
+ }
+ 
++bool AegisService::CancelModelSummaryRequest(const std::string& request_id) {
++  return model_client_ && model_client_->CancelChat(request_id);
++}
++
+ void AegisService::OnModelChat(std::string provider,
+                                SummarizeResult fallback,
+                                base::OnceCallback<void(SummarizeResult)> done,
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index ac6cba5bb7..bbe9f64e45 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -102,6 +102,11 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   // Called from browser startup once Profile is ready.
+   void InitializeForProfile(Profile* profile);
+ 
++  // 进程单例的临时边界：只有当前服务所属的普通 Profile 可访问，
++  // 其他 Profile 与无痕 Profile 必须 fail closed。长期仍需改为
++  // ProfileKeyedService。
++  bool IsInitializedForProfile(const Profile* profile) const;
++
+   bool IsEnabled() const;
+   bool IsTrackerBlockingEnabled() const;
+   bool IsPhishInterstitialEnabled() const;
+@@ -148,12 +153,17 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   static std::string DocumentIdForWebContents(
+       content::WebContents* web_contents);
+ 
+-  // Privacy AI: accepts only a request-scoped, browser-validated structured
+-  // handoff from the renderer. The browser owns the outbound prompt template.
+-  void SummarizePreparedPage(PageSnapshot original,
+-                             PreparedSummary prepared,
+-                             const std::string& locale,
+-                             base::OnceCallback<void(SummarizeResult)> done);
++  // Privacy AI accepts only a request-scoped, browser-validated structured
++  // preparation. The browser owns the outbound prompt template.
++  std::optional<std::string> SummarizePreparedPage(
++      PageSnapshot original,
++      PreparedSummary prepared,
++      const std::string& locale,
++      const std::string& provider_id,
++      const std::string& base_url,
++      const std::string& model,
++      base::OnceCallback<void(SummarizeResult)> done);
++  bool CancelModelSummaryRequest(const std::string& request_id);
+   std::string ConfiguredModelProvider() const;
+   std::string ConfiguredModelBaseUrl() const;
+   std::string ConfiguredModelName() const;
+diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
+index 84e60603fe..10e7af02e9 100644
+--- a/chrome/browser/aegis/aegis_service_unittest.cc
++++ b/chrome/browser/aegis/aegis_service_unittest.cc
+@@ -95,6 +95,24 @@ TEST_F(AegisServiceModelSettingsTest,
+                    ->HasUserSetting());
+ }
+ 
++TEST_F(AegisServiceModelSettingsTest,
++       ProfileBoundaryRejectsOtherAndOffTheRecordProfiles) {
++  AegisService* service = AegisService::GetInstance();
++  auto other_profile = TestingProfile::Builder().Build();
++  Profile* off_the_record =
++      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
++
++  EXPECT_TRUE(service->IsInitializedForProfile(profile()));
++  EXPECT_FALSE(service->IsInitializedForProfile(nullptr));
++  EXPECT_FALSE(service->IsInitializedForProfile(other_profile.get()));
++  EXPECT_FALSE(service->IsInitializedForProfile(off_the_record));
++
++  // 无痕 Profile 的初始化尝试不得挤掉已绑定的普通 Profile。
++  service->InitializeForProfile(off_the_record);
++  EXPECT_TRUE(service->IsInitializedForProfile(profile()));
++  EXPECT_FALSE(service->IsInitializedForProfile(off_the_record));
++}
++
+ TEST_F(AegisServiceModelSettingsTest, EncryptsAndClearsProviderApiKey) {
+   constexpr char kApiKey[] = "sk-test-provider-secret";
+   constexpr char kBaseUrl[] = "http://127.0.0.1:8000/v1";
+@@ -182,8 +200,10 @@ TEST_F(AegisServiceModelSettingsTest,
+   const PageSnapshot public_snapshot =
+       PublicSnapshot("https://news.example.test/article");
+   base::test::TestFuture<SummarizeResult> remote_future;
+-  service->SummarizePreparedPage(public_snapshot, PreparedFor(public_snapshot),
+-                                 "en-US", remote_future.GetCallback());
++  service->SummarizePreparedPage(
++      public_snapshot, PreparedFor(public_snapshot), "en-US",
++      service->ConfiguredModelProvider(), service->ConfiguredModelBaseUrl(),
++      service->ConfiguredModelName(), remote_future.GetCallback());
+ 
+   const GURL endpoint("https://api.openai.com/v1/chat/completions");
+   test_url_loader_factory_.WaitForRequest(endpoint);
+@@ -203,9 +223,10 @@ TEST_F(AegisServiceModelSettingsTest,
+   const PageSnapshot sensitive_snapshot =
+       PublicSnapshot("https://secure-bank.example.test/account");
+   base::test::TestFuture<SummarizeResult> local_future;
+-  service->SummarizePreparedPage(sensitive_snapshot,
+-                                 PreparedFor(sensitive_snapshot), "en-US",
+-                                 local_future.GetCallback());
++  service->SummarizePreparedPage(
++      sensitive_snapshot, PreparedFor(sensitive_snapshot), "en-US",
++      service->ConfiguredModelProvider(), service->ConfiguredModelBaseUrl(),
++      service->ConfiguredModelName(), local_future.GetCallback());
+   const SummarizeResult local = local_future.Take();
+   EXPECT_TRUE(local.ok);
+   EXPECT_EQ("heuristic", local.backend);
+@@ -226,10 +247,12 @@ TEST_F(AegisServiceModelSettingsTest,
+   ASSERT_TRUE(saved.Get<0>()) << saved.Get<1>();
+ 
+   const PageSnapshot snapshot =
+-      PublicSnapshot("https://secure-bank.example.test/account");
++      PublicSnapshot("https://news.example.test/local-article");
+   base::test::TestFuture<SummarizeResult> summarized;
+-  service->SummarizePreparedPage(snapshot, PreparedFor(snapshot), "en-US",
+-                                 summarized.GetCallback());
++  service->SummarizePreparedPage(
++      snapshot, PreparedFor(snapshot), "en-US",
++      service->ConfiguredModelProvider(), service->ConfiguredModelBaseUrl(),
++      service->ConfiguredModelName(), summarized.GetCallback());
+ 
+   const GURL endpoint("http://127.0.0.1:8000/v1/messages");
+   test_url_loader_factory_.WaitForRequest(endpoint);
+@@ -245,6 +268,73 @@ TEST_F(AegisServiceModelSettingsTest,
+   EXPECT_EQ("http://127.0.0.1:8000/v1", result.destination);
+ }
+ 
++TEST_F(AegisServiceModelSettingsTest, SensitivePageSkipsNumericLoopbackModel) {
++  AegisService* service = AegisService::GetInstance();
++  base::test::TestFuture<bool, std::string> saved;
++  service->SetModelSettings("anthropic", "http://127.0.0.1:8000/v1",
++                            "local-claude-compatible", std::string(), false,
++                            saved.GetCallback());
++  ASSERT_TRUE(saved.Get<0>()) << saved.Get<1>();
++
++  const PageSnapshot snapshot =
++      PublicSnapshot("https://secure-bank.example.test/account");
++  base::test::TestFuture<SummarizeResult> summarized;
++  service->SummarizePreparedPage(
++      snapshot, PreparedFor(snapshot), "en-US",
++      service->ConfiguredModelProvider(), service->ConfiguredModelBaseUrl(),
++      service->ConfiguredModelName(), summarized.GetCallback());
++
++  const SummarizeResult result = summarized.Take();
++  EXPECT_TRUE(result.ok);
++  EXPECT_EQ("heuristic", result.backend);
++  EXPECT_FALSE(result.model_ready);
++  EXPECT_TRUE(result.stayed_on_device);
++  EXPECT_EQ("local", result.destination);
++  EXPECT_EQ(0, result.chars_sent);
++  EXPECT_NE(std::string::npos, result.error.find("sensitive host label"));
++  EXPECT_FALSE(
++      test_url_loader_factory_.IsPending("http://127.0.0.1:8000/v1/messages"));
++}
++
++TEST_F(AegisServiceModelSettingsTest,
++       UsesPreviewedModelDestinationAfterSettingsChange) {
++  AegisService* service = AegisService::GetInstance();
++  base::test::TestFuture<bool, std::string> local_saved;
++  service->SetModelSettings("openai", "http://127.0.0.1:8000/v1",
++                            "previewed-local-model", std::string(), false,
++                            local_saved.GetCallback());
++  ASSERT_TRUE(local_saved.Get<0>()) << local_saved.Get<1>();
++  const std::string previewed_provider = service->ConfiguredModelProvider();
++  const std::string previewed_base_url = service->ConfiguredModelBaseUrl();
++  const std::string previewed_model = service->ConfiguredModelName();
++
++  base::test::TestFuture<bool, std::string> remote_saved;
++  service->SetModelSettings("openai", "https://gateway.example.test/v1",
++                            "later-remote-model", std::string(), false,
++                            remote_saved.GetCallback());
++  ASSERT_TRUE(remote_saved.Get<0>()) << remote_saved.Get<1>();
++
++  const PageSnapshot snapshot =
++      PublicSnapshot("https://news.example.test/config-race");
++  base::test::TestFuture<SummarizeResult> summarized;
++  service->SummarizePreparedPage(snapshot, PreparedFor(snapshot), "en-US",
++                                 previewed_provider, previewed_base_url,
++                                 previewed_model, summarized.GetCallback());
++
++  const GURL local_endpoint("http://127.0.0.1:8000/v1/chat/completions");
++  test_url_loader_factory_.WaitForRequest(local_endpoint);
++  EXPECT_FALSE(test_url_loader_factory_.IsPending(
++      "https://gateway.example.test/v1/chat/completions"));
++  ASSERT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
++      local_endpoint.spec(),
++      R"({"choices":[{"message":{"content":"previewed destination"}}]})"));
++  const SummarizeResult result = summarized.Take();
++  EXPECT_TRUE(result.ok);
++  EXPECT_EQ("previewed destination", result.summary);
++  EXPECT_EQ(previewed_base_url, result.destination);
++  EXPECT_TRUE(result.stayed_on_device);
++}
++
+ class AegisServiceLegacyMigrationTest : public ChromeRenderViewHostTestHarness {
+  protected:
+   void SetUp() override {
+diff --git a/chrome/browser/aegis/model_provider_client.cc b/chrome/browser/aegis/model_provider_client.cc
+index 9e930cb875..bc070f7a40 100644
+--- a/chrome/browser/aegis/model_provider_client.cc
++++ b/chrome/browser/aegis/model_provider_client.cc
+@@ -16,6 +16,7 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/time/time.h"
++#include "base/unguessable_token.h"
+ #include "base/values.h"
+ #include "chrome/browser/browser_process.h"
+ #include "net/base/ip_address.h"
+@@ -55,7 +56,7 @@ constexpr net::NetworkTrafficAnnotationTag kLocalTrafficAnnotation =
+           "numeric-loopback model API endpoint."
+         trigger:
+           "The user loads local models or confirms a page summary in "
+-          "chrome://aegis."
++          "the native Aegis site popup."
+         data: "Model configuration or a PII-redacted page summary prompt."
+         destination: LOCAL
+         internal {
+@@ -83,7 +84,7 @@ constexpr net::NetworkTrafficAnnotationTag kWebsiteTrafficAnnotation =
+           "configured HTTPS model provider."
+         trigger:
+           "The user loads remote models or confirms a remote page summary in "
+-          "chrome://aegis."
++          "the native Aegis site popup."
+         data:
+           "An API credential in a request header, model configuration, or a "
+           "PII-redacted page summary prompt."
+@@ -469,11 +470,18 @@ bool RequestSucceeded(const network::SimpleURLLoader* loader,
+          response_code >= 200 && response_code < 300;
+ }
+ 
+-std::string RequestFailedError(int response_code) {
+-  if (response_code >= 100 && response_code <= 599) {
++std::string RequestFailedError(int response_code, int net_error) {
++  if (net_error == net::ERR_TIMED_OUT) {
++    return "model request timed out";
++  }
++  if (response_code >= 300 && response_code <= 599) {
+     return base::StrCat({"model request failed (HTTP ",
+                          base::NumberToString(response_code), ")"});
+   }
++  if (net_error != net::OK) {
++    return base::StrCat(
++        {"model network request failed (", net::ErrorToString(net_error), ")"});
++  }
+   return "model request failed";
+ }
+ 
+@@ -573,6 +581,12 @@ int ModelProviderRequestLoadFlags(ModelProvider provider,
+   return flags;
+ }
+ 
++base::TimeDelta ModelProviderChatTimeout(ModelProvider provider,
++                                         const GURL& base_url) {
++  return IsLocalModelEndpoint(provider, base_url) ? base::Minutes(3)
++                                                  : base::Seconds(45);
++}
++
+ ModelProviderClient::ModelProviderClient() = default;
+ ModelProviderClient::~ModelProviderClient() = default;
+ 
+@@ -616,74 +630,90 @@ void ModelProviderClient::ListModels(ModelProvider provider,
+       kMaxResponseBytes);
+ }
+ 
+-void ModelProviderClient::Chat(ModelProvider provider,
+-                               const std::string& base_url,
+-                               const std::string& api_key,
+-                               const std::string& model,
+-                               const std::string& system,
+-                               const std::string& user,
+-                               ChatCallback done) {
++std::optional<ModelProviderClient::ChatRequestId> ModelProviderClient::Chat(
++    ModelProvider provider,
++    const std::string& base_url,
++    const std::string& api_key,
++    const std::string& model,
++    const std::string& system,
++    const std::string& user,
++    ChatCallback done) {
+   if (request_in_flight_) {
+     std::move(done).Run(false, "model request already in progress", {});
+-    return;
++    return std::nullopt;
+   }
+   if (!g_browser_process || !g_browser_process->shared_url_loader_factory()) {
+     std::move(done).Run(false, "model network unavailable", {});
+-    return;
++    return std::nullopt;
+   }
+   std::string error;
+   const std::optional<GURL> parsed_base =
+       ResolveBaseUrl(provider, base_url, &error);
+   if (!parsed_base) {
+     std::move(done).Run(false, std::move(error), {});
+-    return;
++    return std::nullopt;
+   }
+   if (!IsValidApiKey(provider, api_key)) {
+     std::move(done).Run(false, "invalid API key", {});
+-    return;
++    return std::nullopt;
+   }
+   if (!IsValidModelName(provider, model)) {
+     std::move(done).Run(false, "invalid model name", {});
+-    return;
++    return std::nullopt;
+   }
+   if (!IsValidPrompt(system, kMaxSystemPromptBytes) || system.empty() ||
+       !IsValidPrompt(user, kMaxUserPromptBytes) || user.empty()) {
+     std::move(done).Run(false, "invalid model prompt", {});
+-    return;
++    return std::nullopt;
+   }
+   const std::optional<std::string> body =
+       BuildChatBody(provider, model, system, user);
+   if (!body) {
+     std::move(done).Run(false, "failed to encode model request", {});
+-    return;
++    return std::nullopt;
+   }
+ 
+   const GURL endpoint = ChatEndpoint(provider, *parsed_base, model);
+   auto request =
+       BuildResourceRequest(provider, *parsed_base, endpoint, "POST", api_key);
+   request_in_flight_ = true;
++  active_chat_request_id_ = base::UnguessableToken::Create().ToString();
+   loader_ = network::SimpleURLLoader::Create(
+       std::move(request), IsLocalModelEndpoint(provider, *parsed_base)
+                               ? kLocalTrafficAnnotation
+                               : kWebsiteTrafficAnnotation);
+   loader_->AttachStringForUpload(*body, "application/json");
+-  loader_->SetTimeoutDuration(base::Seconds(45));
++  loader_->SetTimeoutDuration(ModelProviderChatTimeout(provider, *parsed_base));
+   loader_->DownloadToString(
+       g_browser_process->shared_url_loader_factory().get(),
+       base::BindOnce(&ModelProviderClient::OnChat, weak_factory_.GetWeakPtr(),
+                      provider, std::move(done)),
+       kMaxResponseBytes);
++  return active_chat_request_id_;
++}
++
++bool ModelProviderClient::CancelChat(ChatRequestId request_id) {
++  if (!active_chat_request_id_ || *active_chat_request_id_ != request_id) {
++    return false;
++  }
++  weak_factory_.InvalidateWeakPtrs();
++  loader_.reset();
++  request_in_flight_ = false;
++  active_chat_request_id_.reset();
++  return true;
+ }
+ 
+ void ModelProviderClient::OnListModels(ModelProvider provider,
+                                        ListModelsCallback done,
+                                        std::optional<std::string> body) {
+   const int response_code = ResponseCode(loader_.get());
++  const int net_error = loader_ ? loader_->NetError() : net::ERR_FAILED;
+   const bool ok = RequestSucceeded(loader_.get(), body);
+   request_in_flight_ = false;
+   loader_.reset();
+   if (!ok) {
+-    std::move(done).Run(false, RequestFailedError(response_code), {});
++    std::move(done).Run(false, RequestFailedError(response_code, net_error),
++                        {});
+     return;
+   }
+   std::optional<std::vector<std::string>> models =
+@@ -699,11 +729,14 @@ void ModelProviderClient::OnChat(ModelProvider provider,
+                                  ChatCallback done,
+                                  std::optional<std::string> body) {
+   const int response_code = ResponseCode(loader_.get());
++  const int net_error = loader_ ? loader_->NetError() : net::ERR_FAILED;
+   const bool ok = RequestSucceeded(loader_.get(), body);
+   request_in_flight_ = false;
++  active_chat_request_id_.reset();
+   loader_.reset();
+   if (!ok) {
+-    std::move(done).Run(false, RequestFailedError(response_code), {});
++    std::move(done).Run(false, RequestFailedError(response_code, net_error),
++                        {});
+     return;
+   }
+   std::optional<std::string> content = ParseChatContent(provider, *body);
+diff --git a/chrome/browser/aegis/model_provider_client.h b/chrome/browser/aegis/model_provider_client.h
+index a5c3ec19f7..87c69915c8 100644
+--- a/chrome/browser/aegis/model_provider_client.h
++++ b/chrome/browser/aegis/model_provider_client.h
+@@ -12,6 +12,7 @@
+ 
+ #include "base/functional/callback.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/time/time.h"
+ 
+ class GURL;
+ 
+@@ -45,8 +46,13 @@ bool IsValidModelName(ModelProvider provider, std::string_view model);
+ // 所有请求都禁用缓存；只有数值 loopback 绕过系统代理。
+ int ModelProviderRequestLoadFlags(ModelProvider provider, const GURL& base_url);
+ 
++// 本机大模型通常比外网 API 慢，给数值 loopback 更长的生成窗口。
++base::TimeDelta ModelProviderChatTimeout(ModelProvider provider,
++                                         const GURL& base_url);
++
+ class ModelProviderClient {
+  public:
++  using ChatRequestId = std::string;
+   using ListModelsCallback = base::OnceCallback<
+       void(bool ok, std::string error, std::vector<std::string> models)>;
+   using ChatCallback =
+@@ -61,13 +67,14 @@ class ModelProviderClient {
+                   const std::string& base_url,
+                   const std::string& api_key,
+                   ListModelsCallback done);
+-  void Chat(ModelProvider provider,
+-            const std::string& base_url,
+-            const std::string& api_key,
+-            const std::string& model,
+-            const std::string& system,
+-            const std::string& user,
+-            ChatCallback done);
++  std::optional<ChatRequestId> Chat(ModelProvider provider,
++                                    const std::string& base_url,
++                                    const std::string& api_key,
++                                    const std::string& model,
++                                    const std::string& system,
++                                    const std::string& user,
++                                    ChatCallback done);
++  bool CancelChat(ChatRequestId request_id);
+ 
+   bool busy() const { return request_in_flight_; }
+ 
+@@ -81,6 +88,7 @@ class ModelProviderClient {
+ 
+   std::unique_ptr<network::SimpleURLLoader> loader_;
+   bool request_in_flight_ = false;
++  std::optional<ChatRequestId> active_chat_request_id_;
+   base::WeakPtrFactory<ModelProviderClient> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/aegis/model_provider_client_unittest.cc b/chrome/browser/aegis/model_provider_client_unittest.cc
+index b4d6cdfa3c..acd5d7559e 100644
+--- a/chrome/browser/aegis/model_provider_client_unittest.cc
++++ b/chrome/browser/aegis/model_provider_client_unittest.cc
+@@ -19,6 +19,7 @@
+ #include "net/http/http_request_headers.h"
+ #include "net/http/http_status_code.h"
+ #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "services/network/test/test_url_loader_factory.h"
+ #include "services/network/test/test_utils.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+@@ -122,6 +123,9 @@ TEST(ModelProviderPolicyTest, ValidatesNamesCookiesCacheAndProxyFlags) {
+   EXPECT_NE(0, local_flags & net::LOAD_BYPASS_CACHE);
+   EXPECT_NE(0, local_flags & net::LOAD_DO_NOT_SAVE_COOKIES);
+   EXPECT_NE(0, local_flags & net::LOAD_BYPASS_PROXY);
++  EXPECT_EQ(base::Minutes(3),
++            ModelProviderChatTimeout(ModelProvider::kOpenAI,
++                                     GURL("http://127.0.0.1:8000/v1")));
+ 
+   const int remote_flags = ModelProviderRequestLoadFlags(
+       ModelProvider::kOpenAI, GURL("https://gateway.example.test/v1"));
+@@ -129,6 +133,9 @@ TEST(ModelProviderPolicyTest, ValidatesNamesCookiesCacheAndProxyFlags) {
+   EXPECT_NE(0, remote_flags & net::LOAD_BYPASS_CACHE);
+   EXPECT_NE(0, remote_flags & net::LOAD_DO_NOT_SAVE_COOKIES);
+   EXPECT_EQ(0, remote_flags & net::LOAD_BYPASS_PROXY);
++  EXPECT_EQ(base::Seconds(45),
++            ModelProviderChatTimeout(ModelProvider::kOpenAI,
++                                     GURL("https://gateway.example.test/v1")));
+ }
+ 
+ class ModelProviderClientNetworkTest : public testing::Test {
+@@ -380,5 +387,49 @@ TEST_F(ModelProviderClientNetworkTest, RejectsConcurrentRequest) {
+   EXPECT_FALSE(client.busy());
+ }
+ 
++TEST_F(ModelProviderClientNetworkTest, ReportsTimeoutInsteadOfHttpStatus) {
++  const GURL endpoint("http://127.0.0.1:8000/v1/chat/completions");
++  test_url_loader_factory_.AddResponse(
++      endpoint, network::mojom::URLResponseHead::New(), std::string(),
++      network::URLLoaderCompletionStatus(net::ERR_TIMED_OUT));
++
++  ModelProviderClient client;
++  base::test::TestFuture<bool, std::string, std::string> result;
++  client.Chat(ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "",
++              "local-chat", "system", "user", result.GetCallback());
++
++  EXPECT_FALSE(result.Get<0>());
++  EXPECT_EQ("model request timed out", result.Get<1>());
++  EXPECT_TRUE(result.Get<2>().empty());
++}
++
++TEST_F(ModelProviderClientNetworkTest, CancelsOnlyOwnedChatAndReleasesSlot) {
++  const GURL chat_endpoint("http://127.0.0.1:8000/v1/chat/completions");
++  ModelProviderClient client;
++  base::test::TestFuture<bool, std::string, std::string> abandoned;
++  const std::optional<ModelProviderClient::ChatRequestId> request_id =
++      client.Chat(ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "",
++                  "local-chat", "system", "user", abandoned.GetCallback());
++  ASSERT_TRUE(request_id);
++  PendingRequest(chat_endpoint);
++
++  EXPECT_FALSE(client.CancelChat("wrong-" + *request_id));
++  EXPECT_TRUE(client.busy());
++  EXPECT_TRUE(client.CancelChat(*request_id));
++  EXPECT_FALSE(client.busy());
++  EXPECT_FALSE(client.CancelChat(*request_id));
++  EXPECT_EQ(0, test_url_loader_factory_.NumPending());
++
++  const GURL models_endpoint("http://127.0.0.1:8000/v1/models");
++  base::test::TestFuture<bool, std::string, std::vector<std::string>> models;
++  client.ListModels(ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "",
++                    models.GetCallback());
++  test_url_loader_factory_.WaitForRequest(models_endpoint);
++  EXPECT_EQ(1, test_url_loader_factory_.NumPending());
++  EXPECT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
++      models_endpoint.spec(), R"({"data":[]})"));
++  EXPECT_TRUE(models.Get<0>());
++}
++
+ }  // namespace
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
+index b1fd69b4c4..bc15431571 100644
+--- a/chrome/browser/aegis/summary_policy.cc
++++ b/chrome/browser/aegis/summary_policy.cc
+@@ -96,7 +96,7 @@ const re2::RE2& AwsKeyPattern() {
+ 
+ const re2::RE2& LabelledSecretPattern() {
+   static const base::NoDestructor<re2::RE2> pattern(
+-      R"re((?i:(?:api[_\-]?key|access[_\-]?token|refresh[_\-]?token|authorization|auth|secret|password|passwd|token))[ \t]*[:=][ \t]*(?:bearer[ \t]+)?["']?([A-Z0-9._~+/\-]{8,}={0,2})["']?)re");
++      R"re((?i:(?:api[_\-]?key|access[_\-]?token|refresh[_\-]?token|authorization|auth|secret|password|passwd|token)[ \t]*[:=][ \t]*(?:bearer[ \t]+)?["']?([A-Z0-9._~+/\-]{8,}={0,2})["']?))re");
+   return *pattern;
+ }
+ 
+@@ -130,6 +130,12 @@ const re2::RE2& CreditCardPattern() {
+   return *pattern;
+ }
+ 
++const re2::RE2& AddressHintPattern() {
++  static const base::NoDestructor<re2::RE2> pattern(
++      R"re((?:^|[^A-Z0-9_\x{4E00}-\x{9FFF}])((?i:[0-9]{1,5}[ \t]+[A-Z0-9_.\x{4E00}-\x{9FFF}]+(?:[ \t]+[A-Z0-9_.\x{4E00}-\x{9FFF}]+){0,4}[ \t]+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)))(?:$|[^A-Z0-9_\x{4E00}-\x{9FFF}]))re");
++  return *pattern;
++}
++
+ bool LuhnValid(std::string_view value) {
+   int sum = 0;
+   bool double_digit = false;
+@@ -187,6 +193,7 @@ void CollectRecognizableSensitiveValues(std::string_view text,
+   CollectMatches(text, ChinaIdPattern(), false, values);
+   CollectMatches(text, SsnPattern(), false, values);
+   CollectMatches(text, CreditCardPattern(), true, values);
++  CollectMatches(text, AddressHintPattern(), false, values);
+ }
+ 
+ bool ContainsRecognizableSensitiveValue(std::string_view text) {
+@@ -244,6 +251,136 @@ std::vector<std::string> SensitiveValuesFromOriginal(
+   return values;
+ }
+ 
++std::string RedactValues(std::string_view text,
++                         std::vector<std::string> values) {
++  std::ranges::sort(values,
++                    [](const std::string& left, const std::string& right) {
++                      return left.size() > right.size();
++                    });
++  std::string redacted(text);
++  for (const std::string& value : values) {
++    base::ReplaceSubstringsAfterOffset(&redacted, 0, value, kRedactedValue);
++  }
++  return redacted;
++}
++
++std::string RedactRecognizableValues(std::string_view text) {
++  std::vector<std::string> values;
++  CollectRecognizableSensitiveValues(text, &values);
++  return RedactValues(text, std::move(values));
++}
++
++std::string RedactUrlPath(std::string_view path) {
++  std::string result;
++  size_t start = 0;
++  while (start <= path.size()) {
++    const size_t separator = path.find('/', start);
++    const size_t end =
++        separator == std::string_view::npos ? path.size() : separator;
++    const std::string decoded =
++        base::UnescapeBinaryURLComponent(path.substr(start, end - start));
++    const std::string safe =
++        base::IsStringUTF8(decoded) && !HasUnsafeControlCharacter(decoded)
++            ? RedactRecognizableValues(decoded)
++            : std::string(kRedactedValue);
++    result.append(base::EscapeAllExceptUnreserved(safe));
++    if (separator == std::string_view::npos) {
++      break;
++    }
++    result.push_back('/');
++    start = separator + 1;
++  }
++  return result;
++}
++
++std::string RedactQuery(const GURL& source_url) {
++  std::string query;
++  for (net::QueryIterator it(source_url); !it.IsAtEnd(); it.Advance()) {
++    std::string key = base::UnescapeBinaryURLComponent(it.GetKey());
++    if (key.empty() || !base::IsStringUTF8(key) ||
++        HasUnsafeControlCharacter(key)) {
++      key = "redacted";
++    } else {
++      key = RedactRecognizableValues(key);
++      key = std::string(base::TruncateUTF8ToByteSize(key, 256));
++    }
++    if (!query.empty()) {
++      query.push_back('&');
++    }
++    query.append(base::EscapeQueryParamValue(key, false));
++    query.push_back('=');
++    query.append(base::EscapeQueryParamValue(kRedactedValue, false));
++  }
++  return query;
++}
++
++std::optional<std::string> RedactUrl(const GURL& source_url) {
++  std::string path = RedactUrlPath(source_url.path());
++  std::string query = RedactQuery(source_url);
++  std::string ref(kRedactedValue);
++  GURL::Replacements replacements;
++  replacements.ClearUsername();
++  replacements.ClearPassword();
++  replacements.SetPathStr(path);
++  if (query.empty()) {
++    replacements.ClearQuery();
++  } else {
++    replacements.SetQueryStr(query);
++  }
++  if (source_url.has_ref()) {
++    replacements.SetRefStr(ref);
++  } else {
++    replacements.ClearRef();
++  }
++  const GURL safe_url = source_url.ReplaceComponents(replacements);
++  if (!safe_url.is_valid() || safe_url.spec().size() > kMaxSanitizedUrlBytes) {
++    return std::nullopt;
++  }
++  return safe_url.spec();
++}
++
++std::vector<std::string> HeuristicBullets(std::string_view text,
++                                          std::string_view locale) {
++  constexpr std::string_view kSeparators[] = {".", "。", "!", "！",
++                                              "?", "？", "\n"};
++  std::vector<std::string> bullets;
++  size_t start = 0;
++  while (start < text.size() && bullets.size() < 3) {
++    size_t end = text.size();
++    size_t separator_size = 0;
++    for (std::string_view separator : kSeparators) {
++      const size_t candidate = text.find(separator, start);
++      if (candidate < end) {
++        end = candidate;
++        separator_size = separator.size();
++      }
++    }
++    std::string item(base::TrimWhitespaceASCII(text.substr(start, end - start),
++                                               base::TRIM_ALL));
++    if (item.size() > 20) {
++      bullets.emplace_back(
++          base::TruncateUTF8ToByteSize(item, kMaxHeuristicItemBytes));
++    }
++    if (end == text.size()) {
++      break;
++    }
++    start = end + separator_size;
++  }
++  if (!bullets.empty()) {
++    return bullets;
++  }
++  if (locale == "zh-TW") {
++    bullets.emplace_back("目前頁面沒有足夠的可讀文字可產生要點。");
++  } else if (locale == "zh-CN") {
++    bullets.emplace_back("当前页面没有足够的可读文字可生成要点。");
++  } else {
++    bullets.emplace_back(
++        "The current page does not contain enough readable text for key "
++        "points.");
++  }
++  return bullets;
++}
++
+ bool ContainsOriginalSensitiveValue(
+     std::string_view target,
+     const std::vector<std::string>& sensitive_values) {
+@@ -415,30 +552,95 @@ bool ValidatePromptFields(const ModelPrompt& prompt, std::string* error) {
+ 
+ }  // namespace
+ 
+-bool IsCloudSummaryAllowed(const PageSnapshot& snapshot, std::string* reason) {
++bool IsModelSummaryAllowed(const PageSnapshot& snapshot, std::string* reason) {
+   if (reason) {
+     reason->clear();
+   }
+   if (snapshot.password_fields > 0) {
+-    return Reject(reason, "cloud summary blocked: password field detected");
++    return Reject(reason, "model summary blocked: password field detected");
+   }
+ 
+   const GURL source_url(snapshot.url);
+   if (!source_url.is_valid()) {
+-    return Reject(reason, "cloud summary blocked: invalid URL");
++    return Reject(reason, "model summary blocked: invalid URL");
+   }
+   if (!source_url.SchemeIsHTTPOrHTTPS()) {
+-    return Reject(reason, "cloud summary blocked: URL must use HTTP(S)");
++    return Reject(reason, "model summary blocked: URL must use HTTP(S)");
+   }
+   if (!source_url.has_host()) {
+-    return Reject(reason, "cloud summary blocked: invalid URL");
++    return Reject(reason, "model summary blocked: invalid URL");
+   }
+   if (HasSensitiveHostLabel(source_url)) {
+-    return Reject(reason, "cloud summary blocked: sensitive host label");
++    return Reject(reason, "model summary blocked: sensitive host label");
+   }
+   return true;
+ }
+ 
++std::optional<PreparedSummary> PrepareSummaryForBrowser(
++    const PageSnapshot& original,
++    const std::string& locale,
++    std::string* error) {
++  if (error) {
++    error->clear();
++  }
++  if (!ValidateSourceSnapshot(original, error)) {
++    return std::nullopt;
++  }
++
++  const GURL source_url(original.url);
++  const std::optional<std::string> safe_url = RedactUrl(source_url);
++  if (!safe_url) {
++    Reject(error, "failed to sanitize source URL");
++    return std::nullopt;
++  }
++
++  const std::vector<std::string> sensitive_values =
++      SensitiveValuesFromOriginal(original);
++  PreparedSummary prepared;
++  prepared.schema_version = kPreparedSummarySchemaVersion;
++  prepared.snapshot.url = *safe_url;
++  prepared.snapshot.title = std::string(base::TruncateUTF8ToByteSize(
++      RedactValues(original.title, sensitive_values), kMaxSanitizedTitleBytes));
++  prepared.snapshot.text_sample = std::string(base::TruncateUTF8ToByteSize(
++      RedactValues(original.text_sample, sensitive_values),
++      kMaxSanitizedTextBytes));
++  prepared.snapshot.password_fields = original.password_fields;
++  prepared.snapshot.forms = original.forms;
++
++  const std::string normalized_locale = NormalizedLocale(locale);
++  const std::string readable_text =
++      base::CollapseWhitespaceASCII(prepared.snapshot.text_sample, false);
++  if (readable_text.empty()) {
++    prepared.summary = normalized_locale == "zh-TW" ? "未能擷取可讀頁面文字。"
++                       : normalized_locale == "zh-CN"
++                           ? "未能提取可读页面文本。"
++                           : "No readable page text was captured.";
++  } else {
++    prepared.summary =
++        std::string(base::TruncateUTF8ToByteSize(readable_text, 220));
++  }
++  prepared.bullets = HeuristicBullets(readable_text, normalized_locale);
++  if (original.password_fields > 0) {
++    prepared.risks.push_back(normalized_locale == "zh-TW"
++                                 ? "頁面含密碼欄位，登入前請確認網域。"
++                             : normalized_locale == "zh-CN"
++                                 ? "页面含密码字段，登录前请确认域名。"
++                                 : "Page contains password fields; verify the "
++                                   "domain before signing in.");
++  }
++  if (source_url.SchemeIs("http")) {
++    prepared.risks.push_back(normalized_locale == "zh-TW" ? "連線未使用 HTTPS。"
++                             : normalized_locale == "zh-CN"
++                                 ? "连接未使用 HTTPS。"
++                                 : "Connection is not HTTPS.");
++  }
++
++  if (!ValidatePreparedSummary(original, prepared, error)) {
++    return std::nullopt;
++  }
++  return prepared;
++}
++
+ bool ValidatePreparedSummary(const PageSnapshot& original,
+                              const PreparedSummary& prepared,
+                              std::string* error) {
+diff --git a/chrome/browser/aegis/summary_policy.h b/chrome/browser/aegis/summary_policy.h
+index 7c43f930aa..bad367adc4 100644
+--- a/chrome/browser/aegis/summary_policy.h
++++ b/chrome/browser/aegis/summary_policy.h
+@@ -36,9 +36,16 @@ struct ModelPrompt {
+   std::string user;
+ };
+ 
+-// browser 进程在向外部云模型发送内容前执行的强制策略。拒绝时 reason
+-// 包含可供调用方展示或记录的原因。
+-bool IsCloudSummaryAllowed(const PageSnapshot& snapshot, std::string* reason);
++// browser 进程在调用任意兼容模型 API 前执行的强制策略。本机 loopback
++// 也不能绕过敏感页的启发式摘要边界。拒绝时 reason 包含可展示的原因。
++bool IsModelSummaryAllowed(const PageSnapshot& snapshot, std::string* reason);
++
++// 在 browser 进程内生成仅含脱敏字段的摘要输入和本机启发式结果。任何返回值
++// 都已经通过 ValidatePreparedSummary；失败时返回 nullopt 并填写 error。
++std::optional<PreparedSummary> PrepareSummaryForBrowser(
++    const PageSnapshot& original,
++    const std::string& locale,
++    std::string* error = nullptr);
+ 
+ // 校验 renderer 返回的安全快照与本地启发式结果。失败时不应 Probe 或
+ // 调用任何兼容模型 API。
+diff --git a/chrome/browser/aegis/summary_policy_unittest.cc b/chrome/browser/aegis/summary_policy_unittest.cc
+index 913d178549..51713ca163 100644
+--- a/chrome/browser/aegis/summary_policy_unittest.cc
++++ b/chrome/browser/aegis/summary_policy_unittest.cc
+@@ -4,9 +4,11 @@
+ #include "chrome/browser/aegis/summary_policy.h"
+ 
+ #include <string>
++#include <string_view>
+ #include <utility>
+ 
+ #include "base/json/json_reader.h"
++#include "base/strings/escape.h"
+ #include "base/test/task_environment.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+@@ -63,6 +65,43 @@ PageSnapshot CloudSnapshot(std::string url) {
+   return snapshot;
+ }
+ 
++PageSnapshot SensitiveProducerSnapshot() {
++  PageSnapshot snapshot;
++  snapshot.url =
++      "http://alice:password123@example.test/profiles/"
++      "alice%40example.test?session=session-token-12345&email="
++      "alice%40example.test#private-fragment-9";
++  snapshot.title = "Contact alice@example.test at 123 Main Street";
++  snapshot.text_sample =
++      "Email alice@example.test. Authorization: Bearer abcdefghijklmnop. "
++      "JWT eyJabcde.abcde12345.signature67890. AWS key "
++      "AKIAABCDEFGHIJKLMNOP. api_key=secret-token-12345. "
++      "Call 13800138000 or +1 415-555-2671. ID 11010519491231002X. "
++      "SSN 123-45-6789. Card 4111 1111 1111 1111. "
++      "Address 123 Main Street. This public sentence remains readable and "
++      "describes the page after sensitive values are removed.";
++  snapshot.forms = 2;
++  return snapshot;
++}
++
++constexpr std::string_view kProducerSensitiveValues[] = {
++    "alice",
++    "password123",
++    "alice@example.test",
++    "session-token-12345",
++    "private-fragment-9",
++    "Bearer abcdefghijklmnop",
++    "eyJabcde.abcde12345.signature67890",
++    "AKIAABCDEFGHIJKLMNOP",
++    "secret-token-12345",
++    "13800138000",
++    "+1 415-555-2671",
++    "11010519491231002X",
++    "123-45-6789",
++    "4111 1111 1111 1111",
++    "123 Main Street",
++};
++
+ class SummaryPolicyModelOutboundTest : public testing::Test {
+  protected:
+   void SetUp() override {
+@@ -114,38 +153,89 @@ TEST(SummaryPolicyTest, AcceptsStructuredRedactedSnapshotAndFixedPrompt) {
+             english_prompt->system.find("local privacy assistant"));
+ }
+ 
+-TEST(SummaryPolicyTest, AllowsCloudSummaryForOrdinaryHttpSites) {
++TEST(SummaryPolicyTest, BrowserProducerRedactsPageAndBuildsHeuristic) {
++  const PageSnapshot original = SensitiveProducerSnapshot();
++  std::string error;
++  const std::optional<PreparedSummary> prepared =
++      PrepareSummaryForBrowser(original, "zh-CN", &error);
++
++  ASSERT_TRUE(prepared.has_value()) << error;
++  EXPECT_TRUE(ValidatePreparedSummary(original, *prepared, &error)) << error;
++  const GURL safe_url(prepared->snapshot.url);
++  EXPECT_TRUE(safe_url.is_valid());
++  EXPECT_FALSE(safe_url.has_username());
++  EXPECT_FALSE(safe_url.has_password());
++  for (net::QueryIterator it(safe_url); !it.IsAtEnd(); it.Advance()) {
++    EXPECT_EQ("[REDACTED]", it.GetUnescapedValue());
++  }
++  EXPECT_EQ("[REDACTED]", base::UnescapeBinaryURLComponent(safe_url.ref()));
++  EXPECT_EQ(original.forms, prepared->snapshot.forms);
++  EXPECT_EQ(original.password_fields, prepared->snapshot.password_fields);
++  EXPECT_FALSE(prepared->summary.empty());
++  EXPECT_FALSE(prepared->bullets.empty());
++  EXPECT_FALSE(prepared->risks.empty());
++
++  const std::string prepared_text =
++      prepared->snapshot.url + "\n" + prepared->snapshot.title + "\n" +
++      prepared->snapshot.text_sample + "\n" + prepared->summary;
++  for (std::string_view value : kProducerSensitiveValues) {
++    EXPECT_EQ(std::string::npos, prepared_text.find(value)) << value;
++  }
++  EXPECT_NE(std::string::npos,
++            prepared->snapshot.text_sample.find("[REDACTED]"));
++  EXPECT_NE(std::string::npos,
++            prepared->snapshot.text_sample.find("public sentence remains"));
++}
++
++TEST(SummaryPolicyTest, BrowserProducerOutboundPromptLeaksNoOriginalValue) {
++  const PageSnapshot original = SensitiveProducerSnapshot();
++  std::string error;
++  const std::optional<PreparedSummary> prepared =
++      PrepareSummaryForBrowser(original, "en-US", &error);
++  ASSERT_TRUE(prepared.has_value()) << error;
++  const std::optional<ModelPrompt> prompt =
++      BuildValidatedModelPrompt(original, *prepared, "en-US", &error);
++
++  ASSERT_TRUE(prompt.has_value()) << error;
++  const std::string outbound = prompt->system + "\n" + prompt->user;
++  for (std::string_view value : kProducerSensitiveValues) {
++    EXPECT_EQ(std::string::npos, outbound.find(value)) << value;
++  }
++  EXPECT_NE(std::string::npos, outbound.find("[REDACTED]"));
++}
++
++TEST(SummaryPolicyTest, AllowsModelSummaryForOrdinaryHttpSites) {
+   std::string reason = "stale reason";
+-  EXPECT_TRUE(IsCloudSummaryAllowed(
++  EXPECT_TRUE(IsModelSummaryAllowed(
+       CloudSnapshot("https://news.example.test/articles/bank-safety"),
+       &reason));
+   EXPECT_TRUE(reason.empty());
+ 
+-  EXPECT_TRUE(IsCloudSummaryAllowed(
++  EXPECT_TRUE(IsModelSummaryAllowed(
+       CloudSnapshot("http://example.test/?topic=paypal"), nullptr));
+ }
+ 
+-TEST(SummaryPolicyTest, RejectsCloudSummaryWhenPasswordFieldIsPresent) {
++TEST(SummaryPolicyTest, RejectsModelSummaryWhenPasswordFieldIsPresent) {
+   PageSnapshot snapshot = CloudSnapshot("https://example.test/login");
+   snapshot.password_fields = 1;
+   std::string reason;
+ 
+-  EXPECT_FALSE(IsCloudSummaryAllowed(snapshot, &reason));
++  EXPECT_FALSE(IsModelSummaryAllowed(snapshot, &reason));
+   EXPECT_NE(std::string::npos, reason.find("password field"));
+ }
+ 
+-TEST(SummaryPolicyTest, RejectsCloudSummaryForInvalidOrNonHttpUrl) {
++TEST(SummaryPolicyTest, RejectsModelSummaryForInvalidOrNonHttpUrl) {
+   std::string reason;
+   EXPECT_FALSE(
+-      IsCloudSummaryAllowed(CloudSnapshot("not a valid URL"), &reason));
++      IsModelSummaryAllowed(CloudSnapshot("not a valid URL"), &reason));
+   EXPECT_NE(std::string::npos, reason.find("invalid URL"));
+ 
+-  EXPECT_FALSE(IsCloudSummaryAllowed(
++  EXPECT_FALSE(IsModelSummaryAllowed(
+       CloudSnapshot("file:///tmp/public-article.html"), &reason));
+   EXPECT_NE(std::string::npos, reason.find("HTTP(S)"));
+ }
+ 
+-TEST(SummaryPolicyTest, RejectsCloudSummaryForSensitiveHostLabels) {
++TEST(SummaryPolicyTest, RejectsModelSummaryForSensitiveHostLabels) {
+   constexpr const char* kBlockedUrls[] = {
+       "https://bank.example.test/",     "https://secure-paypal.test/",
+       "https://alipay.example.test/",   "https://services.gov/",
+@@ -156,7 +246,7 @@ TEST(SummaryPolicyTest, RejectsCloudSummaryForSensitiveHostLabels) {
+ 
+   for (const char* url : kBlockedUrls) {
+     std::string reason;
+-    EXPECT_FALSE(IsCloudSummaryAllowed(CloudSnapshot(url), &reason)) << url;
++    EXPECT_FALSE(IsModelSummaryAllowed(CloudSnapshot(url), &reason)) << url;
+     EXPECT_NE(std::string::npos, reason.find("sensitive host label")) << url;
+   }
+ }
+diff --git a/chrome/browser/aegis/summary_session.cc b/chrome/browser/aegis/summary_session.cc
+new file mode 100644
+index 0000000000..bdd52b3bfb
+--- /dev/null
++++ b/chrome/browser/aegis/summary_session.cc
+@@ -0,0 +1,285 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/summary_session.h"
++
++#include <cstdint>
++#include <utility>
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "chrome/browser/aegis/model_provider_client.h"
++#include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
++
++namespace aegis {
++namespace {
++
++constexpr base::TimeDelta kSummaryConfirmationTtl = base::Minutes(1);
++constexpr size_t kMaxCaptureUrlBytes = 8192;
++constexpr size_t kMaxCaptureTitleBytes = 4096;
++constexpr size_t kMaxCaptureTextBytes = 64 * 1024;
++constexpr int32_t kMaxCaptureFieldCount = 1'000'000;
++
++SummarizeResult SessionError(std::string error) {
++  SummarizeResult result;
++  result.error = std::move(error);
++  return result;
++}
++
++int Utf16Length(std::string_view value) {
++  return static_cast<int>(base::UTF8ToUTF16(value).size());
++}
++
++}  // namespace
++
++SummarySession::SummarySession(content::WebContents* source, std::string locale)
++    : source_document_(source && source->GetPrimaryMainFrame()
++                           ? source->GetPrimaryMainFrame()->GetWeakDocumentPtr()
++                           : content::WeakDocumentPtr()),
++      source_url_(source ? source->GetLastCommittedURL() : GURL()),
++      locale_(std::move(locale)) {}
++
++SummarySession::~SummarySession() {
++  Cancel();
++}
++
++void SummarySession::Begin(PreviewCallback done) {
++  if (state_ != State::kIdle) {
++    Preview preview;
++    preview.error = "summary session already started";
++    std::move(done).Run(std::move(preview));
++    return;
++  }
++  preview_callback_ = std::move(done);
++
++  if (!IsSourceCurrent()) {
++    Preview preview;
++    preview.error = "source page is unavailable or has navigated";
++    FinishPreview(std::move(preview));
++    return;
++  }
++  if (!IsSourceProfileAllowed()) {
++    Preview preview;
++    preview.error = "summary is unavailable for this profile";
++    FinishPreview(std::move(preview));
++    return;
++  }
++  AegisService* service = AegisService::GetInstance();
++  if (!service->IsPrivacyAiEnabled() || !service->IsPolicyWorkerEnabled()) {
++    Preview preview;
++    preview.error = "privacy summary or policy worker disabled";
++    FinishPreview(std::move(preview));
++    return;
++  }
++
++  content::RenderFrameHost* frame = source_document_.AsRenderFrameHostIfValid();
++  frame->GetRemoteAssociatedInterfaces()->GetInterface(&capture_client_);
++  if (!capture_client_.is_bound()) {
++    Preview preview;
++    preview.error = "page renderer is unavailable";
++    FinishPreview(std::move(preview));
++    return;
++  }
++
++  state_ = State::kCapturing;
++  capture_client_.set_disconnect_handler(base::BindOnce(
++      &SummarySession::OnCaptureDisconnected, weak_factory_.GetWeakPtr()));
++  capture_client_->CollectAegisPageSignals(
++      /*include_text=*/true, base::BindOnce(&SummarySession::OnPageSignals,
++                                            weak_factory_.GetWeakPtr()));
++}
++
++void SummarySession::Confirm(ResultCallback done) {
++  if (state_ != State::kAwaitingConfirmation || !original_ || !prepared_) {
++    std::move(done).Run(SessionError("summary is not awaiting confirmation"));
++    return;
++  }
++  if (base::TimeTicks::Now() - prepared_at_ > kSummaryConfirmationTtl) {
++    state_ = State::kFinished;
++    original_.reset();
++    prepared_.reset();
++    std::move(done).Run(SessionError("summary confirmation expired"));
++    return;
++  }
++  if (!IsSourceCurrent()) {
++    state_ = State::kFinished;
++    original_.reset();
++    prepared_.reset();
++    std::move(done).Run(SessionError("page navigated before confirmation"));
++    return;
++  }
++  if (!IsSourceProfileAllowed()) {
++    state_ = State::kFinished;
++    original_.reset();
++    prepared_.reset();
++    std::move(done).Run(
++        SessionError("summary profile changed before confirmation"));
++    return;
++  }
++
++  PageSnapshot original = std::move(*original_);
++  PreparedSummary prepared = std::move(*prepared_);
++  original_.reset();
++  prepared_.reset();
++  state_ = State::kRunning;
++  result_callback_ = std::move(done);
++
++  std::optional<std::string> request_id =
++      AegisService::GetInstance()->SummarizePreparedPage(
++          std::move(original), std::move(prepared), locale_, provider_,
++          base_url_, model_,
++          base::BindOnce(&SummarySession::FinishResult,
++                         weak_factory_.GetWeakPtr()));
++  // Feature/configuration/sensitive-page paths may complete synchronously.
++  if (state_ == State::kRunning) {
++    active_request_id_ = std::move(request_id);
++    if (!active_request_id_) {
++      FinishResult(SessionError("summary request did not start"));
++    }
++  }
++}
++
++void SummarySession::Cancel() {
++  if (state_ == State::kCancelled || state_ == State::kFinished) {
++    return;
++  }
++  capture_client_.reset();
++  if (active_request_id_) {
++    AegisService* service = AegisService::GetInstance();
++    if (IsSourceProfileAllowed()) {
++      service->CancelModelSummaryRequest(*active_request_id_);
++    }
++    active_request_id_.reset();
++  }
++  original_.reset();
++  prepared_.reset();
++  preview_callback_.Reset();
++  result_callback_.Reset();
++  weak_factory_.InvalidateWeakPtrs();
++  state_ = State::kCancelled;
++}
++
++bool SummarySession::IsSourceCurrent() const {
++  content::RenderFrameHost* frame = source_document_.AsRenderFrameHostIfValid();
++  content::WebContents* contents =
++      frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
++  return frame && contents && contents->GetPrimaryMainFrame() == frame &&
++         !frame->IsErrorDocument() && source_url_.SchemeIsHTTPOrHTTPS() &&
++         frame->GetLastCommittedURL() == source_url_ &&
++         contents->GetLastCommittedURL() == source_url_;
++}
++
++bool SummarySession::IsSourceProfileAllowed() const {
++  content::RenderFrameHost* frame = source_document_.AsRenderFrameHostIfValid();
++  content::WebContents* contents =
++      frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
++  Profile* profile =
++      contents ? Profile::FromBrowserContext(contents->GetBrowserContext())
++               : nullptr;
++  return AegisService::GetInstance()->IsInitializedForProfile(profile);
++}
++
++void SummarySession::OnCaptureDisconnected() {
++  if (state_ != State::kCapturing) {
++    return;
++  }
++  capture_client_.reset();
++  Preview preview;
++  preview.error = "page renderer disconnected during capture";
++  FinishPreview(std::move(preview));
++}
++
++void SummarySession::OnPageSignals(int32_t password_fields,
++                                   int32_t forms,
++                                   const std::vector<std::string>& form_actions,
++                                   const std::string& title,
++                                   const std::string& text_sample) {
++  (void)form_actions;
++  capture_client_.reset();
++  if (state_ != State::kCapturing) {
++    return;
++  }
++  if (!IsSourceCurrent() || source_url_.spec().size() > kMaxCaptureUrlBytes ||
++      !base::IsStringUTF8(title) || !base::IsStringUTF8(text_sample) ||
++      title.size() > kMaxCaptureTitleBytes ||
++      text_sample.size() > kMaxCaptureTextBytes || password_fields < 0 ||
++      password_fields > kMaxCaptureFieldCount || forms < 0 ||
++      forms > kMaxCaptureFieldCount) {
++    Preview preview;
++    preview.error = "page navigated or returned invalid summary data";
++    FinishPreview(std::move(preview));
++    return;
++  }
++  if (!IsSourceProfileAllowed()) {
++    Preview preview;
++    preview.error = "summary profile changed during capture";
++    FinishPreview(std::move(preview));
++    return;
++  }
++
++  PageSnapshot original;
++  original.url = source_url_.spec();
++  original.title = title;
++  original.text_sample = text_sample;
++  original.password_fields = password_fields;
++  original.forms = forms;
++  std::optional<PreparedSummary> prepared =
++      PrepareSummaryForBrowser(original, locale_);
++  if (!prepared) {
++    Preview preview;
++    preview.error = "browser privacy preparation rejected the page";
++    FinishPreview(std::move(preview));
++    return;
++  }
++
++  AegisService* service = AegisService::GetInstance();
++  provider_ = service->ConfiguredModelProvider();
++  base_url_ = service->ConfiguredModelBaseUrl();
++  model_ = service->ConfiguredModelName();
++
++  Preview preview;
++  preview.ok = true;
++  preview.site = source_url_.host();
++  preview.chars_read = Utf16Length(original.text_sample);
++  preview.chars_redacted = Utf16Length(prepared->snapshot.text_sample);
++  preview.provider = provider_;
++  preview.base_url = base_url_;
++  preview.model = model_;
++  const std::optional<ModelProvider> provider = ParseModelProvider(provider_);
++  preview.stayed_on_device =
++      provider && IsLocalModelEndpoint(*provider, GURL(base_url_));
++  preview.model_allowed =
++      IsModelSummaryAllowed(original, &preview.model_block_reason);
++
++  original_ = std::move(original);
++  prepared_ = std::move(*prepared);
++  prepared_at_ = base::TimeTicks::Now();
++  state_ = State::kAwaitingConfirmation;
++  FinishPreview(std::move(preview));
++}
++
++void SummarySession::FinishPreview(Preview preview) {
++  if (!preview.ok && state_ != State::kCancelled) {
++    state_ = State::kFinished;
++  }
++  if (preview_callback_) {
++    std::move(preview_callback_).Run(std::move(preview));
++  }
++}
++
++void SummarySession::FinishResult(SummarizeResult result) {
++  if (state_ != State::kRunning) {
++    return;
++  }
++  active_request_id_.reset();
++  state_ = State::kFinished;
++  if (result_callback_) {
++    std::move(result_callback_).Run(std::move(result));
++  }
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/summary_session.h b/chrome/browser/aegis/summary_session.h
+new file mode 100644
+index 0000000000..72b7e65660
+--- /dev/null
++++ b/chrome/browser/aegis/summary_session.h
+@@ -0,0 +1,104 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_SUMMARY_SESSION_H_
++#define CHROME_BROWSER_AEGIS_SUMMARY_SESSION_H_
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/functional/callback.h"
++#include "base/memory/weak_ptr.h"
++#include "base/time/time.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/aegis/summary_policy.h"
++#include "chrome/common/chrome_render_frame.mojom.h"
++#include "content/public/browser/weak_document_ptr.h"
++#include "mojo/public/cpp/bindings/associated_remote.h"
++#include "url/gurl.h"
++
++namespace content {
++class WebContents;
++}
++
++namespace aegis {
++
++class SummarySessionTestPeer;
++
++// Owns one native-popup summary attempt. Raw page text and the prepared model
++// payload stay inside this object; the view receives only preview metadata and
++// the final result.
++class SummarySession {
++ public:
++  enum class State {
++    kIdle,
++    kCapturing,
++    kAwaitingConfirmation,
++    kRunning,
++    kFinished,
++    kCancelled,
++  };
++
++  struct Preview {
++    bool ok = false;
++    std::string error;
++    std::string site;
++    int chars_read = 0;
++    int chars_redacted = 0;
++    bool model_allowed = false;
++    std::string model_block_reason;
++    std::string provider;
++    std::string base_url;
++    std::string model;
++    bool stayed_on_device = false;
++  };
++
++  using PreviewCallback = base::OnceCallback<void(Preview)>;
++  using ResultCallback = base::OnceCallback<void(SummarizeResult)>;
++
++  SummarySession(content::WebContents* source, std::string locale);
++  SummarySession(const SummarySession&) = delete;
++  SummarySession& operator=(const SummarySession&) = delete;
++  ~SummarySession();
++
++  void Begin(PreviewCallback done);
++  void Confirm(ResultCallback done);
++  void Cancel();
++
++  State state() const { return state_; }
++
++ private:
++  friend class SummarySessionTestPeer;
++
++  bool IsSourceCurrent() const;
++  bool IsSourceProfileAllowed() const;
++  void OnCaptureDisconnected();
++  void OnPageSignals(int32_t password_fields,
++                     int32_t forms,
++                     const std::vector<std::string>& form_actions,
++                     const std::string& title,
++                     const std::string& text_sample);
++  void FinishPreview(Preview preview);
++  void FinishResult(SummarizeResult result);
++
++  const content::WeakDocumentPtr source_document_;
++  const GURL source_url_;
++  const std::string locale_;
++
++  State state_ = State::kIdle;
++  base::TimeTicks prepared_at_;
++  std::optional<PageSnapshot> original_;
++  std::optional<PreparedSummary> prepared_;
++  std::string provider_;
++  std::string base_url_;
++  std::string model_;
++  std::optional<std::string> active_request_id_;
++  PreviewCallback preview_callback_;
++  ResultCallback result_callback_;
++  mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> capture_client_;
++  base::WeakPtrFactory<SummarySession> weak_factory_{this};
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_SUMMARY_SESSION_H_
+diff --git a/chrome/browser/aegis/summary_session_unittest.cc b/chrome/browser/aegis/summary_session_unittest.cc
+new file mode 100644
+index 0000000000..ed5bc9d7f3
+--- /dev/null
++++ b/chrome/browser/aegis/summary_session_unittest.cc
+@@ -0,0 +1,59 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/summary_session.h"
++
++#include "chrome/test/base/chrome_render_view_host_test_harness.h"
++#include "content/public/test/navigation_simulator.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++class SummarySessionTestPeer {
++ public:
++  static bool IsSourceCurrent(const SummarySession& session) {
++    return session.IsSourceCurrent();
++  }
++};
++
++namespace {
++
++class SummarySessionTest : public ChromeRenderViewHostTestHarness {};
++
++TEST_F(SummarySessionTest, ExactDocumentAndUrlRemainCurrent) {
++  NavigateAndCommit(GURL("https://source.example.test/article?token=hidden"));
++  SummarySession session(web_contents(), "zh-CN");
++
++  EXPECT_TRUE(SummarySessionTestPeer::IsSourceCurrent(session));
++}
++
++TEST_F(SummarySessionTest, CrossDocumentNavigationInvalidatesSource) {
++  NavigateAndCommit(GURL("https://source.example.test/first"));
++  SummarySession session(web_contents(), "zh-CN");
++
++  NavigateAndCommit(GURL("https://source.example.test/second"));
++
++  EXPECT_FALSE(SummarySessionTestPeer::IsSourceCurrent(session));
++}
++
++TEST_F(SummarySessionTest, SameDocumentUrlChangeInvalidatesSource) {
++  const GURL initial("https://source.example.test/article#before");
++  NavigateAndCommit(initial);
++  SummarySession session(web_contents(), "zh-CN");
++
++  auto navigation = content::NavigationSimulator::CreateRendererInitiated(
++      GURL("https://source.example.test/article#after"), main_rfh());
++  navigation->CommitSameDocument();
++
++  EXPECT_FALSE(SummarySessionTestPeer::IsSourceCurrent(session));
++}
++
++TEST_F(SummarySessionTest, InternalPageCannotBecomeSummarySource) {
++  NavigateAndCommit(GURL("chrome://version/"));
++  SummarySession session(web_contents(), "zh-CN");
++
++  EXPECT_FALSE(SummarySessionTestPeer::IsSourceCurrent(session));
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index fa5d232202..406d0ef0a5 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -75,6 +75,9 @@ interface CapturedSummary {
+   error?: string;
+   requestId?: string;
+   snapshot?: PageSnapshot;
++  modelProvider?: string;
++  modelBaseUrl?: string;
++  modelName?: string;
+ }
+ 
+ interface PreparedSummary {
+@@ -145,6 +148,7 @@ let modelSettingsRequestSerial = 0;
+ let lastModelStatusSignature = '';
+ let modelControlsEnabled = false;
+ let modelControlsAndroid = false;
++let summaryRequestRunning = false;
+ 
+ function checkbox(id: string): HTMLInputElement {
+   const el = getRequiredElement(id);
+@@ -688,7 +692,7 @@ function applyStatus(status: AegisStatus) {
+   fillActivityLog(status.recentEvents || []);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+   actionButton('summarize').disabled =
+-      !status.privacyAi || !status.policyWorkerReady;
++      summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
+ }
+ 
+ async function setModule(module: ModuleName, enabled: boolean) {
+@@ -743,6 +747,28 @@ function summaryBackendLabel(value: string|undefined, zh: boolean): string {
+                  (zh ? '未知' : 'Unknown');
+ }
+ 
++function summaryErrorLabel(value: string, zh: boolean): string {
++  if (!zh) {
++    return value;
++  }
++  if (value === 'model request timed out') {
++    return '模型请求超时';
++  }
++  if (value === 'model request already in progress') {
++    return '已有模型请求正在进行';
++  }
++  if (value.startsWith('model network request failed')) {
++    return value.replace('model network request failed', '模型网络请求失败');
++  }
++  if (value === 'model summary blocked: sensitive host label') {
++    return '检测到敏感站点，已跳过模型调用';
++  }
++  if (value === 'model summary blocked: password field detected') {
++    return '检测到密码字段，已跳过模型调用';
++  }
++  return value;
++}
++
+ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+   const lang = document.documentElement.lang || 'zh-CN';
+   const zh = lang.startsWith('zh');
+@@ -752,8 +778,10 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+   const configuredFormat = normalizeModelApiFormat(status.modelProvider);
+   const backendFormat = apiFormatFromBackend(result.backend);
+   const remoteAttempted = result.stayedOnDevice === false;
++  const modelAttempted = (result.charsSent || 0) > 0 &&
++      result.destination !== 'local';
+   const usedFormat = backendFormat ||
+-      (remoteAttempted ? configuredFormat : null);
++      (modelAttempted ? configuredFormat : null);
+   const location = result.stayedOnDevice === true ?
+       (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
+       result.stayedOnDevice === false ?
+@@ -766,7 +794,10 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+     location,
+     (zh ? 'API 格式：' : 'API format: ') + format,
+     (zh ? '后端：' : 'Backend: ') +
+-        summaryBackendLabel(result.backend, zh),
++        (result.backend === 'heuristic' && modelAttempted ?
++             (zh ? '启发式摘要（模型调用失败后降级）' :
++                   'Heuristic summary (fallback after model failure)') :
++             summaryBackendLabel(result.backend, zh)),
+   ];
+   if (usedFormat && status.modelName) {
+     lines.push((zh ? '模型：' : 'Model: ') + status.modelName);
+@@ -798,7 +829,8 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+     lines.push(`! ${r}`);
+   }
+   if (result.error) {
+-    lines.push((zh ? '降级原因：' : 'Fallback reason: ') + result.error);
++    lines.push((zh ? '降级原因：' : 'Fallback reason: ') +
++               summaryErrorLabel(result.error, zh));
+   }
+   return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '')
+       .join('\n');
+@@ -1158,7 +1190,8 @@ async function probeFingerprint() {
+ }
+ 
+ async function summarizeActiveTab() {
+-  const captured: CapturedSummary = await sendWithPromise('summarizeActiveTab');
++  const captured: CapturedSummary =
++      await sendWithPromise('summarizeActiveTab');
+   if (!captured.ok || !captured.requestId || !captured.snapshot) {
+     showResult(captured.error || 'summary capture failed');
+     return;
+@@ -1168,23 +1201,57 @@ async function summarizeActiveTab() {
+     snapshot: captured.snapshot,
+   }));
+   if (!prepared) {
+-    // Consume the one-shot browser request even when the renderer rejects its
++    // Consume the prepared browser request even when the renderer rejects its
+     // own output; it must never remain reusable until TTL expiry.
+     await sendWithPromise('completePreparedSummary', captured.requestId, {});
+     showResult('renderer policy worker rejected the page snapshot');
+     return;
+   }
+-  const status: AegisStatus =
++  const liveStatus: AegisStatus =
+       withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
++  const status: AegisStatus = {
++    ...liveStatus,
++    modelProvider: captured.modelProvider || liveStatus.modelProvider,
++    modelBaseUrl: captured.modelBaseUrl || liveStatus.modelBaseUrl,
++    modelName: captured.modelName || liveStatus.modelName,
++  };
+   if (!await confirmSummaryPreview(captured, prepared, status)) {
+     await sendWithPromise('cancelPreparedSummary', captured.requestId);
+     return;
+   }
++  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
++  showResult(isSensitiveSummarySource(captured.snapshot) ?
++      (zh ? '正在生成本机启发式摘要，不调用模型…' :
++            'Generating an on-device heuristic summary without calling a model…') :
++      isLocalModelEndpoint(status.modelBaseUrl || '') ?
++      (zh ? '本机模型正在生成，最长等待 3 分钟…' :
++            'The local model is generating; allow up to 3 minutes…') :
++      (zh ? '兼容模型服务正在生成，最长等待 45 秒…' :
++            'The compatible model service is generating; allow up to 45 seconds…'));
+   const result: SummarizeResult = await sendWithPromise(
+       'completePreparedSummary', captured.requestId, prepared);
+   showResult(formatSummary(result, status));
+ }
+ 
++async function runSummaryAction() {
++  summaryRequestRunning = true;
++  actionButton('summarize').disabled = true;
++  try {
++    await summarizeActiveTab();
++  } catch (err) {
++    showResult(String(err));
++  } finally {
++    summaryRequestRunning = false;
++    try {
++      const next: AegisStatus = await sendWithPromise('getStatus');
++      applyStatus(next);
++    } catch (err) {
++      actionButton('summarize').disabled = false;
++      showResult(String(err));
++    }
++  }
++}
++
+ function bindModelControls() {
+   selectField('model-provider').addEventListener('change', () => {
+     rememberModelDraft();
+@@ -1348,7 +1415,8 @@ async function saveModelSettings(clearKey: boolean) {
+ }
+ 
+ async function init() {
+-  const status: AegisStatus = await sendWithPromise('getStatus');
++  const status: AegisStatus =
++      withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
+   applyStatus(status);
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+@@ -1371,16 +1439,7 @@ async function init() {
+     })();
+   });
+   actionButton('summarize').addEventListener('click', () => {
+-    void (async () => {
+-      actionButton('summarize').disabled = true;
+-      try {
+-        await summarizeActiveTab();
+-      } catch (err) {
+-        showResult(String(err));
+-      }
+-      const next: AegisStatus = await sendWithPromise('getStatus');
+-      applyStatus(next);
+-    })();
++    void runSummaryAction();
+   });
+   actionButton('fp-probe').addEventListener('click', () => {
+     void probeFingerprint();
+@@ -1398,7 +1457,7 @@ async function init() {
+     getRequiredElement('filter-meta').textContent = formatMeta(next);
+     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
+     actionButton('summarize').disabled =
+-        !next.privacyAi || !next.policyWorkerReady;
++        summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
+   });
+ }
+ 
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 8b6b8fa6ec..5c7388ca19 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -6,13 +6,16 @@
+ #include <memory>
+ #include <optional>
+ #include <string>
++#include <utility>
+ 
+ #include "base/functional/bind.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/summary_session.h"
+ #include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_bubble_delegate_view.h"
+@@ -33,6 +36,8 @@
+ #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+ #include "ui/views/controls/button/md_text_button.h"
+ #include "ui/views/controls/label.h"
++#include "ui/views/controls/scroll_view.h"
++#include "ui/views/controls/throbber.h"
+ #include "ui/views/layout/box_layout.h"
+ #include "ui/views/style/typography.h"
+ #include "ui/views/view.h"
+@@ -40,9 +45,34 @@
+ 
+ namespace {
+ 
+-constexpr int kBubbleWidth = 360;
++constexpr int kBubbleWidth = 440;
++constexpr int kResultMaxHeight = 300;
+ constexpr base::TimeDelta kIntroDuration = base::Seconds(4);
+ 
++// 在 AegisService 改为 ProfileKeyedService 前使用 fail-closed 过渡边界。
++aegis::AegisService* ServiceForBrowser(Browser* browser) {
++  if (!browser) {
++    return nullptr;
++  }
++  aegis::AegisService* service = aegis::AegisService::GetInstance();
++  return service->IsInitializedForProfile(browser->profile()) ? service
++                                                              : nullptr;
++}
++
++aegis::AegisService* ServiceForWebContents(Browser* browser,
++                                           content::WebContents* web_contents) {
++  aegis::AegisService* service = ServiceForBrowser(browser);
++  if (!service || !web_contents) {
++    return nullptr;
++  }
++  Profile* source_profile =
++      Profile::FromBrowserContext(web_contents->GetBrowserContext());
++  return source_profile == browser->profile() &&
++                 service->IsInitializedForProfile(source_profile)
++             ? service
++             : nullptr;
++}
++
+ bool UseChinese() {
+   return g_browser_process &&
+          base::StartsWith(g_browser_process->GetApplicationLocale(), "zh",
+@@ -75,6 +105,16 @@ std::u16string EventKind(const std::string& kind) {
+   return Copy(u"保护动作", u"Protection action");
+ }
+ 
++std::u16string ModelFormat(const std::string& provider) {
++  if (provider == "anthropic") {
++    return Copy(u"Claude（Anthropic）兼容", u"Anthropic compatible");
++  }
++  if (provider == "gemini") {
++    return Copy(u"Gemini 兼容", u"Gemini compatible");
++  }
++  return Copy(u"OpenAI 兼容", u"OpenAI compatible");
++}
++
+ views::Label* AddLabel(
+     views::View* parent,
+     std::u16string text,
+@@ -86,6 +126,23 @@ views::Label* AddLabel(
+   return parent->AddChildView(std::move(label));
+ }
+ 
++std::unique_ptr<views::View> CreatePanel() {
++  auto panel = std::make_unique<views::View>();
++  auto* layout = panel->SetLayoutManager(std::make_unique<views::BoxLayout>(
++      views::BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
++  layout->set_cross_axis_alignment(
++      views::BoxLayout::CrossAxisAlignment::kStretch);
++  return panel;
++}
++
++std::unique_ptr<views::View> CreateButtonRow() {
++  auto row = std::make_unique<views::View>();
++  auto* layout = row->SetLayoutManager(std::make_unique<views::BoxLayout>(
++      views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 8));
++  layout->set_main_axis_alignment(views::BoxLayout::MainAxisAlignment::kEnd);
++  return row;
++}
++
+ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   METADATA_HEADER(AegisPageBubble, LocationBarBubbleDelegateView)
+ 
+@@ -95,7 +152,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+                   aegis::PagePrivacySummary summary)
+       : LocationBarBubbleDelegateView(
+             views::BubbleAnchor(anchor),
+-            browser->tab_strip_model()->GetActiveWebContents()),
++            browser->tab_strip_model()->GetActiveWebContents(),
++            /*autosize=*/true),
+         browser_(browser),
+         summary_(std::move(summary)) {
+     SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
+@@ -110,7 +168,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+ 
+   AegisPageBubble(const AegisPageBubble&) = delete;
+   AegisPageBubble& operator=(const AegisPageBubble&) = delete;
+-  ~AegisPageBubble() override = default;
++  ~AegisPageBubble() override {
++    if (summary_session_) {
++      summary_session_->Cancel();
++    }
++  }
+ 
+  private:
+   void Init() override {
+@@ -119,32 +181,44 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     layout->set_cross_axis_alignment(
+         views::BoxLayout::CrossAxisAlignment::kStretch);
+ 
++    BuildProtectionPanel();
++    BuildProgressPanel();
++    BuildPreviewPanel();
++    BuildResultPanel();
++    ShowPanel(protection_panel_);
++  }
++
++  void BuildProtectionPanel() {
++    protection_panel_ = AddChildView(CreatePanel());
++
+     const std::u16string site =
+         summary_.site_key.empty() ? Copy(u"当前内部页面", u"this internal page")
+                                   : base::UTF8ToUTF16(summary_.site_key);
+-    AddLabel(this,
++    AddLabel(protection_panel_,
+              summary_.paused
+                  ? Copy(u"此站的跟踪与清理规则已暂停 10 分钟",
+                         u"Tracking and cleanup rules are paused for 10 minutes")
+                  : Copy(u"Aegis 正在保护 ", u"Aegis is protecting ") + site,
+              views::style::CONTEXT_DIALOG_TITLE);
+ 
+-    AddLabel(this, Copy(u"本页已处理 ", u"Handled ") +
+-                       base::NumberToString16(summary_.total) +
+-                       Copy(u" 项", u" items on this page"));
+-    AddLabel(this, Copy(u"阻止跟踪请求：", u"Blocked requests: ") +
+-                       base::NumberToString16(summary_.blocked));
+-    AddLabel(this, Copy(u"清理链接/Referer 参数：",
+-                        u"Cleaned link/referrer parameters: ") +
+-                       base::NumberToString16(summary_.params));
+-    AddLabel(this, Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ") +
+-                       base::NumberToString16(summary_.cookies));
+-    AddLabel(this, Copy(u"挖矿风险提醒（仅观察）：",
+-                        u"Mining risk alerts (observe-only): ") +
+-                       base::NumberToString16(summary_.miner_alerts));
++    AddLabel(protection_panel_, Copy(u"本页已处理 ", u"Handled ") +
++                                    base::NumberToString16(summary_.total) +
++                                    Copy(u" 项", u" items on this page"));
++    AddLabel(protection_panel_, Copy(u"阻止跟踪请求：", u"Blocked requests: ") +
++                                    base::NumberToString16(summary_.blocked));
++    AddLabel(protection_panel_, Copy(u"清理链接/Referer 参数：",
++                                     u"Cleaned link/referrer parameters: ") +
++                                    base::NumberToString16(summary_.params));
++    AddLabel(protection_panel_,
++             Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ") +
++                 base::NumberToString16(summary_.cookies));
++    AddLabel(protection_panel_,
++             Copy(u"挖矿风险提醒（仅观察）：",
++                  u"Mining risk alerts (observe-only): ") +
++                 base::NumberToString16(summary_.miner_alerts));
+ 
+     if (!summary_.events.empty()) {
+-      AddLabel(this, Copy(u"最近发生了什么", u"Recent actions"),
++      AddLabel(protection_panel_, Copy(u"最近发生了什么", u"Recent actions"),
+                views::style::CONTEXT_DIALOG_TITLE);
+       const size_t visible_events = std::min<size_t>(5, summary_.events.size());
+       for (size_t index = 0; index < visible_events; ++index) {
+@@ -152,15 +226,27 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+         const std::u16string domain = base::UTF8ToUTF16(
+             event.display_domain.empty() ? event.site_key
+                                          : event.display_domain);
+-        AddLabel(this, u"• " + EventKind(event.kind) + u" · " + domain +
+-                           (event.count > 1
+-                                ? u" ×" + base::NumberToString16(event.count)
+-                                : std::u16string()));
++        AddLabel(
++            protection_panel_,
++            u"• " + EventKind(event.kind) + u" · " + domain +
++                (event.count > 1 ? u" ×" + base::NumberToString16(event.count)
++                                 : std::u16string()));
+       }
+     }
+ 
++    auto summarize_button = std::make_unique<views::MdTextButton>(
++        base::BindRepeating(&AegisPageBubble::OpenSummary,
++                            base::Unretained(this)),
++        Copy(u"AI 摘要当前页", u"Summarize this page with AI"));
++    summarize_button->SetEnabled(CanSummarizeCurrentPage());
++    if (!summarize_button->GetEnabled()) {
++      summarize_button->SetTooltipText(Copy(
++          u"AI 摘要仅支持普通网页", u"AI summary supports web pages only"));
++    }
++    protection_panel_->AddChildView(std::move(summarize_button));
++
+     if (!summary_.site_key.empty()) {
+-      AddChildView(std::make_unique<views::MdTextButton>(
++      protection_panel_->AddChildView(std::make_unique<views::MdTextButton>(
+           base::BindRepeating(&AegisPageBubble::TogglePause,
+                               base::Unretained(this)),
+           summary_.paused
+@@ -168,24 +254,241 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+               : Copy(u"为此站暂停 10 分钟并重新加载",
+                      u"Pause this site for 10 minutes and reload")));
+     }
+-    AddChildView(std::make_unique<views::MdTextButton>(
++    protection_panel_->AddChildView(std::make_unique<views::MdTextButton>(
+         base::BindRepeating(&AegisPageBubble::OpenSettings,
+                             base::Unretained(this)),
+         Copy(u"打开完整设置", u"Open full settings")));
+-    AddLabel(this, Copy(u"临时暂停不关闭钓鱼防护，也不会改变全局默认。",
+-                        u"Temporary pause keeps phishing protection on and "
+-                        u"does not change global defaults."));
++    AddLabel(protection_panel_,
++             Copy(u"临时暂停不关闭钓鱼防护，也不会改变全局默认。",
++                  u"Temporary pause keeps phishing protection on and "
++                  u"does not change global defaults."));
++  }
++
++  void BuildProgressPanel() {
++    progress_panel_ = AddChildView(CreatePanel());
++    progress_panel_->SetVisible(false);
++    throbber_ =
++        progress_panel_->AddChildView(std::make_unique<views::Throbber>());
++    AddLabel(progress_panel_, Copy(u"AI 摘要当前页", u"AI page summary"),
++             views::style::CONTEXT_DIALOG_TITLE);
++    progress_label_ = AddLabel(
++        progress_panel_, Copy(u"正在读取并脱敏当前页…",
++                              u"Reading and redacting the current page…"));
++    progress_panel_->AddChildView(std::make_unique<views::MdTextButton>(
++        base::BindRepeating(&AegisPageBubble::CancelSummary,
++                            base::Unretained(this)),
++        Copy(u"取消摘要", u"Cancel summary")));
++  }
++
++  void BuildPreviewPanel() {
++    preview_panel_ = AddChildView(CreatePanel());
++    preview_panel_->SetVisible(false);
++    AddLabel(preview_panel_, Copy(u"摘要前确认", u"Confirm summary"),
++             views::style::CONTEXT_DIALOG_TITLE);
++    preview_site_label_ = AddLabel(preview_panel_, std::u16string());
++    preview_read_label_ = AddLabel(preview_panel_, std::u16string());
++    preview_redacted_label_ = AddLabel(preview_panel_, std::u16string());
++    preview_destination_label_ = AddLabel(preview_panel_, std::u16string());
++    AddLabel(
++        preview_panel_,
++        Copy(u"不会显示或送出完整网址查询参数；非本机地址只有确认后才会发送脱敏"
++             u"文本。",
++             u"Full URL query values are never shown or sent. Redacted text "
++             u"is sent to a non-local endpoint only after confirmation."));
++
++    auto buttons = CreateButtonRow();
++    buttons->AddChildView(std::make_unique<views::MdTextButton>(
++        base::BindRepeating(&AegisPageBubble::CancelSummary,
++                            base::Unretained(this)),
++        Copy(u"取消", u"Cancel")));
++    auto confirm = std::make_unique<views::MdTextButton>(
++        base::BindRepeating(&AegisPageBubble::ConfirmSummary,
++                            base::Unretained(this)),
++        Copy(u"确认并摘要", u"Confirm and summarize"));
++    confirm->SetStyle(ui::ButtonStyle::kProminent);
++    confirm_button_ = buttons->AddChildView(std::move(confirm));
++    preview_panel_->AddChildView(std::move(buttons));
++  }
++
++  void BuildResultPanel() {
++    result_panel_ = AddChildView(CreatePanel());
++    result_panel_->SetVisible(false);
++    AddLabel(result_panel_, Copy(u"AI 摘要结果", u"AI summary result"),
++             views::style::CONTEXT_DIALOG_TITLE);
++
++    auto scroll_view = std::make_unique<views::ScrollView>();
++    scroll_view->SetHorizontalScrollBarMode(
++        views::ScrollView::ScrollBarMode::kDisabled);
++    scroll_view->ClipHeightTo(80, kResultMaxHeight);
++    auto result_contents = CreatePanel();
++    result_label_ = AddLabel(result_contents.get(), std::u16string());
++    result_label_->SetSelectable(true);
++    result_label_->SetMaximumWidth(kBubbleWidth - 48);
++    scroll_view->SetContents(std::move(result_contents));
++    result_panel_->AddChildView(std::move(scroll_view));
++    result_panel_->AddChildView(std::make_unique<views::MdTextButton>(
++        base::BindRepeating(&AegisPageBubble::CancelSummary,
++                            base::Unretained(this)),
++        Copy(u"返回站点保护", u"Back to site protection")));
+   }
+ 
+   void TogglePause() {
+-    aegis::AegisService::GetInstance()->SetSitePaused(
+-        summary_.site_key, !summary_.paused, base::Minutes(10));
++    content::WebContents* source =
++        browser_->tab_strip_model()->GetActiveWebContents();
++    aegis::AegisService* service = ServiceForWebContents(browser_, source);
++    if (!service || summary_.site_key.empty()) {
++      return;
++    }
++    service->SetSitePaused(summary_.site_key, !summary_.paused,
++                           base::Minutes(10));
+     if (GetWidget()) {
+       GetWidget()->Close();
+     }
+     chrome::Reload(browser_, WindowOpenDisposition::CURRENT_TAB);
+   }
+ 
++  bool CanSummarizeCurrentPage() const {
++    content::WebContents* source =
++        browser_->tab_strip_model()->GetActiveWebContents();
++    return ServiceForWebContents(browser_, source) &&
++           source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS();
++  }
++
++  void OpenSummary() {
++    content::WebContents* source =
++        browser_->tab_strip_model()->GetActiveWebContents();
++    if (!ServiceForWebContents(browser_, source) ||
++        !source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
++      return;
++    }
++    summary_session_ = std::make_unique<aegis::SummarySession>(
++        source, g_browser_process ? g_browser_process->GetApplicationLocale()
++                                  : std::string("en"));
++    ShowPanel(progress_panel_);
++    progress_label_->SetText(Copy(u"正在读取并脱敏当前页…",
++                                  u"Reading and redacting the current page…"));
++    summary_session_->Begin(base::BindOnce(&AegisPageBubble::OnSummaryPrepared,
++                                           weak_factory_.GetWeakPtr()));
++  }
++
++  void OnSummaryPrepared(aegis::SummarySession::Preview preview) {
++    if (!preview.ok) {
++      ShowError(base::UTF8ToUTF16(preview.error));
++      return;
++    }
++    preview_ = std::move(preview);
++    preview_site_label_->SetText(Copy(u"来源站点：", u"Source site: ") +
++                                 base::UTF8ToUTF16(preview_.site));
++    preview_read_label_->SetText(
++        Copy(u"将读取的页面文字：", u"Page characters read: ") +
++        base::NumberToString16(preview_.chars_read));
++    preview_redacted_label_->SetText(
++        Copy(u"脱敏后文字：", u"Characters after redaction: ") +
++        base::NumberToString16(preview_.chars_redacted));
++
++    const std::u16string processing =
++        !preview_.model_allowed ? Copy(u"本机启发式处理，不调用模型",
++                                       u"On-device heuristic; no model call")
++        : preview_.stayed_on_device ? Copy(u"本机处理", u"On-device processing")
++                                    : Copy(u"远程处理", u"Remote processing");
++    preview_destination_label_->SetText(
++        processing + Copy(u" · API 格式：", u" · API format: ") +
++        ModelFormat(preview_.provider) + Copy(u" · 模型：", u" · Model: ") +
++        base::UTF8ToUTF16(preview_.model) +
++        Copy(u" · 目标：", u" · Destination: ") +
++        base::UTF8ToUTF16(preview_.base_url));
++    ShowPanel(preview_panel_);
++    confirm_button_->RequestFocus();
++  }
++
++  void ConfirmSummary() {
++    if (!summary_session_) {
++      return;
++    }
++    ShowPanel(progress_panel_);
++    progress_label_->SetText(
++        !preview_.model_allowed
++            ? Copy(u"正在生成本机启发式摘要，不调用模型…",
++                   u"Generating an on-device heuristic summary without a "
++                   u"model call…")
++        : preview_.stayed_on_device
++            ? Copy(u"本机模型正在生成，最长等待 3 分钟…",
++                   u"The local model is generating; allow up to 3 minutes…")
++            : Copy(u"兼容模型服务正在生成，最长等待 45 秒…",
++                   u"The compatible model service is generating; allow up "
++                   u"to 45 seconds…"));
++    summary_session_->Confirm(base::BindOnce(
++        &AegisPageBubble::OnSummaryFinished, weak_factory_.GetWeakPtr()));
++  }
++
++  void OnSummaryFinished(aegis::SummarizeResult result) {
++    std::u16string text;
++    if (!result.ok && result.summary.empty()) {
++      text = Copy(u"摘要失败：", u"Summary failed: ") +
++             base::UTF8ToUTF16(result.error);
++    } else {
++      text = result.stayed_on_device
++                 ? Copy(u"本机处理 · 未出网",
++                        u"On-device · did not leave this computer")
++                 : Copy(u"远程处理", u"Remote processing");
++      text += Copy(u"\nAPI 格式：", u"\nAPI format: ") +
++              ModelFormat(preview_.provider);
++      text +=
++          Copy(u"\n模型：", u"\nModel: ") + base::UTF8ToUTF16(preview_.model);
++      if (!result.summary.empty()) {
++        text += u"\n\n" + base::UTF8ToUTF16(result.summary);
++      }
++      for (const std::string& item : result.bullets) {
++        text += u"\n• " + base::UTF8ToUTF16(item);
++      }
++      if (!result.risks.empty()) {
++        text += Copy(u"\n\n风险提示", u"\n\nRisk notes");
++        for (const std::string& item : result.risks) {
++          text += u"\n• " + base::UTF8ToUTF16(item);
++        }
++      }
++      if (!result.error.empty()) {
++        text += Copy(u"\n\n模型调用未完成，已显示本机启发式结果：",
++                     u"\n\nThe model call did not complete; showing the "
++                     u"on-device heuristic result: ") +
++                base::UTF8ToUTF16(result.error);
++      }
++    }
++    result_label_->SetText(text);
++    ShowPanel(result_panel_);
++    result_label_->GetViewAccessibility().AnnounceText(text);
++  }
++
++  void ShowError(std::u16string error) {
++    result_label_->SetText(Copy(u"摘要失败：", u"Summary failed: ") + error);
++    ShowPanel(result_panel_);
++  }
++
++  void CancelSummary() {
++    summary_session_.reset();
++    preview_ = aegis::SummarySession::Preview();
++    ShowPanel(protection_panel_);
++  }
++
++  void ShowPanel(views::View* panel) {
++    protection_panel_->SetVisible(panel == protection_panel_);
++    progress_panel_->SetVisible(panel == progress_panel_);
++    preview_panel_->SetVisible(panel == preview_panel_);
++    result_panel_->SetVisible(panel == result_panel_);
++    if (panel == progress_panel_) {
++      throbber_->Start();
++    } else {
++      throbber_->Stop();
++    }
++    const std::u16string title =
++        panel == protection_panel_
++            ? Copy(u"Aegis 当前站点保护", u"Aegis site protection")
++            : Copy(u"AI 摘要当前页", u"AI page summary");
++    SetTitle(title);
++    SetAccessibleTitle(title);
++    PreferredSizeChanged();
++  }
++
+   void OpenSettings() {
+     browser_->OpenURL(content::OpenURLParams(
+                           GURL(chrome::kChromeUIAegisURL), content::Referrer(),
+@@ -199,6 +502,21 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+ 
+   const raw_ptr<Browser> browser_;
+   const aegis::PagePrivacySummary summary_;
++  raw_ptr<views::View> protection_panel_ = nullptr;
++  raw_ptr<views::View> progress_panel_ = nullptr;
++  raw_ptr<views::View> preview_panel_ = nullptr;
++  raw_ptr<views::View> result_panel_ = nullptr;
++  raw_ptr<views::Throbber> throbber_ = nullptr;
++  raw_ptr<views::Label> progress_label_ = nullptr;
++  raw_ptr<views::Label> preview_site_label_ = nullptr;
++  raw_ptr<views::Label> preview_read_label_ = nullptr;
++  raw_ptr<views::Label> preview_redacted_label_ = nullptr;
++  raw_ptr<views::Label> preview_destination_label_ = nullptr;
++  raw_ptr<views::MdTextButton> confirm_button_ = nullptr;
++  raw_ptr<views::Label> result_label_ = nullptr;
++  aegis::SummarySession::Preview preview_;
++  std::unique_ptr<aegis::SummarySession> summary_session_;
++  base::WeakPtrFactory<AegisPageBubble> weak_factory_{this};
+ };
+ 
+ BEGIN_METADATA(AegisPageBubble)
+@@ -214,12 +532,17 @@ AegisToolbarButton::AegisToolbarButton(Browser* browser)
+   SetFlipCanvasOnPaintForRTLUI(false);
+   SetLabelSideSpacing(4);
+   GetViewAccessibility().SetHasPopup(ax::mojom::HasPopup::kDialog);
+-  aegis::AegisService::GetInstance()->AddObserver(this);
++  if (aegis::AegisService* service = ServiceForBrowser(browser_)) {
++    service->AddObserver(this);
++    observing_service_ = true;
++  }
+   Update(browser_->tab_strip_model()->GetActiveWebContents());
+ }
+ 
+ AegisToolbarButton::~AegisToolbarButton() {
+-  aegis::AegisService::GetInstance()->RemoveObserver(this);
++  if (observing_service_) {
++    aegis::AegisService::GetInstance()->RemoveObserver(this);
++  }
+   if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
+     bubble_tracker_.view()->GetWidget()->Close();
+   }
+@@ -240,9 +563,13 @@ void AegisToolbarButton::OnPressed() {
+     bubble_tracker_.view()->GetWidget()->Close();
+     return;
+   }
+-  auto bubble = std::make_unique<AegisPageBubble>(
+-      this, browser_,
+-      aegis::AegisService::GetInstance()->GetPageSummary(web_contents_));
++  aegis::PagePrivacySummary summary;
++  if (aegis::AegisService* service =
++          ServiceForWebContents(browser_, web_contents_)) {
++    summary = service->GetPageSummary(web_contents_);
++  }
++  auto bubble =
++      std::make_unique<AegisPageBubble>(this, browser_, std::move(summary));
+   bubble_tracker_.SetView(bubble.get());
+   auto* bubble_view = bubble.get();
+   views::BubbleDialogDelegateView::CreateBubble(std::move(bubble));
+@@ -250,7 +577,18 @@ void AegisToolbarButton::OnPressed() {
+ }
+ 
+ void AegisToolbarButton::Refresh() {
+-  aegis::AegisService* service = aegis::AegisService::GetInstance();
++  aegis::AegisService* service = ServiceForWebContents(browser_, web_contents_);
++  if (!service) {
++    intro_timer_.Stop();
++    SetHighlight(std::u16string(), std::nullopt);
++    SetText(std::u16string());
++    const std::u16string status = Copy(u"Aegis：此用户资料不可用",
++                                       u"Aegis: unavailable for this profile");
++    SetTooltipText(status);
++    GetViewAccessibility().SetName(status);
++    PreferredSizeChanged();
++    return;
++  }
+   const aegis::PagePrivacySummary summary =
+       service->GetPageSummary(web_contents_);
+ 
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+index 5322188f74..495286cd52 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+@@ -40,6 +40,7 @@ class AegisToolbarButton : public ToolbarButton,
+ 
+   const raw_ptr<Browser> browser_;
+   raw_ptr<content::WebContents> web_contents_ = nullptr;
++  bool observing_service_ = false;
+   views::ViewTracker bubble_tracker_;
+   base::OneShotTimer intro_timer_;
+ };
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 3604708f74..b333c5a34e 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -54,6 +54,8 @@ constexpr size_t kMaxCaptureUrlBytes = 8192;
+ constexpr size_t kMaxCaptureTitleBytes = 4096;
+ constexpr size_t kMaxCaptureTextBytes = 64 * 1024;
+ constexpr int32_t kMaxCaptureFieldCount = 1'000'000;
++constexpr char kProfileUnavailableError[] =
++    "Aegis is unavailable for this profile";
+ 
+ std::optional<int> ReadInteger(const base::DictValue& dict, const char* key) {
+   if (std::optional<int> value = dict.FindInt(key)) {
+@@ -297,10 +299,18 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
+ }  // namespace
+ 
+ AegisUIHandler::AegisUIHandler() = default;
+-AegisUIHandler::~AegisUIHandler() = default;
++AegisUIHandler::~AegisUIHandler() {
++  if (active_model_request_id_) {
++    if (aegis::AegisService* service = ServiceForWebUI()) {
++      service->CancelModelSummaryRequest(*active_model_request_id_);
++    }
++  }
++}
+ 
+ void AegisUIHandler::RegisterMessages() {
+-  service_observation_.Observe(aegis::AegisService::GetInstance());
++  if (aegis::AegisService* service = ServiceForWebUI()) {
++    service_observation_.Observe(service);
++  }
+   web_ui()->RegisterMessageCallback(
+       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
+                                        base::Unretained(this)));
+@@ -357,83 +367,116 @@ void AegisUIHandler::RegisterMessages() {
+                           base::Unretained(this)));
+ }
+ 
++// 这是当前进程单例的 fail-closed 过渡边界；在 AegisService 改为
++// ProfileKeyedService 前，每个 WebUI 入口都必须经过此校验。
++aegis::AegisService* AegisUIHandler::ServiceForWebUI() {
++  if (!web_ui()) {
++    return nullptr;
++  }
++  Profile* profile = Profile::FromWebUI(web_ui());
++  aegis::AegisService* service = aegis::AegisService::GetInstance();
++  return service->IsInitializedForProfile(profile) ? service : nullptr;
++}
++
+ base::DictValue AegisUIHandler::BuildStatus() {
+-  auto* service = aegis::AegisService::GetInstance();
++  aegis::AegisService* service = ServiceForWebUI();
+   base::DictValue status;
+-  status.Set("enabled", service->IsEnabled());
+-  status.Set("trackerBlocking", service->IsTrackerBlockingEnabled());
+-  status.Set("phishInterstitial", service->IsPhishInterstitialEnabled());
+-  status.Set("fingerprintGuard", service->IsFingerprintGuardEnabled());
+-  status.Set("minerGuard", service->IsMinerGuardEnabled());
+-  status.Set("filterListAutoUpdate", service->IsFilterListAutoUpdateEnabled());
+-  status.Set("filterListUpdating", service->IsFilterListUpdating());
+-  status.Set("filterListHostCount", service->FilterListHostCount());
+-  status.Set("filterListLastUpdated",
+-             static_cast<double>(service->FilterListLastUpdated()));
+-  status.Set("filterListLastError", service->FilterListLastError());
+-  status.Set("linkSanitize", service->IsLinkSanitizeEnabled());
+-  status.Set("cookieJanitor", service->IsCookieJanitorEnabled());
+-  status.Set("cnameUncloak", service->IsCnameUncloakEnabled());
+-  status.Set("bounceTracking", service->IsBounceTrackingEnabled());
+-  status.Set("policyWorker", service->IsPolicyWorkerEnabled());
++  status.Set("profileAvailable", service != nullptr);
++  status.Set("enabled", service && service->IsEnabled());
++  status.Set("trackerBlocking", service && service->IsTrackerBlockingEnabled());
++  status.Set("phishInterstitial",
++             service && service->IsPhishInterstitialEnabled());
++  status.Set("fingerprintGuard",
++             service && service->IsFingerprintGuardEnabled());
++  status.Set("minerGuard", service && service->IsMinerGuardEnabled());
++  status.Set("filterListAutoUpdate",
++             service && service->IsFilterListAutoUpdateEnabled());
++  status.Set("filterListUpdating", service && service->IsFilterListUpdating());
++  status.Set("filterListHostCount",
++             service ? service->FilterListHostCount() : 0);
++  status.Set(
++      "filterListLastUpdated",
++      service ? static_cast<double>(service->FilterListLastUpdated()) : 0.0);
++  status.Set("filterListLastError",
++             service ? service->FilterListLastError() : std::string());
++  status.Set("linkSanitize", service && service->IsLinkSanitizeEnabled());
++  status.Set("cookieJanitor", service && service->IsCookieJanitorEnabled());
++  status.Set("cnameUncloak", service && service->IsCnameUncloakEnabled());
++  status.Set("bounceTracking", service && service->IsBounceTrackingEnabled());
++  status.Set("policyWorker", service && service->IsPolicyWorkerEnabled());
+   // Runtime readiness belongs to this chrome://aegis renderer and is filled
+   // from an aegisEvaluate("ping") result in aegis.ts.
+   status.Set("policyWorkerReady", false);
+   status.Set("policyWorkerError", "");
+-  status.Set("privacyAi", service->IsPrivacyAiEnabled());
++  status.Set("privacyAi", service && service->IsPrivacyAiEnabled());
+ #if BUILDFLAG(IS_ANDROID)
+   status.Set("isAndroid", true);
+   status.Set("torrentSupported", false);
+ #else
+   status.Set("isAndroid", false);
+ #if BUILDFLAG(IS_MAC)
+-  status.Set("torrentSupported", true);
++  status.Set("torrentSupported", service != nullptr);
+ #else
+   status.Set("torrentSupported", false);
+ #endif
+ #endif
+-  Profile* profile = Profile::FromWebUI(web_ui());
++  Profile* profile = service ? Profile::FromWebUI(web_ui()) : nullptr;
+   status.Set("torrentDisclosureAcknowledged",
+-             profile->GetPrefs()->GetBoolean(
+-                 aegis::prefs::kTorrentDisclosureAcknowledged));
+-  status.Set("torrentTaskId",
+-             profile->GetPrefs()->GetString(aegis::prefs::kLastTorrentTaskId));
+-  status.Set("aiControl", service->IsAiControlEnabled());
+-  status.Set("aiControlRunning", service->AiControlRunning());
+-  status.Set("aiControlPort", service->AiControlPort());
+-  status.Set("aiControlAddress", service->AiControlAddress());
+-  status.Set("aiControlLoopbackOnly", service->AiControlLoopbackOnly());
+-  status.Set("aiControlClients",
+-             static_cast<double>(service->CdpWebSocketClientCount()));
+-  const std::string model_provider = service->ConfiguredModelProvider();
+-  const std::string model_base_url = service->ConfiguredModelBaseUrl();
++             profile && profile->GetPrefs()->GetBoolean(
++                            aegis::prefs::kTorrentDisclosureAcknowledged));
++  status.Set("torrentTaskId", profile ? profile->GetPrefs()->GetString(
++                                            aegis::prefs::kLastTorrentTaskId)
++                                      : std::string());
++  status.Set("aiControl", service && service->IsAiControlEnabled());
++  status.Set("aiControlRunning", service && service->AiControlRunning());
++  status.Set("aiControlPort", service ? service->AiControlPort() : 0);
++  status.Set("aiControlAddress",
++             service ? service->AiControlAddress() : std::string());
++  status.Set("aiControlLoopbackOnly",
++             service && service->AiControlLoopbackOnly());
++  status.Set(
++      "aiControlClients",
++      service ? static_cast<double>(service->CdpWebSocketClientCount()) : 0.0);
++  const std::string model_provider =
++      service ? service->ConfiguredModelProvider() : std::string();
++  const std::string model_base_url =
++      service ? service->ConfiguredModelBaseUrl() : std::string();
+   status.Set("modelProvider", model_provider);
+   status.Set("modelBaseUrl", model_base_url);
+-  status.Set("modelName", service->ConfiguredModelName());
+-  status.Set("modelApiKeyConfigured",
+-             service->HasModelApiKey(model_provider, model_base_url));
++  status.Set("modelName",
++             service ? service->ConfiguredModelName() : std::string());
++  status.Set(
++      "modelApiKeyConfigured",
++      service && service->HasModelApiKey(model_provider, model_base_url));
+   status.Set("modelCredentialState",
+-             service->ModelCredentialState(model_provider, model_base_url));
++             service
++                 ? service->ModelCredentialState(model_provider, model_base_url)
++                 : std::string());
+   base::ListValue events;
+-  for (const auto& event : service->RecentPrivacyEvents()) {
+-    base::DictValue row;
+-    row.Set("kind", event.kind);
+-    row.Set("reason", event.reason);
+-    row.Set("site", event.site_key);
+-    row.Set("domain", event.display_domain);
+-    row.Set("count", event.count);
+-    row.Set("firstTime", static_cast<double>(event.first_unix_seconds));
+-    row.Set("lastTime", static_cast<double>(event.last_unix_seconds));
+-    base::ListValue details;
+-    for (const std::string& detail : event.details) {
+-      if (!detail.empty()) {
+-        details.Append(detail);
++  if (service) {
++    for (const auto& event : service->RecentPrivacyEvents()) {
++      base::DictValue row;
++      row.Set("kind", event.kind);
++      row.Set("reason", event.reason);
++      row.Set("site", event.site_key);
++      row.Set("domain", event.display_domain);
++      row.Set("count", event.count);
++      row.Set("firstTime", static_cast<double>(event.first_unix_seconds));
++      row.Set("lastTime", static_cast<double>(event.last_unix_seconds));
++      base::ListValue details;
++      for (const std::string& detail : event.details) {
++        if (!detail.empty()) {
++          details.Append(detail);
++        }
+       }
++      row.Set("details", std::move(details));
++      events.Append(std::move(row));
+     }
+-    row.Set("details", std::move(details));
+-    events.Append(std::move(row));
+   }
+   status.Set("recentEvents", std::move(events));
++  if (!service) {
++    status.Set("error", kProfileUnavailableError);
++  }
+   return status;
+ }
+ 
+@@ -458,7 +501,13 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+   const std::string& module = args[1].GetString();
+   const bool enabled = args[2].GetBool();
+ 
+-  auto* service = aegis::AegisService::GetInstance();
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
++    base::DictValue status = BuildStatus();
++    status.Set("ok", false);
++    ResolveJavascriptCallback(callback_id, status);
++    return;
++  }
+   if (module == "trackerBlocking") {
+     service->SetTrackerBlockingEnabled(enabled);
+   } else if (module == "phishInterstitial") {
+@@ -494,7 +543,12 @@ void AegisUIHandler::HandleUpdateFilterLists(const base::ListValue& args) {
+     return;
+   }
+   const std::string callback_id = args[0].GetString();
+-  aegis::AegisService::GetInstance()->UpdateFilterLists(
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
++    OnFilterListsUpdated(callback_id, false);
++    return;
++  }
++  service->UpdateFilterLists(
+       base::BindOnce(&AegisUIHandler::OnFilterListsUpdated,
+                      weak_factory_.GetWeakPtr(), callback_id));
+ }
+@@ -503,6 +557,9 @@ void AegisUIHandler::OnFilterListsUpdated(std::string callback_id, bool ok) {
+   if (!IsJavascriptAllowed()) {
+     return;
+   }
++  if (!ServiceForWebUI()) {
++    ok = false;
++  }
+   base::DictValue status = BuildStatus();
+   status.Set("ok", ok);
+   ResolveJavascriptCallback(base::Value(callback_id), status);
+@@ -514,21 +571,35 @@ void AegisUIHandler::HandleSummarizeActiveTab(const base::ListValue& args) {
+     return;
+   }
+   const std::string callback_id = args[0].GetString();
+-  auto* service = aegis::AegisService::GetInstance();
+-  if (!service->IsPrivacyAiEnabled() || !service->IsPolicyWorkerEnabled()) {
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
+     aegis::SummarizeResult result;
+-    result.error = "privacy summary or renderer policy worker disabled";
++    result.error = kProfileUnavailableError;
+     OnSummarized(callback_id, std::move(result));
+     return;
+   }
+   content::WebContents* skip = web_ui()->GetWebContents();
+   content::WebContents* target = FindHttpTab(skip);
++  if (!service->IsPrivacyAiEnabled() || !service->IsPolicyWorkerEnabled()) {
++    aegis::SummarizeResult result;
++    result.error = "privacy summary or policy worker disabled";
++    OnSummarized(callback_id, std::move(result));
++    return;
++  }
+   if (!target) {
+     aegis::SummarizeResult result;
+     result.error = "no http(s) tab";
+     OnSummarized(callback_id, std::move(result));
+     return;
+   }
++  Profile* target_profile =
++      Profile::FromBrowserContext(target->GetBrowserContext());
++  if (!service->IsInitializedForProfile(target_profile)) {
++    aegis::SummarizeResult result;
++    result.error = "summary source profile is unavailable";
++    OnSummarized(callback_id, std::move(result));
++    return;
++  }
+   content::RenderFrameHost* rfh = target->GetPrimaryMainFrame();
+   if (!rfh) {
+     aegis::SummarizeResult result;
+@@ -593,6 +664,16 @@ void AegisUIHandler::OnPageSignals(std::string callback_id,
+   content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(frame_id);
+   content::WebContents* target =
+       rfh ? content::WebContents::FromRenderFrameHost(rfh) : nullptr;
++  aegis::AegisService* service = ServiceForWebUI();
++  Profile* target_profile =
++      target ? Profile::FromBrowserContext(target->GetBrowserContext())
++             : nullptr;
++  if (!service || !service->IsInitializedForProfile(target_profile)) {
++    aegis::SummarizeResult result;
++    result.error = "summary source profile changed during capture";
++    OnSummarized(std::move(callback_id), std::move(result));
++    return;
++  }
+   const content::NavigationEntry* entry =
+       target ? target->GetController().GetLastCommittedEntry() : nullptr;
+   const GURL parsed_url(url);
+@@ -622,12 +703,18 @@ void AegisUIHandler::OnPageSignals(std::string callback_id,
+   pending.original = snapshot;
+   pending.frame_id = frame_id;
+   pending.document_sequence = document_sequence;
++  pending.model_provider = service->ConfiguredModelProvider();
++  pending.model_base_url = service->ConfiguredModelBaseUrl();
++  pending.model_name = service->ConfiguredModelName();
+   pending.created = base::TimeTicks::Now();
+   pending_summary_ = pending;
+ 
+   base::DictValue response;
+   response.Set("ok", true);
+   response.Set("requestId", pending.request_id);
++  response.Set("modelProvider", pending.model_provider);
++  response.Set("modelBaseUrl", pending.model_base_url);
++  response.Set("modelName", pending.model_name);
+   base::DictValue snapshot_value;
+   snapshot_value.Set("url", snapshot.url);
+   snapshot_value.Set("title", snapshot.title);
+@@ -652,6 +739,13 @@ void AegisUIHandler::HandleCompletePreparedSummary(
+     OnSummarized(callback_id, std::move(result));
+   };
+ 
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
++    pending_summary_.reset();
++    reject(kProfileUnavailableError);
++    return;
++  }
++
+   if (!pending_summary_ || pending_summary_->request_id != request_id) {
+     reject("invalid or replayed summary request");
+     return;
+@@ -667,8 +761,15 @@ void AegisUIHandler::HandleCompletePreparedSummary(
+       content::RenderFrameHost::FromID(pending.frame_id);
+   content::WebContents* target =
+       rfh ? content::WebContents::FromRenderFrameHost(rfh) : nullptr;
++  Profile* target_profile =
++      target ? Profile::FromBrowserContext(target->GetBrowserContext())
++             : nullptr;
+   const content::NavigationEntry* entry =
+       target ? target->GetController().GetLastCommittedEntry() : nullptr;
++  if (!service->IsInitializedForProfile(target_profile)) {
++    reject("summary source profile changed before completion");
++    return;
++  }
+   if (!target || target->GetPrimaryMainFrame() != rfh || !entry ||
+       entry->GetMainFrameDocumentSequenceNumber() !=
+           pending.document_sequence ||
+@@ -684,8 +785,16 @@ void AegisUIHandler::HandleCompletePreparedSummary(
+     return;
+   }
+   const std::string locale = l10n_util::GetApplicationLocale(std::string());
+-  aegis::AegisService::GetInstance()->SummarizePreparedPage(
++  if (active_model_request_id_) {
++    aegis::SummarizeResult result;
++    result.error = "model request already in progress";
++    ResolveJavascriptCallback(base::Value(callback_id),
++                              SummarizeToDict(result));
++    return;
++  }
++  active_model_request_id_ = service->SummarizePreparedPage(
+       std::move(pending.original), std::move(*prepared), locale,
++      pending.model_provider, pending.model_base_url, pending.model_name,
+       base::BindOnce(&AegisUIHandler::OnSummarized, weak_factory_.GetWeakPtr(),
+                      std::move(callback_id)));
+ }
+@@ -709,9 +818,14 @@ void AegisUIHandler::HandleCancelPreparedSummary(const base::ListValue& args) {
+ 
+ void AegisUIHandler::OnSummarized(std::string callback_id,
+                                   aegis::SummarizeResult result) {
++  active_model_request_id_.reset();
+   if (!IsJavascriptAllowed()) {
+     return;
+   }
++  if (!ServiceForWebUI()) {
++    result = aegis::SummarizeResult();
++    result.error = kProfileUnavailableError;
++  }
+   ResolveJavascriptCallback(base::Value(callback_id), SummarizeToDict(result));
+ }
+ 
+@@ -723,7 +837,12 @@ void AegisUIHandler::HandleSetModelSettings(const base::ListValue& args) {
+     return;
+   }
+   const std::string callback_id = args[0].GetString();
+-  aegis::AegisService::GetInstance()->SetModelSettings(
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
++    OnModelSettingsSaved(callback_id, false, kProfileUnavailableError);
++    return;
++  }
++  service->SetModelSettings(
+       args[1].GetString(), args[2].GetString(), args[3].GetString(),
+       args[4].GetString(), args[5].GetBool(),
+       base::BindOnce(&AegisUIHandler::OnModelSettingsSaved,
+@@ -736,6 +855,10 @@ void AegisUIHandler::OnModelSettingsSaved(std::string callback_id,
+   if (!IsJavascriptAllowed()) {
+     return;
+   }
++  if (!ServiceForWebUI()) {
++    ok = false;
++    error = kProfileUnavailableError;
++  }
+   base::DictValue status = BuildStatus();
+   status.Set("ok", ok);
+   if (!ok) {
+@@ -753,7 +876,12 @@ void AegisUIHandler::HandleListModels(const base::ListValue& args) {
+   const std::string callback_id = args[0].GetString();
+   const std::string provider = args[1].GetString();
+   const std::string requested_base_url = args[2].GetString();
+-  auto* service = aegis::AegisService::GetInstance();
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
++    OnModelsListed(callback_id, provider, std::string(), false,
++                   kProfileUnavailableError, {});
++    return;
++  }
+   const std::optional<std::string> normalized_base_url =
+       service->ResolveModelBaseUrl(provider, requested_base_url);
+   const std::string reported_base_url =
+@@ -779,11 +907,19 @@ void AegisUIHandler::OnModelsListed(std::string callback_id,
+   dict.Set("error", std::move(error));
+   dict.Set("modelProvider", provider);
+   dict.Set("modelBaseUrl", base_url);
+-  auto* service = aegis::AegisService::GetInstance();
+-  dict.Set("modelApiKeyConfigured",
+-           service->HasModelApiKey(provider, base_url));
+-  dict.Set("modelCredentialState",
+-           service->ModelCredentialState(provider, base_url));
++  aegis::AegisService* service = ServiceForWebUI();
++  if (!service) {
++    dict.Set("ok", false);
++    dict.Set("error", kProfileUnavailableError);
++    dict.Set("modelApiKeyConfigured", false);
++    dict.Set("modelCredentialState", "");
++    models.clear();
++  } else {
++    dict.Set("modelApiKeyConfigured",
++             service->HasModelApiKey(provider, base_url));
++    dict.Set("modelCredentialState",
++             service->ModelCredentialState(provider, base_url));
++  }
+   base::ListValue list;
+   for (const std::string& name : models) {
+     list.Append(name);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index a7eaeed5f7..50a99e097d 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -49,6 +49,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   void OnAegisStateChanged() override;
+ 
+  private:
++  aegis::AegisService* ServiceForWebUI();
+   base::DictValue BuildStatus();
+   void HandleGetStatus(const base::ListValue& args);
+   void HandleSetModuleEnabled(const base::ListValue& args);
+@@ -106,6 +107,9 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+     aegis::PageSnapshot original;
+     content::GlobalRenderFrameHostId frame_id;
+     int64_t document_sequence = 0;
++    std::string model_provider;
++    std::string model_base_url;
++    std::string model_name;
+     base::TimeTicks created;
+   };
+ 
+@@ -123,6 +127,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   };
+ 
+   std::optional<PendingSummary> pending_summary_;
++  std::optional<std::string> active_model_request_id_;
+   std::optional<PendingMetalink> pending_metalink_;
+   std::optional<PendingTorrent> pending_torrent_;
+   base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
+-- 
+2.52.0
+

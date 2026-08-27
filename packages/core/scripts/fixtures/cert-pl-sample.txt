@@ -1,0 +1,3 @@
+# Representative CERT.PL domain feed
+cert-fixture.example
+shared-fixture.example

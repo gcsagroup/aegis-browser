@@ -1,0 +1,5175 @@
+From 0cf383b209c68414f45bae7244df057d1805a897 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 26 Aug 2026 18:00:16 +0800
+Subject: [PATCH] feat(aegis): integrate accelerated and BT downloads
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  19 +
+ chrome/browser/aegis/aegis_prefs.cc           |   2 +
+ chrome/browser/aegis/aegis_torrent_client.cc  | 106 ++++
+ chrome/browser/aegis/aegis_torrent_client.h   |  61 +++
+ .../aegis/metalink_download_verifier.cc       | 305 +++++++++++
+ .../aegis/metalink_download_verifier.h        |  36 ++
+ chrome/browser/aegis/metalink_parser.cc       | 194 +++++++
+ chrome/browser/aegis/metalink_parser.h        |  41 ++
+ .../browser/aegis/metalink_parser_unittest.cc |  96 ++++
+ chrome/browser/download/download_ui_model.cc  |  79 ++-
+ chrome/browser/resources/aegis/aegis.css      |  95 +++-
+ chrome/browser/resources/aegis/aegis.html     |   9 +-
+ chrome/browser/resources/aegis/aegis.ts       | 114 ++--
+ chrome/browser/resources/downloads/BUILD.gn   |   3 +
+ .../downloads/aegis_download_panel.css        | 185 +++++++
+ .../downloads/aegis_download_panel.html.ts    | 127 +++++
+ .../downloads/aegis_download_panel.ts         | 517 ++++++++++++++++++
+ chrome/browser/resources/downloads/item.css   |  12 +
+ .../browser/resources/downloads/item.html.ts  |   5 +
+ .../resources/downloads/manager.html.ts       |   2 +
+ chrome/browser/resources/downloads/manager.ts |   1 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 136 +++++
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 437 ++++++++++++++-
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |  42 +-
+ chrome/browser/ui/webui/downloads/BUILD.gn    |   1 +
+ .../ui/webui/downloads/downloads.mojom        |   7 +
+ .../webui/downloads/downloads_list_tracker.cc |  66 ++-
+ .../webui/downloads/downloads_list_tracker.h  |   4 +
+ .../downloads_list_tracker_unittest.cc        |  39 ++
+ .../ui/webui/downloads/downloads_ui.cc        |   2 +
+ chrome/common/aegis/pref_names.h              |   3 +
+ chrome/services/aegis_torrent/BUILD.gn        |  50 ++
+ .../aegis_torrent/aegis_torrent_service.cc    | 325 +++++++++++
+ .../aegis_torrent/aegis_torrent_service.h     |  55 ++
+ .../aegis_torrent/public/mojom/BUILD.gn       |  13 +
+ .../public/mojom/aegis_torrent_service.mojom  |  70 +++
+ .../services/aegis_torrent/torrent_safety.cc  | 232 ++++++++
+ .../services/aegis_torrent/torrent_safety.h   |  34 ++
+ .../aegis_torrent/torrent_safety_unittest.cc  |  76 +++
+ .../torrent_transfer_unittest.cc              | 138 +++++
+ .../test/data/webui/downloads/test_support.ts |   5 +
+ chrome/utility/BUILD.gn                       |   1 +
+ chrome/utility/services.cc                    |   8 +
+ .../common/parallel_download_utils.cc         |  41 +-
+ .../parallel_download_utils_unittest.cc       |  16 +
+ .../public/common/download_features.cc        |   8 +-
+ sandbox/policy/mac/network.sb                 |   7 +
+ third_party/aegis_libtorrent/.gitignore       |   7 +
+ third_party/aegis_libtorrent/BUILD.gn         | 230 ++++++++
+ third_party/aegis_libtorrent/LICENSE          |  27 +
+ third_party/aegis_libtorrent/README.aegis     |  19 +
+ 51 files changed, 4012 insertions(+), 96 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_torrent_client.cc
+ create mode 100644 chrome/browser/aegis/aegis_torrent_client.h
+ create mode 100644 chrome/browser/aegis/metalink_download_verifier.cc
+ create mode 100644 chrome/browser/aegis/metalink_download_verifier.h
+ create mode 100644 chrome/browser/aegis/metalink_parser.cc
+ create mode 100644 chrome/browser/aegis/metalink_parser.h
+ create mode 100644 chrome/browser/aegis/metalink_parser_unittest.cc
+ create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.css
+ create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.html.ts
+ create mode 100644 chrome/browser/resources/downloads/aegis_download_panel.ts
+ create mode 100644 chrome/services/aegis_torrent/BUILD.gn
+ create mode 100644 chrome/services/aegis_torrent/aegis_torrent_service.cc
+ create mode 100644 chrome/services/aegis_torrent/aegis_torrent_service.h
+ create mode 100644 chrome/services/aegis_torrent/public/mojom/BUILD.gn
+ create mode 100644 chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
+ create mode 100644 chrome/services/aegis_torrent/torrent_safety.cc
+ create mode 100644 chrome/services/aegis_torrent/torrent_safety.h
+ create mode 100644 chrome/services/aegis_torrent/torrent_safety_unittest.cc
+ create mode 100644 chrome/services/aegis_torrent/torrent_transfer_unittest.cc
+ create mode 100644 third_party/aegis_libtorrent/.gitignore
+ create mode 100644 third_party/aegis_libtorrent/BUILD.gn
+ create mode 100644 third_party/aegis_libtorrent/LICENSE
+ create mode 100644 third_party/aegis_libtorrent/README.aegis
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index f5938cb5ee..da0c389d21 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -27,6 +27,10 @@ source_set("aegis") {
+     "aegis_service.h",
+     "filter_list_updater.cc",
+     "filter_list_updater.h",
++    "metalink_download_verifier.cc",
++    "metalink_download_verifier.h",
++    "metalink_parser.cc",
++    "metalink_parser.h",
+     "ollama_sidecar.cc",
+     "ollama_sidecar.h",
+     "privacy_event_store.cc",
+@@ -45,6 +49,7 @@ source_set("aegis") {
+     "//chrome/common",
+     "//chrome/common:mojo_bindings",
+     "//chrome/common/aegis",
++    "//components/download/public/common:public",
+     "//components/pref_registry",
+     "//components/prefs",
+     "//components/resources",
+@@ -52,14 +57,26 @@ source_set("aegis") {
+     "//components/security_interstitials/core",
+     "//content/public/browser",
+     "//content/public/common",
++    "//crypto",
+     "//mojo/public/cpp/bindings",
+     "//net",
++    "//services/data_decoder/public/cpp",
+     "//services/network/public/cpp",
+     "//services/network/public/mojom",
+     "//third_party/re2",
+     "//ui/base",
+     "//url",
+   ]
++  if (is_mac) {
++    sources += [
++      "aegis_torrent_client.cc",
++      "aegis_torrent_client.h",
++    ]
++    deps += [
++      "//chrome/services/aegis_torrent/public/mojom",
++      "//sandbox/mac:seatbelt_extension",
++    ]
++  }
+ }
+ 
+ test("aegis_browser_unittests") {
+@@ -69,6 +86,7 @@ test("aegis_browser_unittests") {
+     "aegis_phish_tab_helper_unittest.cc",
+     "aegis_ui_handler_unittest.cc",
+     "filter_list_updater_unittest.cc",
++    "metalink_parser_unittest.cc",
+     "ollama_sidecar_unittest.cc",
+     "privacy_event_store_unittest.cc",
+     "summary_policy_unittest.cc",
+@@ -81,6 +99,7 @@ test("aegis_browser_unittests") {
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+     "//net",
++    "//services/data_decoder/public/cpp:test_support",
+     "//services/network:test_support",
+     "//testing/gtest",
+     "//url",
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 2eda0b2fc4..f84c810f20 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -34,6 +34,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kAiControlEnabled, false);
+   registry->RegisterStringPref(prefs::kPausedSites, std::string());
+   registry->RegisterBooleanPref(prefs::kAwarenessIntroShown, false);
++  registry->RegisterBooleanPref(prefs::kTorrentDisclosureAcknowledged, false);
++  registry->RegisterStringPref(prefs::kLastTorrentTaskId, std::string());
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_torrent_client.cc b/chrome/browser/aegis/aegis_torrent_client.cc
+new file mode 100644
+index 0000000000..662b4df109
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_torrent_client.cc
+@@ -0,0 +1,106 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/aegis_torrent_client.h"
++
++#include <memory>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "content/public/browser/service_process_host.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
++#include "sandbox/mac/seatbelt_extension.h"
++
++namespace aegis {
++
++AegisTorrentClient* AegisTorrentClient::GetInstance() {
++  static base::NoDestructor<AegisTorrentClient> instance;
++  return instance.get();
++}
++
++AegisTorrentClient::AegisTorrentClient() = default;
++AegisTorrentClient::~AegisTorrentClient() = default;
++
++mojom::AegisTorrentService* AegisTorrentClient::GetRemote() {
++  if (!remote_.is_bound()) {
++    remote_ = content::ServiceProcessHost::Launch<mojom::AegisTorrentService>(
++        content::ServiceProcessHost::Options()
++            .WithDisplayName("Aegis Torrent Service")
++            .Pass());
++    remote_.reset_on_disconnect();
++  }
++  return remote_.get();
++}
++
++void AegisTorrentClient::ValidateTorrent(
++    std::vector<uint8_t> torrent_data,
++    mojom::AegisTorrentService::ValidateTorrentCallback callback) {
++  GetRemote()->ValidateTorrent(
++      std::move(torrent_data),
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          std::move(callback), mojom::TorrentPreview::New()));
++}
++
++void AegisTorrentClient::ValidateMagnet(
++    std::string magnet_uri,
++    mojom::AegisTorrentService::ValidateMagnetCallback callback) {
++  GetRemote()->ValidateMagnet(
++      std::move(magnet_uri),
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          std::move(callback), mojom::TorrentPreview::New()));
++}
++
++void AegisTorrentClient::StartTorrent(
++    std::vector<uint8_t> torrent_data,
++    std::string magnet_uri,
++    const base::FilePath& destination,
++    std::vector<uint32_t> selected_files,
++    mojom::TorrentOptionsPtr options,
++    mojom::AegisTorrentService::StartTorrentCallback callback) {
++  std::unique_ptr<sandbox::SeatbeltExtensionToken> token =
++      sandbox::SeatbeltExtension::Issue(
++          sandbox::SeatbeltExtension::FILE_READ_WRITE, destination.value());
++  if (!token) {
++    std::move(callback).Run(false, "download directory permission denied", "");
++    return;
++  }
++  GetRemote()->StartTorrent(
++      std::move(torrent_data), std::move(magnet_uri), destination,
++      std::move(selected_files), std::move(options), std::move(*token),
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          std::move(callback), false, "torrent service disconnected", ""));
++}
++
++void AegisTorrentClient::GetStatus(
++    std::string task_id,
++    mojom::AegisTorrentService::GetStatusCallback callback) {
++  GetRemote()->GetStatus(std::move(task_id),
++                         mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++                             std::move(callback), mojom::TorrentStatus::New()));
++}
++
++void AegisTorrentClient::Pause(
++    std::string task_id,
++    mojom::AegisTorrentService::PauseCallback callback) {
++  GetRemote()->Pause(
++      std::move(task_id),
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(callback), false));
++}
++
++void AegisTorrentClient::Resume(
++    std::string task_id,
++    mojom::AegisTorrentService::ResumeCallback callback) {
++  GetRemote()->Resume(
++      std::move(task_id),
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(callback), false));
++}
++
++void AegisTorrentClient::Cancel(
++    std::string task_id,
++    bool delete_files,
++    mojom::AegisTorrentService::CancelCallback callback) {
++  GetRemote()->Cancel(
++      std::move(task_id), delete_files,
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(std::move(callback), false));
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_torrent_client.h b/chrome/browser/aegis/aegis_torrent_client.h
+new file mode 100644
+index 0000000000..9b245a8544
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_torrent_client.h
+@@ -0,0 +1,61 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_TORRENT_CLIENT_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_TORRENT_CLIENT_H_
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/no_destructor.h"
++#include "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom.h"
++#include "mojo/public/cpp/bindings/remote.h"
++
++namespace aegis {
++
++// Browser-process owner for the sandboxed torrent service. Keeping the Remote
++// outside chrome://aegis lets downloads continue when the settings tab closes.
++class AegisTorrentClient {
++ public:
++  static AegisTorrentClient* GetInstance();
++
++  AegisTorrentClient(const AegisTorrentClient&) = delete;
++  AegisTorrentClient& operator=(const AegisTorrentClient&) = delete;
++
++  void ValidateTorrent(
++      std::vector<uint8_t> torrent_data,
++      mojom::AegisTorrentService::ValidateTorrentCallback callback);
++  void ValidateMagnet(
++      std::string magnet_uri,
++      mojom::AegisTorrentService::ValidateMagnetCallback callback);
++  void StartTorrent(std::vector<uint8_t> torrent_data,
++                    std::string magnet_uri,
++                    const base::FilePath& destination,
++                    std::vector<uint32_t> selected_files,
++                    mojom::TorrentOptionsPtr options,
++                    mojom::AegisTorrentService::StartTorrentCallback callback);
++  void GetStatus(std::string task_id,
++                 mojom::AegisTorrentService::GetStatusCallback callback);
++  void Pause(std::string task_id,
++             mojom::AegisTorrentService::PauseCallback callback);
++  void Resume(std::string task_id,
++              mojom::AegisTorrentService::ResumeCallback callback);
++  void Cancel(std::string task_id,
++              bool delete_files,
++              mojom::AegisTorrentService::CancelCallback callback);
++
++ private:
++  friend class base::NoDestructor<AegisTorrentClient>;
++
++  AegisTorrentClient();
++  ~AegisTorrentClient();
++
++  mojom::AegisTorrentService* GetRemote();
++
++  mojo::Remote<mojom::AegisTorrentService> remote_;
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_TORRENT_CLIENT_H_
+diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
+new file mode 100644
+index 0000000000..d7c4b6d845
+--- /dev/null
++++ b/chrome/browser/aegis/metalink_download_verifier.cc
+@@ -0,0 +1,305 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/metalink_download_verifier.h"
++
++#include <algorithm>
++#include <array>
++#include <memory>
++#include <optional>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/memory/raw_ptr.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/supports_user_data.h"
++#include "base/task/thread_pool.h"
++#include "chrome/browser/profiles/profile.h"
++#include "components/download/public/common/download_interrupt_reasons.h"
++#include "components/download/public/common/download_item.h"
++#include "components/download/public/common/download_url_parameters.h"
++#include "content/public/browser/download_manager.h"
++#include "content/public/browser/storage_partition.h"
++#include "crypto/secure_hash.h"
++#include "net/base/address_list.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/net_errors.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/simple_host_resolver.h"
++#include "services/network/public/mojom/fetch_api.mojom-shared.h"
++#include "services/network/public/mojom/host_resolver.mojom.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++
++namespace aegis {
++namespace {
++
++std::optional<std::string> HashFile(const base::FilePath& path,
++                                    const std::string& algorithm) {
++  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
++  if (!file.IsValid()) {
++    return std::nullopt;
++  }
++  std::unique_ptr<crypto::SecureHash> hash = crypto::SecureHash::Create(
++      algorithm == "sha-512" ? crypto::SecureHash::SHA512
++                             : crypto::SecureHash::SHA256);
++  std::array<uint8_t, 64 * 1024> buffer;
++  while (true) {
++    const std::optional<size_t> bytes_read =
++        file.ReadAtCurrentPos(base::span(buffer));
++    if (!bytes_read) {
++      return std::nullopt;
++    }
++    if (*bytes_read == 0) {
++      break;
++    }
++    hash->Update(base::span(buffer).first(*bytes_read));
++  }
++  std::vector<uint8_t> digest(hash->GetHashLength());
++  hash->Finish(digest);
++  return base::ToLowerASCII(base::HexEncode(digest));
++}
++
++bool DeleteDownloadedFile(const base::FilePath& path) {
++  return base::DeleteFile(path);
++}
++
++bool AllAddressesArePublic(const net::AddressList& addresses) {
++  return !addresses.empty() &&
++         std::ranges::all_of(addresses, [](const net::IPEndPoint& endpoint) {
++           return endpoint.address().IsPubliclyRoutable();
++         });
++}
++
++class MetalinkVerificationData : public base::SupportsUserData::Data {
++ public:
++  explicit MetalinkVerificationData(MetalinkVerificationStatus status)
++      : status(status) {}
++
++  MetalinkVerificationStatus status;
++};
++
++const char kMetalinkVerificationDataKey[] =
++    "Aegis Metalink verification status";
++
++class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
++ public:
++  MetalinkDownloadVerifier(Profile* profile, MetalinkParseResult result)
++      : profile_(profile),
++        result_(std::move(result)),
++        host_resolver_(network::SimpleHostResolver::Create(base::BindRepeating(
++            [](Profile* profile) {
++              return profile->GetDefaultStoragePartition()->GetNetworkContext();
++            },
++            profile))) {}
++
++  void Start() { StartNextMirror(); }
++
++  void OnDownloadUpdated(download::DownloadItem* item) override {
++    if (item != current_item_) {
++      return;
++    }
++    switch (item->GetState()) {
++      case download::DownloadItem::IN_PROGRESS:
++        return;
++      case download::DownloadItem::COMPLETE: {
++        if (hashing_) {
++          return;
++        }
++        hashing_ = true;
++        SetMetalinkVerificationStatus(*item,
++                                      MetalinkVerificationStatus::kVerifying);
++        const base::FilePath path = item->GetTargetFilePath();
++        base::ThreadPool::PostTaskAndReplyWithResult(
++            FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++            base::BindOnce(&HashFile, path, result_.hash_algorithm),
++            base::BindOnce(&MetalinkDownloadVerifier::OnHashReady,
++                           weak_factory_.GetWeakPtr(), path));
++        return;
++      }
++      case download::DownloadItem::CANCELLED:
++        StopObserving();
++        delete this;
++        return;
++      case download::DownloadItem::INTERRUPTED:
++        RetryAfterDeleting();
++        return;
++      case download::DownloadItem::MAX_DOWNLOAD_STATE:
++        return;
++    }
++  }
++
++  void OnDownloadDestroyed(download::DownloadItem* item) override {
++    if (item == current_item_) {
++      current_item_ = nullptr;
++      delete this;
++    }
++  }
++
++ private:
++  ~MetalinkDownloadVerifier() override { StopObserving(); }
++
++  void StartNextMirror() {
++    if (next_mirror_ >= result_.mirrors.size()) {
++      delete this;
++      return;
++    }
++    const GURL url = result_.mirrors[next_mirror_++].url;
++    host_resolver_->ResolveHost(
++        network::mojom::HostResolverHost::NewHostPortPair(
++            net::HostPortPair::FromURL(url)),
++        net::NetworkAnonymizationKey::CreateTransient(), nullptr,
++        base::BindOnce(&MetalinkDownloadVerifier::OnHostResolved,
++                       weak_factory_.GetWeakPtr(), url));
++  }
++
++  void OnHostResolved(
++      GURL url,
++      int result,
++      const net::ResolveErrorInfo& /*resolve_error_info*/,
++      const net::AddressList& resolved_addresses,
++      const net::HostResolverEndpointResults& /*alternative_endpoints*/) {
++    if (result != net::OK || !AllAddressesArePublic(resolved_addresses)) {
++      StartNextMirror();
++      return;
++    }
++    net::NetworkTrafficAnnotationTag annotation =
++        net::DefineNetworkTrafficAnnotation("aegis_metalink_download", R"(
++          semantics {
++            sender: "Aegis Metalink download"
++            description:
++              "Downloads a user-imported Metalink file from one of its "
++              "hash-bound mirrors without site credentials."
++            trigger:
++              "The user validates a Metalink document and presses Download."
++            data: "No cookies, authorization, referrer, or URL userinfo."
++            destination: WEBSITE
++          }
++          policy {
++            cookies_allowed: NO
++            setting:
++              "Only runs after an explicit user action in chrome://aegis."
++            policy_exception_justification: "Not implemented."
++          })");
++    auto parameters =
++        std::make_unique<download::DownloadUrlParameters>(url, annotation);
++    parameters->set_credentials_mode(network::mojom::CredentialsMode::kOmit);
++    parameters->set_cross_origin_redirects(
++        network::mojom::RedirectMode::kError);
++    parameters->set_do_not_prompt_for_login(true);
++    parameters->set_require_safety_checks(true);
++    parameters->set_suggested_name(base::UTF8ToUTF16(result_.file_name));
++    parameters->set_callback(
++        base::BindOnce(&MetalinkDownloadVerifier::OnDownloadStarted,
++                       weak_factory_.GetWeakPtr()));
++    profile_->GetDownloadManager()->DownloadUrl(std::move(parameters));
++  }
++
++  void OnDownloadStarted(download::DownloadItem* item,
++                         download::DownloadInterruptReason reason) {
++    if (!item || reason != download::DOWNLOAD_INTERRUPT_REASON_NONE) {
++      StartNextMirror();
++      return;
++    }
++    current_item_ = item;
++    SetMetalinkVerificationStatus(*current_item_,
++                                  MetalinkVerificationStatus::kPending);
++    current_item_->AddObserver(this);
++  }
++
++  void StopObserving() {
++    if (current_item_) {
++      current_item_->RemoveObserver(this);
++      current_item_ = nullptr;
++    }
++  }
++
++  void RetryAfterDeleting() {
++    download::DownloadItem* failed = current_item_;
++    StopObserving();
++    failed->DeleteFile(base::BindOnce(
++        [](base::WeakPtr<MetalinkDownloadVerifier> self, bool deleted) {
++          if (!self) {
++            return;
++          }
++          if (deleted) {
++            self->StartNextMirror();
++          } else {
++            delete self.get();
++          }
++        },
++        weak_factory_.GetWeakPtr()));
++  }
++
++  void OnHashReady(const base::FilePath& path,
++                   std::optional<std::string> actual_hash) {
++    if (actual_hash && *actual_hash == result_.hash_hex) {
++      if (current_item_) {
++        SetMetalinkVerificationStatus(*current_item_,
++                                      MetalinkVerificationStatus::kVerified);
++      }
++      delete this;
++      return;
++    }
++    if (current_item_) {
++      SetMetalinkVerificationStatus(*current_item_,
++                                    MetalinkVerificationStatus::kFailed);
++    }
++    StopObserving();
++    base::ThreadPool::PostTaskAndReplyWithResult(
++        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++        base::BindOnce(&DeleteDownloadedFile, path),
++        base::BindOnce(&MetalinkDownloadVerifier::OnHashMismatchFileDeleted,
++                       weak_factory_.GetWeakPtr()));
++  }
++
++  void OnHashMismatchFileDeleted(bool deleted) {
++    if (!deleted) {
++      delete this;
++      return;
++    }
++    hashing_ = false;
++    StartNextMirror();
++  }
++
++  raw_ptr<Profile> profile_;
++  MetalinkParseResult result_;
++  std::unique_ptr<network::SimpleHostResolver> host_resolver_;
++  size_t next_mirror_ = 0;
++  raw_ptr<download::DownloadItem> current_item_ = nullptr;
++  bool hashing_ = false;
++  base::WeakPtrFactory<MetalinkDownloadVerifier> weak_factory_{this};
++};
++
++}  // namespace
++
++MetalinkVerificationStatus GetMetalinkVerificationStatus(
++    const download::DownloadItem& item) {
++  const auto* data = static_cast<const MetalinkVerificationData*>(
++      item.GetUserData(kMetalinkVerificationDataKey));
++  return data ? data->status : MetalinkVerificationStatus::kNone;
++}
++
++void SetMetalinkVerificationStatus(download::DownloadItem& item,
++                                   MetalinkVerificationStatus status) {
++  item.SetUserData(kMetalinkVerificationDataKey,
++                   std::make_unique<MetalinkVerificationData>(status));
++  item.UpdateObservers();
++}
++
++void StartVerifiedMetalinkDownload(Profile* profile,
++                                   MetalinkParseResult result) {
++  if (!profile || !result.ok || result.mirrors.empty()) {
++    return;
++  }
++  (new MetalinkDownloadVerifier(profile, std::move(result)))->Start();
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
+new file mode 100644
+index 0000000000..91db372632
+--- /dev/null
++++ b/chrome/browser/aegis/metalink_download_verifier.h
+@@ -0,0 +1,36 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
++#define CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
++
++#include "chrome/browser/aegis/metalink_parser.h"
++
++class Profile;
++
++namespace download {
++class DownloadItem;
++}
++
++namespace aegis {
++
++enum class MetalinkVerificationStatus {
++  kNone,
++  kPending,
++  kVerifying,
++  kVerified,
++  kFailed,
++};
++
++MetalinkVerificationStatus GetMetalinkVerificationStatus(
++    const download::DownloadItem& item);
++void SetMetalinkVerificationStatus(download::DownloadItem& item,
++                                   MetalinkVerificationStatus status);
++
++// Starts a Browser-native, credential-free mirror download. The verifier owns
++// itself until the file hash matches or all mirrors fail.
++void StartVerifiedMetalinkDownload(Profile* profile,
++                                   MetalinkParseResult result);
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
+diff --git a/chrome/browser/aegis/metalink_parser.cc b/chrome/browser/aegis/metalink_parser.cc
+new file mode 100644
+index 0000000000..12d8a54252
+--- /dev/null
++++ b/chrome/browser/aegis/metalink_parser.cc
+@@ -0,0 +1,194 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/metalink_parser.h"
++
++#include <algorithm>
++#include <optional>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "net/base/ip_address.h"
++#include "net/base/url_util.h"
++#include "services/data_decoder/public/cpp/data_decoder.h"
++#include "services/data_decoder/public/cpp/safe_xml_parser.h"
++#include "services/data_decoder/public/mojom/xml_parser.mojom.h"
++
++namespace aegis {
++namespace {
++
++constexpr size_t kMaxMetalinkBytes = 1024 * 1024;
++constexpr size_t kMaxMirrors = 16;
++constexpr int64_t kMaxDeclaredFileBytes = 2LL * 1024 * 1024 * 1024 * 1024;
++constexpr char kMetalinkNamespace[] = "urn:ietf:params:xml:ns:metalink";
++
++std::string Qualified(const std::string& prefix, const char* name) {
++  return data_decoder::GetXmlQualifiedName(prefix, name);
++}
++
++bool IsSafeFileName(const std::string& name) {
++  return !name.empty() && name.size() <= 255 && name != "." && name != ".." &&
++         name.find('/') == std::string::npos &&
++         name.find('\\') == std::string::npos &&
++         name.find('\0') == std::string::npos;
++}
++
++bool IsAllowedMirrorUrl(const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || url.has_username() ||
++      url.has_password() || url.has_ref() || url.host().empty() ||
++      net::HostStringIsLocalhost(url.host())) {
++    return false;
++  }
++  if (std::optional<net::IPAddress> literal =
++          net::IPAddress::FromIPLiteral(url.HostNoBrackets())) {
++    return literal->IsPubliclyRoutable();
++  }
++  return true;
++}
++
++std::optional<std::string> ReadElementText(const base::Value& parent,
++                                           const std::string& tag) {
++  const base::Value* element =
++      data_decoder::GetXmlElementChildWithTag(parent, tag);
++  std::string text;
++  if (!element || !data_decoder::GetXmlElementText(*element, &text)) {
++    return std::nullopt;
++  }
++  base::TrimWhitespaceASCII(text, base::TRIM_ALL, &text);
++  return text;
++}
++
++MetalinkParseResult ParseMetalinkValue(const base::Value& root) {
++  MetalinkParseResult result;
++  std::string prefix;
++  if (!data_decoder::GetXmlElementNamespacePrefix(root, kMetalinkNamespace,
++                                                  &prefix) ||
++      !data_decoder::IsXmlElementNamed(root, Qualified(prefix, "metalink"))) {
++    result.error = "不是 RFC 5854 Metalink 文档";
++    return result;
++  }
++
++  std::vector<const base::Value*> files;
++  data_decoder::GetAllXmlElementChildrenWithTag(root, Qualified(prefix, "file"),
++                                                &files);
++  if (files.size() != 1) {
++    result.error = "第一版只接受恰好一个 file";
++    return result;
++  }
++  const base::Value& file = *files.front();
++  result.file_name = data_decoder::GetXmlElementAttribute(file, "name");
++  if (!IsSafeFileName(result.file_name)) {
++    result.error = "文件名不安全";
++    return result;
++  }
++
++  if (std::optional<std::string> size_text =
++          ReadElementText(file, Qualified(prefix, "size"))) {
++    if (!base::StringToInt64(*size_text, &result.file_size) ||
++        result.file_size < 0 || result.file_size > kMaxDeclaredFileBytes) {
++      result.error = "文件大小无效或超过 2 TiB";
++      return result;
++    }
++  }
++
++  std::vector<const base::Value*> hashes;
++  data_decoder::GetAllXmlElementChildrenWithTag(file, Qualified(prefix, "hash"),
++                                                &hashes);
++  for (const base::Value* hash : hashes) {
++    std::string type =
++        base::ToLowerASCII(data_decoder::GetXmlElementAttribute(*hash, "type"));
++    base::RemoveChars(type, "-", &type);
++    const size_t expected_length = type == "sha512"   ? 128
++                                   : type == "sha256" ? 64
++                                                      : 0;
++    std::string hash_hex;
++    if (expected_length && data_decoder::GetXmlElementText(*hash, &hash_hex)) {
++      base::TrimWhitespaceASCII(hash_hex, base::TRIM_ALL, &hash_hex);
++      std::vector<uint8_t> decoded;
++      if (hash_hex.size() == expected_length &&
++          base::HexStringToBytes(hash_hex, &decoded)) {
++        result.hash_algorithm = type == "sha512" ? "sha-512" : "sha-256";
++        result.hash_hex = base::ToLowerASCII(hash_hex);
++        break;
++      }
++    }
++  }
++  if (result.hash_hex.empty()) {
++    result.error = "缺少有效的 SHA-256 或 SHA-512";
++    return result;
++  }
++
++  std::vector<const base::Value*> urls;
++  data_decoder::GetAllXmlElementChildrenWithTag(file, Qualified(prefix, "url"),
++                                                &urls);
++  for (const base::Value* element : urls) {
++    if (result.mirrors.size() >= kMaxMirrors) {
++      break;
++    }
++    std::string url_text;
++    if (!data_decoder::GetXmlElementText(*element, &url_text)) {
++      continue;
++    }
++    base::TrimWhitespaceASCII(url_text, base::TRIM_ALL, &url_text);
++    GURL url(url_text);
++    if (!IsAllowedMirrorUrl(url)) {
++      continue;
++    }
++    int priority = 999999;
++    const std::string priority_text =
++        data_decoder::GetXmlElementAttribute(*element, "priority");
++    if (!priority_text.empty() &&
++        (!base::StringToInt(priority_text, &priority) || priority < 1)) {
++      continue;
++    }
++    if (std::ranges::any_of(result.mirrors, [&url](const MetalinkMirror& item) {
++          return item.url == url;
++        })) {
++      continue;
++    }
++    result.mirrors.push_back({std::move(url), priority});
++  }
++  std::ranges::stable_sort(
++      result.mirrors, {},
++      [](const MetalinkMirror& mirror) { return mirror.priority; });
++  if (result.mirrors.empty()) {
++    result.error = "没有可用的公开 HTTP(S) 镜像";
++    return result;
++  }
++  result.ok = true;
++  return result;
++}
++
++void OnXmlParsed(MetalinkParseCallback callback,
++                 data_decoder::DataDecoder::ValueOrError parsed) {
++  if (!parsed.has_value()) {
++    MetalinkParseResult result;
++    result.error = "Metalink XML 解析失败";
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  std::move(callback).Run(ParseMetalinkValue(*parsed));
++}
++
++}  // namespace
++
++void ParseMetalink(std::string xml, MetalinkParseCallback callback) {
++  if (xml.empty() || xml.size() > kMaxMetalinkBytes) {
++    MetalinkParseResult result;
++    result.error = "Metalink 文档为空或超过 1 MiB";
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  data_decoder::DataDecoder::ParseXmlIsolated(
++      xml, data_decoder::mojom::XmlParser::WhitespaceBehavior::kIgnore,
++      base::BindOnce(&OnXmlParsed, std::move(callback)));
++}
++
++MetalinkParseResult ParseMetalinkValueForTesting(const base::Value& root) {
++  return ParseMetalinkValue(root);
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/metalink_parser.h b/chrome/browser/aegis/metalink_parser.h
+new file mode 100644
+index 0000000000..fa38b2c5fe
+--- /dev/null
++++ b/chrome/browser/aegis/metalink_parser.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_METALINK_PARSER_H_
++#define CHROME_BROWSER_AEGIS_METALINK_PARSER_H_
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "base/functional/callback_forward.h"
++#include "base/values.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++struct MetalinkMirror {
++  GURL url;
++  int priority = 999999;
++};
++
++struct MetalinkParseResult {
++  bool ok = false;
++  std::string error;
++  std::string file_name;
++  int64_t file_size = -1;
++  std::string hash_algorithm;
++  std::string hash_hex;
++  std::vector<MetalinkMirror> mirrors;
++};
++
++using MetalinkParseCallback = base::OnceCallback<void(MetalinkParseResult)>;
++
++// Parses untrusted RFC 5854 XML in the isolated Data Decoder service.
++void ParseMetalink(std::string xml, MetalinkParseCallback callback);
++
++// Exposed for deterministic unit tests after safe XML decoding.
++MetalinkParseResult ParseMetalinkValueForTesting(const base::Value& root);
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_METALINK_PARSER_H_
+diff --git a/chrome/browser/aegis/metalink_parser_unittest.cc b/chrome/browser/aegis/metalink_parser_unittest.cc
+new file mode 100644
+index 0000000000..dd900b5e2a
+--- /dev/null
++++ b/chrome/browser/aegis/metalink_parser_unittest.cc
+@@ -0,0 +1,96 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/metalink_parser.h"
++
++#include <string>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/run_loop.h"
++#include "content/public/test/browser_task_environment.h"
++#include "services/data_decoder/public/cpp/test_support/in_process_data_decoder.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis {
++namespace {
++
++MetalinkParseResult Parse(const std::string& xml) {
++  base::RunLoop run_loop;
++  MetalinkParseResult result;
++  ParseMetalink(xml, base::BindOnce(
++                         [](MetalinkParseResult* out, base::OnceClosure done,
++                            MetalinkParseResult parsed) {
++                           *out = std::move(parsed);
++                           std::move(done).Run();
++                         },
++                         &result, run_loop.QuitClosure()));
++  run_loop.Run();
++  return result;
++}
++
++class MetalinkParserTest : public testing::Test {
++ protected:
++  content::BrowserTaskEnvironment task_environment_;
++  data_decoder::test::InProcessDataDecoder in_process_data_decoder_;
++};
++
++TEST_F(MetalinkParserTest, ParsesSafeMirrorsAndStrongHash) {
++  const MetalinkParseResult result = Parse(R"(
++    <metalink xmlns="urn:ietf:params:xml:ns:metalink">
++      <file name="aegis.bin">
++        <size>4096</size>
++        <hash type="sha-256">
++          0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
++        </hash>
++        <url priority="2">https://mirror-b.example/aegis.bin?token=secret</url>
++        <url priority="1">https://mirror-a.example/aegis.bin</url>
++      </file>
++    </metalink>)");
++  ASSERT_TRUE(result.ok) << result.error;
++  EXPECT_EQ(result.file_name, "aegis.bin");
++  EXPECT_EQ(result.file_size, 4096);
++  EXPECT_EQ(result.hash_algorithm, "sha-256");
++  ASSERT_EQ(result.mirrors.size(), 2u);
++  EXPECT_EQ(result.mirrors[0].url.host(), "mirror-a.example");
++  EXPECT_EQ(result.mirrors[1].url.host(), "mirror-b.example");
++}
++
++TEST_F(MetalinkParserTest, RejectsPrivateAndCredentialedMirrors) {
++  const MetalinkParseResult result = Parse(R"(
++    <metalink xmlns="urn:ietf:params:xml:ns:metalink">
++      <file name="aegis.bin">
++        <hash type="sha-512">0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef</hash>
++        <url>http://127.0.0.1/aegis.bin</url>
++        <url>http://192.168.1.2/aegis.bin</url>
++        <url>https://user:password@example.com/aegis.bin</url>
++      </file>
++    </metalink>)");
++  EXPECT_FALSE(result.ok);
++  EXPECT_EQ(result.error, "没有可用的公开 HTTP(S) 镜像");
++}
++
++TEST_F(MetalinkParserTest, RejectsTraversalWeakHashAndOversize) {
++  EXPECT_FALSE(Parse(R"(
++    <metalink xmlns="urn:ietf:params:xml:ns:metalink">
++      <file name="../escape.bin">
++        <hash type="sha-256">
++          0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
++        </hash>
++        <url>https://example.com/a.bin</url>
++      </file>
++    </metalink>)")
++                   .ok);
++  EXPECT_FALSE(Parse(R"(
++    <metalink xmlns="urn:ietf:params:xml:ns:metalink">
++      <file name="a.bin">
++        <hash type="sha-1">0123456789abcdef0123456789abcdef01234567</hash>
++        <url>https://example.com/a.bin</url>
++      </file>
++    </metalink>)")
++                   .ok);
++  EXPECT_EQ(Parse(std::string(1024 * 1024 + 1, 'x')).error,
++            "Metalink 文档为空或超过 1 MiB");
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
+index 4bc7f513e0..397d5a2436 100644
+--- a/chrome/browser/download/download_ui_model.cc
++++ b/chrome/browser/download/download_ui_model.cc
+@@ -10,6 +10,9 @@
+ #include "base/feature_list.h"
+ #include "base/i18n/number_formatting.h"
+ #include "base/i18n/rtl.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
+@@ -28,6 +31,7 @@
+ #include "chrome/common/url_constants.h"
+ #include "chrome/grit/branded_strings.h"
+ #include "chrome/grit/generated_resources.h"
++#include "components/download/internal/common/parallel_download_utils.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/enterprise/common/proto/connectors.pb.h"
+ #include "components/google/core/common/google_util.h"
+@@ -174,8 +178,9 @@ base::WeakPtr<DownloadUIModel> DownloadUIModel::GetWeakPtr() {
+ }
+ 
+ bool DownloadUIModel::HasSupportedImageMimeType() const {
+-  if (blink::IsSupportedImageMimeType(GetMimeType()))
++  if (blink::IsSupportedImageMimeType(GetMimeType())) {
+     return true;
++  }
+ 
+   std::string mime;
+   base::FilePath::StringType extension_with_dot =
+@@ -236,18 +241,36 @@ std::u16string DownloadUIModel::GetStatusText() const {
+ std::u16string DownloadUIModel::GetStatusTextForLabel(
+     const gfx::FontList& font_list,
+     float available_pixel_width) const {
++  const download::DownloadItem* item = GetDownloadItem();
++  const bool show_aegis_parallel =
++      item && item->GetState() == download::DownloadItem::IN_PROGRESS &&
++      item->IsParallelDownload();
++  const auto with_aegis_status = [&](std::u16string status) {
++    if (!show_aegis_parallel) {
++      return status;
++    }
++    const bool is_zh =
++        base::StartsWith(g_browser_process->GetApplicationLocale(), "zh",
++                         base::CompareCase::INSENSITIVE_ASCII);
++    const std::u16string request_limit =
++        base::NumberToString16(download::GetParallelRequestCountConfig());
++    return base::StrCat(
++        {is_zh ? u"Aegis 智能并行（最多 " : u"Aegis smart parallel (up to ",
++         request_limit, is_zh ? u" 路） · " : u") · ", status});
++  };
+   if (!ShouldPromoteOrigin()) {
+-    return GetStatusText();
++    return with_aegis_status(GetStatusText());
+   }
+   if (const GURL url = GetOriginalURL(); url.is_valid()) {
+     std::u16string url_string = url_formatter::FormatUrlForSecurityDisplay(url);
+     // available_pixel_width can be 0 before the view is inflated.
+-    return available_pixel_width <= 0
+-               ? url_string
+-               : gfx::ElideText(url_string, font_list, available_pixel_width,
+-                                gfx::ELIDE_TAIL);
++    return with_aegis_status(available_pixel_width <= 0
++                                 ? url_string
++                                 : gfx::ElideText(url_string, font_list,
++                                                  available_pixel_width,
++                                                  gfx::ELIDE_TAIL));
+   }
+-  return GetStatusText();
++  return with_aegis_status(GetStatusText());
+ }
+ #endif
+ 
+@@ -823,8 +846,9 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetInProgressStatusText()
+ 
+   // A download scheduled to be opened when complete: "Opening in 10 secs"
+   if (model_->GetOpenWhenComplete()) {
+-    if (!time_remaining_known)
++    if (!time_remaining_known) {
+       return l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_OPEN_WHEN_COMPLETE);
++    }
+ 
+     return l10n_util::GetStringFUTF16(
+         IDS_DOWNLOAD_STATUS_OPEN_IN,
+@@ -934,12 +958,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
+       return l10n_util::GetStringUTF16(
+           IDS_POLICY_ACTION_BLOCKED_BY_ORGANIZATION);
+     case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_SCANNING:
+-        // "Scan for malware • Suspicious"
+-        return l10n_util::GetStringFUTF16(
+-            IDS_DOWNLOAD_BUBBLE_DOWNLOAD_STATUS_MESSAGE_WITH_SEPARATOR,
+-            l10n_util::GetStringUTF16(
+-                IDS_DOWNLOAD_BUBBLE_STATUS_DEEP_SCANNING_PROMPT_UPDATED),
+-            l10n_util::GetStringUTF16(IDS_DOWNLOAD_BUBBLE_STATUS_SUSPICIOUS));
++      // "Scan for malware • Suspicious"
++      return l10n_util::GetStringFUTF16(
++          IDS_DOWNLOAD_BUBBLE_DOWNLOAD_STATUS_MESSAGE_WITH_SEPARATOR,
++          l10n_util::GetStringUTF16(
++              IDS_DOWNLOAD_BUBBLE_STATUS_DEEP_SCANNING_PROMPT_UPDATED),
++          l10n_util::GetStringUTF16(IDS_DOWNLOAD_BUBBLE_STATUS_SUSPICIOUS));
+     case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_LOCAL_PASSWORD_SCANNING:
+       // "Suspicious file blocked • Password needed"
+       return l10n_util::GetStringFUTF16(
+@@ -970,12 +994,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
+       return l10n_util::GetStringUTF16(
+           IDS_DOWNLOAD_BUBBLE_STATUS_LOCAL_DECRYPTING);
+     case download::DOWNLOAD_DANGER_TYPE_DEEP_SCANNED_FAILED:
+-        // "Scan failed • Suspicious"
+-        return l10n_util::GetStringFUTF16(
+-            IDS_DOWNLOAD_BUBBLE_DOWNLOAD_STATUS_MESSAGE_WITH_SEPARATOR,
+-            l10n_util::GetStringUTF16(
+-                IDS_DOWNLOAD_BUBBLE_STATUS_DEEP_SCANNED_FAILED_UPDATED),
+-            l10n_util::GetStringUTF16(IDS_DOWNLOAD_BUBBLE_STATUS_SUSPICIOUS));
++      // "Scan failed • Suspicious"
++      return l10n_util::GetStringFUTF16(
++          IDS_DOWNLOAD_BUBBLE_DOWNLOAD_STATUS_MESSAGE_WITH_SEPARATOR,
++          l10n_util::GetStringUTF16(
++              IDS_DOWNLOAD_BUBBLE_STATUS_DEEP_SCANNED_FAILED_UPDATED),
++          l10n_util::GetStringUTF16(IDS_DOWNLOAD_BUBBLE_STATUS_SUSPICIOUS));
+     case download::DOWNLOAD_DANGER_TYPE_BLOCKED_SCAN_FAILED:
+       // "Blocked • Scan failed"
+       return get_blocked_warning(IDS_DOWNLOAD_BUBBLE_STATUS_SCAN_FAILED);
+@@ -997,8 +1021,9 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
+   DCHECK_EQ(DownloadItem::IN_PROGRESS, model_->GetState());
+ 
+   std::u16string warning_status_text = GetBubbleWarningStatusText();
+-  if (!warning_status_text.empty())
++  if (!warning_status_text.empty()) {
+     return warning_status_text;
++  }
+ 
+   base::TimeDelta time_remaining;
+   // time_remaining is only known if the download isn't paused, and it isn't
+@@ -1053,10 +1078,11 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
+   // A download scheduled to be opened when complete: "↓ 100/120 MB • Opening in
+   // 10 seconds"
+   if (model_->GetOpenWhenComplete()) {
+-    if (!time_remaining_known)
++    if (!time_remaining_known) {
+       // "100/120 MB • Opening when complete"
+       return get_size_ratio_string(
+           l10n_util::GetStringUTF16(IDS_DOWNLOAD_STATUS_OPEN_WHEN_COMPLETE));
++    }
+ 
+     // "↓ 100/120 MB • Opening in 10 seconds..."
+     return get_active_download_size_ratio_string(l10n_util::GetStringFUTF16(
+@@ -1112,12 +1138,14 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetCompletedStatusText()
+ std::u16string
+ DownloadUIModel::BubbleStatusTextBuilder::GetCompletedStatusText() const {
+   std::u16string warning_status_text = GetBubbleWarningStatusText();
+-  if (!warning_status_text.empty())
++  if (!warning_status_text.empty()) {
+     return warning_status_text;
++  }
+ 
+   std::u16string status_text = GetCompletedRemovedOrSavedStatusText();
+-  if (!status_text.empty())
++  if (!status_text.empty()) {
+     return status_text;
++  }
+ 
+   if (model_->GetEndTime().is_null()) {
+     // Offline items have these null.
+@@ -1297,8 +1325,9 @@ std::u16string DownloadUIModel::GetInProgressAccessibleAlertText() const {
+   base::TimeDelta remaining;
+   if (TimeRemaining(&remaining)) {
+     // If complete, skip this round: a completion status update is coming soon.
+-    if (remaining.is_zero())
++    if (remaining.is_zero()) {
+       return std::u16string();
++    }
+ 
+     const std::u16string remaining_string =
+         ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_REMAINING,
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index f0b8adf32c..4f09c6dfbc 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -178,12 +178,28 @@ h1 {
+   margin-top: 2.4rem;
+ }
+ 
++.downloads {
++  margin-top: 2.4rem;
++}
++
++.download-subsection {
++  margin-top: 1.6rem;
++  padding-top: 1.25rem;
++  border-top: 1px solid var(--line);
++}
++
++.download-subsection h3 {
++  margin: 0 0 0.35rem;
++  font-size: 1.02rem;
++}
++
+ .privacy {
+   margin-top: 2.4rem;
+ }
+ 
+ .privacy h2,
+ .filters h2,
++.downloads h2,
+ .activity h2,
+ .ai-control h2,
+ .modules h2 {
+@@ -277,7 +293,10 @@ button:disabled {
+ }
+ 
+ .field input[type='text'],
+-.field input[type='url'] {
++.field input[type='url'],
++.field input[type='file'],
++.field textarea,
++.compact-field input[type='number'] {
+   padding: 0.55rem 0.7rem;
+   border: 1px solid var(--line);
+   background: transparent;
+@@ -286,6 +305,76 @@ button:disabled {
+   border-radius: 6px;
+ }
+ 
++.field textarea {
++  width: 100%;
++  resize: vertical;
++}
++
++.torrent-files {
++  max-height: 14rem;
++  margin: 0.75rem 0 0;
++  padding: 0;
++  overflow: auto;
++  list-style: none;
++  border: 1px solid var(--line);
++}
++
++.torrent-files li {
++  padding: 0.5rem 0.65rem;
++  border-bottom: 1px solid var(--line);
++}
++
++.torrent-files li:last-child {
++  border-bottom: 0;
++}
++
++.torrent-files label,
++.torrent-disclosure,
++.torrent-options label {
++  display: flex;
++  align-items: flex-start;
++  gap: 0.55rem;
++}
++
++.torrent-options {
++  display: grid;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  gap: 0.7rem 1rem;
++  margin-top: 1rem;
++}
++
++.compact-field {
++  flex-direction: column;
++  color: var(--muted);
++  font-size: 0.85rem;
++}
++
++.compact-field input[type='number'] {
++  width: 100%;
++}
++
++.torrent-disclosure {
++  margin-top: 1rem;
++  color: var(--muted);
++  font-size: 0.88rem;
++}
++
++.torrent-disclosure input,
++.torrent-options input[type='checkbox'],
++.torrent-files input {
++  flex-shrink: 0;
++  accent-color: var(--accent);
++}
++
++.torrent-task {
++  margin-top: 1rem;
++}
++
++.torrent-task progress {
++  width: 100%;
++  accent-color: var(--accent);
++}
++
+ .actions {
+   display: flex;
+   flex-wrap: wrap;
+@@ -374,4 +463,8 @@ button.primary {
+   .metrics {
+     grid-template-columns: 1fr;
+   }
++
++  .torrent-options {
++    grid-template-columns: 1fr;
++  }
+ }
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 95313817b0..e0bdf773d4 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -17,7 +17,8 @@
+             <p class="health-state" id="health-state">—</p>
+           </div>
+         </div>
+-        <div class="metrics" aria-label="session protection totals">
++        <div class="metrics" role="group"
++             aria-label="session protection totals">
+           <div class="metric">
+             <span class="metric-value" id="overview-blocked">0</span>
+             <span class="metric-label">$i18n{overviewBlocked}</span>
+@@ -122,6 +123,12 @@
+         </label>
+         <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
+       </section>
++      <section class="downloads" aria-label="downloads and mirrors">
++        <h2>$i18n{downloadsTitle}</h2>
++        <p class="meta">$i18n{downloadsMeta}</p>
++        <p><a href="chrome://downloads">$i18n{downloadsTitle}</a></p>
++        <p class="scope-note">$i18n{torrentSafety}</p>
++      </section>
+       <section class="privacy" aria-label="privacy ai">
+         <h2>$i18n{privacyAiTitle}</h2>
+         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index b81039ee9e..77dd735c1b 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1,8 +1,9 @@
+ // Copyright 2026 GCSA
+ 
++import './policy_worker.js';
++
+ import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
+ import {getRequiredElement} from 'chrome://resources/js/util.js';
+-import './policy_worker.js';
+ 
+ interface PrivacyEvent {
+   kind: string;
+@@ -42,6 +43,9 @@ interface AegisStatus {
+   ollamaUrl?: string;
+   ollamaModel?: string;
+   isAndroid?: boolean;
++  torrentSupported?: boolean;
++  torrentDisclosureAcknowledged?: boolean;
++  torrentTaskId?: string;
+   recentEvents?: PrivacyEvent[];
+   ok?: boolean;
+   error?: string;
+@@ -65,11 +69,7 @@ interface CapturedSummary {
+ interface PreparedSummary {
+   schemaVersion: 1;
+   sanitizedSnapshot: PageSnapshot;
+-  heuristic: {
+-    summary: string;
+-    bullets: string[];
+-    risks: string[];
+-  };
++  heuristic: {summary: string; bullets: string[]; risks: string[];};
+ }
+ 
+ declare global {
+@@ -102,8 +102,7 @@ interface OllamaProbeResult {
+   models?: string[];
+ }
+ 
+-type ModuleName =
+-    'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
++type ModuleName = 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+     'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
+     'bounceTracking'|'policyWorker'|'privacyAi'|'aiControl';
+ 
+@@ -132,17 +131,17 @@ function actionButton(id: string): HTMLButtonElement {
+ }
+ 
+ function workerEvaluate(
+-    op: 'ping'|'prepareSummary', payload: Record<string, unknown> = {}):
+-    Record<string, unknown>|null {
++    op: 'ping'|'prepareSummary',
++    payload: Record<string, unknown> = {}): Record<string, unknown>|null {
+   const evaluate = window.aegisEvaluate;
+   if (!evaluate) {
+     return null;
+   }
+   try {
+-    const value = JSON.parse(evaluate(JSON.stringify({op, ...payload}))) as
+-        unknown;
++    const value =
++        JSON.parse(evaluate(JSON.stringify({op, ...payload}))) as unknown;
+     return typeof value === 'object' && value !== null ?
+-        value as Record<string, unknown> :
++        value as Record<string, unknown>:
+         null;
+   } catch {
+     return null;
+@@ -163,7 +162,8 @@ function withRendererPolicyWorkerStatus(status: AegisStatus): AegisStatus {
+ }
+ 
+ function isStringArray(value: unknown): value is string[] {
+-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
++  return Array.isArray(value) &&
++      value.every((item) => typeof item === 'string');
+ }
+ 
+ function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+@@ -190,8 +190,7 @@ function parsePreparedSummary(value: Record<string, unknown>|null):
+   if (!hasExactKeys(
+           safe, ['forms', 'passwordFields', 'textSample', 'title', 'url']) ||
+       !hasExactKeys(local, ['bullets', 'risks', 'summary']) ||
+-      typeof safe['url'] !== 'string' ||
+-      typeof safe['title'] !== 'string' ||
++      typeof safe['url'] !== 'string' || typeof safe['title'] !== 'string' ||
+       typeof safe['textSample'] !== 'string' ||
+       typeof safe['passwordFields'] !== 'number' ||
+       typeof safe['forms'] !== 'number' ||
+@@ -222,10 +221,10 @@ function formatMeta(status: AegisStatus): string {
+     return zh ? '尚未下载过滤列表。' : 'No compiled filter list yet.';
+   }
+   const when = new Date(status.filterListLastUpdated * 1000).toLocaleString();
+-  const err = status.filterListLastError
+-      ? (zh ? ` 上次错误：${status.filterListLastError}` :
+-              ` Last error: ${status.filterListLastError}`)
+-      : '';
++  const err = status.filterListLastError ?
++      (zh ? ` 上次错误：${status.filterListLastError}` :
++            ` Last error: ${status.filterListLastError}`) :
++            '';
+   return zh ? `已编译 ${count} 条主机规则 · 更新于 ${when}${err}` :
+               `Compiled ${count} host rules · updated ${when}${err}`;
+ }
+@@ -275,8 +274,9 @@ function fillOverview(status: AegisStatus) {
+   const policyUnavailable = status.policyWorker && !status.policyWorkerReady;
+   if (status.filterListLastError || policyUnavailable) {
+     dot.dataset['state'] = 'warning';
+-    state.textContent = zh ? '核心防护运行中，部分能力需注意' :
+-                             'Core protection active; some features need attention';
++    state.textContent = zh ?
++        '核心防护运行中，部分能力需注意' :
++        'Core protection active; some features need attention';
+     return;
+   }
+   dot.dataset['state'] = 'ok';
+@@ -299,8 +299,8 @@ function formatOllamaStatus(probe: OllamaProbeResult): string {
+   if (!probe.ok) {
+     return zh ? `未检测到 Ollama；策略 worker 就绪时将使用启发式摘要。${
+                     probe.error ? `（${probe.error}）` : ''}` :
+-                `Ollama not found; heuristics require a ready policy worker.${
+-                    probe.error ? ` (${probe.error})` : ''}`;
++                                  `Ollama not found; heuristics require a ready policy worker.${
++                    probe.error ? ` (${probe.error})` : ''                  }`;
+   }
+   const models = probe.models || [];
+   if (models.length === 0) {
+@@ -401,18 +401,21 @@ function formatSummary(result: SummarizeResult): string {
+       (zh ? '本机 Ollama' : 'Local Ollama') :
+       (zh ? '启发式摘要（未调用模型）' : 'Heuristic summary (no model)');
+   const lines = [
+-    onDevice ? (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
+-               (zh ? '已离开本机' : 'Left this device'),
++    onDevice ?
++        (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
++        (zh ? '已离开本机' : 'Left this device'),
+     (zh ? '后端：' : 'Backend: ') + backend,
+   ];
+   if (result.destination && result.destination !== 'local') {
+     lines.push((zh ? '目标：' : 'Destination: ') + result.destination);
+   }
+   if (result.charsIn) {
+-    lines.push((zh ? '处理字数：' : 'Characters read: ') + String(result.charsIn));
++    lines.push(
++        (zh ? '处理字数：' : 'Characters read: ') + String(result.charsIn));
+   }
+   if (result.charsSent) {
+-    lines.push((zh ? '发给模型：' : 'Sent to model: ') + String(result.charsSent));
++    lines.push(
++        (zh ? '发给模型：' : 'Sent to model: ') + String(result.charsSent));
+   }
+   lines.push('');
+   if (result.url) {
+@@ -427,7 +430,8 @@ function formatSummary(result: SummarizeResult): string {
+   for (const r of result.risks || []) {
+     lines.push(`! ${r}`);
+   }
+-  return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '').join('\n');
++  return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '')
++      .join('\n');
+ }
+ 
+ async function confirmSummaryPreview(
+@@ -443,9 +447,10 @@ async function confirmSummaryPreview(
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   const destination = status.ollamaUrl ?
+       (zh ? `本机启发式；本机模型可用时仅发往 ${status.ollamaUrl}` :
+-            `Local heuristic; only ${status.ollamaUrl} if the local model is available`) :
+-      (zh ? '仅本机启发式，不发送给模型' :
+-            'Local heuristic only; not sent to a model');
++            `Local heuristic; only ${
++                status.ollamaUrl} if the local model is available`) :
++            (zh ? '仅本机启发式，不发送给模型' :
++                  'Local heuristic only; not sent to a model');
+   getRequiredElement('summary-preview-site').textContent =
+       (zh ? '来源站点：' : 'Source site: ') +
+       siteFromUrl(captured.snapshot.url);
+@@ -489,8 +494,8 @@ function fillAiControl(status: AegisStatus) {
+   const connectEl = getRequiredElement('ai-control-connect');
+   const on = !!status.aiControl && !!status.aiControlRunning;
+   if (!status.aiControl) {
+-    statusEl.textContent = zh ? 'AI 控制已关闭（默认）。' :
+-                                'AI control is off (default).';
++    statusEl.textContent =
++        zh ? 'AI 控制已关闭（默认）。' : 'AI control is off (default).';
+     connectEl.hidden = true;
+     return;
+   }
+@@ -508,8 +513,7 @@ function fillAiControl(status: AegisStatus) {
+   const clientsText = zh ?
+       (clients ? `当前 ${clients} 个本机 agent 已连接` :
+                  '当前没有 agent 连接') :
+-      (clients ? `${clients} local agent(s) connected` :
+-                 'no agent connected');
++                 (clients ? `${clients} local agent(s) connected` : 'no agent connected');
+   statusEl.textContent = zh ?
+       `调试端口 ${port} · 绑定 ${address} · ${
+           loopback ? '仅 loopback' : '绑定范围未知'} · ${clientsText}` :
+@@ -538,12 +542,14 @@ function fillActivityLog(events: PrivacyEvent[]) {
+     kind.className = 'kind';
+     kind.textContent = kindLabel(event.kind, zh);
+     li.appendChild(kind);
+-    const target = event.domain || event.site || (zh ? '当前页面' : 'this page');
++    const target =
++        event.domain || event.site || (zh ? '当前页面' : 'this page');
+     const reason = event.reason ? ` · ${event.reason}` : '';
+-    const details = event.details?.length ? ` · ${event.details.join(', ')}` : '';
++    const details =
++        event.details?.length ? ` · ${event.details.join(', ')}` : '';
+     const count = event.count > 1 ? ` ×${event.count}` : '';
+-    li.appendChild(document.createTextNode(
+-        `${target}${reason}${details}${count}`));
++    li.appendChild(
++        document.createTextNode(`${target}${reason}${details}${count}`));
+     list.appendChild(li);
+   }
+ }
+@@ -689,12 +695,14 @@ async function probeFingerprint() {
+     const lines: string[] = [];
+     if (on) {
+       lines.push(
+-          zh ? 'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。' :
+-               'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
++          zh ?
++              'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。' :
++              'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
+     } else {
+       lines.push(
+-          zh ? 'Fingerprint Guard 关着：这是浏览器原始读数。关开后请刷新本页再测。' :
+-               'Fingerprint Guard is off: this is the raw browser reading. Toggle, reload, then probe again.');
++          zh ?
++              'Fingerprint Guard 关着：这是浏览器原始读数。关开后请刷新本页再测。' :
++              'Fingerprint Guard is off: this is the raw browser reading. Toggle, reload, then probe again.');
+     }
+     if (canvas) {
+       lines.push(zh ? `Canvas 读数 ${canvas}` : `Canvas ${canvas}`);
+@@ -724,8 +732,9 @@ async function probeFingerprint() {
+                'WebGL / WebGPU strings are replaced with Aegis-stable values.');
+     } else if (on && (webgl.line || webgpu.line)) {
+       lines.push(
+-          zh ? '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。' :
+-               'No Aegis marker yet. Toggle the guard, reload, then probe again.');
++          zh ?
++              '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。' :
++              'No Aegis marker yet. Toggle the guard, reload, then probe again.');
+     }
+     result.textContent = lines.filter(Boolean).join('\n');
+   } catch (err) {
+@@ -737,8 +746,7 @@ async function probeFingerprint() {
+ }
+ 
+ async function summarizeActiveTab() {
+-  const captured: CapturedSummary =
+-      await sendWithPromise('summarizeActiveTab');
++  const captured: CapturedSummary = await sendWithPromise('summarizeActiveTab');
+   if (!captured.ok || !captured.requestId || !captured.snapshot) {
+     showResult(captured.error || 'summary capture failed');
+     return;
+@@ -750,13 +758,12 @@ async function summarizeActiveTab() {
+   if (!prepared) {
+     // Consume the one-shot browser request even when the renderer rejects its
+     // own output; it must never remain reusable until TTL expiry.
+-    await sendWithPromise(
+-        'completePreparedSummary', captured.requestId, {});
++    await sendWithPromise('completePreparedSummary', captured.requestId, {});
+     showResult('renderer policy worker rejected the page snapshot');
+     return;
+   }
+-  const status: AegisStatus = withRendererPolicyWorkerStatus(
+-      await sendWithPromise('getStatus'));
++  const status: AegisStatus =
++      withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
+   if (!await confirmSummaryPreview(captured, prepared, status)) {
+     await sendWithPromise('cancelPreparedSummary', captured.requestId);
+     return;
+@@ -807,8 +814,7 @@ async function init() {
+       applyStatus(next);
+       if (next.ok === false) {
+         const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+-        getRequiredElement('ollama-status').textContent =
+-            next.error ||
++        getRequiredElement('ollama-status').textContent = next.error ||
+             (zh ? '地址必须是本机 loopback。' : 'URL must be loopback.');
+         return;
+       }
+diff --git a/chrome/browser/resources/downloads/BUILD.gn b/chrome/browser/resources/downloads/BUILD.gn
+index aed48f9d22..f0e48cb54b 100644
+--- a/chrome/browser/resources/downloads/BUILD.gn
++++ b/chrome/browser/resources/downloads/BUILD.gn
+@@ -16,6 +16,8 @@ build_webui("build") {
+   ]
+ 
+   ts_files = [
++    "aegis_download_panel.html.ts",
++    "aegis_download_panel.ts",
+     "bypass_warning_confirmation_dialog.html.ts",
+     "bypass_warning_confirmation_dialog.ts",
+     "data.ts",
+@@ -31,6 +33,7 @@ build_webui("build") {
+   ]
+ 
+   css_files = [
++    "aegis_download_panel.css",
+     "bypass_warning_confirmation_dialog.css",
+     "item.css",
+     "manager.css",
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.css b/chrome/browser/resources/downloads/aegis_download_panel.css
+new file mode 100644
+index 0000000000..e29ab8c0ce
+--- /dev/null
++++ b/chrome/browser/resources/downloads/aegis_download_panel.css
+@@ -0,0 +1,185 @@
++/* Copyright 2026 GCSA */
++
++/* #css_wrapper_metadata_start
++ * #type=style-lit
++ * #scheme=relative
++ * #css_wrapper_metadata_end */
++
++:host {
++  --aegis-card-width: clamp(550px, 80%, 680px);
++  display: block;
++  margin: 20px auto 0;
++  width: var(--aegis-card-width);
++}
++
++.card {
++  background: var(--cr-card-background-color);
++  border-radius: 12px;
++  box-shadow: var(--cr-card-shadow);
++  color: var(--cr-primary-text-color);
++  overflow: hidden;
++}
++
++.header {
++  align-items: center;
++  display: flex;
++  gap: 16px;
++  justify-content: space-between;
++  min-height: 64px;
++  padding: 0 20px;
++}
++
++.title {
++  font-size: 15px;
++  font-weight: 500;
++}
++
++.subtitle,
++.hint {
++  color: var(--cr-secondary-text-color);
++  font-size: 12px;
++  line-height: 18px;
++}
++
++.composer,
++.task {
++  border-top: 1px solid var(--cr-separator-color);
++  padding: 16px 20px 20px;
++}
++
++.field {
++  display: grid;
++  gap: 6px;
++  margin-top: 12px;
++}
++
++input[type='file'],
++input[type='number'],
++textarea {
++  box-sizing: border-box;
++  font: inherit;
++  width: 100%;
++}
++
++textarea,
++input[type='number'] {
++  background: transparent;
++  border: 1px solid var(--cr-separator-color);
++  border-radius: 8px;
++  color: var(--cr-primary-text-color);
++  padding: 9px 11px;
++}
++
++.actions,
++.options {
++  align-items: center;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 10px;
++  margin-top: 14px;
++}
++
++.options label {
++  flex: 1 1 180px;
++}
++
++.toggle {
++  align-items: center;
++  display: flex;
++  gap: 7px;
++}
++
++.preview {
++  background: var(--cr-fallback-color-surface-variant);
++  border-radius: 8px;
++  line-height: 20px;
++  margin: 14px 0 0;
++  overflow-wrap: anywhere;
++  padding: 12px;
++  white-space: pre-wrap;
++}
++
++.files {
++  list-style: none;
++  margin: 10px 0 0;
++  max-height: 190px;
++  overflow: auto;
++  padding: 0;
++}
++
++.files label {
++  align-items: flex-start;
++  display: flex;
++  gap: 8px;
++  padding: 5px 2px;
++}
++
++.disclosure {
++  align-items: flex-start;
++  display: flex;
++  gap: 8px;
++  line-height: 18px;
++  margin-top: 14px;
++}
++
++.task-heading {
++  align-items: center;
++  display: flex;
++  gap: 10px;
++}
++
++.protocol-badge {
++  background: var(--google-blue-50);
++  border-radius: 12px;
++  color: var(--google-blue-700);
++  font-size: 11px;
++  font-weight: 600;
++  padding: 3px 8px;
++}
++
++@media (prefers-color-scheme: dark) {
++  .protocol-badge {
++    background: rgba(138, 180, 248, .16);
++    color: var(--google-blue-300);
++  }
++}
++
++progress {
++  height: 4px;
++  margin-top: 12px;
++  width: 100%;
++}
++
++.task-status {
++  line-height: 20px;
++  margin-top: 8px;
++  white-space: pre-wrap;
++}
++
++button {
++  background: transparent;
++  border: 1px solid var(--cr-separator-color);
++  border-radius: 18px;
++  color: var(--cr-link-color);
++  cursor: pointer;
++  font: inherit;
++  min-height: 34px;
++  padding: 0 14px;
++}
++
++button.primary {
++  background: var(--cr-button-background-color);
++  border-color: transparent;
++  color: var(--cr-button-text-color);
++}
++
++button:disabled {
++  cursor: default;
++  opacity: .45;
++}
++
++@media (max-width: 700px) {
++  :host {
++    --aegis-card-width: calc(100% - 32px);
++  }
++}
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.html.ts b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
+new file mode 100644
+index 0000000000..0f265dd7d3
+--- /dev/null
++++ b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
+@@ -0,0 +1,127 @@
++// Copyright 2026 GCSA
++
++import {html, nothing} from '//resources/lit/v3_0/lit.rollup.js';
++
++import type {AegisDownloadPanelElement} from './aegis_download_panel.js';
++
++export function getHtml(this: AegisDownloadPanelElement) {
++  // clang-format off
++  return html`<!--_html_template_start_-->
++<div class="card">
++  <div class="header">
++    <div>
++      <div class="title">${this.isZh_() ? 'Aegis 下载中心' : 'Aegis downloads'}</div>
++      <div class="subtitle">${this.isZh_() ?
++          'HTTP 自动并行 · Metalink 镜像 · BT / Magnet' :
++          'Parallel HTTP · Metalink mirrors · BT / Magnet'}</div>
++    </div>
++    <button @click="${this.onToggleClick_}">
++      ${this.expanded_ ? (this.isZh_() ? '收起' : 'Close') :
++                        (this.isZh_() ? '新建高级下载' : 'New advanced download')}
++    </button>
++  </div>
++  ${this.expanded_ ? html`
++    <div class="composer">
++      <div class="hint">${this.isZh_() ?
++          '选择 .meta4、.metalink、.torrent，或粘贴 Magnet。检查通过后才会开始。' :
++          'Choose a .meta4, .metalink, or .torrent file, or paste a Magnet link. Nothing starts before inspection.'}</div>
++      <label class="field">
++        <span>${this.isZh_() ? '本地描述文件' : 'Local descriptor file'}</span>
++        <input id="descriptor" type="file"
++            accept=".meta4,.metalink,.torrent,application/metalink4+xml,application/x-bittorrent"
++            @change="${this.onDescriptorChange_}">
++      </label>
++      <label class="field">
++        <span>${this.isZh_() ? 'Magnet 链接' : 'Magnet link'}</span>
++        <textarea id="magnet" rows="2" spellcheck="false"
++            placeholder="magnet:?xt=urn:btih:…"
++            @input="${this.onMagnetInput_}"></textarea>
++      </label>
++      <div class="actions">
++        <button class="primary" ?disabled="${this.working_}"
++            @click="${this.onInspectClick_}">${this.isZh_() ? '检查内容' : 'Inspect'}</button>
++      </div>
++      ${this.previewText_ ? html`
++        <div class="preview">${this.previewText_}</div>` : nothing}
++      ${this.previewKind_ === 'metalink' && this.requestId_ ? html`
++        <div class="actions">
++          <button class="primary" ?disabled="${this.working_}"
++              @click="${this.onStartMetalinkClick_}">
++            ${this.isZh_() ? '添加到下载列表' : 'Add to downloads'}
++          </button>
++        </div>` : nothing}
++      ${this.previewKind_ === 'torrent' && this.requestId_ ? html`
++        ${this.previewFiles_.length ? html`
++          <ul class="files">
++            ${this.previewFiles_.map(file => html`
++              <li><label>
++                <input type="checkbox" checked data-file-index="${file.index}"
++                    @change="${this.onFileSelectionChange_}">
++                <span>${file.path} · ${this.formatBytes_(file.size)}</span>
++              </label></li>`)}
++          </ul>` : nothing}
++        <div class="options">
++          <label class="toggle"><input id="dht" type="checkbox" checked>
++            ${this.isZh_() ? '启用 DHT' : 'Enable DHT'}</label>
++          <label class="toggle"><input id="pex" type="checkbox" checked>
++            ${this.isZh_() ? '启用 PEX' : 'Enable PEX'}</label>
++          <label class="field">${this.isZh_() ? '下载上限（KiB/s，0 不限）' :
++                                     'Download limit (KiB/s, 0 unlimited)'}
++            <input id="download-limit" type="number" min="0" max="1000000"
++                step="128" value="0">
++          </label>
++          <label class="field">${this.isZh_() ? '上传上限（KiB/s，0 不限）' :
++                                     'Upload limit (KiB/s, 0 unlimited)'}
++            <input id="upload-limit" type="number" min="0" max="1000000"
++                step="128" value="256">
++          </label>
++        </div>
++        <label class="disclosure">
++          <input id="disclosure" type="checkbox"
++              .checked="${this.disclosureAcknowledged_}"
++              ?disabled="${this.disclosureAcknowledged_}">
++          <span>${this.isZh_() ?
++              '我知道 BT 会向节点、Tracker 或 DHT 公开本机 IP；我只下载有权取得的内容。完成后 Aegis 自动停止做种。' :
++              'I understand that BT exposes my IP to peers, trackers, or DHT. I will only download authorized content. Aegis stops seeding on completion.'}</span>
++        </label>
++        <div class="actions">
++          <button class="primary" ?disabled="${this.working_}"
++              @click="${this.onStartTorrentClick_}">
++            ${this.isZh_() ? '开始 BT 下载' : 'Start BT download'}
++          </button>
++        </div>` : nothing}
++    </div>` : nothing}
++  ${this.taskId_ || this.taskStatus_ ? html`
++    <div class="task">
++      <div class="task-heading">
++        <span class="protocol-badge">BT</span>
++        <span class="title">${this.taskStatus_?.name ||
++            (this.isZh_() ? '正在恢复任务' : 'Restoring task')}</span>
++      </div>
++      <progress max="1000000" value="${this.taskStatus_?.progressPpm || 0}"></progress>
++      <div class="task-status">${this.formatTaskStatus_(this.isZh_(), this.taskStatus_)}</div>
++      <div class="actions">
++        <button ?disabled="${!this.taskStatus_?.found ||
++                            !!this.taskStatus_.paused ||
++                            !!this.taskStatus_.finished || this.controlPending_}"
++            @click="${this.onPauseClick_}">
++          ${this.isZh_() ? '暂停' : 'Pause'}
++        </button>
++        <button ?disabled="${!this.taskStatus_?.found ||
++                            !this.taskStatus_.paused ||
++                            !!this.taskStatus_.finished || this.controlPending_}"
++            @click="${this.onResumeClick_}">
++          ${this.isZh_() ? '继续' : 'Resume'}
++        </button>
++        <button ?disabled="${!this.taskStatus_?.found ||
++                            !!this.taskStatus_.finished ||
++                            this.controlPending_}"
++            @click="${this.onCancelClick_}">
++          ${this.isZh_() ? '取消（保留文件）' : 'Cancel (keep files)'}
++        </button>
++      </div>
++    </div>` : nothing}
++</div>
++<!--_html_template_end_-->`;
++  // clang-format on
++}
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.ts b/chrome/browser/resources/downloads/aegis_download_panel.ts
+new file mode 100644
+index 0000000000..808667af3d
+--- /dev/null
++++ b/chrome/browser/resources/downloads/aegis_download_panel.ts
+@@ -0,0 +1,517 @@
++// Copyright 2026 GCSA
++
++import {sendWithPromise} from 'chrome://resources/js/cr.js';
++import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
++
++import {getCss} from './aegis_download_panel.css.js';
++import {getHtml} from './aegis_download_panel.html.js';
++
++interface AegisStatus {
++  torrentDisclosureAcknowledged?: boolean;
++  torrentTaskId?: string;
++  torrentSupported?: boolean;
++}
++
++interface MetalinkPreview {
++  ok: boolean;
++  error?: string;
++  requestId?: string;
++  fileName?: string;
++  fileSize?: number;
++  hashAlgorithm?: string;
++  hashHex?: string;
++  mirrorOrigins?: string[];
++}
++
++interface TorrentFile {
++  index: number;
++  path: string;
++  size: number;
++}
++
++interface TorrentPreview {
++  ok: boolean;
++  error?: string;
++  requestId?: string;
++  name?: string;
++  totalSize?: number;
++  hasV1?: boolean;
++  hasV2?: boolean;
++  trackerCount?: number;
++  files?: TorrentFile[];
++}
++
++interface TorrentStatus {
++  found: boolean;
++  error?: string;
++  name?: string;
++  state?: string;
++  totalBytes?: number;
++  completedBytes?: number;
++  progressPpm?: number;
++  downloadRate?: number;
++  uploadRate?: number;
++  peers?: number;
++  seeds?: number;
++  paused?: boolean;
++  finished?: boolean;
++}
++
++interface TorrentStartResult {
++  ok: boolean;
++  error?: string;
++  taskId?: string;
++}
++
++function formatBytes(value: number): string {
++  if (!Number.isFinite(value) || value < 0) {
++    return '—';
++  }
++  if (value < 1024) {
++    return `${value} B`;
++  }
++  if (value < 1024 * 1024) {
++    return `${(value / 1024).toFixed(1)} KiB`;
++  }
++  if (value < 1024 * 1024 * 1024) {
++    return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
++  }
++  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
++}
++
++function fileAsBase64(file: File): Promise<string> {
++  return new Promise((resolve, reject) => {
++    const reader = new FileReader();
++    reader.addEventListener('error', () => reject(reader.error), {once: true});
++    reader.addEventListener('load', () => {
++      if (typeof reader.result !== 'string') {
++        reject(new Error('torrent read failed'));
++        return;
++      }
++      const comma = reader.result.indexOf(',');
++      resolve(comma >= 0 ? reader.result.slice(comma + 1) : '');
++    }, {once: true});
++    reader.readAsDataURL(file);
++  });
++}
++
++export class AegisDownloadPanelElement extends CrLitElement {
++  static get is() {
++    return 'aegis-download-panel';
++  }
++
++  static override get styles() {
++    return getCss();
++  }
++
++  override render() {
++    return getHtml.bind(this)();
++  }
++
++  static override get properties() {
++    return {
++      expanded_: {type: Boolean},
++      working_: {type: Boolean},
++      previewText_: {type: String},
++      previewKind_: {type: String},
++      previewFiles_: {type: Array},
++      requestId_: {type: String},
++      taskId_: {type: String},
++      taskStatus_: {type: Object},
++      disclosureAcknowledged_: {type: Boolean},
++      controlPending_: {type: Boolean},
++    };
++  }
++
++  protected accessor expanded_ = false;
++  protected accessor working_ = false;
++  protected accessor previewText_ = '';
++  protected accessor previewKind_: ''|'metalink'|'torrent' = '';
++  protected accessor previewFiles_: TorrentFile[] = [];
++  protected accessor requestId_ = '';
++  protected accessor taskId_ = '';
++  protected accessor taskStatus_: TorrentStatus|null = null;
++  protected accessor disclosureAcknowledged_ = false;
++  protected accessor controlPending_ = false;
++
++  private selectedFiles_ = new Set<number>();
++  private pollTimer_ = 0;
++  private readonly visibilityListener_ = () => {
++    window.clearTimeout(this.pollTimer_);
++    if (!document.hidden && this.taskId_) {
++      void this.refreshTask_();
++    }
++  };
++
++  override connectedCallback() {
++    super.connectedCallback();
++    document.addEventListener('visibilitychange', this.visibilityListener_);
++    void this.restoreTask_();
++  }
++
++  override disconnectedCallback() {
++    window.clearTimeout(this.pollTimer_);
++    document.removeEventListener('visibilitychange', this.visibilityListener_);
++    super.disconnectedCallback();
++  }
++
++  protected isZh_(): boolean {
++    return document.documentElement.lang.startsWith('zh');
++  }
++
++  protected onToggleClick_() {
++    this.expanded_ = !this.expanded_;
++  }
++
++  private descriptor_(): HTMLInputElement|null {
++    return this.shadowRoot.querySelector<HTMLInputElement>('#descriptor');
++  }
++
++  protected onDescriptorChange_() {
++    if (this.descriptor_()?.files?.length) {
++      const magnet =
++          this.shadowRoot.querySelector<HTMLTextAreaElement>('#magnet');
++      if (magnet) {
++        magnet.value = '';
++      }
++    }
++    this.resetPreview_();
++  }
++
++  protected onMagnetInput_(event: Event) {
++    const input = event.target as HTMLTextAreaElement;
++    if (input.value.trim()) {
++      const descriptor = this.descriptor_();
++      if (descriptor) {
++        descriptor.value = '';
++      }
++    }
++    this.resetPreview_();
++  }
++
++  private resetPreview_() {
++    this.requestId_ = '';
++    this.previewKind_ = '';
++    this.previewText_ = '';
++    this.previewFiles_ = [];
++    this.selectedFiles_.clear();
++    this.requestUpdate();
++  }
++
++  protected async onInspectClick_() {
++    const zh = document.documentElement.lang.startsWith('zh');
++    const file = this.descriptor_()?.files?.item(0) || null;
++    const magnet =
++        this.shadowRoot.querySelector<HTMLTextAreaElement>('#magnet')
++            ?.value.trim() ||
++        '';
++    this.resetPreview_();
++    this.working_ = true;
++    try {
++      if (magnet) {
++        const preview: TorrentPreview =
++            await sendWithPromise('parseMagnet', magnet);
++        this.setTorrentPreview_(preview, zh);
++      } else if (file) {
++        const name = file.name.toLowerCase();
++        if (name.endsWith('.torrent')) {
++          if (file.size > 4 * 1024 * 1024) {
++            throw new Error(
++                zh ? 'Torrent 元数据超过 4 MiB。' :
++                     'Torrent metadata exceeds 4 MiB.');
++          }
++          const preview: TorrentPreview =
++              await sendWithPromise('parseTorrent', await fileAsBase64(file));
++          this.setTorrentPreview_(preview, zh);
++        } else if (name.endsWith('.meta4') || name.endsWith('.metalink')) {
++          if (file.size > 1024 * 1024) {
++            throw new Error(
++                zh ? 'Metalink 文件超过 1 MiB。' : 'Metalink exceeds 1 MiB.');
++          }
++          const preview: MetalinkPreview =
++              await sendWithPromise('parseMetalink', await file.text());
++          this.setMetalinkPreview_(preview, zh);
++        } else {
++          throw new Error(
++              zh ? '请选择 Metalink 或 Torrent 文件。' :
++                   'Choose a Metalink or Torrent file.');
++        }
++      } else {
++        throw new Error(
++            zh ? '请选择文件或粘贴 Magnet 链接。' :
++                 'Choose a file or paste a Magnet link.');
++      }
++    } catch (error) {
++      this.previewText_ = String(error);
++    } finally {
++      this.working_ = false;
++    }
++  }
++
++  private setMetalinkPreview_(preview: MetalinkPreview, zh: boolean) {
++    if (!preview.ok) {
++      this.previewText_ = (zh ? '检查失败：' : 'Inspection failed: ') +
++          (preview.error || 'invalid Metalink');
++      return;
++    }
++    this.previewKind_ = 'metalink';
++    this.requestId_ = preview.requestId || '';
++    this.previewText_ = [
++      `${zh ? '文件：' : 'File: '}${preview.fileName || '—'}`,
++      `${zh ? '大小：' : 'Size: '}${formatBytes(preview.fileSize ?? -1)}`,
++      `${zh ? '校验：' : 'Integrity: '}${
++          (preview.hashAlgorithm ||
++           '').toUpperCase()} ${preview.hashHex || ''}`,
++      zh ? '镜像来源（隐藏路径与查询参数）：' :
++           'Mirror origins (paths and queries hidden):',
++      ...(preview.mirrorOrigins || []).map(origin => `• ${origin}`),
++    ].join('\n');
++  }
++
++  private setTorrentPreview_(preview: TorrentPreview, zh: boolean) {
++    if (!preview.ok) {
++      this.previewText_ = (zh ? '检查失败：' : 'Inspection failed: ') +
++          (preview.error || 'invalid torrent');
++      return;
++    }
++    const versions = [
++      preview.hasV1 ? 'v1' : '', preview.hasV2 ? 'v2' : ''
++    ].filter(Boolean).join(' + ');
++    this.previewKind_ = 'torrent';
++    this.requestId_ = preview.requestId || '';
++    this.previewFiles_ = preview.files || [];
++    this.selectedFiles_ = new Set(this.previewFiles_.map(file => file.index));
++    this.previewText_ = [
++      `${zh ? '名称：' : 'Name: '}${preview.name || '—'}`,
++      `${zh ? '大小：' : 'Size: '}${
++          preview.totalSize ? formatBytes(preview.totalSize) :
++                              (zh ? '等待元数据' : 'waiting for metadata')}`,
++      `${zh ? '协议：' : 'Protocol: '}${versions || '—'}`,
++      `${
++          zh ? 'Tracker 数量（地址不显示）：' :
++               'Tracker count (addresses hidden): '}${
++          preview.trackerCount || 0}`,
++      `${zh ? '文件数：' : 'Files: '}${this.previewFiles_.length}`,
++    ].join('\n');
++  }
++
++  protected onFileSelectionChange_(event: Event) {
++    const input = event.target as HTMLInputElement;
++    const index = Number(input.dataset['fileIndex']);
++    if (!Number.isInteger(index) || index < 0) {
++      return;
++    }
++    if (input.checked) {
++      this.selectedFiles_.add(index);
++    } else {
++      this.selectedFiles_.delete(index);
++    }
++  }
++
++  protected async onStartMetalinkClick_() {
++    if (!this.requestId_) {
++      return;
++    }
++    const zh = document.documentElement.lang.startsWith('zh');
++    this.working_ = true;
++    const requestId = this.requestId_;
++    this.requestId_ = '';
++    try {
++      const result: {ok: boolean, error?: string} =
++          await sendWithPromise('startMetalinkDownload', requestId);
++      this.previewText_ = result.ok ?
++          (zh ?
++               '已添加到下方原生下载列表；完成后自动校验散列并在需要时切换镜像。' :
++               'Added to the native download list below. Integrity and mirror failover are automatic.') :
++          (result.error || 'download start failed');
++    } catch (error) {
++      this.previewText_ = String(error);
++    } finally {
++      this.working_ = false;
++    }
++  }
++
++  private readLimit_(id: string): number|null {
++    const value = Number(
++        this.shadowRoot.querySelector<HTMLInputElement>(`#${id}`)?.value);
++    return Number.isInteger(value) && value >= 0 && value <= 1000000 ? value :
++                                                                       null;
++  }
++
++  protected async onStartTorrentClick_() {
++    if (!this.requestId_) {
++      return;
++    }
++    const zh = document.documentElement.lang.startsWith('zh');
++    const downloadLimit = this.readLimit_('download-limit');
++    const uploadLimit = this.readLimit_('upload-limit');
++    const disclosure =
++        this.shadowRoot.querySelector<HTMLInputElement>('#disclosure')
++            ?.checked === true;
++    if (this.previewFiles_.length && !this.selectedFiles_.size) {
++      this.previewText_ =
++          zh ? '请至少选择一个文件。' : 'Select at least one file.';
++      return;
++    }
++    if (downloadLimit === null || uploadLimit === null) {
++      this.previewText_ = zh ?
++          '速度上限必须是 0–1000000 的整数。' :
++          'Rate limits must be integers from 0 to 1000000.';
++      return;
++    }
++    if (!disclosure) {
++      this.previewText_ = zh ? '开始前请确认 BT 网络隐私说明。' :
++                               'Acknowledge the BT privacy disclosure first.';
++      return;
++    }
++    this.working_ = true;
++    const requestId = this.requestId_;
++    this.requestId_ = '';
++    try {
++      const result: TorrentStartResult = await sendWithPromise(
++          'startTorrent', requestId, [...this.selectedFiles_], {
++            enableDht: this.shadowRoot.querySelector<HTMLInputElement>('#dht')
++                           ?.checked === true,
++            enablePex: this.shadowRoot.querySelector<HTMLInputElement>('#pex')
++                           ?.checked === true,
++            downloadLimitKib: downloadLimit,
++            uploadLimitKib: uploadLimit,
++          },
++          disclosure);
++      if (!result.ok || !result.taskId) {
++        this.previewText_ = result.error || 'torrent start failed';
++        return;
++      }
++      this.taskId_ = result.taskId;
++      this.disclosureAcknowledged_ = true;
++      this.expanded_ = false;
++      await this.refreshTask_();
++    } catch (error) {
++      this.previewText_ = String(error);
++    } finally {
++      this.working_ = false;
++    }
++  }
++
++  private async restoreTask_() {
++    try {
++      const status: AegisStatus = await sendWithPromise('getStatus');
++      this.disclosureAcknowledged_ =
++          status.torrentDisclosureAcknowledged === true;
++      if (status.torrentSupported && status.torrentTaskId) {
++        this.taskId_ = status.torrentTaskId;
++        await this.refreshTask_();
++      }
++    } catch {
++      // The ordinary downloads list remains usable if Aegis is unavailable.
++    }
++  }
++
++  private schedulePoll_() {
++    window.clearTimeout(this.pollTimer_);
++    if (!this.taskId_ || document.hidden || this.controlPending_) {
++      return;
++    }
++    this.pollTimer_ = window.setTimeout(() => void this.refreshTask_(), 2000);
++  }
++
++  private async refreshTask_() {
++    if (!this.taskId_ || this.controlPending_) {
++      return;
++    }
++    const requestedId = this.taskId_;
++    try {
++      const status: TorrentStatus =
++          await sendWithPromise('getTorrentStatus', requestedId);
++      if (requestedId !== this.taskId_) {
++        return;
++      }
++      this.taskStatus_ = status;
++      if (status.found && !status.finished) {
++        this.schedulePoll_();
++      }
++    } catch (error) {
++      this.taskStatus_ = {found: false, error: String(error)};
++    }
++  }
++
++  protected async controlTask_(action: 'pause'|'resume'|'cancel') {
++    if (!this.taskId_ || this.controlPending_) {
++      return;
++    }
++    this.controlPending_ = true;
++    window.clearTimeout(this.pollTimer_);
++    try {
++      const result: {ok: boolean} =
++          await sendWithPromise('controlTorrent', this.taskId_, action);
++      if (result.ok && action === 'cancel') {
++        this.taskId_ = '';
++        this.taskStatus_ = null;
++        return;
++      }
++    } catch (error) {
++      this.taskStatus_ = {found: false, error: String(error)};
++    } finally {
++      this.controlPending_ = false;
++    }
++    if (this.taskId_) {
++      await this.refreshTask_();
++    }
++  }
++
++  protected onPauseClick_() {
++    void this.controlTask_('pause');
++  }
++
++  protected onResumeClick_() {
++    void this.controlTask_('resume');
++  }
++
++  protected onCancelClick_() {
++    void this.controlTask_('cancel');
++  }
++
++  protected formatBytes_(value: number): string {
++    return formatBytes(value);
++  }
++
++  protected formatTaskStatus_(zh: boolean, status: TorrentStatus|null): string {
++    if (!status) {
++      return zh ? '正在读取任务状态…' : 'Loading task status…';
++    }
++    if (!status.found) {
++      return status.error || (zh ? '任务不可用。' : 'Task unavailable.');
++    }
++    const labels: Record<string, [string, string]> = {
++      checking: ['校验文件', 'Checking files'],
++      metadata: ['获取元数据', 'Fetching metadata'],
++      downloading: ['下载中', 'Downloading'],
++      finished: ['已完成', 'Finished'],
++      seeding: ['已完成并停止做种', 'Complete; seeding stopped'],
++      resuming: ['恢复中', 'Resuming'],
++    };
++    const state = status.state || '—';
++    const label = labels[state]?.[zh ? 0 : 1] || state;
++    return [
++      `${zh ? '状态：' : 'State: '}${label}`,
++      `${formatBytes(status.completedBytes || 0)} / ${
++          formatBytes(status.totalBytes || 0)} · ${
++          ((status.progressPpm || 0) / 10000).toFixed(1)}%`,
++      `${zh ? '下载：' : 'Down: '}${
++          formatBytes(status.downloadRate || 0)}/s · ${zh ? '上传：' : 'Up: '}${
++          formatBytes(status.uploadRate || 0)}/s`,
++      `${zh ? '节点：' : 'Peers: '}${status.peers || 0} · ${
++          zh ? '种子：' : 'Seeds: '}${status.seeds || 0}`,
++      status.error || '',
++    ].filter(Boolean)
++        .join('\n');
++  }
++}
++
++customElements.define(AegisDownloadPanelElement.is, AegisDownloadPanelElement);
++
++declare global {
++  interface HTMLElementTagNameMap {
++    'aegis-download-panel': AegisDownloadPanelElement;
++  }
++}
+diff --git a/chrome/browser/resources/downloads/item.css b/chrome/browser/resources/downloads/item.css
+index 7e38038946..20ea75119a 100644
+--- a/chrome/browser/resources/downloads/item.css
++++ b/chrome/browser/resources/downloads/item.css
+@@ -229,6 +229,18 @@ cr-button {
+   color: var(--google-grey-700);
+ }
+ 
++#aegis-acceleration {
++  color: var(--google-blue-700);
++  font-size: 0.75rem;
++  line-height: 20px;
++}
++
++@media (prefers-color-scheme: dark) {
++  #aegis-acceleration {
++    color: var(--google-blue-300);
++  }
++}
++
+ @media (prefers-color-scheme: dark) {
+   .description[description-color='grey'] {
+     color: var(--google-grey-500);
+diff --git a/chrome/browser/resources/downloads/item.html.ts b/chrome/browser/resources/downloads/item.html.ts
+index 03b09f0363..6782cdebba 100644
+--- a/chrome/browser/resources/downloads/item.html.ts
++++ b/chrome/browser/resources/downloads/item.html.ts
+@@ -50,6 +50,11 @@ export function getHtml(this: DownloadsItemElement) {
+         </div>
+       </div>
+ 
++      <div id="aegis-acceleration" role="status"
++          ?hidden="${!this.data?.aegisParallel}">
++        ${this.data?.aegisAccelerationStatusText || ''}
++      </div>
++
+       <div class="description" role="gridcell"
+           description-color="${this.iconAndDescriptionColor_()}"
+           ?hidden="${!this.computeDescriptionVisible_()}">
+diff --git a/chrome/browser/resources/downloads/manager.html.ts b/chrome/browser/resources/downloads/manager.html.ts
+index d52c363174..2487aed96c 100644
+--- a/chrome/browser/resources/downloads/manager.html.ts
++++ b/chrome/browser/resources/downloads/manager.html.ts
+@@ -20,6 +20,8 @@ export function getHtml(this: DownloadsManagerElement) {
+     @save-dangerous-click="${this.onSaveDangerousClick_}">
+   <div class="cr-scrollable-top-shadow"></div>
+   <managed-footnote ?hidden="${this.inSearchMode_}"></managed-footnote>
++  <aegis-download-panel ?hidden="${this.inSearchMode_}">
++  </aegis-download-panel>
+   <cr-infinite-list id="downloadsList" .items="${this.items_}"
+       role="grid" aria-rowcount="${this.items_.length}"
+       ?hidden="${!this.hasDownloads_}" .scrollTarget="${this.listScrollTarget_}"
+diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
+index 12f29a3567..7fff765728 100644
+--- a/chrome/browser/resources/downloads/manager.ts
++++ b/chrome/browser/resources/downloads/manager.ts
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ import '/strings.m.js';
++import './aegis_download_panel.js';
+ import './bypass_warning_confirmation_dialog.js';
+ import './item.js';
+ import './toolbar.js';
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index eaf671e9dd..165e330ec9 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -38,6 +38,27 @@ struct AegisStrings {
+   const char* filter_list_auto_update_hint;
+   const char* filter_list_update_now;
+   const char* filter_list_meta;
++  const char* downloads_title;
++  const char* downloads_meta;
++  const char* metalink_file_label;
++  const char* metalink_inspect;
++  const char* metalink_download;
++  const char* metalink_safety;
++  const char* torrent_title;
++  const char* torrent_meta;
++  const char* torrent_file_label;
++  const char* magnet_label;
++  const char* torrent_inspect;
++  const char* torrent_start;
++  const char* torrent_dht;
++  const char* torrent_pex;
++  const char* torrent_download_limit;
++  const char* torrent_upload_limit;
++  const char* torrent_disclosure;
++  const char* torrent_pause;
++  const char* torrent_resume;
++  const char* torrent_cancel;
++  const char* torrent_safety;
+   const char* link_sanitize_label;
+   const char* link_sanitize_hint;
+   const char* cookie_janitor_label;
+@@ -110,6 +131,36 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_update_now = "立即更新",
+         .filter_list_meta =
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
++        .downloads_title = "下載與鏡像",
++        .downloads_meta =
++            "一般 HTTP(S) 下載會自動使用有界智能並行；也可匯入單文件 "
++            "RFC 5854 Metalink。",
++        .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
++        .metalink_inspect = "檢查文件",
++        .metalink_download = "確認並下載",
++        .metalink_safety =
++            "只接受公開 HTTP(S) 鏡像與 SHA-256/SHA-512。開始前僅顯示鏡像來源，"
++            "不顯示路徑、查詢參數或憑證；散列不符會刪除文件並嘗試下一鏡像。",
++        .torrent_title = "BT / Magnet",
++        .torrent_meta =
++            "先在本機檢查 .torrent 或 Magnet，再由 Network 沙箱服務下載。",
++        .torrent_file_label = "Torrent 文件（.torrent）",
++        .magnet_label = "Magnet 連結",
++        .torrent_inspect = "檢查 BT 內容",
++        .torrent_start = "確認並開始 BT 下載",
++        .torrent_dht = "啟用 DHT 找節點",
++        .torrent_pex = "啟用 PEX 節點交換",
++        .torrent_download_limit = "下載上限（KiB/s，0 為不限）",
++        .torrent_upload_limit = "上傳上限（KiB/s，0 為不限）",
++        .torrent_disclosure =
++            "我知道 BT 會向節點、Tracker 或 DHT 公開我的 IP；我只下載有權取得的"
++            "內容。Aegis 完成後會自動停止做種。",
++        .torrent_pause = "暫停",
++        .torrent_resume = "繼續",
++        .torrent_cancel = "取消任務（保留文件）",
++        .torrent_safety =
++            "限制 4 MiB 元資料、2048 個文件和 2 TiB；拒絕路徑穿越與符號連結。"
++            "預設關閉 UPnP、NAT-PMP 與 LSD，完成即停種。",
+         .link_sanitize_label = "清洗追蹤參數",
+         .link_sanitize_hint =
+             "導覽與跳轉時去掉 utm_、fbclid、gclid，並清洗 Referer "
+@@ -204,6 +255,36 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_update_now = "立即更新",
+         .filter_list_meta =
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
++        .downloads_title = "下载与镜像",
++        .downloads_meta =
++            "普通 HTTP(S) 下载会自动使用有界智能并行；也可导入单文件 "
++            "RFC 5854 Metalink。",
++        .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
++        .metalink_inspect = "检查文件",
++        .metalink_download = "确认并下载",
++        .metalink_safety =
++            "只接受公网 HTTP(S) 镜像与 SHA-256/SHA-512。开始前仅显示镜像来源，"
++            "不显示路径、查询参数或凭据；散列不符会删除文件并尝试下一镜像。",
++        .torrent_title = "BT / Magnet",
++        .torrent_meta =
++            "先在本机检查 .torrent 或 Magnet，再由 Network 沙箱服务下载。",
++        .torrent_file_label = "Torrent 文件（.torrent）",
++        .magnet_label = "Magnet 链接",
++        .torrent_inspect = "检查 BT 内容",
++        .torrent_start = "确认并开始 BT 下载",
++        .torrent_dht = "启用 DHT 找节点",
++        .torrent_pex = "启用 PEX 节点交换",
++        .torrent_download_limit = "下载上限（KiB/s，0 为不限）",
++        .torrent_upload_limit = "上传上限（KiB/s，0 为不限）",
++        .torrent_disclosure =
++            "我知道 BT 会向节点、Tracker 或 DHT 公开我的 IP；我只下载有权获取的"
++            "内容。Aegis 完成后会自动停止做种。",
++        .torrent_pause = "暂停",
++        .torrent_resume = "继续",
++        .torrent_cancel = "取消任务（保留文件）",
++        .torrent_safety =
++            "限制 4 MiB 元数据、2048 个文件和 2 TiB；拒绝路径穿越与符号链接。"
++            "默认关闭 UPnP、NAT-PMP 与 LSD，完成即停种。",
+         .link_sanitize_label = "清洗跟踪参数",
+         .link_sanitize_hint =
+             "导航与跳转时去掉 utm_、fbclid、gclid，并清洗 Referer "
+@@ -301,6 +382,40 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .filter_list_meta =
+           "No compiled filter list yet. Update to compile EasyList / "
+           "EasyPrivacy.",
++      .downloads_title = "Downloads and mirrors",
++      .downloads_meta =
++          "Regular HTTP(S) downloads use bounded smart parallelism. You can "
++          "also import a single-file RFC 5854 Metalink.",
++      .metalink_file_label = "Metalink file (.meta4 / .metalink)",
++      .metalink_inspect = "Inspect file",
++      .metalink_download = "Confirm and download",
++      .metalink_safety =
++          "Only public HTTP(S) mirrors and SHA-256/SHA-512 are accepted. The "
++          "preview shows origins, never paths, queries, or credentials. Hash "
++          "mismatches are deleted before trying the next mirror.",
++      .torrent_title = "BitTorrent / Magnet",
++      .torrent_meta =
++          "Inspect a .torrent or Magnet locally, then download in a Network-"
++          "sandboxed service.",
++      .torrent_file_label = "Torrent file (.torrent)",
++      .magnet_label = "Magnet link",
++      .torrent_inspect = "Inspect BT content",
++      .torrent_start = "Confirm and start BT download",
++      .torrent_dht = "Use DHT peer discovery",
++      .torrent_pex = "Use PEX peer exchange",
++      .torrent_download_limit = "Download limit (KiB/s, 0 unlimited)",
++      .torrent_upload_limit = "Upload limit (KiB/s, 0 unlimited)",
++      .torrent_disclosure =
++          "I understand that BT reveals my IP to peers, trackers, or DHT. I "
++          "will download only content I am authorized to obtain. Aegis stops "
++          "seeding when complete.",
++      .torrent_pause = "Pause",
++      .torrent_resume = "Resume",
++      .torrent_cancel = "Cancel task (keep files)",
++      .torrent_safety =
++          "Metadata is limited to 4 MiB, 2,048 files, and 2 TiB. Path "
++          "traversal and symlinks are rejected. UPnP, NAT-PMP, and LSD are "
++          "off; completed tasks stop seeding.",
+       .link_sanitize_label = "Strip tracking parameters",
+       .link_sanitize_hint =
+           "Removes utm_, fbclid, gclid and similar tracking params from "
+@@ -402,6 +517,27 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+                     strings.filter_list_auto_update_hint);
+   source->AddString("filterListUpdateNow", strings.filter_list_update_now);
+   source->AddString("filterListMeta", strings.filter_list_meta);
++  source->AddString("downloadsTitle", strings.downloads_title);
++  source->AddString("downloadsMeta", strings.downloads_meta);
++  source->AddString("metalinkFileLabel", strings.metalink_file_label);
++  source->AddString("metalinkInspect", strings.metalink_inspect);
++  source->AddString("metalinkDownload", strings.metalink_download);
++  source->AddString("metalinkSafety", strings.metalink_safety);
++  source->AddString("torrentTitle", strings.torrent_title);
++  source->AddString("torrentMeta", strings.torrent_meta);
++  source->AddString("torrentFileLabel", strings.torrent_file_label);
++  source->AddString("magnetLabel", strings.magnet_label);
++  source->AddString("torrentInspect", strings.torrent_inspect);
++  source->AddString("torrentStart", strings.torrent_start);
++  source->AddString("torrentDht", strings.torrent_dht);
++  source->AddString("torrentPex", strings.torrent_pex);
++  source->AddString("torrentDownloadLimit", strings.torrent_download_limit);
++  source->AddString("torrentUploadLimit", strings.torrent_upload_limit);
++  source->AddString("torrentDisclosure", strings.torrent_disclosure);
++  source->AddString("torrentPause", strings.torrent_pause);
++  source->AddString("torrentResume", strings.torrent_resume);
++  source->AddString("torrentCancel", strings.torrent_cancel);
++  source->AddString("torrentSafety", strings.torrent_safety);
+   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
+   source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
+   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index ea38362345..63b4746860 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -3,12 +3,14 @@
+ 
+ #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
+ 
++#include <algorithm>
+ #include <cmath>
+ #include <cstdint>
+ #include <optional>
+ #include <string>
+ #include <utility>
+ 
++#include "base/base64.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/string_util.h"
+ #include "base/time/time.h"
+@@ -16,12 +18,19 @@
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/aegis/aegis_torrent_client.h"
++#include "chrome/browser/aegis/metalink_download_verifier.h"
++#include "chrome/browser/aegis/metalink_parser.h"
++#include "chrome/browser/download/download_prefs.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/pref_names.h"
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #endif
+ #include "chrome/common/chrome_render_frame.mojom.h"
++#include "components/prefs/pref_service.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/render_frame_host.h"
+@@ -31,10 +40,16 @@
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #include "ui/base/l10n/l10n_util.h"
+ #include "url/gurl.h"
++#include "url/origin.h"
+ 
+ namespace {
+ 
+ constexpr base::TimeDelta kSummaryRequestTtl = base::Minutes(1);
++constexpr base::TimeDelta kMetalinkRequestTtl = base::Minutes(1);
++constexpr base::TimeDelta kTorrentRequestTtl = base::Minutes(1);
++constexpr size_t kMaxTorrentBytes = 4 * 1024 * 1024;
++constexpr size_t kMaxMagnetBytes = 16 * 1024;
++constexpr size_t kMaxTorrentFiles = 2048;
+ constexpr size_t kMaxCaptureUrlBytes = 8192;
+ constexpr size_t kMaxCaptureTitleBytes = 4096;
+ constexpr size_t kMaxCaptureTextBytes = 64 * 1024;
+@@ -216,6 +231,69 @@ base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
+   return dict;
+ }
+ 
++base::DictValue MetalinkToPreview(const aegis::MetalinkParseResult& result) {
++  base::DictValue dict;
++  dict.Set("ok", result.ok);
++  dict.Set("error", result.error);
++  if (!result.ok) {
++    return dict;
++  }
++  dict.Set("fileName", result.file_name);
++  dict.Set("fileSize", static_cast<double>(result.file_size));
++  dict.Set("hashAlgorithm", result.hash_algorithm);
++  dict.Set("hashHex", result.hash_hex);
++  base::ListValue mirrors;
++  for (const aegis::MetalinkMirror& mirror : result.mirrors) {
++    // Only expose origins to the settings renderer. Paths, queries, and
++    // fragments can contain credentials or signed download tokens.
++    mirrors.Append(url::Origin::Create(mirror.url).Serialize());
++  }
++  dict.Set("mirrorOrigins", std::move(mirrors));
++  return dict;
++}
++
++base::DictValue TorrentToPreview(const aegis::mojom::TorrentPreview& preview) {
++  base::DictValue dict;
++  dict.Set("ok", preview.ok);
++  dict.Set("error", preview.error);
++  if (!preview.ok) {
++    return dict;
++  }
++  dict.Set("name", preview.name);
++  dict.Set("totalSize", static_cast<double>(preview.total_size));
++  dict.Set("hasV1", preview.has_v1);
++  dict.Set("hasV2", preview.has_v2);
++  dict.Set("trackerCount", static_cast<int>(preview.tracker_count));
++  base::ListValue files;
++  for (const auto& source : preview.files) {
++    base::DictValue file;
++    file.Set("index", static_cast<int>(source->index));
++    file.Set("path", source->path);
++    file.Set("size", static_cast<double>(source->size));
++    files.Append(std::move(file));
++  }
++  dict.Set("files", std::move(files));
++  return dict;
++}
++
++base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
++  base::DictValue dict;
++  dict.Set("found", status.found);
++  dict.Set("error", status.error);
++  dict.Set("name", status.name);
++  dict.Set("state", status.state);
++  dict.Set("totalBytes", static_cast<double>(status.total_bytes));
++  dict.Set("completedBytes", static_cast<double>(status.completed_bytes));
++  dict.Set("progressPpm", static_cast<int>(status.progress_ppm));
++  dict.Set("downloadRate", static_cast<double>(status.download_rate));
++  dict.Set("uploadRate", static_cast<double>(status.upload_rate));
++  dict.Set("peers", static_cast<int>(status.peers));
++  dict.Set("seeds", static_cast<int>(status.seeds));
++  dict.Set("paused", status.paused);
++  dict.Set("finished", status.finished);
++  return dict;
++}
++
+ }  // namespace
+ 
+ AegisUIHandler::AegisUIHandler() = default;
+@@ -253,9 +331,33 @@ void AegisUIHandler::RegisterMessages() {
+   web_ui()->RegisterMessageCallback(
+       "probeOllama", base::BindRepeating(&AegisUIHandler::HandleProbeOllama,
+                                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "parseMetalink", base::BindRepeating(&AegisUIHandler::HandleParseMetalink,
++                                           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "startMetalinkDownload",
++      base::BindRepeating(&AegisUIHandler::HandleStartMetalinkDownload,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "parseTorrent", base::BindRepeating(&AegisUIHandler::HandleParseTorrent,
++                                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "parseMagnet", base::BindRepeating(&AegisUIHandler::HandleParseMagnet,
++                                         base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "startTorrent", base::BindRepeating(&AegisUIHandler::HandleStartTorrent,
++                                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "getTorrentStatus",
++      base::BindRepeating(&AegisUIHandler::HandleGetTorrentStatus,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "controlTorrent",
++      base::BindRepeating(&AegisUIHandler::HandleControlTorrent,
++                          base::Unretained(this)));
+ }
+ 
+-base::DictValue AegisUIHandler::BuildStatus() const {
++base::DictValue AegisUIHandler::BuildStatus() {
+   auto* service = aegis::AegisService::GetInstance();
+   base::DictValue status;
+   status.Set("enabled", service->IsEnabled());
+@@ -280,9 +382,21 @@ base::DictValue AegisUIHandler::BuildStatus() const {
+   status.Set("privacyAi", service->IsPrivacyAiEnabled());
+ #if BUILDFLAG(IS_ANDROID)
+   status.Set("isAndroid", true);
++  status.Set("torrentSupported", false);
+ #else
+   status.Set("isAndroid", false);
++#if BUILDFLAG(IS_MAC)
++  status.Set("torrentSupported", true);
++#else
++  status.Set("torrentSupported", false);
++#endif
+ #endif
++  Profile* profile = Profile::FromWebUI(web_ui());
++  status.Set("torrentDisclosureAcknowledged",
++             profile->GetPrefs()->GetBoolean(
++                 aegis::prefs::kTorrentDisclosureAcknowledged));
++  status.Set("torrentTaskId",
++             profile->GetPrefs()->GetString(aegis::prefs::kLastTorrentTaskId));
+   status.Set("aiControl", service->IsAiControlEnabled());
+   status.Set("aiControlRunning", service->AiControlRunning());
+   status.Set("aiControlPort", service->AiControlPort());
+@@ -640,3 +754,324 @@ void AegisUIHandler::OnOllamaProbed(std::string callback_id,
+   dict.Set("models", std::move(list));
+   ResolveJavascriptCallback(base::Value(callback_id), dict);
+ }
++
++void AegisUIHandler::HandleParseMetalink(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
++    return;
++  }
++  pending_metalink_.reset();
++  aegis::ParseMetalink(
++      args[1].GetString(),
++      base::BindOnce(&AegisUIHandler::OnMetalinkParsed,
++                     weak_factory_.GetWeakPtr(), args[0].GetString()));
++}
++
++void AegisUIHandler::OnMetalinkParsed(std::string callback_id,
++                                      aegis::MetalinkParseResult result) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  base::DictValue response = MetalinkToPreview(result);
++  if (result.ok) {
++    PendingMetalink pending;
++    pending.request_id = base::UnguessableToken::Create().ToString();
++    pending.result = std::move(result);
++    pending.created = base::TimeTicks::Now();
++    response.Set("requestId", pending.request_id);
++    pending_metalink_ = std::move(pending);
++  }
++  ResolveJavascriptCallback(base::Value(callback_id), response);
++}
++
++void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
++    return;
++  }
++  const base::Value& callback_id = args[0];
++  const std::string& request_id = args[1].GetString();
++  base::DictValue response;
++  if (!pending_metalink_ || pending_metalink_->request_id != request_id) {
++    response.Set("ok", false);
++    response.Set("error", "invalid or replayed Metalink request");
++    ResolveJavascriptCallback(callback_id, response);
++    return;
++  }
++  PendingMetalink pending = std::move(*pending_metalink_);
++  pending_metalink_.reset();
++  if (base::TimeTicks::Now() - pending.created > kMetalinkRequestTtl) {
++    response.Set("ok", false);
++    response.Set("error", "Metalink request expired");
++    ResolveJavascriptCallback(callback_id, response);
++    return;
++  }
++  aegis::StartVerifiedMetalinkDownload(Profile::FromWebUI(web_ui()),
++                                       std::move(pending.result));
++  response.Set("ok", true);
++  response.Set("error", "");
++  ResolveJavascriptCallback(callback_id, response);
++}
++
++void AegisUIHandler::HandleParseTorrent(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
++    return;
++  }
++  pending_torrent_.reset();
++  const std::string& encoded = args[1].GetString();
++  base::DictValue failure;
++  if (encoded.size() > ((kMaxTorrentBytes + 2) / 3) * 4 + 4) {
++    failure.Set("ok", false);
++    failure.Set("error", "torrent metadata exceeds the 4 MiB limit");
++    ResolveJavascriptCallback(args[0], failure);
++    return;
++  }
++  std::optional<std::vector<uint8_t>> decoded = base::Base64Decode(encoded);
++  if (!decoded || decoded->empty() || decoded->size() > kMaxTorrentBytes) {
++    failure.Set("ok", false);
++    failure.Set("error", "torrent metadata is not valid base64");
++    ResolveJavascriptCallback(args[0], failure);
++    return;
++  }
++  std::vector<uint8_t> pending_bytes = *decoded;
++  aegis::AegisTorrentClient::GetInstance()->ValidateTorrent(
++      std::move(*decoded),
++      base::BindOnce(&AegisUIHandler::OnTorrentValidated,
++                     weak_factory_.GetWeakPtr(), args[0].GetString(),
++                     std::move(pending_bytes), std::string()));
++}
++
++void AegisUIHandler::HandleParseMagnet(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
++    return;
++  }
++  pending_torrent_.reset();
++  const std::string& magnet_uri = args[1].GetString();
++  base::DictValue failure;
++  if (magnet_uri.empty() || magnet_uri.size() > kMaxMagnetBytes) {
++    failure.Set("ok", false);
++    failure.Set("error", "magnet link is invalid or too large");
++    ResolveJavascriptCallback(args[0], failure);
++    return;
++  }
++  aegis::AegisTorrentClient::GetInstance()->ValidateMagnet(
++      magnet_uri,
++      base::BindOnce(&AegisUIHandler::OnTorrentValidated,
++                     weak_factory_.GetWeakPtr(), args[0].GetString(),
++                     std::vector<uint8_t>(), magnet_uri));
++}
++
++void AegisUIHandler::OnTorrentValidated(
++    std::string callback_id,
++    std::vector<uint8_t> torrent_data,
++    std::string magnet_uri,
++    aegis::mojom::TorrentPreviewPtr preview) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  if (!preview) {
++    preview = aegis::mojom::TorrentPreview::New();
++    preview->error = "torrent service disconnected";
++  }
++  base::DictValue response = TorrentToPreview(*preview);
++  if (preview->ok) {
++    PendingTorrent pending;
++    pending.request_id = base::UnguessableToken::Create().ToString();
++    pending.torrent_data = std::move(torrent_data);
++    pending.magnet_uri = std::move(magnet_uri);
++    pending.created = base::TimeTicks::Now();
++    response.Set("requestId", pending.request_id);
++    pending_torrent_ = std::move(pending);
++  }
++  ResolveJavascriptCallback(base::Value(callback_id), response);
++}
++
++void AegisUIHandler::HandleStartTorrent(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 5 || !args[0].is_string() || !args[1].is_string() ||
++      !args[2].is_list() || !args[3].is_dict() || !args[4].is_bool()) {
++    return;
++  }
++  const std::string callback_id = args[0].GetString();
++  const std::string& request_id = args[1].GetString();
++  auto fail = [this, &callback_id](std::string error) {
++    base::DictValue response;
++    response.Set("ok", false);
++    response.Set("error", std::move(error));
++    ResolveJavascriptCallback(base::Value(callback_id), response);
++  };
++  if (!pending_torrent_ || pending_torrent_->request_id != request_id) {
++    fail("invalid or replayed torrent request");
++    return;
++  }
++  PendingTorrent pending = std::move(*pending_torrent_);
++  pending_torrent_.reset();
++  if (base::TimeTicks::Now() - pending.created > kTorrentRequestTtl) {
++    fail("torrent request expired");
++    return;
++  }
++
++  std::vector<uint32_t> selected_files;
++  if (args[2].GetList().size() > kMaxTorrentFiles) {
++    fail("too many selected torrent files");
++    return;
++  }
++  for (const base::Value& value : args[2].GetList()) {
++    if (!value.is_int() || value.GetInt() < 0) {
++      fail("selected torrent file index is invalid");
++      return;
++    }
++    selected_files.push_back(static_cast<uint32_t>(value.GetInt()));
++  }
++  std::ranges::sort(selected_files);
++  selected_files.erase(
++      std::unique(selected_files.begin(), selected_files.end()),
++      selected_files.end());
++
++  const base::DictValue& source_options = args[3].GetDict();
++  const std::optional<bool> enable_dht = source_options.FindBool("enableDht");
++  const std::optional<bool> enable_pex = source_options.FindBool("enablePex");
++  const std::optional<int> download_limit =
++      ReadInteger(source_options, "downloadLimitKib");
++  const std::optional<int> upload_limit =
++      ReadInteger(source_options, "uploadLimitKib");
++  if (!enable_dht || !enable_pex || !download_limit || !upload_limit) {
++    fail("torrent options are invalid");
++    return;
++  }
++
++  Profile* profile = Profile::FromWebUI(web_ui());
++  PrefService* prefs = profile->GetPrefs();
++  if (!prefs->GetBoolean(aegis::prefs::kTorrentDisclosureAcknowledged)) {
++    if (!args[4].GetBool()) {
++      fail("torrent privacy disclosure must be acknowledged");
++      return;
++    }
++    prefs->SetBoolean(aegis::prefs::kTorrentDisclosureAcknowledged, true);
++  }
++  DownloadPrefs* download_prefs = DownloadPrefs::FromBrowserContext(profile);
++  const base::FilePath destination = download_prefs->DownloadPath();
++  if (destination.empty()) {
++    fail("download directory is unavailable");
++    return;
++  }
++
++  auto options = aegis::mojom::TorrentOptions::New();
++  options->enable_dht = *enable_dht;
++  options->enable_pex = *enable_pex;
++  options->download_limit_kib = static_cast<uint32_t>(*download_limit);
++  options->upload_limit_kib = static_cast<uint32_t>(*upload_limit);
++  aegis::AegisTorrentClient::GetInstance()->StartTorrent(
++      std::move(pending.torrent_data), std::move(pending.magnet_uri),
++      destination, std::move(selected_files), std::move(options),
++      base::BindOnce(&AegisUIHandler::OnTorrentStarted,
++                     weak_factory_.GetWeakPtr(), std::move(callback_id)));
++}
++
++void AegisUIHandler::OnTorrentStarted(std::string callback_id,
++                                      bool ok,
++                                      const std::string& error,
++                                      const std::string& task_id) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  if (ok) {
++    Profile::FromWebUI(web_ui())->GetPrefs()->SetString(
++        aegis::prefs::kLastTorrentTaskId, task_id);
++  }
++  base::DictValue response;
++  response.Set("ok", ok);
++  response.Set("error", error);
++  response.Set("taskId", task_id);
++  ResolveJavascriptCallback(base::Value(callback_id), response);
++}
++
++void AegisUIHandler::HandleGetTorrentStatus(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
++    return;
++  }
++  const std::string& task_id = args[1].GetString();
++  const std::string& expected =
++      Profile::FromWebUI(web_ui())->GetPrefs()->GetString(
++          aegis::prefs::kLastTorrentTaskId);
++  if (task_id.empty() || task_id != expected) {
++    base::DictValue response;
++    response.Set("found", false);
++    response.Set("error", "torrent task is not available in this profile");
++    ResolveJavascriptCallback(args[0], response);
++    return;
++  }
++  aegis::AegisTorrentClient::GetInstance()->GetStatus(
++      task_id, base::BindOnce(&AegisUIHandler::OnTorrentStatus,
++                              weak_factory_.GetWeakPtr(), args[0].GetString()));
++}
++
++void AegisUIHandler::OnTorrentStatus(std::string callback_id,
++                                     aegis::mojom::TorrentStatusPtr status) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  if (!status) {
++    status = aegis::mojom::TorrentStatus::New();
++    status->error = "torrent service disconnected";
++  }
++  ResolveJavascriptCallback(base::Value(callback_id),
++                            TorrentStatusToDict(*status));
++}
++
++void AegisUIHandler::HandleControlTorrent(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.size() != 3 || !args[0].is_string() || !args[1].is_string() ||
++      !args[2].is_string()) {
++    return;
++  }
++  const std::string task_id = args[1].GetString();
++  const std::string& expected =
++      Profile::FromWebUI(web_ui())->GetPrefs()->GetString(
++          aegis::prefs::kLastTorrentTaskId);
++  if (task_id.empty() || task_id != expected) {
++    OnTorrentControlled(args[0].GetString(), args[2].GetString(), task_id,
++                        false);
++    return;
++  }
++  const std::string& action = args[2].GetString();
++  auto callback = base::BindOnce(&AegisUIHandler::OnTorrentControlled,
++                                 weak_factory_.GetWeakPtr(),
++                                 args[0].GetString(), action, task_id);
++  if (action == "pause") {
++    aegis::AegisTorrentClient::GetInstance()->Pause(task_id,
++                                                    std::move(callback));
++  } else if (action == "resume") {
++    aegis::AegisTorrentClient::GetInstance()->Resume(task_id,
++                                                     std::move(callback));
++  } else if (action == "cancel") {
++    aegis::AegisTorrentClient::GetInstance()->Cancel(task_id, false,
++                                                     std::move(callback));
++  } else {
++    OnTorrentControlled(args[0].GetString(), action, task_id, false);
++  }
++}
++
++void AegisUIHandler::OnTorrentControlled(std::string callback_id,
++                                         std::string action,
++                                         std::string task_id,
++                                         bool ok) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  if (action == "cancel") {
++    PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
++    if (prefs->GetString(aegis::prefs::kLastTorrentTaskId) == task_id) {
++      prefs->ClearPref(aegis::prefs::kLastTorrentTaskId);
++    }
++    // A disconnected service owns no surviving task. Treat cancel as
++    // idempotent so a cleanup-time disconnect cannot leave a stale UI card.
++    ok = true;
++  }
++  base::DictValue response;
++  response.Set("ok", ok);
++  ResolveJavascriptCallback(base::Value(callback_id), response);
++}
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 484ddb0c2c..744b0a50d7 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -13,6 +13,8 @@
+ #include "base/time/time.h"
+ #include "base/values.h"
+ #include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/aegis/metalink_parser.h"
++#include "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom.h"
+ #include "content/public/browser/global_routing_id.h"
+ #include "content/public/browser/web_ui_message_handler.h"
+ 
+@@ -47,7 +49,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   void OnAegisStateChanged() override;
+ 
+  private:
+-  base::DictValue BuildStatus() const;
++  base::DictValue BuildStatus();
+   void HandleGetStatus(const base::ListValue& args);
+   void HandleSetModuleEnabled(const base::ListValue& args);
+   void HandleUpdateFilterLists(const base::ListValue& args);
+@@ -56,6 +58,13 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   void HandleCancelPreparedSummary(const base::ListValue& args);
+   void HandleSetOllamaSettings(const base::ListValue& args);
+   void HandleProbeOllama(const base::ListValue& args);
++  void HandleParseMetalink(const base::ListValue& args);
++  void HandleStartMetalinkDownload(const base::ListValue& args);
++  void HandleParseTorrent(const base::ListValue& args);
++  void HandleParseMagnet(const base::ListValue& args);
++  void HandleStartTorrent(const base::ListValue& args);
++  void HandleGetTorrentStatus(const base::ListValue& args);
++  void HandleControlTorrent(const base::ListValue& args);
+   void OnFilterListsUpdated(std::string callback_id, bool ok);
+   void OnPageSignals(std::string callback_id,
+                      content::GlobalRenderFrameHostId frame_id,
+@@ -70,6 +79,22 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+                       bool ok,
+                       std::string error,
+                       std::vector<std::string> models);
++  void OnMetalinkParsed(std::string callback_id,
++                        aegis::MetalinkParseResult result);
++  void OnTorrentValidated(std::string callback_id,
++                          std::vector<uint8_t> torrent_data,
++                          std::string magnet_uri,
++                          aegis::mojom::TorrentPreviewPtr preview);
++  void OnTorrentStarted(std::string callback_id,
++                        bool ok,
++                        const std::string& error,
++                        const std::string& task_id);
++  void OnTorrentStatus(std::string callback_id,
++                       aegis::mojom::TorrentStatusPtr status);
++  void OnTorrentControlled(std::string callback_id,
++                           std::string action,
++                           std::string task_id,
++                           bool ok);
+ 
+   struct PendingSummary {
+     std::string request_id;
+@@ -79,7 +104,22 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+     base::TimeTicks created;
+   };
+ 
++  struct PendingMetalink {
++    std::string request_id;
++    aegis::MetalinkParseResult result;
++    base::TimeTicks created;
++  };
++
++  struct PendingTorrent {
++    std::string request_id;
++    std::vector<uint8_t> torrent_data;
++    std::string magnet_uri;
++    base::TimeTicks created;
++  };
++
+   std::optional<PendingSummary> pending_summary_;
++  std::optional<PendingMetalink> pending_metalink_;
++  std::optional<PendingTorrent> pending_torrent_;
+   base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
+       service_observation_{this};
+ 
+diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
+index 6a01cfa614..3c1d6428c2 100644
+--- a/chrome/browser/ui/webui/downloads/BUILD.gn
++++ b/chrome/browser/ui/webui/downloads/BUILD.gn
+@@ -58,6 +58,7 @@ source_set("downloads") {
+     "//chrome/browser/ui:ui_features",
+     "//chrome/browser/ui/webui",
+     "//chrome/browser/ui/webui:webui_load_timer",
++    "//chrome/browser/ui/webui/aegis",
+     "//chrome/common",
+     "//components/download/content/public",
+     "//components/download/public/common:public",
+diff --git a/chrome/browser/ui/webui/downloads/downloads.mojom b/chrome/browser/ui/webui/downloads/downloads.mojom
+index 3ac6fde31b..d72e0449be 100644
+--- a/chrome/browser/ui/webui/downloads/downloads.mojom
++++ b/chrome/browser/ui/webui/downloads/downloads.mojom
+@@ -65,6 +65,13 @@ enum SafeBrowsingState {
+ // This is the information associated with a download used for rendering in the
+ // UI.
+ struct Data {
++  // Aegis download acceleration evidence. These fields never contain URL
++  // query values, cookies, authorization headers, or referrers.
++  bool aegis_parallel;
++  int32 aegis_parallel_request_limit;
++  uint32 aegis_completed_slice_count;
++  bool aegis_integrity_hash_available;
++  string aegis_acceleration_status_text;
+   bool file_externally_removed;
+   bool is_dangerous;
+   [RenamedFrom=is_mixed_content]
+diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
+index d0fbb71c60..3225aa9019 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
+@@ -18,9 +18,13 @@
+ #include "base/i18n/unicodestring.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/strings/escape.h"
++#include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/time/time.h"
++#include "chrome/browser/aegis/metalink_download_verifier.h"
++#include "chrome/browser/browser_process.h"
+ #include "chrome/browser/download/download_crx_util.h"
+ #include "chrome/browser/download/download_item_model.h"
+ #include "chrome/browser/download/download_item_warning_data.h"
+@@ -31,6 +35,7 @@
+ #include "chrome/browser/extensions/api/downloads/downloads_api.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
++#include "components/download/internal/common/parallel_download_utils.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/download/public/common/download_item.h"
+ #include "components/download/public/common/download_item_rename_handler.h"
+@@ -68,6 +73,48 @@ namespace {
+ // JavaScript errors (https://crbug.com/41495722).
+ const size_t kMaxDisplayURLChars = 16 * 1024;
+ 
++std::string GetAegisAccelerationStatusText(const DownloadItem& item,
++                                           int request_limit,
++                                           size_t completed_slices,
++                                           bool integrity_hash_available) {
++  const bool is_zh =
++      base::StartsWith(g_browser_process->GetApplicationLocale(), "zh",
++                       base::CompareCase::INSENSITIVE_ASCII);
++  std::vector<std::string> parts;
++  if (item.IsParallelDownload()) {
++    parts.push_back(base::StrCat(
++        {is_zh ? "Aegis 智能并行（最多 " : "Aegis smart parallel (up to ",
++         base::NumberToString(request_limit), is_zh ? " 路）" : ")"}));
++    parts.push_back(
++        base::StrCat({base::NumberToString(completed_slices),
++                      is_zh ? " 个分片已完成" : " slices completed"}));
++    if (integrity_hash_available) {
++      parts.push_back(is_zh ? "SHA-256 散列已生成" : "SHA-256 hash ready");
++    }
++  }
++  switch (aegis::GetMetalinkVerificationStatus(item)) {
++    case aegis::MetalinkVerificationStatus::kNone:
++      break;
++    case aegis::MetalinkVerificationStatus::kPending:
++      parts.push_back(is_zh ? "Metalink · 下载完成后校验强散列"
++                            : "Metalink · strong hash checked after download");
++      break;
++    case aegis::MetalinkVerificationStatus::kVerifying:
++      parts.push_back(is_zh ? "Metalink · 正在校验强散列"
++                            : "Metalink · verifying strong hash");
++      break;
++    case aegis::MetalinkVerificationStatus::kVerified:
++      parts.push_back(is_zh ? "Metalink · 强散列已验证"
++                            : "Metalink · strong hash verified");
++      break;
++    case aegis::MetalinkVerificationStatus::kFailed:
++      parts.push_back(is_zh ? "Metalink · 散列不符，文件已移除"
++                            : "Metalink · hash mismatch; file removed");
++      break;
++  }
++  return base::JoinString(parts, " · ");
++}
++
+ // Returns an enum value to be used as the |danger_type| value in
+ // CreateDownloadData().
+ downloads::mojom::DangerType GetDangerType(
+@@ -163,8 +210,6 @@ std::string TimeFormatLongDate(const base::Time& time) {
+   return base::UTF16ToUTF8(base::i18n::UnicodeStringToString16(date_string));
+ }
+ 
+-
+-
+ // Returns a formatted string representing the initiator origin of the download
+ // request. May return empty string if there is no suitable origin to display.
+ std::u16string GetFormattedInitiatorOrigin(const download::DownloadItem* item) {
+@@ -336,6 +381,23 @@ downloads::mojom::DataPtr DownloadsListTracker::CreateDownloadData(
+ 
+   auto file_value = downloads::mojom::Data::New();
+ 
++  const bool is_parallel = download_item->IsParallelDownload();
++  const int parallel_request_limit =
++      is_parallel ? download::GetParallelRequestCountConfig() : 1;
++  const size_t completed_slice_count = std::ranges::count_if(
++      download_item->GetReceivedSlices(),
++      [](const DownloadItem::ReceivedSlice& slice) { return slice.finished; });
++  file_value->aegis_parallel = is_parallel;
++  file_value->aegis_parallel_request_limit = parallel_request_limit;
++  file_value->aegis_completed_slice_count = completed_slice_count;
++  const bool integrity_hash_available =
++      download_item->GetState() == download::DownloadItem::COMPLETE &&
++      !download_item->GetHash().empty();
++  file_value->aegis_integrity_hash_available = integrity_hash_available;
++  file_value->aegis_acceleration_status_text = GetAegisAccelerationStatusText(
++      *download_item, parallel_request_limit, completed_slice_count,
++      integrity_hash_available);
++
+   file_value->started =
+       static_cast<int>(download_item->GetStartTime().ToTimeT());
+   file_value->since_string = base::UTF16ToUTF8(ui::TimeFormat::RelativeDate(
+diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.h b/chrome/browser/ui/webui/downloads/downloads_list_tracker.h
+index 907c706c62..c7a7a02b00 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.h
++++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.h
+@@ -101,6 +101,10 @@ class DownloadsListTracker
+                            CreateDownloadData_UrlFormatting_VeryLong);
+   FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
+                            CreateDownloadData_InitiatorOriginPresent);
++  FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
++                           CreateDownloadData_AegisParallelEvidence);
++  FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
++                           CreateDownloadData_MetalinkVerifiedEvidence);
+   FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
+                            CreateDownloadData_InitiatorOriginNotPresent);
+   FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
+diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc
+index 8ddd0ed3b2..08fdc73b45 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc
+@@ -16,6 +16,7 @@
+ #include "base/memory/ptr_util.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/time/time.h"
++#include "chrome/browser/aegis/metalink_download_verifier.h"
+ #include "chrome/browser/download/download_item_model.h"
+ #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
+ #include "chrome/browser/ui/webui/downloads/mock_downloads_page.h"
+@@ -118,6 +119,8 @@ class DownloadsListTrackerTest : public testing::Test {
+     ON_CALL(*new_item, GetTargetFilePath())
+         .WillByDefault(
+             ReturnRefOfCopy(base::FilePath(FILE_PATH_LITERAL("foo.txt"))));
++    ON_CALL(*new_item, GetReceivedSlices())
++        .WillByDefault(ReturnRefOfCopy(DownloadItem::ReceivedSlices()));
+     ON_CALL(*new_item, GetURL())
+         .WillByDefault(ReturnRefOfCopy(GURL("https://example.test")));
+     ON_CALL(*new_item, GetRequestInitiator())
+@@ -472,6 +475,42 @@ TEST_F(DownloadsListTrackerTest, CreateDownloadData_InitiatorOriginPresent) {
+   EXPECT_EQ(data->display_initiator_origin, u"https://initiatorexample.test");
+ }
+ 
++TEST_F(DownloadsListTrackerTest, CreateDownloadData_AegisParallelEvidence) {
++  MockDownloadItem* item = CreateNextItem();
++  ON_CALL(*item, IsParallelDownload()).WillByDefault(Return(true));
++  ON_CALL(*item, GetState()).WillByDefault(Return(DownloadItem::IN_PROGRESS));
++  ON_CALL(*item, GetReceivedSlices())
++      .WillByDefault(ReturnRefOfCopy(DownloadItem::ReceivedSlices{
++          DownloadItem::ReceivedSlice(0, 1024, true),
++          DownloadItem::ReceivedSlice(1024, 512, false),
++      }));
++
++  auto tracker = std::make_unique<DownloadsListTracker>(
++      manager(), page_.BindAndGetRemote());
++  downloads::mojom::DataPtr data = tracker->CreateDownloadData(item);
++
++  EXPECT_TRUE(data->aegis_parallel);
++  EXPECT_GE(data->aegis_parallel_request_limit, 1);
++  EXPECT_LE(data->aegis_parallel_request_limit, 6);
++  EXPECT_EQ(data->aegis_completed_slice_count, 1u);
++  EXPECT_FALSE(data->aegis_integrity_hash_available);
++  EXPECT_FALSE(data->aegis_acceleration_status_text.empty());
++}
++
++TEST_F(DownloadsListTrackerTest, CreateDownloadData_MetalinkVerifiedEvidence) {
++  MockDownloadItem* item = CreateNextItem();
++  ON_CALL(*item, IsParallelDownload()).WillByDefault(Return(false));
++  aegis::SetMetalinkVerificationStatus(
++      *item, aegis::MetalinkVerificationStatus::kVerified);
++
++  auto tracker = std::make_unique<DownloadsListTracker>(
++      manager(), page_.BindAndGetRemote());
++  downloads::mojom::DataPtr data = tracker->CreateDownloadData(item);
++
++  EXPECT_FALSE(data->aegis_parallel);
++  EXPECT_FALSE(data->aegis_acceleration_status_text.empty());
++}
++
+ TEST_F(DownloadsListTrackerTest, CreateDownloadData_InitiatorOriginNotPresent) {
+   MockDownloadItem* item = CreateNextItem();
+   ON_CALL(*item, GetRequestInitiator())
+diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
+index 961b2a558a..9e41c572ca 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
+@@ -23,6 +23,7 @@
+ #include "chrome/browser/safe_browsing/advanced_protection_status_manager.h"
+ #include "chrome/browser/safe_browsing/advanced_protection_status_manager_factory.h"
+ #include "chrome/browser/ui/ui_features.h"
++#include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
+ #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
+ #include "chrome/browser/ui/webui/downloads/downloads_dom_handler.h"
+ #include "chrome/browser/ui/webui/managed_ui_handler.h"
+@@ -275,6 +276,7 @@ DownloadsUI::DownloadsUI(content::WebUI* web_ui)
+                         "Download.WebUi.LoadCompletedInMainFrame") {
+   Profile* profile = Profile::FromWebUI(web_ui);
+   web_ui->AddMessageHandler(std::make_unique<MetricsHandler>());
++  web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
+ 
+   // Set up the chrome://downloads/ source.
+   content::WebUIDataSource* source = CreateAndAddDownloadsUIHTMLSource(profile);
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index 08c1406a64..a550df3940 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -36,6 +36,9 @@ inline constexpr char kOllamaModel[] = "aegis.ollama_model";
+ inline constexpr char kAiControlEnabled[] = "aegis.ai_control_enabled";
+ inline constexpr char kPausedSites[] = "aegis.paused_sites";
+ inline constexpr char kAwarenessIntroShown[] = "aegis.awareness_intro_shown";
++inline constexpr char kTorrentDisclosureAcknowledged[] =
++    "aegis.torrent_disclosure_acknowledged";
++inline constexpr char kLastTorrentTaskId[] = "aegis.last_torrent_task_id";
+ 
+ }  // namespace aegis::prefs
+ 
+diff --git a/chrome/services/aegis_torrent/BUILD.gn b/chrome/services/aegis_torrent/BUILD.gn
+new file mode 100644
+index 0000000000..a2f5428635
+--- /dev/null
++++ b/chrome/services/aegis_torrent/BUILD.gn
+@@ -0,0 +1,50 @@
++# Copyright 2026 GCSA
++
++import("//testing/test.gni")
++
++source_set("safety") {
++  sources = [
++    "torrent_safety.cc",
++    "torrent_safety.h",
++  ]
++  configs -= [ "//build/config/compiler:no_exceptions" ]
++  configs += [ "//build/config/compiler:exceptions" ]
++  deps = [
++    "//base",
++  ]
++  public_deps = [ "//third_party/aegis_libtorrent:libtorrent" ]
++}
++
++source_set("service") {
++  sources = [
++    "aegis_torrent_service.cc",
++    "aegis_torrent_service.h",
++  ]
++  configs -= [ "//build/config/compiler:no_exceptions" ]
++  configs += [ "//build/config/compiler:exceptions" ]
++  deps = [
++    ":safety",
++    "//base",
++    "//chrome/services/aegis_torrent/public/mojom",
++    "//mojo/public/cpp/bindings",
++    "//sandbox/mac:seatbelt_extension",
++    "//third_party/aegis_libtorrent:libtorrent",
++  ]
++}
++
++test("aegis_torrent_unittests") {
++  testonly = true
++  sources = [
++    "torrent_safety_unittest.cc",
++    "torrent_transfer_unittest.cc",
++  ]
++  configs -= [ "//build/config/compiler:no_exceptions" ]
++  configs += [ "//build/config/compiler:exceptions" ]
++  deps = [
++    ":safety",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//third_party/aegis_libtorrent:libtorrent",
++    "//testing/gtest",
++  ]
++}
+diff --git a/chrome/services/aegis_torrent/aegis_torrent_service.cc b/chrome/services/aegis_torrent/aegis_torrent_service.cc
+new file mode 100644
+index 0000000000..c3a51bf0b2
+--- /dev/null
++++ b/chrome/services/aegis_torrent/aegis_torrent_service.cc
+@@ -0,0 +1,325 @@
++// Copyright 2026 GCSA
++
++#include "chrome/services/aegis_torrent/aegis_torrent_service.h"
++
++#include <algorithm>
++#include <cstdint>
++#include <limits>
++#include <memory>
++#include <string>
++#include <unordered_map>
++#include <utility>
++#include <vector>
++
++#include "base/unguessable_token.h"
++#include "build/build_config.h"
++#include "chrome/services/aegis_torrent/torrent_safety.h"
++#include "libtorrent/add_torrent_params.hpp"
++#include "libtorrent/extensions/smart_ban.hpp"
++#include "libtorrent/extensions/ut_metadata.hpp"
++#include "libtorrent/extensions/ut_pex.hpp"
++#include "libtorrent/load_torrent.hpp"
++#include "libtorrent/magnet_uri.hpp"
++#include "libtorrent/session.hpp"
++#include "libtorrent/session_params.hpp"
++#include "libtorrent/settings_pack.hpp"
++#include "libtorrent/torrent_flags.hpp"
++#include "libtorrent/torrent_status.hpp"
++#include "sandbox/mac/seatbelt_extension.h"
++#include "sandbox/mac/seatbelt_extension_token.h"
++
++namespace aegis::torrent {
++namespace {
++
++mojom::TorrentPreviewPtr ToMojoPreview(const SafeTorrentPreview& source) {
++  auto preview = mojom::TorrentPreview::New();
++  preview->ok = source.ok;
++  preview->error = source.error;
++  preview->name = source.name;
++  preview->total_size = source.total_size;
++  preview->has_v1 = source.has_v1;
++  preview->has_v2 = source.has_v2;
++  preview->tracker_count = source.tracker_count;
++  for (const SafeTorrentFile& source_file : source.files) {
++    auto file = mojom::TorrentFile::New();
++    file->index = source_file.index;
++    file->path = source_file.path;
++    file->size = source_file.size;
++    preview->files.push_back(std::move(file));
++  }
++  return preview;
++}
++
++std::string TorrentStateName(libtorrent::torrent_status::state_t state) {
++  using State = libtorrent::torrent_status;
++  switch (state) {
++    case State::checking_files:
++      return "checking";
++    case State::downloading_metadata:
++      return "metadata";
++    case State::downloading:
++      return "downloading";
++    case State::finished:
++      return "finished";
++    case State::seeding:
++      return "seeding";
++    case State::checking_resume_data:
++      return "resuming";
++  }
++}
++
++uint32_t ClampToUint32(int value) {
++  return value <= 0 ? 0u : static_cast<uint32_t>(value);
++}
++
++}  // namespace
++
++struct AegisTorrentService::State {
++  struct Task {
++    std::string name;
++    libtorrent::torrent_handle handle;
++    std::unique_ptr<sandbox::SeatbeltExtension> destination_extension;
++  };
++
++  std::unique_ptr<libtorrent::session> session;
++  std::unordered_map<std::string, Task> tasks;
++};
++
++AegisTorrentService::AegisTorrentService(
++    mojo::PendingReceiver<mojom::AegisTorrentService> receiver)
++    : receiver_(this, std::move(receiver)), state_(std::make_unique<State>()) {}
++
++AegisTorrentService::~AegisTorrentService() = default;
++
++void AegisTorrentService::ValidateTorrent(
++    const std::vector<uint8_t>& torrent_data,
++    ValidateTorrentCallback callback) {
++  std::move(callback).Run(ToMojoPreview(ValidateTorrentBytes(torrent_data)));
++}
++
++void AegisTorrentService::ValidateMagnet(const std::string& magnet_uri,
++                                         ValidateMagnetCallback callback) {
++  std::move(callback).Run(ToMojoPreview(ValidateMagnetUri(magnet_uri)));
++}
++
++void AegisTorrentService::EnsureSession(const mojom::TorrentOptions& options) {
++  libtorrent::settings_pack settings = libtorrent::min_memory_usage();
++  settings.set_str(libtorrent::settings_pack::user_agent,
++                   "Aegis/0.1 libtorrent/2.1.1");
++  settings.set_bool(libtorrent::settings_pack::enable_upnp, false);
++  settings.set_bool(libtorrent::settings_pack::enable_natpmp, false);
++  settings.set_bool(libtorrent::settings_pack::enable_lsd, false);
++  settings.set_bool(libtorrent::settings_pack::enable_dht, options.enable_dht);
++  settings.set_int(libtorrent::settings_pack::connections_limit, 80);
++  settings.set_int(libtorrent::settings_pack::active_downloads, 3);
++  settings.set_int(libtorrent::settings_pack::active_seeds, 0);
++  settings.set_int(libtorrent::settings_pack::download_rate_limit,
++                   static_cast<int>(std::min<uint64_t>(
++                       uint64_t{options.download_limit_kib} * 1024,
++                       std::numeric_limits<int>::max())));
++  settings.set_int(libtorrent::settings_pack::upload_rate_limit,
++                   static_cast<int>(std::min<uint64_t>(
++                       uint64_t{options.upload_limit_kib} * 1024,
++                       std::numeric_limits<int>::max())));
++  if (!state_->session) {
++    std::vector<std::shared_ptr<libtorrent::plugin>> no_default_plugins;
++    libtorrent::session_params params(std::move(settings),
++                                      std::move(no_default_plugins));
++    state_->session = std::make_unique<libtorrent::session>(std::move(params));
++  } else {
++    state_->session->apply_settings(std::move(settings));
++    state_->session->resume();
++  }
++}
++
++void AegisTorrentService::StartTorrent(
++    const std::vector<uint8_t>& torrent_data,
++    const std::string& magnet_uri,
++    const base::FilePath& destination,
++    const std::vector<uint32_t>& selected_files,
++    mojom::TorrentOptionsPtr options,
++#if BUILDFLAG(IS_MAC)
++    sandbox::SeatbeltExtensionToken destination_token,
++#endif
++    StartTorrentCallback callback) {
++  if (!options || destination.empty() || !destination.IsAbsolute() ||
++      (torrent_data.empty() == magnet_uri.empty())) {
++    std::move(callback).Run(false, "invalid torrent start request", "");
++    return;
++  }
++
++  const SafeTorrentPreview preview = torrent_data.empty()
++                                         ? ValidateMagnetUri(magnet_uri)
++                                         : ValidateTorrentBytes(torrent_data);
++  if (!preview.ok) {
++    std::move(callback).Run(false, preview.error, "");
++    return;
++  }
++
++#if BUILDFLAG(IS_MAC)
++  auto destination_extension =
++      sandbox::SeatbeltExtension::FromToken(std::move(destination_token));
++  if (!destination_extension || !destination_extension->Consume()) {
++    std::move(callback).Run(false, "download directory permission denied", "");
++    return;
++  }
++#endif
++
++  libtorrent::error_code error;
++  libtorrent::add_torrent_params params;
++  if (!torrent_data.empty()) {
++    libtorrent::load_torrent_limits limits;
++    limits.max_buffer_size = 4 * 1024 * 1024;
++    limits.max_pieces = 1'048'576;
++    limits.max_decode_depth = 40;
++    limits.max_decode_tokens = 200'000;
++    limits.max_duplicate_filenames = 32;
++    limits.max_directory_depth = 32;
++    const auto data = libtorrent::span<char const>(
++        reinterpret_cast<char const*>(torrent_data.data()),
++        torrent_data.size());
++    params = libtorrent::load_torrent_buffer(data, error, limits);
++  } else {
++    params = libtorrent::parse_magnet_uri(magnet_uri, error);
++  }
++  if (error) {
++    std::move(callback).Run(false, error.message(), "");
++    return;
++  }
++
++  params.flags &= ~libtorrent::torrent_flags::paused;
++  params.flags &= ~libtorrent::torrent_flags::auto_managed;
++  params.save_path = destination.AsUTF8Unsafe();
++  params.extensions.push_back(&libtorrent::create_ut_metadata_plugin);
++  params.extensions.push_back(&libtorrent::create_smart_ban_plugin);
++  if (options->enable_pex) {
++    params.extensions.push_back(&libtorrent::create_ut_pex_plugin);
++  }
++  if (!torrent_data.empty() && !selected_files.empty()) {
++    params.file_priorities.assign(preview.files.size(),
++                                  libtorrent::dont_download);
++    for (uint32_t file_index : selected_files) {
++      if (file_index >= params.file_priorities.size()) {
++        std::move(callback).Run(false, "selected file index is invalid", "");
++        return;
++      }
++      params.file_priorities[file_index] = libtorrent::default_priority;
++    }
++  }
++
++  EnsureSession(*options);
++  libtorrent::torrent_handle handle =
++      state_->session->add_torrent(std::move(params), error);
++  if (error || !handle.is_valid()) {
++    std::move(callback).Run(
++        false, error ? error.message() : "failed to add torrent", "");
++    return;
++  }
++  const std::string task_id = base::UnguessableToken::Create().ToString();
++  State::Task task;
++  task.name = preview.name;
++  task.handle = std::move(handle);
++#if BUILDFLAG(IS_MAC)
++  task.destination_extension = std::move(destination_extension);
++#endif
++  state_->tasks.emplace(task_id, std::move(task));
++  std::move(callback).Run(true, "", task_id);
++}
++
++void AegisTorrentService::GetStatus(const std::string& task_id,
++                                    GetStatusCallback callback) {
++  auto result = mojom::TorrentStatus::New();
++  auto task = state_->tasks.find(task_id);
++  if (task == state_->tasks.end() || !task->second.handle.is_valid()) {
++    result->error = "torrent task not found";
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  const libtorrent::torrent_status status = task->second.handle.status();
++  if (status.is_seeding) {
++    task->second.handle.pause();
++  }
++  result->found = true;
++  result->name = status.name.empty() ? task->second.name : status.name;
++  result->state = TorrentStateName(status.state);
++  result->total_bytes =
++      status.total_wanted > 0 ? static_cast<uint64_t>(status.total_wanted) : 0;
++  result->completed_bytes =
++      status.total_wanted_done > 0
++          ? static_cast<uint64_t>(status.total_wanted_done)
++          : 0;
++  result->progress_ppm = ClampToUint32(status.progress_ppm);
++  result->download_rate = ClampToUint32(status.download_payload_rate);
++  result->upload_rate = ClampToUint32(status.upload_payload_rate);
++  result->peers = ClampToUint32(status.num_peers);
++  result->seeds = ClampToUint32(status.num_seeds);
++  result->paused = bool(status.flags & libtorrent::torrent_flags::paused);
++  result->finished = status.is_finished || status.is_seeding;
++  if (status.errc) {
++    result->error = status.errc.message();
++  }
++  bool has_active_task = false;
++  for (const auto& item : state_->tasks) {
++    const State::Task& candidate = item.second;
++    if (!candidate.handle.is_valid()) {
++      continue;
++    }
++    const libtorrent::torrent_status candidate_status =
++        candidate.handle.status();
++    if (!candidate_status.is_finished && !candidate_status.is_seeding &&
++        !(candidate_status.flags & libtorrent::torrent_flags::paused)) {
++      has_active_task = true;
++      break;
++    }
++  }
++  if (!has_active_task && state_->session) {
++    libtorrent::settings_pack idle;
++    idle.set_bool(libtorrent::settings_pack::enable_dht, false);
++    state_->session->apply_settings(std::move(idle));
++  }
++  std::move(callback).Run(std::move(result));
++}
++
++void AegisTorrentService::Pause(const std::string& task_id,
++                                PauseCallback callback) {
++  auto task = state_->tasks.find(task_id);
++  const bool ok = task != state_->tasks.end() && task->second.handle.is_valid();
++  if (ok) {
++    task->second.handle.pause();
++  }
++  std::move(callback).Run(ok);
++}
++
++void AegisTorrentService::Resume(const std::string& task_id,
++                                 ResumeCallback callback) {
++  auto task = state_->tasks.find(task_id);
++  const bool ok = task != state_->tasks.end() && task->second.handle.is_valid();
++  if (ok) {
++    task->second.handle.resume();
++  }
++  std::move(callback).Run(ok);
++}
++
++void AegisTorrentService::Cancel(const std::string& task_id,
++                                 bool delete_files,
++                                 CancelCallback callback) {
++  auto task = state_->tasks.find(task_id);
++  if (task == state_->tasks.end() || !state_->session) {
++    std::move(callback).Run(false);
++    return;
++  }
++  libtorrent::torrent_handle handle = task->second.handle;
++  handle.pause();
++  state_->tasks.erase(task);
++  const bool should_reset_session = state_->tasks.empty();
++  std::move(callback).Run(true);
++  if (should_reset_session) {
++    state_->session.reset();
++  } else {
++    state_->session->remove_torrent(
++        handle, delete_files ? libtorrent::session_handle::delete_files
++                             : libtorrent::remove_flags_t{});
++  }
++}
++
++}  // namespace aegis::torrent
+diff --git a/chrome/services/aegis_torrent/aegis_torrent_service.h b/chrome/services/aegis_torrent/aegis_torrent_service.h
+new file mode 100644
+index 0000000000..073207b346
+--- /dev/null
++++ b/chrome/services/aegis_torrent/aegis_torrent_service.h
+@@ -0,0 +1,55 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_SERVICES_AEGIS_TORRENT_AEGIS_TORRENT_SERVICE_H_
++#define CHROME_SERVICES_AEGIS_TORRENT_AEGIS_TORRENT_SERVICE_H_
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "build/build_config.h"
++#include "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++
++namespace aegis::torrent {
++
++class AegisTorrentService : public mojom::AegisTorrentService {
++ public:
++  explicit AegisTorrentService(
++      mojo::PendingReceiver<mojom::AegisTorrentService> receiver);
++  AegisTorrentService(const AegisTorrentService&) = delete;
++  AegisTorrentService& operator=(const AegisTorrentService&) = delete;
++  ~AegisTorrentService() override;
++
++  void ValidateTorrent(const std::vector<uint8_t>& torrent_data,
++                       ValidateTorrentCallback callback) override;
++  void ValidateMagnet(const std::string& magnet_uri,
++                      ValidateMagnetCallback callback) override;
++  void StartTorrent(const std::vector<uint8_t>& torrent_data,
++                    const std::string& magnet_uri,
++                    const base::FilePath& destination,
++                    const std::vector<uint32_t>& selected_files,
++                    mojom::TorrentOptionsPtr options,
++#if BUILDFLAG(IS_MAC)
++                    sandbox::SeatbeltExtensionToken destination_token,
++#endif
++                    StartTorrentCallback callback) override;
++  void GetStatus(const std::string& task_id,
++                 GetStatusCallback callback) override;
++  void Pause(const std::string& task_id, PauseCallback callback) override;
++  void Resume(const std::string& task_id, ResumeCallback callback) override;
++  void Cancel(const std::string& task_id,
++              bool delete_files,
++              CancelCallback callback) override;
++
++ private:
++  struct State;
++
++  void EnsureSession(const mojom::TorrentOptions& options);
++  mojo::Receiver<mojom::AegisTorrentService> receiver_;
++  std::unique_ptr<State> state_;
++};
++
++}  // namespace aegis::torrent
++
++#endif  // CHROME_SERVICES_AEGIS_TORRENT_AEGIS_TORRENT_SERVICE_H_
+diff --git a/chrome/services/aegis_torrent/public/mojom/BUILD.gn b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
+new file mode 100644
+index 0000000000..2bf88013bc
+--- /dev/null
++++ b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
+@@ -0,0 +1,13 @@
++# Copyright 2026 GCSA
++
++import("//mojo/public/tools/bindings/mojom.gni")
++
++mojom("mojom") {
++  sources = [ "aegis_torrent_service.mojom" ]
++  enabled_features = [ "is_mac" ]
++  public_deps = [
++    "//mojo/public/mojom/base",
++    "//sandbox/policy/mojom",
++    "//sandbox/mac/mojom",
++  ]
++}
+diff --git a/chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom b/chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
+new file mode 100644
+index 0000000000..e1c29b67cf
+--- /dev/null
++++ b/chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
+@@ -0,0 +1,70 @@
++// Copyright 2026 GCSA
++
++module aegis.mojom;
++
++import "mojo/public/mojom/base/file_path.mojom";
++import "sandbox/policy/mojom/sandbox.mojom";
++
++[EnableIf=is_mac] import "sandbox/mac/mojom/seatbelt_extension_token.mojom";
++
++struct TorrentFile {
++  uint32 index;
++  string path;
++  uint64 size;
++};
++
++struct TorrentPreview {
++  bool ok;
++  string error;
++  string name;
++  uint64 total_size;
++  bool has_v1;
++  bool has_v2;
++  uint32 tracker_count;
++  array<TorrentFile> files;
++};
++
++struct TorrentOptions {
++  bool enable_dht;
++  bool enable_pex;
++  uint32 download_limit_kib;
++  uint32 upload_limit_kib;
++};
++
++struct TorrentStatus {
++  bool found;
++  string error;
++  string name;
++  string state;
++  uint64 total_bytes;
++  uint64 completed_bytes;
++  uint32 progress_ppm;
++  uint32 download_rate;
++  uint32 upload_rate;
++  uint32 peers;
++  uint32 seeds;
++  bool paused;
++  bool finished;
++};
++
++// Runs in Chromium's network sandbox. The Browser process retains all UI and
++// permission decisions; this service only receives bounded torrent metadata,
++// a capability-scoped destination, and task commands.
++[ServiceSandbox=sandbox.mojom.Sandbox.kNetwork]
++interface AegisTorrentService {
++  ValidateTorrent(array<uint8> torrent_data) => (TorrentPreview preview);
++  ValidateMagnet(string magnet_uri) => (TorrentPreview preview);
++
++  StartTorrent(
++      array<uint8> torrent_data, string magnet_uri,
++      mojo_base.mojom.FilePath destination, array<uint32> selected_files,
++      TorrentOptions options,
++      [EnableIf=is_mac]
++      sandbox.mac.mojom.SeatbeltExtensionToken destination_token)
++      => (bool ok, string error, string task_id);
++
++  GetStatus(string task_id) => (TorrentStatus status);
++  Pause(string task_id) => (bool ok);
++  Resume(string task_id) => (bool ok);
++  Cancel(string task_id, bool delete_files) => (bool ok);
++};
+diff --git a/chrome/services/aegis_torrent/torrent_safety.cc b/chrome/services/aegis_torrent/torrent_safety.cc
+new file mode 100644
+index 0000000000..e53be9d914
+--- /dev/null
++++ b/chrome/services/aegis_torrent/torrent_safety.cc
+@@ -0,0 +1,232 @@
++// Copyright 2026 GCSA
++
++#include "chrome/services/aegis_torrent/torrent_safety.h"
++
++#include <algorithm>
++#include <cstddef>
++#include <cstdint>
++#include <limits>
++#include <string>
++#include <string_view>
++#include <utility>
++
++#include "base/files/file_path.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "libtorrent/bdecode.hpp"
++#include "libtorrent/file_storage.hpp"
++#include "libtorrent/load_torrent.hpp"
++#include "libtorrent/magnet_uri.hpp"
++#include "libtorrent/torrent_info.hpp"
++
++namespace aegis::torrent {
++namespace {
++
++constexpr size_t kMaxTorrentBytes = 4 * 1024 * 1024;
++constexpr size_t kMaxMagnetBytes = 16 * 1024;
++constexpr int kMaxFiles = 2048;
++constexpr uint64_t kMaxTotalBytes = uint64_t{2} * 1024 * 1024 * 1024 * 1024;
++constexpr size_t kMaxPathBytes = 1024;
++constexpr size_t kMaxComponentBytes = 255;
++constexpr int kMaxDirectoryDepth = 32;
++
++bool IsUnsafeComponent(libtorrent::string_view component) {
++  if (component.empty() || component.size() > kMaxComponentBytes ||
++      component == "." || component == "..") {
++    return true;
++  }
++  for (char value : component) {
++    const unsigned char byte = static_cast<unsigned char>(value);
++    if (byte == 0 || byte < 0x20 || value == '/' || value == '\\') {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool ValidateV2Tree(const libtorrent::bdecode_node& node, int depth) {
++  if (node.type() != libtorrent::bdecode_node::dict_t ||
++      depth > kMaxDirectoryDepth) {
++    return false;
++  }
++  for (int index = 0; index < node.dict_size(); ++index) {
++    auto [key, value] = node.dict_at(index);
++    if (key.empty()) {
++      if (value.type() != libtorrent::bdecode_node::dict_t) {
++        return false;
++      }
++      continue;
++    }
++    if (IsUnsafeComponent(key) || !ValidateV2Tree(value, depth + 1)) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool HasUnsafeRawPaths(const std::vector<uint8_t>& bytes) {
++  libtorrent::error_code error;
++  const auto data = libtorrent::span<char const>(
++      reinterpret_cast<char const*>(bytes.data()), bytes.size());
++  libtorrent::bdecode_node root =
++      libtorrent::bdecode(data, error, nullptr, kMaxDirectoryDepth + 8, 200000);
++  if (error || root.type() != libtorrent::bdecode_node::dict_t) {
++    return true;
++  }
++  libtorrent::bdecode_node info = root.dict_find_dict("info");
++  if (!info) {
++    return true;
++  }
++  libtorrent::string_view name = info.dict_find_string_value("name.utf-8");
++  if (name.empty()) {
++    name = info.dict_find_string_value("name");
++  }
++  if (IsUnsafeComponent(name)) {
++    return true;
++  }
++
++  libtorrent::bdecode_node files = info.dict_find_list("files");
++  if (files) {
++    if (files.list_size() <= 0 || files.list_size() > kMaxFiles) {
++      return true;
++    }
++    for (int file_index = 0; file_index < files.list_size(); ++file_index) {
++      libtorrent::bdecode_node file = files.list_at(file_index);
++      if (file.type() != libtorrent::bdecode_node::dict_t) {
++        return true;
++      }
++      libtorrent::bdecode_node path = file.dict_find_list("path.utf-8");
++      if (!path) {
++        path = file.dict_find_list("path");
++      }
++      if (!path || path.list_size() <= 0 ||
++          path.list_size() > kMaxDirectoryDepth) {
++        return true;
++      }
++      for (int part = 0; part < path.list_size(); ++part) {
++        libtorrent::bdecode_node component = path.list_at(part);
++        if (component.type() != libtorrent::bdecode_node::string_t ||
++            IsUnsafeComponent(component.string_value())) {
++          return true;
++        }
++      }
++    }
++  }
++
++  libtorrent::bdecode_node file_tree = info.dict_find_dict("file tree");
++  return file_tree && !ValidateV2Tree(file_tree, 0);
++}
++
++bool IsSafeNormalizedPath(const std::string& path) {
++  if (path.empty() || path.size() > kMaxPathBytes ||
++      !base::IsStringUTF8(path)) {
++    return false;
++  }
++  const base::FilePath file_path = base::FilePath::FromUTF8Unsafe(path);
++  if (file_path.IsAbsolute() || file_path.ReferencesParent()) {
++    return false;
++  }
++  const std::vector<base::FilePath::StringType> components =
++      file_path.GetComponents();
++  return !components.empty() &&
++         static_cast<int>(components.size()) <= kMaxDirectoryDepth + 1;
++}
++
++SafeTorrentPreview Fail(std::string error) {
++  SafeTorrentPreview result;
++  result.error = std::move(error);
++  return result;
++}
++
++}  // namespace
++
++SafeTorrentPreview ValidateTorrentBytes(const std::vector<uint8_t>& bytes) {
++  if (bytes.empty() || bytes.size() > kMaxTorrentBytes) {
++    return Fail("torrent metadata exceeds the 4 MiB limit");
++  }
++  if (HasUnsafeRawPaths(bytes)) {
++    return Fail("torrent contains an unsafe file path");
++  }
++
++  libtorrent::load_torrent_limits limits;
++  limits.max_buffer_size = static_cast<int>(kMaxTorrentBytes);
++  limits.max_pieces = 1'048'576;
++  limits.max_decode_depth = kMaxDirectoryDepth + 8;
++  limits.max_decode_tokens = 200'000;
++  limits.max_duplicate_filenames = 32;
++  limits.max_directory_depth = kMaxDirectoryDepth;
++
++  libtorrent::error_code error;
++  const auto data = libtorrent::span<char const>(
++      reinterpret_cast<char const*>(bytes.data()), bytes.size());
++  libtorrent::add_torrent_params params =
++      libtorrent::load_torrent_buffer(data, error, limits);
++  if (error || !params.ti) {
++    return Fail(error ? error.message() : "torrent metadata is incomplete");
++  }
++  if (params.ti->num_files() <= 0 || params.ti->num_files() > kMaxFiles ||
++      params.ti->total_size() < 0 ||
++      static_cast<uint64_t>(params.ti->total_size()) > kMaxTotalBytes) {
++    return Fail("torrent file count or total size exceeds the safety limit");
++  }
++  if (!base::IsStringUTF8(params.ti->name()) || params.ti->name().empty() ||
++      params.ti->name().size() > kMaxComponentBytes) {
++    return Fail("torrent name is invalid");
++  }
++
++  SafeTorrentPreview result;
++  result.name = params.ti->name();
++  result.total_size = static_cast<uint64_t>(params.ti->total_size());
++  result.has_v1 = params.ti->info_hashes().has_v1();
++  result.has_v2 = params.ti->info_hashes().has_v2();
++  result.tracker_count = static_cast<uint32_t>(std::min<size_t>(
++      params.trackers.size(), std::numeric_limits<uint32_t>::max()));
++  const libtorrent::file_storage& files = params.ti->layout();
++  result.files.reserve(files.num_files());
++  for (int file_number = 0; file_number < files.num_files(); ++file_number) {
++    const libtorrent::file_index_t file_index{file_number};
++    const std::string path = files.file_path(file_index);
++    if (files.file_absolute_path(file_index) ||
++        (files.file_flags(file_index) &
++         libtorrent::file_storage::flag_symlink) ||
++        !IsSafeNormalizedPath(path) || files.file_size(file_index) < 0) {
++      return Fail("torrent contains an unsafe file entry");
++    }
++    result.files.push_back(
++        {static_cast<uint32_t>(file_number), path,
++         static_cast<uint64_t>(files.file_size(file_index))});
++  }
++  result.ok = true;
++  return result;
++}
++
++SafeTorrentPreview ValidateMagnetUri(const std::string& magnet_uri) {
++  if (magnet_uri.empty() || magnet_uri.size() > kMaxMagnetBytes ||
++      !base::StartsWith(magnet_uri, "magnet:?",
++                        base::CompareCase::INSENSITIVE_ASCII)) {
++    return Fail("magnet link is invalid or too large");
++  }
++  libtorrent::error_code error;
++  libtorrent::add_torrent_params params =
++      libtorrent::parse_magnet_uri(magnet_uri, error);
++  if (error || (!params.info_hashes.has_v1() && !params.info_hashes.has_v2())) {
++    return Fail(error ? error.message()
++                      : "magnet link has no supported info hash");
++  }
++  if (!params.name.empty() && (!base::IsStringUTF8(params.name) ||
++                               params.name.size() > kMaxComponentBytes ||
++                               IsUnsafeComponent(params.name))) {
++    return Fail("magnet display name is unsafe");
++  }
++
++  SafeTorrentPreview result;
++  result.ok = true;
++  result.name = params.name.empty() ? "Magnet download" : params.name;
++  result.has_v1 = params.info_hashes.has_v1();
++  result.has_v2 = params.info_hashes.has_v2();
++  result.tracker_count = static_cast<uint32_t>(std::min<size_t>(
++      params.trackers.size(), std::numeric_limits<uint32_t>::max()));
++  return result;
++}
++
++}  // namespace aegis::torrent
+diff --git a/chrome/services/aegis_torrent/torrent_safety.h b/chrome/services/aegis_torrent/torrent_safety.h
+new file mode 100644
+index 0000000000..ffecdd9070
+--- /dev/null
++++ b/chrome/services/aegis_torrent/torrent_safety.h
+@@ -0,0 +1,34 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_SERVICES_AEGIS_TORRENT_TORRENT_SAFETY_H_
++#define CHROME_SERVICES_AEGIS_TORRENT_TORRENT_SAFETY_H_
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++namespace aegis::torrent {
++
++struct SafeTorrentFile {
++  uint32_t index = 0;
++  std::string path;
++  uint64_t size = 0;
++};
++
++struct SafeTorrentPreview {
++  bool ok = false;
++  std::string error;
++  std::string name;
++  uint64_t total_size = 0;
++  bool has_v1 = false;
++  bool has_v2 = false;
++  uint32_t tracker_count = 0;
++  std::vector<SafeTorrentFile> files;
++};
++
++SafeTorrentPreview ValidateTorrentBytes(const std::vector<uint8_t>& bytes);
++SafeTorrentPreview ValidateMagnetUri(const std::string& magnet_uri);
++
++}  // namespace aegis::torrent
++
++#endif  // CHROME_SERVICES_AEGIS_TORRENT_TORRENT_SAFETY_H_
+diff --git a/chrome/services/aegis_torrent/torrent_safety_unittest.cc b/chrome/services/aegis_torrent/torrent_safety_unittest.cc
+new file mode 100644
+index 0000000000..22972225d3
+--- /dev/null
++++ b/chrome/services/aegis_torrent/torrent_safety_unittest.cc
+@@ -0,0 +1,76 @@
++// Copyright 2026 GCSA
++
++#include "chrome/services/aegis_torrent/torrent_safety.h"
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::torrent {
++namespace {
++
++std::vector<uint8_t> Bytes(std::string value) {
++  return std::vector<uint8_t>(value.begin(), value.end());
++}
++
++std::string PieceHash() {
++  return std::string(20, 'a');
++}
++
++TEST(AegisTorrentSafetyTest, AcceptsBoundedV1Torrent) {
++  const std::string encoded =
++      "d4:infod6:lengthi4e4:name8:test.bin12:piece lengthi4e6:pieces20:" +
++      PieceHash() + "ee";
++  const SafeTorrentPreview result = ValidateTorrentBytes(Bytes(encoded));
++
++  ASSERT_TRUE(result.ok) << result.error;
++  EXPECT_EQ("test.bin", result.name);
++  EXPECT_EQ(4u, result.total_size);
++  ASSERT_EQ(1u, result.files.size());
++  EXPECT_EQ("test.bin", result.files[0].path);
++  EXPECT_TRUE(result.has_v1);
++}
++
++TEST(AegisTorrentSafetyTest, RejectsParentTraversalBeforeSanitization) {
++  const std::string encoded =
++      "d4:infod5:filesld6:lengthi4e4:pathl2:..8:evil.bineee4:name4:root"
++      "12:piece lengthi4e6:pieces20:" +
++      PieceHash() + "ee";
++  const SafeTorrentPreview result = ValidateTorrentBytes(Bytes(encoded));
++
++  EXPECT_FALSE(result.ok);
++  EXPECT_EQ("torrent contains an unsafe file path", result.error);
++}
++
++TEST(AegisTorrentSafetyTest, RejectsSymlinkEntry) {
++  const std::string encoded =
++      "d4:infod5:filesld4:attr1:l6:lengthi0e4:pathl8:link.bine"
++      "12:symlink pathl10:target.bineee4:name4:root12:piece lengthi4e"
++      "6:pieces20:" +
++      PieceHash() + "ee";
++  const SafeTorrentPreview result = ValidateTorrentBytes(Bytes(encoded));
++
++  EXPECT_FALSE(result.ok);
++}
++
++TEST(AegisTorrentSafetyTest, AcceptsMagnetWithoutExposingTrackers) {
++  const SafeTorrentPreview result = ValidateMagnetUri(
++      "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&"
++      "dn=Fixture&tr=http%3A%2F%2Ftracker.example%2Fannounce%3Ftoken%3Dsecret");
++
++  ASSERT_TRUE(result.ok) << result.error;
++  EXPECT_EQ("Fixture", result.name);
++  EXPECT_TRUE(result.has_v1);
++  EXPECT_EQ(1u, result.tracker_count);
++}
++
++TEST(AegisTorrentSafetyTest, RejectsMagnetWithoutInfoHash) {
++  const SafeTorrentPreview result =
++      ValidateMagnetUri("magnet:?dn=NoHash&tr=http://tracker.example/announce");
++  EXPECT_FALSE(result.ok);
++}
++
++}  // namespace
++}  // namespace aegis::torrent
+diff --git a/chrome/services/aegis_torrent/torrent_transfer_unittest.cc b/chrome/services/aegis_torrent/torrent_transfer_unittest.cc
+new file mode 100644
+index 0000000000..80b9f7438b
+--- /dev/null
++++ b/chrome/services/aegis_torrent/torrent_transfer_unittest.cc
+@@ -0,0 +1,138 @@
++// Copyright 2026 GCSA
++
++#include <algorithm>
++#include <cstdint>
++#include <iterator>
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/threading/platform_thread.h"
++#include "base/time/time.h"
++#include "libtorrent/add_torrent_params.hpp"
++#include "libtorrent/address.hpp"
++#include "libtorrent/create_torrent.hpp"
++#include "libtorrent/error_code.hpp"
++#include "libtorrent/load_torrent.hpp"
++#include "libtorrent/session.hpp"
++#include "libtorrent/settings_pack.hpp"
++#include "libtorrent/torrent_flags.hpp"
++#include "libtorrent/torrent_info.hpp"
++#include "libtorrent/torrent_status.hpp"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::torrent {
++namespace {
++
++libtorrent::settings_pack LocalTransferSettings() {
++  libtorrent::settings_pack settings = libtorrent::min_memory_usage();
++  settings.set_str(libtorrent::settings_pack::listen_interfaces, "127.0.0.1:0");
++  settings.set_bool(libtorrent::settings_pack::enable_dht, false);
++  settings.set_bool(libtorrent::settings_pack::enable_lsd, false);
++  settings.set_bool(libtorrent::settings_pack::enable_upnp, false);
++  settings.set_bool(libtorrent::settings_pack::enable_natpmp, false);
++  settings.set_bool(
++      libtorrent::settings_pack::allow_multiple_connections_per_ip, true);
++  settings.set_int(libtorrent::settings_pack::connections_limit, 12);
++  return settings;
++}
++
++libtorrent::torrent_handle AddTorrent(
++    libtorrent::session& session,
++    const std::shared_ptr<const libtorrent::torrent_info>& info,
++    const base::FilePath& save_path,
++    bool seed_mode) {
++  libtorrent::add_torrent_params params;
++  params.ti = info;
++  params.save_path = save_path.value();
++  params.flags &= ~libtorrent::torrent_flags::paused;
++  params.flags &= ~libtorrent::torrent_flags::auto_managed;
++  if (seed_mode) {
++    params.flags |= libtorrent::torrent_flags::seed_mode;
++  }
++  libtorrent::error_code error;
++  libtorrent::torrent_handle handle =
++      session.add_torrent(std::move(params), error);
++  EXPECT_FALSE(error) << error.message();
++  EXPECT_TRUE(handle.is_valid());
++  return handle;
++}
++
++TEST(AegisTorrentTransferTest, DownloadsIdenticalPayloadFromTwoLocalSeeds) {
++  base::ScopedTempDir root;
++  ASSERT_TRUE(root.CreateUniqueTempDir());
++  const base::FilePath seed_one = root.GetPath().AppendASCII("seed-one");
++  const base::FilePath seed_two = root.GetPath().AppendASCII("seed-two");
++  const base::FilePath download = root.GetPath().AppendASCII("download");
++  ASSERT_TRUE(base::CreateDirectory(seed_one));
++  ASSERT_TRUE(base::CreateDirectory(seed_two));
++  ASSERT_TRUE(base::CreateDirectory(download));
++
++  std::string payload(1024 * 1024, '\0');
++  for (size_t index = 0; index < payload.size(); ++index) {
++    payload[index] = static_cast<char>((index * 131 + 17) & 0xff);
++  }
++  const base::FilePath source_file = seed_one.AppendASCII("payload.bin");
++  ASSERT_TRUE(base::WriteFile(source_file, payload));
++  ASSERT_TRUE(base::WriteFile(seed_two.AppendASCII("payload.bin"), payload));
++
++  std::vector<libtorrent::create_file_entry> files;
++  files.emplace_back("payload.bin", static_cast<int64_t>(payload.size()));
++  libtorrent::create_torrent creator(std::move(files), 16 * 1024,
++                                     libtorrent::create_torrent::v1_only);
++  libtorrent::error_code error;
++  libtorrent::set_piece_hashes(creator, seed_one.value(), error);
++  ASSERT_FALSE(error) << error.message();
++  std::vector<char> metadata = creator.generate_buf();
++  libtorrent::add_torrent_params loaded = libtorrent::load_torrent_buffer(
++      metadata, error, libtorrent::load_torrent_limits());
++  ASSERT_FALSE(error) << error.message();
++  ASSERT_TRUE(loaded.ti);
++  auto info = loaded.ti;
++
++  libtorrent::session seeder_one(LocalTransferSettings());
++  libtorrent::session seeder_two(LocalTransferSettings());
++  libtorrent::session downloader(LocalTransferSettings());
++  libtorrent::torrent_handle first =
++      AddTorrent(seeder_one, info, seed_one, true);
++  libtorrent::torrent_handle second =
++      AddTorrent(seeder_two, info, seed_two, true);
++  libtorrent::torrent_handle target =
++      AddTorrent(downloader, info, download, false);
++
++  ASSERT_GT(seeder_one.listen_port(), 0);
++  ASSERT_GT(seeder_two.listen_port(), 0);
++  const libtorrent::address loopback =
++      libtorrent::make_address("127.0.0.1", error);
++  ASSERT_FALSE(error) << error.message();
++  target.connect_peer(
++      {loopback, static_cast<uint16_t>(seeder_one.listen_port())});
++  target.connect_peer(
++      {loopback, static_cast<uint16_t>(seeder_two.listen_port())});
++
++  libtorrent::torrent_status status;
++  const base::TimeTicks deadline = base::TimeTicks::Now() + base::Seconds(20);
++  do {
++    status = target.status();
++    if (status.is_finished || status.is_seeding) {
++      break;
++    }
++    base::PlatformThread::Sleep(base::Milliseconds(100));
++  } while (base::TimeTicks::Now() < deadline);
++
++  EXPECT_TRUE(status.is_finished || status.is_seeding)
++      << "downloaded=" << status.total_wanted_done
++      << " total=" << status.total_wanted << " peers=" << status.num_peers;
++  std::string downloaded;
++  ASSERT_TRUE(
++      base::ReadFileToString(download.AppendASCII("payload.bin"), &downloaded));
++  EXPECT_EQ(downloaded, payload);
++  EXPECT_TRUE(first.is_valid());
++  EXPECT_TRUE(second.is_valid());
++}
++
++}  // namespace
++}  // namespace aegis::torrent
+diff --git a/chrome/test/data/webui/downloads/test_support.ts b/chrome/test/data/webui/downloads/test_support.ts
+index d016d7fbe3..ce27034f94 100644
+--- a/chrome/test/data/webui/downloads/test_support.ts
++++ b/chrome/test/data/webui/downloads/test_support.ts
+@@ -100,6 +100,11 @@ export class TestIconLoader extends TestBrowserProxy implements IconLoader {
+ export function createDownload(config?: Partial<MojomData>): MojomData {
+   return Object.assign(
+       {
++        aegisAccelerationStatusText: '',
++        aegisCompletedSliceCount: 0,
++        aegisIntegrityHashAvailable: false,
++        aegisParallel: false,
++        aegisParallelRequestLimit: 1,
+         byExtId: '',
+         byExtName: '',
+         dangerType: DangerType.kNoApplicableDangerType,
+diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
+index 65a2d58f58..4c9c0fc995 100644
+--- a/chrome/utility/BUILD.gn
++++ b/chrome/utility/BUILD.gn
+@@ -85,6 +85,7 @@ static_library("utility") {
+ 
+   if (is_mac) {
+     deps += [
++      "//chrome/services/aegis_torrent:service",
+       "//chrome/services/mac_notifications",
+       "//services/proxy_resolver_mac",
+     ]
+diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
+index 56c14be837..f301b9cf00 100644
+--- a/chrome/utility/services.cc
++++ b/chrome/utility/services.cc
+@@ -46,6 +46,7 @@
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+ #if BUILDFLAG(IS_MAC)
++#include "chrome/services/aegis_torrent/aegis_torrent_service.h"
+ #include "chrome/services/mac_notifications/mac_notification_provider_impl.h"
+ #include "chrome/services/system_signals/mac/mac_system_signals_service.h"
+ #include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
+@@ -194,6 +195,12 @@ auto RunWindowsSystemProxyResolver(
+ #endif  // BUILDFLAG(IS_WIN)
+ 
+ #if BUILDFLAG(IS_MAC)
++auto RunAegisTorrentService(
++    mojo::PendingReceiver<aegis::mojom::AegisTorrentService> receiver) {
++  return std::make_unique<aegis::torrent::AegisTorrentService>(
++      std::move(receiver));
++}
++
+ auto RunMacNotificationService(
+     mojo::PendingReceiver<mac_notifications::mojom::MacNotificationProvider>
+         receiver) {
+@@ -480,6 +487,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+ 
+ #if BUILDFLAG(IS_MAC)
++  services.Add(RunAegisTorrentService);
+   services.Add(RunMacNotificationService);
+ #endif  // BUILDFLAG(IS_MAC)
+ 
+diff --git a/components/download/internal/common/parallel_download_utils.cc b/components/download/internal/common/parallel_download_utils.cc
+index 28173ff830..91bfc91ae9 100644
+--- a/components/download/internal/common/parallel_download_utils.cc
++++ b/components/download/internal/common/parallel_download_utils.cc
+@@ -4,12 +4,16 @@
+ 
+ #include "components/download/internal/common/parallel_download_utils.h"
+ 
++#include <algorithm>
++
+ #include "base/metrics/field_trial_params.h"
++#include "base/power_monitor/power_monitor.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/time/time.h"
+ #include "components/download/public/common/download_features.h"
+ #include "components/download/public/common/download_save_info.h"
+ #include "components/download/public/common/parallel_download_configs.h"
++#include "net/base/network_change_notifier.h"
+ 
+ namespace download {
+ 
+@@ -45,8 +49,9 @@ std::vector<DownloadItem::ReceivedSlice> FindSlicesToDownload(
+ 
+   auto iter = received_slices.begin();
+   DCHECK_GE(iter->offset, 0);
+-  if (iter->offset != 0)
++  if (iter->offset != 0) {
+     result.emplace_back(0, iter->offset);
++  }
+ 
+   while (true) {
+     int64_t offset = iter->offset + iter->received_bytes;
+@@ -57,8 +62,9 @@ std::vector<DownloadItem::ReceivedSlice> FindSlicesToDownload(
+     }
+ 
+     DCHECK_GE(next->offset, offset);
+-    if (next->offset > offset)
++    if (next->offset > offset) {
+       result.emplace_back(offset, next->offset - offset);
++    }
+     iter = next;
+   }
+   return result;
+@@ -170,8 +176,35 @@ int GetParallelRequestCountConfig() {
+   std::string finch_value = base::GetFieldTrialParamValueByFeature(
+       features::kParallelDownloading, kParallelRequestCountFinchKey);
+   int result;
+-  return base::StringToInt(finch_value, &result) ? result
+-                                                 : kParallelRequestCount;
++  result =
++      base::StringToInt(finch_value, &result) ? result : kParallelRequestCount;
++
++  // Keep desktop acceleration bounded. Resource-state checks happen only
++  // when a parallel job is configured, so they add no polling load.
++  result = std::clamp(result, 1, 6);
++  if (net::NetworkChangeNotifier::GetConnectionCost() ==
++      net::NetworkChangeNotifier::CONNECTION_COST_METERED) {
++    return 1;
++  }
++
++  base::PowerMonitor* power_monitor = base::PowerMonitor::GetInstance();
++  if (!power_monitor->IsInitialized()) {
++    return result;
++  }
++
++  using ThermalState = base::PowerThermalObserver::DeviceThermalState;
++  switch (power_monitor->GetCurrentThermalState()) {
++    case ThermalState::kSerious:
++    case ThermalState::kCritical:
++      return 1;
++    case ThermalState::kFair:
++      result = std::min(result, 2);
++      break;
++    case ThermalState::kUnknown:
++    case ThermalState::kNominal:
++      break;
++  }
++  return power_monitor->IsOnBatteryPower() ? std::min(result, 2) : result;
+ }
+ 
+ base::TimeDelta GetParallelRequestDelayConfig() {
+diff --git a/components/download/internal/common/parallel_download_utils_unittest.cc b/components/download/internal/common/parallel_download_utils_unittest.cc
+index 4887204625..94128626ef 100644
+--- a/components/download/internal/common/parallel_download_utils_unittest.cc
++++ b/components/download/internal/common/parallel_download_utils_unittest.cc
+@@ -345,6 +345,22 @@ TEST_F(ParallelDownloadUtilsTest, FinchConfigEnabled) {
+   EXPECT_EQ(GetParallelRequestRemainingTimeConfig(), base::Seconds(3));
+ }
+ 
++TEST_F(ParallelDownloadUtilsTest, ParallelRequestCountIsBounded) {
++  {
++    base::test::ScopedFeatureList feature_list;
++    feature_list.InitAndEnableFeatureWithParameters(
++        features::kParallelDownloading,
++        {{kParallelRequestCountFinchKey, "99"}});
++    EXPECT_EQ(GetParallelRequestCountConfig(), 6);
++  }
++  {
++    base::test::ScopedFeatureList feature_list;
++    feature_list.InitAndEnableFeatureWithParameters(
++        features::kParallelDownloading, {{kParallelRequestCountFinchKey, "0"}});
++    EXPECT_EQ(GetParallelRequestCountConfig(), 1);
++  }
++}
++
+ // Test to verify the disable experiment group will actually disable the
+ // feature.
+ TEST_F(ParallelDownloadUtilsTest, FinchConfigDisabled) {
+diff --git a/components/download/public/common/download_features.cc b/components/download/public/common/download_features.cc
+index 7473aedbbc..cd5850b9d2 100644
+--- a/components/download/public/common/download_features.cc
++++ b/components/download/public/common/download_features.cc
+@@ -10,13 +10,7 @@
+ namespace download {
+ namespace features {
+ 
+-BASE_FEATURE(kParallelDownloading,
+-#if BUILDFLAG(IS_ANDROID)
+-             base::FEATURE_ENABLED_BY_DEFAULT
+-#else
+-             base::FEATURE_DISABLED_BY_DEFAULT
+-#endif
+-);
++BASE_FEATURE(kParallelDownloading, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ BASE_FEATURE(kBackoffInDownloading, base::FEATURE_DISABLED_BY_DEFAULT);
+diff --git a/sandbox/policy/mac/network.sb b/sandbox/policy/mac/network.sb
+index 27144995fe..0cf55d3d71 100644
+--- a/sandbox/policy/mac/network.sb
++++ b/sandbox/policy/mac/network.sb
+@@ -57,6 +57,13 @@
+   (allow file-read* (subpath (param network-service-test-certs-dir))))
+ 
+ ; Network socket access.
++(allow file-read* file-write*
++  ; Aegis BT downloads receive a Browser-issued capability for exactly the
++  ; selected destination directory. Without a valid token this rule grants no
++  ; filesystem access.
++  (extension "com.apple.app-sandbox.read-write")
++)
++
+ (allow network-outbound
+   (control-name "com.apple.netsrc")
+   (literal "/private/var/run/mDNSResponder")
+diff --git a/third_party/aegis_libtorrent/.gitignore b/third_party/aegis_libtorrent/.gitignore
+new file mode 100644
+index 0000000000..9b892e4934
+--- /dev/null
++++ b/third_party/aegis_libtorrent/.gitignore
+@@ -0,0 +1,7 @@
++/build/
++/build-notls/
++/dist/
++/install/
++/install-notls/
++/source/
++/source-staging.*/
+diff --git a/third_party/aegis_libtorrent/BUILD.gn b/third_party/aegis_libtorrent/BUILD.gn
+new file mode 100644
+index 0000000000..6213a70641
+--- /dev/null
++++ b/third_party/aegis_libtorrent/BUILD.gn
+@@ -0,0 +1,230 @@
++# Copyright 2026 GCSA
++
++assert(is_mac, "Aegis libtorrent local integration is currently macOS-only")
++
++_boost_include_dir = "/opt/homebrew/opt/boost/include"
++_libtorrent_sources = [
++  "source/deps/try_signal/signal_error_code.cpp",
++  "source/deps/try_signal/try_signal.cpp",
++  "source/src/add_torrent_params.cpp",
++  "source/src/alert.cpp",
++  "source/src/alert_manager.cpp",
++  "source/src/announce_entry.cpp",
++  "source/src/assert.cpp",
++  "source/src/back_pressure.cpp",
++  "source/src/bandwidth_limit.cpp",
++  "source/src/bandwidth_manager.cpp",
++  "source/src/bandwidth_queue_entry.cpp",
++  "source/src/bdecode.cpp",
++  "source/src/bitfield.cpp",
++  "source/src/bloom_filter.cpp",
++  "source/src/bt_peer_connection.cpp",
++  "source/src/chained_buffer.cpp",
++  "source/src/choker.cpp",
++  "source/src/close_reason.cpp",
++  "source/src/copy_file.cpp",
++  "source/src/cpuid.cpp",
++  "source/src/crc32c.cpp",
++  "source/src/create_torrent.cpp",
++  "source/src/directory.cpp",
++  "source/src/disabled_disk_io.cpp",
++  "source/src/disk_buffer_holder.cpp",
++  "source/src/disk_buffer_pool.cpp",
++  "source/src/disk_cache.cpp",
++  "source/src/disk_completed_queue.cpp",
++  "source/src/disk_io_thread_pool.cpp",
++  "source/src/disk_job.cpp",
++  "source/src/disk_job_fence.cpp",
++  "source/src/disk_job_pool.cpp",
++  "source/src/drive_info.cpp",
++  "source/src/ed25519/add_scalar.cpp",
++  "source/src/ed25519/fe.cpp",
++  "source/src/ed25519/ge.cpp",
++  "source/src/ed25519/hasher512.cpp",
++  "source/src/ed25519/key_exchange.cpp",
++  "source/src/ed25519/keypair.cpp",
++  "source/src/ed25519/sc.cpp",
++  "source/src/ed25519/sha512.cpp",
++  "source/src/ed25519/sign.cpp",
++  "source/src/ed25519/verify.cpp",
++  "source/src/entry.cpp",
++  "source/src/enum_net.cpp",
++  "source/src/error_code.cpp",
++  "source/src/escape_string.cpp",
++  "source/src/ffs.cpp",
++  "source/src/file.cpp",
++  "source/src/file_pool_impl.cpp",
++  "source/src/file_progress.cpp",
++  "source/src/file_storage.cpp",
++  "source/src/fingerprint.cpp",
++  "source/src/generate_peer_id.cpp",
++  "source/src/gzip.cpp",
++  "source/src/hash_picker.cpp",
++  "source/src/hasher.cpp",
++  "source/src/hex.cpp",
++  "source/src/http_connection.cpp",
++  "source/src/http_parser.cpp",
++  "source/src/http_tracker_connection.cpp",
++  "source/src/i2p_pex.cpp",
++  "source/src/i2p_stream.cpp",
++  "source/src/identify_client.cpp",
++  "source/src/instantiate_connection.cpp",
++  "source/src/ip_filter.cpp",
++  "source/src/ip_helpers.cpp",
++  "source/src/ip_notifier.cpp",
++  "source/src/ip_voter.cpp",
++  "source/src/kademlia/dht_settings.cpp",
++  "source/src/kademlia/dht_state.cpp",
++  "source/src/kademlia/dht_storage.cpp",
++  "source/src/kademlia/dht_tracker.cpp",
++  "source/src/kademlia/dos_blocker.cpp",
++  "source/src/kademlia/ed25519.cpp",
++  "source/src/kademlia/find_data.cpp",
++  "source/src/kademlia/get_item.cpp",
++  "source/src/kademlia/get_peers.cpp",
++  "source/src/kademlia/item.cpp",
++  "source/src/kademlia/msg.cpp",
++  "source/src/kademlia/node.cpp",
++  "source/src/kademlia/node_entry.cpp",
++  "source/src/kademlia/node_id.cpp",
++  "source/src/kademlia/put_data.cpp",
++  "source/src/kademlia/refresh.cpp",
++  "source/src/kademlia/routing_table.cpp",
++  "source/src/kademlia/rpc_manager.cpp",
++  "source/src/kademlia/sample_infohashes.cpp",
++  "source/src/kademlia/traversal_algorithm.cpp",
++  "source/src/listen_socket_handle.cpp",
++  "source/src/load_torrent.cpp",
++  "source/src/lsd.cpp",
++  "source/src/magnet_uri.cpp",
++  "source/src/merkle.cpp",
++  "source/src/merkle_tree.cpp",
++  "source/src/mmap.cpp",
++  "source/src/mmap_disk_io.cpp",
++  "source/src/mmap_storage.cpp",
++  "source/src/natpmp.cpp",
++  "source/src/packet_buffer.cpp",
++  "source/src/parse_url.cpp",
++  "source/src/part_file.cpp",
++  "source/src/path.cpp",
++  "source/src/pe_crypto.cpp",
++  "source/src/peer_class.cpp",
++  "source/src/peer_class_set.cpp",
++  "source/src/peer_connection.cpp",
++  "source/src/peer_connection_handle.cpp",
++  "source/src/peer_info.cpp",
++  "source/src/peer_list.cpp",
++  "source/src/performance_counters.cpp",
++  "source/src/piece_picker.cpp",
++  "source/src/platform_util.cpp",
++  "source/src/posix_disk_io.cpp",
++  "source/src/posix_part_file.cpp",
++  "source/src/posix_storage.cpp",
++  "source/src/pread_disk_io.cpp",
++  "source/src/pread_storage.cpp",
++  "source/src/precomputed_block_hashes.cpp",
++  "source/src/proxy_base.cpp",
++  "source/src/proxy_settings.cpp",
++  "source/src/puff.cpp",
++  "source/src/random.cpp",
++  "source/src/read_resume_data.cpp",
++  "source/src/receive_buffer.cpp",
++  "source/src/request_blocks.cpp",
++  "source/src/resolve_duplicate_filenames.cpp",
++  "source/src/resolve_links.cpp",
++  "source/src/resolver.cpp",
++  "source/src/rtc_signaling.cpp",
++  "source/src/rtc_stream.cpp",
++  "source/src/session.cpp",
++  "source/src/session_call.cpp",
++  "source/src/session_handle.cpp",
++  "source/src/session_impl.cpp",
++  "source/src/session_params.cpp",
++  "source/src/session_settings.cpp",
++  "source/src/session_stats.cpp",
++  "source/src/settings_pack.cpp",
++  "source/src/sha1.cpp",
++  "source/src/sha1_hash.cpp",
++  "source/src/sha256.cpp",
++  "source/src/smart_ban.cpp",
++  "source/src/socket_io.cpp",
++  "source/src/socket_type.cpp",
++  "source/src/socks5_stream.cpp",
++  "source/src/ssl.cpp",
++  "source/src/stack_allocator.cpp",
++  "source/src/stat.cpp",
++  "source/src/stat_cache.cpp",
++  "source/src/storage_utils.cpp",
++  "source/src/string_util.cpp",
++  "source/src/time.cpp",
++  "source/src/timestamp_history.cpp",
++  "source/src/torrent.cpp",
++  "source/src/torrent_handle.cpp",
++  "source/src/torrent_info.cpp",
++  "source/src/torrent_peer.cpp",
++  "source/src/torrent_peer_allocator.cpp",
++  "source/src/torrent_status.cpp",
++  "source/src/tracker_list.cpp",
++  "source/src/tracker_manager.cpp",
++  "source/src/truncate.cpp",
++  "source/src/udp_socket.cpp",
++  "source/src/udp_tracker_connection.cpp",
++  "source/src/upnp.cpp",
++  "source/src/ut_metadata.cpp",
++  "source/src/ut_pex.cpp",
++  "source/src/utf8.cpp",
++  "source/src/utp_socket_manager.cpp",
++  "source/src/utp_stream.cpp",
++  "source/src/version.cpp",
++  "source/src/web_connection_base.cpp",
++  "source/src/web_peer_connection.cpp",
++  "source/src/web_seed_entry.cpp",
++  "source/src/websocket_stream.cpp",
++  "source/src/websocket_tracker_connection.cpp",
++  "source/src/write_resume_data.cpp",
++  "source/src/xml_parse.cpp",
++]
++
++config("public_config") {
++  cflags_cc = [
++    "-isystem" + rebase_path("//third_party/aegis_libtorrent/source/include",
++                             root_build_dir),
++    "-isystem$_boost_include_dir",
++  ]
++  defines = [
++    "BOOST_ASIO_ENABLE_CANCELIO",
++    "BOOST_ASIO_HAS_STD_CHRONO",
++    "BOOST_ASIO_NO_DEPRECATED",
++    "BOOST_EXCEPTION_DISABLE",
++    "BOOST_SYSTEM_USE_UTF8",
++    "_FILE_OFFSET_BITS=64",
++    "TORRENT_ABI_VERSION=100",
++    "TORRENT_DISABLE_LOGGING",
++    "TORRENT_USE_I2P=0",
++    "TORRENT_USE_RTC=0",
++  ]
++  frameworks = [
++    "CoreFoundation.framework",
++    "SystemConfiguration.framework",
++  ]
++}
++
++static_library("libtorrent") {
++  sources = _libtorrent_sources
++  include_dirs = [
++    "source/include",
++    "source/deps/try_signal",
++  ]
++  defines = [ "TORRENT_BUILDING_LIBRARY" ]
++  configs -= [
++    "//build/config/compiler:chromium_code",
++    "//build/config/compiler:no_exceptions",
++    "//build/config/compiler:no_rtti",
++  ]
++  configs += [
++    "//build/config/compiler:exceptions",
++    "//build/config/compiler:no_chromium_code",
++    "//build/config/compiler:rtti",
++  ]
++  public_configs = [ ":public_config" ]
++}
+diff --git a/third_party/aegis_libtorrent/LICENSE b/third_party/aegis_libtorrent/LICENSE
+new file mode 100644
+index 0000000000..b9907cadc7
+--- /dev/null
++++ b/third_party/aegis_libtorrent/LICENSE
+@@ -0,0 +1,27 @@
++Copyright (c) 2003-2020, Arvid Norberg
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions
++are met:
++
++    * Redistributions of source code must retain the above copyright
++      notice, this list of conditions and the following disclaimer.
++    * Redistributions in binary form must reproduce the above copyright
++      notice, this list of conditions and the following disclaimer in
++      the documentation and/or other materials provided with the distribution.
++    * Neither the name of Rasterbar Software nor the names of its
++      contributors may be used to endorse or promote products derived
++      from this software without specific prior written permission.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
++LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
++CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
++SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
++INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
++CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
++ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
++POSSIBILITY OF SUCH DAMAGE.
+diff --git a/third_party/aegis_libtorrent/README.aegis b/third_party/aegis_libtorrent/README.aegis
+new file mode 100644
+index 0000000000..c93f8f5120
+--- /dev/null
++++ b/third_party/aegis_libtorrent/README.aegis
+@@ -0,0 +1,19 @@
++Name: libtorrent-rasterbar
++Version: 2.1.1
++Upstream: https://www.libtorrent.org/
++Local source mirror: https://sourceforge.net/projects/libtorrent.mirror/files/v2.1.1/
++Source archive SHA-256: 0f163516ecef2e3331500266751de3098835a3c3ae0c2290448046c632bc0e93
++License: BSD-3-Clause (see LICENSE)
++
++This directory is an Aegis local-development integration. Generated source and
++archive directories are intentionally ignored. Reproduce the dependency with:
++
++  pnpm browser:bootstrap:libtorrent
++
++GN compiles libtorrent with Chromium's compiler and libc++ ABI. The current
++local build omits OpenSSL, GnuTLS and Libgcrypt to avoid mixing Homebrew OpenSSL
++with Chromium's BoringSSL in one Utility process. HTTP/UDP trackers, DHT and
++encrypted peer transport remain available; HTTPS trackers are a
++release-blocking integration item. This mirror is not an official libtorrent
++distribution channel, so production_qualified and release_eligible remain
++false until the upstream provenance/signature gate is closed.
+-- 
+2.52.0
+

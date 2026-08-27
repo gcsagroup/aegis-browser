@@ -17,6 +17,8 @@ class WebContents;
 
 namespace aegis {
 
+class AegisPhishControllerClient;
+
 // Full-page warning when navigation matches a phishing seed rule or URL
 // heuristic score. Reason codes are shown on the page (explain, don't just
 // warn).
@@ -30,9 +32,7 @@ class AegisPhishBlockingPage
       content::WebContents* web_contents,
       const GURL& request_url,
       PhishAssessment assessment,
-      std::unique_ptr<
-          security_interstitials::SecurityInterstitialControllerClient>
-          controller_client);
+      std::unique_ptr<AegisPhishControllerClient> controller_client);
 
   AegisPhishBlockingPage(const AegisPhishBlockingPage&) = delete;
   AegisPhishBlockingPage& operator=(const AegisPhishBlockingPage&) = delete;

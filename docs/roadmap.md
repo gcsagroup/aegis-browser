@@ -1,63 +1,85 @@
 # Roadmap
 
-## Phase 0 — Scaffold ✅
+**English** | [简体中文](roadmap.zh-CN.md) | [繁體中文](roadmap.zh-TW.md)
 
-- Monorepo、三语、core 策略、扩展原型
+## Status vocabulary
 
-## Phase 1 — Extension prototype ✅
+- **Historical prototype:** useful evidence of direction, not a current deliverable.
+- **In source:** code or a patch exists; build and runtime status are separate.
+- **Source synchronized:** patch lineage, overlay, and the external checkout agree.
+- **Gate passed:** the named source, artifact, platform, and representative test scope passed together.
+- **Release-qualified:** the same distributable artifact passed identity, trust, signing, installation, privacy, platform, and rollout gates.
 
-- Tracker / Phish / Privacy AI 在 MV3 扩展上可演示（参考实现）
+## Current conclusion — 2026-08-28
 
-## Phase 2 — Harden (core) ✅（初始）
+The source integration is synchronized to 56 top-level Chromium patches plus 2 nested V8 patches. The latest identity-bound local build-tree manifest covers only 54 top-level patches plus the 2 V8 patches and is `diagnostic-only`; patches 0055 and 0056 do not yet have matching artifact evidence.
 
-- 链接清洗、Cookie 策略、Ollama/WebLLM 适配、轻量钓鱼加权
+Project status is **release No-Go**. There is no trusted current-source distribution package, product identity, Developer ID signature, notarization, installed-App acceptance, or current-source Android package.
 
-## Phase 3 — Chromium fork（当前主线）
+## Historical phases
 
-- [x] 废弃 Electron 路线
-- [x] 钉扎 Chromium Mac Stable `151.0.7922.77` + commit
-- [x] depot_tools / fetch / build / run 脚本 + overlay 模板
-- [x] 受限网络下 vpython workaround（PyPI + PyYAML pin）
-- [x] 完成源码 `gclient sync` + `runhooks`（`~/Projects/GCSA-aegis-chromium/src` @ `151.0.7922.77`）
-- [x] 补丁 0001：`AegisService` stub + feature flags（已进 `patches/series`）
-- [x] 首次 `out/Aegis` 编译（`pnpm --filter @gcsa-aegis/browser build`）+ 冒烟验证
-- [x] 补丁 0002：Net throttle（内置 tracker host 拦截子资源）
-- [x] 补丁 0003：`chrome://aegis` WebUI（模块开关 + prefs）
-- [x] 补丁 0004：钓鱼 interstitial
-- [x] 补丁 0005：FingerprintGuard
-- [x] 打包分发（.dmg / .zip）
-- [x] 将 `packages/core` 规则快照打进树（0006）
-- [x] 补丁 0007：EasyList 编译 + 运行时过滤列表更新器
-- [x] 补丁 0008：导航清洗跟踪参数 + Cookie 分类清理
-- [x] 补丁 0009：CNAME 伪装揭开 + bounce tracking 立即清 Cookie
-- [x] 补丁 0010：钓鱼 URL 启发式评分 + 拦截页原因码
-- [x] 补丁 0011：页面特征（密码框/紧迫文案）补强钓鱼评分
-- [x] 补丁 0012：JS 策略 worker（gin + packages/core）+ 本地 Privacy AI / Ollama sidecar
-- [x] 补丁 0013：WebGPU adapter.info farbling
-- [x] 补丁 0014：启动 DCHECK 修复；策略 worker 在 chrome://aegis 运行
-- [x] 补丁 0015：设置页 / 应用菜单 / macOS 菜单增加 `chrome://aegis` 入口
-- [x] 补丁 0016：开关说明 + 本机 Ollama 地址/模型设置
-- [x] 补丁 0017：启动后推迟过滤列表编译与 Cookie 清扫
-- [x] 补丁 0018：EasyList 启动使用本地 compiled.json 缓存，24h 内不重新下载
-- [x] 补丁 0019：EasyList 缓存更新策略（定时检查、条件请求、失败保留旧缓存）
-- [x] 补丁 0020：拦截页人话与分数拆解、摘要未离机证明、会话清理清单
-- [x] 补丁 0021：Cookie 精确名单（保留登录 Cookie）+ 第一方 /g/collect 等收集路径拦截
-- [x] 补丁 0022：会话清单实时刷新、bounce 入日志、Canvas 自检、GA4 收集假象
-- [x] 补丁 0023：拦截行可见、Referer 去参、Cookie 标注、本机 CDP/AI 控制
-- [x] 补丁 0024：远程 CDP 隐藏内部页，并显示本机 agent 连接
-- [x] 补丁 0025：本机 CDP 连接显示浏览器横幅，按钮打开 chrome://aegis
-- [x] 补丁 0026：chrome://aegis 一次检测 Canvas / WebGL / Audio / WebGPU
-- [x] 补丁 0027：Audio 指纹按站点只扰动一次，copyFromChannel 同样生效
-- [x] 补丁 0028：WebGPU limits / subgroup 数值按站点稳定化
-- [x] 补丁 0029：Android 可编入 chrome://aegis，显示名预留 Play 包名
-- [x] 补丁 0030：Android 设置打开 chrome://aegis；手机上关掉 CDP/Ollama
-- [x] Android M1a：Linux（UTM ARM64）编出 `chrome_public_apk` → `ChromePublic.apk`（包名 `app.gcsa.aegis`）
-- [x] Android M1b：`package:android` → `apps/browser/dist/GCSA-aegis.apk`
-- [x] Android M1c：真机侧载安装并启动（Pixel 9 Pro Fold；进入 FirstRun）
-- [ ] Android M1d：完成首次运行向导后，打开网页 + `chrome://aegis` / 设置入口冒烟
+### Phase 0 — Scaffold
 
-## Later
+The monorepo, trilingual product page, and core policy prototype established the product direction.
 
-- Android：同一 Chromium 151 钉扎，产物为侧载 APK，包名 `app.gcsa.aegis` 预留 Play。本机 Mac 只改补丁，编译在 Linux。
-- Android 构建可复现：优先 x86_64 Linux；ARM64+qemu 路径需固化 workaround 文档。
-- （无）桌面 Phase 3 主线已完成。后续增强见研究地图（WebLLM in-process、联邦指纹检测等）。
+### Phase 1 — Extension prototype
+
+The MV3 extension demonstrated selected tracker, phishing, and privacy-summary ideas. It is no longer a product or release target.
+
+### Phase 2 — Core prototype
+
+Link sanitization, cookie classification, PII redaction, phishing heuristics, and generated policy assets moved into reusable, testable code. Research-only evaluators remain separate from browser decisions.
+
+## Phase 3 — Chromium fork
+
+### M0: Baseline and recovery — complete
+
+- Chromium is pinned to version `151.0.7922.77` and base commit `ff37cfca210138f2a40b843b4a8195ab7e4fc7ff`.
+- Local recovery points and evidence-preservation boundaries exist.
+
+### M1: Browser-only convergence and fast gates — complete
+
+- The Chromium browser is the only product line.
+- The workspace has frozen JavaScript dependencies and repeatable fast quality gates.
+
+### M2: Chromium integration and build identity — partial
+
+- The external Chromium checkout matches all 56 top-level patches and the 2 nested V8 patches.
+- The latest finalized identity manifest covers the 54-patch Chromium head plus 2 nested V8 patches, not the current 0056 source head.
+- Current-source 0055/0056 build, affected native tests, representative runtime, and a new identity-bound artifact remain required.
+- Existing build-tree output is local development evidence, not an RC or distribution package.
+
+### M3–M4: Security boundaries and stability — partial
+
+- Chromium-native tracker, link, cookie, phishing, fingerprint, download, summary, and local-automation controls exist in source.
+- Selected historical native, browser, and runtime gates passed for named earlier patch heads.
+- MinerGuard and the V8 bytecode shadow remain observe-only. Research evaluators do not authorize blocking or production security claims.
+- Complete egress attribution, telemetry/update/crash-reporting review, representative feature-behavior matrices, startup stress, false-positive evaluation, and current-head reruns remain open.
+
+### M5: Android — blocked
+
+- A qualified x86-64 Linux build environment is not available in the current evidence set.
+- There is no identity-bound current-source APK/AAB or real-device acceptance for the current source.
+- Android page summary and platform-specific behavior need current-source verification.
+
+### M6: Internal release candidate — pending
+
+An internal RC requires a clean, identity-bound current-source build; affected tests and runtime gates; product identity; signing and notarization preparation; packaging; installed-App acceptance; privacy/egress review; and rollback evidence. None of these may be inferred from source synchronization.
+
+### M7: Documentation and publication boundaries — in progress
+
+- Public README, changelog, architecture, roadmap, and research map are maintained in English, Simplified Chinese, and Traditional Chinese.
+- Dated audit records remain historical snapshots and do not override this roadmap.
+- Source publication, package publication, and production deployment remain distinct decisions.
+
+## GitHub source synchronization
+
+The 2026-08-28 authorization covers SSH synchronization of source branches to `git@github.com:gcsagroup/aegis-browser.git`. It does not cover Git tags, GitHub Releases, binaries, signing credentials, notarization, Play uploads, or production deployment.
+
+## Release exit criteria
+
+1. Commit and reproduce the exact current source and all nested patch lineages from a clean state.
+2. Produce an identity-bound current-source macOS artifact and current-source Android artifact on qualified hosts.
+3. Pass affected unit, browser, runtime, privacy, egress, performance, and representative-site gates on those exact artifacts.
+4. Complete product identity, signing, notarization, packaging, installation, upgrade, rollback, and real-device acceptance.
+5. Review documentation, third-party notices, security/privacy statements, and distribution authorization for the exact release candidate.

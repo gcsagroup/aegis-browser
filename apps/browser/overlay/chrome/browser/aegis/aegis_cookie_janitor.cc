@@ -78,6 +78,9 @@ void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
   if (!AegisService::GetInstance()->IsCookieJanitorEnabled()) {
     return;
   }
+  if (AegisService::GetInstance()->IsSitePaused(cookie.Domain())) {
+    return;
+  }
   const bool session = !cookie.IsPersistent();
   std::optional<base::Time> expiry;
   if (cookie.IsPersistent()) {

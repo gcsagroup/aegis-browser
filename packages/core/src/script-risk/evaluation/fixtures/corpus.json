@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "mode": "research-only",
+  "datasetId": "gcsa-script-risk-synthetic-v1",
+  "createdAt": "2026-08-27T00:00:00.000Z",
+  "split": {
+    "seed": "gcsa-script-risk-synthetic-v1-frozen-split",
+    "ratios": {
+      "train": 0.5,
+      "validation": 0.25,
+      "test": 0.25
+    }
+  },
+  "sourceCatalog": {
+    "project-synthetic": {
+      "name": "GCSA-aegis synthetic script-risk fixtures",
+      "locator": "repo://packages/core/src/script-risk/evaluation/fixtures",
+      "retrievedAt": "2026-08-27T00:00:00.000Z",
+      "license": {
+        "name": "Apache License 2.0",
+        "spdx": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "redistribution": "allowed"
+      }
+    }
+  },
+  "evidenceCatalog": {
+    "benign-control-spec": {
+      "kind": "synthetic-spec",
+      "reference": "repo://packages/core/src/script-risk/evaluation/fixtures/corpus.json#benign-control-spec",
+      "adjudicator": "GCSA-aegis project-authored control",
+      "adjudicatedAt": "2026-08-27T00:00:00.000Z"
+    },
+    "synthetic-mining-spec": {
+      "kind": "synthetic-spec",
+      "reference": "repo://packages/core/src/script-risk/evaluation/fixtures/corpus.json#synthetic-mining-spec",
+      "adjudicator": "GCSA-aegis project-authored mining simulation",
+      "adjudicatedAt": "2026-08-27T00:00:00.000Z"
+    },
+    "synthetic-loader-spec": {
+      "kind": "synthetic-spec",
+      "reference": "repo://packages/core/src/script-risk/evaluation/fixtures/corpus.json#synthetic-loader-spec",
+      "adjudicator": "GCSA-aegis project-authored loader simulation",
+      "adjudicatedAt": "2026-08-27T00:00:00.000Z"
+    }
+  },
+  "samples": [
+    {
+      "sampleId": "benign-chat-alpha-clear",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-chat-alpha-clear.js" },
+      "siteGroup": "chat-alpha.example.test",
+      "familyGroup": "benign-chat-alpha",
+      "timeGroup": "synthetic-batch-benign-chat-alpha",
+      "observedAt": "2026-01-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "chat", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "none", "transformations": [] }
+    },
+    {
+      "sampleId": "benign-chat-alpha-minified",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-chat-alpha-minified.js" },
+      "siteGroup": "chat-alpha.example.test",
+      "familyGroup": "benign-chat-alpha",
+      "timeGroup": "synthetic-batch-benign-chat-alpha",
+      "observedAt": "2026-01-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "chat", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "minified", "transformations": ["whitespace-removal", "short-identifiers"] }
+    },
+    {
+      "sampleId": "benign-codec-beta-clear",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-codec-beta-clear.js" },
+      "siteGroup": "codec-beta.example.test",
+      "familyGroup": "benign-codec-beta",
+      "timeGroup": "synthetic-batch-benign-codec-beta",
+      "observedAt": "2026-02-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "media-codec", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "none", "transformations": [] }
+    },
+    {
+      "sampleId": "benign-codec-beta-renamed",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-codec-beta-renamed.js" },
+      "siteGroup": "codec-beta.example.test",
+      "familyGroup": "benign-codec-beta",
+      "timeGroup": "synthetic-batch-benign-codec-beta",
+      "observedAt": "2026-02-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "media-codec", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "identifier-renamed", "transformations": ["local-identifier-renaming"] }
+    },
+    {
+      "sampleId": "benign-docs-gamma-clear",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-docs-gamma-clear.js" },
+      "siteGroup": "docs-gamma.example.test",
+      "familyGroup": "benign-docs-gamma",
+      "timeGroup": "synthetic-batch-benign-docs-gamma",
+      "observedAt": "2026-03-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "documentation", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "none", "transformations": [] }
+    },
+    {
+      "sampleId": "benign-docs-gamma-encoded",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-docs-gamma-encoded.js" },
+      "siteGroup": "docs-gamma.example.test",
+      "familyGroup": "benign-docs-gamma",
+      "timeGroup": "synthetic-batch-benign-docs-gamma",
+      "observedAt": "2026-03-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "documentation", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "string-encoded", "transformations": ["string-fragment-join"] }
+    },
+    {
+      "sampleId": "benign-hash-delta-control-flow",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-hash-delta-control-flow.js" },
+      "siteGroup": "hash-delta.example.test",
+      "familyGroup": "benign-hash-delta",
+      "timeGroup": "synthetic-batch-benign-hash-delta",
+      "observedAt": "2026-04-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "local-hashing", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "control-flow", "transformations": ["switch-dispatch"] }
+    },
+    {
+      "sampleId": "benign-hash-delta-minified",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/benign-hash-delta-minified.js" },
+      "siteGroup": "hash-delta.example.test",
+      "familyGroup": "benign-hash-delta",
+      "timeGroup": "synthetic-batch-benign-hash-delta",
+      "observedAt": "2026-04-10T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "benign", "category": "local-hashing", "evidenceRef": "benign-control-spec" },
+      "obfuscation": { "tier": "minified", "transformations": ["whitespace-removal", "short-identifiers"] }
+    },
+    {
+      "sampleId": "malicious-loader-gamma-clear",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-loader-gamma-clear.js" },
+      "siteGroup": "loader-gamma.invalid",
+      "familyGroup": "synthetic-loader-gamma",
+      "timeGroup": "synthetic-batch-loader-gamma",
+      "observedAt": "2026-03-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "obfuscated-loader", "evidenceRef": "synthetic-loader-spec" },
+      "obfuscation": { "tier": "none", "transformations": [] }
+    },
+    {
+      "sampleId": "malicious-loader-gamma-control-flow",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-loader-gamma-control-flow.js" },
+      "siteGroup": "loader-gamma.invalid",
+      "familyGroup": "synthetic-loader-gamma",
+      "timeGroup": "synthetic-batch-loader-gamma",
+      "observedAt": "2026-03-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "obfuscated-loader", "evidenceRef": "synthetic-loader-spec" },
+      "obfuscation": { "tier": "control-flow", "transformations": ["switch-dispatch"] }
+    },
+    {
+      "sampleId": "malicious-loader-delta-minified",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-loader-delta-minified.js" },
+      "siteGroup": "loader-delta.invalid",
+      "familyGroup": "synthetic-loader-delta",
+      "timeGroup": "synthetic-batch-loader-delta",
+      "observedAt": "2026-04-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "obfuscated-loader", "evidenceRef": "synthetic-loader-spec" },
+      "obfuscation": { "tier": "minified", "transformations": ["whitespace-removal", "short-identifiers"] }
+    },
+    {
+      "sampleId": "malicious-loader-delta-encoded",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-loader-delta-encoded.js" },
+      "siteGroup": "loader-delta.invalid",
+      "familyGroup": "synthetic-loader-delta",
+      "timeGroup": "synthetic-batch-loader-delta",
+      "observedAt": "2026-04-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "obfuscated-loader", "evidenceRef": "synthetic-loader-spec" },
+      "obfuscation": { "tier": "string-encoded", "transformations": ["api-aliasing", "string-decoding"] }
+    },
+    {
+      "sampleId": "malicious-miner-alpha-clear",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-miner-alpha-clear.js" },
+      "siteGroup": "miner-alpha.invalid",
+      "familyGroup": "synthetic-miner-alpha",
+      "timeGroup": "synthetic-batch-miner-alpha",
+      "observedAt": "2026-01-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "mining", "evidenceRef": "synthetic-mining-spec" },
+      "obfuscation": { "tier": "none", "transformations": [] }
+    },
+    {
+      "sampleId": "malicious-miner-alpha-minified",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-miner-alpha-minified.js" },
+      "siteGroup": "miner-alpha.invalid",
+      "familyGroup": "synthetic-miner-alpha",
+      "timeGroup": "synthetic-batch-miner-alpha",
+      "observedAt": "2026-01-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "mining", "evidenceRef": "synthetic-mining-spec" },
+      "obfuscation": { "tier": "minified", "transformations": ["whitespace-removal", "short-identifiers"] }
+    },
+    {
+      "sampleId": "malicious-miner-beta-renamed",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-miner-beta-renamed.js" },
+      "siteGroup": "miner-beta.invalid",
+      "familyGroup": "synthetic-miner-beta",
+      "timeGroup": "synthetic-batch-miner-beta",
+      "observedAt": "2026-02-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "mining", "evidenceRef": "synthetic-mining-spec" },
+      "obfuscation": { "tier": "identifier-renamed", "transformations": ["local-identifier-renaming"] }
+    },
+    {
+      "sampleId": "malicious-miner-beta-encoded",
+      "artifact": { "kind": "synthetic-fixture", "path": "source/malicious-miner-beta-encoded.js" },
+      "siteGroup": "miner-beta.invalid",
+      "familyGroup": "synthetic-miner-beta",
+      "timeGroup": "synthetic-batch-miner-beta",
+      "observedAt": "2026-02-20T00:00:00.000Z",
+      "sourceRef": "project-synthetic",
+      "label": { "class": "malicious", "category": "mining", "evidenceRef": "synthetic-mining-spec" },
+      "obfuscation": { "tier": "string-encoded", "transformations": ["protocol-string-fragment-join"] }
+    }
+  ]
+}

@@ -7,7 +7,6 @@ build
 *.log
 coverage
 .vite
-apps/extension/dist
 apps/browser/.chromium-root
 apps/browser/depot_tools/
 apps/browser/overlay/third_party/aegis_policy/easylist_compiled.json
@@ -17,3 +16,15 @@ packages/core/dist-worker
 .env
 .env.*
 !/.env.example
+
+# Local runtime/research evidence. Preserve locally; never publish or clean blindly.
+.artifacts/
+/siso_result.json
+
+# Local crash/reproduction evidence. These files are not source artifacts.
+/aegis-log-repro*.txt
+/aegis-repro*.png
+/aegis-repro*.jpg
+/aegis-settings.xml
+/aegis-uidump*.xml
+/tombstone_*

@@ -1,0 +1,2039 @@
+From 53bd1c0a39f8c6ffe58d346c140b98a295f98de1 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 26 Aug 2026 21:41:38 +0800
+Subject: [PATCH 52/52] feat(aegis): harden fingerprint protection
+
+---
+ chrome/browser/aegis/aegis_prefs.cc           |   3 +
+ chrome/browser/aegis/aegis_service.cc         |  10 +-
+ .../browser/chrome_content_browser_client.cc  |   9 +-
+ chrome/browser/profiles/renderer_updater.cc   |  40 +-
+ chrome/browser/profiles/renderer_updater.h    |   1 +
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/features.cc               |   5 +
+ chrome/common/aegis/features.h                |   3 +
+ chrome/common/aegis/features_unittest.cc      |  41 ++
+ .../aegis/fingerprint_guard_unittest.cc       |  97 +++++
+ chrome/common/aegis/pref_names.h              |   2 +
+ chrome/common/renderer_configuration.mojom    |   1 +
+ .../renderer/chrome_render_thread_observer.cc |   4 +-
+ .../worker/embedded_shared_worker_stub.cc     |   2 +
+ third_party/blink/common/BUILD.gn             |   1 +
+ third_party/blink/common/DEPS                 |   1 +
+ .../blink/common/aegis/fingerprint_guard.cc   | 212 +++++++++-
+ .../public/common/aegis/fingerprint_guard.h   |  46 ++-
+ .../blink/public/web/web_shared_worker.h      |   1 +
+ third_party/blink/renderer/core/BUILD.gn      |   1 +
+ .../blink/renderer/core/aegis/build.gni       |   2 +
+ .../blink/renderer/core/aegis/farbling.cc     | 389 +++++++++++-------
+ .../blink/renderer/core/aegis/farbling.h      |  30 +-
+ .../renderer/core/aegis/farbling_unittest.cc  |  72 ++++
+ .../core/exported/web_shared_worker_impl.cc   |   7 +-
+ .../core/exported/web_shared_worker_impl.h    |   1 +
+ .../core/offscreencanvas/offscreen_canvas.cc  |  21 +-
+ .../core/workers/worker_global_scope.h        |   6 +
+ third_party/blink/renderer/modules/BUILD.gn   |   1 +
+ .../service_worker_global_scope.cc            |   6 +-
+ .../renderer/modules/webaudio/audio_buffer.cc |  17 +-
+ .../modules/webaudio/audio_buffer_test.cc     |  84 ++++
+ .../webgl/webgl_rendering_context_base.cc     |  30 +-
+ .../renderer/modules/webgpu/gpu_adapter.cc    |  94 +++--
+ 34 files changed, 1004 insertions(+), 238 deletions(-)
+ create mode 100644 chrome/common/aegis/features_unittest.cc
+ create mode 100644 chrome/common/aegis/fingerprint_guard_unittest.cc
+ create mode 100644 third_party/blink/renderer/core/aegis/farbling_unittest.cc
+ create mode 100644 third_party/blink/renderer/modules/webaudio/audio_buffer_test.cc
+
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index f84c810f20..63a5af117b 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -16,6 +16,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
+   // FingerprintGuard on by default when the feature is enabled.
+   registry->RegisterBooleanPref(prefs::kFingerprintGuardEnabled, true);
++  // Profile 本地密钥；不设置 SYNCABLE_PREF，避免跨设备同步。
++  registry->RegisterStringPref(prefs::kFingerprintFarblingSecret,
++                               std::string());
+   registry->RegisterBooleanPref(prefs::kFilterListAutoUpdateEnabled, true);
+   registry->RegisterInt64Pref(prefs::kFilterListLastUpdated, 0);
+   registry->RegisterIntegerPref(prefs::kFilterListHostCount, 0);
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index a56fde3805..1a2484bf2f 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -198,14 +198,8 @@ bool AegisService::IsPhishInterstitialEnabled() const {
+ }
+ 
+ bool AegisService::IsFingerprintGuardEnabled() const {
+-  if (!IsEnabled() ||
+-      !base::FeatureList::IsEnabled(features::kAegisFingerprintGuard)) {
+-    return false;
+-  }
+-  if (!prefs_) {
+-    return true;
+-  }
+-  return prefs_->GetBoolean(prefs::kFingerprintGuardEnabled);
++  return features::IsFingerprintGuardGloballyEnabled(
++      !prefs_ || prefs_->GetBoolean(prefs::kFingerprintGuardEnabled));
+ }
+ 
+ void AegisService::SetTrackerBlockingEnabled(bool enabled) {
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 7e06895537..70cfead103 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -205,6 +205,7 @@
+ #include "chrome/browser/webauthn/chrome_web_authentication_delegate_base.h"
+ #include "chrome/browser/webauthn/webauthn_pref_names.h"
+ #include "chrome/common/aegis/aegis_net_throttle.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/buildflags.h"
+ #include "chrome/common/channel_info.h"
+@@ -6054,11 +6055,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+           profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
+           profile->GetPrefs()->GetBoolean(
+               aegis::prefs::kTrackerBlockingEnabled),
+-          profile->GetPrefs()->GetBoolean(
+-              aegis::prefs::kFingerprintGuardEnabled),
++          aegis::features::IsFingerprintGuardGloballyEnabled(
++              profile->GetPrefs()->GetBoolean(
++                  aegis::prefs::kFingerprintGuardEnabled)),
+           profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled),
+           profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled),
+-          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites));
++          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites),
++          std::vector<uint8_t>());
+   return std::make_unique<GoogleURLLoaderThrottle>(
+ #if BUILDFLAG(IS_ANDROID)
+       client_data_header,
+diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
+index 8ab76f0485..45b7955e5e 100644
+--- a/chrome/browser/profiles/renderer_updater.cc
++++ b/chrome/browser/profiles/renderer_updater.cc
+@@ -4,15 +4,20 @@
+ 
+ #include "chrome/browser/profiles/renderer_updater.h"
+ 
++#include <cstddef>
++#include <optional>
+ #include <utility>
+ #include <vector>
+ 
++#include "base/base64.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
++#include "base/rand_util.h"
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/content_settings/content_settings_manager_delegate.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/filter_list.h"
+ #include "chrome/common/aegis/filter_list_matcher.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -23,6 +28,7 @@
+ #include "components/content_settings/core/common/content_settings.h"
+ #include "components/content_settings/core/common/content_settings_utils.h"
+ #include "components/policy/core/common/policy_pref_names.h"
++#include "components/prefs/pref_service.h"
+ #include "components/signin/public/base/signin_buildflags.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/render_process_host.h"
+@@ -43,10 +49,36 @@
+ #include "chrome/browser/signin/bound_session_credentials/bound_session_cookie_refresh_service_factory.h"
+ #endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+ 
++namespace {
++
++constexpr size_t kAegisFarblingSecretSize = 32;
++
++std::vector<uint8_t> LoadOrCreateAegisFarblingSecret(Profile* profile) {
++  if (profile->IsOffTheRecord() || profile->IsGuestSession()) {
++    return base::RandBytesAsVector(kAegisFarblingSecretSize);
++  }
++
++  PrefService* prefs = profile->GetPrefs();
++  const std::optional<std::vector<uint8_t>> decoded = base::Base64Decode(
++      prefs->GetString(aegis::prefs::kFingerprintFarblingSecret));
++  if (decoded && decoded->size() == kAegisFarblingSecretSize) {
++    return *decoded;
++  }
++
++  std::vector<uint8_t> secret =
++      base::RandBytesAsVector(kAegisFarblingSecretSize);
++  prefs->SetString(aegis::prefs::kFingerprintFarblingSecret,
++                   base::Base64Encode(secret));
++  return secret;
++}
++
++}  // namespace
++
+ RendererUpdater::RendererUpdater(Profile* profile)
+     : profile_(profile),
+       is_off_the_record_(profile_->IsOffTheRecord()),
+-      original_profile_(profile->GetOriginalProfile())
++      original_profile_(profile->GetOriginalProfile()),
++      aegis_farbling_secret_(LoadOrCreateAegisFarblingSecret(profile))
+ #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+       ,
+       bound_session_cookie_refresh_service_(
+@@ -306,6 +338,8 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+ #endif
+       force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
+       allowed_domains_for_apps_.GetValue(), aegis_tracker_blocking_.GetValue(),
+-      aegis_fingerprint_guard_.GetValue(), aegis_cname_uncloak_.GetValue(),
+-      aegis_link_sanitize_.GetValue(), aegis_paused_sites_.GetValue());
++      aegis::features::IsFingerprintGuardGloballyEnabled(
++          aegis_fingerprint_guard_.GetValue()),
++      aegis_cname_uncloak_.GetValue(), aegis_link_sanitize_.GetValue(),
++      aegis_paused_sites_.GetValue(), aegis_farbling_secret_);
+ }
+diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
+index 741e038b06..95e146555c 100644
+--- a/chrome/browser/profiles/renderer_updater.h
++++ b/chrome/browser/profiles/renderer_updater.h
+@@ -94,6 +94,7 @@ class RendererUpdater : public KeyedService
+   const raw_ptr<Profile> profile_;
+   const bool is_off_the_record_;
+   const raw_ptr<Profile> original_profile_;
++  const std::vector<uint8_t> aegis_farbling_secret_;
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+   raw_ptr<ash::OAuth2LoginManager> oauth2_login_manager_;
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 533f70eda1..f8552af355 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -61,6 +61,8 @@ test("aegis_unittests") {
+     "cookie_classify_unittest.cc",
+     "filter_list_matcher_unittest.cc",
+     "filter_list_unittest.cc",
++    "fingerprint_guard_unittest.cc",
++    "features_unittest.cc",
+     "phish_score_unittest.cc",
+     "site_control_unittest.cc",
+     "threat_feed_index_unittest.cc",
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index b7e50035cd..a62067274c 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -19,4 +19,9 @@ BASE_FEATURE(kAegisPolicyWorker, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPrivacyAi, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisAiControl, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
++bool IsFingerprintGuardGloballyEnabled(bool pref_enabled) {
++  return pref_enabled && base::FeatureList::IsEnabled(kAegisEnabled) &&
++         base::FeatureList::IsEnabled(kAegisFingerprintGuard);
++}
++
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index e0488418bc..e22869db4f 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -22,6 +22,9 @@ BASE_DECLARE_FEATURE(kAegisPolicyWorker);
+ BASE_DECLARE_FEATURE(kAegisPrivacyAi);
+ BASE_DECLARE_FEATURE(kAegisAiControl);
+ 
++// 统一计算可发送给 Renderer 的有效开关，避免 UI 与 Blink 状态不一致。
++bool IsFingerprintGuardGloballyEnabled(bool pref_enabled);
++
+ }  // namespace aegis::features
+ 
+ #endif  // CHROME_COMMON_AEGIS_FEATURES_H_
+diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
+new file mode 100644
+index 0000000000..c0a666028b
+--- /dev/null
++++ b/chrome/common/aegis/features_unittest.cc
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/features.h"
++
++#include "base/test/scoped_feature_list.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::features {
++namespace {
++
++bool EvaluateFingerprintGuard(bool master, bool subfeature, bool pref) {
++  base::test::ScopedFeatureList scoped_features;
++  if (master && subfeature) {
++    scoped_features.InitWithFeatures({kAegisEnabled, kAegisFingerprintGuard},
++                                     {});
++  } else if (master) {
++    scoped_features.InitWithFeatures({kAegisEnabled}, {kAegisFingerprintGuard});
++  } else if (subfeature) {
++    scoped_features.InitWithFeatures({kAegisFingerprintGuard}, {kAegisEnabled});
++  } else {
++    scoped_features.InitWithFeatures({},
++                                     {kAegisEnabled, kAegisFingerprintGuard});
++  }
++  return IsFingerprintGuardGloballyEnabled(pref);
++}
++
++TEST(AegisFeaturesTest, FingerprintGuardRequiresEveryGate) {
++  for (bool master : {false, true}) {
++    for (bool subfeature : {false, true}) {
++      for (bool pref : {false, true}) {
++        SCOPED_TRACE(testing::Message() << "master=" << master << " subfeature="
++                                        << subfeature << " pref=" << pref);
++        EXPECT_EQ(master && subfeature && pref,
++                  EvaluateFingerprintGuard(master, subfeature, pref));
++      }
++    }
++  }
++}
++
++}  // namespace
++}  // namespace aegis::features
+diff --git a/chrome/common/aegis/fingerprint_guard_unittest.cc b/chrome/common/aegis/fingerprint_guard_unittest.cc
+new file mode 100644
+index 0000000000..6444a00f74
+--- /dev/null
++++ b/chrome/common/aegis/fingerprint_guard_unittest.cc
+@@ -0,0 +1,97 @@
++// Copyright 2026 GCSA
++
++#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
++
++#include <array>
++#include <cstdint>
++#include <string_view>
++
++#include "base/hash/hash.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis {
++namespace {
++
++uint64_t PublicHostMask(std::string_view host) {
++  const uint64_t hash = base::PersistentHash(host);
++  return (hash << 1) ^ hash;
++}
++
++TEST(FingerprintGuardTest, RegistrableSiteIsStableAcrossSubdomains) {
++  blink::aegis::SetFingerprintGuardEnabled(true);
++
++  EXPECT_EQ(blink::aegis::FarblingTokenForHost("login.example.com"),
++            blink::aegis::FarblingTokenForHost("cdn.example.com"));
++}
++
++TEST(FingerprintGuardTest, PublicHostHashCannotRecoverACommonSalt) {
++  blink::aegis::SetFingerprintGuardEnabled(true);
++
++  constexpr std::string_view kFirstHost = "one.example.com";
++  constexpr std::string_view kSecondHost = "two.example.net";
++  const uint64_t recovered_first =
++      blink::aegis::FarblingTokenForHost(kFirstHost) ^
++      PublicHostMask(kFirstHost);
++  const uint64_t recovered_second =
++      blink::aegis::FarblingTokenForHost(kSecondHost) ^
++      PublicHostMask(kSecondHost);
++
++  EXPECT_NE(recovered_first, recovered_second);
++}
++
++TEST(FingerprintGuardTest, HmacDerivationHasStableDomainSeparatedVector) {
++  std::array<uint8_t, blink::aegis::kFarblingSecretSize> secret;
++  for (size_t i = 0; i < secret.size(); ++i) {
++    secret[i] = static_cast<uint8_t>(i);
++  }
++
++  constexpr std::string_view kSite = "https://example.com";
++  constexpr uint64_t kEpoch = 12345;
++  const uint64_t canvas = blink::aegis::ComputeFarblingTokenForTesting(
++      secret, kSite, blink::aegis::FarblingSurface::kCanvas, kEpoch);
++  EXPECT_EQ(14324488412929654517ULL, canvas);
++  EXPECT_EQ(canvas,
++            blink::aegis::ComputeFarblingTokenForTesting(
++                secret, kSite, blink::aegis::FarblingSurface::kCanvas, kEpoch));
++  EXPECT_NE(canvas,
++            blink::aegis::ComputeFarblingTokenForTesting(
++                secret, kSite, blink::aegis::FarblingSurface::kAudio, kEpoch));
++  EXPECT_NE(canvas, blink::aegis::ComputeFarblingTokenForTesting(
++                        secret, "https://example.net",
++                        blink::aegis::FarblingSurface::kCanvas, kEpoch));
++  EXPECT_NE(canvas, blink::aegis::ComputeFarblingTokenForTesting(
++                        secret, kSite, blink::aegis::FarblingSurface::kCanvas,
++                        kEpoch + 1));
++}
++
++TEST(FingerprintGuardTest, InvalidSecretAndPausedSiteDisableProtection) {
++  std::array<uint8_t, blink::aegis::kFarblingSecretSize> secret{};
++  blink::aegis::SetFingerprintGuardConfiguration(
++      true, secret, "example.com|200\nexpired.test|100");
++
++  EXPECT_FALSE(blink::aegis::FingerprintProtectionEnabledForSiteForTesting(
++      true, "example.com|200", "cdn.example.com", 150));
++  EXPECT_TRUE(blink::aegis::FingerprintProtectionEnabledForSiteForTesting(
++      true, "example.com|200", "other.test", 150));
++  EXPECT_TRUE(blink::aegis::FingerprintProtectionEnabledForSiteForTesting(
++      true, "example.com|200", "example.com", 200));
++  EXPECT_FALSE(blink::aegis::FingerprintProtectionEnabledForSiteForTesting(
++      false, std::string_view(), "example.com", 150));
++
++  blink::aegis::SetFingerprintGuardConfiguration(
++      true, base::span(secret).first(secret.size() - 1), std::string_view());
++  EXPECT_FALSE(blink::aegis::IsFingerprintGuardEnabled());
++}
++
++TEST(FingerprintGuardTest, WebGPULimitsUseFiniteDownwardBuckets) {
++  EXPECT_EQ(268435456ULL,
++            blink::aegis::BucketWebGPUMaxBufferSize(300000000ULL));
++  EXPECT_EQ(1073741824ULL,
++            blink::aegis::BucketWebGPUMaxBufferSize(1500000000ULL));
++  EXPECT_EQ(32768u, blink::aegis::BucketWebGPUMaxWorkgroupStorage(50000u));
++  EXPECT_EQ(4096u, blink::aegis::BucketWebGPUMaxTexture3D(6000u));
++  EXPECT_EQ(1024u, blink::aegis::BucketWebGPUMaxTexture3D(1024u));
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index a550df3940..ada93350b4 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -13,6 +13,8 @@ inline constexpr char kPhishInterstitialEnabled[] =
+     "aegis.phish_interstitial_enabled";
+ inline constexpr char kFingerprintGuardEnabled[] =
+     "aegis.fingerprint_guard_enabled";
++inline constexpr char kFingerprintFarblingSecret[] =
++    "aegis.fingerprint_farbling_secret";
+ inline constexpr char kFilterListAutoUpdateEnabled[] =
+     "aegis.filter_list_auto_update";
+ inline constexpr char kFilterListLastUpdated[] =
+diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
+index fba394b871..cd7d6557af 100644
+--- a/chrome/common/renderer_configuration.mojom
++++ b/chrome/common/renderer_configuration.mojom
+@@ -35,6 +35,7 @@ struct DynamicParams {
+   bool aegis_cname_uncloak = true;
+   bool aegis_link_sanitize = true;
+   string aegis_paused_sites;
++  array<uint8> aegis_farbling_secret;
+ };
+ 
+ // Renderer → browser: AegisNetThrottle 拦截与 Referer 去参。
+diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
+index 160c6059c6..3b49641129 100644
+--- a/chrome/renderer/chrome_render_thread_observer.cc
++++ b/chrome/renderer/chrome_render_thread_observer.cc
+@@ -227,7 +227,9 @@ void ChromeRenderThreadObserver::SetConfiguration(
+     chrome::mojom::DynamicParamsPtr params) {
+   base::AutoLock lock(dynamic_params_lock_);
+   if (params) {
+-    blink::aegis::SetFingerprintGuardEnabled(params->aegis_fingerprint_guard);
++    blink::aegis::SetFingerprintGuardConfiguration(
++        params->aegis_fingerprint_guard, params->aegis_farbling_secret,
++        params->aegis_paused_sites);
+   }
+   dynamic_params_ = std::move(params);
+ }
+diff --git a/content/renderer/worker/embedded_shared_worker_stub.cc b/content/renderer/worker/embedded_shared_worker_stub.cc
+index 1c6d965d94..ed1bcece4f 100644
+--- a/content/renderer/worker/embedded_shared_worker_stub.cc
++++ b/content/renderer/worker/embedded_shared_worker_stub.cc
+@@ -129,6 +129,8 @@ EmbeddedSharedWorkerStub::EmbeddedSharedWorkerStub(
+       token, info->url, info->options->type, info->options->credentials,
+       blink::WebString::FromUtf8(info->options->name),
+       blink::WebSecurityOrigin(constructor_key.origin()),
++      blink::WebSecurityOrigin(url::Origin::Create(
++          constructor_key.top_level_site().GetURL())),
+       blink::WebSecurityOrigin(origin), is_constructor_secure_context,
+       blink::WebString::FromUtf8(user_agent), ua_metadata,
+       ToWebContentSecurityPolicies(info->content_security_policies),
+diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
+index 3276459e88..04577bf593 100644
+--- a/third_party/blink/common/BUILD.gn
++++ b/third_party/blink/common/BUILD.gn
+@@ -311,6 +311,7 @@ source_set("common") {
+     "//base",
+     "//build:android_buildflags",
+     "//build:chromecast_buildflags",
++    "//crypto",
+     "//media/capture:capture_base",
+     "//media/capture/mojom:video_capture_mojom_support",
+     "//mojo/public/cpp/system",
+diff --git a/third_party/blink/common/DEPS b/third_party/blink/common/DEPS
+index 10d3a58c78..a71b485d5d 100644
+--- a/third_party/blink/common/DEPS
++++ b/third_party/blink/common/DEPS
+@@ -9,6 +9,7 @@ include_rules = [
+     "+base",
+     "+build",
+     "+crypto/hash.h",
++    "+crypto/hmac.h",
+     "+cc/mojom/browser_controls_params.mojom.h",
+     "+gpu/command_buffer/common/shared_image_usage.h",
+     "+net",
+diff --git a/third_party/blink/common/aegis/fingerprint_guard.cc b/third_party/blink/common/aegis/fingerprint_guard.cc
+index f35769ddd3..7153770ee8 100644
+--- a/third_party/blink/common/aegis/fingerprint_guard.cc
++++ b/third_party/blink/common/aegis/fingerprint_guard.cc
+@@ -3,47 +3,219 @@
+ 
+ #include "third_party/blink/public/common/aegis/fingerprint_guard.h"
+ 
+-#include <atomic>
++#include <array>
++#include <cstdint>
++#include <string>
++#include <vector>
+ 
+-#include "base/hash/hash.h"
++#include "base/containers/span.h"
++#include "base/no_destructor.h"
+ #include "base/rand_util.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/synchronization/lock.h"
++#include "base/time/time.h"
++#include "crypto/hmac.h"
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ 
+ namespace blink::aegis {
+ namespace {
+ 
+-std::atomic<bool> g_fingerprint_guard_enabled{false};
+-std::atomic<uint64_t> g_session_salt{0};
++constexpr uint64_t kSecondsPerWeek = 7 * 24 * 60 * 60;
++constexpr std::string_view kHmacDomain = "aegis-farbling-v1";
+ 
+-uint64_t SessionSalt() {
+-  uint64_t salt = g_session_salt.load(std::memory_order_relaxed);
+-  if (salt != 0) {
+-    return salt;
++struct FingerprintGuardState {
++  base::Lock lock;
++  bool enabled = false;
++  std::vector<uint8_t> secret;
++  std::string paused_sites;
++};
++
++FingerprintGuardState& State() {
++  static base::NoDestructor<FingerprintGuardState> state;
++  return *state;
++}
++
++std::string SiteKeyForHost(std::string_view host) {
++  std::string normalized = base::ToLowerASCII(host);
++  while (!normalized.empty() && normalized.back() == '.') {
++    normalized.pop_back();
++  }
++  if (normalized.empty() || normalized.find('/') != std::string::npos ||
++      normalized.find('|') != std::string::npos ||
++      normalized.find('\n') != std::string::npos) {
++    return std::string();
++  }
++  const std::string registrable =
++      net::registry_controlled_domains::GetDomainAndRegistry(
++          normalized,
++          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
++  return registrable.empty() ? normalized : registrable;
++}
++
++bool IsPaused(std::string_view serialized,
++              std::string_view host,
++              int64_t now_unix_seconds) {
++  const std::string target = SiteKeyForHost(host);
++  if (target.empty()) {
++    return false;
++  }
++  for (std::string_view line :
++       base::SplitStringPiece(serialized, "\n", base::TRIM_WHITESPACE,
++                              base::SPLIT_WANT_NONEMPTY)) {
++    const std::vector<std::string_view> fields = base::SplitStringPiece(
++        line, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
++    int64_t expiry = 0;
++    if (fields.size() == 2 && base::StringToInt64(fields[1], &expiry) &&
++        expiry > now_unix_seconds && SiteKeyForHost(fields[0]) == target) {
++      return true;
++    }
++  }
++  return false;
++}
++
++void AppendUint64BigEndian(uint64_t value, std::vector<uint8_t>* output) {
++  for (int shift = 56; shift >= 0; shift -= 8) {
++    output->push_back(static_cast<uint8_t>(value >> shift));
+   }
+-  uint64_t generated = base::RandUint64();
+-  if (generated == 0) {
+-    generated = 1;
++}
++
++void AppendUint32BigEndian(uint32_t value, std::vector<uint8_t>* output) {
++  for (int shift = 24; shift >= 0; shift -= 8) {
++    output->push_back(static_cast<uint8_t>(value >> shift));
+   }
+-  uint64_t expected = 0;
+-  if (g_session_salt.compare_exchange_strong(expected, generated,
+-                                             std::memory_order_relaxed)) {
+-    return generated;
++}
++
++template <typename T, size_t N>
++T BucketDown(T actual, const std::array<T, N>& buckets) {
++  T result = actual;
++  bool found = false;
++  for (T bucket : buckets) {
++    if (bucket <= actual) {
++      result = bucket;
++      found = true;
++    }
+   }
+-  return expected;
++  return found ? result : actual;
++}
++
++std::vector<uint8_t> SnapshotSecret() {
++  FingerprintGuardState& state = State();
++  base::AutoLock lock(state.lock);
++  return state.secret;
+ }
+ 
+ }  // namespace
+ 
++void SetFingerprintGuardConfiguration(bool enabled,
++                                      base::span<const uint8_t> profile_secret,
++                                      std::string_view paused_sites) {
++  FingerprintGuardState& state = State();
++  base::AutoLock lock(state.lock);
++  const bool valid_secret = profile_secret.size() == kFarblingSecretSize;
++  state.enabled = enabled && valid_secret;
++  state.secret.assign(profile_secret.begin(), profile_secret.end());
++  state.paused_sites.assign(paused_sites);
++}
++
+ void SetFingerprintGuardEnabled(bool enabled) {
+-  g_fingerprint_guard_enabled.store(enabled, std::memory_order_relaxed);
++  FingerprintGuardState& state = State();
++  base::AutoLock lock(state.lock);
++  if (enabled && state.secret.size() != kFarblingSecretSize) {
++    state.secret = base::RandBytesAsVector(kFarblingSecretSize);
++  }
++  state.enabled = enabled;
+ }
+ 
+ bool IsFingerprintGuardEnabled() {
+-  return g_fingerprint_guard_enabled.load(std::memory_order_relaxed);
++  FingerprintGuardState& state = State();
++  base::AutoLock lock(state.lock);
++  return state.enabled && state.secret.size() == kFarblingSecretSize;
++}
++
++bool FingerprintProtectionEnabledForSiteForTesting(
++    bool enabled,
++    std::string_view paused_sites,
++    std::string_view top_level_host,
++    int64_t now_unix_seconds) {
++  return enabled && !IsPaused(paused_sites, top_level_host, now_unix_seconds);
++}
++
++bool IsFingerprintGuardEnabledForSite(std::string_view top_level_host) {
++  FingerprintGuardState& state = State();
++  bool enabled = false;
++  std::string paused_sites;
++  {
++    base::AutoLock lock(state.lock);
++    enabled = state.enabled && state.secret.size() == kFarblingSecretSize;
++    paused_sites = state.paused_sites;
++  }
++  const int64_t now =
++      static_cast<int64_t>(base::Time::Now().InSecondsFSinceUnixEpoch());
++  return FingerprintProtectionEnabledForSiteForTesting(enabled, paused_sites,
++                                                       top_level_host, now);
++}
++
++uint64_t ComputeFarblingTokenForTesting(
++    base::span<const uint8_t> secret,
++    std::string_view schemeful_top_level_site,
++    FarblingSurface surface,
++    uint64_t epoch) {
++  if (secret.size() != kFarblingSecretSize ||
++      schemeful_top_level_site.empty()) {
++    return 0;
++  }
++
++  std::vector<uint8_t> message;
++  message.reserve(kHmacDomain.size() + schemeful_top_level_site.size() + 16);
++  message.insert(message.end(), kHmacDomain.begin(), kHmacDomain.end());
++  message.push_back(0);
++  message.push_back(static_cast<uint8_t>(surface));
++  AppendUint64BigEndian(epoch, &message);
++  AppendUint32BigEndian(static_cast<uint32_t>(schemeful_top_level_site.size()),
++                        &message);
++  message.insert(message.end(), schemeful_top_level_site.begin(),
++                 schemeful_top_level_site.end());
++
++  const auto digest = crypto::hmac::SignSha256(secret, message);
++  uint64_t token = 0;
++  for (size_t i = 0; i < sizeof(token); ++i) {
++    token = (token << 8) | digest[i];
++  }
++  return token == 0 ? 1 : token;
++}
++
++uint64_t FarblingTokenForSite(std::string_view schemeful_top_level_site,
++                              FarblingSurface surface) {
++  const std::vector<uint8_t> secret = SnapshotSecret();
++  const uint64_t epoch = static_cast<uint64_t>(
++      base::Time::Now().InSecondsFSinceUnixEpoch() / kSecondsPerWeek);
++  return ComputeFarblingTokenForTesting(secret, schemeful_top_level_site,
++                                        surface, epoch);
+ }
+ 
+ uint64_t FarblingTokenForHost(std::string_view host) {
+-  const uint64_t host_hash = base::PersistentHash(host);
+-  return SessionSalt() ^ (host_hash << 1) ^ host_hash;
++  const std::string site = SiteKeyForHost(host);
++  return site.empty() ? 0
++                      : FarblingTokenForSite("https://" + site,
++                                             FarblingSurface::kCanvas);
++}
++
++uint64_t BucketWebGPUMaxBufferSize(uint64_t actual) {
++  constexpr std::array<uint64_t, 5> kBuckets = {
++      268435456ULL, 536870912ULL, 1073741824ULL, 2147483648ULL, 4294967296ULL};
++  return BucketDown(actual, kBuckets);
++}
++
++uint32_t BucketWebGPUMaxWorkgroupStorage(uint32_t actual) {
++  constexpr std::array<uint32_t, 3> kBuckets = {16384u, 32768u, 65536u};
++  return BucketDown(actual, kBuckets);
++}
++
++uint32_t BucketWebGPUMaxTexture3D(uint32_t actual) {
++  constexpr std::array<uint32_t, 3> kBuckets = {2048u, 4096u, 8192u};
++  return BucketDown(actual, kBuckets);
+ }
+ 
+ }  // namespace blink::aegis
+diff --git a/third_party/blink/public/common/aegis/fingerprint_guard.h b/third_party/blink/public/common/aegis/fingerprint_guard.h
+index 5fb108a04a..9b9c3eedcd 100644
+--- a/third_party/blink/public/common/aegis/fingerprint_guard.h
++++ b/third_party/blink/public/common/aegis/fingerprint_guard.h
+@@ -4,21 +4,61 @@
+ #ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
+ #define THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
+ 
++#include <cstddef>
+ #include <cstdint>
++#include <string>
+ #include <string_view>
+ 
++#include "base/containers/span.h"
+ #include "third_party/blink/public/common/common_export.h"
+ 
+ namespace blink::aegis {
+ 
+-// Process-wide FingerprintGuard switch, synced from profile prefs via
+-// chrome.mojom.DynamicParams.
++inline constexpr size_t kFarblingSecretSize = 32;
++
++enum class FarblingSurface : uint8_t {
++  kCanvas = 1,
++  kAudio = 2,
++  kWebGL = 3,
++  kWebGPU = 4,
++};
++
++// Renderer 进程级配置。密钥由 Browser Profile 持有，不直接编码到 JS 可见值。
++BLINK_COMMON_EXPORT void SetFingerprintGuardConfiguration(
++    bool enabled,
++    base::span<const uint8_t> profile_secret,
++    std::string_view paused_sites);
++
++// 兼容测试和早期初始化；生产代码应使用 SetFingerprintGuardConfiguration()。
+ BLINK_COMMON_EXPORT void SetFingerprintGuardEnabled(bool enabled);
+ BLINK_COMMON_EXPORT bool IsFingerprintGuardEnabled();
++BLINK_COMMON_EXPORT bool IsFingerprintGuardEnabledForSite(
++    std::string_view top_level_host);
+ 
+-// Stable-per-session, varies-by-host farbling seed (eTLD+1 / host scoped).
++// 对 Profile、schemeful 顶层站点、表面和 UTC 7 天周期保持稳定。
++BLINK_COMMON_EXPORT uint64_t
++FarblingTokenForSite(std::string_view schemeful_top_level_site,
++                     FarblingSurface surface);
++
++// 仅为原生回归测试保留；新 Renderer 代码应传入 schemeful 顶层站点。
+ BLINK_COMMON_EXPORT uint64_t FarblingTokenForHost(std::string_view host);
+ 
++// 供原生测试锁定隐私契约的纯函数。
++BLINK_COMMON_EXPORT uint64_t
++ComputeFarblingTokenForTesting(base::span<const uint8_t> secret,
++                               std::string_view schemeful_top_level_site,
++                               FarblingSurface surface,
++                               uint64_t epoch);
++BLINK_COMMON_EXPORT bool FingerprintProtectionEnabledForSiteForTesting(
++    bool enabled,
++    std::string_view paused_sites,
++    std::string_view top_level_host,
++    int64_t now_unix_seconds);
++
++BLINK_COMMON_EXPORT uint64_t BucketWebGPUMaxBufferSize(uint64_t actual);
++BLINK_COMMON_EXPORT uint32_t BucketWebGPUMaxWorkgroupStorage(uint32_t actual);
++BLINK_COMMON_EXPORT uint32_t BucketWebGPUMaxTexture3D(uint32_t actual);
++
+ }  // namespace blink::aegis
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
+diff --git a/third_party/blink/public/web/web_shared_worker.h b/third_party/blink/public/web/web_shared_worker.h
+index afadb2f8c3..44df8cd290 100644
+--- a/third_party/blink/public/web/web_shared_worker.h
++++ b/third_party/blink/public/web/web_shared_worker.h
+@@ -78,6 +78,7 @@ class BLINK_EXPORT WebSharedWorker {
+       network::mojom::CredentialsMode,
+       const WebString& name,
+       WebSecurityOrigin constructor_origin,
++      WebSecurityOrigin top_level_site_origin,
+       WebSecurityOrigin origin_from_browser,
+       bool is_constructor_secure_context,
+       const WebString& user_agent,
+diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
+index 6c8724eba2..aa6391c6b9 100644
+--- a/third_party/blink/renderer/core/BUILD.gn
++++ b/third_party/blink/renderer/core/BUILD.gn
+@@ -1493,6 +1493,7 @@ source_set("unit_tests") {
+   # in 'foo/build.gni' to define blink_core_tests_foo, and add any dependencies
+   # in the deps section below.
+   sources = rebase_path(blink_core_tests_accessibility, "", "accessibility")
++  sources += rebase_path(blink_core_tests_aegis, "", "aegis")
+   sources += rebase_path(blink_core_tests_animation, "", "animation")
+   sources += rebase_path(blink_core_tests_annotation, "", "annotation")
+   sources += rebase_path(blink_core_tests_canvas_interventions,
+diff --git a/third_party/blink/renderer/core/aegis/build.gni b/third_party/blink/renderer/core/aegis/build.gni
+index 1ff31dc83a..ec4ab3873d 100644
+--- a/third_party/blink/renderer/core/aegis/build.gni
++++ b/third_party/blink/renderer/core/aegis/build.gni
+@@ -5,3 +5,5 @@ blink_core_sources_aegis = [
+   "farbling.cc",
+   "farbling.h",
+ ]
++
++blink_core_tests_aegis = [ "farbling_unittest.cc" ]
+diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
+index edaa9e6ae7..27bb83454f 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.cc
++++ b/third_party/blink/renderer/core/aegis/farbling.cc
+@@ -3,20 +3,26 @@
+ 
+ #include "third_party/blink/renderer/core/aegis/farbling.h"
+ 
++#include <algorithm>
++#include <bit>
+ #include <cstdint>
+ #include <string>
+ 
+ #include "base/containers/span.h"
++#include "base/unguessable_token.h"
+ #include "third_party/blink/public/common/aegis/fingerprint_guard.h"
+ #include "third_party/blink/public/common/fingerprinting_protection/noise_token.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_union_float16array_float32array_uint8clampedarray.h"
+ #include "third_party/blink/renderer/core/canvas_interventions/noise_hash.h"
+ #include "third_party/blink/renderer/core/canvas_interventions/noise_helper.h"
++#include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/html/canvas/image_data.h"
++#include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+ #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
+ #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+-#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkImage.h"
+ 
+@@ -24,228 +30,327 @@ namespace blink {
+ namespace aegis {
+ namespace {
+ 
+-std::string HostForContext(ExecutionContext* context) {
++scoped_refptr<const SecurityOrigin> TopLevelOriginForContext(
++    ExecutionContext* context) {
+   if (!context) {
+-    return std::string();
++    return nullptr;
++  }
++
++  if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
++    if (Document* document = window->document()) {
++      if (scoped_refptr<const SecurityOrigin> top_frame_origin =
++              document->TopFrameOrigin()) {
++        return top_frame_origin;
++      }
++    }
+   }
+-  const SecurityOrigin* origin = context->GetSecurityOrigin();
++  if (auto* worker = DynamicTo<WorkerGlobalScope>(context)) {
++    if (const SecurityOrigin* top_level =
++            worker->top_level_frame_security_origin()) {
++      return base::WrapRefCounted(top_level);
++    }
++  }
++  return base::WrapRefCounted(context->GetSecurityOrigin());
++}
++
++std::string TopLevelSiteForContext(ExecutionContext* context) {
++  scoped_refptr<const SecurityOrigin> origin =
++      TopLevelOriginForContext(context);
+   if (!origin) {
+     return std::string();
+   }
+-  return origin->Host().Utf8();
++  if (origin->IsOpaque()) {
++    return "opaque:" + context->GetAgentClusterID().ToString();
++  }
++  return origin->GetSchemefulSite().Serialize();
+ }
+ 
+-uint64_t TokenForContext(ExecutionContext* context) {
+-  return FarblingTokenForHost(HostForContext(context));
++std::string TopLevelHostForContext(ExecutionContext* context) {
++  scoped_refptr<const SecurityOrigin> origin =
++      TopLevelOriginForContext(context);
++  return origin && !origin->IsOpaque() ? origin->Host().Utf8() : std::string();
+ }
+ 
+-}  // namespace
++uint64_t TokenForContext(ExecutionContext* context, FarblingSurface surface) {
++  return FarblingTokenForSite(TopLevelSiteForContext(context), surface);
++}
+ 
+-void MaybeFarbleImageData(ExecutionContext* context, ImageData* image_data) {
+-  if (!IsFingerprintGuardEnabled() || !image_data ||
+-      image_data->IsBufferBaseDetached()) {
++uint64_t AudioNoiseForSample(uint64_t token, size_t sample_index) {
++  // 采用 SplitMix64 风格混合，使每个样本下标都能独立、确定地生成扰动。
++  uint64_t value = token + 0x9e3779b97f4a7c15ULL *
++                               (static_cast<uint64_t>(sample_index) + 1ULL);
++  value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
++  value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
++  return value ^ (value >> 31);
++}
++
++uint64_t PixelNoiseForIndex(uint64_t token, size_t index) {
++  uint64_t value =
++      token + 0x9e3779b97f4a7c15ULL * (static_cast<uint64_t>(index) + 1);
++  value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
++  value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
++  return value ^ (value >> 31);
++}
++
++template <typename Bits>
++Bits FarbleFloatingPointBits(uint64_t token,
++                             size_t index,
++                             Bits bits,
++                             Bits sign_mask,
++                             Bits exponent_mask,
++                             Bits one_bits) {
++  const Bits magnitude = bits & ~sign_mask;
++  if ((magnitude & exponent_mask) == exponent_mask) {
++    return index % 4 == 3 ? one_bits : 0;
++  }
++  if (index % 4 == 3 || magnitude == 0) {
++    return bits;
++  }
++
++  const Bits steps =
++      static_cast<Bits>((PixelNoiseForIndex(token, index) & 3u) + 1u);
++  return (bits & sign_mask) | (magnitude > steps ? magnitude - steps : 0);
++}
++
++void PreserveByteAlphaInvariant(base::span<uint8_t> pixels,
++                                SkAlphaType alpha_type) {
++  if (alpha_type != kOpaque_SkAlphaType && alpha_type != kPremul_SkAlphaType) {
+     return;
+   }
++  for (size_t i = 0; i < pixels.size(); i += 4) {
++    uint8_t& alpha = pixels[i + 3];
++    if (alpha_type == kOpaque_SkAlphaType) {
++      alpha = 255;
++    } else {
++      pixels[i] = std::min(pixels[i], alpha);
++      pixels[i + 1] = std::min(pixels[i + 1], alpha);
++      pixels[i + 2] = std::min(pixels[i + 2], alpha);
++    }
++  }
++}
++
++template <typename T>
++void PreserveOpaqueFloatAlpha(base::span<T> pixels, T one) {
++  for (size_t i = 3; i < pixels.size(); i += 4) {
++    pixels[i] = one;
++  }
++}
++
++}  // namespace
++
++bool ShouldFarbleFingerprint(ExecutionContext* context) {
++  if (!context || TopLevelSiteForContext(context).empty()) {
++    return false;
++  }
++  return IsFingerprintGuardEnabledForSite(TopLevelHostForContext(context));
++}
++
++void FarbleFloat16Pixels(uint64_t token, base::span<uint16_t> pixels) {
++  for (size_t i = 0; i < pixels.size(); ++i) {
++    pixels[i] = FarbleFloatingPointBits<uint16_t>(token, i, pixels[i], 0x8000u,
++                                                  0x7c00u, 0x3c00u);
++  }
++}
++
++void FarbleFloat32Pixels(uint64_t token, base::span<float> pixels) {
++  for (size_t i = 0; i < pixels.size(); ++i) {
++    uint32_t bits = std::bit_cast<uint32_t>(pixels[i]);
++    bits = FarbleFloatingPointBits<uint32_t>(token, i, bits, 0x80000000u,
++                                             0x7f800000u, 0x3f800000u);
++    pixels[i] = std::bit_cast<float>(bits);
++  }
++}
+ 
+-  if (image_data->GetSkColorType() != kRGBA_8888_SkColorType &&
+-      image_data->GetSkColorType() != kBGRA_8888_SkColorType) {
++void MaybeFarbleImageData(ExecutionContext* context, ImageData* image_data) {
++  if (!ShouldFarbleFingerprint(context) || !image_data ||
++      image_data->IsBufferBaseDetached()) {
+     return;
+   }
+ 
+-  base::span<uint8_t> pixels = image_data->RawByteSpan();
+   const int width = image_data->width();
+   const int height = image_data->height();
+   const size_t expected =
+       static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
+-  if (width <= 0 || height <= 0 || pixels.size() != expected) {
++  if (width <= 0 || height <= 0) {
+     return;
+   }
+ 
+-  NoiseHash hash(NoiseToken(TokenForContext(context)));
+-  NoisePixels(hash, pixels, width, height);
++  const uint64_t token = TokenForContext(context, FarblingSurface::kCanvas);
++  switch (image_data->GetSkColorType()) {
++    case kRGBA_8888_SkColorType:
++    case kBGRA_8888_SkColorType: {
++      base::span<uint8_t> pixels = image_data->RawByteSpan();
++      if (pixels.size() != expected) {
++        return;
++      }
++      NoisePixels(NoiseHash(NoiseToken(token)), pixels, width, height);
++      return;
++    }
++    case kRGBA_F16_SkColorType: {
++      base::span<uint16_t> pixels =
++          image_data->data()->GetAsFloat16Array()->AsSpan();
++      if (pixels.size() != expected) {
++        return;
++      }
++      FarbleFloat16Pixels(token, pixels);
++      return;
++    }
++    case kRGBA_F32_SkColorType: {
++      base::span<float> pixels =
++          image_data->data()->GetAsFloat32Array()->AsSpan();
++      if (pixels.size() != expected) {
++        return;
++      }
++      FarbleFloat32Pixels(token, pixels);
++      return;
++    }
++    default:
++      NOTREACHED();
++  }
+ }
+ 
+ scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
+     ExecutionContext* context,
+     scoped_refptr<StaticBitmapImage> image) {
+-  if (!IsFingerprintGuardEnabled() || !image) {
++  if (!ShouldFarbleFingerprint(context) || !image) {
+     return image;
+   }
+ 
+   const gfx::Size size = image->Size();
+   if (size.IsEmpty()) {
+-    return image;
++    return nullptr;
+   }
+ 
+-  SkImageInfo info =
+-      SkImageInfo::Make(size.width(), size.height(), kRGBA_8888_SkColorType,
+-                        kUnpremul_SkAlphaType);
++  const PaintImage paint_image = image->PaintImageForCurrentFrame();
++  const SkImageInfo source_info = paint_image.GetSkImageInfo();
++  SkColorType target_color_type = source_info.colorType();
++  switch (target_color_type) {
++    case kRGBA_8888_SkColorType:
++    case kBGRA_8888_SkColorType:
++    case kSRGBA_8888_SkColorType:
++    case kRGBA_F16Norm_SkColorType:
++    case kRGBA_F16_SkColorType:
++    case kRGBA_F32_SkColorType:
++      break;
++    default:
++      target_color_type = kRGBA_8888_SkColorType;
++  }
++  const SkAlphaType target_alpha_type = source_info.alphaType();
++  const SkImageInfo info =
++      SkImageInfo::Make(size.width(), size.height(), target_color_type,
++                        target_alpha_type, source_info.refColorSpace());
+   SkBitmap bitmap;
+   if (!bitmap.tryAllocPixels(info)) {
+-    return image;
++    return nullptr;
+   }
+ 
+-  const bool read_ok = image->PaintImageForCurrentFrame().readPixels(
+-      bitmap.info(), bitmap.getPixels(), bitmap.rowBytes(), 0, 0);
++  const bool read_ok = paint_image.readPixels(bitmap.info(), bitmap.getPixels(),
++                                              bitmap.rowBytes(), 0, 0);
+   if (!read_ok) {
+-    return image;
++    return nullptr;
+   }
+ 
+-  const size_t row_bytes = static_cast<size_t>(size.width()) * 4u;
++  const size_t row_bytes = info.minRowBytes();
+   if (bitmap.rowBytes() != row_bytes) {
+-    return image;
++    return nullptr;
+   }
+ 
+   const size_t nbytes = row_bytes * static_cast<size_t>(size.height());
+   auto bitmap_span = UNSAFE_TODO(
+       base::span(static_cast<uint8_t*>(bitmap.getPixels()), nbytes));
+-  NoiseHash hash(NoiseToken(TokenForContext(context)));
+-  NoisePixels(hash, bitmap_span, size.width(), size.height());
++  const uint64_t token = TokenForContext(context, FarblingSurface::kCanvas);
++  switch (target_color_type) {
++    case kRGBA_8888_SkColorType:
++    case kBGRA_8888_SkColorType:
++    case kSRGBA_8888_SkColorType:
++      NoisePixels(NoiseHash(NoiseToken(token)), bitmap_span, size.width(),
++                  size.height());
++      PreserveByteAlphaInvariant(bitmap_span, target_alpha_type);
++      break;
++    case kRGBA_F16Norm_SkColorType:
++    case kRGBA_F16_SkColorType: {
++      auto pixels =
++          UNSAFE_TODO(base::span(static_cast<uint16_t*>(bitmap.getPixels()),
++                                 nbytes / sizeof(uint16_t)));
++      FarbleFloat16Pixels(token, pixels);
++      if (target_alpha_type == kOpaque_SkAlphaType) {
++        PreserveOpaqueFloatAlpha<uint16_t>(pixels, 0x3c00u);
++      }
++      break;
++    }
++    case kRGBA_F32_SkColorType: {
++      auto pixels = UNSAFE_TODO(base::span(
++          static_cast<float*>(bitmap.getPixels()), nbytes / sizeof(float)));
++      FarbleFloat32Pixels(token, pixels);
++      if (target_alpha_type == kOpaque_SkAlphaType) {
++        PreserveOpaqueFloatAlpha<float>(pixels, 1.0f);
++      }
++      break;
++    }
++    default:
++      NOTREACHED();
++  }
+ 
+-  return UnacceleratedStaticBitmapImage::Create(
+-      SkImages::RasterFromBitmap(bitmap), image->Orientation());
++  sk_sp<SkImage> sk_image = SkImages::RasterFromBitmap(bitmap);
++  if (!sk_image) {
++    return nullptr;
++  }
++  scoped_refptr<StaticBitmapImage> farbled =
++      UnacceleratedStaticBitmapImage::Create(
++          std::move(sk_image), image->Orientation(), image->GetHdrMetadata());
++  if (!farbled) {
++    return nullptr;
++  }
++  farbled->SetOriginClean(image->OriginClean());
++  return farbled;
+ }
+ 
+ void MaybeFarbleAudioChannel(ExecutionContext* context,
+                              float* data,
+                              size_t length) {
+-  if (!IsFingerprintGuardEnabled() || !data || length == 0) {
++  if (!ShouldFarbleFingerprint(context) || !data || length == 0) {
+     return;
+   }
+ 
+   auto samples = UNSAFE_TODO(base::span(data, length));
+-  // 幅度约 0.05%，由当前页面 host 与采样下标决定，同一站点稳定。
+-  uint64_t token = TokenForContext(context);
++  // 扰动幅度约 0.05%，对同一顶层站点和音频表面保持稳定。
++  const uint64_t token = TokenForContext(context, FarblingSurface::kAudio);
+   for (size_t i = 0; i < samples.size(); ++i) {
+-    token = token * 6364136223846793005ULL + 1ULL;
++    const uint64_t sample_noise = AudioNoiseForSample(token, i);
+     const float delta =
+-        (static_cast<float>((token >> 33) & 0xFFFF) / 65535.f - 0.5f) *
++        (static_cast<float>((sample_noise >> 33) & 0xFFFF) / 65535.f - 0.5f) *
+         0.0005f;
+     samples[i] += samples[i] * delta;
+   }
+ }
+ 
+-String FarbledWebGLVendor(ExecutionContext* context) {
+-  const uint64_t token = TokenForContext(context);
+-  StringBuilder builder;
+-  builder.Append("Google Inc. (Aegis ");
+-  builder.AppendNumber(token & 0xFFFFu);
+-  builder.Append(")");
+-  return builder.ToString();
+-}
+-
+-String FarbledWebGLRenderer(ExecutionContext* context) {
+-  const uint64_t token = TokenForContext(context);
+-  StringBuilder builder;
+-  builder.Append("ANGLE (Aegis, Aegis Renderer ");
+-  builder.AppendNumber((token >> 16) & 0xFFFFu);
+-  builder.Append(" Direct3D11)");
+-  return builder.ToString();
+-}
+-
+ void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
+                                      String& vendor,
+                                      String& architecture,
+                                      String& device,
+                                      String& description,
+                                      String& driver) {
+-  if (!IsFingerprintGuardEnabled()) {
++  if (!ShouldFarbleFingerprint(context)) {
+     return;
+   }
+-  const uint64_t token = TokenForContext(context);
+-  vendor = String("aegis");
+-
+-  StringBuilder arch;
+-  arch.Append("aegis-");
+-  arch.AppendNumber(token & 0xFFFFu);
+-  architecture = arch.ToString();
+-
+-  StringBuilder dev;
+-  dev.Append("0x");
+-  dev.AppendNumber((token >> 16) & 0xFFFFu);
+-  device = dev.ToString();
+-
+-  StringBuilder desc;
+-  desc.Append("ANGLE (Aegis Renderer ");
+-  desc.AppendNumber((token >> 32) & 0xFFFFu);
+-  desc.Append(")");
+-  description = desc.ToString();
+-
+-  StringBuilder drv;
+-  drv.Append("Aegis ");
+-  drv.AppendNumber((token >> 48) & 0xFFFFu);
+-  driver = drv.ToString();
+-}
+-
+-namespace {
+-
+-// WebGPU 规范要求的下限。只往下收，不抬高，避免报出硬件没有的能力。
+-constexpr uint64_t kMinMaxBufferSize = 268435456ULL;
+-constexpr uint32_t kMinMaxWorkgroupStorage = 16384u;
+-constexpr uint32_t kMinMaxTexture3d = 2048u;
+-constexpr uint32_t kMinSubgroupMin = 4u;
+-
+-void AdvanceToken(uint64_t* token) {
+-  *token = *token * 6364136223846793005ULL + 1ULL;
+-}
+-
+-template <typename T>
+-T FarbleTowardMin(T actual, T spec_min, uint64_t* token) {
+-  AdvanceToken(token);
+-  if (actual <= spec_min) {
+-    return actual;
+-  }
+-  const uint64_t headroom = static_cast<uint64_t>(actual - spec_min);
+-  const uint64_t drop = (headroom * ((*token >> 33) & 15u)) / 64u;
+-  const T out = actual - static_cast<T>(drop);
+-  return out < spec_min ? spec_min : out;
++  vendor = String();
++  architecture = String();
++  device = String();
++  description = String();
++  driver = String();
+ }
+ 
+-// subgroupMinSize / subgroupMaxSize 必须是 2 的幂，不能按任意整数收档。
+-uint32_t FarblePowerOfTwoTowardMin(uint32_t actual,
+-                                   uint32_t spec_min,
+-                                   uint64_t* token) {
+-  AdvanceToken(token);
+-  if (actual <= spec_min || (actual & (actual - 1u)) != 0u) {
+-    return actual;
+-  }
+-  uint32_t floor_min = spec_min;
+-  if (floor_min == 0u || (floor_min & (floor_min - 1u)) != 0u) {
+-    return actual;
+-  }
+-  uint32_t steps = 0u;
+-  for (uint32_t v = actual; v > floor_min; v >>= 1u) {
+-    ++steps;
+-  }
+-  const uint32_t drop_steps =
+-      static_cast<uint32_t>((steps * ((*token >> 33) & 15u)) / 64u);
+-  const uint32_t out = actual >> drop_steps;
+-  return out < floor_min ? floor_min : out;
+-}
+-
+-}  // namespace
+-
+ void MaybeFarbleWebGPUNumericLimits(ExecutionContext* context,
+                                     uint64_t& max_buffer_size,
+                                     uint32_t& max_workgroup_storage,
+-                                    uint32_t& max_texture_3d,
+-                                    uint32_t& subgroup_min_size,
+-                                    uint32_t& subgroup_max_size) {
+-  if (!IsFingerprintGuardEnabled()) {
++                                    uint32_t& max_texture_3d) {
++  if (!ShouldFarbleFingerprint(context)) {
+     return;
+   }
+-  uint64_t token = TokenForContext(context);
+-  max_buffer_size =
+-      FarbleTowardMin(max_buffer_size, kMinMaxBufferSize, &token);
++  max_buffer_size = BucketWebGPUMaxBufferSize(max_buffer_size);
+   max_workgroup_storage =
+-      FarbleTowardMin(max_workgroup_storage, kMinMaxWorkgroupStorage, &token);
+-  max_texture_3d = FarbleTowardMin(max_texture_3d, kMinMaxTexture3d, &token);
+-  subgroup_min_size =
+-      FarblePowerOfTwoTowardMin(subgroup_min_size, kMinSubgroupMin, &token);
+-  if (subgroup_max_size > subgroup_min_size) {
+-    subgroup_max_size = FarblePowerOfTwoTowardMin(
+-        subgroup_max_size, subgroup_min_size, &token);
+-  }
++      BucketWebGPUMaxWorkgroupStorage(max_workgroup_storage);
++  max_texture_3d = BucketWebGPUMaxTexture3D(max_texture_3d);
+ }
+ 
+ }  // namespace aegis
+diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
+index 6a84f03cb1..98053a3402 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.h
++++ b/third_party/blink/renderer/core/aegis/farbling.h
+@@ -4,8 +4,10 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
+ #define THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
+ 
++#include <cstddef>
+ #include <cstdint>
+ 
++#include "base/containers/span.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "third_party/blink/renderer/core/core_export.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+@@ -18,26 +20,30 @@ class StaticBitmapImage;
+ 
+ namespace aegis {
+ 
+-// Applies canvas pixel farbling when FingerprintGuard is enabled.
++// 判断当前上下文的 schemeful 顶层站点是否启用指纹保护，并应用站点暂停策略。
++CORE_EXPORT bool ShouldFarbleFingerprint(ExecutionContext* context);
++
++// FingerprintGuard 启用时扰动 Canvas 像素。
+ CORE_EXPORT void MaybeFarbleImageData(ExecutionContext* context,
+                                       ImageData* image_data);
+ 
+-// Farble a canvas snapshot used by toDataURL / toBlob serialization.
++// 对浮点 RGBA 像素施加确定性、有限值安全的扰动。RGB 向零移动少量可表示
++// 步长，有限 alpha 保持不变；半精度输入使用 IEEE-754 binary16 位表示。
++CORE_EXPORT void FarbleFloat16Pixels(uint64_t token,
++                                     base::span<uint16_t> pixels);
++CORE_EXPORT void FarbleFloat32Pixels(uint64_t token, base::span<float> pixels);
++
++// 扰动供 toDataURL / toBlob 序列化使用的 Canvas 快照。
+ CORE_EXPORT scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
+     ExecutionContext* context,
+     scoped_refptr<StaticBitmapImage> image);
+ 
+-// Light Web Audio sample perturbation. 按 host 稳定；调用方应对每个
+-// AudioBuffer 只调用一次，避免重复叠加。
++// 对 Web Audio 样本施加轻量扰动，并按顶层站点、表面和样本下标保持稳定。
+ CORE_EXPORT void MaybeFarbleAudioChannel(ExecutionContext* context,
+                                          float* data,
+                                          size_t length);
+ 
+-// Stable farbled WebGL debug strings for UNMASKED_* parameters.
+-CORE_EXPORT String FarbledWebGLVendor(ExecutionContext* context);
+-CORE_EXPORT String FarbledWebGLRenderer(ExecutionContext* context);
+-
+-// Stable farbled WebGPU adapter.info strings.
++// 保护 WebGPU adapter.info 字符串。
+ CORE_EXPORT void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
+                                                  String& vendor,
+                                                  String& architecture,
+@@ -45,13 +51,11 @@ CORE_EXPORT void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
+                                                  String& description,
+                                                  String& driver);
+ 
+-// 把若干高识别度 WebGPU 数值向规范下限收一档，按 host 稳定，且不超过硬件原值。
++// 把高熵 WebGPU 数值放入固定、有限且只向下收敛的人口桶。
+ CORE_EXPORT void MaybeFarbleWebGPUNumericLimits(ExecutionContext* context,
+                                                 uint64_t& max_buffer_size,
+                                                 uint32_t& max_workgroup_storage,
+-                                                uint32_t& max_texture_3d,
+-                                                uint32_t& subgroup_min_size,
+-                                                uint32_t& subgroup_max_size);
++                                                uint32_t& max_texture_3d);
+ 
+ }  // namespace aegis
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/aegis/farbling_unittest.cc b/third_party/blink/renderer/core/aegis/farbling_unittest.cc
+new file mode 100644
+index 0000000000..fe162d2f1d
+--- /dev/null
++++ b/third_party/blink/renderer/core/aegis/farbling_unittest.cc
+@@ -0,0 +1,72 @@
++// Copyright 2026 GCSA
++
++#include "third_party/blink/renderer/core/aegis/farbling.h"
++
++#include <cmath>
++#include <cstdint>
++#include <iterator>
++#include <limits>
++
++#include "base/containers/span.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace blink::aegis {
++namespace {
++
++TEST(AegisFarblingTest, Float16IsDeterministicFiniteAndFormatPreserving) {
++  constexpr uint64_t kToken = 0x123456789abcdef0ULL;
++  uint16_t first[] = {0x3c00u, 0x3800u, 0xbc00u, 0x3c00u,
++                      0x7c00u, 0x7e00u, 0xfc00u, 0x7c00u};
++  uint16_t second[] = {0x3c00u, 0x3800u, 0xbc00u, 0x3c00u,
++                       0x7c00u, 0x7e00u, 0xfc00u, 0x7c00u};
++
++  FarbleFloat16Pixels(kToken, first);
++  FarbleFloat16Pixels(kToken, second);
++
++  EXPECT_EQ(base::span(first), base::span(second));
++  EXPECT_NE(first[0], 0x3c00u);
++  EXPECT_EQ(first[3], 0x3c00u);
++  for (uint16_t value : first) {
++    EXPECT_NE(value & 0x7c00u, 0x7c00u);
++  }
++}
++
++TEST(AegisFarblingTest, Float32IsDeterministicFiniteAndPreservesAlpha) {
++  constexpr uint64_t kToken = 0x0fedcba987654321ULL;
++  float first[] = {1.0f,
++                   -0.5f,
++                   0.25f,
++                   0.75f,
++                   std::numeric_limits<float>::infinity(),
++                   std::numeric_limits<float>::quiet_NaN(),
++                   -std::numeric_limits<float>::infinity(),
++                   1.0f};
++  float second[std::size(first)];
++  base::span(second).copy_from(first);
++
++  FarbleFloat32Pixels(kToken, first);
++  FarbleFloat32Pixels(kToken, second);
++
++  EXPECT_EQ(base::span(first), base::span(second));
++  for (float value : first) {
++    EXPECT_TRUE(std::isfinite(value));
++  }
++  EXPECT_NE(first[0], 1.0f);
++  EXPECT_FLOAT_EQ(first[3], 0.75f);
++  EXPECT_FLOAT_EQ(first[7], 1.0f);
++}
++
++TEST(AegisFarblingTest, FloatNoiseIsSiteTokenSeparated) {
++  float first[16] = {1.0f, 0.5f, 0.25f, 1.0f, 1.0f, 0.5f, 0.25f, 1.0f,
++                     1.0f, 0.5f, 0.25f, 1.0f, 1.0f, 0.5f, 0.25f, 1.0f};
++  float second[std::size(first)];
++  base::span(second).copy_from(first);
++
++  FarbleFloat32Pixels(1u, first);
++  FarbleFloat32Pixels(2u, second);
++
++  EXPECT_NE(base::span(first), base::span(second));
++}
++
++}  // namespace
++}  // namespace blink::aegis
+diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc b/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
+index a3a718f49e..0a06e6d2b0 100644
+--- a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
++++ b/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
+@@ -214,6 +214,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
+     network::mojom::CredentialsMode credentials_mode,
+     const WebString& name,
+     WebSecurityOrigin constructor_origin,
++    WebSecurityOrigin top_level_site_origin,
+     WebSecurityOrigin origin_from_browser,
+     bool is_constructor_secure_context,
+     const WebString& user_agent,
+@@ -298,7 +299,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
+       /*direct_sockets_force_enabled_in_parent=*/false,
+       /*interface_registry=*/nullptr,
+       /*agent_group_scheduler_compositor_task_runner=*/nullptr,
+-      /*top_level_frame_security_origin=*/nullptr,
++      top_level_site_origin.Get(),
+       /*parent_storage_access_api_status=*/
+       net::StorageAccessApiStatus::kNone,
+       require_cross_site_request_for_cookies,
+@@ -367,6 +368,7 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
+     network::mojom::CredentialsMode credentials_mode,
+     const WebString& name,
+     WebSecurityOrigin constructor_origin,
++    WebSecurityOrigin top_level_site_origin,
+     WebSecurityOrigin origin_from_browser,
+     bool is_constructor_secure_context,
+     const WebString& user_agent,
+@@ -396,7 +398,8 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
+       base::WrapUnique(new WebSharedWorkerImpl(token, std::move(host), client));
+   worker->StartWorkerContext(
+       script_request_url, script_type, credentials_mode, name,
+-      constructor_origin, origin_from_browser, is_constructor_secure_context,
++      constructor_origin, top_level_site_origin, origin_from_browser,
++      is_constructor_secure_context,
+       user_agent, ua_metadata, content_security_policies,
+       outside_fetch_client_settings_object, devtools_worker_token,
+       std::move(content_settings), std::move(browser_interface_broker),
+diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.h b/third_party/blink/renderer/core/exported/web_shared_worker_impl.h
+index 4e80c2984b..0d69e4ec6d 100644
+--- a/third_party/blink/renderer/core/exported/web_shared_worker_impl.h
++++ b/third_party/blink/renderer/core/exported/web_shared_worker_impl.h
+@@ -111,6 +111,7 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker {
+       network::mojom::CredentialsMode,
+       const WebString& name,
+       WebSecurityOrigin constructor_origin,
++      WebSecurityOrigin top_level_site_origin,
+       WebSecurityOrigin origin_from_browser,
+       bool is_constructor_secure_context,
+       const WebString& user_agent,
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index 6cfcdef9fb..3bea2714c2 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -15,6 +15,7 @@
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
+ #include "third_party/blink/renderer/core/css/css_font_selector.h"
+ #include "third_party/blink/renderer/core/css/offscreen_font_selector.h"
+ #include "third_party/blink/renderer/core/css/style_engine.h"
+@@ -316,6 +317,20 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+     return nullptr;
+   }
+ 
++  scoped_refptr<StaticBitmapImage> protected_image;
++  if (aegis::ShouldFarbleFingerprint(GetExecutionContext())) {
++    // 先完成受保护快照；失败时保持源 OffscreenCanvas 不被 transfer 清空。
++    context_->FinalizeFrame(FlushReason::kOther);
++    protected_image = aegis::MaybeFarbleStaticBitmapImage(
++        GetExecutionContext(), context_->GetImage());
++    if (!protected_image) {
++      exception_state.ThrowDOMException(
++          DOMExceptionCode::kNotReadableError,
++          "Protected readback of the source image has failed.");
++      return nullptr;
++    }
++  }
++
+   ImageBitmap* image =
+       context_->TransferToImageBitmap(script_state, exception_state);
+   if (exception_state.HadException()) [[unlikely]] {
+@@ -326,6 +341,8 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+     // Undocumented exception (not in spec).
+     exception_state.ThrowDOMException(DOMExceptionCode::kUnknownError,
+                                       "ImageBitmap construction failed");
++  } else if (protected_image) {
++    image = MakeGarbageCollected<ImageBitmap>(std::move(protected_image));
+   }
+ 
+   return image;
+@@ -473,7 +490,9 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+   }
+ 
+   base::TimeTicks start_time = base::TimeTicks::Now();
+-  scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
++  scoped_refptr<StaticBitmapImage> image_bitmap =
++      aegis::MaybeFarbleStaticBitmapImage(GetExecutionContext(),
++                                          context_->GetImage());
+   if (image_bitmap) {
+     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+         script_state, exception_state.GetContext());
+diff --git a/third_party/blink/renderer/core/workers/worker_global_scope.h b/third_party/blink/renderer/core/workers/worker_global_scope.h
+index 563dc0d547..b9abe46442 100644
+--- a/third_party/blink/renderer/core/workers/worker_global_scope.h
++++ b/third_party/blink/renderer/core/workers/worker_global_scope.h
+@@ -275,6 +275,12 @@ class CORE_EXPORT WorkerGlobalScope
+     return top_level_frame_security_origin_.get();
+   }
+ 
++  // Service Worker 构造后才收到分区 StorageKey；脚本执行前据此固定顶层站点。
++  void SetAegisTopLevelFrameSecurityOrigin(
++      scoped_refptr<const SecurityOrigin> origin) {
++    top_level_frame_security_origin_ = std::move(origin);
++  }
++
+  protected:
+   WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
+                     WorkerThread*,
+diff --git a/third_party/blink/renderer/modules/BUILD.gn b/third_party/blink/renderer/modules/BUILD.gn
+index d4abe985e4..a735efa712 100644
+--- a/third_party/blink/renderer/modules/BUILD.gn
++++ b/third_party/blink/renderer/modules/BUILD.gn
+@@ -639,6 +639,7 @@ source_set("unit_tests") {
+     "wake_lock/wake_lock_test.cc",
+     "wake_lock/wake_lock_test_utils.cc",
+     "wake_lock/wake_lock_test_utils.h",
++    "webaudio/audio_buffer_test.cc",
+     "webaudio/audio_context_autoplay_test.cc",
+     "webaudio/audio_context_test.cc",
+     "webaudio/audio_node_input_test.cc",
+diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
+index 55abfb86d3..e5da0a7147 100644
+--- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
++++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
+@@ -1725,11 +1725,13 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
+ 
+   ancestor_frame_type_ = ancestor_frame_type;
+ 
++  storage_key_ = storage_key;
++  SetAegisTopLevelFrameSecurityOrigin(SecurityOrigin::CreateFromString(
++      storage_key_.GetTopLevelSite().Serialize()));
++
+   global_scope_initialized_ = true;
+   if (!pause_evaluation_)
+     ReadyToRunWorkerScript();
+-
+-  storage_key_ = storage_key;
+ }
+ 
+ void ServiceWorkerGlobalScope::PauseEvaluation() {
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index 53b9f17834..6e466a6cd7 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -27,7 +27,6 @@
+  */
+ 
+ #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
+-#include "third_party/blink/renderer/core/aegis/farbling.h"
+ 
+ #include <memory>
+ 
+@@ -35,6 +34,7 @@
+ #include "base/containers/span.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
++#include "third_party/blink/renderer/core/aegis/farbling.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
+@@ -56,6 +56,13 @@ DOMFloat32Array* CreateFloat32ArrayOrNull(
+              : DOMFloat32Array::CreateUninitializedOrNull(length);
+ }
+ 
++ExecutionContext* CurrentAudioExecutionContext() {
++  if (v8::Isolate* isolate = v8::Isolate::GetCurrent()) {
++    return CurrentExecutionContext(isolate);
++  }
++  return nullptr;
++}
++
+ }  // namespace
+ 
+ AudioBuffer* AudioBuffer::Create(unsigned number_of_channels,
+@@ -225,10 +232,9 @@ void AudioBuffer::MaybeFarbleChannelsForScript() {
+   if (script_audio_farbled_) {
+     return;
+   }
+-  script_audio_farbled_ = true;
+-  ExecutionContext* context = nullptr;
+-  if (v8::Isolate* isolate = v8::Isolate::GetCurrent()) {
+-    context = CurrentExecutionContext(isolate);
++  ExecutionContext* context = CurrentAudioExecutionContext();
++  if (!aegis::ShouldFarbleFingerprint(context)) {
++    return;
+   }
+   for (Member<DOMFloat32Array>& channel : channels_) {
+     if (channel && channel->Data() && channel->length() > 0) {
+@@ -236,6 +242,7 @@ void AudioBuffer::MaybeFarbleChannelsForScript() {
+                                      channel->length());
+     }
+   }
++  script_audio_farbled_ = true;
+ }
+ 
+ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer_test.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer_test.cc
+new file mode 100644
+index 0000000000..82b2b63ca8
+--- /dev/null
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer_test.cc
+@@ -0,0 +1,84 @@
++// Copyright 2026 GCSA
++
++#include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
++
++#include <array>
++#include <string_view>
++
++#include "base/containers/span.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
++#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
++#include "third_party/blink/renderer/platform/testing/task_environment.h"
++#include "third_party/blink/renderer/platform/weborigin/kurl.h"
++
++namespace blink {
++namespace {
++
++class AudioBufferFarblingTest : public testing::Test {
++ protected:
++  void SetProtectionEnabled(bool enabled) {
++    std::array<uint8_t, aegis::kFarblingSecretSize> secret;
++    for (size_t i = 0; i < secret.size(); ++i) {
++      secret[i] = static_cast<uint8_t>(i);
++    }
++    aegis::SetFingerprintGuardConfiguration(enabled, base::span(secret),
++                                            std::string_view());
++  }
++
++  void TearDown() override {
++    aegis::SetFingerprintGuardConfiguration(false, base::span<const uint8_t>(),
++                                            std::string_view());
++  }
++
++ private:
++  test::TaskEnvironment task_environment_;
++};
++
++TEST_F(AudioBufferFarblingTest, DisabledReadDoesNotBlockLaterFarbling) {
++  V8TestingScope scope(KURL("https://audio.example.test/"));
++  AudioBuffer* buffer = AudioBuffer::Create(1, 4, 48000);
++  ASSERT_TRUE(buffer);
++  const std::array<float, 4> original = {0.25f, 0.5f, 0.75f, 1.0f};
++  buffer->getChannelData(0)->AsSpan().copy_from(original);
++
++  SetProtectionEnabled(false);
++  auto disabled_data =
++      buffer->getChannelData(0, scope.GetExceptionState())->AsSpan();
++  EXPECT_TRUE(disabled_data == base::span(original));
++
++  SetProtectionEnabled(true);
++  auto enabled_data =
++      buffer->getChannelData(0, scope.GetExceptionState())->AsSpan();
++  EXPECT_NE(enabled_data[0], original[0]);
++}
++
++TEST_F(AudioBufferFarblingTest, PartialWritePreservesExactScriptInput) {
++  V8TestingScope scope(KURL("https://audio.example.test/"));
++  AudioBuffer* buffer = AudioBuffer::Create(1, 4, 48000);
++  ASSERT_TRUE(buffer);
++  const std::array<float, 4> original = {0.25f, 0.5f, 0.75f, 1.0f};
++  buffer->getChannelData(0)->AsSpan().copy_from(original);
++  SetProtectionEnabled(true);
++
++  auto first_read =
++      buffer->getChannelData(0, scope.GetExceptionState())->AsSpan();
++  std::array<float, 4> first_farbled;
++  base::span(first_farbled).copy_from(first_read);
++
++  DOMFloat32Array* source = DOMFloat32Array::Create(1);
++  ASSERT_TRUE(source);
++  source->AsSpan()[0] = original[1];
++  buffer->copyToChannel(NotShared<DOMFloat32Array>(source), 0, 1,
++                        scope.GetExceptionState());
++
++  auto second_read =
++      buffer->getChannelData(0, scope.GetExceptionState())->AsSpan();
++  EXPECT_FLOAT_EQ(second_read[0], first_farbled[0]);
++  EXPECT_FLOAT_EQ(second_read[1], original[1]);
++  EXPECT_FLOAT_EQ(second_read[2], first_farbled[2]);
++  EXPECT_FLOAT_EQ(second_read[3], first_farbled[3]);
++}
++
++}  // namespace
++}  // namespace blink
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index e0d3aeec63..8d08b0b2d8 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -25,7 +25,6 @@
+ 
+ #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
+ #include "third_party/blink/renderer/core/aegis/farbling.h"
+-#include "third_party/blink/public/common/aegis/fingerprint_guard.h"
+ 
+ #include <inttypes.h>
+ 
+@@ -3868,12 +3867,17 @@ bool WebGLRenderingContextBase::TimerQueryExtensionsEnabled() {
+ ScriptObject WebGLRenderingContextBase::getExtension(ScriptState* script_state,
+                                                      const String& name) {
+   ExecutionContext* context = ExecutionContext::From(script_state);
++  const bool is_debug_renderer_info = DeprecatedEqualIgnoringCase(
++      name, WebGLDebugRendererInfo::ExtensionName());
+ 
+-  if (name == WebGLDebugRendererInfo::ExtensionName()) {
++  if (is_debug_renderer_info) {
+     UseCounter::Count(context, WebFeature::kWebGLDebugRendererInfo);
+   }
+ 
+-  WebGLExtension* extension = EnableExtensionIfSupported(name, context);
++  WebGLExtension* extension =
++      is_debug_renderer_info && aegis::ShouldFarbleFingerprint(context)
++          ? nullptr
++          : EnableExtensionIfSupported(name, context);
+   return ScriptObject(
+       script_state->GetIsolate(),
+       ToV8Traits<IDLNullable<WebGLExtension>>::ToV8(script_state, extension));
+@@ -4193,9 +4197,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+-        if (aegis::IsFingerprintGuardEnabled()) {
+-          return WebGLAny(script_state,
+-                          aegis::FarbledWebGLRenderer(ExecutionContext::From(script_state)));
++        if (aegis::ShouldFarbleFingerprint(
++                ExecutionContext::From(script_state))) {
++          return WebGLAny(script_state, String());
+         }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_RENDERER)));
+@@ -4206,9 +4210,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+-        if (aegis::IsFingerprintGuardEnabled()) {
+-          return WebGLAny(script_state,
+-                          aegis::FarbledWebGLVendor(ExecutionContext::From(script_state)));
++        if (aegis::ShouldFarbleFingerprint(
++                ExecutionContext::From(script_state))) {
++          return WebGLAny(script_state, String());
+         }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_VENDOR)));
+@@ -4527,8 +4531,16 @@ WebGLRenderingContextBase::getSupportedExtensions() {
+     return std::nullopt;
+ 
+   Vector<String> result;
++  const bool hide_debug_renderer_info =
++      aegis::ShouldFarbleFingerprint(GetExecutionContext());
+ 
+   for (ExtensionTracker* tracker : extensions_) {
++    if (hide_debug_renderer_info &&
++        DeprecatedEqualIgnoringCase(
++            String(tracker->ExtensionName()),
++            WebGLDebugRendererInfo::ExtensionName())) {
++      continue;
++    }
+     if (ExtensionSupportedAndAllowed(tracker)) {
+       result.push_back(tracker->ExtensionName());
+     }
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+index 3621aada46..2637d0bb24 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+@@ -31,7 +31,14 @@ namespace blink {
+ 
+ namespace {
+ 
+-GPUSupportedFeatures* MakeFeatureNameSet(wgpu::Adapter adapter) {
++bool IsAegisHiddenSubgroupFeature(wgpu::FeatureName feature) {
++  return feature == wgpu::FeatureName::Subgroups ||
++         feature == wgpu::FeatureName::SubgroupSizeControl ||
++         feature == wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix;
++}
++
++GPUSupportedFeatures* MakeFeatureNameSet(wgpu::Adapter adapter,
++                                         bool protect_adapter_info) {
+   GPUSupportedFeatures* features = MakeGarbageCollected<GPUSupportedFeatures>();
+   DCHECK(features->FeatureNameSet().empty());
+ 
+@@ -41,6 +48,9 @@ GPUSupportedFeatures* MakeFeatureNameSet(wgpu::Adapter adapter) {
+   const auto features_span = UNSAFE_BUFFERS(base::span<const wgpu::FeatureName>(
+       supported_features.features, supported_features.featureCount));
+   for (const auto& f : features_span) {
++    if (protect_adapter_info && IsAegisHiddenSubgroupFeature(f)) {
++      continue;
++    }
+     auto feature_name_enum_optional =
+         GPUSupportedFeatures::ToV8FeatureNameEnum(f);
+     if (feature_name_enum_optional) {
+@@ -59,19 +69,26 @@ GPUAdapter::GPUAdapter(
+     scoped_refptr<DawnControlClientHolder> dawn_control_client,
+     const GPURequestAdapterOptions* options)
+     : DawnObject(dawn_control_client, std::move(handle), String()), gpu_(gpu) {
++  ExecutionContext* execution_context =
++      gpu_ ? gpu_->GetExecutionContext() : nullptr;
++  const bool protect_adapter_info =
++      aegis::ShouldFarbleFingerprint(execution_context);
+   wgpu::AdapterInfo info = {};
+   wgpu::ChainedStructOut** propertiesChain = &info.nextInChain;
+-  if (GetHandle().HasFeature(wgpu::FeatureName::AdapterPropertiesMemoryHeaps)) {
++  if (!protect_adapter_info &&
++      GetHandle().HasFeature(wgpu::FeatureName::AdapterPropertiesMemoryHeaps)) {
+     *propertiesChain = &memory_heaps_;
+     propertiesChain = &(*propertiesChain)->nextInChain;
+   }
+-  if (GetHandle().HasFeature(
++  if (!protect_adapter_info &&
++      GetHandle().HasFeature(
+           wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
+     *propertiesChain = &subgroup_matrix_configs_;
+     propertiesChain = &(*propertiesChain)->nextInChain;
+   }
+   wgpu::AdapterPropertiesD3D d3dProperties = {};
+   bool supportsPropertiesD3D =
++      !protect_adapter_info &&
+       GetHandle().HasFeature(wgpu::FeatureName::AdapterPropertiesD3D);
+   if (supportsPropertiesD3D) {
+     *propertiesChain = &d3dProperties;
+@@ -79,14 +96,17 @@ GPUAdapter::GPUAdapter(
+   }
+   wgpu::AdapterPropertiesVk vkProperties = {};
+   bool supportsPropertiesVk =
++      !protect_adapter_info &&
+       GetHandle().HasFeature(wgpu::FeatureName::AdapterPropertiesVk);
+   if (supportsPropertiesVk) {
+     *propertiesChain = &vkProperties;
+     propertiesChain = &(*propertiesChain)->nextInChain;
+   }
+   wgpu::DawnAdapterPropertiesPowerPreference powerProperties{};
+-  *propertiesChain = &powerProperties;
+-  propertiesChain = &(*propertiesChain)->nextInChain;
++  if (!protect_adapter_info) {
++    *propertiesChain = &powerProperties;
++    propertiesChain = &(*propertiesChain)->nextInChain;
++  }
+ 
+   GetHandle().GetInfo(&info);
+   adapter_type_ = info.adapterType;
+@@ -110,19 +130,18 @@ GPUAdapter::GPUAdapter(
+   if (supportsPropertiesVk) {
+     vk_driver_version_ = vkProperties.driverVersion;
+   }
+-  subgroup_min_size_ = info.subgroupMinSize;
+-  subgroup_max_size_ = info.subgroupMaxSize;
++  subgroup_min_size_ = protect_adapter_info ? 4 : info.subgroupMinSize;
++  subgroup_max_size_ = protect_adapter_info ? 128 : info.subgroupMaxSize;
+   power_preference_ = powerProperties.powerPreference;
+ 
+-  features_ = MakeFeatureNameSet(GetHandle());
++  features_ = MakeFeatureNameSet(GetHandle(), protect_adapter_info);
+ 
+   GPUSupportedLimits::ComboLimits limits;
+   GetHandle().GetLimits(limits.GetLinked());
+-  if (ExecutionContext* context =
+-          gpu_ ? gpu_->GetExecutionContext() : nullptr) {
++  if (execution_context) {
+     aegis::MaybeFarbleWebGPUNumericLimits(
+-        context, limits.maxBufferSize, limits.maxComputeWorkgroupStorageSize,
+-        limits.maxTextureDimension3D, subgroup_min_size_, subgroup_max_size_);
++        execution_context, limits.maxBufferSize,
++        limits.maxComputeWorkgroupStorageSize, limits.maxTextureDimension3D);
+   }
+   limits_ = MakeGarbageCollected<GPUSupportedLimits>(limits);
+ 
+@@ -131,20 +150,24 @@ GPUAdapter::GPUAdapter(
+ 
+ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
+   bool is_fallback_adapter = adapter_type_ == wgpu::AdapterType::CPU;
++  ExecutionContext* execution_context =
++      gpu_ ? gpu_->GetExecutionContext() : nullptr;
++  const bool protect_adapter_info =
++      aegis::ShouldFarbleFingerprint(execution_context);
+ 
+   String vendor = vendor_;
+   String architecture = architecture_;
+   String device = device_;
+   String description = description_;
+   String driver = driver_;
+-  if (ExecutionContext* context =
+-          gpu_ ? gpu_->GetExecutionContext() : nullptr) {
+-    aegis::MaybeFarbleWebGPUAdapterStrings(context, vendor, architecture,
+-                                           device, description, driver);
++  if (execution_context) {
++    aegis::MaybeFarbleWebGPUAdapterStrings(
++        execution_context, vendor, architecture, device, description, driver);
+   }
+ 
+   GPUAdapterInfo* info;
+-  if (RuntimeEnabledFeatures::WebGPUDeveloperFeaturesEnabled()) {
++  if (!protect_adapter_info &&
++      RuntimeEnabledFeatures::WebGPUDeveloperFeaturesEnabled()) {
+     // If WebGPU developer features have been enabled then provide all available
+     // adapter info values.
+     info = MakeGarbageCollected<GPUAdapterInfo>(
+@@ -153,7 +176,7 @@ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
+         FromDawnEnum(backend_type_), FromDawnEnum(adapter_type_),
+         d3d_shader_model_, vk_driver_version_, FromDawnEnum(power_preference_));
+ 
+-    // SAFETY: Required from caller
++    // SAFETY: 由调用方保证下方指针及元素数量有效。
+     const auto memory_heaps_span =
+         UNSAFE_BUFFERS(base::span<const wgpu::MemoryHeapInfo>(
+             memory_heaps_.heapInfo, memory_heaps_.heapCount));
+@@ -166,14 +189,16 @@ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
+         is_fallback_adapter);
+   }
+ 
+-  // SAFETY: Required from caller
+-  const auto subgroup_matrix_configs_span =
+-      UNSAFE_BUFFERS(base::span<const wgpu::SubgroupMatrixConfig>(
+-          subgroup_matrix_configs_.configs,
+-          subgroup_matrix_configs_.configCount));
+-  for (const auto& c : subgroup_matrix_configs_span) {
+-    info->AppendSubgroupMatrixConfig(
+-        MakeGarbageCollected<GPUSubgroupMatrixConfig>(c));
++  if (!protect_adapter_info) {
++    // SAFETY: 由调用方保证下方指针及元素数量有效。
++    const auto subgroup_matrix_configs_span =
++        UNSAFE_BUFFERS(base::span<const wgpu::SubgroupMatrixConfig>(
++            subgroup_matrix_configs_.configs,
++            subgroup_matrix_configs_.configCount));
++    for (const auto& c : subgroup_matrix_configs_span) {
++      info->AppendSubgroupMatrixConfig(
++          MakeGarbageCollected<GPUSubgroupMatrixConfig>(c));
++    }
+   }
+ 
+   return info;
+@@ -277,6 +302,23 @@ ScriptPromise<GPUDevice> GPUAdapter::requestDevice(
+                                       descriptor->requiredLimits(), resolver)) {
+       return promise;
+     }
++    if (aegis::ShouldFarbleFingerprint(
++            ExecutionContext::From(script_state)) &&
++        ((required_limits.maxBufferSize != wgpu::kLimitU64Undefined &&
++          required_limits.maxBufferSize > limits_->maxBufferSize()) ||
++         (required_limits.maxComputeWorkgroupStorageSize !=
++              wgpu::kLimitU32Undefined &&
++          required_limits.maxComputeWorkgroupStorageSize >
++              limits_->maxComputeWorkgroupStorageSize()) ||
++         (required_limits.maxTextureDimension3D !=
++              wgpu::kLimitU32Undefined &&
++          required_limits.maxTextureDimension3D >
++              limits_->maxTextureDimension3D()))) {
++      resolver->RejectWithDOMException(
++          DOMExceptionCode::kOperationError,
++          "Required limits exceed the adapter's exposed limits.");
++      return promise;
++    }
+   }
+ 
+   // Use a set to prevent duplicate features.
+-- 
+2.52.0
+

@@ -1,0 +1,27 @@
+From 5de9fbddbc54b648f98352b2d601c7694c9739f6 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 24 Aug 2026 21:15:11 +0800
+Subject: [PATCH 35/38] fix: satisfy Aegis WebUI type lint
+
+---
+ chrome/browser/resources/aegis/aegis.ts | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 4e723a6e47..0826127a45 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -727,8 +727,8 @@ async function init() {
+   }
+   window.setInterval(() => {
+     void (async () => {
+-      const next = withRendererPolicyWorkerStatus(
+-          await sendWithPromise('getStatus') as AegisStatus);
++      const next: AegisStatus =
++          withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
+       fillActivityLog(next.recentEvents || []);
+       fillAiControl(next);
+       getRequiredElement('filter-meta').textContent = formatMeta(next);
+-- 
+2.52.0
+

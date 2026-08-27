@@ -235,11 +235,11 @@ index 85fe9f0053..99912aef6b 100644
 +      entry.Set("etag", std::move(*etag));
 +    }
 +  }
-+  // last-modified 是 non-coalescing header，不能用 GetNormalizedHeader（DCHECK 会崩）。
-+  std::string last_modified;
-+  if (headers->EnumerateHeader(nullptr, "last-modified", &last_modified) &&
-+      !last_modified.empty()) {
-+    entry.Set("lastModified", std::move(last_modified));
++  if (std::optional<std::string> last_modified =
++          headers->GetNormalizedHeader("last-modified")) {
++    if (!last_modified->empty()) {
++      entry.Set("lastModified", std::move(*last_modified));
++    }
 +  }
 +  if (entry.empty()) {
 +    return;
@@ -598,4 +598,3 @@ index 78be0b3a4d..94972c1f14 100644
  inline constexpr char kCnameUncloakEnabled[] = "aegis.cname_uncloak_enabled";
 -- 
 2.52.0
-

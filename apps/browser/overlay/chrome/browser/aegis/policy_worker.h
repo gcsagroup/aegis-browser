@@ -4,6 +4,7 @@
 #ifndef CHROME_BROWSER_AEGIS_POLICY_WORKER_H_
 #define CHROME_BROWSER_AEGIS_POLICY_WORKER_H_
 
+#include <atomic>
 #include <memory>
 #include <string>
 
@@ -11,6 +12,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "v8/include/v8-persistent-handle.h"
 
@@ -42,8 +44,8 @@ class PolicyWorker {
   PolicyWorker& operator=(const PolicyWorker&) = delete;
 
   void Start();
-  bool ready() const { return ready_; }
-  const std::string& last_error() const { return last_error_; }
+  bool ready() const { return ready_.load(std::memory_order_acquire); }
+  std::string last_error() const;
 
   // |request_json| is a {"op": "...", ...} payload understood by
   // packages/core/src/policy-worker-entry.ts. Reply is posted back to the
@@ -61,12 +63,14 @@ class PolicyWorker {
                         scoped_refptr<base::SequencedTaskRunner> reply,
                         EvaluateCallback done);
   std::string RunEvaluate(const std::string& request_json);
+  void SetLastError(std::string error);
 
   std::unique_ptr<base::Thread> thread_;
   std::unique_ptr<gin::IsolateHolder> isolate_holder_;
   v8::Global<v8::Context> context_;
-  bool ready_ = false;
-  std::string last_error_;
+  std::atomic_bool ready_{false};
+  mutable base::Lock status_lock_;
+  std::string last_error_ GUARDED_BY(status_lock_);
 };
 
 }  // namespace aegis

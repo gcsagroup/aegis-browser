@@ -1,5 +1,6 @@
 // Copyright 2026 GCSA
-// Intended path: chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
+// Intended path:
+// chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
 
 #include "chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h"
 
@@ -53,6 +54,9 @@ AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
   if (!url.SchemeIsHTTPOrHTTPS()) {
     return content::NavigationThrottle::PROCEED;
   }
+  if (AegisService::GetInstance()->IsSitePaused(std::string(url.host()))) {
+    return content::NavigationThrottle::PROCEED;
+  }
 
   std::vector<std::string> removed;
 
@@ -60,8 +64,9 @@ AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
   if (cleaned == url) {
     return content::NavigationThrottle::PROCEED;
   }
-  AegisService::GetInstance()->RecordStrippedParams(std::string(url.host()),
-                                                    removed);
+  AegisService::GetInstance()->RecordStrippedParams(
+      std::string(url.host()), removed, /*document_id=*/std::string(),
+      /*site_key=*/std::string(url.host()));
 
   content::WebContents* web_contents = handle->GetWebContents();
   if (!web_contents) {
@@ -74,17 +79,16 @@ AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
 
   LOG(INFO) << "Aegis: sanitizing navigation " << url << " -> " << cleaned;
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](base::WeakPtr<content::WebContents> contents,
-             content::OpenURLParams params) {
-            if (!contents) {
-              return;
-            }
-            contents->OpenURL(std::move(params),
-                              /*navigation_handle_callback=*/{});
-          },
-          web_contents->GetWeakPtr(), std::move(params)));
+      FROM_HERE, base::BindOnce(
+                     [](base::WeakPtr<content::WebContents> contents,
+                        content::OpenURLParams params) {
+                       if (!contents) {
+                         return;
+                       }
+                       contents->OpenURL(std::move(params),
+                                         /*navigation_handle_callback=*/{});
+                     },
+                     web_contents->GetWeakPtr(), std::move(params)));
   return content::NavigationThrottle::CANCEL_AND_IGNORE;
 }
 

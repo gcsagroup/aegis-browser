@@ -12,6 +12,31 @@ import {
 const SUSPICIOUS_TLDS = SUSPICIOUS_PHISH_TLDS;
 const BRAND_KEYWORDS = PHISH_BRAND_KEYWORDS;
 
+const SHORTENER_HOSTS = new Set([
+  "bit.ly",
+  "buff.ly",
+  "cutt.ly",
+  "is.gd",
+  "ow.ly",
+  "rb.gy",
+  "rebrand.ly",
+  "shorturl.at",
+  "t.co",
+  "tinyurl.com",
+]);
+
+const CREDENTIAL_PATH_WORDS = [
+  "account",
+  "auth",
+  "confirm",
+  "login",
+  "password",
+  "secure",
+  "signin",
+  "verify",
+  "wallet",
+];
+
 /** Navigation-time block threshold; mirrored by chrome/common/aegis/phish_score.cc. */
 export const PHISH_BLOCK_THRESHOLD = 55;
 
@@ -45,20 +70,85 @@ function hasPunycode(host: string): boolean {
   return host.includes("xn--");
 }
 
-function brandSpoofInHost(host: string): string | null {
+function normalizeLookalike(label: string): string {
+  return label.replace(/0/g, "o").replace(/1/g, "i").replace(/3/g, "e")
+    .replace(/4/g, "a").replace(/5/g, "s").replace(/7/g, "t");
+}
+
+function isEditDistanceAtMostOne(left: string, right: string): boolean {
+  if (Math.abs(left.length - right.length) > 1) return false;
+  if (left === right) return true;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < left.length && j < right.length) {
+    if (left[i] === right[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+    edits += 1;
+    if (edits > 1) return false;
+    if (left.length > right.length) i += 1;
+    else if (right.length > left.length) j += 1;
+    else {
+      i += 1;
+      j += 1;
+    }
+  }
+  return edits + Number(i < left.length || j < right.length) <= 1;
+}
+
+function registrableLabel(host: string): string {
   const labels = host.toLowerCase().split(".");
-  const sld = labels.length >= 2 ? labels[labels.length - 2] : labels[0];
+  const commonSecondLevelSuffixes = new Set([
+    "co.uk", "com.au", "com.br", "com.cn", "com.hk", "co.jp", "co.kr",
+  ]);
+  const suffix = labels.slice(-2).join(".");
+  const index = commonSecondLevelSuffixes.has(suffix) ? labels.length - 3 : labels.length - 2;
+  return labels[Math.max(0, index)] ?? "";
+}
+
+function safeDecodePath(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return pathname;
+  }
+}
+
+function brandSpoofInHost(
+  host: string,
+): { brand: string; reason: "brand_spoof_host" | "brand_lookalike_host" } | null {
+  const labels = host.toLowerCase().split(".");
+  const sld = registrableLabel(host);
   for (const brand of BRAND_KEYWORDS) {
     // Official-looking apex (paypal.com / www.paypal.com)
     if (sld === brand) continue;
-    const hit = labels.some(
+    const embedded = labels.some(
       (label) =>
         label === brand ||
         label.startsWith(`${brand}-`) ||
         label.endsWith(`-${brand}`) ||
         label.includes(`-${brand}-`),
     );
-    if (hit) return brand;
+    if (embedded) return { brand, reason: "brand_spoof_host" };
+    if (brand.length < 5) continue;
+    const lookalike = labels.some((label) => {
+      if (label.length < 5 || label === brand) return false;
+      const normalized = normalizeLookalike(label);
+      return normalized === brand || isEditDistanceAtMostOne(normalized, brand);
+    });
+    if (lookalike) return { brand, reason: "brand_lookalike_host" };
+  }
+  return null;
+}
+
+function brandInPath(pathname: string, host: string): string | null {
+  const sld = registrableLabel(host);
+  const tokens = safeDecodePath(pathname).toLowerCase().split(/[^a-z0-9]+/);
+  for (const brand of BRAND_KEYWORDS) {
+    if (brand !== sld && tokens.includes(brand)) return brand;
   }
   return null;
 }
@@ -143,12 +233,33 @@ export function scorePhishingUrl(
 
   const spoofBrand = brandSpoofInHost(host);
   if (spoofBrand) {
-    score += 30;
+    const weight = spoofBrand.reason === "brand_lookalike_host" ? 40 : 30;
+    score += weight;
     reasons.push({
-      code: "brand_spoof_host",
-      weight: 30,
-      detail: spoofBrand,
+      code: spoofBrand.reason,
+      weight,
+      detail: spoofBrand.brand,
     });
+  }
+
+  const pathBrand = brandInPath(url.pathname, host);
+  if (pathBrand) {
+    score += 15;
+    reasons.push({ code: "brand_in_path", weight: 15, detail: pathBrand });
+  }
+
+  const path = safeDecodePath(url.pathname).toLowerCase();
+  const credentialWord = CREDENTIAL_PATH_WORDS.find((word) =>
+    path.split(/[^a-z0-9]+/).includes(word)
+  );
+  if (credentialWord) {
+    score += 10;
+    reasons.push({ code: "credential_path", weight: 10, detail: credentialWord });
+  }
+
+  if (SHORTENER_HOSTS.has(host)) {
+    score += 15;
+    reasons.push({ code: "shortened_url", weight: 15, detail: host });
   }
 
   if (url.username || urlString.includes("@")) {
@@ -175,8 +286,11 @@ export function assessPhishing(
   let score = urlOnly.score;
   const reasons = [...urlOnly.reasons];
   const spoofBrand =
-    urlOnly.reasons.find((r) => r.code === "brand_spoof_host")?.detail ?? null;
+    urlOnly.reasons.find((r) =>
+      r.code === "brand_spoof_host" || r.code === "brand_lookalike_host"
+    )?.detail ?? null;
   const isIp = urlOnly.reasons.some((r) => r.code === "ip_hostname");
+  const isPunycode = urlOnly.reasons.some((r) => r.code === "punycode_host");
   let parsed: URL | null = null;
   try {
     parsed = new URL(snapshot.url);
@@ -197,16 +311,34 @@ export function assessPhishing(
 
   const passwordFields = snapshot.passwordFields ?? 0;
   const forms = snapshot.forms ?? 0;
-  if (passwordFields > 0 && (spoofBrand || isIp || isHttp)) {
-    score += 25;
+  const crossSiteFormActions = snapshot.crossSiteFormActions ?? 0;
+  if (passwordFields > 0 && crossSiteFormActions > 0) {
+    score += 45;
+    reasons.push({
+      code: "cross_site_credential_submit",
+      weight: 45,
+      detail: `crossSiteForms=${crossSiteFormActions}`,
+    });
+  } else if (passwordFields > 0 && (spoofBrand || isIp || isHttp || isPunycode)) {
+    const weight = isPunycode ? 30 : 25;
+    score += weight;
     reasons.push({
       code: "password_on_risky_origin",
-      weight: 25,
+      weight,
       detail: `passwordFields=${passwordFields}`,
     });
   } else if (passwordFields > 0 && forms > 0 && score >= 20) {
     score += 12;
     reasons.push({ code: "credential_form", weight: 12 });
+  }
+
+
+  if (passwordFields > 0) {
+    const pageBrand = BRAND_KEYWORDS.find((brand) => text.includes(brand));
+    if (pageBrand && !spoofBrand) {
+      score += 15;
+      reasons.push({ code: "brand_credential_page", weight: 15, detail: pageBrand });
+    }
   }
 
   return finish(snapshot.url, score, reasons);

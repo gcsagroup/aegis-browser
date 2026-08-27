@@ -1,0 +1,647 @@
+From e7130735b33220b2439a9e3a566abe994f09e830 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 24 Aug 2026 23:35:22 +0800
+Subject: [PATCH 38/38] fix: preserve initial CDP documents across remote
+ creation
+
+---
+ .../chrome_devtools_manager_delegate.cc       | 20 +++++-
+ .../chrome_devtools_manager_delegate.h        |  5 ++
+ .../protocol/devtools_protocol_browsertest.cc | 65 +++++++++++++++----
+ .../devtools/devtools_agent_host_impl.cc      |  2 +-
+ .../browser/devtools/devtools_http_handler.cc | 54 +++++++++++----
+ .../browser/devtools/devtools_http_handler.h  |  9 ++-
+ .../devtools_http_handler_unittest.cc         | 54 +++++++++------
+ .../devtools/devtools_session_unittest.cc     | 15 -----
+ .../devtools/protocol/target_handler.cc       |  9 ++-
+ .../render_frame_devtools_agent_host.cc       |  4 +-
+ .../browser/devtools_manager_delegate.cc      |  9 +++
+ .../browser/devtools_manager_delegate.h       | 14 ++++
+ .../shell_devtools_manager_delegate.cc        | 16 ++++-
+ .../browser/shell_devtools_manager_delegate.h |  5 ++
+ 14 files changed, 215 insertions(+), 66 deletions(-)
+
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+index cfc5b9ac36..75edfa1f4b 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+@@ -482,9 +482,25 @@ scoped_refptr<DevToolsAgentHost> ChromeDevToolsManagerDelegate::CreateNewTarget(
+     const GURL& url,
+     DevToolsManagerDelegate::TargetType target_type,
+     bool new_window) {
+-  NavigateParams params(ProfileManager::GetLastUsedProfile(), url,
+-                        ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
++  return CreateNewTargetWithNavigationMode(url, target_type, new_window,
++                                           NewTargetNavigationMode::kNavigate);
++}
++
++scoped_refptr<DevToolsAgentHost>
++ChromeDevToolsManagerDelegate::CreateNewTargetWithNavigationMode(
++    const GURL& url,
++    DevToolsManagerDelegate::TargetType target_type,
++    bool new_window,
++    NewTargetNavigationMode navigation_mode) {
++  Profile* profile = ProfileManager::GetLastUsedProfile();
++  NavigateParams params(profile, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+   params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
++  if (navigation_mode == NewTargetNavigationMode::kKeepInitialBlankDocument) {
++    content::WebContents::CreateParams create_params(profile);
++    create_params.desired_renderer_state =
++        content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
++    params.contents_to_insert = content::WebContents::Create(create_params);
++  }
+   Navigate(&params);
+   if (!params.navigated_or_inserted_contents)
+     return nullptr;
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
+index b557d5b5d5..4c6979d295 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
+@@ -103,6 +103,11 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
+       const GURL& url,
+       TargetType target_type,
+       bool new_window) override;
++  scoped_refptr<content::DevToolsAgentHost> CreateNewTargetWithNavigationMode(
++      const GURL& url,
++      TargetType target_type,
++      bool new_window,
++      NewTargetNavigationMode navigation_mode) override;
+   bool HasBundledFrontendResources() override;
+   void AcceptDebugging(AcceptCallback) override;
+   void SetActiveWebSocketConnections(size_t count) override;
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index 1f0b0fa75d..23e237bed5 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -94,6 +94,7 @@
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/web_applications/test/isolated_web_app_test_utils.h"
+ #include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_url_info.h"
+ #include "chrome/browser/web_applications/isolated_web_apps/test/isolated_web_app_builder.h"
+@@ -268,6 +269,19 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateInDefaultContextById) {
+ }
+ 
+ class AegisRemoteDevToolsProtocolTest : public DevToolsProtocolTestBase {
++ public:
++  bool AttachCreatedTargetForTesting(
++      const scoped_refptr<content::DevToolsAgentHost>& target) {
++    BeginRemoteDebuggingTargetCreation();
++    if (!target->AttachClient(this)) {
++      EndRemoteDebuggingTargetCreation();
++      return false;
++    }
++    FinalizeRemoteDebuggingTargetCreation(
++        target->GetId(), target->GetDocumentForRemoteDebugging());
++    return true;
++  }
++
+  private:
+   bool IsRemoteDebuggingClient() override { return true; }
+ 
+@@ -378,6 +392,28 @@ class AegisOtherRemoteDevToolsProtocolClient
+   bool IsRemoteDebuggingClient() override { return true; }
+ };
+ 
++IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
++                       AegisRemoteCreationCanClaimUncommittedInitialDocument) {
++  content::WebContents::CreateParams create_params(browser()->profile());
++  create_params.desired_renderer_state =
++      content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
++  auto created_contents_owner = content::WebContents::Create(create_params);
++  ASSERT_TRUE(created_contents_owner);
++  content::WebContents* created_contents = created_contents_owner.get();
++  browser()->tab_strip_model()->AppendWebContents(
++      std::move(created_contents_owner), /*foreground=*/false);
++
++  scoped_refptr<content::DevToolsAgentHost> created_target =
++      content::DevToolsAgentHost::GetOrCreateFor(created_contents);
++  ASSERT_TRUE(created_target);
++  EXPECT_EQ(content::DevToolsAgentHost::kTypePage, created_target->GetType());
++  EXPECT_TRUE(created_contents->GetLastCommittedURL().is_empty());
++  ASSERT_TRUE(created_target->GetDocumentForRemoteDebugging()
++                  .AsRenderFrameHostIfValid());
++  EXPECT_TRUE(AttachCreatedTargetForTesting(created_target));
++  EXPECT_TRUE(created_target->DetachClient(this));
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+                        AegisRemoteTargetAccessHidesInternalTargets) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+@@ -477,23 +513,27 @@ IN_PROC_BROWSER_TEST_F(
+       "Target.attachToTarget",
+       base::DictValue().Set("targetId", target->GetId()).Set("flatten", true));
+   ASSERT_TRUE(attach_result);
+-  const std::string* session_id = attach_result->FindString("sessionId");
+-  ASSERT_TRUE(session_id);
++  const std::string* attached_session_id =
++      attach_result->FindString("sessionId");
++  ASSERT_TRUE(attached_session_id);
++  const std::string session_id = *attached_session_id;
+ 
+   EXPECT_FALSE(SendSessionCommand("ServiceWorker.enable", base::DictValue(),
+-                                  *session_id, true));
++                                  session_id, true));
+   ASSERT_TRUE(error());
+   EXPECT_FALSE(SendSessionCommand("Storage.setSharedStorageTracking",
+                                   base::DictValue().Set("enable", true),
+-                                  *session_id, true));
++                                  session_id, true));
+   ASSERT_TRUE(error());
+   EXPECT_EQ(
+       "Shared storage tracking is not available to remote debugging clients",
+       *error()->FindString("message"));
+ 
+   const base::DictValue* history_result = SendSessionCommand(
+-      "Page.getNavigationHistory", base::DictValue(), *session_id, true);
+-  ASSERT_TRUE(history_result);
++      "Page.getNavigationHistory", base::DictValue(), session_id, true);
++  ASSERT_TRUE(history_result) << (error() && error()->FindString("message")
++                                      ? *error()->FindString("message")
++                                      : "missing protocol error");
+   const base::ListValue* entries = history_result->FindList("entries");
+   ASSERT_TRUE(entries);
+   for (const base::Value& entry : *entries) {
+@@ -504,7 +544,7 @@ IN_PROC_BROWSER_TEST_F(
+ 
+   EXPECT_FALSE(SendSessionCommand(
+       "Page.navigateToHistoryEntry",
+-      base::DictValue().Set("entryId", internal_entry_id), *session_id, true));
++      base::DictValue().Set("entryId", internal_entry_id), session_id, true));
+   ASSERT_TRUE(error());
+   EXPECT_EQ("Navigation is not allowed for this remote debugging client",
+             *error()->FindString("message"));
+@@ -513,7 +553,7 @@ IN_PROC_BROWSER_TEST_F(
+ 
+   EXPECT_FALSE(SendSessionCommand(
+       "Page.navigate", base::DictValue().Set("url", chrome::kChromeUIAegisURL),
+-      *session_id, true));
++      session_id, true));
+   ASSERT_TRUE(error());
+   EXPECT_EQ("Navigation is not allowed for this remote debugging client",
+             *error()->FindString("message"));
+@@ -540,7 +580,8 @@ IN_PROC_BROWSER_TEST_F(
+   ASSERT_TRUE(created_target);
+   content::WebContents* created_contents = created_target->GetWebContents();
+   ASSERT_TRUE(created_contents);
+-  EXPECT_EQ(GURL(url::kAboutBlankURL), created_contents->GetLastCommittedURL());
++  EXPECT_TRUE(created_contents->GetLastCommittedURL().is_empty());
++  EXPECT_TRUE(created_contents->GetController().IsInitialBlankNavigation());
+ 
+   const base::DictValue* attach_result = SendCommandSync(
+       "Target.attachToTarget",
+@@ -697,11 +738,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+   ASSERT_TRUE(created_target);
+   content::WebContents* created_contents = created_target->GetWebContents();
+   ASSERT_TRUE(created_contents);
+-  content::RenderFrameHost* initial_document =
+-      created_contents->GetPrimaryMainFrame();
+-  ASSERT_TRUE(content::NavigateToURL(created_contents,
+-                                     GURL("about:blank#same-document")));
+-  EXPECT_EQ(initial_document, created_contents->GetPrimaryMainFrame());
++  EXPECT_TRUE(created_contents->GetLastCommittedURL().is_empty());
+ 
+   const base::DictValue* attach_result = SendCommandSync(
+       "Target.attachToTarget",
+diff --git a/content/browser/devtools/devtools_agent_host_impl.cc b/content/browser/devtools/devtools_agent_host_impl.cc
+index b6b0ed2590..0c75837c73 100644
+--- a/content/browser/devtools/devtools_agent_host_impl.cc
++++ b/content/browser/devtools/devtools_agent_host_impl.cc
+@@ -429,7 +429,7 @@ bool DevToolsAgentHostImpl::IsRemoteDebuggingTargetOperationAllowed(
+     }
+     const GURL target_url = target->GetURLForRemoteDebugging();
+     const bool is_initial_blank_target =
+-        client && target_url.IsAboutBlank() &&
++        client && (target_url.is_empty() || target_url.IsAboutBlank()) &&
+         (target->GetType() == DevToolsAgentHost::kTypePage ||
+          target->GetType() == DevToolsAgentHost::kTypeTab);
+     const WeakDocumentPtr target_document =
+diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
+index 13124a3e4c..d459906fff 100644
+--- a/content/browser/devtools/devtools_http_handler.cc
++++ b/content/browser/devtools/devtools_http_handler.cc
+@@ -130,6 +130,19 @@ bool RequestIsSafeToServe(const net::HttpServerRequestInfo& info) {
+   return url.HostIsIPAddress() || net::IsLocalHostname(url.GetHost());
+ }
+ 
++bool IsInitialBlankDocumentUrl(const GURL& url) {
++  // A newly-created WebContents can expose its exact initial document before
++  // the synthetic about:blank commit has populated GetLastCommittedURL().
++  return url.is_empty() || url.IsAboutBlank();
++}
++
++bool TargetStillMatchesRequestedUrl(DevToolsAgentHost* target,
++                                    const GURL& requested_url) {
++  const GURL visible_url = target->GetURL();
++  return requested_url.IsAboutBlank() ? IsInitialBlankDocumentUrl(visible_url)
++                                      : visible_url == requested_url;
++}
++
+ // Returns the (incorrectly named, for historical reasons) WebKit version, in
+ // the form "major.minor (@chromium_git_revision)".
+ std::string GetWebKitVersion() {
+@@ -847,11 +860,17 @@ void DevToolsHttpHandler::OnJsonRequest(
+     }
+     // TODO(dsv): Remove for "for_tab" support once DevTools Frontend
+     // no longer needs it for e2e tests
++    const auto navigation_mode =
++        url.spec() == url::kAboutBlankURL
++            ? DevToolsManagerDelegate::NewTargetNavigationMode::
++                  kKeepInitialBlankDocument
++            : DevToolsManagerDelegate::NewTargetNavigationMode::kNavigate;
+     scoped_refptr<DevToolsAgentHost> agent_host =
+-        delegate_->CreateNewTarget(url,
+-                                   for_tab ? DevToolsManagerDelegate::kTab
+-                                           : DevToolsManagerDelegate::kFrame,
+-                                   /*new_window=*/false);
++        delegate_->CreateNewTargetWithNavigationMode(
++            url,
++            for_tab ? DevToolsManagerDelegate::kTab
++                    : DevToolsManagerDelegate::kFrame,
++            /*new_window=*/false, navigation_mode);
+     if (!agent_host) {
+       SendJson(connection_id, net::HTTP_INTERNAL_SERVER_ERROR, std::nullopt,
+                "Could not create new page");
+@@ -877,13 +896,14 @@ void DevToolsHttpHandler::OnJsonRequest(
+         agent_host->GetDocumentForRemoteDebugging();
+     const bool may_grant_initial_document =
+         agent_host->GetType() == target_type &&
+-        committed_url.spec() == url::kAboutBlankURL &&
++        IsInitialBlankDocumentUrl(committed_url) &&
+         created_document.AsRenderFrameHostIfValid() &&
+         (url.spec() == url::kAboutBlankURL ||
+          requested_public_url_is_connectable);
+     if (may_grant_initial_document) {
+-      http_created_initial_documents_.insert_or_assign(agent_host->GetId(),
+-                                                       created_document);
++      http_created_initial_documents_.insert_or_assign(
++          agent_host->GetId(),
++          HttpCreatedInitialDocumentGrant{created_document, url});
+     }
+     if (!may_enumerate_created_target && !may_grant_initial_document) {
+       agent_host->Close();
+@@ -1310,6 +1330,11 @@ base::DictValue DevToolsHttpHandler::SerializeDescriptor(
+   dictionary.Set(kTargetDescriptionField, agent_host->GetDescription());
+ 
+   GURL url = agent_host->GetURLForRemoteDebugging();
++  if (url.is_empty() &&
++      (agent_host->GetType() == DevToolsAgentHost::kTypePage ||
++       agent_host->GetType() == DevToolsAgentHost::kTypeTab)) {
++    url = GURL(url::kAboutBlankURL);
++  }
+   dictionary.Set(kTargetUrlField, url.spec());
+ 
+   GURL favicon_url = agent_host->GetFaviconURL();
+@@ -1352,12 +1377,16 @@ WeakDocumentPtr DevToolsHttpHandler::TakeHttpCreatedInitialDocumentGrant(
+     return WeakDocumentPtr();
+   }
+ 
+-  WeakDocumentPtr granted_document = std::move(grant->second);
++  HttpCreatedInitialDocumentGrant initial_document_grant =
++      std::move(grant->second);
+   http_created_initial_documents_.erase(grant);
+-  if (agent_host->GetURLForRemoteDebugging().spec() != url::kAboutBlankURL) {
++  if (!IsInitialBlankDocumentUrl(agent_host->GetURLForRemoteDebugging()) ||
++      !TargetStillMatchesRequestedUrl(agent_host,
++                                      initial_document_grant.requested_url)) {
+     return WeakDocumentPtr();
+   }
+ 
++  WeakDocumentPtr granted_document = std::move(initial_document_grant.document);
+   RenderFrameHost* granted_frame = granted_document.AsRenderFrameHostIfValid();
+   RenderFrameHost* current_frame =
+       agent_host->GetDocumentForRemoteDebugging().AsRenderFrameHostIfValid();
+@@ -1370,13 +1399,16 @@ void DevToolsHttpHandler::PruneHttpCreatedInitialDocumentGrants() {
+        grant != http_created_initial_documents_.end();) {
+     scoped_refptr<DevToolsAgentHost> agent_host =
+         DevToolsAgentHost::GetForId(grant->first);
+-    RenderFrameHost* granted_frame = grant->second.AsRenderFrameHostIfValid();
++    RenderFrameHost* granted_frame =
++        grant->second.document.AsRenderFrameHostIfValid();
+     RenderFrameHost* current_frame =
+         agent_host ? agent_host->GetDocumentForRemoteDebugging()
+                          .AsRenderFrameHostIfValid()
+                    : nullptr;
+     if (!agent_host || !granted_frame || granted_frame != current_frame ||
+-        agent_host->GetURLForRemoteDebugging().spec() != url::kAboutBlankURL) {
++        !IsInitialBlankDocumentUrl(agent_host->GetURLForRemoteDebugging()) ||
++        !TargetStillMatchesRequestedUrl(agent_host.get(),
++                                        grant->second.requested_url)) {
+       grant = http_created_initial_documents_.erase(grant);
+     } else {
+       ++grant;
+diff --git a/content/browser/devtools/devtools_http_handler.h b/content/browser/devtools/devtools_http_handler.h
+index d2c67238ec..b04c8f910f 100644
+--- a/content/browser/devtools/devtools_http_handler.h
++++ b/content/browser/devtools/devtools_http_handler.h
+@@ -20,6 +20,7 @@
+ #include "content/public/browser/weak_document_ptr.h"
+ #include "net/base/ip_endpoint.h"
+ #include "net/http/http_status_code.h"
++#include "url/gurl.h"
+ 
+ namespace base {
+ class Thread;
+@@ -67,6 +68,11 @@ class DevToolsHttpHandler {
+   net::IPEndPoint GetServerIpAddress() const;
+ 
+  private:
++  struct HttpCreatedInitialDocumentGrant {
++    WeakDocumentPtr document;
++    GURL requested_url;
++  };
++
+   friend class ServerWrapper;
+   friend void ServerStartedOnUI(base::WeakPtr<DevToolsHttpHandler> handler,
+                                 std::unique_ptr<base::Thread> thread,
+@@ -143,7 +149,8 @@ class DevToolsHttpHandler {
+   using ConnectionToClientMap =
+       std::map<int, std::unique_ptr<DevToolsAgentHostClientImpl>>;
+   ConnectionToClientMap connection_to_client_;
+-  std::map<std::string, WeakDocumentPtr> http_created_initial_documents_;
++  std::map<std::string, HttpCreatedInitialDocumentGrant>
++      http_created_initial_documents_;
+   raw_ptr<DevToolsManagerDelegate> delegate_;
+   std::unique_ptr<DevToolsSocketFactory> socket_factory_;
+   base::WeakPtrFactory<DevToolsHttpHandler> weak_factory_{this};
+diff --git a/content/browser/devtools/devtools_http_handler_unittest.cc b/content/browser/devtools/devtools_http_handler_unittest.cc
+index 20889c8bc0..2ee863d2e6 100644
+--- a/content/browser/devtools/devtools_http_handler_unittest.cc
++++ b/content/browser/devtools/devtools_http_handler_unittest.cc
+@@ -162,8 +162,11 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
+         .WillByDefault(Return(true));
+   }
+   MOCK_METHOD(scoped_refptr<DevToolsAgentHost>,
+-              CreateNewTarget,
+-              (const GURL& url, TargetType target_type, bool new_window),
++              CreateNewTargetWithNavigationMode,
++              (const GURL& url,
++               TargetType target_type,
++               bool new_window,
++               NewTargetNavigationMode navigation_mode),
+               (override));
+   MOCK_METHOD(DevToolsAgentHost::List,
+               RemoteDebuggingTargets,
+@@ -407,10 +410,12 @@ TEST_F(DevToolsHttpHandlerTest, MutatingActionsiRequireSafeVerb) {
+   EXPECT_GE(delegate.request_status(), 0);
+   EXPECT_EQ(405, request->response_info().headers->response_code());
+ 
+-  EXPECT_CALL(
+-      *MockDevToolsManagerDelegate::last_instance,
+-      CreateNewTarget(GURL("about:blank"), DevToolsManagerDelegate::kFrame,
+-                      /*new_window=*/false))
++  EXPECT_CALL(*MockDevToolsManagerDelegate::last_instance,
++              CreateNewTargetWithNavigationMode(
++                  GURL("about:blank"), DevToolsManagerDelegate::kFrame,
++                  /*new_window=*/false,
++                  DevToolsManagerDelegate::NewTargetNavigationMode::
++                      kKeepInitialBlankDocument))
+       .WillOnce(Return(base::MakeRefCounted<MockDevToolsAgentHost>()));
+ 
+   request = request_context->CreateRequest(
+@@ -438,10 +443,12 @@ TEST_F(DevToolsHttpHandlerTest, TestJsonNew) {
+   int port = factory->port();
+   net::TestDelegate delegate;
+ 
+-  EXPECT_CALL(
+-      *MockDevToolsManagerDelegate::last_instance,
+-      CreateNewTarget(GURL("about:blank"), DevToolsManagerDelegate::kFrame,
+-                      /*new_window=*/false));
++  EXPECT_CALL(*MockDevToolsManagerDelegate::last_instance,
++              CreateNewTargetWithNavigationMode(
++                  GURL("about:blank"), DevToolsManagerDelegate::kFrame,
++                  /*new_window=*/false,
++                  DevToolsManagerDelegate::NewTargetNavigationMode::
++                      kKeepInitialBlankDocument));
+   GURL url(base::StringPrintf("http://127.0.0.1:%d/json/new", port));
+   auto request_context = net::CreateTestURLRequestContextBuilder()->Build();
+   auto request = request_context->CreateRequest(
+@@ -451,10 +458,11 @@ TEST_F(DevToolsHttpHandlerTest, TestJsonNew) {
+   delegate.RunUntilComplete();
+   EXPECT_GE(delegate.request_status(), 0);
+ 
+-  EXPECT_CALL(
+-      *MockDevToolsManagerDelegate::last_instance,
+-      CreateNewTarget(GURL("http://example.com"),
+-                      DevToolsManagerDelegate::kFrame, /*new_window=*/false));
++  EXPECT_CALL(*MockDevToolsManagerDelegate::last_instance,
++              CreateNewTargetWithNavigationMode(
++                  GURL("http://example.com"), DevToolsManagerDelegate::kFrame,
++                  /*new_window=*/false,
++                  DevToolsManagerDelegate::NewTargetNavigationMode::kNavigate));
+   url = GURL(base::StringPrintf(
+       "http://127.0.0.1:%d/json/new?%s", port,
+       base::EscapeQueryParamValue("http://example.com", true).c_str()));
+@@ -465,10 +473,11 @@ TEST_F(DevToolsHttpHandlerTest, TestJsonNew) {
+   delegate.RunUntilComplete();
+   EXPECT_GE(delegate.request_status(), 0);
+ 
+-  EXPECT_CALL(
+-      *MockDevToolsManagerDelegate::last_instance,
+-      CreateNewTarget(GURL("http://example.com"), DevToolsManagerDelegate::kTab,
+-                      /*new_window=*/false));
++  EXPECT_CALL(*MockDevToolsManagerDelegate::last_instance,
++              CreateNewTargetWithNavigationMode(
++                  GURL("http://example.com"), DevToolsManagerDelegate::kTab,
++                  /*new_window=*/false,
++                  DevToolsManagerDelegate::NewTargetNavigationMode::kNavigate));
+   url = GURL(base::StringPrintf(
+       "http://127.0.0.1:%d/json/new?%s&for_tab", port,
+       base::EscapeQueryParamValue("http://example.com", true).c_str()));
+@@ -664,7 +673,8 @@ TEST_F(DevToolsHttpHandlerWithServerTest,
+           DevToolsAgentHost::kTypePage, GURL("chrome://aegis")))
+       .WillOnce(Return(false));
+   EXPECT_CALL(*manager_delegate,
+-              CreateNewTarget(testing::_, testing::_, testing::_))
++              CreateNewTargetWithNavigationMode(testing::_, testing::_,
++                                                testing::_, testing::_))
+       .Times(0);
+ 
+   std::string body;
+@@ -778,6 +788,12 @@ TEST_F(DevToolsWebSocketHandlerTest, DeniedPageWebSocketMatchesMissingTarget) {
+                       kWebSocketConnect,
+                   testing::_, testing::_))
+       .Times(2);
++  EXPECT_CALL(
++      *manager_delegate,
++      AllowRemoteDebuggingTargetOperation(
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++          testing::_, testing::_))
++      .Times(1);
+ 
+   int attach_count = 0;
+   int activate_count = 0;
+diff --git a/content/browser/devtools/devtools_session_unittest.cc b/content/browser/devtools/devtools_session_unittest.cc
+index 1eeb5be73b..604dc28381 100644
+--- a/content/browser/devtools/devtools_session_unittest.cc
++++ b/content/browser/devtools/devtools_session_unittest.cc
+@@ -9,7 +9,6 @@
+ 
+ #include "base/containers/span.h"
+ #include "content/public/browser/devtools_agent_host_client.h"
+-#include "content/public/browser/devtools_external_agent_proxy.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/inspector_protocol/crdtp/cbor.h"
+ #include "third_party/inspector_protocol/crdtp/json.h"
+@@ -37,25 +36,11 @@ class StubDevToolsAgentHostClient : public DevToolsAgentHostClient {
+   void AgentHostClosed(DevToolsAgentHost* agent_host) override {}
+ };
+ 
+-class RemoteDevToolsAgentHostClient final : public StubDevToolsAgentHostClient {
+- public:
+-  bool IsRemoteDebuggingClient() override { return true; }
+-};
+-
+ TEST(DevToolsAgentHostClientTest, RemoteDebuggingDefaultsToFalse) {
+   StubDevToolsAgentHostClient client;
+   EXPECT_FALSE(client.IsRemoteDebuggingClient());
+ }
+ 
+-TEST(DevToolsSessionTest, ExternalAgentProxyPreservesRemoteDebuggingClient) {
+-  RemoteDevToolsAgentHostClient client;
+-  DevToolsSession session(&client,
+-                          DevToolsSession::Mode::kDoesNotSupportTabTarget);
+-  DevToolsExternalAgentProxy& proxy = session;
+-
+-  EXPECT_TRUE(proxy.IsRemoteDebuggingClient());
+-}
+-
+ TEST(DevToolsSessionValidateMessageTest, MalformedJson) {
+   std::vector<uint8_t> message = ToVector("{invalid cbor/json");
+   EXPECT_FALSE(DevToolsSession::ValidateMessage("", false, message));
+diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
+index 63d56c15e1..3b3a5d2aac 100644
+--- a/content/browser/devtools/protocol/target_handler.cc
++++ b/content/browser/devtools/protocol/target_handler.cc
+@@ -1659,8 +1659,15 @@ Response TargetHandler::CreateTarget(
+         &DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
+         base::Unretained(root_session_->GetClient())));
+   }
++  const auto navigation_mode =
++      root_session_->GetClient()->IsRemoteDebuggingClient() &&
++              gurl.spec() == url::kAboutBlankURL
++          ? DevToolsManagerDelegate::NewTargetNavigationMode::
++                kKeepInitialBlankDocument
++          : DevToolsManagerDelegate::NewTargetNavigationMode::kNavigate;
+   scoped_refptr<DevToolsAgentHost> agent_host =
+-      delegate->CreateNewTarget(gurl, target_type, new_window.value_or(false));
++      delegate->CreateNewTargetWithNavigationMode(
++          gurl, target_type, new_window.value_or(false), navigation_mode);
+   if (!agent_host) {
+     return Response::ServerError("Not supported");
+   }
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
+index 5e60f66ac3..0a7713c677 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.cc
++++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
+@@ -1134,7 +1134,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+     return true;
+   }
+   const bool is_initial_blank_target =
+-      agent_host && frame_host->GetLastCommittedURL().IsAboutBlank() &&
++      agent_host &&
++      (frame_host->GetLastCommittedURL().is_empty() ||
++       frame_host->GetLastCommittedURL().IsAboutBlank()) &&
+       (agent_host->GetType() == DevToolsAgentHost::kTypePage ||
+        agent_host->GetType() == DevToolsAgentHost::kTypeTab);
+   if (is_initial_blank_target &&
+diff --git a/content/public/browser/devtools_manager_delegate.cc b/content/public/browser/devtools_manager_delegate.cc
+index ce930829bb..045c96d17a 100644
+--- a/content/public/browser/devtools_manager_delegate.cc
++++ b/content/public/browser/devtools_manager_delegate.cc
+@@ -82,6 +82,15 @@ scoped_refptr<DevToolsAgentHost> DevToolsManagerDelegate::CreateNewTarget(
+   return nullptr;
+ }
+ 
++scoped_refptr<DevToolsAgentHost>
++DevToolsManagerDelegate::CreateNewTargetWithNavigationMode(
++    const GURL& url,
++    DevToolsManagerDelegate::TargetType target_type,
++    bool new_window,
++    NewTargetNavigationMode navigation_mode) {
++  return CreateNewTarget(url, target_type, new_window);
++}
++
+ std::vector<BrowserContext*> DevToolsManagerDelegate::GetBrowserContexts() {
+   return std::vector<BrowserContext*>();
+ }
+diff --git a/content/public/browser/devtools_manager_delegate.h b/content/public/browser/devtools_manager_delegate.h
+index bf07a527cc..65527278c3 100644
+--- a/content/public/browser/devtools_manager_delegate.h
++++ b/content/public/browser/devtools_manager_delegate.h
+@@ -112,6 +112,11 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
+   // https://docs.google.com/document/d/14aeiC_zga2SS0OXJd6eIFj8N0o5LGwUpuqa4L8NKoR4/
+   enum TargetType { kFrame, kTab };
+ 
++  enum class NewTargetNavigationMode {
++    kNavigate,
++    kKeepInitialBlankDocument,
++  };
++
+   // Remote CDP operations that expose or mutate a concrete target. Callers
+   // must pass the URL being authorized: the target's current URL for existing
+   // target operations, and the requested destination for create/navigation.
+@@ -148,6 +153,15 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
+   virtual scoped_refptr<DevToolsAgentHost>
+   CreateNewTarget(const GURL& url, TargetType target_type, bool new_window);
+ 
++  // Creates a target while allowing the caller to preserve the initial blank
++  // document. The default keeps existing embedders source-compatible and
++  // delegates to CreateNewTarget().
++  virtual scoped_refptr<DevToolsAgentHost> CreateNewTargetWithNavigationMode(
++      const GURL& url,
++      TargetType target_type,
++      bool new_window,
++      NewTargetNavigationMode navigation_mode);
++
+   // Get all live browser contexts created by CreateBrowserContext() method.
+   virtual std::vector<BrowserContext*> GetBrowserContexts();
+ 
+diff --git a/content/shell/browser/shell_devtools_manager_delegate.cc b/content/shell/browser/shell_devtools_manager_delegate.cc
+index 856b49d3cc..76a2f53764 100644
+--- a/content/shell/browser/shell_devtools_manager_delegate.cc
++++ b/content/shell/browser/shell_devtools_manager_delegate.cc
+@@ -220,7 +220,21 @@ scoped_refptr<DevToolsAgentHost> ShellDevToolsManagerDelegate::CreateNewTarget(
+     const GURL& url,
+     content::DevToolsManagerDelegate::TargetType target_type,
+     bool new_window) {
+-  Shell* shell = Shell::CreateNewWindow(browser_context_, url, nullptr,
++  return CreateNewTargetWithNavigationMode(url, target_type, new_window,
++                                           NewTargetNavigationMode::kNavigate);
++}
++
++scoped_refptr<DevToolsAgentHost>
++ShellDevToolsManagerDelegate::CreateNewTargetWithNavigationMode(
++    const GURL& url,
++    content::DevToolsManagerDelegate::TargetType target_type,
++    bool new_window,
++    NewTargetNavigationMode navigation_mode) {
++  const GURL target_url =
++      navigation_mode == NewTargetNavigationMode::kKeepInitialBlankDocument
++          ? GURL()
++          : url;
++  Shell* shell = Shell::CreateNewWindow(browser_context_, target_url, nullptr,
+                                         Shell::GetShellDefaultSize());
+   return target_type == content::DevToolsManagerDelegate::kTab
+              ? DevToolsAgentHost::GetOrCreateForTab(shell->web_contents())
+diff --git a/content/shell/browser/shell_devtools_manager_delegate.h b/content/shell/browser/shell_devtools_manager_delegate.h
+index 675a28c410..eb86ffb42b 100644
+--- a/content/shell/browser/shell_devtools_manager_delegate.h
++++ b/content/shell/browser/shell_devtools_manager_delegate.h
+@@ -36,6 +36,11 @@ class ShellDevToolsManagerDelegate : public DevToolsManagerDelegate {
+   scoped_refptr<DevToolsAgentHost> CreateNewTarget(const GURL& url,
+                                                    TargetType target_type,
+                                                    bool new_window) override;
++  scoped_refptr<DevToolsAgentHost> CreateNewTargetWithNavigationMode(
++      const GURL& url,
++      TargetType target_type,
++      bool new_window,
++      NewTargetNavigationMode navigation_mode) override;
+   std::string GetDiscoveryPageHTML() override;
+   bool HasBundledFrontendResources() override;
+   void ClientAttached(
+-- 
+2.52.0
+

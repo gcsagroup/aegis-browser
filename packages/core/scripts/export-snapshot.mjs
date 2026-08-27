@@ -28,6 +28,18 @@ function parseStringArray(source, exportName) {
   return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
 }
 
+function reproducibleTimestamp() {
+  const raw = process.env.SOURCE_DATE_EPOCH ?? "0";
+  if (!/^\d+$/.test(raw)) {
+    throw new Error("SOURCE_DATE_EPOCH must be a non-negative integer");
+  }
+  const date = new Date(Number(raw) * 1000);
+  if (Number.isNaN(date.valueOf())) {
+    throw new Error("SOURCE_DATE_EPOCH is outside the supported date range");
+  }
+  return date.toISOString();
+}
+
 const trackerSrc = readFileSync(
   resolve(root, "src/tracker/builtin-rules.ts"),
   "utf8",
@@ -39,7 +51,7 @@ const phishSrc = readFileSync(
 
 const snapshot = {
   version: 1,
-  generatedAt: new Date().toISOString(),
+  generatedAt: reproducibleTimestamp(),
   source: "@gcsa-aegis/core",
   trackerHosts: parseStringArray(trackerSrc, "BUILTIN_TRACKER_HOSTS"),
   trackingQueryParams: parseStringArray(trackerSrc, "TRACKING_QUERY_PARAMS"),

@@ -6,7 +6,8 @@
 #include <string>
 #include <utility>
 
-#include "chrome/browser/aegis/aegis_service.h"
+#include "base/check.h"
+#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/webui_url_constants.h"
@@ -45,8 +46,10 @@ void AegisPhishControllerClient::GoBack() {
 }
 
 void AegisPhishControllerClient::Proceed() {
-  AegisService::GetInstance()->AllowPhishHostForSession(
-      std::string(request_url_.host()));
+  PhishTabHelper::CreateForWebContents(web_contents());
+  PhishTabHelper* helper = PhishTabHelper::FromWebContents(web_contents());
+  CHECK(helper);
+  helper->AllowNextNavigationOnce(request_url_);
   Reload();
 }
 

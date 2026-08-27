@@ -9,19 +9,35 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./script-risk/ast": {
+      "types": "./dist/script-risk/ast-analyzer.d.cts",
+      "node": {
+        "import": "./dist/script-risk/ast-analyzer.cjs"
+      }
+    },
+    "./script-risk/structure": {
+      "types": "./dist/script-risk/structure-signature.d.cts",
+      "node": {
+        "import": "./dist/script-risk/structure-signature.cjs"
+      }
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts --format esm --dts --clean && tsup src/script-risk/ast-analyzer.ts src/script-risk/structure-signature.ts --format cjs --dts --platform node --target node20 --minify --outDir dist/script-risk",
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "export-snapshot": "node ./scripts/export-snapshot.mjs",
     "compile-easylist": "node ./scripts/compile-easylist.mjs",
+    "compile-threat-feeds": "node ./scripts/compile-threat-feeds.mjs",
+    "evaluate:script-risk": "node ./scripts/evaluate-script-risk-corpus.mjs",
+    "evaluate:script-risk-gates": "node ./scripts/evaluate-script-risk-gates.mjs",
     "bundle-policy-worker": "tsup src/policy-worker-entry.ts --format iife --platform browser --target es2020 --minify --outDir dist-worker --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"

@@ -31,11 +31,31 @@ AegisPhishNavigationThrottle::~AegisPhishNavigationThrottle() = default;
 
 content::NavigationThrottle::ThrottleCheckResult
 AegisPhishNavigationThrottle::WillStartRequest() {
+  content::NavigationHandle* handle = navigation_handle();
+  if (handle->IsInOutermostMainFrame()) {
+    if (content::WebContents* web_contents = handle->GetWebContents()) {
+      if (PhishTabHelper* helper =
+              PhishTabHelper::FromWebContents(web_contents)) {
+        if (helper->ConsumeOneTimeNavigationBypass(handle->GetURL(),
+                                                   handle->GetNavigationId())) {
+          return content::NavigationThrottle::PROCEED;
+        }
+      }
+    }
+  }
   return MaybeIntercept();
 }
 
 content::NavigationThrottle::ThrottleCheckResult
 AegisPhishNavigationThrottle::WillRedirectRequest() {
+  if (content::WebContents* web_contents =
+          navigation_handle()->GetWebContents()) {
+    if (PhishTabHelper* helper =
+            PhishTabHelper::FromWebContents(web_contents)) {
+      helper->CancelOneTimeNavigationBypass(
+          navigation_handle()->GetNavigationId());
+    }
+  }
   return MaybeIntercept();
 }
 
@@ -52,7 +72,8 @@ AegisPhishNavigationThrottle::MaybeIntercept() {
 
   const GURL& url = handle->GetURL();
   if (content::WebContents* web_contents = handle->GetWebContents()) {
-    if (PhishTabHelper* helper = PhishTabHelper::FromWebContents(web_contents)) {
+    if (PhishTabHelper* helper =
+            PhishTabHelper::FromWebContents(web_contents)) {
       if (std::optional<PhishAssessment> stashed =
               helper->TakeStashedAssessment(url)) {
         LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url
@@ -87,7 +108,8 @@ AegisPhishNavigationThrottle::ShowInterstitial(
     }
   }
   AegisService::GetInstance()->RecordPhishBlock(
-      request_url.has_host() ? std::string(request_url.host()) : request_url.spec(),
+      request_url.has_host() ? std::string(request_url.host())
+                             : request_url.spec(),
       reason);
 
   auto controller =

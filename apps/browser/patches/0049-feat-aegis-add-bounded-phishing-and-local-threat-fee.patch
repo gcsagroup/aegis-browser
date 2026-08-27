@@ -1,0 +1,1968 @@
+From cf0f5f3bfbb289520dcc6e9a39f648d5da115f46 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 23:28:28 +0800
+Subject: [PATCH] feat(aegis): add bounded phishing and local threat feeds
+
+---
+ .../actor/execution_engine_unittest.cc        |   7 +-
+ chrome/browser/aegis/BUILD.gn                 |   2 +
+ .../aegis/aegis_phish_blocking_page.cc        |  59 ++++
+ .../browser/aegis/aegis_phish_tab_helper.cc   |  74 +++--
+ chrome/browser/aegis/aegis_phish_tab_helper.h |   3 +
+ .../aegis/aegis_phish_tab_helper_unittest.cc  |   3 +-
+ chrome/browser/aegis/aegis_service.cc         |  39 ++-
+ chrome/browser/aegis/aegis_service.h          |   3 +
+ .../aegis/generated/policy_worker_source.inc  |   4 +-
+ chrome/browser/aegis/threat_feed_updater.cc   | 268 ++++++++++++++++++
+ chrome/browser/aegis/threat_feed_updater.h    |  57 ++++
+ .../actor_login_siwg_controller_unittest.cc   |   4 +-
+ ...d_change_page_stability_waiter_unittest.cc |   2 +-
+ .../browser/resources/aegis/policy_worker.ts  |   4 +-
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  36 +--
+ chrome/common/aegis/BUILD.gn                  |   6 +-
+ chrome/common/aegis/phish_score.cc            | 222 +++++++++++++--
+ chrome/common/aegis/phish_score.h             |   1 +
+ chrome/common/aegis/phish_score_unittest.cc   |  67 ++++-
+ chrome/common/aegis/threat_feed_index.cc      | 245 ++++++++++++++++
+ chrome/common/aegis/threat_feed_index.h       |  69 +++++
+ .../aegis/threat_feed_index_unittest.cc       |  75 +++++
+ chrome/common/chrome_render_frame.mojom       |  10 +-
+ .../renderer/chrome_render_frame_observer.cc  |  70 +++--
+ .../renderer/chrome_render_frame_observer.h   |   5 +-
+ third_party/aegis_policy/policy_worker.js     |   4 +-
+ 26 files changed, 1234 insertions(+), 105 deletions(-)
+ create mode 100644 chrome/browser/aegis/threat_feed_updater.cc
+ create mode 100644 chrome/browser/aegis/threat_feed_updater.h
+ create mode 100644 chrome/common/aegis/threat_feed_index.cc
+ create mode 100644 chrome/common/aegis/threat_feed_index.h
+ create mode 100644 chrome/common/aegis/threat_feed_index_unittest.cc
+
+diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
+index 8f0960753f..2e0e9bb7e0 100644
+--- a/chrome/browser/actor/execution_engine_unittest.cc
++++ b/chrome/browser/actor/execution_engine_unittest.cc
+@@ -159,9 +159,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+       RequestImageForContextNodeCallback callback) override {}
+   void ExecuteWebUIJavaScript(const std::u16string& javascript) override {}
+   void GetMediaFeedURL(GetMediaFeedURLCallback callback) override {}
+-  void CollectAegisPageSignals(CollectAegisPageSignalsCallback callback)
+-      override {
+-    std::move(callback).Run(0, 0, "", "");
++  void CollectAegisPageSignals(
++      bool include_text,
++      CollectAegisPageSignalsCallback callback) override {
++    std::move(callback).Run(0, 0, {}, "", "");
+   }
+   void LoadBlockedPlugins(const std::string& identifier) override {}
+   void SetShouldDeferMediaLoad(bool should_defer) override {}
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 29147e3578..f5938cb5ee 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -33,6 +33,8 @@ source_set("aegis") {
+     "privacy_event_store.h",
+     "summary_policy.cc",
+     "summary_policy.h",
++    "threat_feed_updater.cc",
++    "threat_feed_updater.h",
+   ]
+   deps = [
+     "//base",
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+index 7c9fd77ff1..945f85d14a 100644
+--- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
++++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
+@@ -83,6 +83,31 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
+     }
+     return WithoutTechnicalWeight(std::move(label), reason.weight);
+   }
++  if (reason.code == "brand_lookalike_host") {
++    std::u16string label = zh ? u"域名只改了品牌中的少数字符，疑似仿冒「"
++                              : u"Domain uses a near-match of \"";
++    label += detail.empty() ? (zh ? u"知名品牌" : u"a known brand") : detail;
++    label += zh ? u"」" : u"\"";
++    return WithoutTechnicalWeight(std::move(label), reason.weight);
++  }
++  if (reason.code == "brand_in_path") {
++    return WithoutTechnicalWeight(
++        zh ? u"把品牌名称放在路径中，不能证明这是品牌正站"
++           : u"Brand name appears only in the path, not the real domain",
++        reason.weight);
++  }
++  if (reason.code == "credential_path") {
++    return WithoutTechnicalWeight(
++        zh ? u"网址路径在诱导登录或验证账号"
++           : u"URL path asks for sign-in or account verification",
++        reason.weight);
++  }
++  if (reason.code == "shortened_url") {
++    return WithoutTechnicalWeight(
++        zh ? u"短链接隐藏了最终去向"
++           : u"Short link hides its final destination",
++        reason.weight);
++  }
+   if (reason.code == "at_symbol_trick") {
+     return WithoutTechnicalWeight(
+         zh ? u"网址含 @，用来掩盖真实去向"
+@@ -109,6 +134,40 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
+         zh ? u"页面在收集账号或密码" : u"Page is collecting credentials",
+         reason.weight);
+   }
++  if (reason.code == "cross_site_credential_submit") {
++    return WithoutTechnicalWeight(
++        zh ? u"密码会被提交到另一个网站"
++           : u"Password form submits to a different site",
++        reason.weight);
++  }
++  if (reason.code == "brand_credential_page") {
++    return WithoutTechnicalWeight(
++        zh ? u"页面借用品牌名称并要求输入密码"
++           : u"Page uses a brand name while requesting a password",
++        reason.weight);
++  }
++  if (reason.code == "threat_feed_match") {
++    std::u16string label = zh ? u"命中本地威胁情报名单"
++                              : u"Matched the local threat reputation index";
++    if (!detail.empty()) {
++      label += u" (" + detail + u")";
++    }
++    return WithoutTechnicalWeight(std::move(label), reason.weight);
++  }
++  if (reason.code == "threat_feed_domain_match") {
++    std::u16string label = zh ? u"域名命中本地危险网站名单"
++                              : u"Domain matched a local warning list";
++    if (!detail.empty()) {
++      label += u" (" + detail + u")";
++    }
++    return WithoutTechnicalWeight(std::move(label), reason.weight);
++  }
++  if (reason.code == "stale_threat_feed_match") {
++    return WithoutTechnicalWeight(
++        zh ? u"命中过期的本地威胁情报，已作为辅助风险信号"
++           : u"Matched stale local threat data; used as a supporting signal",
++        reason.weight);
++  }
+   if (reason.code == "lightweight_model_blend") {
+     return WithoutTechnicalWeight(
+         zh ? u"本地规则也发现了相似风险" : u"Local rules found similar risk",
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
+index eef77b5444..20535f8460 100644
+--- a/chrome/browser/aegis/aegis_phish_tab_helper.cc
++++ b/chrome/browser/aegis/aegis_phish_tab_helper.cc
+@@ -15,6 +15,7 @@
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #include "ui/base/page_transition_types.h"
+ 
+@@ -142,9 +143,8 @@ void PhishTabHelper::DOMContentLoaded(
+     return;
+   }
+ 
+-  PhishAssessment url_score = AssessPhishingUrl(url);
+-  if (MatchesBuiltinPhishRule(url) || url_score.should_block ||
+-      url_score.score == 0) {
++  PhishAssessment url_score = service->AssessPhishUrl(url);
++  if (MatchesBuiltinPhishRule(url) || url_score.should_block) {
+     return;
+   }
+ 
+@@ -164,22 +164,24 @@ void PhishTabHelper::DOMContentLoaded(
+   chrome::mojom::ChromeRenderFrame* raw = client->get();
+   content::WeakDocumentPtr source_document =
+       render_frame_host->GetWeakDocumentPtr();
+-  raw->CollectAegisPageSignals(base::BindOnce(
+-      [](std::unique_ptr<mojo::AssociatedRemote<
+-             chrome::mojom::ChromeRenderFrame>> keep_alive,
+-         base::WeakPtr<PhishTabHelper> self,
+-         content::WeakDocumentPtr source_document, int32_t password_fields,
+-         int32_t forms, const std::string& title,
+-         const std::string& text_sample) {
+-        if (!self) {
+-          return;
+-        }
+-        self->OnPageSignalsCollected(std::move(source_document),
+-                                     password_fields, forms, title,
+-                                     text_sample);
+-      },
+-      std::move(client), weak_factory_.GetWeakPtr(),
+-      std::move(source_document)));
++  raw->CollectAegisPageSignals(
++      url_score.score > 0,
++      base::BindOnce(
++          [](std::unique_ptr<mojo::AssociatedRemote<
++                 chrome::mojom::ChromeRenderFrame>> keep_alive,
++             base::WeakPtr<PhishTabHelper> self,
++             content::WeakDocumentPtr source_document, int32_t password_fields,
++             int32_t forms, const std::vector<std::string>& form_actions,
++             const std::string& title, const std::string& text_sample) {
++            if (!self) {
++              return;
++            }
++            self->OnPageSignalsCollected(std::move(source_document),
++                                         password_fields, forms, form_actions,
++                                         title, text_sample);
++          },
++          std::move(client), weak_factory_.GetWeakPtr(),
++          std::move(source_document)));
+ }
+ 
+ void PhishTabHelper::InvalidatePageSignalCheck() {
+@@ -204,6 +206,7 @@ void PhishTabHelper::OnPageSignalsCollected(
+     content::WeakDocumentPtr source_document,
+     int32_t password_fields,
+     int32_t forms,
++    const std::vector<std::string>& form_actions,
+     const std::string& title,
+     const std::string& text_sample) {
+   content::RenderFrameHost* source_frame =
+@@ -217,13 +220,14 @@ void PhishTabHelper::OnPageSignalsCollected(
+   checking_document_ = content::WeakDocumentPtr();
+   const GURL current_url = source_frame->GetLastCommittedURL();
+   OnPageSignals(std::move(source_document), current_url, password_fields, forms,
+-                title, text_sample);
++                form_actions, title, text_sample);
+ }
+ 
+ void PhishTabHelper::OnPageSignals(content::WeakDocumentPtr source_document,
+                                    const GURL& url,
+                                    int32_t password_fields,
+                                    int32_t forms,
++                                   const std::vector<std::string>& form_actions,
+                                    const std::string& title,
+                                    const std::string& text_sample) {
+   content::WebContents* contents = web_contents();
+@@ -243,13 +247,29 @@ void PhishTabHelper::OnPageSignals(content::WeakDocumentPtr source_document,
+     return;
+   }
+ 
+-  PhishAssessment assessment = ApplyPageSignals(
+-      AssessPhishingUrl(url), PageSignals{
+-                                  .title = title,
+-                                  .text_sample = text_sample,
+-                                  .password_fields = password_fields,
+-                                  .forms = forms,
+-                              });
++  int cross_site_form_actions = 0;
++  for (const std::string& action_text : form_actions) {
++    const GURL action(action_text);
++    if (!action.is_valid() || !action.SchemeIsHTTPOrHTTPS() ||
++        !action.has_host()) {
++      continue;
++    }
++    if (!net::registry_controlled_domains::SameDomainOrHost(
++            url, action,
++            net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
++      ++cross_site_form_actions;
++    }
++  }
++
++  PhishAssessment assessment =
++      ApplyPageSignals(service->AssessPhishUrl(url),
++                       PageSignals{
++                           .title = title,
++                           .text_sample = text_sample,
++                           .password_fields = password_fields,
++                           .forms = forms,
++                           .cross_site_form_actions = cross_site_form_actions,
++                       });
+   if (!assessment.should_block) {
+     return;
+   }
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.h b/chrome/browser/aegis/aegis_phish_tab_helper.h
+index 7e86371712..35f3dc3c6f 100644
+--- a/chrome/browser/aegis/aegis_phish_tab_helper.h
++++ b/chrome/browser/aegis/aegis_phish_tab_helper.h
+@@ -7,6 +7,7 @@
+ #include <cstdint>
+ #include <optional>
+ #include <string>
++#include <vector>
+ 
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/common/aegis/phish_score.h"
+@@ -56,12 +57,14 @@ class PhishTabHelper : public content::WebContentsObserver,
+   void OnPageSignalsCollected(content::WeakDocumentPtr source_document,
+                               int32_t password_fields,
+                               int32_t forms,
++                              const std::vector<std::string>& form_actions,
+                               const std::string& title,
+                               const std::string& text_sample);
+   void OnPageSignals(content::WeakDocumentPtr source_document,
+                      const GURL& url,
+                      int32_t password_fields,
+                      int32_t forms,
++                     const std::vector<std::string>& form_actions,
+                      const std::string& title,
+                      const std::string& text_sample);
+ 
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc b/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc
+index 3fe8cf6f6f..7399ae5b0f 100644
+--- a/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc
+@@ -27,7 +27,8 @@ class PhishTabHelperTestPeer {
+                                  content::WeakDocumentPtr source_document) {
+     helper->OnPageSignalsCollected(std::move(source_document),
+                                    /*password_fields=*/1, /*forms=*/1,
+-                                   "Sign in", "Verify your account");
++                                   /*form_actions=*/{}, "Sign in",
++                                   "Verify your account");
+   }
+ 
+   static void FailPageSignalCheck(PhishTabHelper* helper,
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index b47bf212d2..a56fde3805 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -22,6 +22,7 @@
+ #include "chrome/browser/aegis/aegis_cookie_janitor.h"
+ #include "chrome/browser/aegis/filter_list_updater.h"
+ #include "chrome/browser/aegis/ollama_sidecar.h"
++#include "chrome/browser/aegis/threat_feed_updater.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/aegis_block_reporter.h"
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
+@@ -113,6 +114,10 @@ void AegisService::InitializeForProfile(Profile* profile) {
+     // LoadFromDisk 完成后再决定是否自动更新，避免缓存未读完就重新下载。
+     filter_list_updater_->LoadFromDisk();
+   }
++  if (IsPhishInterstitialEnabled()) {
++    threat_feed_updater_ = std::make_unique<ThreatFeedUpdater>(profile);
++    threat_feed_updater_->LoadFromDisk();
++  }
+   if (base::FeatureList::IsEnabled(features::kAegisCookieJanitor) &&
+       IsCookieJanitorEnabled()) {
+     cookie_janitor_ = std::make_unique<CookieJanitor>(profile);
+@@ -155,6 +160,7 @@ void AegisService::ShutdownForProfile() {
+     cookie_janitor_->Stop();
+   }
+   cookie_janitor_.reset();
++  threat_feed_updater_.reset();
+   filter_list_updater_.reset();
+   observer_notification_timer_.Stop();
+   privacy_events_.Clear();
+@@ -213,6 +219,12 @@ void AegisService::SetPhishInterstitialEnabled(bool enabled) {
+   if (prefs_) {
+     prefs_->SetBoolean(prefs::kPhishInterstitialEnabled, enabled);
+   }
++  if (initialized_ && enabled && !threat_feed_updater_) {
++    threat_feed_updater_ = std::make_unique<ThreatFeedUpdater>(profile_);
++    threat_feed_updater_->LoadFromDisk();
++  } else if (!enabled) {
++    threat_feed_updater_.reset();
++  }
+   NotifyObservers();
+ }
+ 
+@@ -943,7 +955,7 @@ std::optional<PhishAssessment> AegisService::EvaluatePhish(
+   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_host()) {
+     return std::nullopt;
+   }
+-  PhishAssessment assessment = AssessPhishingUrl(url);
++  PhishAssessment assessment = AssessPhishUrl(url);
+   if (MatchesBuiltinPhishRule(url)) {
+     assessment.reasons.push_back({"seed_host", 100, std::string(url.host())});
+     assessment.score = std::min(100, assessment.score + 100);
+@@ -955,6 +967,31 @@ std::optional<PhishAssessment> AegisService::EvaluatePhish(
+   return assessment;
+ }
+ 
++PhishAssessment AegisService::AssessPhishUrl(const GURL& url) const {
++  PhishAssessment assessment = AssessPhishingUrl(url);
++  if (!threat_feed_updater_) {
++    return assessment;
++  }
++  const std::optional<ThreatMatch> match =
++      threat_feed_updater_->Match(url, NowUnixSeconds());
++  if (!match) {
++    return assessment;
++  }
++  const std::vector<std::string> source_names =
++      ThreatSourceNames(match->sources);
++  const std::string detail = base::JoinString(source_names, "+");
++  const bool exact_url = match->kind == ThreatEntryKind::kUrl;
++  const int weight = match->stale ? 25 : (exact_url ? 100 : 35);
++  const std::string code =
++      match->stale
++          ? "stale_threat_feed_match"
++          : (exact_url ? "threat_feed_match" : "threat_feed_domain_match");
++  assessment.reasons.push_back({code, weight, detail});
++  assessment.score = std::min(100, assessment.score + weight);
++  assessment.should_block = assessment.score >= kPhishBlockThreshold;
++  return assessment;
++}
++
+ void AegisService::PushPrivacyEvent(PrivacyEvent event) {
+   privacy_events_.Record(std::move(event));
+   if (!observer_notification_timer_.IsRunning()) {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 9920a8efbb..57feaab09c 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -38,6 +38,7 @@ class WebContents;
+ namespace aegis {
+ 
+ class FilterListUpdater;
++class ThreatFeedUpdater;
+ class CookieJanitor;
+ class OllamaSidecar;
+ class AiControl;
+@@ -188,6 +189,7 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   // Main-frame phishing interstitial decision (seed rules + URL heuristics).
+   // Returns the assessment when the page should be blocked.
+   std::optional<PhishAssessment> EvaluatePhish(const GURL& url) const;
++  PhishAssessment AssessPhishUrl(const GURL& url) const;
+   bool ShouldShowPhishInterstitial(const GURL& url) const;
+ 
+   void RecordStrippedParams(const std::string& host,
+@@ -224,6 +226,7 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   raw_ptr<Profile> profile_ = nullptr;
+   PrivacyEventStore privacy_events_;
+   std::unique_ptr<FilterListUpdater> filter_list_updater_;
++  std::unique_ptr<ThreatFeedUpdater> threat_feed_updater_;
+   std::unique_ptr<CookieJanitor> cookie_janitor_;
+   std::unique_ptr<OllamaSidecar> ollama_;
+   std::unique_ptr<AiControl> ai_control_;
+diff --git a/chrome/browser/aegis/generated/policy_worker_source.inc b/chrome/browser/aegis/generated/policy_worker_source.inc
+index 7771cf9855..2bc5e22fe3 100644
+--- a/chrome/browser/aegis/generated/policy_worker_source.inc
++++ b/chrome/browser/aegis/generated/policy_worker_source.inc
+@@ -1,7 +1,7 @@
+ // Generated by apps/browser/scripts/sync-policy-worker.sh — do not edit.
+ // Source: packages/core/src/policy-worker-entry.ts
+ inline constexpr char kAegisPolicyWorkerJs[] = R"AEGISJS(
+-"use strict";(()=>{var g=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],h=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var L=g,E=h,v=55,I=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function N(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function O(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function D(e){return e.includes("xn--")}function U(e){let t=e.toLowerCase().split("."),s=t.length>=2?t[t.length-2]:t[0];for(let o of E){if(s===o)continue;if(t.some(r=>r===o||r.startsWith(`${o}-`)||r.endsWith(`-${o}`)||r.includes(`-${o}-`)))return o}return null}function f(e,t,s){let o=Math.min(100,t);return{score:o,severity:N(o),reasons:s,shouldBlock:o>=v,url:e}}function p(e,t=[]){let s;try{s=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let o=s.hostname.toLowerCase();if(t.some(c=>o===c.toLowerCase()||o.endsWith(`.${c.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;s.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),O(o)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:o})),D(o)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:o})),o.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:o}));let i=o.split(".").pop()??"";L.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=U(o);return a&&(r+=30,n.push({code:"brand_spoof_host",weight:30,detail:a})),(s.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),f(e,r,n)}function _(e,t=[]){let s=p(e.url,t);if(s.reasons[0]?.code==="allowlisted"||s.reasons[0]?.code==="invalid_url")return s;let o=s.score,n=[...s.reasons],r=s.reasons.find(u=>u.code==="brand_spoof_host")?.detail??null,i=s.reasons.some(u=>u.code==="ip_hostname"),a=null;try{a=new URL(e.url)}catch{a=null}let c=a?.protocol==="http:",A=`${e.title}
+-${e.textSample}`.toLowerCase();for(let u of I)if(A.includes(u.toLowerCase())){o+=10,n.push({code:"urgency_language",weight:10,detail:u});break}let m=e.passwordFields??0,T=e.forms??0;return m>0&&(r||i||c)?(o+=25,n.push({code:"password_on_risky_origin",weight:25,detail:`passwordFields=${m}`})):m>0&&T>0&&o>=20&&(o+=12,n.push({code:"credential_form",weight:12})),f(e.url,o,n)}var y=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,s]=e.split("@");return`${t.slice(0,1)}***@${s}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function H(e){let t=0,s=!1;for(let o=e.length-1;o>=0;o--){let n=Number(e[o]);s&&(n*=2,n>9&&(n-=9)),t+=n,s=!s}return t%10===0}function l(e){let t=[];for(let r of y){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!H(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let s=[],o=-1;for(let r of t)r.start<o||(s.push(r),o=r.end);let n=e;for(let r=s.length-1;r>=0;r--){let i=s[r],a=y.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:s,redacted:n,blocked:s.length>0}}function k(e,t){let s=l(e);return s.blocked?t?{allowed:!0,payload:s.redacted,scan:s}:{allowed:!1,payload:s.redacted,scan:s}:{allowed:!0,payload:e,scan:s}}var z=2048,M=512,j=6e3;function W(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(l(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(l(t).redacted)}}).join("/")}function $(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=W(t.pathname);let s=[...new Set(t.searchParams.keys())];t.search="";for(let o of s)t.searchParams.append(l(o).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),l(t.toString()).redacted.slice(0,z)}catch{return"[INVALID_URL]"}}function S(e){return{url:$(e.url),title:l(e.title).redacted.slice(0,M),textSample:l(e.textSample).redacted.slice(0,j),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function F(e,t){let s=S(e),o=s.textSample.replace(/\s+/g," ").trim(),n=o.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(s.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(s.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=o.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function b(e,t){let s=S(e),o=F(s,t);return{schemaVersion:1,sanitizedSnapshot:s,heuristic:{summary:o.summary,bullets:o.bullets,risks:o.risks}}}function R(e){try{let t=new URL(e),s=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(s)}catch{return!0}}var P=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function x(e,t=[]){let s;try{s=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let o=new Set([...P,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...s.searchParams.keys()])o.has(i.toLowerCase())&&(n.push(i),s.searchParams.delete(i));s.hash&&/utm_|fbclid|gclid/i.test(s.hash)&&(s.hash="",n.push("#tracking-hash"));let r=s.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var B=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),K=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),Y=["_gcl_"],X=["_ga_","_gat_","__utm","mp_","_hj","amp_"],G=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],Z=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],J=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],V=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],Q=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function d(e,t){return t.reduce((s,o)=>e.includes(o)?s+1:s,0)}function w(e,t){return t.some(s=>e.startsWith(s))}var q=new Set(["c_user","datr","sb","xs","presence"]),ee=["facebook.com","messenger.com"];function te(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return G.some(s=>t===s||t.endsWith(`.${s}`))}function se(e,t){let s=e.toLowerCase();if(!q.has(s))return!1;let o=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ee.some(n=>o===n||o.endsWith(`.${n}`))}function C(e){let t=e.name.toLowerCase(),s=e.domain.toLowerCase();if(se(t,s))return"necessary";if(B.has(t)||w(t,Y))return"advertising";if(K.has(t)||w(t,X))return"analytics";if(te(s))return"advertising";let o=`${t} ${s}`,n={necessary:d(o,Q),functionality:d(o,V),analytics:d(o,J),advertising:d(o,Z)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var oe=8192,re=4096,ne=64*1024;function ie(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>oe||t.title.length>re||t.textSample.length>ne)return!1;for(let s of["forms","passwordFields"]){let o=t[s];if(o!==void 0&&(typeof o!="number"||!Number.isSafeInteger(o)||o<0||o>1e6))return!1}return!0}function ae(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ce(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return p(e.url??"");case"assessPhish":return _(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return l(e.text??"");case"gateOutbound":return k(e.text??"",!!e.userApproved);case"sanitizeUrl":return x(e.url??"");case"classifyCookie":return{category:C({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:R(e.url??"")};case"prepareSummary":return ie(e.snapshot)?b(e.snapshot,ae(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function le(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ce(t))}catch(t){let s=t instanceof Error?t.message:String(t);return JSON.stringify({error:s})}}var ue=globalThis;ue.aegisEvaluate=le;})();
++"use strict";(()=>{var y=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],k=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var D=y,h=k,z=new Set(["bit.ly","buff.ly","cutt.ly","is.gd","ow.ly","rb.gy","rebrand.ly","shorturl.at","t.co","tinyurl.com"]),H=["account","auth","confirm","login","password","secure","signin","verify","wallet"],U=55,M=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function j(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function W(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function $(e){return e.includes("xn--")}function F(e){return e.replace(/0/g,"o").replace(/1/g,"i").replace(/3/g,"e").replace(/4/g,"a").replace(/5/g,"s").replace(/7/g,"t")}function B(e,t){if(Math.abs(e.length-t.length)>1)return!1;if(e===t)return!0;let o=0,s=0,n=0;for(;o<e.length&&s<t.length;){if(e[o]===t[s]){o+=1,s+=1;continue}if(n+=1,n>1)return!1;e.length>t.length?o+=1:(t.length>e.length||(o+=1),s+=1)}return n+ +(o<e.length||s<t.length)<=1}function b(e){let t=e.toLowerCase().split("."),o=new Set(["co.uk","com.au","com.br","com.cn","com.hk","co.jp","co.kr"]),s=t.slice(-2).join("."),n=o.has(s)?t.length-3:t.length-2;return t[Math.max(0,n)]??""}function S(e){try{return decodeURIComponent(e)}catch{return e}}function K(e){let t=e.toLowerCase().split("."),o=b(e);for(let s of h){if(o===s)continue;if(t.some(i=>i===s||i.startsWith(`${s}-`)||i.endsWith(`-${s}`)||i.includes(`-${s}-`)))return{brand:s,reason:"brand_spoof_host"};if(s.length<5)continue;if(t.some(i=>{if(i.length<5||i===s)return!1;let a=F(i);return a===s||B(a,s)}))return{brand:s,reason:"brand_lookalike_host"}}return null}function Y(e,t){let o=b(t),s=S(e).toLowerCase().split(/[^a-z0-9]+/);for(let n of h)if(n!==o&&s.includes(n))return n;return null}function R(e,t,o){let s=Math.min(100,t);return{score:s,severity:j(s),reasons:o,shouldBlock:s>=U,url:e}}function f(e,t=[]){let o;try{o=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let s=o.hostname.toLowerCase();if(t.some(u=>s===u.toLowerCase()||s.endsWith(`.${u.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;o.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),W(s)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:s})),$(s)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:s})),s.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:s}));let i=s.split(".").pop()??"";D.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=K(s);if(a){let u=a.reason==="brand_lookalike_host"?40:30;r+=u,n.push({code:a.reason,weight:u,detail:a.brand})}let c=Y(o.pathname,s);c&&(r+=15,n.push({code:"brand_in_path",weight:15,detail:c}));let g=S(o.pathname).toLowerCase(),m=H.find(u=>g.split(/[^a-z0-9]+/).includes(u));return m&&(r+=10,n.push({code:"credential_path",weight:10,detail:m})),z.has(s)&&(r+=15,n.push({code:"shortened_url",weight:15,detail:s})),(o.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),R(e,r,n)}function w(e,t=[]){let o=f(e.url,t);if(o.reasons[0]?.code==="allowlisted"||o.reasons[0]?.code==="invalid_url")return o;let s=o.score,n=[...o.reasons],r=o.reasons.find(l=>l.code==="brand_spoof_host"||l.code==="brand_lookalike_host")?.detail??null,i=o.reasons.some(l=>l.code==="ip_hostname"),a=o.reasons.some(l=>l.code==="punycode_host"),c=null;try{c=new URL(e.url)}catch{c=null}let g=c?.protocol==="http:",m=`${e.title}
++${e.textSample}`.toLowerCase();for(let l of M)if(m.includes(l.toLowerCase())){s+=10,n.push({code:"urgency_language",weight:10,detail:l});break}let u=e.passwordFields??0,O=e.forms??0,_=e.crossSiteFormActions??0;if(u>0&&_>0)s+=45,n.push({code:"cross_site_credential_submit",weight:45,detail:`crossSiteForms=${_}`});else if(u>0&&(r||i||g||a)){let l=a?30:25;s+=l,n.push({code:"password_on_risky_origin",weight:l,detail:`passwordFields=${u}`})}else u>0&&O>0&&s>=20&&(s+=12,n.push({code:"credential_form",weight:12}));if(u>0){let l=h.find(N=>m.includes(N));l&&!r&&(s+=15,n.push({code:"brand_credential_page",weight:15,detail:l}))}return R(e.url,s,n)}var P=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,o]=e.split("@");return`${t.slice(0,1)}***@${o}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function X(e){let t=0,o=!1;for(let s=e.length-1;s>=0;s--){let n=Number(e[s]);o&&(n*=2,n>9&&(n-=9)),t+=n,o=!o}return t%10===0}function d(e){let t=[];for(let r of P){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!X(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let o=[],s=-1;for(let r of t)r.start<s||(o.push(r),s=r.end);let n=e;for(let r=o.length-1;r>=0;r--){let i=o[r],a=P.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:o,redacted:n,blocked:o.length>0}}function x(e,t){let o=d(e);return o.blocked?t?{allowed:!0,payload:o.redacted,scan:o}:{allowed:!1,payload:o.redacted,scan:o}:{allowed:!0,payload:e,scan:o}}var G=2048,Z=512,J=6e3;function V(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(d(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(d(t).redacted)}}).join("/")}function Q(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=V(t.pathname);let o=[...new Set(t.searchParams.keys())];t.search="";for(let s of o)t.searchParams.append(d(s).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),d(t.toString()).redacted.slice(0,G)}catch{return"[INVALID_URL]"}}function C(e){return{url:Q(e.url),title:d(e.title).redacted.slice(0,Z),textSample:d(e.textSample).redacted.slice(0,J),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function q(e,t){let o=C(e),s=o.textSample.replace(/\s+/g," ").trim(),n=s.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(o.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(o.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=s.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function A(e,t){let o=C(e),s=q(o,t);return{schemaVersion:1,sanitizedSnapshot:o,heuristic:{summary:s.summary,bullets:s.bullets,risks:s.risks}}}function T(e){try{let t=new URL(e),o=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(o)}catch{return!0}}var L=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function E(e,t=[]){let o;try{o=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let s=new Set([...L,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...o.searchParams.keys()])s.has(i.toLowerCase())&&(n.push(i),o.searchParams.delete(i));o.hash&&/utm_|fbclid|gclid/i.test(o.hash)&&(o.hash="",n.push("#tracking-hash"));let r=o.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var ee=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),te=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),oe=["_gcl_"],se=["_ga_","_gat_","__utm","mp_","_hj","amp_"],ne=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],re=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],ie=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],ae=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],ce=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function p(e,t){return t.reduce((o,s)=>e.includes(s)?o+1:o,0)}function v(e,t){return t.some(o=>e.startsWith(o))}var le=new Set(["c_user","datr","sb","xs","presence"]),ue=["facebook.com","messenger.com"];function de(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return ne.some(o=>t===o||t.endsWith(`.${o}`))}function me(e,t){let o=e.toLowerCase();if(!le.has(o))return!1;let s=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ue.some(n=>s===n||s.endsWith(`.${n}`))}function I(e){let t=e.name.toLowerCase(),o=e.domain.toLowerCase();if(me(t,o))return"necessary";if(ee.has(t)||v(t,oe))return"advertising";if(te.has(t)||v(t,se))return"analytics";if(de(o))return"advertising";let s=`${t} ${o}`,n={necessary:p(s,ce),functionality:p(s,ae),analytics:p(s,ie),advertising:p(s,re)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var pe=8192,ge=4096,he=64*1024;function fe(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>pe||t.title.length>ge||t.textSample.length>he)return!1;for(let o of["forms","passwordFields"]){let s=t[o];if(s!==void 0&&(typeof s!="number"||!Number.isSafeInteger(s)||s<0||s>1e6))return!1}return!0}function _e(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ye(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return f(e.url??"");case"assessPhish":return w(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return d(e.text??"");case"gateOutbound":return x(e.text??"",!!e.userApproved);case"sanitizeUrl":return E(e.url??"");case"classifyCookie":return{category:I({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:T(e.url??"")};case"prepareSummary":return fe(e.snapshot)?A(e.snapshot,_e(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function ke(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ye(t))}catch(t){let o=t instanceof Error?t.message:String(t);return JSON.stringify({error:o})}}var be=globalThis;be.aegisEvaluate=ke;})();
+ 
+ )AEGISJS";
+diff --git a/chrome/browser/aegis/threat_feed_updater.cc b/chrome/browser/aegis/threat_feed_updater.cc
+new file mode 100644
+index 0000000000..07e429aa45
+--- /dev/null
++++ b/chrome/browser/aegis/threat_feed_updater.cc
+@@ -0,0 +1,268 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/threat_feed_updater.h"
++
++#include <algorithm>
++#include <optional>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "base/files/file_util.h"
++#include "base/files/important_file_writer.h"
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "base/strings/string_split.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/task/thread_pool.h"
++#include "base/time/time.h"
++#include "chrome/browser/after_startup_task_utils.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
++#include "net/base/load_flags.h"
++#include "net/base/net_errors.h"
++#include "net/http/http_response_headers.h"
++#include "net/http/http_status_code.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++constexpr char kCertPlUrl[] = "https://hole.cert.pl/domains/v2/domains.txt";
++constexpr char kThreatDir[] = "AegisThreatFeeds";
++constexpr char kThreatFile[] = "threat-index.bin";
++constexpr size_t kMaxCacheBytes = 40 * 1024 * 1024;
++constexpr size_t kMaxFeedBytes = 4 * 1024 * 1024;
++constexpr size_t kMaxCertEntries = 250'000;
++constexpr size_t kMinimumCertEntries = 1'000;
++constexpr base::TimeDelta kCertFreshness = base::Hours(2);
++constexpr base::TimeDelta kRetryDelay = base::Hours(1);
++
++constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
++    net::DefineNetworkTrafficAnnotation("aegis_cert_pl_threat_feed", R"(
++      semantics {
++        sender: "GCSA-aegis"
++        description:
++          "Downloads the public CERT.PL warning-list domains used by the "
++          "local Aegis phishing reputation index."
++        trigger:
++          "After startup when the local threat index is missing or expired."
++        data: "None. Only the public feed URL is requested."
++        destination: WEBSITE
++        internal { contacts { email: "aegis@gcsa.local" } }
++        user_data { type: NONE }
++        last_reviewed: "2026-08-25"
++      }
++      policy {
++        cookies_allowed: NO
++        setting: "Disabled when Aegis phishing protection is disabled."
++        policy_exception_justification: "Not yet implemented."
++      })");
++
++int64_t NowUnixSeconds() {
++  return (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++}
++
++base::FilePath IndexPath(Profile* profile) {
++  return profile->GetPath().AppendASCII(kThreatDir).AppendASCII(kThreatFile);
++}
++
++std::optional<ThreatIndex> ReadIndex(base::FilePath path) {
++  std::string bytes;
++  if (!base::ReadFileToStringWithMaxSize(path, &bytes, kMaxCacheBytes)) {
++    return std::nullopt;
++  }
++  return ParseThreatIndex(base::as_byte_span(bytes));
++}
++
++std::optional<ThreatIndex> CompileCertFeed(std::string body,
++                                           std::optional<ThreatIndex> current,
++                                           int64_t now) {
++  std::vector<ThreatEntry> entries;
++  if (current && now <= current->expires_at) {
++    entries.reserve(current->entries.size());
++    for (ThreatEntry entry : current->entries) {
++      entry.sources &= ~kThreatSourceCertPl;
++      if (entry.sources != 0) {
++        entries.push_back(std::move(entry));
++      }
++    }
++  }
++
++  size_t accepted = 0;
++  size_t rejected = 0;
++  for (std::string_view line : base::SplitStringPiece(
++           body, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++    if (line.starts_with('#')) {
++      continue;
++    }
++    if (accepted >= kMaxCertEntries) {
++      return std::nullopt;
++    }
++    std::optional<ThreatEntry> entry =
++        MakeThreatHostEntry(line, kThreatSourceCertPl);
++    if (!entry) {
++      ++rejected;
++      if (rejected > 10) {
++        return std::nullopt;
++      }
++      continue;
++    }
++    entries.push_back(std::move(*entry));
++    ++accepted;
++  }
++  if (accepted < kMinimumCertEntries) {
++    return std::nullopt;
++  }
++
++  int64_t expires_at = now + kCertFreshness.InSeconds();
++  if (current && now <= current->expires_at) {
++    expires_at = std::min(expires_at, current->expires_at);
++  }
++  return ThreatIndex{.generated_at = now,
++                     .expires_at = expires_at,
++                     .entries = MergeThreatEntries(std::move(entries))};
++}
++
++}  // namespace
++
++ThreatFeedUpdater::ThreatFeedUpdater(Profile* profile) : profile_(profile) {}
++
++ThreatFeedUpdater::~ThreatFeedUpdater() = default;
++
++void ThreatFeedUpdater::LoadFromDisk() {
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
++      base::BindOnce(&ReadIndex, IndexPath(profile_)),
++      base::BindOnce(&ThreatFeedUpdater::OnLoadedFromDisk,
++                     weak_factory_.GetWeakPtr()));
++}
++
++std::optional<ThreatMatch> ThreatFeedUpdater::Match(const GURL& url,
++                                                    int64_t now) const {
++  return index_ ? index_->Match(url, now) : std::nullopt;
++}
++
++void ThreatFeedUpdater::OnLoadedFromDisk(std::optional<ThreatIndex> index) {
++  if (index) {
++    LOG(INFO) << "Aegis: loaded threat reputation index, entries="
++              << index->entries.size();
++    index_ = std::move(index);
++  }
++  MaybeUpdate();
++}
++
++void ThreatFeedUpdater::MaybeUpdate() {
++  timer_.Stop();
++  if (updating_) {
++    return;
++  }
++  const int64_t now = NowUnixSeconds();
++  if (index_ && now <= index_->expires_at) {
++    Schedule(base::Seconds(std::max<int64_t>(60, index_->expires_at - now)));
++    return;
++  }
++  AfterStartupTaskUtils::PostTask(
++      FROM_HERE, base::SequencedTaskRunner::GetCurrentDefault(),
++      base::BindOnce(&ThreatFeedUpdater::UpdateNow,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void ThreatFeedUpdater::UpdateNow() {
++  if (updating_ || !g_browser_process ||
++      !g_browser_process->shared_url_loader_factory()) {
++    Schedule(kRetryDelay);
++    return;
++  }
++  updating_ = true;
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = GURL(kCertPlUrl);
++  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++  request->redirect_mode = network::mojom::RedirectMode::kError;
++  request->load_flags = net::LOAD_BYPASS_CACHE | net::LOAD_DISABLE_CACHE;
++  request->priority = net::IDLE;
++  loader_ =
++      network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
++  loader_->SetAllowHttpErrorResults(true);
++  loader_->SetRetryOptions(
++      2, network::SimpleURLLoader::RetryMode::RETRY_ON_NETWORK_CHANGE);
++  loader_->DownloadToString(
++      g_browser_process->shared_url_loader_factory().get(),
++      base::BindOnce(&ThreatFeedUpdater::OnFetched, weak_factory_.GetWeakPtr()),
++      kMaxFeedBytes);
++}
++
++void ThreatFeedUpdater::OnFetched(std::optional<std::string> body) {
++  const int net_error = loader_ ? loader_->NetError() : net::ERR_FAILED;
++  const net::HttpResponseHeaders* headers =
++      loader_ && loader_->ResponseInfo()
++          ? loader_->ResponseInfo()->headers.get()
++          : nullptr;
++  const int status = headers ? headers->response_code() : 0;
++  loader_.reset();
++  if (net_error != net::OK || status != net::HTTP_OK || !body) {
++    updating_ = false;
++    LOG(WARNING) << "Aegis: CERT.PL threat feed update failed, net="
++                 << net_error << " http=" << status;
++    Schedule(kRetryDelay);
++    return;
++  }
++
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::TaskPriority::BEST_EFFORT},
++      base::BindOnce(&CompileCertFeed, std::move(*body), index_,
++                     NowUnixSeconds()),
++      base::BindOnce(&ThreatFeedUpdater::OnCompiled,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void ThreatFeedUpdater::OnCompiled(std::optional<ThreatIndex> index) {
++  updating_ = false;
++  if (!index) {
++    LOG(WARNING) << "Aegis: rejected malformed or undersized CERT.PL feed";
++    Schedule(kRetryDelay);
++    return;
++  }
++  Persist(*index);
++  LOG(INFO) << "Aegis: updated threat reputation index, entries="
++            << index->entries.size();
++  index_ = std::move(index);
++  MaybeUpdate();
++}
++
++void ThreatFeedUpdater::Persist(const ThreatIndex& index) {
++  const base::FilePath path = IndexPath(profile_);
++  const std::string bytes = SerializeThreatIndex(index);
++  if (bytes.empty()) {
++    return;
++  }
++  base::ThreadPool::PostTask(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
++      base::BindOnce(
++          [](base::FilePath path, std::string bytes) {
++            if (base::CreateDirectory(path.DirName())) {
++              base::ImportantFileWriter::WriteFileAtomically(path, bytes);
++            }
++          },
++          path, bytes));
++}
++
++void ThreatFeedUpdater::Schedule(base::TimeDelta delay) {
++  if (delay < base::Minutes(1)) {
++    delay = base::Minutes(1);
++  }
++  if (delay > base::Hours(24)) {
++    delay = base::Hours(24);
++  }
++  timer_.Start(FROM_HERE, delay,
++               base::BindOnce(&ThreatFeedUpdater::MaybeUpdate,
++                              weak_factory_.GetWeakPtr()));
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/threat_feed_updater.h b/chrome/browser/aegis/threat_feed_updater.h
+new file mode 100644
+index 0000000000..bb5f1b354e
+--- /dev/null
++++ b/chrome/browser/aegis/threat_feed_updater.h
+@@ -0,0 +1,57 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_THREAT_FEED_UPDATER_H_
++#define CHROME_BROWSER_AEGIS_THREAT_FEED_UPDATER_H_
++
++#include <cstdint>
++#include <memory>
++#include <optional>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
++#include "chrome/common/aegis/threat_feed_index.h"
++
++class GURL;
++class Profile;
++
++namespace network {
++class SimpleURLLoader;
++}
++
++namespace aegis {
++
++// Loads an immutable local multi-source reputation index and refreshes the
++// public CERT.PL domain source in the background. PhishTank and URLhaus are
++// imported by the offline compiler because their production feeds require
++// larger downloads or credentials that must not be embedded in Chromium.
++class ThreatFeedUpdater {
++ public:
++  explicit ThreatFeedUpdater(Profile* profile);
++  ThreatFeedUpdater(const ThreatFeedUpdater&) = delete;
++  ThreatFeedUpdater& operator=(const ThreatFeedUpdater&) = delete;
++  ~ThreatFeedUpdater();
++
++  void LoadFromDisk();
++  std::optional<ThreatMatch> Match(const GURL& url, int64_t now) const;
++
++ private:
++  void OnLoadedFromDisk(std::optional<ThreatIndex> index);
++  void MaybeUpdate();
++  void UpdateNow();
++  void OnFetched(std::optional<std::string> body);
++  void OnCompiled(std::optional<ThreatIndex> index);
++  void Persist(const ThreatIndex& index);
++  void Schedule(base::TimeDelta delay);
++
++  raw_ptr<Profile> profile_;
++  std::optional<ThreatIndex> index_;
++  bool updating_ = false;
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++  base::OneShotTimer timer_;
++  base::WeakPtrFactory<ThreatFeedUpdater> weak_factory_{this};
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_THREAT_FEED_UPDATER_H_
+diff --git a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
+index 650d160899..d4906c9413 100644
+--- a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
++++ b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
+@@ -110,7 +110,7 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+   MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
+   MOCK_METHOD(void,
+               CollectAegisPageSignals,
+-              (CollectAegisPageSignalsCallback),
++              (bool, CollectAegisPageSignalsCallback),
+               (override));
+   MOCK_METHOD(void, LoadBlockedPlugins, (const std::string&), (override));
+   MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
+@@ -158,8 +158,6 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+ 
+ }  // namespace
+ 
+-
+-
+ using AttemptLoginDetails =
+     optimization_guide::proto::ActorLoginQuality_AttemptLoginDetails;
+ 
+diff --git a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
+index 8c540d59a5..4d7b59bda7 100644
+--- a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
++++ b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
+@@ -101,7 +101,7 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+   MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
+   MOCK_METHOD(void,
+               CollectAegisPageSignals,
+-              (CollectAegisPageSignalsCallback),
++              (bool, CollectAegisPageSignalsCallback),
+               (override));
+   MOCK_METHOD(void, LoadBlockedPlugins, (const std::string&), (override));
+   MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
+diff --git a/chrome/browser/resources/aegis/policy_worker.ts b/chrome/browser/resources/aegis/policy_worker.ts
+index 9c7c55744b..298c9bde9d 100644
+--- a/chrome/browser/resources/aegis/policy_worker.ts
++++ b/chrome/browser/resources/aegis/policy_worker.ts
+@@ -1,7 +1,7 @@
+ // Copyright 2026 GCSA
+ // Generated by apps/browser/scripts/sync-policy-worker.sh — do not edit.
+ // @ts-nocheck
+-"use strict";(()=>{var g=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],h=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var L=g,E=h,v=55,I=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function N(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function O(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function D(e){return e.includes("xn--")}function U(e){let t=e.toLowerCase().split("."),s=t.length>=2?t[t.length-2]:t[0];for(let o of E){if(s===o)continue;if(t.some(r=>r===o||r.startsWith(`${o}-`)||r.endsWith(`-${o}`)||r.includes(`-${o}-`)))return o}return null}function f(e,t,s){let o=Math.min(100,t);return{score:o,severity:N(o),reasons:s,shouldBlock:o>=v,url:e}}function p(e,t=[]){let s;try{s=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let o=s.hostname.toLowerCase();if(t.some(c=>o===c.toLowerCase()||o.endsWith(`.${c.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;s.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),O(o)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:o})),D(o)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:o})),o.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:o}));let i=o.split(".").pop()??"";L.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=U(o);return a&&(r+=30,n.push({code:"brand_spoof_host",weight:30,detail:a})),(s.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),f(e,r,n)}function _(e,t=[]){let s=p(e.url,t);if(s.reasons[0]?.code==="allowlisted"||s.reasons[0]?.code==="invalid_url")return s;let o=s.score,n=[...s.reasons],r=s.reasons.find(u=>u.code==="brand_spoof_host")?.detail??null,i=s.reasons.some(u=>u.code==="ip_hostname"),a=null;try{a=new URL(e.url)}catch{a=null}let c=a?.protocol==="http:",A=`${e.title}
+-${e.textSample}`.toLowerCase();for(let u of I)if(A.includes(u.toLowerCase())){o+=10,n.push({code:"urgency_language",weight:10,detail:u});break}let m=e.passwordFields??0,T=e.forms??0;return m>0&&(r||i||c)?(o+=25,n.push({code:"password_on_risky_origin",weight:25,detail:`passwordFields=${m}`})):m>0&&T>0&&o>=20&&(o+=12,n.push({code:"credential_form",weight:12})),f(e.url,o,n)}var y=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,s]=e.split("@");return`${t.slice(0,1)}***@${s}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function H(e){let t=0,s=!1;for(let o=e.length-1;o>=0;o--){let n=Number(e[o]);s&&(n*=2,n>9&&(n-=9)),t+=n,s=!s}return t%10===0}function l(e){let t=[];for(let r of y){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!H(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let s=[],o=-1;for(let r of t)r.start<o||(s.push(r),o=r.end);let n=e;for(let r=s.length-1;r>=0;r--){let i=s[r],a=y.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:s,redacted:n,blocked:s.length>0}}function k(e,t){let s=l(e);return s.blocked?t?{allowed:!0,payload:s.redacted,scan:s}:{allowed:!1,payload:s.redacted,scan:s}:{allowed:!0,payload:e,scan:s}}var z=2048,M=512,j=6e3;function W(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(l(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(l(t).redacted)}}).join("/")}function $(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=W(t.pathname);let s=[...new Set(t.searchParams.keys())];t.search="";for(let o of s)t.searchParams.append(l(o).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),l(t.toString()).redacted.slice(0,z)}catch{return"[INVALID_URL]"}}function S(e){return{url:$(e.url),title:l(e.title).redacted.slice(0,M),textSample:l(e.textSample).redacted.slice(0,j),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function F(e,t){let s=S(e),o=s.textSample.replace(/\s+/g," ").trim(),n=o.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(s.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(s.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=o.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function b(e,t){let s=S(e),o=F(s,t);return{schemaVersion:1,sanitizedSnapshot:s,heuristic:{summary:o.summary,bullets:o.bullets,risks:o.risks}}}function R(e){try{let t=new URL(e),s=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(s)}catch{return!0}}var P=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function x(e,t=[]){let s;try{s=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let o=new Set([...P,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...s.searchParams.keys()])o.has(i.toLowerCase())&&(n.push(i),s.searchParams.delete(i));s.hash&&/utm_|fbclid|gclid/i.test(s.hash)&&(s.hash="",n.push("#tracking-hash"));let r=s.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var B=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),K=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),Y=["_gcl_"],X=["_ga_","_gat_","__utm","mp_","_hj","amp_"],G=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],Z=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],J=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],V=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],Q=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function d(e,t){return t.reduce((s,o)=>e.includes(o)?s+1:s,0)}function w(e,t){return t.some(s=>e.startsWith(s))}var q=new Set(["c_user","datr","sb","xs","presence"]),ee=["facebook.com","messenger.com"];function te(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return G.some(s=>t===s||t.endsWith(`.${s}`))}function se(e,t){let s=e.toLowerCase();if(!q.has(s))return!1;let o=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ee.some(n=>o===n||o.endsWith(`.${n}`))}function C(e){let t=e.name.toLowerCase(),s=e.domain.toLowerCase();if(se(t,s))return"necessary";if(B.has(t)||w(t,Y))return"advertising";if(K.has(t)||w(t,X))return"analytics";if(te(s))return"advertising";let o=`${t} ${s}`,n={necessary:d(o,Q),functionality:d(o,V),analytics:d(o,J),advertising:d(o,Z)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var oe=8192,re=4096,ne=64*1024;function ie(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>oe||t.title.length>re||t.textSample.length>ne)return!1;for(let s of["forms","passwordFields"]){let o=t[s];if(o!==void 0&&(typeof o!="number"||!Number.isSafeInteger(o)||o<0||o>1e6))return!1}return!0}function ae(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ce(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return p(e.url??"");case"assessPhish":return _(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return l(e.text??"");case"gateOutbound":return k(e.text??"",!!e.userApproved);case"sanitizeUrl":return x(e.url??"");case"classifyCookie":return{category:C({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:R(e.url??"")};case"prepareSummary":return ie(e.snapshot)?b(e.snapshot,ae(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function le(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ce(t))}catch(t){let s=t instanceof Error?t.message:String(t);return JSON.stringify({error:s})}}var ue=globalThis;ue.aegisEvaluate=le;})();
++"use strict";(()=>{var y=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],k=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var D=y,h=k,z=new Set(["bit.ly","buff.ly","cutt.ly","is.gd","ow.ly","rb.gy","rebrand.ly","shorturl.at","t.co","tinyurl.com"]),H=["account","auth","confirm","login","password","secure","signin","verify","wallet"],U=55,M=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function j(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function W(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function $(e){return e.includes("xn--")}function F(e){return e.replace(/0/g,"o").replace(/1/g,"i").replace(/3/g,"e").replace(/4/g,"a").replace(/5/g,"s").replace(/7/g,"t")}function B(e,t){if(Math.abs(e.length-t.length)>1)return!1;if(e===t)return!0;let o=0,s=0,n=0;for(;o<e.length&&s<t.length;){if(e[o]===t[s]){o+=1,s+=1;continue}if(n+=1,n>1)return!1;e.length>t.length?o+=1:(t.length>e.length||(o+=1),s+=1)}return n+ +(o<e.length||s<t.length)<=1}function b(e){let t=e.toLowerCase().split("."),o=new Set(["co.uk","com.au","com.br","com.cn","com.hk","co.jp","co.kr"]),s=t.slice(-2).join("."),n=o.has(s)?t.length-3:t.length-2;return t[Math.max(0,n)]??""}function S(e){try{return decodeURIComponent(e)}catch{return e}}function K(e){let t=e.toLowerCase().split("."),o=b(e);for(let s of h){if(o===s)continue;if(t.some(i=>i===s||i.startsWith(`${s}-`)||i.endsWith(`-${s}`)||i.includes(`-${s}-`)))return{brand:s,reason:"brand_spoof_host"};if(s.length<5)continue;if(t.some(i=>{if(i.length<5||i===s)return!1;let a=F(i);return a===s||B(a,s)}))return{brand:s,reason:"brand_lookalike_host"}}return null}function Y(e,t){let o=b(t),s=S(e).toLowerCase().split(/[^a-z0-9]+/);for(let n of h)if(n!==o&&s.includes(n))return n;return null}function R(e,t,o){let s=Math.min(100,t);return{score:s,severity:j(s),reasons:o,shouldBlock:s>=U,url:e}}function f(e,t=[]){let o;try{o=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let s=o.hostname.toLowerCase();if(t.some(u=>s===u.toLowerCase()||s.endsWith(`.${u.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;o.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),W(s)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:s})),$(s)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:s})),s.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:s}));let i=s.split(".").pop()??"";D.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=K(s);if(a){let u=a.reason==="brand_lookalike_host"?40:30;r+=u,n.push({code:a.reason,weight:u,detail:a.brand})}let c=Y(o.pathname,s);c&&(r+=15,n.push({code:"brand_in_path",weight:15,detail:c}));let g=S(o.pathname).toLowerCase(),m=H.find(u=>g.split(/[^a-z0-9]+/).includes(u));return m&&(r+=10,n.push({code:"credential_path",weight:10,detail:m})),z.has(s)&&(r+=15,n.push({code:"shortened_url",weight:15,detail:s})),(o.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),R(e,r,n)}function w(e,t=[]){let o=f(e.url,t);if(o.reasons[0]?.code==="allowlisted"||o.reasons[0]?.code==="invalid_url")return o;let s=o.score,n=[...o.reasons],r=o.reasons.find(l=>l.code==="brand_spoof_host"||l.code==="brand_lookalike_host")?.detail??null,i=o.reasons.some(l=>l.code==="ip_hostname"),a=o.reasons.some(l=>l.code==="punycode_host"),c=null;try{c=new URL(e.url)}catch{c=null}let g=c?.protocol==="http:",m=`${e.title}
++${e.textSample}`.toLowerCase();for(let l of M)if(m.includes(l.toLowerCase())){s+=10,n.push({code:"urgency_language",weight:10,detail:l});break}let u=e.passwordFields??0,O=e.forms??0,_=e.crossSiteFormActions??0;if(u>0&&_>0)s+=45,n.push({code:"cross_site_credential_submit",weight:45,detail:`crossSiteForms=${_}`});else if(u>0&&(r||i||g||a)){let l=a?30:25;s+=l,n.push({code:"password_on_risky_origin",weight:l,detail:`passwordFields=${u}`})}else u>0&&O>0&&s>=20&&(s+=12,n.push({code:"credential_form",weight:12}));if(u>0){let l=h.find(N=>m.includes(N));l&&!r&&(s+=15,n.push({code:"brand_credential_page",weight:15,detail:l}))}return R(e.url,s,n)}var P=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,o]=e.split("@");return`${t.slice(0,1)}***@${o}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function X(e){let t=0,o=!1;for(let s=e.length-1;s>=0;s--){let n=Number(e[s]);o&&(n*=2,n>9&&(n-=9)),t+=n,o=!o}return t%10===0}function d(e){let t=[];for(let r of P){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!X(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let o=[],s=-1;for(let r of t)r.start<s||(o.push(r),s=r.end);let n=e;for(let r=o.length-1;r>=0;r--){let i=o[r],a=P.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:o,redacted:n,blocked:o.length>0}}function x(e,t){let o=d(e);return o.blocked?t?{allowed:!0,payload:o.redacted,scan:o}:{allowed:!1,payload:o.redacted,scan:o}:{allowed:!0,payload:e,scan:o}}var G=2048,Z=512,J=6e3;function V(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(d(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(d(t).redacted)}}).join("/")}function Q(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=V(t.pathname);let o=[...new Set(t.searchParams.keys())];t.search="";for(let s of o)t.searchParams.append(d(s).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),d(t.toString()).redacted.slice(0,G)}catch{return"[INVALID_URL]"}}function C(e){return{url:Q(e.url),title:d(e.title).redacted.slice(0,Z),textSample:d(e.textSample).redacted.slice(0,J),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function q(e,t){let o=C(e),s=o.textSample.replace(/\s+/g," ").trim(),n=s.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(o.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(o.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=s.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function A(e,t){let o=C(e),s=q(o,t);return{schemaVersion:1,sanitizedSnapshot:o,heuristic:{summary:s.summary,bullets:s.bullets,risks:s.risks}}}function T(e){try{let t=new URL(e),o=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(o)}catch{return!0}}var L=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function E(e,t=[]){let o;try{o=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let s=new Set([...L,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...o.searchParams.keys()])s.has(i.toLowerCase())&&(n.push(i),o.searchParams.delete(i));o.hash&&/utm_|fbclid|gclid/i.test(o.hash)&&(o.hash="",n.push("#tracking-hash"));let r=o.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var ee=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),te=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),oe=["_gcl_"],se=["_ga_","_gat_","__utm","mp_","_hj","amp_"],ne=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],re=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],ie=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],ae=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],ce=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function p(e,t){return t.reduce((o,s)=>e.includes(s)?o+1:o,0)}function v(e,t){return t.some(o=>e.startsWith(o))}var le=new Set(["c_user","datr","sb","xs","presence"]),ue=["facebook.com","messenger.com"];function de(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return ne.some(o=>t===o||t.endsWith(`.${o}`))}function me(e,t){let o=e.toLowerCase();if(!le.has(o))return!1;let s=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ue.some(n=>s===n||s.endsWith(`.${n}`))}function I(e){let t=e.name.toLowerCase(),o=e.domain.toLowerCase();if(me(t,o))return"necessary";if(ee.has(t)||v(t,oe))return"advertising";if(te.has(t)||v(t,se))return"analytics";if(de(o))return"advertising";let s=`${t} ${o}`,n={necessary:p(s,ce),functionality:p(s,ae),analytics:p(s,ie),advertising:p(s,re)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var pe=8192,ge=4096,he=64*1024;function fe(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>pe||t.title.length>ge||t.textSample.length>he)return!1;for(let o of["forms","passwordFields"]){let s=t[o];if(s!==void 0&&(typeof s!="number"||!Number.isSafeInteger(s)||s<0||s>1e6))return!1}return!0}function _e(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ye(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return f(e.url??"");case"assessPhish":return w(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return d(e.text??"");case"gateOutbound":return x(e.text??"",!!e.userApproved);case"sanitizeUrl":return E(e.url??"");case"classifyCookie":return{category:I({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:T(e.url??"")};case"prepareSummary":return fe(e.snapshot)?A(e.snapshot,_e(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function ke(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ye(t))}catch(t){let o=t instanceof Error?t.message:String(t);return JSON.stringify({error:o})}}var be=globalThis;be.aegisEvaluate=ke;})();
+ 
+ export {};
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index f9995c7430..ea38362345 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -433,22 +433,26 @@ void AegisUIHandler::HandleSummarizeActiveTab(const base::ListValue& args) {
+     return;
+   }
+   chrome::mojom::ChromeRenderFrame* raw = client->get();
+-  raw->CollectAegisPageSignals(base::BindOnce(
+-      [](std::unique_ptr<mojo::AssociatedRemote<
+-             chrome::mojom::ChromeRenderFrame>> keep_alive,
+-         base::WeakPtr<AegisUIHandler> self, std::string callback_id,
+-         content::GlobalRenderFrameHostId frame_id, int64_t document_sequence,
+-         std::string url, int32_t password_fields, int32_t forms,
+-         const std::string& title, const std::string& text_sample) {
+-        if (!self) {
+-          return;
+-        }
+-        self->OnPageSignals(std::move(callback_id), frame_id, document_sequence,
+-                            std::move(url), password_fields, forms, title,
+-                            text_sample);
+-      },
+-      std::move(client), weak_factory_.GetWeakPtr(), callback_id, frame_id,
+-      document_sequence, url));
++  raw->CollectAegisPageSignals(
++      /*include_text=*/true,
++      base::BindOnce(
++          [](std::unique_ptr<mojo::AssociatedRemote<
++                 chrome::mojom::ChromeRenderFrame>> keep_alive,
++             base::WeakPtr<AegisUIHandler> self, std::string callback_id,
++             content::GlobalRenderFrameHostId frame_id,
++             int64_t document_sequence, std::string url,
++             int32_t password_fields, int32_t forms,
++             const std::vector<std::string>& form_actions,
++             const std::string& title, const std::string& text_sample) {
++            if (!self) {
++              return;
++            }
++            self->OnPageSignals(std::move(callback_id), frame_id,
++                                document_sequence, std::move(url),
++                                password_fields, forms, title, text_sample);
++          },
++          std::move(client), weak_factory_.GetWeakPtr(), callback_id, frame_id,
++          document_sequence, url));
+ }
+ 
+ void AegisUIHandler::OnPageSignals(std::string callback_id,
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index f8afb6436e..533f70eda1 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -36,11 +36,14 @@ source_set("aegis") {
+     "pref_names.h",
+     "site_control.cc",
+     "site_control.h",
++    "threat_feed_index.cc",
++    "threat_feed_index.h",
+     "tracking_query_params.cc",
+     "tracking_query_params.h",
+   ]
+   deps = [
+     "//base",
++    "//crypto",
+     "//net",
+     "//services/network/public/cpp",
+     "//third_party/aegis_policy:policy_snapshot",
+@@ -60,12 +63,13 @@ test("aegis_unittests") {
+     "filter_list_unittest.cc",
+     "phish_score_unittest.cc",
+     "site_control_unittest.cc",
++    "threat_feed_index_unittest.cc",
+     "tracking_query_params_unittest.cc",
+   ]
+   deps = [
+     ":aegis",
+-    "//base/test:test_support",
+     "//base/test:run_all_unittests",
++    "//base/test:test_support",
+     "//net",
+     "//services/network/public/cpp",
+     "//services/network/public/mojom:url_loader_base",
+diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
+index 440a996587..7c2fde31cc 100644
+--- a/chrome/common/aegis/phish_score.cc
++++ b/chrome/common/aegis/phish_score.cc
+@@ -10,17 +10,19 @@
+ #include <string_view>
+ #include <vector>
+ 
++#include "base/containers/span.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+ namespace {
+ 
+-#include "chrome/common/aegis/generated/suspicious_phish_tlds.inc"
+ #include "chrome/common/aegis/generated/phish_brand_keywords.inc"
++#include "chrome/common/aegis/generated/suspicious_phish_tlds.inc"
+ 
+ bool HasSuspiciousTld(std::string_view tld) {
+   for (std::string_view candidate : kSuspiciousPhishTlds) {
+@@ -31,6 +33,16 @@ bool HasSuspiciousTld(std::string_view tld) {
+   return false;
+ }
+ 
++constexpr std::string_view kShortenerHosts[] = {
++    "bit.ly", "buff.ly",    "cutt.ly",     "is.gd", "ow.ly",
++    "rb.gy",  "rebrand.ly", "shorturl.at", "t.co",  "tinyurl.com",
++};
++
++constexpr std::string_view kCredentialPathWords[] = {
++    "account", "auth",   "confirm", "login",  "password",
++    "secure",  "signin", "verify",  "wallet",
++};
++
+ bool LabelSpoofsBrand(std::string_view label, std::string_view brand) {
+   if (label == brand) {
+     return true;
+@@ -44,27 +56,147 @@ bool LabelSpoofsBrand(std::string_view label, std::string_view brand) {
+   return label.find(base::StrCat({"-", brand, "-"})) != std::string_view::npos;
+ }
+ 
+-std::string BrandSpoofInHost(std::string_view host) {
++std::string NormalizeLookalike(std::string_view label) {
++  std::string normalized(label);
++  for (char& c : normalized) {
++    switch (c) {
++      case '0':
++        c = 'o';
++        break;
++      case '1':
++        c = 'i';
++        break;
++      case '3':
++        c = 'e';
++        break;
++      case '4':
++        c = 'a';
++        break;
++      case '5':
++        c = 's';
++        break;
++      case '7':
++        c = 't';
++        break;
++      default:
++        break;
++    }
++  }
++  return normalized;
++}
++
++bool IsEditDistanceAtMostOne(std::string_view left, std::string_view right) {
++  if (left.size() > right.size() + 1 || right.size() > left.size() + 1) {
++    return false;
++  }
++  size_t left_index = 0;
++  size_t right_index = 0;
++  int edits = 0;
++  while (left_index < left.size() && right_index < right.size()) {
++    if (left[left_index] == right[right_index]) {
++      ++left_index;
++      ++right_index;
++      continue;
++    }
++    if (++edits > 1) {
++      return false;
++    }
++    if (left.size() > right.size()) {
++      ++left_index;
++    } else if (right.size() > left.size()) {
++      ++right_index;
++    } else {
++      ++left_index;
++      ++right_index;
++    }
++  }
++  if (left_index < left.size() || right_index < right.size()) {
++    ++edits;
++  }
++  return edits <= 1;
++}
++
++std::string RegistrableLabel(std::string_view host) {
++  std::string registrable =
++      net::registry_controlled_domains::GetDomainAndRegistry(
++          std::string(host),
++          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
++  if (!registrable.empty()) {
++    return registrable.substr(0, registrable.find('.'));
++  }
++  const std::vector<std::string_view> labels = base::SplitStringPiece(
++      host, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  return labels.empty()
++             ? std::string()
++             : std::string(labels.size() >= 2 ? *std::next(labels.rbegin())
++                                              : labels.back());
++}
++
++struct BrandHostMatch {
++  std::string brand;
++  std::string reason;
++};
++
++BrandHostMatch BrandSpoofInHost(std::string_view host) {
+   const std::vector<std::string_view> labels = base::SplitStringPiece(
+       host, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+   if (labels.empty()) {
+-    return std::string();
++    return BrandHostMatch();
+   }
+-  const std::string_view sld =
+-      labels.size() >= 2 ? *std::next(labels.rbegin()) : labels.back();
++  const std::string sld = RegistrableLabel(host);
+   for (std::string_view brand : kPhishBrandKeywords) {
+     if (sld == brand) {
+       continue;
+     }
+     for (std::string_view label : labels) {
+       if (LabelSpoofsBrand(label, brand)) {
+-        return std::string(brand);
++        return {std::string(brand), "brand_spoof_host"};
+       }
+     }
++    if (brand.size() < 5) {
++      continue;
++    }
++    for (std::string_view label : labels) {
++      if (label.size() < 5 || label == brand) {
++        continue;
++      }
++      const std::string normalized = NormalizeLookalike(label);
++      if (normalized == brand || IsEditDistanceAtMostOne(normalized, brand)) {
++        return {std::string(brand), "brand_lookalike_host"};
++      }
++    }
++  }
++  return BrandHostMatch();
++}
++
++std::string FindToken(std::string_view value,
++                      base::span<const std::string_view> candidates) {
++  const std::vector<std::string_view> tokens = base::SplitStringPiece(
++      value, "/-_.", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  for (std::string_view candidate : candidates) {
++    if (std::ranges::find(tokens, candidate) != tokens.end()) {
++      return std::string(candidate);
++    }
+   }
+   return std::string();
+ }
+ 
++std::string BrandInPath(std::string_view path, std::string_view host) {
++  const std::string sld = RegistrableLabel(host);
++  const std::vector<std::string_view> tokens = base::SplitStringPiece(
++      path, "/-_.", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  for (std::string_view brand : kPhishBrandKeywords) {
++    if (brand != sld && std::ranges::find(tokens, brand) != tokens.end()) {
++      return std::string(brand);
++    }
++  }
++  return std::string();
++}
++
++bool IsShortenerHost(std::string_view host) {
++  return std::ranges::find(kShortenerHosts, host) != std::end(kShortenerHosts);
++}
++
+ }  // namespace
+ 
+ PhishAssessment AssessPhishingUrl(const GURL& url) {
+@@ -109,10 +241,27 @@ PhishAssessment AssessPhishingUrl(const GURL& url) {
+     }
+   }
+ 
+-  const std::string spoof = BrandSpoofInHost(host);
+-  if (!spoof.empty()) {
+-    score += 30;
+-    out.reasons.push_back({"brand_spoof_host", 30, spoof});
++  const BrandHostMatch spoof = BrandSpoofInHost(host);
++  if (!spoof.brand.empty()) {
++    const int weight = spoof.reason == "brand_lookalike_host" ? 40 : 30;
++    score += weight;
++    out.reasons.push_back({spoof.reason, weight, spoof.brand});
++  }
++
++  const std::string path = base::ToLowerASCII(url.path());
++  const std::string path_brand = BrandInPath(path, host);
++  if (!path_brand.empty()) {
++    score += 15;
++    out.reasons.push_back({"brand_in_path", 15, path_brand});
++  }
++  const std::string credential_word = FindToken(path, kCredentialPathWords);
++  if (!credential_word.empty()) {
++    score += 10;
++    out.reasons.push_back({"credential_path", 10, credential_word});
++  }
++  if (IsShortenerHost(host)) {
++    score += 15;
++    out.reasons.push_back({"shortened_url", 15, host});
+   }
+ 
+   const std::string spec = url.possibly_invalid_spec();
+@@ -129,10 +278,18 @@ PhishAssessment AssessPhishingUrl(const GURL& url) {
+ namespace {
+ 
+ constexpr std::string_view kUrgencyPhrases[] = {
+-    "verify your account", "confirm your identity", "suspend",
+-    "unusual activity",    "act now",               "password expired",
+-    "login immediately",   "账户异常",              "立即验证",
+-    "密码过期",            "異常登入",              "立即驗證",
++    "verify your account",
++    "confirm your identity",
++    "suspend",
++    "unusual activity",
++    "act now",
++    "password expired",
++    "login immediately",
++    "账户异常",
++    "立即验证",
++    "密码过期",
++    "異常登入",
++    "立即驗證",
+ };
+ 
+ bool HasReason(const PhishAssessment& assessment, std::string_view code) {
+@@ -189,25 +346,48 @@ PhishAssessment ApplyPageSignals(PhishAssessment assessment,
+   }
+ 
+   const bool risky = HasReason(assessment, "brand_spoof_host") ||
++                     HasReason(assessment, "brand_lookalike_host") ||
+                      HasReason(assessment, "ip_hostname") ||
+-                     HasReason(assessment, "insecure_http");
+-  if (page.password_fields > 0 && risky) {
+-    score += 25;
++                     HasReason(assessment, "insecure_http") ||
++                     HasReason(assessment, "punycode_host") ||
++                     HasReason(assessment, "threat_feed_domain_match");
++  if (page.password_fields > 0 && page.cross_site_form_actions > 0) {
++    score += 45;
++    assessment.reasons.push_back(
++        {"cross_site_credential_submit", 45,
++         base::StrCat({"crossSiteForms=",
++                       base::NumberToString(page.cross_site_form_actions)})});
++  } else if (page.password_fields > 0 && risky) {
++    const int weight = HasReason(assessment, "punycode_host") ? 30 : 25;
++    score += weight;
+     assessment.reasons.push_back(
+-        {"password_on_risky_origin", 25,
+-         base::StrCat({"passwordFields=",
+-                       base::NumberToString(page.password_fields)})});
++        {"password_on_risky_origin", weight,
++         base::StrCat(
++             {"passwordFields=", base::NumberToString(page.password_fields)})});
+   } else if (page.password_fields > 0 && page.forms > 0 && score >= 20) {
+     score += 12;
+     assessment.reasons.push_back({"credential_form", 12, std::string()});
+   }
+ 
++  if (page.password_fields > 0 && !HasReason(assessment, "brand_spoof_host") &&
++      !HasReason(assessment, "brand_lookalike_host")) {
++    for (std::string_view brand : kPhishBrandKeywords) {
++      if (haystack.find(brand) != std::string::npos) {
++        score += 15;
++        assessment.reasons.push_back(
++            {"brand_credential_page", 15, std::string(brand)});
++        break;
++      }
++    }
++  }
++
+   score = std::min(100, score);
+   const int nudge = LightweightNudge(haystack);
+   if (nudge > 0) {
+     const int blended =
+         std::min(100, static_cast<int>(std::round(score + nudge * 0.3)));
+-    assessment.reasons.push_back({"lightweight_model_blend", nudge, std::string()});
++    assessment.reasons.push_back(
++        {"lightweight_model_blend", nudge, std::string()});
+     score = blended;
+   }
+ 
+diff --git a/chrome/common/aegis/phish_score.h b/chrome/common/aegis/phish_score.h
+index 8b1891d675..285f8853d6 100644
+--- a/chrome/common/aegis/phish_score.h
++++ b/chrome/common/aegis/phish_score.h
+@@ -31,6 +31,7 @@ struct PageSignals {
+   std::string text_sample;
+   int password_fields = 0;
+   int forms = 0;
++  int cross_site_form_actions = 0;
+ };
+ 
+ // URL-only heuristic score (no page body). Seed-host matching is applied by
+diff --git a/chrome/common/aegis/phish_score_unittest.cc b/chrome/common/aegis/phish_score_unittest.cc
+index 571d8c774f..a7c1ae12e3 100644
+--- a/chrome/common/aegis/phish_score_unittest.cc
++++ b/chrome/common/aegis/phish_score_unittest.cc
+@@ -34,11 +34,39 @@ TEST(PhishScoreTest, BlocksBrandSpoofOnSuspiciousTld) {
+   const PhishAssessment result =
+       AssessPhishingUrl(GURL("http://paypal-secure-login.tk/signin"));
+ 
+-  EXPECT_EQ(result.score, 60);
++  EXPECT_EQ(result.score, 70);
+   EXPECT_TRUE(result.should_block);
+   EXPECT_TRUE(HasReason(result, "insecure_http"));
+   EXPECT_TRUE(HasReason(result, "suspicious_tld"));
+   EXPECT_TRUE(HasReason(result, "brand_spoof_host"));
++  EXPECT_TRUE(HasReason(result, "credential_path"));
++}
++
++TEST(PhishScoreTest, DetectsDigitSubstitutionBrandLookalike) {
++  const PhishAssessment result =
++      AssessPhishingUrl(GURL("https://micros0ft.com/"));
++
++  EXPECT_EQ(result.score, 40);
++  EXPECT_FALSE(result.should_block);
++  EXPECT_TRUE(HasReason(result, "brand_lookalike_host"));
++}
++
++TEST(PhishScoreTest, ShortenerIsContextNotStandaloneBlock) {
++  const PhishAssessment result =
++      AssessPhishingUrl(GURL("https://bit.ly/example"));
++
++  EXPECT_EQ(result.score, 15);
++  EXPECT_FALSE(result.should_block);
++  EXPECT_TRUE(HasReason(result, "shortened_url"));
++}
++
++TEST(PhishScoreTest, DetectsBrandAndCredentialWordsInPath) {
++  const PhishAssessment result =
++      AssessPhishingUrl(GURL("https://example.com/paypal/login"));
++
++  EXPECT_EQ(result.score, 25);
++  EXPECT_TRUE(HasReason(result, "brand_in_path"));
++  EXPECT_TRUE(HasReason(result, "credential_path"));
+ }
+ 
+ TEST(PhishScoreTest, AllowsOrdinaryHttpsUrl) {
+@@ -77,6 +105,43 @@ TEST(PhishScoreTest, InvalidAssessmentCannotBeWeakenedByPageSignals) {
+   EXPECT_TRUE(HasReason(result, "invalid_url"));
+ }
+ 
++TEST(PhishScoreTest, BlocksCrossSitePasswordSubmission) {
++  PhishAssessment result = AssessPhishingUrl(GURL("https://example.com/login"));
++  result = ApplyPageSignals(std::move(result),
++                            PageSignals{.title = "Account login",
++                                        .text_sample = "Enter your password",
++                                        .password_fields = 1,
++                                        .forms = 1,
++                                        .cross_site_form_actions = 1});
++
++  EXPECT_TRUE(result.should_block);
++  EXPECT_TRUE(HasReason(result, "cross_site_credential_submit"));
++}
++
++TEST(PhishScoreTest, DomainFeedMatchNeedsCredentialEvidenceToBlock) {
++  PhishAssessment domain_match;
++  domain_match.score = 35;
++  domain_match.reasons.push_back({"threat_feed_domain_match", 35, "CERT.PL"});
++
++  PhishAssessment result = ApplyPageSignals(
++      std::move(domain_match),
++      PageSignals{.title = "Sign in", .password_fields = 1, .forms = 1});
++
++  EXPECT_TRUE(result.should_block);
++  EXPECT_TRUE(HasReason(result, "password_on_risky_origin"));
++}
++
++TEST(PhishScoreTest, BlocksPunycodePasswordPageWithoutUrgencyCopy) {
++  PhishAssessment result = AssessPhishingUrl(GURL("https://xn--pple-43d.com/"));
++  result = ApplyPageSignals(
++      std::move(result),
++      PageSignals{.title = "Sign in", .password_fields = 1, .forms = 1});
++
++  EXPECT_GE(result.score, kPhishBlockThreshold);
++  EXPECT_TRUE(result.should_block);
++  EXPECT_TRUE(HasReason(result, "password_on_risky_origin"));
++}
++
+ TEST(BuiltinPhishHostsTest, MatchesSeedHostAndPathWithoutSiblingFalsePositive) {
+   EXPECT_TRUE(
+       MatchesBuiltinPhishRule(GURL("https://paypal-secure-login.com/signin")));
+diff --git a/chrome/common/aegis/threat_feed_index.cc b/chrome/common/aegis/threat_feed_index.cc
+new file mode 100644
+index 0000000000..cd34e53904
+--- /dev/null
++++ b/chrome/common/aegis/threat_feed_index.cc
+@@ -0,0 +1,245 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/threat_feed_index.h"
++
++#include <algorithm>
++#include <compare>
++#include <limits>
++#include <utility>
++
++#include "base/containers/span.h"
++#include "base/strings/string_util.h"
++#include "crypto/hash.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++constexpr std::string_view kMagic = "AEGISTI1";
++constexpr uint32_t kSchemaVersion = 1;
++constexpr size_t kHeaderBytes = 36;
++constexpr size_t kRecordBytes = 36;
++constexpr uint32_t kMaxEntries = 1'000'000;
++constexpr uint64_t kMaxFreshnessSeconds = 7 * 24 * 60 * 60;
++constexpr uint8_t kKnownSourceMask =
++    kThreatSourcePhishTank | kThreatSourceUrlhaus | kThreatSourceCertPl;
++
++uint32_t ReadUint32(base::span<const uint8_t> bytes, size_t offset) {
++  return static_cast<uint32_t>(bytes[offset]) |
++         (static_cast<uint32_t>(bytes[offset + 1]) << 8) |
++         (static_cast<uint32_t>(bytes[offset + 2]) << 16) |
++         (static_cast<uint32_t>(bytes[offset + 3]) << 24);
++}
++
++uint64_t ReadUint64(base::span<const uint8_t> bytes, size_t offset) {
++  uint64_t value = 0;
++  for (size_t index = 0; index < 8; ++index) {
++    value |= static_cast<uint64_t>(bytes[offset + index]) << (index * 8);
++  }
++  return value;
++}
++
++void AppendUint32(uint32_t value, std::string* output) {
++  for (size_t index = 0; index < 4; ++index) {
++    output->push_back(static_cast<char>((value >> (index * 8)) & 0xff));
++  }
++}
++
++void AppendUint64(uint64_t value, std::string* output) {
++  for (size_t index = 0; index < 8; ++index) {
++    output->push_back(static_cast<char>((value >> (index * 8)) & 0xff));
++  }
++}
++
++std::array<uint8_t, 32> Digest(std::string_view prefix,
++                               std::string_view value) {
++  return crypto::hash::Sha256(std::string(prefix) + std::string(value));
++}
++
++std::string CanonicalHost(std::string_view host) {
++  std::string cleaned = base::ToLowerASCII(host);
++  while (base::EndsWith(cleaned, ".")) {
++    cleaned.pop_back();
++  }
++  if (cleaned.empty() || cleaned.find('.') == std::string::npos) {
++    return std::string();
++  }
++  const GURL parsed("https://" + cleaned + "/");
++  return parsed.is_valid() && parsed.has_host() ? std::string(parsed.host())
++                                                : std::string();
++}
++
++ThreatEntry SearchKey(ThreatEntryKind kind,
++                      const std::array<uint8_t, 32>& digest) {
++  return {.kind = kind, .sources = 0, .digest = digest};
++}
++
++std::optional<ThreatEntry> FindEntry(const std::vector<ThreatEntry>& entries,
++                                     ThreatEntryKind kind,
++                                     const std::array<uint8_t, 32>& digest) {
++  const ThreatEntry key = SearchKey(kind, digest);
++  auto found = std::lower_bound(entries.begin(), entries.end(), key);
++  if (found == entries.end() || found->kind != kind ||
++      found->digest != digest) {
++    return std::nullopt;
++  }
++  return *found;
++}
++
++}  // namespace
++
++std::optional<ThreatEntry> MakeThreatHostEntry(std::string_view host,
++                                               uint8_t sources) {
++  const std::string canonical = CanonicalHost(host);
++  if (canonical.empty() || sources == 0) {
++    return std::nullopt;
++  }
++  return ThreatEntry{.kind = ThreatEntryKind::kHost,
++                     .sources = sources,
++                     .digest = Digest("h:", canonical)};
++}
++
++std::optional<ThreatEntry> MakeThreatUrlEntry(const GURL& url,
++                                              uint8_t sources) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_host() ||
++      sources == 0) {
++    return std::nullopt;
++  }
++  return ThreatEntry{.kind = ThreatEntryKind::kUrl,
++                     .sources = sources,
++                     .digest = Digest("u:", url.GetWithoutRef().spec())};
++}
++
++std::vector<ThreatEntry> MergeThreatEntries(std::vector<ThreatEntry> entries) {
++  std::sort(entries.begin(), entries.end());
++  std::vector<ThreatEntry> merged;
++  merged.reserve(entries.size());
++  for (ThreatEntry& entry : entries) {
++    if (entry.sources == 0) {
++      continue;
++    }
++    if (!merged.empty() && merged.back().kind == entry.kind &&
++        merged.back().digest == entry.digest) {
++      merged.back().sources |= entry.sources;
++      continue;
++    }
++    merged.push_back(std::move(entry));
++  }
++  return merged;
++}
++
++std::optional<ThreatMatch> ThreatIndex::Match(const GURL& url,
++                                              int64_t now) const {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || !url.has_host()) {
++    return std::nullopt;
++  }
++  if (const auto url_entry =
++          FindEntry(entries, ThreatEntryKind::kUrl,
++                    Digest("u:", url.GetWithoutRef().spec()))) {
++    return ThreatMatch{.kind = url_entry->kind,
++                       .sources = url_entry->sources,
++                       .stale = now > expires_at};
++  }
++
++  std::string host = base::ToLowerASCII(url.host());
++  while (host.find('.') != std::string::npos) {
++    if (const auto host_entry =
++            FindEntry(entries, ThreatEntryKind::kHost, Digest("h:", host))) {
++      return ThreatMatch{.kind = host_entry->kind,
++                         .sources = host_entry->sources,
++                         .stale = now > expires_at};
++    }
++    const size_t dot = host.find('.');
++    if (dot == std::string::npos) {
++      break;
++    }
++    host.erase(0, dot + 1);
++  }
++  return std::nullopt;
++}
++
++std::optional<ThreatIndex> ParseThreatIndex(base::span<const uint8_t> bytes) {
++  if (bytes.size() < kHeaderBytes ||
++      std::string_view(reinterpret_cast<const char*>(bytes.data()),
++                       kMagic.size()) != kMagic ||
++      ReadUint32(bytes, 8) != kSchemaVersion) {
++    return std::nullopt;
++  }
++  const uint64_t generated = ReadUint64(bytes, 12);
++  const uint64_t expires = ReadUint64(bytes, 20);
++  const uint32_t count = ReadUint32(bytes, 28);
++  if (ReadUint32(bytes, 32) != 0 || generated == 0 || expires < generated ||
++      expires - generated > kMaxFreshnessSeconds ||
++      generated > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
++      expires > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
++      count > kMaxEntries ||
++      bytes.size() !=
++          kHeaderBytes + static_cast<size_t>(count) * kRecordBytes) {
++    return std::nullopt;
++  }
++
++  ThreatIndex index{.generated_at = static_cast<int64_t>(generated),
++                    .expires_at = static_cast<int64_t>(expires)};
++  index.entries.reserve(count);
++  for (uint32_t record = 0; record < count; ++record) {
++    const size_t offset =
++        kHeaderBytes + static_cast<size_t>(record) * kRecordBytes;
++    const uint8_t kind_value = bytes[offset];
++    const uint8_t sources = bytes[offset + 1];
++    if ((kind_value != static_cast<uint8_t>(ThreatEntryKind::kHost) &&
++         kind_value != static_cast<uint8_t>(ThreatEntryKind::kUrl)) ||
++        sources == 0 || (sources & ~kKnownSourceMask) != 0 ||
++        bytes[offset + 2] != 0 || bytes[offset + 3] != 0) {
++      return std::nullopt;
++    }
++    ThreatEntry entry{.kind = static_cast<ThreatEntryKind>(kind_value),
++                      .sources = sources};
++    std::copy_n(bytes.begin() + offset + 4, entry.digest.size(),
++                entry.digest.begin());
++    if (!index.entries.empty() && !(index.entries.back() < entry)) {
++      return std::nullopt;
++    }
++    index.entries.push_back(std::move(entry));
++  }
++  return index;
++}
++
++std::string SerializeThreatIndex(const ThreatIndex& index) {
++  const std::vector<ThreatEntry> entries = MergeThreatEntries(index.entries);
++  if (index.generated_at <= 0 || index.expires_at < index.generated_at ||
++      entries.size() > kMaxEntries) {
++    return std::string();
++  }
++  std::string output;
++  output.reserve(kHeaderBytes + entries.size() * kRecordBytes);
++  output.append(kMagic);
++  AppendUint32(kSchemaVersion, &output);
++  AppendUint64(static_cast<uint64_t>(index.generated_at), &output);
++  AppendUint64(static_cast<uint64_t>(index.expires_at), &output);
++  AppendUint32(static_cast<uint32_t>(entries.size()), &output);
++  AppendUint32(0, &output);
++  for (const ThreatEntry& entry : entries) {
++    output.push_back(static_cast<char>(entry.kind));
++    output.push_back(static_cast<char>(entry.sources));
++    output.append(2, '\0');
++    output.append(reinterpret_cast<const char*>(entry.digest.data()),
++                  entry.digest.size());
++  }
++  return output;
++}
++
++std::vector<std::string> ThreatSourceNames(uint8_t sources) {
++  std::vector<std::string> names;
++  if (sources & kThreatSourcePhishTank) {
++    names.push_back("PhishTank");
++  }
++  if (sources & kThreatSourceUrlhaus) {
++    names.push_back("URLhaus");
++  }
++  if (sources & kThreatSourceCertPl) {
++    names.push_back("CERT.PL");
++  }
++  return names;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/threat_feed_index.h b/chrome/common/aegis/threat_feed_index.h
+new file mode 100644
+index 0000000000..a1583c179c
+--- /dev/null
++++ b/chrome/common/aegis/threat_feed_index.h
+@@ -0,0 +1,69 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_COMMON_AEGIS_THREAT_FEED_INDEX_H_
++#define CHROME_COMMON_AEGIS_THREAT_FEED_INDEX_H_
++
++#include <array>
++#include <compare>
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/containers/span.h"
++
++class GURL;
++
++namespace aegis {
++
++inline constexpr uint8_t kThreatSourcePhishTank = 1 << 0;
++inline constexpr uint8_t kThreatSourceUrlhaus = 1 << 1;
++inline constexpr uint8_t kThreatSourceCertPl = 1 << 2;
++
++enum class ThreatEntryKind : uint8_t {
++  kHost = 1,
++  kUrl = 2,
++};
++
++struct ThreatEntry {
++  ThreatEntryKind kind = ThreatEntryKind::kHost;
++  uint8_t sources = 0;
++  std::array<uint8_t, 32> digest{};
++
++  auto operator<=>(const ThreatEntry& other) const {
++    if (kind != other.kind) {
++      return static_cast<uint8_t>(kind) <=> static_cast<uint8_t>(other.kind);
++    }
++    return digest <=> other.digest;
++  }
++  bool operator==(const ThreatEntry& other) const = default;
++};
++
++struct ThreatMatch {
++  ThreatEntryKind kind = ThreatEntryKind::kHost;
++  uint8_t sources = 0;
++  bool stale = false;
++};
++
++struct ThreatIndex {
++  int64_t generated_at = 0;
++  int64_t expires_at = 0;
++  std::vector<ThreatEntry> entries;
++
++  std::optional<ThreatMatch> Match(const GURL& url, int64_t now) const;
++};
++
++std::optional<ThreatEntry> MakeThreatHostEntry(std::string_view host,
++                                               uint8_t sources);
++std::optional<ThreatEntry> MakeThreatUrlEntry(const GURL& url, uint8_t sources);
++std::vector<ThreatEntry> MergeThreatEntries(std::vector<ThreatEntry> entries);
++
++std::optional<ThreatIndex> ParseThreatIndex(base::span<const uint8_t> bytes);
++std::string SerializeThreatIndex(const ThreatIndex& index);
++
++std::vector<std::string> ThreatSourceNames(uint8_t sources);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_THREAT_FEED_INDEX_H_
+diff --git a/chrome/common/aegis/threat_feed_index_unittest.cc b/chrome/common/aegis/threat_feed_index_unittest.cc
+new file mode 100644
+index 0000000000..b4b94e76ae
+--- /dev/null
++++ b/chrome/common/aegis/threat_feed_index_unittest.cc
+@@ -0,0 +1,75 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/threat_feed_index.h"
++
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/containers/span.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++TEST(ThreatFeedIndexTest, RoundTripsAndMatchesHostSuffixAndExactUrl) {
++  std::vector<ThreatEntry> entries;
++  entries.push_back(*MakeThreatHostEntry("evil.example", kThreatSourceCertPl));
++  entries.push_back(*MakeThreatUrlEntry(
++      GURL("https://compromised.example/phish?id=1#fragment"),
++      kThreatSourcePhishTank));
++  ThreatIndex original{
++      .generated_at = 100, .expires_at = 200, .entries = std::move(entries)};
++
++  const std::string bytes = SerializeThreatIndex(original);
++  const auto parsed = ParseThreatIndex(base::as_byte_span(bytes));
++
++  ASSERT_TRUE(parsed);
++  const auto host_match =
++      parsed->Match(GURL("https://sub.evil.example/login"), 150);
++  ASSERT_TRUE(host_match);
++  EXPECT_EQ(host_match->sources, kThreatSourceCertPl);
++  EXPECT_FALSE(host_match->stale);
++  const auto url_match =
++      parsed->Match(GURL("https://compromised.example/phish?id=1#other"), 201);
++  ASSERT_TRUE(url_match);
++  EXPECT_EQ(url_match->kind, ThreatEntryKind::kUrl);
++  EXPECT_TRUE(url_match->stale);
++  EXPECT_FALSE(
++      parsed->Match(GURL("https://compromised.example/phish?id=2"), 150));
++}
++
++TEST(ThreatFeedIndexTest, MergesSourcesForSameDigest) {
++  ThreatEntry first = *MakeThreatHostEntry("evil.example", kThreatSourceCertPl);
++  ThreatEntry second =
++      *MakeThreatHostEntry("evil.example", kThreatSourcePhishTank);
++  const std::vector<ThreatEntry> merged =
++      MergeThreatEntries({std::move(first), std::move(second)});
++
++  ASSERT_EQ(merged.size(), 1u);
++  EXPECT_EQ(merged[0].sources, kThreatSourceCertPl | kThreatSourcePhishTank);
++}
++
++TEST(ThreatFeedIndexTest, RejectsSingleLabelHostRules) {
++  EXPECT_FALSE(MakeThreatHostEntry("com", kThreatSourceCertPl));
++  EXPECT_FALSE(MakeThreatHostEntry("localhost", kThreatSourceCertPl));
++}
++
++TEST(ThreatFeedIndexTest, RejectsTruncatedOrUnsortedIndex) {
++  ThreatIndex original{
++      .generated_at = 100,
++      .expires_at = 200,
++      .entries = {*MakeThreatHostEntry("a.example", kThreatSourceCertPl),
++                  *MakeThreatHostEntry("b.example", kThreatSourceCertPl)}};
++  std::string bytes = SerializeThreatIndex(original);
++  ASSERT_FALSE(bytes.empty());
++
++  EXPECT_FALSE(
++      ParseThreatIndex(base::as_byte_span(bytes).first(bytes.size() - 1)));
++  std::swap_ranges(bytes.begin() + 36, bytes.begin() + 72, bytes.begin() + 72);
++  EXPECT_FALSE(ParseThreatIndex(base::as_byte_span(bytes)));
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/common/chrome_render_frame.mojom b/chrome/common/chrome_render_frame.mojom
+index efaa533860..a5139225cf 100644
+--- a/chrome/common/chrome_render_frame.mojom
++++ b/chrome/common/chrome_render_frame.mojom
+@@ -91,10 +91,12 @@ interface ChromeRenderFrame {
+   // Requests the Media Feed Url from the renderer (if the page has one).
+   GetMediaFeedURL() => (url.mojom.Url? url);
+ 
+-  // Collects password/form counts and a short text sample for Aegis phishing
+-  // page-sense scoring. Main-frame only; subframes return zeros.
+-  CollectAegisPageSignals() =>
+-      (int32 password_fields, int32 forms, string title, string text_sample);
++  // Collects bounded password/form signals for Aegis phishing page-sense
++  // scoring. Text is read only for an already-risky URL or a credential page.
++  // Main-frame only; subframes return zeros.
++  CollectAegisPageSignals(bool include_text) =>
++      (int32 password_fields, int32 forms, array<string> form_actions,
++       string title, string text_sample);
+ 
+   // Tells the render frame to load any blocked plugins matching the given
+   // identifier (empty string matches all).
+diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
+index 9cbb78c72a..4c4bdc9d79 100644
+--- a/chrome/renderer/chrome_render_frame_observer.cc
++++ b/chrome/renderer/chrome_render_frame_observer.cc
+@@ -65,6 +65,7 @@
+ #include "third_party/blink/public/web/web_document_loader.h"
+ #include "third_party/blink/public/web/web_element.h"
+ #include "third_party/blink/public/web/web_element_collection.h"
++#include "third_party/blink/public/web/web_form_element.h"
+ #include "third_party/blink/public/web/web_frame_content_dumper.h"
+ #include "third_party/blink/public/web/web_input_element.h"
+ #include "third_party/blink/public/web/web_local_frame.h"
+@@ -110,7 +111,6 @@ using content::RenderFrame;
+ // Any text beyond this point will be clipped.
+ static const size_t kMaxIndexChars = 65535;
+ 
+-
+ // For a page that auto-refreshes, we still show the bubble, if
+ // the refresh delay is less than this value (in seconds).
+ static constexpr base::TimeDelta kLocationChangeInterval = base::Seconds(10);
+@@ -203,8 +203,9 @@ ChromeRenderFrameObserver::ChromeRenderFrameObserver(
+           base::Unretained(this)));
+ 
+   // Don't do anything else for subframes.
+-  if (!render_frame->IsMainFrame())
++  if (!render_frame->IsMainFrame()) {
+     return;
++  }
+ 
+ #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+   SetClientSidePhishingDetection();
+@@ -249,8 +250,9 @@ void ChromeRenderFrameObserver::ReadyToCommitNavigation(
+     WebDocumentLoader* document_loader) {
+   // Execute cache clear operations that were postponed until a navigation
+   // event (including tab reload).
+-  if (render_frame()->IsMainFrame() && web_cache_impl_)
++  if (render_frame()->IsMainFrame() && web_cache_impl_) {
+     web_cache_impl_->ExecutePendingClearCache();
++  }
+ 
+   // Let translate_agent do any preparatory work before the new document loads.
+   if (translate_agent_) {
+@@ -279,8 +281,9 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
+ void ChromeRenderFrameObserver::DidFinishLoad() {
+   WebLocalFrame* frame = render_frame()->GetWebFrame();
+   // Don't do anything for subframes.
+-  if (frame->Parent() || frame->IsInFencedFrameTree())
++  if (frame->Parent() || frame->IsInFencedFrameTree()) {
+     return;
++  }
+ 
+   GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
+   if (!osdd_url.is_empty()) {
+@@ -296,16 +299,18 @@ void ChromeRenderFrameObserver::DidFinishLoad() {
+ void ChromeRenderFrameObserver::DidCreateNewDocument() {
+ #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+   DCHECK(render_frame());
+-  if (!render_frame()->IsMainFrame())
++  if (!render_frame()->IsMainFrame()) {
+     return;
++  }
+ 
+   DCHECK(render_frame()->GetWebFrame());
+   blink::WebDocumentLoader* doc_loader =
+       render_frame()->GetWebFrame()->GetDocumentLoader();
+   DCHECK(doc_loader);
+ 
+-  if (!doc_loader->HasBeenLoadedAsWebArchive())
++  if (!doc_loader->HasBeenLoadedAsWebArchive()) {
+     return;
++  }
+ 
+   // Connect to Mojo service on browser to notify it of the page's archive
+   // properties.
+@@ -329,8 +334,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
+   WebLocalFrame* frame = render_frame()->GetWebFrame();
+ 
+   // Don't do anything for subframes.
+-  if (frame->Parent())
++  if (frame->Parent()) {
+     return;
++  }
+ 
+   static crash_reporter::CrashKeyString<8> view_count_key("view-count");
+   view_count_key.Set(base::NumberToString(blink::WebView::GetWebViewCount()));
+@@ -338,8 +344,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
+ #if !BUILDFLAG(IS_ANDROID)
+   if (render_frame()->GetEnabledBindings().HasAny(
+           content::kWebUIBindingsPolicySet)) {
+-    for (const auto& script : webui_javascript_)
++    for (const auto& script : webui_javascript_) {
+       render_frame()->ExecuteJavaScript(script);
++    }
+     webui_javascript_.clear();
+   }
+ #endif
+@@ -616,27 +623,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+ }
+ 
+ void ChromeRenderFrameObserver::CollectAegisPageSignals(
++    bool include_text,
+     CollectAegisPageSignalsCallback callback) {
++  constexpr int32_t kMaxForms = 64;
++  constexpr int32_t kMaxFormActions = 32;
++  constexpr int32_t kMaxInputsVisited = 128;
+   int32_t password_fields = 0;
+   int32_t forms = 0;
++  std::vector<std::string> form_actions;
+   std::string title;
+   std::string text_sample;
+ 
+-  WebLocalFrame* frame = render_frame() ? render_frame()->GetWebFrame() : nullptr;
++  WebLocalFrame* frame =
++      render_frame() ? render_frame()->GetWebFrame() : nullptr;
+   if (frame && !frame->Parent() && !frame->IsInFencedFrameTree()) {
+     blink::WebDocument doc = frame->GetDocument();
+     title = doc.Title().Utf8();
+-    forms = static_cast<int32_t>(doc.Forms().size());
+-    blink::WebElement body = doc.Body();
+-    if (!body.IsNull()) {
+-      text_sample = body.TextContentAbridged(2048).Utf8();
++    const std::vector<blink::WebFormElement> page_forms = doc.Forms();
++    forms = std::min(kMaxForms, static_cast<int32_t>(page_forms.size()));
++    for (const blink::WebFormElement& form : page_forms) {
++      if (form_actions.size() >= static_cast<size_t>(kMaxFormActions)) {
++        break;
++      }
++      const std::string action = form.Action().Utf8();
++      if (!action.empty()) {
++        form_actions.push_back(action);
++      }
+     }
+     blink::WebElement root = doc.DocumentElement();
+     if (!root.IsNull()) {
+       blink::WebElementCollection inputs =
+           root.GetElementsByHTMLTagName("input");
++      int32_t inputs_visited = 0;
+       for (blink::WebElement el = inputs.FirstItem(); !el.IsNull();
+            el = inputs.NextItem()) {
++        if (++inputs_visited > kMaxInputsVisited) {
++          break;
++        }
+         const blink::WebInputElement input =
+             el.DynamicTo<blink::WebInputElement>();
+         if (input.IsNull()) {
+@@ -648,8 +671,15 @@ void ChromeRenderFrameObserver::CollectAegisPageSignals(
+         }
+       }
+     }
++    if (include_text || password_fields > 0) {
++      blink::WebElement body = doc.Body();
++      if (!body.IsNull()) {
++        text_sample = body.TextContentAbridged(2048).Utf8();
++      }
++    }
+   }
+-  std::move(callback).Run(password_fields, forms, title, text_sample);
++  std::move(callback).Run(password_fields, forms, form_actions, title,
++                          text_sample);
+ }
+ 
+ void ChromeRenderFrameObserver::LoadBlockedPlugins(
+@@ -879,11 +909,13 @@ bool ChromeRenderFrameObserver::NeedsDownscale(
+     const gfx::Size& original_image_size,
+     int32_t requested_image_min_area_pixels,
+     const gfx::Size& requested_image_max_size) {
+-  if (original_image_size.GetArea() < requested_image_min_area_pixels)
++  if (original_image_size.GetArea() < requested_image_min_area_pixels) {
+     return false;
++  }
+   if (original_image_size.width() <= requested_image_max_size.width() &&
+-      original_image_size.height() <= requested_image_max_size.height())
++      original_image_size.height() <= requested_image_max_size.height()) {
+     return false;
++  }
+   return true;
+ }
+ 
+@@ -892,14 +924,16 @@ SkBitmap ChromeRenderFrameObserver::Downscale(
+     const SkBitmap& image,
+     int requested_image_min_area_pixels,
+     const gfx::Size& requested_image_max_size) {
+-  if (image.isNull())
++  if (image.isNull()) {
+     return SkBitmap();
++  }
+ 
+   gfx::Size image_size(image.width(), image.height());
+ 
+   if (!NeedsDownscale(image_size, requested_image_min_area_pixels,
+-                      requested_image_max_size))
++                      requested_image_max_size)) {
+     return image;
++  }
+ 
+   gfx::SizeF scaled_size = gfx::SizeF(image_size);
+ 
+diff --git a/chrome/renderer/chrome_render_frame_observer.h b/chrome/renderer/chrome_render_frame_observer.h
+index a56470f053..fae7302131 100644
+--- a/chrome/renderer/chrome_render_frame_observer.h
++++ b/chrome/renderer/chrome_render_frame_observer.h
+@@ -127,8 +127,9 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
+   void SetCCTClientHeader(const std::string& header) override;
+ #endif
+   void GetMediaFeedURL(GetMediaFeedURLCallback callback) override;
+-  void CollectAegisPageSignals(CollectAegisPageSignalsCallback callback)
+-      override;
++  void CollectAegisPageSignals(
++      bool include_text,
++      CollectAegisPageSignalsCallback callback) override;
+   void LoadBlockedPlugins(const std::string& identifier) override;
+   void SetShouldDeferMediaLoad(bool should_defer) override;
+ 
+diff --git a/third_party/aegis_policy/policy_worker.js b/third_party/aegis_policy/policy_worker.js
+index 6c37f1a09f..65ffcaa9f5 100644
+--- a/third_party/aegis_policy/policy_worker.js
++++ b/third_party/aegis_policy/policy_worker.js
+@@ -1,2 +1,2 @@
+-"use strict";(()=>{var g=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],h=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var L=g,E=h,v=55,I=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function N(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function O(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function D(e){return e.includes("xn--")}function U(e){let t=e.toLowerCase().split("."),s=t.length>=2?t[t.length-2]:t[0];for(let o of E){if(s===o)continue;if(t.some(r=>r===o||r.startsWith(`${o}-`)||r.endsWith(`-${o}`)||r.includes(`-${o}-`)))return o}return null}function f(e,t,s){let o=Math.min(100,t);return{score:o,severity:N(o),reasons:s,shouldBlock:o>=v,url:e}}function p(e,t=[]){let s;try{s=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let o=s.hostname.toLowerCase();if(t.some(c=>o===c.toLowerCase()||o.endsWith(`.${c.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;s.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),O(o)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:o})),D(o)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:o})),o.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:o}));let i=o.split(".").pop()??"";L.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=U(o);return a&&(r+=30,n.push({code:"brand_spoof_host",weight:30,detail:a})),(s.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),f(e,r,n)}function _(e,t=[]){let s=p(e.url,t);if(s.reasons[0]?.code==="allowlisted"||s.reasons[0]?.code==="invalid_url")return s;let o=s.score,n=[...s.reasons],r=s.reasons.find(u=>u.code==="brand_spoof_host")?.detail??null,i=s.reasons.some(u=>u.code==="ip_hostname"),a=null;try{a=new URL(e.url)}catch{a=null}let c=a?.protocol==="http:",A=`${e.title}
+-${e.textSample}`.toLowerCase();for(let u of I)if(A.includes(u.toLowerCase())){o+=10,n.push({code:"urgency_language",weight:10,detail:u});break}let m=e.passwordFields??0,T=e.forms??0;return m>0&&(r||i||c)?(o+=25,n.push({code:"password_on_risky_origin",weight:25,detail:`passwordFields=${m}`})):m>0&&T>0&&o>=20&&(o+=12,n.push({code:"credential_form",weight:12})),f(e.url,o,n)}var y=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,s]=e.split("@");return`${t.slice(0,1)}***@${s}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function H(e){let t=0,s=!1;for(let o=e.length-1;o>=0;o--){let n=Number(e[o]);s&&(n*=2,n>9&&(n-=9)),t+=n,s=!s}return t%10===0}function l(e){let t=[];for(let r of y){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!H(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let s=[],o=-1;for(let r of t)r.start<o||(s.push(r),o=r.end);let n=e;for(let r=s.length-1;r>=0;r--){let i=s[r],a=y.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:s,redacted:n,blocked:s.length>0}}function k(e,t){let s=l(e);return s.blocked?t?{allowed:!0,payload:s.redacted,scan:s}:{allowed:!1,payload:s.redacted,scan:s}:{allowed:!0,payload:e,scan:s}}var z=2048,M=512,j=6e3;function W(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(l(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(l(t).redacted)}}).join("/")}function $(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=W(t.pathname);let s=[...new Set(t.searchParams.keys())];t.search="";for(let o of s)t.searchParams.append(l(o).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),l(t.toString()).redacted.slice(0,z)}catch{return"[INVALID_URL]"}}function S(e){return{url:$(e.url),title:l(e.title).redacted.slice(0,M),textSample:l(e.textSample).redacted.slice(0,j),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function F(e,t){let s=S(e),o=s.textSample.replace(/\s+/g," ").trim(),n=o.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(s.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(s.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=o.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function b(e,t){let s=S(e),o=F(s,t);return{schemaVersion:1,sanitizedSnapshot:s,heuristic:{summary:o.summary,bullets:o.bullets,risks:o.risks}}}function R(e){try{let t=new URL(e),s=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(s)}catch{return!0}}var P=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function x(e,t=[]){let s;try{s=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let o=new Set([...P,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...s.searchParams.keys()])o.has(i.toLowerCase())&&(n.push(i),s.searchParams.delete(i));s.hash&&/utm_|fbclid|gclid/i.test(s.hash)&&(s.hash="",n.push("#tracking-hash"));let r=s.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var B=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),K=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),Y=["_gcl_"],X=["_ga_","_gat_","__utm","mp_","_hj","amp_"],G=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],Z=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],J=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],V=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],Q=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function d(e,t){return t.reduce((s,o)=>e.includes(o)?s+1:s,0)}function w(e,t){return t.some(s=>e.startsWith(s))}var q=new Set(["c_user","datr","sb","xs","presence"]),ee=["facebook.com","messenger.com"];function te(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return G.some(s=>t===s||t.endsWith(`.${s}`))}function se(e,t){let s=e.toLowerCase();if(!q.has(s))return!1;let o=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ee.some(n=>o===n||o.endsWith(`.${n}`))}function C(e){let t=e.name.toLowerCase(),s=e.domain.toLowerCase();if(se(t,s))return"necessary";if(B.has(t)||w(t,Y))return"advertising";if(K.has(t)||w(t,X))return"analytics";if(te(s))return"advertising";let o=`${t} ${s}`,n={necessary:d(o,Q),functionality:d(o,V),analytics:d(o,J),advertising:d(o,Z)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var oe=8192,re=4096,ne=64*1024;function ie(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>oe||t.title.length>re||t.textSample.length>ne)return!1;for(let s of["forms","passwordFields"]){let o=t[s];if(o!==void 0&&(typeof o!="number"||!Number.isSafeInteger(o)||o<0||o>1e6))return!1}return!0}function ae(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ce(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return p(e.url??"");case"assessPhish":return _(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return l(e.text??"");case"gateOutbound":return k(e.text??"",!!e.userApproved);case"sanitizeUrl":return x(e.url??"");case"classifyCookie":return{category:C({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:R(e.url??"")};case"prepareSummary":return ie(e.snapshot)?b(e.snapshot,ae(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function le(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ce(t))}catch(t){let s=t instanceof Error?t.message:String(t);return JSON.stringify({error:s})}}var ue=globalThis;ue.aegisEvaluate=le;})();
++"use strict";(()=>{var y=["zip","mov","tk","ml","ga","cf","gq","top","xyz","icu","click","country"],k=["paypal","apple","microsoft","google","amazon","facebook","instagram","netflix","bank","chase","wellsfargo","icloud","outlook","office365","binance","coinbase","alipay","taobao","wechat"];var D=y,h=k,z=new Set(["bit.ly","buff.ly","cutt.ly","is.gd","ow.ly","rb.gy","rebrand.ly","shorturl.at","t.co","tinyurl.com"]),H=["account","auth","confirm","login","password","secure","signin","verify","wallet"],U=55,M=["verify your account","confirm your identity","suspend","unusual activity","act now","password expired","login immediately","\u8D26\u6237\u5F02\u5E38","\u7ACB\u5373\u9A8C\u8BC1","\u5BC6\u7801\u8FC7\u671F","\u7570\u5E38\u767B\u5165","\u7ACB\u5373\u9A57\u8B49"];function j(e){return e>=80?"critical":e>=55?"high":e>=30?"medium":"low"}function W(e){return/^(\d{1,3}\.){3}\d{1,3}$/.test(e)||e.includes(":")}function $(e){return e.includes("xn--")}function F(e){return e.replace(/0/g,"o").replace(/1/g,"i").replace(/3/g,"e").replace(/4/g,"a").replace(/5/g,"s").replace(/7/g,"t")}function B(e,t){if(Math.abs(e.length-t.length)>1)return!1;if(e===t)return!0;let o=0,s=0,n=0;for(;o<e.length&&s<t.length;){if(e[o]===t[s]){o+=1,s+=1;continue}if(n+=1,n>1)return!1;e.length>t.length?o+=1:(t.length>e.length||(o+=1),s+=1)}return n+ +(o<e.length||s<t.length)<=1}function b(e){let t=e.toLowerCase().split("."),o=new Set(["co.uk","com.au","com.br","com.cn","com.hk","co.jp","co.kr"]),s=t.slice(-2).join("."),n=o.has(s)?t.length-3:t.length-2;return t[Math.max(0,n)]??""}function S(e){try{return decodeURIComponent(e)}catch{return e}}function K(e){let t=e.toLowerCase().split("."),o=b(e);for(let s of h){if(o===s)continue;if(t.some(i=>i===s||i.startsWith(`${s}-`)||i.endsWith(`-${s}`)||i.includes(`-${s}-`)))return{brand:s,reason:"brand_spoof_host"};if(s.length<5)continue;if(t.some(i=>{if(i.length<5||i===s)return!1;let a=F(i);return a===s||B(a,s)}))return{brand:s,reason:"brand_lookalike_host"}}return null}function Y(e,t){let o=b(t),s=S(e).toLowerCase().split(/[^a-z0-9]+/);for(let n of h)if(n!==o&&s.includes(n))return n;return null}function R(e,t,o){let s=Math.min(100,t);return{score:s,severity:j(s),reasons:o,shouldBlock:s>=U,url:e}}function f(e,t=[]){let o;try{o=new URL(e)}catch{return{score:100,severity:"critical",reasons:[{code:"invalid_url",weight:100,detail:e}],shouldBlock:!0,url:e}}let s=o.hostname.toLowerCase();if(t.some(u=>s===u.toLowerCase()||s.endsWith(`.${u.toLowerCase()}`)))return{score:0,severity:"low",reasons:[{code:"allowlisted",weight:0}],shouldBlock:!1,url:e};let n=[],r=0;o.protocol==="http:"&&(r+=12,n.push({code:"insecure_http",weight:12})),W(s)&&(r+=35,n.push({code:"ip_hostname",weight:35,detail:s})),$(s)&&(r+=25,n.push({code:"punycode_host",weight:25,detail:s})),s.split(".").length>=5&&(r+=15,n.push({code:"deep_subdomain",weight:15,detail:s}));let i=s.split(".").pop()??"";D.includes(i)&&(r+=18,n.push({code:"suspicious_tld",weight:18,detail:i}));let a=K(s);if(a){let u=a.reason==="brand_lookalike_host"?40:30;r+=u,n.push({code:a.reason,weight:u,detail:a.brand})}let c=Y(o.pathname,s);c&&(r+=15,n.push({code:"brand_in_path",weight:15,detail:c}));let g=S(o.pathname).toLowerCase(),m=H.find(u=>g.split(/[^a-z0-9]+/).includes(u));return m&&(r+=10,n.push({code:"credential_path",weight:10,detail:m})),z.has(s)&&(r+=15,n.push({code:"shortened_url",weight:15,detail:s})),(o.username||e.includes("@"))&&(r+=20,n.push({code:"at_symbol_trick",weight:20})),R(e,r,n)}function w(e,t=[]){let o=f(e.url,t);if(o.reasons[0]?.code==="allowlisted"||o.reasons[0]?.code==="invalid_url")return o;let s=o.score,n=[...o.reasons],r=o.reasons.find(l=>l.code==="brand_spoof_host"||l.code==="brand_lookalike_host")?.detail??null,i=o.reasons.some(l=>l.code==="ip_hostname"),a=o.reasons.some(l=>l.code==="punycode_host"),c=null;try{c=new URL(e.url)}catch{c=null}let g=c?.protocol==="http:",m=`${e.title}
++${e.textSample}`.toLowerCase();for(let l of M)if(m.includes(l.toLowerCase())){s+=10,n.push({code:"urgency_language",weight:10,detail:l});break}let u=e.passwordFields??0,O=e.forms??0,_=e.crossSiteFormActions??0;if(u>0&&_>0)s+=45,n.push({code:"cross_site_credential_submit",weight:45,detail:`crossSiteForms=${_}`});else if(u>0&&(r||i||g||a)){let l=a?30:25;s+=l,n.push({code:"password_on_risky_origin",weight:l,detail:`passwordFields=${u}`})}else u>0&&O>0&&s>=20&&(s+=12,n.push({code:"credential_form",weight:12}));if(u>0){let l=h.find(N=>m.includes(N));l&&!r&&(s+=15,n.push({code:"brand_credential_page",weight:15,detail:l}))}return R(e.url,s,n)}var P=[{kind:"secret",regex:/\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,mask:()=>"[REDACTED_SECRET]"},{kind:"email",regex:/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,mask:e=>{let[t,o]=e.split("@");return`${t.slice(0,1)}***@${o}`}},{kind:"phone",regex:/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)|\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g,mask:e=>`${e.slice(0,3)}****${e.slice(-2)}`},{kind:"idCard",regex:/\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b/g,mask:e=>`${e.slice(0,4)}**********${e.slice(-4)}`},{kind:"ssn",regex:/\b\d{3}-\d{2}-\d{4}\b/g,mask:()=>"***-**-****"},{kind:"creditCard",regex:/\b(?:\d[ -]*?){13,19}\b/g,mask:e=>{let t=e.replace(/\D/g,"");return t.length<13||t.length>19?e:`${t.slice(0,4)} **** **** ${t.slice(-4)}`}},{kind:"addressHint",regex:/\b\d{1,5}\s+[\w.\u4e00-\u9fff]+(?:\s+[\w.\u4e00-\u9fff]+){0,4}\s+(?:street|st|road|rd|ave|avenue|blvd|lane|ln|drive|dr|路|街|巷|号)\b/gi,mask:()=>"[REDACTED_ADDRESS]"}];function X(e){let t=0,o=!1;for(let s=e.length-1;s>=0;s--){let n=Number(e[s]);o&&(n*=2,n>9&&(n-=9)),t+=n,o=!o}return t%10===0}function d(e){let t=[];for(let r of P){r.regex.lastIndex=0;let i;for(;(i=r.regex.exec(e))!==null;){let a=i[0];if(r.kind==="creditCard"){let c=a.replace(/\D/g,"");if(c.length<13||c.length>19||!X(c))continue}t.push({kind:r.kind,value:a,start:i.index,end:i.index+a.length})}}t.sort((r,i)=>r.start-i.start);let o=[],s=-1;for(let r of t)r.start<s||(o.push(r),s=r.end);let n=e;for(let r=o.length-1;r>=0;r--){let i=o[r],a=P.find(c=>c.kind===i.kind);n=n.slice(0,i.start)+a.mask(i.value)+n.slice(i.end)}return{matches:o,redacted:n,blocked:o.length>0}}function x(e,t){let o=d(e);return o.blocked?t?{allowed:!0,payload:o.redacted,scan:o}:{allowed:!1,payload:o.redacted,scan:o}:{allowed:!0,payload:e,scan:o}}var G=2048,Z=512,J=6e3;function V(e){return e.split("/").map(t=>{if(!t)return t;try{return encodeURIComponent(d(decodeURIComponent(t)).redacted)}catch{return encodeURIComponent(d(t).redacted)}}).join("/")}function Q(e){try{let t=new URL(e);if(t.protocol!=="http:"&&t.protocol!=="https:")return"[UNSUPPORTED_URL]";t.username="",t.password="",t.pathname=V(t.pathname);let o=[...new Set(t.searchParams.keys())];t.search="";for(let s of o)t.searchParams.append(d(s).redacted,"[REDACTED]");return t.hash&&(t.hash="[REDACTED]"),d(t.toString()).redacted.slice(0,G)}catch{return"[INVALID_URL]"}}function C(e){return{url:Q(e.url),title:d(e.title).redacted.slice(0,Z),textSample:d(e.textSample).redacted.slice(0,J),forms:Math.max(0,Math.trunc(e.forms??0)),passwordFields:Math.max(0,Math.trunc(e.passwordFields??0))}}function q(e,t){let o=C(e),s=o.textSample.replace(/\s+/g," ").trim(),n=s.slice(0,220)||(t==="en"?"No readable page text was captured.":t==="zh-TW"?"\u672A\u80FD\u64F7\u53D6\u53EF\u8B80\u9801\u9762\u6587\u5B57\u3002":"\u672A\u80FD\u63D0\u53D6\u53EF\u8BFB\u9875\u9762\u6587\u672C\u3002"),r=[];(o.passwordFields??0)>0&&r.push(t==="en"?"Page contains password fields \u2014 verify the domain before signing in.":t==="zh-TW"?"\u9801\u9762\u542B\u5BC6\u78BC\u6B04\u4F4D\uFF0C\u767B\u5165\u524D\u8ACB\u78BA\u8A8D\u7DB2\u57DF\u3002":"\u9875\u9762\u542B\u5BC6\u7801\u5B57\u6BB5\uFF0C\u767B\u5F55\u524D\u8BF7\u786E\u8BA4\u57DF\u540D\u3002");try{new URL(o.url).protocol==="http:"&&r.push(t==="en"?"Connection is not HTTPS.":t==="zh-TW"?"\u9023\u7DDA\u672A\u4F7F\u7528 HTTPS\u3002":"\u8FDE\u63A5\u672A\u4F7F\u7528 HTTPS\u3002")}catch{}let i=s.split(/[.。！？!?]/).map(a=>a.trim()).filter(a=>a.length>20).slice(0,3);return{summary:n,bullets:i.length>0?i:[t==="en"?"Open the side panel on a content-heavy page for better results.":t==="zh-TW"?"\u8ACB\u5728\u5167\u5BB9\u8F03\u591A\u7684\u9801\u9762\u958B\u555F\u5074\u6B04\u4EE5\u7372\u5F97\u66F4\u597D\u6458\u8981\u3002":"\u8BF7\u5728\u5185\u5BB9\u8F83\u591A\u7684\u9875\u9762\u6253\u5F00\u4FA7\u680F\u4EE5\u83B7\u5F97\u66F4\u597D\u6458\u8981\u3002"],risks:r,backend:"mock",modelReady:!0}}function A(e,t){let o=C(e),s=q(o,t);return{schemaVersion:1,sanitizedSnapshot:o,heuristic:{summary:s.summary,bullets:s.bullets,risks:s.risks}}}function T(e){try{let t=new URL(e),o=t.hostname.toLowerCase();return t.protocol==="chrome:"||t.protocol==="edge:"||t.protocol==="about:"?!0:/(^|\.)(bank|paypal|alipay|gov|irs|healthcare|hospital|clinic)/.test(o)}catch{return!0}}var L=["fbclid","gclid","gclsrc","dclid","msclkid","mc_eid","mc_cid","igshid","twclid","ttclid","yclid","ybclid","utm_source","utm_medium","utm_campaign","utm_term","utm_content","utm_id","_ga","_gl","vero_id","wickedid","oly_anon_id","oly_enc_id","gbraid","wbraid","gad_source","gad_campaignid","srsltid","li_fat_id","_hsenc","_hsmi","mkt_tok"];function E(e,t=[]){let o;try{o=new URL(e)}catch{return{original:e,cleaned:e,removed:[],changed:!1}}let s=new Set([...L,...t].map(i=>i.toLowerCase())),n=[];for(let i of[...o.searchParams.keys()])s.has(i.toLowerCase())&&(n.push(i),o.searchParams.delete(i));o.hash&&/utm_|fbclid|gclid/i.test(o.hash)&&(o.hash="",n.push("#tracking-hash"));let r=o.toString();return{original:e,cleaned:r,removed:n,changed:r!==e}}var ee=new Set(["ide","dsid","anid","fr","_fbp","_fbc","personalization_id","muc_ads","muid","muidb","tuuid","tuuid_lu","cto_bundle","_gcl_au","_gcl_aw"]),te=new Set(["_ga","_gid","_gat","__utma","__utmb","__utmc","__utmz","__utmt","_hjid","ajs_anonymous_id","ajs_user_id","ajs_group_id","_clck","_clsk","_pk_id","_pk_ses","_ym_uid","_ym_d","_vwo_uuid"]),oe=["_gcl_"],se=["_ga_","_gat_","__utm","mp_","_hj","amp_"],ne=["doubleclick.net","googlesyndication.com","adnxs.com","criteo.com","taboola.com","outbrain.com","amazon-adsystem.com","adsrvr.org","pubmatic.com","casalemedia.com","scorecardresearch.com","quantserve.com","moatads.com","openx.net","rubiconproject.com"],re=["ads","ad_","_ad","advert","doubleclick","personalization_id","muc_ads"],ie=["_ga","_gid","_gat","mixpanel","amplitude","hotjar","optimizely","segment","analytics"],ae=["lang","locale","theme","timezone","prefs","preference","sidebar","consent","cookie_consent"],ce=["session","sess","csrf","xsrf","auth","token","sid","login","secure","__host-","__secure-"];function p(e,t){return t.reduce((o,s)=>e.includes(s)?o+1:o,0)}function v(e,t){return t.some(o=>e.startsWith(o))}var le=new Set(["c_user","datr","sb","xs","presence"]),ue=["facebook.com","messenger.com"];function de(e){let t=(e.startsWith(".")?e.slice(1):e).toLowerCase();return ne.some(o=>t===o||t.endsWith(`.${o}`))}function me(e,t){let o=e.toLowerCase();if(!le.has(o))return!1;let s=t.startsWith(".")?t.slice(1).toLowerCase():t.toLowerCase();return ue.some(n=>s===n||s.endsWith(`.${n}`))}function I(e){let t=e.name.toLowerCase(),o=e.domain.toLowerCase();if(me(t,o))return"necessary";if(ee.has(t)||v(t,oe))return"advertising";if(te.has(t)||v(t,se))return"analytics";if(de(o))return"advertising";let s=`${t} ${o}`,n={necessary:p(s,ce),functionality:p(s,ae),analytics:p(s,ie),advertising:p(s,re)},r="unknown",i=0;for(let[a,c]of Object.entries(n))c>i&&(r=a,i=c);return i===0?"unknown":r}var pe=8192,ge=4096,he=64*1024;function fe(e){if(!e||typeof e!="object")return!1;let t=e;if(typeof t.url!="string"||typeof t.title!="string"||typeof t.textSample!="string"||t.url.length>pe||t.title.length>ge||t.textSample.length>he)return!1;for(let o of["forms","passwordFields"]){let s=t[o];if(s!==void 0&&(typeof s!="number"||!Number.isSafeInteger(s)||s<0||s>1e6))return!1}return!0}function _e(e){return e==="zh-TW"||e==="en"?e:"zh-CN"}function ye(e){switch(e.op){case"ping":return{ok:!0,worker:"aegis-policy"};case"scorePhish":return f(e.url??"");case"assessPhish":return w(e.snapshot??{url:e.url??"",title:"",textSample:e.text??""});case"scanPii":return d(e.text??"");case"gateOutbound":return x(e.text??"",!!e.userApproved);case"sanitizeUrl":return E(e.url??"");case"classifyCookie":return{category:I({name:e.cookie?.name??"",value:e.cookie?.value??"",domain:e.cookie?.domain??"",path:e.cookie?.path??"/",secure:!!e.cookie?.secure,httpOnly:!!e.cookie?.httpOnly,session:e.cookie?.session??!0,expirationDate:e.cookie?.expirationDate})};case"isSensitive":return{sensitive:T(e.url??"")};case"prepareSummary":return fe(e.snapshot)?A(e.snapshot,_e(e.locale)):{error:"valid structured snapshot required"};default:return{error:`unknown op: ${e.op}`}}}function ke(e){try{let t=JSON.parse(e);return!t||typeof t.op!="string"?JSON.stringify({error:"missing op"}):JSON.stringify(ye(t))}catch(t){let o=t instanceof Error?t.message:String(t);return JSON.stringify({error:o})}}var be=globalThis;be.aegisEvaluate=ke;})();
+-- 
+2.52.0
+

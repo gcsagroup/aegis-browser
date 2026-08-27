@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GCSA-aegis — 本地优先的隐私安全浏览器</title>
+    <title>GCSA-aegis — 本地开发中的隐私安全浏览器</title>
     <meta
       name="description"
-      content="GCSA-aegis 是本地优先的隐私安全浏览器。AI 摘要不出机器，钓鱼拦截会说明原因，跟踪在引擎里处理。"
+      content="GCSA-aegis 是处于本地开发 No-Go 阶段的 Chromium fork。页面摘要本地化和无产品遥测是待出站审计的设计目标，当前没有可映射到当前源码的分发包。"
     />
     <style>
       :root {
@@ -412,16 +412,16 @@
 
       <section class="hero">
         <div>
-          <h1 data-i18n="hero">本地优先的隐私安全浏览器</h1>
+          <h1 data-i18n="hero">开发中的本地优先隐私安全浏览器</h1>
           <p class="lede" data-i18n="lede">
-            AI 摘要不出机器，钓鱼拦截会说明原因，跟踪在引擎里处理。不是扩展，也不是套了一层壳的 Chrome。
+            浏览器形态已集成到 Chromium fork；摘要、跟踪与自动化边界仍在本地验证。当前 No-Go，不提供分发包。
           </p>
           <div class="actions">
-            <a class="btn" href="#try" data-i18n="ctaTry">如何试用</a>
-            <a class="btn secondary" href="#check" data-i18n="ctaCheck">当场核对</a>
+            <a class="btn" href="#try" data-i18n="ctaTry">当前状态</a>
+            <a class="btn secondary" href="#check" data-i18n="ctaCheck">验收条件</a>
           </div>
           <p class="meta" data-i18n="heroMeta">
-            基于 Chromium 151 · 当前分发包为 macOS arm64 · Apache-2.0
+            基于 Chromium 151 · 本地开发 No-Go · 当前无可追溯分发包
           </p>
         </div>
         <aside class="panel" aria-label="chrome://aegis">
@@ -432,20 +432,20 @@
             chrome://aegis
           </div>
           <div class="panel-body">
-            <h2 data-i18n="panelTitle">本次会话</h2>
-            <p class="kicker" data-i18n="panelKicker">清掉的跟踪，可以打开设置页核对。</p>
+            <h2 data-i18n="panelTitle">静态演示数据</h2>
+            <p class="kicker" data-i18n="panelKicker">下面仅展示目标 UI 文案，不代表当前会话或运行证据。</p>
             <ul class="log">
               <li>
                 <span class="tag" data-i18n="log1Tag">参数</span>
-                <span data-i18n="log1">去掉 utm_source、fbclid、gbraid</span>
+                <span data-i18n="log1">示例：去掉 utm_source、fbclid、gbraid</span>
               </li>
               <li>
                 <span class="tag" data-i18n="log2Tag">Cookie</span>
-                <span data-i18n="log2">删除 _ga、_fbp；登录 Cookie 保留</span>
+                <span data-i18n="log2">示例：删除 _ga、_fbp；登录 Cookie 保留</span>
               </li>
               <li>
                 <span class="tag" data-i18n="log3Tag">摘要</span>
-                <span data-i18n="log3">启发式 · 本机 · 未出网 · 842 字</span>
+                <span data-i18n="log3">示例：启发式摘要（非当前运行结果）</span>
               </li>
             </ul>
           </div>
@@ -456,65 +456,65 @@
         <h2 data-i18n="pillarsTitle">三件事</h2>
         <div class="num">01</div>
         <div>
-          <h3 data-i18n="p1Title">页面不上传</h3>
+          <h3 data-i18n="p1Title">本地摘要是设计目标</h3>
           <p data-i18n="p1Body">
-            隐私摘要在你电脑里完成。文本先脱敏；有本机 Ollama 时只连 127.0.0.1，没有则走启发式。网页内容默认不上云。
+            桌面摘要的结构化脱敏与最终 POST 请求体已通过定向回归；完整 Chromium 出站审计和签名安装 App 证据仍未完成，Android 摘要当前不可用。
           </p>
         </div>
         <div class="num">02</div>
         <div>
-          <h3 data-i18n="p2Title">拦截讲得清</h3>
+          <h3 data-i18n="p2Title">可解释拦截在验证中</h3>
           <p data-i18n="p2Body">
-            高风险仿冒站会先拦住，用人话说明像谁、依据是什么、分数怎么加到阈值。你可以选择继续访问。
+            当前源码的原生测试、Release 全量构建和代表性站点稳定性矩阵已通过；开关功能行为矩阵、安装 App 与启动压力验证仍待完成。
           </p>
         </div>
         <div class="num">03</div>
         <div>
           <h3 data-i18n="p3Title">写进引擎，不是再装扩展</h3>
           <p data-i18n="p3Body">
-            广告与分析请求、跟踪参数、伪装域名、广告 Cookie，在 Chromium 内核处理。不受扩展规则上限限制。
+            请求、参数、伪装域名和 Cookie 已集成到 Chromium，并随当前 build-tree App 完成构建；代表性站点行为与分发门禁仍待验收。它不是 Extension 交付物。
           </p>
         </div>
       </section>
 
       <section class="split">
         <div>
-          <h2 data-i18n="featTitle">引擎里在做的</h2>
+          <h2 data-i18n="featTitle">当前源码中的实验实现</h2>
           <dl class="feat">
             <div>
               <dt data-i18n="f1t">跟踪器拦截</dt>
-              <dd data-i18n="f1d">EasyList / EasyPrivacy，加上第一方 /g/collect、gtm.js 等收集路径。不拦你主动打开的网页。</dd>
+              <dd data-i18n="f1d">补丁序列包含 EasyList / EasyPrivacy 与部分第一方收集路径规则；最终行为待当前 App 回归。</dd>
             </div>
             <div>
               <dt data-i18n="f2t">链接与 Cookie</dt>
-              <dd data-i18n="f2d">导航时去掉 utm、fbclid、gclid、gbraid 等。按名称查表删除广告／分析 Cookie，登录 Cookie 留下。</dd>
+              <dd data-i18n="f2d">补丁序列包含去参和按名称分类清理 Cookie；保留登录态仍需代表性站点验证。</dd>
             </div>
             <div>
               <dt data-i18n="f3t">伪装与跳转</dt>
-              <dd data-i18n="f3d">揭开子资源 CNAME；识别 bounce tracking 并立即清对应 Cookie。</dd>
+              <dd data-i18n="f3d">子资源 CNAME 与 bounce tracking 已有原生定向测试；代表性站点运行覆盖仍待完成。</dd>
             </div>
             <div>
               <dt data-i18n="f4t">指纹稳定化</dt>
-              <dd data-i18n="f4d">对 Canvas、WebGL、Audio、WebGPU 做稳定化。打开 chrome://aegis 点「检测本页指纹」，防护开着时 WebGL/WebGPU 会出现 Aegis，maxBufferSize 会随开关变化。不是「无法指纹」。</dd>
+              <dd data-i18n="f4d">Canvas、OffscreenCanvas、Audio、WebGL、WebGPU 反指纹已通过本地行为矩阵；目标是降低稳定识别，不是“无法指纹”，发布身份绑定仍待完成。</dd>
             </div>
             <div>
               <dt data-i18n="f5t">本机 AI 控制</dt>
-              <dd data-i18n="f5d">默认关闭。打开后只允许 127.0.0.1 上的 CDP；连上后顶部出现横幅。远程列表不暴露 chrome:// / file://。</dd>
+              <dd data-i18n="f5d">桌面 HTTP、直接 target WebSocket、pipe 与所选 Target.* 路径已通过本地门禁；获授权的本机 agent 仍可读取 DOM，真实签名、Android 和完整协议覆盖尚未验收。</dd>
             </div>
           </dl>
         </div>
         <div id="check">
-          <h2 data-i18n="checkTitle">你可以当场核对</h2>
+          <h2 data-i18n="checkTitle">当前源码门通过后的下一验收</h2>
           <ol class="steps">
-            <li data-i18n="s1"><strong>打开带跟踪尾巴的链接。</strong> 地址栏里 utm_source、fbclid 会被拿掉。</li>
-            <li data-i18n="s2"><strong>打开高风险仿冒登录页。</strong> 拦截页写出为什么拦，并可继续访问。</li>
-            <li data-i18n="s3"><strong>打开 chrome://aegis。</strong> 看拦截与 Cookie。打开 AI 控制后，本机 agent 连上会出现顶部横幅。</li>
+            <li data-i18n="s1"><strong>链接去参验收。</strong> 用代表性链接确认地址栏和请求中的参数行为。</li>
+            <li data-i18n="s2"><strong>钓鱼拦截验收。</strong> 用受控测试页核对阈值、原因和继续访问路径。</li>
+            <li data-i18n="s3"><strong>安装自动化边界验收。</strong> 在签名安装 App 上复核列表、直连 target WebSocket 与 Target.*，不能只看 build-tree 结果。</li>
           </ol>
         </div>
       </section>
 
       <section class="compare">
-        <h2 data-i18n="cmpTitle">和常见做法的差别</h2>
+        <h2 data-i18n="cmpTitle">设计方向对比（非发布能力清单）</h2>
         <table>
           <thead>
             <tr>
@@ -531,7 +531,7 @@
             </tr>
             <tr>
               <td data-i18n="c2l">页面 AI</td>
-              <td data-i18n="c2a">本机启发式或本机 Ollama，默认不上云</td>
+              <td data-i18n="c2a">使用本机启发式或用户配置的兼容 API；调用前确认目标</td>
               <td data-i18n="c2b">不少助手把整页送到云端</td>
             </tr>
             <tr>
@@ -551,76 +551,77 @@
       <section class="limits">
         <h2 data-i18n="limTitle">现在不这样说</h2>
         <ul>
-          <li data-i18n="lim1">安装后不会自带大模型。没有本机 Ollama 时，摘要走启发式。</li>
+          <li data-i18n="lim1">已有可映射当前源码的 macOS build-tree App，但它不是 RC；没有通过身份、签名、打包和安装门的 App，也没有当前源码 APK，因此不提供试用分发包。</li>
           <li data-i18n="lim2">指纹防护是降低跨站识别，不是让网站无法识别你。</li>
           <li data-i18n="lim3">第一方收集按已知路径拦截，不宣称挡住所有服务端埋点。</li>
-          <li data-i18n="lim4">打开 AI 控制后，本机 agent 仍可能经 CDP 读到网页 DOM。远程列表不包含 chrome:// 与 file://。</li>
+          <li data-i18n="lim4">所选 CDP 场景仅在测试专用 mock Keychain 下通过；本机 agent 可读取获授权页面 DOM，签名安装、Android 和完整协议仍未验收。</li>
+          <li data-i18n="lim5">AIM eligibility 与 policy FM/GCM 已有局部门禁，但不等于全部 Google/GCM 出站关闭；“无产品遥测”和“页面内容不出机”仍待完整审计。</li>
         </ul>
       </section>
 
       <section class="get" id="try">
-        <h2 data-i18n="getTitle">如何试用</h2>
+        <h2 data-i18n="getTitle">当前状态</h2>
         <p data-i18n="getBody">
-          本机分发包在 <code>apps/browser/dist/GCSA-aegis.app</code>。第一次用 Finder 打开可能需要右键 → 打开。浏览器内打开 <code>chrome://aegis</code> 开关模块、看会话记录、做本机摘要。
+          当前为本地开发 No-Go。已有当前源码的 macOS non-component build-tree App，本地 ad-hoc 严格结构校验已通过，但仍是 Chromium 身份、没有 TeamIdentifier 和分发包；出站审计、安装稳定性和 Android 验收完成后才能生成内部候选包。
         </p>
       </section>
 
       <footer>
         <span>GCSA-aegis · Chromium 151.0.7922.77</span>
-        <span data-i18n="footer">Apache-2.0 · 页面内容默认不上云，无遥测</span>
+        <span data-i18n="footer">Apache-2.0 · 本地开发 No-Go · 出站审计待完成</span>
       </footer>
     </div>
     <script>
       const COPY = {
         "zh-CN": {
-          title: "GCSA-aegis — 本地优先的隐私安全浏览器",
+          title: "GCSA-aegis — 本地开发中的隐私安全浏览器",
           navTag: "隐私安全浏览器",
-          hero: "本地优先的隐私安全浏览器",
-          lede: "AI 摘要不出机器，钓鱼拦截会说明原因，跟踪在引擎里处理。不是扩展，也不是套了一层壳的 Chrome。",
-          ctaTry: "如何试用",
-          ctaCheck: "当场核对",
-          heroMeta: "基于 Chromium 151 · 当前分发包为 macOS arm64 · Apache-2.0",
-          panelTitle: "本次会话",
-          panelKicker: "清掉的跟踪，可以打开设置页核对。",
+          hero: "开发中的本地优先隐私安全浏览器",
+          lede: "浏览器形态已集成到 Chromium fork；摘要、跟踪与自动化边界仍在本地验证。当前 No-Go，不提供分发包。",
+          ctaTry: "当前状态",
+          ctaCheck: "验收条件",
+          heroMeta: "基于 Chromium 151 · 本地开发 No-Go · 当前无可追溯分发包",
+          panelTitle: "静态演示数据",
+          panelKicker: "下面仅展示目标 UI 文案，不代表当前会话或运行证据。",
           log1Tag: "参数",
-          log1: "去掉 utm_source、fbclid、gbraid",
+          log1: "示例：去掉 utm_source、fbclid、gbraid",
           log2Tag: "Cookie",
-          log2: "删除 _ga、_fbp；登录 Cookie 保留",
+          log2: "示例：删除 _ga、_fbp；登录 Cookie 保留",
           log3Tag: "摘要",
-          log3: "启发式 · 本机 · 未出网 · 842 字",
+          log3: "示例：启发式摘要（非当前运行结果）",
           pillarsTitle: "三件事",
-          p1Title: "页面不上传",
+          p1Title: "本地摘要是设计目标",
           p1Body:
-            "隐私摘要在你电脑里完成。文本先脱敏；有本机 Ollama 时只连 127.0.0.1，没有则走启发式。网页内容默认不上云。",
-          p2Title: "拦截讲得清",
+            "桌面摘要的结构化脱敏与最终 POST 请求体已通过定向回归；完整 Chromium 出站审计和签名安装 App 证据仍未完成，Android 摘要当前不可用。",
+          p2Title: "可解释拦截在验证中",
           p2Body:
-            "高风险仿冒站会先拦住，用人话说明像谁、依据是什么、分数怎么加到阈值。你可以选择继续访问。",
+            "当前源码的原生测试、Release 全量构建和代表性站点稳定性矩阵已通过；开关功能行为矩阵、安装 App 与启动压力验证仍待完成。",
           p3Title: "写进引擎，不是再装扩展",
           p3Body:
-            "广告与分析请求、跟踪参数、伪装域名、广告 Cookie，在 Chromium 内核处理。不受扩展规则上限限制。",
-          featTitle: "引擎里在做的",
+            "请求、参数、伪装域名和 Cookie 已集成到 Chromium，并随当前 build-tree App 完成构建；代表性站点行为与分发门禁仍待验收。它不是 Extension 交付物。",
+          featTitle: "当前源码中的实验实现",
           f1t: "跟踪器拦截",
-          f1d: "EasyList / EasyPrivacy，加上第一方 /g/collect、gtm.js 等收集路径。不拦你主动打开的网页。",
+          f1d: "补丁序列包含 EasyList / EasyPrivacy 与部分第一方收集路径规则；最终行为待当前 App 回归。",
           f2t: "链接与 Cookie",
-          f2d: "导航时去掉 utm、fbclid、gclid、gbraid 等。按名称查表删除广告／分析 Cookie，登录 Cookie 留下。",
+          f2d: "补丁序列包含去参和按名称分类清理 Cookie；保留登录态仍需代表性站点验证。",
           f3t: "伪装与跳转",
-          f3d: "揭开子资源 CNAME；识别 bounce tracking 并立即清对应 Cookie。",
+          f3d: "子资源 CNAME 与 bounce tracking 已有原生定向测试；代表性站点运行覆盖仍待完成。",
           f4t: "指纹稳定化",
-          f4d: "对 Canvas、WebGL、Audio、WebGPU 做稳定化。打开 chrome://aegis 点「检测本页指纹」，防护开着时 WebGL/WebGPU 会出现 Aegis，maxBufferSize 会随开关变化。不是「无法指纹」。",
+          f4d: "Canvas、OffscreenCanvas、Audio、WebGL、WebGPU 反指纹已通过本地行为矩阵；目标是降低稳定识别，不是“无法指纹”，发布身份绑定仍待完成。",
           f5t: "本机 AI 控制",
-          f5d: "默认关闭。打开后只允许 127.0.0.1 上的 CDP；连上后顶部出现横幅。远程列表不暴露 chrome:// / file://。",
-          checkTitle: "你可以当场核对",
-          s1: "<strong>打开带跟踪尾巴的链接。</strong> 地址栏里 utm_source、fbclid 会被拿掉。",
-          s2: "<strong>打开高风险仿冒登录页。</strong> 拦截页写出为什么拦，并可继续访问。",
-          s3: "<strong>打开 chrome://aegis。</strong> 看拦截与 Cookie。打开 AI 控制后，本机 agent 连上会出现顶部横幅。",
-          cmpTitle: "和常见做法的差别",
+          f5d: "桌面 HTTP、直接 target WebSocket、pipe 与所选 Target.* 路径已通过本地门禁；获授权的本机 agent 仍可读取 DOM，真实签名、Android 和完整协议覆盖尚未验收。",
+          checkTitle: "当前源码门通过后的下一验收",
+          s1: "<strong>链接去参验收。</strong> 用代表性链接确认地址栏和请求中的参数行为。",
+          s2: "<strong>钓鱼拦截验收。</strong> 用受控测试页核对阈值、原因和继续访问路径。",
+          s3: "<strong>安装自动化边界验收。</strong> 在签名安装 App 上复核列表、直连 target WebSocket 与 Target.*，不能只看 build-tree 结果。",
+          cmpTitle: "设计方向对比（非发布能力清单）",
           cmpUs: "GCSA-aegis",
           cmpOther: "常见做法",
           c1l: "形态",
           c1a: "Chromium fork，能力写在引擎",
           c1b: "Chrome + 扩展，或套壳浏览器",
           c2l: "页面 AI",
-          c2a: "本机启发式或本机 Ollama，默认不上云",
+          c2a: "使用本机启发式或用户配置的兼容 API；调用前确认目标",
           c2b: "不少助手把整页送到云端",
           c3l: "钓鱼",
           c3a: "拦截并解释原因，可继续",
@@ -629,64 +630,65 @@
           c4a: "内核拦请求、清参数、揭 CNAME",
           c4b: "扩展声明式规则，深度有限",
           limTitle: "现在不这样说",
-          lim1: "安装后不会自带大模型。没有本机 Ollama 时，摘要走启发式。",
+          lim1: "已有可映射当前源码的 macOS build-tree App，但它不是 RC；没有通过身份、签名、打包和安装门的 App，也没有当前源码 APK，因此不提供试用分发包。",
           lim2: "指纹防护是降低跨站识别，不是让网站无法识别你。",
           lim3: "第一方收集按已知路径拦截，不宣称挡住所有服务端埋点。",
-          lim4: "打开 AI 控制后，本机 agent 仍可能经 CDP 读到网页 DOM。远程列表不包含 chrome:// 与 file://。",
-          getTitle: "如何试用",
+          lim4: "所选 CDP 场景仅在测试专用 mock Keychain 下通过；本机 agent 可读取获授权页面 DOM，签名安装、Android 和完整协议仍未验收。",
+          lim5: "AIM eligibility 与 policy FM/GCM 已有局部门禁，但不等于全部 Google/GCM 出站关闭；“无产品遥测”和“页面内容不出机”仍待完整审计。",
+          getTitle: "当前状态",
           getBody:
-            "本机分发包在 <code>apps/browser/dist/GCSA-aegis.app</code>。第一次用 Finder 打开可能需要右键 → 打开。浏览器内打开 <code>chrome://aegis</code> 开关模块、看会话记录、做本机摘要。AI 控制默认关闭。",
-          footer: "Apache-2.0 · 页面内容默认不上云，无遥测",
+            "当前为本地开发 No-Go。已有当前源码的 macOS non-component build-tree App，本地 ad-hoc 严格结构校验已通过，但仍是 Chromium 身份、没有 TeamIdentifier 和分发包；出站审计、安装稳定性和 Android 验收完成后才能生成内部候选包。",
+          footer: "Apache-2.0 · 本地开发 No-Go · 出站审计待完成",
         },
         "zh-TW": {
-          title: "GCSA-aegis — 本地優先的隱私安全瀏覽器",
+          title: "GCSA-aegis — 本機開發中的隱私安全瀏覽器",
           navTag: "隱私安全瀏覽器",
-          hero: "本地優先的隱私安全瀏覽器",
-          lede: "AI 摘要不出機器，釣魚攔截會說明原因，追蹤在引擎裡處理。不是擴充功能，也不是套了一層殼的 Chrome。",
-          ctaTry: "如何試用",
-          ctaCheck: "當場核對",
-          heroMeta: "基於 Chromium 151 · 目前分發包為 macOS arm64 · Apache-2.0",
-          panelTitle: "本次工作階段",
-          panelKicker: "清掉的追蹤，可以打開設定頁核對。",
+          hero: "開發中的本機優先隱私安全瀏覽器",
+          lede: "瀏覽器形態已整合到 Chromium fork；摘要、追蹤與自動化邊界仍在本機驗證。目前 No-Go，不提供分發包。",
+          ctaTry: "目前狀態",
+          ctaCheck: "驗收條件",
+          heroMeta: "基於 Chromium 151 · 本機開發 No-Go · 目前無可追溯分發包",
+          panelTitle: "靜態示範資料",
+          panelKicker: "下列內容只展示目標 UI 文案，不代表目前工作階段或執行證據。",
           log1Tag: "參數",
-          log1: "去掉 utm_source、fbclid、gbraid",
+          log1: "範例：去掉 utm_source、fbclid、gbraid",
           log2Tag: "Cookie",
-          log2: "刪除 _ga、_fbp；登入 Cookie 保留",
+          log2: "範例：刪除 _ga、_fbp；登入 Cookie 保留",
           log3Tag: "摘要",
-          log3: "啟發式 · 本機 · 未出網 · 842 字",
+          log3: "範例：啟發式摘要（非目前執行結果）",
           pillarsTitle: "三件事",
-          p1Title: "頁面不上傳",
+          p1Title: "本機摘要是設計目標",
           p1Body:
-            "隱私摘要在你的電腦裡完成。文字先脫敏；有本機 Ollama 時只連 127.0.0.1，沒有則走啟發式。網頁內容預設不上雲。",
-          p2Title: "攔截講得清",
+            "桌面摘要的結構化脫敏與最終 POST 請求內容已通過定向回歸；完整 Chromium 出站稽核和簽名安裝 App 證據仍未完成，Android 摘要目前不可用。",
+          p2Title: "可解釋攔截仍在驗證",
           p2Body:
-            "高風險仿冒站會先攔住，用人話說明像誰、依據是什麼、分數怎麼加到閾值。你可以選擇繼續造訪。",
+            "目前原始碼的原生測試、Release 全量構建和代表性網站穩定性矩陣已通過；開關功能行為矩陣、安裝 App 與啟動壓力驗證仍待完成。",
           p3Title: "寫進引擎，不是再裝擴充功能",
           p3Body:
-            "廣告與分析請求、追蹤參數、偽裝網域、廣告 Cookie，在 Chromium 核心處理。不受擴充功能規則上限限制。",
-          featTitle: "引擎裡在做的",
+            "請求、參數、偽裝網域和 Cookie 已整合到 Chromium，並隨目前 build-tree App 完成構建；代表性網站行為與分發門禁仍待驗收。它不是 Extension 交付物。",
+          featTitle: "目前原始碼中的實驗實作",
           f1t: "追蹤器攔截",
-          f1d: "EasyList / EasyPrivacy，加上第一方 /g/collect、gtm.js 等收集路徑。不攔你主動打開的網頁。",
+          f1d: "補丁序列包含 EasyList / EasyPrivacy 與部分第一方收集路徑規則；最終行為待目前 App 回歸。",
           f2t: "連結與 Cookie",
-          f2d: "導覽時去掉 utm、fbclid、gclid、gbraid 等。按名稱查表刪除廣告／分析 Cookie，登入 Cookie 留下。",
+          f2d: "補丁序列包含去參數和按名稱分類清理 Cookie；保留登入狀態仍需代表性網站驗證。",
           f3t: "偽裝與跳轉",
-          f3d: "揭開子資源 CNAME；識別 bounce tracking 並立即清對應 Cookie。",
+          f3d: "子資源 CNAME 與 bounce tracking 已有原生定向測試；代表性網站執行覆蓋仍待完成。",
           f4t: "指紋穩定化",
-          f4d: "對 Canvas、WebGL、Audio、WebGPU 做穩定化。打開 chrome://aegis 點「檢測本頁指紋」，防護開著時 WebGL/WebGPU 會出現 Aegis，maxBufferSize 會隨開關變化。不是「無法指紋」。",
+          f4d: "Canvas、OffscreenCanvas、Audio、WebGL、WebGPU 反指紋已通過本機行為矩陣；目標是降低穩定識別，不是“無法指紋”，發佈身分綁定仍待完成。",
           f5t: "本機 AI 控制",
-          f5d: "預設關閉。打開後只允許 127.0.0.1 上的 CDP；連上後頂部出現橫幅。遠端列表不暴露 chrome:// / file://。",
-          checkTitle: "你可以當場核對",
-          s1: "<strong>打開帶追蹤尾巴的連結。</strong> 網址列裡 utm_source、fbclid 會被拿掉。",
-          s2: "<strong>打開高風險仿冒登入頁。</strong> 攔截頁寫出為什麼攔，並可繼續造訪。",
-          s3: "<strong>打開 chrome://aegis。</strong> 看攔截與 Cookie。打開 AI 控制後，本機 agent 連上會出現頂部橫幅。",
-          cmpTitle: "和常見做法的差別",
+          f5d: "桌面 HTTP、直接 target WebSocket、pipe 與所選 Target.* 路徑已通過本機門禁；獲授權的本機 agent 仍可讀取 DOM，真實簽名、Android 和完整協定覆蓋尚未驗收。",
+          checkTitle: "目前原始碼門通過後的下一驗收",
+          s1: "<strong>連結去參數驗收。</strong> 用代表性連結確認網址列和請求中的參數行為。",
+          s2: "<strong>釣魚攔截驗收。</strong> 用受控測試頁核對閾值、原因和繼續造訪路徑。",
+          s3: "<strong>安裝自動化邊界驗收。</strong> 在簽名安裝 App 上複核列表、直連 target WebSocket 與 Target.*，不能只看 build-tree 結果。",
+          cmpTitle: "設計方向比較（非發布能力清單）",
           cmpUs: "GCSA-aegis",
           cmpOther: "常見做法",
           c1l: "形態",
           c1a: "Chromium fork，能力寫在引擎",
           c1b: "Chrome + 擴充功能，或套殼瀏覽器",
           c2l: "頁面 AI",
-          c2a: "本機啟發式或本機 Ollama，預設不上雲",
+          c2a: "使用本機啟發式或使用者設定的相容 API；呼叫前確認目標",
           c2b: "不少助手把整頁送到雲端",
           c3l: "釣魚",
           c3a: "攔截並解釋原因，可繼續",
@@ -695,64 +697,65 @@
           c4a: "核心攔請求、清參數、揭 CNAME",
           c4b: "擴充功能宣告式規則，深度有限",
           limTitle: "現在不這樣說",
-          lim1: "安裝後不會自帶大型模型。沒有本機 Ollama 時，摘要走啟發式。",
+          lim1: "已有可對應目前原始碼的 macOS build-tree App，但它不是 RC；沒有通過身分、簽名、封裝和安裝門的 App，也沒有目前原始碼 APK，因此不提供試用分發包。",
           lim2: "指紋防護是降低跨站識別，不是讓網站無法識別你。",
           lim3: "第一方收集按已知路徑攔截，不宣稱擋住所有伺服器端埋點。",
-          lim4: "打開 AI 控制後，本機 agent 仍可能經 CDP 讀到網頁 DOM。遠端列表不包含 chrome:// 與 file://。",
-          getTitle: "如何試用",
+          lim4: "所選 CDP 場景僅在測試專用 mock Keychain 下通過；本機 agent 可讀取獲授權頁面 DOM，簽名安裝、Android 和完整協定仍未驗收。",
+          lim5: "AIM eligibility 與 policy FM/GCM 已有局部門禁，但不等於全部 Google/GCM 出站關閉；“無產品遙測”和“頁面內容不出機”仍待完整稽核。",
+          getTitle: "目前狀態",
           getBody:
-            "本機分發包在 <code>apps/browser/dist/GCSA-aegis.app</code>。第一次用 Finder 打開可能需要右鍵 → 打開。瀏覽器內打開 <code>chrome://aegis</code> 開關模組、看工作階段紀錄、做本機摘要。AI 控制預設關閉。",
-          footer: "Apache-2.0 · 頁面內容預設不上雲，無遙測",
+            "目前為本機開發 No-Go。已有目前原始碼的 macOS non-component build-tree App，本機 ad-hoc 嚴格結構驗證已通過，但仍是 Chromium 身分、沒有 TeamIdentifier 和分發包；出站稽核、安裝穩定性和 Android 驗收完成後才能生成內部候選包。",
+          footer: "Apache-2.0 · 本機開發 No-Go · 出站稽核待完成",
         },
         en: {
-          title: "GCSA-aegis — a local-first privacy browser",
+          title: "GCSA-aegis — a privacy browser in local development",
           navTag: "privacy browser",
-          hero: "A local-first privacy and security browser",
-          lede: "Summaries stay on the machine. Phish blocks explain why. Tracking is handled in the engine — not by an extension, and not by a Chrome wrapper.",
-          ctaTry: "Try it",
-          ctaCheck: "Check for yourself",
-          heroMeta: "Chromium 151 · current package is macOS arm64 · Apache-2.0",
-          panelTitle: "This session",
-          panelKicker: "What was stripped is visible on the settings page.",
+          hero: "A local-first privacy browser in development",
+          lede: "The product is integrated as a Chromium fork. Summary, tracking, and automation boundaries are still under local verification. Current status is No-Go; no package is offered.",
+          ctaTry: "Current status",
+          ctaCheck: "Acceptance gates",
+          heroMeta: "Chromium 151 · local-development No-Go · no traceable package",
+          panelTitle: "Static demo data",
+          panelKicker: "The entries below illustrate target UI copy; they are not current-session or runtime evidence.",
           log1Tag: "params",
-          log1: "Removed utm_source, fbclid, gbraid",
+          log1: "Example: removed utm_source, fbclid, gbraid",
           log2Tag: "cookies",
-          log2: "Deleted _ga and _fbp; login cookies kept",
+          log2: "Example: deleted _ga and _fbp; login cookies kept",
           log3Tag: "summary",
-          log3: "heuristic · on-device · not sent · 842 chars",
+          log3: "Example: heuristic summary (not a current runtime result)",
           pillarsTitle: "Three claims",
-          p1Title: "The page does not leave the device",
+          p1Title: "Local summary is a design target",
           p1Body:
-            "Privacy summaries run on your computer. Text is redacted first. Ollama, if present, is loopback-only; otherwise a heuristic is used. Page content is not uploaded by default.",
-          p2Title: "Blocks that explain themselves",
+            "Structured redaction and the final POST body for desktop summary have passed directed regression tests. A complete Chromium egress audit and signed installed-App proof are still pending, and Android summary is unavailable.",
+          p2Title: "Explainable blocking is under verification",
           p2Body:
-            "High-risk lookalikes are stopped first, with a human reason, evidence, and a score versus the threshold. You can continue anyway.",
+            "The current source passed native tests, a full Release build, and a representative-site stability matrix. Functional toggle behavior, installed-App, and startup-stress gates are still pending.",
           p3Title: "In the engine, not another extension",
           p3Body:
-            "Ad and analytics requests, tracking parameters, cloaked hosts, and ad cookies are handled inside Chromium. No extension rule-count ceiling.",
-          featTitle: "What the engine does",
+            "Requests, parameters, cloaked hosts, and cookies are integrated into Chromium and included in the current build-tree App. Representative-site behavior and distribution gates are still pending. This is not an Extension deliverable.",
+          featTitle: "Experimental implementations in the current source",
           f1t: "Tracker blocking",
-          f1d: "EasyList / EasyPrivacy, plus first-party collect paths such as /g/collect and gtm.js. Pages you open are not blocked.",
+          f1d: "The patch series includes EasyList / EasyPrivacy and selected first-party collect-path rules. Final behavior awaits current-App regression.",
           f2t: "Links and cookies",
-          f2d: "Strips utm, fbclid, gclid, gbraid and similar on navigation. Deletes ads/analytics cookies by name; keeps login cookies.",
+          f2d: "The patch series includes parameter stripping and name-based cookie classification. Preserving sign-in state still needs representative-site tests.",
           f3t: "Cloaking and bounces",
-          f3d: "Uncloaks subresource CNAMEs. Detects bounce tracking and clears matching cookies immediately.",
+          f3d: "Subresource CNAME and bounce-tracking handling have directed native tests. Representative-site runtime coverage is still pending.",
           f4t: "Fingerprint stabilization",
-          f4d: "Stabilizes Canvas, WebGL, Audio, and WebGPU. On chrome://aegis, tap Probe this page fingerprints; with the guard on, WebGL/WebGPU show Aegis and maxBufferSize changes with the switch. Not fingerprint-proof.",
+          f4d: "Canvas, OffscreenCanvas, Audio, WebGL, and WebGPU fingerprint mitigations passed the local behavior matrix. The goal is to reduce stable identification, not make users fingerprint-proof; release identity binding is still pending.",
           f5t: "Local AI control",
-          f5d: "Off by default. When on, CDP binds only to 127.0.0.1. A banner appears while an agent is connected. Remote lists hide chrome:// and file://.",
-          checkTitle: "Check it yourself",
-          s1: "<strong>Open a link with tracking tails.</strong> utm_source and fbclid disappear from the address bar.",
-          s2: "<strong>Open a high-risk lookalike login page.</strong> The interstitial says why, and you can continue.",
-          s3: "<strong>Open chrome://aegis.</strong> Check blocks and cookies. Turn on AI control, connect a local agent, and a banner appears.",
-          cmpTitle: "How it differs",
+          f5d: "Desktop HTTP, direct target WebSocket, pipe, and selected Target.* paths passed local gates. An authorized local agent can still read DOM; real signing, Android, and full-protocol coverage remain unverified.",
+          checkTitle: "Next acceptance checks after source gates",
+          s1: "<strong>Parameter-stripping acceptance.</strong> Use representative links to verify address-bar and request behavior.",
+          s2: "<strong>Phishing-block acceptance.</strong> Use controlled pages to verify thresholds, reasons, and the continue path.",
+          s3: "<strong>Installed automation-boundary acceptance.</strong> Recheck listings, direct target WebSockets, and Target.* in a signed installed App; build-tree results alone are not enough.",
+          cmpTitle: "Design-direction comparison (not a release capability list)",
           cmpUs: "GCSA-aegis",
           cmpOther: "Typical approach",
           c1l: "Form",
           c1a: "Chromium fork; capability lives in the engine",
           c1b: "Chrome plus an extension, or a wrapped shell",
           c2l: "Page AI",
-          c2a: "On-device heuristic or local Ollama; not uploaded by default",
+          c2a: "Uses an on-device heuristic or a user-configured compatible API; confirms the target before the call",
           c2b: "Many assistants send the full page to the cloud",
           c3l: "Phishing",
           c3a: "Blocks with reasons; continue is allowed",
@@ -761,14 +764,15 @@
           c4a: "Engine blocks requests, strips params, uncloaks CNAME",
           c4b: "Declarative extension rules, limited depth",
           limTitle: "What we do not claim",
-          lim1: "No bundled large model. Without local Ollama, summaries are heuristic.",
+          lim1: "A macOS build-tree App is traceable to the current source, but it is not an RC. No App has passed identity, signing, packaging, and installed-App gates, and there is no current-source APK, so no trial package is offered.",
           lim2: "Fingerprint Guard reduces cross-site identification; it does not make you unidentifiable.",
           lim3: "First-party collect is blocked on known paths. We do not claim to stop all server-side tagging.",
-          lim4: "With AI control on, a local agent can still read page DOM over CDP. chrome:// and file:// are not listed as remote targets.",
-          getTitle: "How to try it",
+          lim4: "Selected CDP scenarios passed only with a test-only mock Keychain. A local agent can read authorized page DOM; signed installation, Android, and full-protocol coverage remain unverified.",
+          lim5: "AIM eligibility and policy FM/GCM have narrow local gates, but this does not close all Google/GCM egress. No product telemetry and page content staying local still require a complete audit.",
+          getTitle: "Current status",
           getBody:
-            "The local package is at <code>apps/browser/dist/GCSA-aegis.app</code>. The first Finder launch may need right-click → Open. In the browser, open <code>chrome://aegis</code> to toggle modules, review the session log, and summarize on-device. AI control is off by default.",
-          footer: "Apache-2.0 · page content stays local by default; no telemetry",
+            "Current status is local-development No-Go. A macOS non-component build-tree App maps to the current source and passes local ad-hoc strict structural verification, but it still has Chromium identity, no TeamIdentifier, and no distribution package. Egress, installed stability, and Android gates remain before an internal candidate.",
+          footer: "Apache-2.0 · local-development No-Go · egress audit pending",
         },
       };
 

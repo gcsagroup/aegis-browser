@@ -1,0 +1,437 @@
+From a07225f1b00a3f6dd1f37cce08e656a1c9b4830f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 01:35:43 +0800
+Subject: [PATCH] fix: delay policy FM until enterprise registration
+
+---
+ ...fm_registration_token_uploader_unittest.cc | 208 ++++++++++++++++++
+ .../user_fm_registration_token_uploader.cc    |  90 +++++++-
+ .../user_fm_registration_token_uploader.h     |  25 ++-
+ 3 files changed, 315 insertions(+), 8 deletions(-)
+
+diff --git a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
+index 1ba8638d57..7e5ae56b7a 100644
+--- a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
++++ b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
+@@ -6,15 +6,30 @@
+ 
+ #include <stdint.h>
+ 
++#include <cstddef>
++
++#include "base/functional/bind.h"
++#include "base/memory/raw_ref.h"
+ #include "base/test/protobuf_matchers.h"
+ #include "base/test/task_environment.h"
++#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
++#include "chrome/browser/policy/cloud/user_fm_registration_token_uploader.h"
++#include "chrome/test/base/testing_profile.h"
+ #include "components/invalidation/invalidation_listener.h"
++#include "components/invalidation/profile_invalidation_provider.h"
++#include "components/invalidation/public/identity_provider.h"
++#include "components/invalidation/test_support/fake_invalidation_listener.h"
+ #include "components/policy/core/common/cloud/cloud_policy_client.h"
+ #include "components/policy/core/common/cloud/cloud_policy_constants.h"
+ #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
++#include "components/policy/core/common/cloud/mock_cloud_policy_manager.h"
+ #include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
+ #include "components/policy/proto/device_management_backend.pb.h"
++#include "content/public/browser/browser_context.h"
++#include "content/public/test/browser_task_environment.h"
++#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/test/test_network_connection_tracker.h"
++#include "services/network/test/test_url_loader_factory.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -51,6 +66,56 @@ class MockInvalidationListener : public invalidation::InvalidationListener {
+ 
+   int64_t project_number() const override { return kFakeProjectNumber; }
+ };
++
++class NoAccountIdentityProvider final : public invalidation::IdentityProvider {
++ public:
++  CoreAccountId GetActiveAccountId() override { return CoreAccountId(); }
++
++  bool IsActiveAccountWithRefreshToken() override { return false; }
++
++  std::unique_ptr<invalidation::ActiveAccountAccessTokenFetcher>
++  FetchAccessToken(
++      const std::string& oauth_consumer_name,
++      const OAuth2AccessTokenManager::ScopeSet& scopes,
++      invalidation::ActiveAccountAccessTokenCallback callback) override {
++    ADD_FAILURE() << "未受管 Profile 不应请求 access token";
++    return nullptr;
++  }
++
++  void InvalidateAccessToken(const OAuth2AccessTokenManager::ScopeSet& scopes,
++                             const std::string& access_token) override {}
++};
++
++struct ListenerCounters {
++  size_t created = 0;
++  size_t started = 0;
++  size_t shutdown = 0;
++};
++
++class CountingInvalidationListener final
++    : public invalidation::FakeInvalidationListener {
++ public:
++  CountingInvalidationListener(int64_t project_number,
++                               ListenerCounters& counters)
++      : FakeInvalidationListener(project_number), counters_(counters) {}
++
++  void Shutdown() override {
++    EXPECT_TRUE(started_);
++    started_ = false;
++    ++counters_->shutdown;
++    FakeInvalidationListener::Shutdown();
++  }
++
++ private:
++  void Start(invalidation::RegistrationTokenHandler* handler) override {
++    EXPECT_FALSE(started_);
++    started_ = true;
++    ++counters_->started;
++  }
++
++  raw_ref<ListenerCounters> counters_;
++  bool started_ = false;
++};
+ }  // namespace
+ 
+ class FmRegistrationTokenUploaderTest : public testing::Test {
+@@ -283,4 +348,147 @@ TEST_F(FmRegistrationTokenUploaderTest,
+   core_.Disconnect();
+ }
+ 
++class UserFmRegistrationTokenUploaderTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    TestingProfile::Builder profile_builder;
++    profile_builder.AddTestingFactory(
++        invalidation::ProfileInvalidationProviderFactory::GetInstance(),
++        base::BindOnce(
++            &UserFmRegistrationTokenUploaderTest::BuildInvalidationProvider,
++            base::Unretained(this)));
++    profile_ = profile_builder.Build();
++
++    auto store = std::make_unique<MockCloudPolicyStore>(
++        dm_protocol::GetChromeUserPolicyType());
++    policy_manager_ = std::make_unique<MockCloudPolicyManager>(
++        std::move(store), task_environment_.GetMainThreadTaskRunner());
++    uploader_ = std::make_unique<UserFmRegistrationTokenUploader>(
++        profile_.get(), policy_manager_.get());
++  }
++
++  void TearDown() override {
++    uploader_->Shutdown();
++    uploader_.reset();
++    profile_.reset();
++    policy_manager_.reset();
++  }
++
++  std::unique_ptr<KeyedService> BuildInvalidationProvider(
++      content::BrowserContext* context) {
++    Profile* profile = Profile::FromBrowserContext(context);
++    return std::make_unique<invalidation::ProfileInvalidationProvider>(
++        test_url_loader_factory_.GetSafeWeakWrapper(),
++        std::make_unique<NoAccountIdentityProvider>(), profile->GetPrefs(),
++        base::BindRepeating(
++            &UserFmRegistrationTokenUploaderTest::CreateListener,
++            base::Unretained(this)));
++  }
++
++  std::unique_ptr<invalidation::InvalidationListener> CreateListener(
++      int64_t project_number,
++      std::string log_prefix) {
++    ++counters_.created;
++    return std::make_unique<CountingInvalidationListener>(project_number,
++                                                          counters_);
++  }
++
++  void CompleteProfileInitialization() {
++    uploader_->OnProfileInitializationComplete(profile_.get());
++  }
++
++  MockCloudPolicyClient* ConnectClient(bool registered) {
++    auto client = std::make_unique<MockCloudPolicyClient>();
++    MockCloudPolicyClient* client_ptr = client.get();
++    if (registered) {
++      client_ptr->SetDMToken(kFakeDMToken);
++    }
++    policy_manager_->core()->Connect(std::move(client));
++    return client_ptr;
++  }
++
++  content::BrowserTaskEnvironment task_environment_;
++  network::TestURLLoaderFactory test_url_loader_factory_;
++  ListenerCounters counters_;
++  std::unique_ptr<TestingProfile> profile_;
++  std::unique_ptr<MockCloudPolicyManager> policy_manager_;
++  std::unique_ptr<UserFmRegistrationTokenUploader> uploader_;
++};
++
++TEST_F(UserFmRegistrationTokenUploaderTest,
++       UnregisteredClientDoesNotStartListeners) {
++  CompleteProfileInitialization();
++  ConnectClient(/*registered=*/false);
++
++  EXPECT_EQ(0u, counters_.created);
++  EXPECT_EQ(0u, counters_.started);
++  EXPECT_EQ(0u, counters_.shutdown);
++}
++
++TEST_F(UserFmRegistrationTokenUploaderTest,
++       FirstRegistrationStartsExactlyOnceAndSurvivesDisconnect) {
++  CompleteProfileInitialization();
++  MockCloudPolicyClient* client = ConnectClient(/*registered=*/false);
++
++  client->SetDMToken(kFakeDMToken);
++  client->NotifyRegistrationStateChanged();
++  const size_t listener_count = counters_.started;
++  ASSERT_GT(listener_count, 0u);
++  EXPECT_EQ(listener_count, counters_.created);
++  EXPECT_EQ(0u, counters_.shutdown);
++
++  client->NotifyRegistrationStateChanged();
++  EXPECT_EQ(listener_count, counters_.started);
++
++  client->SetDMToken(std::string());
++  client->NotifyRegistrationStateChanged();
++  EXPECT_EQ(listener_count, counters_.started);
++  EXPECT_EQ(0u, counters_.shutdown);
++
++  policy_manager_->core()->Disconnect();
++  ConnectClient(/*registered=*/true);
++  EXPECT_EQ(listener_count, counters_.started);
++  EXPECT_EQ(0u, counters_.shutdown);
++
++  uploader_->Shutdown();
++  EXPECT_EQ(listener_count, counters_.shutdown);
++}
++
++TEST_F(UserFmRegistrationTokenUploaderTest,
++       ReconnectBeforeFirstRegistrationStillStarts) {
++  CompleteProfileInitialization();
++  ConnectClient(/*registered=*/false);
++  policy_manager_->core()->Disconnect();
++
++  MockCloudPolicyClient* client = ConnectClient(/*registered=*/false);
++  client->SetDMToken(kFakeDMToken);
++  client->NotifyRegistrationStateChanged();
++
++  EXPECT_GT(counters_.started, 0u);
++  EXPECT_EQ(counters_.started, counters_.created);
++  EXPECT_EQ(0u, counters_.shutdown);
++}
++
++TEST_F(UserFmRegistrationTokenUploaderTest,
++       ConnectedClientStartsAfterProfileInitialization) {
++  ConnectClient(/*registered=*/true);
++  EXPECT_EQ(0u, counters_.started);
++
++  CompleteProfileInitialization();
++
++  EXPECT_GT(counters_.started, 0u);
++  EXPECT_EQ(counters_.started, counters_.created);
++  EXPECT_EQ(0u, counters_.shutdown);
++}
++
++TEST_F(UserFmRegistrationTokenUploaderTest, ShutdownDetachesObservers) {
++  CompleteProfileInitialization();
++  MockCloudPolicyClient* client = ConnectClient(/*registered=*/false);
++  uploader_->Shutdown();
++
++  client->SetDMToken(kFakeDMToken);
++  client->NotifyRegistrationStateChanged();
++  EXPECT_EQ(0u, counters_.started);
++}
++
+ }  // namespace policy
+diff --git a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc
+index d2386d277e..329116fd12 100644
+--- a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc
++++ b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc
+@@ -50,7 +50,7 @@ namespace policy {
+ UserFmRegistrationTokenUploader::UserFmRegistrationTokenUploader(
+     Profile* profile,
+     CloudPolicyManager* policy_manager)
+-    : policy_manager_(policy_manager) {
++    : profile_(profile), policy_manager_(policy_manager) {
+   CHECK(profile);
+   CHECK(policy_manager);
+ 
+@@ -63,18 +63,96 @@ UserFmRegistrationTokenUploader::~UserFmRegistrationTokenUploader() = default;
+ 
+ void UserFmRegistrationTokenUploader::Shutdown() {
+   profile_observation_.Reset();
++  client_observation_.Reset();
++  core_observation_.Reset();
++
++  // 正常的 KeyedService 关闭顺序会先让依赖本服务的策略消费者解除
++  // listener observer，再由这里停止 FM registration handler。
+   uploaders_.clear();
++
++  profile_ = nullptr;
++  policy_manager_ = nullptr;
+ }
+ 
+ void UserFmRegistrationTokenUploader::OnProfileInitializationComplete(
+     Profile* profile) {
+   CHECK(profile_observation_.IsObservingSource(profile));
++  CHECK_EQ(profile_, profile);
+   profile_observation_.Reset();
+ 
+-  // Initialize now that profile creation is complete and the invalidation
+-  // service can safely be initialized.
++  CloudPolicyCore* core = policy_manager_->core();
++  CHECK(core);
++  core_observation_.Observe(core);
++
++  // AddObserver 不会重放已经发生的 Connect，因此需要主动检查当前状态。
++  if (core->IsConnected()) {
++    OnCoreConnected(core);
++  }
++}
++
++void UserFmRegistrationTokenUploader::OnCoreConnected(CloudPolicyCore* core) {
++  CHECK(core_observation_.IsObservingSource(core));
++  CHECK(policy_manager_);
++  CHECK_EQ(core, policy_manager_->core());
++  CHECK(core->client());
++
++  client_observation_.Reset();
++  client_observation_.Observe(core->client());
++  MaybeStartUploaders();
++}
++
++void UserFmRegistrationTokenUploader::OnRefreshSchedulerStarted(
++    CloudPolicyCore* core) {
++  CHECK(core_observation_.IsObservingSource(core));
++}
++
++void UserFmRegistrationTokenUploader::OnCoreDisconnecting(
++    CloudPolicyCore* core) {
++  CHECK(core_observation_.IsObservingSource(core));
++  client_observation_.Reset();
++
++  // uploader 必须跨 disconnect 保留。提前析构会关闭共享的 invalidation
++  // listener，而策略、远程命令等消费者此时可能仍在观察它。
++}
++
++void UserFmRegistrationTokenUploader::OnCoreDestruction(CloudPolicyCore* core) {
++  CHECK(core_observation_.IsObservingSource(core));
++
++  // 正常 Profile 生命周期会先调用 KeyedService::Shutdown()；这里仅作为
++  // Core 异常提前析构时的防御性兜底。
++  Shutdown();
++}
++
++void UserFmRegistrationTokenUploader::OnRegistrationStateChanged(
++    CloudPolicyClient* client) {
++  CHECK(client_observation_.IsObservingSource(client));
++
++  // 失去注册时不能销毁 uploader；它持有的 listener 与其他策略消费者共享。
++  if (client->is_registered()) {
++    MaybeStartUploaders();
++  }
++}
++
++void UserFmRegistrationTokenUploader::MaybeStartUploaders() {
++  if (!profile_ || !policy_manager_ || !uploaders_.empty()) {
++    return;
++  }
++
++  CloudPolicyCore* core = policy_manager_->core();
++  if (!core->IsConnected()) {
++    return;
++  }
++
++  CloudPolicyClient* client = core->client();
++  CHECK(client);
++  if (!client->is_registered()) {
++    return;
++  }
++
++  // Profile 已完成初始化且 CloudPolicyClient 已确认注册，此时才允许创建
++  // listener，避免普通未受管 Profile 在启动阶段触发 FM/GCM 注册。
+   invalidation::ProfileInvalidationProvider* invalidation_provider =
+-      GetInvalidationProvider(profile);
++      GetInvalidationProvider(profile_);
+   if (!invalidation_provider) {
+     VLOG(1) << "Invalidation provider does not exist.";
+     return;
+@@ -83,10 +161,10 @@ void UserFmRegistrationTokenUploader::OnProfileInitializationComplete(
+   for (const int64_t project_number : GetAllInvalidationProjectNumbers()) {
+     invalidation::InvalidationListener* invalidation_listener =
+         invalidation_provider->GetInvalidationListener(project_number);
++    CHECK(invalidation_listener);
+ 
+     uploaders_.emplace_back(std::make_unique<FmRegistrationTokenUploader>(
+-        PolicyInvalidationScope::kUser, invalidation_listener,
+-        policy_manager_->core()));
++        PolicyInvalidationScope::kUser, invalidation_listener, core));
+   }
+ }
+ 
+diff --git a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h
+index 8fcf54be08..b4fce1d345 100644
+--- a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h
++++ b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h
+@@ -8,9 +8,12 @@
+ #include <memory>
+ #include <vector>
+ 
++#include "base/memory/raw_ptr.h"
+ #include "base/scoped_observation.h"
+ #include "chrome/browser/profiles/profile_observer.h"
+ #include "components/keyed_service/core/keyed_service.h"
++#include "components/policy/core/common/cloud/cloud_policy_client.h"
++#include "components/policy/core/common/cloud/cloud_policy_core.h"
+ 
+ class Profile;
+ 
+@@ -22,7 +25,9 @@ class FmRegistrationTokenUploader;
+ // Uploads Firebase registration token to the backend server. Implemented as a
+ // KeyedService to allow profile-based lifetime management.
+ class UserFmRegistrationTokenUploader : public KeyedService,
+-                                        public ProfileObserver {
++                                        public ProfileObserver,
++                                        public CloudPolicyCore::Observer,
++                                        public CloudPolicyClient::Observer {
+  public:
+   // `profile` is profile associated with the invalidator. It is used to get
+   // a reference to the profile's invalidation service. Both the profile and
+@@ -43,11 +48,27 @@ class UserFmRegistrationTokenUploader : public KeyedService,
+   // ProfileObserver implementation:
+   void OnProfileInitializationComplete(Profile* profile) override;
+ 
++  // CloudPolicyCore::Observer implementation:
++  void OnCoreConnected(CloudPolicyCore* core) override;
++  void OnRefreshSchedulerStarted(CloudPolicyCore* core) override;
++  void OnCoreDisconnecting(CloudPolicyCore* core) override;
++  void OnCoreDestruction(CloudPolicyCore* core) override;
++
++  // CloudPolicyClient::Observer implementation:
++  void OnRegistrationStateChanged(CloudPolicyClient* client) override;
++
+  private:
+-  base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
++  void MaybeStartUploaders();
+ 
++  raw_ptr<Profile> profile_ = nullptr;
+   raw_ptr<CloudPolicyManager> policy_manager_ = nullptr;
+ 
++  base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
++  base::ScopedObservation<CloudPolicyCore, CloudPolicyCore::Observer>
++      core_observation_{this};
++  base::ScopedObservation<CloudPolicyClient, CloudPolicyClient::Observer>
++      client_observation_{this};
++
+   std::vector<std::unique_ptr<FmRegistrationTokenUploader>> uploaders_;
+ };
+ 
+-- 
+2.52.0
+

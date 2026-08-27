@@ -1,0 +1,1290 @@
+From 3fd71b41b53e1117573d45131b82022335e2e4f5 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 26 Aug 2026 21:39:06 +0800
+Subject: [PATCH 51/52] feat(aegis): add native download settings
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ chrome/browser/aegis/aegis_download_prefs.cc  |  83 ++++++++
+ chrome/browser/aegis/aegis_download_prefs.h   |  52 +++++
+ .../aegis/aegis_download_prefs_unittest.cc    |  85 ++++++++
+ .../chrome_download_manager_delegate.cc       |   4 +
+ chrome/browser/prefs/browser_prefs.cc         |   2 +
+ .../downloads/aegis_download_panel.html.ts    |  10 +-
+ .../downloads/aegis_download_panel.ts         |  13 ++
+ .../downloads_page/downloads_browser_proxy.ts |  26 ++-
+ .../downloads_page/downloads_page.html        |  99 +++++++++
+ .../settings/downloads_page/downloads_page.ts | 190 +++++++++++++++++-
+ .../ui/webui/downloads/downloads_ui.cc        |  13 ++
+ .../ui/webui/settings/downloads_handler.cc    |  98 +++++++++
+ .../ui/webui/settings/downloads_handler.h     |   4 +
+ .../settings/downloads_handler_unittest.cc    |  52 +++++
+ .../webui/settings/downloads_page_test.ts     |  45 +++++
+ .../common/parallel_download_utils.cc         |  16 +-
+ .../parallel_download_utils_unittest.cc       |  16 ++
+ .../public/common/download_features.cc        |  36 ++++
+ .../public/common/download_features.h         |  10 +
+ 20 files changed, 847 insertions(+), 10 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_download_prefs.cc
+ create mode 100644 chrome/browser/aegis/aegis_download_prefs.h
+ create mode 100644 chrome/browser/aegis/aegis_download_prefs_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index da0c389d21..a0f44386ef 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -7,6 +7,8 @@ source_set("aegis") {
+   sources = [
+     "aegis_ai_control.cc",
+     "aegis_ai_control.h",
++    "aegis_download_prefs.cc",
++    "aegis_download_prefs.h",
+     "aegis_bounce_observer.cc",
+     "aegis_bounce_observer.h",
+     "aegis_cookie_janitor.cc",
+@@ -81,6 +83,7 @@ source_set("aegis") {
+ 
+ test("aegis_browser_unittests") {
+   sources = [
++    "aegis_download_prefs_unittest.cc",
+     "aegis_ai_control_unittest.cc",
+     "aegis_phish_blocking_page_unittest.cc",
+     "aegis_phish_tab_helper_unittest.cc",
+diff --git a/chrome/browser/aegis/aegis_download_prefs.cc b/chrome/browser/aegis/aegis_download_prefs.cc
+new file mode 100644
+index 0000000000..239efb83ba
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_download_prefs.cc
+@@ -0,0 +1,83 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/aegis_download_prefs.h"
++
++#include "base/check.h"
++#include "components/download/public/common/download_features.h"
++#include "components/prefs/pref_registry_simple.h"
++#include "components/prefs/pref_service.h"
++
++namespace aegis {
++
++void RegisterDownloadLocalStatePrefs(PrefRegistrySimple* registry) {
++  registry->RegisterIntegerPref(kDownloadParallelMode,
++                                kDownloadParallelModeSmart);
++  registry->RegisterBooleanPref(kDownloadReduceOnMetered, true);
++  registry->RegisterBooleanPref(kDownloadReduceOnBattery, true);
++  registry->RegisterBooleanPref(kTorrentDhtEnabled, true);
++  registry->RegisterBooleanPref(kTorrentPexEnabled, true);
++  registry->RegisterIntegerPref(kTorrentDownloadLimitKib, 0);
++  registry->RegisterIntegerPref(kTorrentUploadLimitKib, 256);
++}
++
++DownloadSettings ReadDownloadSettings(const PrefService& local_state) {
++  DownloadSettings settings;
++  const int parallel_mode = local_state.GetInteger(kDownloadParallelMode);
++  settings.parallel_mode = IsValidDownloadParallelMode(parallel_mode)
++                               ? parallel_mode
++                               : kDownloadParallelModeSmart;
++  settings.reduce_on_metered =
++      local_state.GetBoolean(kDownloadReduceOnMetered);
++  settings.reduce_on_battery =
++      local_state.GetBoolean(kDownloadReduceOnBattery);
++  settings.torrent_dht_enabled = local_state.GetBoolean(kTorrentDhtEnabled);
++  settings.torrent_pex_enabled = local_state.GetBoolean(kTorrentPexEnabled);
++  const int download_limit =
++      local_state.GetInteger(kTorrentDownloadLimitKib);
++  settings.torrent_download_limit_kib =
++      IsValidTorrentRateLimit(download_limit) ? download_limit : 0;
++  const int upload_limit = local_state.GetInteger(kTorrentUploadLimitKib);
++  settings.torrent_upload_limit_kib =
++      IsValidTorrentRateLimit(upload_limit) ? upload_limit : 256;
++  return settings;
++}
++
++bool IsValidDownloadParallelMode(int mode) {
++  return mode == kDownloadParallelModeSmart ||
++         mode == kDownloadParallelModeSingle ||
++         mode == kDownloadParallelModeThree ||
++         mode == kDownloadParallelModeSix;
++}
++
++bool IsValidTorrentRateLimit(int limit_kib) {
++  return limit_kib >= 0 && limit_kib <= kMaxTorrentRateLimitKib;
++}
++
++void WriteDownloadSettings(PrefService* local_state,
++                           const DownloadSettings& settings) {
++  CHECK(local_state);
++  CHECK(IsValidDownloadParallelMode(settings.parallel_mode));
++  CHECK(IsValidTorrentRateLimit(settings.torrent_download_limit_kib));
++  CHECK(IsValidTorrentRateLimit(settings.torrent_upload_limit_kib));
++  local_state->SetInteger(kDownloadParallelMode, settings.parallel_mode);
++  local_state->SetBoolean(kDownloadReduceOnMetered,
++                          settings.reduce_on_metered);
++  local_state->SetBoolean(kDownloadReduceOnBattery,
++                          settings.reduce_on_battery);
++  local_state->SetBoolean(kTorrentDhtEnabled, settings.torrent_dht_enabled);
++  local_state->SetBoolean(kTorrentPexEnabled, settings.torrent_pex_enabled);
++  local_state->SetInteger(kTorrentDownloadLimitKib,
++                          settings.torrent_download_limit_kib);
++  local_state->SetInteger(kTorrentUploadLimitKib,
++                          settings.torrent_upload_limit_kib);
++  ApplyDownloadSettings(*local_state);
++}
++
++void ApplyDownloadSettings(const PrefService& local_state) {
++  const DownloadSettings settings = ReadDownloadSettings(local_state);
++  download::features::ConfigureAegisParallelDownloading(
++      settings.parallel_mode, settings.reduce_on_metered,
++      settings.reduce_on_battery);
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_download_prefs.h b/chrome/browser/aegis/aegis_download_prefs.h
+new file mode 100644
+index 0000000000..2172dfe704
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_download_prefs.h
+@@ -0,0 +1,52 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_AEGIS_DOWNLOAD_PREFS_H_
++#define CHROME_BROWSER_AEGIS_AEGIS_DOWNLOAD_PREFS_H_
++
++class PrefRegistrySimple;
++class PrefService;
++
++namespace aegis {
++
++inline constexpr char kDownloadParallelMode[] =
++    "aegis.download.parallel_mode";
++inline constexpr char kDownloadReduceOnMetered[] =
++    "aegis.download.reduce_on_metered";
++inline constexpr char kDownloadReduceOnBattery[] =
++    "aegis.download.reduce_on_battery";
++inline constexpr char kTorrentDhtEnabled[] =
++    "aegis.download.torrent_dht_enabled";
++inline constexpr char kTorrentPexEnabled[] =
++    "aegis.download.torrent_pex_enabled";
++inline constexpr char kTorrentDownloadLimitKib[] =
++    "aegis.download.torrent_download_limit_kib";
++inline constexpr char kTorrentUploadLimitKib[] =
++    "aegis.download.torrent_upload_limit_kib";
++
++constexpr int kDownloadParallelModeSmart = 0;
++constexpr int kDownloadParallelModeSingle = 1;
++constexpr int kDownloadParallelModeThree = 3;
++constexpr int kDownloadParallelModeSix = 6;
++constexpr int kMaxTorrentRateLimitKib = 1'000'000;
++
++struct DownloadSettings {
++  int parallel_mode = kDownloadParallelModeSmart;
++  bool reduce_on_metered = true;
++  bool reduce_on_battery = true;
++  bool torrent_dht_enabled = true;
++  bool torrent_pex_enabled = true;
++  int torrent_download_limit_kib = 0;
++  int torrent_upload_limit_kib = 256;
++};
++
++void RegisterDownloadLocalStatePrefs(PrefRegistrySimple* registry);
++DownloadSettings ReadDownloadSettings(const PrefService& local_state);
++bool IsValidDownloadParallelMode(int mode);
++bool IsValidTorrentRateLimit(int limit_kib);
++void WriteDownloadSettings(PrefService* local_state,
++                           const DownloadSettings& settings);
++void ApplyDownloadSettings(const PrefService& local_state);
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_AEGIS_AEGIS_DOWNLOAD_PREFS_H_
+diff --git a/chrome/browser/aegis/aegis_download_prefs_unittest.cc b/chrome/browser/aegis/aegis_download_prefs_unittest.cc
+new file mode 100644
+index 0000000000..c33796d00d
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_download_prefs_unittest.cc
+@@ -0,0 +1,85 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/aegis_download_prefs.h"
++
++#include "components/download/public/common/download_features.h"
++#include "components/prefs/testing_pref_service.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis {
++namespace {
++
++class AegisDownloadPrefsTest : public testing::Test {
++ public:
++  AegisDownloadPrefsTest() {
++    RegisterDownloadLocalStatePrefs(prefs_.registry());
++  }
++
++  ~AegisDownloadPrefsTest() override {
++    download::features::ConfigureAegisParallelDownloading(0, true, true);
++  }
++
++ protected:
++  TestingPrefServiceSimple prefs_;
++};
++
++TEST_F(AegisDownloadPrefsTest, DefaultsAreConservativeAndApplied) {
++  const DownloadSettings settings = ReadDownloadSettings(prefs_);
++  EXPECT_EQ(settings.parallel_mode, kDownloadParallelModeSmart);
++  EXPECT_TRUE(settings.reduce_on_metered);
++  EXPECT_TRUE(settings.reduce_on_battery);
++  EXPECT_TRUE(settings.torrent_dht_enabled);
++  EXPECT_TRUE(settings.torrent_pex_enabled);
++  EXPECT_EQ(settings.torrent_download_limit_kib, 0);
++  EXPECT_EQ(settings.torrent_upload_limit_kib, 256);
++
++  ApplyDownloadSettings(prefs_);
++  EXPECT_EQ(download::features::GetAegisParallelDownloadMode(), 0);
++  EXPECT_TRUE(
++      download::features::ShouldAegisReduceParallelismOnMetered());
++  EXPECT_TRUE(
++      download::features::ShouldAegisReduceParallelismOnBattery());
++}
++
++TEST_F(AegisDownloadPrefsTest, RoundTripsAndAppliesSettings) {
++  const DownloadSettings expected{
++      .parallel_mode = kDownloadParallelModeSix,
++      .reduce_on_metered = false,
++      .reduce_on_battery = false,
++      .torrent_dht_enabled = false,
++      .torrent_pex_enabled = true,
++      .torrent_download_limit_kib = 4096,
++      .torrent_upload_limit_kib = 512,
++  };
++  WriteDownloadSettings(&prefs_, expected);
++
++  const DownloadSettings actual = ReadDownloadSettings(prefs_);
++  EXPECT_EQ(actual.parallel_mode, expected.parallel_mode);
++  EXPECT_EQ(actual.reduce_on_metered, expected.reduce_on_metered);
++  EXPECT_EQ(actual.reduce_on_battery, expected.reduce_on_battery);
++  EXPECT_EQ(actual.torrent_dht_enabled, expected.torrent_dht_enabled);
++  EXPECT_EQ(actual.torrent_pex_enabled, expected.torrent_pex_enabled);
++  EXPECT_EQ(actual.torrent_download_limit_kib,
++            expected.torrent_download_limit_kib);
++  EXPECT_EQ(actual.torrent_upload_limit_kib,
++            expected.torrent_upload_limit_kib);
++  EXPECT_EQ(download::features::GetAegisParallelDownloadMode(), 6);
++  EXPECT_FALSE(
++      download::features::ShouldAegisReduceParallelismOnMetered());
++  EXPECT_FALSE(
++      download::features::ShouldAegisReduceParallelismOnBattery());
++}
++
++TEST_F(AegisDownloadPrefsTest, ValidatesModesAndLimits) {
++  EXPECT_TRUE(IsValidDownloadParallelMode(0));
++  EXPECT_TRUE(IsValidDownloadParallelMode(1));
++  EXPECT_TRUE(IsValidDownloadParallelMode(3));
++  EXPECT_TRUE(IsValidDownloadParallelMode(6));
++  EXPECT_FALSE(IsValidDownloadParallelMode(2));
++  EXPECT_FALSE(IsValidTorrentRateLimit(-1));
++  EXPECT_TRUE(IsValidTorrentRateLimit(kMaxTorrentRateLimitKib));
++  EXPECT_FALSE(IsValidTorrentRateLimit(kMaxTorrentRateLimitKib + 1));
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
+index f02af613fc..721a07e920 100644
+--- a/chrome/browser/download/chrome_download_manager_delegate.cc
++++ b/chrome/browser/download/chrome_download_manager_delegate.cc
+@@ -30,6 +30,7 @@
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/download/download_core_service.h"
+ #include "chrome/browser/download/download_core_service_factory.h"
+@@ -637,6 +638,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
+       download_message_bridge_(std::make_unique<DownloadMessageBridge>()),
+ #endif
+       download_prefs_(std::make_unique<DownloadPrefs>(profile)) {
++  if (g_browser_process && g_browser_process->local_state()) {
++    aegis::ApplyDownloadSettings(*g_browser_process->local_state());
++  }
+ }
+ 
+ ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
+diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
+index 7f7b08d894..1ca1da1af5 100644
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -19,6 +19,7 @@
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/about_flags.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
+ #include "chrome/browser/aegis/aegis_prefs.h"
+ #include "chrome/browser/accessibility/accessibility_labels_service.h"
+ #include "chrome/browser/accessibility/invert_bubble_prefs.h"
+@@ -1394,6 +1395,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+   accessibility::AccessibilityPrefsController::RegisterLocalStatePrefs(
+       registry);
+ #endif
++  aegis::RegisterDownloadLocalStatePrefs(registry);
+   autofill::prefs::RegisterLocalStatePrefs(registry);
+   breadcrumbs::RegisterPrefs(registry);
+   browser_shutdown::RegisterPrefs(registry);
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.html.ts b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
+index 0f265dd7d3..f924ac5cbc 100644
+--- a/chrome/browser/resources/downloads/aegis_download_panel.html.ts
++++ b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
+@@ -61,19 +61,21 @@ export function getHtml(this: AegisDownloadPanelElement) {
+               </label></li>`)}
+           </ul>` : nothing}
+         <div class="options">
+-          <label class="toggle"><input id="dht" type="checkbox" checked>
++          <label class="toggle"><input id="dht" type="checkbox"
++              .checked="${this.torrentDhtDefault_}">
+             ${this.isZh_() ? '启用 DHT' : 'Enable DHT'}</label>
+-          <label class="toggle"><input id="pex" type="checkbox" checked>
++          <label class="toggle"><input id="pex" type="checkbox"
++              .checked="${this.torrentPexDefault_}">
+             ${this.isZh_() ? '启用 PEX' : 'Enable PEX'}</label>
+           <label class="field">${this.isZh_() ? '下载上限（KiB/s，0 不限）' :
+                                      'Download limit (KiB/s, 0 unlimited)'}
+             <input id="download-limit" type="number" min="0" max="1000000"
+-                step="128" value="0">
++                step="128" .value="${String(this.torrentDownloadLimitDefault_)}">
+           </label>
+           <label class="field">${this.isZh_() ? '上传上限（KiB/s，0 不限）' :
+                                      'Upload limit (KiB/s, 0 unlimited)'}
+             <input id="upload-limit" type="number" min="0" max="1000000"
+-                step="128" value="256">
++                step="128" .value="${String(this.torrentUploadLimitDefault_)}">
+           </label>
+         </div>
+         <label class="disclosure">
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.ts b/chrome/browser/resources/downloads/aegis_download_panel.ts
+index 808667af3d..2394f2aa6d 100644
+--- a/chrome/browser/resources/downloads/aegis_download_panel.ts
++++ b/chrome/browser/resources/downloads/aegis_download_panel.ts
+@@ -1,6 +1,7 @@
+ // Copyright 2026 GCSA
+ 
+ import {sendWithPromise} from 'chrome://resources/js/cr.js';
++import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+ 
+ import {getCss} from './aegis_download_panel.css.js';
+@@ -120,6 +121,10 @@ export class AegisDownloadPanelElement extends CrLitElement {
+       taskStatus_: {type: Object},
+       disclosureAcknowledged_: {type: Boolean},
+       controlPending_: {type: Boolean},
++      torrentDhtDefault_: {type: Boolean},
++      torrentPexDefault_: {type: Boolean},
++      torrentDownloadLimitDefault_: {type: Number},
++      torrentUploadLimitDefault_: {type: Number},
+     };
+   }
+ 
+@@ -133,6 +138,14 @@ export class AegisDownloadPanelElement extends CrLitElement {
+   protected accessor taskStatus_: TorrentStatus|null = null;
+   protected accessor disclosureAcknowledged_ = false;
+   protected accessor controlPending_ = false;
++  protected accessor torrentDhtDefault_ =
++      loadTimeData.getBoolean('aegisTorrentDhtDefault');
++  protected accessor torrentPexDefault_ =
++      loadTimeData.getBoolean('aegisTorrentPexDefault');
++  protected accessor torrentDownloadLimitDefault_ =
++      loadTimeData.getInteger('aegisTorrentDownloadLimitKibDefault');
++  protected accessor torrentUploadLimitDefault_ =
++      loadTimeData.getInteger('aegisTorrentUploadLimitKibDefault');
+ 
+   private selectedFiles_ = new Set<number>();
+   private pollTimer_ = 0;
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts b/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts
+index 0e4a09e1cb..6edea56748 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts
+@@ -2,9 +2,17 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+-// <if expr="is_chromeos">
+ import {sendWithPromise} from 'chrome://resources/js/cr.js';
+-// </if>
++
++export interface AegisDownloadSettings {
++  parallelMode: number;
++  reduceOnMetered: boolean;
++  reduceOnBattery: boolean;
++  torrentDhtEnabled: boolean;
++  torrentPexEnabled: boolean;
++  torrentDownloadLimitKib: number;
++  torrentUploadLimitKib: number;
++}
+ 
+ export interface DownloadsBrowserProxy {
+   initializeDownloads(): void;
+@@ -14,6 +22,10 @@ export interface DownloadsBrowserProxy {
+ 
+   resetAutoOpenFileTypes(): void;
+ 
++  getAegisDownloadSettings(): Promise<AegisDownloadSettings>;
++  setAegisDownloadSettings(
++      settings: AegisDownloadSettings): Promise<AegisDownloadSettings>;
++
+   // <if expr="is_chromeos">
+   /**
+    * @param path Path to sanitze.
+@@ -36,6 +48,16 @@ export class DownloadsBrowserProxyImpl implements DownloadsBrowserProxy {
+     chrome.send('resetAutoOpenFileTypes');
+   }
+ 
++  getAegisDownloadSettings() {
++    return sendWithPromise<AegisDownloadSettings>(
++        'getAegisDownloadSettings');
++  }
++
++  setAegisDownloadSettings(settings: AegisDownloadSettings) {
++    return sendWithPromise<AegisDownloadSettings>(
++        'setAegisDownloadSettings', settings);
++  }
++
+   // <if expr="is_chromeos">
+   getDownloadLocationText(path: string) {
+     return sendWithPromise<string>('getDownloadLocationText', path);
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html b/chrome/browser/resources/settings/downloads_page/downloads_page.html
+index a8092a52f5..ef5b392db9 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.html
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html
+@@ -2,6 +2,34 @@
+     #defaultDownloadPath {
+       word-break: break-word;
+     }
++    .aegis-description {
++      color: var(--cr-secondary-text-color);
++      font-size: 12px;
++      line-height: 18px;
++      margin-top: 4px;
++    }
++    .aegis-heading {
++      font-weight: 500;
++    }
++    .aegis-select {
++      background: var(--cr-card-background-color);
++      border: 1px solid var(--cr-separator-color);
++      border-radius: 8px;
++      color: var(--cr-primary-text-color);
++      min-height: 36px;
++      padding: 0 12px;
++    }
++    .aegis-rate-row {
++      align-items: end;
++      display: grid;
++      gap: 16px;
++      grid-template-columns: 1fr 1fr;
++      padding: 12px 20px;
++    }
++    .aegis-fixed {
++      color: var(--cr-secondary-text-color);
++      padding: 12px 20px;
++    }
+   </style>
+   <settings-section page-title="$i18n{downloadsPageTitle}"
+       class="cr-centered-card-container">
+@@ -51,3 +79,74 @@
+       </settings-toggle-button>
+     </template>
+   </settings-section>
++  <settings-section page-title="[[aegisStrings_.title]]"
++      class="cr-centered-card-container" hidden="[[!aegisSettingsReady_]]">
++    <div class="cr-row first">
++      <div class="flex cr-padded-text">
++        <div class="aegis-heading">[[aegisStrings_.httpTitle]]</div>
++        <div class="aegis-description">[[aegisStrings_.httpDescription]]</div>
++      </div>
++    </div>
++    <div class="cr-row">
++      <div class="flex cr-padded-text">[[aegisStrings_.mode]]</div>
++      <select class="aegis-select" value="[[aegisParallelMode_]]"
++          on-change="onAegisParallelModeChanged_">
++        <option value="0">[[aegisStrings_.smart]]</option>
++        <option value="1">[[aegisStrings_.single]]</option>
++        <option value="3">[[aegisStrings_.three]]</option>
++        <option value="6">[[aegisStrings_.six]]</option>
++      </select>
++    </div>
++    <div class="cr-row">
++      <div class="flex cr-padded-text">[[aegisStrings_.metered]]</div>
++      <cr-toggle id="aegisReduceOnMetered"
++          checked="{{aegisReduceOnMetered_}}"
++          on-change="onAegisToggleChanged_">
++      </cr-toggle>
++    </div>
++    <div class="cr-row">
++      <div class="flex cr-padded-text">[[aegisStrings_.battery]]</div>
++      <cr-toggle id="aegisReduceOnBattery"
++          checked="{{aegisReduceOnBattery_}}"
++          on-change="onAegisToggleChanged_">
++      </cr-toggle>
++    </div>
++    <div class="aegis-fixed">[[aegisStrings_.thermal]]</div>
++
++    <div class="cr-row">
++      <div class="flex cr-padded-text">
++        <div class="aegis-heading">[[aegisStrings_.btTitle]]</div>
++        <div class="aegis-description">[[aegisStrings_.btDescription]]</div>
++      </div>
++    </div>
++    <div class="cr-row">
++      <div class="flex cr-padded-text">[[aegisStrings_.dht]]</div>
++      <cr-toggle id="aegisTorrentDhtEnabled"
++          checked="{{aegisTorrentDhtEnabled_}}"
++          on-change="onAegisToggleChanged_">
++      </cr-toggle>
++    </div>
++    <div class="cr-row">
++      <div class="flex cr-padded-text">[[aegisStrings_.pex]]</div>
++      <cr-toggle id="aegisTorrentPexEnabled"
++          checked="{{aegisTorrentPexEnabled_}}"
++          on-change="onAegisToggleChanged_">
++      </cr-toggle>
++    </div>
++    <div class="aegis-rate-row">
++      <cr-input id="aegisTorrentDownloadLimit" type="number" min="0"
++          max="1000000" value="[[aegisTorrentDownloadLimitKib_]]"
++          label="[[aegisStrings_.downloadLimit]]"
++          on-change="onAegisLimitChanged_">
++      </cr-input>
++      <cr-input id="aegisTorrentUploadLimit" type="number" min="0"
++          max="1000000" value="[[aegisTorrentUploadLimitKib_]]"
++          label="[[aegisStrings_.uploadLimit]]"
++          on-change="onAegisLimitChanged_">
++      </cr-input>
++    </div>
++    <div class="aegis-fixed">
++      <div>[[aegisStrings_.stopSeeding]]</div>
++      <div class="aegis-description">[[aegisStrings_.saved]]</div>
++    </div>
++  </settings-section>
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index d22e7d008d..e3995696c6 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -8,6 +8,8 @@
+  * settings.
+  */
+ import 'chrome://resources/cr_elements/cr_button/cr_button.js';
++import 'chrome://resources/cr_elements/cr_input/cr_input.js';
++import 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
+ import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+ import '../controls/controlled_button.js';
+ import '../controls/settings_toggle_button.js';
+@@ -15,6 +17,8 @@ import '../settings_page/settings_section.js';
+ import '../settings_shared.css.js';
+ 
+ import {PrefsMixin} from '/shared/settings/prefs/prefs_mixin.js';
++import type {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
++import type {CrToggleElement} from 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
+ import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
+ import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+ 
+@@ -22,7 +26,7 @@ import {loadTimeData} from '../i18n_setup.js';
+ import {getSearchManager} from '../search_settings.js';
+ import type {SettingsPlugin} from '../settings_main/settings_plugin.js';
+ 
+-import type {DownloadsBrowserProxy} from './downloads_browser_proxy.js';
++import type {AegisDownloadSettings, DownloadsBrowserProxy} from './downloads_browser_proxy.js';
+ import {DownloadsBrowserProxyImpl} from './downloads_browser_proxy.js';
+ import {getTemplate} from './downloads_page.html.js';
+ 
+@@ -46,6 +50,94 @@ export class SettingsDownloadsPageElement extends
+         value: false,
+       },
+ 
++      aegisSettingsReady_: {
++        type: Boolean,
++        value: false,
++      },
++
++      aegisParallelMode_: {
++        type: Number,
++        value: 0,
++      },
++
++      aegisReduceOnMetered_: {
++        type: Boolean,
++        value: true,
++      },
++
++      aegisReduceOnBattery_: {
++        type: Boolean,
++        value: true,
++      },
++
++      aegisTorrentDhtEnabled_: {
++        type: Boolean,
++        value: true,
++      },
++
++      aegisTorrentPexEnabled_: {
++        type: Boolean,
++        value: true,
++      },
++
++      aegisTorrentDownloadLimitKib_: {
++        type: Number,
++        value: 0,
++      },
++
++      aegisTorrentUploadLimitKib_: {
++        type: Number,
++        value: 256,
++      },
++
++      aegisStrings_: {
++        type: Object,
++        value: () => {
++          const zh = document.documentElement.lang.startsWith('zh');
++          return zh ? {
++            title: 'Aegis 下载加速',
++            httpTitle: 'HTTP(S) 并行下载',
++            httpDescription: '服务器支持 Range 时使用多连接；不支持时自动回落。',
++            mode: '连接策略',
++            smart: '智能（推荐）',
++            single: '单连接',
++            three: '最多 3 个连接',
++            six: '最多 6 个连接',
++            metered: '计量网络自动降为单连接',
++            battery: '使用电池时自动降低并行数',
++            thermal: '系统温度过高时始终自动降级，不能关闭。',
++            btTitle: 'BT / Magnet 默认设置',
++            btDescription: '用于新任务；下载中心仍可在开始前临时修改。',
++            dht: '默认启用 DHT',
++            pex: '默认启用 PEX 节点交换',
++            downloadLimit: '默认下载上限（KiB/s，0 不限）',
++            uploadLimit: '默认上传上限（KiB/s，0 不限）',
++            stopSeeding: '下载完成后停止上传（固定开启）',
++            saved: '设置会立即保存并应用于新下载。',
++          } : {
++            title: 'Aegis download acceleration',
++            httpTitle: 'Parallel HTTP(S) downloads',
++            httpDescription: 'Uses multiple connections when the server supports Range, otherwise falls back automatically.',
++            mode: 'Connection policy',
++            smart: 'Smart (recommended)',
++            single: 'Single connection',
++            three: 'Up to 3 connections',
++            six: 'Up to 6 connections',
++            metered: 'Use one connection on metered networks',
++            battery: 'Reduce parallelism while on battery',
++            thermal: 'High system temperature always reduces parallelism and cannot be disabled.',
++            btTitle: 'BT / Magnet defaults',
++            btDescription: 'Used for new tasks; the Downloads page can override them before starting.',
++            dht: 'Enable DHT by default',
++            pex: 'Enable PEX by default',
++            downloadLimit: 'Default download limit (KiB/s, 0 unlimited)',
++            uploadLimit: 'Default upload limit (KiB/s, 0 unlimited)',
++            stopSeeding: 'Stop uploading after completion (always on)',
++            saved: 'Settings are saved immediately and apply to new downloads.',
++          };
++        },
++      },
++
+       // <if expr="is_chromeos">
+       /**
+        * The download location string that is suitable to display in the UI.
+@@ -77,6 +169,15 @@ export class SettingsDownloadsPageElement extends
+ 
+ 
+   declare private autoOpenDownloads_: boolean;
++  declare private aegisSettingsReady_: boolean;
++  declare private aegisParallelMode_: number;
++  declare private aegisReduceOnMetered_: boolean;
++  declare private aegisReduceOnBattery_: boolean;
++  declare private aegisTorrentDhtEnabled_: boolean;
++  declare private aegisTorrentPexEnabled_: boolean;
++  declare private aegisTorrentDownloadLimitKib_: number;
++  declare private aegisTorrentUploadLimitKib_: number;
++  declare private aegisStrings_: Record<string, string>;
+ 
+   // <if expr="is_chromeos">
+   declare private downloadLocation_: string;
+@@ -86,6 +187,7 @@ export class SettingsDownloadsPageElement extends
+ 
+   private browserProxy_: DownloadsBrowserProxy =
+       DownloadsBrowserProxyImpl.getInstance();
++  private aegisSaveChain_: Promise<void> = Promise.resolve();
+ 
+   override ready() {
+     super.ready();
+@@ -96,6 +198,92 @@ export class SettingsDownloadsPageElement extends
+         });
+ 
+     this.browserProxy_.initializeDownloads();
++    void this.loadAegisDownloadSettings_();
++  }
++
++  private async loadAegisDownloadSettings_() {
++    const settings = await this.browserProxy_.getAegisDownloadSettings();
++    this.applyAegisDownloadSettings_(settings);
++    this.aegisSettingsReady_ = true;
++  }
++
++  private applyAegisDownloadSettings_(settings: AegisDownloadSettings) {
++    this.aegisParallelMode_ = settings.parallelMode;
++    this.aegisReduceOnMetered_ = settings.reduceOnMetered;
++    this.aegisReduceOnBattery_ = settings.reduceOnBattery;
++    this.aegisTorrentDhtEnabled_ = settings.torrentDhtEnabled;
++    this.aegisTorrentPexEnabled_ = settings.torrentPexEnabled;
++    this.aegisTorrentDownloadLimitKib_ = settings.torrentDownloadLimitKib;
++    this.aegisTorrentUploadLimitKib_ = settings.torrentUploadLimitKib;
++  }
++
++  private currentAegisDownloadSettings_(): AegisDownloadSettings {
++    return {
++      parallelMode: this.aegisParallelMode_,
++      reduceOnMetered: this.aegisReduceOnMetered_,
++      reduceOnBattery: this.aegisReduceOnBattery_,
++      torrentDhtEnabled: this.aegisTorrentDhtEnabled_,
++      torrentPexEnabled: this.aegisTorrentPexEnabled_,
++      torrentDownloadLimitKib: this.aegisTorrentDownloadLimitKib_,
++      torrentUploadLimitKib: this.aegisTorrentUploadLimitKib_,
++    };
++  }
++
++  private saveAegisDownloadSettings_() {
++    if (!this.aegisSettingsReady_) {
++      return;
++    }
++    const requested = this.currentAegisDownloadSettings_();
++    this.aegisSaveChain_ = this.aegisSaveChain_
++                                .then(async () => {
++                                  const saved = await this.browserProxy_
++                                                    .setAegisDownloadSettings(
++                                                        requested);
++                                  if (JSON.stringify(requested) ===
++                                      JSON.stringify(
++                                          this.currentAegisDownloadSettings_())) {
++                                    this.applyAegisDownloadSettings_(saved);
++                                  }
++                                })
++                                .catch(() => this.loadAegisDownloadSettings_());
++  }
++
++  private onAegisParallelModeChanged_(event: Event) {
++    this.aegisParallelMode_ = Number((event.target as HTMLSelectElement).value);
++    this.saveAegisDownloadSettings_();
++  }
++
++  private onAegisToggleChanged_(event: Event) {
++    const toggle = event.currentTarget as CrToggleElement;
++    switch (toggle.id) {
++      case 'aegisReduceOnMetered':
++        this.aegisReduceOnMetered_ = toggle.checked;
++        break;
++      case 'aegisReduceOnBattery':
++        this.aegisReduceOnBattery_ = toggle.checked;
++        break;
++      case 'aegisTorrentDhtEnabled':
++        this.aegisTorrentDhtEnabled_ = toggle.checked;
++        break;
++      case 'aegisTorrentPexEnabled':
++        this.aegisTorrentPexEnabled_ = toggle.checked;
++        break;
++      default:
++        return;
++    }
++    this.saveAegisDownloadSettings_();
++  }
++
++  private onAegisLimitChanged_(event: Event) {
++    const input = event.currentTarget as CrInputElement;
++    const value = Math.min(1000000, Math.max(0, Number(input.value) || 0));
++    if (input.id === 'aegisTorrentDownloadLimit') {
++      this.aegisTorrentDownloadLimitKib_ = value;
++    } else {
++      this.aegisTorrentUploadLimitKib_ = value;
++    }
++    input.value = String(value);
++    this.saveAegisDownloadSettings_();
+   }
+ 
+   private selectDownloadLocation_() {
+diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
+index 9e41c572ca..e3598d2ef9 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
+@@ -14,6 +14,7 @@
+ #include "base/threading/thread.h"
+ #include "base/values.h"
+ #include "build/branding_buildflags.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/defaults.h"
+ #include "chrome/browser/download/download_core_service.h"
+@@ -77,6 +78,18 @@ content::WebUIDataSource* CreateAndAddDownloadsUIHTMLSource(Profile* profile) {
+           ->IsUnderAdvancedProtection();
+   source->AddBoolean("requestsApVerdicts", requests_ap_verdicts);
+ 
++  const aegis::DownloadSettings aegis_download_settings =
++      aegis::ReadDownloadSettings(*g_browser_process->local_state());
++  source->AddBoolean("aegisTorrentDhtDefault",
++                     aegis_download_settings.torrent_dht_enabled);
++  source->AddBoolean("aegisTorrentPexDefault",
++                     aegis_download_settings.torrent_pex_enabled);
++  source->AddInteger(
++      "aegisTorrentDownloadLimitKibDefault",
++      aegis_download_settings.torrent_download_limit_kib);
++  source->AddInteger("aegisTorrentUploadLimitKibDefault",
++                     aegis_download_settings.torrent_upload_limit_kib);
++
+   static constexpr webui::LocalizedString kStrings[] = {
+       {"title", IDS_DOWNLOAD_HISTORY_TITLE},
+       {"searchResultsPlural", IDS_SEARCH_RESULTS_PLURAL},
+diff --git a/chrome/browser/ui/webui/settings/downloads_handler.cc b/chrome/browser/ui/webui/settings/downloads_handler.cc
+index f220871087..2b4dd9d485 100644
+--- a/chrome/browser/ui/webui/settings/downloads_handler.cc
++++ b/chrome/browser/ui/webui/settings/downloads_handler.cc
+@@ -4,9 +4,13 @@
+ 
+ #include "chrome/browser/ui/webui/settings/downloads_handler.h"
+ 
++#include <optional>
++
+ #include "base/functional/bind.h"
+ #include "base/metrics/user_metrics.h"
+ #include "base/values.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
++#include "chrome/browser/browser_process.h"
+ #include "chrome/browser/download/download_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
+@@ -26,6 +30,68 @@
+ 
+ using base::UserMetricsAction;
+ 
++namespace {
++
++base::DictValue DownloadSettingsToValue(
++    const aegis::DownloadSettings& settings) {
++  base::DictValue value;
++  value.Set("parallelMode", settings.parallel_mode);
++  value.Set("reduceOnMetered", settings.reduce_on_metered);
++  value.Set("reduceOnBattery", settings.reduce_on_battery);
++  value.Set("torrentDhtEnabled", settings.torrent_dht_enabled);
++  value.Set("torrentPexEnabled", settings.torrent_pex_enabled);
++  value.Set("torrentDownloadLimitKib",
++            settings.torrent_download_limit_kib);
++  value.Set("torrentUploadLimitKib", settings.torrent_upload_limit_kib);
++  return value;
++}
++
++std::optional<aegis::DownloadSettings> DownloadSettingsFromValue(
++    const base::Value& value) {
++  if (!value.is_dict() || value.GetDict().size() != 7) {
++    return std::nullopt;
++  }
++  const base::DictValue& dict = value.GetDict();
++  const std::optional<int> parallel_mode = dict.FindInt("parallelMode");
++  const std::optional<bool> reduce_on_metered =
++      dict.FindBool("reduceOnMetered");
++  const std::optional<bool> reduce_on_battery =
++      dict.FindBool("reduceOnBattery");
++  const std::optional<bool> torrent_dht_enabled =
++      dict.FindBool("torrentDhtEnabled");
++  const std::optional<bool> torrent_pex_enabled =
++      dict.FindBool("torrentPexEnabled");
++  const std::optional<int> torrent_download_limit =
++      dict.FindInt("torrentDownloadLimitKib");
++  const std::optional<int> torrent_upload_limit =
++      dict.FindInt("torrentUploadLimitKib");
++  if (!parallel_mode || !reduce_on_metered || !reduce_on_battery ||
++      !torrent_dht_enabled || !torrent_pex_enabled ||
++      !torrent_download_limit || !torrent_upload_limit ||
++      !aegis::IsValidDownloadParallelMode(*parallel_mode) ||
++      !aegis::IsValidTorrentRateLimit(*torrent_download_limit) ||
++      !aegis::IsValidTorrentRateLimit(*torrent_upload_limit)) {
++    return std::nullopt;
++  }
++  return aegis::DownloadSettings{
++      .parallel_mode = *parallel_mode,
++      .reduce_on_metered = *reduce_on_metered,
++      .reduce_on_battery = *reduce_on_battery,
++      .torrent_dht_enabled = *torrent_dht_enabled,
++      .torrent_pex_enabled = *torrent_pex_enabled,
++      .torrent_download_limit_kib = *torrent_download_limit,
++      .torrent_upload_limit_kib = *torrent_upload_limit,
++  };
++}
++
++PrefService* GetLocalState() {
++  CHECK(g_browser_process);
++  CHECK(g_browser_process->local_state());
++  return g_browser_process->local_state();
++}
++
++}  // namespace
++
+ namespace settings {
+ 
+ DownloadsHandler::DownloadsHandler(Profile* profile) : profile_(profile) {}
+@@ -51,6 +117,14 @@ void DownloadsHandler::RegisterMessages() {
+       "selectDownloadLocation",
+       base::BindRepeating(&DownloadsHandler::HandleSelectDownloadLocation,
+                           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "getAegisDownloadSettings",
++      base::BindRepeating(&DownloadsHandler::HandleGetAegisDownloadSettings,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "setAegisDownloadSettings",
++      base::BindRepeating(&DownloadsHandler::HandleSetAegisDownloadSettings,
++                          base::Unretained(this)));
+ #if BUILDFLAG(IS_CHROMEOS)
+   web_ui()->RegisterMessageCallback(
+       "getDownloadLocationText",
+@@ -84,6 +158,30 @@ void DownloadsHandler::SendAutoOpenDownloadsToJavascript() {
+                     base::Value(auto_open_downloads));
+ }
+ 
++void DownloadsHandler::HandleGetAegisDownloadSettings(
++    const base::ListValue& args) {
++  AllowJavascript();
++  CHECK_EQ(args.size(), 1u);
++  ResolveJavascriptCallback(
++      args[0], DownloadSettingsToValue(
++                   aegis::ReadDownloadSettings(*GetLocalState())));
++}
++
++void DownloadsHandler::HandleSetAegisDownloadSettings(
++    const base::ListValue& args) {
++  AllowJavascript();
++  CHECK_EQ(args.size(), 2u);
++  std::optional<aegis::DownloadSettings> settings =
++      DownloadSettingsFromValue(args[1]);
++  if (!settings) {
++    RejectJavascriptCallback(args[0],
++                             base::Value("invalid Aegis download settings"));
++    return;
++  }
++  aegis::WriteDownloadSettings(GetLocalState(), *settings);
++  ResolveJavascriptCallback(args[0], DownloadSettingsToValue(*settings));
++}
++
+ void DownloadsHandler::HandleResetAutoOpenFileTypes(
+     const base::ListValue& args) {
+   base::RecordAction(UserMetricsAction("Options_ResetAutoOpenFiles"));
+diff --git a/chrome/browser/ui/webui/settings/downloads_handler.h b/chrome/browser/ui/webui/settings/downloads_handler.h
+index 7da3275b2c..f7994087d4 100644
+--- a/chrome/browser/ui/webui/settings/downloads_handler.h
++++ b/chrome/browser/ui/webui/settings/downloads_handler.h
+@@ -34,6 +34,7 @@ class DownloadsHandler : public SettingsPageUIHandler,
+  private:
+   friend class DownloadsHandlerTest;
+   FRIEND_TEST_ALL_PREFIXES(DownloadsHandlerTest, AutoOpenDownloads);
++  FRIEND_TEST_ALL_PREFIXES(DownloadsHandlerTest, AegisDownloadSettings);
+ 
+   // Callback for the "initializeDownloads" message. This starts observers and
+   // retrieves the current browser state.
+@@ -41,6 +42,9 @@ class DownloadsHandler : public SettingsPageUIHandler,
+ 
+   void SendAutoOpenDownloadsToJavascript();
+ 
++  void HandleGetAegisDownloadSettings(const base::ListValue& args);
++  void HandleSetAegisDownloadSettings(const base::ListValue& args);
++
+   // Resets the list of filetypes that are auto-opened after download.
+   void HandleResetAutoOpenFileTypes(const base::ListValue& args);
+ 
+diff --git a/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc b/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc
+index c33eed4d9f..b09bb44ce4 100644
+--- a/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc
++++ b/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc
+@@ -12,6 +12,8 @@
+ #include "chrome/browser/download/download_core_service_factory.h"
+ #include "chrome/browser/download/download_core_service_impl.h"
+ #include "chrome/browser/download/download_prefs.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
++#include "chrome/browser/browser_process.h"
+ #include "chrome/common/pref_names.h"
+ #include "chrome/test/base/testing_profile.h"
+ #include "components/enterprise/connectors/core/connectors_prefs.h"
+@@ -70,6 +72,7 @@ class DownloadsHandlerTest : public testing::Test {
+ 
+   Profile* profile() { return &profile_; }
+   DownloadsHandler* handler() { return &handler_; }
++  content::TestWebUI* test_web_ui() { return &test_web_ui_; }
+   bool connection_policy_enabled() const { return connection_policy_enabled_; }
+ 
+  private:
+@@ -97,4 +100,53 @@ TEST_F(DownloadsHandlerTest, AutoOpenDownloads) {
+   VerifyAutoOpenDownloadsChangedCallback();
+ }
+ 
++TEST_F(DownloadsHandlerTest, AegisDownloadSettings) {
++  base::DictValue settings;
++  settings.Set("parallelMode", 6);
++  settings.Set("reduceOnMetered", false);
++  settings.Set("reduceOnBattery", false);
++  settings.Set("torrentDhtEnabled", false);
++  settings.Set("torrentPexEnabled", true);
++  settings.Set("torrentDownloadLimitKib", 4096);
++  settings.Set("torrentUploadLimitKib", 512);
++
++  base::ListValue set_args;
++  set_args.Append("set-callback");
++  set_args.Append(settings.Clone());
++  handler()->HandleSetAegisDownloadSettings(set_args);
++
++  const aegis::DownloadSettings stored =
++      aegis::ReadDownloadSettings(*g_browser_process->local_state());
++  EXPECT_EQ(stored.parallel_mode, 6);
++  EXPECT_FALSE(stored.reduce_on_metered);
++  EXPECT_FALSE(stored.reduce_on_battery);
++  EXPECT_FALSE(stored.torrent_dht_enabled);
++  EXPECT_TRUE(stored.torrent_pex_enabled);
++  EXPECT_EQ(stored.torrent_download_limit_kib, 4096);
++  EXPECT_EQ(stored.torrent_upload_limit_kib, 512);
++
++  ASSERT_EQ(test_web_ui()->call_data().size(), 1u);
++  const content::TestWebUI::CallData& set_response =
++      *test_web_ui()->call_data().back();
++  EXPECT_EQ(set_response.function_name(), "cr.webUIResponse");
++  EXPECT_EQ(set_response.arg1()->GetString(), "set-callback");
++  EXPECT_TRUE(set_response.arg2()->GetBool());
++  EXPECT_EQ(set_response.arg3()->GetDict().FindInt("parallelMode"), 6);
++  test_web_ui()->ClearTrackedCalls();
++
++  base::ListValue get_args;
++  get_args.Append("get-callback");
++  handler()->HandleGetAegisDownloadSettings(get_args);
++  ASSERT_EQ(test_web_ui()->call_data().size(), 1u);
++  const content::TestWebUI::CallData& get_response =
++      *test_web_ui()->call_data().back();
++  EXPECT_EQ(get_response.function_name(), "cr.webUIResponse");
++  EXPECT_EQ(get_response.arg1()->GetString(), "get-callback");
++  EXPECT_TRUE(get_response.arg2()->GetBool());
++  EXPECT_EQ(get_response.arg3()->GetDict().FindInt("parallelMode"), 6);
++
++  aegis::WriteDownloadSettings(g_browser_process->local_state(),
++                               aegis::DownloadSettings());
++}
++
+ }  // namespace settings
+diff --git a/chrome/test/data/webui/settings/downloads_page_test.ts b/chrome/test/data/webui/settings/downloads_page_test.ts
+index d3723a3f0d..213ac1ecf0 100644
+--- a/chrome/test/data/webui/settings/downloads_page_test.ts
++++ b/chrome/test/data/webui/settings/downloads_page_test.ts
+@@ -29,6 +29,8 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
+       'selectDownloadLocation',
+       'resetAutoOpenFileTypes',
+       'getDownloadLocationText',
++      'getAegisDownloadSettings',
++      'setAegisDownloadSettings',
+     ]);
+   }
+ 
+@@ -48,6 +50,32 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
+     this.methodCalled('resetAutoOpenFileTypes');
+   }
+ 
++  getAegisDownloadSettings() {
++    this.methodCalled('getAegisDownloadSettings');
++    return Promise.resolve({
++      parallelMode: 0,
++      reduceOnMetered: true,
++      reduceOnBattery: true,
++      torrentDhtEnabled: true,
++      torrentPexEnabled: true,
++      torrentDownloadLimitKib: 0,
++      torrentUploadLimitKib: 256,
++    });
++  }
++
++  setAegisDownloadSettings(settings: {
++    parallelMode: number,
++    reduceOnMetered: boolean,
++    reduceOnBattery: boolean,
++    torrentDhtEnabled: boolean,
++    torrentPexEnabled: boolean,
++    torrentDownloadLimitKib: number,
++    torrentUploadLimitKib: number,
++  }) {
++    this.methodCalled('setAegisDownloadSettings', settings);
++    return Promise.resolve(settings);
++  }
++
+   // <if expr="is_chromeos">
+   getDownloadLocationText(path: string) {
+     this.methodCalled('getDownloadLocationText', path);
+@@ -88,6 +116,23 @@ suite('DownloadsHandler', function() {
+     return downloadsBrowserProxy.whenCalled('selectDownloadLocation');
+   });
+ 
++  test('aegis download settings are shown and saved', async function() {
++    await downloadsBrowserProxy.whenCalled('getAegisDownloadSettings');
++    await flushTasks();
++    const select = downloadsPage.shadowRoot!.querySelector<HTMLSelectElement>(
++        '.aegis-select');
++    assertTrue(!!select);
++    assertTrue(select.value === '0');
++
++    select.value = '6';
++    select.dispatchEvent(new Event('change'));
++    const saved = await downloadsBrowserProxy.whenCalled(
++        'setAegisDownloadSettings');
++    assertTrue(saved.parallelMode === 6);
++    assertTrue(saved.reduceOnMetered === true);
++    assertTrue(saved.torrentUploadLimitKib === 256);
++  });
++
+   test('openAdvancedDownloadsettings', async function() {
+     let button = downloadsPage.shadowRoot!.querySelector<HTMLElement>(
+         '#resetAutoOpenFileTypes');
+diff --git a/components/download/internal/common/parallel_download_utils.cc b/components/download/internal/common/parallel_download_utils.cc
+index 91bfc91ae9..234e52bb6f 100644
+--- a/components/download/internal/common/parallel_download_utils.cc
++++ b/components/download/internal/common/parallel_download_utils.cc
+@@ -179,10 +179,16 @@ int GetParallelRequestCountConfig() {
+   result =
+       base::StringToInt(finch_value, &result) ? result : kParallelRequestCount;
+ 
++  const int aegis_parallel_mode = features::GetAegisParallelDownloadMode();
++  if (aegis_parallel_mode != 0) {
++    result = aegis_parallel_mode;
++  }
++
+   // Keep desktop acceleration bounded. Resource-state checks happen only
+   // when a parallel job is configured, so they add no polling load.
+   result = std::clamp(result, 1, 6);
+-  if (net::NetworkChangeNotifier::GetConnectionCost() ==
++  if (features::ShouldAegisReduceParallelismOnMetered() &&
++      net::NetworkChangeNotifier::GetConnectionCost() ==
+       net::NetworkChangeNotifier::CONNECTION_COST_METERED) {
+     return 1;
+   }
+@@ -204,7 +210,10 @@ int GetParallelRequestCountConfig() {
+     case ThermalState::kNominal:
+       break;
+   }
+-  return power_monitor->IsOnBatteryPower() ? std::min(result, 2) : result;
++  return features::ShouldAegisReduceParallelismOnBattery() &&
++                 power_monitor->IsOnBatteryPower()
++             ? std::min(result, 2)
++             : result;
+ }
+ 
+ base::TimeDelta GetParallelRequestDelayConfig() {
+@@ -239,7 +248,8 @@ int64_t GetMaxContiguousDataBlockSizeFromBeginning(
+ 
+ bool IsParallelDownloadEnabled() {
+   bool feature_enabled =
+-      base::FeatureList::IsEnabled(features::kParallelDownloading);
++      base::FeatureList::IsEnabled(features::kParallelDownloading) &&
++      features::GetAegisParallelDownloadMode() != 1;
+   // Disabled when |kEnableParallelDownloadFinchKey| Finch config is set to
+   // false.
+   bool enabled_parameter = GetFieldTrialParamByFeatureAsBool(
+diff --git a/components/download/internal/common/parallel_download_utils_unittest.cc b/components/download/internal/common/parallel_download_utils_unittest.cc
+index 94128626ef..852a869588 100644
+--- a/components/download/internal/common/parallel_download_utils_unittest.cc
++++ b/components/download/internal/common/parallel_download_utils_unittest.cc
+@@ -361,6 +361,22 @@ TEST_F(ParallelDownloadUtilsTest, ParallelRequestCountIsBounded) {
+   }
+ }
+ 
++TEST_F(ParallelDownloadUtilsTest, AegisConnectionPolicyOverridesFinch) {
++  base::test::ScopedFeatureList feature_list;
++  feature_list.InitAndEnableFeatureWithParameters(
++      features::kParallelDownloading, {{kParallelRequestCountFinchKey, "3"}});
++
++  features::ConfigureAegisParallelDownloading(6, false, false);
++  EXPECT_TRUE(IsParallelDownloadEnabled());
++  EXPECT_EQ(GetParallelRequestCountConfig(), 6);
++
++  features::ConfigureAegisParallelDownloading(1, false, false);
++  EXPECT_FALSE(IsParallelDownloadEnabled());
++  EXPECT_EQ(GetParallelRequestCountConfig(), 1);
++
++  features::ConfigureAegisParallelDownloading(0, true, true);
++}
++
+ // Test to verify the disable experiment group will actually disable the
+ // feature.
+ TEST_F(ParallelDownloadUtilsTest, FinchConfigDisabled) {
+diff --git a/components/download/public/common/download_features.cc b/components/download/public/common/download_features.cc
+index cd5850b9d2..f769c2dc01 100644
+--- a/components/download/public/common/download_features.cc
++++ b/components/download/public/common/download_features.cc
+@@ -4,14 +4,50 @@
+ 
+ #include "components/download/public/common/download_features.h"
+ 
++#include <atomic>
++
+ #include "build/android_buildflags.h"
+ #include "build/build_config.h"
+ 
+ namespace download {
+ namespace features {
+ 
++namespace {
++
++std::atomic<int> g_aegis_parallel_mode{0};
++std::atomic<bool> g_aegis_reduce_on_metered{true};
++std::atomic<bool> g_aegis_reduce_on_battery{true};
++
++}  // namespace
++
+ BASE_FEATURE(kParallelDownloading, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
++void ConfigureAegisParallelDownloading(int parallel_mode,
++                                       bool reduce_on_metered,
++                                       bool reduce_on_battery) {
++  if (parallel_mode != 0 && parallel_mode != 1 && parallel_mode != 3 &&
++      parallel_mode != 6) {
++    parallel_mode = 0;
++  }
++  g_aegis_parallel_mode.store(parallel_mode, std::memory_order_relaxed);
++  g_aegis_reduce_on_metered.store(reduce_on_metered,
++                                  std::memory_order_relaxed);
++  g_aegis_reduce_on_battery.store(reduce_on_battery,
++                                  std::memory_order_relaxed);
++}
++
++int GetAegisParallelDownloadMode() {
++  return g_aegis_parallel_mode.load(std::memory_order_relaxed);
++}
++
++bool ShouldAegisReduceParallelismOnMetered() {
++  return g_aegis_reduce_on_metered.load(std::memory_order_relaxed);
++}
++
++bool ShouldAegisReduceParallelismOnBattery() {
++  return g_aegis_reduce_on_battery.load(std::memory_order_relaxed);
++}
++
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ BASE_FEATURE(kBackoffInDownloading, base::FEATURE_DISABLED_BY_DEFAULT);
+ #endif
+diff --git a/components/download/public/common/download_features.h b/components/download/public/common/download_features.h
+index 3df7f8e64d..2afbc6ea40 100644
+--- a/components/download/public/common/download_features.h
++++ b/components/download/public/common/download_features.h
+@@ -14,6 +14,16 @@ namespace features {
+ // Whether a download can be handled by parallel jobs.
+ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kParallelDownloading);
+ 
++// Browser-wide Aegis policy. A value of 0 selects Chromium's smart default;
++// the other supported values are 1, 3, and 6 total requests.
++COMPONENTS_DOWNLOAD_EXPORT void ConfigureAegisParallelDownloading(
++    int parallel_mode,
++    bool reduce_on_metered,
++    bool reduce_on_battery);
++COMPONENTS_DOWNLOAD_EXPORT int GetAegisParallelDownloadMode();
++COMPONENTS_DOWNLOAD_EXPORT bool ShouldAegisReduceParallelismOnMetered();
++COMPONENTS_DOWNLOAD_EXPORT bool ShouldAegisReduceParallelismOnBattery();
++
+ // Whether we allow the download job resume in a backoff.
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kBackoffInDownloading);
+-- 
+2.52.0
+

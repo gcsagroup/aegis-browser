@@ -40,6 +40,16 @@ PolicyWorker::~PolicyWorker() {
   }
 }
 
+std::string PolicyWorker::last_error() const {
+  base::AutoLock lock(status_lock_);
+  return last_error_;
+}
+
+void PolicyWorker::SetLastError(std::string error) {
+  base::AutoLock lock(status_lock_);
+  last_error_ = std::move(error);
+}
+
 void PolicyWorker::Start() {
   if (thread_) {
     return;
@@ -49,15 +59,15 @@ void PolicyWorker::Start() {
   // call it here. The JS bundle instead runs in chrome://aegis (renderer V8).
   // If this process already initialized gin (utility / tests), reuse it.
   if (!gin::IsolateHolder::Initialized()) {
-    last_error_ =
-        "browser process has no V8 snapshot; JS worker runs in chrome://aegis";
-    VLOG(1) << "Aegis: " << last_error_;
+    SetLastError(
+        "browser process has no V8 snapshot; JS worker runs in chrome://aegis");
+    VLOG(1) << "Aegis: " << last_error();
     return;
   }
   thread_ = std::make_unique<base::Thread>("AegisPolicyWorker");
   if (!thread_->Start()) {
-    last_error_ = "failed to start policy worker thread";
-    LOG(ERROR) << "Aegis: " << last_error_;
+    SetLastError("failed to start policy worker thread");
+    LOG(ERROR) << "Aegis: " << last_error();
     thread_.reset();
     return;
   }
@@ -81,8 +91,8 @@ void PolicyWorker::Evaluate(std::string request_json, EvaluateCallback done) {
 
 void PolicyWorker::InitOnWorker() {
   if (!gin::IsolateHolder::Initialized()) {
-    last_error_ = "gin isolate holder not initialized";
-    LOG(ERROR) << "Aegis: " << last_error_;
+    SetLastError("gin isolate holder not initialized");
+    LOG(ERROR) << "Aegis: " << last_error();
     return;
   }
 
@@ -107,28 +117,28 @@ void PolicyWorker::InitOnWorker() {
   v8::Local<v8::Script> script;
   if (!v8::ScriptCompiler::Compile(context, &script_source)
            .ToLocal(&script)) {
-    last_error_ = try_catch.HasCaught() ? try_catch.GetStackTrace()
-                                        : "compile failed";
-    LOG(ERROR) << "Aegis: policy worker compile failed: " << last_error_;
+    SetLastError(try_catch.HasCaught() ? try_catch.GetStackTrace()
+                                       : "compile failed");
+    LOG(ERROR) << "Aegis: policy worker compile failed: " << last_error();
     isolate_holder_.reset();
     return;
   }
   if (script->Run(context).IsEmpty()) {
-    last_error_ =
-        try_catch.HasCaught() ? try_catch.GetStackTrace() : "run failed";
-    LOG(ERROR) << "Aegis: policy worker run failed: " << last_error_;
+    SetLastError(try_catch.HasCaught() ? try_catch.GetStackTrace()
+                                       : "run failed");
+    LOG(ERROR) << "Aegis: policy worker run failed: " << last_error();
     isolate_holder_.reset();
     return;
   }
 
   context_.Reset(isolate, context);
-  ready_ = true;
-  last_error_.clear();
+  SetLastError(std::string());
+  ready_.store(true, std::memory_order_release);
   LOG(INFO) << "Aegis: policy worker ready";
 }
 
 void PolicyWorker::ShutdownOnWorker() {
-  ready_ = false;
+  ready_.store(false, std::memory_order_release);
   context_.Reset();
   isolate_holder_.reset();
 }
@@ -143,9 +153,10 @@ void PolicyWorker::EvaluateOnWorker(
 }
 
 std::string PolicyWorker::RunEvaluate(const std::string& request_json) {
-  if (!ready_ || !isolate_holder_) {
-    return last_error_.empty() ? R"({"error":"worker not ready"})"
-                               : R"({"error":")" + last_error_ + R"("})";
+  if (!ready() || !isolate_holder_) {
+    const std::string error = last_error();
+    return error.empty() ? R"({"error":"worker not ready"})"
+                         : R"({"error":")" + error + R"("})";
   }
 
   v8::Isolate* isolate = isolate_holder_->isolate();

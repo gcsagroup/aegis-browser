@@ -107,6 +107,49 @@ bool CacheIsFresh(int64_t last_unix) {
 
 }  // namespace
 
+FilterListHttpValidators ExtractFilterListHttpValidators(
+    const net::HttpResponseHeaders* headers) {
+  FilterListHttpValidators validators;
+  if (!headers) {
+    return validators;
+  }
+
+  std::optional<std::string> etag = headers->GetNormalizedHeader("etag");
+  if (etag && !etag->empty()) {
+    validators.etag = std::move(*etag);
+  }
+
+  std::string last_modified;
+  if (headers->EnumerateHeader(nullptr, "last-modified", &last_modified) &&
+      !last_modified.empty()) {
+    validators.last_modified = std::move(last_modified);
+  }
+  return validators;
+}
+
+void ApplyFilterListRequestSecurityPolicy(
+    network::ResourceRequest* request) {
+  if (!request) {
+    return;
+  }
+  request->redirect_mode = network::mojom::RedirectMode::kError;
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+}
+
+bool ShouldStageFilterListHttpValidators(int net_error,
+                                         int http_status,
+                                         bool has_response_body) {
+  if (net_error != net::OK) {
+    return false;
+  }
+  return http_status == net::HTTP_NOT_MODIFIED ||
+         (http_status == net::HTTP_OK && has_response_body);
+}
+
+bool IsUsableCompiledFilterList(const CompiledFilterList& list) {
+  return list.parsed > 0 && (!list.hosts.empty() || !list.path_rules.empty());
+}
+
 FilterListUpdater::FilterListUpdater(Profile* profile)
     : profile_(profile), prefs_(profile->GetPrefs()) {}
 
@@ -239,6 +282,7 @@ void FilterListUpdater::UpdateNow(UpdateCallback callback) {
   fetch_index_ = 0;
   urls_ = {kEasyListUrl, kEasyPrivacyUrl};
   compiled_by_index_.assign(urls_.size(), std::nullopt);
+  pending_validators_ = FilterListHttpValidators();
   FetchNext();
 }
 
@@ -267,21 +311,16 @@ void FilterListUpdater::AttachValidators(network::ResourceRequest* request) {
 
 void FilterListUpdater::RememberValidators(
     const std::string& url,
-    const net::HttpResponseHeaders* headers) {
-  if (!prefs_ || !headers || url.empty()) {
+    FilterListHttpValidators extracted) {
+  if (!prefs_ || url.empty()) {
     return;
   }
   base::DictValue entry;
-  if (std::optional<std::string> etag = headers->GetNormalizedHeader("etag")) {
-    if (!etag->empty()) {
-      entry.Set("etag", std::move(*etag));
-    }
+  if (extracted.etag) {
+    entry.Set("etag", std::move(*extracted.etag));
   }
-  // last-modified 是 non-coalescing header，不能用 GetNormalizedHeader（DCHECK 会崩）。
-  std::string last_modified;
-  if (headers->EnumerateHeader(nullptr, "last-modified", &last_modified) &&
-      !last_modified.empty()) {
-    entry.Set("lastModified", std::move(last_modified));
+  if (extracted.last_modified) {
+    entry.Set("lastModified", std::move(*extracted.last_modified));
   }
   if (entry.empty()) {
     return;
@@ -304,8 +343,8 @@ void FilterListUpdater::FetchNext() {
   auto request = std::make_unique<network::ResourceRequest>();
   request->url = GURL(urls_[fetch_index_]);
   request->load_flags = net::LOAD_DISABLE_CACHE;
-  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   request->priority = net::IDLE;
+  ApplyFilterListRequestSecurityPolicy(request.get());
   AttachValidators(request.get());
 
   loader_ = network::SimpleURLLoader::Create(std::move(request),
@@ -327,7 +366,12 @@ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
   }
   const int status = headers ? headers->response_code() : 0;
   const std::string source = urls_[fetch_index_];
-  RememberValidators(source, headers);
+  const bool should_stage_validators = ShouldStageFilterListHttpValidators(
+      net_error, status, body.has_value());
+  FilterListHttpValidators response_validators;
+  if (should_stage_validators) {
+    response_validators = ExtractFilterListHttpValidators(headers);
+  }
   loader_.reset();
 
   if (net_error != net::OK) {
@@ -335,6 +379,7 @@ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
     return;
   }
   if (status == net::HTTP_NOT_MODIFIED) {
+    RememberValidators(source, std::move(response_validators));
     fetch_index_++;
     FetchNext();
     return;
@@ -343,6 +388,7 @@ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
     Finish(false, "fetch failed (HTTP " + base::NumberToString(status) + ")");
     return;
   }
+  pending_validators_ = std::move(response_validators);
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::TaskPriority::BEST_EFFORT},
       base::BindOnce(
@@ -355,6 +401,13 @@ void FilterListUpdater::OnFetched(std::optional<std::string> body) {
 }
 
 void FilterListUpdater::OnCompiled(CompiledFilterList list) {
+  if (!IsUsableCompiledFilterList(list)) {
+    pending_validators_ = FilterListHttpValidators();
+    Finish(false, "compiled filter list has no blocking rules");
+    return;
+  }
+  RememberValidators(urls_[fetch_index_], std::move(pending_validators_));
+  pending_validators_ = FilterListHttpValidators();
   compiled_by_index_[fetch_index_] = std::move(list);
   fetch_index_++;
   FetchNext();
@@ -430,6 +483,7 @@ void FilterListUpdater::OnNotModified() {
 void FilterListUpdater::Finish(bool ok, const std::string& error) {
   updating_ = false;
   loader_.reset();
+  pending_validators_ = FilterListHttpValidators();
   if (prefs_) {
     prefs_->SetInt64(prefs::kFilterListLastAttempt, NowUnixSeconds());
     prefs_->SetString(prefs::kFilterListLastError, error);

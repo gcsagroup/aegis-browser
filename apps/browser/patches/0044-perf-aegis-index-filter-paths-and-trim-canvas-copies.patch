@@ -1,0 +1,300 @@
+From 5822011d91b368ffbe674875f04673048e4bff26 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 16:52:48 +0800
+Subject: [PATCH] perf(aegis): index filter paths and trim canvas copies
+
+---
+ chrome/common/aegis/filter_list_matcher.cc    | 103 ++++++++++++------
+ chrome/common/aegis/filter_list_matcher.h     |   6 +-
+ .../aegis/filter_list_matcher_unittest.cc     |  37 +++++++
+ .../blink/renderer/core/aegis/farbling.cc     |  10 +-
+ 4 files changed, 114 insertions(+), 42 deletions(-)
+
+diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
+index 13bf014155..d24a6c5d9c 100644
+--- a/chrome/common/aegis/filter_list_matcher.cc
++++ b/chrome/common/aegis/filter_list_matcher.cc
+@@ -3,30 +3,15 @@
+ 
+ #include "chrome/common/aegis/filter_list_matcher.h"
+ 
++#include <algorithm>
++#include <utility>
++
+ #include "base/strings/string_util.h"
+ #include "chrome/common/aegis/builtin_tracker_hosts.h"
+ #include "chrome/common/aegis/first_party_collect.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
+-namespace {
+-
+-bool PathRuleMatches(std::string_view rule, const GURL& url) {
+-  if (!url.is_valid() || !url.has_host()) {
+-    return false;
+-  }
+-  const size_t slash = rule.find('/');
+-  if (slash == std::string_view::npos) {
+-    return false;
+-  }
+-  const std::string_view host = rule.substr(0, slash);
+-  if (host.empty() || !url.DomainIs(host)) {
+-    return false;
+-  }
+-  return base::StartsWith(url.path(), rule.substr(slash));
+-}
+-
+-}  // namespace
+ 
+ // static
+ FilterListMatcher* FilterListMatcher::GetInstance() {
+@@ -37,12 +22,41 @@ FilterListMatcher::FilterListMatcher() = default;
+ FilterListMatcher::~FilterListMatcher() = default;
+ 
+ void FilterListMatcher::ReplaceCompiledList(CompiledFilterList list) {
+-  base::AutoLock lock(lock_);
+-  hosts_.clear();
+-  exceptions_.clear();
+-  hosts_.insert(list.hosts.begin(), list.hosts.end());
+-  exceptions_.insert(list.exceptions.begin(), list.exceptions.end());
+-  list_ = std::move(list);
++  base::flat_set<std::string> hosts(list.hosts.begin(), list.hosts.end());
++  base::flat_set<std::string> exceptions(list.exceptions.begin(),
++                                         list.exceptions.end());
++  std::vector<std::pair<std::string, std::string>> parsed_path_rules;
++  parsed_path_rules.reserve(list.path_rules.size());
++  for (const std::string& rule : list.path_rules) {
++    const size_t slash = rule.find('/');
++    if (slash == std::string::npos || slash == 0) {
++      continue;
++    }
++    parsed_path_rules.emplace_back(rule.substr(0, slash), rule.substr(slash));
++  }
++  std::sort(parsed_path_rules.begin(), parsed_path_rules.end());
++
++  using PathRuleEntry = std::pair<std::string, std::vector<std::string>>;
++  std::vector<PathRuleEntry> path_rule_entries;
++  path_rule_entries.reserve(parsed_path_rules.size());
++  for (auto& [host, path] : parsed_path_rules) {
++    if (path_rule_entries.empty() || path_rule_entries.back().first != host) {
++      path_rule_entries.emplace_back(std::move(host),
++                                     std::vector<std::string>());
++    }
++    path_rule_entries.back().second.push_back(std::move(path));
++  }
++  base::flat_map<std::string, std::vector<std::string>> path_rules(
++      base::sorted_unique, std::move(path_rule_entries));
++
++  {
++    base::AutoLock lock(lock_);
++    hosts_.swap(hosts);
++    exceptions_.swap(exceptions);
++    path_rules_.swap(path_rules);
++    std::swap(list_, list);
++  }
++  // 旧容器已交换到局部变量，离开锁后再析构，避免阻塞请求分类。
+ }
+ 
+ CompiledFilterList FilterListMatcher::CurrentList() const {
+@@ -65,12 +79,12 @@ BlockReason FilterListMatcher::ClassifyBlock(const GURL& url) const {
+     return BlockReason::kFirstPartyCollect;
+   }
+ 
+-  const std::string host = base::ToLowerASCII(url.host());
++  const std::string_view host = url.host();
+   base::AutoLock lock(lock_);
+   if (MatchesException(host)) {
+     return BlockReason::kNone;
+   }
+-  if (MatchesCompiledHost(host) || MatchesPathRule(url)) {
++  if (MatchesCompiledHost(host) || MatchesPathRule(host, url.path())) {
+     return BlockReason::kEasyList;
+   }
+   return BlockReason::kNone;
+@@ -94,7 +108,10 @@ size_t FilterListMatcher::compiled_host_count() const {
+ }
+ 
+ bool FilterListMatcher::MatchesCompiledHost(std::string_view host) const {
+-  std::string current(host);
++  std::string_view current = host;
++  if (!current.empty() && current.back() == '.') {
++    current.remove_suffix(1);
++  }
+   while (!current.empty()) {
+     if (hosts_.contains(current)) {
+       return true;
+@@ -103,13 +120,16 @@ bool FilterListMatcher::MatchesCompiledHost(std::string_view host) const {
+     if (dot == std::string::npos) {
+       break;
+     }
+-    current = current.substr(dot + 1);
++    current.remove_prefix(dot + 1);
+   }
+   return false;
+ }
+ 
+ bool FilterListMatcher::MatchesException(std::string_view host) const {
+-  std::string current(host);
++  std::string_view current = host;
++  if (!current.empty() && current.back() == '.') {
++    current.remove_suffix(1);
++  }
+   while (!current.empty()) {
+     if (exceptions_.contains(current)) {
+       return true;
+@@ -118,16 +138,31 @@ bool FilterListMatcher::MatchesException(std::string_view host) const {
+     if (dot == std::string::npos) {
+       break;
+     }
+-    current = current.substr(dot + 1);
++    current.remove_prefix(dot + 1);
+   }
+   return false;
+ }
+ 
+-bool FilterListMatcher::MatchesPathRule(const GURL& url) const {
+-  for (const std::string& rule : list_.path_rules) {
+-    if (PathRuleMatches(rule, url)) {
+-      return true;
++bool FilterListMatcher::MatchesPathRule(std::string_view host,
++                                        std::string_view path) const {
++  std::string_view current = host;
++  if (!current.empty() && current.back() == '.') {
++    current.remove_suffix(1);
++  }
++  while (!current.empty()) {
++    const auto it = path_rules_.find(current);
++    if (it != path_rules_.end()) {
++      for (const std::string& prefix : it->second) {
++        if (base::StartsWith(path, prefix)) {
++          return true;
++        }
++      }
++    }
++    const size_t dot = current.find('.');
++    if (dot == std::string::npos) {
++      break;
+     }
++    current.remove_prefix(dot + 1);
+   }
+   return false;
+ }
+diff --git a/chrome/common/aegis/filter_list_matcher.h b/chrome/common/aegis/filter_list_matcher.h
+index 3c6cdb50e2..1aa1a66b24 100644
+--- a/chrome/common/aegis/filter_list_matcher.h
++++ b/chrome/common/aegis/filter_list_matcher.h
+@@ -8,6 +8,7 @@
+ #include <string_view>
+ #include <vector>
+ 
++#include "base/containers/flat_map.h"
+ #include "base/containers/flat_set.h"
+ #include "base/memory/singleton.h"
+ #include "base/synchronization/lock.h"
+@@ -55,12 +56,15 @@ class FilterListMatcher {
+       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+   bool MatchesException(std::string_view host) const
+       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+-  bool MatchesPathRule(const GURL& url) const EXCLUSIVE_LOCKS_REQUIRED(lock_);
++  bool MatchesPathRule(std::string_view host, std::string_view path) const
++      EXCLUSIVE_LOCKS_REQUIRED(lock_);
+ 
+   mutable base::Lock lock_;
+   CompiledFilterList list_ GUARDED_BY(lock_);
+   base::flat_set<std::string> hosts_ GUARDED_BY(lock_);
+   base::flat_set<std::string> exceptions_ GUARDED_BY(lock_);
++  base::flat_map<std::string, std::vector<std::string>> path_rules_
++      GUARDED_BY(lock_);
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/filter_list_matcher_unittest.cc b/chrome/common/aegis/filter_list_matcher_unittest.cc
+index 88d13370d9..8d54edd660 100644
+--- a/chrome/common/aegis/filter_list_matcher_unittest.cc
++++ b/chrome/common/aegis/filter_list_matcher_unittest.cc
+@@ -34,6 +34,12 @@ TEST_F(FilterListMatcherTest, MatchesHostSubdomainsAndExceptionSubdomains) {
+             BlockReason::kNone);
+   EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
+       GURL("https://nottracker.example/collect")));
++  EXPECT_TRUE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://sub.tracker.example./collect")));
++  EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://sub.tracker.example../collect")));
++  EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://child.allowed.tracker.example./collect")));
+ }
+ 
+ TEST_F(FilterListMatcherTest, PathRulesRespectHostAndPathBoundaries) {
+@@ -43,9 +49,40 @@ TEST_F(FilterListMatcherTest, PathRulesRespectHostAndPathBoundaries) {
+       GURL("https://cdn.assets.example/safe/pixel")));
+   EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
+       GURL("https://notassets.example/pixel")));
++  EXPECT_TRUE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://cdn.assets.example./pixel/event")));
++  EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://cdn.assets.example../pixel/event")));
+   EXPECT_EQ(FilterListMatcher::GetInstance()->compiled_host_count(), 2u);
+ }
+ 
++TEST_F(FilterListMatcherTest, ReplacesPathRuleIndexWithoutStaleEntries) {
++  CompiledFilterList list;
++  list.path_rules = {"new.example/event"};
++  FilterListMatcher::GetInstance()->ReplaceCompiledList(std::move(list));
++
++  EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://assets.example/pixel/event")));
++  EXPECT_TRUE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://cdn.new.example/event/1")));
++}
++
++TEST_F(FilterListMatcherTest, IgnoresUnrelatedPathRuleHosts) {
++  CompiledFilterList list;
++  for (int i = 0; i < 6000; ++i) {
++    list.path_rules.push_back("host" + std::to_string(i) + ".example/pixel");
++  }
++  list.path_rules.push_back("target.example/match");
++  FilterListMatcher::GetInstance()->ReplaceCompiledList(std::move(list));
++
++  for (int i = 0; i < 1000; ++i) {
++    EXPECT_FALSE(FilterListMatcher::GetInstance()->ShouldBlock(
++        GURL("https://unrelated.example/safe")));
++  }
++  EXPECT_TRUE(FilterListMatcher::GetInstance()->ShouldBlock(
++      GURL("https://cdn.target.example/match/event")));
++}
++
+ TEST_F(FilterListMatcherTest, BuiltinRuleWinsOverCompiledException) {
+   CompiledFilterList list;
+   list.exceptions = {"google-analytics.com"};
+diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
+index 4bf5bfe3b3..edaa9e6ae7 100644
+--- a/third_party/blink/renderer/core/aegis/farbling.cc
++++ b/third_party/blink/renderer/core/aegis/farbling.cc
+@@ -5,7 +5,6 @@
+ 
+ #include <cstdint>
+ #include <string>
+-#include <vector>
+ 
+ #include "base/containers/span.h"
+ #include "third_party/blink/public/common/aegis/fingerprint_guard.h"
+@@ -98,13 +97,10 @@ scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
+   }
+ 
+   const size_t nbytes = row_bytes * static_cast<size_t>(size.height());
+-  auto bitmap_span =
+-      UNSAFE_TODO(base::span(static_cast<uint8_t*>(bitmap.getPixels()), nbytes));
+-  std::vector<uint8_t> packed(nbytes);
+-  base::span<uint8_t>(packed).copy_from(bitmap_span);
++  auto bitmap_span = UNSAFE_TODO(
++      base::span(static_cast<uint8_t*>(bitmap.getPixels()), nbytes));
+   NoiseHash hash(NoiseToken(TokenForContext(context)));
+-  NoisePixels(hash, packed, size.width(), size.height());
+-  bitmap_span.copy_from(packed);
++  NoisePixels(hash, bitmap_span, size.width(), size.height());
+ 
+   return UnacceleratedStaticBitmapImage::Create(
+       SkImages::RasterFromBitmap(bitmap), image->Orientation());
+-- 
+2.52.0
+
