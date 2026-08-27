@@ -1,0 +1,2033 @@
+From fb283ec560ec507b5877da8ef61dc1a75073cd78 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 27 Aug 2026 04:49:03 +0800
+Subject: [PATCH 53/53] feat(aegis): add observe-only MinerGuard
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   9 +-
+ chrome/browser/aegis/aegis_prefs.cc           |   1 +
+ chrome/browser/aegis/aegis_service.cc         | 112 ++++++-
+ chrome/browser/aegis/aegis_service.h          |  18 +
+ .../browser/aegis/aegis_service_unittest.cc   |  33 ++
+ .../browser/chrome_content_browser_client.cc  |  40 +++
+ .../browser/chrome_content_browser_client.h   |   2 +
+ chrome/browser/page_load_metrics/BUILD.gn     |   5 +
+ ..._miner_guard_page_load_metrics_observer.cc | 309 ++++++++++++++++++
+ ...s_miner_guard_page_load_metrics_observer.h |  79 +++++
+ .../page_load_metrics_initialize.cc           |   4 +
+ chrome/browser/resources/aegis/aegis.html     |   7 +
+ chrome/browser/resources/aegis/aegis.ts       |  15 +
+ .../ui/views/toolbar/aegis_toolbar_button.cc  |  11 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  19 ++
+ .../ui/webui/aegis/aegis_ui_handler.cc        |   3 +
+ chrome/common/aegis/BUILD.gn                  |   8 +-
+ chrome/common/aegis/features.cc               |   9 +-
+ chrome/common/aegis/features.h                |   2 +
+ chrome/common/aegis/features_unittest.cc      |  27 ++
+ chrome/common/aegis/miner_guard_model.cc      | 216 ++++++++++++
+ chrome/common/aegis/miner_guard_model.h       |  84 +++++
+ .../aegis/miner_guard_model_unittest.cc       | 198 +++++++++++
+ chrome/common/aegis/miner_guard_reporter.cc   |  58 ++++
+ chrome/common/aegis/miner_guard_reporter.h    |  41 +++
+ .../aegis/miner_guard_reporter_unittest.cc    |  63 ++++
+ chrome/common/aegis/pref_names.h              |   1 +
+ .../websockets/websocket_connector_impl.cc    |   3 +-
+ .../public/browser/content_browser_client.cc  |   3 +
+ .../public/browser/content_browser_client.h   |   5 +
+ 30 files changed, 1377 insertions(+), 8 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_service_unittest.cc
+ create mode 100644 chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc
+ create mode 100644 chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h
+ create mode 100644 chrome/common/aegis/miner_guard_model.cc
+ create mode 100644 chrome/common/aegis/miner_guard_model.h
+ create mode 100644 chrome/common/aegis/miner_guard_model_unittest.cc
+ create mode 100644 chrome/common/aegis/miner_guard_reporter.cc
+ create mode 100644 chrome/common/aegis/miner_guard_reporter.h
+ create mode 100644 chrome/common/aegis/miner_guard_reporter_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index a0f44386ef..39fd2d5b44 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -7,12 +7,12 @@ source_set("aegis") {
+   sources = [
+     "aegis_ai_control.cc",
+     "aegis_ai_control.h",
+-    "aegis_download_prefs.cc",
+-    "aegis_download_prefs.h",
+     "aegis_bounce_observer.cc",
+     "aegis_bounce_observer.h",
+     "aegis_cookie_janitor.cc",
+     "aegis_cookie_janitor.h",
++    "aegis_download_prefs.cc",
++    "aegis_download_prefs.h",
+     "aegis_link_sanitize_navigation_throttle.cc",
+     "aegis_link_sanitize_navigation_throttle.h",
+     "aegis_phish_blocking_page.cc",
+@@ -48,6 +48,7 @@ source_set("aegis") {
+     "//chrome/browser:browser_process",
+     "//chrome/browser/preloading/prefetch/no_state_prefetch",
+     "//chrome/browser/profiles:profile",
++    "//chrome/browser/ui/tab_contents:impl",
+     "//chrome/common",
+     "//chrome/common:mojo_bindings",
+     "//chrome/common/aegis",
+@@ -57,6 +58,7 @@ source_set("aegis") {
+     "//components/resources",
+     "//components/security_interstitials/content:security_interstitial_page",
+     "//components/security_interstitials/core",
++    "//components/tabs:public",
+     "//content/public/browser",
+     "//content/public/common",
+     "//crypto",
+@@ -83,10 +85,11 @@ source_set("aegis") {
+ 
+ test("aegis_browser_unittests") {
+   sources = [
+-    "aegis_download_prefs_unittest.cc",
+     "aegis_ai_control_unittest.cc",
++    "aegis_download_prefs_unittest.cc",
+     "aegis_phish_blocking_page_unittest.cc",
+     "aegis_phish_tab_helper_unittest.cc",
++    "aegis_service_unittest.cc",
+     "aegis_ui_handler_unittest.cc",
+     "filter_list_updater_unittest.cc",
+     "metalink_parser_unittest.cc",
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 63a5af117b..baad81d6d8 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -16,6 +16,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
+   // FingerprintGuard on by default when the feature is enabled.
+   registry->RegisterBooleanPref(prefs::kFingerprintGuardEnabled, true);
++  registry->RegisterBooleanPref(prefs::kMinerGuardEnabled, true);
+   // Profile 本地密钥；不设置 SYNCABLE_PREF，避免跨设备同步。
+   registry->RegisterStringPref(prefs::kFingerprintFarblingSecret,
+                                std::string());
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 1a2484bf2f..c58487eb88 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -24,15 +24,18 @@
+ #include "chrome/browser/aegis/ollama_sidecar.h"
+ #include "chrome/browser/aegis/threat_feed_updater.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
+ #include "chrome/common/aegis/aegis_block_reporter.h"
+ #include "chrome/common/aegis/builtin_phish_hosts.h"
+ #include "chrome/common/aegis/cdp_ws_hook.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/filter_list_matcher.h"
++#include "chrome/common/aegis/miner_guard_reporter.h"
+ #include "chrome/common/aegis/phish_score.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/aegis/site_control.h"
+ #include "components/prefs/pref_service.h"
++#include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/btm_service.h"
+ #include "content/public/browser/global_routing_id.h"
+@@ -46,6 +49,8 @@ namespace {
+ 
+ constexpr base::TimeDelta kObserverNotificationInterval =
+     base::Milliseconds(250);
++constexpr base::TimeDelta kMinerObservationWindow = base::Seconds(30);
++constexpr size_t kMaxMinerDocuments = 100;
+ 
+ int64_t NowUnixSeconds() {
+   return (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
+@@ -164,6 +169,7 @@ void AegisService::ShutdownForProfile() {
+   filter_list_updater_.reset();
+   observer_notification_timer_.Stop();
+   privacy_events_.Clear();
++  miner_documents_.clear();
+   cdp_ws_clients_ = 0;
+   prefs_ = nullptr;
+   profile_ = nullptr;
+@@ -202,6 +208,11 @@ bool AegisService::IsFingerprintGuardEnabled() const {
+       !prefs_ || prefs_->GetBoolean(prefs::kFingerprintGuardEnabled));
+ }
+ 
++bool AegisService::IsMinerGuardEnabled() const {
++  return features::IsMinerGuardGloballyEnabled(
++      !prefs_ || prefs_->GetBoolean(prefs::kMinerGuardEnabled));
++}
++
+ void AegisService::SetTrackerBlockingEnabled(bool enabled) {
+   if (prefs_) {
+     prefs_->SetBoolean(prefs::kTrackerBlockingEnabled, enabled);
+@@ -229,6 +240,16 @@ void AegisService::SetFingerprintGuardEnabled(bool enabled) {
+   NotifyObservers();
+ }
+ 
++void AegisService::SetMinerGuardEnabled(bool enabled) {
++  if (prefs_) {
++    prefs_->SetBoolean(prefs::kMinerGuardEnabled, enabled);
++  }
++  if (!enabled) {
++    miner_documents_.clear();
++  }
++  NotifyObservers();
++}
++
+ bool AegisService::IsFilterListAutoUpdateEnabled() const {
+   if (!IsEnabled() ||
+       !base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
+@@ -448,7 +469,7 @@ std::string AegisService::DocumentIdForWebContents(
+   if (!web_contents || !web_contents->GetPrimaryMainFrame()) {
+     return std::string();
+   }
+-  return web_contents->GetPrimaryMainFrame()->GetFrameToken().ToString();
++  return web_contents->GetPrimaryMainFrame()->GetReportingSource().ToString();
+ }
+ 
+ PagePrivacySummary AegisService::GetPageSummary(
+@@ -463,6 +484,10 @@ PagePrivacySummary AegisService::GetPageSummary(
+   summary.events = privacy_events_.ForDocumentAndSite(
+       DocumentIdForWebContents(web_contents), summary.site_key);
+   for (const PrivacyEvent& event : summary.events) {
++    if (event.kind == "miner") {
++      summary.miner_alerts += event.count;
++      continue;
++    }
+     summary.total += event.count;
+     if (event.kind == "block") {
+       summary.blocked += event.count;
+@@ -501,6 +526,11 @@ void AegisService::SetSitePaused(const std::string& host,
+     return;
+   }
+   prefs_->SetString(prefs::kPausedSites, next);
++  if (paused) {
++    std::erase_if(miner_documents_, [&host](const auto& entry) {
++      return entry.first.ends_with("|" + SiteKeyForHost(host));
++    });
++  }
+   NotifyObservers();
+ }
+ 
+@@ -630,6 +660,10 @@ void AegisService::InstallReporterCallbacks() {
+                           weak_ptr_factory_.GetWeakPtr()),
+       base::BindRepeating(&AegisService::OnStrippedParamsReport,
+                           weak_ptr_factory_.GetWeakPtr()));
++  MinerGuardReporter::SetCallback(
++      content::GetUIThreadTaskRunner({}),
++      base::BindRepeating(&AegisService::OnMinerSignals,
++                          weak_ptr_factory_.GetWeakPtr()));
+   CdpWsHook::SetClientCountCallback(base::BindRepeating([](size_t count) {
+     AegisService::GetInstance()->SetCdpWebSocketClientCount(count);
+   }));
+@@ -638,9 +672,83 @@ void AegisService::InstallReporterCallbacks() {
+ void AegisService::ClearReporterCallbacks() {
+   weak_ptr_factory_.InvalidateWeakPtrs();
+   BlockReporter::ClearCallbacks();
++  MinerGuardReporter::ClearCallback();
+   CdpWsHook::SetClientCountCallback({});
+ }
+ 
++bool AegisService::IsCurrentProfileDocument(const std::string& document_id,
++                                            const std::string& site_key) const {
++  if (!profile_ || document_id.empty() || site_key.empty()) {
++    return false;
++  }
++  bool found = false;
++  tabs::ForEachTabInterface([&](tabs::TabInterface* tab) {
++    content::WebContents* web_contents = tab->GetContents();
++    if (!web_contents || web_contents->GetBrowserContext() != profile_ ||
++        DocumentIdForWebContents(web_contents) != document_id) {
++      return true;
++    }
++    found = SiteKeyForHost(
++                std::string(web_contents->GetLastCommittedURL().host())) ==
++            SiteKeyForHost(site_key);
++    return !found;
++  });
++  return found;
++}
++
++void AegisService::OnMinerSignals(std::string document_id,
++                                  std::string site_key,
++                                  std::string display_domain,
++                                  MinerRuntimeSignals signals) {
++  site_key = SiteKeyForHost(site_key);
++  const std::string state_key = document_id + "|" + site_key;
++  if (!IsMinerGuardEnabled() || IsSitePaused(site_key) ||
++      !IsCurrentProfileDocument(document_id, site_key)) {
++    miner_documents_.erase(state_key);
++    return;
++  }
++
++  const base::TimeTicks now = base::TimeTicks::Now();
++  std::erase_if(miner_documents_, [now](const auto& entry) {
++    return now - entry.second.last_update > kMinerObservationWindow;
++  });
++  auto it = miner_documents_.find(state_key);
++  if (it == miner_documents_.end() &&
++      miner_documents_.size() >= kMaxMinerDocuments) {
++    auto oldest = std::min_element(
++        miner_documents_.begin(), miner_documents_.end(),
++        [](const auto& left, const auto& right) {
++          return left.second.last_update < right.second.last_update;
++        });
++    if (oldest != miner_documents_.end()) {
++      miner_documents_.erase(oldest);
++    }
++  }
++  it = miner_documents_.try_emplace(state_key).first;
++  it->second.last_update = now;
++  MinerDocumentState& state = it->second;
++  AddMinerSignalsToWindow(signals, now, kMinerObservationWindow, &state.window);
++  const MinerAssessment assessment = AssessMinerSignals(state.window.signals);
++  if (assessment.verdict != MinerVerdict::kLikelyMining ||
++      state.likely_mining_reported) {
++    return;
++  }
++  state.likely_mining_reported = true;
++
++  PrivacyEvent event;
++  event.document_id = std::move(document_id);
++  event.site_key = std::move(site_key);
++  event.kind = "miner";
++  event.reason = "likely_mining";
++  event.display_domain = SiteKeyForHost(display_domain);
++  event.details = SafeDetails(assessment.reasons);
++  event.first_unix_seconds = NowUnixSeconds();
++  event.last_unix_seconds = event.first_unix_seconds;
++  PushPrivacyEvent(std::move(event));
++  LOG(INFO) << "[AegisMinerGuard] schema=1 mode=observe_only "
++               "verdict=likely_mining score_bucket=high";
++}
++
+ namespace {
+ 
+ std::string NormalizeLocale(const std::string& locale) {
+@@ -1131,7 +1239,7 @@ std::string AegisService::ResolveDocumentContext(
+   content::RenderFrameHost* main_frame = frame->GetOutermostMainFrame();
+   *site_key =
+       SiteKeyForHost(std::string(main_frame->GetLastCommittedURL().host()));
+-  return main_frame->GetFrameToken().ToString();
++  return main_frame->GetReportingSource().ToString();
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 57feaab09c..8b8fc01ff3 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -6,6 +6,7 @@
+ 
+ #include <cstdint>
+ #include <deque>
++#include <map>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -22,6 +23,7 @@
+ #include "chrome/browser/aegis/privacy_event_store.h"
+ #include "chrome/browser/aegis/summary_policy.h"
+ #include "chrome/browser/profiles/profile_observer.h"
++#include "chrome/common/aegis/miner_guard_model.h"
+ #include "chrome/common/aegis/phish_score.h"
+ #include "chrome/common/renderer_configuration.mojom.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+@@ -75,6 +77,7 @@ struct PagePrivacySummary {
+   int cookies = 0;
+   int bounces = 0;
+   int phishing = 0;
++  int miner_alerts = 0;
+   bool paused = false;
+   std::vector<PrivacyEvent> events;
+ };
+@@ -98,6 +101,7 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   bool IsTrackerBlockingEnabled() const;
+   bool IsPhishInterstitialEnabled() const;
+   bool IsFingerprintGuardEnabled() const;
++  bool IsMinerGuardEnabled() const;
+   bool IsFilterListAutoUpdateEnabled() const;
+   bool IsLinkSanitizeEnabled() const;
+   bool IsCookieJanitorEnabled() const;
+@@ -114,6 +118,7 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   void SetTrackerBlockingEnabled(bool enabled);
+   void SetPhishInterstitialEnabled(bool enabled);
+   void SetFingerprintGuardEnabled(bool enabled);
++  void SetMinerGuardEnabled(bool enabled);
+   void SetFilterListAutoUpdateEnabled(bool enabled);
+   void SetLinkSanitizeEnabled(bool enabled);
+   void SetCookieJanitorEnabled(bool enabled);
+@@ -236,6 +241,13 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+   base::RetainingOneShotTimer observer_notification_timer_;
+   size_t cdp_ws_clients_ = 0;
+ 
++  struct MinerDocumentState {
++    MinerSignalWindow window;
++    base::TimeTicks last_update;
++    bool likely_mining_reported = false;
++  };
++  std::map<std::string, MinerDocumentState> miner_documents_;
++
+   void InstallReporterCallbacks();
+   void ClearReporterCallbacks();
+   void OnBlockedReport(GURL url,
+@@ -251,6 +263,12 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+                               std::vector<std::string> keys,
+                               std::string source_site,
+                               std::string document_id);
++  void OnMinerSignals(std::string document_id,
++                      std::string site_key,
++                      std::string display_domain,
++                      MinerRuntimeSignals signals);
++  bool IsCurrentProfileDocument(const std::string& document_id,
++                                const std::string& site_key) const;
+   void ShutdownForProfile();
+   void OnOllamaReady(SummarizeResult heuristic,
+                      std::string system,
+diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
+new file mode 100644
+index 0000000000..7f7542b237
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_service_unittest.cc
+@@ -0,0 +1,33 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/aegis_service.h"
++
++#include "chrome/test/base/chrome_render_view_host_test_harness.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/web_contents.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++class AegisServiceDocumentIdTest : public ChromeRenderViewHostTestHarness {};
++
++TEST_F(AegisServiceDocumentIdTest, ChangesAcrossSameSiteDocuments) {
++  NavigateAndCommit(GURL("https://example.test/first"));
++  content::RenderFrameHost* first_frame = web_contents()->GetPrimaryMainFrame();
++  const std::string first_id =
++      AegisService::DocumentIdForWebContents(web_contents());
++  EXPECT_EQ(first_frame->GetReportingSource().ToString(), first_id);
++
++  NavigateAndCommit(GURL("https://example.test/second"));
++  content::RenderFrameHost* second_frame =
++      web_contents()->GetPrimaryMainFrame();
++  const std::string second_id =
++      AegisService::DocumentIdForWebContents(web_contents());
++  EXPECT_EQ(second_frame->GetReportingSource().ToString(), second_id);
++  EXPECT_NE(first_id, second_id);
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 70cfead103..a3c8da77f2 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -48,6 +48,7 @@
+ #include "base/strings/stringprintf.h"
+ #include "base/supports_user_data.h"
+ #include "base/task/sequenced_task_runner.h"
++#include "base/time/time.h"
+ #include "base/types/expected.h"
+ #include "base/types/expected_macros.h"
+ #include "base/values.h"
+@@ -206,7 +207,10 @@
+ #include "chrome/browser/webauthn/webauthn_pref_names.h"
+ #include "chrome/common/aegis/aegis_net_throttle.h"
+ #include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/miner_guard_model.h"
++#include "chrome/common/aegis/miner_guard_reporter.h"
+ #include "chrome/common/aegis/pref_names.h"
++#include "chrome/common/aegis/site_control.h"
+ #include "chrome/common/buildflags.h"
+ #include "chrome/common/channel_info.h"
+ #include "chrome/common/chrome_constants.h"
+@@ -6900,6 +6904,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
+ #endif
+ }
+ 
++void ChromeContentBrowserClient::OnWebSocketConnectionInitiated(
++    content::RenderFrameHost* frame,
++    const GURL& url) {
++  if (!frame) {
++    return;
++  }
++  content::RenderFrameHost* main_frame = frame->GetOutermostMainFrame();
++  if (!main_frame) {
++    return;
++  }
++  const GURL& page_url = main_frame->GetLastCommittedURL();
++  if (!page_url.SchemeIsHTTPOrHTTPS()) {
++    return;
++  }
++  Profile* profile = Profile::FromBrowserContext(frame->GetBrowserContext());
++  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
++  if (!prefs || !aegis::features::IsMinerGuardGloballyEnabled(
++                    prefs->GetBoolean(aegis::prefs::kMinerGuardEnabled))) {
++    return;
++  }
++  const std::string display_domain(page_url.host());
++  const std::string site_key = aegis::SiteKeyForHost(display_domain);
++  const int64_t now = (base::Time::Now() - base::Time::UnixEpoch()).InSeconds();
++  if (aegis::IsSitePaused(prefs->GetString(aegis::prefs::kPausedSites),
++                          site_key, now)) {
++    return;
++  }
++
++  aegis::MinerRuntimeSignals signals;
++  signals.websocket = true;
++  signals.mining_endpoint = aegis::MiningEndpointIndicator(url).has_value();
++  aegis::MinerGuardReporter::ReportSignals(
++      main_frame->GetReportingSource().ToString(), site_key, display_domain,
++      signals);
++}
++
+ content::ContentBrowserClient::WebSocketOptions
+ ChromeContentBrowserClient::GetWebSocketOptions(
+     content::RenderFrameHost* frame) {
+diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
+index e21e743a9f..6dd52c36db 100644
+--- a/chrome/browser/chrome_content_browser_client.h
++++ b/chrome/browser/chrome_content_browser_client.h
+@@ -743,6 +743,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+       content::FrameTreeNodeId frame_tree_node_id,
+       const network::ResourceRequest& resource_request) override;
+   bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
++  void OnWebSocketConnectionInitiated(content::RenderFrameHost* frame,
++                                      const GURL& url) override;
+   content::ContentBrowserClient::WebSocketOptions GetWebSocketOptions(
+       content::RenderFrameHost* frame) override;
+   void CreateWebSocket(
+diff --git a/chrome/browser/page_load_metrics/BUILD.gn b/chrome/browser/page_load_metrics/BUILD.gn
+index fa68b9ab17..9334316557 100644
+--- a/chrome/browser/page_load_metrics/BUILD.gn
++++ b/chrome/browser/page_load_metrics/BUILD.gn
+@@ -90,6 +90,8 @@ source_set("page_load_metrics") {
+ 
+ source_set("impl") {
+   sources = [
++    "observers/aegis_miner_guard_page_load_metrics_observer.cc",
++    "observers/aegis_miner_guard_page_load_metrics_observer.h",
+     "observers/bookmark_bar_page_load_metrics_observer.cc",
+     "observers/captcha_metrics_observer.cc",
+     "observers/captcha_provider_manager.cc",
+@@ -150,8 +152,11 @@ source_set("impl") {
+     "//chrome/browser/translate",
+     "//chrome/browser/ui/browser_window",
+     "//chrome/common",
++    "//chrome/common/aegis",
+     "//components/content_settings/core/browser",
+     "//components/page_load_metrics/browser/observers/ad_metrics",
++    "//components/performance_manager",
++    "//components/prefs",
+     "//components/security_state/content",
+     "//components/site_engagement/content",
+     "//components/ukm",
+diff --git a/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc
+new file mode 100644
+index 0000000000..217e64c1f3
+--- /dev/null
++++ b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc
+@@ -0,0 +1,309 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h"
++
++#include <algorithm>
++#include <cmath>
++
++#include "base/functional/bind.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/miner_guard_reporter.h"
++#include "chrome/common/aegis/pref_names.h"
++#include "chrome/common/aegis/site_control.h"
++#include "components/performance_manager/public/resource_attribution/page_context.h"
++#include "components/performance_manager/public/resource_attribution/queries.h"
++#include "components/performance_manager/public/resource_attribution/resource_contexts.h"
++#include "components/performance_manager/public/resource_attribution/resource_types.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom.h"
++#include "third_party/blink/public/mojom/use_counter/use_counter_feature.mojom.h"
++
++namespace aegis {
++namespace {
++
++using FeatureType = blink::mojom::UseCounterFeatureType;
++using PageContext = resource_attribution::PageContext;
++using ResourceType = resource_attribution::ResourceType;
++using WebFeature = blink::mojom::WebFeature;
++
++constexpr base::TimeDelta kCpuSampleInterval = base::Seconds(2);
++constexpr base::TimeDelta kCpuSampleBackoff = base::Seconds(30);
++constexpr int kHighCpuPercent = 35;
++constexpr int kMaxCpuPercent = 1000;
++constexpr int kMaxSustainedSamples = 10;
++constexpr int kMaxCpuSamples = 15;
++
++}  // namespace
++
++AegisMinerGuardPageLoadMetricsObserver::
++    AegisMinerGuardPageLoadMetricsObserver() = default;
++
++AegisMinerGuardPageLoadMetricsObserver::
++    ~AegisMinerGuardPageLoadMetricsObserver() = default;
++
++page_load_metrics::PageLoadMetricsObserver::ObservePolicy
++AegisMinerGuardPageLoadMetricsObserver::OnStart(
++    content::NavigationHandle* navigation_handle,
++    const GURL& currently_committed_url,
++    bool started_in_foreground) {
++  if (!navigation_handle->IsInPrimaryMainFrame() ||
++      !features::IsMinerGuardGloballyEnabled(true)) {
++    return STOP_OBSERVING;
++  }
++  page_hidden_ = !started_in_foreground;
++  signals_.background = page_hidden_;
++  return CONTINUE_OBSERVING;
++}
++
++page_load_metrics::PageLoadMetricsObserver::ObservePolicy
++AegisMinerGuardPageLoadMetricsObserver::OnCommit(
++    content::NavigationHandle* navigation_handle) {
++  if (!navigation_handle->IsInPrimaryMainFrame() ||
++      !navigation_handle->GetURL().SchemeIsHTTPOrHTTPS()) {
++    return STOP_OBSERVING;
++  }
++  content::RenderFrameHost* frame = navigation_handle->GetRenderFrameHost();
++  if (!frame) {
++    return STOP_OBSERVING;
++  }
++  display_domain_ = std::string(navigation_handle->GetURL().host());
++  site_key_ = SiteKeyForHost(display_domain_);
++  document_id_ = frame->GetReportingSource().ToString();
++  return CONTINUE_OBSERVING;
++}
++
++page_load_metrics::PageLoadMetricsObserver::ObservePolicy
++AegisMinerGuardPageLoadMetricsObserver::OnFencedFramesStart(
++    content::NavigationHandle* navigation_handle,
++    const GURL& currently_committed_url) {
++  return STOP_OBSERVING;
++}
++
++page_load_metrics::PageLoadMetricsObserver::ObservePolicy
++AegisMinerGuardPageLoadMetricsObserver::OnPrerenderStart(
++    content::NavigationHandle* navigation_handle,
++    const GURL& currently_committed_url) {
++  return STOP_OBSERVING;
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::OnFeaturesUsageObserved(
++    content::RenderFrameHost* rfh,
++    const std::vector<blink::UseCounterFeature>& features) {
++  if (!IsEnabledForCurrentPage()) {
++    StopCpuSampling();
++    return;
++  }
++  MinerRuntimeSignals report;
++  bool changed = false;
++  const auto observe = [&changed](bool* current, bool* outgoing) {
++    if (*current) {
++      return;
++    }
++    *current = true;
++    *outgoing = true;
++    changed = true;
++  };
++  for (const blink::UseCounterFeature& feature : features) {
++    if (feature.type() != FeatureType::kWebFeature) {
++      continue;
++    }
++    switch (static_cast<WebFeature>(feature.value())) {
++      case WebFeature::kWorkerStart:
++        observe(&signals_.worker, &report.worker);
++        break;
++      case WebFeature::kWebAssemblyInstantiation:
++      case WebFeature::kWebAssemblyModuleCompilation:
++        observe(&signals_.wasm, &report.wasm);
++        break;
++      case WebFeature::kWebGPURequestAdapter:
++      case WebFeature::kWebGPUQueueSubmit:
++        observe(&signals_.webgpu, &report.webgpu);
++        break;
++      case WebFeature::kV8SharedArrayBufferConstructed:
++      case WebFeature::kUnrestrictedSharedArrayBuffer:
++        observe(&signals_.shared_memory, &report.shared_memory);
++        break;
++      case WebFeature::kWebSocket:
++        observe(&signals_.websocket, &report.websocket);
++        break;
++      default:
++        break;
++    }
++  }
++  if (!changed) {
++    return;
++  }
++  report.background = page_hidden_;
++  ReportSignals(report);
++  MaybeStartCpuSampling();
++}
++
++page_load_metrics::PageLoadMetricsObserver::ObservePolicy
++AegisMinerGuardPageLoadMetricsObserver::OnHidden(
++    const page_load_metrics::mojom::PageLoadTiming& timing) {
++  if (page_hidden_) {
++    return CONTINUE_OBSERVING;
++  }
++  page_hidden_ = true;
++  signals_.background = true;
++  MinerRuntimeSignals report;
++  report.background = true;
++  ReportSignals(report);
++  return CONTINUE_OBSERVING;
++}
++
++page_load_metrics::PageLoadMetricsObserver::ObservePolicy
++AegisMinerGuardPageLoadMetricsObserver::OnShown() {
++  page_hidden_ = false;
++  signals_.background = false;
++  return CONTINUE_OBSERVING;
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::OnComplete(
++    const page_load_metrics::mojom::PageLoadTiming& timing) {
++  StopCpuSampling();
++}
++
++bool AegisMinerGuardPageLoadMetricsObserver::IsEnabledForCurrentPage() const {
++  if (!features::IsMinerGuardGloballyEnabled(true)) {
++    return false;
++  }
++  content::WebContents* web_contents = GetDelegate().GetWebContents();
++  if (!web_contents || site_key_.empty()) {
++    return false;
++  }
++  Profile* profile =
++      Profile::FromBrowserContext(web_contents->GetBrowserContext());
++  PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
++  if (!prefs || !prefs->GetBoolean(prefs::kMinerGuardEnabled)) {
++    return false;
++  }
++  return !IsSitePaused(
++      prefs->GetString(prefs::kPausedSites), site_key_,
++      (base::Time::Now() - base::Time::UnixEpoch()).InSeconds());
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::MaybeStartCpuSampling() {
++  if (!IsEnabledForCurrentPage()) {
++    StopCpuSampling();
++    return;
++  }
++  if (!ShouldSampleMinerCpu(signals_) || cpu_timer_.IsRunning() ||
++      cpu_backoff_timer_.IsRunning()) {
++    return;
++  }
++  cpu_sample_count_ = 0;
++  SampleCpu();
++  cpu_timer_.Start(
++      FROM_HERE, kCpuSampleInterval,
++      base::BindRepeating(&AegisMinerGuardPageLoadMetricsObserver::SampleCpu,
++                          weak_ptr_factory_.GetWeakPtr()));
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::StopCpuSampling() {
++  cpu_timer_.Stop();
++  cpu_backoff_timer_.Stop();
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::SampleCpu() {
++  if (cpu_query_in_flight_) {
++    return;
++  }
++  if (cpu_sample_count_ >= kMaxCpuSamples) {
++    cpu_timer_.Stop();
++    signals_.sustained_high_cpu_samples = 0;
++    previous_measurement_time_.reset();
++    cpu_backoff_timer_.Start(
++        FROM_HERE, kCpuSampleBackoff,
++        base::BindOnce(
++            &AegisMinerGuardPageLoadMetricsObserver::MaybeStartCpuSampling,
++            weak_ptr_factory_.GetWeakPtr()));
++    return;
++  }
++  if (!IsEnabledForCurrentPage()) {
++    StopCpuSampling();
++    return;
++  }
++  content::WebContents* web_contents = GetDelegate().GetWebContents();
++  std::optional<PageContext> page_context =
++      PageContext::FromWebContents(web_contents);
++  if (!page_context) {
++    return;
++  }
++  ++cpu_sample_count_;
++  cpu_query_in_flight_ = true;
++  resource_attribution::QueryBuilder()
++      .AddResourceType(ResourceType::kCPUTime)
++      .AddResourceContext(*page_context)
++      .QueryOnce(
++          base::BindOnce(&AegisMinerGuardPageLoadMetricsObserver::OnCpuSample,
++                         weak_ptr_factory_.GetWeakPtr()));
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::OnCpuSample(
++    const resource_attribution::QueryResultMap& query_results) {
++  cpu_query_in_flight_ = false;
++  if (query_results.empty() || !IsEnabledForCurrentPage()) {
++    return;
++  }
++  const auto& cpu_result = query_results.begin()->second.cpu_time_result;
++  if (!cpu_result) {
++    return;
++  }
++  const base::TimeTicks measurement_time =
++      cpu_result->metadata.measurement_time;
++  if (!previous_measurement_time_) {
++    previous_measurement_time_ = measurement_time;
++    previous_cpu_ = cpu_result->cumulative_cpu;
++    previous_background_cpu_ = cpu_result->cumulative_background_cpu;
++    return;
++  }
++  const base::TimeDelta wall_time =
++      measurement_time - *previous_measurement_time_;
++  const base::TimeDelta cpu_delta = cpu_result->cumulative_cpu - previous_cpu_;
++  const base::TimeDelta background_delta =
++      cpu_result->cumulative_background_cpu - previous_background_cpu_;
++  previous_measurement_time_ = measurement_time;
++  previous_cpu_ = cpu_result->cumulative_cpu;
++  previous_background_cpu_ = cpu_result->cumulative_background_cpu;
++  if (!wall_time.is_positive() || cpu_delta.is_negative()) {
++    return;
++  }
++  const double cpu_percent =
++      100.0 * cpu_delta.InMicrosecondsF() / wall_time.InMicrosecondsF();
++  signals_.cpu_percent =
++      std::clamp(static_cast<int>(std::lround(cpu_percent)), 0, kMaxCpuPercent);
++  if (signals_.cpu_percent >= kHighCpuPercent) {
++    signals_.sustained_high_cpu_samples =
++        std::min(kMaxSustainedSamples, signals_.sustained_high_cpu_samples + 1);
++  } else {
++    signals_.sustained_high_cpu_samples = 0;
++  }
++  signals_.background = page_hidden_ || background_delta.is_positive();
++  MinerRuntimeSignals report;
++  report.cpu_sampled = true;
++  report.cpu_percent = signals_.cpu_percent;
++  report.sustained_high_cpu_samples = signals_.sustained_high_cpu_samples;
++  report.background = signals_.background;
++  report.worker = signals_.worker;
++  report.wasm = signals_.wasm;
++  report.webgpu = signals_.webgpu;
++  report.shared_memory = signals_.shared_memory;
++  report.websocket = signals_.websocket;
++  ReportSignals(report);
++}
++
++void AegisMinerGuardPageLoadMetricsObserver::ReportSignals(
++    const MinerRuntimeSignals& report) {
++  if (document_id_.empty() || site_key_.empty() || !IsEnabledForCurrentPage()) {
++    return;
++  }
++  MinerGuardReporter::ReportSignals(document_id_, site_key_, display_domain_,
++                                    report);
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h
+new file mode 100644
+index 0000000000..97f1d23b4e
+--- /dev/null
++++ b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h
+@@ -0,0 +1,79 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_AEGIS_MINER_GUARD_PAGE_LOAD_METRICS_OBSERVER_H_
++#define CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_AEGIS_MINER_GUARD_PAGE_LOAD_METRICS_OBSERVER_H_
++
++#include <optional>
++
++#include "base/memory/weak_ptr.h"
++#include "base/time/time.h"
++#include "base/timer/timer.h"
++#include "chrome/common/aegis/miner_guard_model.h"
++#include "components/page_load_metrics/browser/page_load_metrics_observer.h"
++#include "components/performance_manager/public/resource_attribution/query_results.h"
++
++namespace content {
++class NavigationHandle;
++class RenderFrameHost;
++}  // namespace content
++
++namespace aegis {
++
++// Trusted browser-side observation only. This class never executes page source,
++// blocks a request or terminates a worker.
++class AegisMinerGuardPageLoadMetricsObserver
++    : public page_load_metrics::PageLoadMetricsObserver {
++ public:
++  AegisMinerGuardPageLoadMetricsObserver();
++  ~AegisMinerGuardPageLoadMetricsObserver() override;
++
++  AegisMinerGuardPageLoadMetricsObserver(
++      const AegisMinerGuardPageLoadMetricsObserver&) = delete;
++  AegisMinerGuardPageLoadMetricsObserver& operator=(
++      const AegisMinerGuardPageLoadMetricsObserver&) = delete;
++
++  ObservePolicy OnStart(content::NavigationHandle* navigation_handle,
++                        const GURL& currently_committed_url,
++                        bool started_in_foreground) override;
++  ObservePolicy OnCommit(content::NavigationHandle* navigation_handle) override;
++  ObservePolicy OnFencedFramesStart(
++      content::NavigationHandle* navigation_handle,
++      const GURL& currently_committed_url) override;
++  ObservePolicy OnPrerenderStart(content::NavigationHandle* navigation_handle,
++                                 const GURL& currently_committed_url) override;
++  void OnFeaturesUsageObserved(
++      content::RenderFrameHost* rfh,
++      const std::vector<blink::UseCounterFeature>& features) override;
++  ObservePolicy OnHidden(
++      const page_load_metrics::mojom::PageLoadTiming& timing) override;
++  ObservePolicy OnShown() override;
++  void OnComplete(
++      const page_load_metrics::mojom::PageLoadTiming& timing) override;
++
++ private:
++  bool IsEnabledForCurrentPage() const;
++  void MaybeStartCpuSampling();
++  void StopCpuSampling();
++  void SampleCpu();
++  void OnCpuSample(const resource_attribution::QueryResultMap& query_results);
++  void ReportSignals(const MinerRuntimeSignals& report);
++
++  MinerRuntimeSignals signals_;
++  std::string document_id_;
++  std::string site_key_;
++  std::string display_domain_;
++  bool page_hidden_ = false;
++  int cpu_sample_count_ = 0;
++  bool cpu_query_in_flight_ = false;
++  std::optional<base::TimeTicks> previous_measurement_time_;
++  base::TimeDelta previous_cpu_;
++  base::TimeDelta previous_background_cpu_;
++  base::RepeatingTimer cpu_timer_;
++  base::OneShotTimer cpu_backoff_timer_;
++  base::WeakPtrFactory<AegisMinerGuardPageLoadMetricsObserver>
++      weak_ptr_factory_{this};
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_AEGIS_MINER_GUARD_PAGE_LOAD_METRICS_OBSERVER_H_
+diff --git a/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc b/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
+index ccbc498901..058379fe5a 100644
+--- a/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
++++ b/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
+@@ -14,6 +14,7 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
+ #include "chrome/browser/history/history_service_factory.h"
++#include "chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h"
+ #include "chrome/browser/page_load_metrics/observers/bookmark_bar_page_load_metrics_observer.h"
+ #include "chrome/browser/page_load_metrics/observers/captcha_metrics_observer.h"
+ #include "chrome/browser/page_load_metrics/observers/chrome_gws_abandoned_page_load_metrics_observer.h"
+@@ -137,6 +138,7 @@ class PageLoadMetricsEmbedder
+   bool IsNonTabWebUI(const GURL& url) override;
+   bool IsInternalWebUI(const GURL& url) override;
+   bool ShouldObserveScheme(std::string_view scheme) override;
++
+  protected:
+   // page_load_metrics::PageLoadMetricsEmbedderBase:
+   void RegisterObservers(page_load_metrics::PageLoadTracker* tracker,
+@@ -201,6 +203,8 @@ void PageLoadMetricsEmbedder::RegisterObservers(
+ 
+   // Observers for regular web pages.
+   RegisterCommonObservers(tracker);
++  tracker->AddObserver(
++      std::make_unique<aegis::AegisMinerGuardPageLoadMetricsObserver>());
+ 
+   if (!IsNoStatePrefetch(web_contents())) {
+     tracker->AddObserver(std::make_unique<AMPPageLoadMetricsObserver>());
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index e0bdf773d4..f7c8dd2613 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -68,6 +68,13 @@
+           <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
+           <p class="meta" id="fp-result"></p>
+         </div>
++        <label class="row">
++          <span class="copy">
++            <span class="name">$i18n{minerGuardLabel}</span>
++            <span class="hint">$i18n{minerGuardHint}</span>
++          </span>
++          <input id="miner-guard" type="checkbox">
++        </label>
+         <label class="row">
+           <span class="copy">
+             <span class="name">$i18n{linkSanitizeLabel}</span>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 77dd735c1b..d7d29b1c3f 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -21,6 +21,7 @@ interface AegisStatus {
+   trackerBlocking: boolean;
+   phishInterstitial: boolean;
+   fingerprintGuard: boolean;
++  minerGuard: boolean;
+   filterListAutoUpdate: boolean;
+   filterListUpdating: boolean;
+   filterListHostCount: number;
+@@ -103,6 +104,7 @@ interface OllamaProbeResult {
+ }
+ 
+ type ModuleName = 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
++    'minerGuard'|
+     'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
+     'bounceTracking'|'policyWorker'|'privacyAi'|'aiControl';
+ 
+@@ -272,6 +274,14 @@ function fillOverview(status: AegisStatus) {
+     return;
+   }
+   const policyUnavailable = status.policyWorker && !status.policyWorkerReady;
++  const minerObserved = events.some((event) => event.kind === 'miner');
++  if (status.minerGuard && minerObserved) {
++    dot.dataset['state'] = 'warning';
++    state.textContent = zh ?
++        '本次会话曾有页面符合挖矿风险组合规则（历史提醒，未阻断）' :
++        'A page in this session matched the mining-risk rule (prior observe-only alert)';
++    return;
++  }
+   if (status.filterListLastError || policyUnavailable) {
+     dot.dataset['state'] = 'warning';
+     state.textContent = zh ?
+@@ -316,6 +326,7 @@ function applyStatus(status: AegisStatus) {
+   checkbox('tracker').checked = status.trackerBlocking;
+   checkbox('phish').checked = status.phishInterstitial;
+   checkbox('fingerprint').checked = status.fingerprintGuard;
++  checkbox('miner-guard').checked = status.minerGuard;
+   checkbox('link-sanitize').checked = status.linkSanitize;
+   checkbox('cookie-janitor').checked = status.cookieJanitor;
+   checkbox('cname-uncloak').checked = status.cnameUncloak;
+@@ -482,6 +493,9 @@ function kindLabel(kind: string, zh: boolean): string {
+   if (kind === 'phish') {
+     return zh ? '钓鱼' : 'Phish';
+   }
++  if (kind === 'miner') {
++    return zh ? '挖矿风险' : 'Mining risk';
++  }
+   if (kind === 'cdp') {
+     return zh ? '控制' : 'CDP';
+   }
+@@ -779,6 +793,7 @@ async function init() {
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+   bindToggle('fingerprint', 'fingerprintGuard');
++  bindToggle('miner-guard', 'minerGuard');
+   bindToggle('link-sanitize', 'linkSanitize');
+   bindToggle('cookie-janitor', 'cookieJanitor');
+   bindToggle('cname-uncloak', 'cnameUncloak');
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 2cbd206a83..8b6b8fa6ec 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -69,6 +69,9 @@ std::u16string EventKind(const std::string& kind) {
+   if (kind == "phish") {
+     return Copy(u"钓鱼拦截", u"Blocked phishing");
+   }
++  if (kind == "miner") {
++    return Copy(u"挖矿风险（仅观察）", u"Mining risk (observe-only)");
++  }
+   return Copy(u"保护动作", u"Protection action");
+ }
+ 
+@@ -136,6 +139,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+                        base::NumberToString16(summary_.params));
+     AddLabel(this, Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ") +
+                        base::NumberToString16(summary_.cookies));
++    AddLabel(this, Copy(u"挖矿风险提醒（仅观察）：",
++                        u"Mining risk alerts (observe-only): ") +
++                       base::NumberToString16(summary_.miner_alerts));
+ 
+     if (!summary_.events.empty()) {
+       AddLabel(this, Copy(u"最近发生了什么", u"Recent actions"),
+@@ -251,6 +257,8 @@ void AegisToolbarButton::Refresh() {
+   std::u16string label;
+   if (summary.paused) {
+     label = Copy(u"暂停", u"Paused");
++  } else if (summary.miner_alerts > 0) {
++    label = u"!";
+   } else if (summary.total > 0) {
+     label = summary.total > 99 ? u"99+" : base::NumberToString16(summary.total);
+   }
+@@ -259,6 +267,9 @@ void AegisToolbarButton::Refresh() {
+   std::u16string status =
+       summary.paused ? Copy(u"Aegis：此站保护已临时暂停",
+                             u"Aegis: protection paused for this site")
++      : summary.miner_alerts > 0
++          ? Copy(u"Aegis：本页有挖矿风险历史提醒（仅观察，未阻断）",
++                 u"Aegis: prior mining-risk alert (observe-only)")
+       : summary.total > 0
+           ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ") +
+                 base::NumberToString16(summary.total) +
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 165e330ec9..06e2c36225 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -33,6 +33,8 @@ struct AegisStrings {
+   const char* fingerprint_label;
+   const char* fingerprint_hint;
+   const char* fingerprint_probe;
++  const char* miner_guard_label;
++  const char* miner_guard_hint;
+   const char* filter_list_title;
+   const char* filter_list_auto_update;
+   const char* filter_list_auto_update_hint;
+@@ -123,6 +125,11 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "檢測兩次，同一頁的 Audio 讀數應相同；WebGPU 的 maxBufferSize "
+             "會隨開關變化。",
+         .fingerprint_probe = "檢測本頁指紋",
++        .miner_guard_label = "挖礦腳本偵測（僅觀察）",
++        .miner_guard_hint =
++            "由瀏覽器側組合估算頁面 CPU、Worker／Wasm／WebGPU 與挖礦端點訊號。"
++            "符合目前規則時只記錄提醒，不會中止腳本或連線；重新啟用後請重新整理"
++            "頁面。",
+         .filter_list_title = "EasyList 規則",
+         .filter_list_auto_update = "自動更新過濾列表",
+         .filter_list_auto_update_hint =
+@@ -247,6 +254,11 @@ AegisStrings StringsForLocale(const std::string& locale) {
+             "检测两次，同一页的 Audio 读数应相同；WebGPU 的 maxBufferSize "
+             "会随开关变化。",
+         .fingerprint_probe = "检测本页指纹",
++        .miner_guard_label = "挖矿脚本检测（仅观察）",
++        .miner_guard_hint =
++            "由浏览器侧组合估算页面 CPU、Worker／Wasm／WebGPU 与挖矿端点信号。"
++            "符合当前规则时只记录提醒，不会终止脚本或连接；重新启用后请刷新页面"
++            "。",
+         .filter_list_title = "EasyList 规则",
+         .filter_list_auto_update = "自动更新过滤列表",
+         .filter_list_auto_update_hint =
+@@ -372,6 +384,11 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "fingerprinting. Probe twice; Audio on this page should stay the "
+           "same. WebGPU maxBufferSize changes with the guard.",
+       .fingerprint_probe = "Probe this page fingerprints",
++      .miner_guard_label = "Mining script detection (observe-only)",
++      .miner_guard_hint =
++          "Combines estimated page CPU, Worker/Wasm/WebGPU use, and strong "
++          "mining endpoint indicators. Rule matches are reported without "
++          "stopping scripts or connections; reload after re-enabling it.",
+       .filter_list_title = "EasyList rules",
+       .filter_list_auto_update = "Auto-update filter lists",
+       .filter_list_auto_update_hint =
+@@ -511,6 +528,8 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("fingerprintLabel", strings.fingerprint_label);
+   source->AddString("fingerprintHint", strings.fingerprint_hint);
+   source->AddString("fingerprintProbe", strings.fingerprint_probe);
++  source->AddString("minerGuardLabel", strings.miner_guard_label);
++  source->AddString("minerGuardHint", strings.miner_guard_hint);
+   source->AddString("filterListTitle", strings.filter_list_title);
+   source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
+   source->AddString("filterListAutoUpdateHint",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 63b4746860..ec5884fbc4 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -364,6 +364,7 @@ base::DictValue AegisUIHandler::BuildStatus() {
+   status.Set("trackerBlocking", service->IsTrackerBlockingEnabled());
+   status.Set("phishInterstitial", service->IsPhishInterstitialEnabled());
+   status.Set("fingerprintGuard", service->IsFingerprintGuardEnabled());
++  status.Set("minerGuard", service->IsMinerGuardEnabled());
+   status.Set("filterListAutoUpdate", service->IsFilterListAutoUpdateEnabled());
+   status.Set("filterListUpdating", service->IsFilterListUpdating());
+   status.Set("filterListHostCount", service->FilterListHostCount());
+@@ -457,6 +458,8 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+     service->SetPhishInterstitialEnabled(enabled);
+   } else if (module == "fingerprintGuard") {
+     service->SetFingerprintGuardEnabled(enabled);
++  } else if (module == "minerGuard") {
++    service->SetMinerGuardEnabled(enabled);
+   } else if (module == "filterListAutoUpdate") {
+     service->SetFilterListAutoUpdateEnabled(enabled);
+   } else if (module == "linkSanitize") {
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index f8552af355..718dce789e 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -31,6 +31,10 @@ source_set("aegis") {
+     "filter_list_matcher.h",
+     "first_party_collect.cc",
+     "first_party_collect.h",
++    "miner_guard_model.cc",
++    "miner_guard_model.h",
++    "miner_guard_reporter.cc",
++    "miner_guard_reporter.h",
+     "phish_score.cc",
+     "phish_score.h",
+     "pref_names.h",
+@@ -59,10 +63,12 @@ test("aegis_unittests") {
+     "cdp_infobar_copy_unittest.cc",
+     "cdp_target_filter_unittest.cc",
+     "cookie_classify_unittest.cc",
++    "features_unittest.cc",
+     "filter_list_matcher_unittest.cc",
+     "filter_list_unittest.cc",
+     "fingerprint_guard_unittest.cc",
+-    "features_unittest.cc",
++    "miner_guard_model_unittest.cc",
++    "miner_guard_reporter_unittest.cc",
+     "phish_score_unittest.cc",
+     "site_control_unittest.cc",
+     "threat_feed_index_unittest.cc",
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index a62067274c..cd9248cc7f 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -5,11 +5,13 @@
+ 
+ namespace aegis::features {
+ 
+-// Chromium 120+ uses the 2-arg BASE_FEATURE form (name derived from identifier).
++// Chromium 120+ uses the 2-arg BASE_FEATURE form (name derived from
++// identifier).
+ BASE_FEATURE(kAegisEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPhishInterstitial, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisMinerGuard, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFilterListUpdater, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisLinkSanitize, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisCookieJanitor, base::FEATURE_ENABLED_BY_DEFAULT);
+@@ -24,4 +26,9 @@ bool IsFingerprintGuardGloballyEnabled(bool pref_enabled) {
+          base::FeatureList::IsEnabled(kAegisFingerprintGuard);
+ }
+ 
++bool IsMinerGuardGloballyEnabled(bool pref_enabled) {
++  return pref_enabled && base::FeatureList::IsEnabled(kAegisEnabled) &&
++         base::FeatureList::IsEnabled(kAegisMinerGuard);
++}
++
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index e22869db4f..81bef9fcd2 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -13,6 +13,7 @@ BASE_DECLARE_FEATURE(kAegisEnabled);
+ BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
+ BASE_DECLARE_FEATURE(kAegisPhishInterstitial);
+ BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
++BASE_DECLARE_FEATURE(kAegisMinerGuard);
+ BASE_DECLARE_FEATURE(kAegisFilterListUpdater);
+ BASE_DECLARE_FEATURE(kAegisLinkSanitize);
+ BASE_DECLARE_FEATURE(kAegisCookieJanitor);
+@@ -24,6 +25,7 @@ BASE_DECLARE_FEATURE(kAegisAiControl);
+ 
+ // 统一计算可发送给 Renderer 的有效开关，避免 UI 与 Blink 状态不一致。
+ bool IsFingerprintGuardGloballyEnabled(bool pref_enabled);
++bool IsMinerGuardGloballyEnabled(bool pref_enabled);
+ 
+ }  // namespace aegis::features
+ 
+diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
+index c0a666028b..f9fa295f44 100644
+--- a/chrome/common/aegis/features_unittest.cc
++++ b/chrome/common/aegis/features_unittest.cc
+@@ -37,5 +37,32 @@ TEST(AegisFeaturesTest, FingerprintGuardRequiresEveryGate) {
+   }
+ }
+ 
++bool EvaluateMinerGuard(bool master, bool subfeature, bool pref) {
++  base::test::ScopedFeatureList scoped_features;
++  if (master && subfeature) {
++    scoped_features.InitWithFeatures({kAegisEnabled, kAegisMinerGuard}, {});
++  } else if (master) {
++    scoped_features.InitWithFeatures({kAegisEnabled}, {kAegisMinerGuard});
++  } else if (subfeature) {
++    scoped_features.InitWithFeatures({kAegisMinerGuard}, {kAegisEnabled});
++  } else {
++    scoped_features.InitWithFeatures({}, {kAegisEnabled, kAegisMinerGuard});
++  }
++  return IsMinerGuardGloballyEnabled(pref);
++}
++
++TEST(AegisFeaturesTest, MinerGuardRequiresEveryGlobalGate) {
++  for (bool master : {false, true}) {
++    for (bool subfeature : {false, true}) {
++      for (bool pref : {false, true}) {
++        SCOPED_TRACE(testing::Message() << "master=" << master << " subfeature="
++                                        << subfeature << " pref=" << pref);
++        EXPECT_EQ(master && subfeature && pref,
++                  EvaluateMinerGuard(master, subfeature, pref));
++      }
++    }
++  }
++}
++
+ }  // namespace
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/miner_guard_model.cc b/chrome/common/aegis/miner_guard_model.cc
+new file mode 100644
+index 0000000000..78d5df5990
+--- /dev/null
++++ b/chrome/common/aegis/miner_guard_model.cc
+@@ -0,0 +1,216 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/miner_guard_model.h"
++
++#include <algorithm>
++#include <string_view>
++
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++constexpr int kHighCpuPercent = 35;
++constexpr int kSustainedSampleCount = 3;
++
++bool IsExpired(base::TimeTicks observed_at,
++               base::TimeTicks now,
++               base::TimeDelta duration) {
++  return !observed_at.is_null() &&
++         (now < observed_at || now - observed_at >= duration);
++}
++
++void ExpireSignal(bool* signal,
++                  base::TimeTicks* observed_at,
++                  base::TimeTicks now,
++                  base::TimeDelta duration) {
++  if (!IsExpired(*observed_at, now, duration)) {
++    return;
++  }
++  *signal = false;
++  *observed_at = base::TimeTicks();
++}
++
++void ObserveSignal(bool incoming,
++                   bool* signal,
++                   base::TimeTicks* observed_at,
++                   base::TimeTicks now) {
++  if (!incoming) {
++    return;
++  }
++  *signal = true;
++  *observed_at = now;
++}
++
++void AddReason(bool present,
++               int weight,
++               std::string_view code,
++               int* score,
++               std::vector<std::string>* reasons) {
++  if (!present) {
++    return;
++  }
++  *score += weight;
++  reasons->emplace_back(code);
++}
++
++std::vector<std::string_view> EndpointTokens(const GURL& url,
++                                             std::string* storage) {
++  *storage = base::ToLowerASCII(url.host());
++  storage->push_back('/');
++  storage->append(base::ToLowerASCII(url.path()));
++  return base::SplitStringPiece(*storage, ".-_/", base::TRIM_WHITESPACE,
++                                base::SPLIT_WANT_NONEMPTY);
++}
++
++bool HasToken(const std::vector<std::string_view>& tokens,
++              std::string_view expected) {
++  return std::ranges::find(tokens, expected) != tokens.end();
++}
++
++}  // namespace
++
++MinerAssessment AssessMinerSignals(const MinerRuntimeSignals& signals) {
++  MinerAssessment result;
++  const bool high_cpu =
++      signals.cpu_sampled && signals.cpu_percent >= kHighCpuPercent;
++  const bool sustained =
++      signals.cpu_sampled &&
++      signals.sustained_high_cpu_samples >= kSustainedSampleCount;
++  const bool compute = signals.wasm || signals.webgpu;
++  const bool execution_fanout = signals.worker || signals.websocket;
++  const bool strong_indicator = signals.mining_endpoint;
++
++  AddReason(high_cpu, 20, "high_cpu", &result.score, &result.reasons);
++  AddReason(sustained, 20, "sustained_cpu", &result.score, &result.reasons);
++  AddReason(signals.background, 5, "background", &result.score,
++            &result.reasons);
++  AddReason(signals.worker, 10, "worker", &result.score, &result.reasons);
++  AddReason(signals.wasm, 10, "wasm", &result.score, &result.reasons);
++  AddReason(signals.webgpu, 10, "webgpu", &result.score, &result.reasons);
++  AddReason(signals.shared_memory, 5, "shared_memory", &result.score,
++            &result.reasons);
++  AddReason(signals.websocket, 10, "websocket", &result.score, &result.reasons);
++  AddReason(signals.mining_endpoint, 35, "mining_endpoint", &result.score,
++            &result.reasons);
++  result.score = std::min(100, result.score);
++
++  // A likely-mining verdict requires sustained resource use plus a strong
++  // endpoint indicator and an execution or communication fan-out. This keeps
++  // games, codecs, local AI and scientific Wasm/WebGPU workloads out of the
++  // high-confidence bucket.
++  if (strong_indicator && high_cpu && sustained && execution_fanout &&
++      (compute || signals.worker) && result.score >= 80) {
++    result.verdict = MinerVerdict::kLikelyMining;
++  } else if (high_cpu && sustained && compute && execution_fanout &&
++             result.score >= 60) {
++    result.verdict = MinerVerdict::kSuspicious;
++  } else if (result.score >= 20) {
++    result.verdict = MinerVerdict::kObserve;
++  }
++  return result;
++}
++
++void MergeMinerSignals(const MinerRuntimeSignals& incoming,
++                       MinerRuntimeSignals* accumulated) {
++  if (!accumulated) {
++    return;
++  }
++  if (incoming.cpu_sampled) {
++    accumulated->cpu_sampled = true;
++    accumulated->cpu_percent = incoming.cpu_percent;
++    accumulated->sustained_high_cpu_samples =
++        incoming.sustained_high_cpu_samples;
++  }
++  accumulated->background = accumulated->background || incoming.background;
++  accumulated->worker = accumulated->worker || incoming.worker;
++  accumulated->wasm = accumulated->wasm || incoming.wasm;
++  accumulated->webgpu = accumulated->webgpu || incoming.webgpu;
++  accumulated->shared_memory =
++      accumulated->shared_memory || incoming.shared_memory;
++  accumulated->websocket = accumulated->websocket || incoming.websocket;
++  accumulated->mining_endpoint =
++      accumulated->mining_endpoint || incoming.mining_endpoint;
++}
++
++void AddMinerSignalsToWindow(const MinerRuntimeSignals& incoming,
++                             base::TimeTicks now,
++                             base::TimeDelta duration,
++                             MinerSignalWindow* window) {
++  if (!window) {
++    return;
++  }
++  if (IsExpired(window->cpu_at, now, duration)) {
++    window->signals.cpu_sampled = false;
++    window->signals.cpu_percent = 0;
++    window->signals.sustained_high_cpu_samples = 0;
++    window->cpu_at = base::TimeTicks();
++  }
++  ExpireSignal(&window->signals.background, &window->background_at, now,
++               duration);
++  ExpireSignal(&window->signals.worker, &window->worker_at, now, duration);
++  ExpireSignal(&window->signals.wasm, &window->wasm_at, now, duration);
++  ExpireSignal(&window->signals.webgpu, &window->webgpu_at, now, duration);
++  ExpireSignal(&window->signals.shared_memory, &window->shared_memory_at, now,
++               duration);
++  ExpireSignal(&window->signals.websocket, &window->websocket_at, now,
++               duration);
++  ExpireSignal(&window->signals.mining_endpoint, &window->mining_endpoint_at,
++               now, duration);
++
++  if (incoming.cpu_sampled) {
++    window->signals.cpu_sampled = true;
++    window->signals.cpu_percent = incoming.cpu_percent;
++    window->signals.sustained_high_cpu_samples =
++        incoming.sustained_high_cpu_samples;
++    window->cpu_at = now;
++  }
++  ObserveSignal(incoming.background, &window->signals.background,
++                &window->background_at, now);
++  ObserveSignal(incoming.worker, &window->signals.worker, &window->worker_at,
++                now);
++  ObserveSignal(incoming.wasm, &window->signals.wasm, &window->wasm_at, now);
++  ObserveSignal(incoming.webgpu, &window->signals.webgpu, &window->webgpu_at,
++                now);
++  ObserveSignal(incoming.shared_memory, &window->signals.shared_memory,
++                &window->shared_memory_at, now);
++  ObserveSignal(incoming.websocket, &window->signals.websocket,
++                &window->websocket_at, now);
++  ObserveSignal(incoming.mining_endpoint, &window->signals.mining_endpoint,
++                &window->mining_endpoint_at, now);
++}
++
++bool ShouldSampleMinerCpu(const MinerRuntimeSignals& signals) {
++  const bool compute = signals.wasm || signals.webgpu;
++  return (signals.worker && compute) ||
++         (signals.websocket && (signals.worker || compute));
++}
++
++std::optional<std::string> MiningEndpointIndicator(const GURL& url) {
++  if (!url.is_valid() || (!url.SchemeIs("ws") && !url.SchemeIs("wss") &&
++                          !url.SchemeIsHTTPOrHTTPS())) {
++    return std::nullopt;
++  }
++  std::string storage;
++  const std::vector<std::string_view> tokens = EndpointTokens(url, &storage);
++  if (HasToken(tokens, "stratum")) {
++    return "stratum_endpoint";
++  }
++  if (HasToken(tokens, "cryptonight")) {
++    return "cryptonight_endpoint";
++  }
++  if (HasToken(tokens, "coinhive")) {
++    return "coinhive_endpoint";
++  }
++  if (HasToken(tokens, "xmrig")) {
++    return "xmrig_endpoint";
++  }
++  if (HasToken(tokens, "webmine") || HasToken(tokens, "webminer")) {
++    return "web_mining_endpoint";
++  }
++  return std::nullopt;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/miner_guard_model.h b/chrome/common/aegis/miner_guard_model.h
+new file mode 100644
+index 0000000000..1059621b65
+--- /dev/null
++++ b/chrome/common/aegis/miner_guard_model.h
+@@ -0,0 +1,84 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_COMMON_AEGIS_MINER_GUARD_MODEL_H_
++#define CHROME_COMMON_AEGIS_MINER_GUARD_MODEL_H_
++
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/time/time.h"
++
++class GURL;
++
++namespace aegis {
++
++// MinerGuard is deliberately multi-signal. Common high-load web features are
++// not malicious on their own, so no single CPU, Worker, Wasm, WebGPU or socket
++// signal can produce a mining verdict.
++struct MinerRuntimeSignals {
++  bool cpu_sampled = false;
++  int cpu_percent = 0;
++  int sustained_high_cpu_samples = 0;
++  bool background = false;
++  bool worker = false;
++  bool wasm = false;
++  bool webgpu = false;
++  bool shared_memory = false;
++  bool websocket = false;
++  bool mining_endpoint = false;
++};
++
++enum class MinerVerdict {
++  kBenign = 0,
++  kObserve = 1,
++  kSuspicious = 2,
++  kLikelyMining = 3,
++};
++
++struct MinerAssessment {
++  MinerVerdict verdict = MinerVerdict::kBenign;
++  int score = 0;
++  std::vector<std::string> reasons;
++};
++
++MinerAssessment AssessMinerSignals(const MinerRuntimeSignals& signals);
++
++// Merges a full page-observer snapshot or a partial trusted hook report. CPU
++// fields are replaced only by a sampled report; capability bits are sticky for
++// the caller's bounded observation window.
++void MergeMinerSignals(const MinerRuntimeSignals& incoming,
++                       MinerRuntimeSignals* accumulated);
++
++// Tracks each signal in a bounded rolling observation window. A new report
++// refreshes only the fields it actually carries, so unrelated callbacks cannot
++// keep old endpoint or CPU evidence alive.
++struct MinerSignalWindow {
++  MinerRuntimeSignals signals;
++  base::TimeTicks cpu_at;
++  base::TimeTicks background_at;
++  base::TimeTicks worker_at;
++  base::TimeTicks wasm_at;
++  base::TimeTicks webgpu_at;
++  base::TimeTicks shared_memory_at;
++  base::TimeTicks websocket_at;
++  base::TimeTicks mining_endpoint_at;
++};
++
++void AddMinerSignalsToWindow(const MinerRuntimeSignals& incoming,
++                             base::TimeTicks now,
++                             base::TimeDelta duration,
++                             MinerSignalWindow* window);
++
++// CPU attribution is only useful when page capabilities can satisfy the
++// multi-signal mining rule. A lone WebSocket, Worker or compute API is not
++// enough to start the sampler.
++bool ShouldSampleMinerCpu(const MinerRuntimeSignals& signals);
++
++// Returns a privacy-safe reason code for strong mining endpoint indicators.
++// The query, fragment, credentials and full URL are never returned or stored.
++std::optional<std::string> MiningEndpointIndicator(const GURL& url);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_MINER_GUARD_MODEL_H_
+diff --git a/chrome/common/aegis/miner_guard_model_unittest.cc b/chrome/common/aegis/miner_guard_model_unittest.cc
+new file mode 100644
+index 0000000000..8b25eed38b
+--- /dev/null
++++ b/chrome/common/aegis/miner_guard_model_unittest.cc
+@@ -0,0 +1,198 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/miner_guard_model.h"
++
++#include <algorithm>
++
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++TEST(MinerGuardModelTest, SingleSignalsNeverProduceMiningVerdict) {
++  MinerRuntimeSignals cpu;
++  cpu.cpu_sampled = true;
++  cpu.cpu_percent = 95;
++  cpu.sustained_high_cpu_samples = 8;
++  EXPECT_NE(AssessMinerSignals(cpu).verdict, MinerVerdict::kLikelyMining);
++
++  MinerRuntimeSignals wasm;
++  wasm.wasm = true;
++  EXPECT_NE(AssessMinerSignals(wasm).verdict, MinerVerdict::kLikelyMining);
++
++  MinerRuntimeSignals worker;
++  worker.worker = true;
++  EXPECT_NE(AssessMinerSignals(worker).verdict, MinerVerdict::kLikelyMining);
++
++  MinerRuntimeSignals socket;
++  socket.websocket = true;
++  EXPECT_NE(AssessMinerSignals(socket).verdict, MinerVerdict::kLikelyMining);
++}
++
++TEST(MinerGuardModelTest, BenignHighLoadCombinationsAreNotLikelyMining) {
++  MinerRuntimeSignals codec;
++  codec.cpu_sampled = true;
++  codec.cpu_percent = 90;
++  codec.sustained_high_cpu_samples = 6;
++  codec.worker = true;
++  codec.wasm = true;
++  EXPECT_EQ(AssessMinerSignals(codec).verdict, MinerVerdict::kSuspicious);
++
++  MinerRuntimeSignals game = codec;
++  game.websocket = true;
++  game.shared_memory = true;
++  EXPECT_EQ(AssessMinerSignals(game).verdict, MinerVerdict::kSuspicious);
++
++  MinerRuntimeSignals local_ai;
++  local_ai.cpu_sampled = true;
++  local_ai.cpu_percent = 90;
++  local_ai.sustained_high_cpu_samples = 6;
++  local_ai.worker = true;
++  local_ai.webgpu = true;
++  EXPECT_EQ(AssessMinerSignals(local_ai).verdict, MinerVerdict::kSuspicious);
++}
++
++TEST(MinerGuardModelTest, StrongEndpointAndSustainedBehaviorAreRequired) {
++  MinerRuntimeSignals signals;
++  signals.worker = true;
++  signals.wasm = true;
++  signals.websocket = true;
++  signals.mining_endpoint = true;
++  EXPECT_NE(AssessMinerSignals(signals).verdict, MinerVerdict::kLikelyMining);
++
++  signals.cpu_sampled = true;
++  signals.cpu_percent = 75;
++  signals.sustained_high_cpu_samples = 3;
++  const MinerAssessment result = AssessMinerSignals(signals);
++  EXPECT_EQ(result.verdict, MinerVerdict::kLikelyMining);
++  EXPECT_GE(result.score, 80);
++  EXPECT_NE(std::ranges::find(result.reasons, "mining_endpoint"),
++            result.reasons.end());
++}
++
++TEST(MinerGuardModelTest, JavaScriptWorkerWithStrongEndpointCanBeDetected) {
++  MinerRuntimeSignals signals;
++  signals.cpu_sampled = true;
++  signals.cpu_percent = 80;
++  signals.sustained_high_cpu_samples = 4;
++  signals.worker = true;
++  signals.websocket = true;
++  signals.mining_endpoint = true;
++  EXPECT_EQ(AssessMinerSignals(signals).verdict, MinerVerdict::kLikelyMining);
++}
++
++TEST(MinerGuardModelTest, EndpointMatchingIsBoundedAndPrivacySafe) {
++  EXPECT_EQ(MiningEndpointIndicator(
++                GURL("wss://compute.example.test/v1/stratum?wallet=secret")),
++            "stratum_endpoint");
++  EXPECT_EQ(MiningEndpointIndicator(
++                GURL("https://cdn.example.test/assets/xmrig/module.wasm")),
++            "xmrig_endpoint");
++  EXPECT_FALSE(MiningEndpointIndicator(
++      GURL("wss://chat.example.test/socket?room=miners")));
++  EXPECT_FALSE(MiningEndpointIndicator(GURL("file:///tmp/stratum")));
++}
++
++TEST(MinerGuardModelTest, MergesPartialReportsWithoutResettingEvidence) {
++  MinerRuntimeSignals accumulated;
++  accumulated.worker = true;
++  accumulated.wasm = true;
++
++  MinerRuntimeSignals endpoint;
++  endpoint.websocket = true;
++  endpoint.mining_endpoint = true;
++  MergeMinerSignals(endpoint, &accumulated);
++
++  MinerRuntimeSignals cpu;
++  cpu.cpu_sampled = true;
++  cpu.cpu_percent = 82;
++  cpu.sustained_high_cpu_samples = 3;
++  MergeMinerSignals(cpu, &accumulated);
++
++  EXPECT_TRUE(accumulated.worker);
++  EXPECT_TRUE(accumulated.wasm);
++  EXPECT_TRUE(accumulated.websocket);
++  EXPECT_TRUE(accumulated.mining_endpoint);
++  EXPECT_EQ(accumulated.cpu_percent, 82);
++  EXPECT_EQ(AssessMinerSignals(accumulated).verdict,
++            MinerVerdict::kLikelyMining);
++}
++
++TEST(MinerGuardModelTest, RollingWindowExpiresEachSignalIndependently) {
++  const base::TimeTicks start = base::TimeTicks::Now();
++  MinerSignalWindow window;
++
++  MinerRuntimeSignals endpoint;
++  endpoint.worker = true;
++  endpoint.websocket = true;
++  endpoint.mining_endpoint = true;
++  AddMinerSignalsToWindow(endpoint, start, base::Seconds(30), &window);
++
++  MinerRuntimeSignals keepalive;
++  keepalive.wasm = true;
++  AddMinerSignalsToWindow(keepalive, start + base::Seconds(29),
++                          base::Seconds(30), &window);
++  EXPECT_TRUE(window.signals.mining_endpoint);
++
++  MinerRuntimeSignals cpu;
++  cpu.cpu_sampled = true;
++  cpu.cpu_percent = 90;
++  cpu.sustained_high_cpu_samples = 4;
++  AddMinerSignalsToWindow(cpu, start + base::Seconds(30), base::Seconds(30),
++                          &window);
++  EXPECT_FALSE(window.signals.mining_endpoint);
++  EXPECT_FALSE(window.signals.worker);
++  EXPECT_EQ(AssessMinerSignals(window.signals).verdict, MinerVerdict::kObserve);
++}
++
++TEST(MinerGuardModelTest, LateEndpointRemainsFreshForLaterCpuSamples) {
++  const base::TimeTicks start = base::TimeTicks::Now();
++  MinerSignalWindow window;
++  MinerRuntimeSignals capability;
++  capability.worker = true;
++  AddMinerSignalsToWindow(capability, start, base::Seconds(30), &window);
++
++  MinerRuntimeSignals endpoint;
++  endpoint.websocket = true;
++  endpoint.mining_endpoint = true;
++  AddMinerSignalsToWindow(endpoint, start + base::Seconds(29),
++                          base::Seconds(30), &window);
++
++  MinerRuntimeSignals cpu;
++  cpu.cpu_sampled = true;
++  cpu.cpu_percent = 80;
++  cpu.sustained_high_cpu_samples = 3;
++  cpu.worker = true;
++  AddMinerSignalsToWindow(cpu, start + base::Seconds(35), base::Seconds(30),
++                          &window);
++  EXPECT_EQ(AssessMinerSignals(window.signals).verdict,
++            MinerVerdict::kLikelyMining);
++}
++
++TEST(MinerGuardModelTest, UnsampledCpuValuesCannotProduceMiningVerdict) {
++  MinerRuntimeSignals signals;
++  signals.cpu_percent = 99;
++  signals.sustained_high_cpu_samples = 10;
++  signals.worker = true;
++  signals.websocket = true;
++  signals.mining_endpoint = true;
++  EXPECT_NE(AssessMinerSignals(signals).verdict, MinerVerdict::kLikelyMining);
++}
++
++TEST(MinerGuardModelTest, CpuSamplingRequiresAUsefulCapabilityCombination) {
++  MinerRuntimeSignals signals;
++  signals.websocket = true;
++  EXPECT_FALSE(ShouldSampleMinerCpu(signals));
++  signals.worker = true;
++  EXPECT_TRUE(ShouldSampleMinerCpu(signals));
++
++  signals = MinerRuntimeSignals();
++  signals.worker = true;
++  EXPECT_FALSE(ShouldSampleMinerCpu(signals));
++  signals.wasm = true;
++  EXPECT_TRUE(ShouldSampleMinerCpu(signals));
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/common/aegis/miner_guard_reporter.cc b/chrome/common/aegis/miner_guard_reporter.cc
+new file mode 100644
+index 0000000000..61be26ac47
+--- /dev/null
++++ b/chrome/common/aegis/miner_guard_reporter.cc
+@@ -0,0 +1,58 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/miner_guard_reporter.h"
++
++#include "base/check.h"
++#include "base/no_destructor.h"
++#include "base/synchronization/lock.h"
++#include "base/task/bind_post_task.h"
++#include "base/task/sequenced_task_runner.h"
++
++namespace aegis {
++namespace {
++
++struct ReporterState {
++  base::Lock lock;
++  MinerGuardReporter::SignalsCallback callback;
++};
++
++ReporterState& GetReporterState() {
++  static base::NoDestructor<ReporterState> state;
++  return *state;
++}
++
++}  // namespace
++
++void MinerGuardReporter::SetCallback(
++    scoped_refptr<base::SequencedTaskRunner> task_runner,
++    SignalsCallback callback) {
++  CHECK(task_runner);
++  CHECK(callback);
++  callback = base::BindPostTask(task_runner, std::move(callback));
++  ReporterState& state = GetReporterState();
++  base::AutoLock lock(state.lock);
++  state.callback = std::move(callback);
++}
++
++void MinerGuardReporter::ClearCallback() {
++  ReporterState& state = GetReporterState();
++  base::AutoLock lock(state.lock);
++  state.callback.Reset();
++}
++
++void MinerGuardReporter::ReportSignals(const std::string& document_id,
++                                       const std::string& site_key,
++                                       const std::string& display_domain,
++                                       const MinerRuntimeSignals& signals) {
++  SignalsCallback callback;
++  {
++    ReporterState& state = GetReporterState();
++    base::AutoLock lock(state.lock);
++    callback = state.callback;
++  }
++  if (callback) {
++    callback.Run(document_id, site_key, display_domain, signals);
++  }
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/miner_guard_reporter.h b/chrome/common/aegis/miner_guard_reporter.h
+new file mode 100644
+index 0000000000..3ea30bcc42
+--- /dev/null
++++ b/chrome/common/aegis/miner_guard_reporter.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_COMMON_AEGIS_MINER_GUARD_REPORTER_H_
++#define CHROME_COMMON_AEGIS_MINER_GUARD_REPORTER_H_
++
++#include <string>
++
++#include "base/functional/callback.h"
++#include "base/memory/scoped_refptr.h"
++#include "chrome/common/aegis/miner_guard_model.h"
++
++namespace base {
++class SequencedTaskRunner;
++}
++
++namespace aegis {
++
++// Sequence-safe bridge from trusted browser instrumentation to AegisService.
++// Reports contain only bounded booleans, CPU buckets and sanitized site keys;
++// source text, query strings and WebSocket payloads never cross this bridge.
++class MinerGuardReporter {
++ public:
++  using SignalsCallback =
++      base::RepeatingCallback<void(std::string document_id,
++                                   std::string site_key,
++                                   std::string display_domain,
++                                   MinerRuntimeSignals signals)>;
++
++  static void SetCallback(scoped_refptr<base::SequencedTaskRunner> task_runner,
++                          SignalsCallback callback);
++  static void ClearCallback();
++
++  static void ReportSignals(const std::string& document_id,
++                            const std::string& site_key,
++                            const std::string& display_domain,
++                            const MinerRuntimeSignals& signals);
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_MINER_GUARD_REPORTER_H_
+diff --git a/chrome/common/aegis/miner_guard_reporter_unittest.cc b/chrome/common/aegis/miner_guard_reporter_unittest.cc
+new file mode 100644
+index 0000000000..517c8255f2
+--- /dev/null
++++ b/chrome/common/aegis/miner_guard_reporter_unittest.cc
+@@ -0,0 +1,63 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/miner_guard_reporter.h"
++
++#include <string>
++
++#include "base/functional/bind.h"
++#include "base/run_loop.h"
++#include "base/test/task_environment.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis {
++namespace {
++
++TEST(MinerGuardReporterTest, DeliversBoundedSignalsOnOwnerSequence) {
++  base::test::TaskEnvironment task_environment;
++  base::RunLoop run_loop;
++  std::string received_document;
++  MinerRuntimeSignals received_signals;
++  MinerGuardReporter::SetCallback(
++      base::SequencedTaskRunner::GetCurrentDefault(),
++      base::BindRepeating(
++          [](base::RepeatingClosure quit, std::string* received_document,
++             MinerRuntimeSignals* received_signals, std::string document_id,
++             std::string site_key, std::string display_domain,
++             MinerRuntimeSignals signals) {
++            *received_document = std::move(document_id);
++            *received_signals = signals;
++            quit.Run();
++          },
++          run_loop.QuitClosure(), &received_document, &received_signals));
++
++  MinerRuntimeSignals signals;
++  signals.worker = true;
++  signals.wasm = true;
++  MinerGuardReporter::ReportSignals("document-1", "example.test",
++                                    "example.test", signals);
++  run_loop.Run();
++
++  EXPECT_EQ(received_document, "document-1");
++  EXPECT_TRUE(received_signals.worker);
++  EXPECT_TRUE(received_signals.wasm);
++  MinerGuardReporter::ClearCallback();
++}
++
++TEST(MinerGuardReporterTest, DropsReportsAfterClear) {
++  base::test::TaskEnvironment task_environment;
++  bool called = false;
++  MinerGuardReporter::SetCallback(
++      base::SequencedTaskRunner::GetCurrentDefault(),
++      base::BindRepeating(
++          [](bool* called, std::string, std::string, std::string,
++             MinerRuntimeSignals) { *called = true; },
++          &called));
++  MinerGuardReporter::ClearCallback();
++  MinerGuardReporter::ReportSignals("document-1", "example.test",
++                                    "example.test", MinerRuntimeSignals());
++  task_environment.RunUntilIdle();
++  EXPECT_FALSE(called);
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
+index ada93350b4..e402c6b71d 100644
+--- a/chrome/common/aegis/pref_names.h
++++ b/chrome/common/aegis/pref_names.h
+@@ -13,6 +13,7 @@ inline constexpr char kPhishInterstitialEnabled[] =
+     "aegis.phish_interstitial_enabled";
+ inline constexpr char kFingerprintGuardEnabled[] =
+     "aegis.fingerprint_guard_enabled";
++inline constexpr char kMinerGuardEnabled[] = "aegis.miner_guard_enabled";
+ inline constexpr char kFingerprintFarblingSecret[] =
+     "aegis.fingerprint_farbling_secret";
+ inline constexpr char kFilterListAutoUpdateEnabled[] =
+diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
+index 83caf245b4..382fdf613f 100644
+--- a/content/browser/websockets/websocket_connector_impl.cc
++++ b/content/browser/websockets/websocket_connector_impl.cc
+@@ -64,7 +64,7 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+           policy_exception_justification:
+             "Not implemented. WebSocket is a core web platform API."
+         })");
+-}
++}  // namespace
+ 
+ WebSocketConnectorImpl::WebSocketConnectorImpl(
+     const content::GlobalRenderFrameHostId& frame_id,
+@@ -104,6 +104,7 @@ void WebSocketConnectorImpl::Connect(
+   }
+ 
+   RenderFrameHost* frame = RenderFrameHost::FromID(frame_id_);
++  GetContentClient()->browser()->OnWebSocketConnectionInitiated(frame, url);
+   content::ContentBrowserClient::WebSocketOptions options =
+       GetContentClient()->browser()->GetWebSocketOptions(frame);
+ 
+diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
+index 5785aaf2b9..07712ca7ee 100644
+--- a/content/public/browser/content_browser_client.cc
++++ b/content/public/browser/content_browser_client.cc
+@@ -1164,6 +1164,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+   return false;
+ }
+ 
++void ContentBrowserClient::OnWebSocketConnectionInitiated(RenderFrameHost*,
++                                                          const GURL&) {}
++
+ ContentBrowserClient::WebSocketOptions::WebSocketOptions() = default;
+ ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
+ ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =
+diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
+index d8075263d1..5c939a5959 100644
+--- a/content/public/browser/content_browser_client.h
++++ b/content/public/browser/content_browser_client.h
+@@ -2138,6 +2138,11 @@ class CONTENT_EXPORT ContentBrowserClient {
+   // Returns true when the embedder wants to intercept a websocket connection.
+   virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
+ 
++  // Observe a validated WebSocket connection without changing its options,
++  // interception path or network behavior. Called on the UI thread.
++  virtual void OnWebSocketConnectionInitiated(RenderFrameHost* frame,
++                                              const GURL& url);
++
+   struct CONTENT_EXPORT WebSocketOptions {
+     WebSocketOptions();
+     ~WebSocketOptions();
+-- 
+2.52.0
+

@@ -5,3 +5,5 @@ blink_core_sources_aegis = [
   "farbling.cc",
   "farbling.h",
 ]
+
+blink_core_tests_aegis = [ "farbling_unittest.cc" ]

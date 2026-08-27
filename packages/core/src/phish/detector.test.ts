@@ -9,16 +9,42 @@ describe("scorePhishingUrl", () => {
   it("blocks brand+suspicious-TLD on URL features alone", () => {
     const result = scorePhishingUrl("http://paypal-secure-login.tk/signin");
     expect(result.shouldBlock).toBe(true);
-    expect(result.score).toBe(60);
+    expect(result.score).toBe(70);
     expect(result.reasons.map((r) => r.code)).toEqual([
       "insecure_http",
       "suspicious_tld",
       "brand_spoof_host",
+      "credential_path",
     ]);
   });
 
   it("does not block ordinary https sites", () => {
     expect(scorePhishingUrl("https://example.com/docs").shouldBlock).toBe(false);
+  });
+
+  it("detects digit substitutions in brand lookalikes", () => {
+    const result = scorePhishingUrl("https://micros0ft.com/");
+    expect(result.score).toBe(40);
+    expect(result.reasons[0]).toMatchObject({
+      code: "brand_lookalike_host",
+      detail: "microsoft",
+    });
+  });
+
+  it("treats shorteners as context instead of blocking them alone", () => {
+    const result = scorePhishingUrl("https://bit.ly/example");
+    expect(result.score).toBe(15);
+    expect(result.shouldBlock).toBe(false);
+    expect(result.reasons[0]?.code).toBe("shortened_url");
+  });
+
+  it("recognizes brand and credential words hidden in a path", () => {
+    const result = scorePhishingUrl("https://example.com/paypal/login");
+    expect(result.score).toBe(25);
+    expect(result.reasons.map((reason) => reason.code)).toEqual([
+      "brand_in_path",
+      "credential_path",
+    ]);
   });
 
   it("blocks punycode + suspicious TLD + http", () => {
@@ -67,6 +93,33 @@ describe("assessPhishing", () => {
     expect(result.reasons.some((r) => r.code === "password_on_risky_origin")).toBe(
       true,
     );
+  });
+
+  it("blocks a clean-looking page that submits a password cross-site", () => {
+    const result = assessPhishing({
+      url: "https://example.com/login",
+      title: "Account login",
+      textSample: "Enter your password",
+      forms: 1,
+      passwordFields: 1,
+      crossSiteFormActions: 1,
+    });
+    expect(result.shouldBlock).toBe(true);
+    expect(result.reasons.some((r) => r.code === "cross_site_credential_submit")).toBe(
+      true,
+    );
+  });
+
+  it("blocks a punycode credential page without requiring urgency copy", () => {
+    const result = assessPhishing({
+      url: "https://xn--pple-43d.com/",
+      title: "Sign in",
+      textSample: "",
+      forms: 1,
+      passwordFields: 1,
+    });
+    expect(result.shouldBlock).toBe(true);
+    expect(result.score).toBeGreaterThanOrEqual(55);
   });
 
   it("respects allowlist", () => {

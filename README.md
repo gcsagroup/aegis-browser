@@ -1,64 +1,65 @@
 # GCSA-aegis
 
-本地优先的隐私安全**浏览器**（Chromium fork）：内置本地隐私 AI、反钓鱼、去广告/反追踪。
+**English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-- **主产品**：Chromium fork（`apps/browser`）— 不做 Electron、不以扩展当产品
-- **参考实现**：MV3 扩展（`apps/extension`）用于策略验证
-- UI 语言：简体中文（默认）/ 繁体中文 / English
+GCSA-aegis is a local-first privacy and security browser built as a Chromium fork. Its privacy, anti-phishing, anti-tracking, download, and optional AI features are integrated into the browser rather than delivered as an Electron shell or a separate extension product.
 
-## 产品形态
+> **Status — 2026-08-28:** the source integration is synchronized to 56 top-level Chromium patches plus 2 nested V8 patches. The latest identity-bound local build-tree manifest covers only 54 top-level patches plus the 2 V8 patches; patches 0055 and 0056 are not covered by that artifact evidence. The project remains **release No-Go**: there is no trusted build attestation, product-signed and notarized macOS package, installed-App acceptance, or current-source Android package.
 
-**主产品：Chromium fork 浏览器**（`apps/browser`）。不做 Electron。  
-`apps/extension` 仅作策略原型 / 参考实现。
+## Product shape
 
-## 快速开始（Chromium fork）
+- **Only product:** the Chromium fork under [`apps/browser`](apps/browser/README.md).
+- **Policy source:** [`packages/core`](packages/core) provides testable policies, detectors, and generated browser assets.
+- **Browser integration:** network, storage, fingerprint, phishing, download, WebUI, and local-automation controls live in Chromium integration points.
+- **Privacy AI:** desktop builds support an on-device heuristic and user-configured OpenAI-, Claude (Anthropic)-, or Gemini-compatible APIs. Remote use requires an explicit destination and confirmation; this does not constitute a complete no-telemetry claim.
 
-```bash
-pnpm install
-pnpm --filter @gcsa-aegis/browser bootstrap   # 安装 depot_tools
-pnpm --filter @gcsa-aegis/browser fetch       # 拉 Chromium（数十 GB，耗时长）
-pnpm --filter @gcsa-aegis/browser build
-pnpm --filter @gcsa-aegis/browser run
-```
+## Evidence boundary
 
-详情见 [apps/browser/README.md](apps/browser/README.md)。
+The synchronized source and clean Chromium checkout prove that the patch stack can be reproduced. They do not prove that the current source has passed every build, runtime, signing, installation, Android, privacy, and release gate.
 
-### 扩展原型（可选）
+The most recent identity-bound build-tree evidence is local-only and marked `diagnostic-only`. Historical test counts and artifact hashes remain in dated audit records; they must not be combined across different patch heads or presented as current release evidence.
+
+## Quick start
+
+The JavaScript toolchain is pinned to Node.js `24.14.0` and pnpm `9.15.0`.
 
 ```bash
-pnpm --filter @gcsa-aegis/extension build
-# Chrome → 加载 apps/extension/dist
+pnpm install --frozen-lockfile
+pnpm run quality:fast
+pnpm --filter @gcsa-aegis/browser status
 ```
 
-## 仓库结构
+Preparing and building Chromium requires a large external checkout. Read the [Browser guide](apps/browser/README.md) before running network, build, packaging, or runtime commands.
+
+## Repository layout
 
 ```text
-apps/browser       Chromium fork（产品主线：脚本 / GN / patches）
-apps/extension     MV3 策略原型（参考）
-packages/core      策略与检测（无 chrome.*）
-packages/i18n      zh-CN / zh-TW / en
-packages/model-runtime
-packages/ui
-docs/              架构 / 路线图 / 论文映射
+apps/browser       Chromium pin, overlays, patches, build and verification scripts
+packages/core      Policies, detectors, generators, and research-only evaluation code
+docs/              Architecture, roadmap, research map, product page, and audit records
 ```
 
-## 文档
+## Documentation
 
-- [产品介绍](docs/product.html)
+- [Documentation index](docs/README.md)
 - [Architecture](docs/architecture.md)
-- [Roadmap](docs/roadmap.md)
-- [Browser fork](apps/browser/README.md)
-- [Android / Play 预留](apps/browser/docs/android.md)
-- [Research map](docs/research-map.md)
+- [Roadmap and release gates](docs/roadmap.md)
+- [Research-to-implementation map](docs/research-map.md)
+- [Trilingual product page](docs/product.html)
+- [Changelog](CHANGELOG.md)
 
-## 许可
+## GitHub synchronization boundary
 
-Apache-2.0 — 见 [LICENSE](LICENSE)。
+On 2026-08-28, authorization was granted to synchronize the source repository to `git@github.com:gcsagroup/aegis-browser.git` over SSH. That authorization covers source branch synchronization only. It does **not** authorize creating or publishing a Git tag, GitHub Release, binary, package, signing credential, notarization submission, Play upload, or production deployment.
 
-## 测试
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+## Tests
 
 ```bash
-pnpm test
+pnpm run quality:fast
 ```
 
-`packages/core` 与 `packages/i18n` / `model-runtime` 含 Vitest 单测。
+This command covers the repository's fast JavaScript and script gates. Native Chromium builds, browser tests, runtime matrices, signing, installed-App checks, and Android device acceptance are separate gates.

@@ -1,0 +1,577 @@
+From 969aa19d45f21e5f242bfa7787b67968bab732e0 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 04:59:19 +0800
+Subject: [PATCH 43/43] fix: route Aegis reports to owner sequence
+
+---
+ chrome/browser/aegis/aegis_service.cc         |  43 +++--
+ chrome/browser/aegis/aegis_service.h          |   7 +
+ chrome/common/aegis/BUILD.gn                  |   2 +
+ chrome/common/aegis/aegis_block_reporter.cc   |  34 ++--
+ chrome/common/aegis/aegis_block_reporter.h    |  25 ++-
+ .../aegis/aegis_block_reporter_unittest.cc    | 176 ++++++++++++++++++
+ .../renderer/chrome_render_thread_observer.cc |  77 ++++----
+ .../renderer/chrome_render_thread_observer.h  |  16 ++
+ 8 files changed, 310 insertions(+), 70 deletions(-)
+ create mode 100644 chrome/common/aegis/aegis_block_reporter_unittest.cc
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index d8dae036f1..34866941a4 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -440,21 +440,31 @@ void AegisService::ReportStrippedParams(
+   RecordStrippedParams(host, keys);
+ }
+ 
++void AegisService::OnBlockedReport(GURL url,
++                                   std::string reason,
++                                   std::string cname_alias) {
++  RecordBlockedRequest(url, reason, cname_alias);
++}
++
++void AegisService::OnStrippedReferrerReport(std::string host,
++                                            std::vector<std::string> keys) {
++  RecordStrippedReferrer(host, keys);
++}
++
++void AegisService::OnStrippedParamsReport(std::string host,
++                                          std::vector<std::string> keys) {
++  RecordStrippedParams(host, keys);
++}
++
+ void AegisService::InstallReporterCallbacks() {
+-  BlockReporter::SetBlockedCallback(base::BindRepeating(
+-      [](const GURL& url, const std::string& reason,
+-         const std::string& cname_alias) {
+-        AegisService::GetInstance()->RecordBlockedRequest(url, reason,
+-                                                          cname_alias);
+-      }));
+-  BlockReporter::SetReferrerCallback(base::BindRepeating(
+-      [](const std::string& host, const std::vector<std::string>& keys) {
+-        AegisService::GetInstance()->RecordStrippedReferrer(host, keys);
+-      }));
+-  BlockReporter::SetParamsCallback(base::BindRepeating(
+-      [](const std::string& host, const std::vector<std::string>& keys) {
+-        AegisService::GetInstance()->RecordStrippedParams(host, keys);
+-      }));
++  BlockReporter::SetCallbacks(
++      content::GetUIThreadTaskRunner({}),
++      base::BindRepeating(&AegisService::OnBlockedReport,
++                          weak_ptr_factory_.GetWeakPtr()),
++      base::BindRepeating(&AegisService::OnStrippedReferrerReport,
++                          weak_ptr_factory_.GetWeakPtr()),
++      base::BindRepeating(&AegisService::OnStrippedParamsReport,
++                          weak_ptr_factory_.GetWeakPtr()));
+   CdpWsHook::SetClientCountCallback(base::BindRepeating(
+       [](size_t count) {
+         AegisService::GetInstance()->SetCdpWebSocketClientCount(count);
+@@ -462,9 +472,8 @@ void AegisService::InstallReporterCallbacks() {
+ }
+ 
+ void AegisService::ClearReporterCallbacks() {
+-  BlockReporter::SetBlockedCallback({});
+-  BlockReporter::SetReferrerCallback({});
+-  BlockReporter::SetParamsCallback({});
++  weak_ptr_factory_.InvalidateWeakPtrs();
++  BlockReporter::ClearCallbacks();
+   CdpWsHook::SetClientCountCallback({});
+ }
+ 
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 2ccc9fc511..43e9cd83b3 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -14,6 +14,7 @@
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/singleton.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/scoped_observation.h"
+ #include "chrome/browser/aegis/summary_policy.h"
+ #include "chrome/browser/profiles/profile_observer.h"
+@@ -187,6 +188,10 @@ class AegisService : public chrome::mojom::AegisHost,
+ 
+   void InstallReporterCallbacks();
+   void ClearReporterCallbacks();
++  void OnBlockedReport(GURL url, std::string reason, std::string cname_alias);
++  void OnStrippedReferrerReport(std::string host,
++                                std::vector<std::string> keys);
++  void OnStrippedParamsReport(std::string host, std::vector<std::string> keys);
+   void ShutdownForProfile();
+   void OnOllamaReady(SummarizeResult heuristic,
+                      std::string system,
+@@ -204,6 +209,8 @@ class AegisService : public chrome::mojom::AegisHost,
+       bool ok,
+       std::string body);
+   void PushPrivacyEvent(PrivacyEvent event);
++
++  base::WeakPtrFactory<AegisService> weak_ptr_factory_{this};
+ };
+ 
+ }  // namespace aegis
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index 43fb86eeec..8e0504125c 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -49,6 +49,7 @@ source_set("aegis") {
+ 
+ test("aegis_unittests") {
+   sources = [
++    "aegis_block_reporter_unittest.cc",
+     "aegis_net_throttle_unittest.cc",
+     "cdp_infobar_copy_unittest.cc",
+     "cdp_target_filter_unittest.cc",
+@@ -60,6 +61,7 @@ test("aegis_unittests") {
+   ]
+   deps = [
+     ":aegis",
++    "//base/test:test_support",
+     "//base/test:run_all_unittests",
+     "//net",
+     "//services/network/public/cpp",
+diff --git a/chrome/common/aegis/aegis_block_reporter.cc b/chrome/common/aegis/aegis_block_reporter.cc
+index da917040aa..1e090efd32 100644
+--- a/chrome/common/aegis/aegis_block_reporter.cc
++++ b/chrome/common/aegis/aegis_block_reporter.cc
+@@ -3,9 +3,11 @@
+ 
+ #include "chrome/common/aegis/aegis_block_reporter.h"
+ 
++#include "base/check.h"
+ #include "base/no_destructor.h"
+ #include "base/synchronization/lock.h"
+-#include "url/gurl.h"
++#include "base/task/bind_post_task.h"
++#include "base/task/sequenced_task_runner.h"
+ 
+ namespace aegis {
+ namespace {
+@@ -25,24 +27,34 @@ State& GetState() {
+ }  // namespace
+ 
+ // static
+-void BlockReporter::SetBlockedCallback(BlockedCallback callback) {
+-  State& state = GetState();
+-  base::AutoLock lock(state.lock);
+-  state.blocked = std::move(callback);
+-}
++void BlockReporter::SetCallbacks(
++    scoped_refptr<base::SequencedTaskRunner> task_runner,
++    BlockedCallback blocked,
++    ReferrerCallback referrer,
++    ParamsCallback params) {
++  CHECK(task_runner);
++  CHECK(blocked);
++  CHECK(referrer);
++  CHECK(params);
++
++  blocked = base::BindPostTask(task_runner, std::move(blocked));
++  referrer = base::BindPostTask(task_runner, std::move(referrer));
++  params = base::BindPostTask(task_runner, std::move(params));
+ 
+-// static
+-void BlockReporter::SetReferrerCallback(ReferrerCallback callback) {
+   State& state = GetState();
+   base::AutoLock lock(state.lock);
+-  state.referrer = std::move(callback);
++  state.blocked = std::move(blocked);
++  state.referrer = std::move(referrer);
++  state.params = std::move(params);
+ }
+ 
+ // static
+-void BlockReporter::SetParamsCallback(ParamsCallback callback) {
++void BlockReporter::ClearCallbacks() {
+   State& state = GetState();
+   base::AutoLock lock(state.lock);
+-  state.params = std::move(callback);
++  state.blocked.Reset();
++  state.referrer.Reset();
++  state.params.Reset();
+ }
+ 
+ // static
+diff --git a/chrome/common/aegis/aegis_block_reporter.h b/chrome/common/aegis/aegis_block_reporter.h
+index 9bc3d4d9e2..6aea9b1198 100644
+--- a/chrome/common/aegis/aegis_block_reporter.h
++++ b/chrome/common/aegis/aegis_block_reporter.h
+@@ -8,8 +8,12 @@
+ #include <vector>
+ 
+ #include "base/functional/callback.h"
++#include "base/memory/scoped_refptr.h"
++#include "url/gurl.h"
+ 
+-class GURL;
++namespace base {
++class SequencedTaskRunner;
++}
+ 
+ namespace aegis {
+ 
+@@ -18,16 +22,19 @@ namespace aegis {
+ class BlockReporter {
+  public:
+   using BlockedCallback = base::RepeatingCallback<
+-      void(const GURL& url,
+-           const std::string& reason,
+-           const std::string& cname_alias)>;
+-  using ReferrerCallback = base::RepeatingCallback<
+-      void(const std::string& host, const std::vector<std::string>& keys)>;
++      void(GURL url, std::string reason, std::string cname_alias)>;
++  using ReferrerCallback =
++      base::RepeatingCallback<void(std::string host,
++                                   std::vector<std::string> keys)>;
+   using ParamsCallback = ReferrerCallback;
+ 
+-  static void SetBlockedCallback(BlockedCallback callback);
+-  static void SetReferrerCallback(ReferrerCallback callback);
+-  static void SetParamsCallback(ParamsCallback callback);
++  // Installs one callback set whose targets all run on |task_runner|. Reports
++  // may arrive from any sequence after a URLLoaderThrottle is detached.
++  static void SetCallbacks(scoped_refptr<base::SequencedTaskRunner> task_runner,
++                           BlockedCallback blocked,
++                           ReferrerCallback referrer,
++                           ParamsCallback params);
++  static void ClearCallbacks();
+ 
+   static void ReportBlocked(const GURL& url,
+                             const std::string& reason,
+diff --git a/chrome/common/aegis/aegis_block_reporter_unittest.cc b/chrome/common/aegis/aegis_block_reporter_unittest.cc
+new file mode 100644
+index 0000000000..7cb6801b7a
+--- /dev/null
++++ b/chrome/common/aegis/aegis_block_reporter_unittest.cc
+@@ -0,0 +1,176 @@
++// Copyright 2026 GCSA
++
++#include "chrome/common/aegis/aegis_block_reporter.h"
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "base/barrier_closure.h"
++#include "base/functional/bind.h"
++#include "base/location.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/run_loop.h"
++#include "base/synchronization/waitable_event.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/test/task_environment.h"
++#include "base/threading/thread.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++struct BlockedEvent {
++  GURL url;
++  std::string reason;
++  std::string cname_alias;
++};
++
++class ReportRecorder {
++ public:
++  ReportRecorder(scoped_refptr<base::SequencedTaskRunner> owner_runner,
++                 base::RepeatingClosure on_report)
++      : owner_runner_(std::move(owner_runner)),
++        on_report_(std::move(on_report)) {}
++
++  void OnBlocked(GURL url, std::string reason, std::string alias) {
++    EXPECT_TRUE(owner_runner_->RunsTasksInCurrentSequence());
++    blocked_events.push_back(
++        {std::move(url), std::move(reason), std::move(alias)});
++    on_report_.Run();
++  }
++
++  void OnReferrer(std::string host, std::vector<std::string> keys) {
++    EXPECT_TRUE(owner_runner_->RunsTasksInCurrentSequence());
++    referrer_host = std::move(host);
++    referrer_keys = std::move(keys);
++    on_report_.Run();
++  }
++
++  void OnParams(std::string host, std::vector<std::string> keys) {
++    EXPECT_TRUE(owner_runner_->RunsTasksInCurrentSequence());
++    params_host = std::move(host);
++    params_keys = std::move(keys);
++    on_report_.Run();
++  }
++
++  base::WeakPtr<ReportRecorder> GetWeakPtr() {
++    return weak_ptr_factory_.GetWeakPtr();
++  }
++
++  std::vector<BlockedEvent> blocked_events;
++  std::string referrer_host;
++  std::vector<std::string> referrer_keys;
++  std::string params_host;
++  std::vector<std::string> params_keys;
++
++ private:
++  scoped_refptr<base::SequencedTaskRunner> owner_runner_;
++  base::RepeatingClosure on_report_;
++  base::WeakPtrFactory<ReportRecorder> weak_ptr_factory_{this};
++};
++
++class WeakReportTarget {
++ public:
++  explicit WeakReportTarget(bool* called) : called_(called) {}
++
++  void OnBlocked(GURL, std::string, std::string) { *called_ = true; }
++  void OnReferrer(std::string, std::vector<std::string>) { *called_ = true; }
++
++  base::WeakPtr<WeakReportTarget> GetWeakPtr() {
++    return weak_ptr_factory_.GetWeakPtr();
++  }
++
++ private:
++  raw_ptr<bool> called_;
++  base::WeakPtrFactory<WeakReportTarget> weak_ptr_factory_{this};
++};
++
++class BlockReporterTest : public testing::Test {
++ protected:
++  void SetUp() override { ASSERT_TRUE(worker_.Start()); }
++
++  void TearDown() override {
++    BlockReporter::ClearCallbacks();
++    worker_.Stop();
++    task_environment_.RunUntilIdle();
++  }
++
++  base::test::TaskEnvironment task_environment_;
++  base::Thread worker_{"AegisBlockReporterWorker"};
++};
++
++TEST_F(BlockReporterTest, DeliversReportsOnRegistrationSequence) {
++  const auto owner_runner = base::SequencedTaskRunner::GetCurrentDefault();
++  base::RunLoop run_loop;
++  base::RepeatingClosure on_report =
++      base::BarrierClosure(4, run_loop.QuitClosure());
++  ReportRecorder recorder(owner_runner, std::move(on_report));
++
++  BlockReporter::SetCallbacks(
++      owner_runner,
++      base::BindRepeating(&ReportRecorder::OnBlocked, recorder.GetWeakPtr()),
++      base::BindRepeating(&ReportRecorder::OnReferrer, recorder.GetWeakPtr()),
++      base::BindRepeating(&ReportRecorder::OnParams, recorder.GetWeakPtr()));
++
++  ASSERT_TRUE(worker_.task_runner()->PostTask(
++      FROM_HERE, base::BindOnce([] {
++        BlockReporter::ReportBlocked(
++            GURL("https://static.cloudflareinsights.com/beacon.min.js"),
++            "easylist", "");
++        BlockReporter::ReportBlocked(GURL("https://metrics.shop.example/pixel"),
++                                     "cname", "stats.doubleclick.net");
++        BlockReporter::ReportStrippedReferrer("referrer.example",
++                                              {"utm_source", "gclid"});
++        BlockReporter::ReportStrippedParams("destination.example", {"fbclid"});
++      })));
++  run_loop.Run();
++
++  ASSERT_EQ(recorder.blocked_events.size(), 2u);
++  EXPECT_EQ(recorder.blocked_events[0].url,
++            GURL("https://static.cloudflareinsights.com/beacon.min.js"));
++  EXPECT_EQ(recorder.blocked_events[0].reason, "easylist");
++  EXPECT_TRUE(recorder.blocked_events[0].cname_alias.empty());
++  EXPECT_EQ(recorder.blocked_events[1].url,
++            GURL("https://metrics.shop.example/pixel"));
++  EXPECT_EQ(recorder.blocked_events[1].reason, "cname");
++  EXPECT_EQ(recorder.blocked_events[1].cname_alias, "stats.doubleclick.net");
++  EXPECT_EQ(recorder.referrer_host, "referrer.example");
++  EXPECT_EQ(recorder.referrer_keys,
++            (std::vector<std::string>{"utm_source", "gclid"}));
++  EXPECT_EQ(recorder.params_host, "destination.example");
++  EXPECT_EQ(recorder.params_keys, (std::vector<std::string>{"fbclid"}));
++}
++
++TEST_F(BlockReporterTest, DropsQueuedReportsAfterTargetDestruction) {
++  bool called = false;
++  auto target = std::make_unique<WeakReportTarget>(&called);
++  BlockReporter::SetCallbacks(
++      base::SequencedTaskRunner::GetCurrentDefault(),
++      base::BindRepeating(&WeakReportTarget::OnBlocked, target->GetWeakPtr()),
++      base::BindRepeating(&WeakReportTarget::OnReferrer, target->GetWeakPtr()),
++      base::BindRepeating(&WeakReportTarget::OnReferrer, target->GetWeakPtr()));
++
++  base::WaitableEvent report_queued;
++  ASSERT_TRUE(worker_.task_runner()->PostTask(
++      FROM_HERE, base::BindOnce(
++                     [](base::WaitableEvent* queued) {
++                       BlockReporter::ReportBlocked(
++                           GURL("https://tracker.example/script.js"),
++                           "easylist", "");
++                       queued->Signal();
++                     },
++                     base::Unretained(&report_queued))));
++  report_queued.Wait();
++
++  target.reset();
++  BlockReporter::ClearCallbacks();
++  task_environment_.RunUntilIdle();
++
++  EXPECT_FALSE(called);
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
+index 402aaab440..fc1d917b8f 100644
+--- a/chrome/renderer/chrome_render_thread_observer.cc
++++ b/chrome/renderer/chrome_render_thread_observer.cc
+@@ -147,10 +147,10 @@ ChromeRenderThreadObserver::ChromeRenderThreadObserver()
+ }
+ 
+ ChromeRenderThreadObserver::~ChromeRenderThreadObserver() {
+-  aegis::BlockReporter::SetBlockedCallback(aegis::BlockReporter::BlockedCallback());
+-  aegis::BlockReporter::SetReferrerCallback(
+-      aegis::BlockReporter::ReferrerCallback());
+-  aegis::BlockReporter::SetParamsCallback(aegis::BlockReporter::ParamsCallback());
++  weak_ptr_factory_.InvalidateWeakPtrs();
++  aegis::BlockReporter::ClearCallbacks();
++  aegis_host_.reset();
++  aegis_task_runner_.reset();
+ }
+ 
+ chrome::mojom::DynamicParamsPtr ChromeRenderThreadObserver::GetDynamicParams()
+@@ -243,36 +243,47 @@ void ChromeRenderThreadObserver::SetAegisFilterList(
+ 
+ void ChromeRenderThreadObserver::SetAegisHost(
+     mojo::PendingRemote<chrome::mojom::AegisHost> host) {
++  weak_ptr_factory_.InvalidateWeakPtrs();
++  aegis::BlockReporter::ClearCallbacks();
+   aegis_host_.reset();
+-  aegis_host_.Bind(std::move(host),
+-                   base::SequencedTaskRunner::GetCurrentDefault());
+-  aegis::BlockReporter::SetBlockedCallback(base::BindRepeating(
+-      [](mojo::Remote<chrome::mojom::AegisHost>* remote, const GURL& url,
+-         const std::string& reason, const std::string& cname_alias) {
+-        if (!remote || !remote->is_bound()) {
+-          return;
+-        }
+-        (*remote)->ReportBlockedRequest(url.spec(), reason, cname_alias);
+-      },
+-      &aegis_host_));
+-  aegis::BlockReporter::SetReferrerCallback(base::BindRepeating(
+-      [](mojo::Remote<chrome::mojom::AegisHost>* remote, const std::string& host,
+-         const std::vector<std::string>& keys) {
+-        if (!remote || !remote->is_bound()) {
+-          return;
+-        }
+-        (*remote)->ReportStrippedReferrer(host, keys);
+-      },
+-      &aegis_host_));
+-  aegis::BlockReporter::SetParamsCallback(base::BindRepeating(
+-      [](mojo::Remote<chrome::mojom::AegisHost>* remote, const std::string& host,
+-         const std::vector<std::string>& keys) {
+-        if (!remote || !remote->is_bound()) {
+-          return;
+-        }
+-        (*remote)->ReportStrippedParams(host, keys);
+-      },
+-      &aegis_host_));
++  aegis_task_runner_ = base::SequencedTaskRunner::GetCurrentDefault();
++  aegis_host_.Bind(std::move(host), aegis_task_runner_);
++  aegis::BlockReporter::SetCallbacks(
++      aegis_task_runner_,
++      base::BindRepeating(&ChromeRenderThreadObserver::ForwardBlockedRequest,
++                          weak_ptr_factory_.GetWeakPtr()),
++      base::BindRepeating(&ChromeRenderThreadObserver::ForwardStrippedReferrer,
++                          weak_ptr_factory_.GetWeakPtr()),
++      base::BindRepeating(&ChromeRenderThreadObserver::ForwardStrippedParams,
++                          weak_ptr_factory_.GetWeakPtr()));
++}
++
++void ChromeRenderThreadObserver::ForwardBlockedRequest(
++    GURL url,
++    std::string reason,
++    std::string cname_alias) {
++  DCHECK(aegis_task_runner_->RunsTasksInCurrentSequence());
++  if (aegis_host_.is_bound()) {
++    aegis_host_->ReportBlockedRequest(url.spec(), reason, cname_alias);
++  }
++}
++
++void ChromeRenderThreadObserver::ForwardStrippedReferrer(
++    std::string host,
++    std::vector<std::string> keys) {
++  DCHECK(aegis_task_runner_->RunsTasksInCurrentSequence());
++  if (aegis_host_.is_bound()) {
++    aegis_host_->ReportStrippedReferrer(host, keys);
++  }
++}
++
++void ChromeRenderThreadObserver::ForwardStrippedParams(
++    std::string host,
++    std::vector<std::string> keys) {
++  DCHECK(aegis_task_runner_->RunsTasksInCurrentSequence());
++  if (aegis_host_.is_bound()) {
++    aegis_host_->ReportStrippedParams(host, keys);
++  }
+ }
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+diff --git a/chrome/renderer/chrome_render_thread_observer.h b/chrome/renderer/chrome_render_thread_observer.h
+index 0ece297556..7bfe87b202 100644
+--- a/chrome/renderer/chrome_render_thread_observer.h
++++ b/chrome/renderer/chrome_render_thread_observer.h
+@@ -7,8 +7,10 @@
+ 
+ #include <memory>
+ #include <string>
++#include <vector>
+ 
+ #include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/synchronization/lock.h"
+ #include "base/synchronization/waitable_event.h"
+ #include "base/thread_annotations.h"
+@@ -35,6 +37,12 @@ class BoundSessionRequestThrottledInRendererManager;
+ class BoundSessionRequestThrottledHandler;
+ #endif
+ 
++class GURL;
++
++namespace base {
++class SequencedTaskRunner;
++}
++
+ namespace visitedlink {
+ class VisitedLinkReader;
+ }
+@@ -145,6 +153,11 @@ class ChromeRenderThreadObserver : public content::RenderThreadObserver,
+                           const std::string& exceptions) override;
+   void SetAegisHost(
+       mojo::PendingRemote<chrome::mojom::AegisHost> host) override;
++  void ForwardBlockedRequest(GURL url,
++                             std::string reason,
++                             std::string cname_alias);
++  void ForwardStrippedReferrer(std::string host, std::vector<std::string> keys);
++  void ForwardStrippedParams(std::string host, std::vector<std::string> keys);
+ #if !BUILDFLAG(IS_ANDROID)
+   void SetConfigurationOnProcessLockUpdate(
+       chrome::mojom::StaticParamsPtr params) override;
+@@ -160,6 +173,7 @@ class ChromeRenderThreadObserver : public content::RenderThreadObserver,
+ 
+   mojo::AssociatedReceiverSet<chrome::mojom::RendererConfiguration>
+       renderer_configuration_receivers_;
++  scoped_refptr<base::SequencedTaskRunner> aegis_task_runner_;
+   mojo::Remote<chrome::mojom::AegisHost> aegis_host_;
+ 
+   chrome::mojom::DynamicParamsPtr dynamic_params_
+@@ -181,6 +195,8 @@ class ChromeRenderThreadObserver : public content::RenderThreadObserver,
+       bound_session_request_throttled_in_renderer_manager_;
+   scoped_refptr<base::SequencedTaskRunner> io_task_runner_;
+ #endif
++
++  base::WeakPtrFactory<ChromeRenderThreadObserver> weak_ptr_factory_{this};
+ };
+ 
+ #endif  // CHROME_RENDERER_CHROME_RENDER_THREAD_OBSERVER_H_
+-- 
+2.52.0
+

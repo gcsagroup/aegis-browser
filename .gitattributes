@@ -1,0 +1,5 @@
+# Exported mail patches contain their own diff markers and standard `-- `
+# footer. Preserve that byte stream and avoid treating nested patch syntax as
+# whitespace errors in the repository that stores it.
+apps/browser/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
+apps/browser/patches/v8/*.patch whitespace=-blank-at-eol,-blank-at-eof

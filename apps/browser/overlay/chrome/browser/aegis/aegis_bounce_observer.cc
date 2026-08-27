@@ -80,6 +80,9 @@ void BounceObserver::OnChainHandled(
             redirect->redirector_url)) {
       continue;
     }
+    if (AegisService::GetInstance()->IsSitePaused(redirect->site)) {
+      continue;
+    }
     LOG(INFO) << "Aegis: clearing cookies for bounce tracker "
               << redirect->site;
     AegisService::GetInstance()->RecordBounceClear(redirect->site);

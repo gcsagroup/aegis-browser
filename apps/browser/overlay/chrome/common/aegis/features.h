@@ -13,6 +13,8 @@ BASE_DECLARE_FEATURE(kAegisEnabled);
 BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
 BASE_DECLARE_FEATURE(kAegisPhishInterstitial);
 BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
+BASE_DECLARE_FEATURE(kAegisMinerGuard);
+BASE_DECLARE_FEATURE(kAegisBytecodeShadow);
 BASE_DECLARE_FEATURE(kAegisFilterListUpdater);
 BASE_DECLARE_FEATURE(kAegisLinkSanitize);
 BASE_DECLARE_FEATURE(kAegisCookieJanitor);
@@ -21,6 +23,11 @@ BASE_DECLARE_FEATURE(kAegisBounceTracking);
 BASE_DECLARE_FEATURE(kAegisPolicyWorker);
 BASE_DECLARE_FEATURE(kAegisPrivacyAi);
 BASE_DECLARE_FEATURE(kAegisAiControl);
+
+// 统一计算可发送给 Renderer 的有效开关，避免 UI 与 Blink 状态不一致。
+bool IsFingerprintGuardGloballyEnabled(bool pref_enabled);
+bool IsMinerGuardGloballyEnabled(bool pref_enabled);
+bool IsBytecodeShadowGloballyEnabled();
 
 }  // namespace aegis::features
 

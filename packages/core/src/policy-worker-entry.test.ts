@@ -37,25 +37,59 @@ describe("policy worker entry", () => {
     expect(scan.redacted).not.toContain("alice@example.com");
   });
 
-  it("returns a heuristic summary", () => {
+  it("requires a valid structured snapshot for summary preparation", () => {
     const out = JSON.parse(
       aegisEvaluate(
         JSON.stringify({
-          op: "summarize",
-          locale: "zh-CN",
+          op: "prepareSummary",
+          locale: "en",
+          url: "https://example.com/?token=raw-secret",
+          text: "alice@example.com",
+        }),
+      ),
+    ) as { error: string };
+    expect(out.error).toContain("valid structured snapshot required");
+  });
+
+  it("returns only a redacted structured handoff", () => {
+    const out = JSON.parse(
+      aegisEvaluate(
+        JSON.stringify({
+          op: "prepareSummary",
+          locale: "en",
           snapshot: {
-            url: "https://example.com/login",
-            title: "Login",
-            textSample: "Please sign in to continue. Password expired soon.",
-            passwordFields: 1,
-            forms: 1,
+            url: "https://example.com/?token=tok_live_ABC123456789#private",
+            title: "alice@example.com",
+            textSample: "Bearer abcdefghijklmnop",
+            forms: 0,
+            passwordFields: 0,
           },
         }),
       ),
-    ) as { summary: string; risks: string[]; backend: string };
-    expect(out.summary.length).toBeGreaterThan(0);
-    expect(out.risks.some((r) => r.includes("密码"))).toBe(true);
-    expect(out.backend).toBe("mock");
+    ) as Record<string, unknown>;
+    const handoff = JSON.stringify(out);
+    expect(out["schemaVersion"]).toBe(1);
+    expect(Object.keys(out).sort()).toEqual([
+      "heuristic",
+      "sanitizedSnapshot",
+      "schemaVersion",
+    ]);
+    expect(handoff).not.toContain("tok_live_ABC123456789");
+    expect(handoff).not.toContain("private");
+    expect(handoff).not.toContain("alice@example.com");
+    expect(handoff).not.toContain("abcdefghijklmnop");
+    expect(handoff).not.toContain('"system"');
+    expect(handoff).not.toContain('"user"');
+    expect(handoff).not.toContain('"prompt"');
+  });
+
+  it("does not expose legacy summary or prompt-building operations", () => {
+    for (const op of ["summarize", "buildPrompt"]) {
+      const out = JSON.parse(
+        aegisEvaluate(JSON.stringify({ op, snapshot: {} })),
+      ) as { error: string };
+      expect(out.error).toContain("unknown op");
+    }
   });
 
   it("rejects unknown ops", () => {

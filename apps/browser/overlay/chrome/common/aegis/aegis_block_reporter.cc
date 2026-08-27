@@ -3,9 +3,11 @@
 
 #include "chrome/common/aegis/aegis_block_reporter.h"
 
+#include "base/check.h"
 #include "base/no_destructor.h"
 #include "base/synchronization/lock.h"
-#include "url/gurl.h"
+#include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 
 namespace aegis {
 namespace {
@@ -25,30 +27,42 @@ State& GetState() {
 }  // namespace
 
 // static
-void BlockReporter::SetBlockedCallback(BlockedCallback callback) {
+void BlockReporter::SetCallbacks(
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    BlockedCallback blocked,
+    ReferrerCallback referrer,
+    ParamsCallback params) {
+  CHECK(task_runner);
+  CHECK(blocked);
+  CHECK(referrer);
+  CHECK(params);
+
+  blocked = base::BindPostTask(task_runner, std::move(blocked));
+  referrer = base::BindPostTask(task_runner, std::move(referrer));
+  params = base::BindPostTask(task_runner, std::move(params));
+
   State& state = GetState();
   base::AutoLock lock(state.lock);
-  state.blocked = std::move(callback);
+  state.blocked = std::move(blocked);
+  state.referrer = std::move(referrer);
+  state.params = std::move(params);
 }
 
 // static
-void BlockReporter::SetReferrerCallback(ReferrerCallback callback) {
+void BlockReporter::ClearCallbacks() {
   State& state = GetState();
   base::AutoLock lock(state.lock);
-  state.referrer = std::move(callback);
-}
-
-// static
-void BlockReporter::SetParamsCallback(ParamsCallback callback) {
-  State& state = GetState();
-  base::AutoLock lock(state.lock);
-  state.params = std::move(callback);
+  state.blocked.Reset();
+  state.referrer.Reset();
+  state.params.Reset();
 }
 
 // static
 void BlockReporter::ReportBlocked(const GURL& url,
                                   const std::string& reason,
-                                  const std::string& cname_alias) {
+                                  const std::string& cname_alias,
+                                  const std::string& source_site,
+                                  const std::string& document_id) {
   BlockedCallback callback;
   {
     State& state = GetState();
@@ -56,14 +70,15 @@ void BlockReporter::ReportBlocked(const GURL& url,
     callback = state.blocked;
   }
   if (callback) {
-    callback.Run(url, reason, cname_alias);
+    callback.Run(url, reason, cname_alias, source_site, document_id);
   }
 }
 
 // static
-void BlockReporter::ReportStrippedReferrer(
-    const std::string& host,
-    const std::vector<std::string>& keys) {
+void BlockReporter::ReportStrippedReferrer(const std::string& host,
+                                           const std::vector<std::string>& keys,
+                                           const std::string& source_site,
+                                           const std::string& document_id) {
   ReferrerCallback callback;
   {
     State& state = GetState();
@@ -71,13 +86,15 @@ void BlockReporter::ReportStrippedReferrer(
     callback = state.referrer;
   }
   if (callback) {
-    callback.Run(host, keys);
+    callback.Run(host, keys, source_site, document_id);
   }
 }
 
 // static
 void BlockReporter::ReportStrippedParams(const std::string& host,
-                                         const std::vector<std::string>& keys) {
+                                         const std::vector<std::string>& keys,
+                                         const std::string& source_site,
+                                         const std::string& document_id) {
   ParamsCallback callback;
   {
     State& state = GetState();
@@ -85,7 +102,7 @@ void BlockReporter::ReportStrippedParams(const std::string& host,
     callback = state.params;
   }
   if (callback) {
-    callback.Run(host, keys);
+    callback.Run(host, keys, source_site, document_id);
   }
 }
 

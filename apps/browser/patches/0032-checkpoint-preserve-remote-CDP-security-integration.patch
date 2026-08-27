@@ -1,0 +1,2765 @@
+From 8a005494dca121e205e48350407e2b27b9b09122 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 24 Aug 2026 20:06:50 +0800
+Subject: [PATCH 32/38] checkpoint: preserve remote CDP security integration
+
+---
+ .../browser/aegis/aegis_phish_tab_helper.cc   |  65 ++++-
+ chrome/browser/aegis/aegis_phish_tab_helper.h |  14 +-
+ .../aegis/aegis_phish_tab_helper_unittest.cc  |  90 +++++++
+ chrome/browser/android/BUILD.gn               |   1 +
+ .../devtools_manager_delegate_android.cc      |  64 +++++
+ .../devtools_manager_delegate_android.h       |   4 +
+ chrome/browser/devtools/BUILD.gn              |   5 +-
+ .../chrome_devtools_manager_delegate.cc       |  59 +++-
+ .../chrome_devtools_manager_delegate.h        |  10 +-
+ .../devtools/chrome_devtools_session.cc       |   3 +-
+ .../chrome_devtools_session_android.cc        |   3 +-
+ .../browser/devtools/devtools_browsertest.cc  |  22 ++
+ .../protocol/devtools_protocol_browsertest.cc | 190 +++++++++++++
+ .../devtools/protocol/target_handler.cc       |  38 ++-
+ .../devtools/protocol/target_handler.h        |  11 +-
+ .../protocol/target_handler_android.cc        |  47 +++-
+ .../protocol/target_handler_android.h         |  15 +-
+ chrome/common/aegis/cdp_target_filter.cc      |  10 +
+ chrome/common/aegis/cdp_target_filter.h       |   7 +-
+ .../aegis/cdp_target_filter_unittest.cc       |   8 +
+ .../devtools/devtools_agent_host_impl.cc      |  28 +-
+ .../browser/devtools/devtools_http_handler.cc | 150 +++++++++--
+ .../browser/devtools/devtools_http_handler.h  |   8 +
+ .../devtools_http_handler_unittest.cc         | 226 +++++++++++++++-
+ .../browser/devtools/devtools_pipe_handler.cc |  27 ++
+ .../browser/devtools/devtools_pipe_handler.h  |  12 +
+ content/browser/devtools/devtools_session.cc  |  27 ++
+ content/browser/devtools/devtools_session.h   |   6 +
+ .../devtools/devtools_session_unittest.cc     |  28 ++
+ .../protocol/devtools_protocol_browsertest.cc |  34 +++
+ .../devtools/protocol/target_handler.cc       | 252 +++++++++++++++++-
+ .../devtools/protocol/target_handler.h        |   2 +
+ .../render_frame_devtools_agent_host.cc       |  49 +++-
+ .../render_frame_devtools_agent_host.h        |   3 +
+ .../web_contents_devtools_agent_host.cc       |  16 ++
+ .../browser/devtools_agent_host_client.cc     |  20 ++
+ .../browser/devtools_agent_host_client.h      |  14 +
+ .../browser/devtools_external_agent_proxy.h   |  10 +
+ .../browser/devtools_manager_delegate.cc      |   8 +
+ .../browser/devtools_manager_delegate.h       |  28 +-
+ .../test/test_devtools_protocol_client.cc     |   4 +
+ .../test/test_devtools_protocol_client.h      |   5 +
+ 42 files changed, 1543 insertions(+), 80 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
+index 74cf1900c6..01671ebd20 100644
+--- a/chrome/browser/aegis/aegis_phish_tab_helper.cc
++++ b/chrome/browser/aegis/aegis_phish_tab_helper.cc
+@@ -38,6 +38,10 @@ std::optional<PhishAssessment> PhishTabHelper::TakeStashedAssessment(
+ }
+ 
+ void PhishTabHelper::AllowNextNavigationOnce(const GURL& url) {
++  // The interstitial can proceed to the same URL. Invalidate any renderer
++  // response still pending for the document which caused the interstitial so
++  // it cannot be mistaken for a response from the replacement document.
++  InvalidatePageSignalCheck();
+   one_time_bypass_url_ = url;
+   bypassed_navigation_url_ = GURL();
+   bypassed_navigation_id_.reset();
+@@ -79,6 +83,10 @@ void PhishTabHelper::DidFinishNavigation(
+     return;
+   }
+ 
++  if (!navigation_handle->IsSameDocument()) {
++    InvalidatePageSignalCheck();
++  }
++
+   // A permit which was not consumed by the matching navigation throttle must
+   // not survive a failed navigation or a temporary feature-state change.
+   one_time_bypass_url_ = GURL();
+@@ -108,6 +116,12 @@ void PhishTabHelper::DOMContentLoaded(
+   if (!render_frame_host || !render_frame_host->IsInPrimaryMainFrame()) {
+     return;
+   }
++  // Security interstitials are committed as error documents. Their fixed UI
++  // must never be treated as page content supplied by the blocked site.
++  if (render_frame_host->IsErrorDocument()) {
++    InvalidatePageSignalCheck();
++    return;
++  }
+   if (checking_) {
+     return;
+   }
+@@ -134,32 +148,65 @@ void PhishTabHelper::DOMContentLoaded(
+   }
+ 
+   checking_ = true;
++  checking_document_ = render_frame_host->GetWeakDocumentPtr();
+   auto client = std::make_unique<
+       mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame>>();
+   render_frame_host->GetRemoteAssociatedInterfaces()->GetInterface(
+       client.get());
+   if (!client->is_bound()) {
+-    checking_ = false;
++    InvalidatePageSignalCheck();
+     return;
+   }
+   chrome::mojom::ChromeRenderFrame* raw = client->get();
++  content::WeakDocumentPtr source_document =
++      render_frame_host->GetWeakDocumentPtr();
+   const GURL url_copy = url;
+   raw->CollectAegisPageSignals(base::BindOnce(
+       [](std::unique_ptr<mojo::AssociatedRemote<
+              chrome::mojom::ChromeRenderFrame>> keep_alive,
+-         base::WeakPtr<PhishTabHelper> self, const GURL& url,
++         base::WeakPtr<PhishTabHelper> self,
++         content::WeakDocumentPtr source_document, const GURL& url,
+          int32_t password_fields, int32_t forms, const std::string& title,
+          const std::string& text_sample) {
+         if (!self) {
+           return;
+         }
+-        self->checking_ = false;
+-        self->OnPageSignals(url, password_fields, forms, title, text_sample);
++        self->OnPageSignalsCollected(std::move(source_document), url,
++                                     password_fields, forms, title,
++                                     text_sample);
+       },
+-      std::move(client), weak_factory_.GetWeakPtr(), url_copy));
++      std::move(client), weak_factory_.GetWeakPtr(), std::move(source_document),
++      url_copy));
++}
++
++void PhishTabHelper::InvalidatePageSignalCheck() {
++  checking_ = false;
++  checking_document_ = content::WeakDocumentPtr();
++  weak_factory_.InvalidateWeakPtrs();
++}
++
++void PhishTabHelper::OnPageSignalsCollected(
++    content::WeakDocumentPtr source_document,
++    const GURL& url,
++    int32_t password_fields,
++    int32_t forms,
++    const std::string& title,
++    const std::string& text_sample) {
++  content::RenderFrameHost* source_frame =
++      source_document.AsRenderFrameHostIfValid();
++  if (!checking_ || !source_frame ||
++      checking_document_.AsRenderFrameHostIfValid() != source_frame) {
++    return;
++  }
++
++  checking_ = false;
++  checking_document_ = content::WeakDocumentPtr();
++  OnPageSignals(std::move(source_document), url, password_fields, forms, title,
++                text_sample);
+ }
+ 
+-void PhishTabHelper::OnPageSignals(const GURL& url,
++void PhishTabHelper::OnPageSignals(content::WeakDocumentPtr source_document,
++                                   const GURL& url,
+                                    int32_t password_fields,
+                                    int32_t forms,
+                                    const std::string& title,
+@@ -168,7 +215,11 @@ void PhishTabHelper::OnPageSignals(const GURL& url,
+   if (!contents) {
+     return;
+   }
+-  if (contents->GetLastCommittedURL() != url) {
++  content::RenderFrameHost* source_frame =
++      source_document.AsRenderFrameHostIfValid();
++  if (!source_frame || source_frame != contents->GetPrimaryMainFrame() ||
++      source_frame->IsErrorDocument() ||
++      source_frame->GetLastCommittedURL() != url) {
+     return;
+   }
+ 
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.h b/chrome/browser/aegis/aegis_phish_tab_helper.h
+index 988c77d5f9..c887123e10 100644
+--- a/chrome/browser/aegis/aegis_phish_tab_helper.h
++++ b/chrome/browser/aegis/aegis_phish_tab_helper.h
+@@ -24,6 +24,8 @@ class RenderFrameHost;
+ 
+ namespace aegis {
+ 
++class PhishTabHelperTestPeer;
++
+ // After the main frame finishes loading, asks the renderer for password/form
+ // counts and page text, then reloads into the phishing interstitial if the
+ // combined score crosses the block threshold.
+@@ -45,10 +47,19 @@ class PhishTabHelper : public content::WebContentsObserver,
+   void DOMContentLoaded(content::RenderFrameHost* render_frame_host) override;
+ 
+  private:
++  friend class PhishTabHelperTestPeer;
+   friend class content::WebContentsUserData<PhishTabHelper>;
+   explicit PhishTabHelper(content::WebContents* web_contents);
+ 
+-  void OnPageSignals(const GURL& url,
++  void InvalidatePageSignalCheck();
++  void OnPageSignalsCollected(content::WeakDocumentPtr source_document,
++                              const GURL& url,
++                              int32_t password_fields,
++                              int32_t forms,
++                              const std::string& title,
++                              const std::string& text_sample);
++  void OnPageSignals(content::WeakDocumentPtr source_document,
++                     const GURL& url,
+                      int32_t password_fields,
+                      int32_t forms,
+                      const std::string& title,
+@@ -60,6 +71,7 @@ class PhishTabHelper : public content::WebContentsObserver,
+   GURL bypassed_navigation_url_;
+   std::optional<int64_t> bypassed_navigation_id_;
+   content::WeakDocumentPtr bypassed_document_;
++  content::WeakDocumentPtr checking_document_;
+   bool checking_ = false;
+   base::WeakPtrFactory<PhishTabHelper> weak_factory_{this};
+ 
+diff --git a/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc b/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc
+index 6c7eab0bc1..cf5d0b3ffc 100644
+--- a/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc
+@@ -3,11 +3,48 @@
+ 
+ #include "chrome/browser/aegis/aegis_phish_tab_helper.h"
+ 
++#include <utility>
++
++#include "base/memory/weak_ptr.h"
+ #include "chrome/test/base/chrome_render_view_host_test_harness.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/test/navigation_simulator.h"
++#include "net/base/net_errors.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis {
++
++class PhishTabHelperTestPeer {
++ public:
++  static void BeginPageSignalCheck(PhishTabHelper* helper,
++                                   content::WeakDocumentPtr checking_document) {
++    helper->checking_ = true;
++    helper->checking_document_ = std::move(checking_document);
++  }
++
++  static void DeliverPageSignals(PhishTabHelper* helper,
++                                 content::WeakDocumentPtr source_document,
++                                 const GURL& url) {
++    helper->OnPageSignalsCollected(std::move(source_document), url,
++                                   /*password_fields=*/1, /*forms=*/1,
++                                   "Sign in", "Verify your account");
++  }
++
++  static bool IsChecking(const PhishTabHelper* helper) {
++    return helper->checking_;
++  }
++
++  static content::RenderFrameHost* CheckingFrame(const PhishTabHelper* helper) {
++    return helper->checking_document_.AsRenderFrameHostIfValid();
++  }
++
++  static base::WeakPtr<PhishTabHelper> GetCallbackTarget(
++      PhishTabHelper* helper) {
++    return helper->weak_factory_.GetWeakPtr();
++  }
++};
++
+ namespace {
+ 
+ class PhishTabHelperTest : public ChromeRenderViewHostTestHarness {
+@@ -58,5 +95,58 @@ TEST_F(PhishTabHelperTest, NewPermitReplacesPreviousPermit) {
+   EXPECT_FALSE(helper()->ConsumeOneTimeNavigationBypass(first, 402));
+ }
+ 
++TEST_F(PhishTabHelperTest, ContinueOnceInvalidatesPendingPageSignalCheck) {
++  const GURL url("https://phish.example.test/login");
++  NavigateAndCommit(url);
++  PhishTabHelperTestPeer::BeginPageSignalCheck(
++      helper(), main_rfh()->GetWeakDocumentPtr());
++  base::WeakPtr<PhishTabHelper> callback_target =
++      PhishTabHelperTestPeer::GetCallbackTarget(helper());
++
++  helper()->AllowNextNavigationOnce(url);
++
++  EXPECT_FALSE(callback_target);
++  EXPECT_FALSE(PhishTabHelperTestPeer::IsChecking(helper()));
++  EXPECT_EQ(nullptr, PhishTabHelperTestPeer::CheckingFrame(helper()));
++}
++
++TEST_F(PhishTabHelperTest,
++       LateCallbackCannotCompleteNewDocumentCheckAtSameUrl) {
++  const GURL url("https://phish.example.test/login");
++  NavigateAndCommit(url);
++  content::WeakDocumentPtr old_document = main_rfh()->GetWeakDocumentPtr();
++  PhishTabHelperTestPeer::BeginPageSignalCheck(helper(), old_document);
++
++  helper()->AllowNextNavigationOnce(url);
++  NavigateAndCommit(url);
++  content::RenderFrameHost* new_frame = main_rfh();
++  ASSERT_EQ(nullptr, old_document.AsRenderFrameHostIfValid());
++  PhishTabHelperTestPeer::BeginPageSignalCheck(helper(),
++                                               new_frame->GetWeakDocumentPtr());
++
++  PhishTabHelperTestPeer::DeliverPageSignals(helper(), std::move(old_document),
++                                             url);
++
++  EXPECT_TRUE(PhishTabHelperTestPeer::IsChecking(helper()));
++  EXPECT_EQ(new_frame, PhishTabHelperTestPeer::CheckingFrame(helper()));
++}
++
++TEST_F(PhishTabHelperTest, ErrorDocumentIsNotScored) {
++  const GURL url("https://phish.example.test/login");
++  auto navigation =
++      content::NavigationSimulator::CreateBrowserInitiated(url, web_contents());
++  navigation->Fail(net::ERR_FAILED);
++  navigation->CommitErrorPage();
++  content::RenderFrameHost* error_frame = web_contents()->GetPrimaryMainFrame();
++  ASSERT_TRUE(error_frame->IsErrorDocument());
++  PhishTabHelperTestPeer::BeginPageSignalCheck(
++      helper(), error_frame->GetWeakDocumentPtr());
++
++  helper()->DOMContentLoaded(error_frame);
++
++  EXPECT_FALSE(PhishTabHelperTestPeer::IsChecking(helper()));
++  EXPECT_EQ(nullptr, PhishTabHelperTestPeer::CheckingFrame(helper()));
++}
++
+ }  // namespace
+ }  // namespace aegis
+diff --git a/chrome/browser/android/BUILD.gn b/chrome/browser/android/BUILD.gn
+index a837a27dd5..6c8cb7cb07 100644
+--- a/chrome/browser/android/BUILD.gn
++++ b/chrome/browser/android/BUILD.gn
+@@ -602,6 +602,7 @@ if (is_android) {
+       "//chrome/browser/webauthn:webauthn_request_delegate_android",
+       "//chrome/browser/webauthn:webauthn_request_delegate_android_impl",
+       "//chrome/common:non_code_constants",
++      "//chrome/common/aegis",
+       "//chrome/services/media_gallery_util/public/cpp",
+       "//components/android_autofill/browser:android",
+       "//components/android_autofill/browser:features",
+diff --git a/chrome/browser/android/devtools_manager_delegate_android.cc b/chrome/browser/android/devtools_manager_delegate_android.cc
+index 63c0dc06d3..e7ef7598ef 100644
+--- a/chrome/browser/android/devtools_manager_delegate_android.cc
++++ b/chrome/browser/android/devtools_manager_delegate_android.cc
+@@ -9,6 +9,7 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/notreached.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+@@ -18,6 +19,7 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/ui/android/tab_model/tab_model.h"
+ #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
++#include "chrome/common/aegis/cdp_target_filter.h"
+ #include "chrome/grit/browser_resources.h"
+ #include "content/public/browser/devtools_agent_host.h"
+ #include "content/public/browser/devtools_agent_host_client.h"
+@@ -50,6 +52,30 @@ class ClientProxy : public content::DevToolsAgentHostClient {
+     proxy_->ConnectionClosed();
+   }
+ 
++  bool IsRemoteDebuggingClient() override {
++    return proxy_->IsRemoteDebuggingClient();
++  }
++
++  void RegisterRemoteDebuggingTarget(std::string_view target_id) override {
++    proxy_->RegisterRemoteDebuggingTarget(target_id);
++  }
++
++  bool OwnsRemoteDebuggingTarget(std::string_view target_id) override {
++    return proxy_->OwnsRemoteDebuggingTarget(target_id);
++  }
++
++  void BeginRemoteDebuggingTargetCreation() override {
++    proxy_->BeginRemoteDebuggingTargetCreation();
++  }
++
++  void EndRemoteDebuggingTargetCreation() override {
++    proxy_->EndRemoteDebuggingTargetCreation();
++  }
++
++  bool IsRemoteDebuggingTargetCreationInProgress() override {
++    return proxy_->IsRemoteDebuggingTargetCreationInProgress();
++  }
++
+  private:
+   raw_ptr<content::DevToolsExternalAgentProxy> proxy_;
+ };
+@@ -207,6 +233,36 @@ scoped_refptr<DevToolsAgentHost> DevToolsAgentHostForTab(TabAndroid* tab,
+ 
+ static const void* const kCreatedByDevTools = &kCreatedByDevTools;
+ 
++aegis::RemoteCdpTargetOperation ToAegisRemoteCdpTargetOperation(
++    content::DevToolsManagerDelegate::RemoteDebuggingTargetOperation
++        operation) {
++  using ContentOperation =
++      content::DevToolsManagerDelegate::RemoteDebuggingTargetOperation;
++  switch (operation) {
++    case ContentOperation::kEnumerate:
++      return aegis::RemoteCdpTargetOperation::kEnumerate;
++    case ContentOperation::kCreate:
++      return aegis::RemoteCdpTargetOperation::kCreate;
++    case ContentOperation::kWebSocketConnect:
++      return aegis::RemoteCdpTargetOperation::kWebSocketConnect;
++    case ContentOperation::kGetInfo:
++      return aegis::RemoteCdpTargetOperation::kGetInfo;
++    case ContentOperation::kAttach:
++      return aegis::RemoteCdpTargetOperation::kAttach;
++    case ContentOperation::kNavigate:
++      return aegis::RemoteCdpTargetOperation::kNavigate;
++    case ContentOperation::kActivate:
++      return aegis::RemoteCdpTargetOperation::kActivate;
++    case ContentOperation::kClose:
++      return aegis::RemoteCdpTargetOperation::kClose;
++    case ContentOperation::kExposeDevToolsProtocol:
++      return aegis::RemoteCdpTargetOperation::kExposeDevToolsProtocol;
++    case ContentOperation::kOpenDevTools:
++      return aegis::RemoteCdpTargetOperation::kOpenDevTools;
++  }
++  NOTREACHED();
++}
++
+ } //  namespace
+ 
+ DevToolsManagerDelegateAndroid::DevToolsManagerDelegateAndroid() = default;
+@@ -293,6 +349,14 @@ bool DevToolsManagerDelegateAndroid::AllowInspectingTarget(
+   return IsInspectionAllowed(profile, agent_host);
+ }
+ 
++bool DevToolsManagerDelegateAndroid::AllowRemoteDebuggingTargetOperation(
++    RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) {
++  return aegis::ShouldAllowRemoteCdpTargetOperation(
++      ToAegisRemoteCdpTargetOperation(operation), target_type, url);
++}
++
+ void DevToolsManagerDelegateAndroid::HandleCommand(
+     content::DevToolsAgentHostClientChannel* channel,
+     base::span<const uint8_t> message,
+diff --git a/chrome/browser/android/devtools_manager_delegate_android.h b/chrome/browser/android/devtools_manager_delegate_android.h
+index 674b4f3e0e..ca01d1502f 100644
+--- a/chrome/browser/android/devtools_manager_delegate_android.h
++++ b/chrome/browser/android/devtools_manager_delegate_android.h
+@@ -35,6 +35,10 @@ class DevToolsManagerDelegateAndroid : public content::DevToolsManagerDelegate {
+       TargetType target_type) override;
+   bool IsBrowserTargetDiscoverable() override;
+   bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;
++  bool AllowRemoteDebuggingTargetOperation(
++      RemoteDebuggingTargetOperation operation,
++      std::string_view target_type,
++      const GURL& url) override;
+ 
+   void HandleCommand(content::DevToolsAgentHostClientChannel* channel,
+                      base::span<const uint8_t> message,
+diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
+index d75f6a0401..e994c32fa3 100644
+--- a/chrome/browser/devtools/BUILD.gn
++++ b/chrome/browser/devtools/BUILD.gn
+@@ -252,7 +252,10 @@ static_library("devtools") {
+       "protocol/target_handler_android.h",
+     ]
+ 
+-    deps += [ "//chrome/android:chrome_jni_headers" ]
++    deps += [
++      "//chrome/android:chrome_jni_headers",
++      "//chrome/common/aegis",
++    ]
+   } else {
+     public_deps += [
+       "//chrome/browser/ui:browser_tab_strip",
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+index 3994a5ac2b..cfc5b9ac36 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+@@ -10,6 +10,7 @@
+ #include "base/command_line.h"
+ #include "base/functional/bind.h"
+ #include "base/metrics/histogram_functions.h"
++#include "base/notreached.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/values.h"
+@@ -176,6 +177,36 @@ bool GetExtensionInfo(content::WebContents* wc,
+ 
+ ChromeDevToolsManagerDelegate* g_instance;
+ 
++aegis::RemoteCdpTargetOperation ToAegisRemoteCdpTargetOperation(
++    content::DevToolsManagerDelegate::RemoteDebuggingTargetOperation
++        operation) {
++  using ContentOperation =
++      content::DevToolsManagerDelegate::RemoteDebuggingTargetOperation;
++  switch (operation) {
++    case ContentOperation::kEnumerate:
++      return aegis::RemoteCdpTargetOperation::kEnumerate;
++    case ContentOperation::kCreate:
++      return aegis::RemoteCdpTargetOperation::kCreate;
++    case ContentOperation::kWebSocketConnect:
++      return aegis::RemoteCdpTargetOperation::kWebSocketConnect;
++    case ContentOperation::kGetInfo:
++      return aegis::RemoteCdpTargetOperation::kGetInfo;
++    case ContentOperation::kAttach:
++      return aegis::RemoteCdpTargetOperation::kAttach;
++    case ContentOperation::kNavigate:
++      return aegis::RemoteCdpTargetOperation::kNavigate;
++    case ContentOperation::kActivate:
++      return aegis::RemoteCdpTargetOperation::kActivate;
++    case ContentOperation::kClose:
++      return aegis::RemoteCdpTargetOperation::kClose;
++    case ContentOperation::kExposeDevToolsProtocol:
++      return aegis::RemoteCdpTargetOperation::kExposeDevToolsProtocol;
++    case ContentOperation::kOpenDevTools:
++      return aegis::RemoteCdpTargetOperation::kOpenDevTools;
++  }
++  NOTREACHED();
++}
++
+ }  // namespace
+ 
+ // static
+@@ -420,20 +451,20 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
+   return IsInspectionAllowed(profile, agent_host);
+ }
+ 
+-content::DevToolsAgentHost::List
+-ChromeDevToolsManagerDelegate::RemoteDebuggingTargets(
+-    DevToolsManagerDelegate::TargetType target_type) {
+-  DevToolsAgentHost::List list =
+-      DevToolsManagerDelegate::RemoteDebuggingTargets(target_type);
+-  DevToolsAgentHost::List filtered;
+-  filtered.reserve(list.size());
+-  for (auto& host : list) {
+-    if (host && aegis::ShouldExposeRemoteCdpTarget(host->GetType(),
+-                                                   host->GetURL())) {
+-      filtered.push_back(std::move(host));
+-    }
+-  }
+-  return filtered;
++bool ChromeDevToolsManagerDelegate::AllowRemoteDebuggingTargetOperation(
++    RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) {
++  return ShouldAllowRemoteCdpTargetOperation(operation, target_type, url);
++}
++
++// static
++bool ChromeDevToolsManagerDelegate::ShouldAllowRemoteCdpTargetOperation(
++    RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) {
++  return aegis::ShouldAllowRemoteCdpTargetOperation(
++      ToAegisRemoteCdpTargetOperation(operation), target_type, url);
+ }
+ 
+ void ChromeDevToolsManagerDelegate::ClientAttached(
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
+index c4559270a9..b557d5b5d5 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
+@@ -41,6 +41,10 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
+   ~ChromeDevToolsManagerDelegate() override;
+ 
+   static ChromeDevToolsManagerDelegate* GetInstance();
++  static bool ShouldAllowRemoteCdpTargetOperation(
++      RemoteDebuggingTargetOperation operation,
++      std::string_view target_type,
++      const GURL& url);
+   void UpdateDeviceDiscovery();
+ 
+   // Resets |device_manager_|.
+@@ -87,8 +91,10 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
+ 
+   bool AllowInspectingRenderFrameHost(content::RenderFrameHost* rfh) override;
+   bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;
+-  content::DevToolsAgentHost::List RemoteDebuggingTargets(
+-      TargetType target_type) override;
++  bool AllowRemoteDebuggingTargetOperation(
++      RemoteDebuggingTargetOperation operation,
++      std::string_view target_type,
++      const GURL& url) override;
+   void ClientAttached(
+       content::DevToolsAgentHostClientChannel* channel) override;
+   void ClientDetached(
+diff --git a/chrome/browser/devtools/chrome_devtools_session.cc b/chrome/browser/devtools/chrome_devtools_session.cc
+index d79c1e2c50..d11ebf70ca 100644
+--- a/chrome/browser/devtools/chrome_devtools_session.cc
++++ b/chrome/browser/devtools/chrome_devtools_session.cc
+@@ -118,7 +118,8 @@ ChromeDevToolsSession::ChromeDevToolsSession(
+       channel->GetClient()->IsTrusted()) {
+     target_handler_ = std::make_unique<TargetHandler>(
+         &dispatcher_, channel->GetClient()->IsTrusted(),
+-        channel->GetClient()->MayReadLocalFiles());
++        channel->GetClient()->MayReadLocalFiles(),
++        channel->GetClient()->IsRemoteDebuggingClient(), channel->GetClient());
+   }
+   if (IsDomainAvailableToUntrustedClient<BrowserHandler>() ||
+       channel->GetClient()->IsTrusted()) {
+diff --git a/chrome/browser/devtools/chrome_devtools_session_android.cc b/chrome/browser/devtools/chrome_devtools_session_android.cc
+index 51060313be..b2d48690ad 100644
+--- a/chrome/browser/devtools/chrome_devtools_session_android.cc
++++ b/chrome/browser/devtools/chrome_devtools_session_android.cc
+@@ -32,7 +32,8 @@ ChromeDevToolsSessionAndroid::ChromeDevToolsSessionAndroid(
+       channel->GetClient()->IsTrusted()) {
+     target_handler_ = std::make_unique<TargetHandlerAndroid>(
+         &dispatcher_, channel->GetClient()->IsTrusted(),
+-        channel->GetClient()->MayReadLocalFiles());
++        channel->GetClient()->MayReadLocalFiles(),
++        channel->GetClient()->IsRemoteDebuggingClient(), channel->GetClient());
+   }
+ }
+ 
+diff --git a/chrome/browser/devtools/devtools_browsertest.cc b/chrome/browser/devtools/devtools_browsertest.cc
+index 84491db96f..216bf70214 100644
+--- a/chrome/browser/devtools/devtools_browsertest.cc
++++ b/chrome/browser/devtools/devtools_browsertest.cc
+@@ -3451,6 +3451,28 @@ IN_PROC_BROWSER_TEST_F(DevToolsTest, ExistsForWebContentsAfterClosing) {
+   ASSERT_TRUE(content::DevToolsAgentHost::HasFor(GetInspectedTab()));
+ }
+ 
++#if !BUILDFLAG(IS_ANDROID)
++IN_PROC_BROWSER_TEST_F(DevToolsTest,
++                       AegisLocalDevToolsRemainsAttachedToInternalPage) {
++  const GURL http_url = embedded_test_server()->GetURL("/empty.html");
++  OpenDevToolsWindow(http_url.spec(), true);
++
++  scoped_refptr<content::DevToolsAgentHost> agent_host =
++      content::DevToolsAgentHost::GetOrCreateForTab(GetInspectedTab());
++  ASSERT_TRUE(agent_host->IsAttached());
++  ASSERT_EQ(window_, DevToolsWindow::FindDevToolsWindow(agent_host.get()));
++
++  ASSERT_TRUE(
++      NavigateToURL(GetInspectedTab(), GURL(chrome::kChromeUIAegisURL)));
++  EXPECT_EQ(GURL(chrome::kChromeUIAegisURL),
++            GetInspectedTab()->GetLastCommittedURL());
++  EXPECT_TRUE(agent_host->IsAttached());
++  EXPECT_EQ(window_, DevToolsWindow::FindDevToolsWindow(agent_host.get()));
++
++  CloseDevToolsWindow();
++}
++#endif  // !BUILDFLAG(IS_ANDROID)
++
+ #if !BUILDFLAG(IS_ANDROID)
+ 
+ IN_PROC_BROWSER_TEST_F(InProcessBrowserTest, BrowserCloseWithBeforeUnload) {
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index c7a4d458d2..01ebaf70ef 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -2,6 +2,7 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include <set>
+ #include <string>
+ #include <string_view>
+ 
+@@ -263,6 +264,195 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateInDefaultContextById) {
+   ASSERT_TRUE(result);
+ }
+ 
++class AegisRemoteDevToolsProtocolTest : public DevToolsProtocolTestBase {
++ private:
++  bool IsRemoteDebuggingClient() override { return true; }
++
++  void RegisterRemoteDebuggingTarget(std::string_view target_id) override {
++    owned_target_ids_.emplace(target_id);
++  }
++
++  bool OwnsRemoteDebuggingTarget(std::string_view target_id) override {
++    return owned_target_ids_.contains(target_id);
++  }
++
++  void BeginRemoteDebuggingTargetCreation() override {
++    target_creation_in_progress_ = true;
++  }
++
++  void EndRemoteDebuggingTargetCreation() override {
++    target_creation_in_progress_ = false;
++  }
++
++  bool IsRemoteDebuggingTargetCreationInProgress() override {
++    return target_creation_in_progress_;
++  }
++
++  std::set<std::string, std::less<>> owned_target_ids_;
++  bool target_creation_in_progress_ = false;
++};
++
++class AegisOtherRemoteDevToolsProtocolClient
++    : public content::TestDevToolsProtocolClient {
++ public:
++  const base::DictValue* command_error() const { return error(); }
++
++ private:
++  bool IsRemoteDebuggingClient() override { return true; }
++};
++
++IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
++                       AegisRemoteTargetAccessHidesInternalTargets) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL http_url = embedded_test_server()->GetURL("/empty.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), http_url));
++
++  content::WebContents* http_contents = web_contents();
++  scoped_refptr<content::DevToolsAgentHost> http_target =
++      content::DevToolsAgentHost::GetOrCreateFor(http_contents);
++  const std::string http_target_id = http_target->GetId();
++
++  ui_test_utils::NavigateToURLWithDisposition(
++      browser(), GURL(chrome::kChromeUIAegisURL),
++      WindowOpenDisposition::NEW_BACKGROUND_TAB,
++      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
++  content::WebContents* internal_contents =
++      browser()->tab_strip_model()->GetWebContentsAt(1);
++  ASSERT_TRUE(internal_contents);
++  scoped_refptr<content::DevToolsAgentHost> internal_target =
++      content::DevToolsAgentHost::GetOrCreateFor(internal_contents);
++  const std::string internal_target_id = internal_target->GetId();
++
++  AttachToBrowserTarget();
++
++  const base::DictValue* targets_result = SendCommandSync("Target.getTargets");
++  ASSERT_TRUE(targets_result);
++  const base::ListValue* target_infos = targets_result->FindList("targetInfos");
++  ASSERT_TRUE(target_infos);
++  bool found_http_target = false;
++  bool found_internal_target = false;
++  for (const base::Value& target_info : *target_infos) {
++    const std::string* target_id = target_info.GetDict().FindString("targetId");
++    ASSERT_TRUE(target_id);
++    found_http_target |= *target_id == http_target_id;
++    found_internal_target |= *target_id == internal_target_id;
++  }
++  EXPECT_TRUE(found_http_target);
++  EXPECT_FALSE(found_internal_target);
++
++  const base::DictValue* attach_result = SendCommandSync(
++      "Target.attachToTarget",
++      base::DictValue().Set("targetId", http_target_id).Set("flatten", true));
++  ASSERT_TRUE(attach_result);
++  EXPECT_TRUE(attach_result->FindString("sessionId"));
++
++  EXPECT_FALSE(SendCommandSync("Target.attachToTarget",
++                               base::DictValue()
++                                   .Set("targetId", internal_target_id)
++                                   .Set("flatten", true)));
++  ASSERT_TRUE(error());
++  EXPECT_EQ("No target with given id found", *error()->FindString("message"));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
++                       AegisCreatedBlankTargetIsBoundToRemoteRootClient) {
++  AttachToBrowserTarget();
++
++  const base::DictValue* create_result = SendCommandSync(
++      "Target.createTarget", base::DictValue().Set("url", "about:blank"));
++  ASSERT_TRUE(create_result);
++  const std::string* target_id = create_result->FindString("targetId");
++  ASSERT_TRUE(target_id);
++  const std::string created_target_id = *target_id;
++
++  ASSERT_TRUE(
++      SendCommandSync("Target.getTargetInfo",
++                      base::DictValue().Set("targetId", created_target_id)));
++  ASSERT_TRUE(SendCommandSync("Target.attachToTarget",
++                              base::DictValue()
++                                  .Set("targetId", created_target_id)
++                                  .Set("flatten", true)));
++
++  AegisOtherRemoteDevToolsProtocolClient other_remote_client;
++  other_remote_client.AttachToBrowserTarget();
++  EXPECT_FALSE(other_remote_client.SendCommandSync(
++      "Target.getTargetInfo",
++      base::DictValue().Set("targetId", created_target_id)));
++  ASSERT_TRUE(other_remote_client.command_error());
++  EXPECT_EQ("No target with given id found",
++            *other_remote_client.command_error()->FindString("message"));
++  EXPECT_FALSE(other_remote_client.SendCommandSync(
++      "Target.attachToTarget", base::DictValue()
++                                   .Set("targetId", created_target_id)
++                                   .Set("flatten", true)));
++  ASSERT_TRUE(other_remote_client.command_error());
++  EXPECT_EQ("No target with given id found",
++            *other_remote_client.command_error()->FindString("message"));
++  other_remote_client.DetachProtocolClient();
++}
++
++IN_PROC_BROWSER_TEST_F(
++    AegisRemoteDevToolsProtocolTest,
++    AegisRemoteDiscoveryDestroysAndDetachesNewlyInternalTarget) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL http_url = embedded_test_server()->GetURL("/empty.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), http_url));
++
++  content::WebContents* target_contents = web_contents();
++  scoped_refptr<content::DevToolsAgentHost> target =
++      content::DevToolsAgentHost::GetOrCreateFor(target_contents);
++  const std::string target_id = target->GetId();
++
++  AttachToBrowserTarget();
++
++  ASSERT_TRUE(SendCommandSync("Target.setDiscoverTargets",
++                              base::DictValue().Set("discover", true)));
++  const base::DictValue* attach_result = SendCommandSync(
++      "Target.attachToTarget",
++      base::DictValue().Set("targetId", target_id).Set("flatten", true));
++  ASSERT_TRUE(attach_result);
++  const std::string* session_id = attach_result->FindString("sessionId");
++  ASSERT_TRUE(session_id);
++  const std::string attached_session_id = *session_id;
++  ClearNotifications();
++
++  ASSERT_TRUE(
++      content::NavigateToURL(target_contents, GURL(chrome::kChromeUIAegisURL)));
++
++  base::DictValue destroyed = WaitForMatchingNotification(
++      "Target.targetDestroyed",
++      base::BindRepeating(
++          [](const std::string& expected_target_id,
++             const base::DictValue& params) {
++            const std::string* target_id = params.FindString("targetId");
++            return target_id && *target_id == expected_target_id;
++          },
++          target_id));
++  EXPECT_EQ(target_id, *destroyed.FindString("targetId"));
++
++  base::DictValue detached = WaitForMatchingNotification(
++      "Target.detachedFromTarget",
++      base::BindRepeating(
++          [](const std::string& expected_session_id,
++             const base::DictValue& params) {
++            const std::string* session_id = params.FindString("sessionId");
++            return session_id && *session_id == expected_session_id;
++          },
++          attached_session_id));
++  EXPECT_EQ(attached_session_id, *detached.FindString("sessionId"));
++
++  const base::DictValue* targets_result = SendCommandSync("Target.getTargets");
++  ASSERT_TRUE(targets_result);
++  const base::ListValue* target_infos = targets_result->FindList("targetInfos");
++  ASSERT_TRUE(target_infos);
++  for (const base::Value& target_info : *target_infos) {
++    const std::string* current_target_id =
++        target_info.GetDict().FindString("targetId");
++    ASSERT_TRUE(current_target_id);
++    EXPECT_NE(target_id, *current_target_id);
++  }
++}
++
+ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
+                        InputDispatchEventsToCorrectTarget) {
+   Attach();
+diff --git a/chrome/browser/devtools/protocol/target_handler.cc b/chrome/browser/devtools/protocol/target_handler.cc
+index e6f2e022ba..e3d53532fd 100644
+--- a/chrome/browser/devtools/protocol/target_handler.cc
++++ b/chrome/browser/devtools/protocol/target_handler.cc
+@@ -7,6 +7,8 @@
+ #include <ranges>
+ #include <string_view>
+ 
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/notreached.h"
+ #include "chrome/browser/devtools/chrome_devtools_manager_delegate.h"
+ #include "chrome/browser/devtools/devtools_browser_context_manager.h"
+@@ -22,6 +24,7 @@
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "content/public/browser/devtools_agent_host.h"
++#include "content/public/browser/devtools_agent_host_client.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/url_constants.h"
+ #include "content/public/common/url_utils.h"
+@@ -58,8 +61,13 @@ NavigateParams CreateNavigateParams(Profile* profile,
+ 
+ TargetHandler::TargetHandler(protocol::UberDispatcher* dispatcher,
+                              bool is_trusted,
+-                             bool may_read_local_files)
+-    : is_trusted_(is_trusted), may_read_local_files_(may_read_local_files) {
++                             bool may_read_local_files,
++                             bool is_remote_debugging_client,
++                             content::DevToolsAgentHostClient* client)
++    : is_trusted_(is_trusted),
++      may_read_local_files_(may_read_local_files),
++      is_remote_debugging_client_(is_remote_debugging_client),
++      client_(client) {
+   protocol::Target::Dispatcher::wire(dispatcher, this);
+ }
+ 
+@@ -73,6 +81,9 @@ TargetHandler::~TargetHandler() {
+ protocol::Response TargetHandler::SetRemoteLocations(
+     std::unique_ptr<protocol::Array<protocol::Target::RemoteLocation>>
+         locations) {
++  if (is_remote_debugging_client_) {
++    return protocol::Response::ServerError("Not allowed");
++  }
+   remote_locations_.clear();
+   if (!locations)
+     return protocol::Response::Success();
+@@ -179,6 +190,17 @@ protocol::Response TargetHandler::CreateTarget(
+         "Creating a target with a local URL is not allowed");
+   }
+ 
++  const std::string_view target_type =
++      for_tab.value_or(false) ? content::DevToolsAgentHost::kTypeTab
++                              : content::DevToolsAgentHost::kTypePage;
++  if (is_remote_debugging_client_ &&
++      !ChromeDevToolsManagerDelegate::ShouldAllowRemoteCdpTargetOperation(
++          content::DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++              kCreate,
++          target_type, gurl)) {
++    return protocol::Response::InvalidParams("No target with given id found");
++  }
++
+   create_new_window = !target_browser_interface;
+ 
+   const bool set_window_position = left || top || width || height;
+@@ -208,6 +230,15 @@ protocol::Response TargetHandler::CreateTarget(
+     }
+   }
+ 
++  base::ScopedClosureRunner target_creation_scope;
++  if (is_remote_debugging_client_ &&
++      gurl.spec() == url::kAboutBlankURL) {
++    client_->BeginRemoteDebuggingTargetCreation();
++    target_creation_scope.ReplaceClosure(base::BindOnce(
++        &content::DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
++        base::Unretained(client_.get())));
++  }
++
+   NavigateParams params = CreateNavigateParams(
+       profile, gurl, ui::PAGE_TRANSITION_AUTO_TOPLEVEL, create_new_window,
+       create_in_background, target_browser_interface);
+@@ -263,5 +294,8 @@ protocol::Response TargetHandler::CreateTarget(
+                          params.navigated_or_inserted_contents)
+                          ->GetId();
+   }
++  if (is_remote_debugging_client_) {
++    client_->RegisterRemoteDebuggingTarget(*out_target_id);
++  }
+   return protocol::Response::Success();
+ }
+diff --git a/chrome/browser/devtools/protocol/target_handler.h b/chrome/browser/devtools/protocol/target_handler.h
+index afdcf3d545..7521e9e839 100644
+--- a/chrome/browser/devtools/protocol/target_handler.h
++++ b/chrome/browser/devtools/protocol/target_handler.h
+@@ -7,16 +7,23 @@
+ 
+ #include <set>
+ 
++#include "base/memory/raw_ptr.h"
+ #include "chrome/browser/devtools/protocol/target.h"
+ #include "net/base/host_port_pair.h"
+ 
+ using RemoteLocations = std::set<net::HostPortPair>;
+ 
++namespace content {
++class DevToolsAgentHostClient;
++}
++
+ class TargetHandler : public protocol::Target::Backend {
+  public:
+   TargetHandler(protocol::UberDispatcher* dispatcher,
+                 bool is_trusted,
+-                bool may_read_local_files);
++                bool may_read_local_files,
++                bool is_remote_debugging_client,
++                content::DevToolsAgentHostClient* client);
+ 
+   TargetHandler(const TargetHandler&) = delete;
+   TargetHandler& operator=(const TargetHandler&) = delete;
+@@ -49,6 +56,8 @@ class TargetHandler : public protocol::Target::Backend {
+   RemoteLocations remote_locations_;
+   const bool is_trusted_;
+   const bool may_read_local_files_;
++  const bool is_remote_debugging_client_;
++  const raw_ptr<content::DevToolsAgentHostClient> client_;
+ };
+ 
+ #endif  // CHROME_BROWSER_DEVTOOLS_PROTOCOL_TARGET_HANDLER_H_
+diff --git a/chrome/browser/devtools/protocol/target_handler_android.cc b/chrome/browser/devtools/protocol/target_handler_android.cc
+index 0eabca2325..73fdaa33f1 100644
+--- a/chrome/browser/devtools/protocol/target_handler_android.cc
++++ b/chrome/browser/devtools/protocol/target_handler_android.cc
+@@ -4,9 +4,16 @@
+ 
+ #include "chrome/browser/devtools/protocol/target_handler_android.h"
+ 
++#include <string_view>
++
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "chrome/browser/android/devtools_manager_delegate_android.h"
+ #include "chrome/browser/ui/android/tab_model/tab_model.h"
+ #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
++#include "chrome/common/aegis/cdp_target_filter.h"
++#include "content/public/browser/devtools_agent_host.h"
++#include "content/public/browser/devtools_agent_host_client.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/url_constants.h"
+ #include "content/public/common/url_utils.h"
+@@ -14,10 +21,16 @@
+ 
+ using content::WebContents;
+ 
+-TargetHandlerAndroid::TargetHandlerAndroid(protocol::UberDispatcher* dispatcher,
+-                                           bool is_trusted,
+-                                           bool may_read_local_files)
+-    : is_trusted_(is_trusted), may_read_local_files_(may_read_local_files) {
++TargetHandlerAndroid::TargetHandlerAndroid(
++    protocol::UberDispatcher* dispatcher,
++    bool is_trusted,
++    bool may_read_local_files,
++    bool is_remote_debugging_client,
++    content::DevToolsAgentHostClient* client)
++    : is_trusted_(is_trusted),
++      may_read_local_files_(may_read_local_files),
++      is_remote_debugging_client_(is_remote_debugging_client),
++      client_(client) {
+   protocol::Target::Dispatcher::wire(dispatcher, this);
+ }
+ 
+@@ -26,6 +39,12 @@ TargetHandlerAndroid::~TargetHandlerAndroid() = default;
+ protocol::Response TargetHandlerAndroid::SetRemoteLocations(
+     std::unique_ptr<protocol::Array<protocol::Target::RemoteLocation>>
+         locations) {
++  if (is_remote_debugging_client_) {
++    return protocol::Response::ServerError(
++        "Setting remote locations is not allowed for remote debugging "
++        "clients");
++  }
++
+   remote_locations_.clear();
+   if (!locations) {
+     return protocol::Response::Success();
+@@ -87,6 +106,23 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
+         "Creating a target with a local URL is not allowed");
+   }
+ 
++  const std::string_view target_type =
++      for_tab.value_or(false) ? content::DevToolsAgentHost::kTypeTab
++                              : content::DevToolsAgentHost::kTypePage;
++  if (is_remote_debugging_client_ &&
++      !aegis::ShouldAllowRemoteCdpTargetOperation(
++          aegis::RemoteCdpTargetOperation::kCreate, target_type, gurl)) {
++    return protocol::Response::InvalidParams("No target with given id found");
++  }
++
++  base::ScopedClosureRunner target_creation_scope;
++  if (is_remote_debugging_client_ && gurl.spec() == url::kAboutBlankURL) {
++    client_->BeginRemoteDebuggingTargetCreation();
++    target_creation_scope.ReplaceClosure(base::BindOnce(
++        &content::DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
++        base::Unretained(client_.get())));
++  }
++
+   WebContents* web_contents =
+       tab_model->CreateNewTabForDevTools(gurl, new_window.value_or(false));
+   if (!web_contents) {
+@@ -102,6 +138,9 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
+     *out_target_id =
+         content::DevToolsAgentHost::GetOrCreateFor(web_contents)->GetId();
+   }
++  if (is_remote_debugging_client_) {
++    client_->RegisterRemoteDebuggingTarget(*out_target_id);
++  }
+ 
+   return protocol::Response::Success();
+ }
+diff --git a/chrome/browser/devtools/protocol/target_handler_android.h b/chrome/browser/devtools/protocol/target_handler_android.h
+index c092c1df2f..c66b443cff 100644
+--- a/chrome/browser/devtools/protocol/target_handler_android.h
++++ b/chrome/browser/devtools/protocol/target_handler_android.h
+@@ -7,16 +7,23 @@
+ 
+ #include <set>
+ 
++#include "base/memory/raw_ptr.h"
+ #include "chrome/browser/devtools/protocol/target.h"
+ #include "net/base/host_port_pair.h"
+ 
+ using RemoteLocations = std::set<net::HostPortPair>;
+ 
++namespace content {
++class DevToolsAgentHostClient;
++}
++
+ class TargetHandlerAndroid : public protocol::Target::Backend {
+  public:
+   TargetHandlerAndroid(protocol::UberDispatcher* dispatcher,
+                        bool is_trusted,
+-                       bool may_read_local_files);
++                       bool may_read_local_files,
++                       bool is_remote_debugging_client,
++                       content::DevToolsAgentHostClient* client);
+ 
+   TargetHandlerAndroid(const TargetHandlerAndroid&) = delete;
+   TargetHandlerAndroid& operator=(const TargetHandlerAndroid&) = delete;
+@@ -46,8 +53,10 @@ class TargetHandlerAndroid : public protocol::Target::Backend {
+       std::string* out_target_id) override;
+ 
+  private:
+-  bool is_trusted_ = false;
+-  bool may_read_local_files_ = false;
++  const bool is_trusted_;
++  const bool may_read_local_files_;
++  const bool is_remote_debugging_client_;
++  const raw_ptr<content::DevToolsAgentHostClient> client_;
+   RemoteLocations remote_locations_;
+ };
+ 
+diff --git a/chrome/common/aegis/cdp_target_filter.cc b/chrome/common/aegis/cdp_target_filter.cc
+index 7d092a7630..16a7d39b40 100644
+--- a/chrome/common/aegis/cdp_target_filter.cc
++++ b/chrome/common/aegis/cdp_target_filter.cc
+@@ -5,6 +5,7 @@
+ 
+ #include "url/gurl.h"
+ #include "url/origin.h"
++#include "url/url_constants.h"
+ 
+ namespace aegis {
+ namespace {
+@@ -74,6 +75,15 @@ bool ShouldAllowRemoteCdpTargetOperation(RemoteCdpTargetOperation operation,
+     return false;
+   }
+ 
++  // Playwright-style clients bootstrap a new page at about:blank. Creation is
++  // safe only as the first half of a two-part gate: content records the target
++  // on the creating root client, and every later operation rechecks that exact
++  // ownership. Other clients still cannot enumerate or attach to blank pages.
++  if (operation == RemoteCdpTargetOperation::kCreate &&
++      url.spec() == url::kAboutBlankURL) {
++    return true;
++  }
++
+   // 普通网页 target 的其余操作共享同一 URL 边界。内部页、本地文件、
+   // data/blob/扩展页以及无效 URL 都默认拒绝。
+   return IsAllowedWebUrl(url);
+diff --git a/chrome/common/aegis/cdp_target_filter.h b/chrome/common/aegis/cdp_target_filter.h
+index 21f5597541..6b02a443d5 100644
+--- a/chrome/common/aegis/cdp_target_filter.h
++++ b/chrome/common/aegis/cdp_target_filter.h
+@@ -27,11 +27,14 @@ enum class RemoteCdpTargetOperation {
+ };
+ 
+ // 远程 CDP target 操作授权。|type| 与
+-// content::DevToolsAgentHost::kType* 字符串一致（"browser" 等）。调用者须
+-// 在完成 target id -> DevToolsAgentHost 解析后、执行操作前调用此函数。
++// content::DevToolsAgentHost::kType* 字符串一致（"browser" 等）。既存 target
++// 操作传当前 URL；kCreate/kNavigate 必须传请求的目的 URL，不能用当前页面
++// URL 代替。
+ // Target.setDiscoverTargets / Target.setAutoAttach 是无 target 的会话命令，
+ // 不得用此函数拒绝命令本身；应分别用 kEnumerate / kAttach 过滤命令随后
+ // 产生的每个 discovered/auto-attach target。本地 F12 不应走该远程入口。
++// kCreate 可引导创建 about:blank，但后续操作只允许创建它的同一 root CDP
++// 客户端；该所有权由 content handler 校验，不由本纯策略函数推断。
+ //
+ // 这是纯策略函数；远程 protocol handler 的生产接线仍需在 Chromium
+ // checkout 中完成并由集成测试证明。
+diff --git a/chrome/common/aegis/cdp_target_filter_unittest.cc b/chrome/common/aegis/cdp_target_filter_unittest.cc
+index 2d5e228a29..9f4f65032d 100644
+--- a/chrome/common/aegis/cdp_target_filter_unittest.cc
++++ b/chrome/common/aegis/cdp_target_filter_unittest.cc
+@@ -103,6 +103,14 @@ TEST(CdpTargetFilterTest, HidesInternalAndLocalFiles) {
+   EXPECT_FALSE(ShouldExposeRemoteCdpTarget("other", GURL()));
+ }
+ 
++TEST(CdpTargetFilterTest, AllowsOnlyCreationBootstrapForAboutBlank) {
++  for (RemoteCdpTargetOperation operation : kAllTargetOperations) {
++    EXPECT_EQ(operation == RemoteCdpTargetOperation::kCreate,
++              ShouldAllowRemoteCdpTargetOperation(operation, "page",
++                                                  GURL("about:blank")));
++  }
++}
++
+ TEST(CdpTargetFilterTest, AppliesSameBoundaryToEveryTargetOperation) {
+   for (RemoteCdpTargetOperation operation : kAllTargetOperations) {
+     const bool privileged_bridge =
+diff --git a/content/browser/devtools/devtools_agent_host_impl.cc b/content/browser/devtools/devtools_agent_host_impl.cc
+index ad27a987a2..af96588d6d 100644
+--- a/content/browser/devtools/devtools_agent_host_impl.cc
++++ b/content/browser/devtools/devtools_agent_host_impl.cc
+@@ -42,6 +42,7 @@
+ #include "content/public/common/content_switches.h"
+ #include "net/base/ip_endpoint.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
++#include "url/url_constants.h"
+ 
+ #if BUILDFLAG(IS_WIN)
+ #include <windows.h>
+@@ -337,9 +338,30 @@ bool DevToolsAgentHostImpl::AttachInternal(
+   scoped_refptr<DevToolsAgentHostImpl> protect(this);
+   DevToolsSession* session = session_owned.get();
+   DevToolsManager* manager = DevToolsManager::GetInstance();
+-  if (manager->delegate() &&
+-      !manager->delegate()->AllowInspectingTarget(this)) {
+-    return false;
++  if (manager->delegate()) {
++    if (!manager->delegate()->AllowInspectingTarget(this)) {
++      return false;
++    }
++    if (session->GetClient()->IsRemoteDebuggingClient()) {
++      const bool is_initial_blank_target =
++          GetURL().spec() == url::kAboutBlankURL &&
++          (GetType() == DevToolsAgentHost::kTypePage ||
++           GetType() == DevToolsAgentHost::kTypeTab);
++      if (is_initial_blank_target &&
++          session->GetClient()
++              ->IsRemoteDebuggingTargetCreationInProgress()) {
++        session->GetClient()->RegisterRemoteDebuggingTarget(GetId());
++      }
++      const bool owns_initial_blank_target =
++          is_initial_blank_target &&
++          session->GetClient()->OwnsRemoteDebuggingTarget(GetId());
++      if (!owns_initial_blank_target &&
++          !manager->delegate()->AllowRemoteDebuggingTargetOperation(
++              DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++              GetType(), GetURL())) {
++        return false;
++      }
++    }
+   }
+   session->SetAgentHost(this);
+   if (!AttachSession(session)) {
+diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
+index 2827a0ec55..469845976d 100644
+--- a/content/browser/devtools/devtools_http_handler.cc
++++ b/content/browser/devtools/devtools_http_handler.cc
+@@ -334,8 +334,9 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
+         connection_id_(connection_id),
+         agent_host_(agent_host) {
+     DCHECK_CURRENTLY_ON(BrowserThread::UI);
+-    // TODO(dgozman): handle return value of AttachClient.
+-    agent_host_->AttachClient(this);
++    if (!agent_host_->AttachClient(this)) {
++      agent_host_ = nullptr;
++    }
+   }
+ 
+   ~DevToolsAgentHostClientImpl() override {
+@@ -346,6 +347,31 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
+ 
+   std::string GetTypeForMetrics() override { return "RemoteDebugger"; }
+ 
++  bool IsRemoteDebuggingClient() override { return true; }
++
++  void RegisterRemoteDebuggingTarget(std::string_view target_id) override {
++    owned_target_ids_.emplace(target_id);
++  }
++
++  bool OwnsRemoteDebuggingTarget(std::string_view target_id) override {
++    return owned_target_ids_.contains(std::string(target_id));
++  }
++
++  void BeginRemoteDebuggingTargetCreation() override {
++    ++target_creation_depth_;
++  }
++
++  void EndRemoteDebuggingTargetCreation() override {
++    CHECK_GT(target_creation_depth_, 0u);
++    --target_creation_depth_;
++  }
++
++  bool IsRemoteDebuggingTargetCreationInProgress() override {
++    return target_creation_depth_ > 0;
++  }
++
++  bool IsAttached() const { return agent_host_ != nullptr; }
++
+   bool MayAccessAllCookies() override { return true; }
+ 
+   void AgentHostClosed(DevToolsAgentHost* agent_host) override {
+@@ -386,6 +412,8 @@ class DevToolsAgentHostClientImpl : public DevToolsAgentHostClient {
+   const raw_ptr<ServerWrapper> server_wrapper_;
+   const int connection_id_;
+   scoped_refptr<DevToolsAgentHost> agent_host_;
++  std::set<std::string> owned_target_ids_;
++  size_t target_creation_depth_ = 0;
+ };
+ 
+ static bool TimeComparator(scoped_refptr<DevToolsAgentHost> host1,
+@@ -669,6 +697,15 @@ void DevToolsHttpHandler::OnJsonRequest(
+     GURL url(base::UnescapeBinaryURLComponent(escaped_url));
+     if (!url.is_valid())
+       url = GURL(url::kAboutBlankURL);
++    const std::string_view target_type =
++        for_tab ? DevToolsAgentHost::kTypeTab : DevToolsAgentHost::kTypePage;
++    if (!AllowRemoteTargetOperation(
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kCreate,
++            target_type, url)) {
++      SendJson(connection_id, net::HTTP_NOT_FOUND, std::nullopt,
++               "No such target");
++      return;
++    }
+     // TODO(dsv): Remove for "for_tab" support once DevTools Frontend
+     // no longer needs it for e2e tests
+     scoped_refptr<DevToolsAgentHost> agent_host =
+@@ -681,6 +718,14 @@ void DevToolsHttpHandler::OnJsonRequest(
+                "Could not create new page");
+       return;
+     }
++    if (!AllowRemoteTargetOperation(
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++            agent_host.get())) {
++      agent_host->Close();
++      SendJson(connection_id, net::HTTP_NOT_FOUND, std::nullopt,
++               "No such target");
++      return;
++    }
+     std::string host = info.GetHeaderValue("host");
+     base::DictValue descriptor = SerializeDescriptor(agent_host, host);
+     SendJson(connection_id, net::HTTP_OK, descriptor, "");
+@@ -696,6 +741,16 @@ void DevToolsHttpHandler::OnJsonRequest(
+       return;
+     }
+ 
++    const auto operation =
++        command == "activate"
++            ? DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kActivate
++            : DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kClose;
++    if (!AllowRemoteTargetOperation(operation, agent_host.get())) {
++      SendJson(connection_id, net::HTTP_NOT_FOUND, std::nullopt,
++               "No such target id: " + target_id);
++      return;
++    }
++
+     if (command == "activate") {
+       if (agent_host->Activate()) {
+         SendJson(connection_id, net::HTTP_OK, std::nullopt, "Target activated");
+@@ -748,7 +803,10 @@ void DevToolsHttpHandler::RespondToJsonList(int connection_id,
+   std::sort(agent_hosts.begin(), agent_hosts.end(), TimeComparator);
+   base::ListValue list_value;
+   for (auto& agent_host : agent_hosts) {
+-    if (agent_host->GetType() != DevToolsAgentHost::kTypeTab || for_tab) {
++    if ((agent_host->GetType() != DevToolsAgentHost::kTypeTab || for_tab) &&
++        AllowRemoteTargetOperation(
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++            agent_host.get())) {
+       list_value.Append(SerializeDescriptor(agent_host, host));
+     }
+   }
+@@ -798,10 +856,21 @@ void DevToolsHttpHandler::HandleDebuggingApproval(
+             thread_->task_runner(),
+             base::BindRepeating(&DevToolsSocketFactory::CreateForTethering,
+                                 base::Unretained(socket_factory_.get())));
+-    connection_to_client_[connection_id] =
+-        std::make_unique<DevToolsAgentHostClientImpl>(
+-            thread_->task_runner(), server_wrapper_.get(), connection_id,
+-            browser_agent);
++    if (!AllowRemoteTargetOperation(
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++                kWebSocketConnect,
++            browser_agent.get())) {
++      Send404(connection_id);
++      return;
++    }
++    auto client = std::make_unique<DevToolsAgentHostClientImpl>(
++        thread_->task_runner(), server_wrapper_.get(), connection_id,
++        browser_agent);
++    if (!client->IsAttached()) {
++      Send404(connection_id);
++      return;
++    }
++    connection_to_client_[connection_id] = std::move(client);
+     AcceptWebSocket(connection_id, request);
+   } else {
+     Send403(connection_id, "Connection rejected");
+@@ -851,10 +920,21 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+             thread_->task_runner(),
+             base::BindRepeating(&DevToolsSocketFactory::CreateForTethering,
+                                 base::Unretained(socket_factory_.get())));
+-    connection_to_client_[connection_id] =
+-        std::make_unique<DevToolsAgentHostClientImpl>(
+-            thread_->task_runner(), server_wrapper_.get(), connection_id,
+-            browser_agent);
++    if (!AllowRemoteTargetOperation(
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++                kWebSocketConnect,
++            browser_agent.get())) {
++      Send404(connection_id);
++      return;
++    }
++    auto client = std::make_unique<DevToolsAgentHostClientImpl>(
++        thread_->task_runner(), server_wrapper_.get(), connection_id,
++        browser_agent);
++    if (!client->IsAttached()) {
++      Send404(connection_id);
++      return;
++    }
++    connection_to_client_[connection_id] = std::move(client);
+     AcceptWebSocket(connection_id, request);
+     return;
+   }
+@@ -869,13 +949,25 @@ void DevToolsHttpHandler::OnWebSocketRequest(
+   scoped_refptr<DevToolsAgentHost> agent =
+       DevToolsAgentHost::GetForId(target_id);
+   if (!agent) {
+-    Send500(connection_id, "No such target id: " + target_id);
++    Send404(connection_id);
+     return;
+   }
+ 
+-  connection_to_client_[connection_id] =
+-      std::make_unique<DevToolsAgentHostClientImpl>(
+-          thread_->task_runner(), server_wrapper_.get(), connection_id, agent);
++  if (!AllowRemoteTargetOperation(
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++              kWebSocketConnect,
++          agent.get())) {
++    Send404(connection_id);
++    return;
++  }
++
++  auto client = std::make_unique<DevToolsAgentHostClientImpl>(
++      thread_->task_runner(), server_wrapper_.get(), connection_id, agent);
++  if (!client->IsAttached()) {
++    Send404(connection_id);
++    return;
++  }
++  connection_to_client_[connection_id] = std::move(client);
+ 
+   AcceptWebSocket(connection_id, request);
+ }
+@@ -1033,8 +1125,16 @@ base::DictValue DevToolsHttpHandler::SerializeDescriptor(
+   std::string id = agent_host->GetId();
+   dictionary.Set(kTargetIdField, id);
+   std::string parent_id = agent_host->GetParentId();
+-  if (!parent_id.empty())
+-    dictionary.Set(kTargetParentIdField, parent_id);
++  if (!parent_id.empty()) {
++    scoped_refptr<DevToolsAgentHost> parent =
++        DevToolsAgentHost::GetForId(parent_id);
++    if (parent &&
++        AllowRemoteTargetOperation(
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++            parent.get())) {
++      dictionary.Set(kTargetParentIdField, parent_id);
++    }
++  }
+   dictionary.Set(kTargetTypeField, agent_host->GetType());
+   dictionary.Set(kTargetTitleField,
+                  base::EscapeForHTML(agent_host->GetTitle()));
+@@ -1056,4 +1156,20 @@ base::DictValue DevToolsHttpHandler::SerializeDescriptor(
+   return dictionary;
+ }
+ 
++bool DevToolsHttpHandler::AllowRemoteTargetOperation(
++    DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) const {
++  return !delegate_ || delegate_->AllowRemoteDebuggingTargetOperation(
++                           operation, target_type, url);
++}
++
++bool DevToolsHttpHandler::AllowRemoteTargetOperation(
++    DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++    DevToolsAgentHost* agent_host) const {
++  return agent_host &&
++         AllowRemoteTargetOperation(operation, agent_host->GetType(),
++                                    agent_host->GetURL());
++}
++
+ }  // namespace content
+diff --git a/content/browser/devtools/devtools_http_handler.h b/content/browser/devtools/devtools_http_handler.h
+index 107e08a782..deb1ac3df8 100644
+--- a/content/browser/devtools/devtools_http_handler.h
++++ b/content/browser/devtools/devtools_http_handler.h
+@@ -121,6 +121,14 @@ class DevToolsHttpHandler {
+       scoped_refptr<DevToolsAgentHost> agent_host,
+       const std::string& host);
+ 
++  bool AllowRemoteTargetOperation(
++      DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++      std::string_view target_type,
++      const GURL& url) const;
++  bool AllowRemoteTargetOperation(
++      DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++      DevToolsAgentHost* agent_host) const;
++
+   DevToolsAgentHost::RemoteDebuggingServerMode mode_;
+   std::set<std::string> remote_allow_origins_;
+   // The thread used by the devtools handler to run server socket.
+diff --git a/content/browser/devtools/devtools_http_handler_unittest.cc b/content/browser/devtools/devtools_http_handler_unittest.cc
+index 05f023725c..e6c03555b9 100644
+--- a/content/browser/devtools/devtools_http_handler_unittest.cc
++++ b/content/browser/devtools/devtools_http_handler_unittest.cc
+@@ -23,12 +23,14 @@
+ #include "base/strings/stringprintf.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/test/task_environment.h"
++#include "base/uuid.h"
+ #include "base/values.h"
+ #include "content/browser/devtools/devtools_agent_host_impl.h"
+ #include "content/browser/devtools/devtools_manager.h"
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/content_browser_client.h"
++#include "content/public/browser/devtools_external_agent_proxy_delegate.h"
+ #include "content/public/browser/devtools_manager_delegate.h"
+ #include "content/public/browser/devtools_socket_factory.h"
+ #include "content/public/common/content_client.h"
+@@ -155,6 +157,9 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
+     last_instance = this;
+     EXPECT_CALL(*this, SetActiveWebSocketConnections(testing::_))
+         .Times(testing::AtLeast(0));
++    ON_CALL(*this, AllowRemoteDebuggingTargetOperation(testing::_, testing::_,
++                                                       testing::_))
++        .WillByDefault(Return(true));
+   }
+   MOCK_METHOD(scoped_refptr<DevToolsAgentHost>,
+               CreateNewTarget,
+@@ -168,9 +173,12 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
+               AcceptDebugging,
+               (base::OnceCallback<void(AcceptConnectionResult)> callback),
+               (override));
+-  MOCK_METHOD(void,
+-              SetActiveWebSocketConnections,
+-              (size_t count),
++  MOCK_METHOD(void, SetActiveWebSocketConnections, (size_t count), (override));
++  MOCK_METHOD(bool,
++              AllowRemoteDebuggingTargetOperation,
++              (RemoteDebuggingTargetOperation operation,
++               std::string_view target_type,
++               const GURL& url),
+               (override));
+ };
+ 
+@@ -179,15 +187,61 @@ MockDevToolsManagerDelegate* MockDevToolsManagerDelegate::last_instance =
+ 
+ class MockDevToolsAgentHostWithType : public MockDevToolsAgentHost {
+  public:
+-  explicit MockDevToolsAgentHostWithType(const std::string& type)
+-      : type_(type) {}
++  explicit MockDevToolsAgentHostWithType(const std::string& type,
++                                         const GURL& url = GURL())
++      : type_(type), url_(url) {}
+ 
+   std::string GetType() override { return type_; }
++  GURL GetURL() override { return url_; }
+ 
+  private:
+   ~MockDevToolsAgentHostWithType() override = default;
+ 
+   std::string type_;
++  const GURL url_;
++};
++
++class PolicyTestExternalAgentDelegate
++    : public DevToolsExternalAgentProxyDelegate {
++ public:
++  PolicyTestExternalAgentDelegate(std::string type,
++                                  GURL url,
++                                  int* attach_count,
++                                  int* activate_count,
++                                  int* close_count)
++      : type_(std::move(type)),
++        url_(std::move(url)),
++        attach_count_(attach_count),
++        activate_count_(activate_count),
++        close_count_(close_count) {}
++
++  void Attach(DevToolsExternalAgentProxy* proxy) override { ++*attach_count_; }
++  void Detach(DevToolsExternalAgentProxy* proxy) override {}
++  void SendMessageToBackend(DevToolsExternalAgentProxy* proxy,
++                            base::span<const uint8_t> message) override {}
++  std::string GetType() override { return type_; }
++  std::string GetTitle() override { return "policy test"; }
++  std::string GetDescription() override { return std::string(); }
++  GURL GetURL() override { return url_; }
++  GURL GetFaviconURL() override { return GURL(); }
++  std::string GetFrontendURL() override { return std::string(); }
++  bool Activate() override {
++    ++*activate_count_;
++    return true;
++  }
++  void Reload() override {}
++  bool Close() override {
++    ++*close_count_;
++    return true;
++  }
++  base::TimeTicks GetLastActivityTime() override { return base::TimeTicks(); }
++
++ private:
++  const std::string type_;
++  const GURL url_;
++  const raw_ptr<int> attach_count_;
++  const raw_ptr<int> activate_count_;
++  const raw_ptr<int> close_count_;
+ };
+ 
+ class BrowserClient : public ContentBrowserClient {
+@@ -200,7 +254,7 @@ class BrowserClient : public ContentBrowserClient {
+   }
+ };
+ 
+-}
++}  // namespace
+ 
+ class DevToolsHttpHandlerTest : public testing::Test {
+  public:
+@@ -478,7 +532,8 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
+ 
+   std::unique_ptr<net::URLRequest> RunRequestUntilCompletion(
+       std::string url,
+-      std::map<std::string, std::string> headers = {}) {
++      std::map<std::string, std::string> headers = {},
++      std::string* response_body = nullptr) {
+     net::TestDelegate delegate;
+     auto request = request_context_->CreateRequest(
+         GURL(url), net::DEFAULT_PRIORITY, &delegate,
+@@ -490,6 +545,9 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
+     request->Start();
+     delegate.RunUntilComplete();
+     EXPECT_GE(delegate.request_status(), 0);
++    if (response_body) {
++      *response_body = delegate.data_received();
++    }
+     return request;
+   }
+ 
+@@ -522,6 +580,160 @@ class DevToolsWebSocketHandlerTest : public DevToolsHttpHandlerWithServerTest {
+   }
+ };
+ 
++TEST_F(DevToolsHttpHandlerWithServerTest, TargetPolicyFiltersJsonList) {
++  int port = StartServer();
++  auto* manager_delegate = MockDevToolsManagerDelegate::last_instance;
++  ON_CALL(*manager_delegate, AllowRemoteDebuggingTargetOperation(
++                                 testing::_, testing::_, testing::_))
++      .WillByDefault([](DevToolsManagerDelegate::RemoteDebuggingTargetOperation,
++                        std::string_view type, const GURL& url) {
++        return type == DevToolsAgentHost::kTypeBrowser ||
++               url.SchemeIsHTTPOrHTTPS();
++      });
++
++  auto public_target = base::MakeRefCounted<MockDevToolsAgentHostWithType>(
++      DevToolsAgentHost::kTypePage, GURL("https://example.test/public"));
++  auto internal_target = base::MakeRefCounted<MockDevToolsAgentHostWithType>(
++      DevToolsAgentHost::kTypePage, GURL("chrome://aegis"));
++  EXPECT_CALL(*manager_delegate,
++              RemoteDebuggingTargets(DevToolsManagerDelegate::kFrame))
++      .WillOnce(
++          Return(DevToolsAgentHost::List{public_target, internal_target}));
++
++  std::string body;
++  auto request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/json/list", port), {}, &body);
++  EXPECT_EQ(200, request->GetResponseCode());
++  EXPECT_THAT(body, HasSubstr("https://example.test/public"));
++  EXPECT_THAT(body, Not(HasSubstr("chrome://aegis")));
++  StopServer();
++}
++
++TEST_F(DevToolsHttpHandlerWithServerTest,
++       DeniedActivateAndCloseMatchMissingTarget) {
++  int port = StartServer();
++  auto* manager_delegate = MockDevToolsManagerDelegate::last_instance;
++  ON_CALL(*manager_delegate, AllowRemoteDebuggingTargetOperation(
++                                 testing::_, testing::_, testing::_))
++      .WillByDefault([](DevToolsManagerDelegate::RemoteDebuggingTargetOperation,
++                        std::string_view type, const GURL& url) {
++        return type == DevToolsAgentHost::kTypeBrowser ||
++               url.SchemeIsHTTPOrHTTPS();
++      });
++
++  int internal_attach_count = 0;
++  int internal_activate_count = 0;
++  int internal_close_count = 0;
++  const std::string internal_id =
++      base::Uuid::GenerateRandomV4().AsLowercaseString();
++  scoped_refptr<DevToolsAgentHost> internal_target = DevToolsAgentHost::Forward(
++      internal_id, std::make_unique<PolicyTestExternalAgentDelegate>(
++                       DevToolsAgentHost::kTypePage, GURL("chrome://aegis"),
++                       &internal_attach_count, &internal_activate_count,
++                       &internal_close_count));
++
++  std::string denied_activate_body;
++  auto request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/json/activate/%s", port,
++                         internal_id.c_str()),
++      {}, &denied_activate_body);
++  EXPECT_EQ(404, request->GetResponseCode());
++  EXPECT_EQ(0, internal_activate_count);
++
++  std::string denied_close_body;
++  request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/json/close/%s", port,
++                         internal_id.c_str()),
++      {}, &denied_close_body);
++  EXPECT_EQ(404, request->GetResponseCode());
++  EXPECT_EQ(0, internal_close_count);
++
++  internal_target = nullptr;
++  std::string missing_body;
++  request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/json/activate/%s", port,
++                         internal_id.c_str()),
++      {}, &missing_body);
++  EXPECT_EQ(404, request->GetResponseCode());
++  EXPECT_EQ(missing_body, denied_activate_body);
++  EXPECT_EQ(missing_body, denied_close_body);
++
++  int public_attach_count = 0;
++  int public_activate_count = 0;
++  int public_close_count = 0;
++  const std::string public_id =
++      base::Uuid::GenerateRandomV4().AsLowercaseString();
++  scoped_refptr<DevToolsAgentHost> public_target = DevToolsAgentHost::Forward(
++      public_id,
++      std::make_unique<PolicyTestExternalAgentDelegate>(
++          DevToolsAgentHost::kTypePage, GURL("https://example.test/public"),
++          &public_attach_count, &public_activate_count, &public_close_count));
++  request = RunRequestUntilCompletion(base::StringPrintf(
++      "http://127.0.0.1:%d/json/activate/%s", port, public_id.c_str()));
++  EXPECT_EQ(200, request->GetResponseCode());
++  EXPECT_EQ(1, public_activate_count);
++  request = RunRequestUntilCompletion(base::StringPrintf(
++      "http://127.0.0.1:%d/json/close/%s", port, public_id.c_str()));
++  EXPECT_EQ(200, request->GetResponseCode());
++  EXPECT_EQ(1, public_close_count);
++
++  StopServer();
++}
++
++TEST_F(DevToolsWebSocketHandlerTest, DeniedPageWebSocketMatchesMissingTarget) {
++  int port = StartServer();
++  auto* manager_delegate = MockDevToolsManagerDelegate::last_instance;
++  ON_CALL(*manager_delegate, AllowRemoteDebuggingTargetOperation(
++                                 testing::_, testing::_, testing::_))
++      .WillByDefault([](DevToolsManagerDelegate::RemoteDebuggingTargetOperation,
++                        std::string_view type, const GURL& url) {
++        return type == DevToolsAgentHost::kTypeBrowser ||
++               url.SchemeIsHTTPOrHTTPS();
++      });
++
++  int attach_count = 0;
++  int activate_count = 0;
++  int close_count = 0;
++  const std::string target_id =
++      base::Uuid::GenerateRandomV4().AsLowercaseString();
++  scoped_refptr<DevToolsAgentHost> target = DevToolsAgentHost::Forward(
++      target_id, std::make_unique<PolicyTestExternalAgentDelegate>(
++                     DevToolsAgentHost::kTypePage, GURL("chrome://aegis"),
++                     &attach_count, &activate_count, &close_count));
++  const auto upgrade_headers = std::map<std::string, std::string>{
++      {"connection", "upgrade"}, {"upgrade", "websocket"}};
++  std::string denied_body;
++  auto request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/devtools/page/%s", port,
++                         target_id.c_str()),
++      upgrade_headers, &denied_body);
++  EXPECT_EQ(404, request->GetResponseCode());
++  EXPECT_EQ(0, attach_count);
++
++  target = nullptr;
++  std::string missing_body;
++  request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/devtools/page/%s", port,
++                         target_id.c_str()),
++      upgrade_headers, &missing_body);
++  EXPECT_EQ(404, request->GetResponseCode());
++  EXPECT_EQ(missing_body, denied_body);
++
++  target = DevToolsAgentHost::Forward(
++      target_id,
++      std::make_unique<PolicyTestExternalAgentDelegate>(
++          DevToolsAgentHost::kTypePage, GURL("https://example.test/public"),
++          &attach_count, &activate_count, &close_count));
++  request = RunRequestUntilCompletion(
++      base::StringPrintf("http://127.0.0.1:%d/devtools/page/%s", port,
++                         target_id.c_str()),
++      upgrade_headers);
++  EXPECT_EQ(500, request->GetResponseCode());
++  EXPECT_EQ(1, attach_count);
++
++  StopServer();
++}
++
+ TEST_F(DevToolsWebSocketHandlerTest,
+        TestRejectsWebSocketConnectionsWithOrigin) {
+   int port = StartServer();
+diff --git a/content/browser/devtools/devtools_pipe_handler.cc b/content/browser/devtools/devtools_pipe_handler.cc
+index b15a18e514..4ea3ddd8b7 100644
+--- a/content/browser/devtools/devtools_pipe_handler.cc
++++ b/content/browser/devtools/devtools_pipe_handler.cc
+@@ -463,6 +463,33 @@ void DevToolsPipeHandler::DispatchProtocolMessage(
+ 
+ void DevToolsPipeHandler::AgentHostClosed(DevToolsAgentHost* agent_host) {}
+ 
++bool DevToolsPipeHandler::IsRemoteDebuggingClient() {
++  return true;
++}
++
++void DevToolsPipeHandler::RegisterRemoteDebuggingTarget(
++    std::string_view target_id) {
++  owned_target_ids_.emplace(target_id);
++}
++
++bool DevToolsPipeHandler::OwnsRemoteDebuggingTarget(
++    std::string_view target_id) {
++  return owned_target_ids_.contains(std::string(target_id));
++}
++
++void DevToolsPipeHandler::BeginRemoteDebuggingTargetCreation() {
++  ++target_creation_depth_;
++}
++
++void DevToolsPipeHandler::EndRemoteDebuggingTargetCreation() {
++  CHECK_GT(target_creation_depth_, 0u);
++  --target_creation_depth_;
++}
++
++bool DevToolsPipeHandler::IsRemoteDebuggingTargetCreationInProgress() {
++  return target_creation_depth_ > 0;
++}
++
+ bool DevToolsPipeHandler::MayAccessAllCookies() {
+   return true;
+ }
+diff --git a/content/browser/devtools/devtools_pipe_handler.h b/content/browser/devtools/devtools_pipe_handler.h
+index 6263c0a817..64398c5e30 100644
+--- a/content/browser/devtools/devtools_pipe_handler.h
++++ b/content/browser/devtools/devtools_pipe_handler.h
+@@ -5,6 +5,10 @@
+ #ifndef CONTENT_BROWSER_DEVTOOLS_DEVTOOLS_PIPE_HANDLER_H_
+ #define CONTENT_BROWSER_DEVTOOLS_DEVTOOLS_PIPE_HANDLER_H_
+ 
++#include <cstddef>
++#include <set>
++#include <string>
++
+ #include "base/containers/span.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/weak_ptr.h"
+@@ -33,6 +37,12 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
+   void DispatchProtocolMessage(DevToolsAgentHost* agent_host,
+                                base::span<const uint8_t> message) override;
+   void AgentHostClosed(DevToolsAgentHost* agent_host) override;
++  bool IsRemoteDebuggingClient() override;
++  void RegisterRemoteDebuggingTarget(std::string_view target_id) override;
++  bool OwnsRemoteDebuggingTarget(std::string_view target_id) override;
++  void BeginRemoteDebuggingTargetCreation() override;
++  void EndRemoteDebuggingTargetCreation() override;
++  bool IsRemoteDebuggingTargetCreationInProgress() override;
+   bool MayAccessAllCookies() override;
+   bool UsesBinaryProtocol() override;
+   bool AllowUnsafeOperations() override;
+@@ -57,6 +67,8 @@ class DevToolsPipeHandler : public DevToolsAgentHostClient {
+   int read_fd_;
+   int write_fd_;
+   bool shutting_down_ = false;
++  std::set<std::string> owned_target_ids_;
++  size_t target_creation_depth_ = 0;
+   base::WeakPtrFactory<DevToolsPipeHandler> weak_factory_{this};
+ };
+ 
+diff --git a/content/browser/devtools/devtools_session.cc b/content/browser/devtools/devtools_session.cc
+index 2ebf82b54b..856d4f6a40 100644
+--- a/content/browser/devtools/devtools_session.cc
++++ b/content/browser/devtools/devtools_session.cc
+@@ -185,6 +185,33 @@ DevToolsSession* DevToolsSession::GetRootSession() {
+   return root_session_ ? root_session_.get() : this;
+ }
+ 
++bool DevToolsSession::IsRemoteDebuggingClient() {
++  return GetRootSession()->GetClient()->IsRemoteDebuggingClient();
++}
++
++void DevToolsSession::RegisterRemoteDebuggingTarget(
++    std::string_view target_id) {
++  GetRootSession()->GetClient()->RegisterRemoteDebuggingTarget(target_id);
++}
++
++bool DevToolsSession::OwnsRemoteDebuggingTarget(std::string_view target_id) {
++  return GetRootSession()->GetClient()->OwnsRemoteDebuggingTarget(target_id);
++}
++
++void DevToolsSession::BeginRemoteDebuggingTargetCreation() {
++  GetRootSession()->GetClient()->BeginRemoteDebuggingTargetCreation();
++}
++
++void DevToolsSession::EndRemoteDebuggingTargetCreation() {
++  GetRootSession()->GetClient()->EndRemoteDebuggingTargetCreation();
++}
++
++bool DevToolsSession::IsRemoteDebuggingTargetCreationInProgress() {
++  return GetRootSession()
++      ->GetClient()
++      ->IsRemoteDebuggingTargetCreationInProgress();
++}
++
+ void DevToolsSession::AddHandler(
+     std::unique_ptr<protocol::DevToolsDomainHandler> handler) {
+   DCHECK(agent_host_);
+diff --git a/content/browser/devtools/devtools_session.h b/content/browser/devtools/devtools_session.h
+index d9f1fc60e5..0de7860670 100644
+--- a/content/browser/devtools/devtools_session.h
++++ b/content/browser/devtools/devtools_session.h
+@@ -218,6 +218,12 @@ class DevToolsSession : public protocol::FrontendChannel,
+   // DevToolsExternalAgentProxy implementation.
+   void DispatchOnClientHost(base::span<const uint8_t> message) override;
+   void ConnectionClosed() override;
++  bool IsRemoteDebuggingClient() override;
++  void RegisterRemoteDebuggingTarget(std::string_view target_id) override;
++  bool OwnsRemoteDebuggingTarget(std::string_view target_id) override;
++  void BeginRemoteDebuggingTargetCreation() override;
++  void EndRemoteDebuggingTargetCreation() override;
++  bool IsRemoteDebuggingTargetCreationInProgress() override;
+ 
+   void FallThrough(int call_id,
+                    crdtp::span<uint8_t> method,
+diff --git a/content/browser/devtools/devtools_session_unittest.cc b/content/browser/devtools/devtools_session_unittest.cc
+index 59c64656a1..1eeb5be73b 100644
+--- a/content/browser/devtools/devtools_session_unittest.cc
++++ b/content/browser/devtools/devtools_session_unittest.cc
+@@ -8,6 +8,8 @@
+ #include <vector>
+ 
+ #include "base/containers/span.h"
++#include "content/public/browser/devtools_agent_host_client.h"
++#include "content/public/browser/devtools_external_agent_proxy.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/inspector_protocol/crdtp/cbor.h"
+ #include "third_party/inspector_protocol/crdtp/json.h"
+@@ -28,6 +30,32 @@ std::vector<uint8_t> JsonToCbor(const std::string& json) {
+   return cbor;
+ }
+ 
++class StubDevToolsAgentHostClient : public DevToolsAgentHostClient {
++ public:
++  void DispatchProtocolMessage(DevToolsAgentHost* agent_host,
++                               base::span<const uint8_t> message) override {}
++  void AgentHostClosed(DevToolsAgentHost* agent_host) override {}
++};
++
++class RemoteDevToolsAgentHostClient final : public StubDevToolsAgentHostClient {
++ public:
++  bool IsRemoteDebuggingClient() override { return true; }
++};
++
++TEST(DevToolsAgentHostClientTest, RemoteDebuggingDefaultsToFalse) {
++  StubDevToolsAgentHostClient client;
++  EXPECT_FALSE(client.IsRemoteDebuggingClient());
++}
++
++TEST(DevToolsSessionTest, ExternalAgentProxyPreservesRemoteDebuggingClient) {
++  RemoteDevToolsAgentHostClient client;
++  DevToolsSession session(&client,
++                          DevToolsSession::Mode::kDoesNotSupportTabTarget);
++  DevToolsExternalAgentProxy& proxy = session;
++
++  EXPECT_TRUE(proxy.IsRemoteDebuggingClient());
++}
++
+ TEST(DevToolsSessionValidateMessageTest, MalformedJson) {
+   std::vector<uint8_t> message = ToVector("{invalid cbor/json");
+   EXPECT_FALSE(DevToolsSession::ValidateMessage("", false, message));
+diff --git a/content/browser/devtools/protocol/devtools_protocol_browsertest.cc b/content/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index 7a7dcb052e..4edb4a5d18 100644
+--- a/content/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/content/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -1605,6 +1605,40 @@ class FlattenedDevToolsProtocolTest
+   }
+ };
+ 
++IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest,
++                       RemoteDebuggingProvenanceReachesFlattenedTargetSession) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  NavigateToURLBlockUntilNavigationsComplete(
++      shell(), embedded_test_server()->GetURL("/devtools/navigation.html"), 1);
++
++  DevToolsAgentHostClient& protocol_client = *this;
++  EXPECT_FALSE(protocol_client.IsRemoteDebuggingClient());
++  SetIsRemoteDebuggingClient(true);
++  EXPECT_TRUE(protocol_client.IsRemoteDebuggingClient());
++
++  scoped_refptr<DevToolsAgentHost> target_host =
++      DevToolsAgentHost::GetOrCreateFor(shell()->web_contents());
++  AttachToBrowserTarget();
++
++  base::DictValue command_params;
++  command_params.Set("targetId", target_host->GetId());
++  command_params.Set("flatten", true);
++  const base::DictValue* result =
++      SendCommandSync("Target.attachToTarget", std::move(command_params));
++  ASSERT_TRUE(result);
++  const std::string* session_id = result->FindString("sessionId");
++  ASSERT_TRUE(session_id);
++
++  auto* browser_host = static_cast<DevToolsAgentHostImpl*>(agent_host_.get());
++  DevToolsSession* child_session =
++      browser_host->GetSessionByIdForTesting(*session_id);
++  ASSERT_TRUE(child_session);
++  EXPECT_TRUE(child_session->GetClient()->IsRemoteDebuggingClient());
++
++  DevToolsExternalAgentProxy& child_proxy = *child_session;
++  EXPECT_TRUE(child_proxy.IsRemoteDebuggingClient());
++}
++
+ IN_PROC_BROWSER_TEST_F(FlattenedDevToolsProtocolTest,
+                        SessionIdValidationSucceeds) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
+index f051aaf1c5..c8f90ee921 100644
+--- a/content/browser/devtools/protocol/target_handler.cc
++++ b/content/browser/devtools/protocol/target_handler.cc
+@@ -93,8 +93,63 @@ static const char kInitializerScript[] = R"(
+ 
+ static const char kTargetNotFound[] = "No target with given id found";
+ 
+-std::unique_ptr<Target::TargetInfo> BuildTargetInfo(
++bool AllowRemoteTargetOperation(
++    DevToolsSession* root_session,
++    DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) {
++  if (!root_session->GetClient()->IsRemoteDebuggingClient()) {
++    return true;
++  }
++  DevToolsManagerDelegate* delegate =
++      DevToolsManager::GetInstance()->delegate();
++  return !delegate || delegate->AllowRemoteDebuggingTargetOperation(
++                          operation, target_type, url);
++}
++
++bool AllowRemoteTargetOperation(
++    DevToolsSession* root_session,
++    DevToolsManagerDelegate::RemoteDebuggingTargetOperation operation,
+     DevToolsAgentHost* agent_host) {
++  DevToolsAgentHostClient* client = root_session->GetClient();
++  const bool is_initial_blank_target =
++      agent_host && client->IsRemoteDebuggingClient() &&
++      agent_host->GetURL().spec() == url::kAboutBlankURL &&
++      (agent_host->GetType() == DevToolsAgentHost::kTypePage ||
++       agent_host->GetType() == DevToolsAgentHost::kTypeTab);
++  if (is_initial_blank_target &&
++      client->IsRemoteDebuggingTargetCreationInProgress()) {
++    client->RegisterRemoteDebuggingTarget(agent_host->GetId());
++  }
++  if (is_initial_blank_target &&
++      client->OwnsRemoteDebuggingTarget(agent_host->GetId()) &&
++      operation != DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++                       kExposeDevToolsProtocol &&
++      operation != DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++                       kOpenDevTools) {
++    return true;
++  }
++  return agent_host && AllowRemoteTargetOperation(root_session, operation,
++                                                  agent_host->GetType(),
++                                                  agent_host->GetURL());
++}
++
++bool CanExposeRelatedTarget(DevToolsSession* root_session,
++                            const std::string& target_id) {
++  if (!root_session->GetClient()->IsRemoteDebuggingClient()) {
++    return true;
++  }
++  scoped_refptr<DevToolsAgentHost> related_target =
++      DevToolsAgentHost::GetForId(target_id);
++  return AllowRemoteTargetOperation(
++      root_session,
++      DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++      related_target.get());
++}
++
++std::unique_ptr<Target::TargetInfo> BuildTargetInfo(
++    DevToolsAgentHost* agent_host,
++    DevToolsSession* root_session) {
+   auto* host = static_cast<DevToolsAgentHostImpl*>(agent_host);
+   std::unique_ptr<Target::TargetInfo> target_info =
+       Target::TargetInfo::Create()
+@@ -105,10 +160,12 @@ std::unique_ptr<Target::TargetInfo> BuildTargetInfo(
+           .SetAttached(host->IsAttached())
+           .SetCanAccessOpener(host->CanAccessOpener())
+           .Build();
+-  if (!host->GetParentId().empty()) {
++  if (!host->GetParentId().empty() &&
++      CanExposeRelatedTarget(root_session, host->GetParentId())) {
+     target_info->SetParentId(host->GetParentId());
+   }
+-  if (!host->GetOpenerId().empty()) {
++  if (!host->GetOpenerId().empty() &&
++      CanExposeRelatedTarget(root_session, host->GetOpenerId())) {
+     target_info->SetOpenerId(host->GetOpenerId());
+   }
+   if (!host->GetOpenerFrameId().empty()) {
+@@ -504,8 +561,9 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
+       }
+     }
+     handler->attached_sessions_[id] = std::move(session);
+-    handler->frontend_->AttachedToTarget(id, BuildTargetInfo(agent_host.get()),
+-                                         waiting_for_debugger);
++    handler->frontend_->AttachedToTarget(
++        id, BuildTargetInfo(agent_host.get(), handler->root_session_),
++        waiting_for_debugger);
+     return id;
+   }
+ 
+@@ -650,6 +708,30 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
+ 
+   bool IsTrusted() override { return GetRootClient()->IsTrusted(); }
+ 
++  bool IsRemoteDebuggingClient() override {
++    return GetRootClient()->IsRemoteDebuggingClient();
++  }
++
++  void RegisterRemoteDebuggingTarget(std::string_view target_id) override {
++    GetRootClient()->RegisterRemoteDebuggingTarget(target_id);
++  }
++
++  bool OwnsRemoteDebuggingTarget(std::string_view target_id) override {
++    return GetRootClient()->OwnsRemoteDebuggingTarget(target_id);
++  }
++
++  void BeginRemoteDebuggingTargetCreation() override {
++    GetRootClient()->BeginRemoteDebuggingTargetCreation();
++  }
++
++  void EndRemoteDebuggingTargetCreation() override {
++    GetRootClient()->EndRemoteDebuggingTargetCreation();
++  }
++
++  bool IsRemoteDebuggingTargetCreationInProgress() override {
++    return GetRootClient()->IsRemoteDebuggingTargetCreationInProgress();
++  }
++
+   bool MayReadLocalFiles() override {
+     return GetRootClient()->MayReadLocalFiles();
+   }
+@@ -947,6 +1029,12 @@ bool TargetHandler::AutoAttach(TargetAutoAttacher* source,
+       host->GetType() == DevToolsAgentHost::kTypeServiceWorker) {
+     return false;
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++          host)) {
++    return false;
++  }
+   std::optional<std::string> session_id =
+       Session::Attach(this, host, waiting_for_debugger, flatten_auto_attach_);
+   if (!session_id) {
+@@ -990,12 +1078,47 @@ void TargetHandler::SetAttachedTargetsOfType(
+ }
+ 
+ void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
++  const bool may_enumerate = AllowRemoteTargetOperation(
++      root_session_,
++      DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++      host);
++  const bool should_report =
++      discover() && discover_target_filter_->Match(*host) && may_enumerate;
++  const bool was_reported = reported_hosts_.contains(host);
++  if (was_reported && !should_report) {
++    frontend_->TargetDestroyed(host->GetId());
++    reported_hosts_.erase(host);
++  } else if (!was_reported && should_report) {
++    frontend_->TargetCreated(BuildTargetInfo(host, root_session_));
++    reported_hosts_.insert(host);
++    return;
++  }
++
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++          host) &&
++      !policy_detaching_hosts_.contains(host)) {
++    policy_detaching_hosts_.insert(host);
++    std::vector<Session*> sessions_to_detach;
++    for (const auto& entry : attached_sessions_) {
++      if (entry.second->IsAttachedTo(host->GetId())) {
++        sessions_to_detach.push_back(entry.second.get());
++      }
++    }
++    for (Session* session : sessions_to_detach) {
++      session->ResumeIfThrottled();
++      session->Detach(false);
++    }
++    policy_detaching_hosts_.erase(host);
++  }
++
+   // Only send target info for targets we reported in any way.
+   if (!reported_hosts_.contains(host) &&
+       auto_attached_sessions_.find(host) == auto_attached_sessions_.end()) {
+     return;
+   }
+-  frontend_->TargetInfoChanged(BuildTargetInfo(host));
++  frontend_->TargetInfoChanged(BuildTargetInfo(host, root_session_));
+ }
+ 
+ void TargetHandler::AutoAttacherDestroyed(TargetAutoAttacher* auto_attacher) {
+@@ -1145,6 +1268,13 @@ void TargetHandler::AutoAttachRelated(
+     callback->sendFailure(Response::InvalidParams(kTargetNotFound));
+     return;
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++          host.get())) {
++    callback->sendFailure(Response::InvalidParams(kTargetNotFound));
++    return;
++  }
+   TargetAutoAttacher* auto_attacher = host->auto_attacher();
+   if (!auto_attacher) {
+     callback->sendFailure(
+@@ -1191,6 +1321,12 @@ Response TargetHandler::AttachToTarget(const std::string& target_id,
+   if (!agent_host) {
+     return Response::InvalidParams(kTargetNotFound);
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++          agent_host.get())) {
++    return Response::InvalidParams(kTargetNotFound);
++  }
+   std::optional<std::string> session_id =
+       Session::Attach(this, agent_host.get(), false, flatten.value_or(false));
+   if (!session_id) {
+@@ -1207,6 +1343,12 @@ Response TargetHandler::AttachToBrowserTarget(std::string* out_session_id) {
+   scoped_refptr<DevToolsAgentHost> agent_host =
+       DevToolsAgentHost::CreateForBrowser(
+           nullptr, DevToolsAgentHost::CreateServerSocketCallback());
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++          agent_host.get())) {
++    return Response::InvalidParams(kTargetNotFound);
++  }
+   std::optional<std::string> session_id =
+       Session::Attach(this, agent_host.get(), false, true);
+   if (!session_id) {
+@@ -1261,7 +1403,13 @@ Response TargetHandler::GetTargetInfo(
+   if (!agent_host) {
+     return Response::InvalidParams(kTargetNotFound);
+   }
+-  *target_info = BuildTargetInfo(agent_host.get());
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kGetInfo,
++          agent_host.get())) {
++    return Response::InvalidParams(kTargetNotFound);
++  }
++  *target_info = BuildTargetInfo(agent_host.get(), root_session_);
+   return Response::Success();
+ }
+ 
+@@ -1275,6 +1423,12 @@ Response TargetHandler::ActivateTarget(const std::string& target_id) {
+   if (!agent_host) {
+     return Response::InvalidParams(kTargetNotFound);
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kActivate,
++          agent_host.get())) {
++    return Response::InvalidParams(kTargetNotFound);
++  }
+   agent_host->Activate();
+   return Response::Success();
+ }
+@@ -1286,6 +1440,12 @@ Response TargetHandler::CloseTarget(const std::string& target_id,
+   if (!agent_host) {
+     return Response::InvalidParams(kTargetNotFound);
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kClose,
++          agent_host.get())) {
++    return Response::InvalidParams(kTargetNotFound);
++  }
+   if (access_mode_ == AccessMode::kAutoAttachOnly) {
+     // Only allow to close the targets that we are attached to.
+     if (target_id != owner_target_id_ &&
+@@ -1315,6 +1475,14 @@ void TargetHandler::ExposeDevToolsProtocol(
+     callback->sendFailure(Response::InvalidParams(kTargetNotFound));
+     return;
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++              kExposeDevToolsProtocol,
++          agent_host.get())) {
++    callback->sendFailure(Response::InvalidParams(kTargetNotFound));
++    return;
++  }
+ 
+   if (BrowserToPageConnector::GetInstanceMap()[agent_host.get()]) {
+     callback->sendFailure(Response::ServerError(base::StringPrintf(
+@@ -1407,8 +1575,27 @@ Response TargetHandler::CreateTarget(
+       return response;
+     }
+ 
++    if (!AllowRemoteTargetOperation(
++            root_session_,
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kCreate,
++            DevToolsAgentHost::kTypePage, gurl)) {
++      return Response::InvalidParams(kTargetNotFound);
++    }
++
++    base::ScopedClosureRunner target_creation_scope;
++    if (root_session_->GetClient()->IsRemoteDebuggingClient() &&
++        gurl.spec() == url::kAboutBlankURL) {
++      root_session_->GetClient()->BeginRemoteDebuggingTargetCreation();
++      target_creation_scope.ReplaceClosure(base::BindOnce(
++          &DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
++          base::Unretained(root_session_->GetClient())));
++    }
++
+     *out_target_id =
+         hidden_target_manager_.CreateHiddenTarget(gurl, browser_context);
++    if (root_session_->GetClient()->IsRemoteDebuggingClient()) {
++      root_session_->GetClient()->RegisterRemoteDebuggingTarget(*out_target_id);
++    }
+     return Response::Success();
+   }
+ 
+@@ -1422,12 +1609,33 @@ Response TargetHandler::CreateTarget(
+                        DevToolsSession::Mode::kSupportsTabTarget)
+           ? DevToolsManagerDelegate::kTab
+           : DevToolsManagerDelegate::kFrame;
++  const std::string_view target_type_name =
++      target_type == DevToolsManagerDelegate::kTab
++          ? DevToolsAgentHost::kTypeTab
++          : DevToolsAgentHost::kTypePage;
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kCreate,
++          target_type_name, gurl)) {
++    return Response::InvalidParams(kTargetNotFound);
++  }
++  base::ScopedClosureRunner target_creation_scope;
++  if (root_session_->GetClient()->IsRemoteDebuggingClient() &&
++      gurl.spec() == url::kAboutBlankURL) {
++    root_session_->GetClient()->BeginRemoteDebuggingTargetCreation();
++    target_creation_scope.ReplaceClosure(base::BindOnce(
++        &DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation,
++        base::Unretained(root_session_->GetClient())));
++  }
+   scoped_refptr<DevToolsAgentHost> agent_host =
+       delegate->CreateNewTarget(gurl, target_type, new_window.value_or(false));
+   if (!agent_host) {
+     return Response::ServerError("Not supported");
+   }
+   *out_target_id = agent_host->GetId();
++  if (root_session_->GetClient()->IsRemoteDebuggingClient()) {
++    root_session_->GetClient()->RegisterRemoteDebuggingTarget(*out_target_id);
++  }
+   return Response::Success();
+ }
+ 
+@@ -1446,7 +1654,11 @@ Response TargetHandler::GetTargets(
+   DCHECK(effective_filter);
+   *target_infos = std::make_unique<protocol::Array<Target::TargetInfo>>();
+   for (const auto& host : DevToolsAgentHost::GetOrCreateAll()) {
+-    if (effective_filter->Match(*host)) {
++    if (effective_filter->Match(*host) &&
++        AllowRemoteTargetOperation(
++            root_session_,
++            DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++            host.get())) {
+ #if !BUILDFLAG(IS_ANDROID)
+       // Do not return initial WebUI as the DevTools targets.
+       // TODO(crbug.com/444358999): consider adding this into the `filter` when
+@@ -1455,7 +1667,7 @@ Response TargetHandler::GetTargets(
+         continue;
+       }
+ #endif  //  !BUILDFLAG(IS_ANDROID)
+-      (*target_infos)->emplace_back(BuildTargetInfo(host.get()));
++      (*target_infos)->emplace_back(BuildTargetInfo(host.get(), root_session_));
+     }
+   }
+   return Response::Success();
+@@ -1470,13 +1682,17 @@ bool TargetHandler::ShouldForceDevToolsAgentHostCreation() {
+ void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
+   DCHECK(discover());
+   DCHECK(host);
+-  if (!discover_target_filter_->Match(*host)) {
++  if (!discover_target_filter_->Match(*host) ||
++      !AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kEnumerate,
++          host)) {
+     return;
+   }
+   // If we start discovering late, all existing agent hosts will be reported,
+   // but we could have already attached to some.
+   if (!reported_hosts_.contains(host)) {
+-    frontend_->TargetCreated(BuildTargetInfo(host));
++    frontend_->TargetCreated(BuildTargetInfo(host, root_session_));
+     reported_hosts_.insert(host);
+   }
+ }
+@@ -1715,6 +1931,13 @@ Response TargetHandler::GetDevToolsTarget(
+   if (!agent_host) {
+     return protocol::Response::InvalidParams(kTargetNotFound);
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++              kOpenDevTools,
++          agent_host.get())) {
++    return protocol::Response::InvalidParams(kTargetNotFound);
++  }
+ 
+   if (scoped_refptr<DevToolsAgentHost> devtools_agent_host =
+           agent_host->GetDevToolsAgentHost()) {
+@@ -1736,6 +1959,13 @@ Response TargetHandler::OpenDevTools(const std::string& target_id,
+   if (!agent_host) {
+     return protocol::Response::InvalidParams(kTargetNotFound);
+   }
++  if (!AllowRemoteTargetOperation(
++          root_session_,
++          DevToolsManagerDelegate::RemoteDebuggingTargetOperation::
++              kOpenDevTools,
++          agent_host.get())) {
++    return protocol::Response::InvalidParams(kTargetNotFound);
++  }
+ 
+   scoped_refptr<DevToolsAgentHost> devtools_agent_host =
+       agent_host->OpenDevTools(
+diff --git a/content/browser/devtools/protocol/target_handler.h b/content/browser/devtools/protocol/target_handler.h
+index b0ab17ba10..6c64cfa899 100644
+--- a/content/browser/devtools/protocol/target_handler.h
++++ b/content/browser/devtools/protocol/target_handler.h
+@@ -223,6 +223,8 @@ class TargetHandler : public DevToolsDomainHandler,
+   bool observing_agent_hosts_ = false;
+   std::map<std::string, std::unique_ptr<Session>> attached_sessions_;
+   std::set<raw_ptr<DevToolsAgentHost, SetExperimental>> reported_hosts_;
++  base::flat_set<raw_ptr<DevToolsAgentHost, CtnExperimental>>
++      policy_detaching_hosts_;
+   base::flat_set<std::string> dispose_on_detach_context_ids_;
+   base::flat_map<std::string, net::ProxyConfig> contexts_with_overridden_proxy_;
+   base::flat_set<raw_ptr<Throttle, CtnExperimental>> throttles_;
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
+index 91305ce2fd..27564af166 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.cc
++++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
+@@ -78,6 +78,7 @@
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom.h"
++#include "url/url_constants.h"
+ 
+ #if BUILDFLAG(IS_ANDROID)
+ #include "content/browser/renderer_host/compositor_impl_android.h"
+@@ -744,8 +745,9 @@ void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
+   std::vector<DevToolsSession*> restricted_sessions;
+   bool is_webui = frame_host_ && frame_host_->web_ui();
+   for (DevToolsSession* session : sessions()) {
+-    if (!session->GetClient()->MayAttachToURL(url, is_webui))
++    if (!ShouldAllowSessionForNavigation(url, is_webui, session)) {
+       restricted_sessions.push_back(session);
++    }
+   }
+   if (!restricted_sessions.empty())
+     ForceDetachRestrictedSessions(restricted_sessions);
+@@ -1078,7 +1080,50 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+       !manager->delegate()->AllowInspectingRenderFrameHost(frame_host)) {
+     return false;
+   }
+-  return session->GetClient()->MayAttachToRenderFrameHost(frame_host);
++  if (!session->GetClient()->MayAttachToRenderFrameHost(frame_host)) {
++    return false;
++  }
++  DevToolsAgentHost* agent_host = session->GetAgentHost();
++  if (!session->GetClient()->IsRemoteDebuggingClient()) {
++    return true;
++  }
++  const bool is_initial_blank_target =
++      agent_host && frame_host->GetLastCommittedURL().spec() ==
++                        url::kAboutBlankURL &&
++      (agent_host->GetType() == DevToolsAgentHost::kTypePage ||
++       agent_host->GetType() == DevToolsAgentHost::kTypeTab);
++  if (is_initial_blank_target &&
++      session->GetClient()->IsRemoteDebuggingTargetCreationInProgress()) {
++    session->GetClient()->RegisterRemoteDebuggingTarget(agent_host->GetId());
++  }
++  const bool owns_initial_blank_target =
++      is_initial_blank_target &&
++      session->GetClient()->OwnsRemoteDebuggingTarget(agent_host->GetId());
++  return owns_initial_blank_target || !manager->delegate() ||
++         (agent_host &&
++          manager->delegate()->AllowRemoteDebuggingTargetOperation(
++              DevToolsManagerDelegate::RemoteDebuggingTargetOperation::kAttach,
++              agent_host->GetType(), frame_host->GetLastCommittedURL()));
++}
++
++bool RenderFrameDevToolsAgentHost::ShouldAllowSessionForNavigation(
++    const GURL& url,
++    bool is_webui,
++    DevToolsSession* session) {
++  if (!session->GetClient()->MayAttachToURL(url, is_webui)) {
++    return false;
++  }
++  if (!session->GetClient()->IsRemoteDebuggingClient()) {
++    return true;
++  }
++  DevToolsManagerDelegate* delegate =
++      DevToolsManager::GetInstance()->delegate();
++  DevToolsAgentHost* agent_host = session->GetAgentHost();
++  return !delegate ||
++         (agent_host && delegate->AllowRemoteDebuggingTargetOperation(
++                            DevToolsManagerDelegate::
++                                RemoteDebuggingTargetOperation::kNavigate,
++                            agent_host->GetType(), url));
+ }
+ 
+ void RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories() {
+diff --git a/content/browser/devtools/render_frame_devtools_agent_host.h b/content/browser/devtools/render_frame_devtools_agent_host.h
+index 8750034ee7..e08e0fc106 100644
+--- a/content/browser/devtools/render_frame_devtools_agent_host.h
++++ b/content/browser/devtools/render_frame_devtools_agent_host.h
+@@ -87,6 +87,9 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
+   static void AttachToWebContents(WebContents* web_contents);
+   static bool ShouldAllowSession(RenderFrameHost* frame_host,
+                                  DevToolsSession* session);
++  static bool ShouldAllowSessionForNavigation(const GURL& url,
++                                              bool is_webui,
++                                              DevToolsSession* session);
+ 
+   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
+ 
+diff --git a/content/browser/devtools/web_contents_devtools_agent_host.cc b/content/browser/devtools/web_contents_devtools_agent_host.cc
+index 8cc6931820..5e9ee7c040 100644
+--- a/content/browser/devtools/web_contents_devtools_agent_host.cc
++++ b/content/browser/devtools/web_contents_devtools_agent_host.cc
+@@ -375,7 +375,23 @@ void WebContentsDevToolsAgentHost::RenderFrameHostChanged(
+ void WebContentsDevToolsAgentHost::ReadyToCommitNavigation(
+     NavigationHandle* navigation_handle) {
+   CHECK(web_contents());
++  scoped_refptr<WebContentsDevToolsAgentHost> protect;
+   NavigationRequest* request = NavigationRequest::From(navigation_handle);
++  if (navigation_handle->IsInPrimaryMainFrame()) {
++    std::vector<DevToolsSession*> restricted_sessions;
++    const bool is_webui =
++        web_contents()->GetPrimaryMainFrame()->GetWebUI() != nullptr;
++    for (DevToolsSession* session : sessions()) {
++      if (!RenderFrameDevToolsAgentHost::ShouldAllowSessionForNavigation(
++              request->common_params().url, is_webui, session)) {
++        restricted_sessions.push_back(session);
++      }
++    }
++    if (!restricted_sessions.empty()) {
++      protect = this;
++      ForceDetachRestrictedSessions(restricted_sessions);
++    }
++  }
+   for (auto* tracing : protocol::TracingHandler::ForAgentHost(this)) {
+     tracing->ReadyToCommitNavigation(request);
+   }
+diff --git a/content/public/browser/devtools_agent_host_client.cc b/content/public/browser/devtools_agent_host_client.cc
+index a8370fc086..dd3f3c513e 100644
+--- a/content/public/browser/devtools_agent_host_client.cc
++++ b/content/public/browser/devtools_agent_host_client.cc
+@@ -20,6 +20,26 @@ bool DevToolsAgentHostClient::IsTrusted() {
+   return true;
+ }
+ 
++bool DevToolsAgentHostClient::IsRemoteDebuggingClient() {
++  return false;
++}
++
++void DevToolsAgentHostClient::RegisterRemoteDebuggingTarget(
++    std::string_view target_id) {}
++
++bool DevToolsAgentHostClient::OwnsRemoteDebuggingTarget(
++    std::string_view target_id) {
++  return false;
++}
++
++void DevToolsAgentHostClient::BeginRemoteDebuggingTargetCreation() {}
++
++void DevToolsAgentHostClient::EndRemoteDebuggingTargetCreation() {}
++
++bool DevToolsAgentHostClient::IsRemoteDebuggingTargetCreationInProgress() {
++  return false;
++}
++
+ // File access is allowed by default, only restricted clients that represent
+ // not entirely trusted protocol peers override this to false.
+ bool DevToolsAgentHostClient::MayReadLocalFiles() {
+diff --git a/content/public/browser/devtools_agent_host_client.h b/content/public/browser/devtools_agent_host_client.h
+index a05939c7f0..66c4a06e2f 100644
+--- a/content/public/browser/devtools_agent_host_client.h
++++ b/content/public/browser/devtools_agent_host_client.h
+@@ -6,6 +6,7 @@
+ #define CONTENT_PUBLIC_BROWSER_DEVTOOLS_AGENT_HOST_CLIENT_H_
+ 
+ #include <optional>
++#include <string_view>
+ 
+ #include "base/containers/span.h"
+ #include "content/common/content_export.h"
+@@ -45,6 +46,19 @@ class CONTENT_EXPORT DevToolsAgentHostClient {
+   // manipulate browser altogether.
+   virtual bool IsTrusted();
+ 
++  // Returns true when this client originates from a remote debugging
++  // transport such as the HTTP/WebSocket server or --remote-debugging-pipe.
++  // Local DevTools frontends keep the default false value.
++  virtual bool IsRemoteDebuggingClient();
++
++  // Records and queries targets created by this exact remote debugging root
++  // client. Forwarding clients must delegate these calls to the root client.
++  virtual void RegisterRemoteDebuggingTarget(std::string_view target_id);
++  virtual bool OwnsRemoteDebuggingTarget(std::string_view target_id);
++  virtual void BeginRemoteDebuggingTargetCreation();
++  virtual void EndRemoteDebuggingTargetCreation();
++  virtual bool IsRemoteDebuggingTargetCreationInProgress();
++
+   // Returns true if the client has unrestricted access to all cookies
+   // (i.e., MayAttachToURL() returns true for all possible cookie domains).
+   // When true, cookie operations like clearBrowserCookies can use a more
+diff --git a/content/public/browser/devtools_external_agent_proxy.h b/content/public/browser/devtools_external_agent_proxy.h
+index 558a7316e9..5823aaa2e1 100644
+--- a/content/public/browser/devtools_external_agent_proxy.h
++++ b/content/public/browser/devtools_external_agent_proxy.h
+@@ -5,6 +5,8 @@
+ #ifndef CONTENT_PUBLIC_BROWSER_DEVTOOLS_EXTERNAL_AGENT_PROXY_H_
+ #define CONTENT_PUBLIC_BROWSER_DEVTOOLS_EXTERNAL_AGENT_PROXY_H_
+ 
++#include <string_view>
++
+ #include "base/containers/span.h"
+ 
+ namespace content {
+@@ -18,6 +20,14 @@ class DevToolsExternalAgentProxy {
+   // Informs the client that the connection has closed.
+   virtual void ConnectionClosed() = 0;
+ 
++  // Preserves remote-debugging provenance across forwarding agent hosts.
++  virtual bool IsRemoteDebuggingClient() = 0;
++  virtual void RegisterRemoteDebuggingTarget(std::string_view target_id) = 0;
++  virtual bool OwnsRemoteDebuggingTarget(std::string_view target_id) = 0;
++  virtual void BeginRemoteDebuggingTargetCreation() = 0;
++  virtual void EndRemoteDebuggingTargetCreation() = 0;
++  virtual bool IsRemoteDebuggingTargetCreationInProgress() = 0;
++
+   virtual ~DevToolsExternalAgentProxy() {}
+ };
+ 
+diff --git a/content/public/browser/devtools_manager_delegate.cc b/content/public/browser/devtools_manager_delegate.cc
+index 8257dd01a7..ce930829bb 100644
+--- a/content/public/browser/devtools_manager_delegate.cc
++++ b/content/public/browser/devtools_manager_delegate.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "content/public/browser/devtools_manager_delegate.h"
++
+ #include "base/values.h"
+ #include "content/public/browser/devtools_agent_host.h"
+ 
+@@ -67,6 +68,13 @@ DevToolsAgentHost::List DevToolsManagerDelegate::RemoteDebuggingTargets(
+   return DevToolsAgentHost::GetOrCreateAll();
+ }
+ 
++bool DevToolsManagerDelegate::AllowRemoteDebuggingTargetOperation(
++    RemoteDebuggingTargetOperation operation,
++    std::string_view target_type,
++    const GURL& url) {
++  return true;
++}
++
+ scoped_refptr<DevToolsAgentHost> DevToolsManagerDelegate::CreateNewTarget(
+     const GURL& url,
+     DevToolsManagerDelegate::TargetType target_type,
+diff --git a/content/public/browser/devtools_manager_delegate.h b/content/public/browser/devtools_manager_delegate.h
+index f08399ea04..bf07a527cc 100644
+--- a/content/public/browser/devtools_manager_delegate.h
++++ b/content/public/browser/devtools_manager_delegate.h
+@@ -8,6 +8,7 @@
+ #include <memory>
+ #include <optional>
+ #include <string>
++#include <string_view>
+ 
+ #include "base/containers/span.h"
+ #include "base/memory/scoped_refptr.h"
+@@ -111,8 +112,33 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
+   // https://docs.google.com/document/d/14aeiC_zga2SS0OXJd6eIFj8N0o5LGwUpuqa4L8NKoR4/
+   enum TargetType { kFrame, kTab };
+ 
++  // Remote CDP operations that expose or mutate a concrete target. Callers
++  // must pass the URL being authorized: the target's current URL for existing
++  // target operations, and the requested destination for create/navigation.
++  enum class RemoteDebuggingTargetOperation {
++    kEnumerate,
++    kCreate,
++    kWebSocketConnect,
++    kGetInfo,
++    kAttach,
++    kNavigate,
++    kActivate,
++    kClose,
++    kExposeDevToolsProtocol,
++    kOpenDevTools,
++  };
++
+   // Returns all targets embedder would like to report as debuggable remotely.
+-  virtual DevToolsAgentHost::List RemoteDebuggingTargets(TargetType target_type);
++  virtual DevToolsAgentHost::List RemoteDebuggingTargets(
++      TargetType target_type);
++
++  // Returns whether a remote debugging client may perform `operation` on a
++  // target of `target_type` at `url`. Local DevTools clients do not call this
++  // hook. The default preserves the embedder's existing behavior.
++  virtual bool AllowRemoteDebuggingTargetOperation(
++      RemoteDebuggingTargetOperation operation,
++      std::string_view target_type,
++      const GURL& url);
+ 
+   // Creates new inspectable target given the |url|.
+   // |new_window| is currently only used on Android - Desktop platforms handle
+diff --git a/content/public/test/test_devtools_protocol_client.cc b/content/public/test/test_devtools_protocol_client.cc
+index 6a9f1d47de..5df2714a24 100644
+--- a/content/public/test/test_devtools_protocol_client.cc
++++ b/content/public/test/test_devtools_protocol_client.cc
+@@ -205,6 +205,10 @@ bool TestDevToolsProtocolClient::IsTrusted() {
+   return is_trusted_;
+ }
+ 
++bool TestDevToolsProtocolClient::IsRemoteDebuggingClient() {
++  return is_remote_debugging_client_;
++}
++
+ bool TestDevToolsProtocolClient::MayReadLocalFiles() {
+   return may_read_local_files_;
+ }
+diff --git a/content/public/test/test_devtools_protocol_client.h b/content/public/test/test_devtools_protocol_client.h
+index 9f93516e55..bdea4bcf07 100644
+--- a/content/public/test/test_devtools_protocol_client.h
++++ b/content/public/test/test_devtools_protocol_client.h
+@@ -95,6 +95,9 @@ class TestDevToolsProtocolClient : public DevToolsAgentHostClient {
+     allow_unsafe_operations_ = allow;
+   }
+   void SetIsTrusted(bool is_trusted) { is_trusted_ = is_trusted; }
++  void SetIsRemoteDebuggingClient(bool is_remote_debugging_client) {
++    is_remote_debugging_client_ = is_remote_debugging_client;
++  }
+   void SetNavigationInitiatorOrigin(
+       const url::Origin& navigation_initiator_origin) {
+     navigation_initiator_origin_ = navigation_initiator_origin;
+@@ -129,6 +132,7 @@ class TestDevToolsProtocolClient : public DevToolsAgentHostClient {
+   std::optional<url::Origin> GetNavigationInitiatorOrigin() override;
+   bool AllowUnsafeOperations() override;
+   bool IsTrusted() override;
++  bool IsRemoteDebuggingClient() override;
+   bool MayReadLocalFiles() override;
+   bool MayWriteLocalFiles() override;
+   bool MayAttachToURL(const GURL& url, bool is_webui) override;
+@@ -150,6 +154,7 @@ class TestDevToolsProtocolClient : public DevToolsAgentHostClient {
+ 
+   bool allow_unsafe_operations_ = true;
+   bool is_trusted_ = true;
++  bool is_remote_debugging_client_ = false;
+   std::optional<url::Origin> navigation_initiator_origin_;
+   bool may_read_local_files_ = true;
+   bool may_write_local_files_ = true;
+-- 
+2.52.0
+

@@ -1,34 +1,60 @@
-# Play Store 预留（未上架）
+[**English**](./play-store.md) | [简体中文](./play-store.zh-CN.md) | [繁體中文](./play-store.zh-TW.md)
 
-侧载先发。下面是上架前必须对齐的身份，避免以后改 applicationId。
+# Play Store readiness draft: No-Go
 
-| 项 | 值 |
+This document records future identity, policy, and review gates. It is not a submitted Play declaration.
+
+The current project has:
+
+- no Android build produced from the current source;
+- no current identity-bound APK or AAB;
+- no production upload key;
+- no Play Console application or uploaded artifact; and
+- no approved Data Safety form or public privacy-policy URL for a candidate.
+
+No Play action is authorized by this draft.
+
+## Reserved identity
+
+| Item | Reserved target |
 |---|---|
-| applicationId | `app.gcsa.aegis` |
-| 显示名 | GCSA-aegis |
-| 短名 | Aegis |
-| 默认语言 | 中文（简体） |
-| 架构 | arm64-v8a（`target_cpu = "arm64"`） |
-| 签名 | Play App Signing；本地只保留 **upload key** |
+| Application ID | `app.gcsa.aegis` |
+| Display name | GCSA-aegis |
+| Short name | Aegis |
+| Default listing language | Simplified Chinese |
+| Target architecture | `arm64-v8a` (`target_cpu = "arm64"`) |
+| Future signing | Play App Signing; only the upload key is held locally |
 
-## 不能用的品牌
+The GN application-ID setting proves configuration only. It does not prove the final APK/AAB identity, signing, branding, or store compliance.
 
-不要写 Chrome、Google Chrome，不要用 Chromium 默认图标上架。侧载阶段显示名已改成 GCSA-aegis；上架前替换 `chrome/android/java/res_chromium_base/mipmap-*` 图标。
+Do not publish under Chrome or Google Chrome branding, and do not use Chromium's default icon as the final store asset.
 
-## Data safety（按当前产品填）
+## Data Safety boundary
 
-- 不收集账号、位置、通讯录
-- 页面摘要默认不出机器
-- 无第三方分析 SDK
-- EasyList 更新是用户设备拉过滤列表，不是把浏览记录上传
+The statements below are design goals that require verification against the exact candidate. They must not be copied directly into Play Console:
 
-## 上架清单
+- The product is intended not to collect account, location, contacts, or similar personal data for GCSA-aegis services.
+- Chromium default services, metrics, crash reporting, updates, and all third-party components still require candidate-specific review.
+- Android page summary is currently unavailable. Any future implementation must document local processing and every user-configured remote destination accurately.
+- The product is intended not to bundle a third-party analytics SDK, but the final dependency graph, runtime configuration, and network capture must prove that claim.
+- EasyList or other external updates must not expose browsing history, page URLs, persistent identifiers, or unnecessary headers, and their behavior must be disclosed truthfully.
 
-1. Play Console 应用（包名 `app.gcsa.aegis`，建完不能改）
-2. `AEGIS_PLAY_STORE_PASS=… bash apps/browser/scripts/android-keystore.sh`（密钥不入库）
-3. 隐私政策 URL（本地优先、无遥测）
-4. 截图：`chrome://aegis`、钓鱼拦截页、跟踪拦截
-5. 内容分级、目标受众
-6. 内部测试轨先发，再开放测试
+The final Data Safety form must be based on the same APK/AAB, version configuration, permissions, storage behavior, dependency set, and captured network behavior that will be submitted.
 
-GN 里已经写了 `chrome_public_manifest_package = "app.gcsa.aegis"`（`args/aegis-android.gn`）。
+## Publication gates
+
+1. Build a current-source Release APK/AAB in a clean, supported x86-64 Linux environment.
+2. Bind the repository commit, Chromium commit, 56 Chromium patches, 2 nested V8 patches, GN arguments, package identity, and artifact hashes in a verified manifest.
+3. Pass device tests for First Run, normal browsing, `chrome://aegis`, core protections, lifecycle, storage, upgrades, and network behavior.
+4. Replace default Chromium icons and audit all names, screenshots, descriptions, and restricted brand assets.
+5. Complete permission, outbound-network, data-storage, logging, native-library, third-party-license, and privacy-policy reviews.
+6. After explicit approval, create the Play Console application, enroll in Play App Signing, generate the upload key, and complete the listing and Data Safety form.
+7. Start with an internal test track and review response before deciding on wider testing.
+
+An accepted internal Android candidate is not automatically Play-ready.
+
+## Related documents
+
+- [Android build and acceptance status](./android.md)
+- [Fork architecture](./fork-architecture.md)
+- [Browser README](../README.md)

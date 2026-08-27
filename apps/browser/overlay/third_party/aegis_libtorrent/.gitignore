@@ -1,0 +1,7 @@
+/build/
+/build-notls/
+/dist/
+/install/
+/install-notls/
+/source/
+/source-staging.*/

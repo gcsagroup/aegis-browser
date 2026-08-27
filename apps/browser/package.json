@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "bootstrap": "bash ./scripts/bootstrap-depot-tools.sh",
+    "bootstrap:libtorrent": "bash ./scripts/bootstrap-libtorrent.sh",
     "fetch": "bash ./scripts/fetch-chromium.sh",
     "sync": "bash ./scripts/fetch-chromium.sh --sync-only",
     "apply-patches": "bash ./scripts/apply-patches.sh",
@@ -15,17 +16,26 @@
     "build:android": "bash ./scripts/build-android.sh",
     "package": "bash ./scripts/package.sh",
     "package:android": "bash ./scripts/package-android.sh",
+    "identity": "node ./scripts/write-build-identity.mjs",
+    "test:scripts": "bash ./scripts/status_test.sh && bash ./scripts/run_test.sh && bash ./scripts/apply-patches_test.sh && bash ./scripts/build-package-guards_test.sh && bash ./scripts/package-android-guards_test.sh && bash ./scripts/sign-chromium-app_test.sh && bash -n ./scripts/bootstrap-libtorrent.sh && bash -n ./scripts/install-threat-index.sh && bash -n ./scripts/build-release.sh && bash -n ./scripts/package.sh && bash -n ./scripts/package-android.sh && bash -n ./scripts/sign-chromium-app.sh && node --check ./scripts/write-build-identity.mjs && node ./scripts/write-build-identity.mjs --self-test && node --check ./scripts/verify-bytecode-shadow-runtime.mjs && node ./scripts/verify-bytecode-shadow-runtime.mjs --self-test && node --check ./scripts/verify-cdp-runtime.mjs && node --check ./scripts/verify-download-runtime.mjs && node --check ./scripts/verify-fingerprint-runtime.mjs && node ./scripts/verify-fingerprint-runtime.mjs --self-test && node --check ./scripts/verify-miner-runtime.mjs && node ./scripts/verify-miner-runtime.mjs --self-test && node --check ./scripts/verify-multisite-runtime.mjs",
+    "verify:cdp-runtime": "node ./scripts/verify-cdp-runtime.mjs",
+    "verify:download-runtime": "node ./scripts/verify-download-runtime.mjs",
+    "verify:bytecode-shadow-runtime": "node ./scripts/verify-bytecode-shadow-runtime.mjs",
+    "verify:fingerprint-runtime": "node ./scripts/verify-fingerprint-runtime.mjs --require-webgpu",
+    "verify:miner-runtime": "node ./scripts/verify-miner-runtime.mjs",
+    "verify:multisite-runtime": "bash ./scripts/verify-multisite-runtime.sh",
     "android:gclient": "bash ./scripts/enable-android-gclient.sh",
     "android:keystore": "bash ./scripts/android-keystore.sh",
     "sign": "bash ./scripts/sign-chromium-app.sh",
     "sync-core-snapshot": "bash ./scripts/sync-core-snapshot.sh",
     "sync-easylist": "bash ./scripts/sync-easylist.sh",
     "sync-policy-worker": "bash ./scripts/sync-policy-worker.sh",
+    "install-threat-index": "bash ./scripts/install-threat-index.sh",
     "run": "bash ./scripts/run.sh",
     "run:release": "bash ./scripts/run-release.sh",
-    "status": "bash ./scripts/status.sh",
-    "typecheck": "echo 'Chromium fork package: no TS typecheck'",
-    "lint": "echo 'Chromium fork package: see scripts/'",
-    "test": "bash ./scripts/status.sh"
+    "status": "bash ./scripts/status.sh"
+  },
+  "devDependencies": {
+    "@gcsa-aegis/core": "workspace:*"
   }
 }

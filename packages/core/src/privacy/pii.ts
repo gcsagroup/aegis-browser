@@ -8,6 +8,12 @@ interface PatternDef {
 
 const PATTERNS: PatternDef[] = [
   {
+    kind: "secret",
+    regex:
+      /\b(?:bearer\s+[A-Z0-9._~+\/-]{8,}={0,2}|eyJ[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}\.[A-Z0-9_-]{5,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth(?:orization)?|secret|password|passwd|token)\s*[:=]\s*(?:bearer\s+)?["']?[A-Z0-9._~+\/-]{8,}={0,2}["']?)/gi,
+    mask: () => "[REDACTED_SECRET]",
+  },
+  {
     kind: "email",
     regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
     mask: (m) => {

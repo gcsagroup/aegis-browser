@@ -29,6 +29,29 @@ struct ResourceRequest;
 
 namespace aegis {
 
+struct FilterListHttpValidators {
+  std::optional<std::string> etag;
+  std::optional<std::string> last_modified;
+};
+
+// 从响应头读取条件请求校验器。Last-Modified 属于 non-coalescing header，
+// 必须通过枚举接口读取，不能调用 GetNormalizedHeader。
+FilterListHttpValidators ExtractFilterListHttpValidators(
+    const net::HttpResponseHeaders* headers);
+
+// Filter-list requests never follow redirects or carry ambient credentials.
+void ApplyFilterListRequestSecurityPolicy(network::ResourceRequest* request);
+
+// Validators may be staged only after a completed 304 response, or a completed
+// 200 response with a body. A 200 validator is persisted only after that body
+// compiles into a usable blocking list.
+bool ShouldStageFilterListHttpValidators(int net_error,
+                                         int http_status,
+                                         bool has_response_body);
+
+// Empty/exception-only responses must never replace the last known-good list.
+bool IsUsableCompiledFilterList(const CompiledFilterList& list);
+
 // Downloads EasyList/EasyPrivacy, compiles host tables, persists them under
 // the profile dir, and publishes them to FilterListMatcher.
 //
@@ -73,7 +96,7 @@ class FilterListUpdater {
   void Persist(const CompiledFilterList& list);
   void BumpGeneration();
   void RememberValidators(const std::string& url,
-                          const net::HttpResponseHeaders* headers);
+                          FilterListHttpValidators validators);
   void AttachValidators(network::ResourceRequest* request);
   void ScheduleNextAutoUpdate(base::TimeDelta delay);
   void OnScheduledRefresh();
@@ -85,6 +108,7 @@ class FilterListUpdater {
   size_t fetch_index_ = 0;
   std::vector<std::string> urls_;
   std::vector<std::optional<CompiledFilterList>> compiled_by_index_;
+  FilterListHttpValidators pending_validators_;
   UpdateCallback pending_;
   std::unique_ptr<network::SimpleURLLoader> loader_;
   base::OneShotTimer refresh_timer_;

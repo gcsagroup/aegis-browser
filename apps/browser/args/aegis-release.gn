@@ -15,5 +15,11 @@ target_cpu = "arm64"
 proprietary_codecs = false
 ffmpeg_branding = "Chromium"
 
-# Keep false unless you have branding / licensing lined up.
-is_official_build = false
+# 这是面向用户的自包含构建。Chromium 的 official build 语义独立于
+# Google branding；它会关闭昂贵 DCHECK，并让 DUMP_WILL_BE_CHECK 只记录
+# 诊断信息，避免可恢复的合成器异常反复杀死 GPU 进程。
+is_official_build = true
+
+# 本地固定源码树未下载 Chromium 官方 PGO profile；先关闭 PGO，保证发布
+# 语义可复现。正式外发前应下载与 CHROMIUM_VERSION 对应的 profile 再启用。
+chrome_pgo_phase = 0

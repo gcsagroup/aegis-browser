@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
@@ -55,12 +56,15 @@ class FilterListMatcher {
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
   bool MatchesException(std::string_view host) const
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
-  bool MatchesPathRule(const GURL& url) const EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  bool MatchesPathRule(std::string_view host, std::string_view path) const
+      EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   mutable base::Lock lock_;
   CompiledFilterList list_ GUARDED_BY(lock_);
   base::flat_set<std::string> hosts_ GUARDED_BY(lock_);
   base::flat_set<std::string> exceptions_ GUARDED_BY(lock_);
+  base::flat_map<std::string, std::vector<std::string>> path_rules_
+      GUARDED_BY(lock_);
 };
 
 }  // namespace aegis

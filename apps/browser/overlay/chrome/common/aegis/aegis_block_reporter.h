@@ -8,8 +8,12 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/scoped_refptr.h"
+#include "url/gurl.h"
 
-class GURL;
+namespace base {
+class SequencedTaskRunner;
+}
 
 namespace aegis {
 
@@ -17,25 +21,42 @@ namespace aegis {
 // AegisNetThrottle 在 chrome/common 编译，不能直接依赖 chrome/browser。
 class BlockReporter {
  public:
-  using BlockedCallback = base::RepeatingCallback<
-      void(const GURL& url,
-           const std::string& reason,
-           const std::string& cname_alias)>;
-  using ReferrerCallback = base::RepeatingCallback<
-      void(const std::string& host, const std::vector<std::string>& keys)>;
+  using BlockedCallback =
+      base::RepeatingCallback<void(GURL url,
+                                   std::string reason,
+                                   std::string cname_alias,
+                                   std::string source_site,
+                                   std::string document_id)>;
+  using ReferrerCallback =
+      base::RepeatingCallback<void(std::string host,
+                                   std::vector<std::string> keys,
+                                   std::string source_site,
+                                   std::string document_id)>;
   using ParamsCallback = ReferrerCallback;
 
-  static void SetBlockedCallback(BlockedCallback callback);
-  static void SetReferrerCallback(ReferrerCallback callback);
-  static void SetParamsCallback(ParamsCallback callback);
+  // Installs one callback set whose targets all run on |task_runner|. Reports
+  // may arrive from any sequence after a URLLoaderThrottle is detached.
+  static void SetCallbacks(scoped_refptr<base::SequencedTaskRunner> task_runner,
+                           BlockedCallback blocked,
+                           ReferrerCallback referrer,
+                           ParamsCallback params);
+  static void ClearCallbacks();
 
   static void ReportBlocked(const GURL& url,
                             const std::string& reason,
-                            const std::string& cname_alias);
-  static void ReportStrippedReferrer(const std::string& host,
-                                     const std::vector<std::string>& keys);
-  static void ReportStrippedParams(const std::string& host,
-                                   const std::vector<std::string>& keys);
+                            const std::string& cname_alias,
+                            const std::string& source_site = std::string(),
+                            const std::string& document_id = std::string());
+  static void ReportStrippedReferrer(
+      const std::string& host,
+      const std::vector<std::string>& keys,
+      const std::string& source_site = std::string(),
+      const std::string& document_id = std::string());
+  static void ReportStrippedParams(
+      const std::string& host,
+      const std::vector<std::string>& keys,
+      const std::string& source_site = std::string(),
+      const std::string& document_id = std::string());
 };
 
 }  // namespace aegis

@@ -1,0 +1,132 @@
+From 573e044e75fc0529cd28ea2adcba55cfc04dd97b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 27 Aug 2026 06:34:27 +0800
+Subject: [PATCH] feat(aegis): add V8 bytecode shadow observation
+
+---
+ chrome/browser/chrome_content_browser_client.cc  | 11 +++++++++++
+ chrome/common/aegis/features.cc                  |  6 ++++++
+ chrome/common/aegis/features.h                   |  2 ++
+ chrome/common/aegis/features_unittest.cc         | 14 ++++++++++++++
+ .../renderer_host/render_process_host_impl.cc    | 16 ++++++++++++++++
+ 5 files changed, 49 insertions(+)
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index a3c8da77f2..faefd7ea02 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -2915,6 +2915,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+ #endif
+ 
+   if (process_type == switches::kRendererProcess) {
++    if (aegis::features::IsBytecodeShadowGloballyEnabled()) {
++      std::string javascript_flags =
++          command_line->GetSwitchValueASCII(blink::switches::kJavaScriptFlags);
++      if (!javascript_flags.empty()) {
++        javascript_flags.push_back(',');
++      }
++      javascript_flags.append("--aegis-bytecode-shadow");
++      command_line->AppendSwitchASCII(blink::switches::kJavaScriptFlags,
++                                      javascript_flags);
++    }
++
+     content::RenderProcessHost* process =
+         content::RenderProcessHost::FromID(child_process_id);
+     if (process) {
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index cd9248cc7f..b134264097 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -12,6 +12,7 @@ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPhishInterstitial, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFingerprintGuard, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisMinerGuard, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisBytecodeShadow, base::FEATURE_DISABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisFilterListUpdater, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisLinkSanitize, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisCookieJanitor, base::FEATURE_ENABLED_BY_DEFAULT);
+@@ -31,4 +32,9 @@ bool IsMinerGuardGloballyEnabled(bool pref_enabled) {
+          base::FeatureList::IsEnabled(kAegisMinerGuard);
+ }
+ 
++bool IsBytecodeShadowGloballyEnabled() {
++  return base::FeatureList::IsEnabled(kAegisEnabled) &&
++         base::FeatureList::IsEnabled(kAegisBytecodeShadow);
++}
++
+ }  // namespace aegis::features
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index 81bef9fcd2..41f5a6b8fe 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -14,6 +14,7 @@ BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
+ BASE_DECLARE_FEATURE(kAegisPhishInterstitial);
+ BASE_DECLARE_FEATURE(kAegisFingerprintGuard);
+ BASE_DECLARE_FEATURE(kAegisMinerGuard);
++BASE_DECLARE_FEATURE(kAegisBytecodeShadow);
+ BASE_DECLARE_FEATURE(kAegisFilterListUpdater);
+ BASE_DECLARE_FEATURE(kAegisLinkSanitize);
+ BASE_DECLARE_FEATURE(kAegisCookieJanitor);
+@@ -26,6 +27,7 @@ BASE_DECLARE_FEATURE(kAegisAiControl);
+ // 统一计算可发送给 Renderer 的有效开关，避免 UI 与 Blink 状态不一致。
+ bool IsFingerprintGuardGloballyEnabled(bool pref_enabled);
+ bool IsMinerGuardGloballyEnabled(bool pref_enabled);
++bool IsBytecodeShadowGloballyEnabled();
+ 
+ }  // namespace aegis::features
+ 
+diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
+index f9fa295f44..aca728b64d 100644
+--- a/chrome/common/aegis/features_unittest.cc
++++ b/chrome/common/aegis/features_unittest.cc
+@@ -64,5 +64,19 @@ TEST(AegisFeaturesTest, MinerGuardRequiresEveryGlobalGate) {
+   }
+ }
+ 
++TEST(AegisFeaturesTest, BytecodeShadowIsDefaultOffAndRequiresMasterGate) {
++  EXPECT_FALSE(IsBytecodeShadowGloballyEnabled());
++  {
++    base::test::ScopedFeatureList scoped_features;
++    scoped_features.InitWithFeatures({kAegisEnabled, kAegisBytecodeShadow}, {});
++    EXPECT_TRUE(IsBytecodeShadowGloballyEnabled());
++  }
++  {
++    base::test::ScopedFeatureList scoped_features;
++    scoped_features.InitWithFeatures({kAegisBytecodeShadow}, {kAegisEnabled});
++    EXPECT_FALSE(IsBytecodeShadowGloballyEnabled());
++  }
++}
++
+ }  // namespace
+ }  // namespace aegis::features
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 2a8abef097..bf0cc0d073 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4013,7 +4013,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       switches::kSchedulerBoostUrgent,
+ #endif
+   };
++  // Embedders may add a renderer-only V8 flag before browser switches are
++  // propagated. Preserve and merge it instead of letting an existing browser
++  // --js-flags value overwrite the embedder value.
++  const std::string embedder_javascript_flags =
++      renderer_cmd->GetSwitchValueASCII(blink::switches::kJavaScriptFlags);
+   renderer_cmd->CopySwitchesFrom(browser_cmd, kSwitchNames);
++  if (!embedder_javascript_flags.empty()) {
++    const std::string propagated_javascript_flags =
++        renderer_cmd->GetSwitchValueASCII(blink::switches::kJavaScriptFlags);
++    renderer_cmd->RemoveSwitch(blink::switches::kJavaScriptFlags);
++    renderer_cmd->AppendSwitchASCII(
++        blink::switches::kJavaScriptFlags,
++        propagated_javascript_flags.empty()
++            ? embedder_javascript_flags
++            : base::StrCat({propagated_javascript_flags, ",",
++                            embedder_javascript_flags}));
++  }
+ 
+   // Propagate WebNN switches needed by backends that run in the renderer.
+   renderer_cmd->CopySwitchesFrom(
+-- 
+2.52.0
+

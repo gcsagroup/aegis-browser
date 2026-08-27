@@ -1,6 +1,7 @@
 /**
- * Execution ports — implemented by apps/extension today and apps/browser later.
- * Core never imports chrome.* or Blink APIs.
+ * Browser policy contracts. Chromium adapters implement these capabilities at
+ * the network, storage, page, model, and Blink integration boundaries.
+ * Core never imports Chromium or Blink APIs.
  */
 
 import type { AegisSettings, BlockEvent, CookieCategory } from "./types.js";
@@ -57,7 +58,7 @@ export interface ModelRuntimePort {
 }
 
 export interface FingerprintGuardPort {
-  /** Extension: limited spoofing; Browser fork: engine-level farbling. */
+  /** Chromium fork: engine-level farbling. */
   applyProfile(profileId: string): Promise<void>;
   clear(): Promise<void>;
 }

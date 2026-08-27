@@ -96,6 +96,8 @@ export interface PageSnapshot {
   textSample: string;
   forms?: number;
   passwordFields?: number;
+  /** Forms whose submit target is outside the page's registrable domain. */
+  crossSiteFormActions?: number;
 }
 
 export type PiiKind =
@@ -104,6 +106,7 @@ export type PiiKind =
   | "idCard"
   | "creditCard"
   | "ssn"
+  | "secret"
   | "addressHint";
 
 export interface PiiMatch {

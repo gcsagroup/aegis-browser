@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metalink xmlns="urn:ietf:params:xml:ns:metalink">
+  <file name="aegis-fixture.bin">
+    <size>4096</size>
+    <hash type="sha-256">0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef</hash>
+    <url priority="1">https://mirror-a.example/aegis-fixture.bin?token=must-not-render</url>
+    <url priority="2">https://mirror-b.example/aegis-fixture.bin</url>
+    <url>http://127.0.0.1/aegis-fixture.bin</url>
+  </file>
+</metalink>

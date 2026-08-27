@@ -1,0 +1,95 @@
+From 9c0b1f276ba116e8b25a55466207e6586b44be16 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 27 Aug 2026 16:21:19 +0800
+Subject: [PATCH] fix(aegis): use bounded trace telemetry
+
+---
+ src/interpreter/aegis-bytecode-shadow.cc | 20 +++++++++++++-------
+ src/interpreter/aegis-bytecode-shadow.h  |  5 +++--
+ src/tracing/trace-categories.h           |  3 +++
+ 3 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/src/interpreter/aegis-bytecode-shadow.cc b/src/interpreter/aegis-bytecode-shadow.cc
+index fd1933dccf8..5968a0e31be 100644
+--- a/src/interpreter/aegis-bytecode-shadow.cc
++++ b/src/interpreter/aegis-bytecode-shadow.cc
+@@ -6,14 +6,13 @@
+ 
+ #include <algorithm>
+ #include <atomic>
+-#include <cinttypes>
+ 
+ #include "src/flags/flags.h"
+ #include "src/heap/parked-scope-inl.h"
+ #include "src/interpreter/bytecode-array-iterator.h"
+ #include "src/interpreter/bytecodes.h"
+ #include "src/objects/bytecode-array-inl.h"
+-#include "src/utils/utils.h"
++#include "src/tracing/trace-event.h"
+ 
+ namespace v8 {
+ namespace internal {
+@@ -89,6 +88,10 @@ AegisBytecodeShadowSummary SummarizeAegisBytecode(
+ 
+ void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes) {
+   if (!v8_flags.aegis_bytecode_shadow) return;
++  if (!TRACE_EVENT_CATEGORY_ENABLED(
++          TRACE_DISABLED_BY_DEFAULT("v8.aegis.bytecode_shadow"))) {
++    return;
++  }
+   const unsigned int configured_max_records =
+       v8_flags.aegis_bytecode_shadow_max_records;
+   if (!TryReserveRecord(configured_max_records)) return;
+@@ -97,11 +100,14 @@ void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes) {
+       v8_flags.aegis_bytecode_shadow_max_bytes;
+   const AegisBytecodeShadowSummary summary = SummarizeAegisBytecode(
+       bytecodes, std::min(configured_max_bytes, kHardMaxBytes));
+-  PrintF(stderr,
+-         "[AEGIS_BYTECODE_SHADOW] schema=1 mode=observe-only status=%s "
+-         "bytes=%d opcodes=%d signature=%016" PRIx64 " would_block=0\n",
+-         summary.skipped_too_large ? "skipped-too-large" : "observed",
+-         summary.byte_length, summary.opcode_count, summary.signature);
++  TRACE_EVENT_INSTANT(
++      TRACE_DISABLED_BY_DEFAULT("v8.aegis.bytecode_shadow"),
++      "V8.AegisBytecodeShadow", "record_schema", 2u, "signature_schema", 1u,
++      "mode_code", 0u, "status_code", summary.skipped_too_large ? 1u : 0u,
++      "bytes", static_cast<uint32_t>(summary.byte_length), "opcodes",
++      static_cast<uint32_t>(summary.opcode_count), "signature_hi",
++      static_cast<uint32_t>(summary.signature >> 32), "signature_lo",
++      static_cast<uint32_t>(summary.signature), "would_block", 0u);
+ }
+ 
+ }  // namespace interpreter
+diff --git a/src/interpreter/aegis-bytecode-shadow.h b/src/interpreter/aegis-bytecode-shadow.h
+index d42637ce3a9..103e690a65c 100644
+--- a/src/interpreter/aegis-bytecode-shadow.h
++++ b/src/interpreter/aegis-bytecode-shadow.h
+@@ -32,8 +32,9 @@ AegisOpcodeSequenceSignature(base::Vector<const uint8_t> opcodes);
+ V8_EXPORT_PRIVATE AegisBytecodeShadowSummary
+ SummarizeAegisBytecode(Handle<BytecodeArray> bytecodes, unsigned int max_bytes);
+ 
+-// Default-off, bounded, observe-only diagnostic hook. It emits categorical
+-// metadata to stderr and never changes the BytecodeArray or execution result.
++// Default-off, bounded, observe-only diagnostic hook. When its dedicated trace
++// category is enabled, it emits numeric metadata without source identity and
++// never changes the BytecodeArray or execution result.
+ void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes);
+ 
+ }  // namespace interpreter
+diff --git a/src/tracing/trace-categories.h b/src/tracing/trace-categories.h
+index 26a89e56755..3730c228fee 100644
+--- a/src/tracing/trace-categories.h
++++ b/src/tracing/trace-categories.h
+@@ -34,6 +34,9 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
+         TRACE_DISABLED_BY_DEFAULT("devtools.v8-source-rundown-sources"))
+         .SetTags("slow"),
+     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("v8")).SetTags("slow"),
++    perfetto::Category(
++        TRACE_DISABLED_BY_DEFAULT("v8.aegis.bytecode_shadow"))
++        .SetTags("slow"),
+     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("v8.compile")).SetTags("slow"),
+     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profiler"))
+         .SetTags("slow"),
+-- 
+2.52.0
+

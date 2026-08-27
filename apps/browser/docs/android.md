@@ -1,26 +1,37 @@
-# Android（M1：能装能开）
+[**English**](./android.md) | [简体中文](./android.zh-CN.md) | [繁體中文](./android.zh-TW.md)
 
-范围：只做 Android。iOS 不做完整浏览器。  
-钉扎：与桌面相同，Chromium `151.0.7922.77`。  
-首发：侧载 APK；包名已按 Play 预留。
+# Android status: No-Go
 
-## 这台 Mac 编不出 APK
+This document covers the Android browser target only. iOS and a WebView wrapper are outside the current product scope.
 
-Chromium 151 原文：*Building the Android client on Windows or Mac is not supported and doesn't work.*
+## Current evidence boundary
 
-另外，Android `gclient sync` + `out/AegisAndroid` 大约还要 **100GB**。不要在现有 Mac checkout 上加 `target_os = ["android"]`，会把磁盘撑满且仍然编不过。
+- Android uses the same pinned Chromium `151.0.7922.77` base as desktop.
+- The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
+- Current source contains 56 top-level Chromium patches and 2 nested V8 patches, but **no Android build has been produced from this current source**.
+- There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
+- The Android WebUI handler cannot currently obtain a normal web-page tab. Page summary must therefore be shown as unavailable on Android.
 
-本机角色：改 overlay / 打补丁。编译放到 **Linux**（推荐本机 [UTM](https://mac.getutm.app/) 开 Ubuntu，磁盘 ≥200GB、内存 ≥16GB）。
+Android remains **No-Go** until a current-source build and device acceptance are complete.
 
-官方 Android 构建机是 **x86-64 Linux**。Chromium 151 没有 Linux_arm64 的 clang/rust 主机包。若 Linux 虚拟机是 ARM64，需安装 `qemu-user` + `qemu-user-binfmt` 和 `libc6:amd64`，并在编译前 `ulimit -s unlimited`（否则 rustc 会 SIGSEGV）。x86-64 虚拟机更接近官方环境，但在 Apple Silicon 上同样是仿真。ARM64 上 `gperf` 的 CIPD 包不存在，脚本会改拉 `linux-amd64` 并用 qemu 跑。
+## Supported build environment
 
-## Linux 上怎么编
+Chromium Android clients cannot be built directly on macOS or Windows. This project requires a separate, supported **x86-64 Linux** checkout with:
 
-同一钉扎，单独一份 checkout（不要复用 Mac 那份）：
+- at least 200 GB of available disk space;
+- enough memory for a Chromium build;
+- the pinned Chromium base and exact patch inputs; and
+- no reuse of the macOS checkout as an Android build tree.
+
+Historical ARM64 Linux and QEMU experiments are not the current reproducible build gate.
+
+## Future build entry point
+
+The following commands fetch or synchronize network content. Run them only in an approved Linux environment and only after the exact source identity is fixed.
 
 ```bash
-# 在 Linux 上
 export PATH="$HOME/depot_tools:$PATH"
+
 pnpm --filter @gcsa-aegis/browser fetch
 bash apps/browser/scripts/enable-android-gclient.sh
 pnpm --filter @gcsa-aegis/browser apply-patches
@@ -29,27 +40,34 @@ pnpm --filter @gcsa-aegis/browser build:android
 pnpm --filter @gcsa-aegis/browser package:android
 ```
 
-产物：
+Expected candidate paths, which **do not currently exist as accepted outputs**, are:
 
-- `out/AegisAndroid/apks/ChromePublic.apk`（内部文件名仍叫 ChromePublic）
+- `$CHROMIUM_ROOT/src/out/AegisAndroid/apks/ChromePublic.apk`
 - `apps/browser/dist/GCSA-aegis.apk`
-- applicationId：`app.gcsa.aegis`
-- 桌面显示名：`GCSA-aegis`
+- application ID: `app.gcsa.aegis`
+- launcher name: `GCSA-aegis`
 
-侧载：
+An AAB path and Play signing identity must be defined and verified before store work.
 
-```bash
-adb install -r apps/browser/dist/GCSA-aegis.apk
-```
+## Acceptance criteria
 
-打开任意网页即为 M1 通过。设置 → 隐私和安全 → GCSA-aegis 打开模块页（也可在地址栏输入 `chrome://aegis`）。Android 上不显示 CDP / Ollama；摘要只走启发式。
+1. Replay all 56 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
+2. Build successfully and create a manifest that binds the repository commit, Chromium commit, both patch-series identities, GN arguments, and APK/AAB SHA-256.
+3. Verify final package ID, version, launcher name, icons, permissions, native libraries, and signing structure.
+4. Uninstall any old build, install the current APK on a representative device, complete First Run, open normal pages and `chrome://aegis`, and exercise core protections.
+5. Keep page summary explicitly unavailable until Android can capture and bind a real page document; after implementation, test collection, redaction, confirmation, navigation invalidation, and results on a device.
+6. Run startup, background/foreground, crash, storage, update, and network acceptance without residual processes or unexplained outbound traffic.
+7. Treat a passing internal candidate as separate from Play publication readiness.
 
-## Play 预留
+## Play Store boundary
 
-见 [play-store.md](./play-store.md)。侧载用 debug 签名即可；上架前再生成 upload key。
+See [Play Store readiness](./play-store.md). The project currently has no production upload key, Play Console application, uploaded artifact, or approved Data Safety declaration.
 
-## 刻意不做（Android）
+## Deliberately out of scope
 
-- iOS / WebView 壳
-- 本机 CDP / Ollama sidecar 当卖点
-- 把现有 Mac checkout 改成 Android 构建树
+- iOS or a WebView shell
+- CDP as an Android product feature
+- a local model sidecar as an Android promise
+- building Android in the existing macOS checkout
+
+Related public documents: [Browser README](../README.md) and [fork architecture](./fork-architecture.md).

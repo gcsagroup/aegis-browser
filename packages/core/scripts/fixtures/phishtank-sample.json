@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://phish-fixture.example/login#campaign",
+    "verified": "yes",
+    "online": "yes"
+  },
+  {
+    "url": "https://offline-fixture.example/",
+    "verified": "yes",
+    "online": "no"
+  }
+]

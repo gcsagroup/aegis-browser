@@ -5,6 +5,7 @@
 #define CHROME_COMMON_AEGIS_AEGIS_NET_THROTTLE_H_
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "third_party/blink/public/common/loader/url_loader_throttle.h"
@@ -22,11 +23,17 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
   static std::unique_ptr<blink::URLLoaderThrottle> MaybeCreate(
       bool tracker_blocking_enabled,
       bool cname_uncloak_enabled,
-      bool link_sanitize_enabled);
+      bool link_sanitize_enabled,
+      std::string paused_sites = std::string(),
+      std::string document_id = std::string(),
+      std::string default_source_site = std::string());
 
   AegisNetThrottle(bool tracker_blocking_enabled,
                    bool cname_uncloak_enabled,
-                   bool link_sanitize_enabled);
+                   bool link_sanitize_enabled,
+                   std::string paused_sites = std::string(),
+                   std::string document_id = std::string(),
+                   std::string default_source_site = std::string());
   AegisNetThrottle(const AegisNetThrottle&) = delete;
   AegisNetThrottle& operator=(const AegisNetThrottle&) = delete;
   ~AegisNetThrottle() override;
@@ -46,9 +53,9 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
 
  private:
   void MaybeSanitizeReferrer(network::ResourceRequest* request);
-  void MaybeSanitizeRedirect(net::RedirectInfo* redirect_info,
-                             network::HttpRequestHeadersUpdateParams*
-                                 headers_update_params);
+  void MaybeSanitizeRedirect(
+      net::RedirectInfo* redirect_info,
+      network::HttpRequestHeadersUpdateParams* headers_update_params);
   void MaybeBlock(const GURL& url);
   void MaybeBlockCloaked(const GURL& url,
                          const std::vector<std::string>& dns_aliases);
@@ -59,8 +66,13 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
   const bool tracker_blocking_enabled_;
   const bool cname_uncloak_enabled_;
   const bool link_sanitize_enabled_;
+  const std::string paused_sites_;
+  const std::string document_id_;
+  const std::string default_source_site_;
   bool is_main_document_ = false;
+  bool paused_for_site_ = false;
   GURL current_url_;
+  std::string source_site_;
 };
 
 }  // namespace aegis

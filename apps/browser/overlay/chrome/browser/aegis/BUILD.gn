@@ -1,10 +1,20 @@
 # Copyright 2026 GCSA
 # Intended path: chrome/browser/aegis/BUILD.gn
 
+import("//testing/test.gni")
+
 source_set("aegis") {
   sources = [
     "aegis_ai_control.cc",
     "aegis_ai_control.h",
+    "aegis_bounce_observer.cc",
+    "aegis_bounce_observer.h",
+    "aegis_cookie_janitor.cc",
+    "aegis_cookie_janitor.h",
+    "aegis_download_prefs.cc",
+    "aegis_download_prefs.h",
+    "aegis_link_sanitize_navigation_throttle.cc",
+    "aegis_link_sanitize_navigation_throttle.h",
     "aegis_phish_blocking_page.cc",
     "aegis_phish_blocking_page.h",
     "aegis_phish_controller_client.cc",
@@ -13,22 +23,24 @@ source_set("aegis") {
     "aegis_phish_navigation_throttle.h",
     "aegis_phish_tab_helper.cc",
     "aegis_phish_tab_helper.h",
-    "aegis_link_sanitize_navigation_throttle.cc",
-    "aegis_link_sanitize_navigation_throttle.h",
-    "aegis_cookie_janitor.cc",
-    "aegis_cookie_janitor.h",
-    "aegis_bounce_observer.cc",
-    "aegis_bounce_observer.h",
     "aegis_prefs.cc",
     "aegis_prefs.h",
     "aegis_service.cc",
     "aegis_service.h",
     "filter_list_updater.cc",
     "filter_list_updater.h",
-    "ollama_sidecar.cc",
-    "ollama_sidecar.h",
-    "policy_worker.cc",
-    "policy_worker.h",
+    "metalink_download_verifier.cc",
+    "metalink_download_verifier.h",
+    "metalink_parser.cc",
+    "metalink_parser.h",
+    "model_provider_client.cc",
+    "model_provider_client.h",
+    "privacy_event_store.cc",
+    "privacy_event_store.h",
+    "summary_policy.cc",
+    "summary_policy.h",
+    "threat_feed_updater.cc",
+    "threat_feed_updater.h",
   ]
   deps = [
     "//base",
@@ -36,23 +48,76 @@ source_set("aegis") {
     "//chrome/browser:browser_process",
     "//chrome/browser/preloading/prefetch/no_state_prefetch",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/tab_contents:impl",
     "//chrome/common",
-    "//chrome/common/aegis",
     "//chrome/common:mojo_bindings",
+    "//chrome/common/aegis",
+    "//components/download/public/common:public",
+    "//components/os_crypt/async/browser",
     "//components/pref_registry",
     "//components/prefs",
     "//components/resources",
     "//components/security_interstitials/content:security_interstitial_page",
     "//components/security_interstitials/core",
+    "//components/tabs:public",
     "//content/public/browser",
     "//content/public/common",
-    "//gin",
+    "//crypto",
     "//mojo/public/cpp/bindings",
     "//net",
+    "//services/data_decoder/public/cpp",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
-    "//url",
+    "//third_party/re2",
     "//ui/base",
-    "//v8",
+    "//url",
   ]
+  if (!is_android) {
+    sources += [
+      "summary_session.cc",
+      "summary_session.h",
+    ]
+  }
+  if (is_mac) {
+    sources += [
+      "aegis_torrent_client.cc",
+      "aegis_torrent_client.h",
+    ]
+    deps += [
+      "//chrome/services/aegis_torrent/public/mojom",
+      "//sandbox/mac:seatbelt_extension",
+    ]
+  }
+}
+
+test("aegis_browser_unittests") {
+  sources = [
+    "aegis_ai_control_unittest.cc",
+    "aegis_download_prefs_unittest.cc",
+    "aegis_phish_blocking_page_unittest.cc",
+    "aegis_phish_tab_helper_unittest.cc",
+    "aegis_service_unittest.cc",
+    "aegis_ui_handler_unittest.cc",
+    "filter_list_updater_unittest.cc",
+    "metalink_parser_unittest.cc",
+    "model_provider_client_unittest.cc",
+    "privacy_event_store_unittest.cc",
+    "summary_policy_unittest.cc",
+  ]
+  deps = [
+    ":aegis",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/webui/aegis",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
+    "//content/test:test_support",
+    "//net",
+    "//services/data_decoder/public/cpp:test_support",
+    "//services/network:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+  if (!is_android) {
+    sources += [ "summary_session_unittest.cc" ]
+  }
 }

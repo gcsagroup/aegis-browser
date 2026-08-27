@@ -1,0 +1,452 @@
+From 743445819afdaf2d4af686602a4237b7d4e26847 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 20:22:12 +0800
+Subject: [PATCH] feat(aegis): add native site protection surface
+
+---
+ chrome/browser/ui/views/toolbar/BUILD.gn      |   3 +
+ .../ui/views/toolbar/aegis_toolbar_button.cc  | 286 ++++++++++++++++++
+ .../ui/views/toolbar/aegis_toolbar_button.h   |  47 +++
+ .../browser/ui/views/toolbar/toolbar_view.cc  |   8 +
+ .../browser/ui/views/toolbar/toolbar_view.h   |   3 +
+ 5 files changed, 347 insertions(+)
+ create mode 100644 chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+ create mode 100644 chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+
+diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
+index f50374fe1c..1edab3916d 100644
+--- a/chrome/browser/ui/views/toolbar/BUILD.gn
++++ b/chrome/browser/ui/views/toolbar/BUILD.gn
+@@ -10,6 +10,7 @@ import("//ui/webui/webui_features.gni")
+ source_set("toolbar") {
+   public = [
+     "action_app_menu.h",
++    "aegis_toolbar_button.h",
+     "ai_overlay_toolbar_button.h",
+     "app_menu.h",
+     "app_menu_control.h",
+@@ -110,6 +111,7 @@ source_set("toolbar") {
+ source_set("impl") {
+   sources = [
+     "action_app_menu.cc",
++    "aegis_toolbar_button.cc",
+     "ai_overlay_toolbar_button.cc",
+     "app_menu.cc",
+     "back_forward_button.cc",
+@@ -169,6 +171,7 @@ source_set("impl") {
+     "//chrome/app/theme:theme_resources_grit",
+     "//chrome/app/vector_icons",
+     "//chrome/browser:browser_process",
++    "//chrome/browser/aegis",
+     "//chrome/browser:chained_back_navigation_tracker",
+     "//chrome/browser:flags",
+     "//chrome/browser:primitives",
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+new file mode 100644
+index 0000000000..2cbd206a83
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -0,0 +1,286 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/ui/views/toolbar/aegis_toolbar_button.h"
++
++#include <algorithm>
++#include <memory>
++#include <optional>
++#include <string>
++
++#include "base/functional/bind.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
++#include "build/build_config.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/views/location_bar/location_bar_bubble_delegate_view.h"
++#include "chrome/common/webui_url_constants.h"
++#include "components/vector_icons/vector_icons.h"
++#include "content/public/browser/page_navigator.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/common/referrer.h"
++#include "ui/accessibility/ax_enums.mojom.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/base/models/image_model.h"
++#include "ui/base/mojom/dialog_button.mojom.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/base/window_open_disposition.h"
++#include "ui/color/color_id.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/views/accessibility/view_accessibility.h"
++#include "ui/views/bubble/bubble_dialog_delegate_view.h"
++#include "ui/views/controls/button/md_text_button.h"
++#include "ui/views/controls/label.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/style/typography.h"
++#include "ui/views/view.h"
++#include "ui/views/widget/widget.h"
++
++namespace {
++
++constexpr int kBubbleWidth = 360;
++constexpr base::TimeDelta kIntroDuration = base::Seconds(4);
++
++bool UseChinese() {
++  return g_browser_process &&
++         base::StartsWith(g_browser_process->GetApplicationLocale(), "zh",
++                          base::CompareCase::INSENSITIVE_ASCII);
++}
++
++std::u16string Copy(std::u16string chinese, std::u16string english) {
++  return UseChinese() ? std::move(chinese) : std::move(english);
++}
++
++std::u16string EventKind(const std::string& kind) {
++  if (kind == "block") {
++    return Copy(u"拦截", u"Blocked");
++  }
++  if (kind == "param") {
++    return Copy(u"参数清理", u"Cleaned parameters");
++  }
++  if (kind == "cookie") {
++    return Copy(u"Cookie 清理", u"Cleaned cookies");
++  }
++  if (kind == "bounce") {
++    return Copy(u"跳转清理", u"Cleared bounce tracking");
++  }
++  if (kind == "phish") {
++    return Copy(u"钓鱼拦截", u"Blocked phishing");
++  }
++  return Copy(u"保护动作", u"Protection action");
++}
++
++views::Label* AddLabel(
++    views::View* parent,
++    std::u16string text,
++    int text_context = views::style::CONTEXT_DIALOG_BODY_TEXT) {
++  auto label = std::make_unique<views::Label>(std::move(text), text_context);
++  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  label->SetMultiLine(true);
++  label->SetAllowCharacterBreak(true);
++  return parent->AddChildView(std::move(label));
++}
++
++class AegisPageBubble : public LocationBarBubbleDelegateView {
++  METADATA_HEADER(AegisPageBubble, LocationBarBubbleDelegateView)
++
++ public:
++  AegisPageBubble(AegisToolbarButton* anchor,
++                  Browser* browser,
++                  aegis::PagePrivacySummary summary)
++      : LocationBarBubbleDelegateView(
++            views::BubbleAnchor(anchor),
++            browser->tab_strip_model()->GetActiveWebContents()),
++        browser_(browser),
++        summary_(std::move(summary)) {
++    SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
++    SetShowCloseButton(true);
++    set_margins(gfx::Insets::VH(16, 18));
++    const std::u16string title =
++        Copy(u"Aegis 当前站点保护", u"Aegis site protection");
++    SetTitle(title);
++    SetAccessibleTitle(title);
++    set_fixed_width(kBubbleWidth);
++  }
++
++  AegisPageBubble(const AegisPageBubble&) = delete;
++  AegisPageBubble& operator=(const AegisPageBubble&) = delete;
++  ~AegisPageBubble() override = default;
++
++ private:
++  void Init() override {
++    auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
++    layout->set_cross_axis_alignment(
++        views::BoxLayout::CrossAxisAlignment::kStretch);
++
++    const std::u16string site =
++        summary_.site_key.empty() ? Copy(u"当前内部页面", u"this internal page")
++                                  : base::UTF8ToUTF16(summary_.site_key);
++    AddLabel(this,
++             summary_.paused
++                 ? Copy(u"此站的跟踪与清理规则已暂停 10 分钟",
++                        u"Tracking and cleanup rules are paused for 10 minutes")
++                 : Copy(u"Aegis 正在保护 ", u"Aegis is protecting ") + site,
++             views::style::CONTEXT_DIALOG_TITLE);
++
++    AddLabel(this, Copy(u"本页已处理 ", u"Handled ") +
++                       base::NumberToString16(summary_.total) +
++                       Copy(u" 项", u" items on this page"));
++    AddLabel(this, Copy(u"阻止跟踪请求：", u"Blocked requests: ") +
++                       base::NumberToString16(summary_.blocked));
++    AddLabel(this, Copy(u"清理链接/Referer 参数：",
++                        u"Cleaned link/referrer parameters: ") +
++                       base::NumberToString16(summary_.params));
++    AddLabel(this, Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ") +
++                       base::NumberToString16(summary_.cookies));
++
++    if (!summary_.events.empty()) {
++      AddLabel(this, Copy(u"最近发生了什么", u"Recent actions"),
++               views::style::CONTEXT_DIALOG_TITLE);
++      const size_t visible_events = std::min<size_t>(5, summary_.events.size());
++      for (size_t index = 0; index < visible_events; ++index) {
++        const aegis::PrivacyEvent& event = summary_.events[index];
++        const std::u16string domain = base::UTF8ToUTF16(
++            event.display_domain.empty() ? event.site_key
++                                         : event.display_domain);
++        AddLabel(this, u"• " + EventKind(event.kind) + u" · " + domain +
++                           (event.count > 1
++                                ? u" ×" + base::NumberToString16(event.count)
++                                : std::u16string()));
++      }
++    }
++
++    if (!summary_.site_key.empty()) {
++      AddChildView(std::make_unique<views::MdTextButton>(
++          base::BindRepeating(&AegisPageBubble::TogglePause,
++                              base::Unretained(this)),
++          summary_.paused
++              ? Copy(u"恢复此站默认保护", u"Restore protection for this site")
++              : Copy(u"为此站暂停 10 分钟并重新加载",
++                     u"Pause this site for 10 minutes and reload")));
++    }
++    AddChildView(std::make_unique<views::MdTextButton>(
++        base::BindRepeating(&AegisPageBubble::OpenSettings,
++                            base::Unretained(this)),
++        Copy(u"打开完整设置", u"Open full settings")));
++    AddLabel(this, Copy(u"临时暂停不关闭钓鱼防护，也不会改变全局默认。",
++                        u"Temporary pause keeps phishing protection on and "
++                        u"does not change global defaults."));
++  }
++
++  void TogglePause() {
++    aegis::AegisService::GetInstance()->SetSitePaused(
++        summary_.site_key, !summary_.paused, base::Minutes(10));
++    if (GetWidget()) {
++      GetWidget()->Close();
++    }
++    chrome::Reload(browser_, WindowOpenDisposition::CURRENT_TAB);
++  }
++
++  void OpenSettings() {
++    browser_->OpenURL(content::OpenURLParams(
++                          GURL(chrome::kChromeUIAegisURL), content::Referrer(),
++                          WindowOpenDisposition::NEW_FOREGROUND_TAB,
++                          ui::PAGE_TRANSITION_LINK, false),
++                      /*navigation_handle_callback=*/{});
++    if (GetWidget()) {
++      GetWidget()->Close();
++    }
++  }
++
++  const raw_ptr<Browser> browser_;
++  const aegis::PagePrivacySummary summary_;
++};
++
++BEGIN_METADATA(AegisPageBubble)
++END_METADATA
++
++}  // namespace
++
++AegisToolbarButton::AegisToolbarButton(Browser* browser)
++    : ToolbarButton(base::BindRepeating(&AegisToolbarButton::OnPressed,
++                                        base::Unretained(this))),
++      browser_(browser) {
++  SetVectorIcon(vector_icons::kShieldIcon);
++  SetFlipCanvasOnPaintForRTLUI(false);
++  SetLabelSideSpacing(4);
++  GetViewAccessibility().SetHasPopup(ax::mojom::HasPopup::kDialog);
++  aegis::AegisService::GetInstance()->AddObserver(this);
++  Update(browser_->tab_strip_model()->GetActiveWebContents());
++}
++
++AegisToolbarButton::~AegisToolbarButton() {
++  aegis::AegisService::GetInstance()->RemoveObserver(this);
++  if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
++    bubble_tracker_.view()->GetWidget()->Close();
++  }
++}
++
++void AegisToolbarButton::Update(content::WebContents* web_contents) {
++  web_contents_ = web_contents;
++  Refresh();
++}
++
++void AegisToolbarButton::OnAegisStateChanged() {
++  web_contents_ = browser_->tab_strip_model()->GetActiveWebContents();
++  Refresh();
++}
++
++void AegisToolbarButton::OnPressed() {
++  if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
++    bubble_tracker_.view()->GetWidget()->Close();
++    return;
++  }
++  auto bubble = std::make_unique<AegisPageBubble>(
++      this, browser_,
++      aegis::AegisService::GetInstance()->GetPageSummary(web_contents_));
++  bubble_tracker_.SetView(bubble.get());
++  auto* bubble_view = bubble.get();
++  views::BubbleDialogDelegateView::CreateBubble(std::move(bubble));
++  bubble_view->ShowForReason(LocationBarBubbleDelegateView::USER_GESTURE);
++}
++
++void AegisToolbarButton::Refresh() {
++  aegis::AegisService* service = aegis::AegisService::GetInstance();
++  const aegis::PagePrivacySummary summary =
++      service->GetPageSummary(web_contents_);
++
++  std::u16string label;
++  if (summary.paused) {
++    label = Copy(u"暂停", u"Paused");
++  } else if (summary.total > 0) {
++    label = summary.total > 99 ? u"99+" : base::NumberToString16(summary.total);
++  }
++  SetText(label);
++
++  std::u16string status =
++      summary.paused ? Copy(u"Aegis：此站保护已临时暂停",
++                            u"Aegis: protection paused for this site")
++      : summary.total > 0
++          ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ") +
++                base::NumberToString16(summary.total) +
++                Copy(u" 项", u" items on this page")
++          : Copy(u"Aegis：防护正常", u"Aegis: protection active");
++  SetTooltipText(status);
++  GetViewAccessibility().SetName(status);
++  PreferredSizeChanged();
++
++  if (summary.total > 0 && service->ShouldShowAwarenessIntro() && GetWidget()) {
++    SetHighlight(Copy(u"Aegis 已保护本页", u"Aegis protected this page"),
++                 std::nullopt);
++    service->MarkAwarenessIntroShown();
++    intro_timer_.Start(FROM_HERE, kIntroDuration,
++                       base::BindOnce(&AegisToolbarButton::ClearIntroHighlight,
++                                      base::Unretained(this)));
++  }
++}
++
++void AegisToolbarButton::ClearIntroHighlight() {
++  SetHighlight(std::u16string(), std::nullopt);
++}
++
++BEGIN_METADATA(AegisToolbarButton)
++END_METADATA
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+new file mode 100644
+index 0000000000..5322188f74
+--- /dev/null
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+@@ -0,0 +1,47 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
++#define CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
++
++#include "base/memory/raw_ptr.h"
++#include "base/timer/timer.h"
++#include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_button.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/views/view_tracker.h"
++
++class Browser;
++
++namespace content {
++class WebContents;
++}
++
++// Browser-native Aegis entry point. It intentionally lives in the toolbar
++// instead of a page injection or extension surface.
++class AegisToolbarButton : public ToolbarButton,
++                           public aegis::AegisServiceObserver {
++  METADATA_HEADER(AegisToolbarButton, ToolbarButton)
++
++ public:
++  explicit AegisToolbarButton(Browser* browser);
++  AegisToolbarButton(const AegisToolbarButton&) = delete;
++  AegisToolbarButton& operator=(const AegisToolbarButton&) = delete;
++  ~AegisToolbarButton() override;
++
++  void Update(content::WebContents* web_contents);
++
++  // aegis::AegisServiceObserver:
++  void OnAegisStateChanged() override;
++
++ private:
++  void OnPressed();
++  void Refresh();
++  void ClearIntroHighlight();
++
++  const raw_ptr<Browser> browser_;
++  raw_ptr<content::WebContents> web_contents_ = nullptr;
++  views::ViewTracker bubble_tracker_;
++  base::OneShotTimer intro_timer_;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index 5a42610d05..d555138da3 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -90,6 +90,7 @@
+ #include "chrome/browser/ui/views/tabs/glic/glic_and_actor_buttons_container.h"
+ #include "chrome/browser/ui/views/tabs/tab_strip.h"
+ #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
++#include "chrome/browser/ui/views/toolbar/aegis_toolbar_button.h"
+ #include "chrome/browser/ui/views/toolbar/app_menu.h"
+ #include "chrome/browser/ui/views/toolbar/app_menu_control.h"
+ #include "chrome/browser/ui/views/toolbar/avatar_toolbar_button_interface.h"
+@@ -469,6 +470,8 @@ void ToolbarView::Init() {
+     location_bar_ = toolbar_webview_->GetLocationBar();
+   }
+ 
++  aegis_button_ = AddChildView(std::make_unique<AegisToolbarButton>(browser_));
++
+   bool is_glic_left_of_profile =
+       features::kGlicToolbarButtonLocationParam.Get() ==
+           features::GlicToolbarButtonLocation::kLeftOfProfileChip ||
+@@ -1171,6 +1174,11 @@ void ToolbarView::Update(WebContents* tab) {
+     pinned_toolbar_actions_container_->UpdateAllIcons();
+   }
+ 
++  if (aegis_button_) {
++    aegis_button_->Update(
++        tab ? tab : browser_->tab_strip_model()->GetActiveWebContents());
++  }
++
+   if (ReloadControl* reload_control = GetReloadButton(); reload_control) {
+     reload_control->SetDevToolsStatus(
+         chrome::IsDebuggerAttachedToCurrentTab(browser_));
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
+index c2d82dc622..93ffd5305b 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.h
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
+@@ -46,6 +46,7 @@
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+ 
+ class AvatarToolbarButton;
++class AegisToolbarButton;
+ class AvatarToolbarButtonInterface;
+ class BatterySaverButton;
+ class BrowserAppMenuButton;
+@@ -184,6 +185,7 @@ class ToolbarView : public views::AccessiblePaneView,
+   }
+   MediaToolbarButtonView* media_button() const { return media_button_; }
+   HomeButton* home_button() const { return home_; }
++  AegisToolbarButton* aegis_button() const { return aegis_button_; }
+ 
+   // TODO(crbug.com/513238408): Remove this once toolbar layout/overflow is
+   // fixed.
+@@ -370,6 +372,7 @@ class ToolbarView : public views::AccessiblePaneView,
+   raw_ptr<WebUIToolbarWebView> toolbar_webview_ = nullptr;
+   std::unique_ptr<WebUIToolbarWebView> detached_toolbar_webview_;
+   raw_ptr<HomeButton> home_ = nullptr;
++  raw_ptr<AegisToolbarButton> aegis_button_ = nullptr;
+   raw_ptr<SplitTabsToolbarButton> split_tabs_ = nullptr;
+   raw_ptr<CustomTabBarView> custom_tab_bar_ = nullptr;
+   raw_ptr<LocationBarView> location_bar_view_ = nullptr;
+-- 
+2.52.0
+

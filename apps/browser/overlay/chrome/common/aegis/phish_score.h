@@ -31,6 +31,7 @@ struct PageSignals {
   std::string text_sample;
   int password_fields = 0;
   int forms = 0;
+  int cross_site_form_actions = 0;
 };
 
 // URL-only heuristic score (no page body). Seed-host matching is applied by

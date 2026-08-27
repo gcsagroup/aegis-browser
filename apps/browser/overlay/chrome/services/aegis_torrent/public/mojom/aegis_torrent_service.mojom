@@ -1,0 +1,70 @@
+// Copyright 2026 GCSA
+
+module aegis.mojom;
+
+import "mojo/public/mojom/base/file_path.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+[EnableIf=is_mac] import "sandbox/mac/mojom/seatbelt_extension_token.mojom";
+
+struct TorrentFile {
+  uint32 index;
+  string path;
+  uint64 size;
+};
+
+struct TorrentPreview {
+  bool ok;
+  string error;
+  string name;
+  uint64 total_size;
+  bool has_v1;
+  bool has_v2;
+  uint32 tracker_count;
+  array<TorrentFile> files;
+};
+
+struct TorrentOptions {
+  bool enable_dht;
+  bool enable_pex;
+  uint32 download_limit_kib;
+  uint32 upload_limit_kib;
+};
+
+struct TorrentStatus {
+  bool found;
+  string error;
+  string name;
+  string state;
+  uint64 total_bytes;
+  uint64 completed_bytes;
+  uint32 progress_ppm;
+  uint32 download_rate;
+  uint32 upload_rate;
+  uint32 peers;
+  uint32 seeds;
+  bool paused;
+  bool finished;
+};
+
+// Runs in Chromium's network sandbox. The Browser process retains all UI and
+// permission decisions; this service only receives bounded torrent metadata,
+// a capability-scoped destination, and task commands.
+[ServiceSandbox=sandbox.mojom.Sandbox.kNetwork]
+interface AegisTorrentService {
+  ValidateTorrent(array<uint8> torrent_data) => (TorrentPreview preview);
+  ValidateMagnet(string magnet_uri) => (TorrentPreview preview);
+
+  StartTorrent(
+      array<uint8> torrent_data, string magnet_uri,
+      mojo_base.mojom.FilePath destination, array<uint32> selected_files,
+      TorrentOptions options,
+      [EnableIf=is_mac]
+      sandbox.mac.mojom.SeatbeltExtensionToken destination_token)
+      => (bool ok, string error, string task_id);
+
+  GetStatus(string task_id) => (TorrentStatus status);
+  Pause(string task_id) => (bool ok);
+  Resume(string task_id) => (bool ok);
+  Cancel(string task_id, bool delete_files) => (bool ok);
+};

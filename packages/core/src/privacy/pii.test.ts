@@ -17,4 +17,14 @@ describe("scanPii", () => {
     expect(approved.allowed).toBe(true);
     expect(approved.payload).toContain("***-**-****");
   });
+
+  it("redacts bearer tokens and labelled secrets", () => {
+    const input =
+      "Authorization: Bearer abcdefghijklmnop and token=tok_live_ABC123456789";
+    const result = scanPii(input);
+    expect(result.matches.filter((m) => m.kind === "secret")).toHaveLength(2);
+    expect(result.redacted).not.toContain("abcdefghijklmnop");
+    expect(result.redacted).not.toContain("tok_live_ABC123456789");
+    expect(result.redacted).toContain("[REDACTED_SECRET]");
+  });
 });

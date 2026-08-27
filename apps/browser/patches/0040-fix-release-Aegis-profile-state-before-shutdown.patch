@@ -1,0 +1,149 @@
+From b71d38d266377ae5d3123327bacd25341847c3ca Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 00:30:07 +0800
+Subject: [PATCH] fix: release Aegis profile state before shutdown
+
+---
+ chrome/browser/aegis/aegis_service.cc | 47 +++++++++++++++++++++++++--
+ chrome/browser/aegis/aegis_service.h  | 11 ++++++-
+ 2 files changed, 55 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 963323df6e..d8dae036f1 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -5,10 +5,11 @@
+ 
+ #include <algorithm>
+ 
+-#include "base/logging.h"
++#include "base/check.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+ #include "base/json/json_reader.h"
++#include "base/logging.h"
+ #include "base/memory/singleton.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/time/time.h"
+@@ -42,14 +43,22 @@ AegisService* AegisService::GetInstance() {
+ AegisService::AegisService() = default;
+ 
+ AegisService::~AegisService() {
+-  CdpWsHook::SetClientCountCallback({});
++  ClearReporterCallbacks();
+ }
+ 
+ void AegisService::InitializeForProfile(Profile* profile) {
++  CHECK(profile);
+   if (!IsEnabled()) {
+     VLOG(1) << "Aegis disabled by feature flag";
+     return;
+   }
++  if (initialized_) {
++    if (profile_ == profile) {
++      return;
++    }
++    ShutdownForProfile();
++  }
++  profile_observation_.Observe(profile);
+   prefs_ = profile->GetPrefs();
+   profile_ = profile;
+   initialized_ = true;
+@@ -81,6 +90,33 @@ void AegisService::InitializeForProfile(Profile* profile) {
+                                            : " (tracker blocking off)");
+ }
+ 
++void AegisService::OnProfileWillBeDestroyed(Profile* profile) {
++  if (profile_ == profile) {
++    ShutdownForProfile();
++  }
++}
++
++void AegisService::ShutdownForProfile() {
++  profile_observation_.Reset();
++  host_receivers_.Clear();
++  ClearReporterCallbacks();
++  if (ai_control_) {
++    ai_control_->Stop();
++  }
++  ai_control_.reset();
++  ollama_.reset();
++  if (cookie_janitor_) {
++    cookie_janitor_->Stop();
++  }
++  cookie_janitor_.reset();
++  filter_list_updater_.reset();
++  privacy_events_.clear();
++  cdp_ws_clients_ = 0;
++  prefs_ = nullptr;
++  profile_ = nullptr;
++  initialized_ = false;
++}
++
+ bool AegisService::IsEnabled() const {
+   return base::FeatureList::IsEnabled(features::kAegisEnabled);
+ }
+@@ -425,6 +461,13 @@ void AegisService::InstallReporterCallbacks() {
+       }));
+ }
+ 
++void AegisService::ClearReporterCallbacks() {
++  BlockReporter::SetBlockedCallback({});
++  BlockReporter::SetReferrerCallback({});
++  BlockReporter::SetParamsCallback({});
++  CdpWsHook::SetClientCountCallback({});
++}
++
+ namespace {
+ 
+ std::string NormalizeLocale(const std::string& locale) {
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index 5d71c55a85..2ccc9fc511 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -14,7 +14,9 @@
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/singleton.h"
++#include "base/scoped_observation.h"
+ #include "chrome/browser/aegis/summary_policy.h"
++#include "chrome/browser/profiles/profile_observer.h"
+ #include "chrome/common/aegis/phish_score.h"
+ #include "chrome/common/renderer_configuration.mojom.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+@@ -61,7 +63,8 @@ struct PrivacyEvent {
+   int64_t unix_seconds = 0;
+ };
+ 
+-class AegisService : public chrome::mojom::AegisHost {
++class AegisService : public chrome::mojom::AegisHost,
++                     public ProfileObserver {
+  public:
+   static AegisService* GetInstance();
+ 
+@@ -137,6 +140,9 @@ class AegisService : public chrome::mojom::AegisHost {
+                               std::string error,
+                               std::vector<std::string> models)> done);
+ 
++  // ProfileObserver:
++  void OnProfileWillBeDestroyed(Profile* profile) override;
++
+   // Host-rule match against builtin seed + compiled EasyList. Callers should
+   // skip main-document navigations (RequestDestination::kDocument).
+   bool ShouldBlockUrl(const GURL& url) const;
+@@ -176,9 +182,12 @@ class AegisService : public chrome::mojom::AegisHost {
+   std::unique_ptr<OllamaSidecar> ollama_;
+   std::unique_ptr<AiControl> ai_control_;
+   mojo::ReceiverSet<chrome::mojom::AegisHost> host_receivers_;
++  base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
+   size_t cdp_ws_clients_ = 0;
+ 
+   void InstallReporterCallbacks();
++  void ClearReporterCallbacks();
++  void ShutdownForProfile();
+   void OnOllamaReady(SummarizeResult heuristic,
+                      std::string system,
+                      std::string user,
+-- 
+2.52.0
+

@@ -9,7 +9,39 @@
     <main class="page">
       <h1>$i18n{title}</h1>
       <p class="subtitle">$i18n{subtitle}</p>
+      <section class="overview" aria-labelledby="overview-title">
+        <div class="health">
+          <span class="health-dot" id="health-dot" aria-hidden="true"></span>
+          <div>
+            <h2 id="overview-title">$i18n{overviewTitle}</h2>
+            <p class="health-state" id="health-state">—</p>
+          </div>
+        </div>
+        <div class="metrics" role="group"
+             aria-label="session protection totals">
+          <div class="metric">
+            <span class="metric-value" id="overview-blocked">0</span>
+            <span class="metric-label">$i18n{overviewBlocked}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="overview-links">0</span>
+            <span class="metric-label">$i18n{overviewLinks}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="overview-storage">0</span>
+            <span class="metric-label">$i18n{overviewStorage}</span>
+          </div>
+        </div>
+        <p class="scope-note">$i18n{overviewScope}</p>
+      </section>
+      <section class="activity" aria-label="session activity">
+        <h2>$i18n{activityTitle}</h2>
+        <p class="meta">$i18n{activityHint}</p>
+        <ul id="activity-log" class="log"></ul>
+        <p class="meta" id="activity-empty">$i18n{activityEmpty}</p>
+      </section>
       <section class="modules" aria-label="modules">
+        <h2>$i18n{modulesTitle}</h2>
         <label class="row">
           <span class="copy">
             <span class="name">$i18n{trackerLabel}</span>
@@ -36,6 +68,13 @@
           <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
           <p class="meta" id="fp-result"></p>
         </div>
+        <label class="row">
+          <span class="copy">
+            <span class="name">$i18n{minerGuardLabel}</span>
+            <span class="hint">$i18n{minerGuardHint}</span>
+          </span>
+          <input id="miner-guard" type="checkbox">
+        </label>
         <label class="row">
           <span class="copy">
             <span class="name">$i18n{linkSanitizeLabel}</span>
@@ -79,12 +118,6 @@
           <input id="privacy-ai" type="checkbox">
         </label>
       </section>
-      <section class="activity" aria-label="session activity">
-        <h2>$i18n{activityTitle}</h2>
-        <p class="meta">$i18n{activityHint}</p>
-        <ul id="activity-log" class="log"></ul>
-        <p class="meta" id="activity-empty">$i18n{activityEmpty}</p>
-      </section>
       <section class="filters" aria-label="filter lists">
         <h2>$i18n{filterListTitle}</h2>
         <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
@@ -97,28 +130,57 @@
         </label>
         <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
       </section>
+      <section class="downloads" aria-label="downloads and mirrors">
+        <h2>$i18n{downloadsTitle}</h2>
+        <p class="meta">$i18n{downloadsMeta}</p>
+        <p><a href="chrome://downloads">$i18n{downloadsTitle}</a></p>
+        <p class="scope-note">$i18n{torrentSafety}</p>
+      </section>
       <section class="privacy" aria-label="privacy ai">
         <h2>$i18n{privacyAiTitle}</h2>
         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
-        <div id="ollama-fields">
-        <p class="meta">$i18n{ollamaHint}</p>
-        <p class="meta">$i18n{casperNote}</p>
-        <label class="field">
-          <span class="name">$i18n{ollamaUrlLabel}</span>
-          <input id="ollama-url" type="url" spellcheck="false"
-                 placeholder="http://127.0.0.1:11434">
-        </label>
-        <label class="field">
-          <span class="name">$i18n{ollamaModelLabel}</span>
-          <input id="ollama-model" type="text" spellcheck="false"
-                 list="ollama-models" placeholder="llama3.2:3b">
-          <datalist id="ollama-models"></datalist>
-        </label>
-        <p class="meta" id="ollama-status"></p>
+        <div id="model-fields">
+          <p class="meta">$i18n{modelHint}</p>
+          <p class="meta" id="model-data-note">$i18n{modelDataNote}</p>
+          <label class="field">
+            <span class="name">$i18n{modelProviderLabel}</span>
+            <select id="model-provider">
+              <option value="openai">$i18n{modelOpenAiCompatible}</option>
+              <option value="anthropic">$i18n{modelAnthropicCompatible}</option>
+              <option value="gemini">$i18n{modelGeminiCompatible}</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="name">$i18n{modelEndpointLabel}</span>
+            <input id="model-endpoint" type="url" spellcheck="false"
+                   placeholder="https://api.openai.com/v1">
+          </label>
+          <label class="field" id="model-api-key-field">
+            <span class="name">$i18n{modelApiKeyLabel}</span>
+            <input id="model-api-key" type="password" autocomplete="off"
+                   spellcheck="false" aria-describedby="model-api-key-state">
+            <span class="field-hint" id="model-api-key-state">
+              $i18n{modelApiKeyHint}
+            </span>
+          </label>
+          <label class="field">
+            <span class="name">$i18n{modelSelectLabel}</span>
+            <select id="model-select" aria-describedby="model-status">
+              <option value="">$i18n{modelSelectLabel}</option>
+            </select>
+          </label>
+          <label class="field" id="model-custom-field" hidden>
+            <span class="name">$i18n{modelCustomLabel}</span>
+            <input id="model-custom" type="text" spellcheck="false">
+          </label>
+          <p class="meta" id="model-status"></p>
         </div>
         <div class="actions">
-          <button id="ollama-probe" type="button">$i18n{ollamaProbe}</button>
-          <button id="ollama-save" type="button">$i18n{ollamaSave}</button>
+          <button id="model-load" type="button">$i18n{modelLoad}</button>
+          <button id="model-save" type="button">$i18n{modelSave}</button>
+          <button id="model-key-clear" type="button" hidden>
+            $i18n{modelKeyClear}
+          </button>
           <button id="summarize" type="button">$i18n{privacyAiSummarize}</button>
         </div>
         <pre class="result" id="privacy-result" hidden></pre>
@@ -138,6 +200,31 @@
       </section>
       <p class="note">$i18n{note}</p>
     </main>
+    <dialog id="summary-preview" aria-labelledby="summary-preview-title">
+      <form method="dialog">
+        <h2 id="summary-preview-title">$i18n{summaryPreviewTitle}</h2>
+        <p class="preview-site" id="summary-preview-site"></p>
+        <dl class="preview-facts">
+          <div>
+            <dt>$i18n{summaryPreviewRead}</dt>
+            <dd id="summary-preview-read">0</dd>
+          </div>
+          <div>
+            <dt>$i18n{summaryPreviewRedacted}</dt>
+            <dd id="summary-preview-redacted">0</dd>
+          </div>
+          <div>
+            <dt>$i18n{summaryPreviewDestination}</dt>
+            <dd id="summary-preview-destination">—</dd>
+          </div>
+        </dl>
+        <p class="scope-note">$i18n{summaryPreviewScope}</p>
+        <div class="dialog-actions">
+          <button value="cancel">$i18n{summaryPreviewCancel}</button>
+          <button class="primary" value="confirm">$i18n{summaryPreviewConfirm}</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="aegis.js"></script>
   </body>
 </html>

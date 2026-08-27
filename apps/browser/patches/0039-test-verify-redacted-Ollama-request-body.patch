@@ -1,0 +1,153 @@
+From ad77c94241134d1617815de8a212782c09fcf4de Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 00:17:12 +0800
+Subject: [PATCH] test: verify redacted Ollama request body
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   1 +
+ .../browser/aegis/summary_policy_unittest.cc  | 102 ++++++++++++++++++
+ 2 files changed, 103 insertions(+)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 5b0dd4dfe2..055c8dc00d 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -73,6 +73,7 @@ test("aegis_browser_unittests") {
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+     "//net",
++    "//services/network:test_support",
+     "//testing/gtest",
+     "//url",
+   ]
+diff --git a/chrome/browser/aegis/summary_policy_unittest.cc b/chrome/browser/aegis/summary_policy_unittest.cc
+index 0298f8eae5..684c91c8b0 100644
+--- a/chrome/browser/aegis/summary_policy_unittest.cc
++++ b/chrome/browser/aegis/summary_policy_unittest.cc
+@@ -5,8 +5,19 @@
+ 
+ #include <string>
+ 
++#include "base/json/json_reader.h"
++#include "base/test/task_environment.h"
++#include "base/test/test_future.h"
+ #include "chrome/browser/aegis/aegis_service.h"
++#include "chrome/browser/aegis/ollama_sidecar.h"
++#include "chrome/test/base/testing_browser_process.h"
++#include "net/base/load_flags.h"
++#include "net/http/http_request_headers.h"
++#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
++#include "services/network/test/test_url_loader_factory.h"
++#include "services/network/test/test_utils.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
+ 
+ namespace aegis {
+ namespace {
+@@ -43,6 +54,21 @@ PreparedSummary SafePreparedSummary() {
+   return prepared;
+ }
+ 
++class SummaryPolicyOllamaOutboundTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    TestingBrowserProcess::GetGlobal()->SetSharedURLLoaderFactory(
++        test_url_loader_factory_.GetSafeWeakWrapper());
++  }
++
++  void TearDown() override {
++    TestingBrowserProcess::GetGlobal()->SetSharedURLLoaderFactory(nullptr);
++  }
++
++  base::test::TaskEnvironment task_environment_;
++  network::TestURLLoaderFactory test_url_loader_factory_;
++};
++
+ TEST(SummaryPolicyTest, AcceptsStructuredRedactedSnapshotAndFixedPrompt) {
+   const PageSnapshot original = OriginalSnapshot();
+   const PreparedSummary prepared = SafePreparedSummary();
+@@ -138,5 +164,81 @@ TEST(SummaryPolicyTest, RejectsInvalidUtf8AndPromptTampering) {
+   EXPECT_NE(std::string::npos, error.find("fixed template"));
+ }
+ 
++TEST_F(SummaryPolicyOllamaOutboundTest,
++       SerializedRequestContainsNoOriginalPii) {
++  const PageSnapshot original = OriginalSnapshot();
++  const PreparedSummary prepared = SafePreparedSummary();
++  std::string error;
++  const std::optional<OllamaPrompt> prompt =
++      BuildValidatedOllamaPrompt(original, prepared, "zh-CN", &error);
++  ASSERT_TRUE(prompt.has_value()) << error;
++
++  const GURL endpoint("http://127.0.0.1:11434/api/chat");
++  OllamaSidecar sidecar;
++  base::test::TestFuture<bool, std::string> response;
++  sidecar.Chat("http://127.0.0.1:11434/", "local-test-model",
++               prompt->system, prompt->user, response.GetCallback());
++
++  EXPECT_TRUE(sidecar.busy());
++  test_url_loader_factory_.WaitForRequest(endpoint);
++  ASSERT_EQ(1u, test_url_loader_factory_.pending_requests()->size());
++  const network::ResourceRequest& request =
++      test_url_loader_factory_.GetPendingRequest(0)->request;
++  EXPECT_EQ(endpoint, request.url);
++  EXPECT_EQ("POST", request.method);
++  EXPECT_EQ(network::mojom::RedirectMode::kError, request.redirect_mode);
++  EXPECT_EQ(network::mojom::CredentialsMode::kOmit, request.credentials_mode);
++  EXPECT_EQ(OllamaRequestLoadFlags(), request.load_flags);
++  EXPECT_EQ(
++      "application/json",
++      request.headers.GetHeader(net::HttpRequestHeaders::kContentType)
++          .value_or(std::string()));
++
++  const std::string upload_body = network::GetUploadData(request);
++  EXPECT_EQ(std::string::npos, upload_body.find("password123"));
++  EXPECT_EQ(std::string::npos, upload_body.find("alice@example.test"));
++  EXPECT_EQ(std::string::npos, upload_body.find("session-token-12345"));
++  EXPECT_EQ(std::string::npos, upload_body.find("private-fragment-9"));
++  EXPECT_EQ(std::string::npos, upload_body.find("abcdefghijklmnop"));
++  EXPECT_NE(std::string::npos, upload_body.find("a***@example.test"));
++  EXPECT_NE(std::string::npos, upload_body.find("%5BREDACTED%5D"));
++  EXPECT_NE(std::string::npos, upload_body.find("[REDACTED_SECRET]"));
++
++  const std::optional<base::Value> payload =
++      base::JSONReader::Read(upload_body, base::JSON_PARSE_RFC);
++  ASSERT_TRUE(payload.has_value());
++  const base::DictValue* payload_dict = payload->GetIfDict();
++  ASSERT_TRUE(payload_dict);
++  const std::string* model = payload_dict->FindString("model");
++  ASSERT_TRUE(model);
++  EXPECT_EQ("local-test-model", *model);
++  EXPECT_EQ(false, payload_dict->FindBool("stream"));
++  const base::ListValue* messages = payload_dict->FindList("messages");
++  ASSERT_TRUE(messages);
++  ASSERT_EQ(2u, messages->size());
++  const base::DictValue* system_message = (*messages)[0].GetIfDict();
++  const base::DictValue* user_message = (*messages)[1].GetIfDict();
++  ASSERT_TRUE(system_message);
++  ASSERT_TRUE(user_message);
++  const std::string* system_role = system_message->FindString("role");
++  const std::string* system_content = system_message->FindString("content");
++  const std::string* user_role = user_message->FindString("role");
++  const std::string* user_content = user_message->FindString("content");
++  ASSERT_TRUE(system_role);
++  ASSERT_TRUE(system_content);
++  ASSERT_TRUE(user_role);
++  ASSERT_TRUE(user_content);
++  EXPECT_EQ("system", *system_role);
++  EXPECT_EQ(prompt->system, *system_content);
++  EXPECT_EQ("user", *user_role);
++  EXPECT_EQ(prompt->user, *user_content);
++
++  EXPECT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
++      endpoint.spec(), R"({"message":{"content":"local summary"}})"));
++  EXPECT_TRUE(response.Get<0>());
++  EXPECT_EQ(R"({"message":{"content":"local summary"}})", response.Get<1>());
++  EXPECT_FALSE(sidecar.busy());
++}
++
+ }  // namespace
+ }  // namespace aegis
+-- 
+2.52.0
+

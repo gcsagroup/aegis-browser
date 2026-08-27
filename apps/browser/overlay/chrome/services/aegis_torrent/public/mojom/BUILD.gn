@@ -1,0 +1,13 @@
+# Copyright 2026 GCSA
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojom") {
+  sources = [ "aegis_torrent_service.mojom" ]
+  enabled_features = [ "is_mac" ]
+  public_deps = [
+    "//mojo/public/mojom/base",
+    "//sandbox/policy/mojom",
+    "//sandbox/mac/mojom",
+  ]
+}

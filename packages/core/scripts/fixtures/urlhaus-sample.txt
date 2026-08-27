@@ -1,0 +1,2 @@
+# Representative URLhaus plain URL feed
+http://malware-fixture.example/payload.exe

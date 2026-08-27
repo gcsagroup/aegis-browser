@@ -1,0 +1,26 @@
+From 42469c6e78003061193cd487399358feea0b8e55 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 24 Aug 2026 21:19:16 +0800
+Subject: [PATCH 36/38] test: use explicit CDP notification matcher type
+
+---
+ .../browser/devtools/protocol/devtools_protocol_browsertest.cc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index ac589fcc92..1f0b0fa75d 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -718,7 +718,8 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+                                      .Set("flatten", true),
+                                  *tab_session_id, true));
+   base::DictValue attached_page = WaitForMatchingNotification(
+-      "Target.attachedToTarget", base::BindRepeating([](const auto& params) {
++      "Target.attachedToTarget",
++      base::BindRepeating([](const base::DictValue& params) {
+         const std::string* type =
+             params.FindStringByDottedPath("targetInfo.type");
+         return type && *type == "page";
+-- 
+2.52.0
+

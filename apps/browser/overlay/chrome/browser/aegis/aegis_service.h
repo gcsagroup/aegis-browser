@@ -6,15 +6,25 @@
 
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "base/containers/flat_set.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
+#include "base/scoped_observation.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "chrome/browser/aegis/privacy_event_store.h"
+#include "chrome/browser/aegis/summary_policy.h"
+#include "chrome/browser/profiles/profile_observer.h"
+#include "chrome/common/aegis/miner_guard_model.h"
 #include "chrome/common/aegis/phish_score.h"
 #include "chrome/common/renderer_configuration.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -24,11 +34,20 @@ class GURL;
 class PrefService;
 class Profile;
 
+namespace os_crypt_async {
+class Encryptor;
+}
+
+namespace content {
+class WebContents;
+}
+
 namespace aegis {
 
 class FilterListUpdater;
+class ThreatFeedUpdater;
 class CookieJanitor;
-class OllamaSidecar;
+class ModelProviderClient;
 class AiControl;
 
 struct PageSnapshot {
@@ -55,13 +74,25 @@ struct SummarizeResult {
   std::string destination;
 };
 
-struct PrivacyEvent {
-  std::string kind;
-  std::string label;
-  int64_t unix_seconds = 0;
+struct PagePrivacySummary {
+  std::string site_key;
+  int total = 0;
+  int blocked = 0;
+  int params = 0;
+  int cookies = 0;
+  int bounces = 0;
+  int phishing = 0;
+  int miner_alerts = 0;
+  bool paused = false;
+  std::vector<PrivacyEvent> events;
 };
 
-class AegisService : public chrome::mojom::AegisHost {
+class AegisServiceObserver : public base::CheckedObserver {
+ public:
+  virtual void OnAegisStateChanged() = 0;
+};
+
+class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
  public:
   static AegisService* GetInstance();
 
@@ -71,10 +102,16 @@ class AegisService : public chrome::mojom::AegisHost {
   // Called from browser startup once Profile is ready.
   void InitializeForProfile(Profile* profile);
 
+  // 进程单例的临时边界：只有当前服务所属的普通 Profile 可访问，
+  // 其他 Profile 与无痕 Profile 必须 fail closed。长期仍需改为
+  // ProfileKeyedService。
+  bool IsInitializedForProfile(const Profile* profile) const;
+
   bool IsEnabled() const;
   bool IsTrackerBlockingEnabled() const;
   bool IsPhishInterstitialEnabled() const;
   bool IsFingerprintGuardEnabled() const;
+  bool IsMinerGuardEnabled() const;
   bool IsFilterListAutoUpdateEnabled() const;
   bool IsLinkSanitizeEnabled() const;
   bool IsCookieJanitorEnabled() const;
@@ -91,6 +128,7 @@ class AegisService : public chrome::mojom::AegisHost {
   void SetTrackerBlockingEnabled(bool enabled);
   void SetPhishInterstitialEnabled(bool enabled);
   void SetFingerprintGuardEnabled(bool enabled);
+  void SetMinerGuardEnabled(bool enabled);
   void SetFilterListAutoUpdateEnabled(bool enabled);
   void SetLinkSanitizeEnabled(bool enabled);
   void SetCookieJanitorEnabled(bool enabled);
@@ -101,20 +139,55 @@ class AegisService : public chrome::mojom::AegisHost {
   void SetAiControlEnabled(bool enabled);
   void UpdateFilterLists(base::OnceCallback<void(bool)> done);
 
-  // Privacy AI: heuristic summary via the JS policy worker, then optional
-  // Ollama sidecar on loopback. Fails closed to the heuristic if the model
-  // is missing.
-  void SummarizePage(PageSnapshot snapshot,
-                     const std::string& locale,
-                     base::OnceCallback<void(SummarizeResult)> done);
-  // Loopback Ollama only. |system|/|user| must already be PII-redacted.
-  void ChatWithOllama(const std::string& system,
-                      const std::string& user,
-                      base::OnceCallback<void(SummarizeResult)> done);
-  std::string OllamaBaseUrl() const;
-  std::string OllamaModel() const;
-  // |url| 必须是 loopback；空字符串回退到默认值。
-  bool SetOllamaSettings(const std::string& url, const std::string& model);
+  void AddObserver(AegisServiceObserver* observer);
+  void RemoveObserver(AegisServiceObserver* observer);
+
+  PagePrivacySummary GetPageSummary(content::WebContents* web_contents) const;
+  bool IsSitePaused(const std::string& host) const;
+  void SetSitePaused(const std::string& host,
+                     bool paused,
+                     base::TimeDelta duration = base::Minutes(10));
+  bool ShouldShowAwarenessIntro() const;
+  void MarkAwarenessIntroShown();
+
+  static std::string DocumentIdForWebContents(
+      content::WebContents* web_contents);
+
+  // Privacy AI accepts only a request-scoped, browser-validated structured
+  // preparation. The browser owns the outbound prompt template.
+  std::optional<std::string> SummarizePreparedPage(
+      PageSnapshot original,
+      PreparedSummary prepared,
+      const std::string& locale,
+      const std::string& provider_id,
+      const std::string& base_url,
+      const std::string& model,
+      base::OnceCallback<void(SummarizeResult)> done);
+  bool CancelModelSummaryRequest(const std::string& request_id);
+  std::string ConfiguredModelProvider() const;
+  std::string ConfiguredModelBaseUrl() const;
+  std::string ConfiguredModelName() const;
+  std::optional<std::string> ResolveModelBaseUrl(
+      const std::string& provider,
+      const std::string& base_url) const;
+  bool HasModelApiKey(const std::string& provider,
+                      const std::string& base_url) const;
+  std::string ModelCredentialState(const std::string& provider,
+                                   const std::string& base_url) const;
+  void SetModelSettings(
+      const std::string& provider,
+      const std::string& base_url,
+      const std::string& model,
+      const std::string& api_key,
+      bool clear_api_key,
+      base::OnceCallback<void(bool ok, std::string error)> done);
+  void ListModels(
+      const std::string& provider,
+      const std::string& base_url,
+      const std::string& api_key,
+      base::OnceCallback<void(bool ok,
+                              std::string error,
+                              std::vector<std::string> models)> done);
   int AiControlPort() const;
   std::string AiControlAddress() const;
   bool AiControlLoopbackOnly() const;
@@ -123,48 +196,56 @@ class AegisService : public chrome::mojom::AegisHost {
   void SetCdpWebSocketClientCount(size_t count);
 
   // Renderer → browser：把拦截记到会话清单。
-  void BindAegisHost(
-      mojo::PendingReceiver<chrome::mojom::AegisHost> receiver);
+  void BindAegisHost(mojo::PendingReceiver<chrome::mojom::AegisHost> receiver,
+                     int render_process_id);
 
   // chrome.mojom.AegisHost:
   void ReportBlockedRequest(const std::string& url,
                             const std::string& reason,
-                            const std::string& cname_alias) override;
+                            const std::string& cname_alias,
+                            const std::string& source_site,
+                            const std::string& local_frame_token) override;
   void ReportStrippedReferrer(const std::string& host,
-                              const std::vector<std::string>& keys) override;
+                              const std::vector<std::string>& keys,
+                              const std::string& source_site,
+                              const std::string& local_frame_token) override;
   void ReportStrippedParams(const std::string& host,
-                            const std::vector<std::string>& keys) override;
-  void ProbeOllama(
-      const std::string& url,
-      base::OnceCallback<void(bool ok,
-                              std::string error,
-                              std::vector<std::string> models)> done);
-  bool IsPolicyWorkerReady() const;
-  std::string PolicyWorkerError() const;
+                            const std::vector<std::string>& keys,
+                            const std::string& source_site,
+                            const std::string& local_frame_token) override;
+  // ProfileObserver:
+  void OnProfileWillBeDestroyed(Profile* profile) override;
 
   // Host-rule match against builtin seed + compiled EasyList. Callers should
   // skip main-document navigations (RequestDestination::kDocument).
   bool ShouldBlockUrl(const GURL& url) const;
 
-  // Main-frame phishing interstitial decision (seed rules + URL heuristics +
-  // session allow). Returns the assessment when the page should be blocked.
+  // Main-frame phishing interstitial decision (seed rules + URL heuristics).
+  // Returns the assessment when the page should be blocked.
   std::optional<PhishAssessment> EvaluatePhish(const GURL& url) const;
+  PhishAssessment AssessPhishUrl(const GURL& url) const;
   bool ShouldShowPhishInterstitial(const GURL& url) const;
-  void AllowPhishHostForSession(const std::string& host);
-  bool IsPhishHostAllowedForSession(const std::string& host) const;
 
   void RecordStrippedParams(const std::string& host,
-                            const std::vector<std::string>& keys);
+                            const std::vector<std::string>& keys,
+                            const std::string& document_id = std::string(),
+                            const std::string& site_key = std::string());
   void RecordStrippedReferrer(const std::string& host,
-                              const std::vector<std::string>& keys);
+                              const std::vector<std::string>& keys,
+                              const std::string& document_id = std::string(),
+                              const std::string& site_key = std::string());
   void RecordDeletedCookie(const std::string& name,
                            const std::string& domain,
                            const std::string& category);
   void RecordBounceClear(const std::string& site);
   void RecordBlockedRequest(const GURL& url,
                             const std::string& reason,
-                            const std::string& cname_alias);
-  void RecordPhishBlock(const std::string& host, const std::string& reason);
+                            const std::string& cname_alias,
+                            const std::string& document_id = std::string(),
+                            const std::string& site_key = std::string());
+  void RecordPhishBlock(const std::string& host,
+                        const std::string& reason,
+                        const std::string& document_id = std::string());
   std::vector<PrivacyEvent> RecentPrivacyEvents() const;
 
   PrefService* prefs() const { return prefs_; }
@@ -177,40 +258,79 @@ class AegisService : public chrome::mojom::AegisHost {
   bool initialized_ = false;
   raw_ptr<PrefService> prefs_ = nullptr;
   raw_ptr<Profile> profile_ = nullptr;
-  base::flat_set<std::string> session_allowed_phish_hosts_;
-  std::deque<PrivacyEvent> privacy_events_;
+  PrivacyEventStore privacy_events_;
   std::unique_ptr<FilterListUpdater> filter_list_updater_;
+  std::unique_ptr<ThreatFeedUpdater> threat_feed_updater_;
   std::unique_ptr<CookieJanitor> cookie_janitor_;
-  std::unique_ptr<OllamaSidecar> ollama_;
+  std::unique_ptr<ModelProviderClient> model_client_;
+  std::map<std::string, std::string> model_api_keys_;
+  bool model_credentials_loading_ = false;
+  bool model_credentials_loaded_ = false;
+  bool model_credentials_available_ = true;
   std::unique_ptr<AiControl> ai_control_;
-  mojo::ReceiverSet<chrome::mojom::AegisHost> host_receivers_;
+  mojo::ReceiverSet<chrome::mojom::AegisHost, int> host_receivers_;
+  base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
+  base::ObserverList<AegisServiceObserver> observers_;
+  base::RetainingOneShotTimer observer_notification_timer_;
   size_t cdp_ws_clients_ = 0;
 
+  struct MinerDocumentState {
+    MinerSignalWindow window;
+    base::TimeTicks last_update;
+    bool likely_mining_reported = false;
+  };
+  std::map<std::string, MinerDocumentState> miner_documents_;
+
   void InstallReporterCallbacks();
-  void OnHeuristicSummary(PageSnapshot snapshot,
-                          std::string locale,
-                          base::OnceCallback<void(SummarizeResult)> done,
-                          std::string json);
-  void OnPromptReady(SummarizeResult heuristic,
-                     std::string locale,
-                     base::OnceCallback<void(SummarizeResult)> done,
-                     std::string json);
-  void OnOllamaReady(SummarizeResult heuristic,
-                     std::string system,
-                     std::string user,
-                     base::OnceCallback<void(SummarizeResult)> done,
-                     bool ok,
-                     std::string body);
-  void OnOllamaChat(SummarizeResult heuristic,
-                    base::OnceCallback<void(SummarizeResult)> done,
-                    bool ok,
-                    std::string body);
-  void OnOllamaProbed(
-      base::OnceCallback<void(bool, std::string, std::vector<std::string>)>
-          done,
-      bool ok,
-      std::string body);
+  void ClearReporterCallbacks();
+  void OnBlockedReport(GURL url,
+                       std::string reason,
+                       std::string cname_alias,
+                       std::string source_site,
+                       std::string document_id);
+  void OnStrippedReferrerReport(std::string host,
+                                std::vector<std::string> keys,
+                                std::string source_site,
+                                std::string document_id);
+  void OnStrippedParamsReport(std::string host,
+                              std::vector<std::string> keys,
+                              std::string source_site,
+                              std::string document_id);
+  void OnMinerSignals(std::string document_id,
+                      std::string site_key,
+                      std::string display_domain,
+                      MinerRuntimeSignals signals);
+  bool IsCurrentProfileDocument(const std::string& document_id,
+                                const std::string& site_key) const;
+  void ShutdownForProfile();
+  void OnModelChat(std::string provider,
+                   SummarizeResult fallback,
+                   base::OnceCallback<void(SummarizeResult)> done,
+                   bool ok,
+                   std::string error,
+                   std::string content);
+  void LoadModelCredentials();
+  void OnModelCredentialsLoaded(
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  void SaveModelApiKey(std::string provider,
+                       std::string base_url,
+                       std::string model,
+                       std::string api_key,
+                       base::OnceCallback<void(bool, std::string)> done,
+                       scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  void PersistModelConfiguration(const std::string& provider,
+                                 const std::string& base_url,
+                                 const std::string& model);
+  std::string EffectiveModelApiKey(const std::string& provider,
+                                   const std::string& base_url,
+                                   const std::string& candidate) const;
   void PushPrivacyEvent(PrivacyEvent event);
+  void NotifyObservers();
+  std::string ResolveDocumentContext(const std::string& local_frame_token,
+                                     int render_process_id,
+                                     std::string* site_key) const;
+
+  base::WeakPtrFactory<AegisService> weak_ptr_factory_{this};
 };
 
 }  // namespace aegis

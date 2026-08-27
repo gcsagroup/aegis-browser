@@ -13,6 +13,21 @@ if [[ -z "$APP" || ! -d "$APP" ]]; then
   exit 1
 fi
 
+PARENT="${OUT_DIR:-$(cd "$(dirname "$APP")" && pwd)}"
+
+verify_package() {
+  "$CS" --verify --deep --strict "$APP" >/dev/null 2>&1 || return 1
+  shopt -s nullglob
+  local helper
+  for helper in "$PARENT"/Chromium\ Helper*.app; do
+    if ! "$CS" --verify --deep --strict "$helper" >/dev/null 2>&1; then
+      shopt -u nullglob
+      return 1
+    fi
+  done
+  shopt -u nullglob
+}
+
 sign_one() {
   local path="$1"
   "$CS" --force --sign - --timestamp=none "$path" >/dev/null 2>&1 || \
@@ -21,9 +36,10 @@ sign_one() {
 
 echo "Ad-hoc signing $APP …"
 
-# 签名未变时跳过 --deep codesign（每次 pnpm run 可省十几秒）。
-if "$CS" --verify --quiet "$APP" 2>/dev/null; then
-  echo "Already signed, skip codesign"
+# 只有整包 strict/deep 验证通过时才允许跳过。Chromium 的 linker-signed
+# 顶层经常能通过浅层 verify，但资源封装仍然无效。
+if verify_package; then
+  echo "Already strict/deep valid, skip codesign"
   if command -v xattr >/dev/null 2>&1; then
     xattr -cr "$APP" 2>/dev/null || true
   fi
@@ -49,7 +65,6 @@ FRAME_BIN="$APP/Contents/Frameworks/Chromium Framework.framework/Versions/Curren
 FRAME="$APP/Contents/Frameworks/Chromium Framework.framework"
 [[ -d "$FRAME" ]] && sign_one "$FRAME"
 
-PARENT="${OUT_DIR:-$(cd "$(dirname "$APP")" && pwd)}"
 shopt -s nullglob
 for h in "$PARENT"/Chromium\ Helper*.app; do
   sign_one "$h"
@@ -58,6 +73,12 @@ shopt -u nullglob
 
 "$CS" --force --deep --sign - --timestamp=none "$APP" >/dev/null 2>&1 || \
   "$CS" --force --deep --sign - "$APP" >/dev/null
+
+if ! verify_package; then
+  echo "Ad-hoc signing completed but strict/deep verification failed: $APP" >&2
+  exit 1
+fi
+"$CS" --verify --deep --strict --verbose=2 "$APP"
 
 # Drop quarantine so Finder double-click works for local builds.
 if command -v xattr >/dev/null 2>&1; then
@@ -69,4 +90,5 @@ if command -v xattr >/dev/null 2>&1; then
   shopt -u nullglob
 fi
 
-echo "Signed OK (ad-hoc). First Finder open may still need: right-click → Open"
+echo "Signed OK (ad-hoc, strict/deep local structure only)."
+echo "This is not Developer ID signing or notarization."

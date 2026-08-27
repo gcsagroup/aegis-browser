@@ -1,0 +1,50 @@
+# Copyright 2026 GCSA
+
+import("//testing/test.gni")
+
+source_set("safety") {
+  sources = [
+    "torrent_safety.cc",
+    "torrent_safety.h",
+  ]
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ "//build/config/compiler:exceptions" ]
+  deps = [
+    "//base",
+  ]
+  public_deps = [ "//third_party/aegis_libtorrent:libtorrent" ]
+}
+
+source_set("service") {
+  sources = [
+    "aegis_torrent_service.cc",
+    "aegis_torrent_service.h",
+  ]
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ "//build/config/compiler:exceptions" ]
+  deps = [
+    ":safety",
+    "//base",
+    "//chrome/services/aegis_torrent/public/mojom",
+    "//mojo/public/cpp/bindings",
+    "//sandbox/mac:seatbelt_extension",
+    "//third_party/aegis_libtorrent:libtorrent",
+  ]
+}
+
+test("aegis_torrent_unittests") {
+  testonly = true
+  sources = [
+    "torrent_safety_unittest.cc",
+    "torrent_transfer_unittest.cc",
+  ]
+  configs -= [ "//build/config/compiler:no_exceptions" ]
+  configs += [ "//build/config/compiler:exceptions" ]
+  deps = [
+    ":safety",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//third_party/aegis_libtorrent:libtorrent",
+    "//testing/gtest",
+  ]
+}

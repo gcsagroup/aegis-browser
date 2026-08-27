@@ -1,0 +1,200 @@
+From 942f0731d19c5eb257fadc7e1a75f653d3db41fb Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 21:19:06 +0800
+Subject: [PATCH] fix(aegis): isolate summary source tab
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  3 +
+ .../aegis/aegis_ui_handler_unittest.cc        | 45 +++++++++++++
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 67 +++++++++++++++----
+ .../browser/ui/webui/aegis/aegis_ui_handler.h | 16 +++++
+ 4 files changed, 117 insertions(+), 14 deletions(-)
+ create mode 100644 chrome/browser/aegis/aegis_ui_handler_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 2951ccc0e7..29147e3578 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -65,6 +65,7 @@ test("aegis_browser_unittests") {
+     "aegis_ai_control_unittest.cc",
+     "aegis_phish_blocking_page_unittest.cc",
+     "aegis_phish_tab_helper_unittest.cc",
++    "aegis_ui_handler_unittest.cc",
+     "filter_list_updater_unittest.cc",
+     "ollama_sidecar_unittest.cc",
+     "privacy_event_store_unittest.cc",
+@@ -72,6 +73,8 @@ test("aegis_browser_unittests") {
+   ]
+   deps = [
+     ":aegis",
++    "//chrome/browser/ui/tabs:tab_strip",
++    "//chrome/browser/ui/webui/aegis",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+new file mode 100644
+index 0000000000..51f1a15233
+--- /dev/null
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -0,0 +1,45 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
++
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/test/base/browser_with_test_window_test.h"
++#include "content/public/browser/web_contents.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
++
++TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
++  AddTab(browser(), GURL("https://left.example/"));
++  AddTab(browser(), GURL("chrome://aegis/"));
++  AddTab(browser(), GURL("https://right.example/"));
++  TabStripModel* model = browser()->tab_strip_model();
++  content::WebContents* settings = model->GetWebContentsAt(1);
++
++  EXPECT_EQ(model->GetWebContentsAt(0),
++            FindSummarySourceTabInModel(model, settings));
++
++  NavigateAndCommit(model->GetWebContentsAt(0), GURL("about:blank"));
++  EXPECT_EQ(model->GetWebContentsAt(2),
++            FindSummarySourceTabInModel(model, settings));
++
++  NavigateAndCommit(model->GetWebContentsAt(2), GURL("about:blank"));
++  EXPECT_EQ(nullptr, FindSummarySourceTabInModel(model, settings));
++}
++
++TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
++  AddTab(browser(), GURL("https://source.example/"));
++  TabStripModel* model = browser()->tab_strip_model();
++  auto foreign = content::WebContents::Create(
++      content::WebContents::CreateParams(profile()));
++
++  EXPECT_EQ(nullptr, FindSummarySourceTabInModel(model, foreign.get()));
++}
++
++}  // namespace
++}  // namespace aegis
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index e136e6597b..f9995c7430 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -112,6 +112,55 @@ std::optional<aegis::PreparedSummary> ParsePreparedSummary(
+   return prepared;
+ }
+ 
++}  // namespace
++
++namespace aegis {
++
++content::WebContents* FindSummarySourceTabInModel(
++    TabStripModel* model,
++    content::WebContents* settings_tab) {
++#if BUILDFLAG(IS_ANDROID)
++  (void)model;
++  (void)settings_tab;
++  return nullptr;
++#else
++  if (!model || !settings_tab) {
++    return nullptr;
++  }
++  const int settings_index = model->GetIndexOfWebContents(settings_tab);
++  if (settings_index == TabStripModel::kNoTab) {
++    return nullptr;
++  }
++  auto candidate_at = [model, settings_tab](int index) {
++    content::WebContents* contents = model->GetWebContentsAt(index);
++    if (!contents || contents == settings_tab) {
++      return static_cast<content::WebContents*>(nullptr);
++    }
++    const GURL& url = contents->GetLastCommittedURL();
++    return url.SchemeIsHTTPOrHTTPS() ? contents : nullptr;
++  };
++  for (int distance = 1; distance < model->count(); ++distance) {
++    const int left = settings_index - distance;
++    if (left >= 0) {
++      if (content::WebContents* candidate = candidate_at(left)) {
++        return candidate;
++      }
++    }
++    const int right = settings_index + distance;
++    if (right < model->count()) {
++      if (content::WebContents* candidate = candidate_at(right)) {
++        return candidate;
++      }
++    }
++  }
++  return nullptr;
++#endif
++}
++
++}  // namespace aegis
++
++namespace {
++
+ content::WebContents* FindHttpTab(content::WebContents* skip) {
+ #if BUILDFLAG(IS_ANDROID)
+   // Android 没有桌面 TabStrip。摘要/截图先只用当前 WebUI 页；设置页本身不是
+@@ -130,21 +179,11 @@ content::WebContents* FindHttpTab(content::WebContents* skip) {
+         if (!model) {
+           return true;
+         }
+-        for (int i = 0; i < model->count(); ++i) {
+-          content::WebContents* contents = model->GetWebContentsAt(i);
+-          if (!contents || contents == skip) {
+-            continue;
+-          }
+-          const GURL& url = contents->GetLastCommittedURL();
+-          if (!url.SchemeIsHTTPOrHTTPS()) {
+-            continue;
+-          }
+-          found = contents;
+-          if (contents == model->GetActiveWebContents()) {
+-            return false;
+-          }
++        if (model->GetIndexOfWebContents(skip) == TabStripModel::kNoTab) {
++          return true;
+         }
+-        return true;
++        found = aegis::FindSummarySourceTabInModel(model, skip);
++        return false;
+       },
+       BrowserCollection::Order::kActivation);
+   return found;
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 933f9248d8..484ddb0c2c 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -16,6 +16,22 @@
+ #include "content/public/browser/global_routing_id.h"
+ #include "content/public/browser/web_ui_message_handler.h"
+ 
++class TabStripModel;
++
++namespace content {
++class WebContents;
++}
++
++namespace aegis {
++
++// 只在设置页所在窗口内选择最近的 HTTP(S) 标签，避免跨窗口、Profile 或
++// 无痕会话读取页面。桌面实现供选择器回归测试直接验证。
++content::WebContents* FindSummarySourceTabInModel(
++    TabStripModel* model,
++    content::WebContents* settings_tab);
++
++}  // namespace aegis
++
+ class AegisUIHandler : public content::WebUIMessageHandler,
+                        public aegis::AegisServiceObserver {
+  public:
+-- 
+2.52.0
