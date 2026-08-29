@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-08-30",
+  "candidates": {
+    "playwrightMcp": {
+      "package": "@playwright/mcp",
+      "version": "0.0.79",
+      "license": "Apache-2.0"
+    },
+    "mcpSdk": {
+      "package": "@modelcontextprotocol/sdk",
+      "version": "1.30.0",
+      "license": "MIT"
+    },
+    "browserUse": {
+      "package": "browser-use",
+      "version": "0.13.8",
+      "license": "MIT"
+    },
+    "stagehand": {
+      "package": "@browserbasehq/stagehand",
+      "version": "4.0.2",
+      "license": "MIT"
+    },
+    "skyvern": {
+      "package": "skyvern",
+      "version": "1.0.48",
+      "license": "AGPL-3.0"
+    },
+    "browserGym": {
+      "package": "browsergym",
+      "version": "0.14.3",
+      "license": "Apache-2.0"
+    }
+  },
+  "forcedEnvironment": {
+    "ANONYMIZED_TELEMETRY": "false",
+    "BROWSER_USE_CLOUD_SYNC": "false",
+    "SKYVERN_TELEMETRY": "false",
+    "ENABLE_CODE_BLOCK": "false",
+    "DISABLE_CODE_BLOCK_EXECUTION": "true"
+  },
+  "forbiddenCapabilities": [
+    "daily-profile",
+    "unbounded-cdp",
+    "arbitrary-javascript",
+    "shell",
+    "filesystem",
+    "cloud-profile-sync",
+    "default-telemetry",
+    "real-login",
+    "real-transaction",
+    "private-upload",
+    "execute-download"
+  ]
+}
