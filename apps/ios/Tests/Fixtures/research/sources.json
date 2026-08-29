@@ -1,0 +1,62 @@
+[
+  {
+    "id": "source-01",
+    "title": "Broker 是唯一授权主体",
+    "path": "research/source-01.html",
+    "expected_claim": "模型与网页只能提出请求，不能签发授权。"
+  },
+  {
+    "id": "source-02",
+    "title": "任务范围不可静默扩大",
+    "path": "research/source-02.html",
+    "expected_claim": "新增 Origin、工具或既有资源必须重新取得用户授权。"
+  },
+  {
+    "id": "source-03",
+    "title": "文档租约绑定页面身份",
+    "path": "research/source-03.html",
+    "expected_claim": "导航、关键 DOM 变化或进程切换会使旧租约失效。"
+  },
+  {
+    "id": "source-04",
+    "title": "动作能力一次性消费",
+    "path": "research/source-04.html",
+    "expected_claim": "R1 与 R2 动作使用短期、一次性、参数绑定的能力。"
+  },
+  {
+    "id": "source-05",
+    "title": "页面提示属于不可信数据",
+    "path": "research/source-05.html",
+    "expected_claim": "页面内容不能改变用户目标、授权或风险等级。"
+  },
+  {
+    "id": "source-06",
+    "title": "敏感数据禁止出站",
+    "path": "research/source-06.html",
+    "expected_claim": "密码、OTP、支付字段与 Cookie 不进入模型或持久日志。"
+  },
+  {
+    "id": "source-07",
+    "title": "结果由浏览器独立验证",
+    "path": "research/source-07.html",
+    "expected_claim": "页面或模型自报成功不能替代 ResultVerifier。"
+  },
+  {
+    "id": "source-08",
+    "title": "后台与重启撤销执行权",
+    "path": "research/source-08.html",
+    "expected_claim": "后台、锁屏或重启后不得自动恢复写操作。"
+  },
+  {
+    "id": "source-09",
+    "title": "最终交易必须用户接管",
+    "path": "research/source-09.html",
+    "expected_claim": "下单、支付、OTP、CAPTCHA 与 3DS 不由 Agent 提交。"
+  },
+  {
+    "id": "source-10",
+    "title": "审计采用最小字段",
+    "path": "research/source-10.html",
+    "expected_claim": "审计记录结果与策略身份，不保存完整页面或敏感查询。"
+  }
+]

@@ -12,7 +12,7 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time/time.h"
+#include "chrome/browser/aegis/model_provider_policy.h"
 
 class GURL;
 
@@ -21,34 +21,6 @@ class SimpleURLLoader;
 }  // namespace network
 
 namespace aegis {
-
-enum class ModelProvider {
-  kOpenAI,
-  kAnthropic,
-  kGemini,
-};
-
-std::optional<ModelProvider> ParseModelProvider(std::string_view id);
-std::string_view ModelProviderId(ModelProvider provider);
-std::string_view DefaultModelBaseUrl(ModelProvider provider);
-std::string_view DefaultModelName(ModelProvider provider);
-
-// 只有数值 loopback HTTP(S) 属于本机目标。localhost 等名称不会被视为
-// 本机目标，以免 DNS、代理或 hosts 配置改变请求去向。
-bool IsLocalModelEndpoint(ModelProvider provider, const GURL& base_url);
-
-// HTTP 仅允许数值 loopback；其他主机必须使用 HTTPS。允许安全的路径前缀，
-// 但拒绝 userinfo、query、fragment 和无效端口。
-bool IsAllowedModelBaseUrl(ModelProvider provider, const GURL& base_url);
-bool ModelProviderRequiresApiKey(ModelProvider provider);
-bool IsValidModelName(ModelProvider provider, std::string_view model);
-
-// 所有请求都禁用缓存；只有数值 loopback 绕过系统代理。
-int ModelProviderRequestLoadFlags(ModelProvider provider, const GURL& base_url);
-
-// 本机大模型通常比外网 API 慢，给数值 loopback 更长的生成窗口。
-base::TimeDelta ModelProviderChatTimeout(ModelProvider provider,
-                                         const GURL& base_url);
 
 class ModelProviderClient {
  public:

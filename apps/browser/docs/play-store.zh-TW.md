@@ -44,7 +44,7 @@ GN 中的 application ID 只證明設定存在，不能證明最終 APK/AAB 身�
 ## 上架門禁
 
 1. 在乾淨、受支援的 x86-64 Linux 環境中建置目前原始碼 Release APK/AAB。
-2. 由驗證清單綁定根儲存庫 commit、Chromium commit、56 個 Chromium 補丁、2 個巢狀 V8 補丁、GN 參數、套件身分和產物雜湊。
+2. 由經過驗證的 Android 清單綁定根儲存庫 commit、Chromium commit、67 個 Chromium 補丁、2 個巢狀 V8 補丁、GN 參數、套件身分和產物雜湊。
 3. 通過 First Run、一般瀏覽、`chrome://aegis`、核心保護、生命週期、儲存、升級和網路行為的真機測試。
 4. 取代預設 Chromium 圖示，並審查所有名稱、螢幕擷取畫面、描述和受限品牌素材。
 5. 完成權限、網路出站、資料儲存、日誌、原生程式庫、第三方授權和隱私權政策審查。

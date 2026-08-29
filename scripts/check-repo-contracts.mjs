@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserRoot = join(repoRoot, 'apps/browser');
+const iosRoot = join(repoRoot, 'apps/ios');
 const failures = [];
 
 function fail(message) {
@@ -38,7 +39,27 @@ function walkMarkdown(root) {
   return files;
 }
 
-function checkBrowserOnly() {
+function topLevelKeysInYamlSection(source, sectionName) {
+  const lines = source.split(/\r?\n/gu);
+  const headerIndex = lines.findIndex((line) => line === `${sectionName}:`);
+  if (headerIndex === -1) {
+    return [];
+  }
+
+  const keys = [];
+  for (const line of lines.slice(headerIndex + 1)) {
+    if (/^\S/u.test(line)) {
+      break;
+    }
+    const match = /^  ([A-Za-z0-9-]+):\s*$/u.exec(line);
+    if (match) {
+      keys.push(match[1]);
+    }
+  }
+  return keys;
+}
+
+function checkProductTopology() {
   const workspace = read(join(repoRoot, 'pnpm-workspace.yaml'));
   const packages = [...workspace.matchAll(/^\s*-\s+"([^"]+)"\s*$/gmu)].map(
     (match) => match[1],
@@ -47,12 +68,44 @@ function checkBrowserOnly() {
   if (JSON.stringify(packages) !== JSON.stringify(expected)) {
     fail(`Workspace 产品边界漂移：${packages.join(', ')}`);
   }
+  if (!existsSync(browserRoot)) {
+    fail('产品拓扑失败：apps/browser 缺失');
+  }
+
+  const iosProjectPath = join(iosRoot, 'project.yml');
+  if (!existsSync(iosProjectPath)) {
+    fail('产品拓扑失败：apps/ios/project.yml 缺失');
+  } else {
+    const iosProject = read(iosProjectPath);
+    const targets = topLevelKeysInYamlSection(iosProject, 'targets');
+    for (const target of [
+      'Aegis',
+      'BrowserKit',
+      'AegisPolicyKit',
+      'AgentKit',
+      'SafariWebExtension',
+      'ShareExtension',
+      'AegisTests',
+      'AegisUITests',
+    ]) {
+      if (!targets.includes(target)) {
+        fail(`iOS 产品拓扑失败：target ${target} 缺失`);
+      }
+    }
+
+    const schemes = topLevelKeysInYamlSection(iosProject, 'schemes');
+    for (const scheme of ['Aegis', 'Aegis-Debug', 'Aegis-Release']) {
+      if (!schemes.includes(scheme)) {
+        fail(`iOS 产品拓扑失败：Scheme ${scheme} 缺失`);
+      }
+    }
+  }
   if (existsSync(join(repoRoot, 'apps/extension'))) {
-    fail('Browser-only 边界失败：apps/extension 重新出现');
+    fail('产品拓扑失败：apps/extension 独立产品重新出现');
   }
   const rootPackage = read(join(repoRoot, 'package.json'));
   if (rootPackage.includes('@gcsa-aegis/extension')) {
-    fail('Browser-only 边界失败：根 package.json 引用 Extension');
+    fail('产品拓扑失败：根 package.json 引用独立 Extension');
   }
 }
 
@@ -176,7 +229,7 @@ function checkDocumentedCommands() {
   }
 }
 
-checkBrowserOnly();
+checkProductTopology();
 checkPatchSeries();
 checkPinnedVersion();
 checkMarkdownLinks();
@@ -189,4 +242,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-process.stdout.write('仓库合同通过：Browser-only、补丁、版本、链接和命令一致。\n');
+process.stdout.write('仓库合同通过：产品拓扑、补丁、版本、链接和命令一致。\n');

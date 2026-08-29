@@ -1,0 +1,267 @@
+name: Aegis
+
+options:
+  bundleIdPrefix: com.gcsa.aegis.ios
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.4"
+  developmentLanguage: zh-Hans
+  indentWidth: 2
+  tabWidth: 2
+  xcodeVersion: "26.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    CLANG_ENABLE_MODULES: YES
+    CURRENT_PROJECT_VERSION: 1
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    IPHONEOS_DEPLOYMENT_TARGET: "18.4"
+    MARKETING_VERSION: 0.1.0
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+  configs:
+    Debug:
+      DEBUG_INFORMATION_FORMAT: dwarf
+      ENABLE_TESTABILITY: YES
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    Release:
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+      SWIFT_COMPILATION_MODE: wholemodule
+
+targets:
+  Aegis:
+    type: application
+    platform: iOS
+    sources:
+      - path: AegisApp
+        excludes:
+          - Aegis.entitlements
+          - Info.plist
+      - path: Shared/ShareInbox.swift
+      - path: Shared/SafariReadOnlyGate.swift
+      - path: SharedWebExtension
+        buildPhase: resources
+    dependencies:
+      - target: BrowserKit
+        embed: true
+      - target: AegisPolicyKit
+        embed: true
+      - target: AgentKit
+        embed: true
+      - target: SafariWebExtension
+        embed: true
+      - target: ShareExtension
+        embed: true
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: AegisApp/Aegis.entitlements
+        INFOPLIST_FILE: AegisApp/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app
+        PRODUCT_NAME: Aegis
+        SUPPORTS_MACCATALYST: NO
+
+  BrowserKit:
+    type: framework
+    platform: iOS
+    sources:
+      - path: BrowserKit
+        excludes:
+          - Info.plist
+    dependencies:
+      - target: AegisPolicyKit
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        INFOPLIST_FILE: BrowserKit/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.browserkit
+        PRODUCT_NAME: BrowserKit
+        SKIP_INSTALL: YES
+
+  AegisPolicyKit:
+    type: framework
+    platform: iOS
+    sources:
+      - path: AegisPolicyKit
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        INFOPLIST_FILE: AegisPolicyKit/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.policykit
+        PRODUCT_NAME: AegisPolicyKit
+        SKIP_INSTALL: YES
+
+  AgentKit:
+    type: framework
+    platform: iOS
+    sources:
+      - path: AgentKit
+        excludes:
+          - Info.plist
+    dependencies:
+      - target: AegisPolicyKit
+      - target: BrowserKit
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        INFOPLIST_FILE: AgentKit/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.agentkit
+        PRODUCT_NAME: AgentKit
+        SKIP_INSTALL: YES
+
+  SafariWebExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SafariWebExtension
+        excludes:
+          - Info.plist
+          - SafariWebExtension.entitlements
+      - path: Shared/SafariReadOnlyGate.swift
+      - path: SharedWebExtension
+        buildPhase: resources
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: YES
+        CODE_SIGN_ENTITLEMENTS: SafariWebExtension/SafariWebExtension.entitlements
+        INFOPLIST_FILE: SafariWebExtension/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app.safari
+        PRODUCT_NAME: SafariWebExtension
+        SKIP_INSTALL: YES
+
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+        excludes:
+          - Info.plist
+          - ShareExtension.entitlements
+      - path: Shared/ShareInbox.swift
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: YES
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+        INFOPLIST_FILE: ShareExtension/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app.share
+        PRODUCT_NAME: ShareExtension
+        SKIP_INSTALL: YES
+
+  AegisTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/AegisTests
+        excludes:
+          - Info.plist
+      - path: Tests/AgentKitTests
+      - path: Tests/AegisPolicyKitTests
+      - path: Tests/Fixtures
+        type: folder
+        buildPhase: resources
+      - path: ../../packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json
+        buildPhase: resources
+    dependencies:
+      - target: Aegis
+      - target: BrowserKit
+      - target: AegisPolicyKit
+      - target: AgentKit
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        INFOPLIST_FILE: Tests/AegisTests/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.tests
+        PRODUCT_NAME: AegisTests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Aegis.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aegis"
+
+  AegisUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/AegisUITests
+        excludes:
+          - Info.plist
+    dependencies:
+      - target: Aegis
+    settings:
+      base:
+        INFOPLIST_FILE: Tests/AegisUITests/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.uitests
+        PRODUCT_NAME: AegisUITests
+        TEST_TARGET_NAME: Aegis
+
+schemes:
+  Aegis:
+    build:
+      targets:
+        Aegis: all
+        AegisTests: [test]
+        AegisUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - name: AegisTests
+          parallelizable: true
+        - name: AegisUITests
+          parallelizable: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+  Aegis-Debug:
+    build:
+      targets:
+        Aegis: all
+        AegisTests: [test]
+        AegisUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - name: AegisTests
+          parallelizable: true
+        - name: AegisUITests
+          parallelizable: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+  Aegis-Release:
+    build:
+      targets:
+        Aegis: all
+        AegisTests: [test]
+        AegisUITests: [test]
+    run:
+      config: Release
+    test:
+      config: Release
+      gatherCoverageData: false
+      targets:
+        - name: AegisTests
+          parallelizable: true
+        - name: AegisUITests
+          parallelizable: false
+    profile:
+      config: Release
+    analyze:
+      config: Release
+    archive:
+      config: Release

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "merchant": "Aegis Fixture Store",
+  "product": {
+    "id": "fixture-headphones",
+    "name": "离线测试耳机",
+    "variant": "深空灰",
+    "unit_price": 199.0,
+    "currency": "CNY",
+    "quantity": 1
+  },
+  "fees": {
+    "shipping": 0.0,
+    "tax": 0.0,
+    "total": 199.0
+  },
+  "subscription": false,
+  "final_submit": {
+    "policy": "forbidden",
+    "enabled": false,
+    "expected_state": "user_takeover"
+  }
+}

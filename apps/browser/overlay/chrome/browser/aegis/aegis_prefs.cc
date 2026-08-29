@@ -43,6 +43,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterStringPref(prefs::kOllamaBaseUrl, "http://127.0.0.1:11434");
   registry->RegisterStringPref(prefs::kOllamaModel, "llama3.2:3b");
   registry->RegisterBooleanPref(prefs::kAiControlEnabled, false);
+  registry->RegisterBooleanPref(prefs::kAgentEnabled, false);
+  registry->RegisterIntegerPref(prefs::kAgentTaskRetentionDays, 30);
+  registry->RegisterDictionaryPref(prefs::kAgentWorkspaces);
   registry->RegisterStringPref(prefs::kPausedSites, std::string());
   registry->RegisterBooleanPref(prefs::kAwarenessIntroShown, false);
   registry->RegisterBooleanPref(prefs::kTorrentDisclosureAcknowledged, false);

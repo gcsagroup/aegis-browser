@@ -55,3 +55,14 @@
 0054-feat-aegis-add-V8-bytecode-shadow-observation.patch
 0055-feat-aegis-support-compatible-model-APIs.patch
 0056-feat-aegis-add-site-summary-shortcut.patch
+0057-build-aegis-pin-bytecode-shadow-V8-revision.patch
+0058-feat-aegis-add-policy-brokered-browser-agent-core.patch
+0059-feat-aegis-enforce-scoped-Actor-execution.patch
+0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch
+0061-fix-aegis-harden-agent-runtime-and-desktop-integrati.patch
+0062-fix-aegis-show-browser-agent-entry-by-default.patch
+0063-fix-aegis-migrate-agent-toolbar-entry.patch
+0064-fix-aegis-signal-agent-side-panel-readiness.patch
+0065-feat-aegis-open-task-pages-automatically.patch
+0066-feat-aegis-tailor-settings-and-update-status.patch
+0067-feat-aegis-add-gcsa-visual-branding.patch

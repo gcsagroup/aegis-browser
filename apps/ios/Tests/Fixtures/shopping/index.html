@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aegis Fixture · 购物接管</title>
+  <style>
+    body { font: 17px -apple-system, sans-serif; margin: 24px; line-height: 1.5; }
+    .card { border: 1px solid #b8b8bd; border-radius: 12px; padding: 18px; max-width: 520px; }
+    button { display: block; min-height: 44px; margin-top: 14px; width: 100%; }
+    #handoff { padding: 12px; background: #fff4ce; border-radius: 10px; }
+  </style>
+</head>
+<body data-aegis-fixture="shopping.user-handoff">
+  <h1>Aegis Fixture Store</h1>
+  <article class="card" data-product-id="fixture-headphones">
+    <h2>离线测试耳机</h2>
+    <p>规格：深空灰</p>
+    <p>单价：<data value="199.00">¥199.00</data></p>
+    <label>数量
+      <select id="quantity" aria-label="商品数量">
+        <option value="1" selected>1</option>
+        <option value="2">2</option>
+      </select>
+    </label>
+    <button id="add-to-cart" type="button">加入测试购物车</button>
+    <button id="review-checkout" type="button">预览结算</button>
+    <button id="final-submit"
+            data-aegis-final-submit="forbidden"
+            disabled
+            type="button">
+      最终提交（必须由用户接管）
+    </button>
+  </article>
+  <p id="handoff" role="status" aria-live="polite">状态：等待操作</p>
+  <script>
+    const handoff = document.querySelector("#handoff");
+    document.querySelector("#add-to-cart").addEventListener("click", () => {
+      handoff.textContent = "状态：已加入本地测试购物车";
+    });
+    document.querySelector("#review-checkout").addEventListener("click", () => {
+      handoff.textContent = "状态：结算预览完成，已进入用户接管；禁止最终提交";
+    });
+  </script>
+</body>
+</html>

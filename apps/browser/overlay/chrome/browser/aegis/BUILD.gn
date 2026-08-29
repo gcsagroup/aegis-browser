@@ -1,7 +1,73 @@
 # Copyright 2026 GCSA
 # Intended path: chrome/browser/aegis/BUILD.gn
 
+import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
+
+source_set("model_provider_policy") {
+  sources = [
+    "model_provider_policy.cc",
+    "model_provider_policy.h",
+  ]
+  deps = [
+    "//base",
+    "//net",
+    "//url",
+  ]
+}
+
+source_set("agent_core") {
+  sources = [
+    "agent/agent_execution.cc",
+    "agent/agent_execution.h",
+    "agent/agent_model_protocol.cc",
+    "agent/agent_model_protocol.h",
+    "agent/agent_monitor_scheduler.cc",
+    "agent/agent_monitor_scheduler.h",
+    "agent/agent_planner.cc",
+    "agent/agent_planner.h",
+    "agent/agent_policy_broker.cc",
+    "agent/agent_policy_broker.h",
+    "agent/agent_result_verifier.cc",
+    "agent/agent_result_verifier.h",
+    "agent/agent_service_observer.h",
+    "agent/agent_task.cc",
+    "agent/agent_task.h",
+    "agent/agent_task_store.cc",
+    "agent/agent_task_store.h",
+    "agent/agent_tool_registry.cc",
+    "agent/agent_tool_registry.h",
+    "agent/agent_types.cc",
+    "agent/agent_types.h",
+    "agent/agent_workflow.cc",
+    "agent/agent_workflow.h",
+  ]
+  deps = [
+    "//base",
+    "//crypto",
+    "//net/base:registry_controlled_domains",
+    "//sql",
+    "//url",
+  ]
+}
+
+if (!is_android) {
+  source_set("agent_model_transport") {
+    sources = [
+      "agent/agent_model_client.cc",
+      "agent/agent_model_client.h",
+    ]
+    deps = [
+      ":agent_core",
+      ":model_provider_policy",
+      "//base",
+      "//net",
+      "//services/network/public/cpp",
+      "//services/network/public/mojom",
+      "//url",
+    ]
+  }
+}
 
 source_set("aegis") {
   sources = [
@@ -43,6 +109,7 @@ source_set("aegis") {
     "threat_feed_updater.h",
   ]
   deps = [
+    ":model_provider_policy",
     "//base",
     "//chrome/browser:after_startup_task_utils",
     "//chrome/browser:browser_process",
@@ -74,8 +141,36 @@ source_set("aegis") {
   ]
   if (!is_android) {
     sources += [
+      "agent/aegis_actor_bridge.cc",
+      "agent/aegis_actor_bridge.h",
+      "agent/aegis_agent_service.cc",
+      "agent/aegis_agent_service.h",
+      "agent/aegis_agent_service_factory.cc",
+      "agent/aegis_agent_service_factory.h",
+      "agent/aegis_browser_tools.cc",
+      "agent/aegis_browser_tools.h",
       "summary_session.cc",
       "summary_session.h",
+    ]
+    deps += [
+      ":agent_core",
+      ":agent_model_transport",
+      "//chrome/browser/actor",
+      "//chrome/browser/bookmarks",
+      "//chrome/browser/content_settings:content_settings_factory",
+      "//chrome/browser/history",
+      "//chrome/browser/notifications",
+      "//chrome/browser/ui/browser_window",
+      "//chrome/browser/ui/tab_contents",
+      "//chrome/browser/ui/tabs:tab_strip",
+      "//chrome/browser/undo",
+      "//components/actor/core",
+      "//components/bookmarks/browser",
+      "//components/keyed_service/core",
+      "//components/tab_groups",
+      "//components/undo",
+      "//crypto",
+      "//ui/message_center/public/cpp",
     ]
   }
   if (is_mac) {
@@ -88,6 +183,113 @@ source_set("aegis") {
       "//sandbox/mac:seatbelt_extension",
     ]
   }
+}
+
+if (!is_android) {
+  test("aegis_agent_model_unittests") {
+    sources = [ "agent/agent_model_client_unittest.cc" ]
+    deps = [
+      ":agent_model_transport",
+      "//base/test:run_all_unittests",
+      "//base/test:test_support",
+      "//mojo/core/embedder",
+      "//services/network:test_support",
+      "//testing/gmock",
+      "//testing/gtest",
+    ]
+  }
+
+  source_set("browser_tests") {
+    testonly = true
+    defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+    sources = [ "agent/aegis_agent_browsertest.cc" ]
+    deps = [
+      ":aegis",
+      "//base",
+      "//base/test:test_support",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/search_engines",
+      "//chrome/browser/ui",
+      "//chrome/browser/ui:browser_actions",
+      "//chrome/browser/ui/side_panel",
+      "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+      "//chrome/browser/ui/views/side_panel",
+      "//chrome/browser/ui/webui/aegis_agent",
+      "//chrome/common/aegis",
+      "//chrome/test:test_support",
+      "//chrome/test:test_support_ui",
+      "//components/prefs",
+      "//components/search_engines",
+      "//content/test:test_support",
+      "//testing/gtest",
+      "//url",
+    ]
+  }
+
+  source_set("interactive_ui_tests") {
+    testonly = true
+    defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+    sources = [ "agent/aegis_agent_interactive_uitest.cc" ]
+    deps = [
+      ":aegis",
+      "//base",
+      "//base/test:test_support",
+      "//chrome/app:command_ids",
+      "//chrome/browser/ui",
+      "//chrome/browser/ui:browser_element_identifiers",
+      "//chrome/browser/ui/side_panel",
+      "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+      "//chrome/browser/ui/views/side_panel",
+      "//chrome/common/aegis",
+      "//chrome/test:test_support",
+      "//chrome/test:test_support_ui",
+      "//components/prefs",
+      "//content/test:test_support",
+      "//testing/gtest",
+      "//url",
+    ]
+  }
+}
+
+test("aegis_agent_core_unittests") {
+  sources = [
+    "agent/agent_core_unittest.cc",
+    "agent/agent_execution_unittest.cc",
+    "agent/agent_model_protocol_unittest.cc",
+    "agent/agent_planner_unittest.cc",
+    "agent/agent_task_store_unittest.cc",
+  ]
+  deps = [
+    ":agent_core",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+fuzzer_test("aegis_agent_model_protocol_fuzzer") {
+  sources = [ "agent/agent_model_protocol_fuzzer.cc" ]
+  deps = [
+    ":agent_core",
+    "//base",
+  ]
+}
+
+fuzzer_test("aegis_agent_tool_arguments_fuzzer") {
+  sources = [ "agent/agent_tool_arguments_fuzzer.cc" ]
+  deps = [
+    ":agent_core",
+    "//base",
+  ]
+}
+
+fuzzer_test("aegis_agent_scope_fuzzer") {
+  sources = [ "agent/agent_scope_fuzzer.cc" ]
+  deps = [
+    ":agent_core",
+    "//base",
+  ]
 }
 
 test("aegis_browser_unittests") {
@@ -118,6 +320,21 @@ test("aegis_browser_unittests") {
     "//url",
   ]
   if (!is_android) {
-    sources += [ "summary_session_unittest.cc" ]
+    sources += [
+      "agent/aegis_agent_service_unittest.cc",
+      "agent/agent_core_unittest.cc",
+      "agent/agent_task_store_unittest.cc",
+      "summary_session_unittest.cc",
+    ]
+    deps += [
+      "//chrome/browser/actor",
+      "//chrome/browser/actor/ui:event_dispatcher",
+      "//chrome/browser/actor/ui:test_support",
+      "//chrome/common/aegis",
+      "//components/actor/core",
+      "//components/download/public/common:public",
+      "//components/undo",
+      "//content/test:test_support",
+    ]
   }
 }

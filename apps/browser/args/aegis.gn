@@ -13,9 +13,20 @@ v8_symbol_level = 0
 # Faster local iteration on Apple Silicon
 target_cpu = "arm64"
 
+# 使用 GCSA 视觉资源，但保留 Chromium 的内部产品名、Bundle ID、辅助进程名
+# 与安装器/字符串身份，避免现有用户数据目录发生迁移。
+is_chrome_branded = false
+branding_path_component = "gcsa_aegis"
+branding_path_product = "chromium"
+branding_file_path = "//chrome/app/theme/gcsa_aegis/BRANDING"
+
 # Keep proprietary codecs off unless you have a licensing plan
 proprietary_codecs = false
 ffmpeg_branding = "Chromium"
 
 # Enable official-ish optimizations without claiming Google branding
 is_official_build = false
+
+# 面向产品的构建不加载 Chromium 的测试 Field Trial 配置。该配置会在
+# macOS 上启用实验性 SearchSettingsUpdate，隐藏完整搜索引擎管理页。
+disable_fieldtrial_testing_config = true

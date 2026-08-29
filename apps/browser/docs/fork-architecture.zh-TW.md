@@ -6,10 +6,9 @@ GCSA-aegis 是 Chromium fork。瀏覽器、網路、儲存、Blink 和部分 V8 
 
 ## 狀態邊界
 
-- 目前原始碼：**56 個頂層 Chromium 補丁 + 2 個巢狀 V8 補丁**。
-- 現有 Release 身分：**54 個 Chromium 補丁 + 2 個 V8 補丁**。
-- Chromium `0055`、`0056` 尚未被目前已提交的 Release 清單涵蓋。
-- 現有 non-component Release build-tree 只是本機證據，不是已簽署、公證、安裝或發布的發行版。
+- 目前整合原始碼：**67 個頂層 Chromium 補丁 + 2 個巢狀 V8 補丁**。
+- 57 補丁診斷清單和 65 補丁 Agent 驗收屬於歷史快照，均不綁定目前 67 補丁 HEAD，也不能為它授予資格。
+- 目前整合原始碼仍需重新完成精確重放、身分綁定建置和受影響執行驗收；目前沒有正式產品簽署、公證、安裝或發布的發行版。
 - Android 尚未從目前原始碼建置。
 
 ## 產品形態
@@ -50,22 +49,18 @@ GCSA-aegis 是 Chromium fork。瀏覽器、網路、儲存、Blink 和部分 V8 
 | 指紋保護 | Blink Canvas、Audio、WebGL、WebGPU hook | 降低部分穩定表面，不阻止全部指紋識別 |
 | 下載 | Chromium 下載 UI 與隔離 torrent service | HTTPS tracker 與發布資格仍受門禁約束 |
 | 頁面摘要 | 啟發式路徑和使用者設定的相容 API | 遠端使用需去識別化與確認；Android 頁面擷取不可用 |
+| Browser Agent | 策略代理、固定工具註冊表、Actor/側欄/WebUI、工作儲存 | 模型不能擴張 scope 或繞過審批；最終購買必須使用者接管 |
 | MinerGuard | Browser/renderer 訊號與報告 | 僅觀察，不阻斷執行或流量 |
-| Bytecode shadow | 預設關閉的巢狀 V8 插樁 | 僅研究；現有身分涵蓋 2 個 V8 補丁，但不涵蓋最新 Chromium 0055/0056 |
+| Bytecode shadow | 預設關閉的巢狀 V8 插樁 | 僅研究；歷史身分涵蓋 2 個 V8 補丁，但均不能為目前 67 補丁 HEAD 或散佈授予資格 |
 | 本機自動化 | Loopback CDP 控制和文件授權 | 部分桌面路徑有本機證據；簽署安裝與 Android 證據獨立 |
 
 ## 補丁交付模型
 
-`apps/browser/patches/series` 排列 56 個 Chromium 補丁，`apps/browser/patches/v8/series` 排列套用在巢狀 V8 checkout 中的 2 個補丁。重放指令碼會先驗證兩套基線。
+`apps/browser/patches/series` 排列 67 個 Chromium 補丁，`apps/browser/patches/v8/series` 排列套用在巢狀 V8 checkout 中的 2 個補丁。重放指令碼會先驗證兩套基線。
 
 `overlay/` 保存供開發和審查使用的預期整合原始碼。它不會獨立套用，也不能取代補丁序列。原始碼變更必須匯出為有序補丁，在固定基線上重放、建置並測試。
 
-最新原始碼與最新合格 Release 身分必須分開描述：
-
-- Chromium 0001–0054 和 V8 0001–0002 已有綁定身分的 Release 證據。
-- Chromium 0055 增加相容模型 API 和憑據隔離。
-- Chromium 0056 增加精確文件綁定的網站摘要流程。
-- 0055/0056 仍需新的已提交儲存庫身分和完整 Release 證據鏈。
+0057–0065 實作並強化 Browser Agent v1；0066 調整設定與更新狀態介面，0067 增加 GCSA 跨平台品牌。歷史 57 補丁和 65 補丁身分均不涵蓋目前 67 補丁 HEAD，必須重新產生重放與建置身分。
 
 「列入 series」只證明順序和檔案存在，不證明乾淨重放、建置新鮮度、簽署、封裝、安裝驗收、Android 支援或發布核准。
 
@@ -83,7 +78,7 @@ HTTP(S) 下載仍由 Chromium `DownloadItem` 執行。Metalink、Torrent 和 Mag
 
 ## 平台與發布邊界
 
-non-component macOS Release build-tree 是發布資格的輸入，不是發布結果。正式發布還需同一目前 commit 和兩套補丁序列的清單、受影響的原生與執行測試、產品身分、簽署、公證、封裝和安裝驗收。
+non-component macOS Release build-tree 是發布資格的輸入，不是發布結果。完整的診斷補丁涵蓋不會使其成為 RC。正式發布還需兩套補丁序列對應的乾淨已提交 root 身分和可信建置證據、受影響的原生與執行測試、產品身分、簽署、公證、封裝、安裝驗收和已通過的發布門禁。
 
 Android 接線存在於原始碼中，但目前沒有由目前原始碼產生的 APK 或 AAB。受支援的 x86-64 Linux 建置、真機驗收、Android 頁面摘要行為和 Play 合規仍是開放門禁。
 

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "safe-package",
+      "path": "downloads/safe-package.json",
+      "declared_mime": "application/json",
+      "observed_mime": "application/json",
+      "expected_sha256": "79afabb32582161e9622d7118d40d66132d443800decd25403a4eb8ddfbafc4a",
+      "expected_policy": "allow_after_confirmation"
+    },
+    {
+      "id": "mime-mismatch",
+      "path": "downloads/mime-mismatch.json",
+      "declared_mime": "application/zip",
+      "observed_mime": "application/json",
+      "expected_policy": "warn_and_block_open"
+    },
+    {
+      "id": "slow-cancellable",
+      "path": "downloads/slow-download.json",
+      "scenario": "chunked_response",
+      "expected_policy": "allow_cancel_without_auto_resume"
+    }
+  ],
+  "open_requires_native_confirmation": true
+}

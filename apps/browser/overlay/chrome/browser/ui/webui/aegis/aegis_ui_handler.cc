@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -19,16 +20,22 @@
 #include "build/build_config.h"
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/aegis/aegis_torrent_client.h"
+#include "chrome/browser/aegis/agent/aegis_agent_service.h"
+#include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
 #include "chrome/browser/aegis/metalink_download_verifier.h"
 #include "chrome/browser/aegis/metalink_parser.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/pref_names.h"
 #if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/side_panel/side_panel_entry.h"
+#include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #endif
+#include "chrome/common/aegis/features.h"
 #include "chrome/common/chrome_render_frame.mojom.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/navigation_controller.h"
@@ -207,6 +214,31 @@ content::WebContents* FindHttpTab(content::WebContents* skip) {
 #endif
 }
 
+#if !BUILDFLAG(IS_ANDROID)
+BrowserWindowInterface* FindOwningBrowser(content::WebContents* contents) {
+  if (!contents) {
+    return nullptr;
+  }
+  BrowserWindowInterface* found = nullptr;
+  GlobalBrowserCollection* collection = GlobalBrowserCollection::GetInstance();
+  if (!collection) {
+    return nullptr;
+  }
+  collection->ForEach(
+      [&](BrowserWindowInterface* browser) {
+        TabStripModel* model = browser->GetTabStripModel();
+        if (model &&
+            model->GetIndexOfWebContents(contents) != TabStripModel::kNoTab) {
+          found = browser;
+          return false;
+        }
+        return true;
+      },
+      BrowserCollection::Order::kActivation);
+  return found;
+}
+#endif
+
 base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
   base::DictValue dict;
   dict.Set("ok", result.ok);
@@ -319,6 +351,10 @@ void AegisUIHandler::RegisterMessages() {
       base::BindRepeating(&AegisUIHandler::HandleSetModuleEnabled,
                           base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
+      "openBrowserAgent",
+      base::BindRepeating(&AegisUIHandler::HandleOpenBrowserAgent,
+                          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       "updateFilterLists",
       base::BindRepeating(&AegisUIHandler::HandleUpdateFilterLists,
                           base::Unretained(this)));
@@ -380,8 +416,10 @@ aegis::AegisService* AegisUIHandler::ServiceForWebUI() {
 
 base::DictValue AegisUIHandler::BuildStatus() {
   aegis::AegisService* service = ServiceForWebUI();
+  Profile* profile = Profile::FromWebUI(web_ui());
+  const bool regular_profile = profile && !profile->IsOffTheRecord();
   base::DictValue status;
-  status.Set("profileAvailable", service != nullptr);
+  status.Set("profileAvailable", regular_profile && service != nullptr);
   status.Set("enabled", service && service->IsEnabled());
   status.Set("trackerBlocking", service && service->IsTrackerBlockingEnabled());
   status.Set("phishInterstitial",
@@ -412,15 +450,23 @@ base::DictValue AegisUIHandler::BuildStatus() {
 #if BUILDFLAG(IS_ANDROID)
   status.Set("isAndroid", true);
   status.Set("torrentSupported", false);
+  status.Set("browserAgentAvailable", false);
+  status.Set("browserAgentEnabled", false);
 #else
   status.Set("isAndroid", false);
+  const bool browser_agent_available =
+      regular_profile &&
+      base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
+  status.Set("browserAgentAvailable", browser_agent_available);
+  status.Set("browserAgentEnabled",
+             browser_agent_available &&
+                 profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled));
 #if BUILDFLAG(IS_MAC)
   status.Set("torrentSupported", service != nullptr);
 #else
   status.Set("torrentSupported", false);
 #endif
 #endif
-  Profile* profile = service ? Profile::FromWebUI(web_ui()) : nullptr;
   status.Set("torrentDisclosureAcknowledged",
              profile && profile->GetPrefs()->GetBoolean(
                             aegis::prefs::kTorrentDisclosureAcknowledged));
@@ -532,9 +578,68 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
     service->SetPrivacyAiEnabled(enabled);
   } else if (module == "aiControl") {
     service->SetAiControlEnabled(enabled);
+  } else if (module == "browserAgent") {
+#if BUILDFLAG(IS_ANDROID)
+    base::DictValue status = BuildStatus();
+    status.Set("ok", false);
+    status.Set("error", "Browser Agent is not available on Android in v1");
+    ResolveJavascriptCallback(callback_id, status);
+    return;
+#else
+    Profile* profile = Profile::FromWebUI(web_ui());
+    if (!profile || !profile->IsRegularProfile() ||
+        !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
+      base::DictValue status = BuildStatus();
+      status.Set("ok", false);
+      status.Set("error", "Browser Agent feature is unavailable");
+      ResolveJavascriptCallback(callback_id, status);
+      return;
+    }
+    aegis::agent::AegisAgentService* agent_service =
+        aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(profile);
+    profile->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, enabled);
+    if (!enabled && agent_service) {
+      agent_service->CancelAllForDisable();
+    } else if (enabled && agent_service) {
+      agent_service->ResumeMonitorsAfterEnable();
+    } else if (enabled) {
+      // Creating the service restores and schedules persisted monitors.
+      aegis::agent::AegisAgentServiceFactory::GetForProfile(profile);
+    }
+#endif
   }
 
   ResolveJavascriptCallback(callback_id, BuildStatus());
+}
+
+void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
+  AllowJavascript();
+  if (args.empty()) {
+    return;
+  }
+  const base::Value& callback_id = args[0];
+  base::DictValue status = BuildStatus();
+#if BUILDFLAG(IS_ANDROID)
+  status.Set("ok", false);
+  status.Set("error", "Browser Agent is not available on Android in v1");
+#else
+  Profile* profile = Profile::FromWebUI(web_ui());
+  BrowserWindowInterface* browser =
+      FindOwningBrowser(web_ui()->GetWebContents());
+  SidePanelUI* side_panel =
+      browser ? browser->GetFeatures().side_panel_ui() : nullptr;
+  if (!profile || !profile->IsRegularProfile() || !browser || !side_panel ||
+      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
+      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+    status.Set("ok", false);
+    status.Set("error", "Enable Browser Agent before opening it");
+  } else {
+    side_panel->Show(SidePanelEntry::Id::kAegisAgent,
+                     SidePanelOpenTrigger::kAegisAgent);
+    status.Set("ok", true);
+  }
+#endif
+  ResolveJavascriptCallback(callback_id, status);
 }
 
 void AegisUIHandler::HandleUpdateFilterLists(const base::ListValue& args) {

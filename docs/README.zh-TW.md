@@ -4,7 +4,7 @@
 
 本目錄保存 GCSA-aegis 的公開產品架構、路線圖、研究邊界、產品頁，以及帶日期的本機稽核記錄。
 
-> **目前邊界 — 2026-08-28：**原始碼整合已同步到 56 個頂層 Chromium 補丁，另含 2 個巢狀 V8 補丁。最新帶身分清單的 build-tree 只涵蓋 54 個頂層補丁及這 2 個 V8 補丁。專案整體仍為發行 No-Go。
+> **目前邊界 — 2026-08-29：** 整合後的原始碼包含 67 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁。先前的 57 補丁診斷清單和 65 補丁 Agent 驗收屬於歷史快照，不能為目前 HEAD 授予資格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`；兩者都不能泛化為廣義惡意 JavaScript 偵測結論。專案整體仍為發行 No-Go。
 
 ## 從這裡開始
 
@@ -15,6 +15,9 @@
 - [變更日誌](../CHANGELOG.zh-TW.md)
 - [三語產品頁](product.html)
 - [Browser 構建與驗證指南](../apps/browser/README.zh-TW.md)
+- [原生 iOS 工程指南](../apps/ios/README.zh-TW.md)
+- [Browser Agent 使用者指南](aegis-browser-agent-v1-user-guide.zh-TW.md)
+- [Browser Agent 架構](aegis-browser-agent-v1-architecture.zh-TW.md)
 
 ## 狀態用語
 

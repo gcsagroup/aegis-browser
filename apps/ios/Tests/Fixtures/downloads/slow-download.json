@@ -1,0 +1,7 @@
+{
+  "fixture": "slow-cancellable",
+  "chunks": 8,
+  "delay_milliseconds_per_chunk": 250,
+  "expected_cancel_deadline_milliseconds": 5000,
+  "auto_resume_after_cancel": false
+}

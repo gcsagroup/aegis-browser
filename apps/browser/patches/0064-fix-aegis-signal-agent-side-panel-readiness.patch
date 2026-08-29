@@ -1,0 +1,171 @@
+From 09da1a134ed630d4a605a1aafee5fbae0e783631 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 29 Aug 2026 03:02:09 +0800
+Subject: [PATCH] fix(aegis): signal agent side panel readiness
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 26 +++++++++++++++++++
+ chrome/browser/resources/aegis_agent/agent.ts |  5 +++-
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |  2 ++
+ .../aegis_agent/aegis_agent_page_handler.cc   |  9 +++++++
+ .../aegis_agent/aegis_agent_page_handler.h    |  4 +++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  2 +-
+ 6 files changed, 46 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 489ba392d2..354f418e54 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -19,8 +19,10 @@
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_actions.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
++#include "chrome/browser/ui/side_panel/side_panel_action_callback.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
++#include "chrome/browser/ui/side_panel/side_panel_enums.h"
+ #include "chrome/browser/ui/side_panel/side_panel_registry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
+@@ -116,6 +118,30 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
+   EXPECT_FALSE(pinned->Contains(kActionSidePanelShowAegisAgent));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
++                       PinnedToolbarActionOpensPanel) {
++  actions::ActionItem* action = actions::ActionManager::Get().FindAction(
++      kActionSidePanelShowAegisAgent,
++      browser()->GetActions()->root_action_item());
++  ASSERT_TRUE(action);
++  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++  ASSERT_TRUE(side_panel);
++  side_panel->DisableAnimationsForTesting();
++
++  action->InvokeAction(
++      actions::ActionInvocationContext::Builder()
++          .SetProperty(
++              kSidePanelOpenTriggerKey,
++              static_cast<std::underlying_type_t<SidePanelOpenTrigger>>(
++                  SidePanelOpenTrigger::kPinnedEntryToolbarButton))
++          .Build());
++
++  EXPECT_TRUE(base::test::RunUntil([&]() {
++    return side_panel->IsSidePanelEntryShowing(
++        SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
++  }));
++}
++
+ class AegisAgentBrowserTest : public InProcessBrowserTest {
+  public:
+   AegisAgentBrowserTest() {
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index b33475a400..f8f41b70e2 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -397,4 +397,7 @@ function bindActions() {
+ initializeLabels();
+ bindActions();
+ proxy.callbackRouter.onSnapshotChanged.addListener(render);
+-proxy.handler.getSnapshot().then(({snapshot: initial}) => render(initial));
++proxy.handler.getSnapshot().then(({snapshot: initial}) => {
++  render(initial);
++  proxy.handler.showUI();
++});
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 3948b1e753..3c454d22ec 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -109,6 +109,8 @@ interface Page {
+ };
+ 
+ interface PageHandler {
++  ShowUI();
++
+   GetSnapshot() => (TaskSnapshot snapshot);
+ 
+   CreateTask(string goal,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 7dc07d318c..59d5a0085b 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -17,6 +17,7 @@
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
+@@ -162,10 +163,12 @@ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
+ AegisAgentPageHandler::AegisAgentPageHandler(
+     Profile* profile,
+     BrowserWindowInterface* browser,
++    AegisAgentUI* ui,
+     mojo::PendingRemote<aegis_agent::mojom::Page> page,
+     mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver)
+     : profile_(profile),
+       browser_(browser && browser->GetProfile() == profile ? browser : nullptr),
++      ui_(ui),
+       page_(std::move(page)),
+       receiver_(this, std::move(receiver)) {
+   if (profile_ && profile_->GetPrefs()) {
+@@ -189,6 +192,12 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+   }
+ }
+ 
++void AegisAgentPageHandler::ShowUI() {
++  if (ui_ && ui_->embedder()) {
++    ui_->embedder()->ShowUI();
++  }
++}
++
+ AegisAgentPageHandler::~AegisAgentPageHandler() = default;
+ 
+ void AegisAgentPageHandler::OnAgentEnabledChanged() {
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index bdc5df3bfe..d854755bfb 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -20,6 +20,7 @@
+ 
+ class Profile;
+ class BrowserWindowInterface;
++class AegisAgentUI;
+ 
+ namespace aegis::agent {
+ class AegisAgentService;
+@@ -32,12 +33,14 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+   AegisAgentPageHandler(
+       Profile* profile,
+       BrowserWindowInterface* browser,
++      AegisAgentUI* ui,
+       mojo::PendingRemote<aegis_agent::mojom::Page> page,
+       mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver);
+   AegisAgentPageHandler(const AegisAgentPageHandler&) = delete;
+   AegisAgentPageHandler& operator=(const AegisAgentPageHandler&) = delete;
+   ~AegisAgentPageHandler() override;
+ 
++  void ShowUI() override;
+   void GetSnapshot(GetSnapshotCallback callback) override;
+   void CreateTask(const std::string& goal,
+                   aegis_agent::mojom::AgentMode mode,
+@@ -91,6 +94,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+ 
+   raw_ptr<Profile> profile_;
+   raw_ptr<BrowserWindowInterface> browser_ = nullptr;
++  raw_ptr<AegisAgentUI> ui_ = nullptr;
+   raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
+   std::string active_task_id_;
+   std::string last_error_;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 9ad9678911..0da7b17209 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -200,6 +200,6 @@ void AegisAgentUI::CreatePageHandler(
+     mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver) {
+   page_handler_ = std::make_unique<AegisAgentPageHandler>(
+       Profile::FromWebUI(web_ui()),
+-      webui::GetBrowserWindowInterface(web_ui()->GetWebContents()),
++      webui::GetBrowserWindowInterface(web_ui()->GetWebContents()), this,
+       std::move(page), std::move(receiver));
+ }

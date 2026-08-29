@@ -43,13 +43,14 @@ Current direction: keep deterministic high-confidence checks in the browser, res
 - The Node-only AST analyzer uses the TypeScript parser, applies size and complexity limits, and emits counts and reason codes without source text, literals, URLs, or payloads. It is not in the page execution path.
 - Bounded behavior and provenance functions operate only on caller-supplied, categorized events. They are not a live browser information-flow system.
 - MinerGuard combines selected browser-side CPU estimates, Worker/Wasm/WebGPU/shared-memory signals, WebSocket observations, and strong endpoint tokens. It records observe-only findings and does not stop scripts, workers, or connections.
-- The current research corpus consists of synthetic fixtures. Its content digest checks integrity, not independent sealing; `sealIsolationVerified=false`, `finalEvaluationEligible=false`, and the final-evaluation path remains locked.
+- The Phase 2 protocol-bound formal research corpus remains synthetic fixtures. Its content digest checks integrity, not independent sealing; `sealIsolationVerified=false`, `finalEvaluationEligible=false`, and the final-evaluation path remains locked.
+- Phase 3 separately evaluated a 13-sample public-source pilot under an `operator-blinded-local` protocol: 3 samples were labeled `mining-capable`, 10 were benign controls, and the candidate detected 1 of the 3 positives for recall `0.333333`. The pilot has no independent holder or sealed test and is not a final evaluation.
 
 ## Evidence and release gates
 
 1. Keep research metrics separate from product runtime and release qualification.
 2. Require independent benign and malicious labeling, real-site coverage, obfuscation tests, false-positive measurement, performance budgets, and breakage testing before a detector can affect page behavior.
-3. Do not describe an observe-only signal, synthetic-fixture result, or claims-completeness check as a security authorization.
-4. Re-run affected gates against the same committed source and identity-bound artifact. The live source has 56 top-level Chromium patches plus 2 nested V8 patches, while the latest identity-bound build-tree covers only 54 plus 2.
+3. Do not describe an observe-only signal, synthetic-fixture result, small operator-blinded public pilot, or claims-completeness check as a security authorization.
+4. Re-run affected gates against the same committed source and identity-bound artifact. The current source contains 67 top-level Chromium patches plus 2 nested V8 patches; the earlier 57-patch diagnostic manifest and 65-patch Agent candidate remain historical evidence and do not bind or qualify this head.
 
 The research program remains **No-Go for production blocking and general malicious-JavaScript claims**.

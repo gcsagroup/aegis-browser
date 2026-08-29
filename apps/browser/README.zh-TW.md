@@ -8,9 +8,9 @@ GCSA-aegis Browser 是把隱私與安全能力直接整合到瀏覽器層和引�
 
 ## 目前狀態
 
-- 目前原始碼列出 **56 個頂層 Chromium 補丁**，另有 **2 個巢狀 V8 補丁**。
-- 現有 Release 清單和執行證據只綁定 **54 個 Chromium 補丁 + 2 個 V8 補丁**；`0055`、`0056` 尚無目前已提交的 Release 身分。
-- non-component `out/AegisRelease/Chromium.app` 只是本機 Release build-tree 輸入，**不是**已簽署、公證、封裝、安裝驗收或發布的發行版。
+- 目前整合原始碼列出 **67 個頂層 Chromium 補丁**，另有 **2 個巢狀 V8 補丁**。
+- 先前的 57 補丁診斷清單和 65 補丁 Agent 驗收保留為歷史快照，均不綁定目前 67 補丁 HEAD，也不能為它授予資格。
+- 仍需重新完成目前整合原始碼的精確重放、身分綁定建置、受影響執行驗收和發布門檻。目前沒有正式產品簽署、公證、封裝、安裝驗收或已發布的桌面發行版。
 - Android **尚未從目前原始碼建置**，目前沒有可對應到原始碼的 APK 或 AAB。
 
 因此，儲存庫目前沒有可發布的桌面或 Android 產物。
@@ -30,11 +30,9 @@ GCSA-aegis Browser 是把隱私與安全能力直接整合到瀏覽器層和引�
 - [Android 建置與驗收狀態](./docs/android.zh-TW.md)
 - [Play Store 準備草案](./docs/play-store.zh-TW.md)
 
-以下是開發內部文件，刻意不翻譯：
-
-- [Overlay 同步規則](./docs/overlay.md)
-- [Chromium 目錄配置](./docs/tree-layout.md)
-- [補丁維護說明](./patches/README.md)
+- [Overlay 同步規則](./docs/overlay.zh-TW.md)
+- [Chromium 目錄配置](./docs/tree-layout.zh-TW.md)
+- [補丁維護說明](./patches/README.zh-TW.md)
 
 實際操作以 `patches/series`、`patches/v8/series` 和 `scripts/` 下的腳本為準。歷史狀態記錄不能取代目前重放、建置或執行驗證。
 
@@ -106,10 +104,10 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 
 目前原始碼口徑：
 
-- 56 個頂層 Chromium 補丁。
+- 列入 Chromium 序列的 67 個頂層補丁。
 - 2 個套用在巢狀 V8 checkout 中的補丁。
-- 現有 Release 身分證據只涵蓋 Chromium 0001–0054 和 2 個 V8 補丁。
-- Chromium 0055、0056 仍需新的已提交身分、乾淨重放、建置、受影響測試和代表性執行證據。
+- 歷史身分只涵蓋先前的 57 補丁和 65 補丁快照，均不涵蓋 0066–0067。
+- 目前 67 補丁 HEAD 必須重新完成精確重放和建置身分綁定，才能形成目前資格結論。
 
 「已列入 series」只表示補丁檔案存在，不證明重放、可重現建置、平台驗收、簽署、封裝或發布已經完成。
 
@@ -121,6 +119,7 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 - 針對部分 Canvas、Audio、WebGL、WebGPU 表面的 Blink 指紋擾動；
 - 原生 HTTP(S)、Metalink、Torrent 和 Magnet 下載；
 - 本機啟發式摘要，以及使用者設定的 OpenAI、Claude（Anthropic）或 Gemini 相容 API；
+- 瀏覽器掌控的 Agent：包含 Observe/Ask/Act 模式、有範圍約束的書籤/URL/頁面/下載/工作流程/監控工具、精確審批、稽核歷史、取消，以及最終購買前的強制使用者接管；
 - 僅觀察的 MinerGuard 訊號；以及
 - 預設關閉、需明確啟用的 V8 bytecode-shadow 研究路徑。
 
@@ -145,7 +144,8 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 5. 代表系統上的全新安裝和升級驗收；以及
 6. 明確的發布決定。
 
-現有 Release build-tree 不符合這些條件，也沒有涵蓋 0055/0056。
+目前本機 diagnostic build-tree 已涵蓋 0055/0056/0057，但不符合上述條件。完整補丁涵蓋不會使其成為 RC 或發行版。
+本機 RC 已符合其中的乾淨重播、身分和受影響測試要求，但尚未符合產品身分、受信任簽署、公證、已安裝散佈套件或發行授權門禁。
 
 ## Android
 

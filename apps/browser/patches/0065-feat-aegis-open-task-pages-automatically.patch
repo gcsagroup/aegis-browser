@@ -1,0 +1,441 @@
+From f810a39ebc9efa9c7e94ab003439e05460a9ca8e Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 29 Aug 2026 16:34:59 +0800
+Subject: [PATCH] feat(aegis): open task pages automatically
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ .../aegis/agent/aegis_agent_browsertest.cc    | 109 ++++++++++++++
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn  |   3 +
+ .../aegis_agent/aegis_agent_page_handler.cc   | 135 ++++++++++++++++--
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  18 +--
+ 5 files changed, 250 insertions(+), 18 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 3164a58133..ca2fa97f3d 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -208,7 +208,9 @@ if (!is_android) {
+       "//base",
+       "//base/test:test_support",
+       "//chrome/browser/profiles:profile",
++      "//chrome/browser/search_engines",
+       "//chrome/browser/ui",
++      "//chrome/browser/ui:browser_actions",
+       "//chrome/browser/ui/side_panel",
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+       "//chrome/browser/ui/views/side_panel",
+@@ -217,6 +219,7 @@ if (!is_android) {
+       "//chrome/test:test_support",
+       "//chrome/test:test_support_ui",
+       "//components/prefs",
++      "//components/search_engines",
+       "//content/test:test_support",
+       "//testing/gtest",
+       "//url",
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 354f418e54..480c375410 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -15,6 +15,7 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_test_util.h"
+ #include "chrome/browser/profiles/profile_window.h"
++#include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_actions.h"
+@@ -25,6 +26,7 @@
+ #include "chrome/browser/ui/side_panel/side_panel_enums.h"
+ #include "chrome/browser/ui/side_panel/side_panel_registry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
+ #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+ #include "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h"
+@@ -35,6 +37,8 @@
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "components/prefs/pref_service.h"
++#include "components/search_engines/template_url.h"
++#include "components/search_engines/template_url_service.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+@@ -54,6 +58,31 @@ SidePanelEntry* AgentEntry(Browser* browser) {
+                   : nullptr;
+ }
+ 
++void ConfigureAgentModel(Profile* profile) {
++  PrefService* pref_service = profile->GetPrefs();
++  pref_service->SetString(prefs::kModelProvider, "openai");
++  pref_service->SetString(prefs::kModelBaseUrl, "https://api.openai.com/v1");
++  pref_service->SetString(prefs::kModelName, "gpt-4.1-mini");
++}
++
++content::WebContents* ShowAgentPanel(Browser* browser) {
++  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  if (!side_panel) {
++    return nullptr;
++  }
++  side_panel->SetNoDelaysForTesting(true);
++  side_panel->DisableAnimationsForTesting();
++  if (!ShowAegisAgentSidePanel(browser) || !base::test::RunUntil([&]() {
++        return side_panel->IsSidePanelEntryShowing(
++            SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
++      })) {
++    return nullptr;
++  }
++  content::WebContents* contents =
++      side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
++  return contents && content::WaitForLoadStop(contents) ? contents : nullptr;
++}
++
+ class AegisAgentDefaultEntryBrowserTest : public InProcessBrowserTest {
+  public:
+   AegisAgentDefaultEntryBrowserTest() {
+@@ -321,5 +350,85 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_EQ(service->task_count_for_testing(), 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       BlankPageGoalAutomaticallyOpensSearchTaskTab) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->profile());
++  TemplateURLService* search =
++      TemplateURLServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(search);
++  search->Load();
++  ASSERT_TRUE(base::test::RunUntil([&]() { return search->loaded(); }));
++  TemplateURLData data;
++  data.SetShortName(u"Aegis fixture search");
++  data.SetKeyword(u"aegis-fixture");
++  data.SetURL(embedded_test_server()
++                  ->GetURL("a.test", "/title1.html?q={searchTerms}")
++                  .spec());
++  TemplateURL* provider = search->Add(std::make_unique<TemplateURL>(data));
++  ASSERT_TRUE(provider);
++  search->SetUserSelectedDefaultSearchProvider(provider);
++
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  EXPECT_FALSE(content::EvalJs(panel, R"JS(
++    document.querySelector('#plan-button').disabled
++  )JS")
++                   .ExtractBool());
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++  const GURL expected =
++      search->GenerateSearchURLForDefaultSearchProvider(u"compare usb hubs");
++
++  const std::string task_id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const result = await BrowserProxy.getInstance().handler
++          .createTask('compare usb hubs', 1, 0, []);
++      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++    })()
++  )JS")
++                                  .ExtractString();
++  ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
++
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
++           browser()->GetActiveTabInterface()->GetURL() == expected;
++  }));
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(service);
++  EXPECT_EQ(service->task_count_for_testing(), 1u);
++  EXPECT_TRUE(service->MostRecentTask()->scope().AllowsOrigin(expected));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       BrowserStewardStartsWithoutOpeningWebPage) {
++  ConfigureAgentModel(browser()->profile());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++
++  const std::string task_id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const result = await BrowserProxy.getInstance().handler
++          .createTask('organize my bookmarks with a preview', 1, 1, []);
++      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++    })()
++  )JS")
++                                  .ExtractString();
++  ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
++
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(service);
++  ASSERT_TRUE(base::test::RunUntil(
++      [&]() { return service->task_count_for_testing() == 1u; }));
++  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
++  EXPECT_TRUE(service->MostRecentTask()->scope().allowed_origins.empty());
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 086ee3dda7..3591d9d3c3 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -36,13 +36,16 @@ source_set("impl") {
+     "//chrome/browser/aegis:agent_core",
+     "//chrome/browser/aegis:model_provider_policy",
+     "//chrome/browser/profiles:profile",
++    "//chrome/browser/search_engines",
+     "//chrome/browser/resources/aegis_agent:resources",
+     "//chrome/browser/ui/browser_window",
++    "//chrome/browser/ui/navigator",
+     "//chrome/browser/ui/webui:theme_source",
+     "//chrome/browser/ui/webui:webui_util",
+     "//chrome/common",
+     "//chrome/common/aegis",
+     "//components/prefs",
++    "//components/search_engines",
+     "//components/tabs:public",
+     "//content/public/browser",
+     "//ui/base",
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 59d5a0085b..e8d72426f3 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -11,16 +11,22 @@
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/agent/agent_policy_broker.h"
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/prefs/pref_service.h"
++#include "components/search_engines/template_url_service.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+@@ -121,6 +127,70 @@ tabs::TabInterface* ActiveTab(BrowserWindowInterface* browser) {
+   return browser ? browser->GetActiveTabInterface() : nullptr;
+ }
+ 
++bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
++  return workflow != AgentWorkflowKind::kBrowserSteward;
++}
++
++std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
++  const size_t https = goal.find("https://");
++  const size_t http = goal.find("http://");
++  const size_t start = std::min(https, http);
++  if (start == std::string_view::npos) {
++    return std::nullopt;
++  }
++  size_t end = goal.find_first_of(" \t\r\n", start);
++  std::string candidate(goal.substr(start, end == std::string_view::npos
++                                               ? goal.size() - start
++                                               : end - start));
++  constexpr std::string_view kTrailingPunctuation[] = {
++      ".",  ",",  ";",  ":",  "!",  "?",  ")",  "]",  "}",  "'",
++      "\"", "，", "。", "；", "：", "！", "？", "）", "】", "》"};
++  bool trimmed = true;
++  while (trimmed && !candidate.empty()) {
++    trimmed = false;
++    for (std::string_view punctuation : kTrailingPunctuation) {
++      if (base::EndsWith(candidate, punctuation)) {
++        candidate.resize(candidate.size() - punctuation.size());
++        trimmed = true;
++        break;
++      }
++    }
++  }
++  const GURL url(candidate);
++  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() ? std::make_optional(url)
++                                                     : std::nullopt;
++}
++
++std::optional<GURL> ResolveAutomaticTaskUrl(Profile* profile,
++                                            std::string_view goal) {
++  if (std::optional<GURL> explicit_url = ExplicitUrlFromGoal(goal)) {
++    return explicit_url;
++  }
++  TemplateURLService* search =
++      profile ? TemplateURLServiceFactory::GetForProfile(profile) : nullptr;
++  if (!search) {
++    return std::nullopt;
++  }
++  const GURL url = search->GenerateSearchURLForDefaultSearchProvider(
++      base::UTF8ToUTF16(goal));
++  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() ? std::make_optional(url)
++                                                     : std::nullopt;
++}
++
++tabs::TabInterface* OpenAutomaticTaskTab(BrowserWindowInterface* browser,
++                                         const GURL& url) {
++  if (!browser || !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    return nullptr;
++  }
++  NavigateParams params(browser, url, ui::PAGE_TRANSITION_GENERATED);
++  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
++  Navigate(&params);
++  return params.navigated_or_inserted_contents
++             ? tabs::TabInterface::GetFromContents(
++                   params.navigated_or_inserted_contents)
++             : nullptr;
++}
++
+ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
+     const GURL& active_url,
+     const std::vector<std::string>& values) {
+@@ -237,26 +307,69 @@ void AegisAgentPageHandler::CreateTask(
+       profile_ ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_)
+                : nullptr;
+   ObserveService(service_);
+-  tabs::TabInterface* tab = ActiveTab(browser_);
+   const std::optional<AgentMode> converted_mode = ConvertMode(mode);
+   const std::optional<AgentWorkflowKind> converted_workflow =
+       ConvertWorkflow(workflow);
+-  const std::optional<std::vector<url::Origin>> origins =
+-      tab ? ParseApprovedOrigins(tab->GetURL(), approved_origins)
+-          : std::nullopt;
+   const std::optional<aegis::agent::AgentModelDestination> model_destination =
+       service_ ? service_->ConfiguredModelDestination() : std::nullopt;
++  tabs::TabInterface* tab = ActiveTab(browser_);
++  GURL task_url = tab ? tab->GetURL() : GURL();
++  std::vector<std::string> resolved_origin_values = approved_origins;
++  const bool has_current_web_target =
++      tab && task_url.is_valid() && task_url.SchemeIsHTTPOrHTTPS();
++  const bool invalid_explicit_origins =
++      has_current_web_target && !approved_origins.empty() &&
++      !ParseApprovedOrigins(task_url, approved_origins);
++  const bool browser_only_task = converted_workflow &&
++                                 !WorkflowNeedsWebTarget(*converted_workflow) &&
++                                 resolved_origin_values.empty();
+   if (!service_ || !service_->IsEnabled()) {
+     last_error_ = "Browser Agent is disabled";
+-  } else if (!tab || !tab->GetURL().is_valid() ||
+-             !tab->GetURL().SchemeIsHTTPOrHTTPS()) {
+-    last_error_ = "Open an approved http(s) page first";
+-  } else if (!converted_mode || !converted_workflow || !origins ||
+-             goal.empty() || goal.size() > 4096u) {
++  } else if (!converted_mode || !converted_workflow || goal.empty() ||
++             goal.size() > 4096u || invalid_explicit_origins) {
+     last_error_ = "Task input is invalid";
+   } else if (!model_destination) {
+     last_error_ = "Configure a valid Agent model provider before planning";
+   } else {
++    const bool has_web_target =
++        tab && tab->GetURL().is_valid() && tab->GetURL().SchemeIsHTTPOrHTTPS();
++    if (!has_web_target && !browser_only_task) {
++      std::optional<GURL> automatic_url;
++      if (!resolved_origin_values.empty()) {
++        const GURL explicit_origin(resolved_origin_values.front());
++        if (explicit_origin.is_valid() &&
++            explicit_origin.SchemeIsHTTPOrHTTPS()) {
++          automatic_url = explicit_origin;
++        }
++      } else {
++        automatic_url = ResolveAutomaticTaskUrl(profile_, goal);
++      }
++      tab = automatic_url ? OpenAutomaticTaskTab(browser_, *automatic_url)
++                          : nullptr;
++      if (tab && resolved_origin_values.empty()) {
++        resolved_origin_values.push_back(
++            url::Origin::Create(*automatic_url).Serialize());
++      }
++      if (tab) {
++        task_url = *automatic_url;
++      }
++    } else if (has_web_target && resolved_origin_values.empty() &&
++               !browser_only_task) {
++      resolved_origin_values.push_back(
++          url::Origin::Create(tab->GetURL()).Serialize());
++    }
++
++    std::optional<std::vector<url::Origin>> origins;
++    if (browser_only_task) {
++      origins.emplace();
++    } else if (tab) {
++      origins = ParseApprovedOrigins(task_url, resolved_origin_values);
++    }
++    if (!tab || !origins) {
++      last_error_ = "A related page could not be opened for this task";
++      std::move(callback).Run(BuildSnapshot());
++      return;
++    }
+     std::optional<aegis::agent::AgentTaskScope> scope =
+         aegis::agent::BuildAgentWorkflowScope(*converted_workflow, *origins,
+                                               {tab->GetHandle().raw_value()},
+@@ -504,8 +617,10 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+   snapshot->agent_enabled =
+       profile_ && profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled);
+   tabs::TabInterface* tab = ActiveTab(browser_);
+-  if (tab && tab->GetURL().is_valid() && tab->GetURL().SchemeIsHTTPOrHTTPS()) {
++  if (tab) {
+     snapshot->active_tab_id = tab->GetHandle().raw_value();
++  }
++  if (tab && tab->GetURL().is_valid() && tab->GetURL().SchemeIsHTTPOrHTTPS()) {
+     snapshot->active_origin = url::Origin::Create(tab->GetURL()).Serialize();
+     if (service_) {
+       const aegis::agent::AgentInvocationContext* invocation =
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 0da7b17209..0b03d6a49e 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -69,22 +69,23 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("ask", "Ask", "询问", "詢問");
+   add("act", "Act", "执行", "執行");
+   add("automate", "Automate", "自动化", "自動化");
+-  add("target", "Current target", "当前目标", "目前目標");
++  add("target", "Task target", "任务目标", "任務目標");
+   add("goal", "What should Aegis do?", "希望 Aegis 做什么？",
+       "希望 Aegis 做什麼？");
+   add("goalPlaceholder", "Describe the result, boundaries, and constraints…",
+       "描述目标、范围和限制……", "描述目標、範圍和限制……");
+-  add("origins", "Allowed origins", "允许访问的来源", "允許存取的來源");
++  add("origins", "Allowed origins (optional)", "允许访问的来源（可选）",
++      "允許存取的來源（選填）");
+   add("originsPlaceholder",
+-      "One exact origin per line, for example https://example.com",
+-      "每行一个精确来源，例如 https://example.com",
+-      "每行一個精確來源，例如 https://example.com");
++      "Leave empty to search and open related pages automatically",
++      "留空时自动搜索并打开相关网页", "留空時自動搜尋並開啟相關網頁");
+   add("workflow", "Workflow", "工作流", "工作流程");
+   add("research", "Research", "深度研究", "深度研究");
+   add("steward", "Browser steward", "浏览器管家", "瀏覽器管家");
+   add("download", "Safe download", "安全下载", "安全下載");
+   add("shopping", "Shopping", "购物助手", "購物助手");
+-  add("plan", "Generate plan", "生成计划", "產生計畫");
++  add("plan", "Find pages and generate plan", "自动找网页并生成计划",
++      "自動找網頁並產生計畫");
+   add("start", "Approve and start", "同意并开始", "同意並開始");
+   add("scope", "Plan and scope", "计划与授权范围", "計畫與授權範圍");
+   add("timeline", "Timeline", "执行时间线", "執行時間軸");
+@@ -102,8 +103,9 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("disabled", "Enable Browser Agent in chrome://aegis first.",
+       "请先在 chrome://aegis 启用浏览器智能体。",
+       "請先在 chrome://aegis 啟用瀏覽器智慧代理。");
+-  add("noTarget", "Open an http(s) page to start.",
+-      "请先打开一个 http(s) 网页。", "請先開啟一個 http(s) 網頁。");
++  add("noTarget", "Aegis will open the right pages for this task.",
++      "无需先打开网页，Aegis 会自动查找。",
++      "無需先開啟網頁，Aegis 會自動查找。");
+   add("noTask", "No active task", "暂无任务", "暫無任務");
+   add("provider", "Model", "模型", "模型");
+   add("budget", "Budget", "预算", "預算");
+-- 
+2.52.0
+

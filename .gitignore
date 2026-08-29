@@ -19,6 +19,7 @@ packages/core/dist-worker
 
 # Local runtime/research evidence. Preserve locally; never publish or clean blindly.
 .artifacts/
+/.research-data/script-risk/
 /siso_result.json
 
 # Local crash/reproduction evidence. These files are not source artifacts.

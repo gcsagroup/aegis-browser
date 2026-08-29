@@ -1,0 +1,39 @@
+{
+  "schema": "gcsa-aegis-script-risk-shadow-protocol-v1",
+  "qualification": "research-only",
+  "releaseEligible": false,
+  "networkPolicy": {
+    "publicHttpsRootOnly": true,
+    "confirmationBinding": "manifest-sha256",
+    "derivedRequests": "public-https-via-pinned-connect-proxy",
+    "resolver": {
+      "mode": "validated-direct-dns",
+      "servers": ["1.1.1.1"],
+      "recordTypes": ["A"]
+    }
+  },
+  "telemetry": {
+    "category": "disabled-by-default-v8.aegis.bytecode_shadow",
+    "eventName": "V8.AegisBytecodeShadow",
+    "recordMode": "record-until-full",
+    "bufferSizeKiB": 32768,
+    "maxRecordsPerProcess": 1000,
+    "candidateRecordLimit": 8192
+  },
+  "execution": {
+    "defaultPilot": true,
+    "pairOrders": ["AB", "BA"],
+    "fullRounds": 2,
+    "timeoutMs": 45000,
+    "settleMs": 3000
+  },
+  "pilot": {
+    "maxSites": 2,
+    "rounds": 1
+  },
+  "sites": [
+    {"url": "https://example.com/"},
+    {"url": "https://www.wikipedia.org/"},
+    {"url": "https://www.mozilla.org/"}
+  ]
+}

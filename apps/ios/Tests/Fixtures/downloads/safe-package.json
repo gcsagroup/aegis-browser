@@ -1,0 +1,8 @@
+{
+  "fixture": "safe-package",
+  "name": "Aegis Offline Test Package",
+  "platform": "iOS Simulator",
+  "architecture": "arm64",
+  "version": "1.0.0",
+  "contains_executable": false
+}

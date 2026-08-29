@@ -1,0 +1,177 @@
+From 9a9baa49307e6c8ebde137ab8ed274ec63535174 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 29 Aug 2026 01:24:21 +0800
+Subject: [PATCH] fix(aegis): show browser agent entry by default
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 50 +++++++++++++++++--
+ .../agent/aegis_agent_interactive_uitest.cc   |  4 +-
+ chrome/common/aegis/features.cc               |  8 +--
+ chrome/common/aegis/features.h                | 10 ++--
+ chrome/common/aegis/features_unittest.cc      |  9 ++++
+ 5 files changed, 66 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 55c647e1db..dd30ca14c9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -15,12 +15,15 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_test_util.h"
+ #include "chrome/browser/profiles/profile_window.h"
++#include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_actions.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
+ #include "chrome/browser/ui/side_panel/side_panel_registry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
++#include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
+ #include "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -34,6 +37,7 @@
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "ui/actions/actions.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+@@ -47,13 +51,53 @@ SidePanelEntry* AgentEntry(Browser* browser) {
+                   : nullptr;
+ }
+ 
++class AegisAgentDefaultEntryBrowserTest : public InProcessBrowserTest {
++ public:
++  AegisAgentDefaultEntryBrowserTest() {
++    features_.InitWithFeatures(
++        {}, {features::kAegisFilterListUpdater,
++             features::kAegisPhishInterstitial});
++  }
++
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    InProcessBrowserTest::SetUpCommandLine(command_line);
++    command_line->AppendSwitch(::switches::kDisableBackgroundNetworking);
++    command_line->AppendSwitch(::switches::kNoProxyServer);
++  }
++
++ private:
++  base::test::ScopedFeatureList features_;
++};
++
++IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
++                       EntryIsVisibleBeforeProfileOptIn) {
++  Profile* profile = browser()->profile();
++  ASSERT_TRUE(profile->IsRegularProfile());
++  EXPECT_TRUE(base::FeatureList::IsEnabled(features::kAegisAgent));
++  EXPECT_TRUE(base::FeatureList::IsEnabled(features::kAegisAgentPageActions));
++  EXPECT_TRUE(base::FeatureList::IsEnabled(features::kAegisAgentBrowserTools));
++  EXPECT_TRUE(base::FeatureList::IsEnabled(features::kAegisAgentWorkflows));
++  EXPECT_FALSE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
++  EXPECT_TRUE(IsAegisAgentSidePanelSupported(profile));
++  EXPECT_TRUE(AgentEntry(browser()));
++  EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(profile), nullptr);
++
++  actions::ActionItem* action = actions::ActionManager::Get().FindAction(
++      kActionSidePanelShowAegisAgent,
++      browser()->GetActions()->root_action_item());
++  ASSERT_TRUE(action);
++  EXPECT_TRUE(action->GetVisible());
++  PinnedToolbarActionsModel* pinned =
++      PinnedToolbarActionsModel::Get(profile);
++  ASSERT_TRUE(pinned);
++  EXPECT_TRUE(pinned->Contains(kActionSidePanelShowAegisAgent));
++}
++
+ class AegisAgentBrowserTest : public InProcessBrowserTest {
+  public:
+   AegisAgentBrowserTest() {
+     features_.InitWithFeatures(
+-        {features::kAegisAgent, features::kAegisAgentPageActions,
+-         features::kAegisAgentBrowserTools, features::kAegisAgentWebMcp,
+-         features::kAegisAgentWorkflows},
++        {features::kAegisAgentWebMcp},
+         {features::kAegisAgentTransactionPilot,
+          features::kAegisFilterListUpdater, features::kAegisPhishInterstitial});
+   }
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index f839a98fbc..22c0b99d91 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -39,9 +39,7 @@ class AegisAgentInteractiveUiTest : public InteractiveBrowserTest {
+  public:
+   AegisAgentInteractiveUiTest() {
+     features_.InitWithFeatures(
+-        {features::kAegisAgent, features::kAegisAgentPageActions,
+-         features::kAegisAgentBrowserTools, features::kAegisAgentWebMcp,
+-         features::kAegisAgentWorkflows},
++        {features::kAegisAgentWebMcp},
+         {features::kAegisAgentTransactionPilot,
+          features::kAegisFilterListUpdater, features::kAegisPhishInterstitial});
+   }
+diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
+index bfda4caa75..6bd0c902d5 100644
+--- a/chrome/common/aegis/features.cc
++++ b/chrome/common/aegis/features.cc
+@@ -21,11 +21,11 @@ BASE_FEATURE(kAegisBounceTracking, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPolicyWorker, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisPrivacyAi, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisAiControl, base::FEATURE_ENABLED_BY_DEFAULT);
+-BASE_FEATURE(kAegisAgent, base::FEATURE_DISABLED_BY_DEFAULT);
+-BASE_FEATURE(kAegisAgentPageActions, base::FEATURE_DISABLED_BY_DEFAULT);
+-BASE_FEATURE(kAegisAgentBrowserTools, base::FEATURE_DISABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisAgent, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisAgentPageActions, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisAgentBrowserTools, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisAgentWebMcp, base::FEATURE_DISABLED_BY_DEFAULT);
+-BASE_FEATURE(kAegisAgentWorkflows, base::FEATURE_DISABLED_BY_DEFAULT);
++BASE_FEATURE(kAegisAgentWorkflows, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE(kAegisAgentTransactionPilot, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ bool IsFingerprintGuardGloballyEnabled(bool pref_enabled) {
+diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
+index 2a633871d2..7c975cdb0f 100644
+--- a/chrome/common/aegis/features.h
++++ b/chrome/common/aegis/features.h
+@@ -23,12 +23,12 @@ BASE_DECLARE_FEATURE(kAegisBounceTracking);
+ BASE_DECLARE_FEATURE(kAegisPolicyWorker);
+ BASE_DECLARE_FEATURE(kAegisPrivacyAi);
+ BASE_DECLARE_FEATURE(kAegisAiControl);
+-// Browser Agent is intentionally opt-in until the full runtime acceptance
+-// gates pass. It can independently make Chromium Actor available without
+-// enabling Glic UI or model orchestration.
++// The accepted Browser Agent surface is available in regular desktop profiles
++// by default. The profile preference remains opt-in, so exposing the entry does
++// not start model calls, tools, or persisted monitors.
+ BASE_DECLARE_FEATURE(kAegisAgent);
+-// Agent capability flags remain independently disabled so a development or
+-// staged rollout can expose read-only planning without enabling write paths.
++// Accepted capabilities ship with the surface. Experimental WebMCP and the
++// transaction pilot remain independent kill switches and default off.
+ BASE_DECLARE_FEATURE(kAegisAgentPageActions);
+ BASE_DECLARE_FEATURE(kAegisAgentBrowserTools);
+ BASE_DECLARE_FEATURE(kAegisAgentWebMcp);
+diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
+index aca728b64d..4abecc9adf 100644
+--- a/chrome/common/aegis/features_unittest.cc
++++ b/chrome/common/aegis/features_unittest.cc
+@@ -78,5 +78,14 @@ TEST(AegisFeaturesTest, BytecodeShadowIsDefaultOffAndRequiresMasterGate) {
+   }
+ }
+ 
++TEST(AegisFeaturesTest, BrowserAgentStableSurfaceDefaultsOn) {
++  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgent));
++  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgentPageActions));
++  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgentBrowserTools));
++  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgentWorkflows));
++  EXPECT_FALSE(base::FeatureList::IsEnabled(kAegisAgentWebMcp));
++  EXPECT_FALSE(base::FeatureList::IsEnabled(kAegisAgentTransactionPilot));
++}
++
+ }  // namespace
+ }  // namespace aegis::features
+-- 
+2.52.0
+

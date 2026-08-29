@@ -1,0 +1,24 @@
+# Copyright 2026 GCSA
+
+import("//ui/webui/resources/tools/build_webui.gni")
+
+build_webui("build") {
+  grd_prefix = "aegis_agent"
+  ts_composite = true
+  ts_deps = [
+    "//ui/webui/resources/js:build_ts",
+    "//ui/webui/resources/mojo:build_ts",
+  ]
+  mojo_files_deps =
+      [ "//chrome/browser/ui/webui/aegis_agent:mojo_bindings_ts__generator" ]
+  mojo_files = [ "$root_gen_dir/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom-webui.ts" ]
+  static_files = [
+    "agent.css",
+    "agent.html",
+  ]
+  ts_files = [
+    "agent.ts",
+    "browser_proxy.ts",
+  ]
+  webui_context_type = "untrusted"
+}

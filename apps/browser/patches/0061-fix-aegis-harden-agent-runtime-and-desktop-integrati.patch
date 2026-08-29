@@ -1,0 +1,1729 @@
+From 9d3e05f83d3d607f750cef619f0dca6df39e624b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 28 Aug 2026 21:01:03 +0800
+Subject: [PATCH 61/61] fix(aegis): harden agent runtime and desktop
+ integration
+
+---
+ chrome/browser/actor/site_policy.cc           |  26 +++-
+ chrome/browser/actor/site_policy_unittest.cc  |  11 ++
+ chrome/browser/aegis/BUILD.gn                 |   2 +
+ .../browser/aegis/agent/aegis_actor_bridge.cc |  59 +++++++--
+ .../aegis/agent/aegis_agent_browsertest.cc    |  19 ++-
+ .../agent/aegis_agent_interactive_uitest.cc   |  52 +++++++-
+ .../aegis/agent/aegis_agent_service.cc        |  77 +++++++----
+ .../browser/aegis/agent/aegis_agent_service.h |   2 +-
+ .../agent/aegis_agent_service_unittest.cc     | 122 ++++++++++++++++--
+ .../aegis/agent/aegis_browser_tools.cc        | 119 ++++++++++++++---
+ .../browser/aegis/agent/aegis_browser_tools.h |  22 +++-
+ .../aegis/agent/agent_core_unittest.cc        |  81 ++++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc |  43 +++---
+ .../aegis/agent/agent_execution_unittest.cc   |  14 ++
+ .../agent/agent_model_protocol_fuzzer.cc      |  11 +-
+ .../aegis/agent/agent_monitor_scheduler.cc    |   9 ++
+ .../aegis/agent/agent_monitor_scheduler.h     |   5 +
+ .../aegis/agent/agent_policy_broker.cc        |  12 ++
+ .../aegis/agent/agent_result_verifier.cc      |  47 +++++--
+ .../browser/aegis/agent/agent_scope_fuzzer.cc |   9 +-
+ .../agent/agent_tool_arguments_fuzzer.cc      |  11 +-
+ .../aegis/agent/agent_tool_registry.cc        |  10 +-
+ .../browser/global_keyboard_shortcuts_mac.mm  |   1 +
+ chrome/browser/resources/aegis_agent/agent.ts |   2 +
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |  55 +++++---
+ .../aegis_agent/aegis_agent_page_handler.cc   |  21 +--
+ chrome/chrome_paks.gni                        |   1 +
+ 27 files changed, 686 insertions(+), 157 deletions(-)
+
+diff --git a/chrome/browser/actor/site_policy.cc b/chrome/browser/actor/site_policy.cc
+index 6c35ef4c43..35047074f0 100644
+--- a/chrome/browser/actor/site_policy.cc
++++ b/chrome/browser/actor/site_policy.cc
+@@ -142,8 +142,24 @@ void MayActOnUrlInternal(
+     const EnterprisePolicyChecker& policy_checker,
+     bool apply_sensitive_origin_check,
+     std::unique_ptr<DecisionWrapper> decision_wrapper) {
+-  if ((net::IsLocalhost(url) && url.SchemeIsHTTPOrHTTPS()) ||
+-      url.IsAboutBlank()) {
++  if (url.IsAboutBlank()) {
++    decision_wrapper->Accept();
++    return;
++  }
++
++  // 客户端的显式阻止是授权边界，不是提示性安全信号。必须先执行该检查，
++  // 再允许 localhost、测试开关或静态白名单提前放行；Aegis 等受限客户端
++  // 正是通过该检查器约束已批准来源。
++  const EnterprisePolicyChecker::UrlBlockReason enterprise_reason =
++      policy_checker.Evaluate(url);
++  if (enterprise_reason ==
++      EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked) {
++    decision_wrapper->Reject("Enterprise policy block",
++                             MayActOnUrlBlockReason::kEnterprisePolicy);
++    return;
++  }
++
++  if (net::IsLocalhost(url) && url.SchemeIsHTTPOrHTTPS()) {
+     decision_wrapper->Accept();
+     return;
+   }
+@@ -223,8 +239,6 @@ void MayActOnUrlInternal(
+     }
+   }
+ 
+-  const EnterprisePolicyChecker::UrlBlockReason enterprise_reason =
+-      policy_checker.Evaluate(url);
+   switch (enterprise_reason) {
+     case EnterprisePolicyChecker::UrlBlockReason::kNotBlocked:
+       break;
+@@ -232,9 +246,7 @@ void MayActOnUrlInternal(
+       decision_wrapper->Accept();
+       return;
+     case EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked:
+-      decision_wrapper->Reject("Enterprise policy block",
+-                               MayActOnUrlBlockReason::kEnterprisePolicy);
+-      return;
++      NOTREACHED();
+   }
+ 
+   auto* lookalike_service = LookalikeUrlServiceFactory::GetForProfile(profile);
+diff --git a/chrome/browser/actor/site_policy_unittest.cc b/chrome/browser/actor/site_policy_unittest.cc
+index 7a7ff9096d..ccc3bf041d 100644
+--- a/chrome/browser/actor/site_policy_unittest.cc
++++ b/chrome/browser/actor/site_policy_unittest.cc
+@@ -307,6 +307,17 @@ TEST_F(ActorSitePolicyTest, EnterprisePolicyBlock) {
+                kGlicNavigationGatingUseSiteNotOrigin.Get()));
+ }
+ 
++TEST_F(ActorSitePolicyTest, EnterprisePolicyBlockOverridesGenericEarlyAllows) {
++  MockPolicyChecker blocked_checker(
++      EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
++  CheckUrl(GURL("http://localhost/"), false, blocked_checker,
++           origin_gating::OriginGatingCache(
++               kGlicNavigationGatingUseSiteNotOrigin.Get()));
++  CheckUrl(GURL("https://a.test/"), false, blocked_checker,
++           origin_gating::OriginGatingCache(
++               kGlicNavigationGatingUseSiteNotOrigin.Get()));
++}
++
+ TEST_F(ActorSitePolicyTest, EnterprisePolicyOrder) {
+   const GURL https_blocked_url("https://c.test/");
+   EXPECT_CALL(
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index daf87a9d3b..3164a58133 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -329,6 +329,8 @@ test("aegis_browser_unittests") {
+       "//chrome/browser/actor/ui:test_support",
+       "//chrome/common/aegis",
+       "//components/actor/core",
++      "//components/download/public/common:public",
++      "//components/undo",
+       "//content/test:test_support",
+     ]
+   }
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 6e466860c7..c23a93b5b3 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -73,10 +73,30 @@ bool IsSafeToolName(std::string_view name) {
+ 
+ bool IsForbiddenFieldName(std::string_view name) {
+   const std::string lowered = base::ToLowerASCII(name);
+-  return lowered == "password" || lowered == "otp" || lowered == "cookie" ||
+-         lowered == "card_number" || lowered == "cvv" || lowered == "api_key" ||
+-         lowered == "authorization" || lowered == "access_token" ||
+-         lowered == "refresh_token";
++  return lowered == "password" || lowered == "passwd" || lowered == "otp" ||
++         lowered == "cookie" || lowered == "card_number" || lowered == "cvv" ||
++         lowered == "api_key" || lowered == "authorization" ||
++         lowered == "access_token" || lowered == "accesstoken" ||
++         lowered == "refresh_token" || lowered == "refreshtoken" ||
++         lowered == "auth_token" || lowered == "authtoken" ||
++         lowered == "client_secret" || lowered == "clientsecret" ||
++         lowered == "private_key" || lowered == "privatekey" ||
++         lowered == "bearer" || lowered == "secret" || lowered == "token" ||
++         lowered == "session" || lowered == "session_id" ||
++         lowered == "sessionid";
++}
++
++bool HasForbiddenWebMcpField(const base::Value& value) {
++  if (value.is_list()) {
++    return std::ranges::any_of(value.GetList(), HasForbiddenWebMcpField);
++  }
++  if (!value.is_dict()) {
++    return false;
++  }
++  return std::ranges::any_of(value.GetDict(), [](const auto& entry) {
++    return IsForbiddenFieldName(entry.first) ||
++           HasForbiddenWebMcpField(entry.second);
++  });
+ }
+ 
+ bool IsAllowedSchemaKeyword(std::string_view key) {
+@@ -177,14 +197,24 @@ std::optional<std::string> SafeWebMcpResult(std::string_view value) {
+     return std::nullopt;
+   }
+   const std::string lowered = base::ToLowerASCII(value);
+-  constexpr std::array<std::string_view, 8> kSecretMarkers = {
+-      "password", "authorization", "bearer ",       "cookie",
+-      "api_key",  "access_token",  "refresh_token", "card_number"};
++  constexpr std::array<std::string_view, 19> kSecretMarkers = {
++      "password",     "passwd",      "authorization",
++      "bearer ",      "cookie",      "api_key",
++      "access_token", "accesstoken", "refresh_token",
++      "refreshtoken", "auth_token",  "client_secret",
++      "private_key",  "card_number", "session_id",
++      "sessionid",    "token",       "secret",
++      "cvv"};
+   if (std::ranges::any_of(kSecretMarkers, [&lowered](std::string_view marker) {
+         return lowered.find(marker) != std::string::npos;
+       })) {
+     return std::nullopt;
+   }
++  std::optional<base::Value> parsed =
++      base::JSONReader::Read(value, base::JSON_PARSE_RFC);
++  if (parsed && HasForbiddenWebMcpField(*parsed)) {
++    return std::nullopt;
++  }
+   return std::string(value);
+ }
+ 
+@@ -613,6 +643,7 @@ AegisActorBridge::~AegisActorBridge() {
+   if (!actor_service_) {
+     return;
+   }
++  actor_state_subscription_ = {};
+   for (const auto& [agent_task_id, actor_task_id] : actor_tasks_) {
+     if (actor_service_->GetTask(actor_task_id)) {
+       actor_service_->StopTask(actor_task_id,
+@@ -680,13 +711,16 @@ bool AegisActorBridge::StopTask(const std::string& agent_task_id,
+   if (it == actor_tasks_.end()) {
+     return false;
+   }
+-  if (actor_service_->GetTask(it->second)) {
++  const actor::TaskId actor_task_id = it->second;
++  if (actor_service_->GetTask(actor_task_id)) {
+     actor_service_->StopTask(
+-        it->second, completed
+-                        ? actor::ActorTask::StoppedReason::kTaskComplete
+-                        : actor::ActorTask::StoppedReason::kStoppedByUser);
++        actor_task_id, completed
++                           ? actor::ActorTask::StoppedReason::kTaskComplete
++                           : actor::ActorTask::StoppedReason::kStoppedByUser);
+   }
+-  actor_tasks_.erase(it);
++  // StopTask() 会同步通知观察者；回调可能已删除该项，因此按键删除，
++  // 不再使用可能失效的迭代器。
++  actor_tasks_.erase(agent_task_id);
+   task_scopes_.erase(agent_task_id);
+   last_documents_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+@@ -902,6 +936,7 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
+         .input_schema = tool->second.input_schema.Clone()};
+     std::string validation_error;
+     if (!parsed_input || !parsed_input->is_dict() ||
++        HasForbiddenWebMcpField(*parsed_input) ||
+         !ValidateAgentToolArguments(tool_contract, parsed_input->GetDict(),
+                                     &validation_error)) {
+       std::move(callback).Run(
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index b7e07b087a..55c647e1db 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -2,6 +2,7 @@
+ 
+ #include <utility>
+ 
++#include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+@@ -23,6 +24,7 @@
+ #include "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
++#include "chrome/common/chrome_switches.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+@@ -52,7 +54,14 @@ class AegisAgentBrowserTest : public InProcessBrowserTest {
+         {features::kAegisAgent, features::kAegisAgentPageActions,
+          features::kAegisAgentBrowserTools, features::kAegisAgentWebMcp,
+          features::kAegisAgentWorkflows},
+-        {features::kAegisAgentTransactionPilot});
++        {features::kAegisAgentTransactionPilot,
++         features::kAegisFilterListUpdater, features::kAegisPhishInterstitial});
++  }
++
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    InProcessBrowserTest::SetUpCommandLine(command_line);
++    command_line->AppendSwitch(::switches::kDisableBackgroundNetworking);
++    command_line->AppendSwitch(::switches::kNoProxyServer);
+   }
+ 
+   void SetUpOnMainThread() override {
+@@ -194,8 +203,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   const std::string error =
+       content::EvalJs(contents, content::JsReplace(R"JS(
+         new Promise(resolve => {
+-          document.querySelector('#goal').value = 'Read one page';
+-          document.querySelector('#origins').value = $1;
++          const goal = document.querySelector('#goal');
++          goal.value = 'Read one page';
++          goal.dispatchEvent(new Event('input', {bubbles: true}));
++          const origins = document.querySelector('#origins');
++          origins.value = $1;
++          origins.dispatchEvent(new Event('input', {bubbles: true}));
+           document.querySelector('#plan-button').click();
+           const deadline = Date.now() + 5000;
+           const poll = () => {
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index 1a580d96d0..f839a98fbc 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
++#include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+@@ -19,6 +20,8 @@
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
++#include "chrome/common/webui_url_constants.h"
++#include "chrome/test/base/interactive_test_utils.h"
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "chrome/test/interaction/interactive_browser_test.h"
+ #include "components/prefs/pref_service.h"
+@@ -39,7 +42,8 @@ class AegisAgentInteractiveUiTest : public InteractiveBrowserTest {
+         {features::kAegisAgent, features::kAegisAgentPageActions,
+          features::kAegisAgentBrowserTools, features::kAegisAgentWebMcp,
+          features::kAegisAgentWorkflows},
+-        {features::kAegisAgentTransactionPilot});
++        {features::kAegisAgentTransactionPilot,
++         features::kAegisFilterListUpdater, features::kAegisPhishInterstitial});
+   }
+ 
+   void SetUp() override {
+@@ -75,7 +79,15 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+ 
+   RunTestSequence(
+       EnsureNotPresent(kSidePanelElementId),
++#if BUILDFLAG(IS_MAC)
++      Do([&]() {
++        EXPECT_TRUE(ui_test_utils::SendKeyPressSync(
++            browser(), ui::VKEY_A, /*control=*/false, /*shift=*/true,
++            /*alt=*/false, /*command=*/true));
++      }),
++#else
+       Do([&]() { chrome::ExecuteCommand(browser(), IDC_SHOW_AEGIS_AGENT); }),
++#endif
+       WaitForShow(kSidePanelElementId),
+       CheckResult(
+           [&]() {
+@@ -111,8 +123,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+               return false;
+             }
+             modes[1].click();
++            const updatedModes =
++                [...document.querySelectorAll('#mode-group button')];
+             document.querySelector('#goal').focus();
+-            return modes[1].getAttribute('aria-checked') === 'true' &&
++            return updatedModes[1].getAttribute('aria-checked') === 'true' &&
+                 document.activeElement.id === 'goal' &&
+                 document.querySelector('#start-button').disabled &&
+                 document.querySelector('#pause-button').disabled &&
+@@ -218,5 +232,39 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+       WaitForHide(kSidePanelElementId));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
++                       SettingsEntryOpensAgentSidePanel) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL(chrome::kChromeUIAegisURL)));
++  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++  ASSERT_TRUE(side_panel);
++  ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
++      SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
++
++  ASSERT_TRUE(content::EvalJs(
++                  browser()->GetActiveTabInterface()->GetContents(), R"JS(
++        (() => {
++          const button = document.querySelector('#browser-agent-open');
++          if (!(button instanceof HTMLButtonElement) || button.disabled) {
++            return false;
++          }
++          button.click();
++          return true;
++        })()
++      )JS")
++                  .ExtractBool());
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return side_panel->IsSidePanelEntryShowing(
++        SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
++  }));
++
++  content::WebContents* contents =
++      side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
++  ASSERT_TRUE(contents);
++  ASSERT_TRUE(content::WaitForLoadStop(contents));
++  EXPECT_EQ(contents->GetLastCommittedURL(),
++            GURL(chrome::kChromeUIUntrustedAegisAgentURL));
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 68d2593da9..226b4a62ec 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -88,15 +88,18 @@ AgentModelProvider ProtocolProvider(ModelProvider provider) {
+   }
+ }
+ 
+-std::string NormalizeAgentModelBaseUrl(ModelProvider provider,
+-                                       std::string_view candidate) {
++bool HasUserSetting(const PrefService* prefs, const char* name) {
++  const PrefService::Preference* preference = prefs->FindPreference(name);
++  return preference && preference->HasUserSetting();
++}
++
++std::optional<std::string> NormalizeAgentModelBaseUrl(
++    ModelProvider provider,
++    std::string_view candidate) {
+   std::string value(base::TrimWhitespaceASCII(candidate, base::TRIM_ALL));
+-  if (value.empty()) {
+-    value = std::string(DefaultModelBaseUrl(provider));
+-  }
+   const GURL parsed(value);
+   if (!IsAllowedModelBaseUrl(provider, parsed)) {
+-    return std::string(DefaultModelBaseUrl(provider));
++    return std::nullopt;
+   }
+   std::string path(parsed.path());
+   while (path.size() > 1 && path.ends_with('/')) {
+@@ -110,6 +113,34 @@ std::string NormalizeAgentModelBaseUrl(ModelProvider provider,
+   return parsed.ReplaceComponents(replacements).spec();
+ }
+ 
++std::optional<AgentModelDestination> ReadExplicitAgentModelDestination(
++    Profile* profile) {
++  const PrefService* prefs = profile ? profile->GetPrefs() : nullptr;
++  if (!prefs || !HasUserSetting(prefs, aegis::prefs::kModelProvider) ||
++      !HasUserSetting(prefs, aegis::prefs::kModelBaseUrl) ||
++      !HasUserSetting(prefs, aegis::prefs::kModelName)) {
++    return std::nullopt;
++  }
++  const std::optional<ModelProvider> provider =
++      ParseModelProvider(prefs->GetString(aegis::prefs::kModelProvider));
++  if (!provider) {
++    return std::nullopt;
++  }
++  const std::optional<std::string> endpoint = NormalizeAgentModelBaseUrl(
++      *provider, prefs->GetString(aegis::prefs::kModelBaseUrl));
++  const std::string model = prefs->GetString(aegis::prefs::kModelName);
++  if (!endpoint || !IsValidModelName(*provider, model)) {
++    return std::nullopt;
++  }
++  return AgentModelDestination{
++      .kind = IsLocalModelEndpoint(*provider, GURL(*endpoint))
++                  ? AgentModelDestination::Kind::kLoopback
++                  : AgentModelDestination::Kind::kCloud,
++      .provider = std::string(ModelProviderId(*provider)),
++      .endpoint = *endpoint,
++      .model = model};
++}
++
+ std::string ModelCapabilityKey(const AgentModelDestination& destination) {
+   return destination.provider + "\n" + destination.endpoint + "\n" +
+          destination.model;
+@@ -123,6 +154,12 @@ std::optional<AgentModelClientConfig> ResolveModelConfig(
+     return std::nullopt;
+   }
+   error->clear();
++  const std::optional<AgentModelDestination> configured =
++      ReadExplicitAgentModelDestination(profile);
++  if (!configured || *configured != destination) {
++    *error = "Agent model destination is not explicitly configured";
++    return std::nullopt;
++  }
+   const std::optional<ModelProvider> provider =
+       ParseModelProvider(destination.provider);
+   if (!profile || !provider ||
+@@ -350,26 +387,9 @@ bool AegisAgentService::IsEnabled() const {
+          profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled);
+ }
+ 
+-AgentModelDestination AegisAgentService::ConfiguredModelDestination() const {
+-  const PrefService* prefs = profile_ ? profile_->GetPrefs() : nullptr;
+-  const ModelProvider provider =
+-      prefs ? ParseModelProvider(prefs->GetString(aegis::prefs::kModelProvider))
+-                  .value_or(ModelProvider::kOpenAI)
+-            : ModelProvider::kOpenAI;
+-  const std::string endpoint = NormalizeAgentModelBaseUrl(
+-      provider, prefs ? prefs->GetString(aegis::prefs::kModelBaseUrl)
+-                      : std::string_view());
+-  const std::string configured_model =
+-      prefs ? prefs->GetString(aegis::prefs::kModelName) : std::string();
+-  const std::string model = IsValidModelName(provider, configured_model)
+-                                ? configured_model
+-                                : std::string(DefaultModelName(provider));
+-  return {.kind = IsLocalModelEndpoint(provider, GURL(endpoint))
+-                      ? AgentModelDestination::Kind::kLoopback
+-                      : AgentModelDestination::Kind::kCloud,
+-          .provider = std::string(ModelProviderId(provider)),
+-          .endpoint = endpoint,
+-          .model = model};
++std::optional<AgentModelDestination>
++AegisAgentService::ConfiguredModelDestination() const {
++  return ReadExplicitAgentModelDestination(profile_);
+ }
+ 
+ bool AegisAgentService::IsToolAvailable(std::string_view tool_name) const {
+@@ -817,7 +837,8 @@ bool AegisAgentService::CancelTask(const std::string& task_id) {
+     actor_bridge_.StopTask(task_id, /*completed=*/false);
+   }
+   policy_broker_.RevokeTaskApprovals(task_id);
+-  browser_tools_.ForgetTask(task_id);
++  browser_tools_.ForgetTask(task_id, /*preserve_bookmark_undo=*/false,
++                            /*cancel_active_downloads=*/true);
+   bookmark_undo_tokens_.erase(task_id);
+   for (const AgentMonitorDefinition& monitor : GetMonitors(task_id)) {
+     task_store_.DeleteMonitor(monitor.monitor_id);
+@@ -2158,7 +2179,7 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
+     return;
+   }
+   AgentMonitorDefinition monitor;
+-  monitor.monitor_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
++  monitor.monitor_id = AgentMonitorIdempotencyKey(task_id, call.action_id);
+   monitor.task_id = task_id;
+   monitor.kind = *kind;
+   monitor.origin = url::Origin::Create(target);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index e1477e2a45..7aa3042004 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -61,7 +61,7 @@ class AegisAgentService : public KeyedService {
+   bool IsEnabled() const;
+   bool IsToolAvailable(std::string_view tool_name) const;
+   Profile* profile() const { return profile_; }
+-  AgentModelDestination ConfiguredModelDestination() const;
++  std::optional<AgentModelDestination> ConfiguredModelDestination() const;
+ 
+   AgentTask* CreateTask(std::string goal, AgentMode mode, AgentTaskScope scope);
+   AgentTask* GetTask(const std::string& task_id);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 618be46422..9fe3869684 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -7,6 +7,7 @@
+ 
+ #include "base/files/file_util.h"
+ #include "base/test/scoped_feature_list.h"
++#include "base/test/test_future.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/ui/event_dispatcher.h"
+ #include "chrome/browser/actor/ui/test_support/mock_actor_ui_state_manager.h"
+@@ -17,7 +18,9 @@
+ #include "chrome/test/base/testing_browser_process.h"
+ #include "chrome/test/base/testing_profile.h"
+ #include "chrome/test/base/testing_profile_manager.h"
++#include "components/download/public/common/mock_download_item.h"
+ #include "components/prefs/pref_service.h"
++#include "components/undo/undo_manager.h"
+ #include "content/public/test/browser_task_environment.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -25,9 +28,34 @@
+ #include "url/origin.h"
+ 
+ namespace aegis::agent {
++
++class AegisBrowserToolsTestPeer {
++ public:
++  static void SeedUndoReceipt(AegisBrowserTools* tools,
++                              UndoManager* undo_manager) {
++    AegisBrowserTools::BookmarkUndoReceipt receipt{.task_id = "task-bookmarks",
++                                                   .token = "undo-token",
++                                                   .before_hash = "before",
++                                                   .after_hash = "after",
++                                                   .undo_count = 1};
++    tools->bookmark_undo_receipts_.emplace(receipt.token, std::move(receipt));
++    tools->ObserveBookmarkUndoManager(undo_manager);
++  }
++
++  static size_t UndoReceiptCount(const AegisBrowserTools& tools) {
++    return tools.bookmark_undo_receipts_.size();
++  }
++
++  static bool IsObserving(const AegisBrowserTools& tools,
++                          const UndoManager* undo_manager) {
++    return tools.bookmark_undo_manager_ == undo_manager;
++  }
++};
++
+ namespace {
+ 
+ using ::testing::_;
++using ::testing::Return;
+ 
+ std::unique_ptr<actor::ui::ActorUiStateManagerInterface>
+ BuildActorUiStateManagerMock() {
+@@ -176,18 +204,42 @@ TEST_F(AegisAgentServiceTest, ResolvesModelDestinationFromTheOwningProfile) {
+       AegisAgentServiceFactory::GetForProfile(second);
+   ASSERT_TRUE(second_service);
+ 
+-  const AgentModelDestination first_destination =
++  const std::optional<AgentModelDestination> first_destination =
+       first->ConfiguredModelDestination();
+-  const AgentModelDestination second_destination =
++  const std::optional<AgentModelDestination> second_destination =
+       second_service->ConfiguredModelDestination();
+-  EXPECT_EQ(first_destination.kind, AgentModelDestination::Kind::kLoopback);
+-  EXPECT_EQ(first_destination.provider, "openai");
+-  EXPECT_EQ(first_destination.endpoint, "http://127.0.0.1:4111/v1");
+-  EXPECT_EQ(first_destination.model, "profile-one");
+-  EXPECT_EQ(second_destination.kind, AgentModelDestination::Kind::kCloud);
+-  EXPECT_EQ(second_destination.provider, "gemini");
+-  EXPECT_EQ(second_destination.endpoint, "https://models.example.test/v1beta");
+-  EXPECT_EQ(second_destination.model, "models/profile-two");
++  ASSERT_TRUE(first_destination);
++  ASSERT_TRUE(second_destination);
++  EXPECT_EQ(first_destination->kind, AgentModelDestination::Kind::kLoopback);
++  EXPECT_EQ(first_destination->provider, "openai");
++  EXPECT_EQ(first_destination->endpoint, "http://127.0.0.1:4111/v1");
++  EXPECT_EQ(first_destination->model, "profile-one");
++  EXPECT_EQ(second_destination->kind, AgentModelDestination::Kind::kCloud);
++  EXPECT_EQ(second_destination->provider, "gemini");
++  EXPECT_EQ(second_destination->endpoint, "https://models.example.test/v1beta");
++  EXPECT_EQ(second_destination->model, "models/profile-two");
++}
++
++TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  EXPECT_FALSE(service->ConfiguredModelDestination());
++
++  AgentTask* task = service->CreateTask("must stay local", AgentMode::kAsk,
++                                        ServiceTestScope());
++  ASSERT_TRUE(task);
++  base::test::TestFuture<bool, std::string> planning;
++  service->RequestPlan(task->id(), planning.GetCallback());
++  EXPECT_FALSE(planning.Get<0>());
++  EXPECT_EQ(planning.Get<1>(),
++            "Agent model destination is not explicitly configured");
++
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
++                                  "not-a-model-endpoint");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++  EXPECT_FALSE(service->ConfiguredModelDestination());
+ }
+ 
+ TEST_F(AegisAgentServiceTest, RejectsGoalsThatCannotBeSafelyPersisted) {
+@@ -209,6 +261,56 @@ TEST_F(AegisAgentServiceTest, RejectsGoalsThatCannotBeSafelyPersisted) {
+   EXPECT_EQ(service->task_count_for_testing(), 0u);
+ }
+ 
++TEST_F(AegisAgentServiceTest, BookmarkUrlChecksRejectLocalNetworkTargets) {
++  AgentTaskScope scope = ServiceTestScope();
++  const GURL public_url("https://public.example/path");
++  scope.allowed_origins.push_back(url::Origin::Create(public_url));
++  EXPECT_TRUE(
++      IsAegisBookmarkUrlCheckTargetAllowed(scope, public_url, public_url));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, GURL("http://localhost/status"), GURL("http://localhost/status")));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, GURL("http://127.0.0.1/status"), GURL("http://127.0.0.1/status")));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, GURL("http://10.0.0.7/status"), GURL("http://10.0.0.7/status")));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, GURL("http://[::1]/status"), GURL("http://[::1]/status")));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, public_url, GURL("http://localhost/redirected")));
++}
++
++TEST_F(AegisAgentServiceTest, LaterBookmarkEditInvalidatesUndoReceipt) {
++  AegisBrowserTools tools(profile_);
++  UndoManager undo_manager;
++  AegisBrowserToolsTestPeer::SeedUndoReceipt(&tools, &undo_manager);
++  EXPECT_EQ(AegisBrowserToolsTestPeer::UndoReceiptCount(tools), 1u);
++  EXPECT_TRUE(AegisBrowserToolsTestPeer::IsObserving(tools, &undo_manager));
++
++  undo_manager.Shutdown();
++  EXPECT_EQ(AegisBrowserToolsTestPeer::UndoReceiptCount(tools), 0u);
++  EXPECT_FALSE(AegisBrowserToolsTestPeer::IsObserving(tools, &undo_manager));
++}
++
++TEST_F(AegisAgentServiceTest, TaskStopCancelsOnlyActiveOwnedDownloads) {
++  download::MockDownloadItem active;
++  EXPECT_CALL(active, GetState())
++      .WillOnce(Return(download::DownloadItem::IN_PROGRESS));
++  EXPECT_CALL(active, Cancel(true));
++  CancelAegisOwnedDownloadOnTaskStop(&active);
++
++  download::MockDownloadItem interrupted;
++  EXPECT_CALL(interrupted, GetState())
++      .WillOnce(Return(download::DownloadItem::INTERRUPTED));
++  EXPECT_CALL(interrupted, Cancel(true));
++  CancelAegisOwnedDownloadOnTaskStop(&interrupted);
++
++  download::MockDownloadItem complete;
++  EXPECT_CALL(complete, GetState())
++      .WillOnce(Return(download::DownloadItem::COMPLETE));
++  EXPECT_CALL(complete, Cancel(true)).Times(0);
++  CancelAegisOwnedDownloadOnTaskStop(&complete);
++}
++
+ TEST_F(AegisAgentServiceTest, IdempotentActionIdsBindTheExactCall) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 085af3ff8b..9b119d10fc 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -56,16 +56,21 @@
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "crypto/sha2.h"
++#include "net/base/ip_address.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include "net/base/url_util.h"
+ #include "net/http/http_request_headers.h"
+ #include "net/http/http_response_headers.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "net/url_request/redirect_info.h"
++#include "services/network/public/cpp/ip_address_space_util.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/fetch_api.mojom.h"
++#include "services/network/public/mojom/ip_address_space.mojom.h"
++#include "services/network/public/mojom/url_loader_factory.mojom.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "ui/base/base_window.h"
+ #include "ui/base/page_transition_types.h"
+@@ -562,7 +567,21 @@ std::string UrlCheckClassification(int net_error,
+ bool IsUrlCheckTargetAllowed(const AgentTaskScope& scope,
+                              const GURL& selected_bookmark_url,
+                              const GURL& target) {
+-  return target.is_valid() && target.SchemeIsHTTPOrHTTPS() &&
++  const auto is_public_target = [](const GURL& url) {
++    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || url.host().empty() ||
++        !url.username().empty() || !url.password().empty() ||
++        net::IsLocalhost(url)) {
++      return false;
++    }
++    if (!url.HostIsIPAddress()) {
++      return true;
++    }
++    net::IPAddress address;
++    return net::ParseURLHostnameToAddress(url.host(), &address) &&
++           network::IPAddressToIPAddressSpace(address) ==
++               network::mojom::IPAddressSpace::kPublic;
++  };
++  return is_public_target(selected_bookmark_url) && is_public_target(target) &&
+          (url::Origin::Create(target) ==
+               url::Origin::Create(selected_bookmark_url) ||
+           scope.AllowsOrigin(target));
+@@ -608,6 +627,23 @@ bool CandidateMentions(std::string_view candidate, std::string_view expected) {
+ 
+ }  // namespace
+ 
++bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
++                                          const GURL& selected_bookmark_url,
++                                          const GURL& target) {
++  return IsUrlCheckTargetAllowed(scope, selected_bookmark_url, target);
++}
++
++void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item) {
++  if (!item) {
++    return;
++  }
++  const download::DownloadItem::DownloadState state = item->GetState();
++  if (state == download::DownloadItem::IN_PROGRESS ||
++      state == download::DownloadItem::INTERRUPTED) {
++    item->Cancel(/*user_cancel=*/true);
++  }
++}
++
+ struct AegisBrowserTools::UrlCheckBatch {
+   struct Entry {
+     std::string node_id;
+@@ -635,7 +671,9 @@ AegisBrowserTools::AegisBrowserTools(Profile* profile) : profile_(profile) {
+   CHECK(profile_);
+ }
+ 
+-AegisBrowserTools::~AegisBrowserTools() = default;
++AegisBrowserTools::~AegisBrowserTools() {
++  StopObservingBookmarkUndoManager();
++}
+ 
+ bool AegisBrowserTools::CanHandle(std::string_view tool_name) const {
+   return base::StartsWith(tool_name, "tab.") ||
+@@ -683,7 +721,8 @@ void AegisBrowserTools::Execute(AgentTask* task,
+ }
+ 
+ void AegisBrowserTools::ForgetTask(const std::string& task_id,
+-                                   bool preserve_bookmark_undo) {
++                                   bool preserve_bookmark_undo,
++                                   bool cancel_active_downloads) {
+   history_task_tracker_.TryCancelAll();
+   std::erase_if(bookmark_plans_, [&task_id](const auto& entry) {
+     return entry.second.task_id == task_id;
+@@ -693,6 +732,9 @@ void AegisBrowserTools::ForgetTask(const std::string& task_id,
+       return entry.second.task_id == task_id;
+     });
+   }
++  if (bookmark_undo_receipts_.empty()) {
++    StopObservingBookmarkUndoManager();
++  }
+   std::vector<std::pair<std::string, ToolResultCallback>> cancelled;
+   for (auto it = url_check_batches_.begin(); it != url_check_batches_.end();) {
+     if (it->second->task_id != task_id) {
+@@ -710,7 +752,12 @@ void AegisBrowserTools::ForgetTask(const std::string& task_id,
+   }
+   auto downloads = owned_downloads_.find(task_id);
+   if (downloads != owned_downloads_.end()) {
++    content::DownloadManager* manager =
++        cancel_active_downloads ? profile_->GetDownloadManager() : nullptr;
+     for (const std::string& guid : downloads->second) {
++      download::DownloadItem* item =
++          manager ? manager->GetDownloadByGuid(guid) : nullptr;
++      CancelAegisOwnedDownloadOnTaskStop(item);
+       expected_download_hashes_.erase(guid);
+     }
+     owned_downloads_.erase(downloads);
+@@ -720,6 +767,35 @@ void AegisBrowserTools::ForgetTask(const std::string& task_id,
+   });
+ }
+ 
++void AegisBrowserTools::ObserveBookmarkUndoManager(UndoManager* undo_manager) {
++  if (bookmark_undo_manager_ == undo_manager) {
++    return;
++  }
++  StopObservingBookmarkUndoManager();
++  bookmark_undo_manager_ = undo_manager;
++  if (bookmark_undo_manager_) {
++    bookmark_undo_manager_->AddObserver(this);
++  }
++}
++
++void AegisBrowserTools::StopObservingBookmarkUndoManager() {
++  if (!bookmark_undo_manager_) {
++    return;
++  }
++  bookmark_undo_manager_->RemoveObserver(this);
++  bookmark_undo_manager_ = nullptr;
++}
++
++void AegisBrowserTools::OnUndoManagerStateChange() {
++  bookmark_undo_receipts_.clear();
++  StopObservingBookmarkUndoManager();
++}
++
++void AegisBrowserTools::OnUndoManagerShutdown() {
++  bookmark_undo_receipts_.clear();
++  StopObservingBookmarkUndoManager();
++}
++
+ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+                                        const AgentToolCall& call,
+                                        ToolResultCallback callback) {
+@@ -1457,6 +1533,7 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
+         .undo_count = undo_manager->undo_count()};
+     const std::string undo_token = receipt.token;
+     bookmark_undo_receipts_[undo_token] = std::move(receipt);
++    ObserveBookmarkUndoManager(undo_manager);
+     bookmark_plans_.erase(plan_it);
+ 
+     AgentToolResult result =
+@@ -1478,6 +1555,7 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
+         undo_service ? undo_service->undo_manager() : nullptr;
+     if (!token || receipt_it == bookmark_undo_receipts_.end() ||
+         receipt_it->second.task_id != task->id() || !undo_manager ||
++        bookmark_undo_manager_ != undo_manager ||
+         BookmarkSnapshot(model) != receipt_it->second.after_hash ||
+         undo_manager->undo_count() != receipt_it->second.undo_count) {
+       std::move(callback).Run(
+@@ -1486,8 +1564,11 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
+       return;
+     }
+     const std::string expected_hash = receipt_it->second.before_hash;
+-    undo_manager->Undo();
+     bookmark_undo_receipts_.erase(receipt_it);
++    if (bookmark_undo_receipts_.empty()) {
++      StopObservingBookmarkUndoManager();
++    }
++    undo_manager->Undo();
+     if (BookmarkSnapshot(model) != expected_hash) {
+       std::move(callback).Run(
+           ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+@@ -1520,7 +1601,9 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
+       const std::string& node_id = value.GetString();
+       const bookmarks::BookmarkNode* node =
+           GetBookmarkNodeByExternalId(model, node_id);
+-      if (!node || !node->is_url() || !node->url().SchemeIsHTTPOrHTTPS() ||
++      if (!node || !node->is_url() ||
++          !IsAegisBookmarkUrlCheckTargetAllowed(task->scope(), node->url(),
++                                                node->url()) ||
+           !unique_ids.insert(node_id).second) {
+         std::move(batch->callback)
+             .Run(ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
+@@ -1822,7 +1905,7 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
+     const bool verified =
+         item->GetState() == download::DownloadItem::COMPLETE &&
+         !item->IsDangerous() && !item->GetFileExternallyRemoved() &&
+-        item->CanOpenDownload() && (expected_hash.empty() || hash_matches);
++        item->CanOpenDownload() && hash_matches;
+     if (!verified) {
+       std::move(callback).Run(ErrorResult(
+           call.action_id, AgentErrorCode::kVerificationFailed,
+@@ -1852,9 +1935,9 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
+     const bool hash_matches =
+         !expected_hash.empty() && !actual_hash.empty() &&
+         base::EqualsCaseInsensitiveASCII(expected_hash, actual_hash);
+-    const bool verified = complete && safe &&
+-                          !item->GetFileExternallyRemoved() &&
+-                          (expected_hash.empty() || hash_matches);
++    const bool safe_and_complete =
++        complete && safe && !item->GetFileExternallyRemoved();
++    const bool verified = safe_and_complete && hash_matches;
+     AgentToolResult result = SuccessResult(
+         call.action_id,
+         verified ? "download state verified" : "download is not yet verified");
+@@ -1872,6 +1955,7 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
+         BoundedUtf8(item->GetFileNameToReportUser().BaseName().AsUTF8Unsafe()));
+     result.value.Set("final_url", SafeUrlForModel(item->GetURL()));
+     result.value.Set("verified", verified);
++    result.value.Set("safe_and_complete", safe_and_complete);
+     result.value.Set("integrity",
+                      expected_hash.empty()
+                          ? "not_provided"
+@@ -2065,6 +2149,8 @@ void AegisBrowserTools::StartUrlCheckRequest(const std::string& batch_key,
+   batch.active_origins.insert(url::Origin::Create(entry.url).Serialize());
+   std::unique_ptr<network::SimpleURLLoader> loader =
+       network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
++  loader->SetURLLoaderFactoryOptions(
++      network::mojom::kURLLoadOptionBlockLocalRequest);
+   loader->SetTimeoutDuration(base::Seconds(10));
+   loader->SetRetryOptions(0, network::SimpleURLLoader::RETRY_NEVER);
+   loader->SetAllowHttpErrorResults(true);
+@@ -2104,7 +2190,8 @@ void AegisBrowserTools::OnUrlCheckRedirect(
+         url::Origin::Create(redirect).Serialize() == target_origin;
+   }
+ 
+-  if (IsUrlCheckTargetAllowed(batch.task->scope(), entry.url, target) &&
++  if (IsAegisBookmarkUrlCheckTargetAllowed(batch.task->scope(), entry.url,
++                                           target) &&
+       entry.redirects.size() < kMaxUrlCheckRedirects &&
+       (!batch.active_origins.contains(target_origin) || belongs_to_entry)) {
+     entry.redirects.push_back(target);
+@@ -2115,10 +2202,10 @@ void AegisBrowserTools::OnUrlCheckRedirect(
+   base::DictValue checked;
+   checked.Set("node_id", entry.node_id);
+   checked.Set("url", SafeUrlForModel(entry.url));
+-  checked.Set("classification",
+-              IsUrlCheckTargetAllowed(batch.task->scope(), entry.url, target)
+-                  ? "indeterminate"
+-                  : "scope_blocked");
++  checked.Set("classification", IsAegisBookmarkUrlCheckTargetAllowed(
++                                    batch.task->scope(), entry.url, target)
++                                    ? "indeterminate"
++                                    : "scope_blocked");
+   checked.Set("http_status", response_head.headers
+                                  ? response_head.headers->response_code()
+                                  : 0);
+@@ -2170,8 +2257,8 @@ void AegisBrowserTools::OnUrlCheckComplete(
+   base::DictValue checked;
+   checked.Set("node_id", entry.node_id);
+   checked.Set("url", SafeUrlForModel(entry.url));
+-  const bool final_allowed =
+-      IsUrlCheckTargetAllowed(batch.task->scope(), entry.url, final_url);
++  const bool final_allowed = IsAegisBookmarkUrlCheckTargetAllowed(
++      batch.task->scope(), entry.url, final_url);
+   checked.Set("classification",
+               final_allowed
+                   ? UrlCheckClassification(net_error, response_code, redirected)
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
+index b9359e38df..42c73c28b3 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.h
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
+@@ -17,6 +17,7 @@
+ #include "base/task/cancelable_task_tracker.h"
+ #include "chrome/browser/aegis/agent/agent_task.h"
+ #include "components/download/public/common/download_interrupt_reasons.h"
++#include "components/undo/undo_manager_observer.h"
+ 
+ class Profile;
+ 
+@@ -36,32 +37,42 @@ namespace download {
+ class DownloadItem;
+ }
+ 
++class UndoManager;
++
+ namespace history {
+ class QueryResults;
+ }
+ 
+ namespace aegis::agent {
+ 
++bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
++                                          const GURL& selected_bookmark_url,
++                                          const GURL& target);
++void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item);
++
+ // Executes browser-owned tools that must not be implemented through renderer
+ // script. Every mutating method revalidates an opaque browser snapshot before
+ // changing state.
+-class AegisBrowserTools {
++class AegisBrowserTools : public UndoManagerObserver {
+  public:
+   using ToolResultCallback = base::OnceCallback<void(AgentToolResult)>;
+ 
+   explicit AegisBrowserTools(Profile* profile);
+   AegisBrowserTools(const AegisBrowserTools&) = delete;
+   AegisBrowserTools& operator=(const AegisBrowserTools&) = delete;
+-  ~AegisBrowserTools();
++  ~AegisBrowserTools() override;
+ 
+   bool CanHandle(std::string_view tool_name) const;
+   void Execute(AgentTask* task,
+                const AgentToolCall& call,
+                ToolResultCallback callback);
+   void ForgetTask(const std::string& task_id,
+-                  bool preserve_bookmark_undo = false);
++                  bool preserve_bookmark_undo = false,
++                  bool cancel_active_downloads = false);
+ 
+  private:
++  friend class AegisBrowserToolsTestPeer;
++
+   struct BookmarkMove {
+     std::string node_uuid;
+     std::u16string category;
+@@ -130,6 +141,10 @@ class AegisBrowserTools {
+                        std::string domain,
+                        ToolResultCallback callback,
+                        history::QueryResults results);
++  void ObserveBookmarkUndoManager(UndoManager* undo_manager);
++  void StopObservingBookmarkUndoManager();
++  void OnUndoManagerStateChange() override;
++  void OnUndoManagerShutdown() override;
+ 
+   raw_ptr<Profile> profile_;
+   std::map<std::string, BookmarkPlan> bookmark_plans_;
+@@ -138,6 +153,7 @@ class AegisBrowserTools {
+   std::map<std::string, base::flat_set<std::string>> owned_downloads_;
+   std::map<std::string, std::string> pending_download_tasks_;
+   std::map<std::string, std::string> expected_download_hashes_;
++  raw_ptr<UndoManager> bookmark_undo_manager_ = nullptr;
+   base::CancelableTaskTracker history_task_tracker_;
+   base::WeakPtrFactory<AegisBrowserTools> weak_ptr_factory_{this};
+ };
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 9feec1745b..ed0d887bc5 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -230,6 +230,15 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
+   EXPECT_TRUE(shopping.tools.contains("shopping.prepare_checkout"));
+ }
+ 
++TEST(AegisAgentToolRegistryTest, SelectRequiresExactActionApproval) {
++  AgentToolRegistry registry;
++  const AgentToolDescriptor* select = registry.Find("page.select");
++  ASSERT_TRUE(select);
++  EXPECT_EQ(select->risk, AgentRiskLevel::kR2ExternalSideEffect);
++  EXPECT_TRUE(select->has_external_side_effect);
++  EXPECT_TRUE(select->requires_document);
++}
++
+ TEST(AegisAgentMonitorSchedulerTest, ClaimsThreeAndCollapsesRestartCatchup) {
+   const base::Time now = base::Time::Now();
+   std::vector<AgentMonitorDefinition> stored;
+@@ -252,6 +261,29 @@ TEST(AegisAgentMonitorSchedulerTest, ClaimsThreeAndCollapsesRestartCatchup) {
+   EXPECT_TRUE(scheduler.ClaimDue(now).empty());
+ }
+ 
++TEST(AegisAgentMonitorSchedulerTest, ReplayUsesOneStableMonitorIdentity) {
++  const std::string first =
++      AgentMonitorIdempotencyKey("task-monitor", "create-1");
++  EXPECT_EQ(first, AgentMonitorIdempotencyKey("task-monitor", "create-1"));
++  EXPECT_NE(first, AgentMonitorIdempotencyKey("task-monitor", "create-2"));
++  EXPECT_NE(first, AgentMonitorIdempotencyKey("other-task", "create-1"));
++
++  AgentMonitorScheduler scheduler;
++  AgentMonitorDefinition monitor{
++      .monitor_id = first,
++      .task_id = "task-monitor",
++      .kind = AgentMonitorKind::kPrice,
++      .origin = url::Origin::Create(GURL("https://shop.example/")),
++      .target_hash = "fixture-hash",
++      .interval = base::Minutes(15),
++      .next_run = base::Time::Now()};
++  ASSERT_TRUE(scheduler.Upsert(monitor));
++  monitor.interval = base::Minutes(30);
++  ASSERT_TRUE(scheduler.Upsert(std::move(monitor)));
++  ASSERT_EQ(scheduler.Snapshot().size(), 1u);
++  EXPECT_EQ(scheduler.Snapshot()[0].interval, base::Minutes(30));
++}
++
+ TEST(AegisAgentMonitorSchedulerTest, UsesBoundedExponentialBackoff) {
+   const base::Time now = base::Time::Now();
+   AgentMonitorScheduler scheduler;
+@@ -390,6 +422,35 @@ TEST(AegisAgentPolicyTest, RejectsArgumentScopeAndStateMismatch) {
+             AgentErrorCode::kInvalidRequest);
+ }
+ 
++TEST(AegisAgentPolicyTest, RejectsSecretsHiddenInWebMcpJson) {
++  AgentToolRegistry registry;
++  AgentPolicyBroker broker(&registry);
++  AgentTaskScope scope = TestScope();
++  scope.allowed_tools.insert("page.webmcp.invoke");
++  AgentTask task("task-webmcp", "invoke page tool", AgentMode::kAct,
++                 std::move(scope));
++  ConsentTask(&task);
++
++  AgentToolCall call;
++  call.action_id = "webmcp-1";
++  call.tool_name = "page.webmcp.invoke";
++  call.committed_url = GURL("https://shop.example/product");
++  call.document = AgentDocumentRef{.tab_id = 7,
++                                   .frame_token = "frame-1",
++                                   .document_token = "document-1",
++                                   .committed_url = call.committed_url};
++  call.arguments.Set("tab_id", 7);
++  call.arguments.Set("document_token", "document-1");
++  call.arguments.Set("name", "fixture.lookup");
++  call.arguments.Set("tool_revision", "revision-1");
++  call.arguments.Set("input_json",
++                     R"({"query":"safe","nested":{"accessToken":"fixture"}})");
++
++  const AgentPolicyDecision decision = broker.Evaluate(task, call);
++  EXPECT_EQ(decision.disposition, AgentPolicyDisposition::kDeny);
++  EXPECT_EQ(decision.error, AgentErrorCode::kScopeViolation);
++}
++
+ TEST(AegisAgentPolicyTest, CompletedTaskAllowsOnlyScopedBookmarkUndo) {
+   AgentToolRegistry registry;
+   AgentPolicyBroker broker(&registry);
+@@ -510,6 +571,15 @@ TEST(AegisAgentResultVerifierTest, RejectsModelClaimWithoutBrowserEvidence) {
+       verifier.Verify(task, call, *descriptor, observed);
+   EXPECT_TRUE(decision.accepted) << decision.reason;
+   EXPECT_TRUE(decision.postcondition_met);
++
++  base::DictValue webmcp_result;
++  webmcp_result.Set("name", "fixture.lookup");
++  webmcp_result.Set("untrusted", true);
++  webmcp_result.Set("result", R"({"sessionId":"fixture-secret"})");
++  base::ListValue webmcp_results;
++  webmcp_results.Append(std::move(webmcp_result));
++  observed.value.Set("webmcp_results", std::move(webmcp_results));
++  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, observed).accepted);
+ }
+ 
+ TEST(AegisAgentResultVerifierTest, AcceptsStructuredBrowserFailure) {
+@@ -625,6 +695,8 @@ TEST(AegisAgentResultVerifierTest, VerifiesScopedMetadataAndDownloadState) {
+   verifying.value.Set("download_id", "download-guid");
+   verifying.value.Set("state", "in_progress");
+   verifying.value.Set("verified", false);
++  verifying.value.Set("safe_and_complete", false);
++  verifying.value.Set("integrity", "not_provided");
+   AgentVerificationDecision incomplete = verifier.Verify(
+       task, verify_call, *registry.Find(verify_call.tool_name), verifying);
+   EXPECT_TRUE(incomplete.accepted);
+@@ -632,10 +704,19 @@ TEST(AegisAgentResultVerifierTest, VerifiesScopedMetadataAndDownloadState) {
+ 
+   verifying.value.Set("state", "complete");
+   verifying.value.Set("verified", true);
++  verifying.value.Set("safe_and_complete", true);
++  verifying.value.Set("integrity", "match");
++  verifying.value.Set("sha256", std::string(64, 'a'));
+   AgentVerificationDecision complete = verifier.Verify(
+       task, verify_call, *registry.Find(verify_call.tool_name), verifying);
+   EXPECT_TRUE(complete.accepted);
+   EXPECT_TRUE(complete.postcondition_met);
++
++  verifying.value.Set("integrity", "not_provided");
++  EXPECT_FALSE(verifier
++                   .Verify(task, verify_call,
++                           *registry.Find(verify_call.tool_name), verifying)
++                   .accepted);
+ }
+ 
+ }  // namespace
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 6f2568e002..cc5a3b0858 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -85,7 +85,20 @@ bool ContainsCheckoutText(std::string_view haystack, std::string_view needle) {
+ }
+ 
+ bool ContainsCheckoutAmount(std::string_view text, int value) {
+-  return text.contains(MinorUnitDecimal(value));
++  const std::string amount = MinorUnitDecimal(value);
++  size_t offset = 0;
++  while ((offset = text.find(amount, offset)) != std::string_view::npos) {
++    const bool left_boundary =
++        offset == 0 || !base::IsAsciiDigit(text[offset - 1]);
++    const size_t end = offset + amount.size();
++    const bool right_boundary =
++        end == text.size() || !base::IsAsciiDigit(text[end]);
++    if (left_boundary && right_boundary) {
++      return true;
++    }
++    ++offset;
++  }
++  return false;
+ }
+ 
+ base::DictValue CompactExecutionEvidence(
+@@ -458,9 +471,8 @@ bool ValidateAgentCheckoutSummary(const AgentToolCall& call,
+   const base::ListValue* source_ids =
+       call.arguments.FindList("source_node_ids");
+   const base::ListValue* nodes = observation.value.FindList("nodes");
+-  if (!source_ids || source_ids->empty() || source_ids->size() > 32u ||
+-      !nodes) {
+-    *error = "checkout summary has no bounded source nodes";
++  if (!source_ids || source_ids->size() != 1u || !nodes) {
++    *error = "checkout summary requires one source container node";
+     return false;
+   }
+   std::map<int, std::string> node_text;
+@@ -480,20 +492,17 @@ bool ValidateAgentCheckoutSummary(const AgentToolCall& call,
+     }
+     node_text[*node_id] += " " + text;
+   }
+-  std::string cited_text;
+-  base::flat_set<int> unique_ids;
+-  for (const base::Value& value : *source_ids) {
+-    if (!value.is_int() || !unique_ids.insert(value.GetInt()).second) {
+-      *error = "checkout source nodes are invalid or duplicated";
+-      return false;
+-    }
+-    auto source = node_text.find(value.GetInt());
+-    if (source == node_text.end()) {
+-      *error = "checkout source node is absent from the fresh observation";
+-      return false;
+-    }
+-    cited_text += source->second;
++  const base::Value& source_id = source_ids->front();
++  if (!source_id.is_int()) {
++    *error = "checkout source node is invalid";
++    return false;
++  }
++  auto source = node_text.find(source_id.GetInt());
++  if (source == node_text.end()) {
++    *error = "checkout source node is absent from the fresh observation";
++    return false;
+   }
++  const std::string& cited_text = source->second;
+   if (!ContainsCheckoutText(cited_text, *merchant) ||
+       !ContainsCheckoutText(cited_text, *product) ||
+       !ContainsCheckoutText(cited_text, *currency) ||
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index fccdb4ded5..ae1d65d6f1 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -229,6 +229,20 @@ TEST(AegisAgentExecutionTest, CheckoutRequiresFreshTraceableArithmetic) {
+   EXPECT_EQ(error,
+             "checkout total does not match its browser-visible components");
+ 
++  AgentToolResult colliding_amount = CheckoutObservation("fresh-1", "1115.00");
++  EXPECT_FALSE(ValidateAgentCheckoutSummary(call, colliding_amount, &error));
++  EXPECT_EQ(error,
++            "checkout values are not traceable to the cited browser nodes");
++
++  AgentToolResult split_sources = CheckoutObservation("fresh-1", "1115.00");
++  base::DictValue decoy;
++  decoy.Set("node_id", 72);
++  decoy.Set("text", "decoy total 115.00 CNY");
++  split_sources.value.FindList("nodes")->Append(std::move(decoy));
++  call.arguments.FindList("source_node_ids")->Append(72);
++  EXPECT_FALSE(ValidateAgentCheckoutSummary(call, split_sources, &error));
++  EXPECT_EQ(error, "checkout summary requires one source container node");
++
+   EXPECT_TRUE(IsSameAgentCheckoutObservation(
+       observation, CheckoutObservation("fresh-1", "115.00")));
+   EXPECT_FALSE(IsSameAgentCheckoutObservation(
+diff --git a/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc b/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc
+index 06a80a3727..9781296c2c 100644
+--- a/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc
++++ b/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc
+@@ -10,7 +10,10 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/containers/span.h"
++#include "base/strings/string_view_util.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
++#include "testing/libfuzzer/libfuzzer_base_wrappers.h"
+ 
+ namespace aegis::agent {
+ namespace {
+@@ -30,15 +33,15 @@ std::vector<AgentModelToolDefinition> AllModelTools() {
+ 
+ }  // namespace
+ 
+-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++DEFINE_LLVM_FUZZER_TEST_ONE_INPUT_SPAN(base::span<const uint8_t> data) {
+   constexpr size_t kMaxInputBytes = 256 * 1024;
+-  if (!data || size == 0 || size > kMaxInputBytes) {
++  if (data.empty() || data.size() > kMaxInputBytes) {
+     return 0;
+   }
+   static const std::vector<AgentModelToolDefinition> kTools = AllModelTools();
+   const AgentModelProvider provider =
+-      static_cast<AgentModelProvider>(data[0] % 3);
+-  const std::string body(reinterpret_cast<const char*>(data + 1), size - 1);
++      static_cast<AgentModelProvider>(data.front() % 3);
++  const std::string body(base::as_string_view(data.subspan(1u)));
+   ParseAgentModelResponse(provider, body, /*is_stream=*/false, kTools);
+   ParseAgentModelResponse(provider, body, /*is_stream=*/true, kTools);
+   return 0;
+diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.cc b/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
+index 9a87c5ddf3..b500aafd77 100644
+--- a/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
++++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
+@@ -5,8 +5,17 @@
+ #include <algorithm>
+ #include <utility>
+ 
++#include "base/strings/string_number_conversions.h"
++#include "crypto/sha2.h"
++
+ namespace aegis::agent {
+ 
++std::string AgentMonitorIdempotencyKey(std::string_view task_id,
++                                       std::string_view action_id) {
++  return "aegis-" + base::HexEncode(crypto::SHA256HashString(
++                        std::string(task_id) + "\n" + std::string(action_id)));
++}
++
+ bool AgentMonitorDefinition::IsValid() const {
+   const bool runtime_target_valid =
+       target_url.is_empty() ||
+diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.h b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
+index 8a39c23bbc..8cd4842b42 100644
+--- a/chrome/browser/aegis/agent/agent_monitor_scheduler.h
++++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
+@@ -6,6 +6,7 @@
+ 
+ #include <map>
+ #include <string>
++#include <string_view>
+ #include <vector>
+ 
+ #include "base/time/time.h"
+@@ -14,6 +15,10 @@
+ 
+ namespace aegis::agent {
+ 
++// 返回稳定的操作身份，使持久化后的重放覆盖同一监控，而不是重复产生副作用。
++std::string AgentMonitorIdempotencyKey(std::string_view task_id,
++                                       std::string_view action_id);
++
+ enum class AgentMonitorKind {
+   kPrice = 0,
+   kInventory = 1,
+diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
+index 527820c2d7..90c0a07248 100644
+--- a/chrome/browser/aegis/agent/agent_policy_broker.cc
++++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
+@@ -6,6 +6,7 @@
+ #include <utility>
+ 
+ #include "base/check.h"
++#include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+@@ -50,6 +51,12 @@ bool ContainsForbiddenSecretField(const base::Value& value) {
+   return false;
+ }
+ 
++bool ContainsForbiddenSecretJson(std::string_view json) {
++  std::optional<base::Value> parsed =
++      base::JSONReader::Read(json, base::JSON_PARSE_RFC);
++  return parsed && ContainsForbiddenSecretField(*parsed);
++}
++
+ }  // namespace
+ 
+ AgentPolicyBroker::AgentPolicyBroker(const AgentToolRegistry* registry)
+@@ -98,6 +105,11 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
+     return Deny(AgentErrorCode::kScopeViolation,
+                 "secret fields are forbidden in model tool arguments");
+   }
++  if (const std::string* input_json = call.arguments.FindString("input_json");
++      input_json && ContainsForbiddenSecretJson(*input_json)) {
++    return Deny(AgentErrorCode::kScopeViolation,
++                "secret fields are forbidden in nested tool input");
++  }
+   if (descriptor->requires_origin &&
+       !task.scope().AllowsOrigin(call.committed_url)) {
+     return Deny(AgentErrorCode::kScopeViolation,
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index 24f7286887..0c2abce187 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -7,6 +7,7 @@
+ #include <string_view>
+ #include <utility>
+ 
++#include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+ #include "base/strings/string_util.h"
+ #include "base/uuid.h"
+@@ -31,25 +32,40 @@ AgentVerificationDecision Accept(bool postcondition_met, std::string reason) {
+           .reason = std::move(reason)};
+ }
+ 
+-bool HasForbiddenResultField(const base::Value& value) {
++bool HasForbiddenResultField(const base::Value& value, int depth = 0) {
++  if (depth > 16) {
++    return true;
++  }
+   if (value.is_list()) {
+     for (const base::Value& child : value.GetList()) {
+-      if (HasForbiddenResultField(child)) {
++      if (HasForbiddenResultField(child, depth + 1)) {
+         return true;
+       }
+     }
+     return false;
+   }
++  if (value.is_string()) {
++    std::optional<base::Value> parsed =
++        base::JSONReader::Read(value.GetString(), base::JSON_PARSE_RFC);
++    return parsed && HasForbiddenResultField(*parsed, depth + 1);
++  }
+   if (!value.is_dict()) {
+     return false;
+   }
+   for (const auto [key, child] : value.GetDict()) {
+     const std::string lowered = base::ToLowerASCII(key);
+-    if (lowered == "password" || lowered == "otp" || lowered == "cookie" ||
+-        lowered == "authorization" || lowered == "api_key" ||
+-        lowered == "full_path" || lowered == "local_path" ||
+-        lowered == "card_number" || lowered == "cvv" ||
+-        HasForbiddenResultField(child)) {
++    if (lowered == "password" || lowered == "passwd" || lowered == "otp" ||
++        lowered == "cookie" || lowered == "authorization" ||
++        lowered == "api_key" || lowered == "full_path" ||
++        lowered == "local_path" || lowered == "card_number" ||
++        lowered == "cvv" || lowered == "access_token" ||
++        lowered == "accesstoken" || lowered == "refresh_token" ||
++        lowered == "refreshtoken" || lowered == "auth_token" ||
++        lowered == "authtoken" || lowered == "client_secret" ||
++        lowered == "clientsecret" || lowered == "private_key" ||
++        lowered == "privatekey" || lowered == "bearer" || lowered == "secret" ||
++        lowered == "token" || lowered == "session" || lowered == "session_id" ||
++        lowered == "sessionid" || HasForbiddenResultField(child, depth + 1)) {
+       return true;
+     }
+   }
+@@ -316,11 +332,18 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+                : Reject("download cancellation lacks cancelled state");
+   }
+   if (call.tool_name == "download.verify") {
+-    return HasString(value, "download_id") && HasString(value, "state") &&
+-                   value.FindBool("verified").has_value()
+-               ? Accept(value.FindBool("verified").value_or(false),
+-                        "download state was read from DownloadItem")
+-               : Reject("download verification lacks native state");
++    if (!HasString(value, "download_id") || !HasString(value, "state") ||
++        !value.FindBool("verified").has_value() ||
++        !value.FindBool("safe_and_complete").has_value() ||
++        !HasString(value, "integrity")) {
++      return Reject("download verification lacks native state");
++    }
++    const bool verified = value.FindBool("verified").value_or(false);
++    const std::string* integrity = value.FindString("integrity");
++    if (verified && (*integrity != "match" || !HasString(value, "sha256"))) {
++      return Reject("verified download lacks matching SHA-256 evidence");
++    }
++    return Accept(verified, "download state was read from DownloadItem");
+   }
+   if (call.tool_name == "download.open") {
+     return HasString(value, "download_id") &&
+diff --git a/chrome/browser/aegis/agent/agent_scope_fuzzer.cc b/chrome/browser/aegis/agent/agent_scope_fuzzer.cc
+index f89866f267..85e1d07726 100644
+--- a/chrome/browser/aegis/agent/agent_scope_fuzzer.cc
++++ b/chrome/browser/aegis/agent/agent_scope_fuzzer.cc
+@@ -5,17 +5,20 @@
+ #include <optional>
+ #include <string>
+ 
++#include "base/containers/span.h"
++#include "base/strings/string_view_util.h"
+ #include "chrome/browser/aegis/agent/agent_task_store.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
++#include "testing/libfuzzer/libfuzzer_base_wrappers.h"
+ 
+ namespace aegis::agent {
+ 
+-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++DEFINE_LLVM_FUZZER_TEST_ONE_INPUT_SPAN(base::span<const uint8_t> data) {
+   constexpr size_t kMaxInputBytes = 128 * 1024;
+-  if (!data || size == 0 || size > kMaxInputBytes) {
++  if (data.empty() || data.size() > kMaxInputBytes) {
+     return 0;
+   }
+-  const std::string input(reinterpret_cast<const char*>(data), size);
++  const std::string input(base::as_string_view(data));
+   std::optional<AgentTaskScope> scope = AgentTaskStore::DeserializeScope(input);
+   if (scope) {
+     AgentToolRegistry registry;
+diff --git a/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc b/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc
+index 96eae15f96..bb17379c8c 100644
+--- a/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc
++++ b/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc
+@@ -7,15 +7,18 @@
+ #include <string_view>
+ #include <vector>
+ 
++#include "base/containers/span.h"
+ #include "base/json/json_reader.h"
++#include "base/strings/string_view_util.h"
+ #include "chrome/browser/aegis/agent/agent_model_protocol.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
++#include "testing/libfuzzer/libfuzzer_base_wrappers.h"
+ 
+ namespace aegis::agent {
+ 
+-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
++DEFINE_LLVM_FUZZER_TEST_ONE_INPUT_SPAN(base::span<const uint8_t> data) {
+   constexpr size_t kMaxInputBytes = 128 * 1024;
+-  if (!data || size < 2 || size > kMaxInputBytes) {
++  if (data.size() < 2 || data.size() > kMaxInputBytes) {
+     return 0;
+   }
+   AgentToolRegistry registry;
+@@ -24,9 +27,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+     return 0;
+   }
+   std::optional<AgentModelToolDefinition> tool =
+-      registry.ModelToolForName(names[data[0] % names.size()]);
++      registry.ModelToolForName(names[data.front() % names.size()]);
+   std::optional<base::Value> value = base::JSONReader::Read(
+-      std::string(reinterpret_cast<const char*>(data + 1), size - 1));
++      base::as_string_view(data.subspan(1u)), base::JSON_PARSE_RFC);
+   if (!tool || !value || !value->is_dict()) {
+     return 0;
+   }
+diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
+index 37a5629688..42f248dbe3 100644
+--- a/chrome/browser/aegis/agent/agent_tool_registry.cc
++++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
+@@ -26,8 +26,8 @@ constexpr std::array<AgentToolDescriptor, 49> kTools = {{
+      AgentDataClass::kPublicPage, true, true, false, false},
+     {"page.type", AgentRiskLevel::kR2ExternalSideEffect,
+      AgentDataClass::kFormData, true, true, true, false},
+-    {"page.select", AgentRiskLevel::kR1Reversible, AgentDataClass::kFormData,
+-     true, true, false, false},
++    {"page.select", AgentRiskLevel::kR2ExternalSideEffect,
++     AgentDataClass::kFormData, true, true, true, false},
+     {"page.scroll", AgentRiskLevel::kR0ReadOnly, AgentDataClass::kPublicPage,
+      true, true, false, false},
+     {"page.drag", AgentRiskLevel::kR1Reversible, AgentDataClass::kFormData,
+@@ -459,7 +459,7 @@ base::DictValue ToolSchema(std::string_view name) {
+     properties.Set("currency", StringSchema(3));
+     properties.Set("delivery_summary", StringSchema(1024));
+     properties.Set("return_summary", StringSchema(1024));
+-    properties.Set("source_node_ids", IntegerArraySchema(1, 1000000000, 32));
++    properties.Set("source_node_ids", IntegerArraySchema(1, 1000000000, 1));
+     properties.Set("observation_fingerprint", StringSchema(64));
+     return StrictObject(
+         std::move(properties),
+@@ -620,8 +620,8 @@ std::string_view ToolDescription(std::string_view name) {
+     return "Delete one exact task-owned monitor.";
+   }
+   if (name == "shopping.prepare_checkout") {
+-    return "Present a source-bound checkout summary and hand final control to "
+-           "the user. Never submit the purchase.";
++    return "Present a single-source checkout summary and hand final control "
++           "to the user. Never submit the purchase.";
+   }
+   return {};
+ }
+diff --git a/chrome/browser/global_keyboard_shortcuts_mac.mm b/chrome/browser/global_keyboard_shortcuts_mac.mm
+index bc8c1e5d95..f66c90ae5d 100644
+--- a/chrome/browser/global_keyboard_shortcuts_mac.mm
++++ b/chrome/browser/global_keyboard_shortcuts_mac.mm
+@@ -151,6 +151,7 @@ const std::vector<KeyboardShortcutData>& GetShortcutsNotPresentInMainMenu() {
+       {true,  false, false, true,  kVK_UpArrow,           IDC_FOCUS_PREVIOUS_PANE},
+       {true,  true,  false, true,  kVK_ANSI_A,            IDC_FOCUS_INACTIVE_POPUP_FOR_ACCESSIBILITY},
+       {true,  false, false, true,  kVK_ANSI_R,            IDC_SHOW_READING_MODE_KEYBOARD},
++      {true,  true,  false, false, kVK_ANSI_A,            IDC_SHOW_AEGIS_AGENT},
+     });
+     // clang-format on
+ 
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 52302e2e38..b33475a400 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -1,5 +1,7 @@
+ // Copyright 2026 GCSA
+ 
++import '/strings.m.js';
++
+ import {loadTimeData} from '//resources/js/load_time_data.js';
+ 
+ import type {
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 69e582976d..3948b1e753 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -63,7 +63,7 @@ struct PendingApproval {
+   string argument_summary;
+   string action_fingerprint;
+   bool requires_user_takeover;
+-  CheckoutSummary ? checkout;
++  CheckoutSummary? checkout;
+ };
+ 
+ struct TimelineEvent {
+@@ -96,8 +96,8 @@ struct TaskSnapshot {
+   string state;
+   string mode;
+   string goal;
+-  PlanSummary     ? plan;
+-  PendingApproval ? pending_approval;
++  PlanSummary? plan;
++  PendingApproval? pending_approval;
+   bool undo_available;
+   array<TimelineEvent> timeline;
+   array<MonitorSummary> monitors;
+@@ -109,25 +109,38 @@ interface Page {
+ };
+ 
+ interface PageHandler {
+-  GetSnapshot() = > (TaskSnapshot snapshot);
+-  CreateTask(string goal, AgentMode mode, Workflow workflow,
+-             array<string> approved_origins) = > (TaskSnapshot snapshot);
+-  RequestPlan(string task_id) = > (TaskSnapshot snapshot);
+-  ConsentAndRun(string task_id) = > (TaskSnapshot snapshot);
+-  Pause(string task_id) = > (TaskSnapshot snapshot);
+-  Resume(string task_id) = > (TaskSnapshot snapshot);
+-  TakeOver(string task_id) = > (TaskSnapshot snapshot);
+-  FinishTakeOver(string task_id, bool completed) = > (TaskSnapshot snapshot);
+-  Stop(string task_id) = > (TaskSnapshot snapshot);
+-  Approve(string task_id, string action_id) = > (TaskSnapshot snapshot);
+-  Undo(string task_id) = > (TaskSnapshot snapshot);
+-  SetMonitorPaused(string task_id, string monitor_id, bool paused) = >
+-      (TaskSnapshot snapshot);
+-  DeleteMonitor(string task_id, string monitor_id) = >
+-      (TaskSnapshot snapshot);
++  GetSnapshot() => (TaskSnapshot snapshot);
++
++  CreateTask(string goal,
++             AgentMode mode,
++             Workflow workflow,
++             array<string> approved_origins) => (TaskSnapshot snapshot);
++
++  RequestPlan(string task_id) => (TaskSnapshot snapshot);
++
++  ConsentAndRun(string task_id) => (TaskSnapshot snapshot);
++
++  Pause(string task_id) => (TaskSnapshot snapshot);
++
++  Resume(string task_id) => (TaskSnapshot snapshot);
++
++  TakeOver(string task_id) => (TaskSnapshot snapshot);
++
++  FinishTakeOver(string task_id, bool completed) => (TaskSnapshot snapshot);
++
++  Stop(string task_id) => (TaskSnapshot snapshot);
++
++  Approve(string task_id, string action_id) => (TaskSnapshot snapshot);
++
++  Undo(string task_id) => (TaskSnapshot snapshot);
++
++  SetMonitorPaused(string task_id, string monitor_id, bool paused)
++      => (TaskSnapshot snapshot);
++
++  DeleteMonitor(string task_id, string monitor_id) => (TaskSnapshot snapshot);
+ };
+ 
+ interface PageHandlerFactory {
+-  CreatePageHandler(pending_remote<Page> page,
+-                    pending_receiver<PageHandler> handler);
++  CreatePageHandler(
++      pending_remote<Page> page, pending_receiver<PageHandler> handler);
+ };
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 6cccfc1ccc..7dc07d318c 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -235,6 +235,8 @@ void AegisAgentPageHandler::CreateTask(
+   const std::optional<std::vector<url::Origin>> origins =
+       tab ? ParseApprovedOrigins(tab->GetURL(), approved_origins)
+           : std::nullopt;
++  const std::optional<aegis::agent::AgentModelDestination> model_destination =
++      service_ ? service_->ConfiguredModelDestination() : std::nullopt;
+   if (!service_ || !service_->IsEnabled()) {
+     last_error_ = "Browser Agent is disabled";
+   } else if (!tab || !tab->GetURL().is_valid() ||
+@@ -243,11 +245,13 @@ void AegisAgentPageHandler::CreateTask(
+   } else if (!converted_mode || !converted_workflow || !origins ||
+              goal.empty() || goal.size() > 4096u) {
+     last_error_ = "Task input is invalid";
++  } else if (!model_destination) {
++    last_error_ = "Configure a valid Agent model provider before planning";
+   } else {
+     std::optional<aegis::agent::AgentTaskScope> scope =
+-        aegis::agent::BuildAgentWorkflowScope(
+-            *converted_workflow, *origins, {tab->GetHandle().raw_value()},
+-            service_->ConfiguredModelDestination());
++        aegis::agent::BuildAgentWorkflowScope(*converted_workflow, *origins,
++                                              {tab->GetHandle().raw_value()},
++                                              *model_destination);
+     AgentTask* task =
+         scope ? service_->CreateTask(goal, *converted_mode, std::move(*scope))
+               : nullptr;
+@@ -384,8 +388,8 @@ void AegisAgentPageHandler::SetMonitorPaused(
+   AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
+   const bool ok = task && task->mode() == AgentMode::kAutomate &&
+                   service_->SetMonitorPaused(task_id, monitor_id, paused);
+-  last_error_ = ok ? std::string()
+-                   : "Task-owned monitor state could not be changed";
++  last_error_ =
++      ok ? std::string() : "Task-owned monitor state could not be changed";
+   if (ok) {
+     active_task_id_ = task_id;
+     ObserveTask(task);
+@@ -393,10 +397,9 @@ void AegisAgentPageHandler::SetMonitorPaused(
+   std::move(callback).Run(BuildSnapshot());
+ }
+ 
+-void AegisAgentPageHandler::DeleteMonitor(
+-    const std::string& task_id,
+-    const std::string& monitor_id,
+-    DeleteMonitorCallback callback) {
++void AegisAgentPageHandler::DeleteMonitor(const std::string& task_id,
++                                          const std::string& monitor_id,
++                                          DeleteMonitorCallback callback) {
+   AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
+   const bool ok = task && task->mode() == AgentMode::kAutomate &&
+                   service_->RemoveMonitor(task_id, monitor_id);
+diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
+index 2bd694fc07..7be1cad9e3 100644
+--- a/chrome/chrome_paks.gni
++++ b/chrome/chrome_paks.gni
+@@ -215,6 +215,7 @@ template("chrome_extra_paks") {
+         "$root_gen_dir/chrome/about_sys_resources.pak",
+         "$root_gen_dir/chrome/access_code_cast_resources.pak",
+         "$root_gen_dir/chrome/actor_overlay_resources.pak",
++        "$root_gen_dir/chrome/aegis_agent_resources.pak",
+         "$root_gen_dir/chrome/app_service_internals_resources.pak",
+         "$root_gen_dir/chrome/autofill_ml_internals_resources.pak",
+         "$root_gen_dir/chrome/bookmarks_resources.pak",
+-- 
+2.52.0
+

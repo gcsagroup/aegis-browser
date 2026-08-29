@@ -43,6 +43,10 @@ inline constexpr char kModelApiKeyCiphertexts[] =
 inline constexpr char kOllamaBaseUrl[] = "aegis.ollama_base_url";
 inline constexpr char kOllamaModel[] = "aegis.ollama_model";
 inline constexpr char kAiControlEnabled[] = "aegis.ai_control_enabled";
+inline constexpr char kAgentEnabled[] = "aegis.agent_enabled";
+inline constexpr char kAgentTaskRetentionDays[] =
+    "aegis.agent_task_retention_days";
+inline constexpr char kAgentWorkspaces[] = "aegis.agent_workspaces";
 inline constexpr char kPausedSites[] = "aegis.paused_sites";
 inline constexpr char kAwarenessIntroShown[] = "aegis.awareness_intro_shown";
 inline constexpr char kTorrentDisclosureAcknowledged[] =

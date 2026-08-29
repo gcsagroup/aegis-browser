@@ -21,6 +21,12 @@ BASE_FEATURE(kAegisBounceTracking, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kAegisPolicyWorker, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kAegisPrivacyAi, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kAegisAiControl, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kAegisAgent, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kAegisAgentPageActions, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kAegisAgentBrowserTools, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kAegisAgentWebMcp, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAegisAgentWorkflows, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kAegisAgentTransactionPilot, base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool IsFingerprintGuardGloballyEnabled(bool pref_enabled) {
   return pref_enabled && base::FeatureList::IsEnabled(kAegisEnabled) &&

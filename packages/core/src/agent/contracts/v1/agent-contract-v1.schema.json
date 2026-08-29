@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gcsa-aegis.local/contracts/agent-contract-v1.schema.json",
+  "title": "Aegis Agent Contract v1",
+  "oneOf": [
+    { "$ref": "#/$defs/task_grant_message" },
+    { "$ref": "#/$defs/document_lease_message" },
+    { "$ref": "#/$defs/action_digest_message" }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "sorted_strings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "sorted_uuids": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/uuid" },
+      "uniqueItems": true
+    },
+    "risk": { "enum": ["R0", "R1", "R2", "R3"] },
+    "tab_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved_existing_tab_ids", "may_create_tabs"],
+      "properties": {
+        "approved_existing_tab_ids": { "$ref": "#/$defs/sorted_uuids" },
+        "may_create_tabs": { "type": "boolean" }
+      }
+    },
+    "bookmark_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root_ids", "may_write"],
+      "properties": {
+        "root_ids": { "$ref": "#/$defs/sorted_uuids" },
+        "may_write": { "type": "boolean" }
+      }
+    },
+    "download_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved_existing_ids", "may_start_downloads"],
+      "properties": {
+        "approved_existing_ids": { "$ref": "#/$defs/sorted_uuids" },
+        "may_start_downloads": { "type": "boolean" }
+      }
+    },
+    "model_destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "exact_https_host", "purpose", "data_classes", "max_request_bytes"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "exact_https_host": { "type": "string", "minLength": 1 },
+        "purpose": { "type": "string", "minLength": 1 },
+        "data_classes": { "$ref": "#/$defs/sorted_strings" },
+        "max_request_bytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "task_grant_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id", "grant_id", "surface", "profile_id", "allowed_top_origins",
+        "allowed_frame_origins", "allowed_tools", "data_classes", "risk_ceiling",
+        "max_steps", "time_budget_seconds", "byte_budget", "cost_budget", "tab_scope",
+        "bookmark_scope", "download_scope", "expires_at", "policy_version", "model_version",
+        "model_destination"
+      ],
+      "properties": {
+        "task_id": { "$ref": "#/$defs/uuid" },
+        "grant_id": { "$ref": "#/$defs/uuid" },
+        "surface": { "enum": ["aegis_browser", "safari_read_only"] },
+        "profile_id": { "$ref": "#/$defs/uuid" },
+        "allowed_top_origins": { "$ref": "#/$defs/sorted_strings" },
+        "allowed_frame_origins": { "$ref": "#/$defs/sorted_strings" },
+        "allowed_tools": { "$ref": "#/$defs/sorted_strings" },
+        "data_classes": { "$ref": "#/$defs/sorted_strings" },
+        "risk_ceiling": { "$ref": "#/$defs/risk" },
+        "max_steps": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "time_budget_seconds": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "byte_budget": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "cost_budget": { "type": "string", "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$" },
+        "tab_scope": { "$ref": "#/$defs/tab_scope" },
+        "bookmark_scope": { "$ref": "#/$defs/bookmark_scope" },
+        "download_scope": { "$ref": "#/$defs/download_scope" },
+        "expires_at": { "$ref": "#/$defs/timestamp" },
+        "policy_version": { "type": "string", "minLength": 1 },
+        "model_version": { "type": "string", "minLength": 1 },
+        "model_destination": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/model_destination" }]
+        }
+      }
+    },
+    "document_lease_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lease_id", "task_id", "grant_id", "profile_id", "process_instance_id",
+        "browser_session_id", "web_view_id", "tab_id", "frame_id", "committed_top_origin",
+        "frame_origin", "navigation_epoch", "document_nonce", "call_sequence", "expires_at"
+      ],
+      "properties": {
+        "lease_id": { "$ref": "#/$defs/uuid" },
+        "task_id": { "$ref": "#/$defs/uuid" },
+        "grant_id": { "$ref": "#/$defs/uuid" },
+        "profile_id": { "$ref": "#/$defs/uuid" },
+        "process_instance_id": { "$ref": "#/$defs/uuid" },
+        "browser_session_id": { "$ref": "#/$defs/uuid" },
+        "web_view_id": { "$ref": "#/$defs/uuid" },
+        "tab_id": { "$ref": "#/$defs/uuid" },
+        "frame_id": { "type": "string", "minLength": 1 },
+        "committed_top_origin": { "type": "string", "minLength": 1 },
+        "frame_origin": { "type": "string", "minLength": 1 },
+        "navigation_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "document_nonce": { "type": "string", "minLength": 1 },
+        "call_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "expires_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "web_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind", "lease_id", "browser_session_id", "web_view_id", "tab_id", "frame_id",
+        "top_origin", "frame_origin", "navigation_epoch", "document_nonce", "call_sequence",
+        "document_digest", "node_fingerprint"
+      ],
+      "properties": {
+        "kind": { "const": "web" },
+        "lease_id": { "$ref": "#/$defs/uuid" },
+        "browser_session_id": { "$ref": "#/$defs/uuid" },
+        "web_view_id": { "$ref": "#/$defs/uuid" },
+        "tab_id": { "$ref": "#/$defs/uuid" },
+        "frame_id": { "type": "string", "minLength": 1 },
+        "top_origin": { "type": "string", "minLength": 1 },
+        "frame_origin": { "type": "string", "minLength": 1 },
+        "navigation_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "document_nonce": { "type": "string", "minLength": 1 },
+        "call_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "document_digest": { "type": "string", "minLength": 1 },
+        "node_fingerprint": { "type": "string", "minLength": 1 }
+      }
+    },
+    "native_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "resource_type", "registry_revision", "resource_id"],
+      "properties": {
+        "kind": { "const": "native" },
+        "resource_type": { "enum": ["bookmark_plan", "bookmark_transaction", "tab_batch", "download"] },
+        "registry_revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "resource_id": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "action_digest_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id", "grant_id", "profile_id", "process_instance_id", "surface", "policy_version",
+        "tool", "normalized_parameters", "call_sequence", "target", "confirmation_digest",
+        "expires_at"
+      ],
+      "properties": {
+        "task_id": { "$ref": "#/$defs/uuid" },
+        "grant_id": { "$ref": "#/$defs/uuid" },
+        "profile_id": { "$ref": "#/$defs/uuid" },
+        "process_instance_id": { "$ref": "#/$defs/uuid" },
+        "surface": { "enum": ["aegis_browser", "safari_read_only"] },
+        "policy_version": { "type": "string", "minLength": 1 },
+        "tool": { "type": "string", "minLength": 1 },
+        "normalized_parameters": { "type": "string" },
+        "call_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "target": { "oneOf": [{ "$ref": "#/$defs/web_target" }, { "$ref": "#/$defs/native_target" }] },
+        "confirmation_digest": { "type": ["string", "null"] },
+        "expires_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "task_grant_message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "message_type", "payload"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "message_type": { "const": "task_grant" },
+        "payload": { "$ref": "#/$defs/task_grant_payload" }
+      }
+    },
+    "document_lease_message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "message_type", "payload"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "message_type": { "const": "document_lease" },
+        "payload": { "$ref": "#/$defs/document_lease_payload" }
+      }
+    },
+    "action_digest_message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "message_type", "payload"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "message_type": { "const": "action_digest_input" },
+        "payload": { "$ref": "#/$defs/action_digest_payload" }
+      }
+    }
+  }
+}

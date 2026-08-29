@@ -1,0 +1,1499 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08AB738ECED584ACD8EEFD90 /* AegisPolicyKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		0A421F28BB9416326ED8C14F /* AegisUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2EE4B19F40D50A254F73400 /* AegisUITests.swift */; };
+		0C658D1B64536667B12FFB4A /* PIIScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D2BFEF59B3EFF8EE72A6DC /* PIIScannerTests.swift */; };
+		0CE5714F43AC5503C8AA2454 /* AgentContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C34171E4342B874705C4B95 /* AgentContractTests.swift */; };
+		0EFF0016AEE681BA688ABCA5 /* WebExtensionIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E17AB92643161AAA2FCC34B0 /* WebExtensionIntegrationTests.swift */; };
+		133EBE3622DFF3B59E0F65B8 /* BrowserKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7755D203721E0D35AD0E28DC /* BrowserKitTests.swift */; };
+		1C90C244D6A96357698C760C /* read-only.js in Resources */ = {isa = PBXBuildFile; fileRef = B97844B59A1122231CA84A1B /* read-only.js */; };
+		24D8A94B087B3826B8E7D306 /* AgentKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		29739518D29D84A07EAD73CE /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = C1007077C6F4B017DC7EE5E3 /* Fixtures */; };
+		426EEBDA7BA2591A98D15A17 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C19A3C2E84FC4F3A6DD96E0C /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		44369D875924DBD657451957 /* BrowserSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855BC0E736799C26DA7783F1 /* BrowserSession.swift */; };
+		4696882FA847A55B0776C99F /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D70A73F99051BB71BD7B95D /* ShareInbox.swift */; };
+		4A53823AD2346049A173870F /* BrowserDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D836A476E0FD58999A2BBBBD /* BrowserDataStore.swift */; };
+		506B25D23A79E9EEB668B1DE /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 929074D962010764650D38AB /* manifest.json */; };
+		51A012093196ED6DBBDC7C07 /* PhishingScorerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CE8B03056668D2B0F3FD6F /* PhishingScorerTests.swift */; };
+		523A56C0A3B4E4FF72486DA1 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 929074D962010764650D38AB /* manifest.json */; };
+		539C51B600BB47FB430D7611 /* WebExtensionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D2695453C0647BA59FA6AE /* WebExtensionRuntime.swift */; };
+		5417E789F7D0BC2213D0615A /* ShareInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0BDB1071C646F6F85D5065 /* ShareInboxTests.swift */; };
+		57F7D0DE7179CAB59B1C9E4D /* AgentContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B191048BDD989006216DCB6 /* AgentContracts.swift */; };
+		58DBFB099C3AEB133708A0FD /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 8FF23EC4AC2439B1E18C02A5 /* background.js */; };
+		61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 397CB2F7CB8A372260242996 /* AegisApp.swift */; };
+		62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBD900AF215F40DB04323FB /* PolicySnapshotTests.swift */; };
+		67748F2CF5517977D9142A39 /* BrowserWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C66FE35850433CA5AC827CC /* BrowserWebView.swift */; };
+		6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; };
+		72CB4B4D2A1DF9D731512DB3 /* BrowserKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		7EEA86B8BEC84C02471EFF1A /* BrowserKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; };
+		813229A00EB9B620B4DE6422 /* PolicyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DE227C3194C654AFA7B2DD /* PolicyModels.swift */; };
+		81675EF41DABEB9D1C57A658 /* LinkSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FF0AF5508FE69A29C6DA727 /* LinkSanitizer.swift */; };
+		81ED16A4B85AF8ADA0FB67A3 /* AgentCenterModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC9C02A3624F938F17E6ABDE /* AgentCenterModel.swift */; };
+		838C5737D8815AB996BC45E6 /* AgentContractCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E3D6DAEB88166AA1F5B336 /* AgentContractCodec.swift */; };
+		840B56758529F2B35742BBF9 /* SafariReadOnlyGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162273D7FA6961C1D03FB8CD /* SafariReadOnlyGateTests.swift */; };
+		8783373417B125F59C243517 /* AegisRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC674B39EE41277890C67F8 /* AegisRootView.swift */; };
+		8E51BF62C4BB22B94BA6EB87 /* AegisPolicyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; };
+		8F1844C84B2E80C7865F69A0 /* BookmarkTransactionJournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C91529E9D1C3457DD010A42 /* BookmarkTransactionJournalTests.swift */; };
+		8FCC91EE7B180F906A4D4FF1 /* PolicySnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA9460A6B63D8C162D0E0A13 /* PolicySnapshot.swift */; };
+		8FE482D6250CED01D8EA3558 /* AgentBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C7AE795E0880C8362301009 /* AgentBroker.swift */; };
+		951712A24A4B4F6A0FA3D2F7 /* ShareInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D70A73F99051BB71BD7B95D /* ShareInbox.swift */; };
+		966246A7BCD0D2E3007E96AF /* ActionCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01D7E15A595D78AE85CA380C /* ActionCapability.swift */; };
+		A04EE620222BAACC80203BC0 /* AgentWorkflows.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC946B5F634860F4DB4118FB /* AgentWorkflows.swift */; };
+		A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */; };
+		A221FA759498782B5C07292B /* AgentCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */; };
+		A75E140D24416D324155FAD6 /* BrowserKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A7B3F09DCB286D28B4F61923 /* NavigationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB730B727C42360401232C8 /* NavigationPolicy.swift */; };
+		A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6107C5E1917AE2F2CB7D23 /* CapabilitySecurityTests.swift */; };
+		A8F53DCF23F78A6D05997E79 /* SafariReadOnlyGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */; };
+		AC2703CF87D6F70B7E0C7440 /* ResourceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD85780C02C3C4F2C26315A /* ResourceRegistry.swift */; };
+		AD3C84BCBEDAF5FFE560C11D /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = 8FF23EC4AC2439B1E18C02A5 /* background.js */; };
+		B0087639BCB7AC25A15DD724 /* AgentContractGoldenVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A05892A05273F09242B610B /* AgentContractGoldenVectorTests.swift */; };
+		B1117F796F8FFA728BADAB2D /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83743D91211FEF8F59981CDF /* SafariWebExtensionHandler.swift */; };
+		B5ED66F92E491CDDC6984660 /* SafariReadOnlyGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */; };
+		B703193C14D69F055D433BA8 /* agent-contract-v1.vectors.json in Resources */ = {isa = PBXBuildFile; fileRef = DA245E2DBEF96BAA62A597CA /* agent-contract-v1.vectors.json */; };
+		B9F51A266D55AECD80F09DE4 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FD6289F9399C3B8DA673D0 /* ShareViewController.swift */; };
+		C0FF31D123B2A6CA40C617A3 /* PIIScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3882C9101F2E7A348FF20A /* PIIScanner.swift */; };
+		C1EE3B71AF9C7C38C1DDA46D /* FixtureSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 150AC76F924BF3B5527BB498 /* FixtureSchemeHandler.swift */; };
+		C34C21360E8D4102DB5F5336 /* AegisPolicyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; };
+		C76B7E9E5FD152E87FF00105 /* PhishingScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFC537DE5C315BE798D0C40 /* PhishingScorer.swift */; };
+		C7F29894ACF611B73F67D456 /* LinkSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4E50D21E8474FF97F7DAE7 /* LinkSanitizerTests.swift */; };
+		D35B3481239DE8C4774C0956 /* WorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0193749B7636A106F72F9642 /* WorkflowTests.swift */; };
+		D3C0C38220BB297F3A973AC3 /* BrowserKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; };
+		D7A101D820C862EBB3972680 /* AgentKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */; };
+		D7EA6BB87737CBDE5B5C1617 /* AegisPolicyKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		DB735A2B973B5D649871E3EC /* NavigationPolicyIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1788A0AC56CB3EC57FF15DD6 /* NavigationPolicyIntegrationTests.swift */; };
+		DC6ED30641C8CC0E4CB07BC6 /* read-only.js in Resources */ = {isa = PBXBuildFile; fileRef = B97844B59A1122231CA84A1B /* read-only.js */; };
+		DC77D9043FD789C47428971A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF72AD752242D6C76AE0CBF1 /* Assets.xcassets */; };
+		E256F4D2434D064A82A9D95C /* SafariDocumentNavigationIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFF9E368B4B4F0B40EA90FE /* SafariDocumentNavigationIdentityTests.swift */; };
+		E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; };
+		EC82CA3264103EABFC665167 /* AgentKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		F0358664B6B9171AD9B429F9 /* SafariWebExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4BED1A1355A1EB0F9884D002 /* SafariWebExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		FB00BBEBB93684B899A3C380 /* AegisPolicyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		05DB5305B1C7926128929F32 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D86361CF20F53AFE75B05C96;
+			remoteInfo = ShareExtension;
+		};
+		13A01EE275517E7487D6C650 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CD34907A19AF607084DBAABB;
+			remoteInfo = SafariWebExtension;
+		};
+		24C2DD40210119EC8F5507B4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C26DC3379C8C26982F712172;
+			remoteInfo = AgentKit;
+		};
+		6AD4DE84AECA29B6612D560A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DFF18AEBD4B5D2EEC1A75488;
+			remoteInfo = BrowserKit;
+		};
+		92D758CAC3BA36BE1614E6CD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A79F0FC08A942DD42F3FFB96;
+			remoteInfo = AegisPolicyKit;
+		};
+		9565CCDD537B138A377D00A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A79F0FC08A942DD42F3FFB96;
+			remoteInfo = AegisPolicyKit;
+		};
+		98C4AC63F5596A9569679272 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B29AD1496FC1D1ADFB7B324;
+			remoteInfo = Aegis;
+		};
+		A1A34477FA7F5FDE39DC2E0D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A79F0FC08A942DD42F3FFB96;
+			remoteInfo = AegisPolicyKit;
+		};
+		A7FE4E2A14358FCCDB5190A4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B29AD1496FC1D1ADFB7B324;
+			remoteInfo = Aegis;
+		};
+		BF6B941904E00BA50DFAE640 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A79F0FC08A942DD42F3FFB96;
+			remoteInfo = AegisPolicyKit;
+		};
+		C020457B012088C33D811FB8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DFF18AEBD4B5D2EEC1A75488;
+			remoteInfo = BrowserKit;
+		};
+		D048C916310E4D51DB5848B3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C26DC3379C8C26982F712172;
+			remoteInfo = AgentKit;
+		};
+		F1619DFE592C6ADF762A5FF3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DFF18AEBD4B5D2EEC1A75488;
+			remoteInfo = BrowserKit;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		651F0D4DBE487052A2BAA841 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F0358664B6B9171AD9B429F9 /* SafariWebExtension.appex in Embed Foundation Extensions */,
+				426EEBDA7BA2591A98D15A17 /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		703AFA76BCDA56B08EEBD95F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				A75E140D24416D324155FAD6 /* BrowserKit.framework in Embed Frameworks */,
+				D7EA6BB87737CBDE5B5C1617 /* AegisPolicyKit.framework in Embed Frameworks */,
+				24D8A94B087B3826B8E7D306 /* AgentKit.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7CFE6D1BEF3420D6A2B7DEAC /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				72CB4B4D2A1DF9D731512DB3 /* BrowserKit.framework in Embed Frameworks */,
+				08AB738ECED584ACD8EEFD90 /* AegisPolicyKit.framework in Embed Frameworks */,
+				EC82CA3264103EABFC665167 /* AgentKit.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0193749B7636A106F72F9642 /* WorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowTests.swift; sourceTree = "<group>"; };
+		01D7E15A595D78AE85CA380C /* ActionCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCapability.swift; sourceTree = "<group>"; };
+		0958879001F2F7DF98B0CBEA /* AgentKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AgentKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		0C34171E4342B874705C4B95 /* AgentContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContractTests.swift; sourceTree = "<group>"; };
+		0D70A73F99051BB71BD7B95D /* ShareInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInbox.swift; sourceTree = "<group>"; };
+		150AC76F924BF3B5527BB498 /* FixtureSchemeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureSchemeHandler.swift; sourceTree = "<group>"; };
+		162273D7FA6961C1D03FB8CD /* SafariReadOnlyGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariReadOnlyGateTests.swift; sourceTree = "<group>"; };
+		1788A0AC56CB3EC57FF15DD6 /* NavigationPolicyIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationPolicyIntegrationTests.swift; sourceTree = "<group>"; };
+		2C7AE795E0880C8362301009 /* AgentBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBroker.swift; sourceTree = "<group>"; };
+		2CFC537DE5C315BE798D0C40 /* PhishingScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhishingScorer.swift; sourceTree = "<group>"; };
+		2DFF9E368B4B4F0B40EA90FE /* SafariDocumentNavigationIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariDocumentNavigationIdentityTests.swift; sourceTree = "<group>"; };
+		39572A60EB59172506D03265 /* AegisUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AegisUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		397CB2F7CB8A372260242996 /* AegisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AegisApp.swift; sourceTree = "<group>"; };
+		3B191048BDD989006216DCB6 /* AgentContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContracts.swift; sourceTree = "<group>"; };
+		3C66FE35850433CA5AC827CC /* BrowserWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWebView.swift; sourceTree = "<group>"; };
+		41FD6289F9399C3B8DA673D0 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		48DE227C3194C654AFA7B2DD /* PolicyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolicyModels.swift; sourceTree = "<group>"; };
+		4A05892A05273F09242B610B /* AgentContractGoldenVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContractGoldenVectorTests.swift; sourceTree = "<group>"; };
+		4BED1A1355A1EB0F9884D002 /* SafariWebExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = SafariWebExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		52E3D6DAEB88166AA1F5B336 /* AgentContractCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContractCodec.swift; sourceTree = "<group>"; };
+		5B6107C5E1917AE2F2CB7D23 /* CapabilitySecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilitySecurityTests.swift; sourceTree = "<group>"; };
+		5CBD900AF215F40DB04323FB /* PolicySnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolicySnapshotTests.swift; sourceTree = "<group>"; };
+		64D2BFEF59B3EFF8EE72A6DC /* PIIScannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PIIScannerTests.swift; sourceTree = "<group>"; };
+		66D2695453C0647BA59FA6AE /* WebExtensionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebExtensionRuntime.swift; sourceTree = "<group>"; };
+		69CE8B03056668D2B0F3FD6F /* PhishingScorerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhishingScorerTests.swift; sourceTree = "<group>"; };
+		7755D203721E0D35AD0E28DC /* BrowserKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserKitTests.swift; sourceTree = "<group>"; };
+		7C91529E9D1C3457DD010A42 /* BookmarkTransactionJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkTransactionJournalTests.swift; sourceTree = "<group>"; };
+		7FF0AF5508FE69A29C6DA727 /* LinkSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSanitizer.swift; sourceTree = "<group>"; };
+		8062DAFB759A5F4F2DEA7F6B /* Aegis.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Aegis.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		83743D91211FEF8F59981CDF /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		855BC0E736799C26DA7783F1 /* BrowserSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSession.swift; sourceTree = "<group>"; };
+		8FF23EC4AC2439B1E18C02A5 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
+		929074D962010764650D38AB /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
+		97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariReadOnlyGate.swift; sourceTree = "<group>"; };
+		A066F1C80823C272439700C0 /* BrowserKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = BrowserKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA4E50D21E8474FF97F7DAE7 /* LinkSanitizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSanitizerTests.swift; sourceTree = "<group>"; };
+		ABC674B39EE41277890C67F8 /* AegisRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AegisRootView.swift; sourceTree = "<group>"; };
+		AC946B5F634860F4DB4118FB /* AgentWorkflows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflows.swift; sourceTree = "<group>"; };
+		AF72AD752242D6C76AE0CBF1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B4A8633750111F2B4CD82ABA /* AegisTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AegisTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B97844B59A1122231CA84A1B /* read-only.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "read-only.js"; sourceTree = "<group>"; };
+		BA9460A6B63D8C162D0E0A13 /* PolicySnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolicySnapshot.swift; sourceTree = "<group>"; };
+		BF3882C9101F2E7A348FF20A /* PIIScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PIIScanner.swift; sourceTree = "<group>"; };
+		C1007077C6F4B017DC7EE5E3 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = Tests/Fixtures; sourceTree = SOURCE_ROOT; };
+		C19A3C2E84FC4F3A6DD96E0C /* ShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D2EE4B19F40D50A254F73400 /* AegisUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AegisUITests.swift; sourceTree = "<group>"; };
+		D836A476E0FD58999A2BBBBD /* BrowserDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserDataStore.swift; sourceTree = "<group>"; };
+		DA245E2DBEF96BAA62A597CA /* agent-contract-v1.vectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "agent-contract-v1.vectors.json"; sourceTree = "<group>"; };
+		DEB730B727C42360401232C8 /* NavigationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationPolicy.swift; sourceTree = "<group>"; };
+		E17AB92643161AAA2FCC34B0 /* WebExtensionIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebExtensionIntegrationTests.swift; sourceTree = "<group>"; };
+		EAD85780C02C3C4F2C26315A /* ResourceRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceRegistry.swift; sourceTree = "<group>"; };
+		EC9C02A3624F938F17E6ABDE /* AgentCenterModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCenterModel.swift; sourceTree = "<group>"; };
+		EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AegisPolicyKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB0BDB1071C646F6F85D5065 /* ShareInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTests.swift; sourceTree = "<group>"; };
+		FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCenterView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		97140DE021FD937E33BAB97A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C34C21360E8D4102DB5F5336 /* AegisPolicyKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA7F0325B0B522BF94DEB1FA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7EEA86B8BEC84C02471EFF1A /* BrowserKit.framework in Frameworks */,
+				8E51BF62C4BB22B94BA6EB87 /* AegisPolicyKit.framework in Frameworks */,
+				D7A101D820C862EBB3972680 /* AgentKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DECD2D07A291A4A02847F866 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */,
+				E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */,
+				A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F8F3A2027CF0903F9D9A0534 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB00BBEBB93684B899A3C380 /* AegisPolicyKit.framework in Frameworks */,
+				D3C0C38220BB297F3A973AC3 /* BrowserKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0FF79D64C7991219D854E117 /* AgentKit */ = {
+			isa = PBXGroup;
+			children = (
+				01D7E15A595D78AE85CA380C /* ActionCapability.swift */,
+				2C7AE795E0880C8362301009 /* AgentBroker.swift */,
+				52E3D6DAEB88166AA1F5B336 /* AgentContractCodec.swift */,
+				3B191048BDD989006216DCB6 /* AgentContracts.swift */,
+				AC946B5F634860F4DB4118FB /* AgentWorkflows.swift */,
+				EAD85780C02C3C4F2C26315A /* ResourceRegistry.swift */,
+			);
+			path = AgentKit;
+			sourceTree = "<group>";
+		};
+		3C78A8C1E43D518571966884 /* contracts */ = {
+			isa = PBXGroup;
+			children = (
+				AD7320903B7ED30CF1130B15 /* v1 */,
+			);
+			path = contracts;
+			sourceTree = "<group>";
+		};
+		3C7C7C95A3C79D9763C9EC3F /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */,
+				0D70A73F99051BB71BD7B95D /* ShareInbox.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		3E290F3990C330CC3F94E4C6 /* AegisPolicyKitTests */ = {
+			isa = PBXGroup;
+			children = (
+				AA4E50D21E8474FF97F7DAE7 /* LinkSanitizerTests.swift */,
+				69CE8B03056668D2B0F3FD6F /* PhishingScorerTests.swift */,
+				64D2BFEF59B3EFF8EE72A6DC /* PIIScannerTests.swift */,
+				5CBD900AF215F40DB04323FB /* PolicySnapshotTests.swift */,
+			);
+			path = AegisPolicyKitTests;
+			sourceTree = "<group>";
+		};
+		42EE7F8922C9AAA1867D5858 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				41FD6289F9399C3B8DA673D0 /* ShareViewController.swift */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		43D1A9D34D50FF36A08B1CBD /* AegisPolicyKit */ = {
+			isa = PBXGroup;
+			children = (
+				7FF0AF5508FE69A29C6DA727 /* LinkSanitizer.swift */,
+				2CFC537DE5C315BE798D0C40 /* PhishingScorer.swift */,
+				BF3882C9101F2E7A348FF20A /* PIIScanner.swift */,
+				48DE227C3194C654AFA7B2DD /* PolicyModels.swift */,
+				BA9460A6B63D8C162D0E0A13 /* PolicySnapshot.swift */,
+			);
+			path = AegisPolicyKit;
+			sourceTree = "<group>";
+		};
+		4757EE6B2FA4F6F21DA9EF32 /* AgentKitTests */ = {
+			isa = PBXGroup;
+			children = (
+				4A05892A05273F09242B610B /* AgentContractGoldenVectorTests.swift */,
+				0C34171E4342B874705C4B95 /* AgentContractTests.swift */,
+				5B6107C5E1917AE2F2CB7D23 /* CapabilitySecurityTests.swift */,
+				0193749B7636A106F72F9642 /* WorkflowTests.swift */,
+			);
+			path = AgentKitTests;
+			sourceTree = "<group>";
+		};
+		4D618B5CFF324A152FFFD5FC /* AegisTests */ = {
+			isa = PBXGroup;
+			children = (
+				7C91529E9D1C3457DD010A42 /* BookmarkTransactionJournalTests.swift */,
+				7755D203721E0D35AD0E28DC /* BrowserKitTests.swift */,
+				1788A0AC56CB3EC57FF15DD6 /* NavigationPolicyIntegrationTests.swift */,
+				2DFF9E368B4B4F0B40EA90FE /* SafariDocumentNavigationIdentityTests.swift */,
+				162273D7FA6961C1D03FB8CD /* SafariReadOnlyGateTests.swift */,
+				FB0BDB1071C646F6F85D5065 /* ShareInboxTests.swift */,
+				E17AB92643161AAA2FCC34B0 /* WebExtensionIntegrationTests.swift */,
+			);
+			path = AegisTests;
+			sourceTree = "<group>";
+		};
+		4FDE9874F5B0ECC431D490BA /* AegisUITests */ = {
+			isa = PBXGroup;
+			children = (
+				D2EE4B19F40D50A254F73400 /* AegisUITests.swift */,
+			);
+			path = AegisUITests;
+			sourceTree = "<group>";
+		};
+		50D0A2A1E229FE1B56E19372 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8062DAFB759A5F4F2DEA7F6B /* Aegis.app */,
+				EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */,
+				B4A8633750111F2B4CD82ABA /* AegisTests.xctest */,
+				39572A60EB59172506D03265 /* AegisUITests.xctest */,
+				0958879001F2F7DF98B0CBEA /* AgentKit.framework */,
+				A066F1C80823C272439700C0 /* BrowserKit.framework */,
+				4BED1A1355A1EB0F9884D002 /* SafariWebExtension.appex */,
+				C19A3C2E84FC4F3A6DD96E0C /* ShareExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		526BAE8C417C353E991FEC1C /* core */ = {
+			isa = PBXGroup;
+			children = (
+				A983B743106B039B1ACB9008 /* src */,
+			);
+			path = core;
+			sourceTree = "<group>";
+		};
+		55B254DA272EAA2FA59DC9F7 /* SafariWebExtension */ = {
+			isa = PBXGroup;
+			children = (
+				83743D91211FEF8F59981CDF /* SafariWebExtensionHandler.swift */,
+			);
+			path = SafariWebExtension;
+			sourceTree = "<group>";
+		};
+		75D3091B55C949DC25CD1851 = {
+			isa = PBXGroup;
+			children = (
+				C7CD882477A02565A54EFBC2 /* AegisApp */,
+				43D1A9D34D50FF36A08B1CBD /* AegisPolicyKit */,
+				0FF79D64C7991219D854E117 /* AgentKit */,
+				9757AE58F18E890CD0DBC09B /* BrowserKit */,
+				DE9643AB7F32DB63DF97C7F3 /* GCSA-aegis */,
+				55B254DA272EAA2FA59DC9F7 /* SafariWebExtension */,
+				3C7C7C95A3C79D9763C9EC3F /* Shared */,
+				9CFA2C11BDDB9BE918F17C4C /* SharedWebExtension */,
+				42EE7F8922C9AAA1867D5858 /* ShareExtension */,
+				E67231F275D5A3D002D8FF59 /* Tests */,
+				50D0A2A1E229FE1B56E19372 /* Products */,
+			);
+			indentWidth = 2;
+			sourceTree = "<group>";
+			tabWidth = 2;
+		};
+		77F5D595720CB02497AA694E /* packages */ = {
+			isa = PBXGroup;
+			children = (
+				526BAE8C417C353E991FEC1C /* core */,
+			);
+			path = packages;
+			sourceTree = "<group>";
+		};
+		9757AE58F18E890CD0DBC09B /* BrowserKit */ = {
+			isa = PBXGroup;
+			children = (
+				D836A476E0FD58999A2BBBBD /* BrowserDataStore.swift */,
+				855BC0E736799C26DA7783F1 /* BrowserSession.swift */,
+				3C66FE35850433CA5AC827CC /* BrowserWebView.swift */,
+				150AC76F924BF3B5527BB498 /* FixtureSchemeHandler.swift */,
+				DEB730B727C42360401232C8 /* NavigationPolicy.swift */,
+				66D2695453C0647BA59FA6AE /* WebExtensionRuntime.swift */,
+			);
+			path = BrowserKit;
+			sourceTree = "<group>";
+		};
+		9CFA2C11BDDB9BE918F17C4C /* SharedWebExtension */ = {
+			isa = PBXGroup;
+			children = (
+				8FF23EC4AC2439B1E18C02A5 /* background.js */,
+				929074D962010764650D38AB /* manifest.json */,
+				B97844B59A1122231CA84A1B /* read-only.js */,
+			);
+			path = SharedWebExtension;
+			sourceTree = "<group>";
+		};
+		A983B743106B039B1ACB9008 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				AB50DA9EAB0FCB41E2C90821 /* agent */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
+		AB50DA9EAB0FCB41E2C90821 /* agent */ = {
+			isa = PBXGroup;
+			children = (
+				3C78A8C1E43D518571966884 /* contracts */,
+			);
+			path = agent;
+			sourceTree = "<group>";
+		};
+		AD7320903B7ED30CF1130B15 /* v1 */ = {
+			isa = PBXGroup;
+			children = (
+				DA245E2DBEF96BAA62A597CA /* agent-contract-v1.vectors.json */,
+			);
+			path = v1;
+			sourceTree = "<group>";
+		};
+		C7CD882477A02565A54EFBC2 /* AegisApp */ = {
+			isa = PBXGroup;
+			children = (
+				397CB2F7CB8A372260242996 /* AegisApp.swift */,
+				ABC674B39EE41277890C67F8 /* AegisRootView.swift */,
+				EC9C02A3624F938F17E6ABDE /* AgentCenterModel.swift */,
+				FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */,
+				AF72AD752242D6C76AE0CBF1 /* Assets.xcassets */,
+			);
+			path = AegisApp;
+			sourceTree = "<group>";
+		};
+		DE9643AB7F32DB63DF97C7F3 /* GCSA-aegis */ = {
+			isa = PBXGroup;
+			children = (
+				77F5D595720CB02497AA694E /* packages */,
+			);
+			name = "GCSA-aegis";
+			path = ../..;
+			sourceTree = "<group>";
+		};
+		E67231F275D5A3D002D8FF59 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				C1007077C6F4B017DC7EE5E3 /* Fixtures */,
+				3E290F3990C330CC3F94E4C6 /* AegisPolicyKitTests */,
+				4D618B5CFF324A152FFFD5FC /* AegisTests */,
+				4FDE9874F5B0ECC431D490BA /* AegisUITests */,
+				4757EE6B2FA4F6F21DA9EF32 /* AgentKitTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1160487D63C81DE8E89EA4FA /* AegisTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D49277A57583B3AA12C26B2D /* Build configuration list for PBXNativeTarget "AegisTests" */;
+			buildPhases = (
+				C3B60DD9AC74606C4C52DF6A /* Sources */,
+				19A7FD5C5BA9079DFCD53418 /* Resources */,
+				AA7F0325B0B522BF94DEB1FA /* Frameworks */,
+				703AFA76BCDA56B08EEBD95F /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				6FFA3263A68821B9004191F4 /* PBXTargetDependency */,
+				A0068FE7656406742A030CD2 /* PBXTargetDependency */,
+				6109E0291FBDF1B4DB98BF20 /* PBXTargetDependency */,
+				36AE83FB92B468ED17D93055 /* PBXTargetDependency */,
+			);
+			name = AegisTests;
+			packageProductDependencies = (
+			);
+			productName = AegisTests;
+			productReference = B4A8633750111F2B4CD82ABA /* AegisTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7B29AD1496FC1D1ADFB7B324 /* Aegis */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79A2E7CAC3BFF7017714C932 /* Build configuration list for PBXNativeTarget "Aegis" */;
+			buildPhases = (
+				B2CA4955498C9770B9754440 /* Sources */,
+				B3182E8A7010051666B062BC /* Resources */,
+				DECD2D07A291A4A02847F866 /* Frameworks */,
+				651F0D4DBE487052A2BAA841 /* Embed Foundation Extensions */,
+				7CFE6D1BEF3420D6A2B7DEAC /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3BBDC0C9A9F787B68354919F /* PBXTargetDependency */,
+				8A574919ED5A88A8C6E5DB92 /* PBXTargetDependency */,
+				4AA58F79C0603CA547598B04 /* PBXTargetDependency */,
+				D58803929CAC5928A1A20B7D /* PBXTargetDependency */,
+				2E6DECC6F8760AC38CB691B0 /* PBXTargetDependency */,
+			);
+			name = Aegis;
+			packageProductDependencies = (
+			);
+			productName = Aegis;
+			productReference = 8062DAFB759A5F4F2DEA7F6B /* Aegis.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6232B519E01ED2B4A84B3E44 /* Build configuration list for PBXNativeTarget "AegisPolicyKit" */;
+			buildPhases = (
+				A3C9433F415E85BD33A42B1D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AegisPolicyKit;
+			packageProductDependencies = (
+			);
+			productName = AegisPolicyKit;
+			productReference = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		C26DC3379C8C26982F712172 /* AgentKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0DCCD54A6D4BD13878595F70 /* Build configuration list for PBXNativeTarget "AgentKit" */;
+			buildPhases = (
+				37A8F0AEA2484F4ED94AE928 /* Sources */,
+				F8F3A2027CF0903F9D9A0534 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FFB60EA7737FFDEC2D348E7A /* PBXTargetDependency */,
+				8841D8761802625B006DAF04 /* PBXTargetDependency */,
+			);
+			name = AgentKit;
+			packageProductDependencies = (
+			);
+			productName = AgentKit;
+			productReference = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		CD34907A19AF607084DBAABB /* SafariWebExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 433DB0B9416541F8865118EE /* Build configuration list for PBXNativeTarget "SafariWebExtension" */;
+			buildPhases = (
+				AE1AF7E931AC6F3A1E2B6C12 /* Sources */,
+				BDB584612B43EFE2E274294F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SafariWebExtension;
+			packageProductDependencies = (
+			);
+			productName = SafariWebExtension;
+			productReference = 4BED1A1355A1EB0F9884D002 /* SafariWebExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		D86361CF20F53AFE75B05C96 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C29CC5472A4946DE7ABAA9C9 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				6485A384503CECB2FF3900F1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShareExtension;
+			packageProductDependencies = (
+			);
+			productName = ShareExtension;
+			productReference = C19A3C2E84FC4F3A6DD96E0C /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		DFF18AEBD4B5D2EEC1A75488 /* BrowserKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 491A8C66DC395BD5310E60BF /* Build configuration list for PBXNativeTarget "BrowserKit" */;
+			buildPhases = (
+				1630230A53274E9D47F068BF /* Sources */,
+				97140DE021FD937E33BAB97A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5F4EAD42557E99D318723D9D /* PBXTargetDependency */,
+			);
+			name = BrowserKit;
+			packageProductDependencies = (
+			);
+			productName = BrowserKit;
+			productReference = A066F1C80823C272439700C0 /* BrowserKit.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		F3081937102D16A286B3F98F /* AegisUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6420DE17BF33C8738CA8CD16 /* Build configuration list for PBXNativeTarget "AegisUITests" */;
+			buildPhases = (
+				438AA3DC584DCD17A52D6FE4 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F107B6048FC7C508374479B9 /* PBXTargetDependency */,
+			);
+			name = AegisUITests;
+			packageProductDependencies = (
+			);
+			productName = AegisUITests;
+			productReference = 39572A60EB59172506D03265 /* AegisUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		070B476F714B6395707EF14A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					F3081937102D16A286B3F98F = {
+						TestTargetID = 7B29AD1496FC1D1ADFB7B324;
+					};
+				};
+			};
+			buildConfigurationList = 6A1C7E404BB2474D71BAA732 /* Build configuration list for PBXProject "Aegis" */;
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = 75D3091B55C949DC25CD1851;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 50D0A2A1E229FE1B56E19372 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7B29AD1496FC1D1ADFB7B324 /* Aegis */,
+				DFF18AEBD4B5D2EEC1A75488 /* BrowserKit */,
+				A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */,
+				C26DC3379C8C26982F712172 /* AgentKit */,
+				CD34907A19AF607084DBAABB /* SafariWebExtension */,
+				D86361CF20F53AFE75B05C96 /* ShareExtension */,
+				1160487D63C81DE8E89EA4FA /* AegisTests */,
+				F3081937102D16A286B3F98F /* AegisUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		19A7FD5C5BA9079DFCD53418 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				29739518D29D84A07EAD73CE /* Fixtures in Resources */,
+				B703193C14D69F055D433BA8 /* agent-contract-v1.vectors.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B3182E8A7010051666B062BC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DC77D9043FD789C47428971A /* Assets.xcassets in Resources */,
+				58DBFB099C3AEB133708A0FD /* background.js in Resources */,
+				506B25D23A79E9EEB668B1DE /* manifest.json in Resources */,
+				DC6ED30641C8CC0E4CB07BC6 /* read-only.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BDB584612B43EFE2E274294F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD3C84BCBEDAF5FFE560C11D /* background.js in Resources */,
+				523A56C0A3B4E4FF72486DA1 /* manifest.json in Resources */,
+				1C90C244D6A96357698C760C /* read-only.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1630230A53274E9D47F068BF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A53823AD2346049A173870F /* BrowserDataStore.swift in Sources */,
+				44369D875924DBD657451957 /* BrowserSession.swift in Sources */,
+				67748F2CF5517977D9142A39 /* BrowserWebView.swift in Sources */,
+				C1EE3B71AF9C7C38C1DDA46D /* FixtureSchemeHandler.swift in Sources */,
+				A7B3F09DCB286D28B4F61923 /* NavigationPolicy.swift in Sources */,
+				539C51B600BB47FB430D7611 /* WebExtensionRuntime.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		37A8F0AEA2484F4ED94AE928 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				966246A7BCD0D2E3007E96AF /* ActionCapability.swift in Sources */,
+				8FE482D6250CED01D8EA3558 /* AgentBroker.swift in Sources */,
+				838C5737D8815AB996BC45E6 /* AgentContractCodec.swift in Sources */,
+				57F7D0DE7179CAB59B1C9E4D /* AgentContracts.swift in Sources */,
+				A04EE620222BAACC80203BC0 /* AgentWorkflows.swift in Sources */,
+				AC2703CF87D6F70B7E0C7440 /* ResourceRegistry.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		438AA3DC584DCD17A52D6FE4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A421F28BB9416326ED8C14F /* AegisUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6485A384503CECB2FF3900F1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				951712A24A4B4F6A0FA3D2F7 /* ShareInbox.swift in Sources */,
+				B9F51A266D55AECD80F09DE4 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A3C9433F415E85BD33A42B1D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				81675EF41DABEB9D1C57A658 /* LinkSanitizer.swift in Sources */,
+				C0FF31D123B2A6CA40C617A3 /* PIIScanner.swift in Sources */,
+				C76B7E9E5FD152E87FF00105 /* PhishingScorer.swift in Sources */,
+				813229A00EB9B620B4DE6422 /* PolicyModels.swift in Sources */,
+				8FCC91EE7B180F906A4D4FF1 /* PolicySnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE1AF7E931AC6F3A1E2B6C12 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A8F53DCF23F78A6D05997E79 /* SafariReadOnlyGate.swift in Sources */,
+				B1117F796F8FFA728BADAB2D /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B2CA4955498C9770B9754440 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
+				8783373417B125F59C243517 /* AegisRootView.swift in Sources */,
+				81ED16A4B85AF8ADA0FB67A3 /* AgentCenterModel.swift in Sources */,
+				A221FA759498782B5C07292B /* AgentCenterView.swift in Sources */,
+				B5ED66F92E491CDDC6984660 /* SafariReadOnlyGate.swift in Sources */,
+				4696882FA847A55B0776C99F /* ShareInbox.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C3B60DD9AC74606C4C52DF6A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0087639BCB7AC25A15DD724 /* AgentContractGoldenVectorTests.swift in Sources */,
+				0CE5714F43AC5503C8AA2454 /* AgentContractTests.swift in Sources */,
+				8F1844C84B2E80C7865F69A0 /* BookmarkTransactionJournalTests.swift in Sources */,
+				133EBE3622DFF3B59E0F65B8 /* BrowserKitTests.swift in Sources */,
+				A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */,
+				C7F29894ACF611B73F67D456 /* LinkSanitizerTests.swift in Sources */,
+				DB735A2B973B5D649871E3EC /* NavigationPolicyIntegrationTests.swift in Sources */,
+				0C658D1B64536667B12FFB4A /* PIIScannerTests.swift in Sources */,
+				51A012093196ED6DBBDC7C07 /* PhishingScorerTests.swift in Sources */,
+				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
+				E256F4D2434D064A82A9D95C /* SafariDocumentNavigationIdentityTests.swift in Sources */,
+				840B56758529F2B35742BBF9 /* SafariReadOnlyGateTests.swift in Sources */,
+				5417E789F7D0BC2213D0615A /* ShareInboxTests.swift in Sources */,
+				0EFF0016AEE681BA688ABCA5 /* WebExtensionIntegrationTests.swift in Sources */,
+				D35B3481239DE8C4774C0956 /* WorkflowTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2E6DECC6F8760AC38CB691B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D86361CF20F53AFE75B05C96 /* ShareExtension */;
+			targetProxy = 05DB5305B1C7926128929F32 /* PBXContainerItemProxy */;
+		};
+		36AE83FB92B468ED17D93055 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C26DC3379C8C26982F712172 /* AgentKit */;
+			targetProxy = D048C916310E4D51DB5848B3 /* PBXContainerItemProxy */;
+		};
+		3BBDC0C9A9F787B68354919F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DFF18AEBD4B5D2EEC1A75488 /* BrowserKit */;
+			targetProxy = F1619DFE592C6ADF762A5FF3 /* PBXContainerItemProxy */;
+		};
+		4AA58F79C0603CA547598B04 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C26DC3379C8C26982F712172 /* AgentKit */;
+			targetProxy = 24C2DD40210119EC8F5507B4 /* PBXContainerItemProxy */;
+		};
+		5F4EAD42557E99D318723D9D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
+			targetProxy = A1A34477FA7F5FDE39DC2E0D /* PBXContainerItemProxy */;
+		};
+		6109E0291FBDF1B4DB98BF20 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
+			targetProxy = 9565CCDD537B138A377D00A0 /* PBXContainerItemProxy */;
+		};
+		6FFA3263A68821B9004191F4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B29AD1496FC1D1ADFB7B324 /* Aegis */;
+			targetProxy = 98C4AC63F5596A9569679272 /* PBXContainerItemProxy */;
+		};
+		8841D8761802625B006DAF04 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DFF18AEBD4B5D2EEC1A75488 /* BrowserKit */;
+			targetProxy = C020457B012088C33D811FB8 /* PBXContainerItemProxy */;
+		};
+		8A574919ED5A88A8C6E5DB92 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
+			targetProxy = 92D758CAC3BA36BE1614E6CD /* PBXContainerItemProxy */;
+		};
+		A0068FE7656406742A030CD2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DFF18AEBD4B5D2EEC1A75488 /* BrowserKit */;
+			targetProxy = 6AD4DE84AECA29B6612D560A /* PBXContainerItemProxy */;
+		};
+		D58803929CAC5928A1A20B7D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CD34907A19AF607084DBAABB /* SafariWebExtension */;
+			targetProxy = 13A01EE275517E7487D6C650 /* PBXContainerItemProxy */;
+		};
+		F107B6048FC7C508374479B9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B29AD1496FC1D1ADFB7B324 /* Aegis */;
+			targetProxy = A7FE4E2A14358FCCDB5190A4 /* PBXContainerItemProxy */;
+		};
+		FFB60EA7737FFDEC2D348E7A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
+			targetProxy = BF6B941904E00BA50DFAE640 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		21C584FB7FA3766472045E62 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AgentKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.agentkit;
+				PRODUCT_NAME = AgentKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		28FED745977D8A0001BB1402 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = BrowserKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.browserkit;
+				PRODUCT_NAME = BrowserKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		4C690ABEB5A9286A91E7B6AD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = AegisApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app;
+				PRODUCT_NAME = Aegis;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		57A306347206290EE1D4F1E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		5EC24325B7D8C4403E0D7497 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5F5D458EB1E1053309D58BAB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = SafariWebExtension/SafariWebExtension.entitlements;
+				INFOPLIST_FILE = SafariWebExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.safari;
+				PRODUCT_NAME = SafariWebExtension;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6360F738D2D25E5E7E5DFB15 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AegisPolicyKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.policykit;
+				PRODUCT_NAME = AegisPolicyKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		67325ED8A59CCD45C0A338CD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.share;
+				PRODUCT_NAME = ShareExtension;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		67F8921229C0A0B1FBF8DBAA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = AegisApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app;
+				PRODUCT_NAME = Aegis;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7689C5EC7A663E1EC6426A80 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = Tests/AegisTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.tests;
+				PRODUCT_NAME = AegisTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aegis.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aegis";
+			};
+			name = Debug;
+		};
+		928CA8A5EFCE630317F38DFB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = Tests/AegisUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.uitests;
+				PRODUCT_NAME = AegisUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Aegis;
+			};
+			name = Release;
+		};
+		96331307EB00A2F3D74B8D06 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = SafariWebExtension/SafariWebExtension.entitlements;
+				INFOPLIST_FILE = SafariWebExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.safari;
+				PRODUCT_NAME = SafariWebExtension;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A0539FD9F66E5B407444315E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.share;
+				PRODUCT_NAME = ShareExtension;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A2D6390C0C588BF1415319ED /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AegisPolicyKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.policykit;
+				PRODUCT_NAME = AegisPolicyKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		AEAFEEF540C71263CD2DD48A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AgentKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.agentkit;
+				PRODUCT_NAME = AgentKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		D14D4020DBE8BC5EC62157AE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = BrowserKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.browserkit;
+				PRODUCT_NAME = BrowserKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		DCFD12A65B45CD81DE6F5325 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = Tests/AegisTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.tests;
+				PRODUCT_NAME = AegisTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aegis.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aegis";
+			};
+			name = Release;
+		};
+		FF2C92C66E620CA8E4638705 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				INFOPLIST_FILE = Tests/AegisUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.uitests;
+				PRODUCT_NAME = AegisUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Aegis;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0DCCD54A6D4BD13878595F70 /* Build configuration list for PBXNativeTarget "AgentKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AEAFEEF540C71263CD2DD48A /* Debug */,
+				21C584FB7FA3766472045E62 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		433DB0B9416541F8865118EE /* Build configuration list for PBXNativeTarget "SafariWebExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5F5D458EB1E1053309D58BAB /* Debug */,
+				96331307EB00A2F3D74B8D06 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		491A8C66DC395BD5310E60BF /* Build configuration list for PBXNativeTarget "BrowserKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				28FED745977D8A0001BB1402 /* Debug */,
+				D14D4020DBE8BC5EC62157AE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6232B519E01ED2B4A84B3E44 /* Build configuration list for PBXNativeTarget "AegisPolicyKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A2D6390C0C588BF1415319ED /* Debug */,
+				6360F738D2D25E5E7E5DFB15 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6420DE17BF33C8738CA8CD16 /* Build configuration list for PBXNativeTarget "AegisUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF2C92C66E620CA8E4638705 /* Debug */,
+				928CA8A5EFCE630317F38DFB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6A1C7E404BB2474D71BAA732 /* Build configuration list for PBXProject "Aegis" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5EC24325B7D8C4403E0D7497 /* Debug */,
+				57A306347206290EE1D4F1E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		79A2E7CAC3BFF7017714C932 /* Build configuration list for PBXNativeTarget "Aegis" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4C690ABEB5A9286A91E7B6AD /* Debug */,
+				67F8921229C0A0B1FBF8DBAA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C29CC5472A4946DE7ABAA9C9 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				67325ED8A59CCD45C0A338CD /* Debug */,
+				A0539FD9F66E5B407444315E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D49277A57583B3AA12C26B2D /* Build configuration list for PBXNativeTarget "AegisTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7689C5EC7A663E1EC6426A80 /* Debug */,
+				DCFD12A65B45CD81DE6F5325 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 070B476F714B6395707EF14A /* Project object */;
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">GCSA Aegis</title>
+  <desc id="desc">GCSA Aegis product logo fade-in animation.</desc>
+  <defs>
+    <linearGradient id="brand-gradient" gradientUnits="userSpaceOnUse" x1="179" y1="512" x2="857" y2="512">
+      <stop offset="0" stop-color="#12CDBF"/>
+      <stop offset="0.5" stop-color="#13B9D5"/>
+      <stop offset="1" stop-color="#168FEF"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#brand-gradient)" shape-rendering="geometricPrecision" opacity="0">
+    <animate attributeName="opacity" values="0;1" dur="0.45s" fill="freeze"/>
+    <path d="M230 429V273C329 252 422 220 512 187C602 220 695 252 794 273V429"
+      stroke-width="52" stroke-linecap="butt" stroke-linejoin="round"/>
+    <path d="M239 574C277 681 361 760 456 790" stroke-width="52" stroke-linecap="butt"/>
+    <path d="M568 790C663 760 747 681 785 574" stroke-width="52" stroke-linecap="butt"/>
+    <path d="M257 506C287 544 329 567 379 579" stroke-width="43" stroke-linecap="round"/>
+    <path d="M648 365C615 332 568 321 516 321C428 321 357 392 357 480C357 568 428 639 516 639C604 639 666 581 674 488"
+      stroke-width="54" stroke-linecap="butt" stroke-linejoin="round"/>
+    <path d="M519 462H773V520H506Z" fill="url(#brand-gradient)" stroke="none"/>
+    <g fill="url(#brand-gradient)" stroke="none">
+      <circle cx="226" cy="490" r="47"/>
+      <circle cx="810" cy="490" r="47"/>
+      <circle cx="512" cy="800" r="47"/>
+    </g>
+  </g>
+</svg>

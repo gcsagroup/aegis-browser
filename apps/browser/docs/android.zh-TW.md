@@ -8,7 +8,7 @@
 
 - Android 與桌面使用同一固定 Chromium `151.0.7922.77` 基線。
 - 預留 application ID 為 `app.gcsa.aegis`；預留不證明已經形成有效套件或 Play 身分。
-- 目前原始碼含 56 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，但**尚未從目前原始碼產出 Android 建置**。
+- 目前原始碼含 67 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，但**尚未從目前原始碼產出 Android 建置**。歷史 macOS 證據不綁定 Android 產物，也不能賦予其 Android 資格。
 - 目前沒有綁定身分的 APK 或 AAB。即使存在 `$HOME/Desktop/GCSA-aegis.apk` 之類的歷史檔案，也不能對應到目前原始碼，更不是 RC。
 - Android WebUI handler 目前無法取得一般網頁 tab，因此 Android 頁面摘要必須顯示為不可用。
 
@@ -51,7 +51,7 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 ## 驗收條件
 
-1. 在乾淨 x86-64 Linux checkout 中，從固定基線重放全部 56 個 Chromium 補丁和 2 個巢狀 V8 補丁。
+1. 在乾淨 x86-64 Linux checkout 中，從固定基線重放全部 67 個 Chromium 補丁和 2 個巢狀 V8 補丁。
 2. 建置成功，並由清單綁定根儲存庫 commit、Chromium commit、兩套補丁序列身分、GN 參數和 APK/AAB SHA-256。
 3. 驗證最終套件名稱、版本、啟動器名稱、圖示、權限、原生程式庫和簽署結構。
 4. 解除安裝舊版本，在代表裝置上安裝目前 APK，完成 First Run，開啟一般網頁和 `chrome://aegis`，實際驗證核心保護。

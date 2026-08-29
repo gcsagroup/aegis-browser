@@ -1,0 +1,3910 @@
+From 98344d6b78b8a94f2c36cdc7bf442180d0845ad7 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 28 Aug 2026 18:30:48 +0800
+Subject: [PATCH 60/61] feat(aegis): add browser agent side panel and entry
+ points
+
+---
+ chrome/app/chrome_command_ids.h               |   2 +
+ chrome/browser/BUILD.gn                       |   6 +-
+ ...r_interface_binders_webui_parts_desktop.cc |   6 +-
+ .../render_view_context_menu.cc               | 156 ++++-
+ .../render_view_context_menu.h                |   2 +
+ chrome/browser/resources/BUILD.gn             |   5 +-
+ chrome/browser/resources/aegis/aegis.html     |  17 +
+ chrome/browser/resources/aegis/aegis.ts       | 174 +++--
+ chrome/browser/resources/aegis_agent/BUILD.gn |  24 +
+ .../browser/resources/aegis_agent/agent.css   | 330 +++++++++
+ .../browser/resources/aegis_agent/agent.html  |  92 +++
+ chrome/browser/resources/aegis_agent/agent.ts | 398 +++++++++++
+ .../resources/aegis_agent/browser_proxy.ts    |  25 +
+ chrome/browser/ui/BUILD.gn                    |   6 +
+ chrome/browser/ui/actions/chrome_action_id.h  |   1 +
+ chrome/browser/ui/browser_actions.cc          |  23 +-
+ .../browser/ui/browser_command_controller.cc  |  15 +-
+ chrome/browser/ui/cocoa/accelerators_cocoa.mm |   3 +-
+ .../ui/side_panel/side_panel_entry_id.h       |   1 +
+ .../browser/ui/side_panel/side_panel_enums.h  |   4 +-
+ .../ui/side_panel/side_panel_enums_utils.h    |   2 +
+ .../browser/ui/toolbar/toolbar_pref_names.cc  |  10 +
+ chrome/browser/ui/views/side_panel/BUILD.gn   |   4 +
+ .../aegis_agent/aegis_agent_side_panel.cc     |  71 ++
+ .../aegis_agent/aegis_agent_side_panel.h      |  19 +
+ .../ui/views/side_panel/side_panel_helper.cc  |   3 +
+ chrome/browser/ui/webui/BUILD.gn              |   3 +-
+ chrome/browser/ui/webui/aegis/BUILD.gn        |   5 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |  32 +
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 109 ++-
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   1 +
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn  |  52 ++
+ .../ui/webui/aegis_agent/aegis_agent.mojom    | 133 ++++
+ .../aegis_agent/aegis_agent_page_handler.cc   | 658 ++++++++++++++++++
+ .../aegis_agent/aegis_agent_page_handler.h    | 110 +++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 205 ++++++
+ .../ui/webui/aegis_agent/aegis_agent_ui.h     |  48 ++
+ .../webui/chrome_untrusted_web_ui_configs.cc  |   2 +
+ chrome/common/webui_url_constants.h           |   3 +
+ chrome/test/BUILD.gn                          |   2 +
+ tools/gritsettings/resource_ids.spec          |   4 +
+ tools/metrics/histograms/enums.xml            |   1 +
+ .../histograms/metadata/page/histograms.xml   |   1 +
+ .../histograms/metadata/sql/histograms.xml    |   1 +
+ .../metrics/histograms/metadata/ui/enums.xml  |   2 +
+ .../histograms/metadata/ui/histograms.xml     |   1 +
+ 46 files changed, 2691 insertions(+), 81 deletions(-)
+ create mode 100644 chrome/browser/resources/aegis_agent/BUILD.gn
+ create mode 100644 chrome/browser/resources/aegis_agent/agent.css
+ create mode 100644 chrome/browser/resources/aegis_agent/agent.html
+ create mode 100644 chrome/browser/resources/aegis_agent/agent.ts
+ create mode 100644 chrome/browser/resources/aegis_agent/browser_proxy.ts
+ create mode 100644 chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc
+ create mode 100644 chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h
+ create mode 100644 chrome/browser/ui/webui/aegis_agent/BUILD.gn
+ create mode 100644 chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+ create mode 100644 chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+ create mode 100644 chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+ create mode 100644 chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+ create mode 100644 chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
+
+diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
+index 9025614e45..1a2819bc6c 100644
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -314,6 +314,7 @@
+ #define IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL 40304
+ #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
+ #define IDC_SHOW_AEGIS                  40310
++#define IDC_SHOW_AEGIS_AGENT            40311
+ 
+ // Spell-check
+ // Insert any additional suggestions before _LAST; these have to be consecutive.
+@@ -452,6 +453,7 @@
+ #define IDC_CONTENT_CONTEXT_USE_PASSKEY_FROM_ANOTHER_DEVICE 50194
+ // Listen to this page context menu.
+ #define IDC_CONTENT_CONTEXT_LISTEN_TO_THIS_PAGE 50195
++#define IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT 50196
+ // Open with items.
+ #define IDC_CONTENT_CONTEXT_OPEN_WITH1 50200
+ #define IDC_CONTENT_CONTEXT_OPEN_WITH2 50201
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index f4fe5d8bf9..8944aec454 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -399,10 +399,10 @@ source_set("startup_data") {
+ source_set("chrome_browser_main") {
+   public = [ "chrome_browser_main.h" ]
+   deps = [
+-    "//chrome/browser/aegis",
+     ":buildflags",
+     "//base",
+     "//build:buildflag_header_h",
++    "//chrome/browser/aegis",
+     "//chrome/browser/first_run",
+     "//chrome/browser/lifetime",
+     "//chrome/browser/ui/startup",
+@@ -920,10 +920,10 @@ source_set("core") {
+     ":universal_web_contents_observers",
+     "//base/allocator:buildflags",
+     "//build/config/linux/dbus:buildflags",
+-    "//chrome/browser/aegis",
+     "//chrome/browser/accessibility",
+     "//chrome/browser/actor",
+     "//chrome/browser/actor:impl",
++    "//chrome/browser/aegis",
+     "//chrome/browser/ai",
+     "//chrome/browser/app_mode",
+     "//chrome/browser/autocomplete:aim_eligibility_service",
+@@ -3249,6 +3249,7 @@ source_set("browser") {
+       "//chrome/browser/ui/web_applications:impl",
+       "//chrome/browser/ui/webui:webui_util",
+       "//chrome/browser/ui/webui/access_code_cast",
++      "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/app_service_internals",
+       "//chrome/browser/ui/webui/autofill_ml_internals",
+       "//chrome/browser/ui/webui/color_pipeline_internals",
+@@ -4833,6 +4834,7 @@ group("browser_generated_files") {
+       "//chrome/browser/ui:webui_name_variants",
+       "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
+       "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
++      "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+       "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
+       "//chrome/browser/ui/webui/customize_buttons:mojo_bindings",
+       "//chrome/browser/ui/webui/data_sharing:mojo_bindings",
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
+index 51f5cdba60..e3877f108c 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
+@@ -28,6 +28,8 @@
+ #include "chrome/browser/ui/views/side_panel/tabs_from_other_devices/tabs_from_other_devices_side_panel_coordinator.h"
+ #include "chrome/browser/ui/webui/access_code_cast/access_code_cast.mojom.h"
+ #include "chrome/browser/ui/webui/access_code_cast/access_code_cast_ui.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/browser/ui/webui/ai_overlay_dialog/ai_overlay_dialog.mojom.h"
+ #include "chrome/browser/ui/webui/ai_overlay_dialog/ai_overlay_dialog_untrusted_ui.h"
+ #include "chrome/browser/ui/webui/app_service_internals/app_service_internals.mojom.h"
+@@ -150,7 +152,7 @@
+ #include "chrome/browser/ui/webui/app_settings/web_app_settings_ui.h"
+ // The intro mojom targets exist on ChromeOS but these headers are only
+ // compiled on Win/Mac/Linux; gn check is static, so suppress it on ChromeOS.
+-#include "chrome/browser/ui/webui/intro/finish_or_continue.mojom.h" // nogncheck
++#include "chrome/browser/ui/webui/intro/finish_or_continue.mojom.h"  // nogncheck
+ #include "chrome/browser/ui/webui/intro/intro.mojom.h"  // nogncheck
+ #include "chrome/browser/ui/webui/intro/intro_ui.h"
+ #include "chrome/browser/ui/webui/intro/sign_in_celebration.mojom.h"  // nogncheck
+@@ -714,6 +716,8 @@ void PopulateChromeWebUIFrameInterfaceBrokersTrustedPartsDesktop(
+ 
+ void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsDesktop(
+     content::WebUIBrowserInterfaceBrokerRegistry& registry) {
++  registry.ForWebUI<AegisAgentUI>()
++      .Add<aegis_agent::mojom::PageHandlerFactory>();
+   if (lens::features::IsLensOverlayEnabled()) {
+     registry.ForWebUI<lens::LensSidePanelUntrustedUI>()
+         .Add<lens::mojom::LensSidePanelPageHandlerFactory>()
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index 400fd3134f..4ea60eebd1 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -10,6 +10,7 @@
+ #include <cstdio>
+ #include <memory>
+ #include <optional>
++#include <ranges>
+ #include <set>
+ #include <string>
+ #include <utility>
+@@ -36,6 +37,8 @@
+ #include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/app/vector_icons/vector_icons.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/app_mode/app_mode_utils.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+@@ -128,6 +131,8 @@
+ #include "chrome/browser/ui/read_anything/read_anything_side_panel_controller_utils.h"
+ #include "chrome/browser/ui/send_tab_to_self/send_tab_to_self_bubble.h"
+ #include "chrome/browser/ui/send_tab_to_self/send_tab_to_self_context_menu_delegate.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
+ #include "chrome/browser/ui/tabs/features.h"
+ #include "chrome/browser/ui/tabs/public/tab_features.h"
+@@ -148,6 +153,8 @@
+ #include "chrome/browser/web_applications/web_app_icon_manager.h"
+ #include "chrome/browser/web_applications/web_app_provider.h"
+ #include "chrome/browser/web_applications/web_app_registrar.h"
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/chrome_constants.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/chrome_render_frame.mojom.h"
+@@ -209,6 +216,7 @@
+ #include "components/strings/grit/components_strings.h"
+ #include "components/supervised_user/core/browser/supervised_user_preferences.h"
+ #include "components/supervised_user/core/browser/supervised_user_url_filtering_service.h"
++#include "components/tabs/public/tab_interface.h"
+ #include "components/translate/core/browser/translate_download_manager.h"
+ #include "components/translate/core/browser/translate_manager.h"
+ #include "components/translate/core/browser/translate_prefs.h"
+@@ -401,6 +409,37 @@ namespace {
+ 
+ constexpr int kTabMenuIconSize = 16;
+ 
++std::string LocalizedAegisText(std::string_view english,
++                               std::string_view simplified,
++                               std::string_view traditional) {
++  const std::string locale =
++      g_browser_process ? g_browser_process->GetApplicationLocale() : "en";
++  if (base::StartsWith(locale, "zh-TW") || base::StartsWith(locale, "zh-HK") ||
++      base::StartsWith(locale, "zh-Hant")) {
++    return std::string(traditional);
++  }
++  return base::StartsWith(locale, "zh") ? std::string(simplified)
++                                        : std::string(english);
++}
++
++std::u16string AegisContextMenuLabel() {
++  return base::UTF8ToUTF16(
++      LocalizedAegisText("Send to Aegis", "交给 Aegis", "交給 Aegis"));
++}
++
++bool LooksLikeDownloadLink(const content::ContextMenuParams& params) {
++  if (!params.suggested_filename.empty()) {
++    return true;
++  }
++  const std::string path = base::ToLowerASCII(params.link_url.path());
++  constexpr std::string_view kDownloadSuffixes[] = {
++      ".dmg", ".pkg", ".zip", ".tar", ".gz",  ".xz", ".7z",
++      ".exe", ".msi", ".deb", ".rpm", ".apk", ".pdf"};
++  return std::ranges::any_of(kDownloadSuffixes, [&](std::string_view suffix) {
++    return base::EndsWith(path, suffix);
++  });
++}
++
+ base::OnceCallback<void(RenderViewContextMenu*)>* GetMenuShownCallback() {
+   static base::NoDestructor<base::OnceCallback<void(RenderViewContextMenu*)>>
+       callback;
+@@ -624,13 +663,14 @@ const std::map<int, int>& GetIdcToUmaMap(UmaEnumIdLookupType type) {
+        {IDC_CONTENT_CONTEXT_ADD_LINK_TO_READING_LIST, 166},
+        {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 167},
+        {IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS, 168},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 169},
+        // To add new items:
+        //   - Add one more line above this comment block, using the UMA value
+        //     from the line below this comment block.
+        //   - Increment the UMA value in that latter line.
+        //   - Add the new item to the RenderViewContextMenuItem enum in
+        //     tools/metrics/histograms/metadata/ui/enums.xml.
+-       {0, 169}});
++       {0, 170}});
+   // LINT.ThenChange(//tools/metrics/histograms/metadata/ui/enums.xml:RenderViewContextMenuItem)
+ 
+   // LINT.IfChange(ContextMenuOptionDesktop)
+@@ -670,13 +710,14 @@ const std::map<int, int>& GetIdcToUmaMap(UmaEnumIdLookupType type) {
+        {IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW, 31},
+        {IDC_CONTENT_CONTEXT_GLICSHAREIMAGE, 32},
+        {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 33},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 34},
+        // To add new items:
+        //   - Add one more line above this comment block, using the UMA value
+        //     from the line below this comment block.
+        //   - Increment the UMA value in that latter line.
+        //   - Add the new item to the ContextMenuOptionDesktop enum in
+        //     tools/metrics/histograms/metadata/ui/enums.xml.
+-       {0, 33}});
++       {0, 34}});
+   // LINT.ThenChange(//tools/metrics/histograms/metadata/ui/enums.xml:ContextMenuOptionDesktop)
+ 
+   return *(type == UmaEnumIdLookupType::GeneralEnumId ? kGeneralMap
+@@ -1437,6 +1478,8 @@ void RenderViewContextMenu::InitMenu() {
+     AppendCurrentExtensionItems();
+   }
+ 
++  AppendAegisAgentItem();
++
+   // Accessibility label items are appended to all menus (with the exception of
+   // within the dev tools and PDF Viewer) when a screen reader is enabled. It
+   // can be difficult to open a specific context menu with a screen reader, so
+@@ -2772,6 +2815,101 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
+   }
+ }
+ 
++void RenderViewContextMenu::AppendAegisAgentItem() {
++  Profile* profile = GetProfile();
++  const GURL page_url = source_web_contents_->GetLastCommittedURL();
++  if (!profile || !profile->IsRegularProfile() || !GetBrowser() ||
++      !page_url.SchemeIsHTTPOrHTTPS() ||
++      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
++      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++    return;
++  }
++  const size_t count = menu_model_.GetItemCount();
++  if (count > 0 &&
++      menu_model_.GetTypeAt(count - 1) != ui::MenuModel::TYPE_SEPARATOR) {
++    menu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
++  }
++  menu_model_.AddItem(IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT,
++                      AegisContextMenuLabel());
++}
++
++void RenderViewContextMenu::ExecuteAegisAgentContext() {
++  Profile* profile = GetProfile();
++  BrowserWindowInterface* browser = GetBrowser();
++  tabs::TabInterface* tab =
++      tabs::TabInterface::MaybeGetFromContents(source_web_contents_);
++  aegis::agent::AegisAgentService* service =
++      profile ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
++              : nullptr;
++  if (!profile || !profile->IsRegularProfile() || !browser || !tab ||
++      !service || !service->IsEnabled()) {
++    return;
++  }
++
++  const std::string page_origin =
++      url::Origin::Create(source_web_contents_->GetLastCommittedURL())
++          .Serialize();
++  aegis::agent::AgentInvocationContext context;
++  context.tab_id = tab->GetHandle().raw_value();
++
++  if (!params_.selection_text.empty()) {
++    const std::u16string selected = params_.selection_text.substr(
++        0, std::min<size_t>(params_.selection_text.size(), 768u));
++    const std::string selected_utf8 = base::UTF16ToUTF8(selected);
++    context.kind = "selection";
++    context.display =
++        base::StrCat({LocalizedAegisText("Selection", "选中文本", "選取文字"),
++                      " · ", page_origin});
++    context.suggested_goal = base::StrCat(
++        {LocalizedAegisText("Research this selected text and cite sources: ",
++                            "研究这段选中文本并标注来源：",
++                            "研究這段選取文字並標註來源："),
++         selected_utf8});
++  } else if (params_.link_url.SchemeIsHTTPOrHTTPS()) {
++    const bool download = LooksLikeDownloadLink(params_);
++    const std::string target_origin =
++        url::Origin::Create(params_.link_url).Serialize();
++    const std::u16string link_text = params_.link_text.substr(
++        0, std::min<size_t>(params_.link_text.size(), 256u));
++    const std::string link_text_utf8 = base::UTF16ToUTF8(link_text);
++    context.kind = download ? "download" : "link";
++    context.display =
++        base::StrCat({LocalizedAegisText(download ? "Download link" : "Link",
++                                         download ? "下载链接" : "链接",
++                                         download ? "下載連結" : "連結"),
++                      " · ", target_origin});
++    context.suggested_goal = base::StrCat(
++        {LocalizedAegisText(
++             download
++                 ? "Verify this download link and find the official source: "
++                 : "Inspect this link and explain the safest next action: ",
++             download ? "验证这个下载链接并查找官方来源："
++                      : "检查这个链接并说明最安全的下一步：",
++             download ? "驗證這個下載連結並尋找官方來源："
++                      : "檢查這個連結並說明最安全的下一步："),
++         link_text_utf8.empty() ? target_origin : link_text_utf8, " · ",
++         target_origin});
++  } else {
++    context.kind = "page";
++    context.display =
++        base::StrCat({LocalizedAegisText("Page", "当前页面", "目前頁面"), " · ",
++                      page_origin});
++    context.suggested_goal =
++        LocalizedAegisText("Analyze this page and propose a verifiable plan.",
++                           "分析当前页面并给出可验证的执行计划。",
++                           "分析目前頁面並提出可驗證的執行計畫。");
++  }
++
++  if (!service->SetPendingInvocationContext(std::move(context))) {
++    return;
++  }
++  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  if (side_panel) {
++    side_panel->Show(SidePanelEntryId::kAegisAgent,
++                     SidePanelOpenTrigger::kAegisAgent);
++  }
++}
++
+ void RenderViewContextMenu::AppendGlicItems() {
+   if (IsGlicWindow(this, browser_context_)) {
+     menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_RELOAD_GLIC,
+@@ -3310,6 +3448,13 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+   }
+ #endif
+   switch (id) {
++    case IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT:
++      return GetProfile() && GetProfile()->IsRegularProfile() && GetBrowser() &&
++             source_web_contents_->GetLastCommittedURL()
++                 .SchemeIsHTTPOrHTTPS() &&
++             base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++             GetProfile()->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled);
++
+     case IDC_BACK:
+       return embedder_web_contents_->GetController().CanGoBack();
+ 
+@@ -3616,6 +3761,9 @@ ui::ImageModel RenderViewContextMenu::GetIconForCommandId(
+ }
+ 
+ bool RenderViewContextMenu::IsCommandIdVisible(int id) const {
++  if (id == IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT) {
++    return true;
++  }
+   if (ContextMenuMatcher::IsExtensionsCustomCommandId(id)) {
+     return extension_items_.IsCommandIdVisible(id);
+   }
+@@ -3666,6 +3814,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
+   }
+ 
+   switch (id) {
++    case IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT:
++      ExecuteAegisAgentContext();
++      break;
++
+     case IDC_CONTENT_CONTEXT_OPENLINKNEWTAB: {
+       WindowOpenDisposition new_tab_disposition =
+           WindowOpenDisposition::NEW_BACKGROUND_TAB;
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.h b/chrome/browser/renderer_context_menu/render_view_context_menu.h
+index 86b862fc8b..ed7a246d21 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
+@@ -323,6 +323,7 @@ class RenderViewContextMenu
+   void AppendMediaItems();
+   void AppendPluginItems();
+   void AppendPageItems();
++  void AppendAegisAgentItem();
+   void AppendExitFullscreenItem();
+   void AppendCopyItem();
+   void AppendLinkToTextItems();
+@@ -333,6 +334,7 @@ class RenderViewContextMenu
+   void AppendReadAnythingItem();
+   void AppendSaveToMemoryBanksItem();
+   void AppendGlicItems();
++  void ExecuteAegisAgentContext();
+   void AppendRotationItems();
+   void AppendSpellingAndSearchSuggestionItems();
+   void AppendOtherEditableItems();
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index dfcbf3d751..968372b0f3 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -52,6 +52,7 @@ group("resources") {
+       "about_sys:resources",
+       "access_code_cast:resources",
+       "actor_overlay:resources",
++      "aegis_agent:resources",
+       "app_service_internals:resources",
+       "autofill_ml_internals:resources",
+       "bookmarks:resources",
+@@ -323,6 +324,7 @@ if (!is_android) {
+ group("dev_ui_resources") {
+   public_deps = [
+     "accessibility:resources",
++    "aegis:resources",
+     "bluetooth_internals:resources",
+     "browsing_topics:resources",
+     "chrome_finds_internals:resources",
+@@ -340,7 +342,6 @@ group("dev_ui_resources") {
+     "predictors:resources",
+     "subresource_filter:resources",
+     "usb_internals:resources",
+-    "aegis:resources",
+     "//components/actor/core/internals/resources",
+     "//components/commerce/core/internals/resources",
+     "//components/data_sharing/data_sharing_internals/resources",
+@@ -405,6 +406,7 @@ repack("dev_ui_paks") {
+ 
+   sources = [
+     "$root_gen_dir/chrome/accessibility_resources.pak",
++    "$root_gen_dir/chrome/aegis_resources.pak",
+     "$root_gen_dir/chrome/bluetooth_internals_resources.pak",
+     "$root_gen_dir/chrome/browsing_topics_internals_resources.pak",
+     "$root_gen_dir/chrome/chrome_finds_internals_resources.pak",
+@@ -422,7 +424,6 @@ repack("dev_ui_paks") {
+     "$root_gen_dir/chrome/predictors_resources.pak",
+     "$root_gen_dir/chrome/subresource_filter_internals_resources.pak",
+     "$root_gen_dir/chrome/usb_internals_resources.pak",
+-    "$root_gen_dir/chrome/aegis_resources.pak",
+     "$root_gen_dir/components/actor_internals_resources.pak",
+     "$root_gen_dir/components/commerce_internals_resources.pak",
+     "$root_gen_dir/components/data_sharing_internals_resources.pak",
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 6c9fa93cb9..ae4fa36ff0 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -185,6 +185,23 @@
+         </div>
+         <pre class="result" id="privacy-result" hidden></pre>
+       </section>
++      <section class="browser-agent" id="browser-agent-section"
++               aria-label="browser agent">
++        <h2>$i18n{browserAgentTitle}</h2>
++        <label class="row">
++          <span class="copy">
++            <span class="name">$i18n{browserAgentLabel}</span>
++            <span class="hint">$i18n{browserAgentHint}</span>
++          </span>
++          <input id="browser-agent" type="checkbox">
++        </label>
++        <div class="actions">
++          <button id="browser-agent-open" type="button">
++            $i18n{browserAgentOpen}
++          </button>
++        </div>
++        <p class="meta" id="browser-agent-status">$i18n{browserAgentStatus}</p>
++      </section>
+       <section class="ai-control" id="ai-control-section" aria-label="ai control">
+         <h2>$i18n{aiControlTitle}</h2>
+         <label class="row">
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 406d0ef0a5..84ee6bb29b 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -48,6 +48,8 @@ interface AegisStatus {
+   aiControlAddress?: string;
+   aiControlLoopbackOnly?: boolean;
+   aiControlClients?: number;
++  browserAgentAvailable?: boolean;
++  browserAgentEnabled?: boolean;
+   modelProvider?: string;
+   modelBaseUrl?: string;
+   modelName?: string;
+@@ -119,10 +121,10 @@ interface ModelListResult {
+   models?: string[];
+ }
+ 
+-type ModuleName = 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
+-    'minerGuard'|
++type ModuleName =
++    'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|'minerGuard'|
+     'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
+-    'bounceTracking'|'policyWorker'|'privacyAi'|'aiControl';
++    'bounceTracking'|'policyWorker'|'privacyAi'|'aiControl'|'browserAgent';
+ 
+ const CUSTOM_MODEL_VALUE = '__custom_model__';
+ const MODEL_ENDPOINTS: Record<ModelApiFormat, string> = {
+@@ -131,7 +133,14 @@ const MODEL_ENDPOINTS: Record<ModelApiFormat, string> = {
+   gemini: 'https://generativelanguage.googleapis.com/v1beta',
+ };
+ const SENSITIVE_HOST_LABEL_MARKERS = [
+-  'bank', 'paypal', 'alipay', 'gov', 'irs', 'healthcare', 'hospital', 'clinic',
++  'bank',
++  'paypal',
++  'alipay',
++  'gov',
++  'irs',
++  'healthcare',
++  'hospital',
++  'clinic',
+ ];
+ const modelDrafts = new Map<string, ModelDraft>();
+ const lastModelEndpoints = new Map<ModelApiFormat, string>();
+@@ -276,7 +285,7 @@ function formatMeta(status: AegisStatus): string {
+   const err = status.filterListLastError ?
+       (zh ? ` 上次错误：${status.filterListLastError}` :
+             ` Last error: ${status.filterListLastError}`) :
+-            '';
++      '';
+   return zh ? `已编译 ${count} 条主机规则 · 更新于 ${when}${err}` :
+               `Compiled ${count} host rules · updated ${when}${err}`;
+ }
+@@ -360,9 +369,9 @@ function normalizeModelApiFormat(value?: string): ModelApiFormat {
+ 
+ function modelApiFormatLabel(format: ModelApiFormat): string {
+   const lang = document.documentElement.lang || 'zh-CN';
+-  const suffix = lang.startsWith('zh-TW') || lang.startsWith('zh-HK') ?
+-      '相容' :
+-      lang.startsWith('zh') ? '兼容' : 'compatible';
++  const suffix = lang.startsWith('zh-TW') || lang.startsWith('zh-HK') ? '相容' :
++      lang.startsWith('zh')                                           ? '兼容' :
++                              'compatible';
+   if (format === 'openai') {
+     return `OpenAI ${suffix}`;
+   }
+@@ -432,8 +441,7 @@ function updateCustomModelVisibility() {
+ }
+ 
+ function fillModelList(
+-    models: string[], selectedModel: string,
+-    state: ModelListState = 'idle') {
++    models: string[], selectedModel: string, state: ModelListState = 'idle') {
+   const select = selectField('model-select');
+   const uniqueModels = Array.from(new Set(
+       models.map((name) => name.trim()).filter((name) => name.length > 0)));
+@@ -453,8 +461,8 @@ function fillModelList(
+   }
+   const custom = document.createElement('option');
+   custom.value = CUSTOM_MODEL_VALUE;
+-  custom.textContent = (document.documentElement.lang || 'zh-CN')
+-                           .startsWith('zh') ?
++  custom.textContent =
++      (document.documentElement.lang || 'zh-CN').startsWith('zh') ?
+       '自定义模型…' :
+       'Custom model…';
+   select.appendChild(custom);
+@@ -477,8 +485,7 @@ function rememberModelDraft() {
+   if (!modelFormInitialized || !activeModelContextKey) {
+     return;
+   }
+-  modelDrafts.set(
+-      activeModelContextKey, {modelName: selectedModelName()});
++  modelDrafts.set(activeModelContextKey, {modelName: selectedModelName()});
+   lastModelEndpoints.set(activeModelFormat, activeModelBaseUrl);
+ }
+ 
+@@ -508,8 +515,8 @@ function renderCredentialState() {
+   const state = getRequiredElement('model-api-key-state');
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   const typed = textField('model-api-key').value.length > 0;
+-  const contextKey = modelContextKey(
+-      activeModelFormat, textField('model-endpoint').value);
++  const contextKey =
++      modelContextKey(activeModelFormat, textField('model-endpoint').value);
+   const configured = configuredCredentials.get(contextKey) === true;
+   const detail = credentialStates.get(contextKey)?.trim();
+   if (typed) {
+@@ -542,16 +549,14 @@ function updateModelFormatPresentation() {
+   const note = getRequiredElement('model-data-note');
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   note.textContent = local ?
+-      (zh ?
+-           `当前为数值 loopback 本机地址，使用 ${formatName}；` +
++      (zh ? `当前为数值 loopback 本机地址，使用 ${formatName}；` +
+                'API Key 可选且保存后不回显。' :
+-           `The current numeric-loopback endpoint uses ${formatName}; ` +
++            `The current numeric-loopback endpoint uses ${formatName}; ` +
+                'the API key is optional and hidden after saving.') :
+-      (zh ?
+-           `脱敏后的页面文本会发往当前地址，使用 ${formatName}；` +
++      (zh ? `脱敏后的页面文本会发往当前地址，使用 ${formatName}；` +
+                'API Key 可选且保存后不回显。' :
+-           `Redacted page text is sent to the current endpoint using ${
+-               formatName}; the API key is optional and hidden after saving.`);
++            `Redacted page text is sent to the current endpoint using ${
++                formatName}; the API key is optional and hidden after saving.`);
+   renderCredentialState();
+   updateCustomModelVisibility();
+ }
+@@ -593,7 +598,8 @@ function applyModelStatus(status: AegisStatus, force = false) {
+     }
+     return;
+   }
+-  if (modelFormInitialized && !force && signature === lastModelStatusSignature) {
++  if (modelFormInitialized && !force &&
++      signature === lastModelStatusSignature) {
+     return;
+   }
+ 
+@@ -607,8 +613,8 @@ function applyModelStatus(status: AegisStatus, force = false) {
+ 
+ function formatModelStatus(result: ModelListResult): string {
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+-  const format = normalizeModelApiFormat(result.modelProvider ||
+-                                          activeModelFormat);
++  const format =
++      normalizeModelApiFormat(result.modelProvider || activeModelFormat);
+   const name = modelApiFormatLabel(format);
+   if (!result.ok) {
+     const error = result.error ? ` (${result.error})` : '';
+@@ -617,8 +623,9 @@ function formatModelStatus(result: ModelListResult): string {
+   }
+   const count = result.models?.length || 0;
+   if (count === 0) {
+-    return zh ? `当前地址已按 ${name} 连接，但未返回可用模型。` :
+-                `The current endpoint connected as ${name}, but returned no models.`;
++    return zh ?
++        `当前地址已按 ${name} 连接，但未返回可用模型。` :
++        `The current endpoint connected as ${name}, but returned no models.`;
+   }
+   return zh ? `已从当前地址按 ${name} 加载 ${count} 个模型。` :
+               `Loaded ${count} models from the current endpoint as ${name}.`;
+@@ -685,6 +692,7 @@ function applyStatus(status: AegisStatus) {
+     checkbox('ai-control').checked = !!status.aiControl;
+     fillAiControl(status);
+   }
++  fillBrowserAgent(status);
+   checkbox('filter-auto').checked = status.filterListAutoUpdate;
+   getRequiredElement('filter-meta').textContent = formatMeta(status);
+   getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(status);
+@@ -778,10 +786,10 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+   const configuredFormat = normalizeModelApiFormat(status.modelProvider);
+   const backendFormat = apiFormatFromBackend(result.backend);
+   const remoteAttempted = result.stayedOnDevice === false;
+-  const modelAttempted = (result.charsSent || 0) > 0 &&
+-      result.destination !== 'local';
+-  const usedFormat = backendFormat ||
+-      (modelAttempted ? configuredFormat : null);
++  const modelAttempted =
++      (result.charsSent || 0) > 0 && result.destination !== 'local';
++  const usedFormat =
++      backendFormat || (modelAttempted ? configuredFormat : null);
+   const location = result.stayedOnDevice === true ?
+       (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
+       result.stayedOnDevice === false ?
+@@ -802,11 +810,12 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+   if (usedFormat && status.modelName) {
+     lines.push((zh ? '模型：' : 'Model: ') + status.modelName);
+   }
+-  const destination = result.destination ||
+-      (remoteAttempted ? status.modelBaseUrl : 'local');
+-  lines.push((zh ? '目标：' : 'Destination: ') +
+-             (destination === 'local' ? (zh ? '本机' : 'On-device') :
+-                                        (destination || '—')));
++  const destination =
++      result.destination || (remoteAttempted ? status.modelBaseUrl : 'local');
++  lines.push(
++      (zh ? '目标：' : 'Destination: ') +
++      (destination === 'local' ? (zh ? '本机' : 'On-device') :
++                                 (destination || '—')));
+   if (result.charsIn) {
+     lines.push(
+         (zh ? '处理字数：' : 'Characters read: ') + String(result.charsIn));
+@@ -829,8 +838,9 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
+     lines.push(`! ${r}`);
+   }
+   if (result.error) {
+-    lines.push((zh ? '降级原因：' : 'Fallback reason: ') +
+-               summaryErrorLabel(result.error, zh));
++    lines.push(
++        (zh ? '降级原因：' : 'Fallback reason: ') +
++        summaryErrorLabel(result.error, zh));
+   }
+   return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '')
+       .join('\n');
+@@ -867,8 +877,7 @@ async function confirmSummaryPreview(
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   const format = normalizeModelApiFormat(status.modelProvider);
+   const endpoint = status.modelBaseUrl || MODEL_ENDPOINTS[format];
+-  const model = status.modelName ||
+-      (zh ? '未选择模型' : 'No model selected');
++  const model = status.modelName || (zh ? '未选择模型' : 'No model selected');
+   const local = isLocalModelEndpoint(endpoint);
+   const formatName = modelApiFormatLabel(format);
+   let destination: string;
+@@ -957,7 +966,7 @@ function fillAiControl(status: AegisStatus) {
+   const clientsText = zh ?
+       (clients ? `当前 ${clients} 个本机 agent 已连接` :
+                  '当前没有 agent 连接') :
+-                 (clients ? `${clients} local agent(s) connected` : 'no agent connected');
++      (clients ? `${clients} local agent(s) connected` : 'no agent connected');
+   statusEl.textContent = zh ?
+       `调试端口 ${port} · 绑定 ${address} · ${
+           loopback ? '仅 loopback' : '绑定范围未知'} · ${clientsText}` :
+@@ -970,6 +979,31 @@ function fillAiControl(status: AegisStatus) {
+   }
+ }
+ 
++function fillBrowserAgent(status: AegisStatus) {
++  const section = getRequiredElement('browser-agent-section');
++  const toggle = checkbox('browser-agent');
++  const open = actionButton('browser-agent-open');
++  const statusEl = getRequiredElement('browser-agent-status');
++  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
++  section.hidden = !!status.isAndroid;
++  toggle.checked = !!status.browserAgentEnabled;
++  toggle.disabled = !status.browserAgentAvailable;
++  open.disabled = !status.browserAgentAvailable || !status.browserAgentEnabled;
++  if (!status.browserAgentAvailable) {
++    statusEl.textContent = zh ?
++        '当前构建未启用 Browser Agent 功能开关。' :
++        'The Browser Agent feature flag is not enabled in this build.';
++  } else if (status.browserAgentEnabled) {
++    statusEl.textContent = zh ?
++        '已启用。高风险操作仍需逐项批准，付款必须手动接管。' :
++        'Enabled. High-risk actions still require approval and payment requires takeover.';
++  } else {
++    statusEl.textContent = zh ?
++        '默认关闭；启用后可从工具栏或此处打开。' :
++        'Off by default. Enable it to open from the toolbar or here.';
++  }
++}
++
+ function fillActivityLog(events: PrivacyEvent[]) {
+   const list = getRequiredElement('activity-log');
+   const empty = getRequiredElement('activity-empty');
+@@ -1190,8 +1224,7 @@ async function probeFingerprint() {
+ }
+ 
+ async function summarizeActiveTab() {
+-  const captured: CapturedSummary =
+-      await sendWithPromise('summarizeActiveTab');
++  const captured: CapturedSummary = await sendWithPromise('summarizeActiveTab');
+   if (!captured.ok || !captured.requestId || !captured.snapshot) {
+     showResult(captured.error || 'summary capture failed');
+     return;
+@@ -1220,14 +1253,17 @@ async function summarizeActiveTab() {
+     return;
+   }
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+-  showResult(isSensitiveSummarySource(captured.snapshot) ?
+-      (zh ? '正在生成本机启发式摘要，不调用模型…' :
+-            'Generating an on-device heuristic summary without calling a model…') :
+-      isLocalModelEndpoint(status.modelBaseUrl || '') ?
+-      (zh ? '本机模型正在生成，最长等待 3 分钟…' :
+-            'The local model is generating; allow up to 3 minutes…') :
+-      (zh ? '兼容模型服务正在生成，最长等待 45 秒…' :
+-            'The compatible model service is generating; allow up to 45 seconds…'));
++  showResult(
++      isSensitiveSummarySource(captured.snapshot) ?
++          (zh ?
++               '正在生成本机启发式摘要，不调用模型…' :
++               'Generating an on-device heuristic summary without calling a model…') :
++          isLocalModelEndpoint(status.modelBaseUrl || '') ?
++          (zh ? '本机模型正在生成，最长等待 3 分钟…' :
++                'The local model is generating; allow up to 3 minutes…') :
++          (zh ?
++               '兼容模型服务正在生成，最长等待 45 秒…' :
++               'The compatible model service is generating; allow up to 45 seconds…'));
+   const result: SummarizeResult = await sendWithPromise(
+       'completePreparedSummary', captured.requestId, prepared);
+   showResult(formatSummary(result, status));
+@@ -1255,8 +1291,7 @@ async function runSummaryAction() {
+ function bindModelControls() {
+   selectField('model-provider').addEventListener('change', () => {
+     rememberModelDraft();
+-    const format =
+-        normalizeModelApiFormat(selectField('model-provider').value);
++    const format = normalizeModelApiFormat(selectField('model-provider').value);
+     const baseUrl = lastModelEndpoints.get(format) || MODEL_ENDPOINTS[format];
+     activateModelContext(format, baseUrl);
+     markModelFormChanged();
+@@ -1265,7 +1300,8 @@ function bindModelControls() {
+     const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+     getRequiredElement('model-status').textContent = zh ?
+         `已切换到 ${modelApiFormatLabel(activeModelFormat)}，请加载模型。` :
+-        `Switched to ${modelApiFormatLabel(activeModelFormat)}. Load models to continue.`;
++        `Switched to ${
++            modelApiFormatLabel(activeModelFormat)}. Load models to continue.`;
+   });
+   textField('model-endpoint').addEventListener('input', () => {
+     rememberModelDraft();
+@@ -1338,18 +1374,17 @@ async function loadModels() {
+           snapshot.contextKey, result.modelApiKeyConfigured);
+     }
+     if (typeof result.modelCredentialState === 'string') {
+-      credentialStates.set(
+-          snapshot.contextKey, result.modelCredentialState);
++      credentialStates.set(snapshot.contextKey, result.modelCredentialState);
+     }
+     const models = result.models || [];
+     const state: ModelListState = !result.ok ? 'error' :
+-        models.length > 0 ? 'loaded' : 'empty';
++        models.length > 0                    ? 'loaded' :
++                                               'empty';
+     fillModelList(models, snapshot.modelName, state);
+     getRequiredElement('model-status').textContent = formatModelStatus(result);
+     renderCredentialState();
+   } catch (error) {
+-    if (serial === modelListRequestSerial &&
+-        isCurrentModelSnapshot(snapshot)) {
++    if (serial === modelListRequestSerial && isCurrentModelSnapshot(snapshot)) {
+       fillModelList([], snapshot.modelName, 'error');
+       getRequiredElement('model-status').textContent = String(error);
+     }
+@@ -1388,10 +1423,10 @@ async function saveModelSettings(clearKey: boolean) {
+             snapshot.contextKey) {
+       return;
+     }
+-    const loadedModels = Array.from(selectField('model-select').options)
+-                             .map((option) => option.value)
+-                             .filter((value) =>
+-                                 value && value !== CUSTOM_MODEL_VALUE);
++    const loadedModels =
++        Array.from(selectField('model-select').options)
++            .map((option) => option.value)
++            .filter((value) => value && value !== CUSTOM_MODEL_VALUE);
+     textField('model-api-key').value = '';
+     modelFormDirty = false;
+     applyModelStatus(next, true);
+@@ -1428,6 +1463,7 @@ async function init() {
+   bindToggle('bounce-tracking', 'bounceTracking');
+   bindToggle('policy-worker', 'policyWorker');
+   bindToggle('privacy-ai', 'privacyAi');
++  bindToggle('browser-agent', 'browserAgent');
+   bindToggle('ai-control', 'aiControl');
+   bindToggle('filter-auto', 'filterListAutoUpdate');
+   bindModelControls();
+@@ -1444,6 +1480,15 @@ async function init() {
+   actionButton('fp-probe').addEventListener('click', () => {
+     void probeFingerprint();
+   });
++  actionButton('browser-agent-open').addEventListener('click', () => {
++    void (async () => {
++      const next: AegisStatus = await sendWithPromise('openBrowserAgent');
++      fillBrowserAgent(next);
++      if (next.ok === false && next.error) {
++        getRequiredElement('browser-agent-status').textContent = next.error;
++      }
++    })();
++  });
+   if (status.privacyAi && !status.isAndroid &&
+       isLocalModelEndpoint(textField('model-endpoint').value)) {
+     void loadModels();
+@@ -1453,6 +1498,7 @@ async function init() {
+     applyModelStatus(next);
+     fillOverview(next);
+     fillActivityLog(next.recentEvents || []);
++    fillBrowserAgent(next);
+     fillAiControl(next);
+     getRequiredElement('filter-meta').textContent = formatMeta(next);
+     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
+diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
+new file mode 100644
+index 0000000000..a91d6a6905
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/BUILD.gn
+@@ -0,0 +1,24 @@
++# Copyright 2026 GCSA
++
++import("//ui/webui/resources/tools/build_webui.gni")
++
++build_webui("build") {
++  grd_prefix = "aegis_agent"
++  ts_composite = true
++  ts_deps = [
++    "//ui/webui/resources/js:build_ts",
++    "//ui/webui/resources/mojo:build_ts",
++  ]
++  mojo_files_deps =
++      [ "//chrome/browser/ui/webui/aegis_agent:mojo_bindings_ts__generator" ]
++  mojo_files = [ "$root_gen_dir/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom-webui.ts" ]
++  static_files = [
++    "agent.css",
++    "agent.html",
++  ]
++  ts_files = [
++    "agent.ts",
++    "browser_proxy.ts",
++  ]
++  webui_context_type = "untrusted"
++}
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+new file mode 100644
+index 0000000000..cfed9da43b
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -0,0 +1,330 @@
++:root {
++  --bg: #f5f7fb;
++  --surface: rgba(255, 255, 255, 0.92);
++  --surface-strong: #fff;
++  --text: #172033;
++  --muted: #647087;
++  --line: #dce2ed;
++  --primary: #4759e8;
++  --primary-hover: #3547d2;
++  --accent: #74e0c0;
++  --danger: #b3261e;
++  --shadow: 0 12px 30px rgba(26, 40, 74, 0.09);
++  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
++}
++
++@media (prefers-color-scheme: dark) {
++  :root {
++    --bg: #111522;
++    --surface: rgba(28, 34, 50, 0.94);
++    --surface-strong: #20273a;
++    --text: #f1f4fb;
++    --muted: #a8b1c6;
++    --line: #343d55;
++    --primary: #8d9aff;
++    --primary-hover: #a4adff;
++    --accent: #62cdae;
++    --danger: #ffb4ab;
++    --shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
++  }
++}
++
++* { box-sizing: border-box; }
++
++body {
++  margin: 0;
++  background:
++      radial-gradient(circle at 92% -4%, color-mix(in srgb, var(--primary) 20%, transparent), transparent 35%),
++      var(--bg);
++  color: var(--text);
++}
++
++main {
++  display: grid;
++  gap: 14px;
++  margin: 0 auto;
++  max-width: 720px;
++  min-width: 280px;
++  padding: 18px;
++}
++
++.hero { display: flex;
++ align-items: center;
++ gap: 12px; }
++
++.mark {
++  align-items: center;
++  background: linear-gradient(145deg, var(--primary), #7c4ee8);
++  border-radius: 12px;
++  box-shadow: var(--shadow);
++  color: white;
++  display: flex;
++  flex: 0 0 38px;
++  font-weight: 750;
++  height: 38px;
++  justify-content: center;
++}
++
++.hero-copy { min-width: 0;
++ flex: 1; }
++
++h1,
++ h2,
++ p { margin: 0; }
++
++h1 { font-size: 18px;
++ letter-spacing: -0.01em; }
++
++h2 { font-size: 14px; }
++
++.hero p { color: var(--muted);
++ font-size: 12px;
++ margin-top: 3px; }
++
++.status {
++  background: color-mix(in srgb, var(--accent) 25%, var(--surface));
++  border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--line));
++  border-radius: 999px;
++  color: var(--text);
++  font-size: 11px;
++  max-width: 120px;
++  overflow: hidden;
++  padding: 5px 9px;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.card,
++ .composer,
++ .target-card,
++ .notice {
++  background: var(--surface);
++  border: 1px solid var(--line);
++  border-radius: 14px;
++  box-shadow: var(--shadow);
++  padding: 14px;
++}
++
++.target-card { display: grid;
++ gap: 3px;
++ box-shadow: none; }
++
++.eyebrow { color: var(--muted);
++ font-size: 11px;
++ text-transform: uppercase; }
++
++#target-value { font-size: 13px;
++ overflow-wrap: anywhere; }
++
++#invocation-context { color: var(--muted);
++ font-size: 11px;
++ overflow-wrap: anywhere; }
++
++.notice { border-color: #e7bd55;
++ color: var(--text);
++ font-size: 13px; }
++
++.composer { display: grid;
++ gap: 11px; }
++
++.segmented {
++  background: color-mix(in srgb, var(--line) 45%, transparent);
++  border-radius: 10px;
++  display: grid;
++  gap: 3px;
++  grid-template-columns: repeat(3, 1fr);
++  padding: 3px;
++}
++
++.segmented button { border: 0;
++ background: transparent; }
++
++.segmented button[aria-checked='true'] {
++  background: var(--surface-strong);
++  box-shadow: 0 2px 8px rgba(20, 30, 50, 0.1);
++  color: var(--primary);
++}
++
++label { color: var(--muted);
++ font-size: 12px;
++ font-weight: 650; }
++
++textarea,
++ select {
++  background: var(--surface-strong);
++  border: 1px solid var(--line);
++  border-radius: 10px;
++  color: var(--text);
++  font: inherit;
++  padding: 10px;
++  resize: vertical;
++  width: 100%;
++}
++
++.workflow-row { display: grid;
++ gap: 6px; }
++
++.quick-actions { display: flex;
++ flex-wrap: wrap;
++ gap: 6px; }
++
++button {
++  background: var(--surface-strong);
++  border: 1px solid var(--line);
++  border-radius: 9px;
++  color: var(--text);
++  cursor: pointer;
++  font: inherit;
++  font-size: 12px;
++  font-weight: 650;
++  min-height: 34px;
++  padding: 7px 11px;
++}
++
++button:hover:not(:disabled) { border-color: var(--primary); }
++
++button:focus-visible,
++ textarea:focus-visible,
++ select:focus-visible {
++  outline: 3px solid color-mix(in srgb, var(--primary) 40%, transparent);
++  outline-offset: 2px;
++}
++
++button:disabled { cursor: default;
++ opacity: 0.45; }
++
++.primary { background: var(--primary);
++ border-color: var(--primary);
++ color: white; }
++
++.primary:hover:not(:disabled) { background: var(--primary-hover); }
++
++.danger { background: var(--danger);
++ border-color: var(--danger);
++ color: white; }
++
++.quiet-danger { color: var(--danger); }
++
++.section-heading { align-items: center;
++ display: flex;
++ gap: 8px;
++ justify-content: space-between; }
++
++.risk { background: color-mix(in srgb, #e7bd55 25%, transparent);
++ border-radius: 999px;
++ font-size: 11px;
++ padding: 4px 8px; }
++
++#plan-summary { color: var(--muted);
++ font-size: 13px;
++ margin: 10px 0; }
++
++.scope-grid { display: grid;
++ gap: 8px;
++ grid-template-columns: minmax(74px, 0.35fr) 1fr;
++ margin: 0 0 12px; }
++
++.scope-grid dt { color: var(--muted);
++ font-size: 11px;
++ font-weight: 650; }
++
++.scope-grid dd { font-size: 12px;
++ margin: 0;
++ overflow-wrap: anywhere; }
++
++.steps,
++ .timeline { display: grid;
++ gap: 8px;
++ margin: 0;
++ padding-left: 22px; }
++
++.steps li,
++ .timeline li { font-size: 12px;
++ padding-left: 3px; }
++
++.steps small,
++ .timeline small { color: var(--muted);
++ display: block;
++ margin-top: 2px; }
++
++.approval { border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
++ display: grid;
++ gap: 9px; }
++
++.approval code { background: color-mix(in srgb, var(--line) 40%, transparent);
++ border-radius: 6px;
++ font-size: 11px;
++ overflow-wrap: anywhere;
++ padding: 7px; }
++
++.exact-action { display: grid;
++ gap: 5px; }
++
++.exact-action span { color: var(--muted);
++ font-size: 11px; }
++
++.exact-action pre { background: color-mix(in srgb, var(--line) 40%, transparent);
++ border-radius: 6px;
++ font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
++ margin: 0;
++ max-height: 180px;
++ overflow: auto;
++ overflow-wrap: anywhere;
++ padding: 7px;
++ white-space: pre-wrap; }
++
++.checkout-summary { margin: 2px 0; }
++
++.checkout-summary dd[data-total='true'] { color: var(--danger);
++ font-size: 14px;
++ font-weight: 750; }
++
++.takeover-notice { color: var(--muted);
++ font-size: 12px;
++ line-height: 1.45; }
++
++.controls { display: flex;
++ flex-wrap: wrap;
++ gap: 6px; }
++
++.empty { color: var(--muted);
++ font-size: 12px;
++ margin-top: 8px; }
++
++.monitors { display: grid;
++ gap: 8px;
++ list-style: none;
++ margin: 10px 0 0;
++ padding: 0; }
++
++.monitors li { border-top: 1px solid var(--line);
++ display: grid;
++ font-size: 12px;
++ gap: 3px;
++ padding-top: 8px; }
++
++.monitors small { color: var(--muted);
++ overflow-wrap: anywhere; }
++
++.monitor-actions { display: flex;
++ gap: 6px;
++ margin-top: 3px; }
++
++.monitor-actions button { font-size: 11px;
++ min-height: 28px;
++ padding: 4px 8px; }
++
++.error { color: var(--danger);
++ font-size: 12px;
++ min-height: 18px;
++ overflow-wrap: anywhere; }
++
++@media (max-width: 360px) {
++  main { padding: 12px; }
++  .status { display: none; }
++}
++
++@media (prefers-reduced-motion: no-preference) {
++  button,
++ .card { transition: border-color 120ms ease, background 120ms ease; }
++}
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+new file mode 100644
+index 0000000000..4a0095a981
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -0,0 +1,92 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="color-scheme" content="light dark">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Aegis Agent</title>
++    <link rel="stylesheet" href="agent.css">
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div class="mark" aria-hidden="true">A</div>
++        <div class="hero-copy">
++          <h1 id="title"></h1>
++          <p id="subtitle"></p>
++        </div>
++        <span id="status" class="status" role="status"></span>
++      </header>
++
++      <section id="disabled-banner" class="notice" hidden></section>
++      <section id="target-card" class="target-card">
++        <span id="target-label" class="eyebrow"></span>
++        <strong id="target-value"></strong>
++        <small id="invocation-context" hidden></small>
++      </section>
++
++      <section class="composer" aria-labelledby="goal-label">
++        <div id="mode-group" class="segmented" role="radiogroup"></div>
++        <label id="goal-label" for="goal"></label>
++        <textarea id="goal" rows="4" maxlength="4096"></textarea>
++        <label id="origins-label" for="origins"></label>
++        <textarea id="origins" rows="3" maxlength="40960" spellcheck="false"></textarea>
++        <div class="workflow-row">
++          <label id="workflow-label" for="workflow"></label>
++          <select id="workflow"></select>
++        </div>
++        <div id="quick-actions" class="quick-actions"></div>
++        <button id="plan-button" class="primary" type="button"></button>
++      </section>
++
++      <section id="plan-card" class="card" hidden>
++        <div class="section-heading">
++          <h2 id="scope-title"></h2>
++          <span id="risk-badge" class="risk"></span>
++        </div>
++        <p id="plan-summary"></p>
++        <dl id="scope-grid" class="scope-grid"></dl>
++        <ol id="plan-steps" class="steps"></ol>
++        <button id="start-button" class="primary" type="button"></button>
++      </section>
++
++      <section id="approval-card" class="card approval" hidden>
++        <h2 id="approval-title"></h2>
++        <p id="approval-detail"></p>
++        <dl id="checkout-summary" class="scope-grid checkout-summary" hidden></dl>
++        <div class="exact-action">
++          <span id="approval-arguments-label"></span>
++          <pre id="approval-arguments"></pre>
++          <span id="approval-fingerprint-label"></span>
++          <code id="approval-fingerprint"></code>
++        </div>
++        <p id="takeover-notice" class="takeover-notice" hidden></p>
++        <code id="approval-id"></code>
++        <button id="approve-button" class="danger" type="button"></button>
++      </section>
++
++      <nav class="controls" aria-label="Task controls">
++        <button id="pause-button" type="button"></button>
++        <button id="resume-button" type="button"></button>
++        <button id="takeover-button" type="button"></button>
++        <button id="finish-takeover-button" type="button"></button>
++        <button id="undo-button" type="button"></button>
++        <button id="stop-button" class="quiet-danger" type="button"></button>
++      </nav>
++
++      <section class="card">
++        <h2 id="timeline-title"></h2>
++        <p id="empty-task" class="empty"></p>
++        <ol id="timeline" class="timeline" aria-live="polite"></ol>
++      </section>
++
++      <section class="card">
++        <h2 id="monitors-title"></h2>
++        <ul id="monitors" class="monitors"></ul>
++      </section>
++
++      <p id="error" class="error" role="alert"></p>
++    </main>
++    <script type="module" src="agent.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+new file mode 100644
+index 0000000000..52302e2e38
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -0,0 +1,398 @@
++// Copyright 2026 GCSA
++
++import {loadTimeData} from '//resources/js/load_time_data.js';
++
++import type {
++  CheckoutSummary,
++  MonitorSummary,
++  PlanSummary,
++  TaskSnapshot,
++  TimelineEvent,
++} from './aegis_agent.mojom-webui.js';
++import {AgentMode, Workflow} from './aegis_agent.mojom-webui.js';
++import {BrowserProxy} from './browser_proxy.js';
++
++const proxy = BrowserProxy.getInstance();
++let snapshot: TaskSnapshot|null = null;
++let selectedMode = AgentMode.kAsk;
++let selectedWorkflow = Workflow.kResearch;
++let busy = false;
++let goalUserEdited = false;
++let originsUserEdited = false;
++
++function element<T extends HTMLElement>(id: string): T {
++  const value = document.getElementById(id);
++  if (!value) {
++    throw new Error(`Missing element: ${id}`);
++  }
++  return value as T;
++}
++
++function text(id: string, key: string) {
++  element(id).textContent = loadTimeData.getString(key);
++}
++
++function option(value: Workflow, label: string): HTMLOptionElement {
++  const result = document.createElement('option');
++  result.value = String(value);
++  result.textContent = label;
++  return result;
++}
++
++function renderModes() {
++  const group = element('mode-group');
++  group.replaceChildren();
++  const modes: Array<[AgentMode, string]> = [
++    [AgentMode.kAsk, 'ask'],
++    [AgentMode.kAct, 'act'],
++    [AgentMode.kAutomate, 'automate'],
++  ];
++  for (const [mode, key] of modes) {
++    const button = document.createElement('button');
++    button.type = 'button';
++    button.role = 'radio';
++    button.textContent = loadTimeData.getString(key);
++    button.setAttribute('aria-checked', String(selectedMode === mode));
++    button.addEventListener('click', () => {
++      selectedMode = mode;
++      renderModes();
++    });
++    group.append(button);
++  }
++}
++
++function addDefinition(
++    list: HTMLElement, term: string, value: string, total = false) {
++  const dt = document.createElement('dt');
++  dt.textContent = term;
++  const dd = document.createElement('dd');
++  dd.textContent = value;
++  if (total) {
++    dd.dataset['total'] = 'true';
++  }
++  list.append(dt, dd);
++}
++
++function formatMinorUnits(value: string, currency: string): string {
++  const parsed = Number.parseInt(value, 10);
++  return Number.isSafeInteger(parsed) && parsed >= 0 ?
++      `${currency} ${(parsed / 100).toFixed(2)}` :
++      `${currency} ${value}`;
++}
++
++function renderCheckoutSummary(checkout: CheckoutSummary|null) {
++  const list = element('checkout-summary');
++  list.hidden = !checkout;
++  list.replaceChildren();
++  if (!checkout) {
++    return;
++  }
++  const amount = (value: string) =>
++      formatMinorUnits(value, checkout.currency);
++  addDefinition(list, loadTimeData.getString('merchant'), checkout.merchant);
++  addDefinition(list, loadTimeData.getString('product'), checkout.product);
++  addDefinition(
++      list, loadTimeData.getString('quantity'), String(checkout.quantity));
++  addDefinition(
++      list, loadTimeData.getString('unitPrice'),
++      amount(checkout.unitPriceMinorUnits));
++  addDefinition(
++      list, loadTimeData.getString('shipping'),
++      amount(checkout.shippingMinorUnits));
++  addDefinition(
++      list, loadTimeData.getString('tax'), amount(checkout.taxMinorUnits));
++  addDefinition(
++      list, loadTimeData.getString('discount'),
++      amount(checkout.discountMinorUnits));
++  addDefinition(
++      list, loadTimeData.getString('total'),
++      amount(checkout.totalMinorUnits), true);
++  addDefinition(
++      list, loadTimeData.getString('delivery'), checkout.deliverySummary);
++  addDefinition(
++      list, loadTimeData.getString('returns'), checkout.returnSummary);
++  addDefinition(
++      list, loadTimeData.getString('sources'),
++      `${checkout.sourceNodeCount} nodes · ` +
++          `${checkout.observationFingerprint.slice(0, 16)}…`);
++}
++
++function renderPlan(plan: PlanSummary|null) {
++  const card = element('plan-card');
++  card.hidden = !plan;
++  if (!plan) {
++    return;
++  }
++  element('plan-summary').textContent = plan.summary;
++  element('risk-badge').textContent = plan.maxRisk;
++  const scope = element('scope-grid');
++  scope.replaceChildren();
++  addDefinition(scope, loadTimeData.getString('provider'),
++      `${plan.provider} · ${plan.model} · ${plan.destination}`);
++  addDefinition(scope, loadTimeData.getString('risk'), plan.maxRisk);
++  addDefinition(scope, loadTimeData.getString('origins'), plan.origins.join(', '));
++  addDefinition(scope, loadTimeData.getString('data'), plan.dataClasses.join(', '));
++  addDefinition(scope, loadTimeData.getString('tools'), plan.tools.join(', '));
++  addDefinition(scope, loadTimeData.getString('budget'),
++      `${plan.maxToolCalls} tools · ${plan.maxModelCalls} model · ` +
++      `${plan.maxNetworkRequests} network · ${plan.maxDuration}`);
++  const steps = element('plan-steps');
++  steps.replaceChildren();
++  for (const step of plan.steps) {
++    const li = document.createElement('li');
++    li.textContent = step.title;
++    const detail = document.createElement('small');
++    detail.textContent = `${step.toolName} · ${step.risk}`;
++    li.append(detail);
++    steps.append(li);
++  }
++}
++
++function renderTimeline(events: TimelineEvent[]) {
++  const list = element('timeline');
++  list.replaceChildren();
++  for (const event of events) {
++    const li = document.createElement('li');
++    li.textContent = event.title;
++    const detail = document.createElement('small');
++    const timestamp = Number(event.timestamp);
++    const when = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleTimeString() : '';
++    detail.textContent = `${event.detail}${when ? ` · ${when}` : ''}`;
++    li.append(detail);
++    list.append(li);
++  }
++}
++
++function renderMonitors(monitors: MonitorSummary[]) {
++  const list = element('monitors');
++  list.replaceChildren();
++  for (const monitor of monitors) {
++    const li = document.createElement('li');
++    const title = document.createElement('strong');
++    title.textContent = `${monitor.kind} · ${monitor.paused ? 'paused' : monitor.interval}`;
++    const origin = document.createElement('small');
++    origin.textContent = monitor.origin;
++    const hash = document.createElement('small');
++    hash.textContent = `${monitor.targetHash.slice(0, 24)}… · failures ${monitor.failures}`;
++    const actions = document.createElement('div');
++    actions.className = 'monitor-actions';
++    const toggle = document.createElement('button');
++    toggle.type = 'button';
++    toggle.dataset['monitorAction'] = 'toggle';
++    toggle.textContent = loadTimeData.getString(
++        monitor.paused ? 'resumeMonitor' : 'pauseMonitor');
++    toggle.disabled = busy;
++    toggle.addEventListener('click', () => withBusy(() =>
++      proxy.handler.setMonitorPaused(
++          monitor.taskId, monitor.monitorId, !monitor.paused)));
++    const remove = document.createElement('button');
++    remove.type = 'button';
++    remove.dataset['monitorAction'] = 'delete';
++    remove.textContent = loadTimeData.getString('deleteMonitor');
++    remove.disabled = busy;
++    remove.addEventListener('click', () => withBusy(() =>
++      proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
++    actions.append(toggle, remove);
++    li.append(title, origin, hash, actions);
++    list.append(li);
++  }
++}
++
++function render(next: TaskSnapshot) {
++  snapshot = next;
++  element('status').textContent = next.state || 'idle';
++  element('target-value').textContent = next.activeOrigin || loadTimeData.getString('noTarget');
++  const invocation = element('invocation-context');
++  invocation.hidden = !next.invocationContext;
++  invocation.textContent = next.invocationContext;
++  if (!next.taskId && next.suggestedGoal && !goalUserEdited) {
++    element<HTMLTextAreaElement>('goal').value = next.suggestedGoal;
++  }
++  if (!next.taskId && next.activeOrigin && !originsUserEdited) {
++    element<HTMLTextAreaElement>('origins').value = next.activeOrigin;
++  }
++  const banner = element('disabled-banner');
++  banner.hidden = next.agentEnabled;
++  banner.textContent = loadTimeData.getString('disabled');
++  element<HTMLTextAreaElement>('goal').disabled = !next.agentEnabled || busy;
++  element<HTMLTextAreaElement>('origins').disabled = !next.agentEnabled || busy;
++  element<HTMLSelectElement>('workflow').disabled = !next.agentEnabled || busy;
++  element<HTMLButtonElement>('plan-button').disabled =
++      !next.agentEnabled || !next.activeTabId || busy;
++  renderPlan(next.plan || null);
++  renderTimeline(next.timeline);
++  renderMonitors(next.monitors);
++  element('empty-task').hidden = Boolean(next.timeline.length);
++  element('empty-task').textContent = loadTimeData.getString('noTask');
++  element('error').textContent = next.lastError;
++
++  const approval = element('approval-card');
++  approval.hidden = !next.pendingApproval;
++  const approveButton = element<HTMLButtonElement>('approve-button');
++  const takeoverNotice = element('takeover-notice');
++  if (next.pendingApproval) {
++    const takeover = next.pendingApproval.requiresUserTakeover;
++    element('approval-title').textContent = loadTimeData.getString(
++        takeover ? 'takeoverReady' : 'waitingApproval');
++    element('approval-detail').textContent =
++        `${next.pendingApproval.toolName} · ${next.pendingApproval.origin} · ` +
++        next.pendingApproval.risk;
++    element('approval-id').textContent = next.pendingApproval.actionId;
++    element('approval-arguments').textContent =
++        next.pendingApproval.argumentSummary;
++    element('approval-fingerprint').textContent =
++        next.pendingApproval.actionFingerprint;
++    renderCheckoutSummary(next.pendingApproval.checkout || null);
++    takeoverNotice.hidden = !takeover;
++    takeoverNotice.textContent = takeover ?
++        loadTimeData.getString('takeoverNotice') : '';
++    approveButton.hidden = takeover;
++  } else {
++    renderCheckoutSummary(null);
++    takeoverNotice.hidden = true;
++    takeoverNotice.textContent = '';
++    element('approval-id').textContent = '';
++    element('approval-arguments').textContent = '';
++    element('approval-fingerprint').textContent = '';
++    approveButton.hidden = false;
++  }
++
++  const state = next.state;
++  element<HTMLButtonElement>('start-button').disabled =
++      busy || state !== 'awaiting_task_consent';
++  element<HTMLButtonElement>('pause-button').disabled = busy || state !== 'running';
++  element<HTMLButtonElement>('resume-button').disabled =
++      busy || state !== 'paused_by_user';
++  element<HTMLButtonElement>('takeover-button').disabled =
++      busy || (state !== 'running' && state !== 'awaiting_action_approval');
++  element<HTMLButtonElement>('finish-takeover-button').disabled =
++      busy || state !== 'user_takeover';
++  approveButton.disabled =
++      busy || !next.pendingApproval ||
++      next.pendingApproval.requiresUserTakeover;
++  element<HTMLButtonElement>('undo-button').disabled =
++      busy || !next.undoAvailable;
++  element<HTMLButtonElement>('stop-button').disabled =
++      busy || !next.taskId || ['completed', 'failed', 'cancelled', 'expired'].includes(state);
++}
++
++async function withBusy(action: () => Promise<{snapshot: TaskSnapshot}>) {
++  if (busy) {
++    return;
++  }
++  busy = true;
++  if (snapshot) {
++    render(snapshot);
++  }
++  try {
++    const response = await action();
++    render(response.snapshot);
++  } finally {
++    busy = false;
++    if (snapshot) {
++      render(snapshot);
++    }
++  }
++}
++
++function initializeLabels() {
++  text('title', 'title');
++  text('subtitle', 'subtitle');
++  text('target-label', 'target');
++  text('goal-label', 'goal');
++  text('origins-label', 'origins');
++  text('workflow-label', 'workflow');
++  text('plan-button', 'plan');
++  text('scope-title', 'scope');
++  text('start-button', 'start');
++  text('approval-title', 'waitingApproval');
++  text('approval-arguments-label', 'exactArguments');
++  text('approval-fingerprint-label', 'actionFingerprint');
++  text('approve-button', 'approve');
++  text('pause-button', 'pause');
++  text('resume-button', 'resume');
++  text('takeover-button', 'takeover');
++  text('finish-takeover-button', 'finishTakeover');
++  text('undo-button', 'undo');
++  text('stop-button', 'stop');
++  text('timeline-title', 'timeline');
++  text('monitors-title', 'monitors');
++  element<HTMLTextAreaElement>('goal').placeholder =
++      loadTimeData.getString('goalPlaceholder');
++  element<HTMLTextAreaElement>('origins').placeholder =
++      loadTimeData.getString('originsPlaceholder');
++  element<HTMLTextAreaElement>('goal').addEventListener('input', () => {
++    goalUserEdited = true;
++  });
++  element<HTMLTextAreaElement>('origins').addEventListener('input', () => {
++    originsUserEdited = true;
++  });
++
++  const select = element<HTMLSelectElement>('workflow');
++  select.append(
++      option(Workflow.kResearch, loadTimeData.getString('research')),
++      option(Workflow.kBrowserSteward, loadTimeData.getString('steward')),
++      option(Workflow.kSafeDownload, loadTimeData.getString('download')),
++      option(Workflow.kShopping, loadTimeData.getString('shopping')));
++  select.addEventListener('change', () => {
++    selectedWorkflow = Number(select.value) as Workflow;
++  });
++
++  const quick = element('quick-actions');
++  const presets: Array<[Workflow, string, string]> = [
++    [Workflow.kResearch, 'research', 'Compare sources and cite conflicts'],
++    [Workflow.kBrowserSteward, 'steward', 'Organize my bookmarks with a preview'],
++    [Workflow.kSafeDownload, 'download', 'Find the official safe download'],
++    [Workflow.kShopping, 'shopping', 'Compare total prices and prepare checkout'],
++  ];
++  for (const [workflow, key, prompt] of presets) {
++    const button = document.createElement('button');
++    button.type = 'button';
++    button.textContent = loadTimeData.getString(key);
++    button.addEventListener('click', () => {
++      selectedWorkflow = workflow;
++      select.value = String(workflow);
++      element<HTMLTextAreaElement>('goal').value = prompt;
++      goalUserEdited = true;
++    });
++    quick.append(button);
++  }
++  renderModes();
++}
++
++function bindActions() {
++  element('plan-button').addEventListener('click', () => withBusy(async () => {
++    const goal = element<HTMLTextAreaElement>('goal').value.trim();
++    const origins = element<HTMLTextAreaElement>('origins').value.split('\n')
++                        .map(value => value.trim())
++                        .filter(value => value.length > 0);
++    const created = await proxy.handler.createTask(
++        goal, selectedMode, selectedWorkflow, origins);
++    if (!created.snapshot.taskId) {
++      return created;
++    }
++    return proxy.handler.requestPlan(created.snapshot.taskId);
++  }));
++  element('start-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.consentAndRun(snapshot?.taskId || '')));
++  element('pause-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.pause(snapshot?.taskId || '')));
++  element('resume-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.resume(snapshot?.taskId || '')));
++  element('takeover-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.takeOver(snapshot?.taskId || '')));
++  element('finish-takeover-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.finishTakeOver(snapshot?.taskId || '', true)));
++  element('stop-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.stop(snapshot?.taskId || '')));
++  element('approve-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.approve(
++        snapshot?.taskId || '', snapshot?.pendingApproval?.actionId || '')));
++  element('undo-button').addEventListener('click', () => withBusy(() =>
++    proxy.handler.undo(snapshot?.taskId || '')));
++}
++
++initializeLabels();
++bindActions();
++proxy.callbackRouter.onSnapshotChanged.addListener(render);
++proxy.handler.getSnapshot().then(({snapshot: initial}) => render(initial));
+diff --git a/chrome/browser/resources/aegis_agent/browser_proxy.ts b/chrome/browser/resources/aegis_agent/browser_proxy.ts
+new file mode 100644
+index 0000000000..5a7838098e
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/browser_proxy.ts
+@@ -0,0 +1,25 @@
++// Copyright 2026 GCSA
++
++import type {PageHandlerInterface} from './aegis_agent.mojom-webui.js';
++import {
++  PageCallbackRouter,
++  PageHandlerFactory,
++  PageHandlerRemote,
++} from './aegis_agent.mojom-webui.js';
++
++export class BrowserProxy {
++  readonly callbackRouter = new PageCallbackRouter();
++  readonly handler: PageHandlerInterface = new PageHandlerRemote();
++
++  constructor() {
++    PageHandlerFactory.getRemote().createPageHandler(
++        this.callbackRouter.$.bindNewPipeAndPassRemote(),
++        (this.handler as PageHandlerRemote).$.bindNewPipeAndPassReceiver());
++  }
++
++  static getInstance(): BrowserProxy {
++    return instance || (instance = new BrowserProxy());
++  }
++}
++
++let instance: BrowserProxy|null = null;
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 017a8c3ff7..12828c7e55 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -482,6 +482,7 @@ static_library("ui") {
+     "//chrome/browser:icon_manager",
+     "//chrome/browser:renderer_preferences_util",
+     "//chrome/browser:resources_util",
++    "//chrome/browser/aegis",
+     "//chrome/browser/affiliations",
+     "//chrome/browser/ai",
+     "//chrome/browser/autocomplete",
+@@ -701,6 +702,7 @@ static_library("ui") {
+     "//chrome/browser/webauthn:impl",
+     "//chrome/browser/webnn",
+     "//chrome/common",
++    "//chrome/common/aegis",
+     "//chrome/common/net",
+     "//chrome/common/search:mojo_bindings",
+     "//chrome/installer/util:with_no_strings",
+@@ -1085,6 +1087,7 @@ static_library("ui") {
+       # data_sharing:impl includes headers from //chrome/browser/ui (e.g.
+       # data_sharing_utils.h) that can't be split out yet.
+       "//chrome/browser/ui/webui/data_sharing:impl",
++      "//chrome/browser/ui/webui/aegis_agent:impl",
+ 
+       # downloads includes headers from //chrome/browser/ui (e.g.
+       # browser_window.h, chrome_pages.h) that can't be split out yet.
+@@ -1678,6 +1681,8 @@ static_library("ui") {
+       "//chrome/browser/ui/webui/access_code_cast",
+       "//chrome/browser/ui/webui/access_code_cast:impl",
+       "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
++      "//chrome/browser/ui/webui/aegis_agent:impl",
++      "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+       "//chrome/browser/ui/webui/ai_overlay_dialog",
+       "//chrome/browser/ui/webui/ai_overlay_dialog:mojo_bindings",
+       "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
+@@ -1993,6 +1998,7 @@ static_library("ui") {
+       "//chrome/browser/ui/tabs:tab_enums",
+       "//chrome/browser/ui/views/side_panel",
+       "//chrome/browser/ui/waap:manager",
++      "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/data_sharing",
+       "//chrome/browser/ui/webui/feedback",
+       "//chrome/browser/ui/webui/feedback:impl",
+diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
+index 1a6acad48b..baa2e0a591 100644
+--- a/chrome/browser/ui/actions/chrome_action_id.h
++++ b/chrome/browser/ui/actions/chrome_action_id.h
+@@ -554,6 +554,7 @@
+   /* Side Panel items */ \
+   E(kActionSidePanelShowAboutThisSite) \
+   E(kActionSidePanelShowAssistant) \
++  E(kActionSidePanelShowAegisAgent) \
+   E(kActionSidePanelShowBookmarks, IDC_SHOW_BOOKMARK_SIDE_PANEL) \
+   E(kActionSidePanelShowComments, IDC_SHOW_COMMENTS_SIDE_PANEL) \
+   E(kActionSidePanelShowCustomizeChrome, IDC_SHOW_CUSTOMIZE_CHROME_SIDE_PANEL) \
+diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
+index 812961aed2..93fdcdb926 100644
+--- a/chrome/browser/ui/browser_actions.cc
++++ b/chrome/browser/ui/browser_actions.cc
+@@ -40,6 +40,7 @@
+ #include "chrome/browser/sharing_hub/sharing_hub_features.h"
+ #include "chrome/browser/ui/accelerator_table.h"
+ #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "components/search_engines/ai_mode_button_config.h"
+ #include "components/search_engines/ai_mode_button_service.h"
+@@ -333,6 +334,23 @@ void BrowserActions::InitializeSidePanelActions() {
+   Profile* const profile = base::to_address(profile_);
+   BrowserWindowInterface* const bwi = base::to_address(bwi_);
+ 
++  if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++      profile->IsRegularProfile()) {
++    root_action_item_->AddChild(
++        actions::ActionItem::Builder(
++            CreateToggleSidePanelActionCallback(
++                SidePanelEntryKey(SidePanelEntryId::kAegisAgent), bwi))
++            .SetActionId(kActionSidePanelShowAegisAgent)
++            .SetText(u"Aegis Agent")
++            .SetTooltipText(u"Aegis Agent")
++            .SetImage(ui::ImageModel::FromVectorIcon(omnibox::kSparkIcon,
++                                                     ui::kColorIcon))
++            .SetProperty(actions::kActionItemPinnableKey,
++                         std::underlying_type_t<actions::ActionPinnableState>(
++                             actions::ActionPinnableState::kPinnable))
++            .Build());
++  }
++
+   root_action_item_->AddChild(
+       SidePanelAction(SidePanelEntryId::kBookmarks, IDS_BOOKMARK_MANAGER_TITLE,
+                       IDS_BOOKMARK_MANAGER_TITLE,
+@@ -3540,9 +3558,8 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
+                  actions::ActionInvocationContext context) {
+                 PrefService* pref_service = bwi->GetProfile()->GetPrefs();
+-                const char* pref_name =
+-                    media_router::prefs::
+-                        kMediaRouterShowCastSessionsStartedByOtherDevices;
++                const char* pref_name = media_router::prefs::
++                    kMediaRouterShowCastSessionsStartedByOtherDevices;
+                 pref_service->SetBoolean(pref_name,
+                                          !pref_service->GetBoolean(pref_name));
+               },
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index 45a19a87c2..5699db240b 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -103,6 +103,7 @@
+ #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
+ #include "chrome/browser/web_applications/web_app_install_params.h"
+ #include "chrome/browser/web_applications/web_app_utils.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/content_restriction.h"
+ #include "chrome/common/pref_names.h"
+@@ -541,7 +542,6 @@ void BrowserCommandController::GlicActiveInstanceChanged(
+   UpdateGlicState();
+ }
+ 
+-
+ void BrowserCommandController::FindBarVisibilityChanged() {
+   // Block find command updates in locked fullscreen mode unless the instance is
+   // locked for OnTask (only relevant for non-web browser scenarios).
+@@ -1250,6 +1250,10 @@ void BrowserCommandController::HandleCommandWithDisposition(
+     case IDC_SHOW_AEGIS:
+       ShowAegisPage(browser_->GetBrowserForOpeningWebUi());
+       break;
++    case IDC_SHOW_AEGIS_AGENT:
++      browser_->GetFeatures().side_panel_ui()->Show(
++          SidePanelEntryId::kAegisAgent, SidePanelOpenTrigger::kAegisAgent);
++      break;
+     case IDC_EDIT_SEARCH_ENGINES:
+       ShowSearchEngineSettings(browser_->GetBrowserForOpeningWebUi());
+       break;
+@@ -1822,6 +1826,10 @@ void BrowserCommandController::InitCommandState() {
+       TabsFromOtherDevicesSidePanelCoordinator::IsSupported(profile()));
+   command_updater_->UpdateCommandEnabled(IDC_SHOW_DOWNLOADS, true);
+   command_updater_->UpdateCommandEnabled(IDC_SHOW_COMMENTS_SIDE_PANEL, true);
++  command_updater_->UpdateCommandEnabled(
++      IDC_SHOW_AEGIS_AGENT,
++      base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++          profile()->IsRegularProfile());
+   command_updater_->UpdateCommandEnabled(IDC_FIND_AND_EDIT_MENU, true);
+   command_updater_->UpdateCommandEnabled(IDC_SAVE_AND_SHARE_MENU, true);
+   command_updater_->UpdateCommandEnabled(IDC_SHOW_READING_MODE_SIDE_PANEL,
+@@ -2349,6 +2357,11 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+   command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
+   command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
+   command_updater_->UpdateCommandEnabled(IDC_SHOW_AEGIS, show_main_ui);
++  command_updater_->UpdateCommandEnabled(
++      IDC_SHOW_AEGIS_AGENT,
++      show_main_ui &&
++          base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++          profile()->IsRegularProfile());
+ #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+   command_updater_->UpdateCommandEnabled(IDC_CHROME_TIPS, show_main_ui);
+   command_updater_->UpdateCommandEnabled(IDC_CHROME_WHATS_NEW, show_main_ui);
+diff --git a/chrome/browser/ui/cocoa/accelerators_cocoa.mm b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
+index ac3e3353cc..0eb21495e9 100644
+--- a/chrome/browser/ui/cocoa/accelerators_cocoa.mm
++++ b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
+@@ -113,7 +113,8 @@ const struct AcceleratorMapping {
+     {IDC_FEEDBACK, ui::EF_COMMAND_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN,
+      ui::VKEY_I},
+ #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+-    {IDC_TAB_SEARCH, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN, ui::VKEY_A},
++    // Aegis Browser reserves Cmd+Shift+A as its primary Agent entry point.
++    {IDC_SHOW_AEGIS_AGENT, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN, ui::VKEY_A},
+     {IDC_CREATE_NEW_TAB_GROUP, ui::EF_CONTROL_DOWN | ui::EF_COMMAND_DOWN,
+      ui::VKEY_P},
+     {IDC_TOGGLE_VERTICAL_TABS_COLLAPSE, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN,
+diff --git a/chrome/browser/ui/side_panel/side_panel_entry_id.h b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+index f77bd9c8db..295132dff3 100644
+--- a/chrome/browser/ui/side_panel/side_panel_entry_id.h
++++ b/chrome/browser/ui/side_panel/side_panel_entry_id.h
+@@ -26,6 +26,7 @@
+   V(kFeed, kActionSidePanelShowFeed, "Feed")                                  \
+   V(kWebView, std::nullopt, "WebView")                                        \
+   V(kContextualTasks, kActionSidePanelShowContextualTasks, "ContextualTasks") \
++  V(kAegisAgent, kActionSidePanelShowAegisAgent, "AegisAgent")                \
+   /* Contextual Entries */                                                    \
+   V(kSideSearch, kActionSidePanelShowSideSearch, "SideSearch")                \
+   V(kLens, kActionSidePanelShowLens, "Lens")                                  \
+diff --git a/chrome/browser/ui/side_panel/side_panel_enums.h b/chrome/browser/ui/side_panel/side_panel_enums.h
+index d4a58de364..73d189952c 100644
+--- a/chrome/browser/ui/side_panel/side_panel_enums.h
++++ b/chrome/browser/ui/side_panel/side_panel_enums.h
+@@ -46,7 +46,8 @@ enum class SidePanelOpenTrigger {
+ #endif
+   kGlicOpened = 28,
+   kContextualTasks = 29,
+-  kMaxValue = kContextualTasks,
++  kAegisAgent = 30,
++  kMaxValue = kAegisAgent,
+ };
+ // LINT.ThenChange(//tools/metrics/histograms/enums.xml:SidePanelOpenTrigger)
+ 
+@@ -80,7 +81,6 @@ enum class SidePanelEntryHideReason {
+ #endif
+ };
+ 
+-
+ enum class SidePanelType {
+   kMinValue,
+   // Panel aligned with the web contents.
+diff --git a/chrome/browser/ui/side_panel/side_panel_enums_utils.h b/chrome/browser/ui/side_panel/side_panel_enums_utils.h
+index f4dc6b548d..31fa32a06d 100644
+--- a/chrome/browser/ui/side_panel/side_panel_enums_utils.h
++++ b/chrome/browser/ui/side_panel/side_panel_enums_utils.h
+@@ -70,6 +70,8 @@ inline std::string ToString(SidePanelOpenTrigger trigger) {
+       return "GlicOpened";
+     case SidePanelOpenTrigger::kContextualTasks:
+       return "ContextualTasks";
++    case SidePanelOpenTrigger::kAegisAgent:
++      return "AegisAgent";
+   }
+   NOTREACHED();
+ }
+diff --git a/chrome/browser/ui/toolbar/toolbar_pref_names.cc b/chrome/browser/ui/toolbar/toolbar_pref_names.cc
+index d93b933b81..9286469922 100644
+--- a/chrome/browser/ui/toolbar/toolbar_pref_names.cc
++++ b/chrome/browser/ui/toolbar/toolbar_pref_names.cc
+@@ -4,8 +4,10 @@
+ 
+ #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+ 
++#include "base/feature_list.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/ui_features.h"
++#include "chrome/common/aegis/features.h"
+ #include "components/pref_registry/pref_registry_syncable.h"
+ #include "components/prefs/pref_registry_simple.h"
+ #include "ui/actions/actions.h"
+@@ -23,6 +25,14 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+     default_pinned_actions.Append(chrome_labs_action.value());
+   }
+ 
++  if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
++    const std::optional<std::string>& agent_action =
++        actions::ActionIdMap::ActionIdToString(kActionSidePanelShowAegisAgent);
++    if (agent_action.has_value()) {
++      default_pinned_actions.Append(agent_action.value());
++    }
++  }
++
+   if (base::FeatureList::IsEnabled(
+           features::kTabsFromOtherDevicesSidePanelPinnedByDefault)) {
+     const std::optional<std::string>& tabs_from_other_devices_action =
+diff --git a/chrome/browser/ui/views/side_panel/BUILD.gn b/chrome/browser/ui/views/side_panel/BUILD.gn
+index 7fcad1f062..922e5678ef 100644
+--- a/chrome/browser/ui/views/side_panel/BUILD.gn
++++ b/chrome/browser/ui/views/side_panel/BUILD.gn
+@@ -9,6 +9,8 @@ import("//extensions/buildflags/buildflags.gni")
+ 
+ source_set("side_panel") {
+   sources = [
++    "aegis_agent/aegis_agent_side_panel.cc",
++    "aegis_agent/aegis_agent_side_panel.h",
+     "bookmarks/bookmarks_side_panel_coordinator.cc",
+     "bookmarks/bookmarks_side_panel_coordinator.h",
+     "comments/comments_side_panel_coordinator.cc",
+@@ -134,6 +136,7 @@ source_set("side_panel") {
+     "//chrome/browser/ui/views/interaction",
+     "//chrome/browser/ui/views/toolbar",
+     "//chrome/browser/ui/webui:webui_util",
++    "//chrome/browser/ui/webui/aegis_agent",
+     "//chrome/browser/ui/webui/side_panel/history",
+     "//chrome/browser/ui/webui/side_panel/history_clusters",
+     "//chrome/browser/ui/webui/side_panel/tabs_from_other_devices",
+@@ -141,6 +144,7 @@ source_set("side_panel") {
+     "//chrome/browser/ui/webui_browser:headers",
+     "//chrome/common",
+     "//chrome/common:constants",
++    "//chrome/common/aegis",
+     "//components/accessibility:reading",
+     "//components/download/content/factory",
+     "//components/download/content/public",
+diff --git a/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc b/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc
+new file mode 100644
+index 0000000000..02dde6dcd6
+--- /dev/null
++++ b/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc
+@@ -0,0 +1,71 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h"
++
++#include <memory>
++
++#include "base/feature_list.h"
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry.h"
++#include "chrome/browser/ui/side_panel/side_panel_registry.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
++#include "chrome/browser/ui/views/side_panel/side_panel_web_ui_view.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
++#include "chrome/browser/ui/webui/top_chrome/webui_contents_wrapper.h"
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/webui_url_constants.h"
++#include "chrome/grit/branded_strings.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++
++using SidePanelWebUIViewT_AegisAgentUI = SidePanelWebUIViewT<AegisAgentUI>;
++BEGIN_TEMPLATE_METADATA(SidePanelWebUIViewT_AegisAgentUI, SidePanelWebUIViewT)
++END_METADATA
++
++namespace aegis::agent {
++namespace {
++
++std::unique_ptr<views::View> CreateAgentView(BrowserWindowInterface* browser,
++                                             SidePanelEntryScope& scope) {
++  return std::make_unique<SidePanelWebUIViewT<AegisAgentUI>>(
++      scope, base::RepeatingClosure(), base::RepeatingClosure(),
++      std::make_unique<WebUIContentsWrapperT<AegisAgentUI>>(
++          GURL(chrome::kChromeUIUntrustedAegisAgentURL), browser->GetProfile(),
++          IDS_PRODUCT_NAME, /*esc_closes_ui=*/false));
++}
++
++}  // namespace
++
++bool IsAegisAgentSidePanelSupported(Profile* profile) {
++  return profile && profile->IsRegularProfile() &&
++         base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
++}
++
++void RegisterAegisAgentSidePanel(BrowserWindowInterface* browser,
++                                 SidePanelRegistry* registry) {
++  if (!browser || !registry ||
++      !IsAegisAgentSidePanelSupported(browser->GetProfile())) {
++    return;
++  }
++  registry->Register(std::make_unique<SidePanelEntry>(
++      SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent),
++      base::BindRepeating(&CreateAgentView, base::Unretained(browser)),
++      /*default_content_width_callback=*/base::NullCallback()));
++}
++
++bool ShowAegisAgentSidePanel(BrowserWindowInterface* browser) {
++  if (!browser || !IsAegisAgentSidePanelSupported(browser->GetProfile())) {
++    return false;
++  }
++  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  if (!side_panel) {
++    return false;
++  }
++  side_panel->Show(SidePanelEntry::Id::kAegisAgent);
++  return true;
++}
++
++}  // namespace aegis::agent
+diff --git a/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h b/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h
+new file mode 100644
+index 0000000000..8e898b6709
+--- /dev/null
++++ b/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h
+@@ -0,0 +1,19 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_AEGIS_AGENT_AEGIS_AGENT_SIDE_PANEL_H_
++#define CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_AEGIS_AGENT_AEGIS_AGENT_SIDE_PANEL_H_
++
++class BrowserWindowInterface;
++class Profile;
++class SidePanelRegistry;
++
++namespace aegis::agent {
++
++bool IsAegisAgentSidePanelSupported(Profile* profile);
++void RegisterAegisAgentSidePanel(BrowserWindowInterface* browser,
++                                 SidePanelRegistry* registry);
++bool ShowAegisAgentSidePanel(BrowserWindowInterface* browser);
++
++}  // namespace aegis::agent
++
++#endif  // CHROME_BROWSER_UI_VIEWS_SIDE_PANEL_AEGIS_AGENT_AEGIS_AGENT_SIDE_PANEL_H_
+diff --git a/chrome/browser/ui/views/side_panel/side_panel_helper.cc b/chrome/browser/ui/views/side_panel/side_panel_helper.cc
+index 414f120c64..eaf1f657fc 100644
+--- a/chrome/browser/ui/views/side_panel/side_panel_helper.cc
++++ b/chrome/browser/ui/views/side_panel/side_panel_helper.cc
+@@ -12,6 +12,7 @@
+ #include "chrome/browser/ui/side_panel/side_panel_registry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/ui_features.h"
++#include "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h"
+ #include "chrome/browser/ui/views/side_panel/bookmarks/bookmarks_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/comments/comments_side_panel_coordinator.h"
+ #include "chrome/browser/ui/views/side_panel/history/history_side_panel_coordinator.h"
+@@ -35,6 +36,8 @@ void SidePanelHelper::PopulateGlobalEntries(
+   BookmarksSidePanelCoordinator::From(browser)->CreateAndRegisterEntry(
+       window_registry);
+ 
++  aegis::agent::RegisterAegisAgentSidePanel(browser, window_registry);
++
+   if (webui_browser::IsWebUIBrowserEnabled()) {
+     // TODO(webium): Consider supporting additional side panels beyond reading
+     // list and bookmarks.
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index 1c5c10b380..f6532d65b1 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -61,8 +61,8 @@ source_set("configs") {
+     "//chrome/browser/ui",
+     "//chrome/browser/ui/webui/about",
+     "//chrome/browser/ui/webui/accessibility",
+-    "//chrome/browser/ui/webui/aegis",
+     "//chrome/browser/ui/webui/actor_internals",
++    "//chrome/browser/ui/webui/aegis",
+     "//chrome/browser/ui/webui/autofill_and_password_manager_internals",
+     "//chrome/browser/ui/webui/browsing_topics",
+     "//chrome/browser/ui/webui/chrome_urls",
+@@ -120,6 +120,7 @@ source_set("configs") {
+       "//chrome/browser/contextual_cueing/internals",
+       "//chrome/browser/glic/selection",
+       "//chrome/browser/ui/webui/access_code_cast",
++      "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/app_service_internals",
+       "//chrome/browser/ui/webui/autofill_ml_internals",
+       "//chrome/browser/ui/webui/color_pipeline_internals",
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index d5d5325d42..64781b003b 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -11,9 +11,13 @@ source_set("aegis") {
+   deps = [
+     "//base",
+     "//chrome/browser/aegis",
++    "//chrome/browser/aegis:agent_core",
++    "//chrome/browser/download",
+     "//chrome/browser/profiles:profile",
+     "//chrome/browser/resources/aegis:resources",
+     "//chrome/common",
++    "//chrome/common/aegis",
++    "//chrome/services/aegis_torrent/public/mojom",
+     "//content/public/browser",
+     "//mojo/public/cpp/bindings",
+     "//third_party/blink/public/common",
+@@ -23,6 +27,7 @@ source_set("aegis") {
+   if (!is_android) {
+     deps += [
+       "//chrome/browser/ui/browser_window",
++      "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+       "//chrome/browser/ui/tabs:tab_strip",
+     ]
+   }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 2b888d78de..05b6fd0bde 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -100,6 +100,11 @@ struct AegisStrings {
+   const char* activity_title;
+   const char* activity_hint;
+   const char* activity_empty;
++  const char* browser_agent_title;
++  const char* browser_agent_label;
++  const char* browser_agent_hint;
++  const char* browser_agent_open;
++  const char* browser_agent_status;
+   const char* ai_control_title;
+   const char* ai_control_label;
+   const char* ai_control_hint;
+@@ -238,6 +243,13 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .activity_empty =
+             "還沒有記錄。打開帶廣告請求或 utm_ "
+             "的頁面後，攔截與清理會出現在這裡。",
++        .browser_agent_title = "瀏覽器智慧代理",
++        .browser_agent_label = "啟用 Aegis Browser Agent",
++        .browser_agent_hint =
++            "依計畫執行網頁與瀏覽器操作；寫入、下載與交易步驟仍由瀏覽器"
++            "政策檢查，付款前必須由你接管。",
++        .browser_agent_open = "開啟 Agent 側邊欄",
++        .browser_agent_status = "Agent 功能旗標未啟用。",
+         .ai_control_title = "AI 控制",
+         .ai_control_label = "允許本機 AI agent 經 CDP 控制",
+         .ai_control_hint =
+@@ -381,6 +393,13 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .activity_empty =
+             "还没有记录。打开带广告请求或 utm_ "
+             "的页面后，拦截与清理会出现在这里。",
++        .browser_agent_title = "浏览器智能体",
++        .browser_agent_label = "启用 Aegis Browser Agent",
++        .browser_agent_hint =
++            "按计划执行网页与浏览器操作；写入、下载和交易步骤仍由浏览器"
++            "策略检查，付款前必须由你接管。",
++        .browser_agent_open = "打开 Agent 侧边栏",
++        .browser_agent_status = "Agent 功能开关尚未启用。",
+         .ai_control_title = "AI 控制",
+         .ai_control_label = "允许本机 AI agent 经 CDP 控制",
+         .ai_control_hint =
+@@ -534,6 +553,14 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "ads cookies, bounce clears, and local CDP connections update live.",
+       .activity_empty =
+           "Nothing recorded yet. Open a page with ad requests or a utm_ link.",
++      .browser_agent_title = "Browser Agent",
++      .browser_agent_label = "Enable Aegis Browser Agent",
++      .browser_agent_hint =
++          "Runs planned page and browser actions. Browser policy still gates "
++          "writes, downloads, and transactions; you must take over before "
++          "payment.",
++      .browser_agent_open = "Open Agent side panel",
++      .browser_agent_status = "The Agent feature flag is not enabled.",
+       .ai_control_title = "AI control",
+       .ai_control_label = "Allow a local AI agent over CDP",
+       .ai_control_hint =
+@@ -646,6 +673,11 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("activityTitle", strings.activity_title);
+   source->AddString("activityHint", strings.activity_hint);
+   source->AddString("activityEmpty", strings.activity_empty);
++  source->AddString("browserAgentTitle", strings.browser_agent_title);
++  source->AddString("browserAgentLabel", strings.browser_agent_label);
++  source->AddString("browserAgentHint", strings.browser_agent_hint);
++  source->AddString("browserAgentOpen", strings.browser_agent_open);
++  source->AddString("browserAgentStatus", strings.browser_agent_status);
+   source->AddString("aiControlTitle", strings.ai_control_title);
+   source->AddString("aiControlLabel", strings.ai_control_label);
+   source->AddString("aiControlHint", strings.ai_control_hint);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index b333c5a34e..68e13c56a5 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -11,6 +11,7 @@
+ #include <utility>
+ 
+ #include "base/base64.h"
++#include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/strings/string_util.h"
+ #include "base/time/time.h"
+@@ -19,16 +20,22 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/aegis_torrent_client.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/metalink_download_verifier.h"
+ #include "chrome/browser/aegis/metalink_parser.h"
+ #include "chrome/browser/download/download_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #if !BUILDFLAG(IS_ANDROID)
++#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/side_panel/side_panel_entry.h"
++#include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #endif
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/chrome_render_frame.mojom.h"
+ #include "components/prefs/pref_service.h"
+ #include "content/public/browser/navigation_controller.h"
+@@ -207,6 +214,31 @@ content::WebContents* FindHttpTab(content::WebContents* skip) {
+ #endif
+ }
+ 
++#if !BUILDFLAG(IS_ANDROID)
++BrowserWindowInterface* FindOwningBrowser(content::WebContents* contents) {
++  if (!contents) {
++    return nullptr;
++  }
++  BrowserWindowInterface* found = nullptr;
++  GlobalBrowserCollection* collection = GlobalBrowserCollection::GetInstance();
++  if (!collection) {
++    return nullptr;
++  }
++  collection->ForEach(
++      [&](BrowserWindowInterface* browser) {
++        TabStripModel* model = browser->GetTabStripModel();
++        if (model &&
++            model->GetIndexOfWebContents(contents) != TabStripModel::kNoTab) {
++          found = browser;
++          return false;
++        }
++        return true;
++      },
++      BrowserCollection::Order::kActivation);
++  return found;
++}
++#endif
++
+ base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
+   base::DictValue dict;
+   dict.Set("ok", result.ok);
+@@ -318,6 +350,10 @@ void AegisUIHandler::RegisterMessages() {
+       "setModuleEnabled",
+       base::BindRepeating(&AegisUIHandler::HandleSetModuleEnabled,
+                           base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "openBrowserAgent",
++      base::BindRepeating(&AegisUIHandler::HandleOpenBrowserAgent,
++                          base::Unretained(this)));
+   web_ui()->RegisterMessageCallback(
+       "updateFilterLists",
+       base::BindRepeating(&AegisUIHandler::HandleUpdateFilterLists,
+@@ -380,8 +416,10 @@ aegis::AegisService* AegisUIHandler::ServiceForWebUI() {
+ 
+ base::DictValue AegisUIHandler::BuildStatus() {
+   aegis::AegisService* service = ServiceForWebUI();
++  Profile* profile = Profile::FromWebUI(web_ui());
++  const bool regular_profile = profile && !profile->IsOffTheRecord();
+   base::DictValue status;
+-  status.Set("profileAvailable", service != nullptr);
++  status.Set("profileAvailable", regular_profile && service != nullptr);
+   status.Set("enabled", service && service->IsEnabled());
+   status.Set("trackerBlocking", service && service->IsTrackerBlockingEnabled());
+   status.Set("phishInterstitial",
+@@ -412,15 +450,23 @@ base::DictValue AegisUIHandler::BuildStatus() {
+ #if BUILDFLAG(IS_ANDROID)
+   status.Set("isAndroid", true);
+   status.Set("torrentSupported", false);
++  status.Set("browserAgentAvailable", false);
++  status.Set("browserAgentEnabled", false);
+ #else
+   status.Set("isAndroid", false);
++  const bool browser_agent_available =
++      regular_profile &&
++      base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
++  status.Set("browserAgentAvailable", browser_agent_available);
++  status.Set("browserAgentEnabled",
++             browser_agent_available &&
++                 profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled));
+ #if BUILDFLAG(IS_MAC)
+   status.Set("torrentSupported", service != nullptr);
+ #else
+   status.Set("torrentSupported", false);
+ #endif
+ #endif
+-  Profile* profile = service ? Profile::FromWebUI(web_ui()) : nullptr;
+   status.Set("torrentDisclosureAcknowledged",
+              profile && profile->GetPrefs()->GetBoolean(
+                             aegis::prefs::kTorrentDisclosureAcknowledged));
+@@ -532,11 +578,70 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+     service->SetPrivacyAiEnabled(enabled);
+   } else if (module == "aiControl") {
+     service->SetAiControlEnabled(enabled);
++  } else if (module == "browserAgent") {
++#if BUILDFLAG(IS_ANDROID)
++    base::DictValue status = BuildStatus();
++    status.Set("ok", false);
++    status.Set("error", "Browser Agent is not available on Android in v1");
++    ResolveJavascriptCallback(callback_id, status);
++    return;
++#else
++    Profile* profile = Profile::FromWebUI(web_ui());
++    if (!profile || !profile->IsRegularProfile() ||
++        !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
++      base::DictValue status = BuildStatus();
++      status.Set("ok", false);
++      status.Set("error", "Browser Agent feature is unavailable");
++      ResolveJavascriptCallback(callback_id, status);
++      return;
++    }
++    aegis::agent::AegisAgentService* agent_service =
++        aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(profile);
++    profile->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, enabled);
++    if (!enabled && agent_service) {
++      agent_service->CancelAllForDisable();
++    } else if (enabled && agent_service) {
++      agent_service->ResumeMonitorsAfterEnable();
++    } else if (enabled) {
++      // Creating the service restores and schedules persisted monitors.
++      aegis::agent::AegisAgentServiceFactory::GetForProfile(profile);
++    }
++#endif
+   }
+ 
+   ResolveJavascriptCallback(callback_id, BuildStatus());
+ }
+ 
++void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
++  AllowJavascript();
++  if (args.empty()) {
++    return;
++  }
++  const base::Value& callback_id = args[0];
++  base::DictValue status = BuildStatus();
++#if BUILDFLAG(IS_ANDROID)
++  status.Set("ok", false);
++  status.Set("error", "Browser Agent is not available on Android in v1");
++#else
++  Profile* profile = Profile::FromWebUI(web_ui());
++  BrowserWindowInterface* browser =
++      FindOwningBrowser(web_ui()->GetWebContents());
++  SidePanelUI* side_panel =
++      browser ? browser->GetFeatures().side_panel_ui() : nullptr;
++  if (!profile || !profile->IsRegularProfile() || !browser || !side_panel ||
++      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
++      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++    status.Set("ok", false);
++    status.Set("error", "Enable Browser Agent before opening it");
++  } else {
++    side_panel->Show(SidePanelEntry::Id::kAegisAgent,
++                     SidePanelOpenTrigger::kAegisAgent);
++    status.Set("ok", true);
++  }
++#endif
++  ResolveJavascriptCallback(callback_id, status);
++}
++
+ void AegisUIHandler::HandleUpdateFilterLists(const base::ListValue& args) {
+   AllowJavascript();
+   if (args.empty() || !args[0].is_string()) {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 50a99e097d..b639fe12cb 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -53,6 +53,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   base::DictValue BuildStatus();
+   void HandleGetStatus(const base::ListValue& args);
+   void HandleSetModuleEnabled(const base::ListValue& args);
++  void HandleOpenBrowserAgent(const base::ListValue& args);
+   void HandleUpdateFilterLists(const base::ListValue& args);
+   void HandleSummarizeActiveTab(const base::ListValue& args);
+   void HandleCompletePreparedSummary(const base::ListValue& args);
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+new file mode 100644
+index 0000000000..086ee3dda7
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -0,0 +1,52 @@
++# Copyright 2026 GCSA
++
++assert(!is_android)
++
++import("//mojo/public/tools/bindings/mojom.gni")
++
++mojom("mojo_bindings") {
++  sources = [ "aegis_agent.mojom" ]
++  webui_module_path = "/"
++}
++
++source_set("aegis_agent") {
++  public = [
++    "aegis_agent_page_handler.h",
++    "aegis_agent_ui.h",
++  ]
++  public_deps = [
++    ":mojo_bindings",
++    "//base",
++    "//chrome/browser/aegis:agent_core",
++    "//chrome/browser/ui/webui/top_chrome",
++    "//components/prefs",
++    "//mojo/public/cpp/bindings",
++  ]
++}
++
++source_set("impl") {
++  sources = [
++    "aegis_agent_page_handler.cc",
++    "aegis_agent_ui.cc",
++  ]
++  public_deps = [ "//chrome/browser:browser_public_dependencies" ]
++  deps = [
++    ":aegis_agent",
++    "//chrome/browser/aegis",
++    "//chrome/browser/aegis:agent_core",
++    "//chrome/browser/aegis:model_provider_policy",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/resources/aegis_agent:resources",
++    "//chrome/browser/ui/browser_window",
++    "//chrome/browser/ui/webui:theme_source",
++    "//chrome/browser/ui/webui:webui_util",
++    "//chrome/common",
++    "//chrome/common/aegis",
++    "//components/prefs",
++    "//components/tabs:public",
++    "//content/public/browser",
++    "//ui/base",
++    "//ui/webui",
++    "//url",
++  ]
++}
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+new file mode 100644
+index 0000000000..69e582976d
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -0,0 +1,133 @@
++// Copyright 2026 GCSA
++
++module aegis_agent.mojom;
++
++enum AgentMode {
++  kAsk = 0,
++  kAct = 1,
++  kAutomate = 2,
++};
++
++enum Workflow {
++  kResearch = 0,
++  kBrowserSteward = 1,
++  kSafeDownload = 2,
++  kShopping = 3,
++};
++
++struct PlanStep {
++  string step_id;
++  string title;
++  string tool_name;
++  string risk;
++};
++
++struct PlanSummary {
++  string summary;
++  array<string> origins;
++  array<string> data_classes;
++  array<string> tools;
++  int32 max_tabs;
++  int32 max_tool_calls;
++  int32 max_model_calls;
++  int32 max_network_requests;
++  string max_duration;
++  string provider;
++  string model;
++  string destination;
++  string max_risk;
++  array<PlanStep> steps;
++};
++
++struct CheckoutSummary {
++  string merchant;
++  string product;
++  int32 quantity;
++  string unit_price_minor_units;
++  string shipping_minor_units;
++  string tax_minor_units;
++  string discount_minor_units;
++  string total_minor_units;
++  string currency;
++  string delivery_summary;
++  string return_summary;
++  int32 source_node_count;
++  string observation_fingerprint;
++};
++
++struct PendingApproval {
++  string action_id;
++  string tool_name;
++  string origin;
++  string risk;
++  string argument_summary;
++  string action_fingerprint;
++  bool requires_user_takeover;
++  CheckoutSummary ? checkout;
++};
++
++struct TimelineEvent {
++  string title;
++  string detail;
++  string timestamp;
++  string status;
++};
++
++struct MonitorSummary {
++  string monitor_id;
++  string task_id;
++  string kind;
++  string origin;
++  string target_hash;
++  string interval;
++  string next_run;
++  bool paused;
++  int32 failures;
++};
++
++struct TaskSnapshot {
++  bool feature_enabled;
++  bool agent_enabled;
++  int32 active_tab_id;
++  string active_origin;
++  string invocation_context;
++  string suggested_goal;
++  string task_id;
++  string state;
++  string mode;
++  string goal;
++  PlanSummary     ? plan;
++  PendingApproval ? pending_approval;
++  bool undo_available;
++  array<TimelineEvent> timeline;
++  array<MonitorSummary> monitors;
++  string last_error;
++};
++
++interface Page {
++  OnSnapshotChanged(TaskSnapshot snapshot);
++};
++
++interface PageHandler {
++  GetSnapshot() = > (TaskSnapshot snapshot);
++  CreateTask(string goal, AgentMode mode, Workflow workflow,
++             array<string> approved_origins) = > (TaskSnapshot snapshot);
++  RequestPlan(string task_id) = > (TaskSnapshot snapshot);
++  ConsentAndRun(string task_id) = > (TaskSnapshot snapshot);
++  Pause(string task_id) = > (TaskSnapshot snapshot);
++  Resume(string task_id) = > (TaskSnapshot snapshot);
++  TakeOver(string task_id) = > (TaskSnapshot snapshot);
++  FinishTakeOver(string task_id, bool completed) = > (TaskSnapshot snapshot);
++  Stop(string task_id) = > (TaskSnapshot snapshot);
++  Approve(string task_id, string action_id) = > (TaskSnapshot snapshot);
++  Undo(string task_id) = > (TaskSnapshot snapshot);
++  SetMonitorPaused(string task_id, string monitor_id, bool paused) = >
++      (TaskSnapshot snapshot);
++  DeleteMonitor(string task_id, string monitor_id) = >
++      (TaskSnapshot snapshot);
++};
++
++interface PageHandlerFactory {
++  CreatePageHandler(pending_remote<Page> page,
++                    pending_receiver<PageHandler> handler);
++};
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+new file mode 100644
+index 0000000000..6cccfc1ccc
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -0,0 +1,658 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h"
++
++#include <algorithm>
++#include <optional>
++#include <utility>
++
++#include "base/containers/flat_set.h"
++#include "base/feature_list.h"
++#include "base/functional/bind.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
++#include "chrome/browser/aegis/agent/agent_policy_broker.h"
++#include "chrome/browser/aegis/agent/agent_workflow.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/aegis/pref_names.h"
++#include "components/prefs/pref_service.h"
++#include "components/tabs/public/tab_interface.h"
++#include "url/gurl.h"
++#include "url/origin.h"
++
++namespace {
++
++using aegis::agent::AgentDataClass;
++using aegis::agent::AgentMode;
++using aegis::agent::AgentRiskLevel;
++using aegis::agent::AgentTask;
++using aegis::agent::AgentTaskState;
++using aegis::agent::AgentWorkflowKind;
++
++const char* ModeName(AgentMode mode) {
++  switch (mode) {
++    case AgentMode::kAsk:
++      return "ask";
++    case AgentMode::kAct:
++      return "act";
++    case AgentMode::kAutomate:
++      return "automate";
++  }
++}
++
++const char* RiskName(AgentRiskLevel risk) {
++  switch (risk) {
++    case AgentRiskLevel::kR0ReadOnly:
++      return "R0 · read only";
++    case AgentRiskLevel::kR1Reversible:
++      return "R1 · reversible";
++    case AgentRiskLevel::kR2ExternalSideEffect:
++      return "R2 · approval required";
++    case AgentRiskLevel::kR3UserTakeover:
++      return "R3 · user takeover";
++    case AgentRiskLevel::kBlocked:
++      return "blocked";
++  }
++}
++
++const char* DataClassName(AgentDataClass data_class) {
++  switch (data_class) {
++    case AgentDataClass::kPublicPage:
++      return "public_page";
++    case AgentDataClass::kBrowserMetadata:
++      return "browser_metadata";
++    case AgentDataClass::kBookmarks:
++      return "bookmarks";
++    case AgentDataClass::kHistory:
++      return "history";
++    case AgentDataClass::kDownloads:
++      return "downloads";
++    case AgentDataClass::kFormData:
++      return "form_data";
++    case AgentDataClass::kSecret:
++      return "secret";
++  }
++}
++
++std::optional<AgentMode> ConvertMode(aegis_agent::mojom::AgentMode mode) {
++  switch (mode) {
++    case aegis_agent::mojom::AgentMode::kAsk:
++      return AgentMode::kAsk;
++    case aegis_agent::mojom::AgentMode::kAct:
++      return AgentMode::kAct;
++    case aegis_agent::mojom::AgentMode::kAutomate:
++      return AgentMode::kAutomate;
++  }
++}
++
++std::optional<AgentWorkflowKind> ConvertWorkflow(
++    aegis_agent::mojom::Workflow workflow) {
++  switch (workflow) {
++    case aegis_agent::mojom::Workflow::kResearch:
++      return AgentWorkflowKind::kResearch;
++    case aegis_agent::mojom::Workflow::kBrowserSteward:
++      return AgentWorkflowKind::kBrowserSteward;
++    case aegis_agent::mojom::Workflow::kSafeDownload:
++      return AgentWorkflowKind::kSafeDownload;
++    case aegis_agent::mojom::Workflow::kShopping:
++      return AgentWorkflowKind::kShopping;
++  }
++}
++
++std::string MonitorKindName(aegis::agent::AgentMonitorKind kind) {
++  switch (kind) {
++    case aegis::agent::AgentMonitorKind::kPrice:
++      return "price";
++    case aegis::agent::AgentMonitorKind::kInventory:
++      return "inventory";
++    case aegis::agent::AgentMonitorKind::kPageChange:
++      return "page_change";
++    case aegis::agent::AgentMonitorKind::kUrlStatus:
++      return "url_status";
++  }
++}
++
++tabs::TabInterface* ActiveTab(BrowserWindowInterface* browser) {
++  return browser ? browser->GetActiveTabInterface() : nullptr;
++}
++
++std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
++    const GURL& active_url,
++    const std::vector<std::string>& values) {
++  constexpr size_t kMaxApprovedOrigins = 20;
++  constexpr size_t kMaxOriginBytes = 2048;
++  if (!active_url.is_valid() || !active_url.SchemeIsHTTPOrHTTPS() ||
++      values.empty() || values.size() > kMaxApprovedOrigins) {
++    return std::nullopt;
++  }
++
++  const url::Origin active_origin = url::Origin::Create(active_url);
++  base::flat_set<std::string> seen;
++  std::vector<url::Origin> origins;
++  origins.reserve(values.size());
++  bool includes_active_origin = false;
++  for (const std::string& value : values) {
++    if (value.empty() || value.size() > kMaxOriginBytes) {
++      return std::nullopt;
++    }
++    const GURL url(value);
++    const url::Origin origin = url::Origin::Create(url);
++    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || origin.opaque() ||
++        url != origin.GetURL()) {
++      return std::nullopt;
++    }
++    const std::string serialized = origin.Serialize();
++    if (!seen.insert(serialized).second) {
++      return std::nullopt;
++    }
++    includes_active_origin |= origin == active_origin;
++    origins.push_back(origin);
++  }
++  return includes_active_origin
++             ? std::optional<std::vector<url::Origin>>(std::move(origins))
++             : std::nullopt;
++}
++
++}  // namespace
++
++AegisAgentPageHandler::AegisAgentPageHandler(
++    Profile* profile,
++    BrowserWindowInterface* browser,
++    mojo::PendingRemote<aegis_agent::mojom::Page> page,
++    mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver)
++    : profile_(profile),
++      browser_(browser && browser->GetProfile() == profile ? browser : nullptr),
++      page_(std::move(page)),
++      receiver_(this, std::move(receiver)) {
++  if (profile_ && profile_->GetPrefs()) {
++    pref_change_registrar_.Init(profile_->GetPrefs());
++    pref_change_registrar_.Add(
++        aegis::prefs::kAgentEnabled,
++        base::BindRepeating(&AegisAgentPageHandler::OnAgentEnabledChanged,
++                            weak_ptr_factory_.GetWeakPtr()));
++  }
++  if (browser_) {
++    active_tab_subscription_ = browser_->RegisterActiveTabDidChange(
++        base::BindRepeating(&AegisAgentPageHandler::OnActiveTabDidChange,
++                            weak_ptr_factory_.GetWeakPtr()));
++  }
++  service_ =
++      profile ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
++              : nullptr;
++  ObserveService(service_);
++  if (service_) {
++    ObserveTask(service_->MostRecentTask());
++  }
++}
++
++AegisAgentPageHandler::~AegisAgentPageHandler() = default;
++
++void AegisAgentPageHandler::OnAgentEnabledChanged() {
++  if (!profile_) {
++    return;
++  }
++  if (profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++    service_ = aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_);
++  } else {
++    service_ =
++        aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(profile_);
++  }
++  ObserveService(service_);
++  ObserveTask(service_ ? service_->MostRecentTask() : nullptr);
++  PushSnapshot();
++}
++
++void AegisAgentPageHandler::OnActiveTabDidChange(
++    BrowserWindowInterface* browser) {
++  if (browser == browser_) {
++    PushSnapshot();
++  }
++}
++
++void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::CreateTask(
++    const std::string& goal,
++    aegis_agent::mojom::AgentMode mode,
++    aegis_agent::mojom::Workflow workflow,
++    const std::vector<std::string>& approved_origins,
++    CreateTaskCallback callback) {
++  last_error_.clear();
++  service_ =
++      profile_ ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_)
++               : nullptr;
++  ObserveService(service_);
++  tabs::TabInterface* tab = ActiveTab(browser_);
++  const std::optional<AgentMode> converted_mode = ConvertMode(mode);
++  const std::optional<AgentWorkflowKind> converted_workflow =
++      ConvertWorkflow(workflow);
++  const std::optional<std::vector<url::Origin>> origins =
++      tab ? ParseApprovedOrigins(tab->GetURL(), approved_origins)
++          : std::nullopt;
++  if (!service_ || !service_->IsEnabled()) {
++    last_error_ = "Browser Agent is disabled";
++  } else if (!tab || !tab->GetURL().is_valid() ||
++             !tab->GetURL().SchemeIsHTTPOrHTTPS()) {
++    last_error_ = "Open an approved http(s) page first";
++  } else if (!converted_mode || !converted_workflow || !origins ||
++             goal.empty() || goal.size() > 4096u) {
++    last_error_ = "Task input is invalid";
++  } else {
++    std::optional<aegis::agent::AgentTaskScope> scope =
++        aegis::agent::BuildAgentWorkflowScope(
++            *converted_workflow, *origins, {tab->GetHandle().raw_value()},
++            service_->ConfiguredModelDestination());
++    AgentTask* task =
++        scope ? service_->CreateTask(goal, *converted_mode, std::move(*scope))
++              : nullptr;
++    if (!task) {
++      last_error_ = "Task scope could not be created";
++    } else {
++      service_->ClearPendingInvocationContext();
++      active_task_id_ = task->id();
++      ObserveTask(task);
++    }
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::RequestPlan(const std::string& task_id,
++                                        RequestPlanCallback callback) {
++  last_error_.clear();
++  AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
++  if (!task) {
++    last_error_ = "Task is unavailable";
++  } else {
++    active_task_id_ = task_id;
++    ObserveTask(task);
++    service_->RequestPlan(
++        task_id, base::BindOnce(&AegisAgentPageHandler::OnPlanReady,
++                                weak_ptr_factory_.GetWeakPtr(), task_id));
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::ConsentAndRun(const std::string& task_id,
++                                          ConsentAndRunCallback callback) {
++  last_error_.clear();
++  AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
++  bool ready = false;
++  if (task && task->state() == AgentTaskState::kAwaitingTaskConsent) {
++    ready = service_->GrantTaskConsent(task_id);
++  } else if (task && task->state() == AgentTaskState::kRecovering) {
++    ready = service_->GrantRecoveryConsent(task_id);
++  } else if (task && task->state() == AgentTaskState::kRunning) {
++    ready = true;
++  }
++  if (!ready) {
++    last_error_ = "Task is not ready to run";
++  } else {
++    active_task_id_ = task_id;
++    ObserveTask(task);
++    service_->RunTask(task_id,
++                      base::BindOnce(&AegisAgentPageHandler::OnRunFinished,
++                                     weak_ptr_factory_.GetWeakPtr(), task_id));
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::Pause(const std::string& task_id,
++                                  PauseCallback callback) {
++  last_error_ = service_ && service_->PauseTask(task_id)
++                    ? std::string()
++                    : "Task could not be paused";
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::Resume(const std::string& task_id,
++                                   ResumeCallback callback) {
++  last_error_ = service_ && service_->ResumeTask(task_id)
++                    ? std::string()
++                    : "Task could not be resumed";
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::TakeOver(const std::string& task_id,
++                                     TakeOverCallback callback) {
++  last_error_ = service_ && service_->BeginUserTakeover(task_id)
++                    ? std::string()
++                    : "User takeover could not begin";
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::FinishTakeOver(const std::string& task_id,
++                                           bool completed,
++                                           FinishTakeOverCallback callback) {
++  const AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
++  bool ok = false;
++  if (task && task->state() == AgentTaskState::kUserTakeover) {
++    ok = service_->CompleteFinalUserTakeover(task_id, completed);
++    if (!ok && !completed) {
++      ok = service_->CancelTask(task_id);
++    } else if (!ok) {
++      ok = service_->FinishUserTakeover(task_id);
++    }
++  }
++  last_error_ = ok ? std::string() : "User takeover could not be finished";
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::Stop(const std::string& task_id,
++                                 StopCallback callback) {
++  last_error_ = service_ && service_->CancelTask(task_id)
++                    ? std::string()
++                    : "Task could not be stopped";
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::Approve(const std::string& task_id,
++                                    const std::string& action_id,
++                                    ApproveCallback callback) {
++  const aegis::agent::AgentToolCall* pending =
++      service_ ? service_->PendingAction(task_id) : nullptr;
++  const bool exact = pending && pending->action_id == action_id;
++  last_error_ = exact && service_->ApprovePendingAction(task_id)
++                    ? std::string()
++                    : "Exact action approval was rejected";
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::Undo(const std::string& task_id,
++                                 UndoCallback callback) {
++  if (!service_ || !service_->CanUndoLastBookmarkAction(task_id)) {
++    last_error_ = "No browser-verified undo receipt is available";
++    std::move(callback).Run(BuildSnapshot());
++    return;
++  }
++  service_->UndoLastBookmarkAction(
++      task_id, base::BindOnce(&AegisAgentPageHandler::OnUndoFinished,
++                              weak_ptr_factory_.GetWeakPtr(), task_id,
++                              std::move(callback)));
++}
++
++void AegisAgentPageHandler::SetMonitorPaused(
++    const std::string& task_id,
++    const std::string& monitor_id,
++    bool paused,
++    SetMonitorPausedCallback callback) {
++  AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
++  const bool ok = task && task->mode() == AgentMode::kAutomate &&
++                  service_->SetMonitorPaused(task_id, monitor_id, paused);
++  last_error_ = ok ? std::string()
++                   : "Task-owned monitor state could not be changed";
++  if (ok) {
++    active_task_id_ = task_id;
++    ObserveTask(task);
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::DeleteMonitor(
++    const std::string& task_id,
++    const std::string& monitor_id,
++    DeleteMonitorCallback callback) {
++  AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
++  const bool ok = task && task->mode() == AgentMode::kAutomate &&
++                  service_->RemoveMonitor(task_id, monitor_id);
++  last_error_ = ok ? std::string() : "Task-owned monitor could not be deleted";
++  if (ok) {
++    active_task_id_ = task_id;
++    ObserveTask(task);
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::OnAgentTaskStateChanged(
++    const std::string& task_id,
++    const aegis::agent::AgentTaskEvent& event) {
++  if (task_id == active_task_id_) {
++    PushSnapshot();
++  }
++}
++
++void AegisAgentPageHandler::OnPlanReady(const std::string& task_id,
++                                        bool ok,
++                                        std::string error) {
++  if (task_id != active_task_id_) {
++    return;
++  }
++  last_error_ = ok ? std::string() : std::move(error);
++  PushSnapshot();
++}
++
++void AegisAgentPageHandler::OnRunFinished(
++    const std::string& task_id,
++    bool ok,
++    std::string error,
++    std::optional<aegis::agent::AgentCompletionSummary> completion) {
++  if (task_id != active_task_id_) {
++    return;
++  }
++  last_error_ = ok ? std::string() : std::move(error);
++  PushSnapshot();
++}
++
++void AegisAgentPageHandler::OnUndoFinished(
++    const std::string& task_id,
++    UndoCallback callback,
++    aegis::agent::AgentToolResult result) {
++  if (task_id == active_task_id_) {
++    last_error_ = result.ok ? std::string() : std::move(result.message);
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::OnAgentServiceSnapshotChanged() {
++  PushSnapshot();
++}
++
++void AegisAgentPageHandler::ObserveService(
++    aegis::agent::AegisAgentService* service) {
++  if (service_observation_.GetSource() == service) {
++    return;
++  }
++  service_observation_.Reset();
++  if (service) {
++    service_observation_.Observe(service);
++  }
++}
++
++void AegisAgentPageHandler::ObserveTask(AgentTask* task) {
++  if (task_observation_.GetSource() == task) {
++    if (!task) {
++      active_task_id_.clear();
++    }
++    return;
++  }
++  task_observation_.Reset();
++  if (task) {
++    task_observation_.Observe(task);
++    active_task_id_ = task->id();
++  } else {
++    active_task_id_.clear();
++  }
++}
++
++void AegisAgentPageHandler::PushSnapshot() {
++  if (page_.is_bound()) {
++    page_->OnSnapshotChanged(BuildSnapshot());
++  }
++}
++
++aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
++  auto snapshot = aegis_agent::mojom::TaskSnapshot::New();
++  snapshot->feature_enabled =
++      base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
++  snapshot->agent_enabled =
++      profile_ && profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled);
++  tabs::TabInterface* tab = ActiveTab(browser_);
++  if (tab && tab->GetURL().is_valid() && tab->GetURL().SchemeIsHTTPOrHTTPS()) {
++    snapshot->active_tab_id = tab->GetHandle().raw_value();
++    snapshot->active_origin = url::Origin::Create(tab->GetURL()).Serialize();
++    if (service_) {
++      const aegis::agent::AgentInvocationContext* invocation =
++          service_->PendingInvocationContext();
++      if (invocation && invocation->tab_id == snapshot->active_tab_id) {
++        snapshot->invocation_context = invocation->display;
++        snapshot->suggested_goal = invocation->suggested_goal;
++      }
++    }
++  }
++  snapshot->state = "idle";
++  snapshot->last_error = last_error_;
++  if (service_) {
++    for (const aegis::agent::AgentMonitorDefinition& monitor :
++         service_->GetAllMonitors()) {
++      auto value = aegis_agent::mojom::MonitorSummary::New();
++      value->monitor_id = monitor.monitor_id;
++      value->task_id = monitor.task_id;
++      value->kind = MonitorKindName(monitor.kind);
++      value->origin = monitor.origin.Serialize();
++      value->target_hash = monitor.target_hash;
++      value->interval =
++          base::NumberToString(monitor.interval.InMinutes()) + " min";
++      value->next_run = base::NumberToString(
++          monitor.next_run.InMillisecondsFSinceUnixEpoch());
++      value->paused = !monitor.enabled;
++      value->failures = monitor.consecutive_failures;
++      snapshot->monitors.push_back(std::move(value));
++    }
++  }
++
++  AgentTask* task = service_ && !active_task_id_.empty()
++                        ? service_->GetTask(active_task_id_)
++                        : nullptr;
++  if (!task && service_) {
++    task = service_->MostRecentTask();
++    ObserveTask(task);
++  }
++  if (!task) {
++    return snapshot;
++  }
++  snapshot->task_id = task->id();
++  snapshot->state = aegis::agent::AgentTaskStateToString(task->state());
++  snapshot->mode = ModeName(task->mode());
++  snapshot->goal = task->goal();
++  snapshot->undo_available = service_->CanUndoLastBookmarkAction(task->id());
++
++  if (const aegis::agent::AgentTaskPlan* plan = service_->GetPlan(task->id())) {
++    auto plan_value = aegis_agent::mojom::PlanSummary::New();
++    plan_value->summary = plan->summary;
++    AgentRiskLevel max_risk = AgentRiskLevel::kR0ReadOnly;
++    for (const url::Origin& origin : plan->scope.allowed_origins) {
++      plan_value->origins.push_back(origin.Serialize());
++    }
++    for (AgentDataClass data_class : plan->scope.allowed_data_classes) {
++      plan_value->data_classes.push_back(DataClassName(data_class));
++    }
++    for (const std::string& tool : plan->scope.allowed_tools) {
++      plan_value->tools.push_back(tool);
++    }
++    for (const aegis::agent::AgentPlanStep& step : plan->steps) {
++      auto step_value = aegis_agent::mojom::PlanStep::New();
++      step_value->step_id = step.step_id;
++      step_value->title = step.title;
++      step_value->tool_name = step.tool_name;
++      step_value->risk = RiskName(step.risk);
++      max_risk = std::max(max_risk, step.risk);
++      plan_value->steps.push_back(std::move(step_value));
++    }
++    plan_value->max_tabs = plan->scope.budgets.max_tabs;
++    plan_value->max_tool_calls = plan->scope.budgets.max_tool_calls;
++    plan_value->max_model_calls = plan->scope.budgets.max_model_calls;
++    plan_value->max_network_requests = plan->scope.budgets.max_network_requests;
++    plan_value->max_duration =
++        base::NumberToString(plan->scope.budgets.max_duration.InMinutes()) +
++        " min";
++    plan_value->provider = plan->scope.model_destination.provider;
++    plan_value->model = plan->scope.model_destination.model;
++    plan_value->destination =
++        plan->scope.model_destination.kind ==
++                aegis::agent::AgentModelDestination::Kind::kLoopback
++            ? "loopback"
++            : "cloud";
++    plan_value->max_risk = RiskName(max_risk);
++    snapshot->plan = std::move(plan_value);
++  }
++
++  if (const aegis::agent::AgentToolCall* pending =
++          service_->PendingAction(task->id())) {
++    auto approval = aegis_agent::mojom::PendingApproval::New();
++    approval->action_id = pending->action_id;
++    approval->tool_name = pending->tool_name;
++    approval->origin =
++        pending->committed_url.is_valid()
++            ? url::Origin::Create(pending->committed_url).Serialize()
++            : std::string();
++    const aegis::agent::AgentToolDescriptor* descriptor =
++        service_->tool_registry().Find(pending->tool_name);
++    approval->risk = descriptor ? RiskName(descriptor->risk) : "blocked";
++    if (!base::JSONWriter::Write(pending->arguments,
++                                 &approval->argument_summary)) {
++      approval->argument_summary = "{}";
++    }
++    approval->action_fingerprint =
++        aegis::agent::AgentPolicyBroker::ActionHash(*pending);
++    approval->requires_user_takeover =
++        descriptor &&
++        descriptor->risk == aegis::agent::AgentRiskLevel::kR3UserTakeover;
++    if (pending->tool_name == "shopping.prepare_checkout") {
++      auto checkout = aegis_agent::mojom::CheckoutSummary::New();
++      const auto string_argument = [&](std::string_view key) {
++        const std::string* value = pending->arguments.FindString(key);
++        return value ? *value : std::string();
++      };
++      const auto integer_argument = [&](std::string_view key) {
++        return pending->arguments.FindInt(key).value_or(0);
++      };
++      checkout->merchant = string_argument("merchant");
++      checkout->product = string_argument("product");
++      checkout->quantity = integer_argument("quantity");
++      checkout->unit_price_minor_units =
++          base::NumberToString(integer_argument("unit_price_minor_units"));
++      checkout->shipping_minor_units =
++          base::NumberToString(integer_argument("shipping_minor_units"));
++      checkout->tax_minor_units =
++          base::NumberToString(integer_argument("tax_minor_units"));
++      checkout->discount_minor_units =
++          base::NumberToString(integer_argument("discount_minor_units"));
++      checkout->total_minor_units =
++          base::NumberToString(integer_argument("total_minor_units"));
++      checkout->currency = string_argument("currency");
++      checkout->delivery_summary = string_argument("delivery_summary");
++      checkout->return_summary = string_argument("return_summary");
++      const base::ListValue* source_nodes =
++          pending->arguments.FindList("source_node_ids");
++      checkout->source_node_count =
++          source_nodes ? static_cast<int32_t>(source_nodes->size()) : 0;
++      checkout->observation_fingerprint =
++          string_argument("observation_fingerprint");
++      approval->checkout = std::move(checkout);
++    }
++    snapshot->pending_approval = std::move(approval);
++  }
++
++  const auto& events = task->events();
++  const size_t first = events.size() > 50u ? events.size() - 50u : 0u;
++  for (size_t index = first; index < events.size(); ++index) {
++    const aegis::agent::AgentTaskEvent& event = events[index];
++    auto event_value = aegis_agent::mojom::TimelineEvent::New();
++    event_value->title = event.title.empty()
++                             ? aegis::agent::AgentTaskStateToString(event.to)
++                             : event.title;
++    event_value->detail = event.reason;
++    event_value->timestamp =
++        base::NumberToString(event.timestamp.InMillisecondsFSinceUnixEpoch());
++    event_value->status =
++        aegis::agent::IsTerminalState(event.to) ? "terminal" : "active";
++    snapshot->timeline.push_back(std::move(event_value));
++  }
++
++  return snapshot;
++}
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+new file mode 100644
+index 0000000000..bdc5df3bfe
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -0,0 +1,110 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
++
++#include <string>
++#include <vector>
++
++#include "base/callback_list.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/scoped_observation.h"
++#include "chrome/browser/aegis/agent/agent_execution.h"
++#include "chrome/browser/aegis/agent/agent_service_observer.h"
++#include "chrome/browser/aegis/agent/agent_task.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
++#include "components/prefs/pref_change_registrar.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/bindings/remote.h"
++
++class Profile;
++class BrowserWindowInterface;
++
++namespace aegis::agent {
++class AegisAgentService;
++}
++
++class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
++                              public aegis::agent::AgentTaskObserver,
++                              public aegis::agent::AegisAgentServiceObserver {
++ public:
++  AegisAgentPageHandler(
++      Profile* profile,
++      BrowserWindowInterface* browser,
++      mojo::PendingRemote<aegis_agent::mojom::Page> page,
++      mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver);
++  AegisAgentPageHandler(const AegisAgentPageHandler&) = delete;
++  AegisAgentPageHandler& operator=(const AegisAgentPageHandler&) = delete;
++  ~AegisAgentPageHandler() override;
++
++  void GetSnapshot(GetSnapshotCallback callback) override;
++  void CreateTask(const std::string& goal,
++                  aegis_agent::mojom::AgentMode mode,
++                  aegis_agent::mojom::Workflow workflow,
++                  const std::vector<std::string>& approved_origins,
++                  CreateTaskCallback callback) override;
++  void RequestPlan(const std::string& task_id,
++                   RequestPlanCallback callback) override;
++  void ConsentAndRun(const std::string& task_id,
++                     ConsentAndRunCallback callback) override;
++  void Pause(const std::string& task_id, PauseCallback callback) override;
++  void Resume(const std::string& task_id, ResumeCallback callback) override;
++  void TakeOver(const std::string& task_id, TakeOverCallback callback) override;
++  void FinishTakeOver(const std::string& task_id,
++                      bool completed,
++                      FinishTakeOverCallback callback) override;
++  void Stop(const std::string& task_id, StopCallback callback) override;
++  void Approve(const std::string& task_id,
++               const std::string& action_id,
++               ApproveCallback callback) override;
++  void Undo(const std::string& task_id, UndoCallback callback) override;
++  void SetMonitorPaused(const std::string& task_id,
++                        const std::string& monitor_id,
++                        bool paused,
++                        SetMonitorPausedCallback callback) override;
++  void DeleteMonitor(const std::string& task_id,
++                     const std::string& monitor_id,
++                     DeleteMonitorCallback callback) override;
++
++  void OnAgentTaskStateChanged(
++      const std::string& task_id,
++      const aegis::agent::AgentTaskEvent& event) override;
++  void OnAgentServiceSnapshotChanged() override;
++
++ private:
++  aegis_agent::mojom::TaskSnapshotPtr BuildSnapshot();
++  void ObserveTask(aegis::agent::AgentTask* task);
++  void ObserveService(aegis::agent::AegisAgentService* service);
++  void PushSnapshot();
++  void OnAgentEnabledChanged();
++  void OnActiveTabDidChange(BrowserWindowInterface* browser);
++  void OnPlanReady(const std::string& task_id, bool ok, std::string error);
++  void OnRunFinished(
++      const std::string& task_id,
++      bool ok,
++      std::string error,
++      std::optional<aegis::agent::AgentCompletionSummary> completion);
++  void OnUndoFinished(const std::string& task_id,
++                      UndoCallback callback,
++                      aegis::agent::AgentToolResult result);
++
++  raw_ptr<Profile> profile_;
++  raw_ptr<BrowserWindowInterface> browser_ = nullptr;
++  raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
++  std::string active_task_id_;
++  std::string last_error_;
++  mojo::Remote<aegis_agent::mojom::Page> page_;
++  mojo::Receiver<aegis_agent::mojom::PageHandler> receiver_;
++  PrefChangeRegistrar pref_change_registrar_;
++  base::CallbackListSubscription active_tab_subscription_;
++  base::ScopedObservation<aegis::agent::AgentTask,
++                          aegis::agent::AgentTaskObserver>
++      task_observation_{this};
++  base::ScopedObservation<aegis::agent::AegisAgentService,
++                          aegis::agent::AegisAgentServiceObserver>
++      service_observation_{this};
++  base::WeakPtrFactory<AegisAgentPageHandler> weak_ptr_factory_{this};
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+new file mode 100644
+index 0000000000..9ad9678911
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -0,0 +1,205 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
++
++#include <string>
++
++#include "base/feature_list.h"
++#include "base/strings/string_util.h"
++#include "chrome/browser/browser_process.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h"
++#include "chrome/browser/ui/webui/theme_source.h"
++#include "chrome/browser/ui/webui/webui_embedding_context.h"
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/webui_url_constants.h"
++#include "chrome/grit/aegis_agent_resources.h"
++#include "chrome/grit/aegis_agent_resources_map.h"
++#include "content/public/browser/browser_context.h"
++#include "content/public/browser/url_data_source.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/browser/web_ui_data_source.h"
++#include "ui/base/webui/web_ui_util.h"
++#include "ui/webui/webui_util.h"
++
++namespace {
++
++enum class UiLanguage {
++  kEnglish,
++  kSimplifiedChinese,
++  kTraditionalChinese,
++};
++
++UiLanguage CurrentLanguage() {
++  const std::string locale =
++      g_browser_process ? g_browser_process->GetApplicationLocale() : "en";
++  if (base::StartsWith(locale, "zh-TW") || base::StartsWith(locale, "zh-HK") ||
++      base::StartsWith(locale, "zh-Hant")) {
++    return UiLanguage::kTraditionalChinese;
++  }
++  return base::StartsWith(locale, "zh") ? UiLanguage::kSimplifiedChinese
++                                        : UiLanguage::kEnglish;
++}
++
++const char* Localized(UiLanguage language,
++                      const char* english,
++                      const char* simplified,
++                      const char* traditional) {
++  switch (language) {
++    case UiLanguage::kEnglish:
++      return english;
++    case UiLanguage::kSimplifiedChinese:
++      return simplified;
++    case UiLanguage::kTraditionalChinese:
++      return traditional;
++  }
++}
++
++void AddStrings(content::WebUIDataSource* source) {
++  const UiLanguage language = CurrentLanguage();
++  auto add = [&](const char* key, const char* en, const char* zh_cn,
++                 const char* zh_tw) {
++    source->AddString(key, Localized(language, en, zh_cn, zh_tw));
++  };
++  add("title", "Aegis Agent", "Aegis 浏览器智能体", "Aegis 瀏覽器智慧代理");
++  add("subtitle", "Plan first. Browser verifies every action.",
++      "先生成计划，再由浏览器验证每一步。",
++      "先產生計畫，再由瀏覽器驗證每一步。");
++  add("ask", "Ask", "询问", "詢問");
++  add("act", "Act", "执行", "執行");
++  add("automate", "Automate", "自动化", "自動化");
++  add("target", "Current target", "当前目标", "目前目標");
++  add("goal", "What should Aegis do?", "希望 Aegis 做什么？",
++      "希望 Aegis 做什麼？");
++  add("goalPlaceholder", "Describe the result, boundaries, and constraints…",
++      "描述目标、范围和限制……", "描述目標、範圍和限制……");
++  add("origins", "Allowed origins", "允许访问的来源", "允許存取的來源");
++  add("originsPlaceholder",
++      "One exact origin per line, for example https://example.com",
++      "每行一个精确来源，例如 https://example.com",
++      "每行一個精確來源，例如 https://example.com");
++  add("workflow", "Workflow", "工作流", "工作流程");
++  add("research", "Research", "深度研究", "深度研究");
++  add("steward", "Browser steward", "浏览器管家", "瀏覽器管家");
++  add("download", "Safe download", "安全下载", "安全下載");
++  add("shopping", "Shopping", "购物助手", "購物助手");
++  add("plan", "Generate plan", "生成计划", "產生計畫");
++  add("start", "Approve and start", "同意并开始", "同意並開始");
++  add("scope", "Plan and scope", "计划与授权范围", "計畫與授權範圍");
++  add("timeline", "Timeline", "执行时间线", "執行時間軸");
++  add("monitors", "Monitors", "监控", "監控");
++  add("pauseMonitor", "Pause monitor", "暂停监控", "暫停監控");
++  add("resumeMonitor", "Resume monitor", "恢复监控", "恢復監控");
++  add("deleteMonitor", "Delete monitor", "删除监控", "刪除監控");
++  add("pause", "Pause", "暂停", "暫停");
++  add("resume", "Resume", "继续", "繼續");
++  add("takeover", "Take over", "接管", "接管");
++  add("finishTakeover", "I finished", "我已完成", "我已完成");
++  add("stop", "Stop", "停止", "停止");
++  add("approve", "Approve exact action", "批准这一个操作", "批准這一個操作");
++  add("undo", "Undo", "撤销", "復原");
++  add("disabled", "Enable Browser Agent in chrome://aegis first.",
++      "请先在 chrome://aegis 启用浏览器智能体。",
++      "請先在 chrome://aegis 啟用瀏覽器智慧代理。");
++  add("noTarget", "Open an http(s) page to start.",
++      "请先打开一个 http(s) 网页。", "請先開啟一個 http(s) 網頁。");
++  add("noTask", "No active task", "暂无任务", "暫無任務");
++  add("provider", "Model", "模型", "模型");
++  add("budget", "Budget", "预算", "預算");
++  add("data", "Data", "数据", "資料");
++  add("tools", "Tools", "工具", "工具");
++  add("risk", "Highest risk", "最高风险", "最高風險");
++  add("steps", "Steps", "步骤", "步驟");
++  add("waitingApproval", "Waiting for your approval", "等待你的批准",
++      "等待你的批准");
++  add("exactArguments", "Exact action parameters", "本次操作的精确参数",
++      "本次操作的精確參數");
++  add("actionFingerprint", "Action fingerprint", "操作指纹", "操作指紋");
++  add("takeoverReady", "Final step is yours", "最终步骤由你完成",
++      "最終步驟由你完成");
++  add("takeoverNotice",
++      "Aegis re-read this checkout and stopped before the final purchase. "
++      "Review the live page, then complete or cancel it yourself.",
++      "Aegis "
++      "已重新读取结账信息，并在最终购买前停止。请核对当前页面后自行完成或取消"
++      "。",
++      "Aegis "
++      "已重新讀取結帳資訊，並在最終購買前停止。請核對目前頁面後自行完成或取消"
++      "。");
++  add("merchant", "Merchant", "商家", "商家");
++  add("product", "Product", "商品", "商品");
++  add("quantity", "Quantity", "数量", "數量");
++  add("unitPrice", "Unit price", "单价", "單價");
++  add("shipping", "Shipping", "运费", "運費");
++  add("tax", "Tax", "税费", "稅費");
++  add("discount", "Discount", "优惠", "優惠");
++  add("total", "Current total", "当前总额", "目前總額");
++  add("delivery", "Delivery", "配送", "配送");
++  add("returns", "Returns", "退货", "退貨");
++  add("sources", "Browser sources", "浏览器来源", "瀏覽器來源");
++}
++
++}  // namespace
++
++AegisAgentUIConfig::AegisAgentUIConfig()
++    : DefaultTopChromeWebUIConfig(content::kChromeUIUntrustedScheme,
++                                  chrome::kChromeUIUntrustedAegisAgentHost) {}
++
++AegisAgentUIConfig::~AegisAgentUIConfig() = default;
++
++bool AegisAgentUIConfig::IsWebUIEnabled(
++    content::BrowserContext* browser_context) {
++  Profile* profile =
++      browser_context ? Profile::FromBrowserContext(browser_context) : nullptr;
++  return base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++         profile && profile->IsRegularProfile();
++}
++
++AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
++    : UntrustedTopChromeWebUIController(web_ui) {
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      web_ui->GetWebContents()->GetBrowserContext(),
++      chrome::kChromeUIUntrustedAegisAgentURL);
++  webui::SetupWebUIDataSource(source, kAegisAgentResources,
++                              IDR_AEGIS_AGENT_AGENT_HTML);
++  AddStrings(source);
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ScriptSrc,
++      "script-src 'self' chrome-untrusted://resources;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::StyleSrc,
++      "style-src 'self' chrome-untrusted://resources;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ImgSrc, "img-src 'self' data:;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc, "connect-src 'none';");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ObjectSrc, "object-src 'none';");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::TrustedTypes,
++      "trusted-types static-types;");
++
++  Profile* profile = Profile::FromWebUI(web_ui);
++  content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(
++                                           profile, /*serve_untrusted=*/true));
++}
++
++AegisAgentUI::~AegisAgentUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(AegisAgentUI)
++
++void AegisAgentUI::BindInterface(
++    mojo::PendingReceiver<aegis_agent::mojom::PageHandlerFactory> receiver) {
++  page_factory_receiver_.reset();
++  page_factory_receiver_.Bind(std::move(receiver));
++}
++
++void AegisAgentUI::CreatePageHandler(
++    mojo::PendingRemote<aegis_agent::mojom::Page> page,
++    mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver) {
++  page_handler_ = std::make_unique<AegisAgentPageHandler>(
++      Profile::FromWebUI(web_ui()),
++      webui::GetBrowserWindowInterface(web_ui()->GetWebContents()),
++      std::move(page), std::move(receiver));
++}
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
+new file mode 100644
+index 0000000000..6a978fe03a
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
+@@ -0,0 +1,48 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_UI_H_
++
++#include <memory>
++
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
++#include "chrome/browser/ui/webui/top_chrome/top_chrome_webui_config.h"
++#include "chrome/browser/ui/webui/top_chrome/untrusted_top_chrome_web_ui_controller.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++
++class AegisAgentPageHandler;
++
++class AegisAgentUI;
++
++class AegisAgentUIConfig : public DefaultTopChromeWebUIConfig<AegisAgentUI> {
++ public:
++  AegisAgentUIConfig();
++  ~AegisAgentUIConfig() override;
++
++  bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
++};
++
++class AegisAgentUI : public UntrustedTopChromeWebUIController,
++                     public aegis_agent::mojom::PageHandlerFactory {
++ public:
++  explicit AegisAgentUI(content::WebUI* web_ui);
++  ~AegisAgentUI() override;
++
++  void BindInterface(
++      mojo::PendingReceiver<aegis_agent::mojom::PageHandlerFactory> receiver);
++
++  static constexpr std::string_view GetWebUIName() { return "AegisAgent"; }
++
++ private:
++  void CreatePageHandler(
++      mojo::PendingRemote<aegis_agent::mojom::Page> page,
++      mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver) override;
++
++  std::unique_ptr<AegisAgentPageHandler> page_handler_;
++  mojo::Receiver<aegis_agent::mojom::PageHandlerFactory> page_factory_receiver_{
++      this};
++
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_UI_H_
+diff --git a/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
+index d14048efd8..2593af3f7c 100644
+--- a/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
+@@ -10,6 +10,7 @@
+ #include "printing/buildflags/buildflags.h"
+ 
+ #if defined(TOOLKIT_VIEWS)
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/browser/ui/webui/data_sharing/data_sharing_ui.h"
+ #include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_ui.h"
+ #include "components/compose/buildflags.h"
+@@ -47,6 +48,7 @@ void RegisterChromeUntrustedWebUIConfigs() {
+ #endif  // defined(TOOLKIT_VIEWS) || BUILDFLAG(ENABLE_PRINT_PREVIEW)
+ 
+ #if defined(TOOLKIT_VIEWS)
++  map.AddUntrustedWebUIConfig(std::make_unique<AegisAgentUIConfig>());
+   map.AddUntrustedWebUIConfig(
+       std::make_unique<lens::LensOverlayUntrustedUIConfig>());
+   map.AddUntrustedWebUIConfig(
+diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
+index d82c74a6ac..ae061b1f53 100644
+--- a/chrome/common/webui_url_constants.h
++++ b/chrome/common/webui_url_constants.h
+@@ -356,6 +356,9 @@ inline constexpr char kChromeUITranslateInternalsHost[] = "translate-internals";
+ inline constexpr char kChromeUIUntrustedComposeHost[] = "compose";
+ inline constexpr char kChromeUIUntrustedComposeUrl[] =
+     "chrome-untrusted://compose/";
++inline constexpr char kChromeUIUntrustedAegisAgentHost[] = "aegis-agent";
++inline constexpr char kChromeUIUntrustedAegisAgentURL[] =
++    "chrome-untrusted://aegis-agent/";
+ inline constexpr char kChromeUIUntrustedDataSharingHost[] = "data-sharing";
+ inline constexpr char kChromeUIUntrustedDataSharingURL[] =
+     "chrome-untrusted://data-sharing/";
+diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
+index 9e2dc91334..f309ed1081 100644
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -2263,6 +2263,7 @@ if (!is_android) {
+       "//chrome/browser/actor:browser_tests",
+       "//chrome/browser/actor:test_support",
+       "//chrome/browser/actor/ui:browser_tests",
++      "//chrome/browser/aegis:browser_tests",
+       "//chrome/browser/affiliations",
+       "//chrome/browser/ai",
+       "//chrome/browser/apps/app_service",
+@@ -9733,6 +9734,7 @@ if (!is_android && !is_chromeos_device) {
+       "//chrome/browser/actor:test_support",
+       "//chrome/browser/actor/ui:interactive_ui_tests",
+       "//chrome/browser/actor/ui/task_list_bubble:interactive_ui_tests",
++      "//chrome/browser/aegis:interactive_ui_tests",
+       "//chrome/browser/apps/app_service",
+       "//chrome/browser/apps/app_service:app_registry_cache_waiter",
+       "//chrome/browser/apps/app_service/app_icon",
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+index 5e9d0920e5..f890f77cfd 100644
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -872,6 +872,10 @@
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [5170],
+   },
++  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis_agent/resources.grd": {
++    "META": {"sizes": {"includes": [10]}},
++    "includes": [5180],
++  },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/whats_new/resources.grd": {
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [5200],
+diff --git a/tools/metrics/histograms/enums.xml b/tools/metrics/histograms/enums.xml
+index d1ad1660dd..ac9ac58de9 100644
+--- a/tools/metrics/histograms/enums.xml
++++ b/tools/metrics/histograms/enums.xml
+@@ -25904,6 +25904,7 @@ Called by update_net_error_codes.py.-->
+   <int value="27" label="Opened from window getting larger"/>
+   <int value="28" label="Opened from Glic"/>
+   <int value="29" label="Opened from Contextual Tasks"/>
++  <int value="30" label="Opened from Aegis Browser Agent entry point"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/ui/side_panel/side_panel_enums.h:SidePanelOpenTrigger) -->
+diff --git a/tools/metrics/histograms/metadata/page/histograms.xml b/tools/metrics/histograms/metadata/page/histograms.xml
+index 74ad88f57c..85efb7ef1d 100644
+--- a/tools/metrics/histograms/metadata/page/histograms.xml
++++ b/tools/metrics/histograms/metadata/page/histograms.xml
+@@ -615,6 +615,7 @@ chromium-metrics-reviews@google.com.
+ 
+ <variants name="WebUIName">
+   <variant name=""/>
++  <variant name=".AegisAgent"/>
+   <variant name=".BookmarksSidePanel"/>
+   <variant name=".CommentsSidePanel"/>
+   <variant name=".Compose"/>
+diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
+index ace4b6a1ce..a5bb0e939d 100644
+--- a/tools/metrics/histograms/metadata/sql/histograms.xml
++++ b/tools/metrics/histograms/metadata/sql/histograms.xml
+@@ -32,6 +32,7 @@ chromium-metrics-reviews@google.com.
+ <variants name="DatabaseTag">
+   <variant name="AccessibilityAnnotator" summary="AccessibilityAnnotator"/>
+   <variant name="Activity" summary="Activity"/>
++  <variant name="AegisAgent" summary="Aegis Browser Agent task storage"/>
+   <variant name="Affiliation" summary="Affiliation"/>
+   <variant name="AggregationService" summary="AggregationService"/>
+   <variant name="AnnotationStorage" summary="AnnotationStorage"/>
+diff --git a/tools/metrics/histograms/metadata/ui/enums.xml b/tools/metrics/histograms/metadata/ui/enums.xml
+index f61c472519..8e79f7b44f 100644
+--- a/tools/metrics/histograms/metadata/ui/enums.xml
++++ b/tools/metrics/histograms/metadata/ui/enums.xml
+@@ -79,6 +79,7 @@ chromium-metrics-reviews@google.com.
+   <int value="31" label="Open link in split view"/>
+   <int value="32" label="Create image with Gemini in Chrome"/>
+   <int value="33" label="Remove from dictionary"/>
++  <int value="34" label="Send page context to Aegis Agent"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:ContextMenuOptionDesktop) -->
+@@ -371,6 +372,7 @@ chromium-metrics-reviews@google.com.
+   <int value="166" label="IDC_CONTENT_CONTEXT_ADD_LINK_TO_READING_LIST"/>
+   <int value="167" label="IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY"/>
+   <int value="168" label="IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS"/>
++  <int value="169" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
+ </enum>
+ 
+ <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:RenderViewContextMenuItem) -->
+diff --git a/tools/metrics/histograms/metadata/ui/histograms.xml b/tools/metrics/histograms/metadata/ui/histograms.xml
+index 611b1d2222..342413fb06 100644
+--- a/tools/metrics/histograms/metadata/ui/histograms.xml
++++ b/tools/metrics/histograms/metadata/ui/histograms.xml
+@@ -130,6 +130,7 @@ chromium-metrics-reviews@google.com.
+ 
+ <variants name="TopChromeWebUIName">
+   <variant name=""/>
++  <variant name=".AegisAgent"/>
+   <variant name=".BookmarksSidePanel"/>
+   <variant name=".CommentsSidePanel"/>
+   <variant name=".CompanionSidePanelUntrusted"/>
+-- 
+2.52.0
+
