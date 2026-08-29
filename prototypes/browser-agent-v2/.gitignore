@@ -1,6 +1,7 @@
 node_modules/
 .venv/
 .venv-browser-use/
+.venv-skyvern/
 *.log
 .env
 .env.*
