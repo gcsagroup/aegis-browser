@@ -34,6 +34,7 @@
 
 ### 修复
 
+- Chromium 后台抓取日志与 vpython wheel/proxy 缓存现在跟随 `CHROMIUM_ROOT` 或 `.chromium-root` 选中的 checkout，不再静默写入已停用的旧 checkout 路径。
 - 修复正常启动看不到 Browser Agent 工具栏/侧栏入口的问题，并为已有 Profile 增加一次性固定迁移。
 - 修复 Agent WebUI 未发送侧栏就绪通知、导致工具栏和设置入口点击后一直等待且界面不出现的问题；新增不绕过生产等待路径的回归测试。
 - Profile 执行仍需显式开启，实验性 WebMCP 与交易能力继续默认关闭。

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-LOG="${HOME}/Projects/GCSA-aegis-chromium-fetch.log"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec >>"$LOG" 2>&1
-echo "==== fetch start $(date -Iseconds) pid=$$ ===="
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
+LOG="${AEGIS_CHROMIUM_FETCH_LOG:-${CHROMIUM_ROOT}-fetch.log}"
+exec >>"$LOG" 2>&1
+echo "==== fetch start $(date -Iseconds) pid=$$ ===="
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/fix-vpython-network.sh"
 configure_git_for_chromium_fetch

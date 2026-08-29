@@ -6,7 +6,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WHEELHOUSE="${AEGIS_WHEELHOUSE:-$HOME/Projects/GCSA-aegis-chromium/.aegis-wheels}"
+if [[ -z "${CHROMIUM_ROOT:-}" ]]; then
+  # shellcheck disable=SC1091
+  source "$SCRIPT_DIR/common.sh"
+fi
+WHEELHOUSE="${AEGIS_WHEELHOUSE:-$CHROMIUM_ROOT/.aegis-wheels}"
+PYPI_PROXY_LOG="${AEGIS_PYPI_PROXY_LOG:-${CHROMIUM_ROOT}-pypi-proxy.log}"
 PROXY_PORT="${AEGIS_PYPI_PROXY_PORT:-4173}"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}/simple/"
 mkdir -p "$WHEELHOUSE/simple"
@@ -247,7 +252,7 @@ ensure_proxy() {
     python3 "$SCRIPT_DIR/local-pypi-proxy.py" \
     --wheelhouse "$WHEELHOUSE" \
     --port "$PROXY_PORT" \
-    >>"$HOME/Projects/GCSA-aegis-chromium-pypi-proxy.log" 2>&1 &
+    >>"$PYPI_PROXY_LOG" 2>&1 &
   local i=0
   while (( i < 30 )); do
     if curl -fsS --max-time 1 "$PROXY_URL" >/dev/null 2>&1; then
@@ -257,7 +262,7 @@ ensure_proxy() {
     sleep 0.2
     i=$((i + 1))
   done
-  echo "WARNING: aegis-pypi-proxy failed to start — see ~/Projects/GCSA-aegis-chromium-pypi-proxy.log"
+  echo "WARNING: aegis-pypi-proxy failed to start — see $PYPI_PROXY_LOG"
   return 1
 }
 
@@ -282,4 +287,3 @@ ensure_proxy || true
 
 echo "VPYTHON_AR_URL=$VPYTHON_AR_URL"
 echo "NO_PROXY=$NO_PROXY"
-
