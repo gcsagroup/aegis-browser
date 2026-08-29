@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "protocolId": "gcsa-script-risk-blind-v1",
+  "mode": "research-only",
+  "evaluationClass": "operator-blinded-local",
+  "independence": {
+    "operatorMayControlCandidateAndEvaluation": true,
+    "independentSampleHolderRequired": false,
+    "independentSealVerified": false,
+    "finalEvaluationEligible": false
+  },
+  "authorization": {
+    "releaseEligible": false,
+    "enforcementAuthorized": false,
+    "pagePathBlockingAuthorized": false
+  },
+  "schemas": {
+    "candidateLock": "gcsa-script-risk-candidate-lock/v1",
+    "predictionEnvelope": "gcsa-script-risk-blind-envelope/v1",
+    "predictionOutput": "gcsa-script-risk-blind-predictions/v1",
+    "labelEnvelope": "gcsa-script-risk-blind-labels/v1",
+    "scoreReport": "gcsa-script-risk-blind-score/v1"
+  },
+  "labels": {
+    "positiveLabel": "mining-capable",
+    "negativeLabel": "benign-control",
+    "classifierPositiveValue": "malicious",
+    "classifierNegativeValue": "benign"
+  },
+  "obfuscationTiers": [
+    "none",
+    "minified",
+    "identifier-renamed",
+    "string-encoded",
+    "control-flow"
+  ],
+  "limits": {
+    "maxJsonBytes": 33554432,
+    "maxSamples": 4096,
+    "maxFilesPerSample": 32,
+    "maxSourceBytesPerFile": 2000000,
+    "maxSourceBytesPerSample": 8000000,
+    "sampleWorkerTimeoutMs": 5000,
+    "workerMaxOldGenerationSizeMb": 192,
+    "workerMaxYoungGenerationSizeMb": 32,
+    "workerStackSizeMb": 4
+  },
+  "privacy": {
+    "predictionInputGroundTruthAllowed": false,
+    "predictionOutputSourceAllowed": false,
+    "predictionOutputGroundTruthAllowed": false
+  },
+  "prohibitedClaims": [
+    "independent-sealed-test",
+    "final-evaluation",
+    "release-authorization",
+    "page-path-blocking-authorization",
+    "general-malicious-javascript-protection"
+  ],
+  "prohibitedActions": [
+    "execute-sample-source",
+    "download-live-malware",
+    "enable-page-path-blocking",
+    "use-final-flag"
+  ]
+}

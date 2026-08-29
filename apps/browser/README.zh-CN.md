@@ -8,9 +8,9 @@ GCSA-aegis Browser 是把隐私与安全能力直接集成到浏览器层和引�
 
 ## 当前状态
 
-- 当前源码列出 **56 个顶层 Chromium 补丁**，另有 **2 个嵌套 V8 补丁**。
-- 现有 Release 清单和运行证据只绑定 **54 个 Chromium 补丁 + 2 个 V8 补丁**；`0055`、`0056` 尚无当前已提交的 Release 身份。
-- non-component `out/AegisRelease/Chromium.app` 只是本地 Release build-tree 输入，**不是**已签名、公证、打包、安装验收或发布的发行版。
+- 当前整合源码列出 **67 个顶层 Chromium 补丁**，另有 **2 个嵌套 V8 补丁**。
+- 此前的 57 补丁诊断清单和 65 补丁 Agent 验收保留为历史快照，均不绑定当前 67 补丁 HEAD，也不能给它授予资格。
+- 仍需重新完成当前整合源码的精确重放、身份绑定构建、受影响运行验收和发布门禁。当前没有正式产品签名、公证、打包、安装验收或已发布的桌面发行版。
 - Android **尚未从当前源码构建**，当前没有可映射到源码的 APK 或 AAB。
 
 因此，仓库目前没有可发布的桌面或 Android 产物。
@@ -30,11 +30,9 @@ GCSA-aegis Browser 是把隐私与安全能力直接集成到浏览器层和引�
 - [Android 构建与验收状态](./docs/android.zh-CN.md)
 - [Play Store 准备草案](./docs/play-store.zh-CN.md)
 
-以下是开发内部文档，刻意不翻译：
-
-- [Overlay 同步规则](./docs/overlay.md)
-- [Chromium 目录布局](./docs/tree-layout.md)
-- [补丁维护说明](./patches/README.md)
+- [Overlay 同步规则](./docs/overlay.zh-CN.md)
+- [Chromium 目录布局](./docs/tree-layout.zh-CN.md)
+- [补丁维护说明](./patches/README.zh-CN.md)
 
 实际操作以 `patches/series`、`patches/v8/series` 和 `scripts/` 下的脚本为准。历史状态记录不能替代当前重放、构建或运行验证。
 
@@ -106,10 +104,10 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 
 当前源码口径：
 
-- 56 个顶层 Chromium 补丁。
+- 列入 Chromium 序列的 67 个顶层补丁。
 - 2 个应用在嵌套 V8 checkout 中的补丁。
-- 现有 Release 身份证据只覆盖 Chromium 0001–0054 和 2 个 V8 补丁。
-- Chromium 0055、0056 仍需新的已提交身份、干净重放、构建、受影响测试和代表性运行证据。
+- 历史身份只覆盖此前的 57 补丁和 65 补丁快照，均不覆盖 0066–0067。
+- 当前 67 补丁 HEAD 必须重新完成精确重放和构建身份绑定，才能形成当前资格结论。
 
 “已列入 series”只表示补丁文件存在，不证明重放、可复现构建、平台验收、签名、打包或发布已经完成。
 
@@ -121,6 +119,7 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 - 针对部分 Canvas、Audio、WebGL、WebGPU 表面的 Blink 指纹扰动；
 - 原生 HTTP(S)、Metalink、Torrent 和 Magnet 下载；
 - 本地启发式摘要，以及用户配置的 OpenAI、Claude（Anthropic）或 Gemini 兼容 API；
+- 浏览器掌控的 Agent：包含 Observe/Ask/Act 模式、有范围约束的书签/URL/页面/下载/工作流/监控工具、精确审批、审计历史、取消，以及最终购买前的强制用户接管；
 - 仅观察的 MinerGuard 信号；以及
 - 默认关闭、需显式启用的 V8 bytecode-shadow 研究路径。
 
@@ -145,7 +144,8 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 5. 代表系统上的全新安装和升级验收；以及
 6. 明确的发布决定。
 
-现有 Release build-tree 不满足这些条件，也没有覆盖 0055/0056。
+当前本地 diagnostic build-tree 已覆盖 0055/0056/0057，但不满足上述条件。完整补丁覆盖不会使其成为 RC 或发行版。
+本地 RC 已满足其中的干净重放、身份和受影响测试要求，但尚未满足产品身份、受信任签名、公证、已安装分发包或发行授权门禁。
 
 ## Android
 

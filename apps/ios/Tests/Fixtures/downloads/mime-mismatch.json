@@ -1,0 +1,6 @@
+{
+  "fixture": "mime-mismatch",
+  "declared_as": "application/zip",
+  "actual_content": "json",
+  "expected_result": "warn_and_block_open"
+}

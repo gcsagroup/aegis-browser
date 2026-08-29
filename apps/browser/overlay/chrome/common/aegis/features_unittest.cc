@@ -78,5 +78,14 @@ TEST(AegisFeaturesTest, BytecodeShadowIsDefaultOffAndRequiresMasterGate) {
   }
 }
 
+TEST(AegisFeaturesTest, BrowserAgentStableSurfaceDefaultsOn) {
+  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgent));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgentPageActions));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgentBrowserTools));
+  EXPECT_TRUE(base::FeatureList::IsEnabled(kAegisAgentWorkflows));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(kAegisAgentWebMcp));
+  EXPECT_FALSE(base::FeatureList::IsEnabled(kAegisAgentTransactionPilot));
+}
+
 }  // namespace
 }  // namespace aegis::features

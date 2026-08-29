@@ -6,10 +6,9 @@ GCSA-aegis is a Chromium fork. The browser, network, storage, Blink, and selecte
 
 ## Status boundary
 
-- Current source: **56 top-level Chromium patches + 2 nested V8 patches**.
-- Existing Release identity: **54 Chromium patches + 2 V8 patches**.
-- Chromium patches `0055` and `0056` are not covered by a current committed Release manifest.
-- The existing non-component Release build-tree is local evidence, not a signed, notarized, installed, or published release.
+- Current combined source: **67 top-level Chromium patches + 2 nested V8 patches**.
+- The 57-patch diagnostic manifest and 65-patch Agent acceptance are historical snapshots; neither binds or qualifies the 67-patch head.
+- The combined source still needs a fresh exact replay, identity-bound build, and affected runtime acceptance. There is no product-signed, notarized, installed, or published release.
 - Android has not been built from the current source.
 
 ## Product shape
@@ -50,22 +49,18 @@ GCSA-aegis is a Chromium fork. The browser, network, storage, Blink, and selecte
 | Fingerprint protection | Blink Canvas, Audio, WebGL, and WebGPU hooks | Reduces selected stable surfaces; does not prevent all fingerprinting |
 | Downloads | Chromium download UI plus isolated torrent service | HTTPS tracker support and release qualification remain gated |
 | Page summaries | Heuristic path and user-configured compatible APIs | Remote use requires redaction and confirmation; Android page capture is unavailable |
+| Browser Agent | Policy broker, fixed tool registry, Actor/side panel/WebUI, task store | Model cannot expand scope or bypass approvals; final purchase requires user takeover |
 | MinerGuard | Browser/renderer signals and reporting | Observe-only; does not block execution or traffic |
-| Bytecode shadow | Disabled-by-default nested V8 instrumentation | Research-only; existing Release identity covers the two V8 patches but not latest Chromium 0055/0056 |
+| Bytecode shadow | Disabled-by-default nested V8 instrumentation | Research-only; historical identities cover both V8 patches, but neither qualifies the current 67-patch head or distribution |
 | Local automation | Loopback CDP controls and document authorization | Selected desktop paths have local evidence; signed-install and Android evidence are separate |
 
 ## Patch delivery model
 
-`apps/browser/patches/series` orders the 56 Chromium patches. `apps/browser/patches/v8/series` orders the 2 patches applied in the nested V8 checkout. The replay script validates both bases before applying them.
+`apps/browser/patches/series` orders the 67 Chromium patches. `apps/browser/patches/v8/series` orders the 2 patches applied in the nested V8 checkout. The replay script validates both bases before applying them.
 
 `overlay/` records expected integration source for development and review. It is not independently applied and cannot replace the patch series. A source change must be exported to an ordered patch, replayed on the pinned base, built, and tested.
 
-The latest source and the latest qualified Release identity are intentionally distinguished:
-
-- Chromium 0001–0054 plus V8 0001–0002 have existing identity-bound Release evidence.
-- Chromium 0055 adds compatible model APIs and credential isolation.
-- Chromium 0056 adds the exact-document site-summary workflow.
-- 0055/0056 need a new committed repository identity and a fresh Release evidence chain.
+Patches 0057–0065 implement and harden Browser Agent v1. Patch 0066 tailors settings and update-status surfaces, and 0067 adds GCSA cross-platform branding. Historical 57-patch and 65-patch identities do not cover the combined 67-patch head; a fresh replay and build identity are required.
 
 Being listed in a series proves only ordering and presence. It does not prove a clean replay, build freshness, signing, packaging, installation acceptance, Android support, or release approval.
 
@@ -83,7 +78,7 @@ Video extraction, media conversion, FFmpeg, and a bundled download extension are
 
 ## Platform and release boundaries
 
-The non-component macOS Release build-tree is an input to release qualification, not the result. Publication additionally requires a manifest for the exact current commit and both patch series, affected native and runtime tests, product identity, signing, notarization, packaging, and install acceptance.
+The non-component macOS Release build-tree is an input to release qualification, not the result. Full diagnostic patch coverage does not make it an RC. Publication additionally requires a clean committed root identity and trusted build evidence for both patch series, affected native and runtime tests, product identity, signing, notarization, packaging, install acceptance, and a passed release gate.
 
 Android wiring exists in source, but there is no current-source APK or AAB. A supported x86-64 Linux build, device acceptance, Android page-summary behavior, and Play compliance remain open gates.
 

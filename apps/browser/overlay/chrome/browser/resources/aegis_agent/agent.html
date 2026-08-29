@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light dark">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aegis Agent</title>
+    <link rel="stylesheet" href="agent.css">
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <div class="mark" aria-hidden="true">A</div>
+        <div class="hero-copy">
+          <h1 id="title"></h1>
+          <p id="subtitle"></p>
+        </div>
+        <span id="status" class="status" role="status"></span>
+      </header>
+
+      <section id="disabled-banner" class="notice" hidden></section>
+      <section id="target-card" class="target-card">
+        <span id="target-label" class="eyebrow"></span>
+        <strong id="target-value"></strong>
+        <small id="invocation-context" hidden></small>
+      </section>
+
+      <section class="composer" aria-labelledby="goal-label">
+        <div id="mode-group" class="segmented" role="radiogroup"></div>
+        <label id="goal-label" for="goal"></label>
+        <textarea id="goal" rows="4" maxlength="4096"></textarea>
+        <label id="origins-label" for="origins"></label>
+        <textarea id="origins" rows="3" maxlength="40960" spellcheck="false"></textarea>
+        <div class="workflow-row">
+          <label id="workflow-label" for="workflow"></label>
+          <select id="workflow"></select>
+        </div>
+        <div id="quick-actions" class="quick-actions"></div>
+        <button id="plan-button" class="primary" type="button"></button>
+      </section>
+
+      <section id="plan-card" class="card" hidden>
+        <div class="section-heading">
+          <h2 id="scope-title"></h2>
+          <span id="risk-badge" class="risk"></span>
+        </div>
+        <p id="plan-summary"></p>
+        <dl id="scope-grid" class="scope-grid"></dl>
+        <ol id="plan-steps" class="steps"></ol>
+        <button id="start-button" class="primary" type="button"></button>
+      </section>
+
+      <section id="approval-card" class="card approval" hidden>
+        <h2 id="approval-title"></h2>
+        <p id="approval-detail"></p>
+        <dl id="checkout-summary" class="scope-grid checkout-summary" hidden></dl>
+        <div class="exact-action">
+          <span id="approval-arguments-label"></span>
+          <pre id="approval-arguments"></pre>
+          <span id="approval-fingerprint-label"></span>
+          <code id="approval-fingerprint"></code>
+        </div>
+        <p id="takeover-notice" class="takeover-notice" hidden></p>
+        <code id="approval-id"></code>
+        <button id="approve-button" class="danger" type="button"></button>
+      </section>
+
+      <nav class="controls" aria-label="Task controls">
+        <button id="pause-button" type="button"></button>
+        <button id="resume-button" type="button"></button>
+        <button id="takeover-button" type="button"></button>
+        <button id="finish-takeover-button" type="button"></button>
+        <button id="undo-button" type="button"></button>
+        <button id="stop-button" class="quiet-danger" type="button"></button>
+      </nav>
+
+      <section class="card">
+        <h2 id="timeline-title"></h2>
+        <p id="empty-task" class="empty"></p>
+        <ol id="timeline" class="timeline" aria-live="polite"></ol>
+      </section>
+
+      <section class="card">
+        <h2 id="monitors-title"></h2>
+        <ul id="monitors" class="monitors"></ul>
+      </section>
+
+      <p id="error" class="error" role="alert"></p>
+    </main>
+    <script type="module" src="agent.js"></script>
+  </body>
+</html>

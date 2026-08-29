@@ -1,0 +1,29 @@
+// Copyright 2026 GCSA Aegis Authors
+// Use of this source code is governed by a BSD-style license.
+
+// 使用品牌色的 GCSA 产品标识新版表示。
+CANVAS_DIMENSIONS, 24,
+PATH_COLOR_ARGB, 0xFF, 0x13, 0xB9, 0xD5,
+CIRCLE, 5, 11.5, 1.25,
+CIRCLE, 19, 11.5, 1.25,
+CIRCLE, 12, 20, 1.25,
+NEW_PATH,
+STROKE, 1.65,
+MOVE_TO, 5.5, 10,
+V_LINE_TO, 6.3,
+CUBIC_TO, 7.8, 5.9, 10, 5.1, 12, 4.4,
+CUBIC_TO, 14, 5.1, 16.2, 5.9, 18.5, 6.3,
+V_LINE_TO, 10,
+MOVE_TO, 5.6, 13.1,
+CUBIC_TO, 6.5, 16.2, 8.8, 18.3, 10.7, 19,
+MOVE_TO, 13.3, 19,
+CUBIC_TO, 15.2, 18.3, 17.5, 16.2, 18.4, 13.1,
+MOVE_TO, 5.8, 12.2,
+CUBIC_TO, 6.8, 13.1, 8, 13.7, 9.4, 14,
+MOVE_TO, 15.5, 9.1,
+CUBIC_TO, 14.6, 8.2, 13.4, 7.8, 12.1, 7.8,
+CUBIC_TO, 9.7, 7.8, 7.9, 9.6, 7.9, 12,
+CUBIC_TO, 7.9, 14.4, 9.7, 16.2, 12.1, 16.2,
+CUBIC_TO, 14.4, 16.2, 15.9, 14.8, 16.2, 12.7,
+MOVE_TO, 12.2, 11.5,
+H_LINE_TO, 19

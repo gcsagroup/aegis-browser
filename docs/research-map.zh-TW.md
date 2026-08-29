@@ -43,13 +43,14 @@
 - 僅 Node AST 分析器使用 TypeScript parser，限制大小和複雜度，只輸出計數與原因碼，不輸出原始碼、字面量、URL 或 payload。它不在頁面執行路徑中。
 - 有界行為與來源函式只處理呼叫方提供的分類事件，不是線上瀏覽器資訊流系統。
 - MinerGuard 組合部分瀏覽器側 CPU 估算、Worker/Wasm/WebGPU/共享記憶體訊號、WebSocket 觀察和強端點 token；只記錄觀察結果，不停止腳本、Worker 或連線。
-- 目前研究語料由合成 fixture 構成。內容摘要只校驗完整性，不證明獨立封存；`sealIsolationVerified=false`、`finalEvaluationEligible=false`，最終評測入口保持閉鎖。
+- Phase 2 固定協議下的正式研究語料仍由合成 fixture 構成。內容摘要只校驗完整性，不證明獨立封存；`sealIsolationVerified=false`、`finalEvaluationEligible=false`，最終評測入口保持閉鎖。
+- Phase 3 另行使用 `operator-blinded-local` 協議評測了 13 個公開原始碼樣本：3 個標記為 `mining-capable`，10 個為良性對照，候選器命中 3 個正樣本中的 1 個，recall 為 `0.333333`。該 pilot 沒有獨立持有方或 sealed test，不是最終評測。
 
 ## 證據與發行門禁
 
 1. 研究指標、產品執行證據和發行資格必須分開。
 2. 偵測器影響頁面行為前，必須補齊獨立良惡性標註、真實網站、混淆測試、誤報測量、效能預算和破站測試。
-3. 僅觀察訊號、合成 fixture 結果或聲明完整性檢查都不能寫成安全授權。
-4. 受影響門禁必須在同一已提交原始碼和帶身分清單的產物上重跑。現場原始碼為 56 個頂層 Chromium 補丁加 2 個巢狀 V8 補丁，而最新身分綁定 build-tree 只涵蓋 54 加 2。
+3. 僅觀察訊號、合成 fixture 結果、小型 operator-blinded 公開 pilot 或聲明完整性檢查都不能寫成安全授權。
+4. 受影響門禁必須在同一已提交原始碼和帶身分清單的產物上重跑。目前原始碼包含 67 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁；先前的 57 補丁診斷清單和 65 補丁 Agent 候選僅為歷史證據，均不綁定目前 HEAD，也不能為它授予資格。
 
 研究專案對正式環境阻斷和「通用惡意 JavaScript 防護」聲明仍為 **No-Go**。

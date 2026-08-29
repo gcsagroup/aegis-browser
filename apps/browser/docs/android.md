@@ -8,7 +8,7 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 - Android uses the same pinned Chromium `151.0.7922.77` base as desktop.
 - The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
-- Current source contains 56 top-level Chromium patches and 2 nested V8 patches, but **no Android build has been produced from this current source**.
+- Current source contains 67 top-level Chromium patches and 2 nested V8 patches, but **no Android build has been produced from this current source**. Historical macOS evidence does not bind or qualify an Android artifact.
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
 - The Android WebUI handler cannot currently obtain a normal web-page tab. Page summary must therefore be shown as unavailable on Android.
 
@@ -51,7 +51,7 @@ An AAB path and Play signing identity must be defined and verified before store 
 
 ## Acceptance criteria
 
-1. Replay all 56 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
+1. Replay all 67 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
 2. Build successfully and create a manifest that binds the repository commit, Chromium commit, both patch-series identities, GN arguments, and APK/AAB SHA-256.
 3. Verify final package ID, version, launcher name, icons, permissions, native libraries, and signing structure.
 4. Uninstall any old build, install the current APK on a representative device, complete First Run, open normal pages and `chrome://aegis`, and exercise core protections.

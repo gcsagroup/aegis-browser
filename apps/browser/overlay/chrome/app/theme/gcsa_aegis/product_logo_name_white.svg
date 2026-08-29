@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 97 22">
+  <g transform="translate(-3.9 -3.5) scale(.028)" fill="none" stroke="#FFFFFF">
+    <path d="M230 429V273C329 252 422 220 512 187C602 220 695 252 794 273V429" stroke-width="52"/>
+    <path d="M239 574C277 681 361 760 456 790M568 790C663 760 747 681 785 574" stroke-width="52"/>
+    <path d="M257 506C287 544 329 567 379 579" stroke-width="43" stroke-linecap="round"/>
+    <path d="M648 365C615 332 568 321 516 321C428 321 357 392 357 480C357 568 428 639 516 639C604 639 666 581 674 488" stroke-width="54"/>
+    <path d="M519 462H773V520H506Z" fill="#FFFFFF" stroke="none"/>
+    <g fill="#FFFFFF" stroke="none">
+      <circle cx="226" cy="490" r="47"/><circle cx="810" cy="490" r="47"/><circle cx="512" cy="800" r="47"/>
+    </g>
+  </g>
+  <text x="22" y="15.8" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" letter-spacing="-.25">GCSA Aegis</text>
+</svg>

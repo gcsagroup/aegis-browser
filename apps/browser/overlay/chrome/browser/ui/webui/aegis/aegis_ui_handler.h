@@ -53,6 +53,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   base::DictValue BuildStatus();
   void HandleGetStatus(const base::ListValue& args);
   void HandleSetModuleEnabled(const base::ListValue& args);
+  void HandleOpenBrowserAgent(const base::ListValue& args);
   void HandleUpdateFilterLists(const base::ListValue& args);
   void HandleSummarizeActiveTab(const base::ListValue& args);
   void HandleCompletePreparedSummary(const base::ListValue& args);

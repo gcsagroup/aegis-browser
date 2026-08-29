@@ -23,6 +23,17 @@ BASE_DECLARE_FEATURE(kAegisBounceTracking);
 BASE_DECLARE_FEATURE(kAegisPolicyWorker);
 BASE_DECLARE_FEATURE(kAegisPrivacyAi);
 BASE_DECLARE_FEATURE(kAegisAiControl);
+// The accepted Browser Agent surface is available in regular desktop profiles
+// by default. The profile preference remains opt-in, so exposing the entry does
+// not start model calls, tools, or persisted monitors.
+BASE_DECLARE_FEATURE(kAegisAgent);
+// Accepted capabilities ship with the surface. Experimental WebMCP and the
+// transaction pilot remain independent kill switches and default off.
+BASE_DECLARE_FEATURE(kAegisAgentPageActions);
+BASE_DECLARE_FEATURE(kAegisAgentBrowserTools);
+BASE_DECLARE_FEATURE(kAegisAgentWebMcp);
+BASE_DECLARE_FEATURE(kAegisAgentWorkflows);
+BASE_DECLARE_FEATURE(kAegisAgentTransactionPilot);
 
 // 统一计算可发送给 Renderer 的有效开关，避免 UI 与 Blink 状态不一致。
 bool IsFingerprintGuardGloballyEnabled(bool pref_enabled);

@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "mode": "research-only",
+  "datasetId": "gcsa-miner-capability-public-pilot-v1",
+  "createdAt": "2026-08-27T18:07:52.000Z",
+  "task": {
+    "target": "browser-mining-capability",
+    "positiveLabel": "mining-capable",
+    "negativeLabel": "benign-control",
+    "publiclyInspectable": true,
+    "independentLabelReview": false,
+    "sealed": false,
+    "contextualMaliciousnessInferred": false,
+    "description": "公开开源源码的挖矿能力工程 pilot；不判断部署时是否获得用户授权，也不代表恶意 JavaScript 盲测。"
+  },
+  "acquisition": {
+    "transport": "https-pinned-github-raw",
+    "allowedHost": "raw.githubusercontent.com",
+    "sourceExecution": false,
+    "maxFileBytes": 2000000,
+    "maxTotalBytes": 4000000,
+    "localOnly": true,
+    "redistributeWithProduct": false
+  },
+  "sources": {
+    "jquery": {
+      "name": "jQuery",
+      "repository": "jquery/jquery",
+      "revision": "71c0dd14927c41d1aab5ce5ef2687d7808a4186b",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/jquery/jquery/tree/71c0dd14927c41d1aab5ce5ef2687d7808a4186b",
+      "license": {"spdx": "MIT", "url": "https://github.com/jquery/jquery/blob/71c0dd14927c41d1aab5ce5ef2687d7808a4186b/LICENSE.txt"}
+    },
+    "lodash": {
+      "name": "Lodash",
+      "repository": "lodash/lodash",
+      "revision": "a666ba591064c8011988275790ad7d625279f09c",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/lodash/lodash/tree/a666ba591064c8011988275790ad7d625279f09c",
+      "license": {"spdx": "MIT", "url": "https://github.com/lodash/lodash/blob/a666ba591064c8011988275790ad7d625279f09c/LICENSE"}
+    },
+    "crypto-js": {
+      "name": "CryptoJS",
+      "repository": "brix/crypto-js",
+      "revision": "ac34a5a584337b33a2e567f50d96819a96ac44bf",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/brix/crypto-js/tree/ac34a5a584337b33a2e567f50d96819a96ac44bf",
+      "license": {"spdx": "MIT", "url": "https://github.com/brix/crypto-js/blob/ac34a5a584337b33a2e567f50d96819a96ac44bf/LICENSE"}
+    },
+    "wasm-feature-detect": {
+      "name": "wasm-feature-detect",
+      "repository": "GoogleChromeLabs/wasm-feature-detect",
+      "revision": "4fc17f1b98620822a5d62e36101f2bcad345025f",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/GoogleChromeLabs/wasm-feature-detect/tree/4fc17f1b98620822a5d62e36101f2bcad345025f",
+      "license": {"spdx": "Apache-2.0", "url": "https://github.com/GoogleChromeLabs/wasm-feature-detect/blob/4fc17f1b98620822a5d62e36101f2bcad345025f/LICENSE"}
+    },
+    "three-js": {
+      "name": "three.js",
+      "repository": "mrdoob/three.js",
+      "revision": "ae46171bedd9885f1019637fee6a86d2380eac01",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/mrdoob/three.js/tree/ae46171bedd9885f1019637fee6a86d2380eac01",
+      "license": {"spdx": "MIT", "url": "https://github.com/mrdoob/three.js/blob/ae46171bedd9885f1019637fee6a86d2380eac01/LICENSE"}
+    },
+    "hls-js": {
+      "name": "hls.js",
+      "repository": "video-dev/hls.js",
+      "revision": "d80bc2f880532e154435b427984eba564b548088",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/video-dev/hls.js/tree/d80bc2f880532e154435b427984eba564b548088",
+      "license": {"spdx": "Apache-2.0", "url": "https://github.com/video-dev/hls.js/blob/d80bc2f880532e154435b427984eba564b548088/LICENSE"}
+    },
+    "marked": {
+      "name": "Marked",
+      "repository": "markedjs/marked",
+      "revision": "53cb13f13fc13d433269248c5caa255ffa1361ee",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/markedjs/marked/tree/53cb13f13fc13d433269248c5caa255ffa1361ee",
+      "license": {"spdx": "MIT", "url": "https://github.com/markedjs/marked/blob/53cb13f13fc13d433269248c5caa255ffa1361ee/LICENSE"}
+    },
+    "simple-websocket": {
+      "name": "simple-websocket",
+      "repository": "feross/simple-websocket",
+      "revision": "f7a15f4e050863a88761b5bfaea2c9739f0f5507",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/feross/simple-websocket/tree/f7a15f4e050863a88761b5bfaea2c9739f0f5507",
+      "license": {"spdx": "MIT", "url": "https://github.com/feross/simple-websocket/blob/f7a15f4e050863a88761b5bfaea2c9739f0f5507/LICENSE"}
+    },
+    "ffmpeg-wasm": {
+      "name": "ffmpeg.wasm",
+      "repository": "ffmpegwasm/ffmpeg.wasm",
+      "revision": "f876f907c7e9b9bf51d4ed0b913a855a63ae63fc",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/ffmpegwasm/ffmpeg.wasm/tree/f876f907c7e9b9bf51d4ed0b913a855a63ae63fc",
+      "license": {"spdx": "MIT", "url": "https://github.com/ffmpegwasm/ffmpeg.wasm/blob/f876f907c7e9b9bf51d4ed0b913a855a63ae63fc/LICENSE"}
+    },
+    "comlink": {
+      "name": "Comlink",
+      "repository": "GoogleChromeLabs/comlink",
+      "revision": "114a4a6448a855a613f1cb9a7c89290606c003cf",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/GoogleChromeLabs/comlink/tree/114a4a6448a855a613f1cb9a7c89290606c003cf",
+      "license": {"spdx": "Apache-2.0", "url": "https://github.com/GoogleChromeLabs/comlink/blob/114a4a6448a855a613f1cb9a7c89290606c003cf/LICENSE"}
+    },
+    "browser-cryptominer": {
+      "name": "browser-cryptominer",
+      "repository": "craciuncezar/browser-cryptominer",
+      "revision": "81f2fc15b6de590ee3a817ba09916e87fe4b430f",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/craciuncezar/browser-cryptominer/tree/81f2fc15b6de590ee3a817ba09916e87fe4b430f",
+      "license": {"spdx": "Apache-2.0", "url": "https://github.com/craciuncezar/browser-cryptominer/blob/81f2fc15b6de590ee3a817ba09916e87fe4b430f/LICENSE"}
+    },
+    "luckyhash": {
+      "name": "LuckyHash",
+      "repository": "dungvn3000/luckyhash",
+      "revision": "d80ef55a16fde59ecb95ad9d5d0a79df291ae56d",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/dungvn3000/luckyhash/tree/d80ef55a16fde59ecb95ad9d5d0a79df291ae56d",
+      "license": {"spdx": "Apache-2.0", "url": "https://github.com/dungvn3000/luckyhash/blob/d80ef55a16fde59ecb95ad9d5d0a79df291ae56d/LICENSE"}
+    },
+    "deepminer": {
+      "name": "deepMiner",
+      "repository": "deepwn/deepMiner",
+      "revision": "4ad4a16066047848b06a1eb0e0da29fc847ecf18",
+      "retrievedAt": "2026-08-27T18:07:52.000Z",
+      "purposeEvidenceUrl": "https://github.com/deepwn/deepMiner/tree/4ad4a16066047848b06a1eb0e0da29fc847ecf18",
+      "license": {"spdx": "MIT", "url": "https://github.com/deepwn/deepMiner/blob/4ad4a16066047848b06a1eb0e0da29fc847ecf18/LICENSE"}
+    }
+  },
+  "samples": [
+    {
+      "sampleId": "benign-jquery-network",
+      "sourceRef": "jquery",
+      "familyGroup": "jquery",
+      "label": "benign-control",
+      "category": "network-library",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "src/jquery.js", "byteLength": 978, "sha256": "4f2a86a4349c5a11032ae491316bbdb68ea9a0dc4ec57a3dc9146a726b02b3a9"},
+        {"remotePath": "src/ajax.js", "byteLength": 23655, "sha256": "450efe0aa5fc4658e426a7cdb850da6cee3b8956fd1a8062fad33e66cb8c9415"},
+        {"remotePath": "src/ajax/xhr.js", "byteLength": 2814, "sha256": "ef7935c399baa869280ddcc013fe9e46cd1c7929139660c2b1984746bca4a836"}
+      ]
+    },
+    {
+      "sampleId": "benign-lodash-minified",
+      "sourceRef": "lodash",
+      "familyGroup": "lodash",
+      "label": "benign-control",
+      "category": "utility-minified",
+      "obfuscationTier": "minified",
+      "files": [{"remotePath": "dist/lodash.min.js", "byteLength": 73302, "sha256": "85674f5fe0380341034b3967c1fd2c5e20a77d20e7555428e99e0e4ee699dd4d"}]
+    },
+    {
+      "sampleId": "benign-crypto-js-sha256",
+      "sourceRef": "crypto-js",
+      "familyGroup": "crypto-js",
+      "label": "benign-control",
+      "category": "cryptography-hash",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "src/core.js", "byteLength": 23399, "sha256": "86a5dfcc9fa664b2297ef9db9e7b6a9a0be43749c3ba8f9a1d8d8e87ad638916"},
+        {"remotePath": "src/sha256.js", "byteLength": 5206, "sha256": "2e0ae5b2734e6aa83a4e11f1143d66b1ef29a2a42e8baaae69dd3fff13810b85"}
+      ]
+    },
+    {
+      "sampleId": "benign-wasm-feature-detect",
+      "sourceRef": "wasm-feature-detect",
+      "familyGroup": "wasm-feature-detect",
+      "label": "benign-control",
+      "category": "wasm-feature-detection",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "src/index.js", "byteLength": 705, "sha256": "21bb4b1d68144ca91a66d79cc272a3f2f7c8b7ecd8a27c3c70b572331c4826c4"},
+        {"remotePath": "src/detectors/threads/index.js", "byteLength": 1027, "sha256": "951ae7a6b65265259b73d409a5119fdf2e51a4b9021667076fc4ad12b06dbc2e"},
+        {"remotePath": "src/detectors/streaming-compilation/index.js", "byteLength": 843, "sha256": "a16883546949123aea60b75bd272186447f3aa61d5a8115eb5a379ee785979e2"}
+      ]
+    },
+    {
+      "sampleId": "benign-three-module",
+      "sourceRef": "three-js",
+      "familyGroup": "three-js",
+      "label": "benign-control",
+      "category": "graphics",
+      "obfuscationTier": "none",
+      "files": [{"remotePath": "build/three.module.js", "byteLength": 660441, "sha256": "e2dc60fc4de968cb9d729993a48ca8569b517f54819839d711dd189d758d3e0d"}]
+    },
+    {
+      "sampleId": "benign-hls-demo",
+      "sourceRef": "hls-js",
+      "familyGroup": "hls-js",
+      "label": "benign-control",
+      "category": "media-streaming",
+      "obfuscationTier": "none",
+      "files": [{"remotePath": "demo/main.js", "byteLength": 54938, "sha256": "09a802179b0e63e2779726242b339c388d1530c71c3099465a716085e65702ca"}]
+    },
+    {
+      "sampleId": "benign-marked-worker",
+      "sourceRef": "marked",
+      "familyGroup": "marked",
+      "label": "benign-control",
+      "category": "worker-markdown",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "docs/demo/demo.js", "byteLength": 15033, "sha256": "384c47ec5a9a0d9eae3dfe551aa70288beb6fcfaac40371a11c2fb58c3f5d057"},
+        {"remotePath": "docs/demo/worker.js", "byteLength": 4143, "sha256": "2c2d0981cf4e21f8e446b5b4d168b51b42a299a241b0563ee2095d11166f50de"}
+      ]
+    },
+    {
+      "sampleId": "benign-simple-websocket",
+      "sourceRef": "simple-websocket",
+      "familyGroup": "simple-websocket",
+      "label": "benign-control",
+      "category": "websocket-client",
+      "obfuscationTier": "none",
+      "files": [{"remotePath": "index.js", "byteLength": 6769, "sha256": "f32d234436d31208f69616149b5c02f8e26be202b21c9b0c9cb4a338a7556d92"}]
+    },
+    {
+      "sampleId": "benign-ffmpeg-wasm",
+      "sourceRef": "ffmpeg-wasm",
+      "familyGroup": "ffmpeg-wasm",
+      "label": "benign-control",
+      "category": "media-wasm-worker",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "packages/ffmpeg/src/classes.ts", "byteLength": 11848, "sha256": "440ff39f251e372304c2491967f764eb039324de799be0810aff9e131991ab70"},
+        {"remotePath": "packages/ffmpeg/src/worker.ts", "byteLength": 6128, "sha256": "902f816be058637efb39fb0cfbdada734db4bf5d3d45d50b775ce94b02bf831a"}
+      ]
+    },
+    {
+      "sampleId": "benign-comlink",
+      "sourceRef": "comlink",
+      "familyGroup": "comlink",
+      "label": "benign-control",
+      "category": "worker-rpc",
+      "obfuscationTier": "none",
+      "files": [{"remotePath": "src/comlink.ts", "byteLength": 20187, "sha256": "7339b43bfbfecb8e3284a5d5fcb5042808680c660f6430e5a513a48e27e7acf4"}]
+    },
+    {
+      "sampleId": "miner-browser-cryptominer",
+      "sourceRef": "browser-cryptominer",
+      "familyGroup": "browser-cryptominer",
+      "label": "mining-capable",
+      "category": "wasm-worker-pool-miner",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "src/index.ts", "byteLength": 8478, "sha256": "cd91b082248330fbf26c61f5b5b9a82d7cd1ac311b6e1274a81369f885c0d44c"},
+        {"remotePath": "public/cn.js", "byteLength": 22451, "sha256": "1e17ad4146184bedf96e89edcc633eb723a2f7d87786d48fabca77e822ba84cc"},
+        {"remotePath": "public/worker.js", "byteLength": 2664, "sha256": "502fa77d89c0fe3fd935870fbe9a25ac1ef54539d0a99d884d48bbf135d99d4f"}
+      ]
+    },
+    {
+      "sampleId": "miner-luckyhash",
+      "sourceRef": "luckyhash",
+      "familyGroup": "luckyhash",
+      "label": "mining-capable",
+      "category": "webgpu-worker-stratum-miner",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "miner.js", "byteLength": 53832, "sha256": "e393383208f34ce173bd8742a4039e270a19c26f35e640128370e15c4a5d3776"},
+        {"remotePath": "worker.js", "byteLength": 7932, "sha256": "bcaf75b18cd9a2dd2759196826aa70d9f312d05d009971addcf12cbf3e53bbd5"}
+      ]
+    },
+    {
+      "sampleId": "miner-deepminer",
+      "sourceRef": "deepminer",
+      "familyGroup": "deepminer",
+      "label": "mining-capable",
+      "category": "wasm-worker-pool-miner",
+      "obfuscationTier": "none",
+      "files": [
+        {"remotePath": "web/lib/deepMiner.js", "byteLength": 19104, "sha256": "67ea1c2bba1c0d338fff7666e6e00e7ccb639e8caf07079373d71838e32bab1d"},
+        {"remotePath": "web/lib/worker.js", "byteLength": 5714, "sha256": "35720bfa78d370b369d13c750e117594ff3cadb9b272c302c1cde2e14e668048"},
+        {"remotePath": "web/lib/cryptonight.js", "byteLength": 135604, "sha256": "0a88800ff85fdcfd3d7cc126d7c45877101d11ca7066eb43c493448b8dc946b6"}
+      ]
+    }
+  ]
+}

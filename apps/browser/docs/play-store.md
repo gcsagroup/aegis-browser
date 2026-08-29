@@ -44,7 +44,7 @@ The final Data Safety form must be based on the same APK/AAB, version configurat
 ## Publication gates
 
 1. Build a current-source Release APK/AAB in a clean, supported x86-64 Linux environment.
-2. Bind the repository commit, Chromium commit, 56 Chromium patches, 2 nested V8 patches, GN arguments, package identity, and artifact hashes in a verified manifest.
+2. Bind the repository commit, Chromium commit, 67 Chromium patches, 2 nested V8 patches, GN arguments, package identity, and artifact hashes in a verified Android manifest.
 3. Pass device tests for First Run, normal browsing, `chrome://aegis`, core protections, lifecycle, storage, upgrades, and network behavior.
 4. Replace default Chromium icons and audit all names, screenshots, descriptions, and restricted brand assets.
 5. Complete permission, outbound-network, data-storage, logging, native-library, third-party-license, and privacy-policy reviews.

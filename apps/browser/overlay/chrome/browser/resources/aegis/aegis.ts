@@ -48,6 +48,8 @@ interface AegisStatus {
   aiControlAddress?: string;
   aiControlLoopbackOnly?: boolean;
   aiControlClients?: number;
+  browserAgentAvailable?: boolean;
+  browserAgentEnabled?: boolean;
   modelProvider?: string;
   modelBaseUrl?: string;
   modelName?: string;
@@ -119,10 +121,10 @@ interface ModelListResult {
   models?: string[];
 }
 
-type ModuleName = 'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|
-    'minerGuard'|
+type ModuleName =
+    'trackerBlocking'|'phishInterstitial'|'fingerprintGuard'|'minerGuard'|
     'filterListAutoUpdate'|'linkSanitize'|'cookieJanitor'|'cnameUncloak'|
-    'bounceTracking'|'policyWorker'|'privacyAi'|'aiControl';
+    'bounceTracking'|'policyWorker'|'privacyAi'|'aiControl'|'browserAgent';
 
 const CUSTOM_MODEL_VALUE = '__custom_model__';
 const MODEL_ENDPOINTS: Record<ModelApiFormat, string> = {
@@ -131,7 +133,14 @@ const MODEL_ENDPOINTS: Record<ModelApiFormat, string> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
 };
 const SENSITIVE_HOST_LABEL_MARKERS = [
-  'bank', 'paypal', 'alipay', 'gov', 'irs', 'healthcare', 'hospital', 'clinic',
+  'bank',
+  'paypal',
+  'alipay',
+  'gov',
+  'irs',
+  'healthcare',
+  'hospital',
+  'clinic',
 ];
 const modelDrafts = new Map<string, ModelDraft>();
 const lastModelEndpoints = new Map<ModelApiFormat, string>();
@@ -276,7 +285,7 @@ function formatMeta(status: AegisStatus): string {
   const err = status.filterListLastError ?
       (zh ? ` 上次错误：${status.filterListLastError}` :
             ` Last error: ${status.filterListLastError}`) :
-            '';
+      '';
   return zh ? `已编译 ${count} 条主机规则 · 更新于 ${when}${err}` :
               `Compiled ${count} host rules · updated ${when}${err}`;
 }
@@ -360,9 +369,9 @@ function normalizeModelApiFormat(value?: string): ModelApiFormat {
 
 function modelApiFormatLabel(format: ModelApiFormat): string {
   const lang = document.documentElement.lang || 'zh-CN';
-  const suffix = lang.startsWith('zh-TW') || lang.startsWith('zh-HK') ?
-      '相容' :
-      lang.startsWith('zh') ? '兼容' : 'compatible';
+  const suffix = lang.startsWith('zh-TW') || lang.startsWith('zh-HK') ? '相容' :
+      lang.startsWith('zh')                                           ? '兼容' :
+                              'compatible';
   if (format === 'openai') {
     return `OpenAI ${suffix}`;
   }
@@ -432,8 +441,7 @@ function updateCustomModelVisibility() {
 }
 
 function fillModelList(
-    models: string[], selectedModel: string,
-    state: ModelListState = 'idle') {
+    models: string[], selectedModel: string, state: ModelListState = 'idle') {
   const select = selectField('model-select');
   const uniqueModels = Array.from(new Set(
       models.map((name) => name.trim()).filter((name) => name.length > 0)));
@@ -453,8 +461,8 @@ function fillModelList(
   }
   const custom = document.createElement('option');
   custom.value = CUSTOM_MODEL_VALUE;
-  custom.textContent = (document.documentElement.lang || 'zh-CN')
-                           .startsWith('zh') ?
+  custom.textContent =
+      (document.documentElement.lang || 'zh-CN').startsWith('zh') ?
       '自定义模型…' :
       'Custom model…';
   select.appendChild(custom);
@@ -477,8 +485,7 @@ function rememberModelDraft() {
   if (!modelFormInitialized || !activeModelContextKey) {
     return;
   }
-  modelDrafts.set(
-      activeModelContextKey, {modelName: selectedModelName()});
+  modelDrafts.set(activeModelContextKey, {modelName: selectedModelName()});
   lastModelEndpoints.set(activeModelFormat, activeModelBaseUrl);
 }
 
@@ -508,8 +515,8 @@ function renderCredentialState() {
   const state = getRequiredElement('model-api-key-state');
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   const typed = textField('model-api-key').value.length > 0;
-  const contextKey = modelContextKey(
-      activeModelFormat, textField('model-endpoint').value);
+  const contextKey =
+      modelContextKey(activeModelFormat, textField('model-endpoint').value);
   const configured = configuredCredentials.get(contextKey) === true;
   const detail = credentialStates.get(contextKey)?.trim();
   if (typed) {
@@ -542,16 +549,14 @@ function updateModelFormatPresentation() {
   const note = getRequiredElement('model-data-note');
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   note.textContent = local ?
-      (zh ?
-           `当前为数值 loopback 本机地址，使用 ${formatName}；` +
+      (zh ? `当前为数值 loopback 本机地址，使用 ${formatName}；` +
                'API Key 可选且保存后不回显。' :
-           `The current numeric-loopback endpoint uses ${formatName}; ` +
+            `The current numeric-loopback endpoint uses ${formatName}; ` +
                'the API key is optional and hidden after saving.') :
-      (zh ?
-           `脱敏后的页面文本会发往当前地址，使用 ${formatName}；` +
+      (zh ? `脱敏后的页面文本会发往当前地址，使用 ${formatName}；` +
                'API Key 可选且保存后不回显。' :
-           `Redacted page text is sent to the current endpoint using ${
-               formatName}; the API key is optional and hidden after saving.`);
+            `Redacted page text is sent to the current endpoint using ${
+                formatName}; the API key is optional and hidden after saving.`);
   renderCredentialState();
   updateCustomModelVisibility();
 }
@@ -593,7 +598,8 @@ function applyModelStatus(status: AegisStatus, force = false) {
     }
     return;
   }
-  if (modelFormInitialized && !force && signature === lastModelStatusSignature) {
+  if (modelFormInitialized && !force &&
+      signature === lastModelStatusSignature) {
     return;
   }
 
@@ -607,8 +613,8 @@ function applyModelStatus(status: AegisStatus, force = false) {
 
 function formatModelStatus(result: ModelListResult): string {
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
-  const format = normalizeModelApiFormat(result.modelProvider ||
-                                          activeModelFormat);
+  const format =
+      normalizeModelApiFormat(result.modelProvider || activeModelFormat);
   const name = modelApiFormatLabel(format);
   if (!result.ok) {
     const error = result.error ? ` (${result.error})` : '';
@@ -617,8 +623,9 @@ function formatModelStatus(result: ModelListResult): string {
   }
   const count = result.models?.length || 0;
   if (count === 0) {
-    return zh ? `当前地址已按 ${name} 连接，但未返回可用模型。` :
-                `The current endpoint connected as ${name}, but returned no models.`;
+    return zh ?
+        `当前地址已按 ${name} 连接，但未返回可用模型。` :
+        `The current endpoint connected as ${name}, but returned no models.`;
   }
   return zh ? `已从当前地址按 ${name} 加载 ${count} 个模型。` :
               `Loaded ${count} models from the current endpoint as ${name}.`;
@@ -685,6 +692,7 @@ function applyStatus(status: AegisStatus) {
     checkbox('ai-control').checked = !!status.aiControl;
     fillAiControl(status);
   }
+  fillBrowserAgent(status);
   checkbox('filter-auto').checked = status.filterListAutoUpdate;
   getRequiredElement('filter-meta').textContent = formatMeta(status);
   getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(status);
@@ -778,10 +786,10 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
   const configuredFormat = normalizeModelApiFormat(status.modelProvider);
   const backendFormat = apiFormatFromBackend(result.backend);
   const remoteAttempted = result.stayedOnDevice === false;
-  const modelAttempted = (result.charsSent || 0) > 0 &&
-      result.destination !== 'local';
-  const usedFormat = backendFormat ||
-      (modelAttempted ? configuredFormat : null);
+  const modelAttempted =
+      (result.charsSent || 0) > 0 && result.destination !== 'local';
+  const usedFormat =
+      backendFormat || (modelAttempted ? configuredFormat : null);
   const location = result.stayedOnDevice === true ?
       (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
       result.stayedOnDevice === false ?
@@ -802,11 +810,12 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
   if (usedFormat && status.modelName) {
     lines.push((zh ? '模型：' : 'Model: ') + status.modelName);
   }
-  const destination = result.destination ||
-      (remoteAttempted ? status.modelBaseUrl : 'local');
-  lines.push((zh ? '目标：' : 'Destination: ') +
-             (destination === 'local' ? (zh ? '本机' : 'On-device') :
-                                        (destination || '—')));
+  const destination =
+      result.destination || (remoteAttempted ? status.modelBaseUrl : 'local');
+  lines.push(
+      (zh ? '目标：' : 'Destination: ') +
+      (destination === 'local' ? (zh ? '本机' : 'On-device') :
+                                 (destination || '—')));
   if (result.charsIn) {
     lines.push(
         (zh ? '处理字数：' : 'Characters read: ') + String(result.charsIn));
@@ -829,8 +838,9 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
     lines.push(`! ${r}`);
   }
   if (result.error) {
-    lines.push((zh ? '降级原因：' : 'Fallback reason: ') +
-               summaryErrorLabel(result.error, zh));
+    lines.push(
+        (zh ? '降级原因：' : 'Fallback reason: ') +
+        summaryErrorLabel(result.error, zh));
   }
   return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '')
       .join('\n');
@@ -867,8 +877,7 @@ async function confirmSummaryPreview(
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   const format = normalizeModelApiFormat(status.modelProvider);
   const endpoint = status.modelBaseUrl || MODEL_ENDPOINTS[format];
-  const model = status.modelName ||
-      (zh ? '未选择模型' : 'No model selected');
+  const model = status.modelName || (zh ? '未选择模型' : 'No model selected');
   const local = isLocalModelEndpoint(endpoint);
   const formatName = modelApiFormatLabel(format);
   let destination: string;
@@ -957,7 +966,7 @@ function fillAiControl(status: AegisStatus) {
   const clientsText = zh ?
       (clients ? `当前 ${clients} 个本机 agent 已连接` :
                  '当前没有 agent 连接') :
-                 (clients ? `${clients} local agent(s) connected` : 'no agent connected');
+      (clients ? `${clients} local agent(s) connected` : 'no agent connected');
   statusEl.textContent = zh ?
       `调试端口 ${port} · 绑定 ${address} · ${
           loopback ? '仅 loopback' : '绑定范围未知'} · ${clientsText}` :
@@ -967,6 +976,31 @@ function fillAiControl(status: AegisStatus) {
   if (on) {
     connectEl.textContent =
         `await chromium.connectOverCDP('http://127.0.0.1:${port}')`;
+  }
+}
+
+function fillBrowserAgent(status: AegisStatus) {
+  const section = getRequiredElement('browser-agent-section');
+  const toggle = checkbox('browser-agent');
+  const open = actionButton('browser-agent-open');
+  const statusEl = getRequiredElement('browser-agent-status');
+  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+  section.hidden = !!status.isAndroid;
+  toggle.checked = !!status.browserAgentEnabled;
+  toggle.disabled = !status.browserAgentAvailable;
+  open.disabled = !status.browserAgentAvailable || !status.browserAgentEnabled;
+  if (!status.browserAgentAvailable) {
+    statusEl.textContent = zh ?
+        '当前构建未启用 Browser Agent 功能开关。' :
+        'The Browser Agent feature flag is not enabled in this build.';
+  } else if (status.browserAgentEnabled) {
+    statusEl.textContent = zh ?
+        '已启用。高风险操作仍需逐项批准，付款必须手动接管。' :
+        'Enabled. High-risk actions still require approval and payment requires takeover.';
+  } else {
+    statusEl.textContent = zh ?
+        '默认关闭；启用后可从工具栏或此处打开。' :
+        'Off by default. Enable it to open from the toolbar or here.';
   }
 }
 
@@ -1190,8 +1224,7 @@ async function probeFingerprint() {
 }
 
 async function summarizeActiveTab() {
-  const captured: CapturedSummary =
-      await sendWithPromise('summarizeActiveTab');
+  const captured: CapturedSummary = await sendWithPromise('summarizeActiveTab');
   if (!captured.ok || !captured.requestId || !captured.snapshot) {
     showResult(captured.error || 'summary capture failed');
     return;
@@ -1220,14 +1253,17 @@ async function summarizeActiveTab() {
     return;
   }
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
-  showResult(isSensitiveSummarySource(captured.snapshot) ?
-      (zh ? '正在生成本机启发式摘要，不调用模型…' :
-            'Generating an on-device heuristic summary without calling a model…') :
-      isLocalModelEndpoint(status.modelBaseUrl || '') ?
-      (zh ? '本机模型正在生成，最长等待 3 分钟…' :
-            'The local model is generating; allow up to 3 minutes…') :
-      (zh ? '兼容模型服务正在生成，最长等待 45 秒…' :
-            'The compatible model service is generating; allow up to 45 seconds…'));
+  showResult(
+      isSensitiveSummarySource(captured.snapshot) ?
+          (zh ?
+               '正在生成本机启发式摘要，不调用模型…' :
+               'Generating an on-device heuristic summary without calling a model…') :
+          isLocalModelEndpoint(status.modelBaseUrl || '') ?
+          (zh ? '本机模型正在生成，最长等待 3 分钟…' :
+                'The local model is generating; allow up to 3 minutes…') :
+          (zh ?
+               '兼容模型服务正在生成，最长等待 45 秒…' :
+               'The compatible model service is generating; allow up to 45 seconds…'));
   const result: SummarizeResult = await sendWithPromise(
       'completePreparedSummary', captured.requestId, prepared);
   showResult(formatSummary(result, status));
@@ -1255,8 +1291,7 @@ async function runSummaryAction() {
 function bindModelControls() {
   selectField('model-provider').addEventListener('change', () => {
     rememberModelDraft();
-    const format =
-        normalizeModelApiFormat(selectField('model-provider').value);
+    const format = normalizeModelApiFormat(selectField('model-provider').value);
     const baseUrl = lastModelEndpoints.get(format) || MODEL_ENDPOINTS[format];
     activateModelContext(format, baseUrl);
     markModelFormChanged();
@@ -1265,7 +1300,8 @@ function bindModelControls() {
     const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
     getRequiredElement('model-status').textContent = zh ?
         `已切换到 ${modelApiFormatLabel(activeModelFormat)}，请加载模型。` :
-        `Switched to ${modelApiFormatLabel(activeModelFormat)}. Load models to continue.`;
+        `Switched to ${
+            modelApiFormatLabel(activeModelFormat)}. Load models to continue.`;
   });
   textField('model-endpoint').addEventListener('input', () => {
     rememberModelDraft();
@@ -1338,18 +1374,17 @@ async function loadModels() {
           snapshot.contextKey, result.modelApiKeyConfigured);
     }
     if (typeof result.modelCredentialState === 'string') {
-      credentialStates.set(
-          snapshot.contextKey, result.modelCredentialState);
+      credentialStates.set(snapshot.contextKey, result.modelCredentialState);
     }
     const models = result.models || [];
     const state: ModelListState = !result.ok ? 'error' :
-        models.length > 0 ? 'loaded' : 'empty';
+        models.length > 0                    ? 'loaded' :
+                                               'empty';
     fillModelList(models, snapshot.modelName, state);
     getRequiredElement('model-status').textContent = formatModelStatus(result);
     renderCredentialState();
   } catch (error) {
-    if (serial === modelListRequestSerial &&
-        isCurrentModelSnapshot(snapshot)) {
+    if (serial === modelListRequestSerial && isCurrentModelSnapshot(snapshot)) {
       fillModelList([], snapshot.modelName, 'error');
       getRequiredElement('model-status').textContent = String(error);
     }
@@ -1388,10 +1423,10 @@ async function saveModelSettings(clearKey: boolean) {
             snapshot.contextKey) {
       return;
     }
-    const loadedModels = Array.from(selectField('model-select').options)
-                             .map((option) => option.value)
-                             .filter((value) =>
-                                 value && value !== CUSTOM_MODEL_VALUE);
+    const loadedModels =
+        Array.from(selectField('model-select').options)
+            .map((option) => option.value)
+            .filter((value) => value && value !== CUSTOM_MODEL_VALUE);
     textField('model-api-key').value = '';
     modelFormDirty = false;
     applyModelStatus(next, true);
@@ -1428,6 +1463,7 @@ async function init() {
   bindToggle('bounce-tracking', 'bounceTracking');
   bindToggle('policy-worker', 'policyWorker');
   bindToggle('privacy-ai', 'privacyAi');
+  bindToggle('browser-agent', 'browserAgent');
   bindToggle('ai-control', 'aiControl');
   bindToggle('filter-auto', 'filterListAutoUpdate');
   bindModelControls();
@@ -1444,6 +1480,15 @@ async function init() {
   actionButton('fp-probe').addEventListener('click', () => {
     void probeFingerprint();
   });
+  actionButton('browser-agent-open').addEventListener('click', () => {
+    void (async () => {
+      const next: AegisStatus = await sendWithPromise('openBrowserAgent');
+      fillBrowserAgent(next);
+      if (next.ok === false && next.error) {
+        getRequiredElement('browser-agent-status').textContent = next.error;
+      }
+    })();
+  });
   if (status.privacyAi && !status.isAndroid &&
       isLocalModelEndpoint(textField('model-endpoint').value)) {
     void loadModels();
@@ -1453,6 +1498,7 @@ async function init() {
     applyModelStatus(next);
     fillOverview(next);
     fillActivityLog(next.recentEvents || []);
+    fillBrowserAgent(next);
     fillAiControl(next);
     getRequiredElement('filter-meta').textContent = formatMeta(next);
     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);

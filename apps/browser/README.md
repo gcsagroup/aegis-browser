@@ -8,9 +8,9 @@ Policy logic originates in `packages/core` and is integrated through generated r
 
 ## Current status
 
-- The source tree currently lists **56 top-level Chromium patches** plus **2 nested V8 patches**.
-- The existing Release manifest and runtime evidence bind only **54 Chromium patches + 2 V8 patches**. Patches `0055` and `0056` do not yet have a current committed Release identity.
-- A non-component `out/AegisRelease/Chromium.app` is a local Release build-tree input. It is **not** a signed, notarized, packaged, installed, or published release.
+- The combined source tree lists **67 top-level Chromium patches** plus **2 nested V8 patches**.
+- The earlier 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots. Neither binds or qualifies the combined 67-patch head.
+- A fresh combined-source replay, identity-bound build, affected runtime acceptance, and release gates remain required. There is no current product-signed, notarized, packaged, installed, or published desktop release.
 - Android has **not been built from the current source**. There is no current-source APK or AAB.
 
 The repository therefore has no release-ready desktop or Android artifact.
@@ -29,8 +29,6 @@ The pin is a fixed snapshot. It does not track newer Stable releases automatical
 - [Fork architecture](./docs/fork-architecture.md)
 - [Android build and acceptance status](./docs/android.md)
 - [Play Store readiness draft](./docs/play-store.md)
-
-The following are development-internal documents and are intentionally not translated:
 
 - [Overlay synchronization rules](./docs/overlay.md)
 - [Chromium tree layout](./docs/tree-layout.md)
@@ -106,10 +104,10 @@ Build success alone does not promote an output to RC or release status.
 
 The current source accounting is:
 
-- 56 top-level patches applied to Chromium.
+- 67 top-level patches listed for Chromium.
 - 2 additional patches applied inside the nested V8 checkout.
-- Existing Release identity evidence covers only Chromium patches 0001–0054 plus the 2 V8 patches.
-- Chromium patches 0055 and 0056 require a new committed identity, clean replay, build, affected tests, and representative runtime evidence.
+- Historical identities cover earlier 57-patch and 65-patch snapshots only; neither covers patches 0066–0067.
+- The combined 67-patch head requires a fresh exact replay and build identity before any current qualification claim.
 
 “Present in the series” means only that a patch file is listed. It does not prove successful replay, build reproducibility, platform acceptance, signing, packaging, or publication.
 
@@ -121,6 +119,7 @@ The current desktop source includes:
 - Blink fingerprint farbling for selected Canvas, Audio, WebGL, and WebGPU surfaces;
 - native HTTP(S), Metalink, Torrent, and Magnet download integration;
 - local heuristic summaries and user-configured OpenAI-, Claude (Anthropic)-, or Gemini-compatible APIs;
+- a browser-owned Agent with Observe/Ask/Act modes, scoped bookmark/URL/page/download/workflow/monitor tools, exact approvals, audit history, cancellation, and mandatory user takeover before final purchase;
 - observe-only MinerGuard signals; and
 - an opt-in, disabled-by-default V8 bytecode-shadow research path.
 
@@ -145,7 +144,8 @@ Before any desktop publication, the same candidate must have:
 5. fresh-install and upgrade acceptance on representative systems; and
 6. an explicit release decision.
 
-The existing Release build-tree does not satisfy this list and does not cover patches 0055/0056.
+The current local diagnostic build-tree covers patches 0055/0056/0057, but does not satisfy this list. Full patch coverage does not make it an RC or release.
+The local RC satisfies the clean replay, identity, and affected-test portions of this list. It does not satisfy product identity, trusted signing, notarization, installed-distribution, or release-authorization gates.
 
 ## Android
 

@@ -1138,6 +1138,24 @@ bool AegisService::HasModelApiKey(const std::string& provider,
              ModelCredentialKey(*parsed_provider, *normalized_base_url));
 }
 
+std::optional<std::string> AegisService::ModelApiKeyForBrowserAgent(
+    const Profile* requesting_profile,
+    const std::string& provider,
+    const std::string& base_url) const {
+  if (!IsInitializedForProfile(requesting_profile) ||
+      model_credentials_loading_ || !model_credentials_loaded_) {
+    return std::nullopt;
+  }
+  const std::optional<ModelProvider> parsed_provider =
+      ParseModelProvider(provider);
+  const std::optional<std::string> normalized_base_url =
+      ResolveModelBaseUrl(provider, base_url);
+  if (!parsed_provider || !normalized_base_url) {
+    return std::nullopt;
+  }
+  return EffectiveModelApiKey(provider, *normalized_base_url, std::string());
+}
+
 std::string AegisService::ModelCredentialState(
     const std::string& provider,
     const std::string& base_url) const {

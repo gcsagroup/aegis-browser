@@ -1,0 +1,148 @@
+// Copyright 2026 GCSA
+
+module aegis_agent.mojom;
+
+enum AgentMode {
+  kAsk = 0,
+  kAct = 1,
+  kAutomate = 2,
+};
+
+enum Workflow {
+  kResearch = 0,
+  kBrowserSteward = 1,
+  kSafeDownload = 2,
+  kShopping = 3,
+};
+
+struct PlanStep {
+  string step_id;
+  string title;
+  string tool_name;
+  string risk;
+};
+
+struct PlanSummary {
+  string summary;
+  array<string> origins;
+  array<string> data_classes;
+  array<string> tools;
+  int32 max_tabs;
+  int32 max_tool_calls;
+  int32 max_model_calls;
+  int32 max_network_requests;
+  string max_duration;
+  string provider;
+  string model;
+  string destination;
+  string max_risk;
+  array<PlanStep> steps;
+};
+
+struct CheckoutSummary {
+  string merchant;
+  string product;
+  int32 quantity;
+  string unit_price_minor_units;
+  string shipping_minor_units;
+  string tax_minor_units;
+  string discount_minor_units;
+  string total_minor_units;
+  string currency;
+  string delivery_summary;
+  string return_summary;
+  int32 source_node_count;
+  string observation_fingerprint;
+};
+
+struct PendingApproval {
+  string action_id;
+  string tool_name;
+  string origin;
+  string risk;
+  string argument_summary;
+  string action_fingerprint;
+  bool requires_user_takeover;
+  CheckoutSummary? checkout;
+};
+
+struct TimelineEvent {
+  string title;
+  string detail;
+  string timestamp;
+  string status;
+};
+
+struct MonitorSummary {
+  string monitor_id;
+  string task_id;
+  string kind;
+  string origin;
+  string target_hash;
+  string interval;
+  string next_run;
+  bool paused;
+  int32 failures;
+};
+
+struct TaskSnapshot {
+  bool feature_enabled;
+  bool agent_enabled;
+  int32 active_tab_id;
+  string active_origin;
+  string invocation_context;
+  string suggested_goal;
+  string task_id;
+  string state;
+  string mode;
+  string goal;
+  PlanSummary? plan;
+  PendingApproval? pending_approval;
+  bool undo_available;
+  array<TimelineEvent> timeline;
+  array<MonitorSummary> monitors;
+  string last_error;
+};
+
+interface Page {
+  OnSnapshotChanged(TaskSnapshot snapshot);
+};
+
+interface PageHandler {
+  ShowUI();
+
+  GetSnapshot() => (TaskSnapshot snapshot);
+
+  CreateTask(string goal,
+             AgentMode mode,
+             Workflow workflow,
+             array<string> approved_origins) => (TaskSnapshot snapshot);
+
+  RequestPlan(string task_id) => (TaskSnapshot snapshot);
+
+  ConsentAndRun(string task_id) => (TaskSnapshot snapshot);
+
+  Pause(string task_id) => (TaskSnapshot snapshot);
+
+  Resume(string task_id) => (TaskSnapshot snapshot);
+
+  TakeOver(string task_id) => (TaskSnapshot snapshot);
+
+  FinishTakeOver(string task_id, bool completed) => (TaskSnapshot snapshot);
+
+  Stop(string task_id) => (TaskSnapshot snapshot);
+
+  Approve(string task_id, string action_id) => (TaskSnapshot snapshot);
+
+  Undo(string task_id) => (TaskSnapshot snapshot);
+
+  SetMonitorPaused(string task_id, string monitor_id, bool paused)
+      => (TaskSnapshot snapshot);
+
+  DeleteMonitor(string task_id, string monitor_id) => (TaskSnapshot snapshot);
+};
+
+interface PageHandlerFactory {
+  CreatePageHandler(
+      pending_remote<Page> page, pending_receiver<PageHandler> handler);
+};

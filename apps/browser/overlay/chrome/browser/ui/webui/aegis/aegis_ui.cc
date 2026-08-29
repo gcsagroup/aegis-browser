@@ -100,6 +100,11 @@ struct AegisStrings {
   const char* activity_title;
   const char* activity_hint;
   const char* activity_empty;
+  const char* browser_agent_title;
+  const char* browser_agent_label;
+  const char* browser_agent_hint;
+  const char* browser_agent_open;
+  const char* browser_agent_status;
   const char* ai_control_title;
   const char* ai_control_label;
   const char* ai_control_hint;
@@ -238,6 +243,13 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .activity_empty =
             "還沒有記錄。打開帶廣告請求或 utm_ "
             "的頁面後，攔截與清理會出現在這裡。",
+        .browser_agent_title = "瀏覽器智慧代理",
+        .browser_agent_label = "啟用 Aegis Browser Agent",
+        .browser_agent_hint =
+            "依計畫執行網頁與瀏覽器操作；寫入、下載與交易步驟仍由瀏覽器"
+            "政策檢查，付款前必須由你接管。",
+        .browser_agent_open = "開啟 Agent 側邊欄",
+        .browser_agent_status = "Agent 功能旗標未啟用。",
         .ai_control_title = "AI 控制",
         .ai_control_label = "允許本機 AI agent 經 CDP 控制",
         .ai_control_hint =
@@ -381,6 +393,13 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .activity_empty =
             "还没有记录。打开带广告请求或 utm_ "
             "的页面后，拦截与清理会出现在这里。",
+        .browser_agent_title = "浏览器智能体",
+        .browser_agent_label = "启用 Aegis Browser Agent",
+        .browser_agent_hint =
+            "按计划执行网页与浏览器操作；写入、下载和交易步骤仍由浏览器"
+            "策略检查，付款前必须由你接管。",
+        .browser_agent_open = "打开 Agent 侧边栏",
+        .browser_agent_status = "Agent 功能开关尚未启用。",
         .ai_control_title = "AI 控制",
         .ai_control_label = "允许本机 AI agent 经 CDP 控制",
         .ai_control_hint =
@@ -534,6 +553,14 @@ AegisStrings StringsForLocale(const std::string& locale) {
           "ads cookies, bounce clears, and local CDP connections update live.",
       .activity_empty =
           "Nothing recorded yet. Open a page with ad requests or a utm_ link.",
+      .browser_agent_title = "Browser Agent",
+      .browser_agent_label = "Enable Aegis Browser Agent",
+      .browser_agent_hint =
+          "Runs planned page and browser actions. Browser policy still gates "
+          "writes, downloads, and transactions; you must take over before "
+          "payment.",
+      .browser_agent_open = "Open Agent side panel",
+      .browser_agent_status = "The Agent feature flag is not enabled.",
       .ai_control_title = "AI control",
       .ai_control_label = "Allow a local AI agent over CDP",
       .ai_control_hint =
@@ -646,6 +673,11 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->AddString("activityTitle", strings.activity_title);
   source->AddString("activityHint", strings.activity_hint);
   source->AddString("activityEmpty", strings.activity_empty);
+  source->AddString("browserAgentTitle", strings.browser_agent_title);
+  source->AddString("browserAgentLabel", strings.browser_agent_label);
+  source->AddString("browserAgentHint", strings.browser_agent_hint);
+  source->AddString("browserAgentOpen", strings.browser_agent_open);
+  source->AddString("browserAgentStatus", strings.browser_agent_status);
   source->AddString("aiControlTitle", strings.ai_control_title);
   source->AddString("aiControlLabel", strings.ai_control_label);
   source->AddString("aiControlHint", strings.ai_control_hint);

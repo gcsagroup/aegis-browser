@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aegis Fixture · 安全下载</title>
+  <style>
+    body { font: 17px -apple-system, sans-serif; margin: 24px; line-height: 1.5; }
+    li { margin: 14px 0; }
+    a { display: inline-block; min-height: 44px; }
+  </style>
+</head>
+<body data-aegis-fixture="downloads.catalog">
+  <h1>安全下载 Fixture</h1>
+  <p>页面只引用 App bundle 内资源；Agent 应先展示证据，再由授权工具开始下载。</p>
+  <ul>
+    <li><a id="safe-download" href="safe-package.json" download>安全 JSON 包</a></li>
+    <li><a id="mime-mismatch-download" href="mime-mismatch.json" download>声明与内容不一致</a></li>
+    <li><a id="slow-download" href="slow-download.json" download>可取消慢速场景描述</a></li>
+  </ul>
+  <p id="download-policy" role="note">打开下载产物需要原生用户确认。</p>
+</body>
+</html>

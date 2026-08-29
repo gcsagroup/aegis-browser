@@ -12,6 +12,13 @@ v8_symbol_level = 0
 
 target_cpu = "arm64"
 
+# 使用 GCSA 视觉资源，但保留 Chromium 的内部产品名、Bundle ID、辅助进程名
+# 与安装器/字符串身份，避免现有用户数据目录发生迁移。
+is_chrome_branded = false
+branding_path_component = "gcsa_aegis"
+branding_path_product = "chromium"
+branding_file_path = "//chrome/app/theme/gcsa_aegis/BRANDING"
+
 proprietary_codecs = false
 ffmpeg_branding = "Chromium"
 
@@ -23,3 +30,7 @@ is_official_build = true
 # 本地固定源码树未下载 Chromium 官方 PGO profile；先关闭 PGO，保证发布
 # 语义可复现。正式外发前应下载与 CHROMIUM_VERSION 对应的 profile 再启用。
 chrome_pgo_phase = 0
+
+# 发行构建不得加载 Chromium 测试 Field Trial；搜索引擎等用户界面必须
+# 由产品配置决定，不能随测试实验组漂移。
+disable_fieldtrial_testing_config = true

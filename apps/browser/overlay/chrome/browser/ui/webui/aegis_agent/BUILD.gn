@@ -1,0 +1,55 @@
+# Copyright 2026 GCSA
+
+assert(!is_android)
+
+import("//mojo/public/tools/bindings/mojom.gni")
+
+mojom("mojo_bindings") {
+  sources = [ "aegis_agent.mojom" ]
+  webui_module_path = "/"
+}
+
+source_set("aegis_agent") {
+  public = [
+    "aegis_agent_page_handler.h",
+    "aegis_agent_ui.h",
+  ]
+  public_deps = [
+    ":mojo_bindings",
+    "//base",
+    "//chrome/browser/aegis:agent_core",
+    "//chrome/browser/ui/webui/top_chrome",
+    "//components/prefs",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
+source_set("impl") {
+  sources = [
+    "aegis_agent_page_handler.cc",
+    "aegis_agent_ui.cc",
+  ]
+  public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+  deps = [
+    ":aegis_agent",
+    "//chrome/browser/aegis",
+    "//chrome/browser/aegis:agent_core",
+    "//chrome/browser/aegis:model_provider_policy",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/search_engines",
+    "//chrome/browser/resources/aegis_agent:resources",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/navigator",
+    "//chrome/browser/ui/webui:theme_source",
+    "//chrome/browser/ui/webui:webui_util",
+    "//chrome/common",
+    "//chrome/common/aegis",
+    "//components/prefs",
+    "//components/search_engines",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//ui/base",
+    "//ui/webui",
+    "//url",
+  ]
+}

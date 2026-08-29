@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aegis Fixture · 基础浏览</title>
+  <style>
+    body { font: 17px -apple-system, sans-serif; margin: 24px; line-height: 1.5; }
+    nav { display: flex; gap: 16px; margin-bottom: 24px; }
+    button, a { min-height: 44px; }
+    #state { padding: 12px; background: #eef4ff; border-radius: 10px; }
+  </style>
+</head>
+<body data-aegis-fixture="browser.basic">
+  <header>
+    <h1>基础浏览 Fixture</h1>
+    <p>用于验证标题、地址、锚点、历史记录、前进后退和页面内状态变化。</p>
+  </header>
+  <nav aria-label="Fixture 导航">
+    <a id="details-link" href="#details">查看详情</a>
+    <a id="help-link" href="#help">帮助</a>
+  </nav>
+  <main>
+    <button id="spa-navigation" type="button">模拟 SPA 导航</button>
+    <p id="state" role="status" aria-live="polite">页面状态：初始</p>
+    <section id="details">
+      <h2>详情</h2>
+      <p>此内容来自 App bundle，不访问公网。</p>
+    </section>
+    <section id="help">
+      <h2>帮助</h2>
+      <p>测试完成后应仍停留在 Aegis 管理的标签页。</p>
+    </section>
+  </main>
+  <script>
+    const state = document.querySelector("#state");
+    document.querySelector("#spa-navigation").addEventListener("click", () => {
+      history.pushState({ fixture: true }, "", "#spa-result");
+      state.textContent = "页面状态：SPA 已导航";
+    });
+    addEventListener("popstate", () => {
+      state.textContent = "页面状态：历史记录已变化";
+    });
+  </script>
+</body>
+</html>

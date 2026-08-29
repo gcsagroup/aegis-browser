@@ -1,3 +1,5 @@
+[**English**](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
+
 # Patches
 
 Patches in this directory are applied on top of the pinned Chromium commit
@@ -12,65 +14,76 @@ Patches in this directory are applied on top of the pinned Chromium commit
 
 ## Current local patch series
 
-状态“series 中”只表示补丁文件列在当前本地 `series`；不表示已经进入上游 Chromium、通过 Release/Android 门或可发布。2026-08-25 历史验收快照：当时 49 个补丁与 checkout 原始 commit 身份、稳定 patch-id 和全部 117 个 overlay 文件一致；HEAD 为 `cf0f5f3bfbb289520dcc6e9a39f648d5da115f46`，tree 为 `154474478108dbfd4fe5c810d1e2077e4249326b`，`series` SHA-256 为 `43db8760d13a9dc2d7ee24fd13167bcc6e7d446f317899103083d22b70c456b3`。桌面产物是否匹配必须以同次 `browser:status` 的新鲜度门为准；每次 series 变化后都要重新验证。
+The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed Release or Android gates, or is publishable. The 49-patch record from 2026-08-25 is retained only as a historical snapshot. The integrated source reached **67 Chromium patches plus 2 nested V8 patches** on 2026-08-29: 0057–0065 contain Browser Agent integration, 0066 contains the Settings/About/update work, and 0067 contains visual branding. Earlier 57/58-patch diagnostics and the 65+2 Agent acceptance do not qualify this final 67+2 source. Desktop artifact matching requires a fresh `browser:status` result and the freshness gates in the corresponding acceptance record; every series change must be revalidated.
 
 | ID | Intent | Status |
 |----|--------|--------|
-| 0001 | Add `chrome/browser/aegis/` stub + feature flag | series 中 |
-| 0002 | Wire network throttle / request cancel for tracker hosts | series 中 |
-| 0003 | Embed `chrome://aegis` WebUI settings surface | series 中 |
-| 0004 | Phish interstitial via navigation throttle | series 中 |
-| 0005 | FingerprintGuard farbling hooks (canvas/audio/WebGL) | series 中 |
-| 0006 | Bundle `packages/core` policy snapshot → C++ `.inc` + JSON | series 中 |
-| 0007 | EasyList compiler + runtime filter-list updater | series 中 |
-| 0008 | Strip tracking query params + cookie janitor | series 中 |
-| 0009 | CNAME uncloak + bounce-tracker cookie clearing | series 中 |
-| 0010 | Phish URL heuristics + explainable interstitial | series 中 |
-| 0011 | Phish page-sense (password forms + urgency copy) | series 中 |
-| 0012 | JS policy worker (gin) + Privacy AI / Ollama sidecar | series 中 |
-| 0013 | WebGPU adapter.info farbling | series 中 |
-| 0014 | 启动 DCHECK 修复；策略 worker 改在 chrome://aegis 运行 | series 中 |
-| 0015 | 设置 / 菜单增加 chrome://aegis 入口 | series 中 |
-| 0016 | 模块说明文案 + Ollama 模型设置 | series 中 |
-| 0017 | 启动后推迟过滤列表/Cookie 清扫 | series 中 |
-| 0018 | EasyList 启动走本地 compiled.json 缓存 | series 中 |
-| 0019 | EasyList 缓存更新：24h 检查 / 304 / 失败退避 | series 中 |
-| 0020 | 拦截页人话、摘要与会话清理清单 | series 中 |
-| 0021 | Cookie 精确名单 + 第一方收集路径拦截 | series 中 |
-| 0022 | 会话清单实时刷新、Canvas 自检、GA4 收集假象 | series 中 |
-| 0023 | 拦截可见、Referer 去参、Cookie 标注、本机 CDP/AI 控制 | series 中 |
-| 0024 | 远程 CDP 目标列表隐藏内部页，会话清单显示 agent 连接 | series 中 |
-| 0025 | 本机 CDP 连接显示浏览器横幅，按钮打开 chrome://aegis | series 中 |
-| 0026 | chrome://aegis 一次检测 Canvas / WebGL / Audio / WebGPU | series 中 |
-| 0027 | Audio 指纹按站点只扰动一次；copyFromChannel 同样生效 | series 中 |
-| 0028 | WebGPU limits / subgroup 数值按站点稳定化 | series 中 |
-| 0029 | Android：chrome://aegis 可进包，显示名/包名预留 Play | series 中 |
-| 0030 | Android 设置打开 chrome://aegis；手机上关掉 CDP/Ollama | series 中 |
-| 0031 | 强化摘要/Ollama、钓鱼与 CDP 本地安全边界及回归测试 | series 中 |
-| 0032 | 保存远程 CDP 生产接线与安全测试检查点 | series 中 |
-| 0033 | 统一远程 CDP 来源传播、目标授权与敏感协议拦截 | series 中 |
-| 0034 | 跨 hash 导航保持初始空白文档所有权语义 | series 中 |
-| 0035 | 修复 Aegis WebUI TypeScript lint | series 中 |
-| 0036 | 修复 CDP 浏览器测试通知 matcher 类型 | series 中 |
-| 0037 | 稳定 Aegis 浏览器单测构建与阈值断言 | series 中 |
-| 0038 | 远程创建目标时保留并单次授权初始文档 | series 中 |
-| 0039 | 捕获 Ollama 最终 HTTP 请求体并验证原始 PII 不外发 | series 中 |
-| 0040 | Profile 销毁前释放 Aegis 组件、回调与原始指针 | series 中 |
-| 0041 | 生产路径禁用 Google AIM eligibility 服务端请求，测试 factory 保留正向门 | series 中 |
-| 0042 | 普通未注册 Profile 不创建 policy FM/GCM listener，企业注册后单次启动 | series 中 |
-| 0043 | 将 Aegis 阻拦、CNAME、Referer 与参数事件切回 Remote 所属序列并保护退出生命周期 | series 中 |
-| 0044 | 按域名索引 path rule、缩短列表替换临界区，并去掉 Canvas farbling 整图双拷贝 | series 中 |
-| 0045 | 结构化页面保护事件、站点聚合、隐私裁剪与临时站点暂停 | series 中 |
-| 0046 | 浏览器原生盾牌入口、当前站点气泡与一次性感知引导 | series 中 |
-| 0047 | 保护概览、摘要前确认、钓鱼线索优先解释与事件驱动状态 | series 中 |
-| 0048 | 摘要来源限制在设置页同一窗口，并拒绝跨窗口/Profile 标签 | series 中 |
-| 0049 | 有界钓鱼页面采集、品牌仿冒/路径/短链信号与本地多源 SHA-256 威胁索引 | series 中 |
-| 0050 | 集成多连接加速下载与 BT 下载 | series 中 |
-| 0051 | 增加原生下载设置及安全默认值 | series 中 |
-| 0052 | 强化 Canvas、OffscreenCanvas、Audio、WebGL 与 WebGPU 反指纹 | series 中 |
-| 0053 | 增加仅观察、不阻断的 MinerGuard | series 中 |
-| 0054 | 增加默认关闭的 V8 bytecode shadow 观察能力 | series 中 |
-| 0055 | 支持可编辑地址的 OpenAI／Claude（Anthropic）／Gemini 兼容 API、模型列表与按地址隔离凭据 | series 中 |
-| 0056 | 当前站点保护弹窗原位完成 AI 摘要确认与结果展示，并以精确文档会话完善兼容 API 请求生命周期 | series 中 |
+| 0001 | Add the `chrome/browser/aegis/` stub and feature flag | in series |
+| 0002 | Wire network throttling and tracker-host request cancellation | in series |
+| 0003 | Embed the `chrome://aegis` WebUI settings surface | in series |
+| 0004 | Add a phishing interstitial through a navigation throttle | in series |
+| 0005 | Add FingerprintGuard farbling hooks for Canvas, Audio, and WebGL | in series |
+| 0006 | Bundle the `packages/core` policy snapshot into C++ `.inc` files and JSON | in series |
+| 0007 | Add an EasyList compiler and runtime filter-list updater | in series |
+| 0008 | Strip tracking query parameters and add a cookie janitor | in series |
+| 0009 | Uncloak CNAMEs and clear bounce-tracker cookies | in series |
+| 0010 | Add phishing URL heuristics and an explainable interstitial | in series |
+| 0011 | Add phishing page-sense for password forms and urgency copy | in series |
+| 0012 | Add the JavaScript policy worker through gin and the Privacy AI/Ollama sidecar | in series |
+| 0013 | Farble WebGPU `adapter.info` | in series |
+| 0014 | Fix the startup DCHECK and run the policy worker under `chrome://aegis` | in series |
+| 0015 | Add `chrome://aegis` entries to Settings and the menu | in series |
+| 0016 | Add module descriptions and Ollama model settings | in series |
+| 0017 | Delay filter-list and cookie cleanup after startup | in series |
+| 0018 | Use the local `compiled.json` cache when EasyList starts | in series |
+| 0019 | Refresh the EasyList cache with a 24-hour check, HTTP 304 handling, and failure backoff | in series |
+| 0020 | Add human-readable interstitial copy, summaries, and a session-cleanup checklist | in series |
+| 0021 | Add an exact cookie list and first-party collection-path blocking | in series |
+| 0022 | Add live session-list refresh, Canvas self-checks, and a GA4 collection decoy | in series |
+| 0023 | Make blocking visible; strip Referer parameters; label cookies; add local CDP/AI controls | in series |
+| 0024 | Hide internal pages from the remote CDP target list and show Agent connections in the session list | in series |
+| 0025 | Show an in-browser banner for local CDP connections and add a button for `chrome://aegis` | in series |
+| 0026 | Run one-time Canvas, WebGL, Audio, and WebGPU checks in `chrome://aegis` | in series |
+| 0027 | Perturb Audio fingerprints once per site and cover `copyFromChannel` | in series |
+| 0028 | Stabilize WebGPU limits and subgroup values per site | in series |
+| 0029 | Package `chrome://aegis` on Android and reserve the display/package identity for Play | in series |
+| 0030 | Open `chrome://aegis` from Android Settings and disable CDP/Ollama on mobile | in series |
+| 0031 | Harden summary/Ollama, phishing, and local CDP security boundaries and regression tests | in series |
+| 0032 | Preserve remote-CDP production wiring and security-test checkpoints | in series |
+| 0033 | Unify remote-CDP origin propagation, target authorization, and sensitive-protocol blocking | in series |
+| 0034 | Preserve initial blank-document ownership semantics across hash navigation | in series |
+| 0035 | Fix Aegis WebUI TypeScript lint failures | in series |
+| 0036 | Fix CDP browser-test notification matcher types | in series |
+| 0037 | Stabilize Aegis browser unit-test builds and threshold assertions | in series |
+| 0038 | Preserve and authorize the initial document once when a remote target is created | in series |
+| 0039 | Capture the final Ollama HTTP request body and verify that raw PII is not sent | in series |
+| 0040 | Release Aegis components, callbacks, and raw pointers before Profile destruction | in series |
+| 0041 | Disable Google AIM eligibility server requests in production while retaining a positive test-factory gate | in series |
+| 0042 | Avoid creating policy FM/GCM listeners for ordinary unregistered Profiles and start once after enterprise registration | in series |
+| 0043 | Return Aegis block, CNAME, Referer, and parameter events to the Remote-owned sequence and guard shutdown lifetime | in series |
+| 0044 | Index path rules by domain, shorten the list-replacement critical section, and remove the full-image double copy from Canvas farbling | in series |
+| 0045 | Add structured page-protection events, site aggregation, privacy trimming, and temporary per-site pause | in series |
+| 0046 | Add a browser-native shield entry, current-site bubble, and one-time awareness onboarding | in series |
+| 0047 | Add a protection overview, pre-summary confirmation, phishing-clue-first explanations, and event-driven state | in series |
+| 0048 | Limit summary sources to the Settings page's own window and reject cross-window/Profile tabs | in series |
+| 0049 | Add bounded phishing-page collection, brand-impersonation/path/short-link signals, and a local multi-source SHA-256 threat index | in series |
+| 0050 | Integrate multi-connection accelerated downloads and BT downloads | in series |
+| 0051 | Add native download settings and secure defaults | in series |
+| 0052 | Harden Canvas, OffscreenCanvas, Audio, WebGL, and WebGPU fingerprint protection | in series |
+| 0053 | Add observe-only, non-blocking MinerGuard | in series |
+| 0054 | Add default-off V8 bytecode-shadow observation | in series |
+| 0055 | Support user-editable OpenAI, Claude (Anthropic), and Gemini-compatible API endpoints, model lists, and endpoint-scoped credentials | in series |
+| 0056 | Complete in-place AI-summary confirmation and results in the current-site bubble, with exact document-session API lifecycle handling | in series |
+| 0057 | Pin the V8 bytecode-shadow observation revision used by Agent | in series |
+| 0058 | Add task contracts, state machine, policy broker, model protocol, task store, and fixed tool registry | in series |
+| 0059 | Connect Aegis exact scope, document binding, and task lifetime to the Actor execution layer | in series |
+| 0060 | Add the native side panel, menu, shortcut, Settings entry, and desktop Browser/UI tests | in series |
+| 0061 | Fix the bounded security-audit findings and harden resource packaging, real shortcuts, and desktop integration | in series |
+| 0062 | Show the Browser Agent entry by default and add regression coverage | in series |
+| 0063 | Migrate the Agent toolbar entry for existing Profiles | in series |
+| 0064 | Signal side-panel readiness explicitly and fix entry state | in series |
+| 0065 | Open task pages automatically and support tasks from blank tabs | in series |
+| 0066 | Remove upstream AI/Google entries from GCSA Settings, restore search-engine management, and rebuild About/update status | in series |
+| 0067 | Integrate the GCSA logo and cross-platform app icons while preserving Chromium's internal identity and user-data directory | in series |
 
-Apply with `pnpm --filter @gcsa-aegis/browser apply-patches` on a clean pinned checkout. 任何 series 变化都必须重新做离线重放、冷/增量构建和受影响测试。
+Apply with `pnpm --filter @gcsa-aegis/browser apply-patches` on a clean pinned checkout. Every series change requires a fresh offline replay, cold and incremental builds, and the affected tests.

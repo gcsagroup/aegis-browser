@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Aegis Read-Only Companion",
+  "version": "0.1.0",
+  "description": "读取用户当前授权页面的最小摘要，不执行页面写操作。",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging",
+    "webNavigation"
+  ],
+  "action": {
+    "default_title": "检查当前页面"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

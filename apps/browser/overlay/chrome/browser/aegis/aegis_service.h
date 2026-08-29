@@ -172,6 +172,12 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
       const std::string& base_url) const;
   bool HasModelApiKey(const std::string& provider,
                       const std::string& base_url) const;
+  // Browser-process-only credential access for the Profile-scoped Agent
+  // transport. The secret is never exposed through Mojo or WebUI.
+  std::optional<std::string> ModelApiKeyForBrowserAgent(
+      const Profile* requesting_profile,
+      const std::string& provider,
+      const std::string& base_url) const;
   std::string ModelCredentialState(const std::string& provider,
                                    const std::string& base_url) const;
   void SetModelSettings(

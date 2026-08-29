@@ -1,0 +1,108 @@
+From 70945fda21074e176dfcc2794ed7169c6fb05ac3 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 29 Aug 2026 01:38:01 +0800
+Subject: [PATCH] fix(aegis): migrate agent toolbar entry
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 23 +++++++++++++++++++
+ .../pinned_toolbar_actions_model.cc           |  6 +++++
+ .../browser/ui/toolbar/toolbar_pref_names.cc  |  1 +
+ .../browser/ui/toolbar/toolbar_pref_names.h   |  5 ++++
+ 4 files changed, 35 insertions(+)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index dd30ca14c9..489ba392d2 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -24,6 +24,7 @@
+ #include "chrome/browser/ui/side_panel/side_panel_registry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
++#include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+ #include "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -91,6 +92,28 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
+       PinnedToolbarActionsModel::Get(profile);
+   ASSERT_TRUE(pinned);
+   EXPECT_TRUE(pinned->Contains(kActionSidePanelShowAegisAgent));
++  EXPECT_TRUE(
++      profile->GetPrefs()->GetBoolean(::prefs::kAegisAgentAutoPinnedMigration));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
++                       ExistingProfilePinsEntryOnlyOnce) {
++  Profile* profile = browser()->profile();
++  PinnedToolbarActionsModel* pinned =
++      PinnedToolbarActionsModel::Get(profile);
++  ASSERT_TRUE(pinned);
++
++  pinned->UpdatePinnedState(kActionSidePanelShowAegisAgent, false);
++  profile->GetPrefs()->SetBoolean(::prefs::kAegisAgentAutoPinnedMigration,
++                                  false);
++  pinned->MaybeMigrateExistingPinnedStates();
++  EXPECT_TRUE(pinned->Contains(kActionSidePanelShowAegisAgent));
++  EXPECT_TRUE(
++      profile->GetPrefs()->GetBoolean(::prefs::kAegisAgentAutoPinnedMigration));
++
++  pinned->UpdatePinnedState(kActionSidePanelShowAegisAgent, false);
++  pinned->MaybeMigrateExistingPinnedStates();
++  EXPECT_FALSE(pinned->Contains(kActionSidePanelShowAegisAgent));
+ }
+ 
+ class AegisAgentBrowserTest : public InProcessBrowserTest {
+diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
+index c2ac3ec961..247f35154d 100644
+--- a/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
++++ b/chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.cc
+@@ -21,6 +21,7 @@
+ #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model_factory.h"
+ #include "chrome/browser/ui/toolbar/toolbar_pref_names.h"
+ #include "chrome/browser/ui/ui_features.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/pref_names.h"
+ #include "components/prefs/pref_change_registrar.h"
+@@ -247,6 +248,11 @@ void PinnedToolbarActionsModel::MaybeMigrateExistingPinnedStates() {
+     UpdatePinnedState(kActionRouteMedia, previously_pinned);
+     pref_service_->SetBoolean(prefs::kPinnedCastMigrationComplete, true);
+   }
++  if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++      !pref_service_->GetBoolean(prefs::kAegisAgentAutoPinnedMigration)) {
++    UpdatePinnedState(kActionSidePanelShowAegisAgent, true);
++    pref_service_->SetBoolean(prefs::kAegisAgentAutoPinnedMigration, true);
++  }
+   if (base::FeatureList::IsEnabled(
+           features::kTabsFromOtherDevicesSidePanelPinnedByDefault) &&
+       !pref_service_->GetBoolean(
+diff --git a/chrome/browser/ui/toolbar/toolbar_pref_names.cc b/chrome/browser/ui/toolbar/toolbar_pref_names.cc
+index 9286469922..fddba76868 100644
+--- a/chrome/browser/ui/toolbar/toolbar_pref_names.cc
++++ b/chrome/browser/ui/toolbar/toolbar_pref_names.cc
+@@ -55,6 +55,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(
+       prefs::kPinnedCastMigrationComplete, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
++  registry->RegisterBooleanPref(prefs::kAegisAgentAutoPinnedMigration, false);
+   registry->RegisterBooleanPref(prefs::kTabsFromOtherDevicesAutoPinnedMigration,
+                                 false);
+ }
+diff --git a/chrome/browser/ui/toolbar/toolbar_pref_names.h b/chrome/browser/ui/toolbar/toolbar_pref_names.h
+index d4ac82cdb3..800c8360fb 100644
+--- a/chrome/browser/ui/toolbar/toolbar_pref_names.h
++++ b/chrome/browser/ui/toolbar/toolbar_pref_names.h
+@@ -29,6 +29,11 @@ inline constexpr char kPinnedChromeLabsMigrationComplete[] =
+ inline constexpr char kPinnedCastMigrationComplete[] =
+     "toolbar.pinned_cast_migration_complete";
+ 
++// Indicates whether the Aegis Agent entry has been auto-pinned once for
++// profiles that existed before the entry shipped by default.
++inline constexpr char kAegisAgentAutoPinnedMigration[] =
++    "toolbar.aegis_agent_auto_pinned_migration";
++
+ // Indicates whether tabs from other devices side panel has been auto-pinned.
+ inline constexpr char kTabsFromOtherDevicesAutoPinnedMigration[] =
+     "toolbar.tabs_from_other_devices_auto_pinned_migration";
+-- 
+2.52.0
+

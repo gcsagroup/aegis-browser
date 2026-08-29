@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <!-- Android 会把用户选择的主题色应用到这个单色遮罩。 -->
+    <group
+        android:name="gcsa_aegis_mark"
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="0.89"
+        android:scaleY="0.89">
+        <path
+            android:name="shield_upper"
+            android:pathData="M230,429V273C329,252 422,220 512,187C602,220 695,252 794,273V429"
+            android:fillColor="#00000000"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="52"
+            android:strokeLineCap="butt"
+            android:strokeLineJoin="round" />
+        <path
+            android:name="shield_lower_left"
+            android:pathData="M239,574C277,681 361,760 456,790"
+            android:fillColor="#00000000"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="52"
+            android:strokeLineCap="butt" />
+        <path
+            android:name="shield_lower_right"
+            android:pathData="M568,790C663,760 747,681 785,574"
+            android:fillColor="#00000000"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="52"
+            android:strokeLineCap="butt" />
+        <path
+            android:name="left_network_link"
+            android:pathData="M257,506C287,544 329,567 379,579"
+            android:fillColor="#00000000"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="43"
+            android:strokeLineCap="round" />
+        <path
+            android:name="g_bowl"
+            android:pathData="M648,365C615,332 568,321 516,321C428,321 357,392 357,480C357,568 428,639 516,639C604,639 666,581 674,488"
+            android:fillColor="#00000000"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="54"
+            android:strokeLineCap="butt"
+            android:strokeLineJoin="round" />
+        <path
+            android:name="g_crossbar"
+            android:pathData="M519,462H773V520H506Z"
+            android:fillColor="#FF000000" />
+        <path
+            android:name="node_left"
+            android:pathData="M179,490A47,47 0,1 1,273,490A47,47 0,1 1,179,490Z"
+            android:fillColor="#FF000000" />
+        <path
+            android:name="node_right"
+            android:pathData="M763,490A47,47 0,1 1,857,490A47,47 0,1 1,763,490Z"
+            android:fillColor="#FF000000" />
+        <path
+            android:name="node_bottom"
+            android:pathData="M465,800A47,47 0,1 1,559,800A47,47 0,1 1,465,800Z"
+            android:fillColor="#FF000000" />
+    </group>
+</vector>
