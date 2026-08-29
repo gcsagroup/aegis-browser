@@ -1,0 +1,19 @@
+{
+  "name": "aegis-browser-agent-v2-prototypes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "test:unit": "node --test test/*.test.mjs",
+    "fixture:preview": "node src/fixture-preview.mjs",
+    "p0:smoke": "node src/p0-playwright-mcp.mjs E2",
+    "p0:matrix": "node src/p0-matrix.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@playwright/mcp": "0.0.79"
+  }
+}
