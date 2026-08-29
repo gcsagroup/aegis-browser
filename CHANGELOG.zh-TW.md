@@ -34,6 +34,7 @@
 
 ### 修正
 
+- Chromium 背景抓取日誌與 vpython wheel/proxy 快取現在跟隨 `CHROMIUM_ROOT` 或 `.chromium-root` 選取的 checkout，不再靜默寫入已停用的舊 checkout 路徑。
 - 修正正常啟動看不到 Browser Agent 工具列/側欄入口的問題，並為既有 Profile 增加一次性固定遷移。
 - 修正 Agent WebUI 未送出側欄就緒通知、導致工具列和設定入口點擊後持續等待且介面不出現的問題；新增不繞過正式等待路徑的迴歸測試。
 - Profile 執行仍需明確開啟，實驗性 WebMCP 與交易能力繼續預設關閉。

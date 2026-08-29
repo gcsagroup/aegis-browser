@@ -34,6 +34,7 @@ The package version remains `0.1.0`, but no `0.1.0` release, Git tag, or binary 
 
 ### Fixed
 
+- Made detached Chromium fetch logs and the vpython wheel/proxy cache follow the checkout selected by `CHROMIUM_ROOT` or `.chromium-root`, instead of silently writing to the retired legacy checkout path.
 - Made the accepted Browser Agent toolbar/side-panel entry visible on normal startup without feature flags, including a one-time pin migration for existing profiles.
 - Fixed the missing Agent WebUI readiness signal that left toolbar and settings entry clicks waiting forever, and added a regression test that keeps the production readiness wait enabled.
 - Per-profile execution remains opt-in and experimental WebMCP/transaction capabilities remain disabled by default.
