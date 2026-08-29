@@ -1,0 +1,2 @@
+# P3 先安装基础 CLI 做本地边界检查；完整 local/server extra 需通过前置门后才安装。
+skyvern==1.0.48

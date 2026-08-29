@@ -10,7 +10,8 @@
     "p0:smoke": "node src/p0-playwright-mcp.mjs E2",
     "p0:matrix": "node src/p0-matrix.mjs",
     "p1:preflight": "node src/p1-browser-use-preflight.mjs",
-    "p2:preflight": "node src/p2-stagehand-preflight.mjs"
+    "p2:preflight": "node src/p2-stagehand-preflight.mjs",
+    "p4:contract": "node src/p4-native-contract.mjs"
   },
   "engines": {
     "node": ">=22"
