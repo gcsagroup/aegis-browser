@@ -69,6 +69,7 @@ test('adapter 只继承显式模型密钥并强制关闭外联能力', (t) => {
   assert.equal(environment.UNRELATED_SECRET, undefined);
   assert.equal(environment.ANONYMIZED_TELEMETRY, 'false');
   assert.equal(environment.BROWSER_USE_CLOUD_SYNC, 'false');
+  assert.equal(environment.BROWSER_USE_DISABLE_EXTENSIONS, '1');
   assert.equal(environment.SKYVERN_TELEMETRY, 'false');
   assert.equal(environment.ENABLE_CODE_BLOCK, 'false');
   assert.equal(environment.DISABLE_CODE_BLOCK_EXECUTION, 'true');
