@@ -34,8 +34,12 @@ export const FORCED_ADAPTER_ENVIRONMENT = Object.freeze({
   STAGEHAND_ENV: 'LOCAL',
 });
 
-export const DEVELOPMENT_MODEL_KEY_NAMES = new Set([
-  'OPENAI_API_KEY',
-  'ANTHROPIC_API_KEY',
-  'GOOGLE_API_KEY',
-]);
+export const MODEL_PROVIDER_DEFINITIONS = Object.freeze({
+  openai: Object.freeze({ environmentVariable: 'OPENAI_API_KEY' }),
+  anthropic: Object.freeze({ environmentVariable: 'ANTHROPIC_API_KEY' }),
+  gemini: Object.freeze({ environmentVariable: 'GOOGLE_API_KEY' }),
+});
+
+export const DEVELOPMENT_MODEL_KEY_NAMES = new Set(
+  Object.values(MODEL_PROVIDER_DEFINITIONS).map(({ environmentVariable }) => environmentVariable),
+);

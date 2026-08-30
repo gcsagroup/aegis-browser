@@ -4,6 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PROTOTYPE_ROOT } from './constants.mjs';
 import { startFixtureServer } from './fixture-server.mjs';
+import { resolveModelSelection } from './model-config.mjs';
 import { createRunContext } from './run-context.mjs';
 import { buildAdapterEnvironment, redact, validateNavigationUrl } from './security.mjs';
 
@@ -52,7 +53,12 @@ function runWorker({ configPath, environment, workingDirectory }) {
 }
 
 export async function runP1BrowserUsePreflight() {
-  const context = createRunContext({ scenarioId: 'E1', candidate: 'p1-browser-use-preflight' });
+  const modelSelection = resolveModelSelection();
+  const context = createRunContext({
+    scenarioId: 'E1',
+    candidate: 'p1-browser-use-preflight',
+    modelSelection,
+  });
   const requests = [];
   const fixture = await startFixtureServer({
     runRoot: context.runRoot,
@@ -103,7 +109,12 @@ export async function runP1BrowserUsePreflight() {
       status: context.journal.assertions.every(({ passed }) => passed) ? 'passed' : 'failed',
       durationMs: Math.round(performance.now() - startedAt),
       modelCalls: 0,
-      autonomousMode: 'not-run-no-development-key',
+      autonomousMode: !modelSelection.configured
+        ? 'not-run-model-selection-not-configured'
+        : modelSelection.credentialAvailable
+          ? 'not-run-preflight-only'
+          : 'not-run-development-credential-unavailable',
+      modelSelection,
       screenshots: 0,
       fixtureRequests: requests.length,
       profilePath: context.profilePath,
