@@ -14,6 +14,12 @@ test('第三方候选均固定精确版本和许可证', () => {
     'AEGIS_V2_MODEL',
     'AEGIS_V2_BASE_URL',
   ]);
+  assert.equal(lock.localModelProvider.runtime.version, '0.31.3');
+  assert.match(lock.localModelProvider.model.revision, /^[0-9a-f]{40}$/);
+  assert.match(lock.localModelProvider.model.weightsSha256, /^[0-9a-f]{64}$/);
+  assert.ok(lock.localModelProvider.model.weightsBytes > 0);
+  assert.equal(lock.localModelProvider.model.remoteCodeAllowed, false);
+  assert.equal(lock.localModelProvider.scope, 'isolated-prototype-only');
   assert.equal(Object.keys(lock.candidates).length, 6);
   for (const candidate of Object.values(lock.candidates)) {
     assert.match(candidate.version, /^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$/);

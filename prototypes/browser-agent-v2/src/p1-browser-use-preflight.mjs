@@ -111,7 +111,7 @@ export async function runP1BrowserUsePreflight() {
       modelCalls: 0,
       autonomousMode: !modelSelection.configured
         ? 'not-run-model-selection-not-configured'
-        : modelSelection.credentialAvailable
+        : (!modelSelection.credentialRequired || modelSelection.credentialAvailable)
           ? 'not-run-preflight-only'
           : 'not-run-development-credential-unavailable',
       modelSelection,

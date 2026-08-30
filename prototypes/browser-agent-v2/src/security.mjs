@@ -92,6 +92,15 @@ export function redact(value, fieldName = '') {
   return value;
 }
 
+export function redactEnvironmentSecrets(value, sourceEnvironment = process.env) {
+  let result = String(value);
+  for (const keyName of DEVELOPMENT_MODEL_KEY_NAMES) {
+    const secret = sourceEnvironment[keyName];
+    if (secret) result = result.split(secret).join('[REDACTED]');
+  }
+  return redact(result);
+}
+
 export function assertNoEnvironmentFile(workingDirectory) {
   const entries = fs.readdirSync(workingDirectory);
   const environmentFile = entries.find((entry) => entry === '.env' || entry.startsWith('.env.'));

@@ -6,8 +6,8 @@
 
 ## 当前边界
 
-- 当前整合源码包含 67 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁。
-- 57 补丁诊断清单和 65 补丁 Agent 验收保留为历史快照，均不绑定当前 67 补丁 HEAD，也不能给它授予资格。
+- 当前本地原型分支包含 68 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁；在明确整合前，已发布 `main` 仍为 67 个顶层补丁。
+- 57 补丁诊断清单和 65 补丁 Agent 验收保留为历史快照，均不绑定本地 68 补丁原型 HEAD，也不能给它授予资格。
 - Android、受信任构建证明、产品身份、签名/公证、安装验收和完整出站审计仍是未关闭门禁。
 - Script-risk、MinerGuard 与 bytecode shadow 仍属于研究或仅观察能力，不能授权阻断或发布声明。
 - 研究语料必须分开：Phase 2 是 synthetic formal fixture；Phase 3 是 13 样本 operator-blinded public pilot，召回率为 `1/3`。两者都不能泛化。
@@ -29,5 +29,11 @@
 - [Aegis Browser Agent v1 M0 基线](aegis-agent-m0-baseline-2026-08-28.md)
 - [Aegis Browser Agent v1 本地验收](aegis-browser-agent-v1-acceptance-2026-08-29.md)
 - [Aegis Browser Agent v1 安全修复验证](aegis-browser-agent-v1-security-fix-verification-2026-08-29.md)
+- [Aegis Browser Agent v2 M0 基线与第三方审计](aegis-browser-agent-v2-m0-baseline-2026-08-30.md)
+- [Aegis Browser Agent v2 P0 Playwright MCP 基线](aegis-browser-agent-v2-p0-playwright-mcp-2026-08-30.md)
+- [Aegis Browser Agent v2 P1/P2 前置报告](aegis-browser-agent-v2-p1-p2-preflight-2026-08-30.md)
+- [Aegis Browser Agent v2 P3/P4 前置报告](aegis-browser-agent-v2-p3-p4-preflight-2026-08-30.md)
+- [Aegis Browser Agent v2 M2 模型原型结果](aegis-browser-agent-v2-m2-model-results-2026-08-30.md)
+- [Aegis Browser Agent v2 M4 Go/No-Go 决策](aegis-browser-agent-v2-m4-go-no-go-2026-08-30.md)
 
 日期化原始记录保留简体中文单一事实源，避免多份证据译本逐渐不一致。本三语索引只概括范围；复用哈希、数量或结论前，必须查看原记录并重新验证。

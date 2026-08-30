@@ -13,6 +13,8 @@ test('run context 生成完整、脱敏且隔离的证据骨架', (t) => {
     provider: 'openai',
     model: 'user-model',
     baseUrl: null,
+    local: false,
+    credentialRequired: true,
     credentialAvailable: true,
   };
   const context = createRunContext({

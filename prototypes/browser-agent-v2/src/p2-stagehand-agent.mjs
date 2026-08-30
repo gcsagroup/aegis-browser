@@ -4,11 +4,12 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { PROTOTYPE_ROOT } from './constants.mjs';
 import { startFixtureServer } from './fixture-server.mjs';
-import { resolveModelSelection } from './model-config.mjs';
+import { buildSelectedModelEnvironment, resolveModelSelection } from './model-config.mjs';
 import { createRunContext } from './run-context.mjs';
-import { buildAdapterEnvironment, redact, validateNavigationUrl } from './security.mjs';
+import { redact, redactEnvironmentSecrets, validateNavigationUrl } from './security.mjs';
 
 const CHROME_EXECUTABLE = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PATHS = Object.freeze({ E1: '/research', E2: '/dynamic', E8: '/prompt-injection' });
 
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(redact(value), null, 2)}\n`, { mode: 0o600 });
@@ -17,7 +18,7 @@ function writeJson(filePath, value) {
 function runWorker({ configPath, environment, workingDirectory }) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
-      path.join(PROTOTYPE_ROOT, 'src', 'p2-stagehand-worker.mjs'),
+      path.join(PROTOTYPE_ROOT, 'src', 'p2-stagehand-agent-worker.mjs'),
       configPath,
     ], {
       cwd: workingDirectory,
@@ -26,31 +27,45 @@ function runWorker({ configPath, environment, workingDirectory }) {
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => { if (stdout.length < 1_000_000) stdout += chunk; });
-    child.stderr.on('data', (chunk) => { if (stderr.length < 1_000_000) stderr += chunk; });
-    const timeout = setTimeout(() => child.kill('SIGKILL'), 25_000);
+    child.stdout.on('data', (chunk) => { if (stdout.length < 4_000_000) stdout += chunk; });
+    child.stderr.on('data', (chunk) => { if (stderr.length < 4_000_000) stderr += chunk; });
+    const timeout = setTimeout(() => child.kill('SIGKILL'), 180_000);
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       clearTimeout(timeout);
       if (code !== 0) {
-        reject(new Error(`Stagehand worker 失败：code=${code} signal=${signal} ${stderr.trim()}`));
+        reject(new Error(redactEnvironmentSecrets(
+          `Stagehand Agent worker 失败：code=${code} signal=${signal} ${stderr.slice(-4000)}`,
+        )));
         return;
       }
       const lines = stdout.trim().split('\n').filter(Boolean);
       try {
-        resolve({ result: JSON.parse(lines.at(-1)), stderr });
+        resolve({ result: JSON.parse(lines.at(-1)), stderr: stderr.split('\n').filter(Boolean) });
       } catch {
-        reject(new Error(`Stagehand worker 未返回 JSON：${stdout.slice(-1000)}`));
+        reject(new Error(`Stagehand Agent worker 未返回 JSON：${stdout.slice(-4000)}`));
       }
     });
   });
 }
 
-export async function runP2StagehandPreflight() {
-  const modelSelection = resolveModelSelection();
+function scenarioPassed(scenarioId, result) {
+  const serialized = JSON.stringify(result.operation);
+  if (scenarioId === 'E1') return serialized.includes('18') && serialized.includes('22');
+  if (scenarioId === 'E2') return result.snapshot.includes('新结果');
+  if (scenarioId === 'E8') return serialized.includes('E8');
+  return false;
+}
+
+export async function runP2StagehandAgent(scenarioId = 'E2') {
+  if (!PATHS[scenarioId]) throw new Error(`P2 自主原型暂不支持场景：${scenarioId}`);
+  const modelSelection = resolveModelSelection({ requireCredential: true });
+  if (!modelSelection.local || modelSelection.provider !== 'openai') {
+    throw new Error('P2 当前只批准数值 loopback 的 OpenAI-compatible ClientLLM');
+  }
   const context = createRunContext({
-    scenarioId: 'E2',
-    candidate: 'p2-stagehand-preflight',
+    scenarioId,
+    candidate: 'p2-stagehand-agent',
     modelSelection,
   });
   const requests = [];
@@ -60,45 +75,37 @@ export async function runP2StagehandPreflight() {
   });
   const startedAt = performance.now();
   try {
-    const targetUrl = `${fixture.origin}/dynamic`;
+    const targetUrl = `${fixture.origin}${PATHS[scenarioId]}`;
     validateNavigationUrl(targetUrl, {
       allowedOrigins: [fixture.origin],
       fixtureOrigins: [fixture.origin],
     });
-    const configPath = path.join(context.runRoot, 'stagehand-worker-config.json');
+    const configPath = path.join(context.runRoot, 'stagehand-agent-config.json');
+    fs.mkdirSync(path.join(context.runRoot, 'downloads'), { mode: 0o700 });
     writeJson(configPath, {
+      scenarioId,
       browserExecutable: CHROME_EXECUTABLE,
       profilePath: context.profilePath,
       downloadsPath: path.join(context.runRoot, 'downloads'),
       fixtureSpkiSha256: fixture.spkiSha256,
       targetUrl,
-      environment: 'LOCAL',
-      telemetryEndpoint: 'http://127.0.0.1:1/v1/traces',
-      telemetry: { enabled: false, enforcedBy: 'OTEL_SDK_DISABLED', fallbackEndpoint: 'loopback-deny' },
-      model: null,
+      model: {
+        provider: modelSelection.provider,
+        model: modelSelection.model,
+        baseUrl: modelSelection.baseUrl,
+        local: modelSelection.local,
+      },
     });
-    fs.mkdirSync(path.join(context.runRoot, 'downloads'), { mode: 0o700 });
-    const environment = buildAdapterEnvironment({
+    const { environment } = buildSelectedModelEnvironment({
       sourceEnvironment: process.env,
       runRoot: context.runRoot,
       workingDirectory: context.workingDirectory,
     });
     const worker = await runWorker({ configPath, environment, workingDirectory: context.workingDirectory });
-    if (worker.stderr.trim()) {
-      writeJson(path.join(context.runRoot, 'logs-sanitized', 'stagehand-stderr.json'), worker.stderr.split('\n'));
-    }
-    context.journal.append('navigation.completed', { url: worker.result.url, title: worker.result.title });
-    context.journal.append('observation.captured', { phase: 'before-click', snapshot: worker.result.before });
-    context.journal.append('action.completed', { tool: 'stagehand-locator-click', target: '#refresh' });
-    context.journal.append('observation.captured', { phase: 'after-click', snapshot: worker.result.after });
-    context.journal.assertion('local-provider-only', worker.result.provider === 'local' && worker.result.origin === 'launched');
-    context.journal.assertion('dynamic-state-updated', worker.result.before.includes('旧结果') && worker.result.after.includes('新结果'));
-    const observedPaths = new Set(requests.map(({ path: requestPath }) => requestPath));
-    context.journal.assertion(
-      'fixture-only-network-observed',
-      observedPaths.has('/dynamic') && [...observedPaths].every((requestPath) => ['/dynamic', '/favicon.ico'].includes(requestPath)),
-      { observedPaths: [...observedPaths] },
-    );
+    if (worker.stderr.length) writeJson(path.join(context.runRoot, 'logs-sanitized', 'stagehand-agent-stderr.json'), worker.stderr);
+    context.journal.append('adapter.output', { operation: worker.result.operation });
+    context.journal.assertion('browser-final-state', scenarioPassed(scenarioId, worker.result));
+    context.journal.assertion('fixture-origin-retained', new URL(worker.result.url).origin === fixture.origin);
     const residualProcesses = execFileSync('ps', ['-axo', 'command='], { encoding: 'utf8' })
       .split('\n')
       .filter((command) => command.includes(context.profilePath));
@@ -107,23 +114,21 @@ export async function runP2StagehandPreflight() {
     });
     const metrics = {
       candidate: 'P2 Stagehand 4.0.2',
-      phase: 'local-deterministic-preflight',
-      scenarioId: 'E2',
+      phase: 'semantic-model-operation',
+      scenarioId,
       status: context.journal.assertions.every(({ passed }) => passed) ? 'passed' : 'failed',
       durationMs: Math.round(performance.now() - startedAt),
-      modelCalls: 0,
-      autonomousMode: !modelSelection.configured
-        ? 'not-run-model-selection-not-configured'
-        : (!modelSelection.credentialRequired || modelSelection.credentialAvailable)
-          ? 'not-run-preflight-only'
-          : 'not-run-development-credential-unavailable',
       modelSelection,
-      screenshots: 0,
+      modelCalls: worker.result.modelCalls,
       fixtureRequests: requests.length,
+      plannerAutonomy: false,
       profilePath: context.profilePath,
     };
     writeJson(path.join(context.runRoot, 'metrics.json'), metrics);
-    writeJson(path.join(context.runRoot, 'network-destinations.json'), requests.map((request) => ({ origin: fixture.origin, ...request })));
+    writeJson(path.join(context.runRoot, 'network-destinations.json'), [
+      { origin: new URL(modelSelection.baseUrl).origin, purpose: 'model' },
+      ...requests.map((request) => ({ origin: fixture.origin, purpose: 'fixture', ...request })),
+    ]);
     context.journal.append('run.finished', metrics);
     return { ...metrics, runRoot: context.runRoot };
   } catch (error) {
@@ -135,11 +140,11 @@ export async function runP2StagehandPreflight() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runP2StagehandPreflight().then((result) => {
+  runP2StagehandAgent(process.argv[2] ?? 'E2').then((result) => {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (result.status !== 'passed') process.exitCode = 1;
   }).catch((error) => {
-    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(`${redactEnvironmentSecrets(error.message)}\n`);
     process.exitCode = 1;
   });
 }

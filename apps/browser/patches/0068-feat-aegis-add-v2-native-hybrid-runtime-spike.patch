@@ -1,0 +1,541 @@
+From bc0ce40b7eaed17d9cc96dd9be6bdad3bd6f2763 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sun, 30 Aug 2026 12:59:08 +0800
+Subject: [PATCH] feat(aegis): add v2 native hybrid runtime spike
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ .../aegis/agent/aegis_agent_browsertest.cc    |  69 +++++++++
+ .../browser/aegis/agent/v2_runtime_spike.cc   | 143 ++++++++++++++++++
+ chrome/browser/aegis/agent/v2_runtime_spike.h | 102 +++++++++++++
+ .../aegis/agent/v2_runtime_spike_unittest.cc  | 131 ++++++++++++++++
+ 5 files changed, 448 insertions(+)
+ create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike.cc
+ create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike.h
+ create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index ca2fa97f3d..ef968aa958 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -41,6 +41,8 @@ source_set("agent_core") {
+     "agent/agent_types.h",
+     "agent/agent_workflow.cc",
+     "agent/agent_workflow.h",
++    "agent/v2_runtime_spike.cc",
++    "agent/v2_runtime_spike.h",
+   ]
+   deps = [
+     "//base",
+@@ -258,6 +260,7 @@ test("aegis_agent_core_unittests") {
+     "agent/agent_model_protocol_unittest.cc",
+     "agent/agent_planner_unittest.cc",
+     "agent/agent_task_store_unittest.cc",
++    "agent/v2_runtime_spike_unittest.cc",
+   ]
+   deps = [
+     ":agent_core",
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 480c375410..d029138eaf 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2026 GCSA
+ 
+ #include <utility>
++#include <vector>
+ 
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+@@ -10,6 +11,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
++#include "chrome/browser/aegis/agent/v2_runtime_spike.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_manager.h"
+@@ -19,6 +21,8 @@
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_actions.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_tabstrip.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/side_panel/side_panel_action_callback.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+@@ -39,6 +43,7 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/search_engines/template_url.h"
+ #include "components/search_engines/template_url_service.h"
++#include "components/tab_groups/tab_group_id.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+@@ -430,5 +435,69 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(service->MostRecentTask()->scope().allowed_origins.empty());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       V2SpikeOwnsDiscoveryTabAndRejectsStaleDocument) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  const GURL fixture_origin = embedded_test_server()->GetURL("/empty.html");
++  V2RuntimeSpike runtime(
++      "isolated-test-profile", "v2-task",
++      {url::Origin::Create(fixture_origin)}, /*max_tabs=*/2);
++  const GURL discovery_url = runtime.BuildDiscoveryUrl(
++      embedded_test_server()->GetURL("/title1.html"), "battery research");
++  ASSERT_TRUE(discovery_url.is_valid());
++
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++  chrome::AddTabAt(browser(), discovery_url, -1, true);
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
++           browser()->GetActiveTabInterface()->GetURL() == discovery_url;
++  }));
++  TabStripModel* tabs = browser()->tab_strip_model();
++  const int task_index = tabs->active_index();
++  const tab_groups::TabGroupId task_group = tabs->AddToNewGroup({task_index});
++  EXPECT_EQ(tabs->GetTabGroupForTab(task_index), task_group);
++
++  const int32_t tab_id =
++      browser()->GetActiveTabInterface()->GetHandle().raw_value();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(tab_id));
++  V2DocumentBinding first_document{
++      .profile_id = "isolated-test-profile",
++      .task_id = "v2-task",
++      .tab_id = tab_id,
++      .frame_token = "primary-main-frame",
++      .document_token = "document-before-navigation",
++      .origin = url::Origin::Create(discovery_url),
++  };
++  ASSERT_TRUE(runtime.CommitDocument(first_document));
++  EXPECT_TRUE(content::EvalJs(tabs->GetActiveWebContents(),
++                              "document.body.innerText.length > 0")
++                  .ExtractBool());
++  EXPECT_EQ(runtime.Authorize({.action_id = "extract-title",
++                               .tool = V2SpikeTool::kExtract,
++                               .binding = first_document}),
++            V2SpikeDecision::kAllow);
++
++  const GURL second_url = embedded_test_server()->GetURL("/title2.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), second_url));
++  V2DocumentBinding second_document = first_document;
++  second_document.document_token = "document-after-navigation";
++  second_document.origin = url::Origin::Create(second_url);
++  ASSERT_TRUE(runtime.CommitDocument(second_document));
++  EXPECT_EQ(runtime.Authorize({.action_id = "stale-click",
++                               .tool = V2SpikeTool::kClick,
++                               .binding = first_document}),
++            V2SpikeDecision::kStaleDocument);
++  EXPECT_TRUE(runtime.MarkDomObservationFailed(second_document));
++  EXPECT_TRUE(runtime.ConsumeVisualFallback(second_document));
++  EXPECT_FALSE(runtime.ConsumeVisualFallback(second_document));
++
++  EXPECT_EQ(runtime.Stop(), std::vector<int32_t>({tab_id}));
++  EXPECT_EQ(runtime.owned_tab_count(), 0u);
++  tabs->CloseWebContentsAt(task_index, TabCloseTypes::CLOSE_NONE);
++  EXPECT_TRUE(base::test::RunUntil(
++      [&]() { return tabs->count() == initial_tab_count; }));
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/v2_runtime_spike.cc b/chrome/browser/aegis/agent/v2_runtime_spike.cc
+new file mode 100644
+index 0000000000..0236484ba2
+--- /dev/null
++++ b/chrome/browser/aegis/agent/v2_runtime_spike.cc
+@@ -0,0 +1,143 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/agent/v2_runtime_spike.h"
++
++#include <utility>
++
++#include "net/base/url_util.h"
++
++namespace aegis::agent {
++
++bool V2DocumentBinding::IsValid() const {
++  return !profile_id.empty() && !task_id.empty() && tab_id > 0 &&
++         !frame_token.empty() && !document_token.empty() && !origin.opaque();
++}
++
++V2RuntimeSpike::V2RuntimeSpike(std::string profile_id,
++                               std::string task_id,
++                               std::vector<url::Origin> allowed_origins,
++                               size_t max_tabs)
++    : profile_id_(std::move(profile_id)),
++      task_id_(std::move(task_id)),
++      allowed_origins_(std::move(allowed_origins)),
++      max_tabs_(max_tabs) {}
++
++V2RuntimeSpike::~V2RuntimeSpike() = default;
++
++GURL V2RuntimeSpike::BuildDiscoveryUrl(const GURL& search_endpoint,
++                                       const std::string& goal) const {
++  if (stopped_ || goal.empty() || !search_endpoint.SchemeIsHTTPOrHTTPS() ||
++      search_endpoint.has_username() || search_endpoint.has_password() ||
++      !AllowsOrigin(url::Origin::Create(search_endpoint))) {
++    return GURL();
++  }
++  return net::AppendQueryParameter(search_endpoint, "q", goal);
++}
++
++bool V2RuntimeSpike::AdoptOwnedTab(int32_t tab_id) {
++  if (stopped_ || tab_id <= 0 || owned_tabs_.size() >= max_tabs_) {
++    return false;
++  }
++  return owned_tabs_.insert(tab_id).second;
++}
++
++bool V2RuntimeSpike::ReleaseOwnedTab(int32_t tab_id) {
++  documents_.erase(tab_id);
++  dom_failed_documents_.erase(tab_id);
++  visual_fallback_documents_.erase(tab_id);
++  return owned_tabs_.erase(tab_id) > 0;
++}
++
++bool V2RuntimeSpike::CommitDocument(V2DocumentBinding binding) {
++  if (stopped_ || !binding.IsValid() || binding.profile_id != profile_id_ ||
++      binding.task_id != task_id_ || !OwnsTab(binding.tab_id) ||
++      !AllowsOrigin(binding.origin)) {
++    return false;
++  }
++  const auto current = documents_.find(binding.tab_id);
++  if (current == documents_.end() || current->second != binding) {
++    dom_failed_documents_.erase(binding.tab_id);
++    visual_fallback_documents_.erase(binding.tab_id);
++  }
++  documents_.insert_or_assign(binding.tab_id, std::move(binding));
++  return true;
++}
++
++V2SpikeDecision V2RuntimeSpike::Authorize(const V2SpikeAction& action) {
++  if (stopped_) {
++    return V2SpikeDecision::kStopped;
++  }
++  if (action.action_id.empty() ||
++      consumed_action_ids_.contains(action.action_id)) {
++    return V2SpikeDecision::kDuplicateAction;
++  }
++  if (action.binding.profile_id != profile_id_ ||
++      action.binding.task_id != task_id_ || !OwnsTab(action.binding.tab_id)) {
++    return V2SpikeDecision::kScopeViolation;
++  }
++  const auto document = documents_.find(action.binding.tab_id);
++  if (document == documents_.end() || document->second != action.binding) {
++    return V2SpikeDecision::kStaleDocument;
++  }
++  if (action.tool == V2SpikeTool::kReadBookmarks) {
++    if (action.destination) {
++      return V2SpikeDecision::kToolDenied;
++    }
++    consumed_action_ids_.insert(action.action_id);
++    return V2SpikeDecision::kAllow;
++  }
++  if (action.tool == V2SpikeTool::kNavigate) {
++    if (!action.destination || !action.destination->SchemeIsHTTPOrHTTPS() ||
++        action.destination->has_username() ||
++        action.destination->has_password() ||
++        !AllowsOrigin(url::Origin::Create(*action.destination))) {
++      return V2SpikeDecision::kInvalidDestination;
++    }
++  } else if (action.destination) {
++    return V2SpikeDecision::kToolDenied;
++  }
++  consumed_action_ids_.insert(action.action_id);
++  return V2SpikeDecision::kAllow;
++}
++
++bool V2RuntimeSpike::MarkDomObservationFailed(
++    const V2DocumentBinding& binding) {
++  const auto document = documents_.find(binding.tab_id);
++  if (stopped_ || document == documents_.end() || document->second != binding) {
++    return false;
++  }
++  dom_failed_documents_.insert_or_assign(binding.tab_id, binding);
++  return true;
++}
++
++bool V2RuntimeSpike::ConsumeVisualFallback(const V2DocumentBinding& binding) {
++  const auto document = documents_.find(binding.tab_id);
++  const auto dom_failed = dom_failed_documents_.find(binding.tab_id);
++  const auto visual_fallback = visual_fallback_documents_.find(binding.tab_id);
++  if (stopped_ || document == documents_.end() || document->second != binding ||
++      dom_failed == dom_failed_documents_.end() ||
++      dom_failed->second != binding ||
++      (visual_fallback != visual_fallback_documents_.end() &&
++       visual_fallback->second == binding)) {
++    return false;
++  }
++  visual_fallback_documents_.insert_or_assign(binding.tab_id, binding);
++  return true;
++}
++
++std::vector<int32_t> V2RuntimeSpike::Stop() {
++  std::vector<int32_t> owned_tabs(owned_tabs_.begin(), owned_tabs_.end());
++  stopped_ = true;
++  owned_tabs_.clear();
++  documents_.clear();
++  consumed_action_ids_.clear();
++  dom_failed_documents_.clear();
++  visual_fallback_documents_.clear();
++  return owned_tabs;
++}
++
++bool V2RuntimeSpike::AllowsOrigin(const url::Origin& origin) const {
++  return allowed_origins_.contains(origin);
++}
++
++}  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/v2_runtime_spike.h b/chrome/browser/aegis/agent/v2_runtime_spike.h
+new file mode 100644
+index 0000000000..ced589af30
+--- /dev/null
++++ b/chrome/browser/aegis/agent/v2_runtime_spike.h
+@@ -0,0 +1,102 @@
++// Copyright 2026 GCSA
++// Isolated Native Hybrid v2 prototype. This is not the production runtime.
++
++#ifndef CHROME_BROWSER_AEGIS_AGENT_V2_RUNTIME_SPIKE_H_
++#define CHROME_BROWSER_AEGIS_AGENT_V2_RUNTIME_SPIKE_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/containers/flat_map.h"
++#include "base/containers/flat_set.h"
++#include "url/gurl.h"
++#include "url/origin.h"
++
++namespace aegis::agent {
++
++enum class V2SpikeTool {
++  kNavigate,
++  kClick,
++  kType,
++  kExtract,
++  kWait,
++  kScreenshot,
++  kReadBookmarks,
++};
++
++struct V2DocumentBinding {
++  std::string profile_id;
++  std::string task_id;
++  int32_t tab_id = 0;
++  std::string frame_token;
++  std::string document_token;
++  url::Origin origin;
++
++  bool IsValid() const;
++  bool operator==(const V2DocumentBinding&) const = default;
++};
++
++struct V2SpikeAction {
++  std::string action_id;
++  V2SpikeTool tool = V2SpikeTool::kExtract;
++  V2DocumentBinding binding;
++  std::optional<GURL> destination;
++};
++
++enum class V2SpikeDecision {
++  kAllow,
++  kStopped,
++  kScopeViolation,
++  kStaleDocument,
++  kDuplicateAction,
++  kToolDenied,
++  kInvalidDestination,
++};
++
++// Browser-process authority contract for the M3 spike. It deliberately has no
++// CDP endpoint, shell, filesystem, secret, or arbitrary JavaScript capability.
++class V2RuntimeSpike {
++ public:
++  V2RuntimeSpike(std::string profile_id,
++                 std::string task_id,
++                 std::vector<url::Origin> allowed_origins,
++                 size_t max_tabs = 4);
++  V2RuntimeSpike(const V2RuntimeSpike&) = delete;
++  V2RuntimeSpike& operator=(const V2RuntimeSpike&) = delete;
++  ~V2RuntimeSpike();
++
++  GURL BuildDiscoveryUrl(const GURL& search_endpoint,
++                         const std::string& goal) const;
++  bool AdoptOwnedTab(int32_t tab_id);
++  bool ReleaseOwnedTab(int32_t tab_id);
++  bool CommitDocument(V2DocumentBinding binding);
++  V2SpikeDecision Authorize(const V2SpikeAction& action);
++  bool MarkDomObservationFailed(const V2DocumentBinding& binding);
++  bool ConsumeVisualFallback(const V2DocumentBinding& binding);
++  std::vector<int32_t> Stop();
++
++  bool stopped() const { return stopped_; }
++  size_t owned_tab_count() const { return owned_tabs_.size(); }
++  bool OwnsTab(int32_t tab_id) const { return owned_tabs_.contains(tab_id); }
++  bool AllowsNativeBookmarkMutation() const { return false; }
++
++ private:
++  bool AllowsOrigin(const url::Origin& origin) const;
++
++  const std::string profile_id_;
++  const std::string task_id_;
++  const base::flat_set<url::Origin> allowed_origins_;
++  const size_t max_tabs_;
++  base::flat_set<int32_t> owned_tabs_;
++  base::flat_map<int32_t, V2DocumentBinding> documents_;
++  base::flat_set<std::string> consumed_action_ids_;
++  base::flat_map<int32_t, V2DocumentBinding> dom_failed_documents_;
++  base::flat_map<int32_t, V2DocumentBinding> visual_fallback_documents_;
++  bool stopped_ = false;
++};
++
++}  // namespace aegis::agent
++
++#endif  // CHROME_BROWSER_AEGIS_AGENT_V2_RUNTIME_SPIKE_H_
+diff --git a/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc b/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
+new file mode 100644
+index 0000000000..818cb5ab43
+--- /dev/null
++++ b/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
+@@ -0,0 +1,131 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/agent/v2_runtime_spike.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::agent {
++namespace {
++
++constexpr int32_t kOwnedTab = 7;
++
++V2DocumentBinding Binding(const char* document_token = "document-1") {
++  return {.profile_id = "isolated-profile",
++          .task_id = "task-1",
++          .tab_id = kOwnedTab,
++          .frame_token = "main-frame",
++          .document_token = document_token,
++          .origin = url::Origin::Create(GURL("https://fixture.test"))};
++}
++
++V2RuntimeSpike Runtime() {
++  return V2RuntimeSpike("isolated-profile", "task-1",
++                        {url::Origin::Create(GURL("https://fixture.test"))});
++}
++
++TEST(AegisV2RuntimeSpikeTest, DiscoveryStartsWithoutCurrentPageUrl) {
++  auto runtime = Runtime();
++  EXPECT_EQ(runtime.BuildDiscoveryUrl(GURL("https://fixture.test/search"),
++                                      "battery research"),
++            GURL("https://fixture.test/search?q=battery+research"));
++  EXPECT_FALSE(runtime
++                   .BuildDiscoveryUrl(GURL("https://outside.test/search"),
++                                      "battery research")
++                   .is_valid());
++  EXPECT_FALSE(
++      runtime
++          .BuildDiscoveryUrl(GURL("https://user:password@fixture.test/search"),
++                             "battery research")
++          .is_valid());
++}
++
++TEST(AegisV2RuntimeSpikeTest, BindsEveryActionToCurrentDocument) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  V2SpikeAction action{.action_id = "action-1",
++                       .tool = V2SpikeTool::kClick,
++                       .binding = Binding()};
++  EXPECT_EQ(runtime.Authorize(action), V2SpikeDecision::kAllow);
++  action.action_id = "action-2";
++  action.binding.document_token = "stale-document";
++  EXPECT_EQ(runtime.Authorize(action), V2SpikeDecision::kStaleDocument);
++}
++
++TEST(AegisV2RuntimeSpikeTest, RejectsCrossProfileTabAndOpenRedirect) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  V2SpikeAction cross_profile{.action_id = "action-profile",
++                              .tool = V2SpikeTool::kExtract,
++                              .binding = Binding()};
++  cross_profile.binding.profile_id = "daily-profile";
++  EXPECT_EQ(runtime.Authorize(cross_profile), V2SpikeDecision::kScopeViolation);
++  V2SpikeAction redirect{.action_id = "action-redirect",
++                         .tool = V2SpikeTool::kNavigate,
++                         .binding = Binding(),
++                         .destination = GURL("https://outside.test/")};
++  EXPECT_EQ(runtime.Authorize(redirect), V2SpikeDecision::kInvalidDestination);
++}
++
++TEST(AegisV2RuntimeSpikeTest, VisualFallbackIsDocumentBoundAndSingleUse) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  EXPECT_FALSE(runtime.ConsumeVisualFallback(Binding()));
++  EXPECT_TRUE(runtime.MarkDomObservationFailed(Binding()));
++  EXPECT_TRUE(runtime.ConsumeVisualFallback(Binding()));
++  EXPECT_FALSE(runtime.ConsumeVisualFallback(Binding()));
++  EXPECT_FALSE(runtime.ConsumeVisualFallback(Binding("stale-document")));
++}
++
++TEST(AegisV2RuntimeSpikeTest, VisualFallbackCannotCrossTabsWithReusedToken) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  V2DocumentBinding second_tab = Binding();
++  second_tab.tab_id = kOwnedTab + 1;
++  ASSERT_TRUE(runtime.AdoptOwnedTab(second_tab.tab_id));
++  ASSERT_TRUE(runtime.CommitDocument(second_tab));
++  ASSERT_TRUE(runtime.MarkDomObservationFailed(Binding()));
++  EXPECT_FALSE(runtime.ConsumeVisualFallback(second_tab));
++}
++
++TEST(AegisV2RuntimeSpikeTest, NativeBookmarksAreReadOnly) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  EXPECT_FALSE(runtime.AllowsNativeBookmarkMutation());
++  EXPECT_EQ(runtime.Authorize({.action_id = "read-bookmarks",
++                               .tool = V2SpikeTool::kReadBookmarks,
++                               .binding = Binding()}),
++            V2SpikeDecision::kAllow);
++}
++
++TEST(AegisV2RuntimeSpikeTest, NativeBookmarksRejectUnexpectedDestination) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  EXPECT_EQ(runtime.Authorize(
++                {.action_id = "read-bookmarks-with-url",
++                 .tool = V2SpikeTool::kReadBookmarks,
++                 .binding = Binding(),
++                 .destination = GURL("https://fixture.test/unexpected")}),
++            V2SpikeDecision::kToolDenied);
++}
++
++TEST(AegisV2RuntimeSpikeTest, StopRevokesOwnedStateAndFutureActions) {
++  auto runtime = Runtime();
++  ASSERT_TRUE(runtime.AdoptOwnedTab(kOwnedTab));
++  ASSERT_TRUE(runtime.CommitDocument(Binding()));
++  EXPECT_EQ(runtime.Stop(), std::vector<int32_t>({kOwnedTab}));
++  EXPECT_TRUE(runtime.stopped());
++  EXPECT_EQ(runtime.owned_tab_count(), 0u);
++  EXPECT_EQ(runtime.Authorize({.action_id = "after-stop",
++                               .tool = V2SpikeTool::kExtract,
++                               .binding = Binding()}),
++            V2SpikeDecision::kStopped);
++}
++
++}  // namespace
++}  // namespace aegis::agent
+-- 
+2.52.0
+

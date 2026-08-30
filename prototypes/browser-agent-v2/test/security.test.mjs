@@ -8,6 +8,7 @@ import {
   assertPathWithin,
   buildAdapterEnvironment,
   redact,
+  redactEnvironmentSecrets,
   validateNavigationUrl,
 } from '../src/security.mjs';
 
@@ -44,6 +45,14 @@ test('日志递归脱敏密钥、密码、OTP 和 Authorization', () => {
     nested: { password: '[REDACTED]', note: '[REDACTED]' },
     otp: '[REDACTED]',
   });
+});
+
+test('异常文本按获准环境变量的精确值脱敏，不依赖密钥前缀', () => {
+  const arbitraryKey = 'development-key-with-an-unusual-format';
+  assert.equal(
+    redactEnvironmentSecrets(`SDK failure: ${arbitraryKey}`, { OPENAI_API_KEY: arbitraryKey }),
+    'SDK failure: [REDACTED]',
+  );
 });
 
 test('adapter 只继承显式模型密钥并强制关闭外联能力', (t) => {

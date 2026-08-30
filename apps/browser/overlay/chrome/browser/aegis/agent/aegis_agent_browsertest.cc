@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 
 #include <utility>
+#include <vector>
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -10,6 +11,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+#include "chrome/browser/aegis/agent/v2_runtime_spike.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -19,6 +21,8 @@
 #include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_actions.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/side_panel/side_panel_action_callback.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
@@ -39,6 +43,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
+#include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
@@ -428,6 +433,70 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       [&]() { return service->task_count_for_testing() == 1u; }));
   EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
   EXPECT_TRUE(service->MostRecentTask()->scope().allowed_origins.empty());
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       V2SpikeOwnsDiscoveryTabAndRejectsStaleDocument) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  const GURL fixture_origin = embedded_test_server()->GetURL("/empty.html");
+  V2RuntimeSpike runtime(
+      "isolated-test-profile", "v2-task",
+      {url::Origin::Create(fixture_origin)}, /*max_tabs=*/2);
+  const GURL discovery_url = runtime.BuildDiscoveryUrl(
+      embedded_test_server()->GetURL("/title1.html"), "battery research");
+  ASSERT_TRUE(discovery_url.is_valid());
+
+  const int initial_tab_count = browser()->tab_strip_model()->count();
+  chrome::AddTabAt(browser(), discovery_url, -1, true);
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
+           browser()->GetActiveTabInterface()->GetURL() == discovery_url;
+  }));
+  TabStripModel* tabs = browser()->tab_strip_model();
+  const int task_index = tabs->active_index();
+  const tab_groups::TabGroupId task_group = tabs->AddToNewGroup({task_index});
+  EXPECT_EQ(tabs->GetTabGroupForTab(task_index), task_group);
+
+  const int32_t tab_id =
+      browser()->GetActiveTabInterface()->GetHandle().raw_value();
+  ASSERT_TRUE(runtime.AdoptOwnedTab(tab_id));
+  V2DocumentBinding first_document{
+      .profile_id = "isolated-test-profile",
+      .task_id = "v2-task",
+      .tab_id = tab_id,
+      .frame_token = "primary-main-frame",
+      .document_token = "document-before-navigation",
+      .origin = url::Origin::Create(discovery_url),
+  };
+  ASSERT_TRUE(runtime.CommitDocument(first_document));
+  EXPECT_TRUE(content::EvalJs(tabs->GetActiveWebContents(),
+                              "document.body.innerText.length > 0")
+                  .ExtractBool());
+  EXPECT_EQ(runtime.Authorize({.action_id = "extract-title",
+                               .tool = V2SpikeTool::kExtract,
+                               .binding = first_document}),
+            V2SpikeDecision::kAllow);
+
+  const GURL second_url = embedded_test_server()->GetURL("/title2.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), second_url));
+  V2DocumentBinding second_document = first_document;
+  second_document.document_token = "document-after-navigation";
+  second_document.origin = url::Origin::Create(second_url);
+  ASSERT_TRUE(runtime.CommitDocument(second_document));
+  EXPECT_EQ(runtime.Authorize({.action_id = "stale-click",
+                               .tool = V2SpikeTool::kClick,
+                               .binding = first_document}),
+            V2SpikeDecision::kStaleDocument);
+  EXPECT_TRUE(runtime.MarkDomObservationFailed(second_document));
+  EXPECT_TRUE(runtime.ConsumeVisualFallback(second_document));
+  EXPECT_FALSE(runtime.ConsumeVisualFallback(second_document));
+
+  EXPECT_EQ(runtime.Stop(), std::vector<int32_t>({tab_id}));
+  EXPECT_EQ(runtime.owned_tab_count(), 0u);
+  tabs->CloseWebContentsAt(task_index, TabCloseTypes::CLOSE_NONE);
+  EXPECT_TRUE(base::test::RunUntil(
+      [&]() { return tabs->count() == initial_tab_count; }));
 }
 
 }  // namespace
