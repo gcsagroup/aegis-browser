@@ -6,8 +6,8 @@
 
 ## 当前边界
 
-- 当前本地原型分支包含 69 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁；在明确整合前，已发布 `main` 仍为 67 个顶层补丁。
-- 57 补丁诊断清单和 65 补丁 Agent 验收保留为历史快照，均不绑定本地 69 补丁原型 HEAD，也不能给它授予资格。
+- 当前本地原型分支包含 72 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁；在明确整合前，已发布 `main` 仍为 67 个顶层补丁。
+- 57 补丁诊断清单和 65 补丁 Agent 验收保留为历史快照，均不绑定本地 72 补丁原型 HEAD，也不能给它授予资格。
 - Android、受信任构建证明、产品身份、签名/公证、安装验收和完整出站审计仍是未关闭门禁。
 - Script-risk、MinerGuard 与 bytecode shadow 仍属于研究或仅观察能力，不能授权阻断或发布声明。
 - 研究语料必须分开：Phase 2 是 synthetic formal fixture；Phase 3 是 13 样本 operator-blinded public pilot，召回率为 `1/3`。两者都不能泛化。

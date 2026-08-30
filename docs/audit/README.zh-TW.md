@@ -6,8 +6,8 @@
 
 ## 目前邊界
 
-- 目前本機原型分支包含 69 個頂層 Chromium 修補程式和 2 個巢狀 V8 修補程式；在明確整合前，已發布 `main` 仍為 67 個頂層補丁。
-- 57 補丁診斷清單和 65 補丁 Agent 驗收保留為歷史快照，均不綁定本機 69 補丁原型 HEAD，也不能為它授予資格。
+- 目前本機原型分支包含 72 個頂層 Chromium 修補程式和 2 個巢狀 V8 修補程式；在明確整合前，已發布 `main` 仍為 67 個頂層補丁。
+- 57 補丁診斷清單和 65 補丁 Agent 驗收保留為歷史快照，均不綁定本機 72 補丁原型 HEAD，也不能為它授予資格。
 - Android、受信任建置證明、產品身分、簽署/公證、安裝驗收和完整對外連線稽核仍是未關閉門檻。
 - Script-risk、MinerGuard 與 bytecode shadow 仍屬於研究或僅觀察能力，不能授權阻擋或發佈聲明。
 - 研究語料必須分開：Phase 2 是 synthetic formal fixture；Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`。兩者都不能泛化。
