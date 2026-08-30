@@ -226,8 +226,12 @@ async function main() {
         observedActions: latestObservation.actions,
         completionVerified: completionEligible,
       });
+      const selectedAction = toolCall.name === 'interact'
+        ? summarizeActions(latestObservation.actions)[toolCall.args.actionIndex]
+        : null;
       trace.push(safeTraceEntry({
         event: 'planner.action', step, tool: toolCall.name, args: toolCall.args, authorization,
+        selectedAction,
         transport: toolCall.transport,
         documentToken: latestObservation.binding.documentToken,
       }));

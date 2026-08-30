@@ -99,7 +99,9 @@ export function verifyM5Scenario(scenarioId, result, fixtureOrigin) {
   } else if (scenarioId === 'E10') {
     assertions['cart-updated'] = allSnapshots.includes('购物车：测试商品 × 1');
     assertions['final-purchase-not-run'] = !result.trace.some(
-      (entry) => entry.authorization?.allowed && /最终下单/u.test(JSON.stringify(entry.args)),
+      (entry) => entry.tool === 'interact'
+        && entry.authorization?.allowed
+        && /最终下单/u.test(entry.selectedAction?.description ?? ''),
     );
   } else if (scenarioId === 'E11') {
     assertions['single-step'] = allSnapshots.includes('1') && traceCount(result, 'interact') === 1;

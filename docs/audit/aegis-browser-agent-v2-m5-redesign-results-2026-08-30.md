@@ -1,8 +1,8 @@
 # Aegis Browser Agent v2 M5 重设计结果
 
 - 日期：2026-08-30
-- 范围：隔离自主 Runtime 原型、E0–E11、本地 HTTPS fixture、独立 Chromium Spike
-- 结论：**v2 架构与隔离原型方案完成；正式产品集成仍为 No-Go**
+- 范围：隔离自主 Runtime 原型、E0–E11、本地 HTTPS fixture、独立 Chromium 桌面集成
+- 结论：**v2 桌面本地候选已完成并可供人工验收；日常 Profile 与正式发布仍为 No-Go**
 
 ## 1. 结果摘要
 
@@ -15,7 +15,14 @@ M5 解决了 M4 的核心失败：Agent 不再要求用户先打开相关网页�
 - 10 轮最终矩阵：120/120，成功率 100%，总耗时 `437918 ms`；
 - Node 测试：38/38；
 - Chromium v2 Runtime 定向单测：12/12；
-- Chromium 真实 BrowserTest：1/1。
+- Chromium Agent Core：62/62；
+- Chromium 真实 BrowserTest：9/9；
+- 指定本地模型回归：E0–E11，12/12。
+
+指定模型为用户提供的 OpenAI-compatible loopback 服务
+`http://127.0.0.1:8000/v1`，模型标识
+`Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit`。该选择只用于本轮验收，产品没有写死
+provider、model 或 base URL。
 
 最终矩阵证据：
 `.artifacts/aegis-agent-v2-prototypes/20260830T115630100Z-m5-matrix-m5-97ddfdb2/metrics.json`。
@@ -50,15 +57,26 @@ M5 解决了 M4 的核心失败：Agent 不再要求用户先打开相关网页�
 所有 run 使用新建隔离 Profile。没有连接、复制或读取用户日常浏览器 Profile；没有云密钥、真实
 账号、付款、上传、下载执行或跨 allowlist 外联。
 
-## 4. Chromium Spike
+## 4. Chromium 桌面集成
 
-原生提交：`a3262433a9`。导出补丁：
+自主 Runtime 原生提交：`a3262433a9`。导出补丁：
 `0069-feat-aegis-harden-v2-autonomous-runtime-spike.patch`，SHA-256：
 `4800ede2d4c270f62384141fd8e3ee67a88a84be523063c1fd5fafcd755d6bc7`。
+新手入口和 Actor 来源隔离提交：`99ec5dd79813bc2acee19ae1b50528c8e3b53630`。导出补丁：
+`0070-feat-aegis-simplify-browser-agent-v2-onboarding.patch`，SHA-256：
+`8924302196059b93838e9bbe19e0a939f578b4210c5f3f995dfadbcd929e3a23`。
 
 补丁在 `V2RuntimeSpike` 中加入精确入口路由、完整 URL 文档绑定、跨文档语义动作去重、只读收藏夹
 单次收据、同 URL 导航拒绝、嵌套重定向预检、风险接管和 Result Verifier 完成门。真实
 BrowserTest 从 `about:blank` 自动创建任务标签、纳入任务组并验证导航后旧文档动作失效。
+
+本轮继续把 Spike 收敛为普通用户可操作的桌面入口：侧栏只保留一个目标输入框和一个“开始任务”
+按钮，提供商品对比、收藏夹、官方下载和购物快捷目标；首次使用可直接检测本地模型并保存连接。
+用户无需预先打开网页，Runtime 会按目标自动创建相关标签页。任务结束后侧栏展示结论、来源和未完成
+事项，而不是只显示内部状态。高级模式、当前页授权和 origin 范围均折叠到高级设置。
+
+Actor 底层 UI 也按任务来源隔离：Aegis 任务保留网页执行边框和用户接管能力，但不进入
+Glic/Gemini 任务气泡，也不显示带 Gemini 品牌的标签状态，避免把本地 Qwen 误导成 Gemini。
 
 ## 5. 选择与边界
 
@@ -66,7 +84,13 @@ M5 选择“原生 Runtime + accessibility-first + 严格模型 adapter”，不
 Playwright MCP、通用 CDP、任意 JavaScript、Shell、文件系统或秘密能力嵌入产品权限根。
 provider、model 和 base URL 仍由用户运行时配置；本轮本地 Qwen/MLX 仅是固定评测变量。
 
-Computer Use 的新 UI 人工检查因 macOS 锁屏未执行；真实 `browser_tests` 已通过，但两者不能互相
-冒充。真实视觉 fallback 的收益也尚未用具备视觉能力的用户模型完成对照。因此本报告只把“v2
-架构与隔离原型方案”判定为完成，不授权正式产品集成、日常 Profile、真实交易、推送、部署、
-签名、公证或发布。iOS 按用户要求继续跳过。
+Computer Use 已在独立 Profile 上完成第一轮真实 UI 检查：从 `about:blank` 打开 Agent，检测并保存
+指定本地模型，输入自然中文目标后自动打开准确的 `https://example.com/`，经历规划、执行、验证并
+在结果卡显示页面结论和来源。该轮发现 Actor 共用状态错误显示 Gemini 文案，随后已按任务来源隔离，
+并由 3 个 Actor UI 单测覆盖开始、提前停止和执行中状态。最终构建后的 UI 复验在本机解锁后执行。
+检查未连接、复制或读取用户日常 Profile。
+
+真实视觉 fallback 的收益仍未用具备视觉能力的用户模型完成对照；任务完成摘要当前只保证浏览器
+会话内保留，跨浏览器重启的完整任务恢复也未列入本轮完成标准。因此本报告授权本地桌面候选人工
+验收，但仍不授权日常 Profile、真实交易、推送、部署、签名、公证或正式发布。iOS 按用户要求
+继续跳过。
