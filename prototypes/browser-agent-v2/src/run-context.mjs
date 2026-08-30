@@ -10,7 +10,12 @@ function timestampId() {
   return new Date().toISOString().replace(/[-:.]/g, '').replace('Z', 'Z-');
 }
 
-export function createRunContext({ scenarioId, candidate, artifactRoot = ARTIFACT_ROOT }) {
+export function createRunContext({
+  scenarioId,
+  candidate,
+  artifactRoot = ARTIFACT_ROOT,
+  modelSelection = null,
+}) {
   if (!/^[A-Z][A-Z0-9-]{0,31}$/.test(scenarioId)) throw new Error(`无效场景 ID：${scenarioId}`);
   if (!/^[a-z][a-z0-9-]{0,31}$/.test(candidate)) throw new Error(`无效候选 ID：${candidate}`);
 
@@ -41,6 +46,7 @@ export function createRunContext({ scenarioId, candidate, artifactRoot = ARTIFAC
     osRelease: os.release(),
     profilePath,
     workingDirectory,
+    modelSelection,
     secretValuesRecorded: false,
   };
   fs.writeFileSync(path.join(runRoot, 'environment.json'), `${JSON.stringify(environment, null, 2)}\n`, {

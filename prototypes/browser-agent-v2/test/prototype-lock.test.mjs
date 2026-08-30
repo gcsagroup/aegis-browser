@@ -6,6 +6,14 @@ import { PROTOTYPE_ROOT } from '../src/constants.mjs';
 test('第三方候选均固定精确版本和许可证', () => {
   const lock = JSON.parse(fs.readFileSync(`${PROTOTYPE_ROOT}/prototype-lock.json`, 'utf8'));
   assert.equal(lock.schemaVersion, 1);
+  assert.equal(lock.modelSelection.mode, 'runtime-user-configured');
+  assert.equal(lock.modelSelection.defaultProvider, null);
+  assert.equal(lock.modelSelection.defaultModel, null);
+  assert.deepEqual(lock.modelSelection.selectionEnvironment, [
+    'AEGIS_V2_PROVIDER',
+    'AEGIS_V2_MODEL',
+    'AEGIS_V2_BASE_URL',
+  ]);
   assert.equal(Object.keys(lock.candidates).length, 6);
   for (const candidate of Object.values(lock.candidates)) {
     assert.match(candidate.version, /^\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.-]+)?$/);

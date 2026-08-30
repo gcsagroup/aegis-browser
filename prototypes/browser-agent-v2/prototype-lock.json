@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
   "auditedAt": "2026-08-30",
+  "modelSelection": {
+    "mode": "runtime-user-configured",
+    "defaultProvider": null,
+    "defaultModel": null,
+    "selectionEnvironment": [
+      "AEGIS_V2_PROVIDER",
+      "AEGIS_V2_MODEL",
+      "AEGIS_V2_BASE_URL"
+    ]
+  },
   "candidates": {
     "playwrightMcp": {
       "package": "@playwright/mcp",

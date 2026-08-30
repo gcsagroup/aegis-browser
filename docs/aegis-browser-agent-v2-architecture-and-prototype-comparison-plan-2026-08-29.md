@@ -32,7 +32,7 @@ v2 推荐采用 **浏览器原生任务运行时 + Stagehand 风格 DOM/视觉�
 推荐决策顺序：
 
 1. 用统一 Harness 对 Browser Use、Stagehand、Playwright MCP、Skyvern 和 Aegis Native
-   Spike 做相同任务、相同模型、相同页面和相同安全测试。
+   Spike 做相同任务、同一对比组内相同的用户所选模型、相同页面和相同安全测试。
 2. 快速原型优先验证 Browser Use 和 Stagehand；Playwright MCP 作为确定性操作基线，
    Skyvern作为任务记录/接管体验参考。
 3. 正式 v2 只保留测量证明有效的交互模式，并在 Chromium Browser Process 内重新建立
@@ -57,7 +57,8 @@ v2 必须表现为“浏览器级任务 Agent”，而不是“当前网页助�
 ### 1.2 关键假设
 
 1. 桌面 Chromium 是 v2 唯一实施平台；iOS 和 Android 的运行证据不能转移到本计划。
-2. Aegis 继续支持用户配置模型，不把任一云模型或云浏览器设为强制依赖。
+2. Aegis 继续支持用户配置 provider、兼容 API 地址和模型；不写死默认 provider/model，
+   也不把任一云模型或云浏览器设为强制依赖。
 3. 外部原型允许使用隔离测试 Profile 和本地/公开只读页面；不允许复制用户日常 Profile、
    上传真实 Cookie、密码、支付信息或私人文件。
 4. v2 可复用 Chromium Actor、Accessibility、WebContents、BookmarkModel、DownloadManager
@@ -70,7 +71,8 @@ v2 必须表现为“浏览器级任务 Agent”，而不是“当前网页助�
 本计划不是以“列出几个框架”为完成，而是要让下一轮可以直接执行：
 
 - 候选原型的责任、接入方式、隔离边界、优缺点和退出条件明确；
-- 所有原型使用同一任务集、评分口径、模型配置和证据格式；
+- 所有原型使用同一任务集、评分口径和证据格式；模型配置由用户在运行时选择，并只在单次
+  对比组内锁定为控制变量；
 - v2 目标架构定义模块边界、数据流、状态机、权限流和失败恢复；
 - 明确保留、重写和删除的 v1 资产；
 - 定义原型阶段和正式开发阶段的独立 Go/No-Go 门；
@@ -229,7 +231,8 @@ Playwright MCP 优化确定性工具接口，Skyvern 优化云工作流。Aegis 
 每次运行记录：
 
 - `scenario_id`、自然语言目标和初始页面（默认 `about:blank`）；
-- 原型名称、commit/package lock、模型、温度/推理设置和视觉模式；
+- 原型名称、commit/package lock、用户当次选择的 provider/model/base URL、温度/推理设置
+  和视觉模式；
 - Profile 身份、允许 origins、最大标签数、步骤、token、时间和费用预算；
 - 是否允许搜索、登录 fixture、下载、上传、浏览器原生工具和用户接管；
 - fixture 版本和期望结果 schema。
@@ -260,7 +263,9 @@ Playwright MCP 优化确定性工具接口，Skyvern 优化云工作流。Aegis 
 
 ### 4.3 公平性要求
 
-- 同一对比组使用相同模型和模型参数；框架专用模型另列，不与通用模型混为同一结果。
+- 产品不设置固定 provider/model；每个对比组在启动时读取用户当次选择，并让组内候选使用
+  相同 provider/model/base URL 和模型参数。下一组可以更换；框架专用模型另列，不与通用
+  模型混为同一结果。
 - 同一场景固定网站/fixture 状态、窗口尺寸、语言、地区、网络条件和预算。
 - 每个概率性场景至少独立运行 10 次；不以最佳一次录像代表成功率。
 - 每轮随机化无关 DOM id、布局顺序和提示注入位置，防止只记住 fixture。
@@ -710,8 +715,9 @@ Windows/Linux/Android、Developer ID、公证、安装包、更新渠道、正�
 4. 允许使用用户提供的开发云模型密钥；任何密钥都不写入仓库、日志或构建产物。
 5. 原型只做公开只读站点和本地 fixture。
 
-据此允许执行 M0–M4 原型比较。开发云模型密钥必须由当前进程环境临时注入；缺少密钥时，
-允许完成 Harness、fixture、确定性基线和 adapter 自测，但不得自动改用其他云模型。
+据此允许执行 M0–M4 原型比较。provider/model/base URL 由用户在运行时选择，开发云模型密钥
+必须由当前进程环境临时注入；缺少配置或密钥时，允许完成 Harness、fixture、确定性基线和
+adapter 自测，但不得自动选择默认模型或改用其他云模型。
 
 以下事项仍不在本次授权内：连接或复制用户日常 Profile、真实账号登录、购物/付款、私人文件
 上传、运行下载产物、把外部框架嵌入正式产品、正式 v2 Chromium 产品开发，以及推送、部署、
