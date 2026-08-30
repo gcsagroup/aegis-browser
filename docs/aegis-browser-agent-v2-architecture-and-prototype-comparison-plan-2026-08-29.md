@@ -1,10 +1,10 @@
 # Aegis Browser Agent v2 架构与原型对比计划
 
-- 版本：Plan v2.1-prototype-complete
+- 版本：Plan v2.2-redesign-prototype-complete
 - 日期：2026-08-29
 - 批准日期：2026-08-30
-- 状态：**M0–M4 隔离原型已完成；正式 v2 产品 No-Go，需重设计自主执行层**
-- 当前基线：根仓库 `main@cb35227` 保持 67 个顶层补丁；本地原型分支新增候选 `0068`，
+- 状态：**M0–M5 隔离原型与自主闭环重设计已完成；正式 v2 产品集成仍为 No-Go**
+- 当前基线：根仓库 `main@cb35227` 保持 67 个顶层补丁；本地原型分支新增候选 `0068–0069`，
   Chromium `151.0.7922.77`，另有 2 个 V8 补丁
 - 产品范围：Aegis Chromium Browser 桌面端；iOS 按当前要求跳过，Android 后置
 - 授权边界：允许在独立工作区安装已审计并锁定的第三方原型依赖，使用用户提供且仅由环境
@@ -745,3 +745,24 @@ P4 证明 Agent 可以从空白页自行打开 discovery 页、建立任务标�
 后续建议不是继续扩展 v1，而是先原型化“用户所选模型 + 严格结构化 tool-call adapter +
 P2 语义动作 + P4 原生权限根”的最小自主闭环，再重新执行相同硬门。provider、model 和
 base URL 继续由用户运行时配置，本轮 `Qwen3-1.7B-4bit` 只作为评测控制变量。
+
+## 16. M5 自主闭环重设计结果（2026-08-30）
+
+M4 的 No-Go 后续重设计已经完成，详细证据见
+[M5 重设计结果](./audit/aegis-browser-agent-v2-m5-redesign-results-2026-08-30.md)。目标架构冻结为：
+
+1. Goal Router 在空白页自动创建 owned tab 并消费显式入口导航，Planner 只处理剩余目标；
+2. 严格单工具调用 Planner 只看到当前可用能力，不接受自由文本猜测或多个工具；
+3. accessibility/DOM 为默认观察路径，外部框架不成为权限根；
+4. Browser Process Native Broker 绑定 Profile、任务、标签、frame、文档、观察和语义动作收据；
+5. Result Verifier 未确认目标证据前不暴露也不授权 `complete`；
+6. 登录、OTP、最终交易、下载和重定向分别进入接管或专用安全路径；Stop 撤销任务状态。
+
+本地 fixture 的 E0–E11 首轮 12/12、3 轮稳定性 36/36、10 轮最终矩阵 120/120。独立 Chromium
+Spike 核心定向单测 12/12、BrowserTest 1/1。新补丁为
+`0069-feat-aegis-harden-v2-autonomous-runtime-spike.patch`，仍只在本地原型分支。
+
+因此“v2 架构与隔离原型方案”完成并可作为正式实现输入；正式产品集成、日常 Profile、真实
+账号/购物、可视化 fallback 收益验收、解锁状态下的新 UI 人工验收、签名、公证和发布仍未获
+本计划授权，也不得由本结果推断为产品 Go。provider/model/base URL 继续由用户配置；M5 runner
+为控制外联仅批准数值 loopback OpenAI-compatible 服务，不是产品 provider 限制。

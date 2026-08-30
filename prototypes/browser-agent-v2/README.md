@@ -1,6 +1,6 @@
 # Aegis Browser Agent v2 原型工作区
 
-该目录只用于 P0–P4 隔离比较，不是正式浏览器运行时。所有任务必须从空白页或 Harness 指定
+该目录用于 P0–P4 隔离比较和 M5 自主闭环重设计，不是正式浏览器运行时。所有任务必须从空白页或 Harness 指定
 入口开始，使用本次 run 的独立 Profile，并只访问本地 fixture 或显式公开只读 allowlist。
 
 ## 当前范围
@@ -12,6 +12,7 @@
 - P2：Stagehand 受控语义动作候选；`plannerAutonomy=false`，不能作为自主内核结论。
 - P3：Skyvern 因默认云依赖、遥测、代码执行面和 AGPL 服务边界被停止。
 - P4：独立 Chromium Native Hybrid Spike，只复用 v1 安全与原生工具资产。
+- M5：Goal Router + 严格 tool-call Planner + accessibility 观察 + Native Broker + Result Verifier。
 
 ## Provider / model 配置
 
@@ -43,10 +44,18 @@ npm run p1:agent -- E0
 npm run p2:agent -- E2
 npm run m2:smoke
 AEGIS_M2_CANDIDATES=p2 npm run m2:matrix
+npm run m5:smoke
+npm run m5:stability
+npm run m5:matrix
 ```
 
 本次 M2 结果：P1 smoke 6/12，E0 0/3、E8 0/3，因此未进入 10 轮；P2 smoke 9/9，
 随后 10 轮 E1/E2/E8 矩阵 30/30。P2 数据只证明语义动作层稳定，不证明空白页自主规划。
+
+M5 从空白页自动打开目标页面，不要求用户预先准备网页。E0–E11 首轮 12/12、稳定性门
+36/36、最终 10 轮矩阵 120/120；登录/OTP 零输入接管，下载、跨域重定向和最终交易被硬拒绝，
+语义动作与原生只读工具均不可重放，`complete` 必须先通过 Result Verifier。M5 固定对照模型
+只用于本轮评测，产品 provider/model/base URL 仍由用户配置。
 
 测试产物只写入仓库根目录被忽略的 `.artifacts/aegis-agent-v2-prototypes/`。不要在此目录创建
 `.env`；模型密钥只能在运行命令的当前进程环境中提供。
