@@ -11,6 +11,24 @@
       "AEGIS_V2_BASE_URL"
     ]
   },
+  "localModelProvider": {
+    "runtime": {
+      "package": "mlx-lm",
+      "version": "0.31.3",
+      "license": "MIT"
+    },
+    "model": {
+      "repository": "mlx-community/Qwen3-1.7B-4bit",
+      "revision": "3b1b1768f8f8cf8351c712464f906e86c2b8269e",
+      "baseModel": "Qwen/Qwen3-1.7B",
+      "license": "Apache-2.0",
+      "format": "MLX SafeTensors 4-bit",
+      "weightsBytes": 968080210,
+      "weightsSha256": "0e86d9677e519323849eac1bc272caae88567a481ff188c431f70be543d9995f",
+      "remoteCodeAllowed": false
+    },
+    "scope": "isolated-prototype-only"
+  },
   "candidates": {
     "playwrightMcp": {
       "package": "@playwright/mcp",

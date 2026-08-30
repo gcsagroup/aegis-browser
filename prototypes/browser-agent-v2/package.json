@@ -10,7 +10,11 @@
     "p0:smoke": "node src/p0-playwright-mcp.mjs E2",
     "p0:matrix": "node src/p0-matrix.mjs",
     "p1:preflight": "node src/p1-browser-use-preflight.mjs",
+    "p1:agent": "node src/p1-browser-use-agent.mjs",
     "p2:preflight": "node src/p2-stagehand-preflight.mjs",
+    "p2:agent": "node src/p2-stagehand-agent.mjs",
+    "m2:smoke": "node src/m2-model-matrix.mjs smoke",
+    "m2:matrix": "node src/m2-model-matrix.mjs matrix",
     "p4:contract": "node src/p4-native-contract.mjs"
   },
   "engines": {
@@ -18,6 +22,7 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "4.0.2",
-    "@playwright/mcp": "0.0.79"
+    "@playwright/mcp": "0.0.79",
+    "zod": "4.4.3"
   }
 }

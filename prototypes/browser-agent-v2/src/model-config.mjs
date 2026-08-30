@@ -24,7 +24,7 @@ function normalizeBaseUrl(value) {
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && numericLoopback)) {
     throw new Error('模型服务必须使用 HTTPS；HTTP 只允许数值 loopback');
   }
-  return raw;
+  return Object.freeze({ value: raw, local: numericLoopback });
 }
 
 export function resolveModelSelection({
@@ -41,6 +41,8 @@ export function resolveModelSelection({
       provider: null,
       model: null,
       baseUrl: null,
+      local: false,
+      credentialRequired: false,
       credentialAvailable: false,
     });
   }
@@ -51,9 +53,12 @@ export function resolveModelSelection({
   if (!definition) throw new Error(`不支持的 provider API 格式：${rawProvider}`);
 
   const model = validateModelName(rawModel);
-  const baseUrl = normalizeBaseUrl(rawBaseUrl);
+  const normalizedBaseUrl = normalizeBaseUrl(rawBaseUrl);
+  const baseUrl = normalizedBaseUrl?.value ?? null;
+  const local = normalizedBaseUrl?.local ?? false;
   const credentialAvailable = Boolean(sourceEnvironment[definition.environmentVariable]);
-  if (requireCredential && !credentialAvailable) {
+  const credentialRequired = !local;
+  if (requireCredential && credentialRequired && !credentialAvailable) {
     throw new Error(`当前进程未提供所选 provider 的开发凭据：${definition.environmentVariable}`);
   }
 
@@ -62,6 +67,8 @@ export function resolveModelSelection({
     provider,
     model,
     baseUrl,
+    local,
+    credentialRequired,
     credentialAvailable,
   });
 }
@@ -77,7 +84,7 @@ export function buildSelectedModelEnvironment({
     sourceEnvironment,
     runRoot,
     workingDirectory,
-    modelKeyName: definition.environmentVariable,
+    modelKeyName: selection.credentialAvailable ? definition.environmentVariable : null,
   });
 
   environment.AEGIS_V2_PROVIDER = selection.provider;
