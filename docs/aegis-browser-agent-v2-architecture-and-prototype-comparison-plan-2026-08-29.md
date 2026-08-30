@@ -1,15 +1,15 @@
 # Aegis Browser Agent v2 架构与原型对比计划
 
-- 版本：Plan v2.2-redesign-prototype-complete
+- 版本：Plan v2.3-desktop-local-candidate
 - 日期：2026-08-29
 - 批准日期：2026-08-30
-- 状态：**M0–M5 隔离原型与自主闭环重设计已完成；正式 v2 产品集成仍为 No-Go**
-- 当前基线：根仓库 `main@cb35227` 保持 67 个顶层补丁；本地原型分支新增候选 `0068–0069`，
+- 状态：**M0–M5 与桌面本地 v2 候选已完成；日常 Profile、真实交易和正式发布仍为 No-Go**
+- 当前基线：根仓库 `main@cb35227` 保持 67 个顶层补丁；本地原型分支新增候选 `0068–0070`，
   Chromium `151.0.7922.77`，另有 2 个 V8 补丁
 - 产品范围：Aegis Chromium Browser 桌面端；iOS 按当前要求跳过，Android 后置
-- 授权边界：允许在独立工作区安装已审计并锁定的第三方原型依赖，使用用户提供且仅由环境
-  注入的开发云模型密钥，运行公开只读站点和本地 fixture。仍不授权连接用户日常 Profile、
-  真实登录/交易/上传、正式 v2 产品源码开发、推送、部署、签名、公证或发布
+- 授权边界：原型方案确认后，用户已继续授权在独立工作区和独立 Profile 完成桌面 v2 本地候选；
+  provider、model 和 base URL 由用户配置，密钥不进入仓库、日志或构建产物。仍不授权连接用户
+  日常 Profile、真实登录/交易/上传、推送、部署、签名、公证或发布
 - 历史参考：[Aegis Browser Agent v1 实施方案](./aegis-browser-agent-v1-implementation-plan-2026-08-28.md)
 - 历史验收：[Aegis Browser Agent v1 macOS 本地验收](./audit/aegis-browser-agent-v1-acceptance-2026-08-29.md)
 
@@ -762,7 +762,23 @@ M4 的 No-Go 后续重设计已经完成，详细证据见
 Spike 核心定向单测 12/12、BrowserTest 1/1。新补丁为
 `0069-feat-aegis-harden-v2-autonomous-runtime-spike.patch`，仍只在本地原型分支。
 
-因此“v2 架构与隔离原型方案”完成并可作为正式实现输入；正式产品集成、日常 Profile、真实
-账号/购物、可视化 fallback 收益验收、解锁状态下的新 UI 人工验收、签名、公证和发布仍未获
-本计划授权，也不得由本结果推断为产品 Go。provider/model/base URL 继续由用户配置；M5 runner
-为控制外联仅批准数值 loopback OpenAI-compatible 服务，不是产品 provider 限制。
+因此“v2 架构与隔离原型方案”完成并可作为产品实现输入。用户随后授权继续实现桌面本地候选；
+日常 Profile、真实账号/购物、可视化 fallback 收益验收、签名、公证和发布仍未获授权，也不得由
+本结果推断为公开发布 Go。provider/model/base URL 继续由用户配置；M5 runner 为控制外联仅批准
+数值 loopback OpenAI-compatible 服务，不是产品 provider 限制。
+
+## 17. 桌面本地候选完成记录（2026-08-30）
+
+基于 M5 冻结架构继续完成 `0070`：侧栏默认只显示目标输入、快捷目标和“开始任务”，首次使用自动
+检测并保存 loopback 模型；Runtime 从空白页自动打开相关网页，并在完成后显示结论、来源和未完成
+事项。高级模式、当前页绑定和 origin 范围折叠到高级设置，provider/model/base URL 仍可自定义。
+
+Actor UI 按任务来源隔离：Aegis 保留执行边框和接管能力，但不显示 Glic/Gemini 任务气泡或品牌状态。
+本地指定模型 `Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit` 完成 E0–E11 12/12；Node 测试 38/38、
+Agent Core 62/62、真实 BrowserTest 9/9、Actor UI 单测 3/3。提交为
+`99ec5dd79813bc2acee19ae1b50528c8e3b53630`，补丁
+`0070-feat-aegis-simplify-browser-agent-v2-onboarding.patch`，SHA-256：
+`8924302196059b93838e9bbe19e0a939f578b4210c5f3f995dfadbcd929e3a23`。
+
+本地桌面候选达到可人工验收状态；iOS 按要求跳过。独立 Profile 之外的使用、真实交易、跨重启完整
+任务恢复、签名、公证、分发和公开发布仍不属于本次完成结论。
