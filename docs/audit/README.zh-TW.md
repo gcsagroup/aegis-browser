@@ -6,8 +6,8 @@
 
 ## 目前邊界
 
-- 目前本機原型分支包含 68 個頂層 Chromium 修補程式和 2 個巢狀 V8 修補程式；在明確整合前，已發布 `main` 仍為 67 個頂層補丁。
-- 57 補丁診斷清單和 65 補丁 Agent 驗收保留為歷史快照，均不綁定本機 68 補丁原型 HEAD，也不能為它授予資格。
+- 目前本機原型分支包含 69 個頂層 Chromium 修補程式和 2 個巢狀 V8 修補程式；在明確整合前，已發布 `main` 仍為 67 個頂層補丁。
+- 57 補丁診斷清單和 65 補丁 Agent 驗收保留為歷史快照，均不綁定本機 69 補丁原型 HEAD，也不能為它授予資格。
 - Android、受信任建置證明、產品身分、簽署/公證、安裝驗收和完整對外連線稽核仍是未關閉門檻。
 - Script-risk、MinerGuard 與 bytecode shadow 仍屬於研究或僅觀察能力，不能授權阻擋或發佈聲明。
 - 研究語料必須分開：Phase 2 是 synthetic formal fixture；Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`。兩者都不能泛化。
@@ -35,5 +35,6 @@
 - [Aegis Browser Agent v2 P3/P4 前置報告](aegis-browser-agent-v2-p3-p4-preflight-2026-08-30.md)
 - [Aegis Browser Agent v2 M2 模型原型結果](aegis-browser-agent-v2-m2-model-results-2026-08-30.md)
 - [Aegis Browser Agent v2 M4 Go/No-Go 決策](aegis-browser-agent-v2-m4-go-no-go-2026-08-30.md)
+- [Aegis Browser Agent v2 M5 重新設計結果](aegis-browser-agent-v2-m5-redesign-results-2026-08-30.md)
 
 日期化原始記錄保留簡體中文單一事實來源，避免多份證據譯本逐漸不一致。本三語索引只概括範圍；重用雜湊、數量或結論前，必須查看原始記錄並重新驗證。

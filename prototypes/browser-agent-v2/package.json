@@ -15,6 +15,10 @@
     "p2:agent": "node src/p2-stagehand-agent.mjs",
     "m2:smoke": "node src/m2-model-matrix.mjs smoke",
     "m2:matrix": "node src/m2-model-matrix.mjs matrix",
+    "m5:agent": "node src/m5-aegis-agent.mjs",
+    "m5:smoke": "node src/m5-smoke.mjs",
+    "m5:stability": "node src/m5-matrix.mjs stability",
+    "m5:matrix": "node src/m5-matrix.mjs matrix",
     "p4:contract": "node src/p4-native-contract.mjs"
   },
   "engines": {

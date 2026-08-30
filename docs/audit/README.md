@@ -6,8 +6,8 @@ These files are dated, point-in-time engineering records. They preserve the evid
 
 ## Current boundary
 
-- This local prototype branch carries 68 top-level Chromium patches plus 2 nested V8 patches. Published `main` remains at 67 top-level patches until the prototype is explicitly integrated.
-- The 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots. Neither binds or qualifies the local 68-patch prototype head.
+- This local prototype branch carries 69 top-level Chromium patches plus 2 nested V8 patches. Published `main` remains at 67 top-level patches until the prototype is explicitly integrated.
+- The 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots. Neither binds or qualifies the local 69-patch prototype head.
 - Android, trusted build attestation, product identity, signing/notarization, install acceptance, and full outbound-traffic review remain open gates.
 - Script-risk, MinerGuard, and bytecode-shadow work remains research-only or observe-only and does not authorize blocking or release claims.
 - Research corpora must remain separated: Phase 2 is a synthetic formal fixture; Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`. Neither result is generalizable.
@@ -35,5 +35,6 @@ These files are dated, point-in-time engineering records. They preserve the evid
 - [Aegis Browser Agent v2 P3/P4 preflight](aegis-browser-agent-v2-p3-p4-preflight-2026-08-30.md)
 - [Aegis Browser Agent v2 M2 model results](aegis-browser-agent-v2-m2-model-results-2026-08-30.md)
 - [Aegis Browser Agent v2 M4 Go/No-Go decision](aegis-browser-agent-v2-m4-go-no-go-2026-08-30.md)
+- [Aegis Browser Agent v2 M5 redesign results](aegis-browser-agent-v2-m5-redesign-results-2026-08-30.md)
 
 The dated source records are retained in Simplified Chinese to avoid maintaining translated evidence copies that could drift. This trilingual index summarizes their scope; hashes, counts, and conclusions must be read from the original record and revalidated before reuse.
