@@ -84,11 +84,15 @@ M5 选择“原生 Runtime + accessibility-first + 严格模型 adapter”，不
 Playwright MCP、通用 CDP、任意 JavaScript、Shell、文件系统或秘密能力嵌入产品权限根。
 provider、model 和 base URL 仍由用户运行时配置；本轮本地 Qwen/MLX 仅是固定评测变量。
 
-Computer Use 已在独立 Profile 上完成第一轮真实 UI 检查：从 `about:blank` 打开 Agent，检测并保存
-指定本地模型，输入自然中文目标后自动打开准确的 `https://example.com/`，经历规划、执行、验证并
-在结果卡显示页面结论和来源。该轮发现 Actor 共用状态错误显示 Gemini 文案，随后已按任务来源隔离，
-并由 3 个 Actor UI 单测覆盖开始、提前停止和执行中状态。最终构建后的 UI 复验在本机解锁后执行。
-检查未连接、复制或读取用户日常 Profile。
+Computer Use 已在独立 Profile 上完成两轮真实 UI 检查。第一轮从 `about:blank` 打开 Agent，检测并
+保存指定本地模型，输入自然中文目标后自动打开准确的 `https://example.com/`，经历规划、执行、验证
+并在结果卡显示页面结论和来源。该轮发现 Actor 共用状态错误显示 Gemini 文案，随后已按任务来源
+隔离，并由 3 个 Actor UI 单测覆盖开始、提前停止和执行中状态。
+
+2026-08-31 最终构建复验使用同一独立测试 Profile：用户只输入一句中文并启动一次，Agent 自动打开
+`https://example.com/`，约 33 秒后返回页面标题、正文第一句话和来源。运行中窗口标题、标签状态、
+接管入口和完成结果均只显示 Aegis，不再出现 Gemini 标题、任务气泡或品牌状态。检查未连接、复制或
+读取用户日常 Profile。
 
 真实视觉 fallback 的收益仍未用具备视觉能力的用户模型完成对照；任务完成摘要当前只保证浏览器
 会话内保留，跨浏览器重启的完整任务恢复也未列入本轮完成标准。因此本报告授权本地桌面候选人工
