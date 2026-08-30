@@ -70,3 +70,4 @@
 0069-feat-aegis-harden-v2-autonomous-runtime-spike.patch
 0070-feat-aegis-simplify-browser-agent-v2-onboarding.patch
 0071-fix-aegis-harden-browser-agent-planning-flow.patch
+0072-fix-aegis-route-goals-through-model-before-browsing.patch

@@ -121,3 +121,40 @@ Chromium 提交：`b2a323aa21`。导出补丁：
 `0071-fix-aegis-harden-browser-agent-planning-flow.patch`，SHA-256：
 `a74b84823d0a07871d769d842f7a6028d9124d7d5cefc9b7f281d8ab6690293e`。
 本结果仍不连接用户日常 Profile，不授权真实账号、交易、上传、签名、公证、分发或公开发布。
+
+## 7. 模型优先路由、执行闭环与接管崩溃修复（2026-08-31）
+
+用户反馈证明 `0071` 仍有三个产品级问题。第一，未给出明确网址的普通目标会在模型理解前被默认
+搜索引擎接管；第二，收藏夹预览虽然已正确路由为浏览器内任务，但 Planner 只看见工具名，不知道
+工具用途，错误地用 `tab.create`“展示预览”；第三，Aegis 网页上的浮动“接管任务”按钮仍调用
+Glic/Gemini UI。诊断报告 `Chromium-2026-08-31-004947.ips` 的故障栈明确落在
+`glic::GlicKeyedService::ToggleUI → actor::ui::HandoffButtonController::OnButtonPressed`。
+
+`0072` 将运行顺序改为：
+
+1. 对普通自然语言目标先调用严格的 `agent.route_goal`，由用户选择的模型在
+   `browser_only / open_url / web_search` 中选一个入口；缺少 URL 不再自动等于搜索；
+2. Browser Process 校验模型给出的入口，创建实际标签页并冻结 origin、tab、工具、数据和预算；
+3. Planner 获得每个已批准工具的用途、风险、是否需要 origin、是否有外部副作用，随后通过
+   `agent.submit_plan` 提交最小步骤；工具结果会自动回到模型，不能为“显示结果”额外开页；
+4. 无网页 origin 的浏览器内任务在 scope 建立时移除所有需要 origin 的工具；只读、预览和
+   “不要修改”目标不得规划外部副作用工具；
+5. 执行模型每轮只能调用浏览器指定的一个工具。schema 失败时，第二轮会收到精确拒绝原因并修正；
+6. Result Verifier 验证浏览器证据后才允许 `agent.complete`。最终摘要跟随用户主要语言；
+7. 接管按钮改为按 Actor 任务来源打开 UI。Aegis 来源只暂停并保留 Aegis 侧栏，不再进入 Glic。
+
+同一 loopback Qwen 的真实协议回归中，输入
+`把浏览器里保存的网站按主题整理一下，先给我看预览，不要修改` 后，模型规划固定为
+`bookmark.list → bookmark.plan`，执行参数为 `{"strategy":"topic"}`，最后通过
+`agent.complete` 返回结果；没有 `tab.create`，也没有搜索页。此前真实 App 已在独立 Profile 中
+观察到“正在理解需求 → 计划已准备 → bookmark.list 成功 → 错误 tab.create 被拒绝”的完整失败链，
+由任务数据库而非界面猜测确认根因。修复后最终自动化证据为 Agent Core 65/65、定向
+BrowserTest 11/11、接管按钮单测 8/8，TypeScript preprocess/build/lint 和 Chromium App 增量构建
+通过。修复后最后一轮 Computer Use 被 macOS 锁屏阻断，没有绕过锁屏；因此该项仍需解锁后的人工
+点击复验，不能把自动化结果写成已完成的最终视觉验收。
+
+Chromium 提交：`6f5240da8d`。导出补丁：
+`0072-fix-aegis-route-goals-through-model-before-browsing.patch`，SHA-256：
+`c36d60779c03a78b22e93b9768f0c382cd9465abe55038ed8f22ed3227eedbe7`。最新 App 仍是 build-tree
+本地候选，不是签名、公证或分发包；日常 Profile、真实账号、交易、上传、运行下载产物和发布边界
+均未扩大。

@@ -6,8 +6,8 @@ These files are dated, point-in-time engineering records. They preserve the evid
 
 ## Current boundary
 
-- This local prototype branch carries 69 top-level Chromium patches plus 2 nested V8 patches. Published `main` remains at 67 top-level patches until the prototype is explicitly integrated.
-- The 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots. Neither binds or qualifies the local 69-patch prototype head.
+- This local prototype branch carries 72 top-level Chromium patches plus 2 nested V8 patches. Published `main` remains at 67 top-level patches until the prototype is explicitly integrated.
+- The 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots. Neither binds or qualifies the local 72-patch prototype head.
 - Android, trusted build attestation, product identity, signing/notarization, install acceptance, and full outbound-traffic review remain open gates.
 - Script-risk, MinerGuard, and bytecode-shadow work remains research-only or observe-only and does not authorize blocking or release claims.
 - Research corpora must remain separated: Phase 2 is a synthetic formal fixture; Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`. Neither result is generalizable.
