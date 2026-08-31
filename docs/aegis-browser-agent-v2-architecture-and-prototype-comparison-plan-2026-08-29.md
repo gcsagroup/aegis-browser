@@ -865,3 +865,18 @@ HTTP(S) 标签直接冻结为任务上下文，自动提供同源只读工具；
 `apps/browser/dist-local/v2-current-page-854079c515/GCSA-aegis.app`。该包显示 GCSA-aegis 名称和定制
 图标，ad-hoc 深度签名验证通过；内部 Bundle ID 仍保留 Chromium 兼容值，所以结论是本地测试 Go、
 公开发布 No-Go。日常 Profile、真实账号、交易、上传、公证、分发和 iOS 边界不变。
+
+## 22. P11 日常场景入口与独立定时自动化（2026-08-31）
+
+普通任务界面移除高级模式、工作流、来源范围和“使用当前页”开关。用户只需自由输入，或选择总结当前页、
+对比商品、整理收藏夹、检查失效链接、找官方下载、搜集资料六个场景；模型理解目标，Browser Process
+继续拥有路由、标签页、origin、工具、预算和确认边界。
+
+自动化从高级设置中独立为任务中心，提供降价、到货、网页更新、URL 有效性模板和五档运行频率。频率是
+Mojo 结构化参数，不是可由模型改写的自然语言偏好；Browser Process 绑定后，服务层在 `monitor.create`
+再次校验一致性。自动化只在浏览器运行期间调度，重启只补一次，不安装系统 daemon。
+
+提交 `666f561898` 通过 Agent Core 66/66、BrowserTest 14/14、Interactive UI Test 2/2、完整 App 构建
+和 Computer Use 键盘视觉验收。补丁 `0075` SHA-256 为
+`37e2ffcf0ad4853b4018e5089f88573f3353a7a43b2bfb2568cf790282b72783`；最新本地候选为
+`apps/browser/dist-local/v2-automation-666f561898/GCSA-aegis.app`。本地测试 Go，公证和公开发布 No-Go。
