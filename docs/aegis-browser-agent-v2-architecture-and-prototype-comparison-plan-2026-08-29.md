@@ -1,10 +1,10 @@
 # Aegis Browser Agent v2 架构与原型对比计划
 
-- 版本：Plan v2.4-model-first-runtime
+- 版本：Plan v2.5-required-tool-routing
 - 日期：2026-08-29
 - 批准日期：2026-08-30
 - 状态：**M0–M5 与桌面本地 v2 候选已完成；日常 Profile、真实交易和正式发布仍为 No-Go**
-- 当前基线：根仓库 `main@cb35227` 保持 67 个顶层补丁；本地原型分支新增候选 `0068–0072`，
+- 当前基线：根仓库 `main@cb35227` 保持 67 个顶层补丁；本地原型分支新增候选 `0068–0073`，
   Chromium `151.0.7922.77`，另有 2 个 V8 补丁
 - 产品范围：Aegis Chromium Browser 桌面端；iOS 按当前要求跳过，Android 后置
 - 授权边界：原型方案确认后，用户已继续授权在独立工作区和独立 Profile 完成桌面 v2 本地候选；
@@ -822,3 +822,29 @@ Glic，从源头移除已确认的 `ToggleUI` 崩溃路径。
 BrowserTest 11/11、接管按钮单测 8/8。提交 `6f5240da8d`，补丁 `0072`。修复后的最终可视点击
 因 macOS 锁屏尚需人工补验；该缺口不影响源码、协议和自动化结论，但仍阻止把本轮标成公开发布
 或最终视觉验收 Go。provider、model 和 base URL 继续由用户配置，iOS 继续跳过。
+
+## 20. P9 点名站点路由与强制工具调用（2026-08-31）
+
+用户输入 `帮我在jd找几款内存` 后出现“AI 没有正确生成计划中的下一步操作”。任务数据库证明该任务
+被错误路由到 Google origin，且执行模型连续两次没有返回浏览器指定的 `page.navigate` 原生工具；
+失败发生在首个网页动作之前，不是京东页面执行错误。
+
+`0073` 将每一轮唯一获准工具同步设置为 provider 原生强制工具选择：OpenAI-compatible 使用具名
+function、Anthropic 使用具名 tool、Gemini 使用 `allowedFunctionNames`。OpenAI-compatible 推理模型
+同时请求最小推理强度，入口路由输出上限从 1024 提高到 4096。点名网站或常用别名时必须直达站内
+HTTPS 页面，不能先交给通用搜索引擎；只查找、比较、推荐商品归类为只读 research，只有明确购买、
+加购物车、填写购物表单或准备结账才进入 shopping。
+
+错误提示不再只说“下一步格式不正确”，而会显示连续两次未生成的具体工具名，并明确说明尚未执行
+网页操作。指定本地 Qwen 的真实协议复验将原句稳定路由为
+`research → open_url → https://search.jd.com/Search?keyword=内存`。新版隔离 Profile 中另一条公开
+只读 USB 扩展坞任务真实完成 `page.navigate → page.extract → page.extract → agent.complete` 并
+显示三款结果；Agent Core 66/66、定向 BrowserTest 8/8、TypeScript preprocess/build/lint、完整
+Chromium 增量构建和 ad-hoc 深度签名检查均通过。
+
+Chromium 提交为 `78f4a03caf`，补丁为
+`0073-fix-aegis-require-model-tools-and-route-named-sites.patch`，SHA-256：
+`125b7148a50e6eba7a728e86ca324ec9041e3d2ced9e3cf3070dbff1ce83b1f4`。Computer Use 可读取侧栏和完成结果，
+但 macOS 辅助功能不能可靠写入 `chrome-untrusted` 侧栏输入框，因此京东原句的本轮证据是模型真实
+协议回归，不冒充完整 UI 点击回归。日常 Profile、真实登录/交易/上传、签名、公证、分发和公开发布
+边界均未扩大，iOS 继续跳过。
