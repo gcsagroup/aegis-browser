@@ -180,3 +180,33 @@ Core 66/66、定向 BrowserTest 8/8，完整 App 构建和 ad-hoc 深度签名�
 Computer Use 对 `chrome-untrusted` 侧栏可读但写入不稳定，因此京东原句未伪报为完整 UI 点击验收；
 这项限制不影响真实模型协议、实际 App 的另一条端到端任务和自动化证据。发布、安全和 Profile 隔离
 边界维持不变。
+
+## 9. 当前页面任务与 App 身份纠正（2026-08-31）
+
+`帮我总结下页面内容` 的失败不是页面过于简单，也不是模型没有连接。根因是 Runtime 没有把“页面内容、
+当前页、this page”等指代语绑定到活动标签页；空 origin 作用域随后移除了页面读取工具，界面又把规划阶段
+失败误写成模型连接问题。`0074` 在 Browser Process 增加当前页目标解析：活动页为 HTTP(S) 时直接冻结
+当前标签、origin 和只读研究工具，不创建新标签、不走搜索；输入框也会自动选择当前页面。错误文案按规划、
+执行和完成阶段分别映射，缺少 `agent.complete` 时明确说明页面已读取但模型未生成最终回答。
+
+永久回归覆盖“隐式当前页目标不新建标签页”。完整主检出
+`/Users/lazy/Projects/GCSA-aegis-chromium/src` 在提交 `854079c515` 上完成完整 App 增量构建，Agent Core
+66/66、定向 BrowserTest 13/13 通过。使用用户指定的
+`http://127.0.0.1:8000/v1` 与
+`Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit`，原句在本地 fixture 上无重试完成真实闭环，耗时
+23.273 秒；结果状态为 completed、摘要非空，来源 origin 与当前页一致。临时真实模型测试代码已移除，
+主检出保持干净。
+
+此前暴露的 `out/AegisRelease/Chromium.app` 是构建树中间产物，不应作为用户交付路径。当前本地候选由
+完整主检出打包为
+`apps/browser/dist-local/v2-current-page-854079c515/GCSA-aegis.app`，可见名称为 `GCSA-aegis`，
+定制 `app.icns` SHA-256 为
+`57dfe02ab5a9209e1c797401a8fcc152a28c6c81e6bde11f8f6d95bd9f3cc445`，ad-hoc 深度签名检查通过。
+内部可执行文件和 Bundle ID 暂时保留 `Chromium` / `org.chromium.Chromium` 以维持当前 Profile 兼容；
+这仍是隔离 Profile 的本地测试候选，不是公证、分发或公开发布包。
+
+原型提交为 `41d8337f89`，完整主检出提交为 `854079c515`；导出补丁
+`0074-fix-aegis-bind-implicit-current-page-tasks.patch` 的 SHA-256 为
+`d54d0a01b7f7ae535a1bcdf58fe90c3a748625707821434c5d20fb6ca0499044`。Computer Use 已确认运行中的
+应用可见名称和菜单栏为 `GCSA-aegis`，但点击侧栏控件时外部辅助控制管道退出；浏览器进程没有崩溃，
+因此不把该工具故障冒充产品崩溃，也不将其算作完整人工点击验收。

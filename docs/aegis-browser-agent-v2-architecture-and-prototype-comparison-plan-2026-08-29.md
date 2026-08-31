@@ -848,3 +848,20 @@ Chromium 提交为 `78f4a03caf`，补丁为
 但 macOS 辅助功能不能可靠写入 `chrome-untrusted` 侧栏输入框，因此京东原句的本轮证据是模型真实
 协议回归，不冒充完整 UI 点击回归。日常 Profile、真实登录/交易/上传、签名、公证、分发和公开发布
 边界均未扩大，iOS 继续跳过。
+
+## 21. P10 当前页面绑定与品牌化交付纠正（2026-08-31）
+
+普通用户说“总结下页面内容”时，Runtime 必须先解析“当前页”指代，再进入模型规划。P10 将当前活动
+HTTP(S) 标签直接冻结为任务上下文，自动提供同源只读工具；不得新建标签、不得转成搜索、不得要求用户
+再次说明 URL。规划、执行和结果完成使用分阶段错误提示，避免把模型协议错误、缺少完成调用和连接错误
+混为一谈。
+
+完整主检出提交 `854079c515` 已通过 Agent Core 66/66、定向 BrowserTest 13/13 和完整 App 增量构建。
+指定本地 Qwen 对原句的真实 fixture 回归无重试完成，耗时 23.273 秒，并返回当前页同源结果。补丁为
+`0074-fix-aegis-bind-implicit-current-page-tasks.patch`，SHA-256：
+`d54d0a01b7f7ae535a1bcdf58fe90c3a748625707821434c5d20fb6ca0499044`。
+
+交付身份同时收敛：构建树里的 `Chromium.app` 只作为中间产物，用户本地验收统一使用
+`apps/browser/dist-local/v2-current-page-854079c515/GCSA-aegis.app`。该包显示 GCSA-aegis 名称和定制
+图标，ad-hoc 深度签名验证通过；内部 Bundle ID 仍保留 Chromium 兼容值，所以结论是本地测试 Go、
+公开发布 No-Go。日常 Profile、真实账号、交易、上传、公证、分发和 iOS 边界不变。
