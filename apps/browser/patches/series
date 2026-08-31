@@ -72,3 +72,4 @@
 0071-fix-aegis-harden-browser-agent-planning-flow.patch
 0072-fix-aegis-route-goals-through-model-before-browsing.patch
 0073-fix-aegis-require-model-tools-and-route-named-sites.patch
+0074-fix-aegis-bind-implicit-current-page-tasks.patch
