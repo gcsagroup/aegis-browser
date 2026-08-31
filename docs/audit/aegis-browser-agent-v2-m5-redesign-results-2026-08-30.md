@@ -236,3 +236,23 @@ TypeScript/CSS 校验和完整 App 构建。Computer Use 在独立 Profile 中�
 补丁 `0075-feat-aegis-simplify-tasks-and-add-scheduled-automati.patch` 的 SHA-256 为
 `37e2ffcf0ad4853b4018e5089f88573f3353a7a43b2bfb2568cf790282b72783`。该包仍是本地验收候选，
 不是公证或公开分发包。
+
+## 11. 跨平台复核边界（2026-08-31）
+
+iOS、Android 和 Windows 不能沿用 macOS App 的运行结论。iOS 是独立的原生 SwiftUI/WKWebView
+产品线，不含 `0075` 的 Chromium 定时自动化工作区；本轮仍从当前原生源码实际执行 iPhone 与 iPad
+Simulator 全量测试。iPhone 17 为 112 通过、1 个仅 iPad 用例按设计跳过，iPad Air 11-inch (M4)
+为 113/113 通过，失败均为 0。结果包位于
+`/tmp/aegis-ios-v2-crossplatform-20260831-execute`，只能证明原生 iOS 既有 Agent、收藏整理、研究、
+安全下载和导航策略等 Simulator 范围，不证明桌面 v2 界面已移植，也不证明真机或发布资格。
+
+Pixel 9 Pro Fold 已通过 ADB 在线确认，系统为 Android 17 / API 37、`arm64-v8a`。设备上的
+`app.gcsa.aegis` 版本为 `151.0.7922.77`，最后更新时间为 2026-08-24；仓库和本地没有与
+`0075` 当前源码身份绑定的 APK/AAB，因此没有覆盖安装，也没有把历史包计入本轮通过。Android
+结论维持 **No-Go**，需要受支持的 x86-64 Linux 当前源码构建、身份清单和 Pixel 真机验收。
+
+Windows 主机 `8.134.163.31` 的 3389 端口和凭据登录已通过 Windows App 实际验证，远程桌面及
+管理员 PowerShell 可用；管理员主目录只见标准用户目录，没有本轮 Aegis/Chromium 源码或 Windows
+候选 App。22 端口在 SSH 密钥交换前关闭，WinRM `/wsman` 返回 503/空响应，SMB/WMI 也未形成可用
+管理会话。当前工程没有 Windows 构建产物或已验证的 Windows 打包链，macOS `.app` 不能跨平台
+执行，因此本轮 Windows 只能标记为“远程连接通过、v2 运行测试 No-Go”，不伪报为产品通过。
