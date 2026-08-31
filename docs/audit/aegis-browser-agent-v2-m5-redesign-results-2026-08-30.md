@@ -158,3 +158,25 @@ Chromium 提交：`6f5240da8d`。导出补丁：
 `c36d60779c03a78b22e93b9768f0c382cd9465abe55038ed8f22ed3227eedbe7`。最新 App 仍是 build-tree
 本地候选，不是签名、公证或分发包；日常 Profile、真实账号、交易、上传、运行下载产物和发布边界
 均未扩大。
+
+## 8. 点名站点路由与强制工具调用修复（2026-08-31）
+
+`帮我在jd找几款内存` 的失败不是京东网页错误。任务数据库显示入口被错误冻结为 Google origin，
+首个计划步骤是 `page.navigate`，但工具调用计数仍为 0；本地 Qwen 连续两轮未返回浏览器指定的原生
+工具，Runtime 因而在任何网页动作前安全停止。
+
+`0073` 对每个 provider 强制调用本轮唯一获准工具，并为 OpenAI-compatible 推理模型请求最小推理
+强度。路由合同补充两条普通用户语义：点名网站/商户/服务时直接打开站内 HTTPS 结果，不经过通用
+搜索；只找、比较和推荐商品使用 research，只有明确购买、加购物车、填写购物表单或准备结账才使用
+shopping。失败界面同时显示具体缺失工具，避免把协议错误误说成连接或网页错误。
+
+真实 loopback Qwen 将原句返回为
+`research → open_url → https://search.jd.com/Search?keyword=内存`。新版隔离 Profile 中 USB 扩展坞
+公开只读任务完整执行三步并生成结果，证明强制工具选择已进入实际 App 链路。自动化结果为 Agent
+Core 66/66、定向 BrowserTest 8/8，完整 App 构建和 ad-hoc 深度签名检查通过。Chromium 提交：
+`78f4a03caf`；补丁：`0073-fix-aegis-require-model-tools-and-route-named-sites.patch`，SHA-256：
+`125b7148a50e6eba7a728e86ca324ec9041e3d2ced9e3cf3070dbff1ce83b1f4`。
+
+Computer Use 对 `chrome-untrusted` 侧栏可读但写入不稳定，因此京东原句未伪报为完整 UI 点击验收；
+这项限制不影响真实模型协议、实际 App 的另一条端到端任务和自动化证据。发布、安全和 Profile 隔离
+边界维持不变。
