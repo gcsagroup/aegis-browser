@@ -74,3 +74,4 @@
 0073-fix-aegis-require-model-tools-and-route-named-sites.patch
 0074-fix-aegis-bind-implicit-current-page-tasks.patch
 0075-feat-aegis-simplify-tasks-and-add-scheduled-automati.patch
+0076-fix-aegis-correct-cross-platform-build-and-branding.patch
