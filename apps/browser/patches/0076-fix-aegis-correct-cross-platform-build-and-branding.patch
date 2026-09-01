@@ -1,0 +1,247 @@
+From f754de276b36427ac971fe347f46a0c80b7e2877 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 1 Sep 2026 21:42:39 +0800
+Subject: [PATCH 76/76] fix(aegis): correct cross-platform build and branding
+
+---
+ chrome/app/theme/gcsa_aegis/BRANDING          | 16 +++++++--------
+ chrome/browser/aegis/BUILD.gn                 |  6 +++---
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 10 ++++++++++
+ .../browser/ui/webui/aegis/aegis_ui_handler.h | 11 ++++++++++
+ .../aegis_torrent/public/mojom/BUILD.gn       | 20 +++++++++++++------
+ 5 files changed, 46 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
+index f8363d5b29..dfebe2211b 100644
+--- a/chrome/app/theme/gcsa_aegis/BRANDING
++++ b/chrome/app/theme/gcsa_aegis/BRANDING
+@@ -1,10 +1,10 @@
+-COMPANY_FULLNAME=The Chromium Authors
+-COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
+-COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+-MAC_BUNDLE_ID=org.chromium.Chromium
++COMPANY_FULLNAME=GCSA
++COMPANY_SHORTNAME=GCSA
++PRODUCT_FULLNAME=GCSA Aegis
++PRODUCT_SHORTNAME=GCSA Aegis
++PRODUCT_INSTALLER_FULLNAME=GCSA Aegis Installer
++PRODUCT_INSTALLER_SHORTNAME=GCSA Aegis Installer
++COPYRIGHT=Copyright @LASTCHANGE_YEAR@ GCSA. All rights reserved.
++MAC_BUNDLE_ID=app.gcsa.aegis
+ MAC_CREATOR_CODE=Cr24
+ MAC_TEAM_ID=
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index ef968aa958..dec8d061b6 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -302,7 +302,6 @@ test("aegis_browser_unittests") {
+     "aegis_phish_blocking_page_unittest.cc",
+     "aegis_phish_tab_helper_unittest.cc",
+     "aegis_service_unittest.cc",
+-    "aegis_ui_handler_unittest.cc",
+     "filter_list_updater_unittest.cc",
+     "metalink_parser_unittest.cc",
+     "model_provider_client_unittest.cc",
+@@ -311,8 +310,6 @@ test("aegis_browser_unittests") {
+   ]
+   deps = [
+     ":aegis",
+-    "//chrome/browser/ui/tabs:tab_strip",
+-    "//chrome/browser/ui/webui/aegis",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+@@ -324,6 +321,7 @@ test("aegis_browser_unittests") {
+   ]
+   if (!is_android) {
+     sources += [
++      "aegis_ui_handler_unittest.cc",
+       "agent/aegis_agent_service_unittest.cc",
+       "agent/agent_core_unittest.cc",
+       "agent/agent_task_store_unittest.cc",
+@@ -333,6 +331,8 @@ test("aegis_browser_unittests") {
+       "//chrome/browser/actor",
+       "//chrome/browser/actor/ui:event_dispatcher",
+       "//chrome/browser/actor/ui:test_support",
++      "//chrome/browser/ui/tabs:tab_strip",
++      "//chrome/browser/ui/webui/aegis",
+       "//chrome/common/aegis",
+       "//components/actor/core",
+       "//components/download/public/common:public",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 68e13c56a5..c5b7021b7a 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -19,7 +19,9 @@
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service.h"
++#if BUILDFLAG(IS_MAC)
+ #include "chrome/browser/aegis/aegis_torrent_client.h"
++#endif
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/metalink_download_verifier.h"
+@@ -53,10 +55,12 @@ namespace {
+ 
+ constexpr base::TimeDelta kSummaryRequestTtl = base::Minutes(1);
+ constexpr base::TimeDelta kMetalinkRequestTtl = base::Minutes(1);
++#if BUILDFLAG(IS_MAC)
+ constexpr base::TimeDelta kTorrentRequestTtl = base::Minutes(1);
+ constexpr size_t kMaxTorrentBytes = 4 * 1024 * 1024;
+ constexpr size_t kMaxMagnetBytes = 16 * 1024;
+ constexpr size_t kMaxTorrentFiles = 2048;
++#endif
+ constexpr size_t kMaxCaptureUrlBytes = 8192;
+ constexpr size_t kMaxCaptureTitleBytes = 4096;
+ constexpr size_t kMaxCaptureTextBytes = 64 * 1024;
+@@ -286,6 +290,7 @@ base::DictValue MetalinkToPreview(const aegis::MetalinkParseResult& result) {
+   return dict;
+ }
+ 
++#if BUILDFLAG(IS_MAC)
+ base::DictValue TorrentToPreview(const aegis::mojom::TorrentPreview& preview) {
+   base::DictValue dict;
+   dict.Set("ok", preview.ok);
+@@ -327,6 +332,7 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
+   dict.Set("finished", status.finished);
+   return dict;
+ }
++#endif
+ 
+ }  // namespace
+ 
+@@ -384,6 +390,7 @@ void AegisUIHandler::RegisterMessages() {
+       "startMetalinkDownload",
+       base::BindRepeating(&AegisUIHandler::HandleStartMetalinkDownload,
+                           base::Unretained(this)));
++#if BUILDFLAG(IS_MAC)
+   web_ui()->RegisterMessageCallback(
+       "parseTorrent", base::BindRepeating(&AegisUIHandler::HandleParseTorrent,
+                                           base::Unretained(this)));
+@@ -401,6 +408,7 @@ void AegisUIHandler::RegisterMessages() {
+       "controlTorrent",
+       base::BindRepeating(&AegisUIHandler::HandleControlTorrent,
+                           base::Unretained(this)));
++#endif
+ }
+ 
+ // 这是当前进程单例的 fail-closed 过渡边界；在 AegisService 改为
+@@ -1091,6 +1099,7 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
+   ResolveJavascriptCallback(callback_id, response);
+ }
+ 
++#if BUILDFLAG(IS_MAC)
+ void AegisUIHandler::HandleParseTorrent(const base::ListValue& args) {
+   AllowJavascript();
+   if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
+@@ -1353,3 +1362,4 @@ void AegisUIHandler::OnTorrentControlled(std::string callback_id,
+   response.Set("ok", ok);
+   ResolveJavascriptCallback(base::Value(callback_id), response);
+ }
++#endif
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index b639fe12cb..794fd54639 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -12,9 +12,12 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/time/time.h"
+ #include "base/values.h"
++#include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/metalink_parser.h"
++#if BUILDFLAG(IS_MAC)
+ #include "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom.h"
++#endif
+ #include "content/public/browser/global_routing_id.h"
+ #include "content/public/browser/web_ui_message_handler.h"
+ 
+@@ -62,11 +65,13 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+   void HandleListModels(const base::ListValue& args);
+   void HandleParseMetalink(const base::ListValue& args);
+   void HandleStartMetalinkDownload(const base::ListValue& args);
++#if BUILDFLAG(IS_MAC)
+   void HandleParseTorrent(const base::ListValue& args);
+   void HandleParseMagnet(const base::ListValue& args);
+   void HandleStartTorrent(const base::ListValue& args);
+   void HandleGetTorrentStatus(const base::ListValue& args);
+   void HandleControlTorrent(const base::ListValue& args);
++#endif
+   void OnFilterListsUpdated(std::string callback_id, bool ok);
+   void OnPageSignals(std::string callback_id,
+                      content::GlobalRenderFrameHostId frame_id,
+@@ -88,6 +93,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+                       std::vector<std::string> models);
+   void OnMetalinkParsed(std::string callback_id,
+                         aegis::MetalinkParseResult result);
++#if BUILDFLAG(IS_MAC)
+   void OnTorrentValidated(std::string callback_id,
+                           std::vector<uint8_t> torrent_data,
+                           std::string magnet_uri,
+@@ -102,6 +108,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+                            std::string action,
+                            std::string task_id,
+                            bool ok);
++#endif
+ 
+   struct PendingSummary {
+     std::string request_id;
+@@ -120,17 +127,21 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+     base::TimeTicks created;
+   };
+ 
++#if BUILDFLAG(IS_MAC)
+   struct PendingTorrent {
+     std::string request_id;
+     std::vector<uint8_t> torrent_data;
+     std::string magnet_uri;
+     base::TimeTicks created;
+   };
++#endif
+ 
+   std::optional<PendingSummary> pending_summary_;
+   std::optional<std::string> active_model_request_id_;
+   std::optional<PendingMetalink> pending_metalink_;
++#if BUILDFLAG(IS_MAC)
+   std::optional<PendingTorrent> pending_torrent_;
++#endif
+   base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
+       service_observation_{this};
+ 
+diff --git a/chrome/services/aegis_torrent/public/mojom/BUILD.gn b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
+index 2bf88013bc..5a3c54c3c0 100644
+--- a/chrome/services/aegis_torrent/public/mojom/BUILD.gn
++++ b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
+@@ -4,10 +4,18 @@ import("//mojo/public/tools/bindings/mojom.gni")
+ 
+ mojom("mojom") {
+   sources = [ "aegis_torrent_service.mojom" ]
+-  enabled_features = [ "is_mac" ]
+-  public_deps = [
+-    "//mojo/public/mojom/base",
+-    "//sandbox/policy/mojom",
+-    "//sandbox/mac/mojom",
+-  ]
++  enabled_features = []
++  if (is_mac) {
++    enabled_features += [ "is_mac" ]
++    public_deps = [
++      "//mojo/public/mojom/base",
++      "//sandbox/mac/mojom",
++      "//sandbox/policy/mojom",
++    ]
++  } else {
++    public_deps = [
++      "//mojo/public/mojom/base",
++      "//sandbox/policy/mojom",
++    ]
++  }
+ }
+-- 
+2.52.0
+
