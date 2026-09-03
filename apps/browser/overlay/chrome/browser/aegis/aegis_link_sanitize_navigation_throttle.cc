@@ -12,7 +12,9 @@
 #include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/tracking_query_params.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
@@ -54,7 +56,13 @@ AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
   if (!url.SchemeIsHTTPOrHTTPS()) {
     return content::NavigationThrottle::PROCEED;
   }
-  if (AegisService::GetInstance()->IsSitePaused(std::string(url.host()))) {
+  content::WebContents* web_contents = handle->GetWebContents();
+  Profile* profile =
+      web_contents
+          ? Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          : nullptr;
+  AegisService* service = AegisServiceFactory::GetForProfile(profile);
+  if (!service || service->IsSitePaused(std::string(url.host()))) {
     return content::NavigationThrottle::PROCEED;
   }
 
@@ -64,20 +72,18 @@ AegisLinkSanitizeNavigationThrottle::MaybeRewrite() {
   if (cleaned == url) {
     return content::NavigationThrottle::PROCEED;
   }
-  AegisService::GetInstance()->RecordStrippedParams(
-      std::string(url.host()), removed, /*document_id=*/std::string(),
-      /*site_key=*/std::string(url.host()));
-
-  content::WebContents* web_contents = handle->GetWebContents();
-  if (!web_contents) {
-    return content::NavigationThrottle::PROCEED;
-  }
+  service->RecordStrippedParams(std::string(url.host()), removed,
+                                /*document_id=*/std::string(),
+                                /*site_key=*/std::string(url.host()));
 
   content::OpenURLParams params =
       content::OpenURLParams::FromNavigationHandle(handle);
   params.url = cleaned;
 
-  LOG(INFO) << "Aegis: sanitizing navigation " << url << " -> " << cleaned;
+  // Browser logs can outlive an Incognito session. Never emit the original
+  // or rewritten URL (including host, query, or fragment).
+  LOG(INFO) << "Aegis: sanitized " << removed.size()
+            << " tracking parameter(s)";
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
                      [](base::WeakPtr<content::WebContents> contents,
@@ -104,7 +110,12 @@ void AegisLinkSanitizeNavigationThrottle::MaybeCreateAndAdd(
   if (!navigation_handle.IsInOutermostMainFrame()) {
     return;
   }
-  if (!AegisService::GetInstance()->IsLinkSanitizeEnabled()) {
+  Profile* profile =
+      web_contents
+          ? Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          : nullptr;
+  AegisService* service = AegisServiceFactory::GetForProfile(profile);
+  if (!service || !service->IsLinkSanitizeEnabled()) {
     return;
   }
   registry.AddThrottle(

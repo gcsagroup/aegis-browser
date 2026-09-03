@@ -12,9 +12,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/aegis/metalink_parser.h"
+#if BUILDFLAG(IS_MAC)
 #include "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom.h"
+#endif
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
@@ -50,6 +53,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
 
  private:
   aegis::AegisService* ServiceForWebUI();
+  bool RequireSupportedProfile(const base::Value& callback_id);
   base::DictValue BuildStatus();
   void HandleGetStatus(const base::ListValue& args);
   void HandleSetModuleEnabled(const base::ListValue& args);
@@ -62,11 +66,13 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   void HandleListModels(const base::ListValue& args);
   void HandleParseMetalink(const base::ListValue& args);
   void HandleStartMetalinkDownload(const base::ListValue& args);
+#if BUILDFLAG(IS_MAC)
   void HandleParseTorrent(const base::ListValue& args);
   void HandleParseMagnet(const base::ListValue& args);
   void HandleStartTorrent(const base::ListValue& args);
   void HandleGetTorrentStatus(const base::ListValue& args);
   void HandleControlTorrent(const base::ListValue& args);
+#endif
   void OnFilterListsUpdated(std::string callback_id, bool ok);
   void OnPageSignals(std::string callback_id,
                      content::GlobalRenderFrameHostId frame_id,
@@ -88,6 +94,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
                       std::vector<std::string> models);
   void OnMetalinkParsed(std::string callback_id,
                         aegis::MetalinkParseResult result);
+#if BUILDFLAG(IS_MAC)
   void OnTorrentValidated(std::string callback_id,
                           std::vector<uint8_t> torrent_data,
                           std::string magnet_uri,
@@ -102,6 +109,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
                            std::string action,
                            std::string task_id,
                            bool ok);
+#endif
 
   struct PendingSummary {
     std::string request_id;
@@ -120,17 +128,21 @@ class AegisUIHandler : public content::WebUIMessageHandler,
     base::TimeTicks created;
   };
 
+#if BUILDFLAG(IS_MAC)
   struct PendingTorrent {
     std::string request_id;
     std::vector<uint8_t> torrent_data;
     std::string magnet_uri;
     base::TimeTicks created;
   };
+#endif
 
   std::optional<PendingSummary> pending_summary_;
   std::optional<std::string> active_model_request_id_;
   std::optional<PendingMetalink> pending_metalink_;
+#if BUILDFLAG(IS_MAC)
   std::optional<PendingTorrent> pending_torrent_;
+#endif
   base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
       service_observation_{this};
 

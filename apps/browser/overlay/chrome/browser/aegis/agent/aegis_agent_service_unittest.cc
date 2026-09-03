@@ -3,15 +3,20 @@
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "base/files/file_util.h"
+#include "base/json/json_reader.h"
+#include "base/strings/strcat.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
+#include "build/build_config.h"
 #include "chrome/browser/actor/actor_keyed_service.h"
 #include "chrome/browser/actor/ui/event_dispatcher.h"
 #include "chrome/browser/actor/ui/test_support/mock_actor_ui_state_manager.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+#include "chrome/browser/aegis/agent/agent_model_client.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/aegis/features.h"
 #include "chrome/common/aegis/pref_names.h"
@@ -22,6 +27,9 @@
 #include "components/prefs/pref_service.h"
 #include "components/undo/undo_manager.h"
 #include "content/public/test/browser_task_environment.h"
+#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+#include "services/network/test/test_url_loader_factory.h"
+#include "services/network/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -55,7 +63,9 @@ class AegisBrowserToolsTestPeer {
 namespace {
 
 using ::testing::_;
+using ::testing::HasSubstr;
 using ::testing::Return;
+using ::testing::SizeIs;
 
 std::unique_ptr<actor::ui::ActorUiStateManagerInterface>
 BuildActorUiStateManagerMock() {
@@ -79,32 +89,13 @@ AgentTaskScope ServiceTestScope() {
   return scope;
 }
 
-AgentModelEvent ServicePlanEvent(const AgentTaskScope& scope) {
+AgentModelEvent ServicePlanEvent() {
   AgentModelEvent event;
   event.type = AgentModelEventType::kToolCall;
   event.tool_call_id = "plan-call";
   event.tool_name = "agent.submit_plan";
   event.arguments.Set("schema_version", kAgentSchemaVersion);
   event.arguments.Set("summary", "Use one bounded page observation");
-  base::ListValue origins;
-  for (const url::Origin& origin : scope.allowed_origins) {
-    origins.Append(origin.Serialize());
-  }
-  event.arguments.Set("origins", std::move(origins));
-  base::ListValue tools;
-  tools.Append("page.observe");
-  event.arguments.Set("tools", std::move(tools));
-  base::ListValue data_classes;
-  data_classes.Append("public_page");
-  event.arguments.Set("data_classes", std::move(data_classes));
-  base::DictValue budgets;
-  budgets.Set("max_tabs", scope.budgets.max_tabs);
-  budgets.Set("max_tool_calls", scope.budgets.max_tool_calls);
-  budgets.Set("max_model_calls", scope.budgets.max_model_calls);
-  budgets.Set("max_network_requests", scope.budgets.max_network_requests);
-  budgets.Set("max_duration_seconds",
-              static_cast<int>(scope.budgets.max_duration.InSeconds()));
-  event.arguments.Set("budgets", std::move(budgets));
   base::DictValue step;
   step.Set("id", "observe");
   step.Set("title", "Observe the approved fixture");
@@ -115,11 +106,21 @@ AgentModelEvent ServicePlanEvent(const AgentTaskScope& scope) {
   return event;
 }
 
+AgentModelEvent ServiceAutomationPlanEvent() {
+  AgentModelEvent event = ServicePlanEvent();
+  base::DictValue monitor;
+  monitor.Set("id", "monitor");
+  monitor.Set("title", "Create the approved fixture monitor");
+  monitor.Set("tool", "monitor.create");
+  event.arguments.FindList("steps")->Append(std::move(monitor));
+  return event;
+}
+
 bool InstallServicePlan(AegisAgentService* service, AgentTask* task) {
   if (!service || !task || !service->BeginPlanning(task->id())) {
     return false;
   }
-  const AgentModelEvent event = ServicePlanEvent(task->scope());
+  const AgentModelEvent event = ServicePlanEvent();
   std::string error;
   return service->AcceptModelPlan(task->id(), event, &error);
 }
@@ -155,14 +156,83 @@ class AegisAgentServiceTest : public testing::Test {
   TestingProfileManager profile_manager_;
 };
 
-TEST_F(AegisAgentServiceTest, IsProfileIsolatedAndRejectsOffTheRecord) {
+TEST_F(AegisAgentServiceTest, KeepsPrimaryIncognitoTasksAndPrefsIsolated) {
   AegisAgentService* service =
       AegisAgentServiceFactory::GetForProfile(profile_);
   ASSERT_TRUE(service);
   EXPECT_TRUE(service->IsEnabled());
+  EXPECT_TRUE(AreAgentSystemNotificationsAllowed(profile_));
+  EXPECT_FALSE(service->task_store_is_in_memory_for_testing());
+
+  AgentTask* regular_task =
+      service->CreateTask("regular task", AgentMode::kAsk, ServiceTestScope());
+  ASSERT_TRUE(regular_task);
+  const base::FilePath regular_database =
+      profile_->GetPath().AppendASCII("AegisAgentTasks.sqlite");
+  ASSERT_TRUE(base::PathExists(regular_database));
+  std::string database_before_incognito_task;
+  ASSERT_TRUE(base::ReadFileToString(regular_database,
+                                     &database_before_incognito_task));
+  base::DictValue regular_workspaces;
+  regular_workspaces.Set("regular-workspace", base::DictValue());
+  profile_->GetPrefs()->SetDict(aegis::prefs::kAgentWorkspaces,
+                                regular_workspaces.Clone());
 
   Profile* otr = profile_->GetPrimaryOTRProfile(/*create_if_needed=*/true);
-  EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(otr), nullptr);
+  ASSERT_TRUE(otr);
+  AegisAgentService* otr_service = AegisAgentServiceFactory::GetForProfile(otr);
+  ASSERT_TRUE(otr_service);
+  EXPECT_NE(otr_service, service);
+  EXPECT_TRUE(otr_service->IsEnabled());
+  EXPECT_FALSE(AreAgentSystemNotificationsAllowed(otr));
+  EXPECT_TRUE(otr_service->task_store_is_in_memory_for_testing());
+  EXPECT_EQ(otr_service->task_count_for_testing(), 0u);
+  EXPECT_TRUE(otr->GetPrefs()->GetDict(aegis::prefs::kAgentWorkspaces).empty());
+  EXPECT_TRUE(profile_->GetPrefs()
+                  ->GetDict(aegis::prefs::kAgentWorkspaces)
+                  .contains("regular-workspace"));
+
+  AgentTask* otr_task = otr_service->CreateTask(
+      "incognito task", AgentMode::kAsk, ServiceTestScope());
+  ASSERT_TRUE(otr_task);
+  EXPECT_EQ(service->task_count_for_testing(), 1u);
+  EXPECT_EQ(otr_service->task_count_for_testing(), 1u);
+  EXPECT_NE(regular_task->id(), otr_task->id());
+
+  std::string database_after_incognito_task;
+  ASSERT_TRUE(
+      base::ReadFileToString(regular_database, &database_after_incognito_task));
+  EXPECT_EQ(database_after_incognito_task, database_before_incognito_task);
+
+  otr->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, false);
+  EXPECT_FALSE(otr_service->IsEnabled());
+  EXPECT_TRUE(profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled));
+  otr->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, true);
+  EXPECT_TRUE(otr_service->IsEnabled());
+}
+
+TEST_F(AegisAgentServiceTest, RejectsUnsupportedProfileTypes) {
+  Profile* auxiliary_otr = profile_->GetOffTheRecordProfile(
+      Profile::OTRProfileID::CreateUniqueForTesting(),
+      /*create_if_needed=*/true);
+  ASSERT_TRUE(auxiliary_otr);
+  EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(auxiliary_otr), nullptr);
+
+  TestingProfile* guest = profile_manager().CreateGuestProfile();
+  ASSERT_TRUE(guest);
+  EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(guest), nullptr);
+
+#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
+  TestingProfile* system = profile_manager().CreateSystemProfile();
+  ASSERT_TRUE(system);
+  EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(system), nullptr);
+#endif
+}
+
+TEST_F(AegisAgentServiceTest, IsolatedAcrossRegularProfiles) {
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
 
   TestingProfile* second =
       profile_manager().CreateTestingProfile("second-profile");
@@ -220,6 +290,381 @@ TEST_F(AegisAgentServiceTest, ResolvesModelDestinationFromTheOwningProfile) {
   EXPECT_EQ(second_destination->model, "models/profile-two");
 }
 
+TEST_F(AegisAgentServiceTest,
+       RepairsOneMalformedGoalRouteWithoutBroadeningScope) {
+  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetGoalRouterClientForTesting(
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>>
+      route_result;
+  service->RouteGoal("整理并检查失效收藏夹", AgentWorkflowKind::kResearch,
+                     route_result.GetCallback());
+  factory.WaitForRequest(endpoint);
+  EXPECT_THAT(*factory.pending_requests(), SizeIs(1));
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad-route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"browser_steward\",\"target\":\"\",\"summary\":\"整理收藏夹\"}"}]})"));
+
+  factory.WaitForRequest(endpoint);
+  EXPECT_THAT(*factory.pending_requests(), SizeIs(1));
+  const network::ResourceRequest& repair_request =
+      factory.GetPendingRequest(0)->request;
+  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
+      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
+  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
+  const std::string* repair_instructions =
+      repair_payload->GetDict().FindString("instructions");
+  ASSERT_TRUE(repair_instructions);
+  EXPECT_THAT(*repair_instructions,
+              HasSubstr("single browser-approved format repair"));
+  EXPECT_THAT(*repair_instructions,
+              HasSubstr("Do not broaden the target, tools, origins"));
+
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"fixed-route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"browser_steward\",\"entry_kind\":\"browser_only\",\"target\":\"\",\"summary\":\"先读取收藏夹，再生成分类与失效链接预览\"}"}]})"));
+  EXPECT_TRUE(route_result.Get<0>()) << route_result.Get<1>();
+  ASSERT_TRUE(route_result.Get<2>());
+  EXPECT_EQ(route_result.Get<2>()->workflow,
+            AgentWorkflowKind::kBrowserSteward);
+  EXPECT_EQ(route_result.Get<2>()->entry_kind,
+            AgentGoalEntryKind::kBrowserOnly);
+  EXPECT_TRUE(route_result.Get<2>()->target.empty());
+}
+
+TEST_F(AegisAgentServiceTest,
+       RepairsOneMalformedPlanAndKeepsBrowserOwnedScope) {
+  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+
+  AgentTaskScope scope = ServiceTestScope();
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = std::string(kBaseUrl);
+  scope.model_destination.model = "fixture-model";
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  AgentTask* task =
+      service->CreateTask("总结公开测试页", AgentMode::kAsk, std::move(scope));
+  ASSERT_TRUE(task);
+  service->SetTaskModelClientForTesting(
+      task->id(),
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+
+  base::test::TestFuture<bool, std::string> plan_result;
+  service->RequestPlan(task->id(), plan_result.GetCallback());
+  factory.WaitForRequest(endpoint);
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"总结页面\"}"}]})"));
+
+  factory.WaitForRequest(endpoint);
+  const network::ResourceRequest& repair_request =
+      factory.GetPendingRequest(0)->request;
+  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
+      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
+  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
+  const std::string* repair_instructions =
+      repair_payload->GetDict().FindString("instructions");
+  ASSERT_TRUE(repair_instructions);
+  EXPECT_THAT(*repair_instructions,
+              HasSubstr("single browser-approved format repair"));
+  EXPECT_THAT(*repair_instructions, HasSubstr("task plan"));
+
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"fixed-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"读取并总结公开测试页\",\"steps\":[{\"id\":\"observe\",\"title\":\"读取公开页面\",\"tool\":\"page.observe\"}]}"}]})"));
+  EXPECT_TRUE(plan_result.Get<0>()) << plan_result.Get<1>();
+  const AgentTaskPlan* plan = service->GetPlan(task->id());
+  ASSERT_TRUE(plan);
+  ASSERT_EQ(plan->steps.size(), 1u);
+  EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
+  EXPECT_EQ(plan->scope.allowed_origins, ServiceTestScope().allowed_origins);
+  EXPECT_TRUE(plan->scope.AllowsTool("page.observe"));
+  EXPECT_FALSE(plan->scope.AllowsTool("page.click"));
+}
+
+TEST_F(AegisAgentServiceTest,
+       UsesApprovedReadOnlyRecoveryAfterTwoMalformedPlans) {
+  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+
+  AgentTaskScope scope = ServiceTestScope();
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = std::string(kBaseUrl);
+  scope.model_destination.model = "fixture-model";
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  AgentTask* task =
+      service->CreateTask("总结公开测试页", AgentMode::kAsk, std::move(scope));
+  ASSERT_TRUE(task);
+  service->SetTaskModelClientForTesting(
+      task->id(),
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+
+  base::test::TestFuture<bool, std::string> plan_result;
+  service->RequestPlan(task->id(), plan_result.GetCallback());
+  for (std::string_view call_id : {"bad-plan-one", "bad-plan-two"}) {
+    factory.WaitForRequest(endpoint);
+    const std::string response = base::StrCat(
+        {R"({"status":"completed","output":[{"type":"function_call","call_id":")",
+         call_id,
+         R"(","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"缺少步骤\"}"}]})"});
+    EXPECT_TRUE(
+        factory.SimulateResponseForPendingRequest(endpoint.spec(), response));
+  }
+
+  EXPECT_TRUE(plan_result.Get<0>()) << plan_result.Get<1>();
+  EXPECT_EQ(task->state(), AgentTaskState::kAwaitingTaskConsent);
+  const AgentTaskPlan* plan = service->GetPlan(task->id());
+  ASSERT_TRUE(plan);
+  ASSERT_EQ(plan->steps.size(), 1u);
+  EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
+  EXPECT_EQ(plan->steps[0].risk, AgentRiskLevel::kR0ReadOnly);
+  EXPECT_FALSE(plan->scope.AllowsTool("page.click"));
+}
+
+TEST_F(AegisAgentServiceTest,
+       RepairsBookmarkPlanThatOmitsAnExplicitUserRequirement) {
+  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+
+  AgentTaskScope scope;
+  scope.allowed_tools = {"bookmark.list", "bookmark.check_urls",
+                         "bookmark.plan", "bookmark.apply"};
+  scope.allowed_data_classes = {AgentDataClass::kBookmarks};
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = std::string(kBaseUrl);
+  scope.model_destination.model = "fixture-model";
+  ASSERT_TRUE(scope.IsValid());
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  AgentTask* task =
+      service->CreateTask("检查收藏夹失效 URL，并给出分类预览，不要修改",
+                          AgentMode::kAct, std::move(scope));
+  ASSERT_TRUE(task);
+  service->SetTaskModelClientForTesting(
+      task->id(),
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+
+  base::test::TestFuture<bool, std::string> plan_result;
+  service->RequestPlan(task->id(), plan_result.GetCallback());
+  factory.WaitForRequest(endpoint);
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"incomplete-bookmark-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"检查失效链接\",\"steps\":[{\"id\":\"list\",\"title\":\"读取收藏夹\",\"tool\":\"bookmark.list\"},{\"id\":\"check\",\"title\":\"检查链接\",\"tool\":\"bookmark.check_urls\"}]}"}]})"));
+
+  factory.WaitForRequest(endpoint);
+  const network::ResourceRequest& repair_request =
+      factory.GetPendingRequest(0)->request;
+  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
+      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
+  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
+  const std::string* repair_instructions =
+      repair_payload->GetDict().FindString("instructions");
+  ASSERT_TRUE(repair_instructions);
+  EXPECT_THAT(*repair_instructions,
+              HasSubstr("omitted required bookmark.plan step"));
+
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"complete-bookmark-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"检查失效链接并生成分类预览\",\"steps\":[{\"id\":\"list\",\"title\":\"读取收藏夹\",\"tool\":\"bookmark.list\"},{\"id\":\"check\",\"title\":\"检查链接\",\"tool\":\"bookmark.check_urls\"},{\"id\":\"preview\",\"title\":\"生成分类预览\",\"tool\":\"bookmark.plan\"}]}"}]})"));
+  EXPECT_TRUE(plan_result.Get<0>()) << plan_result.Get<1>();
+  const AgentTaskPlan* plan = service->GetPlan(task->id());
+  ASSERT_TRUE(plan);
+  ASSERT_EQ(plan->steps.size(), 3u);
+  EXPECT_EQ(plan->steps[0].tool_name, "bookmark.list");
+  EXPECT_EQ(plan->steps[1].tool_name, "bookmark.check_urls");
+  EXPECT_EQ(plan->steps[2].tool_name, "bookmark.plan");
+  EXPECT_FALSE(plan->scope.AllowsTool("bookmark.apply"));
+}
+
+TEST_F(AegisAgentServiceTest,
+       RepairsOneMalformedExecutionTurnAndNormalizesNativeCompletion) {
+  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+
+  AgentTaskScope scope;
+  scope.allowed_tools = {"tab.list"};
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = std::string(kBaseUrl);
+  scope.model_destination.model = "fixture-model";
+
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  AgentTask* task =
+      service->CreateTask("列出当前标签页", AgentMode::kAct, std::move(scope));
+  ASSERT_TRUE(task);
+  ASSERT_TRUE(service->BeginPlanning(task->id()));
+  AgentModelEvent plan_event;
+  plan_event.type = AgentModelEventType::kToolCall;
+  plan_event.tool_call_id = "tab-list-plan";
+  plan_event.tool_name = "agent.submit_plan";
+  plan_event.arguments.Set("schema_version", kAgentSchemaVersion);
+  plan_event.arguments.Set("summary", "列出浏览器允许查看的标签页");
+  base::DictValue step;
+  step.Set("id", "list-tabs");
+  step.Set("title", "读取当前标签页");
+  step.Set("tool", "tab.list");
+  base::ListValue steps;
+  steps.Append(std::move(step));
+  plan_event.arguments.Set("steps", std::move(steps));
+  std::string plan_error;
+  ASSERT_TRUE(service->AcceptModelPlan(task->id(), plan_event, &plan_error))
+      << plan_error;
+  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
+
+  network::TestURLLoaderFactory factory;
+  service->SetTaskModelClientForTesting(
+      task->id(),
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+  base::test::TestFuture<bool, std::string,
+                         std::optional<AgentCompletionSummary>>
+      run_result;
+  service->RunTask(task->id(), run_result.GetCallback());
+
+  factory.WaitForRequest(endpoint);
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad-execution","name":"tab.list","arguments":"{\"unexpected\":true}"}]})"));
+
+  factory.WaitForRequest(endpoint);
+  const network::ResourceRequest& repair_request =
+      factory.GetPendingRequest(0)->request;
+  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
+      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
+  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
+  const std::string* repair_input =
+      repair_payload->GetDict().FindString("input");
+  ASSERT_TRUE(repair_input);
+  EXPECT_THAT(*repair_input, HasSubstr("previous_model_call_rejected_because"));
+  EXPECT_THAT(*repair_input,
+              HasSubstr("tool argument contains an unknown field"));
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"fixed-execution","name":"tab.list","arguments":"{}"}]})"));
+
+  factory.WaitForRequest(endpoint);
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"native-completion","name":"agent.complete","arguments":"{\"outcome\":\"completed\",\"summary\":\"已列出当前标签页。\",\"source_urls\":[\"https://fixture.example/\"],\"unfinished_items\":[]}"}]})"));
+
+  EXPECT_TRUE(run_result.Get<0>()) << run_result.Get<1>();
+  ASSERT_TRUE(run_result.Get<2>());
+  EXPECT_EQ(run_result.Get<2>()->outcome, "completed");
+  EXPECT_TRUE(run_result.Get<2>()->source_urls.empty());
+  EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
+  EXPECT_EQ(task->model_calls_used(), 3);
+}
+
+TEST_F(AegisAgentServiceTest,
+       KeepsVerifiedTaskCompletedWhenFinalModelFormatFailsTwice) {
+  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
+  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+
+  AgentTaskScope scope;
+  scope.allowed_tools = {"tab.list"};
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = std::string(kBaseUrl);
+  scope.model_destination.model = "fixture-model";
+
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  AgentTask* task =
+      service->CreateTask("列出当前标签页", AgentMode::kAct, std::move(scope));
+  ASSERT_TRUE(task);
+  ASSERT_TRUE(service->BeginPlanning(task->id()));
+  AgentModelEvent plan_event;
+  plan_event.type = AgentModelEventType::kToolCall;
+  plan_event.tool_call_id = "tab-list-plan";
+  plan_event.tool_name = "agent.submit_plan";
+  plan_event.arguments.Set("schema_version", kAgentSchemaVersion);
+  plan_event.arguments.Set("summary", "列出浏览器允许查看的标签页");
+  base::DictValue step;
+  step.Set("id", "list-tabs");
+  step.Set("title", "读取当前标签页");
+  step.Set("tool", "tab.list");
+  base::ListValue steps;
+  steps.Append(std::move(step));
+  plan_event.arguments.Set("steps", std::move(steps));
+  std::string plan_error;
+  ASSERT_TRUE(service->AcceptModelPlan(task->id(), plan_event, &plan_error))
+      << plan_error;
+  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
+
+  network::TestURLLoaderFactory factory;
+  service->SetTaskModelClientForTesting(
+      task->id(),
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+  base::test::TestFuture<bool, std::string,
+                         std::optional<AgentCompletionSummary>>
+      run_result;
+  service->RunTask(task->id(), run_result.GetCallback());
+
+  factory.WaitForRequest(endpoint);
+  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"list-tabs","name":"tab.list","arguments":"{}"}]})"));
+
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    factory.WaitForRequest(endpoint);
+    EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
+        endpoint.spec(),
+        R"({"status":"completed","output":[{"type":"function_call","call_id":"wrong-final","name":"tab.list","arguments":"{}"}]})"));
+  }
+
+  EXPECT_TRUE(run_result.Get<0>()) << run_result.Get<1>();
+  ASSERT_TRUE(run_result.Get<2>());
+  EXPECT_EQ(run_result.Get<2>()->outcome, "completed");
+  EXPECT_THAT(run_result.Get<2>()->summary,
+              HasSubstr("浏览器操作均已完成并通过核对"));
+  EXPECT_TRUE(run_result.Get<2>()->source_urls.empty());
+  EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
+  EXPECT_EQ(task->model_calls_used(), 3);
+}
+
 TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
   AegisAgentService* service =
       AegisAgentServiceFactory::GetForProfile(profile_);
@@ -234,6 +679,7 @@ TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
   EXPECT_FALSE(planning.Get<0>());
   EXPECT_EQ(planning.Get<1>(),
             "Agent model destination is not explicitly configured");
+  EXPECT_EQ(task->state(), AgentTaskState::kFailed);
 
   profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
   profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
@@ -277,6 +723,24 @@ TEST_F(AegisAgentServiceTest, BookmarkUrlChecksRejectLocalNetworkTargets) {
       scope, GURL("http://[::1]/status"), GURL("http://[::1]/status")));
   EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
       scope, public_url, GURL("http://localhost/redirected")));
+}
+
+TEST_F(AegisAgentServiceTest,
+       BookmarkUrlChecksAllowOnlyExactNumericLoopbackFixtureOrigin) {
+  AgentTaskScope scope = ServiceTestScope();
+  const GURL ipv4_fixture("http://127.0.0.1:18765/live");
+  const GURL ipv6_fixture("http://[::1]:18765/live");
+  EXPECT_TRUE(IsAegisBookmarkUrlCheckTargetAllowed(
+      scope, ipv4_fixture, GURL("http://127.0.0.1:18765/redirected"), true));
+  EXPECT_TRUE(IsAegisBookmarkUrlCheckTargetAllowed(
+      scope, ipv6_fixture, GURL("http://[::1]:18765/redirected"), true));
+  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
+      scope, ipv4_fixture, GURL("http://127.0.0.1:18766/redirected"), true));
+  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
+      scope, ipv4_fixture, GURL("http://localhost:18765/redirected"), true));
+  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
+      scope, GURL("http://10.0.0.7:18765/live"),
+      GURL("http://10.0.0.7:18765/redirected"), true));
 }
 
 TEST_F(AegisAgentServiceTest, LaterBookmarkEditInvalidatesUndoReceipt) {
@@ -422,10 +886,16 @@ TEST_F(AegisAgentServiceTest, PersistsAndBoundsBrowserLifetimeMonitors) {
   AegisAgentService* service =
       AegisAgentServiceFactory::GetForProfile(profile_);
   ASSERT_TRUE(service);
+  AgentTaskScope scope = ServiceTestScope();
+  scope.allowed_tools.insert("monitor.create");
   AgentTask* task = service->CreateTask("monitor fixture", AgentMode::kAutomate,
-                                        ServiceTestScope());
+                                        std::move(scope));
   ASSERT_TRUE(task);
-  ASSERT_TRUE(InstallServicePlan(service, task));
+  ASSERT_TRUE(service->BeginPlanning(task->id()));
+  const AgentModelEvent plan = ServiceAutomationPlanEvent();
+  std::string plan_error;
+  ASSERT_TRUE(service->AcceptModelPlan(task->id(), plan, &plan_error))
+      << plan_error;
   ASSERT_TRUE(service->GrantTaskConsent(task->id()));
 
   const base::Time now = base::Time::Now();

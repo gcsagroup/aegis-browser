@@ -51,7 +51,7 @@ struct StoredAgentPlan {
 // have no column in this schema.
 class AgentTaskStore {
  public:
-  explicit AgentTaskStore(base::FilePath database_path);
+  explicit AgentTaskStore(base::FilePath database_path, bool in_memory = false);
   AgentTaskStore(const AgentTaskStore&) = delete;
   AgentTaskStore& operator=(const AgentTaskStore&) = delete;
   ~AgentTaskStore();
@@ -88,6 +88,7 @@ class AgentTaskStore {
   const base::FilePath& database_path_for_testing() const {
     return database_path_;
   }
+  bool is_in_memory_for_testing() const { return in_memory_; }
 
  private:
   static bool IsSafeSummary(const std::string& value);
@@ -96,6 +97,7 @@ class AgentTaskStore {
   static base::Time DeserializeTime(int64_t value);
 
   const base::FilePath database_path_;
+  const bool in_memory_;
   sql::Database database_;
   sql::MetaTable meta_table_;
   bool initialized_ = false;

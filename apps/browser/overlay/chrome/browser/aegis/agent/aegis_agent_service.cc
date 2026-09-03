@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/check.h"
 #include "base/check_deref.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -16,14 +17,23 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/uuid.h"
+#include "build/build_config.h"
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/jni_android.h"
+#include "base/android/jni_string.h"
+#endif
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/agent/agent_model_client.h"
 #include "chrome/browser/aegis/model_provider_policy.h"
 #include "chrome/browser/browser_process.h"
+#if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/notifications/notification_display_service_factory.h"
 #include "chrome/browser/notifications/notification_handler.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/common/aegis/features.h"
@@ -35,11 +45,23 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/storage_partition.h"
 #include "crypto/sha2.h"
+#if !BUILDFLAG(IS_ANDROID)
 #include "ui/base/models/image_model.h"
 #include "ui/message_center/public/cpp/notification.h"
 #include "ui/message_center/public/cpp/notifier_id.h"
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+// Must come after headers that specialize JNI string conversion.
+#include "chrome/android/chrome_jni_headers/AegisAgentNotificationBridge_jni.h"
+#endif
 
 namespace aegis::agent {
+
+bool AreAgentSystemNotificationsAllowed(const Profile* profile) {
+  return profile && !profile->IsOffTheRecord();
+}
+
 namespace {
 
 constexpr base::TimeDelta kInvocationContextTtl = base::Minutes(5);
@@ -48,6 +70,49 @@ constexpr base::TimeDelta kCompletedTaskRetention = base::Days(30);
 constexpr size_t kMaxInvocationDisplayBytes = 2048;
 constexpr size_t kMaxSuggestedGoalBytes = 4096;
 constexpr size_t kMaxRuntimeEvidenceItems = 24;
+constexpr size_t kMaxModelRepairErrorBytes = 512;
+constexpr int kModelToolCallMaxOutputTokens = 8192;
+constexpr std::string_view kScheduleMarker =
+    "[AEGIS_SCHEDULE_INTERVAL_MINUTES=";
+
+std::string ModelRepairInstruction(std::string_view stage,
+                                   std::string_view previous_error) {
+  std::string instruction =
+      "\nThis is the single browser-approved format repair attempt for the ";
+  instruction.append(stage);
+  instruction.append(
+      ". The previous native function call was rejected by the browser: ");
+  instruction.append(
+      base::TruncateUTF8ToByteSize(previous_error, kMaxModelRepairErrorBytes));
+  instruction.append(
+      ". Correct only the function arguments, obey the supplied strict schema, "
+      "and return exactly the required native function call with no prose. "
+      "Do not broaden the target, tools, origins, data, or risk.");
+  return instruction;
+}
+
+bool IsRepairablePlanError(std::string_view error) {
+  return !error.contains("could not be stored") &&
+         !error.contains("could not be persisted") &&
+         !error.contains("task is not accepting");
+}
+
+std::optional<int> BrowserOwnedScheduleInterval(std::string_view goal) {
+  const size_t marker = goal.rfind(kScheduleMarker);
+  if (marker == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const size_t value_start = marker + kScheduleMarker.size();
+  const size_t value_end = goal.find(']', value_start);
+  int interval_minutes = 0;
+  if (value_end == std::string_view::npos ||
+      !base::StringToInt(goal.substr(value_start, value_end - value_start),
+                         &interval_minutes) ||
+      interval_minutes < 15 || interval_minutes > 10080) {
+    return std::nullopt;
+  }
+  return interval_minutes;
+}
 
 bool SameDocument(const AgentDocumentRef& left, const AgentDocumentRef& right) {
   return left.tab_id == right.tab_id && left.frame_token == right.frame_token &&
@@ -86,6 +151,16 @@ AgentModelProvider ProtocolProvider(ModelProvider provider) {
     case ModelProvider::kGemini:
       return AgentModelProvider::kGemini;
   }
+}
+
+bool ShouldDisableLocalQwenThinking(const AgentModelDestination& destination) {
+  const std::optional<ModelProvider> provider =
+      ParseModelProvider(destination.provider);
+  return provider == ModelProvider::kOpenAI &&
+         destination.kind == AgentModelDestination::Kind::kLoopback &&
+         IsLocalModelEndpoint(*provider, GURL(destination.endpoint)) &&
+         base::StartsWith(destination.model, "qwen",
+                          base::CompareCase::INSENSITIVE_ASCII);
 }
 
 bool HasUserSetting(const PrefService* prefs, const char* name) {
@@ -176,7 +251,7 @@ std::optional<AgentModelClientConfig> ResolveModelConfig(
     return std::nullopt;
   }
   std::string api_key;
-  AegisService* settings = AegisService::GetInstance();
+  AegisService* settings = AegisServiceFactory::GetForProfile(profile);
   if (settings) {
     std::optional<std::string> stored_key =
         settings->ModelApiKeyForBrowserAgent(profile, destination.provider,
@@ -352,6 +427,7 @@ struct AegisAgentService::ExecutionRuntime {
   bool needs_fresh_observation = false;
   std::optional<int32_t> last_tab_id;
   std::optional<AgentToolResult> previous_result;
+  std::string last_model_error;
   std::vector<AgentExecutionEvidence> evidence_history;
   std::optional<AgentToolCall> pending_action;
   RunCallback callback;
@@ -360,10 +436,20 @@ struct AegisAgentService::ExecutionRuntime {
 AegisAgentService::AegisAgentService(Profile* profile)
     : profile_(profile),
       task_store_(
-          CHECK_DEREF(profile).GetPath().AppendASCII("AegisAgentTasks.sqlite")),
+          CHECK_DEREF(profile).IsOffTheRecord()
+              ? base::FilePath()
+              : profile->GetPath().AppendASCII("AegisAgentTasks.sqlite"),
+          profile->IsOffTheRecord()),
       policy_broker_(&tool_registry_),
       actor_bridge_(profile),
       browser_tools_(profile) {
+  if (profile_->IsOffTheRecord()) {
+    // Workspace snapshots can contain private tab origins. Start Incognito
+    // with a fresh session namespace instead of inheriting the original
+    // Profile's dictionary through the OTR preference overlay.
+    profile_->GetPrefs()->SetDict(aegis::prefs::kAgentWorkspaces,
+                                  base::DictValue());
+  }
   actor_bridge_.SetStateEventCallback(base::BindRepeating(
       &AegisAgentService::OnActorStateEvent, weak_ptr_factory_.GetWeakPtr()));
   storage_ready_ = task_store_.Initialize();
@@ -521,6 +607,138 @@ bool AegisAgentService::BeginPlanning(const std::string& task_id) {
   return Transition(task_id, AgentTaskState::kPlanning, "planning started");
 }
 
+void AegisAgentService::RouteGoal(std::string goal,
+                                  AgentWorkflowKind requested_workflow,
+                                  GoalRouteCallback callback) {
+  RouteGoalAttempt(std::move(goal), requested_workflow,
+                   /*repair_attempt=*/0, std::string(), std::move(callback));
+}
+
+void AegisAgentService::RouteGoalAttempt(std::string goal,
+                                         AgentWorkflowKind requested_workflow,
+                                         int repair_attempt,
+                                         std::string previous_error,
+                                         GoalRouteCallback callback) {
+  if (goal_route_for_testing_) {
+    std::move(callback).Run(true, std::string(), goal_route_for_testing_);
+    return;
+  }
+  const std::optional<AgentModelDestination> destination =
+      ConfiguredModelDestination();
+  const std::optional<std::string> prompt =
+      BuildAgentGoalRoutingPrompt(goal, requested_workflow);
+  if (!destination || !prompt) {
+    std::move(callback).Run(false, "goal routing input is invalid",
+                            std::nullopt);
+    return;
+  }
+  std::string config_error;
+  std::optional<AgentModelClientConfig> config =
+      ResolveModelConfig(profile_, *destination, &config_error);
+  if (!config) {
+    std::move(callback).Run(false, std::move(config_error), std::nullopt);
+    return;
+  }
+  const std::optional<ModelProvider> provider =
+      ParseModelProvider(destination->provider);
+  if (!provider) {
+    std::move(callback).Run(false, "unsupported model provider", std::nullopt);
+    return;
+  }
+  if (!goal_router_client_) {
+    goal_router_client_ = std::make_unique<AgentModelClient>(
+        profile_->GetDefaultStoragePartition()
+            ->GetURLLoaderFactoryForBrowserProcess());
+  }
+  if (goal_router_client_->busy()) {
+    std::move(callback).Run(false, "another goal is being understood",
+                            std::nullopt);
+    return;
+  }
+
+  AgentModelRequest request;
+  request.provider = ProtocolProvider(*provider);
+  request.model = destination->model;
+  request.system_prompt = BuildAgentGoalRouterSystemContract();
+  if (repair_attempt > 0) {
+    request.system_prompt.append(
+        ModelRepairInstruction("goal route", previous_error));
+  }
+  request.user_prompt = *prompt;
+  request.tools.push_back(BuildRouteGoalToolDefinition());
+  request.required_tool_name = "agent.route_goal";
+  request.reasoning_effort = "none";
+  request.disable_model_thinking = ShouldDisableLocalQwenThinking(*destination);
+  request.max_output_tokens = kModelToolCallMaxOutputTokens;
+  request.stream = false;
+  std::optional<AgentModelClient::RequestId> request_id =
+      goal_router_client_->Start(
+          std::move(*config), std::move(request),
+          base::BindOnce(&AegisAgentService::OnGoalRouteModelResult,
+                         weak_ptr_factory_.GetWeakPtr(), std::move(goal),
+                         requested_workflow, repair_attempt,
+                         std::move(callback)));
+  if (request_id && goal_router_client_->busy()) {
+    goal_router_request_id_ = std::move(*request_id);
+  }
+}
+
+void AegisAgentService::SetGoalRouteForTesting(
+    std::optional<AgentGoalRoute> route) {
+  goal_route_for_testing_ = std::move(route);
+}
+
+void AegisAgentService::SetGoalRouterClientForTesting(
+    std::unique_ptr<AgentModelClient> client) {
+  CHECK(!goal_router_client_ || !goal_router_client_->busy());
+  goal_router_client_ = std::move(client);
+}
+
+void AegisAgentService::SetTaskModelClientForTesting(
+    const std::string& task_id,
+    std::unique_ptr<AgentModelClient> client) {
+  CHECK(!model_clients_.contains(task_id) ||
+        !model_clients_.at(task_id)->busy());
+  model_clients_.insert_or_assign(task_id, std::move(client));
+}
+
+void AegisAgentService::OnGoalRouteModelResult(
+    std::string goal,
+    AgentWorkflowKind requested_workflow,
+    int repair_attempt,
+    GoalRouteCallback callback,
+    bool ok,
+    std::string error,
+    AgentModelParseResult result) {
+  goal_router_request_id_.clear();
+  if (!ok) {
+    if (repair_attempt == 0 && !result.error.empty()) {
+      RouteGoalAttempt(std::move(goal), requested_workflow,
+                       /*repair_attempt=*/1, result.error, std::move(callback));
+      return;
+    }
+    std::move(callback).Run(false, std::move(error), std::nullopt);
+    return;
+  }
+  std::string validation_error;
+  std::optional<AgentModelEvent> event =
+      SelectExecutionToolCall(result, "agent.route_goal", &validation_error);
+  std::optional<AgentGoalRoute> route =
+      event ? ParseAndValidateGoalRoute(*event, &validation_error)
+            : std::nullopt;
+  if (!route) {
+    if (repair_attempt == 0) {
+      RouteGoalAttempt(std::move(goal), requested_workflow,
+                       /*repair_attempt=*/1, validation_error,
+                       std::move(callback));
+      return;
+    }
+    std::move(callback).Run(false, std::move(validation_error), std::nullopt);
+    return;
+  }
+  std::move(callback).Run(true, std::string(), std::move(route));
+}
+
 bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
                                         const AgentModelEvent& event,
                                         std::string* error) {
@@ -536,6 +754,12 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
   std::optional<AgentTaskPlan> plan =
       ParseAndValidateTaskPlan(event, task->scope(), tool_registry_, error);
   if (!plan) {
+    return false;
+  }
+  if (!ValidateTaskPlanForMode(*plan, task->mode(), error)) {
+    return false;
+  }
+  if (!ValidateTaskPlanForGoal(*plan, task->goal(), error)) {
     return false;
   }
   for (const AgentPlanStep& step : plan->steps) {
@@ -568,6 +792,14 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
 
 void AegisAgentService::RequestPlan(const std::string& task_id,
                                     PlanReadyCallback callback) {
+  RequestPlanAttempt(task_id, /*repair_attempt=*/0, std::string(),
+                     std::move(callback));
+}
+
+void AegisAgentService::RequestPlanAttempt(const std::string& task_id,
+                                           int repair_attempt,
+                                           std::string previous_error,
+                                           PlanReadyCallback callback) {
   AgentTask* task = GetTask(task_id);
   if (!task || (task->state() != AgentTaskState::kDraft &&
                 task->state() != AgentTaskState::kPlanning)) {
@@ -578,24 +810,16 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
     std::move(callback).Run(false, "task could not enter planning");
     return;
   }
-  const std::string capability_key =
-      ModelCapabilityKey(task->scope().model_destination);
-  AgentModelCapabilityTracker& capability = model_capabilities_[capability_key];
-  if (task->mode() != AgentMode::kAsk &&
-      capability.consecutive_schema_failures() >= 2) {
-    std::move(callback).Run(
-        false, "configured model is limited to Ask mode after schema failures");
-    return;
-  }
   std::optional<std::string> prompt =
-      BuildAgentPlanningPrompt(task->goal(), task->scope());
+      BuildAgentPlanningPrompt(task->goal(), task->scope(), tool_registry_);
   std::string config_error;
   std::optional<AgentModelClientConfig> config = ResolveModelConfig(
       profile_, task->scope().model_destination, &config_error);
   if (!prompt || !config) {
-    std::move(callback).Run(
-        false, !config_error.empty() ? std::move(config_error)
-                                     : "planning budget or prompt is invalid");
+    FailPlanning(task_id, std::move(callback),
+                 !config_error.empty()
+                     ? std::move(config_error)
+                     : "planning budget or prompt is invalid");
     return;
   }
 
@@ -607,39 +831,50 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
     client_it = model_clients_.emplace(task_id, std::move(client)).first;
   }
   if (client_it->second->busy()) {
-    std::move(callback).Run(false, "task already has a model request");
+    FailPlanning(task_id, std::move(callback),
+                 "task already has a model request");
     return;
   }
   const std::optional<ModelProvider> provider =
       ParseModelProvider(task->scope().model_destination.provider);
   if (!provider) {
-    std::move(callback).Run(false, "unsupported model provider");
+    FailPlanning(task_id, std::move(callback), "unsupported model provider");
     return;
   }
   if (!ConsumeModelRequestBudget(task)) {
-    std::move(callback).Run(false, "planning model budget is exhausted");
+    FailPlanning(task_id, std::move(callback),
+                 "planning model budget is exhausted");
     return;
   }
   AgentModelRequest request;
   request.provider = ProtocolProvider(*provider);
   request.model = task->scope().model_destination.model;
   request.system_prompt = BuildAgentPlannerSystemContract();
+  if (repair_attempt > 0) {
+    request.system_prompt.append(
+        ModelRepairInstruction("task plan", previous_error));
+  }
   request.user_prompt = std::move(*prompt);
   request.tools.push_back(BuildSubmitPlanToolDefinition());
-  request.max_output_tokens = 4096;
+  request.required_tool_name = "agent.submit_plan";
+  request.reasoning_effort = "none";
+  request.disable_model_thinking =
+      ShouldDisableLocalQwenThinking(task->scope().model_destination);
+  request.max_output_tokens = kModelToolCallMaxOutputTokens;
   request.stream = false;
   std::optional<AgentModelClient::RequestId> request_id =
       client_it->second->Start(
           std::move(*config), std::move(request),
           base::BindOnce(&AegisAgentService::OnPlanModelResult,
                          weak_ptr_factory_.GetWeakPtr(), task_id,
-                         std::move(callback)));
+                         repair_attempt, std::move(callback)));
   if (request_id && client_it->second->busy()) {
     model_request_ids_[task_id] = std::move(*request_id);
   }
 }
 
 void AegisAgentService::OnPlanModelResult(const std::string& task_id,
+                                          int repair_attempt,
                                           PlanReadyCallback callback,
                                           bool ok,
                                           std::string error,
@@ -650,24 +885,53 @@ void AegisAgentService::OnPlanModelResult(const std::string& task_id,
     std::move(callback).Run(false, "planning task is no longer active");
     return;
   }
+  AgentModelCapabilityTracker& capability =
+      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)];
   if (!ok) {
-    std::move(callback).Run(false, std::move(error));
+    if (repair_attempt == 0 && !result.error.empty()) {
+      capability.RecordSchemaFailure();
+      task->RecordEvent("planning repair",
+                        "browser requested one bounded plan format repair");
+      RequestPlanAttempt(task_id, /*repair_attempt=*/1, result.error,
+                         std::move(callback));
+      return;
+    }
+    if (repair_attempt > 0 && !result.error.empty()) {
+      capability.RecordSchemaFailure();
+      std::string recovery_error;
+      if (TryReadOnlyPlanningRecovery(task_id, &recovery_error)) {
+        std::move(callback).Run(true, std::string());
+        return;
+      }
+    }
+    FailPlanning(task_id, std::move(callback), std::move(error));
     return;
   }
   std::string validation_error;
   std::optional<AgentModelEvent> event =
       SelectExecutionToolCall(result, "agent.submit_plan", &validation_error);
-  AgentModelCapabilityTracker& capability =
-      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)];
   if (!event || !AcceptModelPlan(task_id, *event, &validation_error)) {
     capability.RecordSchemaFailure();
+    if (repair_attempt == 0 && IsRepairablePlanError(validation_error)) {
+      task->RecordEvent("planning repair",
+                        "browser requested one bounded plan format repair");
+      RequestPlanAttempt(task_id, /*repair_attempt=*/1, validation_error,
+                         std::move(callback));
+      return;
+    }
+    std::string recovery_error;
+    if (repair_attempt > 0 &&
+        TryReadOnlyPlanningRecovery(task_id, &recovery_error)) {
+      std::move(callback).Run(true, std::string());
+      return;
+    }
     if (capability.consecutive_schema_failures() >= 2 &&
         task->mode() != AgentMode::kAsk) {
       validation_error =
           "configured model failed the structured-tool contract twice; "
           "only Ask mode is allowed";
     }
-    std::move(callback).Run(false, std::move(validation_error));
+    FailPlanning(task_id, std::move(callback), std::move(validation_error));
     return;
   }
   capability.RecordToolProbeSuccess();
@@ -1046,9 +1310,13 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
   request.user_prompt = BuildAgentExecutionPrompt(
       *task, *plan, runtime.next_step, runtime.attempt,
       runtime.previous_result ? &*runtime.previous_result : nullptr,
-      runtime.evidence_history);
+      runtime.evidence_history, runtime.last_model_error);
   request.tools.push_back(std::move(*tool));
-  request.max_output_tokens = 4096;
+  request.required_tool_name = expected_tool;
+  request.reasoning_effort = "none";
+  request.disable_model_thinking =
+      ShouldDisableLocalQwenThinking(task->scope().model_destination);
+  request.max_output_tokens = kModelToolCallMaxOutputTokens;
   request.stream = false;
   std::optional<AgentModelClient::RequestId> request_id =
       client_it->second->Start(
@@ -1198,8 +1466,17 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
   ExecutionRuntime& runtime = *runtime_it->second;
   if (!ok) {
     ++runtime.model_failures;
+    if (!result.error.empty()) {
+      runtime.last_model_error = error;
+      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
+          .RecordSchemaFailure();
+    }
     if (runtime.model_failures < 2) {
       RequestNextModelTurn(task_id);
+      return;
+    }
+    if (expected_tool == "agent.complete" &&
+        FinishWithBrowserVerifiedFallback(task_id)) {
       return;
     }
     Transition(task_id, AgentTaskState::kFailed,
@@ -1214,37 +1491,66 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
     ++runtime.model_failures;
     model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
         .RecordSchemaFailure();
+    runtime.last_model_error = validation_error;
     if (runtime.model_failures < 2) {
       RequestNextModelTurn(task_id);
       return;
     }
-    Transition(task_id, AgentTaskState::kFailed,
-               "execution schema failed twice");
-    FinishRuntime(task_id, false, std::move(validation_error), std::nullopt);
+    if (expected_tool == "agent.complete" &&
+        FinishWithBrowserVerifiedFallback(task_id)) {
+      return;
+    }
+    const std::string required_tool_error =
+        "execution model did not produce required tool " + expected_tool +
+        " after 2 attempts";
+    Transition(task_id, AgentTaskState::kFailed, required_tool_error);
+    FinishRuntime(task_id, false,
+                  required_tool_error + ": " + std::move(validation_error),
+                  std::nullopt);
     return;
   }
-  runtime.model_failures = 0;
-  model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
-      .RecordSchemaSuccess();
   if (expected_tool == "agent.complete") {
     std::optional<AgentCompletionSummary> completion =
         ParseCompletionSummary(*event, &validation_error);
-    if (!completion ||
-        !AgentCompletionSourcesMatchEvidence(*completion,
-                                             runtime.evidence_history) ||
-        std::ranges::any_of(completion->source_urls,
-                            [&](const std::string& source) {
-                              return !task->scope().AllowsOrigin(GURL(source));
-                            })) {
+    if (completion && !NormalizeAgentCompletionSourcesForEvidence(
+                          &*completion, runtime.evidence_history)) {
+      validation_error =
+          "completion source URLs do not match browser-verified page evidence";
+      completion.reset();
+    } else if (completion &&
+               std::ranges::any_of(
+                   completion->source_urls, [&](const std::string& source) {
+                     return !task->scope().AllowsOrigin(GURL(source));
+                   })) {
+      validation_error = "completion source is outside task scope";
+      completion.reset();
+    }
+    if (!completion) {
+      ++runtime.model_failures;
+      runtime.last_model_error = validation_error;
+      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
+          .RecordSchemaFailure();
+      if (runtime.model_failures < 2) {
+        RequestNextModelTurn(task_id);
+        return;
+      }
+      if (FinishWithBrowserVerifiedFallback(task_id)) {
+        return;
+      }
+      const std::string completion_error =
+          "execution model did not produce required tool agent.complete "
+          "with browser-verifiable evidence after 2 attempts";
       Transition(task_id, AgentTaskState::kFailed,
                  "completion evidence was rejected");
       FinishRuntime(task_id, false,
-                    validation_error.empty()
-                        ? "completion source is outside task scope"
-                        : std::move(validation_error),
+                    completion_error + ": " + std::move(validation_error),
                     std::nullopt);
       return;
     }
+    runtime.model_failures = 0;
+    runtime.last_model_error.clear();
+    model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
+        .RecordSchemaSuccess();
     const std::vector<AgentMonitorDefinition> monitors = GetMonitors(task_id);
     const bool monitoring =
         task->mode() == AgentMode::kAutomate &&
@@ -1269,6 +1575,10 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
     FinishRuntime(task_id, true, std::string(), std::move(completion));
     return;
   }
+  runtime.model_failures = 0;
+  runtime.last_model_error.clear();
+  model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
+      .RecordSchemaSuccess();
   if (runtime.next_step >= plan->steps.size()) {
     Transition(task_id, AgentTaskState::kFailed,
                "model requested an action after the plan ended");
@@ -1593,6 +1903,68 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
   FinishRuntime(task_id, false, result.message, std::nullopt);
 }
 
+bool AegisAgentService::FinishWithBrowserVerifiedFallback(
+    const std::string& task_id) {
+  auto runtime_it = executions_.find(task_id);
+  AgentTask* task = GetTask(task_id);
+  const AgentTaskPlan* plan = GetPlan(task_id);
+  if (!task || !plan || runtime_it == executions_.end() ||
+      runtime_it->second->next_step != plan->steps.size() ||
+      runtime_it->second->pending_action ||
+      runtime_it->second->final_user_takeover ||
+      (task->state() != AgentTaskState::kRunning &&
+       task->state() != AgentTaskState::kReflecting)) {
+    return false;
+  }
+
+  AgentCompletionSummary completion{
+      .outcome = "completed",
+      .summary =
+          "计划中的浏览器操作均已完成并通过核对。AI 最终整理格式不正确，"
+          "已保留浏览器核对结果。"};
+  base::flat_set<std::string> verified_urls;
+  for (const AgentExecutionEvidence& evidence :
+       runtime_it->second->evidence_history) {
+    if (!evidence.result.ok ||
+        !base::StartsWith(evidence.tool_name, "page.")) {
+      continue;
+    }
+    const std::string* value = evidence.result.value.FindString("url");
+    const GURL url(value ? *value : std::string());
+    if (url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
+        url.username().empty() && url.password().empty() &&
+        !url.has_query() && !url.has_ref() &&
+        task->scope().AllowsOrigin(url)) {
+      verified_urls.insert(url.spec());
+    }
+  }
+  completion.source_urls.assign(verified_urls.begin(), verified_urls.end());
+
+  const std::vector<AgentMonitorDefinition> monitors = GetMonitors(task_id);
+  const bool monitoring =
+      task->mode() == AgentMode::kAutomate &&
+      std::ranges::any_of(
+          monitors, [](const auto& monitor) { return monitor.enabled; });
+  if (monitoring) {
+    completion.outcome = "monitoring";
+    completion.summary =
+        "计划步骤已完成；浏览器会在运行期间按已同意的计划继续监控。";
+    FinishRuntime(task_id, true, std::string(), std::move(completion));
+    ScheduleMonitorTimer();
+    return true;
+  }
+  if (!Transition(task_id, AgentTaskState::kVerifying,
+                  "browser verified all actions; model summary fallback used") ||
+      !CompleteTask(task_id)) {
+    FinishRuntime(task_id, false,
+                  "task completion could not be browser-verified",
+                  std::nullopt);
+    return true;
+  }
+  FinishRuntime(task_id, true, std::string(), std::move(completion));
+  return true;
+}
+
 void AegisAgentService::FinishRuntime(
     const std::string& task_id,
     bool ok,
@@ -1605,9 +1977,20 @@ void AegisAgentService::FinishRuntime(
   }
   RunCallback callback = std::move(it->second->callback);
   executions_.erase(it);
+  if (ok && completion) {
+    completion_summaries_[task_id] = *completion;
+  } else {
+    completion_summaries_.erase(task_id);
+  }
   if (callback) {
     std::move(callback).Run(ok, std::move(error), std::move(completion));
   }
+}
+
+const AgentCompletionSummary* AegisAgentService::GetCompletionSummary(
+    const std::string& task_id) const {
+  const auto it = completion_summaries_.find(task_id);
+  return it == completion_summaries_.end() ? nullptr : &it->second;
 }
 
 AgentPolicyDecision AegisAgentService::EvaluateToolCall(
@@ -2057,6 +2440,13 @@ void AegisAgentService::ExecuteMonitorTool(AgentTask* task,
                        "document"));
       return;
     }
+    if (profile_->IsOffTheRecord()) {
+      // The task store itself is an in-memory SQLite database. Keep the target
+      // only in that session and avoid touching OSCrypt/Keychain.
+      OnMonitorCreateEncryptorReady(task->id(), CloneToolCall(call),
+                                    std::move(callback), nullptr);
+      return;
+    }
     if (!g_browser_process || !g_browser_process->os_crypt_async()) {
       std::move(callback).Run(
           MonitorError(call.action_id, AgentErrorCode::kToolUnavailable,
@@ -2162,17 +2552,22 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
       call.arguments.FindInt("interval_minutes");
   const std::optional<AgentMonitorKind> kind =
       kind_value ? ParseMonitorKind(*kind_value) : std::nullopt;
+  const std::optional<int> browser_interval =
+      task ? BrowserOwnedScheduleInterval(task->goal()) : std::nullopt;
   const GURL target = MonitorTargetUrl(call.committed_url);
   const std::optional<AgentDocumentRef> latest =
       call.document ? actor_bridge_.LastDocument(task_id, call.document->tab_id)
                     : std::nullopt;
   std::string ciphertext;
+  const bool ephemeral = profile_ && profile_->IsOffTheRecord();
+  const bool storage_ready =
+      ephemeral || (encryptor && encryptor->IsEncryptionAvailable() &&
+                    encryptor->EncryptString(target.spec(), &ciphertext));
   if (!task || task->state() != AgentTaskState::kRunning || !kind ||
       !interval_minutes || *interval_minutes < 15 ||
       *interval_minutes > 10080 || target.is_empty() || !call.document ||
-      !latest || !SameDocument(*latest, *call.document) || !encryptor ||
-      !encryptor->IsEncryptionAvailable() ||
-      !encryptor->EncryptString(target.spec(), &ciphertext)) {
+      (browser_interval && *interval_minutes != *browser_interval) || !latest ||
+      !SameDocument(*latest, *call.document) || !storage_ready) {
     std::move(callback).Run(
         MonitorError(call.action_id, AgentErrorCode::kInvalidRequest,
                      "monitor target or secure storage is unavailable"));
@@ -2295,7 +2690,10 @@ void AegisAgentService::ExecuteDueMonitor(AgentMonitorDefinition monitor) {
   tabs::TabInterface* target_tab = nullptr;
   ProfileBrowserCollection::GetForProfile(profile_)->ForEach(
       [&](BrowserWindowInterface* browser) {
-        for (tabs::TabInterface* tab : browser->GetAllTabInterfaces()) {
+        TabListInterface* tab_list = TabListInterface::From(browser);
+        for (int index = 0; tab_list && index < tab_list->GetTabCount();
+             ++index) {
+          tabs::TabInterface* tab = tab_list->GetTab(index);
           if (tab && MonitorTargetUrl(tab->GetURL()) == monitor.target_url) {
             target_tab = tab;
             return false;
@@ -2426,7 +2824,19 @@ void AegisAgentService::OnDueMonitorObserved(AgentMonitorDefinition monitor,
 
 void AegisAgentService::ShowMonitorChangeNotification(
     const AgentMonitorDefinition& monitor) const {
-  if (!profile_ || shutting_down_) {
+#if BUILDFLAG(IS_ANDROID)
+  if (shutting_down_ || !AreAgentSystemNotificationsAllowed(profile_)) {
+    return;
+  }
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_AegisAgentNotificationBridge_showMonitorChange(
+      env, base::android::ConvertUTF8ToJavaString(env, monitor.origin.host()),
+      base::android::ConvertUTF8ToJavaString(
+          env, std::string(MonitorKindName(monitor.kind))),
+      base::android::ConvertUTF8ToJavaString(env, monitor.monitor_id));
+  return;
+#else
+  if (shutting_down_ || !AreAgentSystemNotificationsAllowed(profile_)) {
     return;
   }
   NotificationDisplayService* display_service =
@@ -2450,6 +2860,7 @@ void AegisAgentService::ShowMonitorChangeNotification(
       /*delegate=*/nullptr);
   display_service->Display(NotificationHandler::Type::TRANSIENT, notification,
                            /*metadata=*/nullptr);
+#endif
 }
 
 std::optional<StoredAgentTask::RecoveryDisposition>
@@ -2466,6 +2877,10 @@ void AegisAgentService::Shutdown() {
   shutting_down_ = true;
   monitor_timer_.Stop();
   weak_ptr_factory_.InvalidateWeakPtrs();
+  if (goal_router_client_ && !goal_router_request_id_.empty()) {
+    goal_router_client_->Cancel(goal_router_request_id_);
+  }
+  goal_router_request_id_.clear();
   for (const auto& [task_id, request_id] : model_request_ids_) {
     auto client = model_clients_.find(task_id);
     if (client != model_clients_.end()) {
@@ -2482,6 +2897,7 @@ void AegisAgentService::Shutdown() {
     FinishRuntime(task_id, false, "browser profile is shutting down",
                   std::nullopt);
   }
+  const bool cancel_active_downloads = profile_->IsOffTheRecord();
   for (const auto& [task_id, task] : tasks_) {
     if (!IsTerminalState(task->state())) {
       if (TaskUsesActor(*task)) {
@@ -2490,12 +2906,17 @@ void AegisAgentService::Shutdown() {
       policy_broker_.RevokeTaskApprovals(task_id);
       PersistTask(*task);
     }
-    browser_tools_.ForgetTask(task_id);
+    // Incognito has no durable owner that can resume or manage an in-flight
+    // Agent download after its last window closes. Stop those transfers while
+    // leaving completed user-approved files under normal download semantics.
+    browser_tools_.ForgetTask(task_id, /*preserve_bookmark_undo=*/false,
+                              cancel_active_downloads);
   }
   tasks_.clear();
   plans_.clear();
   plan_progress_.clear();
   model_clients_.clear();
+  goal_router_client_.reset();
   model_capabilities_.clear();
   action_results_.clear();
   action_tools_.clear();
@@ -2653,6 +3074,36 @@ bool AegisAgentService::Transition(const std::string& task_id,
   return PersistTask(*task);
 }
 
+void AegisAgentService::FailPlanning(const std::string& task_id,
+                                     PlanReadyCallback callback,
+                                     std::string error) {
+  AgentTask* task = GetTask(task_id);
+  if (task && task->state() == AgentTaskState::kPlanning) {
+    Transition(task_id, AgentTaskState::kFailed,
+               "planning stopped safely; edit the goal and retry");
+  }
+  std::move(callback).Run(false, std::move(error));
+}
+
+bool AegisAgentService::TryReadOnlyPlanningRecovery(const std::string& task_id,
+                                                    std::string* error) {
+  AgentTask* task = GetTask(task_id);
+  if (!error || !task || task->state() != AgentTaskState::kPlanning) {
+    return false;
+  }
+  std::optional<AgentModelEvent> recovery = BuildBrowserReadOnlyRecoveryPlan(
+      task->goal(), task->scope(), tool_registry_);
+  if (!recovery) {
+    *error = "no safe read-only planning recovery is available";
+    return false;
+  }
+  task->RecordEvent(
+      "planning recovery",
+      "model plan format failed twice; browser kept only approved read-only "
+      "steps");
+  return AcceptModelPlan(task_id, *recovery, error);
+}
+
 bool AegisAgentService::PersistTask(const AgentTask& task) {
   auto it = task_has_external_side_effect_.find(task.id());
   return storage_ready_ &&
@@ -2760,3 +3211,7 @@ void AegisAgentService::RestoreMonitors() {
 }
 
 }  // namespace aegis::agent
+
+#if BUILDFLAG(IS_ANDROID)
+DEFINE_JNI(AegisAgentNotificationBridge)
+#endif

@@ -228,6 +228,15 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
       GetAgentWorkflowTemplate(AgentWorkflowKind::kShopping);
   EXPECT_TRUE(shopping.always_user_takeover_for_final_action);
   EXPECT_TRUE(shopping.tools.contains("shopping.prepare_checkout"));
+
+  std::optional<AgentTaskScope> browser_only = BuildAgentWorkflowScope(
+      AgentWorkflowKind::kBrowserSteward, {}, {7}, destination);
+  ASSERT_TRUE(browser_only);
+  EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.list"));
+  EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.plan"));
+  EXPECT_TRUE(browser_only->allowed_tools.contains("tab.list"));
+  EXPECT_FALSE(browser_only->allowed_tools.contains("tab.create"));
+  EXPECT_FALSE(browser_only->allowed_tools.contains("window.create"));
 }
 
 TEST(AegisAgentToolRegistryTest, SelectRequiresExactActionApproval) {

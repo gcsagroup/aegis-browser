@@ -88,6 +88,10 @@ struct MonitorSummary {
 struct TaskSnapshot {
   bool feature_enabled;
   bool agent_enabled;
+  bool model_configured;
+  string model_provider;
+  string model_base_url;
+  string model_name;
   int32 active_tab_id;
   string active_origin;
   string invocation_context;
@@ -97,6 +101,9 @@ struct TaskSnapshot {
   string mode;
   string goal;
   PlanSummary? plan;
+  string result_summary;
+  array<string> result_sources;
+  array<string> unfinished_items;
   PendingApproval? pending_approval;
   bool undo_available;
   array<TimelineEvent> timeline;
@@ -113,10 +120,20 @@ interface PageHandler {
 
   GetSnapshot() => (TaskSnapshot snapshot);
 
+  ConfigureModel(string provider,
+                 string base_url,
+                 string model,
+                 string api_key,
+                 bool clear_api_key) => (TaskSnapshot snapshot);
+
+  ListModels(string provider, string base_url, string api_key)
+      => (bool ok, string error, array<string> models);
+
   CreateTask(string goal,
              AgentMode mode,
              Workflow workflow,
-             array<string> approved_origins) => (TaskSnapshot snapshot);
+             array<string> approved_origins,
+             int32 schedule_interval_minutes) => (TaskSnapshot snapshot);
 
   RequestPlan(string task_id) => (TaskSnapshot snapshot);
 

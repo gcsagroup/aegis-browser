@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
 #include "chrome/common/webui_url_constants.h"
@@ -580,6 +582,15 @@ AegisStrings StringsForLocale(const std::string& locale) {
 }
 
 }  // namespace
+
+bool AegisUIConfig::IsWebUIEnabled(content::BrowserContext* browser_context) {
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+#if BUILDFLAG(IS_ANDROID)
+  return profile && profile->IsRegularProfile();
+#else
+  return aegis::IsAegisProfileSupported(profile);
+#endif
+}
 
 AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);

@@ -56,12 +56,18 @@ int64_t NowUnixSeconds() {
 
 // static
 std::unique_ptr<blink::URLLoaderThrottle> AegisNetThrottle::MaybeCreate(
+    bool profile_supported,
+    CnameCachePartitionId cname_cache_partition_id,
     bool tracker_blocking_enabled,
     bool cname_uncloak_enabled,
     bool link_sanitize_enabled,
     std::string paused_sites,
     std::string document_id,
     std::string default_source_site) {
+  if (!profile_supported ||
+      cname_cache_partition_id == kInvalidCnameCachePartitionId) {
+    return nullptr;
+  }
   const bool block = FeatureAllowsTrackerBlocking() && tracker_blocking_enabled;
   const bool sanitize = FeatureAllowsLinkSanitize() && link_sanitize_enabled;
   if (!block && !sanitize) {
@@ -70,19 +76,22 @@ std::unique_ptr<blink::URLLoaderThrottle> AegisNetThrottle::MaybeCreate(
   const bool cname =
       block && FeatureAllowsCnameUncloak() && cname_uncloak_enabled;
   return std::make_unique<AegisNetThrottle>(
-      block, cname, sanitize, std::move(paused_sites), std::move(document_id),
-      std::move(default_source_site));
+      cname_cache_partition_id, block, cname, sanitize, std::move(paused_sites),
+      std::move(document_id), std::move(default_source_site));
 }
 
-AegisNetThrottle::AegisNetThrottle(bool tracker_blocking_enabled,
-                                   bool cname_uncloak_enabled,
-                                   bool link_sanitize_enabled,
-                                   std::string paused_sites,
-                                   std::string document_id,
-                                   std::string default_source_site)
+AegisNetThrottle::AegisNetThrottle(
+    CnameCachePartitionId cname_cache_partition_id,
+    bool tracker_blocking_enabled,
+    bool cname_uncloak_enabled,
+    bool link_sanitize_enabled,
+    std::string paused_sites,
+    std::string document_id,
+    std::string default_source_site)
     : tracker_blocking_enabled_(tracker_blocking_enabled),
       cname_uncloak_enabled_(cname_uncloak_enabled),
       link_sanitize_enabled_(link_sanitize_enabled),
+      cname_cache_partition_id_(cname_cache_partition_id),
       paused_sites_(std::move(paused_sites)),
       document_id_(std::move(document_id)),
       default_source_site_(std::move(default_source_site)) {}
@@ -111,10 +120,11 @@ void AegisNetThrottle::WillStartRequest(network::ResourceRequest* request,
   }
   MaybeBlock(request->url);
   if (cname_uncloak_enabled_ && request->url.has_host() &&
-      CnameUncloakCache::GetInstance()->IsCloakedHost(request->url.host())) {
-    CancelAndReport(
-        request->url, "cname",
-        CnameUncloakCache::GetInstance()->CloakedAlias(request->url.host()));
+      CnameUncloakCache::GetInstance()->IsCloakedHost(cname_cache_partition_id_,
+                                                      request->url.host())) {
+    CancelAndReport(request->url, "cname",
+                    CnameUncloakCache::GetInstance()->CloakedAlias(
+                        cname_cache_partition_id_, request->url.host()));
   }
 }
 
@@ -135,10 +145,11 @@ void AegisNetThrottle::WillRedirectRequest(
   MaybeBlock(redirect_info->new_url);
   if (cname_uncloak_enabled_ && redirect_info->new_url.has_host() &&
       CnameUncloakCache::GetInstance()->IsCloakedHost(
-          redirect_info->new_url.host())) {
-    CancelAndReport(redirect_info->new_url, "cname",
-                    CnameUncloakCache::GetInstance()->CloakedAlias(
-                        redirect_info->new_url.host()));
+          cname_cache_partition_id_, redirect_info->new_url.host())) {
+    CancelAndReport(
+        redirect_info->new_url, "cname",
+        CnameUncloakCache::GetInstance()->CloakedAlias(
+            cname_cache_partition_id_, redirect_info->new_url.host()));
   }
 }
 
@@ -232,7 +243,8 @@ void AegisNetThrottle::MaybeBlockCloaked(
     return;
   }
   if (url.has_host()) {
-    CnameUncloakCache::GetInstance()->RememberCloakedHost(url.host(), alias);
+    CnameUncloakCache::GetInstance()->RememberCloakedHost(
+        cname_cache_partition_id_, url.host(), alias);
   }
   CancelAndReport(url, "cname", alias);
 }

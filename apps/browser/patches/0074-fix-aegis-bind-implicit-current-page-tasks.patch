@@ -1,0 +1,260 @@
+From 854079c51590cf720888c60421fee152142f1dd2 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 31 Aug 2026 17:04:01 +0800
+Subject: [PATCH] fix(aegis): bind implicit current-page tasks
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 44 +++++++++++++++++++
+ chrome/browser/resources/aegis_agent/agent.ts | 18 +++++++-
+ .../aegis_agent/aegis_agent_page_handler.cc   | 44 ++++++++++++++++---
+ .../aegis_agent/aegis_agent_page_handler.h    |  1 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 14 ++++--
+ 5 files changed, 110 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index eb3e5270f4..bd55a7abef 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -439,6 +439,50 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(service->MostRecentTask()->scope().AllowsOrigin(expected));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       ImplicitCurrentPageGoalBindsActiveTabWithoutNewTab) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->profile());
++  const GURL page_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++  const int32_t active_tab_id =
++      browser()->GetActiveTabInterface()->GetHandle().raw_value();
++
++  EXPECT_TRUE(content::EvalJs(panel, R"JS(
++    (() => {
++      const goal = document.querySelector('#goal');
++      goal.value = '帮我总结下页面内容';
++      goal.dispatchEvent(new Event('input', {bubbles: true}));
++      return document.querySelector('#current-page').checked;
++    })()
++  )JS").ExtractBool());
++
++  const std::string task_id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const result = await BrowserProxy.getInstance().handler
++          .createTask('帮我总结下页面内容', 1, 0, []);
++      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++    })()
++  )JS").ExtractString();
++  ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
++  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
++  EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), page_url);
++
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(service);
++  AgentTask* task = service->GetTask(task_id);
++  ASSERT_TRUE(task);
++  EXPECT_TRUE(task->scope().AllowsTab(active_tab_id));
++  EXPECT_TRUE(task->scope().AllowsOrigin(page_url));
++  EXPECT_TRUE(task->scope().AllowsTool("page.observe"));
++  EXPECT_TRUE(task->scope().AllowsTool("page.extract"));
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        ChinesePunctuationTerminatesExplicitUrl) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index fc0fef6e29..2152d90bd6 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -59,6 +59,11 @@ function inferWorkflow(goal: string): Workflow {
+   return Workflow.kResearch;
+ }
+ 
++function refersToCurrentPage(goal: string): boolean {
++  return /当前页|当前页面|当前网页|这个页面|这个网页|本页面|本网页|页面内容|网页内容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
++      .test(goal);
++}
++
+ function humanStatus(state: string): string {
+   if (state === 'idle' || state === 'draft') {
+     return loadTimeData.getString('statusIdle');
+@@ -352,6 +357,9 @@ function friendlyError(error: string, hasPlan: boolean): string {
+   if (error.includes('related page could not be opened')) {
+     return '无法打开相关网页，请检查网络后重试。';
+   }
++  if (error.includes('current public page is unavailable')) {
++    return '请先打开一个普通网页，再让 Aegis 处理当前页面。';
++  }
+   if (error.includes('Task input is invalid')) {
+     return '任务内容或高级授权范围无效，请检查后重试。';
+   }
+@@ -367,6 +375,9 @@ function friendlyError(error: string, hasPlan: boolean): string {
+   }
+   if (error.includes('execution model did not produce required tool ')) {
+     const match = error.match(/required tool ([a-z0-9._-]+)/i);
++    if (match?.[1] === 'agent.complete') {
++      return loadTimeData.getString('executionCompletionError');
++    }
+     return loadTimeData.getString('executionRequiredToolError')
+         .replace('$1', match?.[1] || 'browser action');
+   }
+@@ -391,7 +402,8 @@ function friendlyError(error: string, hasPlan: boolean): string {
+       error.includes('more than one tool call')) {
+     return loadTimeData.getString('executionFormatError');
+   }
+-  return loadTimeData.getString('planningGenericError');
++  return loadTimeData.getString(
++      hasPlan ? 'executionGenericError' : 'planningGenericError');
+ }
+ 
+ function maybeAutoRun(next: TaskSnapshot) {
+@@ -577,6 +589,10 @@ function initializeLabels() {
+   const goal = element<HTMLTextAreaElement>('goal');
+   goal.addEventListener('input', () => {
+     goalUserEdited = true;
++    if (!currentPageUserEdited && snapshot?.activeOrigin) {
++      element<HTMLInputElement>('current-page').checked =
++          refersToCurrentPage(goal.value);
++    }
+     if (snapshot) {
+       render(snapshot);
+     }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 590a07db21..a9479dbd27 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -134,6 +134,23 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
+   return workflow != AgentWorkflowKind::kBrowserSteward;
+ }
+ 
++// Resolving a deictic page reference belongs to the browser, not the model.
++// This keeps common commands reliable and prevents an intent router from
++// turning "this page" into a browser-metadata or web-search task.
++bool GoalRefersToCurrentPage(std::string_view goal) {
++  const std::string lower_goal = base::ToLowerASCII(goal);
++  constexpr std::string_view kCurrentPageReferences[] = {
++      "当前页",       "当前页面",    "当前网页",  "这个页面",
++      "这个网页",     "本页面",      "本网页",    "页面内容",
++      "网页内容",     "this page",   "current page",
++      "page content", "the page content"};
++  return std::ranges::any_of(kCurrentPageReferences,
++                             [&lower_goal](std::string_view reference) {
++                               return lower_goal.find(reference) !=
++                                      std::string::npos;
++                             });
++}
++
+ std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
+   const std::string lower_goal = base::ToLowerASCII(goal);
+   const size_t https = lower_goal.find("https://");
+@@ -453,10 +470,14 @@ void AegisAgentPageHandler::CreateTask(
+     last_error_ = "Configure a valid Agent model provider before planning";
+   } else {
+     const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(goal);
+-    const bool browser_only =
++    const bool use_current_page =
+         !requested_origins && !explicit_url &&
++        GoalRefersToCurrentPage(goal);
++    const bool browser_only =
++        !requested_origins && !explicit_url && !use_current_page &&
+         !WorkflowNeedsWebTarget(*converted_workflow);
+-    if (!requested_origins && !explicit_url && !browser_only) {
++    if (!requested_origins && !explicit_url && !use_current_page &&
++        !browser_only) {
+       service_->RouteGoal(
+           goal, *converted_workflow,
+           base::BindOnce(&AegisAgentPageHandler::OnGoalRouted,
+@@ -466,7 +487,7 @@ void AegisAgentPageHandler::CreateTask(
+     }
+     CreateResolvedTask(goal, *converted_mode, *converted_workflow,
+                        std::move(requested_origins), explicit_url,
+-                       browser_only, std::move(callback));
++                       browser_only, use_current_page, std::move(callback));
+     return;
+   }
+   std::move(callback).Run(BuildSnapshot());
+@@ -506,7 +527,8 @@ void AegisAgentPageHandler::OnGoalRouted(
+   }
+   CreateResolvedTask(std::move(goal), mode, route->workflow,
+                      std::move(requested_origins), std::move(routed_url),
+-                     browser_only, std::move(callback));
++                     browser_only, /*use_current_page=*/false,
++                     std::move(callback));
+ }
+ 
+ void AegisAgentPageHandler::CreateResolvedTask(
+@@ -516,19 +538,27 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     std::optional<std::vector<url::Origin>> requested_origins,
+     std::optional<GURL> routed_url,
+     bool browser_only,
++    bool use_current_page,
+     CreateTaskCallback callback) {
+   const std::optional<aegis::agent::AgentModelDestination> model_destination =
+       service_ ? service_->ConfiguredModelDestination() : std::nullopt;
+   tabs::TabInterface* tab = ActiveTab(browser_);
+   GURL task_url = tab ? tab->GetURL() : GURL();
+   std::optional<std::vector<url::Origin>> origins;
+-  if (browser_only) {
++  if (use_current_page) {
++    if (!tab || !task_url.is_valid() || !task_url.SchemeIsHTTPOrHTTPS()) {
++      last_error_ = "The current public page is unavailable for this task";
++      std::move(callback).Run(BuildSnapshot());
++      return;
++    }
++    origins = AutomaticTaskOrigins(task_url);
++  } else if (browser_only) {
+     origins.emplace();
+   } else {
+-    const bool use_current_page =
++    const bool use_approved_current_page =
+         tab && requested_origins &&
+         IncludesOrigin(*requested_origins, tab->GetURL());
+-    if (!use_current_page) {
++    if (!use_approved_current_page) {
+       std::optional<GURL> target = requested_origins
+                                        ? std::make_optional(
+                                              requested_origins->front().GetURL())
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index 40f2223104..cda67f3e8a 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -111,6 +111,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+       std::optional<std::vector<url::Origin>> requested_origins,
+       std::optional<GURL> routed_url,
+       bool browser_only,
++      bool use_current_page,
+       CreateTaskCallback callback);
+   void OnPlanReady(const std::string& task_id, bool ok, std::string error);
+   void OnModelConfigured(ConfigureModelCallback callback,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index d9b854fefe..a4f18d6170 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -190,9 +190,17 @@ void AddStrings(content::WebUIDataSource* source) {
+       "AI 没有正确生成计划中的下一步操作，Aegis 已安全停止。请直接重试任务。",
+       "AI 沒有正確產生計畫中的下一步操作，Aegis 已安全停止。請直接重試任務。");
+   add("executionRequiredToolError",
+-      "The model did not call the required $1 action after two attempts. No browser action ran; retry the task.",
+-      "模型连续两次没有调用计划要求的 $1，尚未执行任何网页操作。请重试任务。",
+-      "模型連續兩次沒有呼叫計畫要求的 $1，尚未執行任何網頁操作。請重試任務。");
++      "The model did not call the required $1 action after two attempts. Aegis stopped safely at that step; retry the task.",
++      "模型连续两次没有调用计划要求的 $1，Aegis 已在该步骤安全停止。请重试任务。",
++      "模型連續兩次沒有呼叫計畫要求的 $1，Aegis 已在該步驟安全停止。請重試任務。");
++  add("executionCompletionError",
++      "The page was read, but the AI did not produce the final answer correctly. Aegis stopped safely; retry the task.",
++      "页面已经读取，但 AI 没有正确生成最终回答。Aegis 已安全停止，请重试任务。",
++      "頁面已經讀取，但 AI 沒有正確產生最終回答。Aegis 已安全停止，請重試任務。");
++  add("executionGenericError",
++      "The task started but could not continue. Aegis stopped safely; retry the task or open technical details for the exact cause.",
++      "任务已经开始，但未能继续完成。Aegis 已安全停止；请重试，或展开技术详情查看准确原因。",
++      "任務已經開始，但未能繼續完成。Aegis 已安全停止；請重試，或展開技術詳情查看準確原因。");
+   add("goalRoutingError",
+       "The AI could not determine a safe browser entry. Nothing was opened. Please clarify the goal and try again.",
+       "AI 没有判断出可靠的浏览器入口，本次没有打开网页。请把目标说得更具体后重试。",
+-- 
+2.52.0
+

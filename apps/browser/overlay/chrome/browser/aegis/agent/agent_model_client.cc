@@ -298,8 +298,12 @@ void AgentModelClient::OnComplete(Callback done,
       active_provider_, *body, active_stream_, active_tools_);
   active_tools_.clear();
   if (!result.ok()) {
-    std::string error = std::move(result.error);
-    std::move(done).Run(false, std::move(error), {});
+    // Preserve the structured parse failure so the browser runtime can
+    // distinguish a repairable model-format error from a transport failure.
+    // The parser only exposes bounded validation text, never the raw provider
+    // response.
+    const std::string error = result.error;
+    std::move(done).Run(false, error, std::move(result));
     return;
   }
   std::move(done).Run(true, std::string(), std::move(result));

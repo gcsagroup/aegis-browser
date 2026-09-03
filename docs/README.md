@@ -4,7 +4,7 @@
 
 This directory contains the public product architecture, roadmap, research boundaries, product page, and dated local audit records for GCSA-aegis.
 
-> **Current boundary — 2026-08-29:** the combined source contains 67 top-level Chromium patches plus 2 nested V8 patches. The earlier 57-patch diagnostic manifest and 65-patch Agent acceptance are historical snapshots and do not qualify this head. Phase 2 remains a synthetic formal fixture, while Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`; neither generalizes to broad malicious-JavaScript detection. The project remains release No-Go.
+> **Current boundary — 2026-09-04:** the Browser Agent v2 candidate source contains 95 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`. Platform builds and acceptance remain separate gates; this source identity is not public-release qualification. Phase 2 remains a synthetic formal fixture, while Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`; neither generalizes to broad malicious-JavaScript detection. The project remains release No-Go.
 
 ## Start here
 
@@ -16,8 +16,10 @@ This directory contains the public product architecture, roadmap, research bound
 - [Trilingual product page](product.html)
 - [Browser build and verification guide](../apps/browser/README.md)
 - [Native iOS engineering guide](../apps/ios/README.md)
-- [Browser Agent user guide](aegis-browser-agent-v1-user-guide.md)
+- [Browser Agent v2 user guide](aegis-browser-agent-v2-user-guide.md)
+- [Browser Agent v1 historical user guide](aegis-browser-agent-v1-user-guide.md)
 - [Browser Agent architecture](aegis-browser-agent-v1-architecture.md)
+- [Browser Agent v2 architecture and prototype decision](aegis-browser-agent-v2-architecture.md)
 
 ## Status language
 

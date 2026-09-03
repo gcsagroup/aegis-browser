@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -34,7 +35,8 @@ std::string BuildAgentExecutionPrompt(
     size_t next_step,
     int attempt,
     const AgentToolResult* previous_result = nullptr,
-    base::span<const AgentExecutionEvidence> evidence_history = {});
+    base::span<const AgentExecutionEvidence> evidence_history = {},
+    std::string_view model_correction = {});
 
 // A model turn may contain text for the timeline, but it must contain exactly
 // one native tool call and a completed event. The requested tool must match the
@@ -50,6 +52,12 @@ std::optional<AgentCompletionSummary> ParseCompletionSummary(
     std::string* error);
 bool AgentCompletionSourcesMatchEvidence(
     const AgentCompletionSummary& completion,
+    base::span<const AgentExecutionEvidence> evidence_history);
+// Browser-native tasks such as bookmark checks have no page citation source.
+// Drop model-invented source URLs for those tasks while keeping page-based
+// completions strict and evidence-backed.
+bool NormalizeAgentCompletionSourcesForEvidence(
+    AgentCompletionSummary* completion,
     base::span<const AgentExecutionEvidence> evidence_history);
 
 // A checkout summary is accepted only when its arithmetic and source node

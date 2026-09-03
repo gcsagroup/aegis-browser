@@ -18,10 +18,15 @@ import {
 } from 'node:fs/promises';
 import {homedir, tmpdir} from 'node:os';
 import {createServer as createHttpServer} from 'node:http';
-import {basename, dirname, join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
+import {
+  AEGIS_MAC_APP_BUNDLE_NAME,
+  macAppExecutableName,
+  macAppExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const BROWSER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHROMIUM_ROOT_MARKER = join(BROWSER_ROOT, '.chromium-root');
@@ -86,7 +91,7 @@ const DEFAULT_RELEASE_APP = join(
   'src',
   'out',
   'AegisRelease',
-  'Chromium.app',
+  AEGIS_MAC_APP_BUNDLE_NAME,
 );
 
 function printUsage() {
@@ -94,7 +99,7 @@ function printUsage() {
   node apps/browser/scripts/verify-multisite-runtime.mjs [选项]
 
 选项：
-  --chromium PATH      Release Chromium.app 或 Chromium 可执行文件
+  --chromium PATH      Release GCSA Aegis.app 或浏览器可执行文件
                        默认：${DEFAULT_RELEASE_APP}
   --url URL            覆盖默认站点；可重复指定
   --feature-mode MODE  default、aegis-off、tracker-off、filter-off、
@@ -265,8 +270,11 @@ function parseArgs(argv) {
 
 async function resolveChromiumExecutable(inputPath) {
   let executable = resolve(inputPath);
-  if (basename(executable).endsWith('.app')) {
-    executable = join(executable, 'Contents', 'MacOS', 'Chromium');
+  if (executable.endsWith('.app')) {
+    executable = macAppExecutablePath(
+      executable,
+      await macAppExecutableName(executable),
+    );
   }
   const metadata = await stat(executable).catch(() => null);
   assert(metadata?.isFile(), `Chromium 可执行文件不存在：${executable}`);

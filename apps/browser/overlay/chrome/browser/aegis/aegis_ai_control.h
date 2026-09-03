@@ -17,6 +17,12 @@ bool IsLoopbackDevToolsAddress(std::string_view address, int* port);
 // --remote-allow-origins，就拒绝启用，避免复用被扩大授权的 CDP 服务。
 bool HasExplicitRemoteAllowOrigins(std::string_view origins);
 
+// Opening a primary Incognito Profile closes every process-wide remote
+// debugging transport, including endpoints not created by Aegis and the
+// command-line pipe. Existing remote sessions are detached by the transport
+// destructors before their sockets/pipes are released.
+void StopAllRemoteDebuggingTransportsForIncognito();
+
 // 本机 CDP / DevTools，默认关闭。开启后只绑定 127.0.0.1 / ::1，不绑 0.0.0.0。
 class AiControl {
  public:
@@ -37,8 +43,8 @@ class AiControl {
   std::string address() const;
 
  private:
-  // 表示本实例已接受现有安全服务或已发起安全服务启动。公开状态始终
-  // 重新读取 Chromium 的真实监听地址，不把启动请求当作运行成功。
+  // 表示本实例已发起自己拥有的服务。公开状态始终重新读取 Chromium
+  // 的真实监听地址，不把启动请求当作运行成功。
   bool active_ = false;
   bool started_by_us_ = false;
 };

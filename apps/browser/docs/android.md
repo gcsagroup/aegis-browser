@@ -8,9 +8,10 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 - Android uses the same pinned Chromium `151.0.7922.77` base as desktop.
 - The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
-- Current source contains 67 top-level Chromium patches and 2 nested V8 patches, but **no Android build has been produced from this current source**. Historical macOS evidence does not bind or qualify an Android artifact.
+- The v2 candidate contains 95 top-level Chromium patches and 2 nested V8 patches, replayed exactly to `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`. The current Android build and physical-device acceptance are still in progress; historical macOS evidence does not qualify an Android artifact.
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
-- The Android WebUI handler cannot currently obtain a normal web-page tab. Page summary must therefore be shown as unavailable on Android.
+- v2 source resolves the public page behind the full-page Agent tab and binds current-page tasks to that document. Page capture, redaction, navigation invalidation, and results still require physical-device acceptance.
+- v2 source places the process-wide remote-debugging latch in front of Android DevTools HTTP/socket startup, including deferred startup. Once an Incognito Profile trips the latch, pending and later starts are rejected for the rest of the process; physical-device validation remains open.
 
 Android remains **No-Go** until a current-source build and device acceptance are complete.
 
@@ -51,12 +52,12 @@ An AAB path and Play signing identity must be defined and verified before store 
 
 ## Acceptance criteria
 
-1. Replay all 67 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
+1. Replay all 95 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
 2. Build successfully and create a manifest that binds the repository commit, Chromium commit, both patch-series identities, GN arguments, and APK/AAB SHA-256.
 3. Verify final package ID, version, launcher name, icons, permissions, native libraries, and signing structure.
 4. Uninstall any old build, install the current APK on a representative device, complete First Run, open normal pages and `chrome://aegis`, and exercise core protections.
-5. Keep page summary explicitly unavailable until Android can capture and bind a real page document; after implementation, test collection, redaction, confirmation, navigation invalidation, and results on a device.
-6. Run startup, background/foreground, crash, storage, update, and network acceptance without residual processes or unexplained outbound traffic.
+5. Verify page capture, document binding, redaction, confirmation, navigation invalidation, and result handling on device.
+6. Run startup, background/foreground, crash, storage, update, and network acceptance without residual processes or unexplained outbound traffic, and verify that delayed DevTools startup cannot bypass the Incognito process latch.
 7. Treat a passing internal candidate as separate from Play publication readiness.
 
 ## Play Store boundary

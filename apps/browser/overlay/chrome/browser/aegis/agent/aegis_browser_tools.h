@@ -47,7 +47,8 @@ namespace aegis::agent {
 
 bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
                                           const GURL& selected_bookmark_url,
-                                          const GURL& target);
+                                          const GURL& target,
+                                          bool allow_local_fixture = false);
 void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item);
 
 // Executes browser-owned tools that must not be implemented through renderer

@@ -8,9 +8,10 @@
 
 - Android 與桌面使用同一固定 Chromium `151.0.7922.77` 基線。
 - 預留 application ID 為 `app.gcsa.aegis`；預留不證明已經形成有效套件或 Play 身分。
-- 目前原始碼含 67 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，但**尚未從目前原始碼產出 Android 建置**。歷史 macOS 證據不綁定 Android 產物，也不能賦予其 Android 資格。
+- v2 候選原始碼包含 95 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`。目前 Android 建置和實機驗收仍在進行；歷史 macOS 證據不能賦予 Android 成品資格。
 - 目前沒有綁定身分的 APK 或 AAB。即使存在 `$HOME/Desktop/GCSA-aegis.apk` 之類的歷史檔案，也不能對應到目前原始碼，更不是 RC。
-- Android WebUI handler 目前無法取得一般網頁 tab，因此 Android 頁面摘要必須顯示為不可用。
+- v2 原始碼會解析全頁 Agent 分頁背後的公開網頁，並把目前頁面工作綁定到該文件。頁面擷取、去識別化、導覽失效和結果仍需實機驗收。
+- v2 原始碼將處理程序層級遠端偵錯 latch 置於 Android DevTools HTTP/socket 啟動之前，並涵蓋延遲啟動。無痕 Profile 一旦觸發 latch，本處理程序內待處理和後續啟動都會被拒絕；實機驗證仍未完成。
 
 在完成目前原始碼建置和真機驗收前，Android 維持 **No-Go**。
 
@@ -51,12 +52,12 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 ## 驗收條件
 
-1. 在乾淨 x86-64 Linux checkout 中，從固定基線重放全部 67 個 Chromium 補丁和 2 個巢狀 V8 補丁。
+1. 在乾淨 x86-64 Linux checkout 中，從固定基線重放全部 95 個 Chromium 補丁和 2 個巢狀 V8 補丁。
 2. 建置成功，並由清單綁定根儲存庫 commit、Chromium commit、兩套補丁序列身分、GN 參數和 APK/AAB SHA-256。
 3. 驗證最終套件名稱、版本、啟動器名稱、圖示、權限、原生程式庫和簽署結構。
 4. 解除安裝舊版本，在代表裝置上安裝目前 APK，完成 First Run，開啟一般網頁和 `chrome://aegis`，實際驗證核心保護。
-5. Android 能夠擷取並綁定真實頁面文件前，頁面摘要必須明確不可用；完成實作後，再在真機驗證擷取、去識別化、確認、導覽失效和結果。
-6. 完成啟動、前後台、當機、儲存、升級和網路驗收，不能留下殘留程序或無法解釋的出站。
+5. 在實機驗證頁面擷取、文件綁定、去識別化、確認、導覽失效和結果處理。
+6. 完成啟動、前後台、當機、儲存、升級和網路驗收，不能留下殘留程序或無法解釋的出站，並驗證延遲 DevTools 啟動不能繞過無痕處理程序 latch。
 7. 內部候選通過與 Play 可發布仍是兩道獨立門禁。
 
 ## Play Store 邊界

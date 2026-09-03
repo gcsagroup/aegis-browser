@@ -1,0 +1,370 @@
+From 583cd38ab586ee30e948f0599bb79537dc1632e1 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 04:13:24 +0800
+Subject: [PATCH] fix(aegis): validate bookmark goal coverage
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  3 +
+ .../agent/aegis_agent_service_unittest.cc     | 82 ++++++++++++++++++-
+ chrome/browser/aegis/agent/agent_planner.cc   | 76 +++++++++++++++--
+ chrome/browser/aegis/agent/agent_planner.h    |  7 ++
+ .../aegis/agent/agent_planner_unittest.cc     | 68 +++++++++++++++
+ chrome/browser/resources/aegis_agent/agent.ts |  8 +-
+ 6 files changed, 232 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 95ac4e7a3d..141065ed4e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -759,6 +759,9 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
+   if (!ValidateTaskPlanForMode(*plan, task->mode(), error)) {
+     return false;
+   }
++  if (!ValidateTaskPlanForGoal(*plan, task->goal(), error)) {
++    return false;
++  }
+   for (const AgentPlanStep& step : plan->steps) {
+     if (!IsToolAvailable(step.tool_name) ||
+         (task->mode() == AgentMode::kAsk &&
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 638f382770..4553f860ae 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -106,6 +106,16 @@ AgentModelEvent ServicePlanEvent() {
+   return event;
+ }
+ 
++AgentModelEvent ServiceAutomationPlanEvent() {
++  AgentModelEvent event = ServicePlanEvent();
++  base::DictValue monitor;
++  monitor.Set("id", "monitor");
++  monitor.Set("title", "Create the approved fixture monitor");
++  monitor.Set("tool", "monitor.create");
++  event.arguments.FindList("steps")->Append(std::move(monitor));
++  return event;
++}
++
+ bool InstallServicePlan(AegisAgentService* service, AgentTask* task) {
+   if (!service || !task || !service->BeginPlanning(task->id())) {
+     return false;
+@@ -437,6 +447,68 @@ TEST_F(AegisAgentServiceTest,
+   EXPECT_FALSE(plan->scope.AllowsTool("page.click"));
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       RepairsBookmarkPlanThatOmitsAnExplicitUserRequirement) {
++  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++
++  AgentTaskScope scope;
++  scope.allowed_tools = {"bookmark.list", "bookmark.check_urls",
++                         "bookmark.plan", "bookmark.apply"};
++  scope.allowed_data_classes = {AgentDataClass::kBookmarks};
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = std::string(kBaseUrl);
++  scope.model_destination.model = "fixture-model";
++  ASSERT_TRUE(scope.IsValid());
++
++  network::TestURLLoaderFactory factory;
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  AgentTask* task =
++      service->CreateTask("检查收藏夹失效 URL，并给出分类预览，不要修改",
++                          AgentMode::kAct, std::move(scope));
++  ASSERT_TRUE(task);
++  service->SetTaskModelClientForTesting(
++      task->id(),
++      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
++
++  base::test::TestFuture<bool, std::string> plan_result;
++  service->RequestPlan(task->id(), plan_result.GetCallback());
++  factory.WaitForRequest(endpoint);
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"incomplete-bookmark-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"检查失效链接\",\"steps\":[{\"id\":\"list\",\"title\":\"读取收藏夹\",\"tool\":\"bookmark.list\"},{\"id\":\"check\",\"title\":\"检查链接\",\"tool\":\"bookmark.check_urls\"}]}"}]})"));
++
++  factory.WaitForRequest(endpoint);
++  const network::ResourceRequest& repair_request =
++      factory.GetPendingRequest(0)->request;
++  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
++      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
++  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
++  const std::string* repair_instructions =
++      repair_payload->GetDict().FindString("instructions");
++  ASSERT_TRUE(repair_instructions);
++  EXPECT_THAT(*repair_instructions,
++              HasSubstr("omitted required bookmark.plan step"));
++
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"complete-bookmark-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"检查失效链接并生成分类预览\",\"steps\":[{\"id\":\"list\",\"title\":\"读取收藏夹\",\"tool\":\"bookmark.list\"},{\"id\":\"check\",\"title\":\"检查链接\",\"tool\":\"bookmark.check_urls\"},{\"id\":\"preview\",\"title\":\"生成分类预览\",\"tool\":\"bookmark.plan\"}]}"}]})"));
++  EXPECT_TRUE(plan_result.Get<0>()) << plan_result.Get<1>();
++  const AgentTaskPlan* plan = service->GetPlan(task->id());
++  ASSERT_TRUE(plan);
++  ASSERT_EQ(plan->steps.size(), 3u);
++  EXPECT_EQ(plan->steps[0].tool_name, "bookmark.list");
++  EXPECT_EQ(plan->steps[1].tool_name, "bookmark.check_urls");
++  EXPECT_EQ(plan->steps[2].tool_name, "bookmark.plan");
++  EXPECT_FALSE(plan->scope.AllowsTool("bookmark.apply"));
++}
++
+ TEST_F(AegisAgentServiceTest,
+        RepairsOneMalformedExecutionTurnAndCompletesTheTask) {
+   constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+@@ -742,10 +814,16 @@ TEST_F(AegisAgentServiceTest, PersistsAndBoundsBrowserLifetimeMonitors) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+   ASSERT_TRUE(service);
++  AgentTaskScope scope = ServiceTestScope();
++  scope.allowed_tools.insert("monitor.create");
+   AgentTask* task = service->CreateTask("monitor fixture", AgentMode::kAutomate,
+-                                        ServiceTestScope());
++                                        std::move(scope));
+   ASSERT_TRUE(task);
+-  ASSERT_TRUE(InstallServicePlan(service, task));
++  ASSERT_TRUE(service->BeginPlanning(task->id()));
++  const AgentModelEvent plan = ServiceAutomationPlanEvent();
++  std::string plan_error;
++  ASSERT_TRUE(service->AcceptModelPlan(task->id(), plan, &plan_error))
++      << plan_error;
+   ASSERT_TRUE(service->GrantTaskConsent(task->id()));
+ 
+   const base::Time now = base::Time::Now();
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 60bfc4ea25..119c542607 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -100,6 +100,32 @@ bool GoalContainsAny(std::string_view goal,
+   });
+ }
+ 
++bool IsBookmarkGoal(std::string_view goal) {
++  return GoalContainsAny(
++      goal, {"收藏", "书签", "書籤", "bookmark", "favorite"});
++}
++
++bool BookmarkGoalChecksUrls(std::string_view goal) {
++  return GoalContainsAny(
++      goal, {"失效", "死链", "死鏈", "链接", "連結", "url", "broken",
++             "dead", "unreachable"});
++}
++
++bool BookmarkGoalOrganizes(std::string_view goal) {
++  return GoalContainsAny(goal,
++                         {"整理", "分类", "分類", "归类", "歸類",
++                          "organize", "categor", "tidy"});
++}
++
++bool BookmarkGoalIsReadOnly(std::string_view goal) {
++  return GoalContainsAny(
++      goal,
++      {"不要修改", "不修改", "不要更改", "不更改", "只汇总", "只彙總",
++       "只预览", "只預覽", "修改前", "更改前", "preview before",
++       "without changing", "do not change", "do not modify", "read-only",
++       "read only"});
++}
++
+ std::string_view WorkflowName(AgentWorkflowKind workflow) {
+   switch (workflow) {
+     case AgentWorkflowKind::kResearch:
+@@ -649,16 +675,14 @@ std::optional<AgentModelEvent> BuildBrowserReadOnlyRecoveryPlan(
+     steps.Append(std::move(step));
+   };
+ 
+-  const bool bookmark_goal =
+-      GoalContainsAny(user_goal, {"收藏", "书签", "bookmark", "favorite"});
+-  if (bookmark_goal && maximum_scope.AllowsTool("bookmark.list")) {
++  if (IsBookmarkGoal(user_goal) &&
++      maximum_scope.AllowsTool("bookmark.list")) {
+     add_step("bookmark.list", "读取收藏夹", "Read bookmarks");
+-    if (GoalContainsAny(user_goal,
+-                        {"失效", "死链", "链接", "url", "broken", "dead"})) {
++    if (BookmarkGoalChecksUrls(user_goal)) {
+       add_step("bookmark.check_urls", "检查收藏链接是否有效",
+                "Check bookmark links");
+     }
+-    if (GoalContainsAny(user_goal, {"整理", "分类", "organize", "categor"})) {
++    if (BookmarkGoalOrganizes(user_goal)) {
+       add_step("bookmark.plan", "生成可预览的收藏夹整理方案",
+                "Create a bookmark organization preview");
+     }
+@@ -841,4 +865,44 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
+   return true;
+ }
+ 
++bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
++                             std::string_view user_goal,
++                             std::string* error) {
++  if (!error) {
++    return false;
++  }
++  error->clear();
++  if (!IsBookmarkGoal(user_goal)) {
++    return true;
++  }
++
++  const auto has_step = [&](std::string_view tool_name) {
++    return std::ranges::any_of(plan.steps, [&](const AgentPlanStep& step) {
++      return step.tool_name == tool_name;
++    });
++  };
++  if (!has_step("bookmark.list")) {
++    *error = "bookmark task plan omitted required bookmark.list step";
++    return false;
++  }
++
++  if (BookmarkGoalChecksUrls(user_goal) &&
++      !has_step("bookmark.check_urls")) {
++    *error =
++        "bookmark URL-check goal omitted required bookmark.check_urls step";
++    return false;
++  }
++
++  if (BookmarkGoalOrganizes(user_goal) && !has_step("bookmark.plan")) {
++    *error = "bookmark organization goal omitted required bookmark.plan step";
++    return false;
++  }
++
++  if (BookmarkGoalIsReadOnly(user_goal) && has_step("bookmark.apply")) {
++    *error = "read-only bookmark goal must not include bookmark.apply";
++    return false;
++  }
++  return true;
++}
++
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index d0848738ca..5ec774c07e 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -91,6 +91,13 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
+                              AgentMode mode,
+                              std::string* error);
+ 
++// Ensures that structurally valid bookmark plans still cover each explicit
++// user intent. Missing read-only steps are repairable, while a no-change or
++// preview-only goal can never smuggle bookmark.apply into the plan.
++bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
++                             std::string_view user_goal,
++                             std::string* error);
++
+ }  // namespace aegis::agent
+ 
+ #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index e97e4ee951..89ce65e2a7 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -512,6 +512,74 @@ TEST(AegisAgentPlannerTest,
+       BuildBrowserReadOnlyRecoveryPlan("应用收藏夹方案", writes, registry));
+ }
+ 
++TEST(AegisAgentPlannerTest, BrowserReadOnlyRecoveryCoversCompoundBookmarkGoal) {
++  AgentToolRegistry registry;
++  AgentTaskScope scope = MaximumScope();
++  scope.allowed_origins.clear();
++  scope.allowed_tab_ids.clear();
++  scope.allowed_tools = {"bookmark.list", "bookmark.check_urls",
++                         "bookmark.plan", "bookmark.apply"};
++  scope.allowed_data_classes = {AgentDataClass::kBookmarks};
++  ASSERT_TRUE(scope.IsValid());
++
++  for (std::string_view goal : {
++           std::string_view("检查收藏夹失效 URL，并给出分类预览，不要修改"),
++           std::string_view("檢查書籤死鏈並提供分類預覽，不要更改"),
++       }) {
++    const std::optional<AgentModelEvent> recovery =
++        BuildBrowserReadOnlyRecoveryPlan(goal, scope, registry);
++    ASSERT_TRUE(recovery);
++    std::string error;
++    const std::optional<AgentTaskPlan> plan =
++        ParseAndValidateTaskPlan(*recovery, scope, registry, &error);
++    ASSERT_TRUE(plan) << error;
++    ASSERT_EQ(plan->steps.size(), 3u);
++    EXPECT_EQ(plan->steps[0].tool_name, "bookmark.list");
++    EXPECT_EQ(plan->steps[1].tool_name, "bookmark.check_urls");
++    EXPECT_EQ(plan->steps[2].tool_name, "bookmark.plan");
++    EXPECT_TRUE(ValidateTaskPlanForGoal(plan.value(), goal, &error)) << error;
++  }
++}
++
++TEST(AegisAgentPlannerTest, BookmarkGoalCoverageIsBrowserValidated) {
++  AgentTaskPlan plan;
++  auto add_step = [&](std::string_view tool_name) {
++    plan.steps.push_back(
++        {.step_id = "step-" + std::to_string(plan.steps.size() + 1),
++         .title = std::string(tool_name),
++         .tool_name = std::string(tool_name),
++         .risk = tool_name == "bookmark.apply"
++                     ? AgentRiskLevel::kR2ExternalSideEffect
++                     : AgentRiskLevel::kR0ReadOnly});
++  };
++  std::string error;
++
++  add_step("bookmark.list");
++  EXPECT_FALSE(ValidateTaskPlanForGoal(
++      plan, "检查收藏夹失效 URL，并给出分类预览，不要修改", &error));
++  EXPECT_EQ(
++      error,
++      "bookmark URL-check goal omitted required bookmark.check_urls step");
++
++  add_step("bookmark.check_urls");
++  EXPECT_FALSE(ValidateTaskPlanForGoal(
++      plan, "检查收藏夹失效 URL，并给出分类预览，不要修改", &error));
++  EXPECT_EQ(error,
++            "bookmark organization goal omitted required bookmark.plan step");
++
++  add_step("bookmark.plan");
++  EXPECT_TRUE(ValidateTaskPlanForGoal(
++      plan, "检查收藏夹失效 URL，并给出分类预览，不要修改", &error))
++      << error;
++
++  add_step("bookmark.apply");
++  EXPECT_FALSE(ValidateTaskPlanForGoal(
++      plan, "检查收藏夹失效 URL，并给出分类预览，不要修改", &error));
++  EXPECT_EQ(error, "read-only bookmark goal must not include bookmark.apply");
++
++  EXPECT_TRUE(ValidateTaskPlanForGoal(plan, "总结当前页面", &error)) << error;
++}
++
+ TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
+   AgentTaskPlan one_shot;
+   one_shot.steps.push_back({.step_id = "step-1",
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index b333c7d744..135ac52779 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -49,13 +49,13 @@ function option(value: string, label: string): HTMLOptionElement {
+ }
+ 
+ function inferWorkflow(goal: string): Workflow {
+-  if (/书签|收藏夹|收藏|历史记录|失效链接|链接失效|bookmark|favorite|history|dead\s*link/iu.test(goal)) {
++  if (/书签|書籤|收藏夹|收藏|历史记录|歷史記錄|失效链接|失效連結|链接失效|連結失效|bookmark|favorite|history|dead\s*link/iu.test(goal)) {
+     return Workflow.kBrowserSteward;
+   }
+-  if (/下载|安装包|官方版本|download|installer|release/iu.test(goal)) {
++  if (/下载|下載|安装包|安裝包|官方版本|download|installer|release/iu.test(goal)) {
+     return Workflow.kSafeDownload;
+   }
+-  if (/购买|帮我买|买下|下单|结账|付款|加入购物车|\bbuy\b|purchase|checkout|add\s+to\s+cart/iu
++  if (/购买|購買|帮我买|幫我買|买下|買下|下单|下單|结账|結帳|付款|加入购物车|加入購物車|\bbuy\b|purchase|checkout|add\s+to\s+cart/iu
+           .test(goal)) {
+     return Workflow.kShopping;
+   }
+@@ -63,7 +63,7 @@ function inferWorkflow(goal: string): Workflow {
+ }
+ 
+ function refersToCurrentPage(goal: string): boolean {
+-  return /当前页|当前页面|当前网页|这个页面|这个网页|本页面|本网页|页面内容|网页内容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
++  return /当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
+       .test(goal);
+ }
+ 
+-- 
+2.52.0
+

@@ -3,9 +3,21 @@
 #include "chrome/browser/aegis/agent/agent_workflow.h"
 
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
+#include "build/build_config.h"
+#include "chrome/browser/aegis/agent/agent_tool_registry.h"
 
 namespace aegis::agent {
 namespace {
+
+bool IsToolSupportedOnCurrentPlatform(std::string_view tool) {
+#if BUILDFLAG(IS_ANDROID)
+  return !base::StartsWith(tool, "window.") &&
+         !base::StartsWith(tool, "workspace.");
+#else
+  return true;
+#endif
+}
 
 AgentWorkflowTemplate ResearchTemplate() {
   AgentWorkflowTemplate value;
@@ -138,7 +150,22 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
   AgentTaskScope scope;
   scope.allowed_origins = std::move(origins);
   scope.allowed_tab_ids = std::move(tab_ids);
-  scope.allowed_tools = workflow.tools;
+  for (const std::string& tool : workflow.tools) {
+    if (IsToolSupportedOnCurrentPlatform(tool)) {
+      scope.allowed_tools.insert(tool);
+    }
+  }
+  if (scope.allowed_origins.empty()) {
+    AgentToolRegistry registry;
+    base::flat_set<std::string> browser_only_tools;
+    for (const std::string& tool : scope.allowed_tools) {
+      const AgentToolDescriptor* descriptor = registry.Find(tool);
+      if (descriptor && !descriptor->requires_origin) {
+        browser_only_tools.insert(tool);
+      }
+    }
+    scope.allowed_tools = std::move(browser_only_tools);
+  }
   scope.allowed_data_classes = workflow.data_classes;
   scope.budgets = workflow.budgets;
   scope.model_destination = std::move(destination);

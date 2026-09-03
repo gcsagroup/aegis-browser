@@ -13,7 +13,9 @@
 #include "chrome/browser/aegis/aegis_phish_controller_client.h"
 #include "chrome/browser/aegis/aegis_phish_tab_helper.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+#include "chrome/browser/profiles/profile.h"
 #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle_registry.h"
@@ -76,20 +78,26 @@ AegisPhishNavigationThrottle::MaybeIntercept() {
             PhishTabHelper::FromWebContents(web_contents)) {
       if (std::optional<PhishAssessment> stashed =
               helper->TakeStashedAssessment(url)) {
-        LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url
-                  << " score=" << stashed->score << " (page-sense)";
+        LOG(INFO) << "AegisPhishNavigationThrottle: blocking score="
+                  << stashed->score << " (page-sense)";
         return ShowInterstitial(url, *stashed);
       }
     }
   }
+  content::WebContents* web_contents = handle->GetWebContents();
+  Profile* profile =
+      web_contents
+          ? Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          : nullptr;
+  AegisService* service = AegisServiceFactory::GetForProfile(profile);
   std::optional<PhishAssessment> assessment =
-      AegisService::GetInstance()->EvaluatePhish(url);
+      service ? service->EvaluatePhish(url) : std::nullopt;
   if (!assessment) {
     return content::NavigationThrottle::PROCEED;
   }
 
-  LOG(INFO) << "AegisPhishNavigationThrottle: blocking " << url
-            << " score=" << assessment->score;
+  LOG(INFO) << "AegisPhishNavigationThrottle: blocking score="
+            << assessment->score;
   return ShowInterstitial(url, *assessment);
 }
 
@@ -107,10 +115,16 @@ AegisPhishNavigationThrottle::ShowInterstitial(
       reason += " (" + assessment.reasons.front().detail + ")";
     }
   }
-  AegisService::GetInstance()->RecordPhishBlock(
-      request_url.has_host() ? std::string(request_url.host())
-                             : request_url.spec(),
-      reason);
+  Profile* profile =
+      web_contents
+          ? Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          : nullptr;
+  if (AegisService* service = AegisServiceFactory::GetForProfile(profile)) {
+    service->RecordPhishBlock(request_url.has_host()
+                                  ? std::string(request_url.host())
+                                  : request_url.spec(),
+                              reason);
+  }
 
   auto controller =
       std::make_unique<AegisPhishControllerClient>(web_contents, request_url);
@@ -142,7 +156,12 @@ void AegisPhishNavigationThrottle::MaybeCreateAndAdd(
     return;
   }
 
-  if (!AegisService::GetInstance()->IsPhishInterstitialEnabled()) {
+  Profile* profile =
+      web_contents
+          ? Profile::FromBrowserContext(web_contents->GetBrowserContext())
+          : nullptr;
+  AegisService* service = AegisServiceFactory::GetForProfile(profile);
+  if (!service || !service->IsPhishInterstitialEnabled()) {
     return;
   }
 

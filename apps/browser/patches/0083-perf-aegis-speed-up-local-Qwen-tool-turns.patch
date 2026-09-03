@@ -1,0 +1,137 @@
+From 50279e7c14752df17189eadd76843fe51cb2f555 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 2 Sep 2026 23:21:49 +0800
+Subject: [PATCH 83/90] perf(aegis): speed up local Qwen tool turns
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 15 +++++++++++++
+ .../aegis/agent/agent_model_protocol.cc       |  9 +++++++-
+ .../aegis/agent/agent_model_protocol.h        |  5 +++++
+ .../agent/agent_model_protocol_unittest.cc    | 21 +++++++++++++++++++
+ 4 files changed, 49 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index cbe61a017f..efa25d47da 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -153,6 +153,16 @@ AgentModelProvider ProtocolProvider(ModelProvider provider) {
+   }
+ }
+ 
++bool ShouldDisableLocalQwenThinking(const AgentModelDestination& destination) {
++  const std::optional<ModelProvider> provider =
++      ParseModelProvider(destination.provider);
++  return provider == ModelProvider::kOpenAI &&
++         destination.kind == AgentModelDestination::Kind::kLoopback &&
++         IsLocalModelEndpoint(*provider, GURL(destination.endpoint)) &&
++         base::StartsWith(destination.model, "qwen",
++                          base::CompareCase::INSENSITIVE_ASCII);
++}
++
+ bool HasUserSetting(const PrefService* prefs, const char* name) {
+   const PrefService::Preference* preference = prefs->FindPreference(name);
+   return preference && preference->HasUserSetting();
+@@ -658,6 +668,7 @@ void AegisAgentService::RouteGoalAttempt(std::string goal,
+   request.tools.push_back(BuildRouteGoalToolDefinition());
+   request.required_tool_name = "agent.route_goal";
+   request.reasoning_effort = "none";
++  request.disable_model_thinking = ShouldDisableLocalQwenThinking(*destination);
+   request.max_output_tokens = kModelToolCallMaxOutputTokens;
+   request.stream = false;
+   std::optional<AgentModelClient::RequestId> request_id =
+@@ -841,6 +852,8 @@ void AegisAgentService::RequestPlanAttempt(const std::string& task_id,
+   request.tools.push_back(BuildSubmitPlanToolDefinition());
+   request.required_tool_name = "agent.submit_plan";
+   request.reasoning_effort = "none";
++  request.disable_model_thinking =
++      ShouldDisableLocalQwenThinking(task->scope().model_destination);
+   request.max_output_tokens = kModelToolCallMaxOutputTokens;
+   request.stream = false;
+   std::optional<AgentModelClient::RequestId> request_id =
+@@ -1295,6 +1308,8 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+   request.tools.push_back(std::move(*tool));
+   request.required_tool_name = expected_tool;
+   request.reasoning_effort = "none";
++  request.disable_model_thinking =
++      ShouldDisableLocalQwenThinking(task->scope().model_destination);
+   request.max_output_tokens = kModelToolCallMaxOutputTokens;
+   request.stream = false;
+   std::optional<AgentModelClient::RequestId> request_id =
+diff --git a/chrome/browser/aegis/agent/agent_model_protocol.cc b/chrome/browser/aegis/agent/agent_model_protocol.cc
+index 6e00a84329..acee013c98 100644
+--- a/chrome/browser/aegis/agent/agent_model_protocol.cc
++++ b/chrome/browser/aegis/agent/agent_model_protocol.cc
+@@ -897,7 +897,9 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
+        request.reasoning_effort != "minimal" &&
+        request.reasoning_effort != "low" &&
+        request.reasoning_effort != "medium" &&
+-       request.reasoning_effort != "high")) {
++       request.reasoning_effort != "high") ||
++      (request.disable_model_thinking &&
++       request.provider != AgentModelProvider::kOpenAICompatible)) {
+     *error = "invalid model request";
+     return false;
+   }
+@@ -959,6 +961,11 @@ std::optional<std::string> BuildAgentModelRequestBody(
+         reasoning.Set("effort", request.reasoning_effort);
+         payload.Set("reasoning", std::move(reasoning));
+       }
++      if (request.disable_model_thinking) {
++        base::DictValue chat_template_kwargs;
++        chat_template_kwargs.Set("enable_thinking", false);
++        payload.Set("chat_template_kwargs", std::move(chat_template_kwargs));
++      }
+       for (const AgentModelToolDefinition& tool : request.tools) {
+         tools.Append(BuildOpenAITool(tool));
+       }
+diff --git a/chrome/browser/aegis/agent/agent_model_protocol.h b/chrome/browser/aegis/agent/agent_model_protocol.h
+index ac3641177b..39fd452162 100644
+--- a/chrome/browser/aegis/agent/agent_model_protocol.h
++++ b/chrome/browser/aegis/agent/agent_model_protocol.h
+@@ -45,6 +45,11 @@ struct AgentModelRequest {
+   // Keep tightly scoped tool turns action-first on compatible reasoning
+   // endpoints. Other provider adapters may ignore this preference.
+   std::string reasoning_effort;
++  // Numeric-loopback OpenAI-compatible Qwen servers commonly expose the
++  // model's chat-template switch directly. The service enables this only for
++  // that local combination; cloud and unrelated custom providers never see
++  // the compatibility field.
++  bool disable_model_thinking = false;
+   int max_output_tokens = 2048;
+   bool stream = true;
+ };
+diff --git a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
+index 5e9af70734..6ea94c2c09 100644
+--- a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
+@@ -121,6 +121,27 @@ TEST(AegisAgentModelProtocolTest, RejectsRequiredToolOutsideRequest) {
+   EXPECT_EQ(error, "required tool is not exposed by the request");
+ }
+ 
++TEST(AegisAgentModelProtocolTest,
++     DisablesThinkingOnlyForOpenAICompatibleRequests) {
++  AgentModelRequest request =
++      Request(AgentModelProvider::kOpenAICompatible, false);
++  request.disable_model_thinking = true;
++  std::string error;
++  std::optional<std::string> body = BuildAgentModelRequestBody(request, &error);
++  ASSERT_TRUE(body) << error;
++  std::optional<base::Value> parsed =
++      base::JSONReader::Read(*body, base::JSON_PARSE_RFC);
++  ASSERT_TRUE(parsed);
++  const base::DictValue* chat_template_kwargs =
++      parsed->GetDict().FindDict("chat_template_kwargs");
++  ASSERT_TRUE(chat_template_kwargs);
++  EXPECT_EQ(chat_template_kwargs->FindBool("enable_thinking"), false);
++
++  request.provider = AgentModelProvider::kAnthropic;
++  EXPECT_FALSE(BuildAgentModelRequestBody(request, &error));
++  EXPECT_EQ(error, "invalid model request");
++}
++
+ TEST(AegisAgentModelProtocolTest, NormalizesThreeNonStreamingProviders) {
+   const std::vector<AgentModelToolDefinition> tools = Tools();
+   const std::string openai = R"({
+-- 
+2.52.0
+

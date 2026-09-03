@@ -139,6 +139,19 @@ TEST(CdpTargetFilterTest, RejectsPrivilegedBridgesForPublicPages) {
       GURL("https://example.test/path")));
 }
 
+TEST(CdpTargetFilterTest, BlocksEveryOperationWhileIncognitoIsActive) {
+  SetRemoteCdpBlockedForIncognito(true);
+  for (RemoteCdpTargetOperation operation : kAllTargetOperations) {
+    EXPECT_FALSE(
+        ShouldAllowRemoteCdpTargetOperation(operation, "browser", GURL()));
+    EXPECT_FALSE(ShouldAllowRemoteCdpTargetOperation(
+        operation, "page", GURL("https://private.example/path")));
+  }
+  SetRemoteCdpBlockedForIncognito(false);
+  EXPECT_TRUE(
+      ShouldExposeRemoteCdpTarget("page", GURL("https://public.example/path")));
+}
+
 TEST(CdpTargetFilterTest, RejectsWorkersFromSensitiveOriginsAndNonWebSchemes) {
   EXPECT_FALSE(ShouldExposeRemoteCdpTarget("service_worker",
                                            GURL("chrome://aegis/sw.js")));

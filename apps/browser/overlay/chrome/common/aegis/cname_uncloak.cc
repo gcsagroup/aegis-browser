@@ -38,44 +38,67 @@ CnameUncloakCache* CnameUncloakCache::GetInstance() {
 CnameUncloakCache::CnameUncloakCache() = default;
 CnameUncloakCache::~CnameUncloakCache() = default;
 
-void CnameUncloakCache::RememberCloakedHost(std::string_view host,
+void CnameUncloakCache::RememberCloakedHost(CnameCachePartitionId partition_id,
+                                            std::string_view host,
                                             std::string_view alias) {
+  if (partition_id == kInvalidCnameCachePartitionId) {
+    return;
+  }
   const std::string normalized = NormalizeDnsAlias(host);
   if (normalized.empty()) {
     return;
   }
   const std::string alias_n = NormalizeDnsAlias(alias);
   base::AutoLock lock(lock_);
-  if (hosts_.size() >= kMaxCachedHosts) {
-    hosts_.clear();
-    aliases_.clear();
+  auto& entries = entries_by_partition_[partition_id];
+  if (entries.size() >= kMaxCachedHosts) {
+    entries.clear();
   }
-  hosts_.insert(normalized);
-  if (!alias_n.empty()) {
-    aliases_[normalized] = alias_n;
-  }
+  entries[normalized] = alias_n;
 }
 
-bool CnameUncloakCache::IsCloakedHost(std::string_view host) const {
+bool CnameUncloakCache::IsCloakedHost(CnameCachePartitionId partition_id,
+                                      std::string_view host) const {
+  if (partition_id == kInvalidCnameCachePartitionId) {
+    return false;
+  }
   const std::string normalized = NormalizeDnsAlias(host);
   if (normalized.empty()) {
     return false;
   }
   base::AutoLock lock(lock_);
-  return hosts_.contains(normalized);
+  auto partition = entries_by_partition_.find(partition_id);
+  return partition != entries_by_partition_.end() &&
+         partition->second.contains(normalized);
 }
 
-std::string CnameUncloakCache::CloakedAlias(std::string_view host) const {
+std::string CnameUncloakCache::CloakedAlias(CnameCachePartitionId partition_id,
+                                            std::string_view host) const {
+  if (partition_id == kInvalidCnameCachePartitionId) {
+    return std::string();
+  }
   const std::string normalized = NormalizeDnsAlias(host);
   if (normalized.empty()) {
     return std::string();
   }
   base::AutoLock lock(lock_);
-  auto it = aliases_.find(normalized);
-  if (it == aliases_.end()) {
+  auto partition = entries_by_partition_.find(partition_id);
+  if (partition == entries_by_partition_.end()) {
+    return std::string();
+  }
+  auto it = partition->second.find(normalized);
+  if (it == partition->second.end()) {
     return std::string();
   }
   return it->second;
+}
+
+void CnameUncloakCache::ClearPartition(CnameCachePartitionId partition_id) {
+  if (partition_id == kInvalidCnameCachePartitionId) {
+    return;
+  }
+  base::AutoLock lock(lock_);
+  entries_by_partition_.erase(partition_id);
 }
 
 bool AliasesRevealTracker(const GURL& request_url,

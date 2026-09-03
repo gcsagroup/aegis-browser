@@ -4,6 +4,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 SRC="$CHROMIUM_ROOT/src"
 OUT="${OUT_DIR:-$SRC/out/AegisLocalDev}"
+APP="$(desktop_app_path "$OUT")"
 PROFILE="${AEGIS_USER_DATA_DIR:-$CHROMIUM_ROOT/profiles/AegisLocalDev}"
 ARGS_FILE="$ROOT_DIR/args/aegis.gn"
 if [[ "${1:-}" == -- ]]; then
@@ -35,12 +36,12 @@ case "${AEGIS_RUN_DRY_RUN:-0}" in
     ;;
 esac
 
-if [[ -d "$OUT/Chromium.app" ]]; then
+if [[ -d "$APP" ]]; then
   # Component builds ship linker-signed bundles that Gatekeeper rejects until
   # ad-hoc re-signed. Cheap if already signed.
-  bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$OUT/Chromium.app" "$OUT"
+  bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP" "$OUT"
   printf '启动已验证开发版：%s\n独立 Profile：%s\n' "$binary" "$PROFILE"
-  open -n "$OUT/Chromium.app" --args "${run_args[@]}"
+  open -n "$APP" --args "${run_args[@]}"
 else
   printf '启动已验证开发版：%s\n独立 Profile：%s\n' "$binary" "$PROFILE"
   "$binary" "${run_args[@]}"

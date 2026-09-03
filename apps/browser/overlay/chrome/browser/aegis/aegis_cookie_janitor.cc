@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/after_startup_task_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/cookie_classify.h"
@@ -75,10 +76,11 @@ void CookieJanitor::OnCookieChange(const net::CookieChangeInfo& change) {
 }
 
 void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
-  if (!AegisService::GetInstance()->IsCookieJanitorEnabled()) {
+  AegisService* service = AegisServiceFactory::GetForProfileIfExists(profile_);
+  if (!service || !service->IsCookieJanitorEnabled()) {
     return;
   }
-  if (AegisService::GetInstance()->IsSitePaused(cookie.Domain())) {
+  if (service->IsSitePaused(cookie.Domain())) {
     return;
   }
   const bool session = !cookie.IsPersistent();
@@ -95,8 +97,9 @@ void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
   if (!manager) {
     return;
   }
-  VLOG(1) << "Aegis: deleting " << cookie.Name() << " on " << cookie.Domain();
-  AegisService::GetInstance()->RecordDeletedCookie(
+  // Never place cookie names or domains in logs that may outlive Incognito.
+  VLOG(1) << "Aegis: deleting a classified tracking cookie";
+  service->RecordDeletedCookie(
       cookie.Name(), cookie.Domain(),
       FormatDeletedCookieDetail(cookie.Name(), cookie.Domain(), category));
   manager->DeleteCanonicalCookie(cookie, base::DoNothing());

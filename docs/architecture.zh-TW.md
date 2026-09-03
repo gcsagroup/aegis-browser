@@ -47,8 +47,8 @@ Node-only AST 分析、有界行為/來源函數、本機聯邦模擬和 V8 Igni
 
 ## 目前原始碼與產物身分
 
-- 目前整合 Chromium 原始碼包含 67 個頂層補丁和 2 個巢狀 V8 補丁。
-- 57 補丁診斷清單和 65 補丁 Agent 驗收屬於歷史快照，均不綁定目前 67 補丁 HEAD，也不能為它授予資格。
+- Browser Agent v2 候選原始碼包含 95 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`。
+- 57、65 和 67 補丁記錄屬於歷史快照，不能為 v2 候選成品授予資格。
 - 目前整合 HEAD 必須重新完成精確重放、身分綁定建置和受影響執行驗收，才能成為目前本機候選。
 - 原生 iOS 原始碼包含 App、BrowserKit、AegisPolicyKit、AgentKit、Safari/Share extension targets、共享合約向量和 iPhone/iPad Simulator 測試路徑；目前證據上限為 `SIMULATOR_QUALIFIED`。
 - 不得把 Simulator 資格與未執行的真機或散布門檻拼接成 iOS 發布資格。

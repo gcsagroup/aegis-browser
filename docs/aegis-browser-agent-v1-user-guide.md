@@ -5,12 +5,21 @@
 ## Enable and open Agent
 
 1. Launch the current local macOS candidate normally; no additional feature flag is required.
-2. The Agent button appears on the toolbar of a regular Profile. It is pinned automatically once when an existing Profile is upgraded, and the user can unpin it afterward. Click the button to see the side panel and the enablement prompt.
+2. The Agent button appears on the toolbar of a regular Profile and its primary desktop Incognito Profile. It is pinned automatically once when an existing regular Profile is upgraded, and the user can unpin it afterward. Click the button to see the side panel and the enablement prompt.
 3. Open `chrome://aegis` and enable the execution master switch in the “Browser Agent” section.
 4. Configure the model provider, Base URL, and model name. An API key is optional for a loopback model.
 5. Click “Open Agent,” or use the toolbar button, context menu, or `Command+Shift+A`.
 
-Agent entry points are visible by default, but model calls, tool execution, and monitoring remain disabled by default for each Profile and must be enabled explicitly by the user. Incognito, Guest, and System Profiles do not expose usable entry points.
+Agent entry points are visible by default, but model calls, tool execution, and monitoring remain gated by the settings and task consent of the active Profile.
+
+## Incognito sessions
+
+- The primary desktop Incognito Profile has its own Agent service, current-page summary, toolbar entry, and `chrome://aegis` control plane. It does not reuse the regular Profile's task or event state.
+- Incognito tasks, model credentials, monitoring state, and privacy events stay in session memory and are discarded when the Incognito session ends. A cloud-model API key must be supplied for that session and is not copied to or written into the regular Profile.
+- Explicitly approved bookmark changes and completed downloads follow Chromium's native Incognito semantics and may remain after the window closes. Closing Incognito cancels active Agent downloads and its active BT transfer, while already-written BT bytes are kept. A BT task survives a settings-page refresh only in the same Profile session and is released at completion so another task can start.
+- Because process-wide CDP cannot isolate visible targets by Profile, opening any primary Incognito session stops and blocks every HTTP and pipe “AI Control” transport for the whole process, even one started outside Aegis. It stays off after Incognito closes until you explicitly enable it again in a regular Profile. This does not disable the native Browser Agent.
+- Incognito Actor diagnostics redact private URLs, page/task data, targets, and credential identifiers; login-quality records are not uploaded. Incognito monitors do not send system notifications.
+- Guest, System, and auxiliary off-the-record Profiles do not expose Agent services, entry points, or Aegis network/fingerprint protection. Learned CNAME aliases are partitioned by exact Profile and cleared with the session.
 
 ## Three modes
 
@@ -51,11 +60,11 @@ Monitoring works only while the browser is running and supports price, inventory
 ## Privacy and troubleshooting
 
 - The side panel shows the scope of the current task; it does not grant browser-wide authorization.
-- API keys use system-encrypted storage and are never displayed again in the Agent UI.
+- In a regular Profile, API keys use system-encrypted storage and are never displayed again in the Agent UI. Incognito keys remain only in session memory.
 - After a task stops, controlled tabs and Actors are released; no new tool should start within two seconds.
 - After an abnormal browser exit, reopening a task requires recovery confirmation. Pending actions are not executed automatically.
 - Bookmark undo is valid only in the current browser session; it is not restored and stale writes are not replayed after a restart.
-- Incomplete task metadata is retained for 7 days. Completed, failed, canceled, or expired task metadata is retained for 30 days. Page bodies and raw tool results are not written to TaskStore.
+- In a regular Profile, incomplete task metadata is retained for 7 days and completed, failed, canceled, or expired task metadata for 30 days. Incognito TaskStore is memory-only and has no restart recovery. Page bodies and raw tool results are not written to either store.
 - Turning off the master switch cancels model calls, Actors, approvals, and monitoring.
 
 If a task fails, first inspect the side-panel timeline and error. Do not try to “fix” it by enabling remote debugging, broadening origins, or giving secrets to the model; those actions are outside the v1 security boundary.

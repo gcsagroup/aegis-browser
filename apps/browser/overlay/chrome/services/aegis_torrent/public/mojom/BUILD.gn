@@ -4,10 +4,18 @@ import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom("mojom") {
   sources = [ "aegis_torrent_service.mojom" ]
-  enabled_features = [ "is_mac" ]
-  public_deps = [
-    "//mojo/public/mojom/base",
-    "//sandbox/policy/mojom",
-    "//sandbox/mac/mojom",
-  ]
+  enabled_features = []
+  if (is_mac) {
+    enabled_features += [ "is_mac" ]
+    public_deps = [
+      "//mojo/public/mojom/base",
+      "//sandbox/mac/mojom",
+      "//sandbox/policy/mojom",
+    ]
+  } else {
+    public_deps = [
+      "//mojo/public/mojom/base",
+      "//sandbox/policy/mojom",
+    ]
+  }
 }

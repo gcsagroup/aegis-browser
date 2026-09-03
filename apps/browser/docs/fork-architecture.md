@@ -6,9 +6,9 @@ GCSA-aegis is a Chromium fork. The browser, network, storage, Blink, and selecte
 
 ## Status boundary
 
-- Current combined source: **67 top-level Chromium patches + 2 nested V8 patches**.
-- The 57-patch diagnostic manifest and 65-patch Agent acceptance are historical snapshots; neither binds or qualifies the 67-patch head.
-- The combined source still needs a fresh exact replay, identity-bound build, and affected runtime acceptance. There is no product-signed, notarized, installed, or published release.
+- Current Browser Agent v2 candidate: **95 top-level Chromium patches + 2 nested V8 patches**, replayed exactly to `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`.
+- The 57-, 65-, and 67-patch records are historical snapshots and do not qualify v2 artifacts.
+- Platform identity-bound builds and affected runtime acceptance remain open. There is no product-signed, notarized, installed, or published release.
 - Android has not been built from the current source.
 
 ## Product shape
@@ -50,17 +50,18 @@ GCSA-aegis is a Chromium fork. The browser, network, storage, Blink, and selecte
 | Downloads | Chromium download UI plus isolated torrent service | HTTPS tracker support and release qualification remain gated |
 | Page summaries | Heuristic path and user-configured compatible APIs | Remote use requires redaction and confirmation; Android page capture is unavailable |
 | Browser Agent | Policy broker, fixed tool registry, Actor/side panel/WebUI, task store | Model cannot expand scope or bypass approvals; final purchase requires user takeover |
+| 0079 primary Incognito | Exact-Profile Aegis/Agent/Actor/UI, memory-only state, and process-wide remote-CDP guard | Guest, System, and auxiliary OTR remain fail closed; completed downloads and approved bookmark writes retain Chromium persistence |
 | MinerGuard | Browser/renderer signals and reporting | Observe-only; does not block execution or traffic |
-| Bytecode shadow | Disabled-by-default nested V8 instrumentation | Research-only; historical identities cover both V8 patches, but neither qualifies the current 67-patch head or distribution |
+| Bytecode shadow | Disabled-by-default nested V8 instrumentation | Research-only; exact source identity does not qualify distribution |
 | Local automation | Loopback CDP controls and document authorization | Selected desktop paths have local evidence; signed-install and Android evidence are separate |
 
 ## Patch delivery model
 
-`apps/browser/patches/series` orders the 67 Chromium patches. `apps/browser/patches/v8/series` orders the 2 patches applied in the nested V8 checkout. The replay script validates both bases before applying them.
+`apps/browser/patches/series` orders the 95 Chromium patches. `apps/browser/patches/v8/series` orders the 2 patches applied in the nested V8 checkout. The replay script validates both bases before applying them.
 
 `overlay/` records expected integration source for development and review. It is not independently applied and cannot replace the patch series. A source change must be exported to an ordered patch, replayed on the pinned base, built, and tested.
 
-Patches 0057–0065 implement and harden Browser Agent v1. Patch 0066 tailors settings and update-status surfaces, and 0067 adds GCSA cross-platform branding. Historical 57-patch and 65-patch identities do not cover the combined 67-patch head; a fresh replay and build identity are required.
+Patches 0057–0065 implement and harden Browser Agent v1. Patches 0066–0067 add tailored settings/update status and cross-platform branding. Patches 0068–0095 replace the v1 execution path with the Browser Agent v2 native hybrid runtime, novice entry points, model-first routing, scheduled automation, cross-platform integration, and bounded read-only recovery. The 95-patch source passed exact replay; artifact identity remains platform-specific.
 
 Being listed in a series proves only ordering and presence. It does not prove a clean replay, build freshness, signing, packaging, installation acceptance, Android support, or release approval.
 

@@ -53,7 +53,7 @@ cp "$ROOT_DIR/args/aegis.gn" "$fixture_out/args.gn"
 
 case "$(uname -s)" in
   Darwin)
-    fixture_binary="$fixture_out/Chromium.app/Contents/MacOS/Chromium"
+    fixture_binary="$fixture_out/GCSA Aegis.app/Contents/MacOS/GCSA Aegis"
     ;;
   Linux)
     fixture_binary="$fixture_out/chrome"

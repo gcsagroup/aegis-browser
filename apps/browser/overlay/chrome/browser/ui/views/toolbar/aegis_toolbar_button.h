@@ -5,7 +5,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service.h"  // nogncheck
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/view_tracker.h"
@@ -40,7 +40,7 @@ class AegisToolbarButton : public ToolbarButton,
 
   const raw_ptr<Browser> browser_;
   raw_ptr<content::WebContents> web_contents_ = nullptr;
-  bool observing_service_ = false;
+  raw_ptr<aegis::AegisService> observed_service_ = nullptr;
   views::ViewTracker bubble_tracker_;
   base::OneShotTimer intro_timer_;
 };

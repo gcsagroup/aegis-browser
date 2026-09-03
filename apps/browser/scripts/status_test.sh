@@ -22,8 +22,10 @@ assert_eq replay "$(patch_lineage_kind false true)" \
   "只有 patch-id 匹配时才是 replay"
 assert_eq mismatch "$(patch_lineage_kind true false)" \
   "commit 相同但 patch-id 不同必须失败"
-assert_eq /tmp/out/Chromium.app/Contents/MacOS/Chromium \
+assert_eq '/tmp/out/GCSA Aegis.app/Contents/MacOS/GCSA Aegis' \
   "$(desktop_binary_path /tmp/out Darwin)" "macOS 产物路径"
+assert_eq '/tmp/out/GCSA Aegis.app' \
+  "$(desktop_app_path /tmp/out)" "macOS App 路径"
 assert_eq /tmp/out/chrome "$(desktop_binary_path /tmp/out Linux)" \
   "Linux 产物路径"
 if desktop_binary_path /tmp/out Unknown >/dev/null 2>&1; then
