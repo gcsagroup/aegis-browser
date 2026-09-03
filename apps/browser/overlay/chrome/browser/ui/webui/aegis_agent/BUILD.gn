@@ -1,7 +1,5 @@
 # Copyright 2026 GCSA
 
-assert(!is_android)
-
 import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom("mojo_bindings") {
@@ -18,10 +16,14 @@ source_set("aegis_agent") {
     ":mojo_bindings",
     "//base",
     "//chrome/browser/aegis:agent_core",
-    "//chrome/browser/ui/webui/top_chrome",
     "//components/prefs",
+    "//content/public/browser",
     "//mojo/public/cpp/bindings",
+    "//ui/webui",
   ]
+  if (!is_android) {
+    public_deps += [ "//chrome/browser/ui/webui/top_chrome" ]
+  }
 }
 
 source_set("impl") {
@@ -35,12 +37,12 @@ source_set("impl") {
     "//chrome/browser/aegis",
     "//chrome/browser/aegis:agent_core",
     "//chrome/browser/aegis:model_provider_policy",
+    "//chrome/browser/aegis:profile_support",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/search_engines",
     "//chrome/browser/resources/aegis_agent:resources",
+    "//chrome/browser/search_engines",
+    "//chrome/browser/tab_list",
     "//chrome/browser/ui/browser_window",
-    "//chrome/browser/ui/navigator",
-    "//chrome/browser/ui/webui:theme_source",
     "//chrome/browser/ui/webui:webui_util",
     "//chrome/common",
     "//chrome/common/aegis",
@@ -52,4 +54,7 @@ source_set("impl") {
     "//ui/webui",
     "//url",
   ]
+  if (!is_android) {
+    deps += [ "//chrome/browser/ui/webui:theme_source" ]
+  }
 }

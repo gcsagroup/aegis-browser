@@ -6,9 +6,9 @@ GCSA-aegis 是 Chromium fork。瀏覽器、網路、儲存、Blink 和部分 V8 
 
 ## 狀態邊界
 
-- 目前整合原始碼：**67 個頂層 Chromium 補丁 + 2 個巢狀 V8 補丁**。
-- 57 補丁診斷清單和 65 補丁 Agent 驗收屬於歷史快照，均不綁定目前 67 補丁 HEAD，也不能為它授予資格。
-- 目前整合原始碼仍需重新完成精確重放、身分綁定建置和受影響執行驗收；目前沒有正式產品簽署、公證、安裝或發布的發行版。
+- 目前 Browser Agent v2 候選原始碼：**95 個頂層 Chromium 補丁 + 2 個巢狀 V8 補丁**，可精確重放到 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`。
+- 57、65 和 67 補丁記錄屬於歷史快照，不能為 v2 成品授予資格。
+- 各平台身分綁定建置和受影響執行驗收仍未完成；目前沒有正式產品簽署、公證、安裝或發布的發行版。
 - Android 尚未從目前原始碼建置。
 
 ## 產品形態
@@ -50,17 +50,18 @@ GCSA-aegis 是 Chromium fork。瀏覽器、網路、儲存、Blink 和部分 V8 
 | 下載 | Chromium 下載 UI 與隔離 torrent service | HTTPS tracker 與發布資格仍受門禁約束 |
 | 頁面摘要 | 啟發式路徑和使用者設定的相容 API | 遠端使用需去識別化與確認；Android 頁面擷取不可用 |
 | Browser Agent | 策略代理、固定工具註冊表、Actor/側欄/WebUI、工作儲存 | 模型不能擴張 scope 或繞過審批；最終購買必須使用者接管 |
+| 0079 主要無痕支援 | 精確 Profile 的 Aegis/Agent/Actor/UI、僅記憶體狀態和處理程序層級遠端 CDP 守衛 | Guest、System 與輔助 OTR 繼續 fail closed；已完成下載和獲准書籤寫入保留 Chromium 持久語意 |
 | MinerGuard | Browser/renderer 訊號與報告 | 僅觀察，不阻斷執行或流量 |
-| Bytecode shadow | 預設關閉的巢狀 V8 插樁 | 僅研究；歷史身分涵蓋 2 個 V8 補丁，但均不能為目前 67 補丁 HEAD 或散佈授予資格 |
+| Bytecode shadow | 預設關閉的巢狀 V8 插樁 | 僅研究；精確原始碼身分不等於散佈合格 |
 | 本機自動化 | Loopback CDP 控制和文件授權 | 部分桌面路徑有本機證據；簽署安裝與 Android 證據獨立 |
 
 ## 補丁交付模型
 
-`apps/browser/patches/series` 排列 67 個 Chromium 補丁，`apps/browser/patches/v8/series` 排列套用在巢狀 V8 checkout 中的 2 個補丁。重放指令碼會先驗證兩套基線。
+`apps/browser/patches/series` 排列 95 個 Chromium 補丁，`apps/browser/patches/v8/series` 排列套用在巢狀 V8 checkout 中的 2 個補丁。重放指令碼會先驗證兩套基線。
 
 `overlay/` 保存供開發和審查使用的預期整合原始碼。它不會獨立套用，也不能取代補丁序列。原始碼變更必須匯出為有序補丁，在固定基線上重放、建置並測試。
 
-0057–0065 實作並強化 Browser Agent v1；0066 調整設定與更新狀態介面，0067 增加 GCSA 跨平台品牌。歷史 57 補丁和 65 補丁身分均不涵蓋目前 67 補丁 HEAD，必須重新產生重放與建置身分。
+0057–0065 實作並強化 Browser Agent v1；0066–0067 加入客製設定/更新狀態和跨平台品牌；0068–0095 以 Browser Agent v2 原生混合 Runtime 取代 v1 執行路徑，並加入新手入口、模型優先路由、定時自動化、跨平台接線和有界唯讀恢復。95 補丁原始碼已通過精確重放，成品身分仍按平台分別判定。
 
 「列入 series」只證明順序和檔案存在，不證明乾淨重放、建置新鮮度、簽署、封裝、安裝驗收、Android 支援或發布核准。
 

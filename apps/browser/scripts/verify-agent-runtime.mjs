@@ -8,10 +8,16 @@ import process from 'node:process';
 
 const SOURCE_COUNT = 10;
 const BOOKMARK_COUNT = 500;
-const FIXTURE_VERSION = 1;
+const FIXTURE_VERSION = 4;
 const DOWNLOAD_BYTES = Object.freeze({
-  arm64: Buffer.from('Aegis Browser Agent fixture macOS arm64 v1\n'.repeat(4096)),
-  x64: Buffer.from('Aegis Browser Agent fixture macOS x64 v1\n'.repeat(4096)),
+  'macos-arm64': Buffer.from(
+      'Aegis Browser Agent fixture macOS arm64 v1\n'.repeat(4096)),
+  'macos-x64': Buffer.from(
+      'Aegis Browser Agent fixture macOS x64 v1\n'.repeat(4096)),
+  'windows-x64': Buffer.from(
+      'Aegis Browser Agent fixture Windows x64 v1\n'.repeat(4096)),
+  'android-arm64': Buffer.from(
+      'Aegis Browser Agent fixture Android arm64 APK v1\n'.repeat(4096)),
 });
 const DOWNLOAD_HASHES = Object.freeze(Object.fromEntries(
     Object.entries(DOWNLOAD_BYTES).map(([key, value]) => [
@@ -203,23 +209,43 @@ function chromiumBookmarkMaterial(bookmarks) {
 }
 
 function sanitizedRequest(request, body, origin) {
-  const lower = body.toLowerCase();
+  const inspected = [
+    body,
+    request.headers.cookie || '',
+    request.headers.authorization || '',
+    request.headers['x-api-key'] || '',
+    request.headers['x-goog-api-key'] || '',
+  ].join('\n').toLowerCase();
   const forbidden = [
     'fixture-password',
     'fixture-otp',
     'fixture-cookie',
     '4111111111111111',
-  ].filter((marker) => lower.includes(marker));
+  ].filter((marker) => inspected.includes(marker));
+  let requestedTools = [];
+  try {
+    const payload = JSON.parse(body);
+    requestedTools = Array.isArray(payload.tools) ?
+        payload.tools
+            .map((tool) => tool?.name)
+            .filter((name) => typeof name === 'string' &&
+                /^[a-z0-9._-]{1,128}$/u.test(name)) :
+        [];
+  } catch {
+    // Non-model and deliberately malformed requests expose no tool metadata.
+  }
   return {
     at: new Date().toISOString(),
     authorization_header_present: Boolean(request.headers.authorization),
     body_bytes: Buffer.byteLength(body),
     body_sha256: sha256(body),
+    cookie_header_present: Boolean(request.headers.cookie),
     forbidden_markers: forbidden,
     host: request.headers.host || '',
     method: request.method,
     origin,
     path: new URL(request.url || '/', origin).pathname,
+    requested_tools: requestedTools,
     user_agent_present: Boolean(request.headers['user-agent']),
   };
 }
@@ -252,14 +278,31 @@ function boundedBudgets(maximum = {}) {
 function plannedSteps(goal, availableTools) {
   const has = (name) => availableTools.includes(name);
   const lower = goal.toLowerCase();
+  const scheduled = /browser-owned schedule:\s*monitor\.create must use interval_minutes=\d+/iu
+      .test(goal);
+  if (scheduled && has('page.observe') && has('monitor.create')) {
+    return [
+      ['automation-observe', '读取当前页面并建立监控基线', 'page.observe'],
+      ['automation-create', '创建浏览器定时检查', 'monitor.create'],
+    ];
+  }
   const bookmarkGoal = lower.includes('bookmark') || goal.includes('收藏');
   const bookmarkUrlCheck = lower.includes('url') || lower.includes('dead') ||
       lower.includes('invalid') || goal.includes('失效') || goal.includes('链接检查');
+  const bookmarkPreview = /preview|before changing|without changing|do not (?:change|modify)|修改前|不要修改|只汇总|只彙總/iu
+      .test(goal);
   if (bookmarkGoal && bookmarkUrlCheck &&
       ['bookmark.list', 'bookmark.check_urls'].every(has)) {
     return [
       ['bookmarks-list', '读取收藏夹快照', 'bookmark.list'],
       ['bookmarks-check-urls', '检查收藏夹 URL 状态', 'bookmark.check_urls'],
+    ];
+  }
+  if (bookmarkGoal && bookmarkPreview &&
+      ['bookmark.list', 'bookmark.plan'].every(has)) {
+    return [
+      ['bookmarks-list', '读取收藏夹快照', 'bookmark.list'],
+      ['bookmarks-plan', '生成分类预览', 'bookmark.plan'],
     ];
   }
   if (bookmarkGoal &&
@@ -400,6 +443,135 @@ function findOrigin(prompt, serverOrigin) {
   return serverOrigin;
 }
 
+function monitorKind(goal) {
+  if (/价格|降价|price/iu.test(goal)) {
+    return 'price';
+  }
+  if (/库存|到货|到貨|inventory|stock/iu.test(goal)) {
+    return 'inventory';
+  }
+  if (/失效|链接|連結|url|reachable|health/iu.test(goal)) {
+    return 'url_status';
+  }
+  return 'page_change';
+}
+
+function browserOwnedScheduleMinutes(goal) {
+  const value = /browser-owned schedule:\s*monitor\.create must use interval_minutes=(\d+)/iu
+      .exec(goal)?.[1];
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 15 && parsed <= 10080 ?
+      parsed : 60;
+}
+
+function downloadTarget(goal) {
+  if (/android|apk|安卓/iu.test(goal)) {
+    return {
+      key: 'android-arm64',
+      platform: 'Android',
+      architecture: 'arm64',
+      filename: 'aegis-fixture-android-arm64.apk',
+    };
+  }
+  if (/windows|win(?:32|64)?|\.exe|msi/iu.test(goal)) {
+    return {
+      key: 'windows-x64',
+      platform: 'Windows',
+      architecture: 'x64',
+      filename: 'aegis-fixture-windows-x64.exe',
+    };
+  }
+  if (/macos|mac\b|darwin|苹果电脑|蘋果電腦/iu.test(goal)) {
+    const x64 = /x64|x86[-_ ]?64|intel/iu.test(goal);
+    return {
+      key: x64 ? 'macos-x64' : 'macos-arm64',
+      platform: 'macOS',
+      architecture: x64 ? 'x64' : 'arm64',
+      filename: `aegis-fixture-macos-${x64 ? 'x64' : 'arm64'}.bin`,
+    };
+  }
+  return {
+    key: 'macos-arm64',
+    platform: 'macOS',
+    architecture: 'arm64',
+    filename: 'aegis-fixture-macos-arm64.bin',
+  };
+}
+
+function routeGoalArguments(prompt) {
+  const goal = String(prompt.user_goal || '').trim();
+  const lower = goal.toLowerCase();
+  const browserData = /书签|收藏夹|收藏|标签页|窗口|历史记录|工作区|bookmark|favorite|\btab(?:s)?\b|\bwindow(?:s)?\b|history|workspace/iu
+      .test(goal);
+  const currentPage = /当前页|当前页面|当前网页|这个页面|这个网页|本页面|本网页|页面内容|网页内容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
+      .test(goal);
+  if (browserData) {
+    return {
+      schema_version: 1,
+      workflow: 'browser_steward',
+      entry_kind: 'browser_only',
+      target: '',
+      summary: '使用浏览器本地数据完成任务，不打开搜索页面。',
+    };
+  }
+  if (currentPage) {
+    return {
+      schema_version: 1,
+      workflow: 'research',
+      entry_kind: 'browser_only',
+      target: '',
+      summary: '读取当前公开页面并按用户目标处理。',
+    };
+  }
+
+  const purchase = /购买|帮我买|买下|下单|结账|付款|加入购物车|\bbuy\b|purchase|checkout|add\s+to\s+cart/iu
+      .test(goal);
+  const download = /下载|安装包|官方版本|download|installer|release/iu
+      .test(goal);
+  const explicitUrl = /https?:\/\/[^\s<>'"]+/iu.exec(goal)?.[0];
+  if (explicitUrl) {
+    try {
+      const target = new URL(explicitUrl).href;
+      return {
+        schema_version: 1,
+        workflow: purchase ? 'shopping' :
+            download ? 'safe_download' : 'research',
+        entry_kind: 'open_url',
+        target,
+        summary: '先打开用户明确给出的公开网页，再按目标执行。',
+      };
+    } catch {
+      // Invalid URL text falls through to the normal site/search routing.
+    }
+  }
+  const namedSites = [
+    {match: /京东|\bjd(?:\.com)?\b/iu, target: 'https://www.jd.com/'},
+    {match: /github/iu, target: 'https://github.com/'},
+    {
+      match: /amazon|亚马逊|亞馬遜/iu,
+      target: 'https://www.amazon.com/',
+    },
+    {match: /youtube|油管/iu, target: 'https://www.youtube.com/'},
+  ];
+  const namedSite = namedSites.find(({match}) => match.test(goal));
+  if (namedSite) {
+    return {
+      schema_version: 1,
+      workflow: purchase ? 'shopping' : download ? 'safe_download' : 'research',
+      entry_kind: 'open_url',
+      target: namedSite.target,
+      summary: '先打开用户明确指定的网站，再在站内完成目标。',
+    };
+  }
+  return {
+    schema_version: 1,
+    workflow: purchase ? 'shopping' : download ? 'safe_download' : 'research',
+    entry_kind: 'web_search',
+    target: goal || lower || 'Aegis browser agent fixture',
+    summary: '先理解目标并搜索相关公开页面，再制定执行计划。',
+  };
+}
+
 function executionArguments(name, prompt, serverOrigin) {
   const previous = previousResult(prompt);
   const tabId = firstLiveTab(prompt, previous);
@@ -408,6 +580,9 @@ function executionArguments(name, prompt, serverOrigin) {
       pageEvidence?.document_token || 'missing-document-token';
   const origin = findOrigin(prompt, serverOrigin);
   const step = Number(prompt.next_step_index || 0);
+  if (name === 'agent.route_goal') {
+    return routeGoalArguments(prompt);
+  }
   if (name === 'page.observe') {
     return {tab_id: tabId, query: '读取用户批准范围内的可见事实'};
   }
@@ -473,20 +648,31 @@ function executionArguments(name, prompt, serverOrigin) {
           'missing-snapshot',
     };
   }
+  if (name === 'monitor.create') {
+    return {
+      tab_id: tabId,
+      document_token: documentToken,
+      kind: monitorKind(String(prompt.user_goal || '')),
+      interval_minutes:
+          browserOwnedScheduleMinutes(String(prompt.user_goal || '')),
+    };
+  }
   if (name === 'download.find_official') {
+    const target = downloadTarget(String(prompt.user_goal || ''));
     return {
       product: 'Aegis Fixture Software 1.0',
-      platform: 'macOS',
-      architecture: 'arm64',
+      platform: target.platform,
+      architecture: target.architecture,
       candidate_url: `${origin}/download`,
     };
   }
   if (name === 'download.start') {
+    const target = downloadTarget(String(prompt.user_goal || ''));
     return {
-      url: `${origin}/download/aegis-fixture-macos-arm64.bin`,
+      url: `${origin}/download/${target.filename}`,
       tab_id: tabId,
       document_token: documentToken,
-      expected_sha256: DOWNLOAD_HASHES.arm64,
+      expected_sha256: DOWNLOAD_HASHES[target.key],
     };
   }
   if (name === 'download.verify') {
@@ -633,12 +819,13 @@ class AgentFixtureServer {
     }
     if (path === '/') {
       this.record(request);
-      html(response, 200, fixturePage('Aegis Agent v1 验收夹具', `
-        <h1>Aegis Agent v1 验收夹具</h1>
+      html(response, 200, fixturePage('Aegis Agent v2 验收夹具', `
+        <h1>Aegis Agent v2 验收夹具</h1>
         <nav>
           <a href="/research">A1 研究</a>
           <a href="/download">A4 下载</a>
           <a href="/shop">A5 购物</a>
+          <a href="/sensitive">A6 敏感字段脱敏</a>
           <a href="/status/live">A3 URL</a>
         </nav>`));
       return;
@@ -659,6 +846,23 @@ class AgentFixtureServer {
       }
       return;
     }
+    if (path === '/sensitive') {
+      this.record(request);
+      html(response, 200, fixturePage('Aegis Sensitive Form Fixture', `
+        <article>
+          <h1>Aegis Sensitive Form Fixture</h1>
+          <p>这是用于验证模型请求脱敏的本地页面。Agent 只能总结页面用途，不能读取或发送表单值。</p>
+          <form>
+            <label>密码 <input type="password" value="fixture-password"></label>
+            <label>验证码 <input inputmode="numeric" autocomplete="one-time-code" value="fixture-otp"></label>
+            <label>卡号 <input inputmode="numeric" autocomplete="cc-number" value="4111111111111111"></label>
+          </form>
+        </article>`), {
+        'set-cookie':
+            'aegis_sensitive=fixture-cookie; HttpOnly; SameSite=Strict; Path=/',
+      });
+      return;
+    }
     if (path.startsWith('/status/')) {
       await this.handleStatus(request, response, path.slice('/status/'.length));
       return;
@@ -671,26 +875,31 @@ class AgentFixtureServer {
           <p>官方项目发布页；请选择与当前平台及架构匹配的文件。</p>
           <table>
             <tr><th>平台</th><th>架构</th><th>文件</th><th>SHA-256</th></tr>
-            <tr><td>macOS</td><td>arm64</td><td><a href="/download/aegis-fixture-macos-arm64.bin">下载</a></td><td>${DOWNLOAD_HASHES.arm64}</td></tr>
-            <tr><td>macOS</td><td>x64</td><td><a href="/download/aegis-fixture-macos-x64.bin">下载</a></td><td>${DOWNLOAD_HASHES.x64}</td></tr>
+            <tr><td>macOS</td><td>arm64</td><td><a href="/download/aegis-fixture-macos-arm64.bin">下载</a></td><td>${DOWNLOAD_HASHES['macos-arm64']}</td></tr>
+            <tr><td>macOS</td><td>x64</td><td><a href="/download/aegis-fixture-macos-x64.bin">下载</a></td><td>${DOWNLOAD_HASHES['macos-x64']}</td></tr>
+            <tr><td>Windows</td><td>x64</td><td><a href="/download/aegis-fixture-windows-x64.exe">下载</a></td><td>${DOWNLOAD_HASHES['windows-x64']}</td></tr>
+            <tr><td>Android</td><td>arm64</td><td><a href="/download/aegis-fixture-android-arm64.apk">下载</a></td><td>${DOWNLOAD_HASHES['android-arm64']}</td></tr>
           </table>
           <a rel="nofollow" href="/download/advertisement">广告下载（错误来源）</a>
         </article>`));
       return;
     }
-    const downloadMatch = /^\/download\/aegis-fixture-macos-(arm64|x64)\.bin$/u.exec(path);
+    const downloadMatch = /^\/download\/(aegis-fixture-(?:macos-(?:arm64|x64)\.bin|windows-x64\.exe|android-arm64\.apk))$/u.exec(path);
     if (downloadMatch) {
       this.record(request);
-      const architecture = downloadMatch[1];
-      const payload = DOWNLOAD_BYTES[architecture];
+      const filename = downloadMatch[1];
+      const key = filename
+          .replace(/^aegis-fixture-/u, '')
+          .replace(/\.(?:bin|exe|apk)$/u, '');
+      const payload = DOWNLOAD_BYTES[key];
       response.writeHead(200, {
         'accept-ranges': 'bytes',
         'cache-control': 'no-store',
         'content-disposition':
-            `attachment; filename="aegis-fixture-macos-${architecture}.bin"`,
+            `attachment; filename="${filename}"`,
         'content-length': payload.length,
         'content-type': 'application/octet-stream',
-        'x-aegis-sha256': DOWNLOAD_HASHES[architecture],
+        'x-aegis-sha256': DOWNLOAD_HASHES[key],
       });
       response.end(payload);
       return;
@@ -798,7 +1007,10 @@ class AgentFixtureServer {
     if (path.startsWith('/control/provider/')) {
       this.record(request);
       const mode = path.slice('/control/provider/'.length);
-      assert(['normal', 'malformed', 'redirect', 'timeout', 'wrong-tool'].includes(mode),
+      assert([
+        'normal', 'malformed', 'malformed-once', 'redirect', 'timeout',
+        'wrong-tool', 'wrong-tool-once',
+      ].includes(mode),
              'unknown provider mode');
       this.providerMode = mode;
       json(response, 200, {mode});
@@ -879,7 +1091,11 @@ class AgentFixtureServer {
   async handleProvider(request, response) {
     const body = await this.readBody(request);
     this.record(request, body);
-    if (this.providerMode === 'malformed') {
+    if (this.providerMode === 'malformed' ||
+        this.providerMode === 'malformed-once') {
+      if (this.providerMode === 'malformed-once') {
+        this.providerMode = 'normal';
+      }
       response.writeHead(200, {'content-type': 'application/json'});
       response.end('{not-json');
       return;
@@ -898,7 +1114,11 @@ class AgentFixtureServer {
     const {prompt, tools} = parsePrompt(body);
     const names = tools.map((tool) => tool?.name).filter(Boolean);
     const requestedName = names[0] || '';
-    if (this.providerMode === 'wrong-tool') {
+    if (this.providerMode === 'wrong-tool' ||
+        this.providerMode === 'wrong-tool-once') {
+      if (this.providerMode === 'wrong-tool-once') {
+        this.providerMode = 'normal';
+      }
       json(response, 200, openAiFunctionCall('browser.shell', {}));
       return;
     }
@@ -1032,7 +1252,21 @@ async function runSelfTest(reportPath = null) {
       assert(material.split('\n').length === 503, 'bookmark tree material mismatch');
       assert(sha256(material).length === 64, 'bookmark snapshot hash unavailable');
 
-      const response = await providerCall(origin, 'bookmark.apply', {
+      let response = await providerCall(origin, 'agent.submit_plan', {
+        user_goal:
+            'Organize my bookmarks by topic and show a preview before changing anything',
+        maximum_origins: [],
+        maximum_tools: ['bookmark.list', 'bookmark.plan', 'bookmark.apply'],
+        maximum_data_classes: ['bookmarks'],
+        maximum_budgets: {},
+      });
+      const previewPlan =
+          JSON.parse((await response.json()).output[0].arguments);
+      assert(JSON.stringify(previewPlan.steps.map((step) => step.tool)) ===
+                 '["bookmark.list","bookmark.plan"]',
+             'bookmark preview plan unexpectedly included a write');
+
+      response = await providerCall(origin, 'bookmark.apply', {
         prior_verified_evidence_untrusted: [{
           tool: 'bookmark.plan',
           ok: true,
@@ -1106,14 +1340,47 @@ async function runSelfTest(reportPath = null) {
              'A3 URL check did not preserve the bounded node capability set');
     });
     await check('A4 architecture and SHA-256 download evidence', async () => {
-      const arm = Buffer.from(await (await fetch(
+      const macosArm64 = Buffer.from(await (await fetch(
           `${origin}/download/aegis-fixture-macos-arm64.bin`)).arrayBuffer());
-      const x64 = Buffer.from(await (await fetch(
+      const macosX64 = Buffer.from(await (await fetch(
           `${origin}/download/aegis-fixture-macos-x64.bin`)).arrayBuffer());
-      assert(sha256(arm) === DOWNLOAD_HASHES.arm64, 'arm64 hash mismatch');
-      assert(sha256(x64) === DOWNLOAD_HASHES.x64, 'x64 hash mismatch');
-      assert(DOWNLOAD_HASHES.arm64 !== DOWNLOAD_HASHES.x64,
-             'architecture fixtures unexpectedly match');
+      const windowsX64 = Buffer.from(await (await fetch(
+          `${origin}/download/aegis-fixture-windows-x64.exe`)).arrayBuffer());
+      const androidArm64 = Buffer.from(await (await fetch(
+          `${origin}/download/aegis-fixture-android-arm64.apk`)).arrayBuffer());
+      const payloads = {
+        'macos-arm64': macosArm64,
+        'macos-x64': macosX64,
+        'windows-x64': windowsX64,
+        'android-arm64': androidArm64,
+      };
+      for (const [key, payload] of Object.entries(payloads)) {
+        assert(sha256(payload) === DOWNLOAD_HASHES[key],
+               `${key} hash mismatch`);
+      }
+      assert(new Set(Object.values(DOWNLOAD_HASHES)).size === 4,
+             'platform and architecture fixtures unexpectedly match');
+      const platformCases = [
+        ['Find the official macOS arm64 download', 'macOS', 'arm64',
+          'aegis-fixture-macos-arm64.bin', 'macos-arm64'],
+        ['Find the official Windows x64 installer', 'Windows', 'x64',
+          'aegis-fixture-windows-x64.exe', 'windows-x64'],
+        ['Find the official Android arm64 APK', 'Android', 'arm64',
+          'aegis-fixture-android-arm64.apk', 'android-arm64'],
+      ];
+      for (const [goal, platform, architecture, filename, key] of platformCases) {
+        let response = await providerCall(origin, 'download.find_official', {
+          user_goal: goal,
+        });
+        let args = JSON.parse((await response.json()).output[0].arguments);
+        assert(args.platform === platform && args.architecture === architecture,
+               `${platform} download discovery selected the wrong target`);
+        response = await providerCall(origin, 'download.start', {user_goal: goal});
+        args = JSON.parse((await response.json()).output[0].arguments);
+        assert(args.url === `${origin}/download/${filename}` &&
+                   args.expected_sha256 === DOWNLOAD_HASHES[key],
+               `${platform} download start selected the wrong artifact`);
+      }
     });
     await check('A5 total-price and final-price-change evidence', async () => {
       const totals = [];
@@ -1177,8 +1444,78 @@ async function runSelfTest(reportPath = null) {
                  priceState.total_minor_units === 11500,
              'checkout did not change while the model call was in flight');
     });
-    await check('A9 model normal, malformed, redirect, timeout, wrong-tool modes', async () => {
+    await check('A6 non-vacuous sensitive page and cookie fixture', async () => {
+      const response = await fetch(`${origin}/sensitive`);
+      const body = await response.text();
+      assert(body.includes('fixture-password') &&
+                 body.includes('fixture-otp') &&
+                 body.includes('4111111111111111'),
+             'sensitive form markers are missing');
+      assert(response.headers.getSetCookie().some((value) =>
+        value.includes('fixture-cookie')),
+      'sensitive cookie marker is missing');
+    });
+    await check('A7 browser-owned scheduled automation contract', async () => {
+      const userGoal =
+          `Monitor this page and summarize meaningful changes ${origin}` +
+          '\n\nBrowser-owned schedule: monitor.create must use interval_minutes=60.' +
+          ' The browser will reject any other interval.';
       let response = await providerCall(origin, 'agent.submit_plan', {
+        user_goal: userGoal,
+        maximum_origins: [origin],
+        maximum_tools: ['page.observe', 'page.extract', 'monitor.create'],
+        maximum_data_classes: ['public_page'],
+        maximum_budgets: {
+          max_tabs: 2,
+          max_tool_calls: 8,
+          max_model_calls: 8,
+          max_network_requests: 16,
+          max_duration_seconds: 300,
+        },
+      });
+      const plan = JSON.parse((await response.json()).output[0].arguments);
+      assert(plan.steps.length === 2 &&
+                 plan.steps[0]?.tool === 'page.observe' &&
+                 plan.steps[1]?.tool === 'monitor.create',
+             'automation plan did not end with exactly one monitor.create');
+      response = await providerCall(origin, 'monitor.create', {
+        user_goal: userGoal,
+        required_step: {id: 'automation-create'},
+        live_tab_ids: [7],
+        prior_verified_evidence_untrusted: [{
+          ok: true,
+          tool: 'page.observe',
+          url: `${origin}/research/source-01`,
+          tab_id: 7,
+          document_token: 'document-7',
+        }],
+      });
+      const args = JSON.parse((await response.json()).output[0].arguments);
+      assert(args.tab_id === 7 && args.document_token === 'document-7' &&
+                 args.kind === 'page_change' && args.interval_minutes === 60,
+             'automation execution did not preserve browser-owned schedule');
+    });
+    await check('A9 model normal, malformed, redirect, timeout, wrong-tool modes', async () => {
+      let response = await providerCall(origin, 'agent.route_goal', {
+        user_goal: '整理收藏夹并按主题分类',
+      });
+      const route = JSON.parse((await response.json()).output[0].arguments);
+      assert(route.workflow === 'browser_steward' &&
+                 route.entry_kind === 'browser_only' &&
+                 route.target === '',
+             'v2 goal router did not keep browser data local');
+
+      response = await providerCall(origin, 'agent.route_goal', {
+        user_goal: `Open ${origin}/research/source-01 and summarize it`,
+      });
+      const explicitRoute =
+          JSON.parse((await response.json()).output[0].arguments);
+      assert(explicitRoute.workflow === 'research' &&
+                 explicitRoute.entry_kind === 'open_url' &&
+                 explicitRoute.target === `${origin}/research/source-01`,
+             'v2 goal router did not preserve an explicit public URL');
+
+      response = await providerCall(origin, 'agent.submit_plan', {
         user_goal: `A1 ${origin}`,
         maximum_origins: [origin],
         maximum_tools: ['page.navigate', 'page.extract'],
@@ -1207,6 +1544,26 @@ async function runSelfTest(reportPath = null) {
       response = await providerCall(origin, 'agent.complete');
       const wrong = await response.json();
       assert(wrong.output[0].name === 'browser.shell', 'wrong-tool fixture mismatch');
+
+      await fetch(`${origin}/control/provider/wrong-tool-once`);
+      response = await providerCall(origin, 'agent.route_goal', {
+        user_goal: `Open ${origin}/research/source-01 and summarize it`,
+      });
+      assert((await response.json()).output[0].name === 'browser.shell',
+             'one-shot wrong-tool fixture did not fail its first call');
+      response = await providerCall(origin, 'agent.route_goal', {
+        user_goal: `Open ${origin}/research/source-01 and summarize it`,
+      });
+      assert((await response.json()).output[0].name === 'agent.route_goal',
+             'one-shot wrong-tool fixture did not recover on its next call');
+
+      await fetch(`${origin}/control/provider/malformed-once`);
+      response = await providerCall(origin, 'agent.complete');
+      assert((await response.text()) === '{not-json',
+             'one-shot malformed fixture did not fail its first call');
+      response = await providerCall(origin, 'agent.complete');
+      assert((await response.json()).output[0].name === 'agent.complete',
+             'one-shot malformed fixture did not recover on its next call');
 
       await fetch(`${origin}/control/provider/timeout`);
       let timedOut = false;

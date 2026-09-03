@@ -4,9 +4,9 @@
 
 GCSA-aegis 是一个本地优先的隐私与安全浏览器项目，现有两条产品线：[`apps/browser`](apps/browser/README.zh-CN.md) 下的 Chromium 分支，以及 [`apps/ios`](apps/ios/README.zh-CN.md) 下的原生 iOS 浏览器。核心能力集成在各自的浏览器产品内；项目不会复活已退役的独立扩展产品。
 
-> **状态 — 2026-08-29：** 整合后的源码包含 67 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁。此前的 57 补丁诊断清单和 65 补丁 Agent 验收仅为历史证据，不能给当前 67 补丁 HEAD 授予资格。原生 iOS 产品仍只在已记录的 Simulator 范围内为 **SIMULATOR_QUALIFIED**。项目整体仍是 **发行 No-Go**，还需补齐当前整合源码的构建/运行证据、受信任证明、正式签名、公证、已安装分发包验收、iOS 真机验证和当前源码的 Android 包。
+> **状态 — 2026-09-04：** Browser Agent v2 候选源码包含 95 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 Chromium 提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`。57、65 和 67 补丁记录只保留为历史证据。原生 iOS 产品仍只在已记录的 Simulator 范围内为 **SIMULATOR_QUALIFIED**。项目整体仍是 **发行 No-Go**，还需完成当前源码的平台/运行验收、受信任证明、正式签名、公证、已安装分发包验收，以及本轮明确后置的 iOS 门禁。
 
-普通桌面 Profile 正常启动后会直接显示 Agent 入口。模型调用、工具和监控仍需用户在 `chrome://aegis` 显式开启；WebMCP 与交易提交能力继续默认关闭。
+普通桌面 Profile 和 Android 都会显示 Agent 入口。第一次任务可直接配置并启用用户选择的模型，不要求用户先选工作流或预先打开网页。WebMCP 与交易提交能力继续默认关闭，最终结账/付款必须由用户接管。
 
 ## 产品形态
 

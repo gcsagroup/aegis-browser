@@ -118,8 +118,10 @@ std::optional<std::string> SerializePlanSteps(const AgentTaskPlan& plan) {
 
 }  // namespace
 
-AgentTaskStore::AgentTaskStore(base::FilePath database_path)
-    : database_path_(std::move(database_path)), database_("AegisAgent") {}
+AgentTaskStore::AgentTaskStore(base::FilePath database_path, bool in_memory)
+    : database_path_(std::move(database_path)),
+      in_memory_(in_memory),
+      database_("AegisAgent") {}
 
 AgentTaskStore::~AgentTaskStore() = default;
 
@@ -127,7 +129,8 @@ bool AgentTaskStore::Initialize() {
   if (initialized_) {
     return true;
   }
-  if (!database_.Open(database_path_)) {
+  if (!(in_memory_ ? database_.OpenInMemory()
+                   : database_.Open(database_path_))) {
     return false;
   }
   sql::Transaction transaction(&database_);

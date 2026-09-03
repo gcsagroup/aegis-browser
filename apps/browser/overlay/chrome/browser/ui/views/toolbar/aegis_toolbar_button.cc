@@ -13,6 +13,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/summary_session.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -49,14 +50,11 @@ constexpr int kBubbleWidth = 440;
 constexpr int kResultMaxHeight = 300;
 constexpr base::TimeDelta kIntroDuration = base::Seconds(4);
 
-// 在 AegisService 改为 ProfileKeyedService 前使用 fail-closed 过渡边界。
 aegis::AegisService* ServiceForBrowser(Browser* browser) {
   if (!browser) {
     return nullptr;
   }
-  aegis::AegisService* service = aegis::AegisService::GetInstance();
-  return service->IsInitializedForProfile(browser->profile()) ? service
-                                                              : nullptr;
+  return aegis::AegisServiceFactory::GetForProfile(browser->profile());
 }
 
 aegis::AegisService* ServiceForWebContents(Browser* browser,
@@ -534,14 +532,15 @@ AegisToolbarButton::AegisToolbarButton(Browser* browser)
   GetViewAccessibility().SetHasPopup(ax::mojom::HasPopup::kDialog);
   if (aegis::AegisService* service = ServiceForBrowser(browser_)) {
     service->AddObserver(this);
-    observing_service_ = true;
+    observed_service_ = service;
   }
   Update(browser_->tab_strip_model()->GetActiveWebContents());
 }
 
 AegisToolbarButton::~AegisToolbarButton() {
-  if (observing_service_) {
-    aegis::AegisService::GetInstance()->RemoveObserver(this);
+  if (observed_service_) {
+    observed_service_->RemoveObserver(this);
+    observed_service_ = nullptr;
   }
   if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
     bubble_tracker_.view()->GetWidget()->Close();
@@ -559,6 +558,9 @@ void AegisToolbarButton::OnAegisStateChanged() {
 }
 
 void AegisToolbarButton::OnPressed() {
+  if (!aegis::IsAegisProfileSupported(browser_->profile())) {
+    return;
+  }
   if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
     bubble_tracker_.view()->GetWidget()->Close();
     return;
@@ -577,6 +579,18 @@ void AegisToolbarButton::OnPressed() {
 }
 
 void AegisToolbarButton::Refresh() {
+  const bool profile_supported =
+      aegis::IsAegisProfileSupported(browser_->profile());
+  SetVisible(profile_supported);
+  SetEnabled(profile_supported);
+  if (!profile_supported) {
+    intro_timer_.Stop();
+    SetHighlight(std::u16string(), std::nullopt);
+    SetText(std::u16string());
+    PreferredSizeChanged();
+    return;
+  }
+
   aegis::AegisService* service = ServiceForWebContents(browser_, web_contents_);
   if (!service) {
     intro_timer_.Stop();

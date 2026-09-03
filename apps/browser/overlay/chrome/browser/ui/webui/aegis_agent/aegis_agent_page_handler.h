@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,12 +12,15 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/aegis/agent/agent_execution.h"
+#include "chrome/browser/aegis/agent/agent_planner.h"
 #include "chrome/browser/aegis/agent/agent_service_observer.h"
 #include "chrome/browser/aegis/agent/agent_task.h"
 #include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 class Profile;
 class BrowserWindowInterface;
@@ -42,10 +46,21 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
 
   void ShowUI() override;
   void GetSnapshot(GetSnapshotCallback callback) override;
+  void ConfigureModel(const std::string& provider,
+                      const std::string& base_url,
+                      const std::string& model,
+                      const std::string& api_key,
+                      bool clear_api_key,
+                      ConfigureModelCallback callback) override;
+  void ListModels(const std::string& provider,
+                  const std::string& base_url,
+                  const std::string& api_key,
+                  ListModelsCallback callback) override;
   void CreateTask(const std::string& goal,
                   aegis_agent::mojom::AgentMode mode,
                   aegis_agent::mojom::Workflow workflow,
                   const std::vector<std::string>& approved_origins,
+                  int32_t schedule_interval_minutes,
                   CreateTaskCallback callback) override;
   void RequestPlan(const std::string& task_id,
                    RequestPlanCallback callback) override;
@@ -82,7 +97,30 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   void PushSnapshot();
   void OnAgentEnabledChanged();
   void OnActiveTabDidChange(BrowserWindowInterface* browser);
+  void OnGoalRouted(std::string goal,
+                    aegis::agent::AgentMode mode,
+                    std::optional<std::vector<url::Origin>> requested_origins,
+                    CreateTaskCallback callback,
+                    bool ok,
+                    std::string error,
+                    std::optional<aegis::agent::AgentGoalRoute> route);
+  void CreateResolvedTask(
+      std::string goal,
+      aegis::agent::AgentMode mode,
+      aegis::agent::AgentWorkflowKind workflow,
+      std::optional<std::vector<url::Origin>> requested_origins,
+      std::optional<GURL> routed_url,
+      bool browser_only,
+      bool use_current_page,
+      CreateTaskCallback callback);
   void OnPlanReady(const std::string& task_id, bool ok, std::string error);
+  void OnModelConfigured(ConfigureModelCallback callback,
+                         bool ok,
+                         std::string error);
+  void OnModelsListed(ListModelsCallback callback,
+                      bool ok,
+                      std::string error,
+                      std::vector<std::string> models);
   void OnRunFinished(
       const std::string& task_id,
       bool ok,

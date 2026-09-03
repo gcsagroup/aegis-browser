@@ -39,6 +39,17 @@ struct AgentModelRequest {
   std::string system_prompt;
   std::string user_prompt;
   std::vector<AgentModelToolDefinition> tools;
+  // Agent turns expose one browser-selected tool at a time. Requiring it at
+  // the provider layer avoids models returning prose instead of acting.
+  std::string required_tool_name;
+  // Keep tightly scoped tool turns action-first on compatible reasoning
+  // endpoints. Other provider adapters may ignore this preference.
+  std::string reasoning_effort;
+  // Numeric-loopback OpenAI-compatible Qwen servers commonly expose the
+  // model's chat-template switch directly. The service enables this only for
+  // that local combination; cloud and unrelated custom providers never see
+  // the compatibility field.
+  bool disable_model_thinking = false;
   int max_output_tokens = 2048;
   bool stream = true;
 };

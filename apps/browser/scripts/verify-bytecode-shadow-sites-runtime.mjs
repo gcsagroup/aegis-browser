@@ -42,6 +42,10 @@ import {
 } from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {
+  macAppExecutableName,
+  macAppExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const RUNNER_ENTRY_PATH = fileURLToPath(import.meta.url);
 const BROWSER_ROOT = resolve(dirname(RUNNER_ENTRY_PATH), '..');
@@ -266,7 +270,7 @@ function printUsage() {
       '  --help                       显示帮助',
       '',
       '真实研究选项：',
-      '  --app PATH                   被测 Chromium.app',
+      '  --app PATH                   被测 GCSA Aegis.app',
       '  --binary PATH                被测可执行文件；与 --app 二选一',
       '  --report PATH                JSON 报告；必须不存在，拒绝覆盖',
       '  --hmac-key-file PATH         恰好 32 字节且权限不宽于 0600 的批次密钥',
@@ -821,10 +825,13 @@ async function resolveTarget(options) {
     assert(
       metadata && metadata.isDirectory(),
       'target-invalid',
-      'Chromium.app 不存在',
+      '浏览器 .app 不存在',
     );
     appPath = await realpath(appPath);
-    executable = join(appPath, 'Contents', 'MacOS', 'Chromium');
+    executable = macAppExecutablePath(
+      appPath,
+      await macAppExecutableName(appPath),
+    );
   }
   const metadata = await stat(executable).catch(() => null);
   assert(
@@ -980,7 +987,7 @@ async function verifyBuildIdentity(options, target, runner) {
   assert(
     target.appPath,
     'build-identity-invalid',
-    '被测 binary 必须位于 Chromium.app 内',
+    '被测 binary 必须位于浏览器 .app 内',
   );
   const output = await (runner || runBuildIdentityVerifier)([
     '--phase',
@@ -1023,7 +1030,7 @@ async function acquireBuildOperationLock(target) {
   assert(
     target.appPath,
     'build-identity-invalid',
-    '构建身份锁要求 Chromium.app 目标',
+    '构建身份锁要求浏览器 .app 目标',
   );
   const lockParent = join(dirname(target.appPath), '.aegis');
   await mkdir(lockParent, {recursive: true});

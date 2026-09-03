@@ -82,6 +82,28 @@ TEST(AegisAgentTaskStoreTest, SavesOnlyRedactedMetadataAndRecoversSafely) {
   EXPECT_EQ(database_bytes.find("goal stays in memory"), std::string::npos);
 }
 
+TEST(AegisAgentTaskStoreTest, InMemoryStoreNeverCreatesOrRecoversDiskState) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath path =
+      temp_dir.GetPath().AppendASCII("incognito-tasks.sqlite");
+  {
+    AgentTaskStore store(path, /*in_memory=*/true);
+    EXPECT_TRUE(store.is_in_memory_for_testing());
+    ASSERT_TRUE(store.Initialize());
+    AgentTask task("incognito-task", "ephemeral goal", AgentMode::kAsk,
+                   StoreTestScope());
+    ASSERT_TRUE(store.SaveTask(task, "Ephemeral task", false));
+    EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
+    EXPECT_FALSE(base::PathExists(path));
+  }
+
+  AgentTaskStore fresh_store(path, /*in_memory=*/true);
+  ASSERT_TRUE(fresh_store.Initialize());
+  EXPECT_TRUE(fresh_store.LoadUnfinishedTasks().empty());
+  EXPECT_FALSE(base::PathExists(path));
+}
+
 TEST(AegisAgentTaskStoreTest, RejectsBroadenedOrMalformedStoredScope) {
   EXPECT_FALSE(AgentTaskStore::DeserializeScope("not-json"));
   EXPECT_FALSE(AgentTaskStore::DeserializeScope(R"({})"));

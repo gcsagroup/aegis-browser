@@ -4,6 +4,7 @@
 
 #include "base/feature_list.h"
 #include "chrome/browser/actor/actor_keyed_service_factory.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/features.h"
@@ -41,9 +42,11 @@ AegisAgentService* AegisAgentServiceFactory::GetForProfileIfExists(
 
 AegisAgentServiceFactory::AegisAgentServiceFactory(
     base::PassKey<AegisAgentServiceFactory>)
-    : ProfileKeyedServiceFactory("AegisAgentService",
-                                 ProfileSelections::BuildForRegularProfile()) {
+    : ProfileKeyedServiceFactory(
+          "AegisAgentService",
+          ProfileSelections::BuildForRegularAndIncognito()) {
   DependsOn(actor::ActorKeyedServiceFactory::GetInstance());
+  DependsOn(aegis::AegisServiceFactory::GetInstance());
 }
 
 AegisAgentServiceFactory::~AegisAgentServiceFactory() = default;
@@ -52,7 +55,8 @@ std::unique_ptr<KeyedService>
 AegisAgentServiceFactory::BuildServiceInstanceForBrowserContext(
     content::BrowserContext* context) const {
   Profile* profile = Profile::FromBrowserContext(context);
-  if (!profile || !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
+  if (!aegis::IsAegisProfileSupported(profile) ||
+      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
     return nullptr;
   }

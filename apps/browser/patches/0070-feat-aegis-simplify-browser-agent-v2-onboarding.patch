@@ -1,0 +1,2644 @@
+From cfe7a6cab0a157b8cd2cc443e5fefbef407e70ce Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sun, 30 Aug 2026 22:05:44 +0800
+Subject: [PATCH] feat(aegis): simplify browser agent v2 onboarding
+
+---
+ .../browser/actor/actor_keyed_service_fake.cc |  21 +-
+ .../browser/actor/actor_keyed_service_fake.h  |   4 +-
+ chrome/browser/actor/actor_task.cc            |   3 +-
+ .../actor/ui/actor_ui_state_manager.cc        |  52 +-
+ .../browser/actor/ui/actor_ui_state_manager.h |   7 +
+ .../ui/actor_ui_state_manager_unittest.cc     |  54 ++
+ chrome/browser/actor/ui/event_dispatcher.cc   |   3 +-
+ chrome/browser/actor/ui/event_dispatcher.h    |   1 +
+ chrome/browser/actor/ui/ui_event.cc           |   6 +-
+ chrome/browser/actor/ui/ui_event.h            |   4 +-
+ .../aegis/agent/aegis_agent_browsertest.cc    | 102 ++-
+ .../agent/aegis_agent_interactive_uitest.cc   |  20 +-
+ .../aegis/agent/aegis_agent_service.cc        |  11 +
+ .../browser/aegis/agent/aegis_agent_service.h |   3 +
+ .../browser/resources/aegis_agent/agent.css   | 620 ++++++++++++------
+ .../browser/resources/aegis_agent/agent.html  | 111 +++-
+ chrome/browser/resources/aegis_agent/agent.ts | 389 +++++++++--
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |  16 +
+ .../aegis_agent/aegis_agent_page_handler.cc   | 213 ++++--
+ .../aegis_agent/aegis_agent_page_handler.h    |  17 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  88 ++-
+ 21 files changed, 1350 insertions(+), 395 deletions(-)
+
+diff --git a/chrome/browser/actor/actor_keyed_service_fake.cc b/chrome/browser/actor/actor_keyed_service_fake.cc
+index 75175eb1d3..7fd9646bdd 100644
+--- a/chrome/browser/actor/actor_keyed_service_fake.cc
++++ b/chrome/browser/actor/actor_keyed_service_fake.cc
+@@ -27,31 +27,40 @@ ActorKeyedServiceFake::~ActorKeyedServiceFake() = default;
+ TaskId ActorKeyedServiceFake::CreateTaskForTesting() {
+   return CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
+       actor::webui::mojom::TaskDuration::kDefault,
+-      glic::mojom::FeatureMode::kUnspecified);
++      glic::mojom::FeatureMode::kUnspecified, TestTaskSourceInfo());
++}
++
++TaskId ActorKeyedServiceFake::CreateAegisTaskForTesting() {
++  return CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
++      actor::webui::mojom::TaskDuration::kDefault,
++      glic::mojom::FeatureMode::kUnspecified,
++      TaskSourceInfo(TaskSourceInfo::Client::kAegis, "aegis-test-task"));
+ }
+ 
+ TaskId ActorKeyedServiceFake::CreateTransientTaskForTesting() {
+   return CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
+       actor::webui::mojom::TaskDuration::kTransient,
+-      glic::mojom::FeatureMode::kUnspecified);
++      glic::mojom::FeatureMode::kUnspecified, TestTaskSourceInfo());
+ }
+ 
+ TaskId ActorKeyedServiceFake::CreateExperimentalTriggeringTaskForTesting() {
+   return CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
+       actor::webui::mojom::TaskDuration::kDefault,
+-      glic::mojom::FeatureMode::kExperimentalTriggering);
++      glic::mojom::FeatureMode::kExperimentalTriggering,
++      TestTaskSourceInfo());
+ }
+ 
+ TaskId ActorKeyedServiceFake::CreateTaskWithDurationForTesting(  // IN-TEST
+     actor::webui::mojom::TaskDuration duration) {
+   return CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
+-      duration, glic::mojom::FeatureMode::kUnspecified);
++      duration, glic::mojom::FeatureMode::kUnspecified, TestTaskSourceInfo());
+ }
+ 
+ TaskId ActorKeyedServiceFake::
+     CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
+         actor::webui::mojom::TaskDuration duration,
+-        glic::mojom::FeatureMode feature_mode) {
++        glic::mojom::FeatureMode feature_mode,
++        const TaskSourceInfo& source_info) {
+   std::unique_ptr<ui::UiEventDispatcher> ui_event_dispatcher =
+       ui::NewMockUiEventDispatcher();
+   std::unique_ptr<ui::UiEventDispatcher> task_ui_event_dispatcher =
+@@ -90,7 +99,7 @@ TaskId ActorKeyedServiceFake::
+   task_options->duration = duration;
+   task_options->feature_mode = feature_mode;
+   return ActorKeyedService::CreateTaskForTesting(  // IN-TEST
+-      std::move(task_ui_event_dispatcher), TestTaskSourceInfo(),
++      std::move(task_ui_event_dispatcher), source_info,
+       &no_enterprise_policy_checker_, std::move(task_options),
+       /*delegate=*/nullptr);
+ }
+diff --git a/chrome/browser/actor/actor_keyed_service_fake.h b/chrome/browser/actor/actor_keyed_service_fake.h
+index 19cbe8423a..490d0a6259 100644
+--- a/chrome/browser/actor/actor_keyed_service_fake.h
++++ b/chrome/browser/actor/actor_keyed_service_fake.h
+@@ -20,6 +20,7 @@ class ActorKeyedServiceFake : public ActorKeyedService {
+   ~ActorKeyedServiceFake() override;
+ 
+   TaskId CreateTaskForTesting();
++  TaskId CreateAegisTaskForTesting();
+   TaskId CreateTransientTaskForTesting();
+   TaskId CreateExperimentalTriggeringTaskForTesting();
+   void PauseTaskForTesting(TaskId task_id, bool from_actor);
+@@ -29,7 +30,8 @@ class ActorKeyedServiceFake : public ActorKeyedService {
+  private:
+   TaskId CreateTaskWithDurationAndFeatureModeForTesting(
+       actor::webui::mojom::TaskDuration duration,
+-      glic::mojom::FeatureMode feature_mode);
++      glic::mojom::FeatureMode feature_mode,
++      const TaskSourceInfo& source_info);
+ 
+   TaskId CreateTaskWithDurationForTesting(
+       actor::webui::mojom::TaskDuration duration);
+diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
+index 211969c90f..d76dc7898e 100644
+--- a/chrome/browser/actor/actor_task.cc
++++ b/chrome/browser/actor/actor_task.cc
+@@ -478,7 +478,8 @@ void ActorTask::Stop(StoppedReason stop_reason) {
+       .title = title_,
+       .last_acted_on_tab_handle = last_tab_handle,
+       .duration = duration_,
+-      .feature_mode = feature_mode_});
++      .feature_mode = feature_mode_,
++      .source = source_info_.type});
+ }
+ 
+ void ActorTask::Pause(bool from_actor, bool cancel_existing_action) {
+diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
+index b76d49261b..7fa116158b 100644
+--- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
++++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
+@@ -156,19 +156,37 @@ ActorTask::TaskDuration ActorUiStateManager::GetDuration(
+   return ActorTask::TaskDuration::kDefault;
+ }
+ 
++bool ActorUiStateManager::IsAegisTask(TaskId task_id) const {
++  if (aegis_tasks_.contains(task_id)) {
++    return true;
++  }
++  const ActorTask* task = actor_service_->GetTask(task_id);
++  return task &&
++         task->source_info().type == TaskSourceInfo::Client::kAegis;
++}
++
+ UiTabState ActorUiStateManager::GetActorControlledUiTabState(TaskId task_id) {
++  UiTabState state = kDefaultActorState;
+   switch (GetDuration(task_id)) {
+     case ActorTask::TaskDuration::kDefault:
+-      return kDefaultActorState;
++      break;
+     case ActorTask::TaskDuration::kTransient: {
+       auto it = transient_task_timers_.find(task_id);
+       if (it != transient_task_timers_.end() && !it->second->IsRunning()) {
+-        return kDefaultActorState;
++        state = kDefaultActorState;
++        break;
+       }
+-      return kTransientActorState;
++      state = kTransientActorState;
++      break;
+     }
+   }
+-  NOTREACHED();
++  // The standard tab indicator is branded for Glic/Gemini. Aegis tasks keep
++  // the execution border and handoff control, while their status is shown in
++  // the Aegis side panel.
++  if (IsAegisTask(task_id)) {
++    state.tab_indicator = TabIndicatorStatus::kNone;
++  }
++  return state;
+ }
+ 
+ UiTabState ActorUiStateManager::GetActorControlledUiTabState(
+@@ -252,10 +270,12 @@ void ActorUiStateManager::OnActorTaskStateChange(
+     }
+   }
+ 
+-  notify_actor_task_state_change_debounce_timer_.Start(
+-      FROM_HERE, kProfileScopedUiUpdateDebounceDelay,
+-      base::BindOnce(&ActorUiStateManager::NotifyActorTaskStateChange,
+-                     weak_factory_.GetWeakPtr(), task_id));
++  if (!IsAegisTask(task_id)) {
++    notify_actor_task_state_change_debounce_timer_.Start(
++        FROM_HERE, kProfileScopedUiUpdateDebounceDelay,
++        base::BindOnce(&ActorUiStateManager::NotifyActorTaskStateChange,
++                       weak_factory_.GetWeakPtr(), task_id));
++  }
+ }
+ 
+ std::vector<tabs::TabInterface*> ActorUiStateManager::GetTabs(TaskId id) {
+@@ -328,6 +348,10 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
+   std::visit(
+       absl::Overload{
+           [this](const StartTask& e) {
++            if (IsAegisTask(e.task_id)) {
++              aegis_tasks_.insert(e.task_id);
++              return;
++            }
+             notify_actor_task_state_change_debounce_timer_.Start(
+                 FROM_HERE, kProfileScopedUiUpdateDebounceDelay,
+                 base::BindOnce(&ActorUiStateManager::NotifyActorTaskStateChange,
+@@ -338,6 +362,17 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
+           },
+           [this](const StopTask& e) {
+             transient_task_timers_.erase(e.task_id);
++            if (e.source == TaskSourceInfo::Client::kAegis ||
++                IsAegisTask(e.task_id)) {
++              base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++                  FROM_HERE,
++                  base::BindOnce(&ActorUiStateManager::ActorTaskRemoved,
++                                 weak_factory_.GetWeakPtr(), e.task_id),
++                  base::Seconds(
++                      features::kGlicActorUiCompletedTaskExpiryDelaySeconds
++                          .Get()));
++              return;
++            }
+             // Cancelled tasks are intentionally not stored.
+             if (e.final_state == ActorTask::State::kCancelled) {
+               NotifyActorTaskStopped(e.task_id);
+@@ -427,6 +462,7 @@ base::CallbackListSubscription ActorUiStateManager::RegisterActorTaskStopped(
+ }
+ 
+ void ActorUiStateManager::ActorTaskRemoved(TaskId task_id) {
++  aegis_tasks_.erase(task_id);
+   stopped_task_info_.erase(task_id);
+   actor_task_removed_callback_list_.Notify(task_id);
+ }
+diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.h b/chrome/browser/actor/ui/actor_ui_state_manager.h
+index 3b9e0e4ff4..e909292ca3 100644
+--- a/chrome/browser/actor/ui/actor_ui_state_manager.h
++++ b/chrome/browser/actor/ui/actor_ui_state_manager.h
+@@ -10,6 +10,7 @@
+ #include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/actor/ui/actor_ui_state_manager_interface.h"
+ #include "components/actor/core/task_id.h"
++#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
+ 
+ namespace tabs {
+ class TabInterface;
+@@ -63,6 +64,7 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
+   void StopTimer(TaskId task_id);
+ 
+   ActorTask::TaskDuration GetDuration(const tabs::TabInterface* tab);
++  bool IsAegisTask(TaskId task_id) const;
+   // Notify profile scoped ui components about actor task state changes.
+   void NotifyActorTaskStateChange(TaskId task_id);
+   // Called whenever an actor task state changes.
+@@ -85,6 +87,11 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
+   absl::flat_hash_map<TaskId, std::unique_ptr<base::OneShotTimer>>
+       transient_task_timers_;
+ 
++  // Aegis renders its own task progress and approvals in the side panel. Keep
++  // the Actor tab safety UI, but do not surface these tasks in the Glic/Gemini
++  // profile-scoped task list.
++  absl::flat_hash_set<TaskId> aegis_tasks_;
++
+   base::OneShotTimer notify_actor_task_state_change_debounce_timer_;
+ 
+   const raw_ref<ActorKeyedService> actor_service_;
+diff --git a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
+index ecd415b0a5..8e06dd9f19 100644
+--- a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
++++ b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
+@@ -203,6 +203,46 @@ TEST_F(ActorUiStateManagerTest, SingleTask_RapidTaskStateChanges_Debounced) {
+   EXPECT_EQ(callback_count, 1);
+ }
+ 
++TEST_F(ActorUiStateManagerTest, AegisTaskSkipsGeminiProfileTaskCallbacks) {
++  int state_callback_count = 0;
++  int stopped_callback_count = 0;
++  std::vector<base::CallbackListSubscription> subscriptions;
++  subscriptions.push_back(
++      actor_ui_state_manager()->RegisterActorTaskStateChange(
++          base::BindLambdaForTesting([&](TaskId) { state_callback_count++; })));
++  subscriptions.push_back(actor_ui_state_manager()->RegisterActorTaskStopped(
++      base::BindLambdaForTesting(
++          [&](TaskId) { stopped_callback_count++; })));
++
++  TaskId task_id = actor_keyed_service()->CreateAegisTaskForTesting();
++  actor_ui_state_manager()->OnUiEvent(StartTask(task_id));
++  actor_ui_state_manager()->OnUiEvent(
++      TaskStateChanged(task_id, ActorTask::State::kActing));
++  task_environment().FastForwardBy(kProfileScopedUiUpdateDebounceDelay);
++
++  EXPECT_EQ(state_callback_count, 0);
++  StopActorTask(task_id);
++  EXPECT_EQ(stopped_callback_count, 0);
++  EXPECT_EQ(actor_ui_state_manager()->GetActorTaskState(task_id),
++            std::nullopt);
++  EXPECT_EQ(actor_ui_state_manager()->GetInactiveTaskCount(), 0u);
++}
++
++TEST_F(ActorUiStateManagerTest, AegisTaskStoppedBeforeStartSkipsGeminiUi) {
++  TaskId task_id = actor_keyed_service()->CreateAegisTaskForTesting();
++  actor_keyed_service()->StopTask(task_id,
++                                  ActorTask::StoppedReason::kTaskComplete);
++  actor_ui_state_manager()->OnUiEvent(StopTask(
++      task_id, ActorTask::State::kFinished, "Aegis early stop",
++      tabs::TabHandle(), ActorTask::TaskDuration::kDefault,
++      glic::mojom::FeatureMode::kUnspecified,
++      TaskSourceInfo::Client::kAegis));
++
++  EXPECT_EQ(actor_ui_state_manager()->GetActorTaskState(task_id),
++            std::nullopt);
++  EXPECT_EQ(actor_ui_state_manager()->GetInactiveTaskCount(), 0u);
++}
++
+ TEST_F(ActorUiStateManagerTest, OnActorTaskState_kCreatedNewStateCrashes) {
+   EXPECT_DEATH(actor_ui_state_manager()->OnUiEvent(
+                    TaskStateChanged(TaskId(123), ActorTask::State::kCreated)),
+@@ -333,6 +373,20 @@ TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
+                 expected_ui_tab_state);
+ }
+ 
++TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
++       AegisTaskKeepsSafetyUiWithoutGeminiTabIndicator) {
++  TaskId task_id = actor_keyed_service()->CreateAegisTaskForTesting();
++  actor_ui_state_manager()->OnUiEvent(StartTask(task_id));
++  UiTabState expected_ui_tab_state{
++      .actor_overlay = {.is_active = true, .border_glow_visible = true},
++      .handoff_button = {.is_active = true, .controller = kActor},
++      .tab_indicator = TabIndicatorStatus::kNone,
++      .border_glow_visible = true,
++  };
++  VerifyUiEvent(StartingToActOnTab{mock_tab().GetHandle(), task_id},
++                expected_ui_tab_state);
++}
++
+ TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
+        OnStoppedActingOnTab_UpdatesUiCorrectly) {
+   UiTabState expected_ui_tab_state{
+diff --git a/chrome/browser/actor/ui/event_dispatcher.cc b/chrome/browser/actor/ui/event_dispatcher.cc
+index f11f3e9294..b9b89675b1 100644
+--- a/chrome/browser/actor/ui/event_dispatcher.cc
++++ b/chrome/browser/actor/ui/event_dispatcher.cc
+@@ -151,7 +151,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
+     [](const UiEventDispatcher::StopTask& c) {
+       return EventSequence<SyncUiEvent>{
+           StopTask(c.task_id, c.final_state, c.title,
+-                   c.last_acted_on_tab_handle, c.duration, c.feature_mode)};
++                   c.last_acted_on_tab_handle, c.duration, c.feature_mode,
++                   c.source)};
+     },
+     [](const UiEventDispatcher::RemoveTab& c) {
+       return EventSequence<SyncUiEvent>{StoppedActingOnTab(c.handle)};
+diff --git a/chrome/browser/actor/ui/event_dispatcher.h b/chrome/browser/actor/ui/event_dispatcher.h
+index e8cc60078e..3e3be6f1e6 100644
+--- a/chrome/browser/actor/ui/event_dispatcher.h
++++ b/chrome/browser/actor/ui/event_dispatcher.h
+@@ -47,6 +47,7 @@ class UiEventDispatcher {
+     tabs::TabInterface::Handle last_acted_on_tab_handle;
+     ActorTask::TaskDuration duration;
+     glic::mojom::FeatureMode feature_mode;
++    TaskSourceInfo::Client source = TaskSourceInfo::Client::kUnknown;
+   };
+ 
+   struct RemoveTab {
+diff --git a/chrome/browser/actor/ui/ui_event.cc b/chrome/browser/actor/ui/ui_event.cc
+index 2883ee7c54..69f32e6a88 100644
+--- a/chrome/browser/actor/ui/ui_event.cc
++++ b/chrome/browser/actor/ui/ui_event.cc
+@@ -17,13 +17,15 @@ StopTask::StopTask(actor::TaskId id,
+                    const std::string& title,
+                    tabs::TabInterface::Handle last_acted_on_tab_handle,
+                    ActorTask::TaskDuration duration,
+-                   glic::mojom::FeatureMode feature_mode)
++                   glic::mojom::FeatureMode feature_mode,
++                   TaskSourceInfo::Client source)
+     : task_id(id),
+       final_state(final_state),
+       title(title),
+       last_acted_on_tab_handle(last_acted_on_tab_handle),
+       duration(duration),
+-      feature_mode(feature_mode) {
++      feature_mode(feature_mode),
++      source(source) {
+   DCHECK(ActorTask::IsCompletedState(final_state));
+ }
+ StopTask::~StopTask() = default;
+diff --git a/chrome/browser/actor/ui/ui_event.h b/chrome/browser/actor/ui/ui_event.h
+index 7df9638947..190c1029cf 100644
+--- a/chrome/browser/actor/ui/ui_event.h
++++ b/chrome/browser/actor/ui/ui_event.h
+@@ -52,13 +52,15 @@ struct StopTask {
+   tabs::TabInterface::Handle last_acted_on_tab_handle;
+   ActorTask::TaskDuration duration;
+   glic::mojom::FeatureMode feature_mode;
++  TaskSourceInfo::Client source;
+ 
+   StopTask(actor::TaskId,
+            ActorTask::State,
+            const std::string& title,
+            tabs::TabInterface::Handle,
+            ActorTask::TaskDuration,
+-           glic::mojom::FeatureMode = glic::mojom::FeatureMode::kUnspecified);
++           glic::mojom::FeatureMode = glic::mojom::FeatureMode::kUnspecified,
++           TaskSourceInfo::Client = TaskSourceInfo::Client::kUnknown);
+   StopTask(const StopTask&);
+   ~StopTask();
+ };
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 7935550fdb..829ec1aba6 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -173,6 +173,36 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
+   }));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
++                       FirstTaskConfiguresAndEnablesAgentInPanel) {
++  Profile* profile = browser()->profile();
++  ASSERT_FALSE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++
++  const std::string task_id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const handler = BrowserProxy.getInstance().handler;
++      const configured = await handler.configureModel(
++          'openai', 'http://127.0.0.1:8000/v1', 'fixture-local', '', false);
++      if (!configured.snapshot.modelConfigured) {
++        return `CONFIG_ERROR:${configured.snapshot.lastError}`;
++      }
++      const created = await handler.createTask(
++          'organize my bookmarks with a preview', 1, 1, []);
++      return created.snapshot.taskId || `TASK_ERROR:${created.snapshot.lastError}`;
++    })()
++  )JS").ExtractString();
++  ASSERT_FALSE(task_id.starts_with("CONFIG_ERROR:")) << task_id;
++  ASSERT_FALSE(task_id.starts_with("TASK_ERROR:")) << task_id;
++  EXPECT_TRUE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile);
++  ASSERT_TRUE(service);
++  EXPECT_EQ(service->task_count_for_testing(), 1u);
++}
++
+ class AegisAgentBrowserTest : public InProcessBrowserTest {
+  public:
+   AegisAgentBrowserTest() {
+@@ -256,6 +286,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        LoadsUntrustedPanelAndRejectsOriginExpansion) {
+   ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->profile());
+   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+ 
+@@ -279,21 +310,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+ 
+   const std::string expected_origin = url::Origin::Create(page_url).Serialize();
+   EXPECT_EQ(content::EvalJs(contents, R"JS(
+-      new Promise(resolve => {
+-        const deadline = Date.now() + 5000;
+-        const poll = () => {
+-          const value = document.querySelector('#origins')?.value || '';
+-          if (value || Date.now() >= deadline) {
+-            resolve(value);
+-            return;
+-          }
+-          setTimeout(poll, 10);
+-        };
+-        poll();
+-      })
+-    )JS")
+-                .ExtractString(),
+-            expected_origin);
++    document.querySelector('#origins').value
++  )JS").ExtractString(), "");
++  EXPECT_FALSE(content::EvalJs(contents, R"JS(
++    document.querySelector('#current-page').checked
++  )JS").ExtractBool());
+ 
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(browser()->profile());
+@@ -348,12 +369,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       )JS",
+                                                    page_url.spec()))
+           .ExtractString();
+-  EXPECT_EQ(error, "Task input is invalid");
++  EXPECT_EQ(error, "任务内容或高级授权范围无效，请检查后重试。");
+   EXPECT_EQ(service->task_count_for_testing(), 0u);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+-                       BlankPageGoalAutomaticallyOpensSearchTaskTab) {
++                       GoalAutomaticallyOpensRelatedSearchTaskTab) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+   ConfigureAgentModel(browser()->profile());
+   TemplateURLService* search =
+@@ -371,13 +392,21 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_TRUE(provider);
+   search->SetUserSelectedDefaultSearchProvider(provider);
+ 
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title2.html")));
+   content::WebContents* panel = ShowAgentPanel(browser());
+   ASSERT_TRUE(panel);
+-  EXPECT_FALSE(content::EvalJs(panel, R"JS(
++  EXPECT_TRUE(content::EvalJs(panel, R"JS(
+     document.querySelector('#plan-button').disabled
+-  )JS")
+-                   .ExtractBool());
++  )JS").ExtractBool());
++  EXPECT_FALSE(content::EvalJs(panel, R"JS(
++    (() => {
++      const goal = document.querySelector('#goal');
++      goal.value = 'compare usb hubs';
++      goal.dispatchEvent(new Event('input', {bubbles: true}));
++      return document.querySelector('#plan-button').disabled;
++    })()
++  )JS").ExtractBool());
+   const int initial_tab_count = browser()->tab_strip_model()->count();
+   const GURL expected =
+       search->GenerateSearchURLForDefaultSearchProvider(u"compare usb hubs");
+@@ -404,6 +433,37 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(service->MostRecentTask()->scope().AllowsOrigin(expected));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       ChinesePunctuationTerminatesExplicitUrl) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->profile());
++  const GURL current_url = embedded_test_server()->GetURL("/title2.html");
++  const GURL target_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), current_url));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++
++  const std::string task_id =
++      content::EvalJs(panel, content::JsReplace(R"JS(
++        (async () => {
++          const {BrowserProxy} = await import('./browser_proxy.js');
++          const goal = `打开 ${$1}，读取页面标题和正文第一句话`;
++          const result = await BrowserProxy.getInstance().handler
++              .createTask(goal, 1, 0, []);
++          return result.snapshot.taskId ||
++              `ERROR:${result.snapshot.lastError}`;
++        })()
++      )JS",
++                                               target_url.spec()))
++          .ExtractString();
++  ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
++           browser()->GetActiveTabInterface()->GetURL() == target_url;
++  }));
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        BrowserStewardStartsWithoutOpeningWebPage) {
+   ConfigureAgentModel(browser()->profile());
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index 22c0b99d91..9fe6513b99 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -99,21 +99,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+         ASSERT_TRUE(contents);
+         ASSERT_TRUE(content::WaitForLoadStop(contents));
+         EXPECT_EQ(content::EvalJs(contents, R"JS(
+-              new Promise(resolve => {
+-                const deadline = Date.now() + 5000;
+-                const poll = () => {
+-                  const value = document.querySelector('#origins')?.value || '';
+-                  if (value || Date.now() >= deadline) {
+-                    resolve(value);
+-                    return;
+-                  }
+-                  setTimeout(poll, 10);
+-                };
+-                poll();
+-              })
+-            )JS")
+-                      .ExtractString(),
+-                  expected_origin);
++          document.querySelector('#origins').value
++        )JS").ExtractString(), "");
++        EXPECT_FALSE(content::EvalJs(contents, R"JS(
++          document.querySelector('#current-page').checked
++        )JS").ExtractBool());
+         EXPECT_TRUE(content::EvalJs(contents, R"JS(
+           (() => {
+             const modes = [...document.querySelectorAll('#mode-group button')];
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 226b4a62ec..f7759a80e8 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1605,11 +1605,22 @@ void AegisAgentService::FinishRuntime(
+   }
+   RunCallback callback = std::move(it->second->callback);
+   executions_.erase(it);
++  if (ok && completion) {
++    completion_summaries_[task_id] = *completion;
++  } else {
++    completion_summaries_.erase(task_id);
++  }
+   if (callback) {
+     std::move(callback).Run(ok, std::move(error), std::move(completion));
+   }
+ }
+ 
++const AgentCompletionSummary* AegisAgentService::GetCompletionSummary(
++    const std::string& task_id) const {
++  const auto it = completion_summaries_.find(task_id);
++  return it == completion_summaries_.end() ? nullptr : &it->second;
++}
++
+ AgentPolicyDecision AegisAgentService::EvaluateToolCall(
+     const std::string& task_id,
+     const AgentToolCall& call,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 7aa3042004..bc8e112a60 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -82,6 +82,8 @@ class AegisAgentService : public KeyedService {
+   void RequestPlan(const std::string& task_id, PlanReadyCallback callback);
+   bool SetPlanReady(const std::string& task_id);
+   const AgentTaskPlan* GetPlan(const std::string& task_id) const;
++  const AgentCompletionSummary* GetCompletionSummary(
++      const std::string& task_id) const;
+   bool GrantTaskConsent(const std::string& task_id);
+   bool PauseTask(const std::string& task_id);
+   bool ResumeTask(const std::string& task_id);
+@@ -243,6 +245,7 @@ class AegisAgentService : public KeyedService {
+   AegisBrowserTools browser_tools_;
+   std::map<std::string, std::unique_ptr<AgentTask>> tasks_;
+   std::map<std::string, AgentTaskPlan> plans_;
++  std::map<std::string, AgentCompletionSummary> completion_summaries_;
+   std::map<std::string, std::pair<size_t, int>> plan_progress_;
+   std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
+   std::map<std::string, std::string> model_request_ids_;
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index cfed9da43b..e0998723be 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -1,91 +1,112 @@
+ :root {
+-  --bg: #f5f7fb;
+-  --surface: rgba(255, 255, 255, 0.92);
++  --bg: #f4f6fb;
++  --surface: rgba(255, 255, 255, 0.94);
+   --surface-strong: #fff;
+-  --text: #172033;
+-  --muted: #647087;
++  --text: #182033;
++  --muted: #667085;
+   --line: #dce2ed;
+-  --primary: #4759e8;
+-  --primary-hover: #3547d2;
+-  --accent: #74e0c0;
++  --primary: #4657e8;
++  --primary-hover: #3546d0;
++  --accent: #70d8b9;
+   --danger: #b3261e;
+-  --shadow: 0 12px 30px rgba(26, 40, 74, 0.09);
++  --warning: #f4c95d;
++  --shadow: 0 12px 28px rgba(26, 40, 74, 0.08);
+   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+ }
+ 
+ @media (prefers-color-scheme: dark) {
+   :root {
+     --bg: #111522;
+-    --surface: rgba(28, 34, 50, 0.94);
++    --surface: rgba(29, 35, 51, 0.95);
+     --surface-strong: #20273a;
+     --text: #f1f4fb;
+     --muted: #a8b1c6;
+     --line: #343d55;
+-    --primary: #8d9aff;
+-    --primary-hover: #a4adff;
++    --primary: #8390ff;
++    --primary-hover: #9ca6ff;
+     --accent: #62cdae;
+     --danger: #ffb4ab;
++    --warning: #e7bd55;
+     --shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
+   }
+ }
+ 
+-* { box-sizing: border-box; }
++* {
++  box-sizing: border-box;
++}
++
++[hidden] {
++  display: none !important;
++}
+ 
+ body {
+   margin: 0;
+   background:
+-      radial-gradient(circle at 92% -4%, color-mix(in srgb, var(--primary) 20%, transparent), transparent 35%),
++      radial-gradient(circle at 92% -4%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 34%),
+       var(--bg);
+   color: var(--text);
+ }
+ 
+ main {
+   display: grid;
+-  gap: 14px;
++  gap: 12px;
+   margin: 0 auto;
+   max-width: 720px;
+   min-width: 280px;
+   padding: 18px;
+ }
+ 
+-.hero { display: flex;
+- align-items: center;
+- gap: 12px; }
++.hero {
++  align-items: center;
++  display: flex;
++  gap: 12px;
++}
+ 
+ .mark {
+   align-items: center;
+   background: linear-gradient(145deg, var(--primary), #7c4ee8);
+-  border-radius: 12px;
++  border-radius: 13px;
+   box-shadow: var(--shadow);
+   color: white;
+   display: flex;
+-  flex: 0 0 38px;
+-  font-weight: 750;
+-  height: 38px;
++  flex: 0 0 42px;
++  font-size: 18px;
++  font-weight: 800;
++  height: 42px;
+   justify-content: center;
+ }
+ 
+-.hero-copy { min-width: 0;
+- flex: 1; }
++.hero-copy {
++  flex: 1;
++  min-width: 0;
++}
+ 
+ h1,
+- h2,
+- p { margin: 0; }
++h2,
++p {
++  margin: 0;
++}
+ 
+-h1 { font-size: 18px;
+- letter-spacing: -0.01em; }
++h1 {
++  font-size: 19px;
++  letter-spacing: -0.01em;
++}
+ 
+-h2 { font-size: 14px; }
++h2 {
++  font-size: 14px;
++}
+ 
+-.hero p { color: var(--muted);
+- font-size: 12px;
+- margin-top: 3px; }
++.hero p {
++  color: var(--muted);
++  font-size: 12px;
++  line-height: 1.45;
++  margin-top: 3px;
++}
+ 
+ .status {
+   background: color-mix(in srgb, var(--accent) 25%, var(--surface));
+   border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--line));
+   border-radius: 999px;
+-  color: var(--text);
+   font-size: 11px;
+   max-width: 120px;
+   overflow: hidden;
+@@ -95,236 +116,437 @@ h2 { font-size: 14px; }
+ }
+ 
+ .card,
+- .composer,
+- .target-card,
+- .notice {
++.composer,
++.target-card,
++.notice {
+   background: var(--surface);
+   border: 1px solid var(--line);
+-  border-radius: 14px;
++  border-radius: 15px;
+   box-shadow: var(--shadow);
+   padding: 14px;
+ }
+ 
+-.target-card { display: grid;
+- gap: 3px;
+- box-shadow: none; }
+-
+-.eyebrow { color: var(--muted);
+- font-size: 11px;
+- text-transform: uppercase; }
+-
+-#target-value { font-size: 13px;
+- overflow-wrap: anywhere; }
+-
+-#invocation-context { color: var(--muted);
+- font-size: 11px;
+- overflow-wrap: anywhere; }
+-
+-.notice { border-color: #e7bd55;
+- color: var(--text);
+- font-size: 13px; }
++.composer {
++  display: grid;
++  gap: 10px;
++}
+ 
+-.composer { display: grid;
+- gap: 11px; }
++.notice {
++  border-color: var(--warning);
++  box-shadow: none;
++  font-size: 12px;
++}
+ 
+-.segmented {
+-  background: color-mix(in srgb, var(--line) 45%, transparent);
+-  border-radius: 10px;
++.target-card {
++  box-shadow: none;
+   display: grid;
+   gap: 3px;
+-  grid-template-columns: repeat(3, 1fr);
+-  padding: 3px;
+ }
+ 
+-.segmented button { border: 0;
+- background: transparent; }
++.eyebrow {
++  color: var(--muted);
++  font-size: 11px;
++  text-transform: uppercase;
++}
+ 
+-.segmented button[aria-checked='true'] {
+-  background: var(--surface-strong);
+-  box-shadow: 0 2px 8px rgba(20, 30, 50, 0.1);
+-  color: var(--primary);
++#target-value,
++#invocation-context {
++  overflow-wrap: anywhere;
++}
++
++#target-value {
++  font-size: 13px;
++}
++
++#invocation-context,
++.help {
++  color: var(--muted);
++  font-size: 11px;
++  line-height: 1.45;
+ }
+ 
+-label { color: var(--muted);
+- font-size: 12px;
+- font-weight: 650; }
++label {
++  color: var(--muted);
++  font-size: 12px;
++  font-weight: 650;
++}
+ 
+ textarea,
+- select {
++select,
++input {
+   background: var(--surface-strong);
+   border: 1px solid var(--line);
+   border-radius: 10px;
+   color: var(--text);
+   font: inherit;
+-  padding: 10px;
+-  resize: vertical;
++  min-height: 38px;
++  padding: 9px 10px;
+   width: 100%;
+ }
+ 
+-.workflow-row { display: grid;
+- gap: 6px; }
++textarea {
++  line-height: 1.5;
++  resize: vertical;
++}
+ 
+-.quick-actions { display: flex;
+- flex-wrap: wrap;
+- gap: 6px; }
++#goal {
++  font-size: 14px;
++  min-height: 112px;
++}
+ 
+ button {
+   background: var(--surface-strong);
+   border: 1px solid var(--line);
+-  border-radius: 9px;
++  border-radius: 10px;
+   color: var(--text);
+   cursor: pointer;
+   font: inherit;
+   font-size: 12px;
+-  font-weight: 650;
+-  min-height: 34px;
++  font-weight: 680;
++  min-height: 36px;
+   padding: 7px 11px;
+ }
+ 
+-button:hover:not(:disabled) { border-color: var(--primary); }
++button:hover:not(:disabled) {
++  border-color: var(--primary);
++}
+ 
+ button:focus-visible,
+- textarea:focus-visible,
+- select:focus-visible {
++textarea:focus-visible,
++select:focus-visible,
++input:focus-visible,
++summary:focus-visible {
+   outline: 3px solid color-mix(in srgb, var(--primary) 40%, transparent);
+   outline-offset: 2px;
+ }
+ 
+-button:disabled { cursor: default;
+- opacity: 0.45; }
++button:disabled {
++  cursor: default;
++  opacity: 0.46;
++}
+ 
+-.primary { background: var(--primary);
+- border-color: var(--primary);
+- color: white; }
++.primary {
++  background: var(--primary);
++  border-color: var(--primary);
++  color: white;
++}
+ 
+-.primary:hover:not(:disabled) { background: var(--primary-hover); }
++.primary:hover:not(:disabled) {
++  background: var(--primary-hover);
++}
+ 
+-.danger { background: var(--danger);
+- border-color: var(--danger);
+- color: white; }
++.primary-large {
++  font-size: 14px;
++  min-height: 46px;
++}
+ 
+-.quiet-danger { color: var(--danger); }
++.danger {
++  background: var(--danger);
++  border-color: var(--danger);
++  color: white;
++}
+ 
+-.section-heading { align-items: center;
+- display: flex;
+- gap: 8px;
+- justify-content: space-between; }
++.quiet-danger {
++  color: var(--danger);
++}
+ 
+-.risk { background: color-mix(in srgb, #e7bd55 25%, transparent);
+- border-radius: 999px;
+- font-size: 11px;
+- padding: 4px 8px; }
++.quick-actions,
++.controls,
++.model-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 7px;
++}
+ 
+-#plan-summary { color: var(--muted);
+- font-size: 13px;
+- margin: 10px 0; }
++.quick-actions button {
++  border-radius: 999px;
++  font-weight: 600;
++  min-height: 32px;
++}
+ 
+-.scope-grid { display: grid;
+- gap: 8px;
+- grid-template-columns: minmax(74px, 0.35fr) 1fr;
+- margin: 0 0 12px; }
++summary {
++  cursor: pointer;
++  font-size: 12px;
++  font-weight: 700;
++}
+ 
+-.scope-grid dt { color: var(--muted);
+- font-size: 11px;
+- font-weight: 650; }
++.advanced {
++  border-top: 1px solid var(--line);
++  padding-top: 10px;
++}
+ 
+-.scope-grid dd { font-size: 12px;
+- margin: 0;
+- overflow-wrap: anywhere; }
++.advanced-body,
++.model-body {
++  display: grid;
++  gap: 10px;
++  padding-top: 12px;
++}
++
++.segmented {
++  background: color-mix(in srgb, var(--line) 45%, transparent);
++  border-radius: 10px;
++  display: grid;
++  gap: 3px;
++  grid-template-columns: repeat(3, 1fr);
++  padding: 3px;
++}
++
++.segmented button {
++  background: transparent;
++  border: 0;
++}
++
++.segmented button[aria-checked='true'] {
++  background: var(--surface-strong);
++  box-shadow: 0 2px 8px rgba(20, 30, 50, 0.1);
++  color: var(--primary);
++}
++
++.workflow-row,
++.field-grid {
++  display: grid;
++  gap: 6px;
++}
++
++.checkbox-row {
++  align-items: flex-start;
++  color: var(--text);
++  cursor: pointer;
++  display: flex;
++  gap: 8px;
++}
++
++.checkbox-row input {
++  flex: 0 0 auto;
++  min-height: auto;
++  margin-top: 2px;
++  width: auto;
++}
++
++.checkbox-row span {
++  display: grid;
++  gap: 2px;
++}
++
++.checkbox-row small {
++  color: var(--muted);
++  font-weight: 400;
++}
++
++.model-card > summary {
++  align-items: center;
++  display: flex;
++  gap: 10px;
++  justify-content: space-between;
++}
++
++#model-state {
++  color: var(--primary);
++  font-size: 11px;
++  max-width: 65%;
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.section-heading {
++  align-items: center;
++  display: flex;
++  gap: 8px;
++  justify-content: space-between;
++}
++
++.risk {
++  background: color-mix(in srgb, var(--warning) 28%, transparent);
++  border-radius: 999px;
++  font-size: 11px;
++  padding: 4px 8px;
++}
++
++#plan-summary {
++  color: var(--muted);
++  font-size: 13px;
++  line-height: 1.5;
++  margin: 10px 0;
++}
++
++.result-card {
++  border-color: color-mix(in srgb, var(--accent) 70%, var(--line));
++  display: grid;
++  gap: 10px;
++}
++
++#result-summary {
++  font-size: 14px;
++  line-height: 1.55;
++  white-space: pre-wrap;
++}
++
++.result-card strong {
++  color: var(--muted);
++  font-size: 11px;
++}
++
++.result-card ul {
++  display: grid;
++  gap: 4px;
++  margin: 5px 0 0;
++  padding-left: 20px;
++}
++
++.result-card li {
++  font-size: 12px;
++  overflow-wrap: anywhere;
++}
++
++.task-details {
++  border-top: 1px solid var(--line);
++  padding-top: 9px;
++}
++
++.scope-grid {
++  display: grid;
++  gap: 8px;
++  grid-template-columns: minmax(74px, 0.35fr) 1fr;
++  margin: 12px 0;
++}
++
++.scope-grid dt {
++  color: var(--muted);
++  font-size: 11px;
++  font-weight: 650;
++}
++
++.scope-grid dd {
++  font-size: 12px;
++  margin: 0;
++  overflow-wrap: anywhere;
++}
+ 
+ .steps,
+- .timeline { display: grid;
+- gap: 8px;
+- margin: 0;
+- padding-left: 22px; }
++.timeline {
++  display: grid;
++  gap: 8px;
++  margin: 0;
++  padding-left: 22px;
++}
+ 
+ .steps li,
+- .timeline li { font-size: 12px;
+- padding-left: 3px; }
++.timeline li {
++  font-size: 12px;
++  padding-left: 3px;
++}
+ 
+ .steps small,
+- .timeline small { color: var(--muted);
+- display: block;
+- margin-top: 2px; }
+-
+-.approval { border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+- display: grid;
+- gap: 9px; }
+-
+-.approval code { background: color-mix(in srgb, var(--line) 40%, transparent);
+- border-radius: 6px;
+- font-size: 11px;
+- overflow-wrap: anywhere;
+- padding: 7px; }
+-
+-.exact-action { display: grid;
+- gap: 5px; }
+-
+-.exact-action span { color: var(--muted);
+- font-size: 11px; }
+-
+-.exact-action pre { background: color-mix(in srgb, var(--line) 40%, transparent);
+- border-radius: 6px;
+- font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+- margin: 0;
+- max-height: 180px;
+- overflow: auto;
+- overflow-wrap: anywhere;
+- padding: 7px;
+- white-space: pre-wrap; }
+-
+-.checkout-summary { margin: 2px 0; }
+-
+-.checkout-summary dd[data-total='true'] { color: var(--danger);
+- font-size: 14px;
+- font-weight: 750; }
+-
+-.takeover-notice { color: var(--muted);
+- font-size: 12px;
+- line-height: 1.45; }
+-
+-.controls { display: flex;
+- flex-wrap: wrap;
+- gap: 6px; }
+-
+-.empty { color: var(--muted);
+- font-size: 12px;
+- margin-top: 8px; }
+-
+-.monitors { display: grid;
+- gap: 8px;
+- list-style: none;
+- margin: 10px 0 0;
+- padding: 0; }
+-
+-.monitors li { border-top: 1px solid var(--line);
+- display: grid;
+- font-size: 12px;
+- gap: 3px;
+- padding-top: 8px; }
+-
+-.monitors small { color: var(--muted);
+- overflow-wrap: anywhere; }
+-
+-.monitor-actions { display: flex;
+- gap: 6px;
+- margin-top: 3px; }
+-
+-.monitor-actions button { font-size: 11px;
+- min-height: 28px;
+- padding: 4px 8px; }
+-
+-.error { color: var(--danger);
+- font-size: 12px;
+- min-height: 18px;
+- overflow-wrap: anywhere; }
++.timeline small {
++  color: var(--muted);
++  display: block;
++  margin-top: 2px;
++}
++
++.approval {
++  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
++  display: grid;
++  gap: 9px;
++}
++
++.approval code,
++.exact-action pre {
++  background: color-mix(in srgb, var(--line) 40%, transparent);
++  border-radius: 7px;
++  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
++  overflow-wrap: anywhere;
++  padding: 7px;
++}
++
++.exact-action pre {
++  margin: 8px 0;
++  max-height: 180px;
++  overflow: auto;
++  white-space: pre-wrap;
++}
++
++.exact-action span {
++  color: var(--muted);
++  display: block;
++  font-size: 11px;
++  margin-bottom: 4px;
++}
++
++.checkout-summary {
++  margin: 2px 0;
++}
++
++.checkout-summary dd[data-total='true'] {
++  color: var(--danger);
++  font-size: 14px;
++  font-weight: 750;
++}
++
++.takeover-notice,
++.empty,
++.error {
++  font-size: 12px;
++  line-height: 1.45;
++}
++
++.takeover-notice,
++.empty {
++  color: var(--muted);
++}
++
++.monitors {
++  display: grid;
++  gap: 8px;
++  list-style: none;
++  margin: 10px 0 0;
++  padding: 0;
++}
++
++.monitors li {
++  border-top: 1px solid var(--line);
++  display: grid;
++  font-size: 12px;
++  gap: 3px;
++  padding-top: 8px;
++}
++
++.monitors small {
++  color: var(--muted);
++  overflow-wrap: anywhere;
++}
++
++.monitor-actions {
++  display: flex;
++  gap: 6px;
++  margin-top: 3px;
++}
++
++.monitor-actions button {
++  font-size: 11px;
++  min-height: 28px;
++  padding: 4px 8px;
++}
++
++.error {
++  color: var(--danger);
++  min-height: 18px;
++  overflow-wrap: anywhere;
++}
+ 
+ @media (max-width: 360px) {
+-  main { padding: 12px; }
+-  .status { display: none; }
++  main {
++    padding: 12px;
++  }
++
++  .status {
++    display: none;
++  }
+ }
+ 
+ @media (prefers-reduced-motion: no-preference) {
+   button,
+- .card { transition: border-color 120ms ease, background 120ms ease; }
++  .card {
++    transition: border-color 120ms ease, background 120ms ease;
++  }
+ }
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index 4a0095a981..e2a119351f 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -1,5 +1,5 @@
+ <!doctype html>
+-<html lang="en">
++<html lang="zh-CN">
+   <head>
+     <meta charset="utf-8">
+     <meta name="color-scheme" content="light dark">
+@@ -19,24 +19,69 @@
+       </header>
+ 
+       <section id="disabled-banner" class="notice" hidden></section>
+-      <section id="target-card" class="target-card">
+-        <span id="target-label" class="eyebrow"></span>
+-        <strong id="target-value"></strong>
+-        <small id="invocation-context" hidden></small>
+-      </section>
+ 
+       <section class="composer" aria-labelledby="goal-label">
+-        <div id="mode-group" class="segmented" role="radiogroup"></div>
+         <label id="goal-label" for="goal"></label>
+-        <textarea id="goal" rows="4" maxlength="4096"></textarea>
+-        <label id="origins-label" for="origins"></label>
+-        <textarea id="origins" rows="3" maxlength="40960" spellcheck="false"></textarea>
+-        <div class="workflow-row">
+-          <label id="workflow-label" for="workflow"></label>
+-          <select id="workflow"></select>
++        <textarea id="goal" rows="5" maxlength="4096" autofocus></textarea>
++        <p id="simple-help" class="help"></p>
++        <div id="quick-actions" class="quick-actions" aria-label="Examples"></div>
++        <button id="plan-button" class="primary primary-large" type="button"></button>
++
++        <details id="advanced-settings" class="advanced">
++          <summary id="advanced-label"></summary>
++          <div class="advanced-body">
++            <div id="mode-group" class="segmented" role="radiogroup"></div>
++            <div class="workflow-row">
++              <label id="workflow-label" for="workflow"></label>
++              <select id="workflow"></select>
++            </div>
++            <label class="checkbox-row" for="current-page">
++              <input id="current-page" type="checkbox">
++              <span>
++                <strong id="current-page-label"></strong>
++                <small id="current-page-help"></small>
++              </span>
++            </label>
++            <label id="origins-label" for="origins"></label>
++            <textarea id="origins" rows="3" maxlength="40960" spellcheck="false"></textarea>
++          </div>
++        </details>
++      </section>
++
++      <details id="model-details" class="card model-card">
++        <summary>
++          <span id="model-settings-label"></span>
++          <strong id="model-state"></strong>
++        </summary>
++        <div class="model-body">
++          <p id="model-hint" class="help"></p>
++          <div class="field-grid">
++            <label for="model-provider" id="provider-label"></label>
++            <select id="model-provider">
++              <option value="openai">OpenAI compatible</option>
++              <option value="anthropic">Anthropic</option>
++              <option value="gemini">Gemini</option>
++            </select>
++            <label for="model-base-url" id="base-url-label"></label>
++            <input id="model-base-url" type="url" maxlength="2048" spellcheck="false">
++            <label for="model-name" id="model-name-label"></label>
++            <input id="model-name" list="model-options" type="text" maxlength="256" spellcheck="false">
++            <datalist id="model-options"></datalist>
++            <label for="model-api-key" id="api-key-label"></label>
++            <input id="model-api-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
++          </div>
++          <div class="model-actions">
++            <button id="detect-models-button" type="button"></button>
++            <button id="save-model-button" class="primary" type="button"></button>
++          </div>
++          <p id="model-feedback" class="help" role="status"></p>
+         </div>
+-        <div id="quick-actions" class="quick-actions"></div>
+-        <button id="plan-button" class="primary" type="button"></button>
++      </details>
++
++      <section id="target-card" class="target-card">
++        <span id="target-label" class="eyebrow"></span>
++        <strong id="target-value"></strong>
++        <small id="invocation-context" hidden></small>
+       </section>
+ 
+       <section id="plan-card" class="card" hidden>
+@@ -45,21 +90,37 @@
+           <span id="risk-badge" class="risk"></span>
+         </div>
+         <p id="plan-summary"></p>
+-        <dl id="scope-grid" class="scope-grid"></dl>
+-        <ol id="plan-steps" class="steps"></ol>
+-        <button id="start-button" class="primary" type="button"></button>
++        <details class="task-details">
++          <summary id="details-label"></summary>
++          <dl id="scope-grid" class="scope-grid"></dl>
++          <ol id="plan-steps" class="steps"></ol>
++        </details>
++        <button id="start-button" type="button" hidden disabled></button>
++      </section>
++
++      <section id="result-card" class="card result-card" hidden>
++        <h2 id="result-title"></h2>
++        <p id="result-summary"></p>
++        <div id="result-sources-group" hidden>
++          <strong id="result-sources-label"></strong>
++          <ul id="result-sources"></ul>
++        </div>
++        <div id="unfinished-group" hidden>
++          <strong id="unfinished-label"></strong>
++          <ul id="unfinished-items"></ul>
++        </div>
+       </section>
+ 
+       <section id="approval-card" class="card approval" hidden>
+         <h2 id="approval-title"></h2>
+         <p id="approval-detail"></p>
+         <dl id="checkout-summary" class="scope-grid checkout-summary" hidden></dl>
+-        <div class="exact-action">
+-          <span id="approval-arguments-label"></span>
++        <details class="exact-action">
++          <summary id="approval-arguments-label"></summary>
+           <pre id="approval-arguments"></pre>
+           <span id="approval-fingerprint-label"></span>
+           <code id="approval-fingerprint"></code>
+-        </div>
++        </details>
+         <p id="takeover-notice" class="takeover-notice" hidden></p>
+         <code id="approval-id"></code>
+         <button id="approve-button" class="danger" type="button"></button>
+@@ -74,16 +135,16 @@
+         <button id="stop-button" class="quiet-danger" type="button"></button>
+       </nav>
+ 
+-      <section class="card">
++      <section class="card activity-card">
+         <h2 id="timeline-title"></h2>
+         <p id="empty-task" class="empty"></p>
+         <ol id="timeline" class="timeline" aria-live="polite"></ol>
+       </section>
+ 
+-      <section class="card">
+-        <h2 id="monitors-title"></h2>
++      <details class="card monitor-card">
++        <summary id="monitors-title"></summary>
+         <ul id="monitors" class="monitors"></ul>
+-      </section>
++      </details>
+ 
+       <p id="error" class="error" role="alert"></p>
+     </main>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index f8f41b70e2..30370214f7 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -16,11 +16,16 @@ import {BrowserProxy} from './browser_proxy.js';
+ 
+ const proxy = BrowserProxy.getInstance();
+ let snapshot: TaskSnapshot|null = null;
+-let selectedMode = AgentMode.kAsk;
+-let selectedWorkflow = Workflow.kResearch;
++let selectedMode = AgentMode.kAct;
++let selectedWorkflow: Workflow|null = null;
+ let busy = false;
++let modelBusy = false;
+ let goalUserEdited = false;
+ let originsUserEdited = false;
++let currentPageUserEdited = false;
++let modelFormInitialized = false;
++let autoRunTaskId = '';
++let autoRunInFlight = false;
+ 
+ function element<T extends HTMLElement>(id: string): T {
+   const value = document.getElementById(id);
+@@ -34,13 +39,48 @@ function text(id: string, key: string) {
+   element(id).textContent = loadTimeData.getString(key);
+ }
+ 
+-function option(value: Workflow, label: string): HTMLOptionElement {
++function option(value: string, label: string): HTMLOptionElement {
+   const result = document.createElement('option');
+-  result.value = String(value);
++  result.value = value;
+   result.textContent = label;
+   return result;
+ }
+ 
++function inferWorkflow(goal: string): Workflow {
++  if (/书签|收藏夹|收藏|历史记录|失效链接|链接失效|bookmark|favorite|history|dead\s*link/iu.test(goal)) {
++    return Workflow.kBrowserSteward;
++  }
++  if (/下载|安装包|官方版本|download|installer|release/iu.test(goal)) {
++    return Workflow.kSafeDownload;
++  }
++  if (/购买|购物|比价|价格|下单|结账|到手价|buy|shop|price|checkout|cart/iu.test(goal)) {
++    return Workflow.kShopping;
++  }
++  return Workflow.kResearch;
++}
++
++function humanStatus(state: string): string {
++  if (state === 'idle' || state === 'draft') {
++    return loadTimeData.getString('statusIdle');
++  }
++  if (state === 'planning' || state === 'awaiting_task_consent') {
++    return loadTimeData.getString('statusPlanning');
++  }
++  if (['running', 'reflecting', 'verifying', 'recovering'].includes(state)) {
++    return loadTimeData.getString('statusRunning');
++  }
++  if (state === 'awaiting_action_approval') {
++    return loadTimeData.getString('statusApproval');
++  }
++  if (state === 'user_takeover') {
++    return loadTimeData.getString('statusTakeover');
++  }
++  if (state === 'completed') {
++    return loadTimeData.getString('statusCompleted');
++  }
++  return loadTimeData.getString('statusFailed');
++}
++
+ function renderModes() {
+   const group = element('mode-group');
+   group.replaceChildren();
+@@ -55,6 +95,7 @@ function renderModes() {
+     button.role = 'radio';
+     button.textContent = loadTimeData.getString(key);
+     button.setAttribute('aria-checked', String(selectedMode === mode));
++    button.disabled = busy;
+     button.addEventListener('click', () => {
+       selectedMode = mode;
+       renderModes();
+@@ -119,25 +160,45 @@ function renderCheckoutSummary(checkout: CheckoutSummary|null) {
+           `${checkout.observationFingerprint.slice(0, 16)}…`);
+ }
+ 
+-function renderPlan(plan: PlanSummary|null) {
++function renderPlan(plan: PlanSummary|null, hasTask: boolean) {
+   const card = element('plan-card');
+-  card.hidden = !plan;
++  card.hidden = !hasTask;
++  const risk = element('risk-badge');
++  const details = element<HTMLDetailsElement>('plan-card')
++      .querySelector<HTMLDetailsElement>('.task-details');
+   if (!plan) {
++    element('plan-summary').textContent =
++        loadTimeData.getString('statusPlanning');
++    risk.hidden = true;
++    element('scope-grid').replaceChildren();
++    element('plan-steps').replaceChildren();
++    if (details) {
++      details.hidden = true;
++    }
+     return;
+   }
++  risk.hidden = false;
++  risk.textContent = plan.maxRisk;
+   element('plan-summary').textContent = plan.summary;
+-  element('risk-badge').textContent = plan.maxRisk;
++  if (details) {
++    details.hidden = false;
++  }
+   const scope = element('scope-grid');
+   scope.replaceChildren();
+-  addDefinition(scope, loadTimeData.getString('provider'),
++  addDefinition(
++      scope, loadTimeData.getString('provider'),
+       `${plan.provider} · ${plan.model} · ${plan.destination}`);
+   addDefinition(scope, loadTimeData.getString('risk'), plan.maxRisk);
+-  addDefinition(scope, loadTimeData.getString('origins'), plan.origins.join(', '));
+-  addDefinition(scope, loadTimeData.getString('data'), plan.dataClasses.join(', '));
+-  addDefinition(scope, loadTimeData.getString('tools'), plan.tools.join(', '));
+-  addDefinition(scope, loadTimeData.getString('budget'),
++  addDefinition(
++      scope, loadTimeData.getString('origins'), plan.origins.join(', '));
++  addDefinition(
++      scope, loadTimeData.getString('data'), plan.dataClasses.join(', '));
++  addDefinition(
++      scope, loadTimeData.getString('tools'), plan.tools.join(', '));
++  addDefinition(
++      scope, loadTimeData.getString('budget'),
+       `${plan.maxToolCalls} tools · ${plan.maxModelCalls} model · ` +
+-      `${plan.maxNetworkRequests} network · ${plan.maxDuration}`);
++          `${plan.maxNetworkRequests} network · ${plan.maxDuration}`);
+   const steps = element('plan-steps');
+   steps.replaceChildren();
+   for (const step of plan.steps) {
+@@ -150,6 +211,26 @@ function renderPlan(plan: PlanSummary|null) {
+   }
+ }
+ 
++function renderResult(next: TaskSnapshot) {
++  const card = element('result-card');
++  card.hidden = !next.resultSummary;
++  element('result-summary').textContent = next.resultSummary;
++  const renderItems = (groupId: string, listId: string, items: string[]) => {
++    const group = element(groupId);
++    const list = element(listId);
++    group.hidden = items.length === 0;
++    list.replaceChildren();
++    for (const item of items) {
++      const li = document.createElement('li');
++      li.textContent = item;
++      list.append(li);
++    }
++  };
++  renderItems(
++      'result-sources-group', 'result-sources', next.resultSources);
++  renderItems('unfinished-group', 'unfinished-items', next.unfinishedItems);
++}
++
+ function renderTimeline(events: TimelineEvent[]) {
+   const list = element('timeline');
+   list.replaceChildren();
+@@ -158,7 +239,9 @@ function renderTimeline(events: TimelineEvent[]) {
+     li.textContent = event.title;
+     const detail = document.createElement('small');
+     const timestamp = Number(event.timestamp);
+-    const when = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleTimeString() : '';
++    const when = Number.isFinite(timestamp) ?
++        new Date(timestamp).toLocaleTimeString() :
++        '';
+     detail.textContent = `${event.detail}${when ? ` · ${when}` : ''}`;
+     li.append(detail);
+     list.append(li);
+@@ -171,11 +254,13 @@ function renderMonitors(monitors: MonitorSummary[]) {
+   for (const monitor of monitors) {
+     const li = document.createElement('li');
+     const title = document.createElement('strong');
+-    title.textContent = `${monitor.kind} · ${monitor.paused ? 'paused' : monitor.interval}`;
++    title.textContent =
++        `${monitor.kind} · ${monitor.paused ? 'paused' : monitor.interval}`;
+     const origin = document.createElement('small');
+     origin.textContent = monitor.origin;
+     const hash = document.createElement('small');
+-    hash.textContent = `${monitor.targetHash.slice(0, 24)}… · failures ${monitor.failures}`;
++    hash.textContent =
++        `${monitor.targetHash.slice(0, 24)}… · failures ${monitor.failures}`;
+     const actions = document.createElement('div');
+     actions.className = 'monitor-actions';
+     const toggle = document.createElement('button');
+@@ -200,33 +285,104 @@ function renderMonitors(monitors: MonitorSummary[]) {
+   }
+ }
+ 
++function renderModel(next: TaskSnapshot) {
++  const details = element<HTMLDetailsElement>('model-details');
++  const provider = element<HTMLSelectElement>('model-provider');
++  const baseUrl = element<HTMLInputElement>('model-base-url');
++  const model = element<HTMLInputElement>('model-name');
++  if (!modelFormInitialized) {
++    provider.value = next.modelConfigured ? next.modelProvider : 'openai';
++    baseUrl.value = next.modelConfigured ?
++        next.modelBaseUrl :
++        'http://127.0.0.1:8000/v1';
++    model.value = next.modelConfigured ? next.modelName : '';
++    modelFormInitialized = true;
++  }
++  if (!next.modelConfigured) {
++    details.open = true;
++  }
++  element('model-state').textContent = next.modelConfigured ?
++      `${loadTimeData.getString('modelReady')} · ${next.modelName}` :
++      loadTimeData.getString('modelMissing');
++  provider.disabled = modelBusy;
++  baseUrl.disabled = modelBusy;
++  model.disabled = modelBusy;
++  element<HTMLInputElement>('model-api-key').disabled = modelBusy;
++  element<HTMLButtonElement>('detect-models-button').disabled = modelBusy;
++  element<HTMLButtonElement>('save-model-button').disabled = modelBusy;
++}
++
++function friendlyError(error: string): string {
++  if (!error) {
++    return '';
++  }
++  if (error.includes('Configure a valid Agent model')) {
++    return loadTimeData.getString('modelMissing');
++  }
++  if (error.includes('related page could not be opened')) {
++    return '无法打开相关网页，请检查网络后重试。';
++  }
++  if (error.includes('Task input is invalid')) {
++    return '任务内容或高级授权范围无效，请检查后重试。';
++  }
++  return error;
++}
++
++function maybeAutoRun(next: TaskSnapshot) {
++  if (autoRunTaskId && next.taskId === autoRunTaskId &&
++      next.state === 'awaiting_task_consent' && !autoRunInFlight) {
++    autoRunInFlight = true;
++    proxy.handler.consentAndRun(next.taskId)
++        .then(({snapshot: updated}) => render(updated))
++        .finally(() => {
++          autoRunInFlight = false;
++        });
++  }
++  if (next.taskId === autoRunTaskId &&
++      ['completed', 'failed', 'cancelled', 'expired'].includes(next.state)) {
++    autoRunTaskId = '';
++  }
++}
++
+ function render(next: TaskSnapshot) {
+   snapshot = next;
+-  element('status').textContent = next.state || 'idle';
+-  element('target-value').textContent = next.activeOrigin || loadTimeData.getString('noTarget');
++  element('status').textContent = humanStatus(next.state || 'idle');
++  const useCurrentPage = element<HTMLInputElement>('current-page');
++  element('target-value').textContent =
++      useCurrentPage.checked && next.activeOrigin ?
++      next.activeOrigin :
++      loadTimeData.getString('noTarget');
+   const invocation = element('invocation-context');
+   invocation.hidden = !next.invocationContext;
+   invocation.textContent = next.invocationContext;
+   if (!next.taskId && next.suggestedGoal && !goalUserEdited) {
+     element<HTMLTextAreaElement>('goal').value = next.suggestedGoal;
+   }
+-  if (!next.taskId && next.activeOrigin && !originsUserEdited) {
+-    element<HTMLTextAreaElement>('origins').value = next.activeOrigin;
++  if (!next.taskId && next.invocationContext && next.activeOrigin &&
++      !currentPageUserEdited) {
++    useCurrentPage.checked = true;
+   }
++
+   const banner = element('disabled-banner');
+   banner.hidden = next.agentEnabled;
+   banner.textContent = loadTimeData.getString('disabled');
+-  element<HTMLTextAreaElement>('goal').disabled = !next.agentEnabled || busy;
+-  element<HTMLTextAreaElement>('origins').disabled = !next.agentEnabled || busy;
+-  element<HTMLSelectElement>('workflow').disabled = !next.agentEnabled || busy;
++
++  const goal = element<HTMLTextAreaElement>('goal');
++  goal.disabled = busy;
++  element<HTMLTextAreaElement>('origins').disabled = busy;
++  element<HTMLSelectElement>('workflow').disabled = busy;
++  useCurrentPage.disabled = busy || !next.activeOrigin;
+   element<HTMLButtonElement>('plan-button').disabled =
+-      !next.agentEnabled || !next.activeTabId || busy;
+-  renderPlan(next.plan || null);
++      busy || !next.modelConfigured || !goal.value.trim();
++  renderModes();
++  renderModel(next);
++  renderPlan(next.plan || null, Boolean(next.taskId));
++  renderResult(next);
+   renderTimeline(next.timeline);
+   renderMonitors(next.monitors);
+   element('empty-task').hidden = Boolean(next.timeline.length);
+   element('empty-task').textContent = loadTimeData.getString('noTask');
+-  element('error').textContent = next.lastError;
++  element('error').textContent = friendlyError(next.lastError);
+ 
+   const approval = element('approval-card');
+   approval.hidden = !next.pendingApproval;
+@@ -247,7 +403,8 @@ function render(next: TaskSnapshot) {
+     renderCheckoutSummary(next.pendingApproval.checkout || null);
+     takeoverNotice.hidden = !takeover;
+     takeoverNotice.textContent = takeover ?
+-        loadTimeData.getString('takeoverNotice') : '';
++        loadTimeData.getString('takeoverNotice') :
++        '';
+     approveButton.hidden = takeover;
+   } else {
+     renderCheckoutSummary(null);
+@@ -260,13 +417,14 @@ function render(next: TaskSnapshot) {
+   }
+ 
+   const state = next.state;
+-  element<HTMLButtonElement>('start-button').disabled =
+-      busy || state !== 'awaiting_task_consent';
+-  element<HTMLButtonElement>('pause-button').disabled = busy || state !== 'running';
++  element<HTMLButtonElement>('start-button').disabled = true;
++  element<HTMLButtonElement>('pause-button').disabled =
++      busy || state !== 'running';
+   element<HTMLButtonElement>('resume-button').disabled =
+       busy || state !== 'paused_by_user';
+   element<HTMLButtonElement>('takeover-button').disabled =
+-      busy || (state !== 'running' && state !== 'awaiting_action_approval');
++      busy || (state !== 'running' &&
++               state !== 'awaiting_action_approval');
+   element<HTMLButtonElement>('finish-takeover-button').disabled =
+       busy || state !== 'user_takeover';
+   approveButton.disabled =
+@@ -275,7 +433,13 @@ function render(next: TaskSnapshot) {
+   element<HTMLButtonElement>('undo-button').disabled =
+       busy || !next.undoAvailable;
+   element<HTMLButtonElement>('stop-button').disabled =
+-      busy || !next.taskId || ['completed', 'failed', 'cancelled', 'expired'].includes(state);
++      busy || !next.taskId ||
++      ['completed', 'failed', 'cancelled', 'expired'].includes(state);
++  document.querySelector<HTMLElement>('.controls')!.hidden = !next.taskId;
++  document.querySelector<HTMLElement>('.activity-card')!.hidden = !next.taskId;
++  document.querySelector<HTMLElement>('.monitor-card')!.hidden =
++      next.monitors.length === 0;
++  maybeAutoRun(next);
+ }
+ 
+ async function withBusy(action: () => Promise<{snapshot: TaskSnapshot}>) {
+@@ -302,11 +466,27 @@ function initializeLabels() {
+   text('subtitle', 'subtitle');
+   text('target-label', 'target');
+   text('goal-label', 'goal');
++  text('simple-help', 'simpleHelp');
++  text('advanced-label', 'advanced');
++  text('current-page-label', 'useCurrentPage');
++  text('current-page-help', 'useCurrentPageHelp');
+   text('origins-label', 'origins');
+   text('workflow-label', 'workflow');
+   text('plan-button', 'plan');
+   text('scope-title', 'scope');
++  text('details-label', 'details');
++  text('result-title', 'resultTitle');
++  text('result-sources-label', 'resultSources');
++  text('unfinished-label', 'unfinishedItems');
+   text('start-button', 'start');
++  text('model-settings-label', 'modelSettings');
++  text('model-hint', 'modelHint');
++  text('provider-label', 'providerLabel');
++  text('base-url-label', 'baseUrlLabel');
++  text('model-name-label', 'modelNameLabel');
++  text('api-key-label', 'apiKeyLabel');
++  text('detect-models-button', 'detectModels');
++  text('save-model-button', 'saveModel');
+   text('approval-title', 'waitingApproval');
+   text('approval-arguments-label', 'exactArguments');
+   text('approval-fingerprint-label', 'actionFingerprint');
+@@ -323,60 +503,157 @@ function initializeLabels() {
+       loadTimeData.getString('goalPlaceholder');
+   element<HTMLTextAreaElement>('origins').placeholder =
+       loadTimeData.getString('originsPlaceholder');
+-  element<HTMLTextAreaElement>('goal').addEventListener('input', () => {
++
++  const goal = element<HTMLTextAreaElement>('goal');
++  goal.addEventListener('input', () => {
+     goalUserEdited = true;
++    if (snapshot) {
++      render(snapshot);
++    }
+   });
+   element<HTMLTextAreaElement>('origins').addEventListener('input', () => {
+     originsUserEdited = true;
+   });
++  element<HTMLInputElement>('current-page').addEventListener('change', () => {
++    currentPageUserEdited = true;
++    if (snapshot) {
++      render(snapshot);
++    }
++  });
+ 
+   const select = element<HTMLSelectElement>('workflow');
+   select.append(
+-      option(Workflow.kResearch, loadTimeData.getString('research')),
+-      option(Workflow.kBrowserSteward, loadTimeData.getString('steward')),
+-      option(Workflow.kSafeDownload, loadTimeData.getString('download')),
+-      option(Workflow.kShopping, loadTimeData.getString('shopping')));
++      option('', loadTimeData.getString('autoWorkflow')),
++      option(String(Workflow.kResearch), loadTimeData.getString('research')),
++      option(
++          String(Workflow.kBrowserSteward),
++          loadTimeData.getString('steward')),
++      option(
++          String(Workflow.kSafeDownload),
++          loadTimeData.getString('download')),
++      option(String(Workflow.kShopping), loadTimeData.getString('shopping')));
+   select.addEventListener('change', () => {
+-    selectedWorkflow = Number(select.value) as Workflow;
++    selectedWorkflow = select.value === '' ?
++        null :
++        Number(select.value) as Workflow;
+   });
+ 
+   const quick = element('quick-actions');
+   const presets: Array<[Workflow, string, string]> = [
+-    [Workflow.kResearch, 'research', 'Compare sources and cite conflicts'],
+-    [Workflow.kBrowserSteward, 'steward', 'Organize my bookmarks with a preview'],
+-    [Workflow.kSafeDownload, 'download', 'Find the official safe download'],
+-    [Workflow.kShopping, 'shopping', 'Compare total prices and prepare checkout'],
++    [Workflow.kResearch, 'quickResearch', 'quickResearchGoal'],
++    [Workflow.kBrowserSteward, 'quickSteward', 'quickStewardGoal'],
++    [Workflow.kSafeDownload, 'quickDownload', 'quickDownloadGoal'],
++    [Workflow.kShopping, 'quickShopping', 'quickShoppingGoal'],
+   ];
+-  for (const [workflow, key, prompt] of presets) {
++  for (const [workflow, labelKey, goalKey] of presets) {
+     const button = document.createElement('button');
+     button.type = 'button';
+-    button.textContent = loadTimeData.getString(key);
++    button.textContent = loadTimeData.getString(labelKey);
+     button.addEventListener('click', () => {
+       selectedWorkflow = workflow;
+       select.value = String(workflow);
+-      element<HTMLTextAreaElement>('goal').value = prompt;
++      goal.value = loadTimeData.getString(goalKey);
+       goalUserEdited = true;
++      if (snapshot) {
++        render(snapshot);
++      }
+     });
+     quick.append(button);
+   }
+   renderModes();
+ }
+ 
++async function detectModels() {
++  if (modelBusy) {
++    return;
++  }
++  modelBusy = true;
++  element('model-feedback').textContent = '';
++  if (snapshot) {
++    render(snapshot);
++  }
++  try {
++    const response = await proxy.handler.listModels(
++        element<HTMLSelectElement>('model-provider').value,
++        element<HTMLInputElement>('model-base-url').value.trim(),
++        element<HTMLInputElement>('model-api-key').value.trim());
++    if (!response.ok) {
++      element('model-feedback').textContent = response.error;
++      return;
++    }
++    const options = element<HTMLDataListElement>('model-options');
++    options.replaceChildren();
++    for (const name of response.models) {
++      options.append(option(name, name));
++    }
++    const model = element<HTMLInputElement>('model-name');
++    if (response.models.length && !response.models.includes(model.value)) {
++      model.value = response.models[0]!;
++    }
++    element('model-feedback').textContent =
++        loadTimeData.getString('modelDetected');
++  } finally {
++    modelBusy = false;
++    if (snapshot) {
++      render(snapshot);
++    }
++  }
++}
++
++async function saveModel() {
++  if (modelBusy) {
++    return;
++  }
++  modelBusy = true;
++  if (snapshot) {
++    render(snapshot);
++  }
++  try {
++    const response = await proxy.handler.configureModel(
++        element<HTMLSelectElement>('model-provider').value,
++        element<HTMLInputElement>('model-base-url').value.trim(),
++        element<HTMLInputElement>('model-name').value.trim(),
++        element<HTMLInputElement>('model-api-key').value.trim(), false);
++    element<HTMLInputElement>('model-api-key').value = '';
++    modelFormInitialized = false;
++    render(response.snapshot);
++    if (response.snapshot.modelConfigured) {
++      element('model-feedback').textContent =
++          loadTimeData.getString('modelSaved');
++      element<HTMLDetailsElement>('model-details').open = false;
++    }
++  } finally {
++    modelBusy = false;
++    if (snapshot) {
++      render(snapshot);
++    }
++  }
++}
++
+ function bindActions() {
+   element('plan-button').addEventListener('click', () => withBusy(async () => {
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+-    const origins = element<HTMLTextAreaElement>('origins').value.split('\n')
+-                        .map(value => value.trim())
+-                        .filter(value => value.length > 0);
++    const origins = originsUserEdited ?
++        element<HTMLTextAreaElement>('origins').value.split('\n')
++            .map(value => value.trim())
++            .filter(value => value.length > 0) :
++        [];
++    const useCurrent = element<HTMLInputElement>('current-page').checked;
++    if (useCurrent && snapshot?.activeOrigin &&
++        !origins.includes(snapshot.activeOrigin)) {
++      origins.unshift(snapshot.activeOrigin);
++    }
++    const workflow = selectedWorkflow ?? inferWorkflow(goal);
+     const created = await proxy.handler.createTask(
+-        goal, selectedMode, selectedWorkflow, origins);
++        goal, selectedMode, workflow, origins);
+     if (!created.snapshot.taskId) {
+       return created;
+     }
++    autoRunTaskId = created.snapshot.taskId;
+     return proxy.handler.requestPlan(created.snapshot.taskId);
+   }));
+-  element('start-button').addEventListener('click', () => withBusy(() =>
+-    proxy.handler.consentAndRun(snapshot?.taskId || '')));
++  element('detect-models-button').addEventListener('click', detectModels);
++  element('save-model-button').addEventListener('click', saveModel);
+   element('pause-button').addEventListener('click', () => withBusy(() =>
+     proxy.handler.pause(snapshot?.taskId || '')));
+   element('resume-button').addEventListener('click', () => withBusy(() =>
+@@ -392,6 +669,16 @@ function bindActions() {
+         snapshot?.taskId || '', snapshot?.pendingApproval?.actionId || '')));
+   element('undo-button').addEventListener('click', () => withBusy(() =>
+     proxy.handler.undo(snapshot?.taskId || '')));
++  element('model-provider').addEventListener('change', () => {
++    const provider = element<HTMLSelectElement>('model-provider').value;
++    const baseUrl = element<HTMLInputElement>('model-base-url');
++    baseUrl.value = provider === 'openai' ?
++        'http://127.0.0.1:8000/v1' :
++        provider === 'anthropic' ?
++        'https://api.anthropic.com/v1' :
++        'https://generativelanguage.googleapis.com/v1beta';
++    element<HTMLInputElement>('model-name').value = '';
++  });
+ }
+ 
+ initializeLabels();
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 3c454d22ec..efaa61f68e 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -88,6 +88,10 @@ struct MonitorSummary {
+ struct TaskSnapshot {
+   bool feature_enabled;
+   bool agent_enabled;
++  bool model_configured;
++  string model_provider;
++  string model_base_url;
++  string model_name;
+   int32 active_tab_id;
+   string active_origin;
+   string invocation_context;
+@@ -97,6 +101,9 @@ struct TaskSnapshot {
+   string mode;
+   string goal;
+   PlanSummary? plan;
++  string result_summary;
++  array<string> result_sources;
++  array<string> unfinished_items;
+   PendingApproval? pending_approval;
+   bool undo_available;
+   array<TimelineEvent> timeline;
+@@ -113,6 +120,15 @@ interface PageHandler {
+ 
+   GetSnapshot() => (TaskSnapshot snapshot);
+ 
++  ConfigureModel(string provider,
++                 string base_url,
++                 string model,
++                 string api_key,
++                 bool clear_api_key) => (TaskSnapshot snapshot);
++
++  ListModels(string provider, string base_url, string api_key)
++      => (bool ok, string error, array<string> models);
++
+   CreateTask(string goal,
+              AgentMode mode,
+              Workflow workflow,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index e8d72426f3..3557855497 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -13,10 +13,12 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/agent/agent_policy_broker.h"
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
++#include "chrome/browser/aegis/model_provider_policy.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+@@ -138,10 +140,18 @@ std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
+   if (start == std::string_view::npos) {
+     return std::nullopt;
+   }
+-  size_t end = goal.find_first_of(" \t\r\n", start);
+-  std::string candidate(goal.substr(start, end == std::string_view::npos
+-                                               ? goal.size() - start
+-                                               : end - start));
++  size_t end = goal.size();
++  constexpr std::string_view kUrlDelimiters[] = {
++      " ",  "\t", "\r", "\n", ",",  ";",  "!",  "?", ")", "]",
++      "}",  "'",  "\"", "，", "。", "；", "：", "！", "？", "）",
++      "】", "》", "、"};
++  for (std::string_view delimiter : kUrlDelimiters) {
++    const size_t position = goal.find(delimiter, start);
++    if (position != std::string_view::npos) {
++      end = std::min(end, position);
++    }
++  }
++  std::string candidate(goal.substr(start, end - start));
+   constexpr std::string_view kTrailingPunctuation[] = {
+       ".",  ",",  ";",  ":",  "!",  "?",  ")",  "]",  "}",  "'",
+       "\"", "，", "。", "；", "：", "！", "？", "）", "】", "》"};
+@@ -192,20 +202,16 @@ tabs::TabInterface* OpenAutomaticTaskTab(BrowserWindowInterface* browser,
+ }
+ 
+ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
+-    const GURL& active_url,
+     const std::vector<std::string>& values) {
+   constexpr size_t kMaxApprovedOrigins = 20;
+   constexpr size_t kMaxOriginBytes = 2048;
+-  if (!active_url.is_valid() || !active_url.SchemeIsHTTPOrHTTPS() ||
+-      values.empty() || values.size() > kMaxApprovedOrigins) {
++  if (values.empty() || values.size() > kMaxApprovedOrigins) {
+     return std::nullopt;
+   }
+ 
+-  const url::Origin active_origin = url::Origin::Create(active_url);
+   base::flat_set<std::string> seen;
+   std::vector<url::Origin> origins;
+   origins.reserve(values.size());
+-  bool includes_active_origin = false;
+   for (const std::string& value : values) {
+     if (value.empty() || value.size() > kMaxOriginBytes) {
+       return std::nullopt;
+@@ -220,12 +226,32 @@ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
+     if (!seen.insert(serialized).second) {
+       return std::nullopt;
+     }
+-    includes_active_origin |= origin == active_origin;
+     origins.push_back(origin);
+   }
+-  return includes_active_origin
+-             ? std::optional<std::vector<url::Origin>>(std::move(origins))
+-             : std::nullopt;
++  return origins;
++}
++
++bool IncludesOrigin(const std::vector<url::Origin>& origins,
++                    const GURL& url) {
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    return false;
++  }
++  const url::Origin active_origin = url::Origin::Create(url);
++  return std::ranges::any_of(origins, [&](const url::Origin& origin) {
++    return origin == active_origin;
++  });
++}
++
++bool HasUserSetting(PrefService* prefs, const char* name) {
++  const PrefService::Preference* preference =
++      prefs ? prefs->FindPreference(name) : nullptr;
++  return preference && preference->HasUserSetting();
++}
++
++aegis::AegisService* CoreServiceForProfile(Profile* profile) {
++  aegis::AegisService* service = aegis::AegisService::GetInstance();
++  return profile && service->IsInitializedForProfile(profile) ? service
++                                                               : nullptr;
+ }
+ 
+ }  // namespace
+@@ -253,9 +279,12 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+         base::BindRepeating(&AegisAgentPageHandler::OnActiveTabDidChange,
+                             weak_ptr_factory_.GetWeakPtr()));
+   }
+-  service_ =
+-      profile ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
+-              : nullptr;
++  service_ = profile && profile->GetPrefs()->GetBoolean(
++                            aegis::prefs::kAgentEnabled)
++                 ? aegis::agent::AegisAgentServiceFactory::GetForProfile(
++                       profile)
++                 : aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(
++                       profile);
+   ObserveService(service_);
+   if (service_) {
+     ObserveTask(service_->MostRecentTask());
+@@ -296,6 +325,43 @@ void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
+   std::move(callback).Run(BuildSnapshot());
+ }
+ 
++void AegisAgentPageHandler::ConfigureModel(
++    const std::string& provider,
++    const std::string& base_url,
++    const std::string& model,
++    const std::string& api_key,
++    bool clear_api_key,
++    ConfigureModelCallback callback) {
++  last_error_.clear();
++  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
++  if (!core_service) {
++    last_error_ = "Model settings are unavailable for this profile";
++    std::move(callback).Run(BuildSnapshot());
++    return;
++  }
++  core_service->SetModelSettings(
++      provider, base_url, model, api_key, clear_api_key,
++      base::BindOnce(&AegisAgentPageHandler::OnModelConfigured,
++                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++}
++
++void AegisAgentPageHandler::ListModels(const std::string& provider,
++                                       const std::string& base_url,
++                                       const std::string& api_key,
++                                       ListModelsCallback callback) {
++  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
++  if (!core_service) {
++    std::move(callback).Run(false,
++                            "Model discovery is unavailable for this profile",
++                            {});
++    return;
++  }
++  core_service->ListModels(
++      provider, base_url, api_key,
++      base::BindOnce(&AegisAgentPageHandler::OnModelsListed,
++                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++}
++
+ void AegisAgentPageHandler::CreateTask(
+     const std::string& goal,
+     aegis_agent::mojom::AgentMode mode,
+@@ -303,6 +369,13 @@ void AegisAgentPageHandler::CreateTask(
+     const std::vector<std::string>& approved_origins,
+     CreateTaskCallback callback) {
+   last_error_.clear();
++  if (profile_ && profile_->GetPrefs() &&
++      base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++      !profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++    // Pressing the primary start button is an explicit per-Profile opt-in.
++    // Merely opening the panel still leaves the Agent disabled.
++    profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, true);
++  }
+   service_ =
+       profile_ ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_)
+                : nullptr;
+@@ -314,15 +387,15 @@ void AegisAgentPageHandler::CreateTask(
+       service_ ? service_->ConfiguredModelDestination() : std::nullopt;
+   tabs::TabInterface* tab = ActiveTab(browser_);
+   GURL task_url = tab ? tab->GetURL() : GURL();
+-  std::vector<std::string> resolved_origin_values = approved_origins;
+-  const bool has_current_web_target =
+-      tab && task_url.is_valid() && task_url.SchemeIsHTTPOrHTTPS();
++  std::optional<std::vector<url::Origin>> requested_origins;
++  if (!approved_origins.empty()) {
++    requested_origins = ParseApprovedOrigins(approved_origins);
++  }
+   const bool invalid_explicit_origins =
+-      has_current_web_target && !approved_origins.empty() &&
+-      !ParseApprovedOrigins(task_url, approved_origins);
++      !approved_origins.empty() && !requested_origins;
+   const bool browser_only_task = converted_workflow &&
+                                  !WorkflowNeedsWebTarget(*converted_workflow) &&
+-                                 resolved_origin_values.empty();
++                                 approved_origins.empty();
+   if (!service_ || !service_->IsEnabled()) {
+     last_error_ = "Browser Agent is disabled";
+   } else if (!converted_mode || !converted_workflow || goal.empty() ||
+@@ -331,40 +404,37 @@ void AegisAgentPageHandler::CreateTask(
+   } else if (!model_destination) {
+     last_error_ = "Configure a valid Agent model provider before planning";
+   } else {
+-    const bool has_web_target =
+-        tab && tab->GetURL().is_valid() && tab->GetURL().SchemeIsHTTPOrHTTPS();
+-    if (!has_web_target && !browser_only_task) {
+-      std::optional<GURL> automatic_url;
+-      if (!resolved_origin_values.empty()) {
+-        const GURL explicit_origin(resolved_origin_values.front());
+-        if (explicit_origin.is_valid() &&
+-            explicit_origin.SchemeIsHTTPOrHTTPS()) {
+-          automatic_url = explicit_origin;
++    std::optional<std::vector<url::Origin>> origins;
++    if (browser_only_task) {
++      origins.emplace();
++    } else {
++      const bool use_current_page =
++          tab && requested_origins &&
++          IncludesOrigin(*requested_origins, tab->GetURL());
++      if (!use_current_page) {
++        // A normal task owns a fresh related tab. The current page is used only
++        // when the user explicitly approves its origin (for example, a context
++        // menu invocation or the advanced "use this page" control).
++        std::optional<GURL> automatic_url;
++        if (requested_origins) {
++          automatic_url = requested_origins->front().GetURL();
++        } else {
++          automatic_url = ResolveAutomaticTaskUrl(profile_, goal);
++        }
++        tab = automatic_url ? OpenAutomaticTaskTab(browser_, *automatic_url)
++                            : nullptr;
++        if (tab) {
++          task_url = *automatic_url;
+         }
+-      } else {
+-        automatic_url = ResolveAutomaticTaskUrl(profile_, goal);
+-      }
+-      tab = automatic_url ? OpenAutomaticTaskTab(browser_, *automatic_url)
+-                          : nullptr;
+-      if (tab && resolved_origin_values.empty()) {
+-        resolved_origin_values.push_back(
+-            url::Origin::Create(*automatic_url).Serialize());
+       }
+-      if (tab) {
+-        task_url = *automatic_url;
++      if (requested_origins) {
++        origins = std::move(requested_origins);
++      } else if (tab && task_url.is_valid() &&
++                 task_url.SchemeIsHTTPOrHTTPS()) {
++        origins = std::vector<url::Origin>{url::Origin::Create(task_url)};
+       }
+-    } else if (has_web_target && resolved_origin_values.empty() &&
+-               !browser_only_task) {
+-      resolved_origin_values.push_back(
+-          url::Origin::Create(tab->GetURL()).Serialize());
+     }
+ 
+-    std::optional<std::vector<url::Origin>> origins;
+-    if (browser_only_task) {
+-      origins.emplace();
+-    } else if (tab) {
+-      origins = ParseApprovedOrigins(task_url, resolved_origin_values);
+-    }
+     if (!tab || !origins) {
+       last_error_ = "A related page could not be opened for this task";
+       std::move(callback).Run(BuildSnapshot());
+@@ -551,6 +621,22 @@ void AegisAgentPageHandler::OnPlanReady(const std::string& task_id,
+   PushSnapshot();
+ }
+ 
++void AegisAgentPageHandler::OnModelConfigured(
++    ConfigureModelCallback callback,
++    bool ok,
++    std::string error) {
++  last_error_ = ok ? std::string() : std::move(error);
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::OnModelsListed(
++    ListModelsCallback callback,
++    bool ok,
++    std::string error,
++    std::vector<std::string> models) {
++  std::move(callback).Run(ok, std::move(error), std::move(models));
++}
++
+ void AegisAgentPageHandler::OnRunFinished(
+     const std::string& task_id,
+     bool ok,
+@@ -616,6 +702,24 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
+   snapshot->agent_enabled =
+       profile_ && profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled);
++  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
++  if (core_service) {
++    snapshot->model_provider = core_service->ConfiguredModelProvider();
++    snapshot->model_base_url = core_service->ConfiguredModelBaseUrl();
++    snapshot->model_name = core_service->ConfiguredModelName();
++    PrefService* prefs = profile_->GetPrefs();
++    const std::optional<aegis::ModelProvider> provider =
++        aegis::ParseModelProvider(snapshot->model_provider);
++    snapshot->model_configured =
++        HasUserSetting(prefs, aegis::prefs::kModelProvider) &&
++        HasUserSetting(prefs, aegis::prefs::kModelBaseUrl) &&
++        HasUserSetting(prefs, aegis::prefs::kModelName) && provider &&
++        core_service
++            ->ResolveModelBaseUrl(snapshot->model_provider,
++                                  snapshot->model_base_url)
++            .has_value() &&
++        aegis::IsValidModelName(*provider, snapshot->model_name);
++  }
+   tabs::TabInterface* tab = ActiveTab(browser_);
+   if (tab) {
+     snapshot->active_tab_id = tab->GetHandle().raw_value();
+@@ -708,6 +812,13 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+     snapshot->plan = std::move(plan_value);
+   }
+ 
++  if (const aegis::agent::AgentCompletionSummary* completion =
++          service_->GetCompletionSummary(task->id())) {
++    snapshot->result_summary = completion->summary;
++    snapshot->result_sources = completion->source_urls;
++    snapshot->unfinished_items = completion->unfinished_items;
++  }
++
+   if (const aegis::agent::AgentToolCall* pending =
+           service_->PendingAction(task->id())) {
+     auto approval = aegis_agent::mojom::PendingApproval::New();
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index d854755bfb..a550ba9c61 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -42,6 +42,16 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+ 
+   void ShowUI() override;
+   void GetSnapshot(GetSnapshotCallback callback) override;
++  void ConfigureModel(const std::string& provider,
++                      const std::string& base_url,
++                      const std::string& model,
++                      const std::string& api_key,
++                      bool clear_api_key,
++                      ConfigureModelCallback callback) override;
++  void ListModels(const std::string& provider,
++                  const std::string& base_url,
++                  const std::string& api_key,
++                  ListModelsCallback callback) override;
+   void CreateTask(const std::string& goal,
+                   aegis_agent::mojom::AgentMode mode,
+                   aegis_agent::mojom::Workflow workflow,
+@@ -83,6 +93,13 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+   void OnAgentEnabledChanged();
+   void OnActiveTabDidChange(BrowserWindowInterface* browser);
+   void OnPlanReady(const std::string& task_id, bool ok, std::string error);
++  void OnModelConfigured(ConfigureModelCallback callback,
++                         bool ok,
++                         std::string error);
++  void OnModelsListed(ListModelsCallback callback,
++                      bool ok,
++                      std::string error,
++                      std::vector<std::string> models);
+   void OnRunFinished(
+       const std::string& task_id,
+       bool ok,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 0b03d6a49e..90d9a7f3dc 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -63,31 +63,35 @@ void AddStrings(content::WebUIDataSource* source) {
+     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
+   };
+   add("title", "Aegis Agent", "Aegis 浏览器智能体", "Aegis 瀏覽器智慧代理");
+-  add("subtitle", "Plan first. Browser verifies every action.",
+-      "先生成计划，再由浏览器验证每一步。",
+-      "先產生計畫，再由瀏覽器驗證每一步。");
++  add("subtitle", "Tell Aegis the result. It finds and opens the right pages.",
++      "说出目标，Aegis 会自己查找并打开相关网页。",
++      "說出目標，Aegis 會自己查找並開啟相關網頁。");
+   add("ask", "Ask", "询问", "詢問");
+   add("act", "Act", "执行", "執行");
+   add("automate", "Automate", "自动化", "自動化");
+-  add("target", "Task target", "任务目标", "任務目標");
++  add("target", "Where Aegis will work", "Aegis 将在哪里操作",
++      "Aegis 將在哪裡操作");
+   add("goal", "What should Aegis do?", "希望 Aegis 做什么？",
+       "希望 Aegis 做什麼？");
+-  add("goalPlaceholder", "Describe the result, boundaries, and constraints…",
+-      "描述目标、范围和限制……", "描述目標、範圍和限制……");
++  add("goalPlaceholder",
++      "For example: compare three reliable USB hubs and summarize the differences",
++      "例如：帮我找三款靠谱的 USB 扩展坞，对比后告诉我区别",
++      "例如：幫我找三款可靠的 USB 擴充座，比較後告訴我差異");
+   add("origins", "Allowed origins (optional)", "允许访问的来源（可选）",
+       "允許存取的來源（選填）");
+   add("originsPlaceholder",
+       "Leave empty to search and open related pages automatically",
+       "留空时自动搜索并打开相关网页", "留空時自動搜尋並開啟相關網頁");
+-  add("workflow", "Workflow", "工作流", "工作流程");
++  add("workflow", "Task type", "任务类型", "任務類型");
++  add("autoWorkflow", "Choose automatically", "自动判断", "自動判斷");
+   add("research", "Research", "深度研究", "深度研究");
+   add("steward", "Browser steward", "浏览器管家", "瀏覽器管家");
+   add("download", "Safe download", "安全下载", "安全下載");
+   add("shopping", "Shopping", "购物助手", "購物助手");
+-  add("plan", "Find pages and generate plan", "自动找网页并生成计划",
+-      "自動找網頁並產生計畫");
++  add("plan", "Start task", "开始任务", "開始任務");
+   add("start", "Approve and start", "同意并开始", "同意並開始");
+-  add("scope", "Plan and scope", "计划与授权范围", "計畫與授權範圍");
++  add("scope", "What Aegis is doing", "Aegis 正在做什么",
++      "Aegis 正在做什麼");
+   add("timeline", "Timeline", "执行时间线", "執行時間軸");
+   add("monitors", "Monitors", "监控", "監控");
+   add("pauseMonitor", "Pause monitor", "暂停监控", "暫停監控");
+@@ -100,12 +104,70 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("stop", "Stop", "停止", "停止");
+   add("approve", "Approve exact action", "批准这一个操作", "批准這一個操作");
+   add("undo", "Undo", "撤销", "復原");
+-  add("disabled", "Enable Browser Agent in chrome://aegis first.",
+-      "请先在 chrome://aegis 启用浏览器智能体。",
+-      "請先在 chrome://aegis 啟用瀏覽器智慧代理。");
++  add("disabled", "Aegis will be enabled for this profile when you start.",
++      "点击“开始任务”后，会为当前浏览器用户启用 Aegis。",
++      "點擊「開始任務」後，會為目前瀏覽器使用者啟用 Aegis。");
+   add("noTarget", "Aegis will open the right pages for this task.",
+       "无需先打开网页，Aegis 会自动查找。",
+       "無需先開啟網頁，Aegis 會自動查找。");
++  add("simpleHelp",
++      "You do not need to open a page or choose a workflow first.",
++      "不需要先打开网页，也不需要懂工作流。",
++      "不需要先開啟網頁，也不需要懂工作流程。");
++  add("advanced", "Advanced settings", "高级设置", "進階設定");
++  add("useCurrentPage", "Use the current page", "使用当前网页",
++      "使用目前網頁");
++  add("useCurrentPageHelp",
++      "Off by default so Aegis can find a more relevant page.",
++      "默认关闭，让 Aegis 自动寻找更相关的网页。",
++      "預設關閉，讓 Aegis 自動尋找更相關的網頁。");
++  add("modelSettings", "AI model", "AI 模型", "AI 模型");
++  add("modelMissing", "Connect an AI model before the first task",
++      "首次使用前，先连接一个 AI 模型",
++      "首次使用前，先連接一個 AI 模型");
++  add("modelReady", "AI connected", "AI 已连接", "AI 已連接");
++  add("modelHint",
++      "Local OpenAI-compatible servers need no key. Cloud keys are stored by the browser and never shown here again.",
++      "本机 OpenAI 兼容服务不需要密钥；云端密钥由浏览器安全保存，之后不会再次显示。",
++      "本機 OpenAI 相容服務不需要金鑰；雲端金鑰由瀏覽器安全儲存，之後不會再次顯示。");
++  add("providerLabel", "API format", "API 格式", "API 格式");
++  add("baseUrlLabel", "Service address", "服务地址", "服務位址");
++  add("modelNameLabel", "Model name", "模型名称", "模型名稱");
++  add("apiKeyLabel", "API key (optional)", "API 密钥（可选）",
++      "API 金鑰（選填）");
++  add("detectModels", "Detect models", "检测可用模型", "偵測可用模型");
++  add("saveModel", "Save connection", "保存连接", "儲存連線");
++  add("modelDetected", "Models detected. Choose one, then save.",
++      "已检测到模型，选择一个后保存。",
++      "已偵測到模型，選擇一個後儲存。");
++  add("modelSaved", "Connection saved", "连接已保存", "連線已儲存");
++  add("quickResearch", "Compare products", "对比商品", "比較商品");
++  add("quickResearchGoal", "Compare three reliable USB hubs and summarize the differences",
++      "帮我找三款靠谱的 USB 扩展坞，对比后告诉我区别",
++      "幫我找三款可靠的 USB 擴充座，比較後告訴我差異");
++  add("quickSteward", "Tidy bookmarks", "整理收藏夹", "整理書籤");
++  add("quickStewardGoal", "Organize my bookmarks by topic and show a preview before changing anything",
++      "按主题整理我的收藏夹，修改前先给我看预览",
++      "按主題整理我的書籤，修改前先讓我看預覽");
++  add("quickDownload", "Find download", "找官方下载", "找官方下載");
++  add("quickDownloadGoal", "Find the official safe download for the app I describe",
++      "帮我找到我说的软件的官方安全下载地址",
++      "幫我找到我說的軟體的官方安全下載位址");
++  add("quickShopping", "Shop for me", "帮我购物", "幫我購物");
++  add("quickShoppingGoal", "Compare total prices and prepare the best option for checkout",
++      "对比到手总价，选出最合适的并准备到结账前",
++      "比較到手總價，選出最合適的並準備到結帳前");
++  add("details", "Technical details", "技术详情", "技術詳情");
++  add("statusIdle", "Ready", "可以开始", "可以開始");
++  add("statusPlanning", "Making a plan…", "正在制定计划…", "正在制定計畫…");
++  add("statusRunning", "Working…", "正在执行…", "正在執行…");
++  add("statusApproval", "Needs your approval", "需要你的确认", "需要你的確認");
++  add("statusTakeover", "Your turn", "需要你接管", "需要你接管");
++  add("statusCompleted", "Done", "已完成", "已完成");
++  add("statusFailed", "Needs attention", "遇到问题", "遇到問題");
++  add("resultTitle", "Result", "任务结果", "任務結果");
++  add("resultSources", "Sources", "来源", "來源");
++  add("unfinishedItems", "Not finished", "未完成事项", "未完成事項");
+   add("noTask", "No active task", "暂无任务", "暫無任務");
+   add("provider", "Model", "模型", "模型");
+   add("budget", "Budget", "预算", "預算");
+-- 
+2.52.0
+

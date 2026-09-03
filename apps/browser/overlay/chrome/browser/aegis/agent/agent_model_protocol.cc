@@ -889,7 +889,17 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
       !IsValidText(request.system_prompt, kMaxPromptBytes, false) ||
       !IsValidText(request.user_prompt, kMaxPromptBytes, false) ||
       request.max_output_tokens <= 0 || request.max_output_tokens > 32768 ||
-      request.tools.empty() || request.tools.size() > kMaxToolCount) {
+      request.tools.empty() || request.tools.size() > kMaxToolCount ||
+      (!request.required_tool_name.empty() &&
+       !IsValidToolName(request.required_tool_name)) ||
+      (!request.reasoning_effort.empty() &&
+       request.reasoning_effort != "none" &&
+       request.reasoning_effort != "minimal" &&
+       request.reasoning_effort != "low" &&
+       request.reasoning_effort != "medium" &&
+       request.reasoning_effort != "high") ||
+      (request.disable_model_thinking &&
+       request.provider != AgentModelProvider::kOpenAICompatible)) {
     *error = "invalid model request";
     return false;
   }
@@ -905,6 +915,11 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
       *error = "invalid or duplicated tool definition";
       return false;
     }
+  }
+  if (!request.required_tool_name.empty() &&
+      !names.contains(request.required_tool_name)) {
+    *error = "required tool is not exposed by the request";
+    return false;
   }
   return true;
 }
@@ -933,7 +948,24 @@ std::optional<std::string> BuildAgentModelRequestBody(
       payload.Set("parallel_tool_calls", false);
       payload.Set("store", false);
       payload.Set("stream", request.stream);
-      payload.Set("tool_choice", "auto");
+      if (request.required_tool_name.empty()) {
+        payload.Set("tool_choice", "auto");
+      } else {
+        base::DictValue choice;
+        choice.Set("type", "function");
+        choice.Set("name", request.required_tool_name);
+        payload.Set("tool_choice", std::move(choice));
+      }
+      if (!request.reasoning_effort.empty()) {
+        base::DictValue reasoning;
+        reasoning.Set("effort", request.reasoning_effort);
+        payload.Set("reasoning", std::move(reasoning));
+      }
+      if (request.disable_model_thinking) {
+        base::DictValue chat_template_kwargs;
+        chat_template_kwargs.Set("enable_thinking", false);
+        payload.Set("chat_template_kwargs", std::move(chat_template_kwargs));
+      }
       for (const AgentModelToolDefinition& tool : request.tools) {
         tools.Append(BuildOpenAITool(tool));
       }
@@ -944,6 +976,13 @@ std::optional<std::string> BuildAgentModelRequestBody(
       payload.Set("system", request.system_prompt);
       payload.Set("max_tokens", request.max_output_tokens);
       payload.Set("stream", request.stream);
+      if (!request.required_tool_name.empty()) {
+        base::DictValue choice;
+        choice.Set("type", "tool");
+        choice.Set("name", request.required_tool_name);
+        choice.Set("disable_parallel_tool_use", true);
+        payload.Set("tool_choice", std::move(choice));
+      }
       base::DictValue message;
       message.Set("role", "user");
       message.Set("content", request.user_prompt);
@@ -984,6 +1023,17 @@ std::optional<std::string> BuildAgentModelRequestBody(
       base::ListValue gemini_tools;
       gemini_tools.Append(std::move(declarations));
       payload.Set("tools", std::move(gemini_tools));
+
+      if (!request.required_tool_name.empty()) {
+        base::ListValue allowed_names;
+        allowed_names.Append(request.required_tool_name);
+        base::DictValue function_calling;
+        function_calling.Set("mode", "ANY");
+        function_calling.Set("allowedFunctionNames", std::move(allowed_names));
+        base::DictValue tool_config;
+        tool_config.Set("functionCallingConfig", std::move(function_calling));
+        payload.Set("toolConfig", std::move(tool_config));
+      }
 
       base::DictValue generation_config;
       generation_config.Set("maxOutputTokens", request.max_output_tokens);

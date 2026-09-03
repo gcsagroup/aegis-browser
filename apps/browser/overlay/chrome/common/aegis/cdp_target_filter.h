@@ -26,6 +26,13 @@ enum class RemoteCdpTargetOperation {
   kOpenDevTools,
 };
 
+// Blocks every remote CDP target operation while a primary Incognito
+// Profile is alive. The browser process toggles this before an Incognito
+// target can be created; the atomic gate also protects already-listening
+// loopback endpoints during shutdown races.
+void SetRemoteCdpBlockedForIncognito(bool blocked);
+bool IsRemoteCdpBlockedForIncognito();
+
 // 远程 CDP target 操作授权。|type| 与
 // content::DevToolsAgentHost::kType* 字符串一致（"browser" 等）。既存 target
 // 操作传当前 URL；kCreate/kNavigate 必须传请求的目的 URL，不能用当前页面

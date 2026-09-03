@@ -1,0 +1,62 @@
+From 310b3d0adffaec6aaf2cb7065f1f3e53721614c8 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 00:46:40 +0800
+Subject: [PATCH 89/90] fix(aegis): recover named-site searches from weak
+ routing
+
+---
+ chrome/browser/aegis/agent/agent_planner.cc          | 12 +++++++++---
+ chrome/browser/aegis/agent/agent_planner_unittest.cc | 10 ++++++++++
+ 2 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index a8d4774a3c..ef716ddfff 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -410,13 +410,19 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
+     route.workflow = AgentWorkflowKind::kResearch;
+   }
+   const NamedSite* site = NamedSiteForGoal(user_goal);
+-  if (site && route.entry_kind != AgentGoalEntryKind::kBrowserOnly) {
++  const bool named_site_search = site && GoalRequestsNamedSiteSearch(user_goal);
++  if (named_site_search &&
++      route.workflow == AgentWorkflowKind::kBrowserSteward) {
++    route.workflow = shopping_authority ? AgentWorkflowKind::kShopping
++                                        : AgentWorkflowKind::kResearch;
++  }
++  if (site && (route.entry_kind != AgentGoalEntryKind::kBrowserOnly ||
++               named_site_search)) {
+     if (!RouteTargetsSite(route, *site)) {
+       const std::string proposed_query =
+           route.entry_kind == AgentGoalEntryKind::kWebSearch
+               ? route.target
+-              : (GoalRequestsNamedSiteSearch(user_goal) ? std::string(user_goal)
+-                                                        : std::string());
++              : (named_site_search ? std::string(user_goal) : std::string());
+       route.entry_kind = AgentGoalEntryKind::kOpenUrl;
+       route.target =
+           BrowserOwnedNamedSiteTarget(user_goal, proposed_query, *site);
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index b795469f1b..1189d48036 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -195,6 +195,16 @@ TEST(AegisAgentPlannerTest, BrowserNarrowsShoppingAndNamedSiteRoutes) {
+   EXPECT_EQ(GURL(direct_from_unrelated.target).host(), "search.jd.com");
+   EXPECT_TRUE(GURL(direct_from_unrelated.target).query().contains("keyword="));
+ 
++  AgentGoalRoute mistaken_browser_only;
++  mistaken_browser_only.workflow = AgentWorkflowKind::kBrowserSteward;
++  mistaken_browser_only.entry_kind = AgentGoalEntryKind::kBrowserOnly;
++  AgentGoalRoute corrected_browser_only = ConstrainGoalRouteToUserIntent(
++      "在京东找几款内存", std::move(mistaken_browser_only));
++  EXPECT_EQ(corrected_browser_only.workflow, AgentWorkflowKind::kResearch);
++  EXPECT_EQ(corrected_browser_only.entry_kind, AgentGoalEntryKind::kOpenUrl);
++  EXPECT_EQ(GURL(corrected_browser_only.target).host(), "search.jd.com");
++  EXPECT_TRUE(GURL(corrected_browser_only.target).query().contains("keyword="));
++
+   AgentGoalRoute purchase;
+   purchase.workflow = AgentWorkflowKind::kShopping;
+   purchase.entry_kind = AgentGoalEntryKind::kOpenUrl;
+-- 
+2.52.0
+

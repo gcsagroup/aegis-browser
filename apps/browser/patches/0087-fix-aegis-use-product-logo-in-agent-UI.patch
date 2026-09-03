@@ -1,0 +1,115 @@
+From a09cd44337ff1ac1b656418720da9a4313adf242 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 00:15:29 +0800
+Subject: [PATCH 87/90] fix(aegis): use product logo in agent UI
+
+---
+ .../agent/aegis_agent_interactive_uitest.cc   |  4 +++
+ chrome/browser/resources/aegis_agent/BUILD.gn |  1 +
+ .../browser/resources/aegis_agent/agent.css   | 11 ++------
+ .../browser/resources/aegis_agent/agent.html  |  2 +-
+ .../resources/aegis_agent/product_logo.svg    | 27 +++++++++++++++++++
+ 5 files changed, 35 insertions(+), 10 deletions(-)
+ create mode 100644 chrome/browser/resources/aegis_agent/product_logo.svg
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index 95cb0a2f65..1d4a929ca4 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -104,7 +104,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+                 [...document.querySelectorAll('#quick-actions button')];
+             const automationButton =
+                 document.querySelector('#automation-view-button');
++            const brand = document.querySelector('.mark');
+             if (quick.length !== 6 || !automationButton ||
++                !(brand instanceof HTMLImageElement) ||
++                brand.getAttribute('src') !== 'product_logo.svg' ||
++                brand.getAttribute('alt') !== '' ||
+                 document.querySelector('#advanced-settings')) {
+               return false;
+             }
+diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
+index a91d6a6905..8bd7062437 100644
+--- a/chrome/browser/resources/aegis_agent/BUILD.gn
++++ b/chrome/browser/resources/aegis_agent/BUILD.gn
+@@ -15,6 +15,7 @@ build_webui("build") {
+   static_files = [
+     "agent.css",
+     "agent.html",
++    "product_logo.svg",
+   ]
+   ts_files = [
+     "agent.ts",
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 61031189f6..8178801d27 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -63,17 +63,10 @@ main {
+ }
+ 
+ .mark {
+-  align-items: center;
+-  background: linear-gradient(145deg, var(--primary), #7c4ee8);
+-  border-radius: 13px;
+-  box-shadow: var(--shadow);
+-  color: white;
+-  display: flex;
+   flex: 0 0 42px;
+-  font-size: 18px;
+-  font-weight: 800;
+   height: 42px;
+-  justify-content: center;
++  object-fit: contain;
++  width: 42px;
+ }
+ 
+ .hero-copy {
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index de935e2f24..b9288ef2e2 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -10,7 +10,7 @@
+   <body>
+     <main>
+       <header class="hero">
+-        <div class="mark" aria-hidden="true">A</div>
++        <img class="mark" src="product_logo.svg" alt="">
+         <div class="hero-copy">
+           <h1 id="title"></h1>
+           <p id="subtitle"></p>
+diff --git a/chrome/browser/resources/aegis_agent/product_logo.svg b/chrome/browser/resources/aegis_agent/product_logo.svg
+new file mode 100644
+index 0000000000..4bb68d7322
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/product_logo.svg
+@@ -0,0 +1,27 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
++  <title id="title">GCSA Aegis</title>
++  <desc id="desc">Shield, letter G, and three network nodes.</desc>
++  <defs>
++    <linearGradient id="brand-gradient" gradientUnits="userSpaceOnUse" x1="179" y1="512" x2="857" y2="512">
++      <stop offset="0" stop-color="#12CDBF"/>
++      <stop offset="0.5" stop-color="#13B9D5"/>
++      <stop offset="1" stop-color="#168FEF"/>
++    </linearGradient>
++  </defs>
++  <g fill="none" stroke="url(#brand-gradient)" shape-rendering="geometricPrecision">
++    <path d="M230 429V273C329 252 422 220 512 187C602 220 695 252 794 273V429"
++      stroke-width="52" stroke-linecap="butt" stroke-linejoin="round"/>
++    <path d="M239 574C277 681 361 760 456 790" stroke-width="52" stroke-linecap="butt"/>
++    <path d="M568 790C663 760 747 681 785 574" stroke-width="52" stroke-linecap="butt"/>
++    <path d="M257 506C287 544 329 567 379 579" stroke-width="43" stroke-linecap="round"/>
++    <path d="M648 365C615 332 568 321 516 321C428 321 357 392 357 480C357 568 428 639 516 639C604 639 666 581 674 488"
++      stroke-width="54" stroke-linecap="butt" stroke-linejoin="round"/>
++    <path d="M519 462H773V520H506Z" fill="url(#brand-gradient)" stroke="none"/>
++    <g fill="url(#brand-gradient)" stroke="none">
++      <circle cx="226" cy="490" r="47"/>
++      <circle cx="810" cy="490" r="47"/>
++      <circle cx="512" cy="800" r="47"/>
++    </g>
++  </g>
++</svg>
+-- 
+2.52.0
+

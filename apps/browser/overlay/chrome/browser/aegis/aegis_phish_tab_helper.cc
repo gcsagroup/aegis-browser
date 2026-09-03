@@ -10,6 +10,8 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/builtin_phish_hosts.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
@@ -20,6 +22,17 @@
 #include "ui/base/page_transition_types.h"
 
 namespace aegis {
+
+namespace {
+
+AegisService* ServiceForContents(content::WebContents* contents) {
+  Profile* profile =
+      contents ? Profile::FromBrowserContext(contents->GetBrowserContext())
+               : nullptr;
+  return AegisServiceFactory::GetForProfile(profile);
+}
+
+}  // namespace
 
 PhishTabHelper::PhishTabHelper(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -128,8 +141,8 @@ void PhishTabHelper::DOMContentLoaded(
     return;
   }
 
-  AegisService* service = AegisService::GetInstance();
-  if (!service->IsPhishInterstitialEnabled()) {
+  AegisService* service = ServiceForContents(web_contents());
+  if (!service || !service->IsPhishInterstitialEnabled()) {
     return;
   }
 
@@ -242,8 +255,8 @@ void PhishTabHelper::OnPageSignals(content::WeakDocumentPtr source_document,
     return;
   }
 
-  AegisService* service = AegisService::GetInstance();
-  if (!service->IsPhishInterstitialEnabled()) {
+  AegisService* service = ServiceForContents(contents);
+  if (!service || !service->IsPhishInterstitialEnabled()) {
     return;
   }
 
@@ -275,7 +288,7 @@ void PhishTabHelper::OnPageSignals(content::WeakDocumentPtr source_document,
   }
 
   LOG(INFO) << "Aegis: page-sense phishing score=" << assessment.score
-            << " url=" << url;
+            << " (URL omitted)";
   stashed_ = std::move(assessment);
   stashed_url_ = url;
 

@@ -155,6 +155,8 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
             std::string::npos);
   EXPECT_NE(BuildAgentExecutionSystemContract().find("untrusted data"),
             std::string::npos);
+  EXPECT_NE(BuildAgentExecutionSystemContract().find("same primary language"),
+            std::string::npos);
   std::optional<base::Value> parsed =
       base::JSONReader::Read(prompt, base::JSON_PARSE_RFC);
   ASSERT_TRUE(parsed && parsed->is_dict());
@@ -177,6 +179,13 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
       (*prior_evidence)[1].GetDict().FindList("bookmark_node_ids");
   ASSERT_TRUE(bookmark_node_ids);
   EXPECT_EQ(bookmark_node_ids->size(), 100u);
+
+  const std::string corrected = BuildAgentExecutionPrompt(
+      task, plan, 0, 1, nullptr, {}, "required tool argument is missing");
+  EXPECT_NE(corrected.find("previous_model_call_rejected_because"),
+            std::string::npos);
+  EXPECT_NE(corrected.find("do not repeat the rejected response"),
+            std::string::npos);
 }
 
 TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {
@@ -205,8 +214,29 @@ TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {
   evidence.push_back(
       {.tool_name = "page.extract", .result = std::move(observed)});
   EXPECT_TRUE(AgentCompletionSourcesMatchEvidence(*completion, evidence));
+  const std::vector<std::string> verified_sources = completion->source_urls;
+  completion->source_urls.clear();
+  EXPECT_FALSE(AgentCompletionSourcesMatchEvidence(*completion, evidence));
+  completion->source_urls = verified_sources;
   completion->source_urls.push_back("https://fixture.example/missing");
   EXPECT_FALSE(AgentCompletionSourcesMatchEvidence(*completion, evidence));
+
+  AgentToolResult bookmarks;
+  bookmarks.action_id = "bookmark-check";
+  bookmarks.ok = true;
+  bookmarks.message = "checked browser bookmarks";
+  bookmarks.value.Set("url", "https://fixture.example/not-a-page-source");
+  std::vector<AgentExecutionEvidence> browser_native_evidence;
+  browser_native_evidence.push_back(
+      {.tool_name = "bookmark.check_urls", .result = std::move(bookmarks)});
+  completion->source_urls = {"https://fixture.example/"};
+  EXPECT_TRUE(NormalizeAgentCompletionSourcesForEvidence(
+      &*completion, browser_native_evidence));
+  EXPECT_TRUE(completion->source_urls.empty());
+
+  completion->source_urls = {"https://fixture.example/missing"};
+  EXPECT_FALSE(
+      NormalizeAgentCompletionSourcesForEvidence(&*completion, evidence));
 
   base::ListValue unsafe_sources;
   unsafe_sources.Append("https://fixture.example/?token=secret");

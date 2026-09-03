@@ -41,31 +41,44 @@ source_set("agent_core") {
     "agent/agent_types.h",
     "agent/agent_workflow.cc",
     "agent/agent_workflow.h",
+    "agent/v2_runtime_spike.cc",
+    "agent/v2_runtime_spike.h",
   ]
   deps = [
     "//base",
     "//crypto",
+    "//net",
     "//net/base:registry_controlled_domains",
     "//sql",
     "//url",
   ]
 }
 
-if (!is_android) {
-  source_set("agent_model_transport") {
-    sources = [
-      "agent/agent_model_client.cc",
-      "agent/agent_model_client.h",
-    ]
-    deps = [
-      ":agent_core",
-      ":model_provider_policy",
-      "//base",
-      "//net",
-      "//services/network/public/cpp",
-      "//services/network/public/mojom",
-      "//url",
-    ]
+source_set("agent_model_transport") {
+  sources = [
+    "agent/agent_model_client.cc",
+    "agent/agent_model_client.h",
+  ]
+  deps = [
+    ":agent_core",
+    ":model_provider_policy",
+    "//base",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
+source_set("profile_support") {
+  public = [ "aegis_profile_support.h" ]
+  sources = [ "aegis_profile_support.cc" ]
+  deps = [
+    "//build:chromeos_buildflags",
+    "//chrome/browser/profiles:profile",
+  ]
+  if (is_chromeos) {
+    deps += [ "//chromeos/ash/components/browser_context_helper" ]
   }
 }
 
@@ -93,6 +106,8 @@ source_set("aegis") {
     "aegis_prefs.h",
     "aegis_service.cc",
     "aegis_service.h",
+    "aegis_service_factory.cc",
+    "aegis_service_factory.h",
     "filter_list_updater.cc",
     "filter_list_updater.h",
     "metalink_download_verifier.cc",
@@ -108,11 +123,13 @@ source_set("aegis") {
     "threat_feed_updater.cc",
     "threat_feed_updater.h",
   ]
+  public_deps = [ ":profile_support" ]
   deps = [
     ":model_provider_policy",
     "//base",
     "//chrome/browser:after_startup_task_utils",
     "//chrome/browser:browser_process",
+    "//chrome/browser/devtools",
     "//chrome/browser/preloading/prefetch/no_state_prefetch",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/tab_contents:impl",
@@ -139,39 +156,46 @@ source_set("aegis") {
     "//ui/base",
     "//url",
   ]
+  sources += [
+    "agent/aegis_actor_bridge.cc",
+    "agent/aegis_actor_bridge.h",
+    "agent/aegis_agent_service.cc",
+    "agent/aegis_agent_service.h",
+    "agent/aegis_agent_service_factory.cc",
+    "agent/aegis_agent_service_factory.h",
+    "agent/aegis_browser_tools.cc",
+    "agent/aegis_browser_tools.h",
+  ]
+  deps += [
+    ":agent_core",
+    ":agent_model_transport",
+    "//chrome/browser/actor",
+    "//chrome/browser/bookmarks",
+    "//chrome/browser/content_settings:content_settings_factory",
+    "//chrome/browser/history",
+    "//chrome/browser/notifications",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/undo",
+    "//components/actor/core",
+    "//components/bookmarks/browser",
+    "//components/keyed_service/core",
+    "//components/tab_groups",
+    "//components/undo",
+    "//crypto",
+  ]
   if (!is_android) {
     sources += [
-      "agent/aegis_actor_bridge.cc",
-      "agent/aegis_actor_bridge.h",
-      "agent/aegis_agent_service.cc",
-      "agent/aegis_agent_service.h",
-      "agent/aegis_agent_service_factory.cc",
-      "agent/aegis_agent_service_factory.h",
-      "agent/aegis_browser_tools.cc",
-      "agent/aegis_browser_tools.h",
       "summary_session.cc",
       "summary_session.h",
     ]
     deps += [
-      ":agent_core",
-      ":agent_model_transport",
-      "//chrome/browser/actor",
-      "//chrome/browser/bookmarks",
-      "//chrome/browser/content_settings:content_settings_factory",
-      "//chrome/browser/history",
-      "//chrome/browser/notifications",
-      "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/tab_contents",
       "//chrome/browser/ui/tabs:tab_strip",
-      "//chrome/browser/undo",
-      "//components/actor/core",
-      "//components/bookmarks/browser",
-      "//components/keyed_service/core",
-      "//components/tab_groups",
-      "//components/undo",
-      "//crypto",
       "//ui/message_center/public/cpp",
     ]
+  } else {
+    deps += [ "//chrome/android:chrome_jni_headers" ]
   }
   if (is_mac) {
     sources += [
@@ -208,6 +232,7 @@ if (!is_android) {
       "//base",
       "//base/test:test_support",
       "//chrome/browser/profiles:profile",
+      "//chrome/browser/renderer_context_menu:test_support",
       "//chrome/browser/search_engines",
       "//chrome/browser/ui",
       "//chrome/browser/ui:browser_actions",
@@ -258,6 +283,7 @@ test("aegis_agent_core_unittests") {
     "agent/agent_model_protocol_unittest.cc",
     "agent/agent_planner_unittest.cc",
     "agent/agent_task_store_unittest.cc",
+    "agent/v2_runtime_spike_unittest.cc",
   ]
   deps = [
     ":agent_core",
@@ -298,8 +324,8 @@ test("aegis_browser_unittests") {
     "aegis_download_prefs_unittest.cc",
     "aegis_phish_blocking_page_unittest.cc",
     "aegis_phish_tab_helper_unittest.cc",
+    "aegis_service_factory_unittest.cc",
     "aegis_service_unittest.cc",
-    "aegis_ui_handler_unittest.cc",
     "filter_list_updater_unittest.cc",
     "metalink_parser_unittest.cc",
     "model_provider_client_unittest.cc",
@@ -308,8 +334,10 @@ test("aegis_browser_unittests") {
   ]
   deps = [
     ":aegis",
-    "//chrome/browser/ui/tabs:tab_strip",
-    "//chrome/browser/ui/webui/aegis",
+    ":agent_model_transport",
+    ":profile_support",
+    "//build:chromeos_buildflags",
+    "//chrome/browser/profiles:test_support",
     "//chrome/test:test_support",
     "//chrome/test:test_support_unit",
     "//content/test:test_support",
@@ -321,6 +349,8 @@ test("aegis_browser_unittests") {
   ]
   if (!is_android) {
     sources += [
+      "actor_journal_privacy_unittest.cc",
+      "aegis_ui_handler_unittest.cc",
       "agent/aegis_agent_service_unittest.cc",
       "agent/agent_core_unittest.cc",
       "agent/agent_task_store_unittest.cc",
@@ -330,11 +360,16 @@ test("aegis_browser_unittests") {
       "//chrome/browser/actor",
       "//chrome/browser/actor/ui:event_dispatcher",
       "//chrome/browser/actor/ui:test_support",
+      "//chrome/browser/ui/tabs:tab_strip",
+      "//chrome/browser/ui/webui/aegis",
       "//chrome/common/aegis",
       "//components/actor/core",
       "//components/download/public/common:public",
       "//components/undo",
       "//content/test:test_support",
     ]
+  }
+  if (is_mac) {
+    sources += [ "aegis_torrent_client_unittest.cc" ]
   }
 }

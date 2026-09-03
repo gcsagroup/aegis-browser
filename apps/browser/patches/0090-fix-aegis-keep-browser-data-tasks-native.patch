@@ -1,0 +1,83 @@
+From a17a743ce97fa54c118b80ada0351bf8cbadb1d2 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 00:57:00 +0800
+Subject: [PATCH 90/90] fix(aegis): keep browser data tasks native
+
+---
+ chrome/browser/aegis/agent/agent_planner.cc   | 28 +++++++++++++++++++
+ .../aegis/agent/agent_planner_unittest.cc     | 13 +++++++++
+ 2 files changed, 41 insertions(+)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index ef716ddfff..b76deec8c1 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -182,6 +182,25 @@ bool GoalRequestsSafeDownload(std::string_view goal) {
+                              });
+ }
+ 
++bool GoalRequestsBrowserData(std::string_view goal) {
++  const std::string lower = base::ToLowerASCII(goal);
++  constexpr std::string_view kLocalizedBrowserData[] = {
++      "收藏夹", "书签", "标签页", "浏览器标签", "浏览器窗口", "工作区"};
++  if (std::ranges::any_of(kLocalizedBrowserData,
++                          [&goal](std::string_view phrase) {
++                            return goal.find(phrase) != std::string_view::npos;
++                          })) {
++    return true;
++  }
++  constexpr std::string_view kAsciiBrowserData[] = {
++      "bookmark", "bookmarks", "favorite", "favorites", "tab", "tabs",
++      "window", "windows", "workspace", "workspaces"};
++  return std::ranges::any_of(kAsciiBrowserData,
++                             [&lower](std::string_view word) {
++                               return ContainsAsciiWord(lower, word);
++                             });
++}
++
+ struct NamedSite {
+   std::string_view ascii_alias;
+   std::string_view localized_alias;
+@@ -411,6 +430,15 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
+   }
+   const NamedSite* site = NamedSiteForGoal(user_goal);
+   const bool named_site_search = site && GoalRequestsNamedSiteSearch(user_goal);
++  if (GoalRequestsBrowserData(user_goal) && !named_site_search) {
++    // Native browser data never needs a search engine or a content page. Local
++    // models can identify browser_only correctly while still choosing the
++    // research workflow; bind both fields here so that bookmarks, tabs,
++    // windows, and workspaces receive only their native tools.
++    route.workflow = AgentWorkflowKind::kBrowserSteward;
++    route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
++    route.target.clear();
++  }
+   if (named_site_search &&
+       route.workflow == AgentWorkflowKind::kBrowserSteward) {
+     route.workflow = shopping_authority ? AgentWorkflowKind::kShopping
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 1189d48036..4a7c166fd4 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -230,6 +230,19 @@ TEST(AegisAgentPlannerTest, BrowserNarrowsShoppingAndNamedSiteRoutes) {
+                                            std::move(browser_only))
+                 .entry_kind,
+             AgentGoalEntryKind::kBrowserOnly);
++
++  AgentGoalRoute weak_bookmark_route;
++  weak_bookmark_route.workflow = AgentWorkflowKind::kResearch;
++  weak_bookmark_route.entry_kind = AgentGoalEntryKind::kWebSearch;
++  weak_bookmark_route.target = "GitHub bookmarks";
++  AgentGoalRoute corrected_bookmark_route = ConstrainGoalRouteToUserIntent(
++      "整理收藏夹里的 GitHub 链接，先给预览，不要修改",
++      std::move(weak_bookmark_route));
++  EXPECT_EQ(corrected_bookmark_route.workflow,
++            AgentWorkflowKind::kBrowserSteward);
++  EXPECT_EQ(corrected_bookmark_route.entry_kind,
++            AgentGoalEntryKind::kBrowserOnly);
++  EXPECT_TRUE(corrected_bookmark_route.target.empty());
+ }
+ 
+ TEST(AegisAgentPlannerTest, BrowserOwnsScopeAndModelChoosesOnlySteps) {
+-- 
+2.52.0
+

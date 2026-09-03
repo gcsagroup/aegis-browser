@@ -11,9 +11,9 @@
 - **Gate passed:** the named source, artifact, platform, and representative test scope passed together.
 - **Release-qualified:** the same distributable artifact passed identity, trust, signing, installation, privacy, platform, and rollout gates.
 
-## Current conclusion — 2026-08-29
+## Current conclusion — 2026-09-04
 
-The combined Chromium source contains 67 top-level patches plus 2 nested V8 patches. The earlier 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots; neither binds or qualifies the current 67-patch head. Fresh exact replay, identity-bound build, and affected runtime acceptance remain open.
+The Browser Agent v2 candidate contains 95 top-level Chromium patches plus 2 nested V8 patches. It replays exactly to Chromium commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; the 57-, 65-, and 67-patch records remain historical snapshots. Platform artifact identity and affected runtime acceptance remain separate open gates.
 
 The native iOS product has a SwiftUI/WKWebView browser, isolated standard/private profiles, embedded Safari/Share extensions, Agent Broker, four offline deterministic workflows, shared Agent Contract v1 vectors, and an iPhone/iPad Simulator chain. Its current ceiling is **SIMULATOR_QUALIFIED**. Real-device validation is `NOT_RUN`; default-browser entitlement is `PENDING`; formal signing, Archive, TestFlight, and App Store delivery are `NOT_RUN`.
 
@@ -48,10 +48,10 @@ Link sanitization, cookie classification, PII redaction, phishing heuristics, an
 
 ### M2: Chromium integration and local build identity — partial
 
-- The ordered source now contains 67 top-level Chromium patches and 2 nested V8 patches.
+- The ordered source now contains 95 top-level Chromium patches and 2 nested V8 patches.
 - The 57-patch diagnostic manifest and 65-patch Agent candidate retain their recorded local evidence, but only for those historical heads.
 - The 65-patch candidate passed its named native, browser, fixture, lifecycle, and local UI scope; it was not a signed, notarized, installed distribution package.
-- The combined 67-patch head still needs a fresh clean replay, exact identity manifest, affected tests, and runtime acceptance.
+- The 95-patch v2 source passed exact clean replay and repository fast gates; exact platform manifests, device tests, and runtime acceptance remain open until recorded together.
 
 ### M3–M4: Security boundaries and stability — partial
 

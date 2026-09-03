@@ -1,0 +1,161 @@
+From 9d02f052720924c279af5e1511c374d6a685ef7e Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 2 Sep 2026 17:24:21 +0800
+Subject: [PATCH 81/90] fix(aegis): validate model plan ordering
+
+---
+ chrome/browser/aegis/agent/agent_planner.cc   | 62 +++++++++++++++++++
+ .../aegis/agent/agent_planner_unittest.cc     | 50 +++++++++++++++
+ 2 files changed, 112 insertions(+)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 133c54032c..fd62d25837 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -500,6 +500,27 @@ std::optional<std::string> BuildAgentPlanningPrompt(
+   }
+   prompt.Set("maximum_tools", std::move(tools));
+   prompt.Set("tool_catalog", std::move(tool_catalog));
++  const bool entry_page_already_open =
++      !maximum_scope.allowed_origins.empty() &&
++      !maximum_scope.allowed_tab_ids.empty() &&
++      maximum_scope.AllowsTool("page.observe");
++  prompt.Set("entry_page_already_open", entry_page_already_open);
++  if (entry_page_already_open) {
++    prompt.Set("required_first_tool", "page.observe");
++  }
++  base::ListValue dependency_rules;
++  dependency_rules.Append(
++      "bookmark.check_urls requires an earlier bookmark.list step");
++  dependency_rules.Append(
++      "bookmark.apply requires an earlier bookmark.plan step");
++  dependency_rules.Append(
++      "bookmark.undo requires an earlier bookmark.apply step");
++  dependency_rules.Append(
++      "download.start requires an earlier download.find_official step");
++  dependency_rules.Append(
++      "download pause, resume, cancel, verify, or open requires an earlier "
++      "download.start step");
++  prompt.Set("plan_dependency_rules", std::move(dependency_rules));
+   base::ListValue data_classes;
+   for (AgentDataClass data_class : maximum_scope.allowed_data_classes) {
+     data_classes.Append(DataClassName(data_class));
+@@ -672,6 +693,47 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+                                        .tool_name = *tool_name,
+                                        .risk = descriptor->risk});
+   }
++  const bool entry_page_already_open =
++      !maximum_scope.allowed_origins.empty() &&
++      !maximum_scope.allowed_tab_ids.empty() &&
++      maximum_scope.AllowsTool("page.observe");
++  if (entry_page_already_open &&
++      plan.steps.front().tool_name != "page.observe") {
++    *error =
++        "page-bound task plan must start with page.observe because the "
++        "browser already opened the entry page";
++    return std::nullopt;
++  }
++  base::flat_set<std::string> earlier_tools;
++  for (const AgentPlanStep& step : plan.steps) {
++    const bool missing_bookmark_list =
++        step.tool_name == "bookmark.check_urls" &&
++        !earlier_tools.contains("bookmark.list");
++    const bool missing_bookmark_plan =
++        step.tool_name == "bookmark.apply" &&
++        !earlier_tools.contains("bookmark.plan");
++    const bool missing_bookmark_apply =
++        step.tool_name == "bookmark.undo" &&
++        !earlier_tools.contains("bookmark.apply");
++    const bool missing_download_source =
++        step.tool_name == "download.start" &&
++        !earlier_tools.contains("download.find_official");
++    const bool missing_download_start =
++        (step.tool_name == "download.pause" ||
++         step.tool_name == "download.resume" ||
++         step.tool_name == "download.cancel" ||
++         step.tool_name == "download.verify" ||
++         step.tool_name == "download.open") &&
++        !earlier_tools.contains("download.start");
++    if (missing_bookmark_list || missing_bookmark_plan ||
++        missing_bookmark_apply || missing_download_source ||
++        missing_download_start) {
++      *error = "task plan uses a browser result before the step that creates "
++               "it";
++      return std::nullopt;
++    }
++    earlier_tools.insert(step.tool_name);
++  }
+   if (!plan.scope.IsValid() || !plan.scope.IsNoBroaderThan(maximum_scope)) {
+     *error = "browser could not bind the plan to its approved scope";
+     return std::nullopt;
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 924c523f01..f82cfc1870 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -263,6 +263,52 @@ TEST(AegisAgentPlannerTest, RejectsModelDeclaredRiskOrUnapprovedStep) {
+   EXPECT_EQ(error, "task plan step is duplicated or outside scope");
+ }
+ 
++TEST(AegisAgentPlannerTest, PreopenedPagePlanMustObserveBeforeActing) {
++  AgentToolRegistry registry;
++  std::string error;
++  AgentModelEvent navigation_first = ValidPlanEvent();
++  navigation_first.arguments.FindList("steps")->front().GetDict().Set(
++      "tool", "page.navigate");
++
++  EXPECT_FALSE(ParseAndValidateTaskPlan(navigation_first, MaximumScope(),
++                                        registry, &error));
++  EXPECT_EQ(error,
++            "page-bound task plan must start with page.observe because the "
++            "browser already opened the entry page");
++}
++
++TEST(AegisAgentPlannerTest, BrowserResultDependenciesAreOrdered) {
++  AgentToolRegistry registry;
++  std::string error;
++  AgentTaskScope bookmarks = MaximumScope();
++  bookmarks.allowed_origins.clear();
++  bookmarks.allowed_tab_ids.clear();
++  bookmarks.allowed_tools = {"bookmark.list", "bookmark.check_urls"};
++  bookmarks.allowed_data_classes = {AgentDataClass::kBookmarks};
++  AgentModelEvent missing_bookmark_list = ValidPlanEvent();
++  missing_bookmark_list.arguments.FindList("steps")->front().GetDict().Set(
++      "tool", "bookmark.check_urls");
++  EXPECT_FALSE(ParseAndValidateTaskPlan(missing_bookmark_list, bookmarks,
++                                        registry, &error));
++  EXPECT_EQ(error,
++            "task plan uses a browser result before the step that creates it");
++
++  AgentTaskScope downloads = MaximumScope();
++  downloads.allowed_tools = {"page.observe", "download.find_official",
++                             "download.start", "download.verify"};
++  downloads.allowed_data_classes.insert(AgentDataClass::kDownloads);
++  AgentModelEvent premature_verify = ValidPlanEvent();
++  base::DictValue verify;
++  verify.Set("id", "verify-before-download");
++  verify.Set("title", "Verify the download");
++  verify.Set("tool", "download.verify");
++  premature_verify.arguments.FindList("steps")->Append(std::move(verify));
++  EXPECT_FALSE(ParseAndValidateTaskPlan(premature_verify, downloads, registry,
++                                        &error));
++  EXPECT_EQ(error,
++            "task plan uses a browser result before the step that creates it");
++}
++
+ TEST(AegisAgentPlannerTest, ShoppingPlanMustEndInOneUserTakeover) {
+   AgentTaskScope shopping_scope = MaximumScope();
+   shopping_scope.allowed_tools.insert("shopping.prepare_checkout");
+@@ -330,6 +376,10 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
+                 .FindDict("model_destination")
+                 ->FindBool("credential_in_browser"),
+             true);
++  EXPECT_EQ(parsed->GetDict().FindBool("entry_page_already_open"), true);
++  EXPECT_EQ(*parsed->GetDict().FindString("required_first_tool"),
++            "page.observe");
++  EXPECT_EQ(parsed->GetDict().FindList("plan_dependency_rules")->size(), 5u);
+   const base::ListValue* catalog = parsed->GetDict().FindList("tool_catalog");
+   ASSERT_TRUE(catalog);
+   ASSERT_EQ(catalog->size(), 3u);
+-- 
+2.52.0
+

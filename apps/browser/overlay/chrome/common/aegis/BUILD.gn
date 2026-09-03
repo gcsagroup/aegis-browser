@@ -19,6 +19,7 @@ source_set("aegis") {
     "cdp_target_filter.h",
     "cdp_ws_hook.cc",
     "cdp_ws_hook.h",
+    "cname_cache_partition.h",
     "cname_uncloak.cc",
     "cname_uncloak.h",
     "cookie_classify.cc",

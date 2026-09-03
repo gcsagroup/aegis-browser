@@ -6,7 +6,7 @@ This document records future identity, policy, and review gates. It is not a sub
 
 The current project has:
 
-- no Android build produced from the current source;
+- no identity-bound, physically accepted Android package yet;
 - no current identity-bound APK or AAB;
 - no production upload key;
 - no Play Console application or uploaded artifact; and
@@ -35,7 +35,7 @@ The statements below are design goals that require verification against the exac
 
 - The product is intended not to collect account, location, contacts, or similar personal data for GCSA-aegis services.
 - Chromium default services, metrics, crash reporting, updates, and all third-party components still require candidate-specific review.
-- Android page summary is currently unavailable. Any future implementation must document local processing and every user-configured remote destination accurately.
+- Android current-page summary exists in v2 source. Store disclosure must accurately describe local processing and every user-configured remote destination.
 - The product is intended not to bundle a third-party analytics SDK, but the final dependency graph, runtime configuration, and network capture must prove that claim.
 - EasyList or other external updates must not expose browsing history, page URLs, persistent identifiers, or unnecessary headers, and their behavior must be disclosed truthfully.
 
@@ -44,7 +44,7 @@ The final Data Safety form must be based on the same APK/AAB, version configurat
 ## Publication gates
 
 1. Build a current-source Release APK/AAB in a clean, supported x86-64 Linux environment.
-2. Bind the repository commit, Chromium commit, 67 Chromium patches, 2 nested V8 patches, GN arguments, package identity, and artifact hashes in a verified Android manifest.
+2. Bind the repository commit, Chromium commit, 95 Chromium patches, 2 nested V8 patches, GN arguments, package identity, and artifact hashes in a verified Android manifest.
 3. Pass device tests for First Run, normal browsing, `chrome://aegis`, core protections, lifecycle, storage, upgrades, and network behavior.
 4. Replace default Chromium icons and audit all names, screenshots, descriptions, and restricted brand assets.
 5. Complete permission, outbound-network, data-storage, logging, native-library, third-party-license, and privacy-policy reviews.

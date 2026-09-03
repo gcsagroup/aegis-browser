@@ -5,16 +5,30 @@
 
 #include <memory>
 
+#include "build/build_config.h"
 #include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
+#if BUILDFLAG(IS_ANDROID)
+#include "content/public/browser/webui_config.h"
+#include "ui/webui/untrusted_web_ui_controller.h"
+#else
 #include "chrome/browser/ui/webui/top_chrome/top_chrome_webui_config.h"
 #include "chrome/browser/ui/webui/top_chrome/untrusted_top_chrome_web_ui_controller.h"
+#endif
 #include "mojo/public/cpp/bindings/receiver.h"
 
 class AegisAgentPageHandler;
 
 class AegisAgentUI;
 
-class AegisAgentUIConfig : public DefaultTopChromeWebUIConfig<AegisAgentUI> {
+#if BUILDFLAG(IS_ANDROID)
+using AegisAgentUIConfigBase = content::DefaultWebUIConfig<AegisAgentUI>;
+using AegisAgentUIControllerBase = ui::UntrustedWebUIController;
+#else
+using AegisAgentUIConfigBase = DefaultTopChromeWebUIConfig<AegisAgentUI>;
+using AegisAgentUIControllerBase = UntrustedTopChromeWebUIController;
+#endif
+
+class AegisAgentUIConfig : public AegisAgentUIConfigBase {
  public:
   AegisAgentUIConfig();
   ~AegisAgentUIConfig() override;
@@ -22,7 +36,7 @@ class AegisAgentUIConfig : public DefaultTopChromeWebUIConfig<AegisAgentUI> {
   bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
 };
 
-class AegisAgentUI : public UntrustedTopChromeWebUIController,
+class AegisAgentUI : public AegisAgentUIControllerBase,
                      public aegis_agent::mojom::PageHandlerFactory {
  public:
   explicit AegisAgentUI(content::WebUI* web_ui);

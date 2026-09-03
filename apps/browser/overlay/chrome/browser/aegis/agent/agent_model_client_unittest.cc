@@ -187,6 +187,24 @@ TEST_F(AgentModelClientTest, DoesNotLeakProviderErrorOrApiKey) {
   EXPECT_THAT(result.Get<1>(), Not(HasSubstr("provider-private-body")));
 }
 
+TEST_F(AgentModelClientTest, PreservesBoundedProtocolFailureForOneRepair) {
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  AgentModelClient client(factory_.GetSafeWeakWrapper());
+  AgentModelClientConfig config{.provider = ModelProvider::kOpenAI,
+                                .base_url = "http://127.0.0.1:8765/v1"};
+  base::test::TestFuture<bool, std::string, AgentModelParseResult> result;
+  ASSERT_TRUE(client.Start(
+      std::move(config), Request(AgentModelProvider::kOpenAICompatible, false),
+      result.GetCallback()));
+  Pending(endpoint);
+  EXPECT_TRUE(factory_.SimulateResponseForPendingRequest(
+      endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad","name":"page.observe","arguments":"{}"}]})"));
+  EXPECT_FALSE(result.Get<0>());
+  EXPECT_THAT(result.Get<1>(), HasSubstr("required"));
+  EXPECT_EQ(result.Get<1>(), result.Get<2>().error);
+}
+
 TEST_F(AgentModelClientTest, CancelsOnlyMatchingRequest) {
   const GURL endpoint("http://127.0.0.1:8765/v1/responses");
   AgentModelClient client(factory_.GetSafeWeakWrapper());
