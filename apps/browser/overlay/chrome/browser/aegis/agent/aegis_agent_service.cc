@@ -72,6 +72,9 @@ constexpr size_t kMaxSuggestedGoalBytes = 4096;
 constexpr size_t kMaxRuntimeEvidenceItems = 24;
 constexpr size_t kMaxModelRepairErrorBytes = 512;
 constexpr int kModelToolCallMaxOutputTokens = 8192;
+constexpr int kMaxEntryNavigationWaitAttempts = 120;
+constexpr base::TimeDelta kEntryNavigationPollInterval =
+    base::Milliseconds(250);
 constexpr std::string_view kScheduleMarker =
     "[AEGIS_SCHEDULE_INTERVAL_MINUTES=";
 
@@ -423,8 +426,10 @@ struct AegisAgentService::ExecutionRuntime {
   int attempt = 0;
   int model_failures = 0;
   int refresh_count = 0;
+  int entry_navigation_wait_attempts = 0;
   bool final_user_takeover = false;
   bool needs_fresh_observation = false;
+  base::OneShotTimer entry_navigation_timer;
   std::optional<int32_t> last_tab_id;
   std::optional<AgentToolResult> previous_result;
   std::string last_model_error;
@@ -1349,9 +1354,11 @@ void AegisAgentService::EnsureFreshObservationThenContinue(
           : nullptr;
   const bool document_needed =
       next_descriptor && next_descriptor->requires_document;
+  const bool scoped_origin_needed =
+      next_descriptor && next_descriptor->requires_origin;
   if (!TaskUsesActor(*task) ||
       (!force_refresh && !runtime.needs_fresh_observation &&
-       !document_needed)) {
+       !document_needed && !scoped_origin_needed)) {
     RequestNextModelTurn(task_id);
     return;
   }
@@ -1359,7 +1366,31 @@ void AegisAgentService::EnsureFreshObservationThenContinue(
   const std::optional<int32_t> tab_id =
       SelectRuntimeObservationTab(*task, runtime);
   if (!tab_id) {
-    if (!document_needed && !runtime.last_tab_id) {
+    bool scoped_tab_is_still_open = false;
+    auto inspect_tab = [&](int32_t candidate) {
+      tabs::TabInterface* tab = tabs::TabHandle(candidate).Get();
+      scoped_tab_is_still_open =
+          scoped_tab_is_still_open ||
+          (tab && tab->GetProfile() == profile_ && task->AllowsTab(candidate));
+    };
+    for (int32_t candidate : task->scope().allowed_tab_ids) {
+      inspect_tab(candidate);
+    }
+    for (int32_t candidate : task->owned_tab_ids()) {
+      inspect_tab(candidate);
+    }
+    if (scoped_origin_needed && scoped_tab_is_still_open &&
+        runtime.entry_navigation_wait_attempts <
+            kMaxEntryNavigationWaitAttempts) {
+      ++runtime.entry_navigation_wait_attempts;
+      runtime.entry_navigation_timer.Start(
+          FROM_HERE, kEntryNavigationPollInterval,
+          base::BindOnce(
+              &AegisAgentService::EnsureFreshObservationThenContinue,
+              weak_ptr_factory_.GetWeakPtr(), task_id, force_refresh));
+      return;
+    }
+    if (!scoped_origin_needed && !document_needed && !runtime.last_tab_id) {
       RequestNextModelTurn(task_id);
       return;
     }
@@ -1368,6 +1399,13 @@ void AegisAgentService::EnsureFreshObservationThenContinue(
     FinishRuntime(task_id, false,
                   "execution stopped because browser context changed",
                   std::nullopt);
+    return;
+  }
+  runtime.entry_navigation_timer.Stop();
+  runtime.entry_navigation_wait_attempts = 0;
+  if (!force_refresh && !runtime.needs_fresh_observation &&
+      !document_needed) {
+    RequestNextModelTurn(task_id);
     return;
   }
   tabs::TabInterface* tab = tabs::TabHandle(*tab_id).Get();
