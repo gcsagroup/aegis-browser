@@ -8,8 +8,8 @@ Policy logic originates in `packages/core` and is integrated through generated r
 
 ## Current status
 
-- The Browser Agent v2 candidate lists **95 top-level Chromium patches** plus **2 nested V8 patches**. Patches 0079–0095 were replayed in an isolated Git index on top of commit `6627949a477277dfd916c275267d0bba886f376c`; the resulting tree exactly matches committed source `c930fa41ef7e9522f145848f3080ee0cc1edc4d8` (tree `33bcb50d8cdd08cfb918af071f3d128b874b15f9`).
-- The 57-, 65-, and 67-patch records remain historical snapshots and do not qualify v2 artifacts.
+- The Browser Agent v2 candidate lists **97 top-level Chromium patches** plus **2 nested V8 patches**. Patches 0079–0095 replay to `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patch 0096 replays to `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`, and patch 0097 produces committed source `a3040bb0dea05e87c2a141b9a29a237a96953620` (tree `d7e560e4803c14a9239c9a9f511f46516f8e1cda`).
+- The 57-, 65-, 67-, and 95-patch records remain historical snapshots and do not qualify the 97-patch artifacts.
 - macOS native and browser tests have passed for the candidate source; exact platform manifests and final UI acceptance remain required. There is no product-signed, notarized, installed, or published desktop release.
 - Android and Windows candidate builds are in validation; no APK, AAB, or Windows package is accepted until the device/host records are complete.
 
@@ -112,10 +112,10 @@ Build success alone does not promote an output to RC or release status.
 
 The current source accounting is:
 
-- 95 top-level patches listed for Chromium.
+- 97 top-level patches listed for Chromium.
 - 2 additional patches applied inside the nested V8 checkout.
-- The 57-, 65-, and 67-patch identities are historical and do not cover the v2 candidate.
-- Patches 0079–0095 passed an exact isolated-index replay on the previously verified 78-patch tree; artifact identity and runtime qualification remain platform-specific.
+- The 57-, 65-, 67-, and 95-patch identities are historical and do not cover the current v2 candidate.
+- Patches 0079–0095 passed an exact isolated-index replay on the previously verified 78-patch tree; patch 0096 independently produced the exact 96-patch tree, and patch 0097 produced the exact 97-patch candidate tree. Artifact identity and runtime qualification remain platform-specific.
 
 “Present in the series” means only that a patch file is listed. It does not prove successful replay, build reproducibility, platform acceptance, signing, packaging, or publication.
 
@@ -152,7 +152,7 @@ Before any desktop publication, the same candidate must have:
 5. fresh-install and upgrade acceptance on representative systems; and
 6. an explicit release decision.
 
-The 95-patch source and both nested V8 patches passed a fresh exact isolated-index replay from their pinned bases. The macOS candidate has passed the named native/browser test scope, but this does not satisfy cross-platform identity, trusted signing, notarization, installed-distribution, or release-authorization gates.
+The 97-patch source and both nested V8 patches passed the chained exact isolated-index replay from their pinned bases. The macOS candidate has passed the named native/browser test scope, but this does not satisfy trusted signing, notarization, installed-distribution, or release-authorization gates.
 
 ## Android
 
