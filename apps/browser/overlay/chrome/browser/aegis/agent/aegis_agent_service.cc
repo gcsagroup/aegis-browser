@@ -1586,9 +1586,9 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
                   std::nullopt);
     return;
   }
-  std::optional<AgentToolCall> call =
-      BindExecutionToolCall(*task, plan->steps[runtime.next_step],
-                            runtime.attempt, *event, &validation_error);
+  std::optional<AgentToolCall> call = BindExecutionToolCall(
+      *task, plan->steps[runtime.next_step], runtime.last_tab_id,
+      runtime.attempt, *event, &validation_error);
   if (call && call->tool_name == "shopping.prepare_checkout" &&
       (!runtime.previous_result ||
        !ValidateAgentCheckoutSummary(*call, *runtime.previous_result,
@@ -1753,6 +1753,7 @@ void AegisAgentService::OnCheckoutPreflight(
 std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
     const AgentTask& task,
     const AgentPlanStep& step,
+    std::optional<int32_t> preferred_tab_id,
     int attempt,
     const AgentModelEvent& event,
     std::string* error) const {
@@ -1776,6 +1777,34 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
   call.tool_name = step.tool_name;
   call.arguments = event.arguments.Clone();
 
+  const std::optional<int> requested_tab_id = call.arguments.FindInt("tab_id");
+  if (requested_tab_id) {
+    std::vector<int32_t> live_scoped_tab_ids;
+    auto append_live_tab = [&](int32_t tab_id) {
+      tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
+      if (tab && tab->GetProfile() == profile_ && task.AllowsTab(tab_id) &&
+          task.scope().AllowsOrigin(tab->GetURL()) &&
+          std::ranges::find(live_scoped_tab_ids, tab_id) ==
+              live_scoped_tab_ids.end()) {
+        live_scoped_tab_ids.push_back(tab_id);
+      }
+    };
+    for (int32_t tab_id : task.scope().allowed_tab_ids) {
+      append_live_tab(tab_id);
+    }
+    for (int32_t tab_id : task.owned_tab_ids()) {
+      append_live_tab(tab_id);
+    }
+    const std::optional<int32_t> browser_bound_tab =
+        SelectBrowserBoundExecutionTab(requested_tab_id, preferred_tab_id,
+                                       live_scoped_tab_ids);
+    if (!browser_bound_tab) {
+      *error = "model referenced a tab outside the live task scope";
+      return std::nullopt;
+    }
+    call.arguments.Set("tab_id", *browser_bound_tab);
+  }
+
   const std::optional<int> tab_id = call.arguments.FindInt("tab_id");
   if (tab_id) {
     tabs::TabInterface* tab = tabs::TabHandle(*tab_id).Get();
@@ -1790,11 +1819,19 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
           actor_bridge_.LastDocument(task.id(), *tab_id);
       const std::string* requested_token =
           call.arguments.FindString("document_token");
-      if (!document || !requested_token ||
-          document->document_token != *requested_token ||
-          document->committed_url != call.committed_url) {
+      if (!document || document->committed_url != call.committed_url) {
         *error = "model referenced a stale browser document";
         return std::nullopt;
+      }
+      if (!requested_token || document->document_token != *requested_token) {
+        // Read-only extraction can safely bind the browser's latest document.
+        // Any action with a visible or external side effect still fails closed
+        // because its node identifiers may have come from stale evidence.
+        if (descriptor->risk != AgentRiskLevel::kR0ReadOnly) {
+          *error = "model referenced a stale browser document";
+          return std::nullopt;
+        }
+        call.arguments.Set("document_token", document->document_token);
       }
       call.document = *document;
     }

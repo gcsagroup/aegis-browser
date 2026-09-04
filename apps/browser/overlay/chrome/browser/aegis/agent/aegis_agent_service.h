@@ -252,6 +252,7 @@ class AegisAgentService : public KeyedService {
   std::optional<AgentToolCall> BindExecutionToolCall(
       const AgentTask& task,
       const AgentPlanStep& step,
+      std::optional<int32_t> preferred_tab_id,
       int attempt,
       const AgentModelEvent& event,
       std::string* error) const;

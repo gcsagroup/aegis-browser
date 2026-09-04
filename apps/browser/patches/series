@@ -94,3 +94,4 @@
 0093-fix-agent-support-explicit-local-fixture-url-checks.patch
 0094-fix-agent-normalize-native-task-completion-evidence.patch
 0095-fix-agent-preserve-verified-completion-and-bookmark-undo.patch
+0096-fix-aegis-bind-model-browser-capabilities.patch

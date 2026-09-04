@@ -38,6 +38,15 @@ std::string BuildAgentExecutionPrompt(
     base::span<const AgentExecutionEvidence> evidence_history = {},
     std::string_view model_correction = {});
 
+// Tab and document identifiers are browser-issued capabilities rather than
+// model-authored intent. Keep an already valid model selection, otherwise
+// bind a browser-verified preferred tab or the only live scoped tab. Ambiguous
+// scopes fail closed.
+std::optional<int32_t> SelectBrowserBoundExecutionTab(
+    std::optional<int32_t> requested_tab_id,
+    std::optional<int32_t> preferred_tab_id,
+    base::span<const int32_t> live_scoped_tab_ids);
+
 // A model turn may contain text for the timeline, but it must contain exactly
 // one native tool call and a completed event. The requested tool must match the
 // browser-selected plan step; model prose or JSON text can never become an
