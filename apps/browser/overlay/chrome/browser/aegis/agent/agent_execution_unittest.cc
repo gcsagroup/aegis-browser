@@ -101,6 +101,20 @@ TEST(AegisAgentExecutionTest, SelectsOnlyExactBrowserChosenTool) {
   EXPECT_FALSE(SelectExecutionToolCall(result, "page.observe", &error));
 }
 
+TEST(AegisAgentExecutionTest,
+     BrowserBindsInvalidModelTabOnlyWhenLiveScopeIsUnambiguous) {
+  const std::vector<int32_t> one_live_tab = {41};
+  EXPECT_EQ(SelectBrowserBoundExecutionTab(999, std::nullopt, one_live_tab),
+            41);
+  EXPECT_EQ(SelectBrowserBoundExecutionTab(41, std::nullopt, one_live_tab), 41);
+
+  const std::vector<int32_t> two_live_tabs = {41, 42};
+  EXPECT_FALSE(
+      SelectBrowserBoundExecutionTab(999, std::nullopt, two_live_tabs));
+  EXPECT_EQ(SelectBrowserBoundExecutionTab(999, 42, two_live_tabs), 42);
+  EXPECT_EQ(SelectBrowserBoundExecutionTab(41, 42, two_live_tabs), 41);
+}
+
 TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
   AgentTask task("task-exec", "Compare the approved fixture", AgentMode::kAsk,
                  ExecutionScope());
@@ -171,6 +185,7 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
   ASSERT_EQ(live_tab_ids->size(), 2u);
   EXPECT_EQ((*live_tab_ids)[0].GetInt(), 7);
   EXPECT_EQ((*live_tab_ids)[1].GetInt(), 8);
+  EXPECT_FALSE(parsed->GetDict().FindInt("required_tab_id"));
   const base::ListValue* prior_evidence =
       parsed->GetDict().FindList("prior_verified_evidence_untrusted");
   ASSERT_TRUE(prior_evidence);
@@ -186,6 +201,19 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
             std::string::npos);
   EXPECT_NE(corrected.find("do not repeat the rejected response"),
             std::string::npos);
+
+  AgentTask single_tab_task("task-single-tab", "Read the fixture",
+                            AgentMode::kAsk, ExecutionScope());
+  const std::string single_tab_prompt =
+      BuildAgentExecutionPrompt(single_tab_task, plan, 0, 0, nullptr, {});
+  const std::optional<base::Value> single_tab_parsed =
+      base::JSONReader::Read(single_tab_prompt, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(single_tab_parsed && single_tab_parsed->is_dict());
+  EXPECT_EQ(single_tab_parsed->GetDict().FindInt("required_tab_id"), 7);
+  const std::string* capability_rule =
+      single_tab_parsed->GetDict().FindString("browser_capability_rule");
+  ASSERT_TRUE(capability_rule);
+  EXPECT_NE(capability_rule->find("never invent"), std::string::npos);
 }
 
 TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {

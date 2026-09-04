@@ -263,6 +263,14 @@ std::string BuildAgentExecutionPrompt(
   for (int32_t tab_id : task.owned_tab_ids()) {
     live_tab_ids.Append(tab_id);
   }
+  if (live_tab_ids.size() == 1u) {
+    envelope.Set("required_tab_id", live_tab_ids[0].GetInt());
+    envelope.Set(
+        "browser_capability_rule",
+        "Use required_tab_id exactly. For document tools, copy the latest "
+        "document_token from the preceding browser result exactly; never "
+        "invent either browser-issued capability.");
+  }
   envelope.Set("live_tab_ids", std::move(live_tab_ids));
   if (previous_result) {
     base::DictValue result;
@@ -311,6 +319,34 @@ std::string BuildAgentExecutionPrompt(
     }
   }
   return prompt;
+}
+
+std::optional<int32_t> SelectBrowserBoundExecutionTab(
+    std::optional<int32_t> requested_tab_id,
+    std::optional<int32_t> preferred_tab_id,
+    base::span<const int32_t> live_scoped_tab_ids) {
+  auto is_live = [&](int32_t tab_id) {
+    return tab_id > 0 && std::ranges::find(live_scoped_tab_ids, tab_id) !=
+                             live_scoped_tab_ids.end();
+  };
+  if (requested_tab_id && is_live(*requested_tab_id)) {
+    return requested_tab_id;
+  }
+  if (preferred_tab_id && is_live(*preferred_tab_id)) {
+    return preferred_tab_id;
+  }
+
+  std::optional<int32_t> only_live_tab;
+  for (int32_t tab_id : live_scoped_tab_ids) {
+    if (tab_id <= 0 || (only_live_tab && tab_id == *only_live_tab)) {
+      continue;
+    }
+    if (only_live_tab) {
+      return std::nullopt;
+    }
+    only_live_tab = tab_id;
+  }
+  return only_live_tab;
 }
 
 std::optional<AgentModelEvent> SelectExecutionToolCall(
