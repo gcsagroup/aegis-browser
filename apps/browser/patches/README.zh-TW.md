@@ -13,7 +13,7 @@
 
 ## 目前本機補丁序列
 
-狀態「series 中」只表示補丁檔案列在目前本機 `series`；不表示已經進入上游 Chromium、通過發行門檻或可以發布。49 補丁和 67 補丁記錄只保留為歷史快照。目前整合原始碼包含 **92 個 Chromium 補丁 + 2 個巢狀 V8 補丁**：0057–0065 是原 Browser Agent 整合，0066–0067 是設定/更新和視覺品牌，0068–0092 以 Browser Agent v2 Runtime 取代並強化 v1 執行路徑，同時加入跨平台入口、定時自動化、指定網站路由、Profile 隔離和有界恢復。2026-09-03 已確認補丁 0079–0092 可在先前驗證的 78 補丁原始碼上透過隔離 Git 索引精確重放；結果是 Chromium 原始碼提交 `583cd38ab586ee30e948f0599bb79537dc1632e1`（tree `aecbebf54c228f181608f6647d401b9e3fb40212`）。成品資格仍按平台分別判定，且必須綁定這份精確原始碼的驗收證據。
+狀態「series 中」只表示補丁檔案列在目前本機 `series`；不表示已經進入上游 Chromium、通過發行門檻或可以發布。49、67 和 95 補丁記錄只保留為歷史快照。目前整合原始碼包含 **97 個 Chromium 補丁 + 2 個巢狀 V8 補丁**：0057–0065 是原 Browser Agent 整合，0066–0067 是設定/更新和視覺品牌，0068–0097 以 Browser Agent v2 Runtime 取代並強化 v1 執行路徑，同時加入跨平台入口、定時自動化、指定網站路由、Profile 隔離、有界恢復、瀏覽器綁定的分頁/文件能力、已提交導覽等待和確定性的服務註冊。補丁 0079–0095 重放到 Chromium 原始碼提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；補丁 0096 重放到 `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`，補丁 0097 產生已提交原始碼 `a3040bb0dea05e87c2a141b9a29a237a96953620`（tree `d7e560e4803c14a9239c9a9f511f46516f8e1cda`）。成品資格仍按平台分別判定，且必須綁定這份精確原始碼的驗收證據。
 
 | ID | 目的 | 狀態 |
 |----|------|------|
@@ -109,6 +109,10 @@
 | 0090 | 書籤等瀏覽器資料任務保持使用原生工具 | series 中 |
 | 0091 | 丟棄 browser-only 路由中無害的冗餘目標而不誤報失敗 | series 中 |
 | 0092 | 驗證書籤目標語意、修復漏步計畫，並確保僅預覽任務維持唯讀 | series 中 |
-| 0079 | 支援隔離的主要無痕 Aegis/Agent/Actor/UI；Guest/System/輔助 OTR fail closed；鎖止桌面/Android 遠端 CDP；遮蔽預設 NetLog API key 請求標頭和 Actor 私密診斷；依 Profile 隔離 CNAME 與 Advanced/Torrent 所有權並在關閉時取消 | series 中 |
+| 0093 | 支援明確的本機 fixture URL 有效性檢查 | series 中 |
+| 0094 | 正規化原生任務完成證據 | series 中 |
+| 0095 | 保留已驗證完成狀態和書籤復原能力 | series 中 |
+| 0096 | 將模型瀏覽器能力綁定到即時任務上下文 | series 中 |
+| 0097 | 等待範圍內導覽提交，並在 Profile 初始化前註冊 Aegis 服務 | series 中 |
 
 在乾淨、固定版本的 checkout 上執行 `pnpm --filter @gcsa-aegis/browser apply-patches` 進行套用。任何 series 變化都必須重新完成離線重放、冷建置、增量建置和受影響測試。
