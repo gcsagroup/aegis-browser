@@ -14,7 +14,7 @@ Patches in this directory are applied on top of the pinned Chromium commit
 
 ## Current local patch series
 
-The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-patch and 67-patch records are retained only as historical snapshots. The current integrated source contains **92 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0092 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, and bounded recovery. On 2026-09-03, patches 0079–0092 replayed exactly in an isolated Git index on the previously verified 78-patch source; the result is Chromium source commit `583cd38ab586ee30e948f0599bb79537dc1632e1` (tree `aecbebf54c228f181608f6647d401b9e3fb40212`). Artifact qualification remains platform-specific and requires the acceptance evidence for that exact source.
+The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-, 67-, and 95-patch records are retained only as historical snapshots. The current integrated source contains **97 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0097 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, bounded recovery, browser-bound tab/document capabilities, committed-navigation waiting, and deterministic service registration. Patches 0079–0095 replay to Chromium source commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patch 0096 replays that tree to `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`, and patch 0097 produces committed source `a3040bb0dea05e87c2a141b9a29a237a96953620` (tree `d7e560e4803c14a9239c9a9f511f46516f8e1cda`). Artifact qualification remains platform-specific and requires acceptance evidence for that exact source.
 
 | ID | Intent | Status |
 |----|--------|--------|
@@ -110,5 +110,10 @@ The status “in series” means only that the patch file is listed in the curre
 | 0090 | Keep bookmark and other browser-data tasks on native tools | in series |
 | 0091 | Tolerate and discard harmless redundant targets on browser-only routes | in series |
 | 0092 | Validate explicit bookmark goals, repair omitted steps, and keep preview-only tasks read-only | in series |
+| 0093 | Support explicit local-fixture URL validity checks | in series |
+| 0094 | Normalize native task-completion evidence | in series |
+| 0095 | Preserve verified completion and bookmark undo | in series |
+| 0096 | Bind model browser capabilities to live task context | in series |
+| 0097 | Wait for scoped navigation to commit and register Aegis services before profile initialization | in series |
 
 Apply with `pnpm --filter @gcsa-aegis/browser apply-patches` on a clean pinned checkout. Every series change requires a fresh offline replay, cold and incremental builds, and the affected tests.

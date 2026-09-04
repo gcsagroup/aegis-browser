@@ -95,3 +95,4 @@
 0094-fix-agent-normalize-native-task-completion-evidence.patch
 0095-fix-agent-preserve-verified-completion-and-bookmark-undo.patch
 0096-fix-aegis-bind-model-browser-capabilities.patch
+0097-fix-agent-wait-for-scoped-navigation-and-register-se.patch
