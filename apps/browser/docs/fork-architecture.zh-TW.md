@@ -6,7 +6,7 @@ GCSA-aegis 是 Chromium fork。瀏覽器、網路、儲存、Blink 和部分 V8 
 
 ## 狀態邊界
 
-- 目前 Browser Agent v2 候選原始碼：**105 個頂層 Chromium 補丁 + 2 個巢狀 V8 補丁**，可精確重放到 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`（tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`）。
+- 目前 Browser Agent v2 候選原始碼：**108 個頂層 Chromium 補丁 + 2 個巢狀 V8 補丁**，可精確重放到原始碼樹 `319366182c31108e29e62d2f2199aff29a0b86e8`。
 - 57、65、67、95 和 97 補丁記錄屬於歷史快照，不能為目前 v2 成品授予資格。
 - 各平台身分綁定建置和受影響執行驗收仍未完成；目前沒有正式產品簽署、公證、安裝或發布的發行版。
 - Android 尚未從目前原始碼建置。
@@ -57,11 +57,11 @@ GCSA-aegis 是 Chromium fork。瀏覽器、網路、儲存、Blink 和部分 V8 
 
 ## 補丁交付模型
 
-`apps/browser/patches/series` 排列 105 個 Chromium 補丁，`apps/browser/patches/v8/series` 排列套用在巢狀 V8 checkout 中的 2 個補丁。重放指令碼會先驗證兩套基線。
+`apps/browser/patches/series` 排列 108 個 Chromium 補丁，`apps/browser/patches/v8/series` 排列套用在巢狀 V8 checkout 中的 2 個補丁。重放指令碼會先驗證兩套基線。
 
 `overlay/` 保存供開發和審查使用的預期整合原始碼。它不會獨立套用，也不能取代補丁序列。原始碼變更必須匯出為有序補丁，在固定基線上重放、建置並測試。
 
-0057–0065 實作並強化 Browser Agent v1；0066–0067 加入客製設定/更新狀態和跨平台品牌；0068–0102 以 Browser Agent v2 原生混合 Runtime 取代 v1 執行路徑，並加入新手入口、模型優先路由、定時自動化、跨平台接線、有界唯讀恢復、瀏覽器綁定的分頁/文件能力、正確的 GCSA Aegis 身分介面、脫離 UI 序列的工作持久化、同源限流後的有界收斂和啟用斷言時安全的 `Retry-After` 處理。105 補丁原始碼已通過連續精確重放，成品身分仍按平台分別判定。
+0057–0065 實作並強化 Browser Agent v1；0066–0067 加入客製設定/更新狀態和跨平台品牌；0068–0102 以 Browser Agent v2 原生混合 Runtime 取代 v1 執行路徑，並加入新手入口、模型優先路由、定時自動化、跨平台接線、有界唯讀恢復、瀏覽器綁定的分頁/文件能力、正確的 GCSA Aegis 身分介面、脫離 UI 序列的工作持久化、同源限流後的有界收斂和啟用斷言時安全的 `Retry-After` 處理。108 補丁原始碼已通過連續精確重放，成品身分仍按平台分別判定。
 
 「列入 series」只證明順序和檔案存在，不證明乾淨重放、建置新鮮度、簽署、封裝、安裝驗收、Android 支援或發布核准。
 

@@ -4,7 +4,9 @@
 
 本目录保存 GCSA-aegis 的公开产品架构、路线图、研究边界、产品页，以及带日期的本地审计记录。
 
-> **当前边界 — 2026-09-05：** Browser Agent v2 候选源码包含 105 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 Chromium 提交 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`（tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`）。平台构建和验收仍是独立门禁，这个源码身份不代表公开发行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 样本 operator-blinded public pilot，召回率为 `1/3`；两者都不能泛化为广义恶意 JavaScript 检测结论。项目整体仍为发行 No-Go。
+> **当前边界 — 2026-09-10：** Browser Agent v2 候选源码包含 108 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 Chromium 提交 源码树 `319366182c31108e29e62d2f2199aff29a0b86e8`。平台构建和验收仍是独立门禁，这个源码身份不代表公开发行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 样本 operator-blinded public pilot，召回率为 `1/3`；两者都不能泛化为广义恶意 JavaScript 检测结论。项目整体仍为发行 No-Go。
+
+[2026-09-10 main 合并与验证](audit/main-consolidation-2026-09-10.md)
 
 ## 从这里开始
 

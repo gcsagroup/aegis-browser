@@ -47,7 +47,7 @@ Node-only AST analysis, bounded behavior/provenance functions, local federated s
 
 ## Current source and artifact identity
 
-- The Browser Agent v2 candidate contains 105 top-level Chromium patches plus 2 nested V8 patches and replays exactly to `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` (tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`).
+- The Browser Agent v2 candidate contains 108 top-level Chromium patches plus 2 nested V8 patches and replays exactly to source tree `319366182c31108e29e62d2f2199aff29a0b86e8`.
 - The 57-, 65-, and 67-patch records are historical snapshots and do not qualify the v2 candidate artifacts.
 - The combined head requires a fresh exact replay, identity-bound build, and affected runtime acceptance before it can become a current local candidate.
 - The native iOS source contains the app, BrowserKit, AegisPolicyKit, AgentKit, Safari/Share extension targets, shared contract vectors, and iPhone/iPad Simulator test chain. Its current ceiling is `SIMULATOR_QUALIFIED`.

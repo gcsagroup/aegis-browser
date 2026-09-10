@@ -10,7 +10,9 @@ The package version remains `0.1.0`, but no `0.1.0` release, Git tag, or binary 
 
 ### Release status
 
-- Synchronized Browser Agent v2 to 106 top-level Chromium patches plus 2 nested V8 patches and replayed them exactly to `383d157c6f3601101038aef6ff964e61b6af7b4f` (tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`).
+- Consolidated development history into `main` on 2026-09-10. Patches 0107–0108 cover startup monitor recovery and verified runtime/summary fixes. [Verification record](docs/audit/main-consolidation-2026-09-10.md); no App build or binary release was performed.
+
+- Synchronized Browser Agent v2 to 108 top-level Chromium patches plus 2 nested V8 patches and replayed them exactly to source tree `319366182c31108e29e62d2f2199aff29a0b86e8`.
 - Patch 0106 fixes blocking locale lookup on Windows UI threads without removing the remote-control warning; rebuilt platform regression acceptance remains pending.
 - The 57-, 65-, 67-, 95-, and 97-patch records remain historical evidence and do not qualify the current v2 artifacts.
 - The project remains release No-Go. Source synchronization does not authorize a tag, GitHub Release, binary, signing, notarization, Play upload, or production deployment.

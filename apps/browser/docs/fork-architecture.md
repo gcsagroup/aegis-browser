@@ -6,7 +6,7 @@ GCSA-aegis is a Chromium fork. The browser, network, storage, Blink, and selecte
 
 ## Status boundary
 
-- Current Browser Agent v2 candidate: **105 top-level Chromium patches + 2 nested V8 patches**, replayed exactly to `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` (tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`).
+- Current Browser Agent v2 candidate: **108 top-level Chromium patches + 2 nested V8 patches**, replayed exactly to source tree `319366182c31108e29e62d2f2199aff29a0b86e8`.
 - The 57-, 65-, 67-, 95-, and 97-patch records are historical snapshots and do not qualify the current v2 artifacts.
 - Platform identity-bound builds and affected runtime acceptance remain open. There is no product-signed, notarized, installed, or published release.
 - Android has not been built from the current source.
@@ -57,11 +57,11 @@ GCSA-aegis is a Chromium fork. The browser, network, storage, Blink, and selecte
 
 ## Patch delivery model
 
-`apps/browser/patches/series` orders the 105 Chromium patches. `apps/browser/patches/v8/series` orders the 2 patches applied in the nested V8 checkout. The replay script validates both bases before applying them.
+`apps/browser/patches/series` orders the 108 Chromium patches. `apps/browser/patches/v8/series` orders the 2 patches applied in the nested V8 checkout. The replay script validates both bases before applying them.
 
 `overlay/` records expected integration source for development and review. It is not independently applied and cannot replace the patch series. A source change must be exported to an ordered patch, replayed on the pinned base, built, and tested.
 
-Patches 0057–0065 implement and harden Browser Agent v1. Patches 0066–0067 add tailored settings/update status and cross-platform branding. Patches 0068–0102 replace the v1 execution path with the Browser Agent v2 native hybrid runtime, novice entry points, model-first routing, scheduled automation, cross-platform integration, bounded read-only recovery, browser-bound tab/document capabilities, corrected GCSA Aegis identity surfaces, off-UI-sequence task persistence, bounded completion after same-origin rate limiting, and assertion-safe `Retry-After` handling. The 105-patch source passed exact chained replay; artifact identity remains platform-specific.
+Patches 0057–0065 implement and harden Browser Agent v1. Patches 0066–0067 add tailored settings/update status and cross-platform branding. Patches 0068–0102 replace the v1 execution path with the Browser Agent v2 native hybrid runtime, novice entry points, model-first routing, scheduled automation, cross-platform integration, bounded read-only recovery, browser-bound tab/document capabilities, corrected GCSA Aegis identity surfaces, off-UI-sequence task persistence, bounded completion after same-origin rate limiting, and assertion-safe `Retry-After` handling. The 108-patch source passed exact chained replay; artifact identity remains platform-specific.
 
 Being listed in a series proves only ordering and presence. It does not prove a clean replay, build freshness, signing, packaging, installation acceptance, Android support, or release approval.
 
