@@ -20,6 +20,8 @@ class AegisUIConfig : public content::DefaultWebUIConfig<AegisUI> {
   AegisUIConfig()
       : DefaultWebUIConfig(content::kChromeUIScheme,
                            chrome::kChromeUIAegisHost) {}
+
+  bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
 };
 
 // chrome://aegis — GCSA-aegis module status and toggles.

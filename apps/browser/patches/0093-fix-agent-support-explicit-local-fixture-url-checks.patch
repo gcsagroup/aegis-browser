@@ -1,0 +1,296 @@
+From 0d679680d8bc9b5e18c434f7cd4ffd12a1b3c17a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 17:41:40 +0800
+Subject: [PATCH] fix(agent): support explicit local fixture URL checks
+
+---
+ .../agent/aegis_agent_service_unittest.cc     | 18 ++++++
+ .../aegis/agent/aegis_browser_tools.cc        | 60 +++++++++++++++----
+ .../browser/aegis/agent/aegis_browser_tools.h |  3 +-
+ .../browser/resources/aegis_agent/agent.css   | 18 ++++++
+ .../browser/resources/aegis_agent/agent.html  |  4 ++
+ chrome/browser/resources/aegis_agent/agent.ts | 13 ++++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 15 +++++
+ 7 files changed, 117 insertions(+), 14 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 4553f860ae..75c6128c6d 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -671,6 +671,24 @@ TEST_F(AegisAgentServiceTest, BookmarkUrlChecksRejectLocalNetworkTargets) {
+       scope, public_url, GURL("http://localhost/redirected")));
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       BookmarkUrlChecksAllowOnlyExactNumericLoopbackFixtureOrigin) {
++  AgentTaskScope scope = ServiceTestScope();
++  const GURL ipv4_fixture("http://127.0.0.1:18765/live");
++  const GURL ipv6_fixture("http://[::1]:18765/live");
++  EXPECT_TRUE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, ipv4_fixture, GURL("http://127.0.0.1:18765/redirected"), true));
++  EXPECT_TRUE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, ipv6_fixture, GURL("http://[::1]:18765/redirected"), true));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, ipv4_fixture, GURL("http://127.0.0.1:18766/redirected"), true));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, ipv4_fixture, GURL("http://localhost:18765/redirected"), true));
++  EXPECT_FALSE(IsAegisBookmarkUrlCheckTargetAllowed(
++      scope, GURL("http://10.0.0.7:18765/live"),
++      GURL("http://10.0.0.7:18765/redirected"), true));
++}
++
+ TEST_F(AegisAgentServiceTest, LaterBookmarkEditInvalidatesUndoReceipt) {
+   AegisBrowserTools tools(profile_);
+   UndoManager undo_manager;
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 70a0b78343..caf749213e 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -12,6 +12,7 @@
+ #include <utility>
+ 
+ #include "base/check.h"
++#include "base/command_line.h"
+ #include "base/containers/flat_set.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
+@@ -98,6 +99,7 @@ constexpr size_t kMaxUrlChecksPerCall = 100;
+ constexpr size_t kMaxConcurrentUrlChecks = 4;
+ constexpr size_t kMaxUrlCheckRedirects = 5;
+ constexpr size_t kMaxReturnedTextBytes = 2048;
++constexpr char kAllowLocalFixtureSwitch[] = "aegis-agent-allow-local-fixture";
+ 
+ AgentToolResult ErrorResult(std::string action_id,
+                             AgentErrorCode error,
+@@ -694,7 +696,8 @@ std::string UrlCheckClassification(int net_error,
+ 
+ bool IsUrlCheckTargetAllowed(const AgentTaskScope& scope,
+                              const GURL& selected_bookmark_url,
+-                             const GURL& target) {
++                             const GURL& target,
++                             bool allow_local_fixture) {
+   const auto is_public_target = [](const GURL& url) {
+     if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || url.host().empty() ||
+         !url.username().empty() || !url.password().empty() ||
+@@ -709,10 +712,31 @@ bool IsUrlCheckTargetAllowed(const AgentTaskScope& scope,
+            network::IPAddressToIPAddressSpace(address) ==
+                network::mojom::IPAddressSpace::kPublic;
+   };
+-  return is_public_target(selected_bookmark_url) && is_public_target(target) &&
+-         (url::Origin::Create(target) ==
+-              url::Origin::Create(selected_bookmark_url) ||
+-          scope.AllowsOrigin(target));
++  if (is_public_target(selected_bookmark_url) && is_public_target(target)) {
++    return url::Origin::Create(target) ==
++               url::Origin::Create(selected_bookmark_url) ||
++           scope.AllowsOrigin(target);
++  }
++  const auto is_numeric_loopback_fixture = [](const GURL& url) {
++    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() ||
++        !url.HostIsIPAddress() || url.IntPort() <= 0 ||
++        !url.username().empty() || !url.password().empty()) {
++      return false;
++    }
++    net::IPAddress address;
++    return net::ParseURLHostnameToAddress(url.host(), &address) &&
++           address.IsLoopback();
++  };
++  return allow_local_fixture &&
++         is_numeric_loopback_fixture(selected_bookmark_url) &&
++         is_numeric_loopback_fixture(target) &&
++         url::Origin::Create(target) ==
++             url::Origin::Create(selected_bookmark_url);
++}
++
++bool AllowLocalFixtureUrlChecks() {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      kAllowLocalFixtureSwitch);
+ }
+ 
+ bool IsSha256Hex(std::string_view value) {
+@@ -757,8 +781,10 @@ bool CandidateMentions(std::string_view candidate, std::string_view expected) {
+ 
+ bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
+                                           const GURL& selected_bookmark_url,
+-                                          const GURL& target) {
+-  return IsUrlCheckTargetAllowed(scope, selected_bookmark_url, target);
++                                          const GURL& target,
++                                          bool allow_local_fixture) {
++  return IsUrlCheckTargetAllowed(scope, selected_bookmark_url, target,
++                                 allow_local_fixture);
+ }
+ 
+ void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item) {
+@@ -1772,7 +1798,8 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
+           GetBookmarkNodeByExternalId(model, node_id);
+       if (!node || !node->is_url() ||
+           !IsAegisBookmarkUrlCheckTargetAllowed(task->scope(), node->url(),
+-                                                node->url()) ||
++                                                node->url(),
++                                                AllowLocalFixtureUrlChecks()) ||
+           !unique_ids.insert(node_id).second) {
+         std::move(batch->callback)
+             .Run(ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
+@@ -2318,8 +2345,13 @@ void AegisBrowserTools::StartUrlCheckRequest(const std::string& batch_key,
+   batch.active_origins.insert(url::Origin::Create(entry.url).Serialize());
+   std::unique_ptr<network::SimpleURLLoader> loader =
+       network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
+-  loader->SetURLLoaderFactoryOptions(
+-      network::mojom::kURLLoadOptionBlockLocalRequest);
++  if (!IsAegisBookmarkUrlCheckTargetAllowed(batch.task->scope(), entry.url,
++                                            entry.url,
++                                            AllowLocalFixtureUrlChecks()) ||
++      !net::IsLocalhost(entry.url)) {
++    loader->SetURLLoaderFactoryOptions(
++        network::mojom::kURLLoadOptionBlockLocalRequest);
++  }
+   loader->SetTimeoutDuration(base::Seconds(10));
+   loader->SetRetryOptions(0, network::SimpleURLLoader::RETRY_NEVER);
+   loader->SetAllowHttpErrorResults(true);
+@@ -2360,7 +2392,8 @@ void AegisBrowserTools::OnUrlCheckRedirect(
+   }
+ 
+   if (IsAegisBookmarkUrlCheckTargetAllowed(batch.task->scope(), entry.url,
+-                                           target) &&
++                                           target,
++                                           AllowLocalFixtureUrlChecks()) &&
+       entry.redirects.size() < kMaxUrlCheckRedirects &&
+       (!batch.active_origins.contains(target_origin) || belongs_to_entry)) {
+     entry.redirects.push_back(target);
+@@ -2372,7 +2405,8 @@ void AegisBrowserTools::OnUrlCheckRedirect(
+   checked.Set("node_id", entry.node_id);
+   checked.Set("url", SafeUrlForModel(entry.url));
+   checked.Set("classification", IsAegisBookmarkUrlCheckTargetAllowed(
+-                                    batch.task->scope(), entry.url, target)
++                                    batch.task->scope(), entry.url, target,
++                                    AllowLocalFixtureUrlChecks())
+                                     ? "indeterminate"
+                                     : "scope_blocked");
+   checked.Set("http_status", response_head.headers
+@@ -2427,7 +2461,7 @@ void AegisBrowserTools::OnUrlCheckComplete(
+   checked.Set("node_id", entry.node_id);
+   checked.Set("url", SafeUrlForModel(entry.url));
+   const bool final_allowed = IsAegisBookmarkUrlCheckTargetAllowed(
+-      batch.task->scope(), entry.url, final_url);
++      batch.task->scope(), entry.url, final_url, AllowLocalFixtureUrlChecks());
+   checked.Set("classification",
+               final_allowed
+                   ? UrlCheckClassification(net_error, response_code, redirected)
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
+index 42c73c28b3..a7cd386def 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.h
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
+@@ -47,7 +47,8 @@ namespace aegis::agent {
+ 
+ bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
+                                           const GURL& selected_bookmark_url,
+-                                          const GURL& target);
++                                          const GURL& target,
++                                          bool allow_local_fixture = false);
+ void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item);
+ 
+ // Executes browser-owned tools that must not be implemented through renderer
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 8178801d27..b4f2a1a701 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -394,6 +394,24 @@ summary {
+   padding-top: 9px;
+ }
+ 
++.technical-error {
++  margin-top: 14px;
++  padding: 12px;
++  border-radius: 10px;
++  background: color-mix(in srgb, var(--cr-fallback-color-error) 10%, transparent);
++}
++
++.technical-error strong,
++.technical-error code {
++  display: block;
++}
++
++.technical-error code {
++  margin-top: 6px;
++  overflow-wrap: anywhere;
++  white-space: pre-wrap;
++}
++
+ .scope-grid {
+   display: grid;
+   gap: 8px;
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index b9288ef2e2..4797f0e166 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -110,6 +110,10 @@
+           <summary id="details-label"></summary>
+           <dl id="scope-grid" class="scope-grid"></dl>
+           <ol id="plan-steps" class="steps"></ol>
++          <div id="technical-error-group" class="technical-error" hidden>
++            <strong id="technical-error-label"></strong>
++            <code id="technical-error"></code>
++          </div>
+         </details>
+         <button id="start-button" type="button" hidden disabled></button>
+       </section>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 135ac52779..d151e3bc22 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -381,6 +381,14 @@ function friendlyError(error: string, hasPlan: boolean): string {
+   if (error.includes('Task input is invalid')) {
+     return loadTimeData.getString('taskInputError');
+   }
++  if (error.includes('URL check requires 1 to 100 bookmark node ids') ||
++      error.includes('network budget exhausted during URL check')) {
++    return loadTimeData.getString('bookmarkUrlLimitError');
++  }
++  if (error.includes(
++          'bookmark node is invalid, duplicated, or not HTTP')) {
++    return loadTimeData.getString('bookmarkUrlSafetyError');
++  }
+   if (error.includes('scheduled automation plan') ||
+       error.includes('monitor.create requires a scheduled automation')) {
+     return loadTimeData.getString('automationPlanError');
+@@ -491,6 +499,11 @@ function render(next: TaskSnapshot) {
+   const error = element('error');
+   error.textContent = friendlyError(next.lastError, Boolean(next.plan));
+   error.hidden = !error.textContent;
++  const technicalErrorGroup = element('technical-error-group');
++  element('technical-error-label').textContent =
++      loadTimeData.getString('technicalErrorLabel');
++  element('technical-error').textContent = next.lastError;
++  technicalErrorGroup.hidden = !next.lastError || !next.plan;
+ 
+   const approval = element('approval-card');
+   approval.hidden = !next.pendingApproval;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 8a1bb5a17a..8ae6c04086 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -295,6 +295,21 @@ void AddStrings(content::WebUIDataSource* source) {
+       "已安全停止；请重试，或展开技术详情查看准确原因。",
+       "任務已經開始，但未能繼續完成。Aegis "
+       "已安全停止；請重試，或展開技術詳情查看準確原因。");
++  add("bookmarkUrlLimitError",
++      "This task can safely check up to 100 bookmark links at a time. No "
++      "bookmark was changed; narrow the selection and retry.",
++      "一次任务最多安全检查 100 个收藏链接。本次未修改收藏夹；请缩小范围后重试。",
++      "一次任務最多安全檢查 100 個書籤連結。本次未修改書籤；請縮小範圍後重試。");
++  add("bookmarkUrlSafetyError",
++      "A bookmark address could not be checked safely (for example, a local, "
++      "private-network, duplicate, or invalid address). No bookmark was "
++      "changed; remove it from the selection and retry.",
++      "收藏链接中包含浏览器无法安全检查的地址（例如本机、内网、重复或格式异常地址）。"
++      "本次未修改收藏夹；请排除该地址后重试。",
++      "書籤連結中包含瀏覽器無法安全檢查的位址（例如本機、內網、重複或格式異常位址）。"
++      "本次未修改書籤；請排除該位址後重試。");
++  add("technicalErrorLabel", "Exact failure detail", "准确失败原因",
++      "準確失敗原因");
+   add("goalRoutingError",
+       "The AI could not determine a safe browser entry. Nothing was opened. "
+       "Please clarify the goal and try again.",
+-- 
+2.52.0
+

@@ -19,8 +19,11 @@ fi
 DEPOT_TOOLS_DIR="${DEPOT_TOOLS_DIR:-$HOME/depot_tools}"
 VERSION_FILE="$ROOT_DIR/CHROMIUM_VERSION"
 COMMIT_FILE="$ROOT_DIR/CHROMIUM_COMMIT"
+AEGIS_MAC_PRODUCT_NAME="GCSA Aegis"
+AEGIS_MAC_APP_BUNDLE_NAME="$AEGIS_MAC_PRODUCT_NAME.app"
 
 export ROOT_DIR REPO_ROOT CHROMIUM_ROOT DEPOT_TOOLS_DIR VERSION_FILE COMMIT_FILE MARKER
+export AEGIS_MAC_PRODUCT_NAME AEGIS_MAC_APP_BUNDLE_NAME
 export DEPOT_TOOLS_UPDATE="${DEPOT_TOOLS_UPDATE:-0}"
 
 normalized_gn_args() {
@@ -40,12 +43,20 @@ gn_args_match() {
     <(normalized_gn_args "$actual") >/dev/null 2>&1
 }
 
+desktop_app_path() {
+  local out_dir="$1"
+  printf '%s/%s\n' "$out_dir" "$AEGIS_MAC_APP_BUNDLE_NAME"
+}
+
 desktop_binary_path() {
   local out_dir="$1"
   local host_os="$2"
 
   case "$host_os" in
-    Darwin) printf '%s/Chromium.app/Contents/MacOS/Chromium\n' "$out_dir" ;;
+    Darwin)
+      printf '%s/%s/Contents/MacOS/%s\n' \
+        "$out_dir" "$AEGIS_MAC_APP_BUNDLE_NAME" "$AEGIS_MAC_PRODUCT_NAME"
+      ;;
     Linux) printf '%s/chrome\n' "$out_dir" ;;
     *) return 1 ;;
   esac
@@ -203,7 +214,7 @@ verify_release_manifest_inputs() {
   fi
 
   case "$(uname -s)" in
-    Darwin) artifact="$out_dir/Chromium.app" ;;
+    Darwin) artifact="$(desktop_app_path "$out_dir")" ;;
     Linux) artifact="$out_dir/chrome" ;;
     *)
       printf '当前宿主不支持 Release 产物身份校验：%s\n' "$(uname -s)" >&2

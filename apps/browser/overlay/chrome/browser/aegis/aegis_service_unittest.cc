@@ -5,8 +5,11 @@
 #include <utility>
 #include <vector>
 
+#include "base/run_loop.h"
 #include "base/test/test_future.h"
 #include "base/values.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
+#include "chrome/common/aegis/cdp_target_filter.h"
 #include "chrome/common/aegis/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -67,21 +70,34 @@ class AegisServiceModelSettingsTest : public ChromeRenderViewHostTestHarness {
     ChromeRenderViewHostTestHarness::SetUp();
     TestingBrowserProcess::GetGlobal()->SetSharedURLLoaderFactory(
         test_url_loader_factory_.GetSafeWeakWrapper());
-    AegisService::GetInstance()->InitializeForProfile(profile());
+    ASSERT_TRUE(service());
   }
 
   void TearDown() override {
-    AegisService::GetInstance()->OnProfileWillBeDestroyed(profile());
     TestingBrowserProcess::GetGlobal()->SetSharedURLLoaderFactory(nullptr);
     ChromeRenderViewHostTestHarness::TearDown();
+  }
+
+  AegisService* service() {
+    return AegisServiceFactory::GetForProfile(profile());
   }
 
   network::TestURLLoaderFactory test_url_loader_factory_;
 };
 
+class CountingAegisServiceObserver : public AegisServiceObserver {
+ public:
+  void OnAegisStateChanged() override { ++change_count_; }
+
+  int change_count() const { return change_count_; }
+
+ private:
+  int change_count_ = 0;
+};
+
 TEST_F(AegisServiceModelSettingsTest,
        NewProfileDefaultsToOpenAIWithoutMigration) {
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = this->service();
   EXPECT_EQ("openai", service->ConfiguredModelProvider());
   EXPECT_EQ("https://api.openai.com/v1", service->ConfiguredModelBaseUrl());
   EXPECT_EQ("gpt-4.1-mini", service->ConfiguredModelName());
@@ -96,28 +112,203 @@ TEST_F(AegisServiceModelSettingsTest,
 }
 
 TEST_F(AegisServiceModelSettingsTest,
-       ProfileBoundaryRejectsOtherAndOffTheRecordProfiles) {
-  AegisService* service = AegisService::GetInstance();
+       RegularAndIncognitoServicesAreIndependent) {
+  AegisService* service = this->service();
+  EXPECT_TRUE(service->IsAiControlAvailable());
+  service->SetTrackerBlockingEnabled(true);
   auto other_profile = TestingProfile::Builder().Build();
   Profile* off_the_record =
       profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  AegisService* off_the_record_service =
+      AegisServiceFactory::GetForProfile(off_the_record);
+  Profile* auxiliary_off_the_record = profile()->GetOffTheRecordProfile(
+      Profile::OTRProfileID::CreateUniqueForTesting(),
+      /*create_if_needed=*/true);
 
   EXPECT_TRUE(service->IsInitializedForProfile(profile()));
   EXPECT_FALSE(service->IsInitializedForProfile(nullptr));
   EXPECT_FALSE(service->IsInitializedForProfile(other_profile.get()));
   EXPECT_FALSE(service->IsInitializedForProfile(off_the_record));
+  EXPECT_EQ(nullptr,
+            AegisServiceFactory::GetForProfile(auxiliary_off_the_record));
+  ASSERT_TRUE(off_the_record_service);
+  EXPECT_NE(service, off_the_record_service);
+  EXPECT_EQ(profile(), service->profile());
+  EXPECT_EQ(off_the_record, off_the_record_service->profile());
+  EXPECT_TRUE(off_the_record_service->IsInitializedForProfile(off_the_record));
+  EXPECT_FALSE(off_the_record_service->IsInitializedForProfile(profile()));
 
-  // 无痕 Profile 的初始化尝试不得挤掉已绑定的普通 Profile。
-  service->InitializeForProfile(off_the_record);
-  EXPECT_TRUE(service->IsInitializedForProfile(profile()));
-  EXPECT_FALSE(service->IsInitializedForProfile(off_the_record));
+  off_the_record_service->SetTrackerBlockingEnabled(false);
+  off_the_record_service->SetSitePaused("private.test", true);
+  off_the_record_service->SetAiControlEnabled(true);
+  EXPECT_FALSE(off_the_record_service->IsTrackerBlockingEnabled());
+  EXPECT_TRUE(service->IsTrackerBlockingEnabled());
+  EXPECT_TRUE(off_the_record_service->IsSitePaused("private.test"));
+  EXPECT_FALSE(service->IsSitePaused("private.test"));
+  EXPECT_FALSE(off_the_record_service->IsAiControlEnabled());
+  EXPECT_FALSE(service->IsAiControlAvailable());
+  EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
+
+  service->RecordStrippedParams("regular.test", {"utm_source"});
+  off_the_record_service->RecordStrippedParams("private.test", {"fbclid"});
+  ASSERT_EQ(1u, service->RecentPrivacyEvents().size());
+  ASSERT_EQ(1u, off_the_record_service->RecentPrivacyEvents().size());
+  EXPECT_EQ("regular.test", service->RecentPrivacyEvents()[0].site_key);
+  EXPECT_EQ("private.test",
+            off_the_record_service->RecentPrivacyEvents()[0].site_key);
+}
+
+TEST_F(AegisServiceModelSettingsTest,
+       IncognitoDisablesAiControlWithoutAutomaticReenable) {
+  AegisService* regular = service();
+  ASSERT_TRUE(regular->IsAiControlAvailable());
+  profile()->GetPrefs()->SetBoolean(prefs::kAiControlEnabled, true);
+
+  Profile* off_the_record =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(prefs::kAiControlEnabled));
+  EXPECT_FALSE(regular->IsAiControlAvailable());
+  EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
+
+  AegisService* incognito = AegisServiceFactory::GetForProfile(off_the_record);
+  ASSERT_TRUE(incognito);
+  incognito->SetAiControlEnabled(true);
+  regular->SetAiControlEnabled(true);
+  EXPECT_FALSE(incognito->IsAiControlAvailable());
+  EXPECT_FALSE(regular->IsAiControlEnabled());
+  EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(prefs::kAiControlEnabled));
+
+  profile()->DestroyOffTheRecordProfile(off_the_record);
+  // The process gate stays latched through actual Profile destruction. Only
+  // an explicit later user enable may clear it after the OTR scan is clean.
+  EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
+  EXPECT_TRUE(regular->IsAiControlAvailable());
+  EXPECT_FALSE(regular->IsAiControlEnabled());
+  EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(prefs::kAiControlEnabled));
+}
+
+TEST_F(AegisServiceModelSettingsTest,
+       IncognitoDestructionNotifiesRegularWebUiAvailability) {
+  AegisService* regular = service();
+  CountingAegisServiceObserver observer;
+  regular->AddObserver(&observer);
+
+  Profile* off_the_record =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  EXPECT_EQ(nullptr,
+            AegisServiceFactory::GetForProfileIfExists(off_the_record));
+  const int notifications_before_destroy = observer.change_count();
+
+  profile()->DestroyOffTheRecordProfile(off_the_record);
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(regular->IsAiControlAvailable());
+  EXPECT_GT(observer.change_count(), notifications_before_destroy);
+  regular->RemoveObserver(&observer);
+}
+
+TEST_F(AegisServiceModelSettingsTest,
+       OriginalProfileDestructionNotifiesOtherRegularWebUi) {
+  auto other_profile = TestingProfile::Builder().Build();
+  AegisService* other_service =
+      AegisServiceFactory::GetForProfile(other_profile.get());
+  ASSERT_TRUE(other_service);
+  CountingAegisServiceObserver observer;
+  other_service->AddObserver(&observer);
+
+  auto doomed_profile = TestingProfile::Builder().Build();
+  AegisService* doomed_service =
+      AegisServiceFactory::GetForProfile(doomed_profile.get());
+  ASSERT_TRUE(doomed_service);
+  ASSERT_TRUE(
+      doomed_profile->GetPrimaryOTRProfile(/*create_if_needed=*/true));
+  EXPECT_FALSE(other_service->IsAiControlAvailable());
+  const int notifications_before_destroy = observer.change_count();
+
+  doomed_profile.reset();
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(other_service->IsAiControlAvailable());
+  EXPECT_GT(observer.change_count(), notifications_before_destroy);
+  other_service->RemoveObserver(&observer);
+}
+
+TEST_F(AegisServiceModelSettingsTest,
+       IncognitoModelKeyIsMemoryOnlyAndClearedOnReopen) {
+  constexpr char kBaseUrl[] = "https://api.openai.com/v1";
+  constexpr char kCredentialKey[] = "openai|https://api.openai.com/v1";
+  base::DictValue original_ciphertexts;
+  original_ciphertexts.Set(kCredentialKey, "regular-profile-sentinel");
+  profile()->GetPrefs()->SetDict(prefs::kModelApiKeyCiphertexts,
+                                 original_ciphertexts.Clone());
+
+  Profile* off_the_record =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  AegisService* incognito = AegisServiceFactory::GetForProfile(off_the_record);
+  ASSERT_TRUE(incognito);
+  EXPECT_TRUE(off_the_record->GetPrefs()
+                  ->GetDict(prefs::kModelApiKeyCiphertexts)
+                  .empty());
+
+  base::test::TestFuture<bool, std::string> saved;
+  incognito->SetModelSettings("openai", kBaseUrl, "gpt-test-model",
+                              "sk-private-session-only", false,
+                              saved.GetCallback());
+  ASSERT_TRUE(saved.Get<0>()) << saved.Get<1>();
+  EXPECT_TRUE(incognito->HasModelApiKey("openai", kBaseUrl));
+  EXPECT_FALSE(service()->HasModelApiKey("openai", kBaseUrl));
+  EXPECT_EQ("regular-profile-sentinel",
+            *profile()
+                 ->GetPrefs()
+                 ->GetDict(prefs::kModelApiKeyCiphertexts)
+                 .FindString(kCredentialKey));
+  EXPECT_TRUE(off_the_record->GetPrefs()
+                  ->GetDict(prefs::kModelApiKeyCiphertexts)
+                  .empty());
+
+  profile()->DestroyOffTheRecordProfile(off_the_record);
+  Profile* reopened =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  AegisService* reopened_service = AegisServiceFactory::GetForProfile(reopened);
+  ASSERT_TRUE(reopened_service);
+  EXPECT_FALSE(reopened_service->HasModelApiKey("openai", kBaseUrl));
+  EXPECT_TRUE(
+      reopened->GetPrefs()->GetDict(prefs::kModelApiKeyCiphertexts).empty());
+}
+
+TEST_F(AegisServiceModelSettingsTest,
+       IncognitoTorrentTaskIdIsIndependentAndClearedOnReopen) {
+  profile()->GetPrefs()->SetString(prefs::kLastTorrentTaskId,
+                                   "regular-task-sentinel");
+
+  Profile* off_the_record =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  ASSERT_TRUE(AegisServiceFactory::GetForProfile(off_the_record));
+  EXPECT_TRUE(
+      off_the_record->GetPrefs()->GetString(prefs::kLastTorrentTaskId).empty());
+  EXPECT_EQ("regular-task-sentinel",
+            profile()->GetPrefs()->GetString(prefs::kLastTorrentTaskId));
+
+  off_the_record->GetPrefs()->SetString(prefs::kLastTorrentTaskId,
+                                        "private-task-sentinel");
+  EXPECT_EQ("regular-task-sentinel",
+            profile()->GetPrefs()->GetString(prefs::kLastTorrentTaskId));
+
+  profile()->DestroyOffTheRecordProfile(off_the_record);
+  Profile* reopened =
+      profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  ASSERT_TRUE(AegisServiceFactory::GetForProfile(reopened));
+  EXPECT_TRUE(
+      reopened->GetPrefs()->GetString(prefs::kLastTorrentTaskId).empty());
+  EXPECT_EQ("regular-task-sentinel",
+            profile()->GetPrefs()->GetString(prefs::kLastTorrentTaskId));
 }
 
 TEST_F(AegisServiceModelSettingsTest, EncryptsAndClearsProviderApiKey) {
   constexpr char kApiKey[] = "sk-test-provider-secret";
   constexpr char kBaseUrl[] = "http://127.0.0.1:8000/v1";
   constexpr char kCredentialKey[] = "openai|http://127.0.0.1:8000/v1";
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = this->service();
   base::test::TestFuture<bool, std::string> saved;
   service->SetModelSettings("openai", kBaseUrl, "gpt-test-model", kApiKey,
                             false, saved.GetCallback());
@@ -190,7 +381,7 @@ TEST_F(AegisServiceModelSettingsTest, EncryptsAndClearsProviderApiKey) {
 
 TEST_F(AegisServiceModelSettingsTest,
        SendsPublicSummaryButKeepsSensitiveHostLocal) {
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = this->service();
   base::test::TestFuture<bool, std::string> saved;
   service->SetModelSettings("openai", "https://api.openai.com/v1",
                             "gpt-test-model", "sk-test-provider-secret", false,
@@ -239,7 +430,7 @@ TEST_F(AegisServiceModelSettingsTest,
 
 TEST_F(AegisServiceModelSettingsTest,
        NumericLoopbackStaysLocalForAnthropicFormat) {
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = this->service();
   base::test::TestFuture<bool, std::string> saved;
   service->SetModelSettings("anthropic", "http://127.0.0.1:8000/v1",
                             "local-claude-compatible", std::string(), false,
@@ -269,7 +460,7 @@ TEST_F(AegisServiceModelSettingsTest,
 }
 
 TEST_F(AegisServiceModelSettingsTest, SensitivePageSkipsNumericLoopbackModel) {
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = this->service();
   base::test::TestFuture<bool, std::string> saved;
   service->SetModelSettings("anthropic", "http://127.0.0.1:8000/v1",
                             "local-claude-compatible", std::string(), false,
@@ -298,7 +489,7 @@ TEST_F(AegisServiceModelSettingsTest, SensitivePageSkipsNumericLoopbackModel) {
 
 TEST_F(AegisServiceModelSettingsTest,
        UsesPreviewedModelDestinationAfterSettingsChange) {
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = this->service();
   base::test::TestFuture<bool, std::string> local_saved;
   service->SetModelSettings("openai", "http://127.0.0.1:8000/v1",
                             "previewed-local-model", std::string(), false,
@@ -344,7 +535,6 @@ class AegisServiceLegacyMigrationTest : public ChromeRenderViewHostTestHarness {
   }
 
   void TearDown() override {
-    AegisService::GetInstance()->OnProfileWillBeDestroyed(profile());
     TestingBrowserProcess::GetGlobal()->SetSharedURLLoaderFactory(nullptr);
     ChromeRenderViewHostTestHarness::TearDown();
   }
@@ -362,8 +552,7 @@ TEST_F(AegisServiceLegacyMigrationTest,
                   ->FindPreference(prefs::kOllamaBaseUrl)
                   ->HasUserSetting());
 
-  AegisService* service = AegisService::GetInstance();
-  service->InitializeForProfile(profile());
+  AegisService* service = AegisServiceFactory::GetForProfile(profile());
   EXPECT_EQ("openai", service->ConfiguredModelProvider());
   EXPECT_EQ("http://127.0.0.1:8000/v1", service->ConfiguredModelBaseUrl());
   EXPECT_EQ("legacy-local-model", service->ConfiguredModelName());
@@ -380,8 +569,7 @@ TEST_F(AegisServiceLegacyMigrationTest,
   profile()->GetPrefs()->SetDict(prefs::kModelApiKeyCiphertexts,
                                  std::move(legacy_keys));
 
-  AegisService* service = AegisService::GetInstance();
-  service->InitializeForProfile(profile());
+  AegisService* service = AegisServiceFactory::GetForProfile(profile());
   EXPECT_EQ("openai", service->ConfiguredModelProvider());
   EXPECT_EQ("http://127.0.0.1:8000/v1", service->ConfiguredModelBaseUrl());
   EXPECT_EQ("legacy-local-model", service->ConfiguredModelName());

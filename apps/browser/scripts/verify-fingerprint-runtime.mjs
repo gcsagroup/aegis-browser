@@ -32,6 +32,12 @@ import {homedir, tmpdir} from 'node:os';
 import {basename, dirname, join, relative, resolve, sep} from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {
+  AEGIS_MAC_APP_BUNDLE_NAME,
+  macAppExecutableName,
+  macAppExecutablePath,
+  macAppFrameworkExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const BROWSER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = resolve(BROWSER_ROOT, '..', '..');
@@ -123,7 +129,7 @@ function defaultChromiumPath() {
   const outDir = process.env.OUT_DIR?.trim()
     ? resolve(process.env.OUT_DIR.trim())
     : join(resolveDefaultChromiumRoot(), 'src', 'out', 'AegisRelease');
-  return join(outDir, 'Chromium.app');
+  return join(outDir, AEGIS_MAC_APP_BUNDLE_NAME);
 }
 
 function printUsage() {
@@ -131,7 +137,7 @@ function printUsage() {
   node apps/browser/scripts/verify-fingerprint-runtime.mjs [选项]
 
 选项：
-  --chromium PATH     Chromium.app 或 Chromium 可执行文件
+  --chromium PATH     GCSA Aegis.app 或浏览器可执行文件
                       默认：${defaultChromiumPath()}
   --timeout-ms N      单步超时，默认 ${DEFAULT_TIMEOUT_MS}
   --headed            使用可见窗口；默认 --headless=new
@@ -237,7 +243,10 @@ function parseArgs(argv) {
 async function resolveChromiumExecutable(inputPath) {
   let executable = resolve(inputPath);
   if (basename(executable).endsWith('.app')) {
-    executable = join(executable, 'Contents', 'MacOS', 'Chromium');
+    executable = macAppExecutablePath(
+      executable,
+      await macAppExecutableName(executable),
+    );
   }
   const metadata = await stat(executable).catch(() => null);
   assert(metadata?.isFile(), `Chromium 可执行文件不存在：${executable}`);
@@ -639,19 +648,16 @@ async function collectBrowserEvidence(chromiumExecutable) {
     process.platform === 'darwin' &&
     basename(appPath).endsWith('.app') &&
     basename(dirname(chromiumExecutable)) === 'MacOS';
-  assert(isMacApp, '正式指纹验证要求 macOS Chromium.app 产物');
+  assert(isMacApp, '正式指纹验证要求 macOS GCSA Aegis.app 产物');
 
   const infoPlistPath = join(appPath, 'Contents', 'Info.plist');
+  const executableName = await macAppExecutableName(appPath);
+  assert(
+    basename(chromiumExecutable) === executableName,
+    '浏览器可执行文件与 Info.plist 不一致',
+  );
   const framework = await fileEvidence(
-    join(
-      appPath,
-      'Contents',
-      'Frameworks',
-      'Chromium Framework.framework',
-      'Versions',
-      'Current',
-      'Chromium Framework',
-    ),
+    macAppFrameworkExecutablePath(appPath, executableName),
   );
   const gnArgs = await fileEvidence(join(dirname(appPath), 'args.gn'));
   const patchSeries = await collectPatchSeriesEvidence();
@@ -720,7 +726,7 @@ async function collectBrowserEvidence(chromiumExecutable) {
         bundleShortVersion &&
         bundleVersion,
     ),
-    'Chromium.app 或可执行文件版本身份不完整',
+    'GCSA Aegis.app 或可执行文件版本身份不完整',
   );
   const outputDir = dirname(appPath);
   const codeSignature = await collectCodeSignatureEvidence(appPath);

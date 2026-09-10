@@ -1,0 +1,239 @@
+From f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 4 Sep 2026 12:43:06 +0800
+Subject: [PATCH] aegis: bind model browser capabilities to live task context
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 49 ++++++++++++++++---
+ .../browser/aegis/agent/aegis_agent_service.h |  1 +
+ chrome/browser/aegis/agent/agent_execution.cc | 36 ++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.h  |  9 ++++
+ .../aegis/agent/agent_execution_unittest.cc   | 28 +++++++++++
+ 5 files changed, 117 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index e6b3660253..48e6bd1629 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1586,9 +1586,9 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+                   std::nullopt);
+     return;
+   }
+-  std::optional<AgentToolCall> call =
+-      BindExecutionToolCall(*task, plan->steps[runtime.next_step],
+-                            runtime.attempt, *event, &validation_error);
++  std::optional<AgentToolCall> call = BindExecutionToolCall(
++      *task, plan->steps[runtime.next_step], runtime.last_tab_id,
++      runtime.attempt, *event, &validation_error);
+   if (call && call->tool_name == "shopping.prepare_checkout" &&
+       (!runtime.previous_result ||
+        !ValidateAgentCheckoutSummary(*call, *runtime.previous_result,
+@@ -1753,6 +1753,7 @@ void AegisAgentService::OnCheckoutPreflight(
+ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
+     const AgentTask& task,
+     const AgentPlanStep& step,
++    std::optional<int32_t> preferred_tab_id,
+     int attempt,
+     const AgentModelEvent& event,
+     std::string* error) const {
+@@ -1776,6 +1777,34 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
+   call.tool_name = step.tool_name;
+   call.arguments = event.arguments.Clone();
+ 
++  const std::optional<int> requested_tab_id = call.arguments.FindInt("tab_id");
++  if (requested_tab_id) {
++    std::vector<int32_t> live_scoped_tab_ids;
++    auto append_live_tab = [&](int32_t tab_id) {
++      tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
++      if (tab && tab->GetProfile() == profile_ && task.AllowsTab(tab_id) &&
++          task.scope().AllowsOrigin(tab->GetURL()) &&
++          std::ranges::find(live_scoped_tab_ids, tab_id) ==
++              live_scoped_tab_ids.end()) {
++        live_scoped_tab_ids.push_back(tab_id);
++      }
++    };
++    for (int32_t tab_id : task.scope().allowed_tab_ids) {
++      append_live_tab(tab_id);
++    }
++    for (int32_t tab_id : task.owned_tab_ids()) {
++      append_live_tab(tab_id);
++    }
++    const std::optional<int32_t> browser_bound_tab =
++        SelectBrowserBoundExecutionTab(requested_tab_id, preferred_tab_id,
++                                       live_scoped_tab_ids);
++    if (!browser_bound_tab) {
++      *error = "model referenced a tab outside the live task scope";
++      return std::nullopt;
++    }
++    call.arguments.Set("tab_id", *browser_bound_tab);
++  }
++
+   const std::optional<int> tab_id = call.arguments.FindInt("tab_id");
+   if (tab_id) {
+     tabs::TabInterface* tab = tabs::TabHandle(*tab_id).Get();
+@@ -1790,12 +1819,20 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
+           actor_bridge_.LastDocument(task.id(), *tab_id);
+       const std::string* requested_token =
+           call.arguments.FindString("document_token");
+-      if (!document || !requested_token ||
+-          document->document_token != *requested_token ||
+-          document->committed_url != call.committed_url) {
++      if (!document || document->committed_url != call.committed_url) {
+         *error = "model referenced a stale browser document";
+         return std::nullopt;
+       }
++      if (!requested_token || document->document_token != *requested_token) {
++        // Read-only extraction can safely bind the browser's latest document.
++        // Any action with a visible or external side effect still fails closed
++        // because its node identifiers may have come from stale evidence.
++        if (descriptor->risk != AgentRiskLevel::kR0ReadOnly) {
++          *error = "model referenced a stale browser document";
++          return std::nullopt;
++        }
++        call.arguments.Set("document_token", document->document_token);
++      }
+       call.document = *document;
+     }
+   } else if (const std::string* target = call.arguments.FindString("url")) {
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index d109ec61b4..eea716f040 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -252,6 +252,7 @@ class AegisAgentService : public KeyedService {
+   std::optional<AgentToolCall> BindExecutionToolCall(
+       const AgentTask& task,
+       const AgentPlanStep& step,
++      std::optional<int32_t> preferred_tab_id,
+       int attempt,
+       const AgentModelEvent& event,
+       std::string* error) const;
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 5aae24c048..c50fffea0c 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -263,6 +263,14 @@ std::string BuildAgentExecutionPrompt(
+   for (int32_t tab_id : task.owned_tab_ids()) {
+     live_tab_ids.Append(tab_id);
+   }
++  if (live_tab_ids.size() == 1u) {
++    envelope.Set("required_tab_id", live_tab_ids[0].GetInt());
++    envelope.Set(
++        "browser_capability_rule",
++        "Use required_tab_id exactly. For document tools, copy the latest "
++        "document_token from the preceding browser result exactly; never "
++        "invent either browser-issued capability.");
++  }
+   envelope.Set("live_tab_ids", std::move(live_tab_ids));
+   if (previous_result) {
+     base::DictValue result;
+@@ -313,6 +321,34 @@ std::string BuildAgentExecutionPrompt(
+   return prompt;
+ }
+ 
++std::optional<int32_t> SelectBrowserBoundExecutionTab(
++    std::optional<int32_t> requested_tab_id,
++    std::optional<int32_t> preferred_tab_id,
++    base::span<const int32_t> live_scoped_tab_ids) {
++  auto is_live = [&](int32_t tab_id) {
++    return tab_id > 0 && std::ranges::find(live_scoped_tab_ids, tab_id) !=
++                             live_scoped_tab_ids.end();
++  };
++  if (requested_tab_id && is_live(*requested_tab_id)) {
++    return requested_tab_id;
++  }
++  if (preferred_tab_id && is_live(*preferred_tab_id)) {
++    return preferred_tab_id;
++  }
++
++  std::optional<int32_t> only_live_tab;
++  for (int32_t tab_id : live_scoped_tab_ids) {
++    if (tab_id <= 0 || (only_live_tab && tab_id == *only_live_tab)) {
++      continue;
++    }
++    if (only_live_tab) {
++      return std::nullopt;
++    }
++    only_live_tab = tab_id;
++  }
++  return only_live_tab;
++}
++
+ std::optional<AgentModelEvent> SelectExecutionToolCall(
+     const AgentModelParseResult& result,
+     std::string_view expected_tool,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index 391150cd7d..d1e352f3a0 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -38,6 +38,15 @@ std::string BuildAgentExecutionPrompt(
+     base::span<const AgentExecutionEvidence> evidence_history = {},
+     std::string_view model_correction = {});
+ 
++// Tab and document identifiers are browser-issued capabilities rather than
++// model-authored intent. Keep an already valid model selection, otherwise
++// bind a browser-verified preferred tab or the only live scoped tab. Ambiguous
++// scopes fail closed.
++std::optional<int32_t> SelectBrowserBoundExecutionTab(
++    std::optional<int32_t> requested_tab_id,
++    std::optional<int32_t> preferred_tab_id,
++    base::span<const int32_t> live_scoped_tab_ids);
++
+ // A model turn may contain text for the timeline, but it must contain exactly
+ // one native tool call and a completed event. The requested tool must match the
+ // browser-selected plan step; model prose or JSON text can never become an
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 14bab2ef4f..543d1e6ec4 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -101,6 +101,20 @@ TEST(AegisAgentExecutionTest, SelectsOnlyExactBrowserChosenTool) {
+   EXPECT_FALSE(SelectExecutionToolCall(result, "page.observe", &error));
+ }
+ 
++TEST(AegisAgentExecutionTest,
++     BrowserBindsInvalidModelTabOnlyWhenLiveScopeIsUnambiguous) {
++  const std::vector<int32_t> one_live_tab = {41};
++  EXPECT_EQ(SelectBrowserBoundExecutionTab(999, std::nullopt, one_live_tab),
++            41);
++  EXPECT_EQ(SelectBrowserBoundExecutionTab(41, std::nullopt, one_live_tab), 41);
++
++  const std::vector<int32_t> two_live_tabs = {41, 42};
++  EXPECT_FALSE(
++      SelectBrowserBoundExecutionTab(999, std::nullopt, two_live_tabs));
++  EXPECT_EQ(SelectBrowserBoundExecutionTab(999, 42, two_live_tabs), 42);
++  EXPECT_EQ(SelectBrowserBoundExecutionTab(41, 42, two_live_tabs), 41);
++}
++
+ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
+   AgentTask task("task-exec", "Compare the approved fixture", AgentMode::kAsk,
+                  ExecutionScope());
+@@ -171,6 +185,7 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
+   ASSERT_EQ(live_tab_ids->size(), 2u);
+   EXPECT_EQ((*live_tab_ids)[0].GetInt(), 7);
+   EXPECT_EQ((*live_tab_ids)[1].GetInt(), 8);
++  EXPECT_FALSE(parsed->GetDict().FindInt("required_tab_id"));
+   const base::ListValue* prior_evidence =
+       parsed->GetDict().FindList("prior_verified_evidence_untrusted");
+   ASSERT_TRUE(prior_evidence);
+@@ -186,6 +201,19 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
+             std::string::npos);
+   EXPECT_NE(corrected.find("do not repeat the rejected response"),
+             std::string::npos);
++
++  AgentTask single_tab_task("task-single-tab", "Read the fixture",
++                            AgentMode::kAsk, ExecutionScope());
++  const std::string single_tab_prompt =
++      BuildAgentExecutionPrompt(single_tab_task, plan, 0, 0, nullptr, {});
++  const std::optional<base::Value> single_tab_parsed =
++      base::JSONReader::Read(single_tab_prompt, base::JSON_PARSE_RFC);
++  ASSERT_TRUE(single_tab_parsed && single_tab_parsed->is_dict());
++  EXPECT_EQ(single_tab_parsed->GetDict().FindInt("required_tab_id"), 7);
++  const std::string* capability_rule =
++      single_tab_parsed->GetDict().FindString("browser_capability_rule");
++  ASSERT_TRUE(capability_rule);
++  EXPECT_NE(capability_rule->find("never invent"), std::string::npos);
+ }
+ 
+ TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {
+-- 
+2.52.0
+

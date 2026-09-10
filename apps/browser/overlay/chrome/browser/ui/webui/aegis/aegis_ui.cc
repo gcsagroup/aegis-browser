@@ -5,6 +5,9 @@
 
 #include <string>
 
+#include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
 #include "chrome/common/webui_url_constants.h"
@@ -12,7 +15,6 @@
 #include "chrome/grit/aegis_resources_map.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/webui_util.h"
 
 namespace {
@@ -581,13 +583,22 @@ AegisStrings StringsForLocale(const std::string& locale) {
 
 }  // namespace
 
+bool AegisUIConfig::IsWebUIEnabled(content::BrowserContext* browser_context) {
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+#if BUILDFLAG(IS_ANDROID)
+  return profile && profile->IsRegularProfile();
+#else
+  return aegis::IsAegisProfileSupported(profile);
+#endif
+}
+
 AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       profile, chrome::kChromeUIAegisHost);
 
   const AegisStrings strings =
-      StringsForLocale(l10n_util::GetApplicationLocale(std::string()));
+      StringsForLocale(g_browser_process->GetApplicationLocale());
   source->AddString("title", strings.title);
   source->AddString("subtitle", strings.subtitle);
   source->AddString("overviewTitle", strings.overview_title);

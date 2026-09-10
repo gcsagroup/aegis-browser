@@ -1,0 +1,24 @@
+# GCSA-aegis Windows x64 release build.
+# Run from a Windows Chromium checkout:
+#   gn gen out/AegisRelease --args="<contents of this file>"
+#   autoninja -C out/AegisRelease chrome
+
+target_cpu = "x64"
+
+is_debug = false
+is_component_build = false
+is_official_build = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+use_siso = false
+
+# Reuse the same GCSA Aegis product name and icon assets as macOS and Android.
+is_chrome_branded = false
+branding_path_component = "gcsa_aegis"
+branding_path_product = "chromium"
+branding_file_path = "//chrome/app/theme/gcsa_aegis/BRANDING"
+
+proprietary_codecs = false
+ffmpeg_branding = "Chromium"
+disable_fieldtrial_testing_config = true

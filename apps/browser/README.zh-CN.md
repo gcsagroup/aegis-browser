@@ -8,10 +8,12 @@ GCSA-aegis Browser 是把隐私与安全能力直接集成到浏览器层和引�
 
 ## 当前状态
 
-- 当前整合源码列出 **67 个顶层 Chromium 补丁**，另有 **2 个嵌套 V8 补丁**。
-- 此前的 57 补丁诊断清单和 65 补丁 Agent 验收保留为历史快照，均不绑定当前 67 补丁 HEAD，也不能给它授予资格。
-- 仍需重新完成当前整合源码的精确重放、身份绑定构建、受影响运行验收和发布门禁。当前没有正式产品签名、公证、打包、安装验收或已发布的桌面发行版。
-- Android **尚未从当前源码构建**，当前没有可映射到源码的 APK 或 AAB。
+- 最新候选为 `383d157c6f3601101038aef6ff964e61b6af7b4f`（tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`）。0103–0106 已从下述 0102 基线精确重放；[本轮跨平台验收](../../docs/audit/aegis-browser-agent-v2-cross-platform-acceptance-2026-09-05.md)仍未全部完成。
+
+- Browser Agent v2 候选源码列出 **106 个顶层 Chromium 补丁**和 **2 个嵌套 V8 补丁**。补丁 0079–0095 精确重放到 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；补丁 0096 重放到 `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`；补丁 0097 生成 `a3040bb0dea05e87c2a141b9a29a237a96953620`；补丁 0098 生成 `911f5c45acf3de10741008cf8f40948d57d31b7a`；补丁 0099 生成 `54f2d8dcf03ecf53b074b4919769ea652fdf5ab5`（tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`）；补丁 0100 生成 `44b79c59cf594b83af5c181842a57c2604d209ed`（tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`）；补丁 0101 生成 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；补丁 0102 生成已提交源码 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。
+- 57、65、67、95 和 97 补丁记录保留为历史快照，不能给 106 补丁产物授予资格。
+- macOS 原生与浏览器测试已在候选源码上通过；仍需精确平台清单和最终 UI 验收。当前没有正式产品签名、公证、安装或已发布的桌面发行版。
+- Android 和 Windows 候选正在验证；完成真机/主机记录前，不接受任何 APK、AAB 或 Windows 安装包。
 
 因此，仓库目前没有可发布的桌面或 Android 产物。
 
@@ -88,7 +90,18 @@ pnpm --filter @gcsa-aegis/browser status
 # 运行仓库和 Browser 脚本门禁。
 pnpm run quality:fast
 pnpm --filter @gcsa-aegis/browser test:scripts
+
+# 可选：预检无密钥本地模型的 Agent 原生工具调用协议。
+node apps/browser/scripts/verify-agent-local-model.mjs \
+  --base-url http://127.0.0.1:8000/v1 --model MODEL --rounds 2
 ```
+
+本地模型预检不会保存完整提示词或原始响应。它会重复检查模型发现、目标路由、计划和执行
+调用，但不能替代在真实浏览器里的端到端运行。
+
+Windows 界面验收使用共享的 [验收脚本](./scripts/windows-agent-ui-acceptance.ps1)，不要继续维护服务器上的独立副本。
+运行前先执行 [脚本自测](./scripts/windows-agent-ui-acceptance_test.ps1)，传入 Windows Node 的 `-NodePath` 和全新的 `-EvidenceDir`；
+该自测只验证启动参数与窗口辅助代码编译，不算界面通过。实际验收须在已解锁桌面运行，不能自动批准其他程序的防火墙弹窗。
 
 常用输出目录：
 
@@ -104,10 +117,10 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 
 当前源码口径：
 
-- 列入 Chromium 序列的 67 个顶层补丁。
+- 列入 Chromium 序列的 106 个顶层补丁。
 - 2 个应用在嵌套 V8 checkout 中的补丁。
-- 历史身份只覆盖此前的 57 补丁和 65 补丁快照，均不覆盖 0066–0067。
-- 当前 67 补丁 HEAD 必须重新完成精确重放和构建身份绑定，才能形成当前资格结论。
+- 57、65、67、95 和 97 补丁身份属于历史记录，不覆盖当前 v2 候选。
+- 补丁 0079–0095 已在先前验证的 78 补丁源码树上通过隔离索引精确重放；补丁 0096 独立生成精确的 96 补丁源码树；补丁 0097 生成精确的 97 补丁源码树；补丁 0098 生成精确的 98 补丁源码树 `7069e2b065466bbab3e3007e5866a3790e85ed47`；补丁 0099 生成精确的 99 补丁源码树 `915676bbfbd340b8b8feb15aecacc70dfd53861b`；补丁 0100 生成精确的 100 补丁源码树 `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`；补丁 0101 生成精确的 101 补丁源码树 `451b3148d12fc2cff2df293cb0f1bb0d6242a908`；补丁 0102 生成精确的 102 补丁源码树 `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`。产物身份和运行资格仍按平台分别判定。
 
 “已列入 series”只表示补丁文件存在，不证明重放、可复现构建、平台验收、签名、打包或发布已经完成。
 
@@ -119,7 +132,7 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 - 针对部分 Canvas、Audio、WebGL、WebGPU 表面的 Blink 指纹扰动；
 - 原生 HTTP(S)、Metalink、Torrent 和 Magnet 下载；
 - 本地启发式摘要，以及用户配置的 OpenAI、Claude（Anthropic）或 Gemini 兼容 API；
-- 浏览器掌控的 Agent：包含 Observe/Ask/Act 模式、有范围约束的书签/URL/页面/下载/工作流/监控工具、精确审批、审计历史、取消，以及最终购买前的强制用户接管；
+- Browser Agent v2：包含模型优先目标路由、可见计划、浏览器掌控的执行/观察/验证循环、常用任务按钮、定时自动化、有范围约束的书签/URL/页面/下载工具、精确审批，以及最终购买前的强制用户接管；
 - 仅观察的 MinerGuard 信号；以及
 - 默认关闭、需显式启用的 V8 bytecode-shadow 研究路径。
 
@@ -129,7 +142,7 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 - 指纹扰动只降低部分稳定表面，不能让浏览器“不可识别”。
 - 远程摘要需用户确认并先在 browser 侧脱敏。允许 HTTPS；明文 HTTP 仅允许数值 loopback 地址。
 - API Key 可选，通过操作系统加密保存在当前浏览器配置中，不回显明文。
-- Android handler 目前无法取得普通网页 tab，因此 Android 页面摘要不可用。
+- v2 源码已实现 Android 页面采集和当前页面绑定；是否运行合格取决于当前 APK 的真机验收。
 
 下载功能位于 Chromium 原生 `chrome://downloads` 和 `chrome://settings/downloads`。视频提取、媒体转换、FFmpeg 和预装下载扩展不属于产品范围。
 
@@ -144,14 +157,13 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 5. 代表系统上的全新安装和升级验收；以及
 6. 明确的发布决定。
 
-当前本地 diagnostic build-tree 已覆盖 0055/0056/0057，但不满足上述条件。完整补丁覆盖不会使其成为 RC 或发行版。
-本地 RC 已满足其中的干净重放、身份和受影响测试要求，但尚未满足产品身份、受信任签名、公证、已安装分发包或发行授权门禁。
+106 个顶层补丁和 2 个嵌套 V8 补丁已通过从各自固定基线开始的连续精确隔离索引重放。此前 macOS 原生/浏览器测试通过记录属于历史候选，最新语言缓存修复须重新构建和回归。受信任签名、公证、已安装分发包及发行授权门禁仍未满足。
 
 ## Android
 
-Android 与桌面共享固定 Chromium 基线，但当前源码尚未产出合格 Android 构建。Android client 需要受支持的 x86-64 Linux 环境；macOS 和 Windows 不能作为 Chromium Android 构建主机。
+Android 与桌面共享固定 Chromium 基线，并从干净的 x86-64 Linux checkout 构建。只有完成 APK 精确身份和真机运行记录后才可接受该构建；macOS 和 Windows 不能作为 Chromium Android 构建主机。
 
-参见 [Android 构建与验收状态](./docs/android.zh-CN.md) 和 [Play Store 准备草案](./docs/play-store.zh-CN.md)。以下只是未来构建入口，不是 APK 已存在的证据：
+参见 [Android 构建与验收状态](./docs/android.zh-CN.md) 和 [Play Store 准备草案](./docs/play-store.zh-CN.md)。以下是构建入口，本身不构成验收证据：
 
 ```bash
 pnpm --filter @gcsa-aegis/browser build:android

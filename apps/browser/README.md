@@ -8,10 +8,12 @@ Policy logic originates in `packages/core` and is integrated through generated r
 
 ## Current status
 
-- The combined source tree lists **67 top-level Chromium patches** plus **2 nested V8 patches**.
-- The earlier 57-patch diagnostic manifest and 65-patch Agent acceptance remain historical snapshots. Neither binds or qualifies the combined 67-patch head.
-- A fresh combined-source replay, identity-bound build, affected runtime acceptance, and release gates remain required. There is no current product-signed, notarized, packaged, installed, or published desktop release.
-- Android has **not been built from the current source**. There is no current-source APK or AAB.
+- The latest candidate is `383d157c6f3601101038aef6ff964e61b6af7b4f` (tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`). Patches 0103–0106 replay exactly from the 0102 baseline below. [Cross-platform acceptance](../../docs/audit/aegis-browser-agent-v2-cross-platform-acceptance-2026-09-05.md) remains incomplete.
+
+- The Browser Agent v2 candidate lists **106 top-level Chromium patches** plus **2 nested V8 patches**. Patches 0079–0095 replay to `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patch 0096 replays to `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`; patch 0097 produces `a3040bb0dea05e87c2a141b9a29a237a96953620`; patch 0098 produces `911f5c45acf3de10741008cf8f40948d57d31b7a`; patch 0099 produces `54f2d8dcf03ecf53b074b4919769ea652fdf5ab5` (tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`); patch 0100 produces `44b79c59cf594b83af5c181842a57c2604d209ed` (tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`); patch 0101 produces `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); and patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`).
+- The 57-, 65-, 67-, 95-, and 97-patch records remain historical snapshots and do not qualify the 106-patch artifacts.
+- macOS native and browser tests have passed for the candidate source; exact platform manifests and final UI acceptance remain required. There is no product-signed, notarized, installed, or published desktop release.
+- Android and Windows candidate builds are in validation; no APK, AAB, or Windows package is accepted until the device/host records are complete.
 
 The repository therefore has no release-ready desktop or Android artifact.
 
@@ -88,7 +90,19 @@ pnpm --filter @gcsa-aegis/browser status
 # Run repository and browser-script gates.
 pnpm run quality:fast
 pnpm --filter @gcsa-aegis/browser test:scripts
+
+# Optional: verify a keyless local model's native Agent tool-call contract.
+node apps/browser/scripts/verify-agent-local-model.mjs \
+  --base-url http://127.0.0.1:8000/v1 --model MODEL --rounds 2
 ```
+
+The local-model preflight stores neither full prompts nor raw responses. It
+checks model discovery plus repeated route, plan, and execution calls; it does
+not replace an end-to-end run in the actual browser.
+
+Use the shared [Windows UI acceptance script](./scripts/windows-agent-ui-acceptance.ps1), not independently maintained server copies.
+First run its [script self-test](./scripts/windows-agent-ui-acceptance_test.ps1) with a Windows Node `-NodePath` and a new `-EvidenceDir`.
+This validates process arguments and compiles the window helper; it does not establish UI acceptance. Actual interaction requires an unlocked desktop and must not automatically approve another application's firewall prompt.
 
 The common output locations are:
 
@@ -104,10 +118,10 @@ Build success alone does not promote an output to RC or release status.
 
 The current source accounting is:
 
-- 67 top-level patches listed for Chromium.
+- 106 top-level patches listed for Chromium.
 - 2 additional patches applied inside the nested V8 checkout.
-- Historical identities cover earlier 57-patch and 65-patch snapshots only; neither covers patches 0066–0067.
-- The combined 67-patch head requires a fresh exact replay and build identity before any current qualification claim.
+- The 57-, 65-, 67-, 95-, and 97-patch identities are historical and do not cover the current v2 candidate.
+- Patches 0079–0095 passed an exact isolated-index replay on the previously verified 78-patch tree; patch 0096 independently produced the exact 96-patch tree; patch 0097 produced the exact 97-patch tree; patch 0098 produced the exact 98-patch tree `7069e2b065466bbab3e3007e5866a3790e85ed47`; patch 0099 produced the exact 99-patch tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`; patch 0100 produced the exact 100-patch tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`; patch 0101 produced the exact 101-patch tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`; and patch 0102 produced the exact 102-patch tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`. Artifact identity and runtime qualification remain platform-specific.
 
 “Present in the series” means only that a patch file is listed. It does not prove successful replay, build reproducibility, platform acceptance, signing, packaging, or publication.
 
@@ -119,7 +133,7 @@ The current desktop source includes:
 - Blink fingerprint farbling for selected Canvas, Audio, WebGL, and WebGPU surfaces;
 - native HTTP(S), Metalink, Torrent, and Magnet download integration;
 - local heuristic summaries and user-configured OpenAI-, Claude (Anthropic)-, or Gemini-compatible APIs;
-- a browser-owned Agent with Observe/Ask/Act modes, scoped bookmark/URL/page/download/workflow/monitor tools, exact approvals, audit history, cancellation, and mandatory user takeover before final purchase;
+- Browser Agent v2 with model-first goal routing, visible planning, a browser-owned execute/observe/verify loop, common-task shortcuts, scheduled automation, scoped bookmark/URL/page/download tools, exact approvals, and mandatory user takeover before final purchase;
 - observe-only MinerGuard signals; and
 - an opt-in, disabled-by-default V8 bytecode-shadow research path.
 
@@ -129,7 +143,7 @@ These boundaries matter:
 - Fingerprint farbling reduces selected stable surfaces; it does not make a browser unidentifiable.
 - Remote summary requests require user confirmation and browser-side redaction. HTTPS endpoints are allowed; plain HTTP is restricted to numeric loopback addresses.
 - API keys are optional, stored through operating-system encryption for the current browser profile, and are not shown back in plaintext.
-- Android page summaries are currently unavailable because the Android handler cannot obtain a normal web-page tab.
+- Android page capture and current-page binding exist in v2 source; their runtime qualification depends on the current APK's physical-device acceptance.
 
 Downloads appear in Chromium's native `chrome://downloads` and `chrome://settings/downloads` surfaces. Video extraction, media conversion, FFmpeg, and a bundled download extension are outside the product scope.
 
@@ -144,14 +158,13 @@ Before any desktop publication, the same candidate must have:
 5. fresh-install and upgrade acceptance on representative systems; and
 6. an explicit release decision.
 
-The current local diagnostic build-tree covers patches 0055/0056/0057, but does not satisfy this list. Full patch coverage does not make it an RC or release.
-The local RC satisfies the clean replay, identity, and affected-test portions of this list. It does not satisfy product identity, trusted signing, notarization, installed-distribution, or release-authorization gates.
+The 106-patch source and both nested V8 patches passed the chained exact isolated-index replay from their pinned bases. Earlier macOS native/browser results remain historical; the latest locale fix requires rebuilt artifacts and regression tests. Trusted signing, notarization, installed-distribution, and release-authorization gates are not satisfied.
 
 ## Android
 
-Android shares the pinned Chromium base, but the current source has not produced an accepted Android build. Android client builds require a supported x86-64 Linux environment; macOS and Windows are not supported Chromium Android build hosts.
+Android shares the pinned Chromium base and is built from a clean x86-64 Linux checkout. A build becomes accepted only after the exact APK identity and physical-device runtime record are complete; macOS and Windows are not supported Chromium Android build hosts.
 
-See [Android build and acceptance status](./docs/android.md) and [Play Store readiness draft](./docs/play-store.md). The commands are future build entry points, not evidence that an APK exists:
+See [Android build and acceptance status](./docs/android.md) and [Play Store readiness draft](./docs/play-store.md). These commands are build entry points, not acceptance evidence by themselves:
 
 ```bash
 pnpm --filter @gcsa-aegis/browser build:android

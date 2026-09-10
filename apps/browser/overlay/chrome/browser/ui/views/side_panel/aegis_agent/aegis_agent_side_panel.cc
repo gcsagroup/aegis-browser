@@ -7,6 +7,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -40,7 +41,7 @@ std::unique_ptr<views::View> CreateAgentView(BrowserWindowInterface* browser,
 }  // namespace
 
 bool IsAegisAgentSidePanelSupported(Profile* profile) {
-  return profile && profile->IsRegularProfile() &&
+  return aegis::IsAegisProfileSupported(profile) &&
          base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
 }
 

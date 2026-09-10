@@ -8,10 +8,12 @@ GCSA-aegis Browser 是把隱私與安全能力直接整合到瀏覽器層和引�
 
 ## 目前狀態
 
-- 目前整合原始碼列出 **67 個頂層 Chromium 補丁**，另有 **2 個巢狀 V8 補丁**。
-- 先前的 57 補丁診斷清單和 65 補丁 Agent 驗收保留為歷史快照，均不綁定目前 67 補丁 HEAD，也不能為它授予資格。
-- 仍需重新完成目前整合原始碼的精確重放、身分綁定建置、受影響執行驗收和發布門檻。目前沒有正式產品簽署、公證、封裝、安裝驗收或已發布的桌面發行版。
-- Android **尚未從目前原始碼建置**，目前沒有可對應到原始碼的 APK 或 AAB。
+- 最新候選為 `383d157c6f3601101038aef6ff964e61b6af7b4f`（tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`）。0103–0106 已從下述 0102 基線精確重放；[本輪跨平台驗收](../../docs/audit/aegis-browser-agent-v2-cross-platform-acceptance-2026-09-05.md)仍未全部完成。
+
+- Browser Agent v2 候選原始碼列出 **106 個頂層 Chromium 補丁**和 **2 個巢狀 V8 補丁**。補丁 0079–0095 精確重放到 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；補丁 0096 重放到 `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`；補丁 0097 產生 `a3040bb0dea05e87c2a141b9a29a237a96953620`；補丁 0098 產生 `911f5c45acf3de10741008cf8f40948d57d31b7a`；補丁 0099 產生 `54f2d8dcf03ecf53b074b4919769ea652fdf5ab5`（tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`）；補丁 0100 產生 `44b79c59cf594b83af5c181842a57c2604d209ed`（tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`）；補丁 0101 產生 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；補丁 0102 產生已提交原始碼 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。
+- 57、65、67、95 和 97 補丁記錄保留為歷史快照，不能為 106 補丁成品授予資格。
+- macOS 原生與瀏覽器測試已在候選原始碼上通過；仍需精確平台清單和最終 UI 驗收。目前沒有正式產品簽署、公證、安裝或已發布的桌面發行版。
+- Android 和 Windows 候選正在驗證；完成實機/主機記錄前，不接受任何 APK、AAB 或 Windows 安裝套件。
 
 因此，儲存庫目前沒有可發布的桌面或 Android 產物。
 
@@ -88,7 +90,18 @@ pnpm --filter @gcsa-aegis/browser status
 # 執行儲存庫和 Browser 指令碼門禁。
 pnpm run quality:fast
 pnpm --filter @gcsa-aegis/browser test:scripts
+
+# 選用：預檢無金鑰本機模型的 Agent 原生工具呼叫協定。
+node apps/browser/scripts/verify-agent-local-model.mjs \
+  --base-url http://127.0.0.1:8000/v1 --model MODEL --rounds 2
 ```
+
+本機模型預檢不會保存完整提示詞或原始回應。它會重複檢查模型探索、目標路由、計畫和執行
+呼叫，但不能取代在真實瀏覽器裡的端到端執行。
+
+Windows 介面驗收使用共享的 [驗收腳本](./scripts/windows-agent-ui-acceptance.ps1)，不要繼續維護伺服器上的獨立副本。
+執行前先執行 [腳本自測](./scripts/windows-agent-ui-acceptance_test.ps1)，傳入 Windows Node 的 `-NodePath` 和全新的 `-EvidenceDir`；
+此自測只驗證啟動參數與視窗輔助程式碼編譯，不算介面通過。實際驗收須在已解鎖桌面執行，不能自動批准其他程式的防火牆彈窗。
 
 常用輸出目錄：
 
@@ -104,10 +117,10 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 
 目前原始碼口徑：
 
-- 列入 Chromium 序列的 67 個頂層補丁。
+- 列入 Chromium 序列的 106 個頂層補丁。
 - 2 個套用在巢狀 V8 checkout 中的補丁。
-- 歷史身分只涵蓋先前的 57 補丁和 65 補丁快照，均不涵蓋 0066–0067。
-- 目前 67 補丁 HEAD 必須重新完成精確重放和建置身分綁定，才能形成目前資格結論。
+- 57、65、67、95 和 97 補丁身分屬於歷史記錄，不涵蓋目前 v2 候選。
+- 補丁 0079–0095 已在先前驗證的 78 補丁原始碼樹上透過隔離索引精確重放；補丁 0096 獨立產生精確的 96 補丁原始碼樹；補丁 0097 產生精確的 97 補丁原始碼樹；補丁 0098 產生精確的 98 補丁原始碼樹 `7069e2b065466bbab3e3007e5866a3790e85ed47`；補丁 0099 產生精確的 99 補丁原始碼樹 `915676bbfbd340b8b8feb15aecacc70dfd53861b`；補丁 0100 產生精確的 100 補丁原始碼樹 `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`；補丁 0101 產生精確的 101 補丁原始碼樹 `451b3148d12fc2cff2df293cb0f1bb0d6242a908`；補丁 0102 產生精確的 102 補丁原始碼樹 `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`。成品身分和執行資格仍按平台分別判定。
 
 「已列入 series」只表示補丁檔案存在，不證明重放、可重現建置、平台驗收、簽署、封裝或發布已經完成。
 
@@ -119,7 +132,7 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 - 針對部分 Canvas、Audio、WebGL、WebGPU 表面的 Blink 指紋擾動；
 - 原生 HTTP(S)、Metalink、Torrent 和 Magnet 下載；
 - 本機啟發式摘要，以及使用者設定的 OpenAI、Claude（Anthropic）或 Gemini 相容 API；
-- 瀏覽器掌控的 Agent：包含 Observe/Ask/Act 模式、有範圍約束的書籤/URL/頁面/下載/工作流程/監控工具、精確審批、稽核歷史、取消，以及最終購買前的強制使用者接管；
+- Browser Agent v2：包含模型優先目標路由、可見計畫、瀏覽器掌控的執行/觀察/驗證循環、常用任務按鈕、定時自動化、有範圍約束的書籤/URL/頁面/下載工具、精確核准，以及最終購買前的強制使用者接管；
 - 僅觀察的 MinerGuard 訊號；以及
 - 預設關閉、需明確啟用的 V8 bytecode-shadow 研究路徑。
 
@@ -129,7 +142,7 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 - 指紋擾動只降低部分穩定表面，不能讓瀏覽器「不可識別」。
 - 遠端摘要需使用者確認，並先在 browser 側去識別化。允許 HTTPS；明文 HTTP 僅允許數值 loopback 位址。
 - API Key 可選，透過作業系統加密保存在目前瀏覽器設定中，不回顯明文。
-- Android handler 目前無法取得一般網頁 tab，因此 Android 頁面摘要不可用。
+- v2 原始碼已實作 Android 頁面擷取和目前頁面綁定；是否執行合格取決於目前 APK 的實機驗收。
 
 下載功能位於 Chromium 原生 `chrome://downloads` 和 `chrome://settings/downloads`。影片擷取、媒體轉換、FFmpeg 和預裝下載擴充功能不屬於產品範圍。
 
@@ -144,14 +157,13 @@ pnpm --filter @gcsa-aegis/browser test:scripts
 5. 代表系統上的全新安裝和升級驗收；以及
 6. 明確的發布決定。
 
-目前本機 diagnostic build-tree 已涵蓋 0055/0056/0057，但不符合上述條件。完整補丁涵蓋不會使其成為 RC 或發行版。
-本機 RC 已符合其中的乾淨重播、身分和受影響測試要求，但尚未符合產品身分、受信任簽署、公證、已安裝散佈套件或發行授權門禁。
+106 個頂層補丁和 2 個巢狀 V8 補丁已通過從各自固定基線開始的連續精確隔離索引重放。此前 macOS 原生/瀏覽器測試通過記錄屬於歷史候選，最新語言快取修復須重新建置和回歸。受信任簽署、公證、已安裝散佈套件及發行授權門檻仍未滿足。
 
 ## Android
 
-Android 與桌面共享固定 Chromium 基線，但目前原始碼尚未產出合格 Android 建置。Android client 需要受支援的 x86-64 Linux 環境；macOS 和 Windows 不能作為 Chromium Android 建置主機。
+Android 與桌面共用固定 Chromium 基線，並從乾淨的 x86-64 Linux checkout 建置。只有完成 APK 精確身分和實機執行記錄後才可接受該建置；macOS 和 Windows 不能作為 Chromium Android 建置主機。
 
-請參閱 [Android 建置與驗收狀態](./docs/android.zh-TW.md) 和 [Play Store 準備草案](./docs/play-store.zh-TW.md)。以下只是未來建置入口，不是 APK 已存在的證據：
+請參閱 [Android 建置與驗收狀態](./docs/android.zh-TW.md) 和 [Play Store 準備草案](./docs/play-store.zh-TW.md)。以下是建置入口，本身不構成驗收證據：
 
 ```bash
 pnpm --filter @gcsa-aegis/browser build:android

@@ -20,6 +20,8 @@ class AegisAgentServiceFactory : public ProfileKeyedServiceFactory {
   AegisAgentServiceFactory& operator=(const AegisAgentServiceFactory&) = delete;
 
   static AegisAgentServiceFactory* GetInstance();
+  // 普通资料启动时恢复已启用的服务；不依赖面板，也不提前创建关闭的服务。
+  static void EnsureForProfileAtStartup(Profile* profile);
   static AegisAgentService* GetForProfile(Profile* profile);
   static AegisAgentService* GetForProfileIfExists(Profile* profile);
 

@@ -5,7 +5,9 @@
 #include <string_view>
 #include <utility>
 
+#include "base/strings/utf_string_conversion_utils.h"
 #include "chrome/common/aegis/builtin_phish_hosts.h"
+#include "chrome/common/aegis/security_text.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -28,6 +30,68 @@ TEST(PhishScoreTest, InvalidUrlFailsClosed) {
   EXPECT_TRUE(result.should_block);
   ASSERT_EQ(result.reasons.size(), 1u);
   EXPECT_EQ(result.reasons[0].code, "invalid_url");
+}
+
+TEST(PhishScoreTest, RemovesEveryUnicodeTagWithoutDecodingInstructions) {
+  for (int codepoint = 0xe0000; codepoint <= 0xe007f; ++codepoint) {
+    std::string salted = "ver";
+    base::WriteUnicodeCharacter(codepoint, &salted);
+    salted += "ify your account";
+    const SecurityText normalized = NormalizeSecurityText(salted);
+    EXPECT_TRUE(normalized.valid_utf8);
+    EXPECT_EQ(normalized.text, "verify your account");
+    EXPECT_EQ(normalized.removed_hidden_codepoints, 1u);
+  }
+  EXPECT_EQ(NormalizeSecurityText("\U000e0072\U000e0075\U000e006e").text, "");
+  EXPECT_FALSE(NormalizeSecurityText(std::string("\xff", 1)).valid_utf8);
+}
+
+TEST(PhishScoreTest, PreservesLegitimateUnicodeAndOnlyExactSubdivisionFlags) {
+  for (const std::string& flag :
+       {std::string("\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e"
+                    "\U000e0067\U000e007f"),
+        std::string("\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063"
+                    "\U000e0074\U000e007f"),
+        std::string("\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c"
+                    "\U000e0073\U000e007f")}) {
+    EXPECT_EQ(NormalizeSecurityText(flag).text, flag);
+    EXPECT_EQ(NormalizeSecurityText(flag).removed_hidden_codepoints, 0u);
+    EXPECT_EQ(NormalizeSecurityText(flag + "\U000e0078").text, flag);
+  }
+  const std::string legitimate =
+      "中文 café العربية می\u200cروم \U0001f469\u200d\U0001f4bb \u2764\ufe0f";
+  EXPECT_EQ(NormalizeSecurityText(legitimate).text, legitimate);
+  EXPECT_EQ(NormalizeSecurityText(
+                "\U0001f3f4\U000e0072\U000e0075\U000e006e\U000e007f")
+                .text,
+            "\U0001f3f4");
+  EXPECT_EQ(NormalizeSecurityText("pass\u200bword\u2060\u00ad\ufeff").text,
+            "password");
+  EXPECT_EQ(NormalizeSecurityText("verify\u00a0your\u202faccount").text,
+            "verify your account");
+}
+
+TEST(PhishScoreTest, InvisibleSaltingCannotWeakenPageDetection) {
+  const PhishAssessment url = AssessPhishingUrl(GURL("http://example.test/"));
+  PageSignals plain{.title = "PayPal",
+                    .text_sample = "verify your account",
+                    .password_fields = 1,
+                    .forms = 1};
+  const PhishAssessment baseline = ApplyPageSignals(url, plain);
+  ASSERT_TRUE(baseline.should_block);
+  plain.title = "Pay\U000e0020Pal";
+  plain.text_sample = "ver\U000e0020ify your acc\u200bount";
+  const PhishAssessment salted = ApplyPageSignals(url, plain);
+  EXPECT_EQ(salted.score, baseline.score);
+  EXPECT_TRUE(salted.should_block);
+  EXPECT_TRUE(HasReason(salted, "unicode_text_obfuscation"));
+  EXPECT_TRUE(HasReason(salted, "urgency_language"));
+  EXPECT_TRUE(HasReason(salted, "brand_credential_page"));
+  const PhishAssessment benign = ApplyPageSignals(
+      AssessPhishingUrl(GURL("https://example.test/")),
+      PageSignals{.title = "研究", .text_sample = "普通\U000e0020文本"});
+  EXPECT_FALSE(benign.should_block);
+  EXPECT_EQ(benign.score, 0);
 }
 
 TEST(PhishScoreTest, BlocksBrandSpoofOnSuspiciousTld) {

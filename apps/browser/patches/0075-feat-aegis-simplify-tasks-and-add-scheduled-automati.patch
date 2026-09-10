@@ -1,0 +1,1719 @@
+From 666f56189859c48cfd594f0d5d6baa68773dcd50 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 31 Aug 2026 19:11:41 +0800
+Subject: [PATCH] feat(aegis): simplify tasks and add scheduled automations
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 143 ++++++++----
+ .../agent/aegis_agent_interactive_uitest.cc   |  59 ++---
+ .../aegis/agent/aegis_agent_service.cc        |  41 +++-
+ .../browser/resources/aegis_agent/agent.css   | 105 +++++----
+ .../browser/resources/aegis_agent/agent.html  |  67 +++---
+ chrome/browser/resources/aegis_agent/agent.ts | 220 ++++++++++--------
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |   3 +-
+ .../aegis_agent/aegis_agent_page_handler.cc   | 150 ++++++------
+ .../aegis_agent/aegis_agent_page_handler.h    |  16 +-
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 197 ++++++++++------
+ 10 files changed, 597 insertions(+), 404 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index bd55a7abef..07fcf5669a 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -190,15 +190,15 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
+         return `CONFIG_ERROR:${configured.snapshot.lastError}`;
+       }
+       const created = await handler.createTask(
+-          'organize my bookmarks with a preview', 1, 1, []);
++          'organize my bookmarks with a preview', 1, 1, [], 0);
+       return created.snapshot.taskId || `TASK_ERROR:${created.snapshot.lastError}`;
+     })()
+-  )JS").ExtractString();
++  )JS")
++                                  .ExtractString();
+   ASSERT_FALSE(task_id.starts_with("CONFIG_ERROR:")) << task_id;
+   ASSERT_FALSE(task_id.starts_with("TASK_ERROR:")) << task_id;
+   EXPECT_TRUE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
+-  AegisAgentService* service =
+-      AegisAgentServiceFactory::GetForProfile(profile);
++  AegisAgentService* service = AegisAgentServiceFactory::GetForProfile(profile);
+   ASSERT_TRUE(service);
+   EXPECT_EQ(service->task_count_for_testing(), 1u);
+ }
+@@ -284,7 +284,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+-                       LoadsUntrustedPanelAndRejectsOriginExpansion) {
++                       LoadsSimplePanelAndRejectsOriginExpansion) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+   ConfigureAgentModel(browser()->profile());
+   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
+@@ -309,12 +309,17 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_TRUE(contents->GetWebUI());
+ 
+   const std::string expected_origin = url::Origin::Create(page_url).Serialize();
+-  EXPECT_EQ(content::EvalJs(contents, R"JS(
+-    document.querySelector('#origins').value
+-  )JS").ExtractString(), "");
+-  EXPECT_FALSE(content::EvalJs(contents, R"JS(
+-    document.querySelector('#current-page').checked
+-  )JS").ExtractBool());
++  EXPECT_TRUE(content::EvalJs(contents, R"JS(
++    !document.querySelector('#advanced-settings') &&
++        !document.querySelector('#mode-group') &&
++        !document.querySelector('#workflow') &&
++        !document.querySelector('#origins') &&
++        !document.querySelector('#current-page') &&
++        document.querySelectorAll('#quick-actions button').length === 6 &&
++        document.querySelectorAll('#automation-presets button').length === 4 &&
++        document.querySelector('#automation-schedule').value === '60'
++  )JS")
++                  .ExtractBool());
+ 
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(browser()->profile());
+@@ -347,29 +352,16 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+ 
+   const std::string error =
+       content::EvalJs(contents, content::JsReplace(R"JS(
+-        new Promise(resolve => {
+-          const goal = document.querySelector('#goal');
+-          goal.value = 'Read one page';
+-          goal.dispatchEvent(new Event('input', {bubbles: true}));
+-          const origins = document.querySelector('#origins');
+-          origins.value = $1;
+-          origins.dispatchEvent(new Event('input', {bubbles: true}));
+-          document.querySelector('#plan-button').click();
+-          const deadline = Date.now() + 5000;
+-          const poll = () => {
+-            const value = document.querySelector('#error')?.textContent || '';
+-            if (value || Date.now() >= deadline) {
+-              resolve(value);
+-              return;
+-            }
+-            setTimeout(poll, 10);
+-          };
+-          poll();
+-        })
++        (async () => {
++          const {BrowserProxy} = await import('./browser_proxy.js');
++          const result = await BrowserProxy.getInstance().handler.createTask(
++              'Read one page', 1, 0, [$1], 0);
++          return result.snapshot.lastError;
++        })()
+       )JS",
+                                                    page_url.spec()))
+           .ExtractString();
+-  EXPECT_EQ(error, "任务内容或高级授权范围无效，请检查后重试。");
++  EXPECT_EQ(error, "Task input is invalid");
+   EXPECT_EQ(service->task_count_for_testing(), 0u);
+ }
+ 
+@@ -398,7 +390,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_TRUE(panel);
+   EXPECT_TRUE(content::EvalJs(panel, R"JS(
+     document.querySelector('#plan-button').disabled
+-  )JS").ExtractBool());
++  )JS")
++                  .ExtractBool());
+   EXPECT_FALSE(content::EvalJs(panel, R"JS(
+     (() => {
+       const goal = document.querySelector('#goal');
+@@ -406,7 +399,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       goal.dispatchEvent(new Event('input', {bubbles: true}));
+       return document.querySelector('#plan-button').disabled;
+     })()
+-  )JS").ExtractBool());
++  )JS")
++                   .ExtractBool());
+   const int initial_tab_count = browser()->tab_strip_model()->count();
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(browser()->profile());
+@@ -424,7 +418,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     (async () => {
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+-          .createTask('compare usb hubs', 1, 0, []);
++          .createTask('compare usb hubs', 1, 0, [], 0);
+       return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+     })()
+   )JS")
+@@ -453,21 +447,23 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+ 
+   EXPECT_TRUE(content::EvalJs(panel, R"JS(
+     (() => {
+-      const goal = document.querySelector('#goal');
+-      goal.value = '帮我总结下页面内容';
+-      goal.dispatchEvent(new Event('input', {bubbles: true}));
+-      return document.querySelector('#current-page').checked;
++      const summary = document.querySelector('#quick-actions button');
++      summary.click();
++      return document.querySelector('#goal').value.length > 0 &&
++          !document.querySelector('#current-page');
+     })()
+-  )JS").ExtractBool());
++  )JS")
++                  .ExtractBool());
+ 
+   const std::string task_id = content::EvalJs(panel, R"JS(
+     (async () => {
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+-          .createTask('帮我总结下页面内容', 1, 0, []);
++          .createTask('帮我总结下页面内容', 1, 0, [], 0);
+       return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+     })()
+-  )JS").ExtractString();
++  )JS")
++                                  .ExtractString();
+   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+   EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+   EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), page_url);
+@@ -483,6 +479,52 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(task->scope().AllowsTool("page.extract"));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       AutomationScheduleIsBrowserOwnedAndBoundToTask) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->profile());
++  const GURL page_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++
++  const std::string task_id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const result = await BrowserProxy.getInstance().handler.createTask(
++          '监控当前页面内容变化', 2, 0, [], 60);
++      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++    })()
++  )JS")
++                                  .ExtractString();
++  ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
++  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
++
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(service);
++  AgentTask* task = service->GetTask(task_id);
++  ASSERT_TRUE(task);
++  EXPECT_EQ(task->mode(), AgentMode::kAutomate);
++  EXPECT_NE(task->goal().find("[AEGIS_SCHEDULE_INTERVAL_MINUTES=60]"),
++            std::string::npos);
++  EXPECT_TRUE(task->scope().AllowsOrigin(page_url));
++  EXPECT_TRUE(task->scope().AllowsTool("monitor.create"));
++
++  const std::string invalid = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const result = await BrowserProxy.getInstance().handler.createTask(
++          '监控当前页面内容变化', 2, 0, [], 10);
++      return result.snapshot.lastError;
++    })()
++  )JS")
++                                  .ExtractString();
++  EXPECT_EQ(invalid, "Task input is invalid");
++  EXPECT_EQ(service->task_count_for_testing(), 1u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        ChinesePunctuationTerminatesExplicitUrl) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+@@ -500,12 +542,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+           const {BrowserProxy} = await import('./browser_proxy.js');
+           const goal = `打开 ${$1}，读取页面标题和正文第一句话`;
+           const result = await BrowserProxy.getInstance().handler
+-              .createTask(goal, 1, 0, []);
++              .createTask(goal, 1, 0, [], 0);
+           return result.snapshot.taskId ||
+               `ERROR:${result.snapshot.lastError}`;
+         })()
+       )JS",
+-                                               target_url.spec()))
++                                                target_url.spec()))
+           .ExtractString();
+   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+   ASSERT_TRUE(base::test::RunUntil([&]() {
+@@ -526,7 +568,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     (async () => {
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler.createTask(
+-          '打开www.example.com告诉我最新消息', 1, 0, []);
++          '打开www.example.com告诉我最新消息', 1, 0, [], 0);
+       return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+     })()
+   )JS")
+@@ -538,12 +580,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_TRUE(service);
+   AgentTask* task = service->GetTask(task_id);
+   ASSERT_TRUE(task);
+-  EXPECT_TRUE(task->scope().AllowsOrigin(
+-      GURL("https://www.example.com/latest")));
+   EXPECT_TRUE(
+-      task->scope().AllowsOrigin(GURL("https://example.com/latest")));
+-  EXPECT_FALSE(task->scope().AllowsOrigin(
+-      GURL("https://unrelated.example.com/latest")));
++      task->scope().AllowsOrigin(GURL("https://www.example.com/latest")));
++  EXPECT_TRUE(task->scope().AllowsOrigin(GURL("https://example.com/latest")));
++  EXPECT_FALSE(
++      task->scope().AllowsOrigin(GURL("https://unrelated.example.com/latest")));
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+@@ -558,7 +599,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     (async () => {
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+-          .createTask('organize my bookmarks with a preview', 1, 1, []);
++          .createTask('organize my bookmarks with a preview', 1, 1, [], 0);
+       return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+     })()
+   )JS")
+@@ -594,7 +635,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     (async () => {
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+-          .createTask('把我的收藏夹按主题分类，先给我看预览', 1, 0, []);
++          .createTask('把我的收藏夹按主题分类，先给我看预览', 1, 0, [], 0);
+       return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+     })()
+   )JS")
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index 9fe6513b99..95cb0a2f65 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -98,24 +98,27 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+             side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
+         ASSERT_TRUE(contents);
+         ASSERT_TRUE(content::WaitForLoadStop(contents));
+-        EXPECT_EQ(content::EvalJs(contents, R"JS(
+-          document.querySelector('#origins').value
+-        )JS").ExtractString(), "");
+-        EXPECT_FALSE(content::EvalJs(contents, R"JS(
+-          document.querySelector('#current-page').checked
+-        )JS").ExtractBool());
+         EXPECT_TRUE(content::EvalJs(contents, R"JS(
+           (() => {
+-            const modes = [...document.querySelectorAll('#mode-group button')];
+-            if (modes.length !== 3) {
++            const quick =
++                [...document.querySelectorAll('#quick-actions button')];
++            const automationButton =
++                document.querySelector('#automation-view-button');
++            if (quick.length !== 6 || !automationButton ||
++                document.querySelector('#advanced-settings')) {
+               return false;
+             }
+-            modes[1].click();
+-            const updatedModes =
+-                [...document.querySelectorAll('#mode-group button')];
+-            document.querySelector('#goal').focus();
+-            return updatedModes[1].getAttribute('aria-checked') === 'true' &&
+-                document.activeElement.id === 'goal' &&
++            automationButton.click();
++            const automationVisible =
++                !document.querySelector('#automation-view').hidden &&
++                document.querySelector('#task-view').hidden &&
++                document.querySelectorAll('#automation-presets button')
++                    .length === 4 &&
++                document.querySelector('#automation-schedule').value === '60';
++            document.querySelector('#task-view-button').click();
++            quick[0].click();
++            return automationVisible &&
++                document.querySelector('#goal').value.length > 0 &&
+                 document.querySelector('#start-button').disabled &&
+                 document.querySelector('#pause-button').disabled &&
+                 document.querySelector('#approve-button').disabled &&
+@@ -131,9 +134,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+         scope.allowed_origins = {url::Origin::Create(page_url)};
+         scope.allowed_tab_ids = {
+             browser()->GetActiveTabInterface()->GetHandle().raw_value()};
+-        scope.allowed_tools = {"page.observe", "monitor.create",
+-                               "monitor.list", "monitor.pause",
+-                               "monitor.delete"};
++        scope.allowed_tools = {"page.observe", "monitor.create", "monitor.list",
++                               "monitor.pause", "monitor.delete"};
+         scope.allowed_data_classes = {AgentDataClass::kPublicPage};
+         scope.model_destination.provider = "aegis-local";
+         scope.model_destination.model = "fixture";
+@@ -142,8 +144,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+         ASSERT_TRUE(task);
+         monitor_task_id = task->id();
+         ASSERT_TRUE(task->TransitionTo(AgentTaskState::kPlanning, "test"));
+-        ASSERT_TRUE(task->TransitionTo(AgentTaskState::kAwaitingTaskConsent,
+-                                       "test"));
++        ASSERT_TRUE(
++            task->TransitionTo(AgentTaskState::kAwaitingTaskConsent, "test"));
+         ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRunning, "test"));
+         AgentMonitorDefinition monitor;
+         monitor.monitor_id = "monitor-ui-fixture";
+@@ -156,8 +158,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+         monitor.interval = base::Minutes(15);
+         monitor.next_run = base::Time::Now() + base::Hours(1);
+         ASSERT_TRUE(service->UpsertMonitor(std::move(monitor)));
+-        ASSERT_TRUE(
+-            task->TransitionTo(AgentTaskState::kVerifying, "verified"));
++        ASSERT_TRUE(task->TransitionTo(AgentTaskState::kVerifying, "verified"));
+         ASSERT_TRUE(service->CompleteTask(monitor_task_id));
+       }),
+       Do([&]() {
+@@ -166,13 +167,17 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+         ASSERT_TRUE(contents);
+         EXPECT_TRUE(content::EvalJs(contents, R"JS(
+           new Promise(resolve => {
++            document.querySelector('#automation-view-button').click();
+             const deadline = Date.now() + 5000;
+             const poll = () => {
+               const toggle = document.querySelector(
+                   '.monitor-actions button[data-monitor-action="toggle"]');
+               const remove = document.querySelector(
+                   '.monitor-actions button[data-monitor-action="delete"]');
+-              if (toggle && remove && !toggle.disabled && !remove.disabled) {
++              const automationVisible =
++                  !document.querySelector('#automation-view').hidden;
++              if (automationVisible && toggle && remove &&
++                  !toggle.disabled && !remove.disabled) {
+                 toggle.click();
+                 resolve(true);
+                 return;
+@@ -222,15 +227,15 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+ 
+ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+                        SettingsEntryOpensAgentSidePanel) {
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+-      browser(), GURL(chrome::kChromeUIAegisURL)));
++  ASSERT_TRUE(
++      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
+   SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+   ASSERT_TRUE(side_panel);
+   ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
+       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
+ 
+-  ASSERT_TRUE(content::EvalJs(
+-                  browser()->GetActiveTabInterface()->GetContents(), R"JS(
++  ASSERT_TRUE(
++      content::EvalJs(browser()->GetActiveTabInterface()->GetContents(), R"JS(
+         (() => {
+           const button = document.querySelector('#browser-agent-open');
+           if (!(button instanceof HTMLButtonElement) || button.disabled) {
+@@ -240,7 +245,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+           return true;
+         })()
+       )JS")
+-                  .ExtractBool());
++          .ExtractBool());
+   ASSERT_TRUE(base::test::RunUntil([&]() {
+     return side_panel->IsSidePanelEntryShowing(
+         SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index f988264fde..bb330b411d 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -48,6 +48,25 @@ constexpr base::TimeDelta kCompletedTaskRetention = base::Days(30);
+ constexpr size_t kMaxInvocationDisplayBytes = 2048;
+ constexpr size_t kMaxSuggestedGoalBytes = 4096;
+ constexpr size_t kMaxRuntimeEvidenceItems = 24;
++constexpr std::string_view kScheduleMarker =
++    "[AEGIS_SCHEDULE_INTERVAL_MINUTES=";
++
++std::optional<int> BrowserOwnedScheduleInterval(std::string_view goal) {
++  const size_t marker = goal.rfind(kScheduleMarker);
++  if (marker == std::string_view::npos) {
++    return std::nullopt;
++  }
++  const size_t value_start = marker + kScheduleMarker.size();
++  const size_t value_end = goal.find(']', value_start);
++  int interval_minutes = 0;
++  if (value_end == std::string_view::npos ||
++      !base::StringToInt(goal.substr(value_start, value_end - value_start),
++                         &interval_minutes) ||
++      interval_minutes < 15 || interval_minutes > 10080) {
++    return std::nullopt;
++  }
++  return interval_minutes;
++}
+ 
+ bool SameDocument(const AgentDocumentRef& left, const AgentDocumentRef& right) {
+   return left.tab_id == right.tab_id && left.frame_token == right.frame_token &&
+@@ -587,11 +606,10 @@ void AegisAgentService::SetGoalRouteForTesting(
+   goal_route_for_testing_ = std::move(route);
+ }
+ 
+-void AegisAgentService::OnGoalRouteModelResult(
+-    GoalRouteCallback callback,
+-    bool ok,
+-    std::string error,
+-    AgentModelParseResult result) {
++void AegisAgentService::OnGoalRouteModelResult(GoalRouteCallback callback,
++                                               bool ok,
++                                               std::string error,
++                                               AgentModelParseResult result) {
+   goal_router_request_id_.clear();
+   if (!ok) {
+     std::move(callback).Run(false, std::move(error), std::nullopt);
+@@ -684,8 +702,9 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
+       profile_, task->scope().model_destination, &config_error);
+   if (!prompt || !config) {
+     FailPlanning(task_id, std::move(callback),
+-                 !config_error.empty() ? std::move(config_error)
+-                                       : "planning budget or prompt is invalid");
++                 !config_error.empty()
++                     ? std::move(config_error)
++                     : "planning budget or prompt is invalid");
+     return;
+   }
+ 
+@@ -704,8 +723,7 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
+   const std::optional<ModelProvider> provider =
+       ParseModelProvider(task->scope().model_destination.provider);
+   if (!provider) {
+-    FailPlanning(task_id, std::move(callback),
+-                 "unsupported model provider");
++    FailPlanning(task_id, std::move(callback), "unsupported model provider");
+     return;
+   }
+   if (!ConsumeModelRequestBudget(task)) {
+@@ -2276,6 +2294,8 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
+       call.arguments.FindInt("interval_minutes");
+   const std::optional<AgentMonitorKind> kind =
+       kind_value ? ParseMonitorKind(*kind_value) : std::nullopt;
++  const std::optional<int> browser_interval =
++      task ? BrowserOwnedScheduleInterval(task->goal()) : std::nullopt;
+   const GURL target = MonitorTargetUrl(call.committed_url);
+   const std::optional<AgentDocumentRef> latest =
+       call.document ? actor_bridge_.LastDocument(task_id, call.document->tab_id)
+@@ -2284,7 +2304,8 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
+   if (!task || task->state() != AgentTaskState::kRunning || !kind ||
+       !interval_minutes || *interval_minutes < 15 ||
+       *interval_minutes > 10080 || target.is_empty() || !call.document ||
+-      !latest || !SameDocument(*latest, *call.document) || !encryptor ||
++      (browser_interval && *interval_minutes != *browser_interval) || !latest ||
++      !SameDocument(*latest, *call.document) || !encryptor ||
+       !encryptor->IsEncryptionAvailable() ||
+       !encryptor->EncryptString(target.spec(), &ciphertext)) {
+     std::move(callback).Run(
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 021e586b8c..61031189f6 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -250,7 +250,6 @@ button:disabled {
+   color: var(--danger);
+ }
+ 
+-.quick-actions,
+ .controls,
+ .model-actions {
+   display: flex;
+@@ -258,10 +257,37 @@ button:disabled {
+   gap: 7px;
+ }
+ 
+-.quick-actions button {
+-  border-radius: 999px;
+-  font-weight: 600;
+-  min-height: 32px;
++.workspace-tabs {
++  background: color-mix(in srgb, var(--line) 50%, transparent);
++  border-radius: 12px;
++  display: grid;
++  gap: 4px;
++  grid-template-columns: repeat(2, 1fr);
++  padding: 4px;
++}
++
++.workspace-tabs button {
++  background: transparent;
++  border: 0;
++  min-height: 40px;
++}
++
++.workspace-tabs button[aria-selected='true'] {
++  background: var(--surface-strong);
++  box-shadow: 0 3px 10px rgba(20, 30, 50, 0.1);
++  color: var(--primary);
++}
++
++.scenario-grid {
++  display: grid;
++  gap: 8px;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++}
++
++.scenario-grid button {
++  min-height: 48px;
++  padding: 9px 10px;
++  text-align: left;
+ }
+ 
+ summary {
+@@ -270,67 +296,38 @@ summary {
+   font-weight: 700;
+ }
+ 
+-.advanced {
+-  border-top: 1px solid var(--line);
+-  padding-top: 10px;
+-}
+-
+-.advanced-body,
+ .model-body {
+   display: grid;
+   gap: 10px;
+   padding-top: 12px;
+ }
+ 
+-.segmented {
+-  background: color-mix(in srgb, var(--line) 45%, transparent);
+-  border-radius: 10px;
++.automation-view {
+   display: grid;
+-  gap: 3px;
+-  grid-template-columns: repeat(3, 1fr);
+-  padding: 3px;
+-}
+-
+-.segmented button {
+-  background: transparent;
+-  border: 0;
++  gap: 12px;
+ }
+ 
+-.segmented button[aria-checked='true'] {
+-  background: var(--surface-strong);
+-  box-shadow: 0 2px 8px rgba(20, 30, 50, 0.1);
+-  color: var(--primary);
++.automation-composer > div:first-child {
++  display: grid;
++  gap: 4px;
+ }
+ 
+-.workflow-row,
+-.field-grid {
++.schedule-row {
+   display: grid;
+   gap: 6px;
+ }
+ 
+-.checkbox-row {
+-  align-items: flex-start;
+-  color: var(--text);
+-  cursor: pointer;
+-  display: flex;
+-  gap: 8px;
+-}
+-
+-.checkbox-row input {
+-  flex: 0 0 auto;
+-  min-height: auto;
+-  margin-top: 2px;
+-  width: auto;
+-}
+-
+-.checkbox-row span {
++.field-grid {
+   display: grid;
+-  gap: 2px;
++  gap: 6px;
+ }
+ 
+-.checkbox-row small {
+-  color: var(--muted);
+-  font-weight: 400;
++.count-badge {
++  background: color-mix(in srgb, var(--primary) 12%, transparent);
++  border-radius: 999px;
++  color: var(--primary);
++  font-size: 11px;
++  padding: 4px 8px;
+ }
+ 
+ .model-card > summary {
+@@ -504,11 +501,13 @@ summary {
+ }
+ 
+ .monitors li {
+-  border-top: 1px solid var(--line);
++  background: color-mix(in srgb, var(--line) 24%, transparent);
++  border: 1px solid var(--line);
++  border-radius: 10px;
+   display: grid;
+   font-size: 12px;
+-  gap: 3px;
+-  padding-top: 8px;
++  gap: 5px;
++  padding: 10px;
+ }
+ 
+ .monitors small {
+@@ -549,6 +548,10 @@ summary {
+   .status {
+     display: none;
+   }
++
++  .scenario-grid {
++    grid-template-columns: 1fr;
++  }
+ }
+ 
+ @media (prefers-reduced-motion: no-preference) {
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index 9126232961..de935e2f24 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -20,32 +20,46 @@
+ 
+       <section id="disabled-banner" class="notice" hidden></section>
+ 
+-      <section class="composer" aria-labelledby="goal-label">
+-        <label id="goal-label" for="goal"></label>
+-        <textarea id="goal" rows="5" maxlength="4096" autofocus></textarea>
+-        <p id="simple-help" class="help"></p>
+-        <div id="quick-actions" class="quick-actions" aria-label="Examples"></div>
+-        <button id="plan-button" class="primary primary-large" type="button"></button>
++      <nav class="workspace-tabs" aria-label="Aegis workspace">
++        <button id="task-view-button" type="button" aria-selected="true"></button>
++        <button id="automation-view-button" type="button" aria-selected="false"></button>
++      </nav>
++
++      <section id="task-view">
++        <section class="composer" aria-labelledby="goal-label">
++          <label id="goal-label" for="goal"></label>
++          <textarea id="goal" rows="5" maxlength="4096" autofocus></textarea>
++          <p id="simple-help" class="help"></p>
++          <div id="quick-actions" class="scenario-grid" aria-label="Common tasks"></div>
++          <button id="plan-button" class="primary primary-large" type="button"></button>
++        </section>
++      </section>
+ 
+-        <details id="advanced-settings" class="advanced">
+-          <summary id="advanced-label"></summary>
+-          <div class="advanced-body">
+-            <div id="mode-group" class="segmented" role="radiogroup"></div>
+-            <div class="workflow-row">
+-              <label id="workflow-label" for="workflow"></label>
+-              <select id="workflow"></select>
+-            </div>
+-            <label class="checkbox-row" for="current-page">
+-              <input id="current-page" type="checkbox">
+-              <span>
+-                <strong id="current-page-label"></strong>
+-                <small id="current-page-help"></small>
+-              </span>
+-            </label>
+-            <label id="origins-label" for="origins"></label>
+-            <textarea id="origins" rows="3" maxlength="40960" spellcheck="false"></textarea>
++      <section id="automation-view" class="automation-view" hidden>
++        <section class="composer automation-composer" aria-labelledby="automation-title">
++          <div>
++            <h2 id="automation-title"></h2>
++            <p id="automation-help" class="help"></p>
+           </div>
+-        </details>
++          <div id="automation-presets" class="scenario-grid" aria-label="Automation templates"></div>
++          <label id="automation-goal-label" for="automation-goal"></label>
++          <textarea id="automation-goal" rows="4" maxlength="3000"></textarea>
++          <div class="schedule-row">
++            <label id="schedule-label" for="automation-schedule"></label>
++            <select id="automation-schedule"></select>
++          </div>
++          <p id="schedule-help" class="help"></p>
++          <button id="create-automation-button" class="primary primary-large" type="button"></button>
++        </section>
++
++        <section class="card automation-list-card">
++          <div class="section-heading">
++            <h2 id="automations-title"></h2>
++            <span id="automation-count" class="count-badge"></span>
++          </div>
++          <p id="empty-automations" class="empty"></p>
++          <ul id="monitors" class="monitors"></ul>
++        </section>
+       </section>
+ 
+       <details id="model-details" class="card model-card">
+@@ -143,11 +157,6 @@
+         <ol id="timeline" class="timeline" aria-live="polite"></ol>
+       </section>
+ 
+-      <details class="card monitor-card">
+-        <summary id="monitors-title"></summary>
+-        <ul id="monitors" class="monitors"></ul>
+-      </details>
+-
+     </main>
+     <script type="module" src="agent.js"></script>
+   </body>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 2152d90bd6..6fd3b3f5c7 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -16,16 +16,14 @@ import {BrowserProxy} from './browser_proxy.js';
+ 
+ const proxy = BrowserProxy.getInstance();
+ let snapshot: TaskSnapshot|null = null;
+-let selectedMode = AgentMode.kAct;
+ let selectedWorkflow: Workflow|null = null;
+ let busy = false;
+ let modelBusy = false;
+ let goalUserEdited = false;
+-let originsUserEdited = false;
+-let currentPageUserEdited = false;
+ let modelFormInitialized = false;
+ let autoRunTaskId = '';
+ let autoRunInFlight = false;
++let activeView: 'task'|'automation' = 'task';
+ 
+ function element<T extends HTMLElement>(id: string): T {
+   const value = document.getElementById(id);
+@@ -86,27 +84,20 @@ function humanStatus(state: string): string {
+   return loadTimeData.getString('statusFailed');
+ }
+ 
+-function renderModes() {
+-  const group = element('mode-group');
+-  group.replaceChildren();
+-  const modes: Array<[AgentMode, string]> = [
+-    [AgentMode.kAsk, 'ask'],
+-    [AgentMode.kAct, 'act'],
+-    [AgentMode.kAutomate, 'automate'],
+-  ];
+-  for (const [mode, key] of modes) {
+-    const button = document.createElement('button');
+-    button.type = 'button';
+-    button.role = 'radio';
+-    button.textContent = loadTimeData.getString(key);
+-    button.setAttribute('aria-checked', String(selectedMode === mode));
+-    button.disabled = busy;
+-    button.addEventListener('click', () => {
+-      selectedMode = mode;
+-      renderModes();
+-    });
+-    group.append(button);
+-  }
++function renderView() {
++  const taskView = element('task-view');
++  const automationView = element('automation-view');
++  const taskButton = element<HTMLButtonElement>('task-view-button');
++  const automationButton =
++      element<HTMLButtonElement>('automation-view-button');
++  const taskSelected = activeView === 'task';
++  taskView.hidden = !taskSelected;
++  automationView.hidden = taskSelected;
++  taskButton.setAttribute('aria-selected', String(taskSelected));
++  automationButton.setAttribute('aria-selected', String(!taskSelected));
++  taskButton.disabled = busy;
++  automationButton.disabled = busy;
++  element('target-card').hidden = !taskSelected;
+ }
+ 
+ function addDefinition(
+@@ -286,16 +277,34 @@ function renderTimeline(events: TimelineEvent[]) {
+ function renderMonitors(monitors: MonitorSummary[]) {
+   const list = element('monitors');
+   list.replaceChildren();
++  element('empty-automations').hidden = monitors.length !== 0;
++  element('automation-count').textContent = String(monitors.length);
++  const kindLabels: {[key: string]: string} = {
++    'price': loadTimeData.getString('automationPrice'),
++    'inventory': loadTimeData.getString('automationInventory'),
++    'page_change': loadTimeData.getString('automationPageChange'),
++    'url_status': loadTimeData.getString('automationUrlStatus'),
++  };
+   for (const monitor of monitors) {
+     const li = document.createElement('li');
+     const title = document.createElement('strong');
+-    title.textContent =
+-        `${monitor.kind} · ${monitor.paused ? 'paused' : monitor.interval}`;
++    title.textContent = `${kindLabels[monitor.kind] || monitor.kind} · ${
++        monitor.paused ? loadTimeData.getString('automationPaused') :
++                         monitor.interval}`;
+     const origin = document.createElement('small');
+     origin.textContent = monitor.origin;
+-    const hash = document.createElement('small');
+-    hash.textContent =
+-        `${monitor.targetHash.slice(0, 24)}… · failures ${monitor.failures}`;
++    const nextRun = document.createElement('small');
++    const timestamp = Number(monitor.nextRun);
++    const when = Number.isFinite(timestamp) ?
++        new Date(timestamp).toLocaleString() :
++        '';
++    nextRun.textContent = monitor.paused ?
++        loadTimeData.getString('automationPausedHelp') :
++        loadTimeData.getString('automationNextRun').replace('$1', when);
++    const failures = document.createElement('small');
++    failures.hidden = monitor.failures === 0;
++    failures.textContent = loadTimeData.getString('automationFailures')
++        .replace('$1', String(monitor.failures));
+     const actions = document.createElement('div');
+     actions.className = 'monitor-actions';
+     const toggle = document.createElement('button');
+@@ -315,7 +324,7 @@ function renderMonitors(monitors: MonitorSummary[]) {
+     remove.addEventListener('click', () => withBusy(() =>
+       proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
+     actions.append(toggle, remove);
+-    li.append(title, origin, hash, actions);
++    li.append(title, origin, nextRun, failures, actions);
+     list.append(li);
+   }
+ }
+@@ -361,7 +370,7 @@ function friendlyError(error: string, hasPlan: boolean): string {
+     return '请先打开一个普通网页，再让 Aegis 处理当前页面。';
+   }
+   if (error.includes('Task input is invalid')) {
+-    return '任务内容或高级授权范围无效，请检查后重试。';
++    return loadTimeData.getString('taskInputError');
+   }
+   if (error.includes('goal route') ||
+       error.includes('browser goal') ||
+@@ -427,34 +436,31 @@ function render(next: TaskSnapshot) {
+   element('status').textContent = busy && !next.taskId ?
+       loadTimeData.getString('statusUnderstanding') :
+       humanStatus(next.state || 'idle');
+-  const useCurrentPage = element<HTMLInputElement>('current-page');
++  const goal = element<HTMLTextAreaElement>('goal');
+   element('target-value').textContent =
+-      useCurrentPage.checked && next.activeOrigin ?
++      refersToCurrentPage(goal.value) && next.activeOrigin ?
+       next.activeOrigin :
+       loadTimeData.getString('noTarget');
+   const invocation = element('invocation-context');
+   invocation.hidden = !next.invocationContext;
+   invocation.textContent = next.invocationContext;
+   if (!next.taskId && next.suggestedGoal && !goalUserEdited) {
+-    element<HTMLTextAreaElement>('goal').value = next.suggestedGoal;
+-  }
+-  if (!next.taskId && next.invocationContext && next.activeOrigin &&
+-      !currentPageUserEdited) {
+-    useCurrentPage.checked = true;
++    goal.value = next.suggestedGoal;
+   }
+ 
+   const banner = element('disabled-banner');
+   banner.hidden = next.agentEnabled;
+   banner.textContent = loadTimeData.getString('disabled');
+ 
+-  const goal = element<HTMLTextAreaElement>('goal');
+   goal.disabled = busy;
+-  element<HTMLTextAreaElement>('origins').disabled = busy;
+-  element<HTMLSelectElement>('workflow').disabled = busy;
+-  useCurrentPage.disabled = busy || !next.activeOrigin;
++  const automationGoal = element<HTMLTextAreaElement>('automation-goal');
++  automationGoal.disabled = busy;
++  element<HTMLSelectElement>('automation-schedule').disabled = busy;
+   element<HTMLButtonElement>('plan-button').disabled =
+       busy || !next.modelConfigured || !goal.value.trim();
+-  renderModes();
++  element<HTMLButtonElement>('create-automation-button').disabled =
++      busy || !next.modelConfigured || !automationGoal.value.trim();
++  renderView();
+   renderModel(next);
+   renderPlan(next.plan || null, Boolean(next.taskId), next.state);
+   renderResult(next);
+@@ -519,8 +525,6 @@ function render(next: TaskSnapshot) {
+       ['completed', 'failed', 'cancelled', 'expired'].includes(state);
+   document.querySelector<HTMLElement>('.controls')!.hidden = !next.taskId;
+   document.querySelector<HTMLElement>('.activity-card')!.hidden = !next.taskId;
+-  document.querySelector<HTMLElement>('.monitor-card')!.hidden =
+-      next.monitors.length === 0;
+   maybeAutoRun(next);
+ }
+ 
+@@ -546,15 +550,20 @@ async function withBusy(action: () => Promise<{snapshot: TaskSnapshot}>) {
+ function initializeLabels() {
+   text('title', 'title');
+   text('subtitle', 'subtitle');
++  text('task-view-button', 'taskWorkspace');
++  text('automation-view-button', 'automationWorkspace');
+   text('target-label', 'target');
+   text('goal-label', 'goal');
+   text('simple-help', 'simpleHelp');
+-  text('advanced-label', 'advanced');
+-  text('current-page-label', 'useCurrentPage');
+-  text('current-page-help', 'useCurrentPageHelp');
+-  text('origins-label', 'origins');
+-  text('workflow-label', 'workflow');
+   text('plan-button', 'plan');
++  text('automation-title', 'automationTitle');
++  text('automation-help', 'automationHelp');
++  text('automation-goal-label', 'automationGoal');
++  text('schedule-label', 'scheduleLabel');
++  text('schedule-help', 'scheduleHelp');
++  text('create-automation-button', 'createAutomation');
++  text('automations-title', 'automationsTitle');
++  text('empty-automations', 'emptyAutomations');
+   text('scope-title', 'scope');
+   text('details-label', 'details');
+   text('result-title', 'resultTitle');
+@@ -580,56 +589,27 @@ function initializeLabels() {
+   text('undo-button', 'undo');
+   text('stop-button', 'stop');
+   text('timeline-title', 'timeline');
+-  text('monitors-title', 'monitors');
+   element<HTMLTextAreaElement>('goal').placeholder =
+       loadTimeData.getString('goalPlaceholder');
+-  element<HTMLTextAreaElement>('origins').placeholder =
+-      loadTimeData.getString('originsPlaceholder');
++  element<HTMLTextAreaElement>('automation-goal').placeholder =
++      loadTimeData.getString('automationGoalPlaceholder');
+ 
+   const goal = element<HTMLTextAreaElement>('goal');
+   goal.addEventListener('input', () => {
+     goalUserEdited = true;
+-    if (!currentPageUserEdited && snapshot?.activeOrigin) {
+-      element<HTMLInputElement>('current-page').checked =
+-          refersToCurrentPage(goal.value);
+-    }
+-    if (snapshot) {
+-      render(snapshot);
+-    }
+-  });
+-  element<HTMLTextAreaElement>('origins').addEventListener('input', () => {
+-    originsUserEdited = true;
+-  });
+-  element<HTMLInputElement>('current-page').addEventListener('change', () => {
+-    currentPageUserEdited = true;
+     if (snapshot) {
+       render(snapshot);
+     }
+   });
+ 
+-  const select = element<HTMLSelectElement>('workflow');
+-  select.append(
+-      option('', loadTimeData.getString('autoWorkflow')),
+-      option(String(Workflow.kResearch), loadTimeData.getString('research')),
+-      option(
+-          String(Workflow.kBrowserSteward),
+-          loadTimeData.getString('steward')),
+-      option(
+-          String(Workflow.kSafeDownload),
+-          loadTimeData.getString('download')),
+-      option(String(Workflow.kShopping), loadTimeData.getString('shopping')));
+-  select.addEventListener('change', () => {
+-    selectedWorkflow = select.value === '' ?
+-        null :
+-        Number(select.value) as Workflow;
+-  });
+-
+   const quick = element('quick-actions');
+   const presets: Array<[Workflow, string, string]> = [
++    [Workflow.kResearch, 'quickSummary', 'quickSummaryGoal'],
+     [Workflow.kResearch, 'quickResearch', 'quickResearchGoal'],
+     [Workflow.kBrowserSteward, 'quickSteward', 'quickStewardGoal'],
++    [Workflow.kBrowserSteward, 'quickUrlCheck', 'quickUrlCheckGoal'],
+     [Workflow.kSafeDownload, 'quickDownload', 'quickDownloadGoal'],
+-    [Workflow.kShopping, 'quickShopping', 'quickShoppingGoal'],
++    [Workflow.kResearch, 'quickGather', 'quickGatherGoal'],
+   ];
+   for (const [workflow, labelKey, goalKey] of presets) {
+     const button = document.createElement('button');
+@@ -637,7 +617,6 @@ function initializeLabels() {
+     button.textContent = loadTimeData.getString(labelKey);
+     button.addEventListener('click', () => {
+       selectedWorkflow = workflow;
+-      select.value = String(workflow);
+       goal.value = loadTimeData.getString(goalKey);
+       goalUserEdited = true;
+       if (snapshot) {
+@@ -646,7 +625,50 @@ function initializeLabels() {
+     });
+     quick.append(button);
+   }
+-  renderModes();
++
++  const automationGoal = element<HTMLTextAreaElement>('automation-goal');
++  const automationPresets: Array<[string, string]> = [
++    ['automationPrice', 'automationPriceGoal'],
++    ['automationInventory', 'automationInventoryGoal'],
++    ['automationPageChange', 'automationPageChangeGoal'],
++    ['automationUrlStatus', 'automationUrlStatusGoal'],
++  ];
++  for (const [labelKey, goalKey] of automationPresets) {
++    const button = document.createElement('button');
++    button.type = 'button';
++    button.textContent = loadTimeData.getString(labelKey);
++    button.addEventListener('click', () => {
++      automationGoal.value = loadTimeData.getString(goalKey);
++      if (snapshot) {
++        render(snapshot);
++      }
++    });
++    element('automation-presets').append(button);
++  }
++  automationGoal.addEventListener('input', () => {
++    if (snapshot) {
++      render(snapshot);
++    }
++  });
++
++  const schedule = element<HTMLSelectElement>('automation-schedule');
++  schedule.append(
++      option('15', loadTimeData.getString('schedule15Minutes')),
++      option('60', loadTimeData.getString('scheduleHourly')),
++      option('360', loadTimeData.getString('schedule6Hours')),
++      option('1440', loadTimeData.getString('scheduleDaily')),
++      option('10080', loadTimeData.getString('scheduleWeekly')));
++  schedule.value = '60';
++
++  element('task-view-button').addEventListener('click', () => {
++    activeView = 'task';
++    renderView();
++  });
++  element('automation-view-button').addEventListener('click', () => {
++    activeView = 'automation';
++    renderView();
++  });
++  renderView();
+ }
+ 
+ async function detectModels() {
+@@ -719,25 +741,29 @@ async function saveModel() {
+ function bindActions() {
+   element('plan-button').addEventListener('click', () => withBusy(async () => {
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+-    const origins = originsUserEdited ?
+-        element<HTMLTextAreaElement>('origins').value.split('\n')
+-            .map(value => value.trim())
+-            .filter(value => value.length > 0) :
+-        [];
+-    const useCurrent = element<HTMLInputElement>('current-page').checked;
+-    if (useCurrent && snapshot?.activeOrigin &&
+-        !origins.includes(snapshot.activeOrigin)) {
+-      origins.unshift(snapshot.activeOrigin);
+-    }
+     const workflow = selectedWorkflow ?? inferWorkflow(goal);
+     const created = await proxy.handler.createTask(
+-        goal, selectedMode, workflow, origins);
++        goal, AgentMode.kAct, workflow, [], 0);
+     if (!created.snapshot.taskId) {
+       return created;
+     }
+     autoRunTaskId = created.snapshot.taskId;
+     return proxy.handler.requestPlan(created.snapshot.taskId);
+   }));
++  element('create-automation-button').addEventListener(
++      'click', () => withBusy(async () => {
++        const goal =
++            element<HTMLTextAreaElement>('automation-goal').value.trim();
++        const interval =
++            Number(element<HTMLSelectElement>('automation-schedule').value);
++        const created = await proxy.handler.createTask(
++            goal, AgentMode.kAutomate, inferWorkflow(goal), [], interval);
++        if (!created.snapshot.taskId) {
++          return created;
++        }
++        autoRunTaskId = created.snapshot.taskId;
++        return proxy.handler.requestPlan(created.snapshot.taskId);
++      }));
+   element('detect-models-button').addEventListener('click', detectModels);
+   element('save-model-button').addEventListener('click', saveModel);
+   element('pause-button').addEventListener('click', () => withBusy(() =>
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index efaa61f68e..c8145fe775 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -132,7 +132,8 @@ interface PageHandler {
+   CreateTask(string goal,
+              AgentMode mode,
+              Workflow workflow,
+-             array<string> approved_origins) => (TaskSnapshot snapshot);
++             array<string> approved_origins,
++             int32 schedule_interval_minutes) => (TaskSnapshot snapshot);
+ 
+   RequestPlan(string task_id) => (TaskSnapshot snapshot);
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index a9479dbd27..d374c40b61 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -140,15 +140,38 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
+ bool GoalRefersToCurrentPage(std::string_view goal) {
+   const std::string lower_goal = base::ToLowerASCII(goal);
+   constexpr std::string_view kCurrentPageReferences[] = {
+-      "当前页",       "当前页面",    "当前网页",  "这个页面",
+-      "这个网页",     "本页面",      "本网页",    "页面内容",
+-      "网页内容",     "this page",   "current page",
+-      "page content", "the page content"};
+-  return std::ranges::any_of(kCurrentPageReferences,
+-                             [&lower_goal](std::string_view reference) {
+-                               return lower_goal.find(reference) !=
+-                                      std::string::npos;
+-                             });
++      "当前页",          "当前页面",  "当前网页",     "这个页面",
++      "这个网页",        "本页面",    "本网页",       "页面内容",
++      "网页内容",        "this page", "current page", "page content",
++      "the page content"};
++  return std::ranges::any_of(
++      kCurrentPageReferences, [&lower_goal](std::string_view reference) {
++        return lower_goal.find(reference) != std::string::npos;
++      });
++}
++
++bool IsValidSchedule(AgentMode mode, int schedule_interval_minutes) {
++  if (mode != AgentMode::kAutomate) {
++    return schedule_interval_minutes == 0;
++  }
++  return schedule_interval_minutes >= 15 && schedule_interval_minutes <= 10080;
++}
++
++std::string BindScheduleToGoal(std::string goal,
++                               int schedule_interval_minutes) {
++  if (schedule_interval_minutes == 0) {
++    return goal;
++  }
++  goal.append(
++      "\n\nBrowser-owned schedule: monitor.create must use "
++      "interval_minutes=");
++  goal.append(base::NumberToString(schedule_interval_minutes));
++  goal.append(
++      ". The user selected this frequency; do not change it. "
++      "[AEGIS_SCHEDULE_INTERVAL_MINUTES=");
++  goal.append(base::NumberToString(schedule_interval_minutes));
++  goal.push_back(']');
++  return goal;
+ }
+ 
+ std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
+@@ -169,8 +192,7 @@ std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
+   }
+   const bool bare_domain = start == www && www < https && www < http;
+   if (bare_domain) {
+-    constexpr std::string_view kBareUrlCharacters =
+-        "-._~:/?#[]@!$&'()*+,;=%";
++    constexpr std::string_view kBareUrlCharacters = "-._~:/?#[]@!$&'()*+,;=%";
+     for (size_t index = start; index < goal.size(); ++index) {
+       const unsigned char character = goal[index];
+       if (!base::IsAsciiAlphaNumeric(character) &&
+@@ -181,9 +203,8 @@ std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
+     }
+   }
+   constexpr std::string_view kUrlDelimiters[] = {
+-      " ",  "\t", "\r", "\n", ",",  ";",  "!",  "?", ")", "]",
+-      "}",  "'",  "\"", "，", "。", "；", "：", "！", "？", "）",
+-      "】", "》", "、"};
++      " ",  "\t", "\r", "\n", ",",  ";",  "!",  "?",  ")",  "]",  "}", "'",
++      "\"", "，", "。", "；", "：", "！", "？", "）", "】", "》", "、"};
+   for (std::string_view delimiter : kUrlDelimiters) {
+     const size_t position = goal.find(delimiter, start);
+     if (position != std::string_view::npos) {
+@@ -301,8 +322,7 @@ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
+   return origins;
+ }
+ 
+-bool IncludesOrigin(const std::vector<url::Origin>& origins,
+-                    const GURL& url) {
++bool IncludesOrigin(const std::vector<url::Origin>& origins, const GURL& url) {
+   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
+     return false;
+   }
+@@ -321,7 +341,7 @@ bool HasUserSetting(PrefService* prefs, const char* name) {
+ aegis::AegisService* CoreServiceForProfile(Profile* profile) {
+   aegis::AegisService* service = aegis::AegisService::GetInstance();
+   return profile && service->IsInitializedForProfile(profile) ? service
+-                                                               : nullptr;
++                                                              : nullptr;
+ }
+ 
+ }  // namespace
+@@ -349,12 +369,11 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+         base::BindRepeating(&AegisAgentPageHandler::OnActiveTabDidChange,
+                             weak_ptr_factory_.GetWeakPtr()));
+   }
+-  service_ = profile && profile->GetPrefs()->GetBoolean(
+-                            aegis::prefs::kAgentEnabled)
+-                 ? aegis::agent::AegisAgentServiceFactory::GetForProfile(
+-                       profile)
+-                 : aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(
+-                       profile);
++  service_ =
++      profile && profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)
++          ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
++          : aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(
++                profile);
+   ObserveService(service_);
+   if (service_) {
+     ObserveTask(service_->MostRecentTask());
+@@ -395,13 +414,12 @@ void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
+   std::move(callback).Run(BuildSnapshot());
+ }
+ 
+-void AegisAgentPageHandler::ConfigureModel(
+-    const std::string& provider,
+-    const std::string& base_url,
+-    const std::string& model,
+-    const std::string& api_key,
+-    bool clear_api_key,
+-    ConfigureModelCallback callback) {
++void AegisAgentPageHandler::ConfigureModel(const std::string& provider,
++                                           const std::string& base_url,
++                                           const std::string& model,
++                                           const std::string& api_key,
++                                           bool clear_api_key,
++                                           ConfigureModelCallback callback) {
+   last_error_.clear();
+   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
+   if (!core_service) {
+@@ -421,9 +439,8 @@ void AegisAgentPageHandler::ListModels(const std::string& provider,
+                                        ListModelsCallback callback) {
+   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
+   if (!core_service) {
+-    std::move(callback).Run(false,
+-                            "Model discovery is unavailable for this profile",
+-                            {});
++    std::move(callback).Run(
++        false, "Model discovery is unavailable for this profile", {});
+     return;
+   }
+   core_service->ListModels(
+@@ -437,6 +454,7 @@ void AegisAgentPageHandler::CreateTask(
+     aegis_agent::mojom::AgentMode mode,
+     aegis_agent::mojom::Workflow workflow,
+     const std::vector<std::string>& approved_origins,
++    int32_t schedule_interval_minutes,
+     CreateTaskCallback callback) {
+   last_error_.clear();
+   if (profile_ && profile_->GetPrefs() &&
+@@ -461,33 +479,38 @@ void AegisAgentPageHandler::CreateTask(
+   }
+   const bool invalid_explicit_origins =
+       !approved_origins.empty() && !requested_origins;
++  std::string resolved_goal =
++      converted_mode ? BindScheduleToGoal(goal, schedule_interval_minutes)
++                     : goal;
+   if (!service_ || !service_->IsEnabled()) {
+     last_error_ = "Browser Agent is disabled";
+   } else if (!converted_mode || !converted_workflow || goal.empty() ||
+-             goal.size() > 4096u || invalid_explicit_origins) {
++             resolved_goal.size() > 4096u || invalid_explicit_origins ||
++             !IsValidSchedule(*converted_mode, schedule_interval_minutes)) {
+     last_error_ = "Task input is invalid";
+   } else if (!model_destination) {
+     last_error_ = "Configure a valid Agent model provider before planning";
+   } else {
+-    const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(goal);
+-    const bool use_current_page =
+-        !requested_origins && !explicit_url &&
+-        GoalRefersToCurrentPage(goal);
+-    const bool browser_only =
+-        !requested_origins && !explicit_url && !use_current_page &&
+-        !WorkflowNeedsWebTarget(*converted_workflow);
++    const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(resolved_goal);
++    const bool use_current_page = !requested_origins && !explicit_url &&
++                                  GoalRefersToCurrentPage(resolved_goal);
++    const bool browser_only = !requested_origins && !explicit_url &&
++                              !use_current_page &&
++                              !WorkflowNeedsWebTarget(*converted_workflow);
+     if (!requested_origins && !explicit_url && !use_current_page &&
+         !browser_only) {
+       service_->RouteGoal(
+-          goal, *converted_workflow,
++          resolved_goal, *converted_workflow,
+           base::BindOnce(&AegisAgentPageHandler::OnGoalRouted,
+-                         weak_ptr_factory_.GetWeakPtr(), goal, *converted_mode,
+-                         std::move(requested_origins), std::move(callback)));
++                         weak_ptr_factory_.GetWeakPtr(), resolved_goal,
++                         *converted_mode, std::move(requested_origins),
++                         std::move(callback)));
+       return;
+     }
+-    CreateResolvedTask(goal, *converted_mode, *converted_workflow,
+-                       std::move(requested_origins), explicit_url,
+-                       browser_only, use_current_page, std::move(callback));
++    CreateResolvedTask(std::move(resolved_goal), *converted_mode,
++                       *converted_workflow, std::move(requested_origins),
++                       explicit_url, browser_only, use_current_page,
++                       std::move(callback));
+     return;
+   }
+   std::move(callback).Run(BuildSnapshot());
+@@ -559,10 +582,10 @@ void AegisAgentPageHandler::CreateResolvedTask(
+         tab && requested_origins &&
+         IncludesOrigin(*requested_origins, tab->GetURL());
+     if (!use_approved_current_page) {
+-      std::optional<GURL> target = requested_origins
+-                                       ? std::make_optional(
+-                                             requested_origins->front().GetURL())
+-                                       : std::move(routed_url);
++      std::optional<GURL> target =
++          requested_origins
++              ? std::make_optional(requested_origins->front().GetURL())
++              : std::move(routed_url);
+       tab = target ? OpenAutomaticTaskTab(browser_, *target) : nullptr;
+       if (tab) {
+         task_url = *target;
+@@ -570,8 +593,7 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     }
+     if (requested_origins) {
+       origins = std::move(requested_origins);
+-    } else if (tab && task_url.is_valid() &&
+-               task_url.SchemeIsHTTPOrHTTPS()) {
++    } else if (tab && task_url.is_valid() && task_url.SchemeIsHTTPOrHTTPS()) {
+       origins = AutomaticTaskOrigins(task_url);
+     }
+   }
+@@ -581,9 +603,9 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     return;
+   }
+   std::optional<aegis::agent::AgentTaskScope> scope =
+-      aegis::agent::BuildAgentWorkflowScope(
+-          workflow, std::move(*origins), {tab->GetHandle().raw_value()},
+-          *model_destination);
++      aegis::agent::BuildAgentWorkflowScope(workflow, std::move(*origins),
++                                            {tab->GetHandle().raw_value()},
++                                            *model_destination);
+   AgentTask* task =
+       scope ? service_->CreateTask(std::move(goal), mode, std::move(*scope))
+             : nullptr;
+@@ -760,19 +782,17 @@ void AegisAgentPageHandler::OnPlanReady(const std::string& task_id,
+   PushSnapshot();
+ }
+ 
+-void AegisAgentPageHandler::OnModelConfigured(
+-    ConfigureModelCallback callback,
+-    bool ok,
+-    std::string error) {
++void AegisAgentPageHandler::OnModelConfigured(ConfigureModelCallback callback,
++                                              bool ok,
++                                              std::string error) {
+   last_error_ = ok ? std::string() : std::move(error);
+   std::move(callback).Run(BuildSnapshot());
+ }
+ 
+-void AegisAgentPageHandler::OnModelsListed(
+-    ListModelsCallback callback,
+-    bool ok,
+-    std::string error,
+-    std::vector<std::string> models) {
++void AegisAgentPageHandler::OnModelsListed(ListModelsCallback callback,
++                                           bool ok,
++                                           std::string error,
++                                           std::vector<std::string> models) {
+   std::move(callback).Run(ok, std::move(error), std::move(models));
+ }
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index cda67f3e8a..205f1a5117 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -60,6 +60,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+                   aegis_agent::mojom::AgentMode mode,
+                   aegis_agent::mojom::Workflow workflow,
+                   const std::vector<std::string>& approved_origins,
++                  int32_t schedule_interval_minutes,
+                   CreateTaskCallback callback) override;
+   void RequestPlan(const std::string& task_id,
+                    RequestPlanCallback callback) override;
+@@ -96,14 +97,13 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+   void PushSnapshot();
+   void OnAgentEnabledChanged();
+   void OnActiveTabDidChange(BrowserWindowInterface* browser);
+-  void OnGoalRouted(
+-      std::string goal,
+-      aegis::agent::AgentMode mode,
+-      std::optional<std::vector<url::Origin>> requested_origins,
+-      CreateTaskCallback callback,
+-      bool ok,
+-      std::string error,
+-      std::optional<aegis::agent::AgentGoalRoute> route);
++  void OnGoalRouted(std::string goal,
++                    aegis::agent::AgentMode mode,
++                    std::optional<std::vector<url::Origin>> requested_origins,
++                    CreateTaskCallback callback,
++                    bool ok,
++                    std::string error,
++                    std::optional<aegis::agent::AgentGoalRoute> route);
+   void CreateResolvedTask(
+       std::string goal,
+       aegis::agent::AgentMode mode,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index a4f18d6170..eef03f0f8e 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -66,35 +66,23 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
+       "说出目标，Aegis 会先理解、制定计划，再操作浏览器。",
+       "說出目標，Aegis 會先理解、制定計畫，再操作瀏覽器。");
+-  add("ask", "Ask", "询问", "詢問");
+-  add("act", "Act", "执行", "執行");
+-  add("automate", "Automate", "自动化", "自動化");
++  add("taskWorkspace", "Common tasks", "常用任务", "常用任務");
++  add("automationWorkspace", "Automations", "自动化", "自動化");
+   add("target", "Where Aegis will work", "Aegis 将在哪里操作",
+       "Aegis 將在哪裡操作");
+   add("goal", "What should Aegis do?", "希望 Aegis 做什么？",
+       "希望 Aegis 做什麼？");
+   add("goalPlaceholder",
+-      "For example: compare three reliable USB hubs and summarize the differences",
++      "For example: compare three reliable USB hubs and summarize the "
++      "differences",
+       "例如：帮我找三款靠谱的 USB 扩展坞，对比后告诉我区别",
+       "例如：幫我找三款可靠的 USB 擴充座，比較後告訴我差異");
+   add("origins", "Allowed origins (optional)", "允许访问的来源（可选）",
+       "允許存取的來源（選填）");
+-  add("originsPlaceholder",
+-      "Leave empty and the AI will decide whether a page or search is needed",
+-      "留空时由 AI 判断是否需要打开或搜索网页",
+-      "留空時由 AI 判斷是否需要開啟或搜尋網頁");
+-  add("workflow", "Task type", "任务类型", "任務類型");
+-  add("autoWorkflow", "Choose automatically", "自动判断", "自動判斷");
+-  add("research", "Research", "深度研究", "深度研究");
+-  add("steward", "Browser steward", "浏览器管家", "瀏覽器管家");
+-  add("download", "Safe download", "安全下载", "安全下載");
+-  add("shopping", "Shopping", "购物助手", "購物助手");
+   add("plan", "Start task", "开始任务", "開始任務");
+   add("start", "Approve and start", "同意并开始", "同意並開始");
+-  add("scope", "What Aegis is doing", "Aegis 正在做什么",
+-      "Aegis 正在做什麼");
++  add("scope", "What Aegis is doing", "Aegis 正在做什么", "Aegis 正在做什麼");
+   add("timeline", "Timeline", "执行时间线", "執行時間軸");
+-  add("monitors", "Monitors", "监控", "監控");
+   add("pauseMonitor", "Pause monitor", "暂停监控", "暫停監控");
+   add("resumeMonitor", "Resume monitor", "恢复监控", "恢復監控");
+   add("deleteMonitor", "Delete monitor", "删除监控", "刪除監控");
+@@ -113,26 +101,20 @@ void AddStrings(content::WebUIDataSource* source) {
+       "is needed.",
+       "Aegis 会先理解目标，再决定是否需要打开或搜索网页。",
+       "Aegis 會先理解目標，再決定是否需要開啟或搜尋網頁。");
+-  add("simpleHelp",
+-      "You do not need to open a page or choose a workflow first.",
+-      "不需要先打开网页，也不需要懂工作流。",
+-      "不需要先開啟網頁，也不需要懂工作流程。");
+-  add("advanced", "Advanced settings", "高级设置", "進階設定");
+-  add("useCurrentPage", "Use the current page", "使用当前网页",
+-      "使用目前網頁");
+-  add("useCurrentPageHelp",
+-      "Off by default so Aegis can understand the goal before choosing a page.",
+-      "默认关闭，让 Aegis 先理解目标再选择网页。",
+-      "預設關閉，讓 Aegis 先理解目標再選擇網頁。");
++  add("simpleHelp", "Choose a common task or describe the result you want.",
++      "选择一个常用场景，或者直接说出你想要的结果。",
++      "選擇一個常用情境，或直接說出你想要的結果。");
+   add("modelSettings", "AI model", "AI 模型", "AI 模型");
+   add("modelMissing", "Connect an AI model before the first task",
+-      "首次使用前，先连接一个 AI 模型",
+-      "首次使用前，先連接一個 AI 模型");
++      "首次使用前，先连接一个 AI 模型", "首次使用前，先連接一個 AI 模型");
+   add("modelReady", "AI connected", "AI 已连接", "AI 已連接");
+   add("modelHint",
+-      "Local OpenAI-compatible servers need no key. Cloud keys are stored by the browser and never shown here again.",
+-      "本机 OpenAI 兼容服务不需要密钥；云端密钥由浏览器安全保存，之后不会再次显示。",
+-      "本機 OpenAI 相容服務不需要金鑰；雲端金鑰由瀏覽器安全儲存，之後不會再次顯示。");
++      "Local OpenAI-compatible servers need no key. Cloud keys are stored by "
++      "the browser and never shown here again.",
++      "本机 OpenAI "
++      "兼容服务不需要密钥；云端密钥由浏览器安全保存，之后不会再次显示。",
++      "本機 OpenAI "
++      "相容服務不需要金鑰；雲端金鑰由瀏覽器安全儲存，之後不會再次顯示。");
+   add("providerLabel", "API format", "API 格式", "API 格式");
+   add("baseUrlLabel", "Service address", "服务地址", "服務位址");
+   add("modelNameLabel", "Model name", "模型名称", "模型名稱");
+@@ -141,25 +123,93 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("detectModels", "Detect models", "检测可用模型", "偵測可用模型");
+   add("saveModel", "Save connection", "保存连接", "儲存連線");
+   add("modelDetected", "Models detected. Choose one, then save.",
+-      "已检测到模型，选择一个后保存。",
+-      "已偵測到模型，選擇一個後儲存。");
++      "已检测到模型，选择一个后保存。", "已偵測到模型，選擇一個後儲存。");
+   add("modelSaved", "Connection saved", "连接已保存", "連線已儲存");
++  add("quickSummary", "Summarize this page", "总结当前页", "總結目前頁面");
++  add("quickSummaryGoal", "Summarize this page and list the key points",
++      "总结当前页面内容，并列出重点", "總結目前頁面內容，並列出重點");
+   add("quickResearch", "Compare products", "对比商品", "比較商品");
+-  add("quickResearchGoal", "Compare three reliable USB hubs and summarize the differences",
++  add("quickResearchGoal",
++      "Compare three reliable USB hubs and summarize the differences",
+       "帮我找三款靠谱的 USB 扩展坞，对比后告诉我区别",
+       "幫我找三款可靠的 USB 擴充座，比較後告訴我差異");
+   add("quickSteward", "Tidy bookmarks", "整理收藏夹", "整理書籤");
+-  add("quickStewardGoal", "Organize my bookmarks by topic and show a preview before changing anything",
++  add("quickStewardGoal",
++      "Organize my bookmarks by topic and show a preview before changing "
++      "anything",
+       "按主题整理我的收藏夹，修改前先给我看预览",
+       "按主題整理我的書籤，修改前先讓我看預覽");
++  add("quickUrlCheck", "Check dead links", "检查失效链接", "檢查失效連結");
++  add("quickUrlCheckGoal",
++      "Check my bookmarks for unreachable links and summarize the results "
++      "without changing anything",
++      "检查收藏夹里无法访问或已经失效的链接，只汇总结果，不要修改",
++      "檢查書籤裡無法存取或已經失效的連結，只彙總結果，不要修改");
+   add("quickDownload", "Find download", "找官方下载", "找官方下載");
+-  add("quickDownloadGoal", "Find the official safe download for the app I describe",
++  add("quickDownloadGoal",
++      "Find the official safe download for the app I describe",
+       "帮我找到我说的软件的官方安全下载地址",
+       "幫我找到我說的軟體的官方安全下載位址");
+-  add("quickShopping", "Shop for me", "帮我购物", "幫我購物");
+-  add("quickShoppingGoal", "Compare total prices and prepare the best option for checkout",
+-      "对比到手总价，选出最合适的并准备到结账前",
+-      "比較到手總價，選出最合適的並準備到結帳前");
++  add("quickGather", "Research a topic", "搜集资料", "蒐集資料");
++  add("quickGatherGoal",
++      "Research the topic I describe, compare reliable sources, and give me a "
++      "concise conclusion with links",
++      "围绕我说的主题搜集可靠资料，对比来源后给我简明结论和链接",
++      "圍繞我說的主題蒐集可靠資料，比較來源後給我簡明結論和連結");
++  add("automationTitle", "Create an automation", "创建定时自动化",
++      "建立定時自動化");
++  add("automationHelp",
++      "Aegis checks while the browser is running. It never purchases, submits, "
++      "or downloads automatically.",
++      "浏览器运行时，Aegis 会按频率检查；不会自动购买、提交或运行下载内容。",
++      "瀏覽器執行時，Aegis 會按頻率檢查；不會自動購買、提交或執行下載內容。");
++  add("automationGoal", "What should Aegis keep checking?",
++      "希望持续检查什么？", "希望持續檢查什麼？");
++  add("automationGoalPlaceholder",
++      "For example: monitor this product and notify me when the price drops",
++      "例如：持续关注这个商品，降价时提醒我",
++      "例如：持續關注這個商品，降價時提醒我");
++  add("scheduleLabel", "Run frequency", "运行频率", "執行頻率");
++  add("scheduleHelp",
++      "Missed runs collapse into one check after the browser restarts.",
++      "浏览器关闭期间不会后台运行；重新打开后只补做一次检查。",
++      "瀏覽器關閉期間不會在背景執行；重新開啟後只補做一次檢查。");
++  add("schedule15Minutes", "Every 15 minutes", "每 15 分钟", "每 15 分鐘");
++  add("scheduleHourly", "Every hour", "每小时", "每小時");
++  add("schedule6Hours", "Every 6 hours", "每 6 小时", "每 6 小時");
++  add("scheduleDaily", "Every day", "每天", "每天");
++  add("scheduleWeekly", "Every week", "每周", "每週");
++  add("createAutomation", "Create automation", "创建自动化", "建立自動化");
++  add("automationsTitle", "My automations", "我的自动化", "我的自動化");
++  add("emptyAutomations", "No automations yet.", "还没有自动化任务。",
++      "還沒有自動化任務。");
++  add("automationPrice", "Price drop", "降价提醒", "降價提醒");
++  add("automationPriceGoal",
++      "Monitor the product I specify and notify me when its price drops",
++      "监控我指定商品的价格变化，降价时提醒我",
++      "監控我指定商品的價格變化，降價時提醒我");
++  add("automationInventory", "Back in stock", "到货提醒", "到貨提醒");
++  add("automationInventoryGoal",
++      "Monitor the product I specify and notify me when it is back in stock",
++      "监控我指定商品的库存，恢复到货时提醒我",
++      "監控我指定商品的庫存，恢復到貨時提醒我");
++  add("automationPageChange", "Page updates", "网页更新", "網頁更新");
++  add("automationPageChangeGoal",
++      "Monitor the page I specify and summarize meaningful changes",
++      "监控我指定网页的内容变化，有重要更新时总结变化",
++      "監控我指定網頁的內容變化，有重要更新時總結變化");
++  add("automationUrlStatus", "URL health", "URL 有效性", "URL 有效性");
++  add("automationUrlStatusGoal",
++      "Check whether the page I specify remains reachable and notify me if it "
++      "fails",
++      "定期检查我指定网页是否还能访问，失效时提醒我",
++      "定期檢查我指定網頁是否還能存取，失效時提醒我");
++  add("automationPaused", "Paused", "已暂停", "已暫停");
++  add("automationPausedHelp", "This automation will not run until resumed.",
++      "恢复前不会继续运行。", "恢復前不會繼續執行。");
++  add("automationNextRun", "Next run: $1", "下次运行：$1", "下次執行：$1");
++  add("automationFailures", "Recent failures: $1", "连续失败：$1 次",
++      "連續失敗：$1 次");
+   add("details", "Technical details", "技术详情", "技術詳情");
+   add("statusIdle", "Ready", "可以开始", "可以開始");
+   add("statusUnderstanding", "Understanding your goal…", "正在理解你的需求…",
+@@ -171,10 +221,14 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("statusCompleted", "Done", "已完成", "已完成");
+   add("statusFailed", "Needs attention", "遇到问题", "遇到問題");
+   add("planFailed", "The task did not start. Edit the goal and try again.",
+-      "任务未开始，可以修改目标后重试。",
+-      "任務未開始，可以修改目標後重試。");
++      "任务未开始，可以修改目标后重试。", "任務未開始，可以修改目標後重試。");
++  add("taskInputError",
++      "The task or schedule is invalid. Edit it and try again.",
++      "任务内容或定时设置无效，请修改后重试。",
++      "任務內容或定時設定無效，請修改後重試。");
+   add("planningScopeError",
+-      "Aegis did not recognize the target correctly. Nothing was changed. Please try again.",
++      "Aegis did not recognize the target correctly. Nothing was changed. "
++      "Please try again.",
+       "Aegis 没有正确识别目标，本次未执行任何操作。请直接重试。",
+       "Aegis 沒有正確識別目標，本次未執行任何操作。請直接重試。");
+   add("planningFormatError",
+@@ -182,29 +236,45 @@ void AddStrings(content::WebUIDataSource* source) {
+       "AI 返回的计划格式不正确，本次未执行任何操作。请直接重试。",
+       "AI 返回的計畫格式不正確，本次未執行任何操作。請直接重試。");
+   add("planningGenericError",
+-      "The task did not start. Nothing was changed. Check the model connection and try again.",
++      "The task did not start. Nothing was changed. Check the model connection "
++      "and try again.",
+       "任务没有成功开始，本次未执行任何操作。请检查模型连接后重试。",
+       "任務沒有成功開始，本次未執行任何操作。請檢查模型連線後重試。");
+   add("executionFormatError",
+-      "The AI did not produce the next planned action correctly. Aegis stopped safely; retry the task.",
++      "The AI did not produce the next planned action correctly. Aegis stopped "
++      "safely; retry the task.",
+       "AI 没有正确生成计划中的下一步操作，Aegis 已安全停止。请直接重试任务。",
+       "AI 沒有正確產生計畫中的下一步操作，Aegis 已安全停止。請直接重試任務。");
+   add("executionRequiredToolError",
+-      "The model did not call the required $1 action after two attempts. Aegis stopped safely at that step; retry the task.",
+-      "模型连续两次没有调用计划要求的 $1，Aegis 已在该步骤安全停止。请重试任务。",
+-      "模型連續兩次沒有呼叫計畫要求的 $1，Aegis 已在該步驟安全停止。請重試任務。");
++      "The model did not call the required $1 action after two attempts. Aegis "
++      "stopped safely at that step; retry the task.",
++      "模型连续两次没有调用计划要求的 $1，Aegis "
++      "已在该步骤安全停止。请重试任务。",
++      "模型連續兩次沒有呼叫計畫要求的 $1，Aegis "
++      "已在該步驟安全停止。請重試任務。");
+   add("executionCompletionError",
+-      "The page was read, but the AI did not produce the final answer correctly. Aegis stopped safely; retry the task.",
+-      "页面已经读取，但 AI 没有正确生成最终回答。Aegis 已安全停止，请重试任务。",
+-      "頁面已經讀取，但 AI 沒有正確產生最終回答。Aegis 已安全停止，請重試任務。");
++      "The page was read, but the AI did not produce the final answer "
++      "correctly. Aegis stopped safely; retry the task.",
++      "页面已经读取，但 AI 没有正确生成最终回答。Aegis "
++      "已安全停止，请重试任务。",
++      "頁面已經讀取，但 AI 沒有正確產生最終回答。Aegis "
++      "已安全停止，請重試任務。");
+   add("executionGenericError",
+-      "The task started but could not continue. Aegis stopped safely; retry the task or open technical details for the exact cause.",
+-      "任务已经开始，但未能继续完成。Aegis 已安全停止；请重试，或展开技术详情查看准确原因。",
+-      "任務已經開始，但未能繼續完成。Aegis 已安全停止；請重試，或展開技術詳情查看準確原因。");
++      "The task started but could not continue. Aegis stopped safely; retry "
++      "the task or open technical details for the exact cause.",
++      "任务已经开始，但未能继续完成。Aegis "
++      "已安全停止；请重试，或展开技术详情查看准确原因。",
++      "任務已經開始，但未能繼續完成。Aegis "
++      "已安全停止；請重試，或展開技術詳情查看準確原因。");
+   add("goalRoutingError",
+-      "The AI could not determine a safe browser entry. Nothing was opened. Please clarify the goal and try again.",
+-      "AI 没有判断出可靠的浏览器入口，本次没有打开网页。请把目标说得更具体后重试。",
+-      "AI 沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試。");
++      "The AI could not determine a safe browser entry. Nothing was opened. "
++      "Please clarify the goal and try again.",
++      "AI "
++      "没有判断出可靠的浏览器入口，本次没有打开网页。请把目标说得更具体后重试"
++      "。",
++      "AI "
++      "沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試"
++      "。");
+   add("timelinePlanning", "Understanding the task", "正在理解任务",
+       "正在理解任務");
+   add("timelinePlanningDetail", "Identifying the target and planning steps",
+@@ -220,19 +290,16 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("timelineVerifyingDetail", "Web actions finished; checking the result",
+       "网页操作已完成，正在核对结果", "網頁操作已完成，正在核對結果");
+   add("timelineCompleted", "Task complete", "任务完成", "任務完成");
+-  add("timelineCompletedDetail", "Result checked", "结果已核对",
+-      "結果已核對");
++  add("timelineCompletedDetail", "Result checked", "结果已核对", "結果已核對");
+   add("timelineFailed", "Task not completed", "任务未完成", "任務未完成");
+   add("timelineFailedDetail", "The plan did not pass; no web action ran",
+-      "计划未通过检查，没有执行网页操作",
+-      "計畫未通過檢查，沒有執行網頁操作");
++      "计划未通过检查，没有执行网页操作", "計畫未通過檢查，沒有執行網頁操作");
+   add("timelineExecutionFormatFailed",
+       "The AI could not form the next planned action",
+       "AI 未能按计划生成下一步操作", "AI 未能按計畫產生下一步操作");
+   add("timelineRequiredToolFailed",
+       "Required action $1 was not produced after retrying",
+-      "重试后仍未生成计划要求的 $1",
+-      "重試後仍未產生計畫要求的 $1");
++      "重试后仍未生成计划要求的 $1", "重試後仍未產生計畫要求的 $1");
+   add("timelineBrowserActionFailed",
+       "A browser action still failed after retrying",
+       "浏览器操作重试后仍未成功", "瀏覽器操作重試後仍未成功");
+-- 
+2.52.0
+

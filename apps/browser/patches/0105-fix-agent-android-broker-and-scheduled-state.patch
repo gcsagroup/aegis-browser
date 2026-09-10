@@ -1,0 +1,832 @@
+From 1e1341b51e3254d4638bc1917b140f30d4c1e9d7 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 5 Sep 2026 15:06:02 +0800
+Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BF=AE=E5=A4=8D=20Android=20?=
+ =?UTF-8?q?=E5=85=A5=E5=8F=A3=E4=B8=8E=E8=87=AA=E5=8A=A8=E5=8C=96=E7=8A=B6?=
+ =?UTF-8?q?=E6=80=81=E5=8F=8A=E5=AE=89=E5=85=A8=E5=AD=98=E5=82=A8=E5=9B=9E?=
+ =?UTF-8?q?=E9=80=80?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  86 ++++++++-----
+ .../agent/aegis_agent_service_unittest.cc     |  54 +++++++++
+ .../aegis/agent/aegis_browser_tools.cc        |  10 +-
+ .../aegis/agent/agent_core_unittest.cc        |  38 ++++++
+ .../aegis/agent/agent_monitor_scheduler.h     |   4 +
+ .../aegis/agent/agent_result_verifier.cc      |  19 +--
+ .../chrome_browser_interface_binders_webui.cc |   4 +
+ ...me_browser_interface_binders_webui_parts.h |   2 +
+ ...r_interface_binders_webui_parts_android.cc |   9 ++
+ chrome/browser/resources/aegis_agent/agent.ts | 113 +++++++++++++++---
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |   1 +
+ .../aegis_agent/aegis_agent_page_handler.cc   |   1 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  46 +++++++
+ 13 files changed, 326 insertions(+), 61 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 8baa30f811..5d4815fb5e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -356,6 +356,7 @@ base::DictValue PublicMonitorValue(const AgentMonitorDefinition& monitor) {
+   value.Set("target_hash", monitor.target_hash);
+   value.Set("interval_minutes", static_cast<int>(monitor.interval.InMinutes()));
+   value.Set("enabled", monitor.enabled);
++  value.Set("session_only", monitor.session_only);
+   value.Set("next_run_us",
+             base::NumberToString(
+                 monitor.next_run.ToDeltaSinceWindowsEpoch().InMicroseconds()));
+@@ -1120,7 +1121,9 @@ bool AegisAgentService::CancelTask(const std::string& task_id) {
+                             /*cancel_active_downloads=*/true);
+   bookmark_undo_tokens_.erase(task_id);
+   for (const AgentMonitorDefinition& monitor : GetMonitors(task_id)) {
+-    DeletePersistedMonitor(monitor.monitor_id);
++    if (!monitor.session_only) {
++      DeletePersistedMonitor(monitor.monitor_id);
++    }
+     monitor_scheduler_.Remove(monitor.monitor_id);
+   }
+   ScheduleMonitorTimer();
+@@ -2360,7 +2363,7 @@ bool AegisAgentService::UpsertMonitor(AgentMonitorDefinition monitor) {
+   if (monitor.next_run.is_null()) {
+     monitor.next_run = base::Time::Now() + monitor.interval;
+   }
+-  if (!PersistMonitor(monitor)) {
++  if (!monitor.session_only && !PersistMonitor(monitor)) {
+     return false;
+   }
+   const bool upserted = monitor_scheduler_.Upsert(std::move(monitor));
+@@ -2393,7 +2396,8 @@ bool AegisAgentService::SetMonitorPaused(const std::string& task_id,
+   if (it->enabled) {
+     it->next_run = base::Time::Now() + it->interval;
+   }
+-  if (!PersistMonitor(*it) || !monitor_scheduler_.Upsert(std::move(*it))) {
++  if ((!it->session_only && !PersistMonitor(*it)) ||
++      !monitor_scheduler_.Upsert(std::move(*it))) {
+     return false;
+   }
+   ScheduleMonitorTimer();
+@@ -2412,7 +2416,8 @@ bool AegisAgentService::RemoveMonitor(const std::string& task_id,
+   auto it = std::ranges::find_if(monitors, [&](const auto& monitor) {
+     return monitor.monitor_id == monitor_id && monitor.task_id == task_id;
+   });
+-  if (it == monitors.end() || !DeletePersistedMonitor(monitor_id)) {
++  if (it == monitors.end() ||
++      (!it->session_only && !DeletePersistedMonitor(monitor_id))) {
+     return false;
+   }
+   const bool removed = monitor_scheduler_.Remove(monitor_id);
+@@ -2439,19 +2444,26 @@ std::vector<AgentMonitorDefinition> AegisAgentService::ClaimDueMonitors(
+         std::ranges::find(task->scope().allowed_origins, monitor.origin) ==
+             task->scope().allowed_origins.end()) {
+       monitor_scheduler_.Remove(monitor.monitor_id);
+-      DeletePersistedMonitor(monitor.monitor_id);
++      if (!monitor.session_only) {
++        DeletePersistedMonitor(monitor.monitor_id);
++      }
+       continue;
+     }
+     if (!task->ConsumeNetworkRequest()) {
+       monitor.enabled = false;
+       monitor_scheduler_.Upsert(monitor);
+-      PersistMonitor(monitor);
++      if (!monitor.session_only) {
++        PersistMonitor(monitor);
++      }
+       continue;
+     }
+-    if (!PersistTask(*task) || !PersistMonitor(monitor)) {
++    if (!PersistTask(*task) ||
++        (!monitor.session_only && !PersistMonitor(monitor))) {
+       monitor.enabled = false;
+       monitor_scheduler_.Upsert(monitor);
+-      PersistMonitor(monitor);
++      if (!monitor.session_only) {
++        PersistMonitor(monitor);
++      }
+       continue;
+     }
+     runnable.push_back(std::move(monitor));
+@@ -2482,12 +2494,13 @@ bool AegisAgentService::MarkMonitorFinished(const std::string& task_id,
+   auto it = std::ranges::find_if(monitors, [&](const auto& monitor) {
+     return monitor.monitor_id == monitor_id && monitor.task_id == task_id;
+   });
+-  const bool persisted = it != monitors.end() && PersistMonitor(*it);
+-  if (persisted) {
++  const bool updated =
++      it != monitors.end() && (it->session_only || PersistMonitor(*it));
++  if (updated) {
+     ScheduleMonitorTimer();
+     NotifyServiceSnapshotChanged();
+   }
+-  return persisted;
++  return updated;
+ }
+ 
+ std::vector<AgentMonitorDefinition> AegisAgentService::GetMonitors(
+@@ -2530,9 +2543,8 @@ void AegisAgentService::ExecuteMonitorTool(AgentTask* task,
+       return;
+     }
+     if (!g_browser_process || !g_browser_process->os_crypt_async()) {
+-      std::move(callback).Run(
+-          MonitorError(call.action_id, AgentErrorCode::kToolUnavailable,
+-                       "secure monitor target storage is unavailable"));
++      OnMonitorCreateEncryptorReady(task->id(), CloneToolCall(call),
++                                    std::move(callback), nullptr);
+       return;
+     }
+     g_browser_process->os_crypt_async()->GetInstance(
+@@ -2640,21 +2652,32 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
+   const std::optional<AgentDocumentRef> latest =
+       call.document ? actor_bridge_.LastDocument(task_id, call.document->tab_id)
+                     : std::nullopt;
+-  std::string ciphertext;
+-  const bool ephemeral = profile_ && profile_->IsOffTheRecord();
+-  const bool storage_ready =
+-      ephemeral || (encryptor && encryptor->IsEncryptionAvailable() &&
+-                    encryptor->EncryptString(target.spec(), &ciphertext));
+-  if (!task || task->state() != AgentTaskState::kRunning || !kind ||
+-      !interval_minutes || *interval_minutes < 15 ||
+-      *interval_minutes > 10080 || target.is_empty() || !call.document ||
+-      (browser_interval && *interval_minutes != *browser_interval) || !latest ||
+-      !SameDocument(*latest, *call.document) || !storage_ready) {
++  if (!task || task->state() != AgentTaskState::kRunning) {
+     std::move(callback).Run(
+         MonitorError(call.action_id, AgentErrorCode::kInvalidRequest,
+-                     "monitor target or secure storage is unavailable"));
++                     "monitor task is no longer running"));
+     return;
+   }
++  if (!kind || !interval_minutes || *interval_minutes < 15 ||
++      *interval_minutes > 10080 ||
++      (browser_interval && *interval_minutes != *browser_interval)) {
++    std::move(callback).Run(
++        MonitorError(call.action_id, AgentErrorCode::kInvalidRequest,
++                     "monitor schedule is invalid"));
++    return;
++  }
++  if (target.is_empty() || !call.document || !latest ||
++      !SameDocument(*latest, *call.document)) {
++    std::move(callback).Run(
++        MonitorError(call.action_id, AgentErrorCode::kInvalidRequest,
++                     "monitor target is unavailable or the page changed"));
++    return;
++  }
++  std::string ciphertext;
++  const bool ephemeral = profile_ && profile_->IsOffTheRecord();
++  const bool encrypted =
++      !ephemeral && encryptor && encryptor->IsEncryptionAvailable() &&
++      encryptor->EncryptString(target.spec(), &ciphertext);
+   AgentMonitorDefinition monitor;
+   monitor.monitor_id = AgentMonitorIdempotencyKey(task_id, call.action_id);
+   monitor.task_id = task_id;
+@@ -2663,12 +2686,13 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
+   monitor.target_hash = Sha256(target.spec());
+   monitor.target_url = target;
+   monitor.target_ciphertext = std::move(ciphertext);
++  monitor.session_only = !encrypted;
+   monitor.interval = base::Minutes(*interval_minutes);
+   monitor.next_run = base::Time::Now() + monitor.interval;
+   if (!UpsertMonitor(monitor)) {
+     std::move(callback).Run(
+         MonitorError(call.action_id, AgentErrorCode::kInternal,
+-                     "encrypted monitor could not be persisted"));
++                     "monitor could not be scheduled"));
+     return;
+   }
+   const std::vector<AgentMonitorDefinition> monitors = GetMonitors(task_id);
+@@ -2677,7 +2701,10 @@ void AegisAgentService::OnMonitorCreateEncryptorReady(
+   std::move(callback).Run(
+       AgentToolResult{.action_id = call.action_id,
+                       .ok = true,
+-                      .message = "encrypted page monitor created",
++                      .message = monitor.session_only
++                                     ? "page monitor created for this browser "
++                                       "session; secure storage was unavailable"
++                                     : "encrypted page monitor created",
+                       .value = std::move(value)});
+ }
+ 
+@@ -3243,7 +3270,7 @@ bool AegisAgentService::PersistPlanProgress(const std::string& task_id,
+ }
+ 
+ bool AegisAgentService::PersistMonitor(const AgentMonitorDefinition& monitor) {
+-  if (!storage_ready_) {
++  if (monitor.session_only || !storage_ready_) {
+     return false;
+   }
+   task_store_.AsyncCall(&AgentTaskStore::SaveMonitor)
+@@ -3419,7 +3446,8 @@ void AegisAgentService::RestoreMonitors(
+   std::vector<AgentMonitorDefinition> valid;
+   for (AgentMonitorDefinition& monitor : monitors) {
+     const AgentTask* task = GetTask(monitor.task_id);
+-    if (!task || task->mode() != AgentMode::kAutomate ||
++    if (monitor.target_ciphertext.empty() || !task ||
++        task->mode() != AgentMode::kAutomate ||
+         task->state() == AgentTaskState::kFailed ||
+         task->state() == AgentTaskState::kCancelled ||
+         task->state() == AgentTaskState::kExpired ||
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index c1f5e8a259..2c08bd2cd6 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -963,6 +963,7 @@ TEST_F(AegisAgentServiceTest, PersistsAndBoundsBrowserLifetimeMonitors) {
+   monitor.kind = AgentMonitorKind::kPageChange;
+   monitor.origin = url::Origin::Create(GURL("https://fixture.example/path"));
+   monitor.target_hash = "sha256:fixture-target";
++  monitor.target_ciphertext = "encrypted-service-fixture";
+   monitor.interval = base::Minutes(15);
+   monitor.next_run = now;
+   ASSERT_TRUE(service->UpsertMonitor(monitor));
+@@ -1023,6 +1024,7 @@ TEST_F(AegisAgentServiceTest,
+     monitor.origin =
+         url::Origin::Create(GURL("https://fixture.example/status"));
+     monitor.target_hash = "sha256:restart-owner";
++    monitor.target_ciphertext = "encrypted-restart-fixture";
+     monitor.interval = base::Minutes(15);
+     monitor.next_run = base::Time::Now() + base::Hours(1);
+     ASSERT_TRUE(original.UpsertMonitor(std::move(monitor)));
+@@ -1046,5 +1048,57 @@ TEST_F(AegisAgentServiceTest,
+   recovered.Shutdown();
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       RunsSessionOnlyMonitorWithoutPersistingItsTarget) {
++  std::string task_id;
++  const base::FilePath database =
++      profile_->GetPath().AppendASCII("AegisAgentTasks.sqlite");
++  {
++    AegisAgentService original(profile_);
++    AgentTaskScope scope = ServiceTestScope();
++    scope.allowed_tools.insert("monitor.create");
++    AgentTask* task = original.CreateTask(
++        "session monitor fixture", AgentMode::kAutomate, std::move(scope));
++    ASSERT_TRUE(task);
++    task_id = task->id();
++    ASSERT_TRUE(original.BeginPlanning(task_id));
++    std::string plan_error;
++    ASSERT_TRUE(original.AcceptModelPlan(task_id, ServiceAutomationPlanEvent(),
++                                         &plan_error))
++        << plan_error;
++    ASSERT_TRUE(original.GrantTaskConsent(task_id));
++
++    const base::Time now = base::Time::Now();
++    AgentMonitorDefinition monitor;
++    monitor.monitor_id = "monitor-session-only";
++    monitor.task_id = task_id;
++    monitor.kind = AgentMonitorKind::kUrlStatus;
++    monitor.origin =
++        url::Origin::Create(GURL("https://fixture.example/private-session-path"));
++    monitor.target_hash = "sha256:session-only-target";
++    monitor.target_url =
++        GURL("https://fixture.example/private-session-path");
++    monitor.interval = base::Minutes(15);
++    monitor.next_run = now;
++    monitor.session_only = true;
++    ASSERT_TRUE(original.UpsertMonitor(monitor));
++    ASSERT_EQ(original.ClaimDueMonitors(now).size(), 1u);
++    ASSERT_TRUE(original.MarkMonitorFinished(task_id, monitor.monitor_id,
++                                             /*success=*/true, now));
++    FlushTaskStore(&original);
++    original.Shutdown();
++    FlushTaskStore(&original);
++  }
++
++  std::string database_bytes;
++  ASSERT_TRUE(base::ReadFileToString(database, &database_bytes));
++  EXPECT_EQ(database_bytes.find("/private-session-path"), std::string::npos);
++
++  AegisAgentService recovered(profile_);
++  FlushTaskStore(&recovered);
++  EXPECT_TRUE(recovered.GetMonitors(task_id).empty());
++  recovered.Shutdown();
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 85d16e2a24..58dec9ae0f 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -206,6 +206,7 @@ std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
+   return tabs;
+ }
+ 
++#if !BUILDFLAG(IS_ANDROID)
+ std::vector<BrowserWindowInterface*> TaskWindows(Profile* profile,
+                                                  const AgentTask& task) {
+   std::vector<BrowserWindowInterface*> windows;
+@@ -255,6 +256,7 @@ size_t NormalWindowCount(Profile* profile) {
+       });
+   return count;
+ }
++#endif
+ 
+ struct OffTheRecordHistoryResult {
+   GURL url;
+@@ -366,12 +368,8 @@ AgentToolResult SearchOffTheRecordSessionHistory(Profile* profile,
+   return result;
+ }
+ 
++#if !BUILDFLAG(IS_ANDROID)
+ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+-#if BUILDFLAG(IS_ANDROID)
+-  static_cast<void>(profile);
+-  static_cast<void>(task);
+-  return Hash("android-window-tools-unavailable");
+-#else
+   std::string material;
+   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
+     material.append(std::to_string(browser->GetSessionID().id()));
+@@ -393,7 +391,6 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+     }
+   }
+   return Hash(material);
+-#endif
+ }
+ 
+ bool HasActiveDownload(Profile* profile) {
+@@ -407,6 +404,7 @@ bool HasActiveDownload(Profile* profile) {
+     return item && item->GetState() == download::DownloadItem::IN_PROGRESS;
+   });
+ }
++#endif
+ 
+ const char* ContentSettingString(ContentSetting setting) {
+   switch (setting) {
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 7cf40ec660..91058eb090 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -609,6 +609,44 @@ TEST(AegisAgentResultVerifierTest, AcceptsStructuredBrowserFailure) {
+   EXPECT_FALSE(decision.postcondition_met);
+ }
+ 
++TEST(AegisAgentResultVerifierTest,
++     AcceptsSessionBoundMonitorWithoutExposingTarget) {
++  AgentToolRegistry registry;
++  AgentResultVerifier verifier;
++  AgentTaskScope scope = TestScope();
++  scope.allowed_tools.insert("monitor.create");
++  AgentTask task("task-monitor", "monitor fixture", AgentMode::kAutomate,
++                 std::move(scope));
++  AgentToolCall call;
++  call.action_id = "monitor-create";
++  call.tool_name = "monitor.create";
++
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.ok = true;
++  result.message = "session monitor created";
++  result.value.Set("monitor_id", "monitor-1");
++  result.value.Set("target_hash", "sha256:fixture");
++  result.value.Set("origin", "https://shop.example");
++  result.value.Set("interval_minutes", 60);
++  result.value.Set("revision", "sha256:revision");
++  result.value.Set("session_only", true);
++  AgentVerificationDecision decision =
++      verifier.Verify(task, call, *registry.Find(call.tool_name), result);
++  EXPECT_TRUE(decision.accepted) << decision.reason;
++  EXPECT_TRUE(decision.postcondition_met);
++
++  result.value.Set("target_url", "https://shop.example/private");
++  EXPECT_FALSE(verifier.Verify(task, call, *registry.Find(call.tool_name),
++                               result)
++                   .accepted);
++  result.value.Remove("target_url");
++  result.value.Remove("session_only");
++  EXPECT_FALSE(verifier.Verify(task, call, *registry.Find(call.tool_name),
++                               result)
++                   .accepted);
++}
++
+ TEST(AegisAgentResultVerifierTest, VerifiesDynamicTabAndWorkspaceOwnership) {
+   AgentToolRegistry registry;
+   AgentResultVerifier verifier;
+diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.h b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
+index 8cd4842b42..f8990a0156 100644
+--- a/chrome/browser/aegis/agent/agent_monitor_scheduler.h
++++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
+@@ -42,6 +42,10 @@ struct AgentMonitorDefinition {
+   base::Time last_run;
+   int consecutive_failures = 0;
+   bool enabled = true;
++  // Session-only monitors keep their exact target in memory and are never
++  // written to the task database. This is the safe fallback when OSCrypt is
++  // unavailable (for example, an ad-hoc signed development build on macOS).
++  bool session_only = false;
+ 
+   bool IsValid() const;
+ };
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index 0c2abce187..bc21a7ad18 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -273,13 +273,18 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+   }
+   if (call.tool_name == "monitor.create") {
+     const std::string* origin = value.FindString("origin");
+-    return HasString(value, "monitor_id") && HasString(value, "target_hash") &&
+-                   origin && task.scope().AllowsOrigin(GURL(*origin)) &&
+-                   value.FindInt("interval_minutes").value_or(0) >= 15 &&
+-                   HasString(value, "revision") &&
+-                   !value.FindString("target_url")
+-               ? Accept(true, "encrypted page monitor was persisted")
+-               : Reject("monitor creation lacks bounded browser evidence");
++    const std::optional<bool> session_only = value.FindBool("session_only");
++    if (!HasString(value, "monitor_id") ||
++        !HasString(value, "target_hash") || !origin ||
++        !task.scope().AllowsOrigin(GURL(*origin)) ||
++        value.FindInt("interval_minutes").value_or(0) < 15 ||
++        !HasString(value, "revision") || !session_only.has_value() ||
++        value.FindString("target_url")) {
++      return Reject("monitor creation lacks bounded browser evidence");
++    }
++    return *session_only
++               ? Accept(true, "session-only page monitor is browser-bound")
++               : Accept(true, "encrypted page monitor was persisted");
+   }
+   if (call.tool_name == "monitor.list") {
+     return HasList(value, "monitors") && HasString(value, "revision")
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
+index 1783d12811..d81fc05b08 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
+@@ -405,6 +405,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
+     content::WebUIBrowserInterfaceBrokerRegistry& registry) {
+   PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(registry);
+ 
++#if BUILDFLAG(IS_ANDROID)
++  PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsAndroid(registry);
++#endif  // BUILDFLAG(IS_ANDROID)
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsCros(registry);
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts.h b/chrome/browser/chrome_browser_interface_binders_webui_parts.h
+index 6c398bd593..092d2ff57d 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui_parts.h
++++ b/chrome/browser/chrome_browser_interface_binders_webui_parts.h
+@@ -31,6 +31,8 @@ void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(
+ void PopulateChromeWebUIFrameBindersPartsAndroid(
+     mojo::BinderMapWithContext<content::RenderFrameHost*>* map,
+     content::RenderFrameHost* render_frame_host);
++void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsAndroid(
++    content::WebUIBrowserInterfaceBrokerRegistry& registry);
+ #else
+ // These assumes "Desktop" is non-Android.
+ void PopulateChromeWebUIFrameBindersPartsDesktop(
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
+index 1c12d8308f..ada1c0c7a2 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
+@@ -4,11 +4,14 @@
+ 
+ #include "chrome/browser/chrome_browser_interface_binders_webui_parts.h"
+ 
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
++#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/browser/ui/webui/feed_internals/feed_internals.mojom.h"
+ #include "chrome/browser/ui/webui/feed_internals/feed_internals_ui.h"
+ #include "chrome/browser/ui/webui/notifications_internals/notifications_internals.mojom.h"
+ #include "chrome/browser/ui/webui/notifications_internals/notifications_internals_ui.h"
+ #include "components/commerce/core/commerce_feature_list.h"
++#include "content/public/browser/web_ui_browser_interface_broker_registry.h"
+ #include "content/public/browser/web_ui_controller_interface_binder.h"
+ #include "mojo/public/cpp/bindings/binder_map.h"
+ 
+@@ -26,4 +29,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
+       map);
+ }
+ 
++void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsAndroid(
++    content::WebUIBrowserInterfaceBrokerRegistry& registry) {
++  registry.ForWebUI<AegisAgentUI>()
++      .Add<aegis_agent::mojom::PageHandlerFactory>();
++}
++
+ }  // namespace chrome::internal
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index b3754a4b9c..77dd38eab6 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -14,7 +14,7 @@ import type {
+ import {AgentMode, Workflow} from './aegis_agent.mojom-webui.js';
+ import {BrowserProxy} from './browser_proxy.js';
+ 
+-const proxy = BrowserProxy.getInstance();
++let proxy: BrowserProxy;
+ let snapshot: TaskSnapshot|null = null;
+ let selectedWorkflow: Workflow|null = null;
+ let busy = false;
+@@ -41,6 +41,15 @@ function text(id: string, key: string) {
+   element(id).textContent = loadTimeData.getString(key);
+ }
+ 
++function showStartupError() {
++  element('status').textContent = loadTimeData.getString('statusFailed');
++  const error = element('error');
++  error.textContent = loadTimeData.getString('startupError');
++  error.hidden = false;
++  element<HTMLButtonElement>('plan-button').disabled = true;
++  element<HTMLButtonElement>('automation-view-button').disabled = true;
++}
++
+ function option(value: string, label: string): HTMLOptionElement {
+   const result = document.createElement('option');
+   result.value = value;
+@@ -67,16 +76,45 @@ function refersToCurrentPage(goal: string): boolean {
+       .test(goal);
+ }
+ 
+-function humanStatus(state: string): string {
++function scheduledTaskStatus(next: TaskSnapshot): string {
++  if (next.mode !== 'automate' ||
++      !(next.state === 'recovering' ||
++        (next.state === 'running' && next.resultSummary))) {
++    return '';
++  }
++  const monitors = next.monitors.filter(item => item.taskId === next.taskId);
++  if (monitors.length === 0) {
++    return '';
++  }
++  return monitors.every(item => item.paused) ? 'paused' : 'scheduled';
++}
++
++function humanStatus(next: TaskSnapshot): string {
++  const scheduled = scheduledTaskStatus(next);
++  if (scheduled) {
++    return loadTimeData.getString(
++        scheduled === 'paused' ? 'statusPaused' : 'statusScheduled');
++  }
++  const state = next.state || 'idle';
+   if (state === 'idle' || state === 'draft') {
+     return loadTimeData.getString('statusIdle');
+   }
+   if (state === 'planning' || state === 'awaiting_task_consent') {
+     return loadTimeData.getString('statusPlanning');
+   }
+-  if (['running', 'reflecting', 'verifying', 'recovering'].includes(state)) {
++  if (['running', 'reflecting', 'verifying'].includes(state)) {
+     return loadTimeData.getString('statusRunning');
+   }
++  if (state === 'paused_by_user') {
++    return loadTimeData.getString('statusPaused');
++  }
++  if (state === 'recovering') {
++    return loadTimeData.getString('statusRecovering');
++  }
++  if (state === 'cancelled' || state === 'expired') {
++    return loadTimeData.getString(
++        state === 'cancelled' ? 'statusCancelled' : 'statusExpired');
++  }
+   if (state === 'awaiting_action_approval') {
+     return loadTimeData.getString('statusApproval');
+   }
+@@ -214,9 +252,15 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
+ }
+ 
+ function renderResult(next: TaskSnapshot) {
++  const scheduled = scheduledTaskStatus(next);
++  const summary = scheduled ?
++      loadTimeData.getString(
++          scheduled === 'paused' ? 'automationPausedHelp' :
++                                   'automationScheduledHelp') :
++      next.resultSummary;
+   const card = element('result-card');
+-  card.hidden = !next.resultSummary;
+-  element('result-summary').textContent = next.resultSummary;
++  card.hidden = !summary;
++  element('result-summary').textContent = summary;
+   const renderItems = (groupId: string, listId: string, items: string[]) => {
+     const group = element(groupId);
+     const list = element(listId);
+@@ -262,6 +306,12 @@ function renderTimeline(events: TimelineEvent[]) {
+       'completed': 'timelineCompleted',
+       'browser verification passed': 'timelineCompletedDetail',
+       'failed': 'timelineFailed',
++      'recovering': 'statusRecovering',
++      'browser restarted; external actions were not replayed':
++          'timelineRestartedDetail',
++      'paused_by_user': 'statusPaused',
++      'cancelled': 'statusCancelled',
++      'expired': 'statusExpired',
+       'execution schema failed twice': 'timelineExecutionFormatFailed',
+       'browser action failed after bounded retries':
+           'timelineBrowserActionFailed',
+@@ -311,6 +361,11 @@ function renderMonitors(monitors: MonitorSummary[]) {
+                          monitor.interval}`;
+     const origin = document.createElement('small');
+     origin.textContent = monitor.origin;
++    const retention = document.createElement('small');
++    retention.hidden = !monitor.sessionOnly;
++    retention.textContent = `${
++        loadTimeData.getString('automationSessionOnly')} · ${
++        loadTimeData.getString('automationSessionOnlyHelp')}`;
+     const nextRun = document.createElement('small');
+     const timestamp = Number(monitor.nextRun);
+     const when = Number.isFinite(timestamp) ?
+@@ -342,7 +397,7 @@ function renderMonitors(monitors: MonitorSummary[]) {
+     remove.addEventListener('click', () => withBusy(() =>
+       proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
+     actions.append(toggle, remove);
+-    li.append(title, origin, nextRun, failures, actions);
++    li.append(title, origin, retention, nextRun, failures, actions);
+     list.append(li);
+   }
+ }
+@@ -388,6 +443,9 @@ function friendlyError(error: string, hasPlan: boolean): string {
+   if (error.includes('related page could not be opened')) {
+     return loadTimeData.getString('relatedPageOpenError');
+   }
++  if (error.includes('execution stopped because browser context changed')) {
++    return loadTimeData.getString('pageContextUnavailableError');
++  }
+   if (error.includes('current public page is unavailable')) {
+     return loadTimeData.getString('currentPageUnavailableError');
+   }
+@@ -406,6 +464,17 @@ function friendlyError(error: string, hasPlan: boolean): string {
+       error.includes('monitor.create requires a scheduled automation')) {
+     return loadTimeData.getString('automationPlanError');
+   }
++  if (error.includes('monitor schedule is invalid')) {
++    return loadTimeData.getString('taskInputError');
++  }
++  if (error.includes('monitor target is unavailable') ||
++      error.includes('monitor creation requires Automate mode')) {
++    return loadTimeData.getString('automationTargetError');
++  }
++  if (error.includes('monitor could not be scheduled') ||
++      error.includes('secure monitor target storage is unavailable')) {
++    return loadTimeData.getString('automationRuntimeError');
++  }
+   if (error.includes('goal route') ||
+       error.includes('browser goal') ||
+       error.includes('goal is being understood') ||
+@@ -476,7 +545,7 @@ function render(next: TaskSnapshot) {
+   snapshot = next;
+   element('status').textContent = busy && !next.taskId ?
+       loadTimeData.getString('statusUnderstanding') :
+-      humanStatus(next.state || 'idle');
++      humanStatus(next);
+   const goal = element<HTMLTextAreaElement>('goal');
+   element('target-value').textContent =
+       refersToCurrentPage(goal.value) && next.activeOrigin ?
+@@ -569,7 +638,8 @@ function render(next: TaskSnapshot) {
+   element<HTMLButtonElement>('stop-button').disabled =
+       busy || !next.taskId ||
+       ['completed', 'failed', 'cancelled', 'expired'].includes(state);
+-  document.querySelector<HTMLElement>('.controls')!.hidden = !next.taskId;
++  document.querySelector<HTMLElement>('.controls')!.hidden =
++      !next.taskId || Boolean(scheduledTaskStatus(next));
+   document.querySelector<HTMLElement>('.activity-card')!.hidden = !next.taskId;
+   maybeAutoRun(next);
+ }
+@@ -849,14 +919,19 @@ function bindActions() {
+ }
+ 
+ initializeLabels();
+-bindActions();
+-proxy.callbackRouter.onSnapshotChanged.addListener(render);
+-proxy.handler.getSnapshot().then(({snapshot: initial}) => {
+-  render(initial);
+-  proxy.handler.showUI();
+-  // A launcher invocation always represents a new user request. Do not let a
+-  // completed (or otherwise retained) previous task silently suppress it.
+-  if (launchAutoStart && initial.modelConfigured) {
+-    element<HTMLButtonElement>('plan-button').click();
+-  }
+-});
++try {
++  proxy = BrowserProxy.getInstance();
++  bindActions();
++  proxy.callbackRouter.onSnapshotChanged.addListener(render);
++  proxy.handler.getSnapshot().then(({snapshot: initial}) => {
++    render(initial);
++    proxy.handler.showUI();
++    // A launcher invocation always represents a new user request. Do not let a
++    // completed (or otherwise retained) previous task silently suppress it.
++    if (launchAutoStart && initial.modelConfigured) {
++      element<HTMLButtonElement>('plan-button').click();
++    }
++  }).catch(showStartupError);
++} catch {
++  showStartupError();
++}
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index c8145fe775..251541b4bf 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -82,6 +82,7 @@ struct MonitorSummary {
+   string interval;
+   string next_run;
+   bool paused;
++  bool session_only;
+   int32 failures;
+ };
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 5daa9c0068..edea9ecf40 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -945,6 +945,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+       value->next_run = base::NumberToString(
+           monitor.next_run.InMillisecondsFSinceUnixEpoch());
+       value->paused = !monitor.enabled;
++      value->session_only = monitor.session_only;
+       value->failures = monitor.consecutive_failures;
+       snapshot->monitors.push_back(std::move(value));
+     }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 2de867a0d3..e33c1dfb3f 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -221,6 +221,13 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("automationPausedHelp", "This automation will not run until resumed.",
+       "恢复前不会继续运行。", "恢復前不會繼續執行。");
+   add("automationNextRun", "Next run: $1", "下次运行：$1", "下次執行：$1");
++  add("automationSessionOnly", "This browser session only",
++      "仅本次浏览器会话", "僅本次瀏覽器工作階段");
++  add("automationSessionOnlyHelp",
++      "Secure storage is unavailable. Keep this browser open; this automation "
++      "will not resume after restart.",
++      "安全存储暂不可用。保持浏览器开启时仍会按计划检查；关闭后不会恢复。",
++      "安全儲存空間暫不可用。保持瀏覽器開啟時仍會按計畫檢查；關閉後不會恢復。");
+   add("automationFailures", "Recent failures: $1", "连续失败：$1 次",
+       "連續失敗：$1 次");
+   add("details", "Technical details", "技术详情", "技術詳情");
+@@ -229,10 +236,31 @@ void AddStrings(content::WebUIDataSource* source) {
+       "正在理解你的需求…");
+   add("statusPlanning", "Making a plan…", "正在制定计划…", "正在制定計畫…");
+   add("statusRunning", "Working…", "正在执行…", "正在執行…");
++  add("statusPaused", "Paused", "已暂停", "已暫停");
++  add("statusScheduled", "Waiting for next check", "等待定时检查",
++      "等待定時檢查");
++  add("statusRecovering", "Task restored", "任务已恢复", "任務已恢復");
++  add("statusCancelled", "Stopped", "已停止", "已停止");
++  add("statusExpired", "Task expired", "任务已到期", "任務已到期");
++  add("automationScheduledHelp",
++      "The automation is ready and waiting for its next scheduled check. "
++      "Keep the browser open; you can pause it in My automations.",
++      "自动化已就绪，正在等待下一次定时检查。请保持浏览器开启；"
++      "可在“我的自动化”中暂停。",
++      "自動化已就緒，正在等待下一次定時檢查。請保持瀏覽器開啟；"
++      "可在「我的自動化」中暫停。");
+   add("statusApproval", "Needs your approval", "需要你的确认", "需要你的確認");
+   add("statusTakeover", "Your turn", "需要你接管", "需要你接管");
+   add("statusCompleted", "Done", "已完成", "已完成");
+   add("statusFailed", "Needs attention", "遇到问题", "遇到問題");
++  add("pageContextUnavailableError",
++      "The task page was still loading, was closed, or left the approved "
++      "site. Aegis stopped without reading other pages. Wait for the page "
++      "to load or check your connection, then retry this task.",
++      "任务网页尚未加载完成、已关闭，或离开了允许的网站。Aegis 已停止，"
++      "没有读取其他网页。请等待页面加载或检查网络后重试本任务。",
++      "任務網頁尚未載入完成、已關閉，或離開了允許的網站。Aegis 已停止，"
++      "沒有讀取其他網頁。請等待頁面載入或檢查網路後重試本任務。");
+   add("planFailed", "The task did not start. Edit the goal and try again.",
+       "任务未开始，可以修改目标后重试。", "任務未開始，可以修改目標後重試。");
+   add("taskInputError",
+@@ -246,6 +274,14 @@ void AddStrings(content::WebUIDataSource* source) {
+       "没有生成必需的定时检查步骤，因此没有创建自动化。请保留当前页面并重试。",
+       "AI "
+       "沒有產生必要的定時檢查步驟，因此沒有建立自動化。請保留目前頁面並重試。");
++  add("automationTargetError",
++      "Aegis could not verify the page to monitor. Reopen the page and retry.",
++      "Aegis 无法确认要监控的网页。请重新打开该网页后重试。",
++      "Aegis 無法確認要監控的網頁。請重新開啟該網頁後重試。");
++  add("automationRuntimeError",
++      "The automation could not be created. Keep the browser open and retry.",
++      "自动化未能创建。请保持浏览器开启后重试。",
++      "自動化未能建立。請保持瀏覽器開啟後重試。");
+   add("relatedPageOpenError",
+       "The related page could not be opened. Check the network and retry this "
+       "task.",
+@@ -269,6 +305,11 @@ void AddStrings(content::WebUIDataSource* source) {
+       "and try again.",
+       "任务没有成功开始，本次未执行任何操作。请检查模型连接后重试。",
+       "任務沒有成功開始，本次未執行任何操作。請檢查模型連線後重試。");
++  add("startupError",
++      "Aegis could not connect to its browser runtime. Restart the browser "
++      "and try again.",
++      "Aegis 无法连接浏览器执行引擎。请重启浏览器后重试。",
++      "Aegis 無法連接瀏覽器執行引擎。請重新啟動瀏覽器後重試。");
+   add("executionFormatError",
+       "The AI did not produce the next planned action correctly. Aegis stopped "
+       "safely; retry the task.",
+@@ -349,6 +390,11 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("timelineCompleted", "Task complete", "任务完成", "任務完成");
+   add("timelineCompletedDetail", "Result checked", "结果已核对", "結果已核對");
+   add("timelineFailed", "Task not completed", "任务未完成", "任務未完成");
++  add("timelineRestartedDetail",
++      "The browser restarted. Saved automations were restored; previous web "
++      "actions were not repeated.",
++      "浏览器已重启，已保存的自动化已恢复；之前的网页操作没有重复执行。",
++      "瀏覽器已重新啟動，已儲存的自動化已恢復；先前的網頁操作沒有重複執行。");
+   add("timelineFailedDetail", "The plan did not pass; no web action ran",
+       "计划未通过检查，没有执行网页操作", "計畫未通過檢查，沒有執行網頁操作");
+   add("timelineExecutionFormatFailed",
+-- 
+2.52.0
+

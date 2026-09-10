@@ -15,28 +15,35 @@ export function getHtml(this: AegisDownloadPanelElement) {
           'HTTP 自动并行 · Metalink 镜像 · BT / Magnet' :
           'Parallel HTTP · Metalink mirrors · BT / Magnet'}</div>
     </div>
-    <button @click="${this.onToggleClick_}">
+    <button ?disabled="${!this.profileAvailable_}"
+        @click="${this.onToggleClick_}">
       ${this.expanded_ ? (this.isZh_() ? '收起' : 'Close') :
                         (this.isZh_() ? '新建高级下载' : 'New advanced download')}
     </button>
   </div>
   ${this.expanded_ ? html`
     <div class="composer">
-      <div class="hint">${this.isZh_() ?
-          '选择 .meta4、.metalink、.torrent，或粘贴 Magnet。检查通过后才会开始。' :
-          'Choose a .meta4, .metalink, or .torrent file, or paste a Magnet link. Nothing starts before inspection.'}</div>
+      <div class="hint">${this.torrentSupported_ ?
+          (this.isZh_() ?
+               '选择 .meta4、.metalink、.torrent，或粘贴 Magnet。检查通过后才会开始。' :
+               'Choose a .meta4, .metalink, or .torrent file, or paste a Magnet link. Nothing starts before inspection.') :
+          (this.isZh_() ?
+               '选择 .meta4 或 .metalink。检查通过后才会开始。' :
+               'Choose a .meta4 or .metalink file. Nothing starts before inspection.')}</div>
       <label class="field">
         <span>${this.isZh_() ? '本地描述文件' : 'Local descriptor file'}</span>
         <input id="descriptor" type="file"
-            accept=".meta4,.metalink,.torrent,application/metalink4+xml,application/x-bittorrent"
+            accept="${this.torrentSupported_ ?
+                '.meta4,.metalink,.torrent,application/metalink4+xml,application/x-bittorrent' :
+                '.meta4,.metalink,application/metalink4+xml'}"
             @change="${this.onDescriptorChange_}">
       </label>
-      <label class="field">
+      ${this.torrentSupported_ ? html`<label class="field">
         <span>${this.isZh_() ? 'Magnet 链接' : 'Magnet link'}</span>
         <textarea id="magnet" rows="2" spellcheck="false"
             placeholder="magnet:?xt=urn:btih:…"
             @input="${this.onMagnetInput_}"></textarea>
-      </label>
+      </label>` : nothing}
       <div class="actions">
         <button class="primary" ?disabled="${this.working_}"
             @click="${this.onInspectClick_}">${this.isZh_() ? '检查内容' : 'Inspect'}</button>

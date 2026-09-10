@@ -8,6 +8,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/filter_list_matcher.h"
 #include "content/public/browser/storage_partition.h"
@@ -61,7 +62,8 @@ void BounceObserver::CreateFor(content::BtmService* btm_service,
 void BounceObserver::OnChainHandled(
     const std::vector<content::BtmRedirectPtr>& redirects,
     const content::BtmRedirectChainPtr& chain) {
-  if (!AegisService::GetInstance()->IsBounceTrackingEnabled()) {
+  AegisService* service = AegisServiceFactory::GetForProfileIfExists(profile_);
+  if (!service || !service->IsBounceTrackingEnabled()) {
     return;
   }
   if (!chain || chain->is_partial_chain) {
@@ -80,12 +82,13 @@ void BounceObserver::OnChainHandled(
             redirect->redirector_url)) {
       continue;
     }
-    if (AegisService::GetInstance()->IsSitePaused(redirect->site)) {
+    if (service->IsSitePaused(redirect->site)) {
       continue;
     }
-    LOG(INFO) << "Aegis: clearing cookies for bounce tracker "
-              << redirect->site;
-    AegisService::GetInstance()->RecordBounceClear(redirect->site);
+    // Browser logs can outlive an Incognito session; keep site identity only
+    // in the Profile-scoped in-memory event store.
+    LOG(INFO) << "Aegis: clearing cookies for a bounce tracker";
+    service->RecordBounceClear(redirect->site);
     DeleteSiteCookies(redirect->site);
   }
 }

@@ -1,0 +1,33 @@
+From 13807aaf086948bdff0370e356718d0c2ac54d27 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 5 Sep 2026 01:50:11 +0800
+Subject: [PATCH] fix(agent): read retry-after without coalescing
+
+---
+ chrome/browser/aegis/agent/aegis_browser_tools.cc | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 63aaf8b3c2..d57992b418 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -2473,10 +2473,13 @@ void AegisBrowserTools::OnUrlCheckComplete(
+   if (response_code == 429) {
+     int retry_after_seconds = 5;
+     if (response_headers) {
+-      const std::optional<std::string> retry_after =
+-          response_headers->GetNormalizedHeader("retry-after");
++      std::string retry_after;
+       int parsed = 0;
+-      if (retry_after && base::StringToInt(*retry_after, &parsed)) {
++      // Retry-After is a non-coalescing response header. Calling
++      // GetNormalizedHeader() for it DCHECKs in assertion-enabled builds.
++      if (response_headers->EnumerateHeader(nullptr, "Retry-After",
++                                            &retry_after) &&
++          base::StringToInt(retry_after, &parsed)) {
+         retry_after_seconds = std::clamp(parsed, 1, 60);
+       }
+     }
+-- 
+2.52.0
+

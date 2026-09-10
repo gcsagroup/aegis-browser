@@ -105,6 +105,14 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
     return Deny(AgentErrorCode::kScopeViolation,
                 "secret fields are forbidden in model tool arguments");
   }
+  if (call.tool_name == "bookmark.check_urls") {
+    const auto* ids = call.arguments.FindList("node_ids");
+    const auto* reference = call.arguments.FindString("selection_ref");
+    if ((ids != nullptr) == (reference != nullptr) || (ids && ids->empty())) {
+      return Deny(AgentErrorCode::kInvalidRequest,
+                  "bookmark check requires exactly one nonempty selection");
+    }
+  }
   if (const std::string* input_json = call.arguments.FindString("input_json");
       input_json && ContainsForbiddenSecretJson(*input_json)) {
     return Deny(AgentErrorCode::kScopeViolation,

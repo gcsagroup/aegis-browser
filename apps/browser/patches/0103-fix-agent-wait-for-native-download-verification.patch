@@ -1,0 +1,279 @@
+From 272ccf4589fe8249c292bd53a081e9563688b4aa Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 5 Sep 2026 03:45:16 +0800
+Subject: [PATCH] fix(agent): wait for native download verification
+
+---
+ .../agent/aegis_agent_service_unittest.cc     |  28 ++++
+ .../aegis/agent/aegis_browser_tools.cc        | 143 +++++++++++++-----
+ .../browser/aegis/agent/aegis_browser_tools.h |   8 +
+ .../aegis/agent/agent_tool_registry.cc        |   3 +-
+ 4 files changed, 140 insertions(+), 42 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 54b0a614d7..c1f5e8a259 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -59,6 +59,10 @@ class AegisBrowserToolsTestPeer {
+                           const UndoManager* undo_manager) {
+     return tools.bookmark_undo_manager_ == undo_manager;
+   }
++
++  static bool ShouldWaitForDownloadVerification(download::DownloadItem* item) {
++    return AegisBrowserTools::ShouldWaitForDownloadVerification(item);
++  }
+ };
+ 
+ namespace {
+@@ -803,6 +807,30 @@ TEST_F(AegisAgentServiceTest, TaskStopCancelsOnlyActiveOwnedDownloads) {
+   CancelAegisOwnedDownloadOnTaskStop(&complete);
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       DownloadVerificationWaitsOnlyWhileAnActiveDownloadProgresses) {
++  download::MockDownloadItem active;
++  EXPECT_CALL(active, GetState())
++      .WillOnce(Return(download::DownloadItem::IN_PROGRESS));
++  EXPECT_CALL(active, IsPaused()).WillOnce(Return(false));
++  EXPECT_TRUE(
++      AegisBrowserToolsTestPeer::ShouldWaitForDownloadVerification(&active));
++
++  download::MockDownloadItem paused;
++  EXPECT_CALL(paused, GetState())
++      .WillOnce(Return(download::DownloadItem::IN_PROGRESS));
++  EXPECT_CALL(paused, IsPaused()).WillOnce(Return(true));
++  EXPECT_FALSE(
++      AegisBrowserToolsTestPeer::ShouldWaitForDownloadVerification(&paused));
++
++  download::MockDownloadItem complete;
++  EXPECT_CALL(complete, GetState())
++      .WillOnce(Return(download::DownloadItem::COMPLETE));
++  EXPECT_CALL(complete, IsPaused()).Times(0);
++  EXPECT_FALSE(
++      AegisBrowserToolsTestPeer::ShouldWaitForDownloadVerification(&complete));
++}
++
+ TEST_F(AegisAgentServiceTest, IdempotentActionIdsBindTheExactCall) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index d57992b418..85d16e2a24 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -16,9 +16,11 @@
+ #include "base/containers/flat_set.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
++#include "base/location.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/time/time.h"
+ #include "base/timer/timer.h"
+ #include "base/uuid.h"
+@@ -99,6 +101,9 @@ constexpr size_t kMaxUrlChecksPerCall = 100;
+ constexpr size_t kMaxConcurrentUrlChecks = 4;
+ constexpr size_t kMaxUrlCheckRedirects = 5;
+ constexpr size_t kMaxReturnedTextBytes = 2048;
++constexpr base::TimeDelta kDownloadVerificationPollInterval =
++    base::Milliseconds(500);
++constexpr base::TimeDelta kMaxDownloadVerificationWait = base::Minutes(10);
+ constexpr char kAllowLocalFixtureSwitch[] = "aegis-agent-allow-local-fixture";
+ 
+ AgentToolResult ErrorResult(std::string action_id,
+@@ -2117,47 +2122,10 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
+   }
+ 
+   if (call.tool_name == "download.verify") {
+-    const bool complete = item->GetState() == download::DownloadItem::COMPLETE;
+-    const bool safe = !item->IsDangerous();
+-    const std::string actual_hash = item->GetHash().size() == 32u
+-                                        ? base::HexEncode(item->GetHash())
+-                                        : std::string();
+-    const auto expected_it = expected_download_hashes_.find(item->GetGuid());
+-    const std::string expected_hash =
+-        expected_it == expected_download_hashes_.end() ? std::string()
+-                                                       : expected_it->second;
+-    const bool hash_matches =
+-        !expected_hash.empty() && !actual_hash.empty() &&
+-        base::EqualsCaseInsensitiveASCII(expected_hash, actual_hash);
+-    const bool safe_and_complete =
+-        complete && safe && !item->GetFileExternallyRemoved();
+-    const bool verified = safe_and_complete && hash_matches;
+-    AgentToolResult result = SuccessResult(
+-        call.action_id,
+-        verified ? "download state verified" : "download is not yet verified");
+-    result.value.Set("download_id", item->GetGuid());
+-    result.value.Set("state", DownloadStateString(item->GetState()));
+-    result.value.Set("paused", item->IsPaused());
+-    result.value.Set("dangerous", item->IsDangerous());
+-    result.value.Set("danger_type", static_cast<int>(item->GetDangerType()));
+-    result.value.Set("received_bytes",
+-                     base::NumberToString(item->GetReceivedBytes()));
+-    result.value.Set("total_bytes",
+-                     base::NumberToString(item->GetTotalBytes()));
+-    result.value.Set(
+-        "file_name",
+-        BoundedUtf8(item->GetFileNameToReportUser().BaseName().AsUTF8Unsafe()));
+-    result.value.Set("final_url", SafeUrlForModel(item->GetURL()));
+-    result.value.Set("verified", verified);
+-    result.value.Set("safe_and_complete", safe_and_complete);
+-    result.value.Set("integrity",
+-                     expected_hash.empty()
+-                         ? "not_provided"
+-                         : (hash_matches ? "match" : "not_matched"));
+-    if (!actual_hash.empty()) {
+-      result.value.Set("sha256", base::ToLowerASCII(actual_hash));
+-    }
+-    std::move(callback).Run(std::move(result));
++    FinishDownloadVerification(
++        task->id(), task->scope(), call.action_id, *download_id,
++        base::TimeTicks::Now() + kMaxDownloadVerificationWait,
++        std::move(callback));
+     return;
+   }
+ 
+@@ -2166,6 +2134,99 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
+                                       "download tool is not implemented"));
+ }
+ 
++// DownloadItem completion includes browser safety checks and can lag the
++// network response by several seconds. Keep one read-only verification call
++// pending instead of spending all bounded model retries while the native
++// download is still progressing.
++void AegisBrowserTools::FinishDownloadVerification(
++    std::string task_id,
++    AgentTaskScope scope,
++    std::string action_id,
++    std::string download_id,
++    base::TimeTicks deadline,
++    ToolResultCallback callback) {
++  content::DownloadManager* manager = profile_->GetDownloadManager();
++  auto owned = owned_downloads_.find(task_id);
++  download::DownloadItem* item = manager && owned != owned_downloads_.end() &&
++                                         owned->second.contains(download_id)
++                                     ? manager->GetDownloadByGuid(download_id)
++                                     : nullptr;
++  if (!item) {
++    std::move(callback).Run(
++        ErrorResult(std::move(action_id), AgentErrorCode::kScopeViolation,
++                    "download is no longer owned by this task"));
++    return;
++  }
++  if (!scope.AllowsOrigin(item->GetURL())) {
++    std::move(callback).Run(
++        ErrorResult(std::move(action_id), AgentErrorCode::kScopeViolation,
++                    "download final URL is outside task scope"));
++    return;
++  }
++
++  const bool waiting = ShouldWaitForDownloadVerification(item);
++  if (waiting && base::TimeTicks::Now() < deadline) {
++    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&AegisBrowserTools::FinishDownloadVerification,
++                       weak_ptr_factory_.GetWeakPtr(), std::move(task_id),
++                       std::move(scope), std::move(action_id),
++                       std::move(download_id), deadline, std::move(callback)),
++        kDownloadVerificationPollInterval);
++    return;
++  }
++
++  const bool timed_out = waiting;
++  const bool complete = item->GetState() == download::DownloadItem::COMPLETE;
++  const bool safe = !item->IsDangerous();
++  const std::string actual_hash = item->GetHash().size() == 32u
++                                      ? base::HexEncode(item->GetHash())
++                                      : std::string();
++  const auto expected_it = expected_download_hashes_.find(item->GetGuid());
++  const std::string expected_hash =
++      expected_it == expected_download_hashes_.end() ? std::string()
++                                                     : expected_it->second;
++  const bool hash_matches =
++      !expected_hash.empty() && !actual_hash.empty() &&
++      base::EqualsCaseInsensitiveASCII(expected_hash, actual_hash);
++  const bool safe_and_complete =
++      complete && safe && !item->GetFileExternallyRemoved();
++  const bool verified = safe_and_complete && hash_matches;
++  AgentToolResult result = SuccessResult(
++      action_id, verified ? "download state verified"
++                          : (timed_out ? "download verification timed out"
++                                       : "download is not verified"));
++  result.value.Set("download_id", item->GetGuid());
++  result.value.Set("state", DownloadStateString(item->GetState()));
++  result.value.Set("paused", item->IsPaused());
++  result.value.Set("dangerous", item->IsDangerous());
++  result.value.Set("danger_type", static_cast<int>(item->GetDangerType()));
++  result.value.Set("received_bytes",
++                   base::NumberToString(item->GetReceivedBytes()));
++  result.value.Set("total_bytes", base::NumberToString(item->GetTotalBytes()));
++  result.value.Set(
++      "file_name",
++      BoundedUtf8(item->GetFileNameToReportUser().BaseName().AsUTF8Unsafe()));
++  result.value.Set("final_url", SafeUrlForModel(item->GetURL()));
++  result.value.Set("verified", verified);
++  result.value.Set("safe_and_complete", safe_and_complete);
++  result.value.Set("wait_timed_out", timed_out);
++  result.value.Set("integrity", expected_hash.empty()
++                                    ? "not_provided"
++                                    : (hash_matches ? "match" : "not_matched"));
++  if (!actual_hash.empty()) {
++    result.value.Set("sha256", base::ToLowerASCII(actual_hash));
++  }
++  std::move(callback).Run(std::move(result));
++}
++
++// static
++bool AegisBrowserTools::ShouldWaitForDownloadVerification(
++    download::DownloadItem* item) {
++  return item && item->GetState() == download::DownloadItem::IN_PROGRESS &&
++         !item->IsPaused();
++}
++
+ void AegisBrowserTools::OnDownloadStarted(
+     std::string pending_token,
+     const std::string& task_id,
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
+index a7cd386def..ab08e5508d 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.h
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
+@@ -15,6 +15,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/task/cancelable_task_tracker.h"
++#include "base/time/time.h"
+ #include "chrome/browser/aegis/agent/agent_task.h"
+ #include "components/download/public/common/download_interrupt_reasons.h"
+ #include "components/undo/undo_manager_observer.h"
+@@ -125,6 +126,13 @@ class AegisBrowserTools : public UndoManagerObserver {
+                          ToolResultCallback callback,
+                          download::DownloadItem* item,
+                          download::DownloadInterruptReason reason);
++  void FinishDownloadVerification(std::string task_id,
++                                  AgentTaskScope scope,
++                                  std::string action_id,
++                                  std::string download_id,
++                                  base::TimeTicks deadline,
++                                  ToolResultCallback callback);
++  static bool ShouldWaitForDownloadVerification(download::DownloadItem* item);
+   void PumpUrlCheckRequests(const std::string& batch_key);
+   void StartUrlCheckRequest(const std::string& batch_key, size_t index);
+   void OnUrlCheckRedirect(const std::string& batch_key,
+diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
+index 42f248dbe3..cb7f584242 100644
+--- a/chrome/browser/aegis/agent/agent_tool_registry.cc
++++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
+@@ -598,7 +598,8 @@ std::string_view ToolDescription(std::string_view name) {
+     return "Cancel an exact Agent-owned download.";
+   }
+   if (name == "download.verify") {
+-    return "Verify a completed download's evidence.";
++    return "Wait for an Agent-owned download to finish and verify its "
++           "browser evidence.";
+   }
+   if (name == "download.open") {
+     return "Hand a verified Agent-owned download to the user to open.";
+-- 
+2.52.0
+

@@ -72,6 +72,7 @@ class SummarySession {
 
   bool IsSourceCurrent() const;
   bool IsSourceProfileAllowed() const;
+  AegisService* ServiceForSource() const;
   void OnCaptureDisconnected();
   void OnPageSignals(int32_t password_fields,
                      int32_t forms,

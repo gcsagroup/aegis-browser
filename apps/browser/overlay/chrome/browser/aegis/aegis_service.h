@@ -15,9 +15,9 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/scoped_multi_source_observation.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -27,6 +27,7 @@
 #include "chrome/common/aegis/miner_guard_model.h"
 #include "chrome/common/aegis/phish_score.h"
 #include "chrome/common/renderer_configuration.mojom.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 
@@ -92,20 +93,21 @@ class AegisServiceObserver : public base::CheckedObserver {
   virtual void OnAegisStateChanged() = 0;
 };
 
-class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
+class AegisService : public KeyedService,
+                     public chrome::mojom::AegisHost,
+                     public ProfileObserver {
  public:
-  static AegisService* GetInstance();
+  explicit AegisService(Profile* profile);
+  ~AegisService() override;
 
   AegisService(const AegisService&) = delete;
   AegisService& operator=(const AegisService&) = delete;
 
-  // Called from browser startup once Profile is ready.
-  void InitializeForProfile(Profile* profile);
-
-  // 进程单例的临时边界：只有当前服务所属的普通 Profile 可访问，
-  // 其他 Profile 与无痕 Profile 必须 fail closed。长期仍需改为
-  // ProfileKeyedService。
+  // The service is owned by the exact regular or primary Incognito Profile.
+  // It is never redirected between Profiles.
   bool IsInitializedForProfile(const Profile* profile) const;
+  Profile* profile() const { return profile_; }
+  const std::string& torrent_owner_id() const { return torrent_owner_id_; }
 
   bool IsEnabled() const;
   bool IsTrackerBlockingEnabled() const;
@@ -119,6 +121,7 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
   bool IsBounceTrackingEnabled() const;
   bool IsPolicyWorkerEnabled() const;
   bool IsPrivacyAiEnabled() const;
+  bool IsAiControlAvailable() const;
   bool IsAiControlEnabled() const;
   bool IsFilterListUpdating() const;
   int FilterListHostCount() const;
@@ -222,6 +225,9 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
   // ProfileObserver:
   void OnProfileWillBeDestroyed(Profile* profile) override;
 
+  // KeyedService:
+  void Shutdown() override;
+
   // Host-rule match against builtin seed + compiled EasyList. Callers should
   // skip main-document navigations (RequestDestination::kDocument).
   bool ShouldBlockUrl(const GURL& url) const;
@@ -257,11 +263,15 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
   PrefService* prefs() const { return prefs_; }
 
  private:
-  friend struct base::DefaultSingletonTraits<AegisService>;
-  AegisService();
-  ~AegisService() override;
+  void OnOffTheRecordProfileCreated(Profile* off_the_record) override;
+  static void DisableAiControlForIncognito();
+  static void NotifyAiControlAvailabilityChanged();
+  static void NotifyAiControlAvailabilityWhenIncognitoDestroyed(
+      base::WeakPtr<Profile> retiring_incognito,
+      int retries_remaining);
 
   bool initialized_ = false;
+  const std::string torrent_owner_id_;
   raw_ptr<PrefService> prefs_ = nullptr;
   raw_ptr<Profile> profile_ = nullptr;
   PrivacyEventStore privacy_events_;
@@ -276,6 +286,8 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
   std::unique_ptr<AiControl> ai_control_;
   mojo::ReceiverSet<chrome::mojom::AegisHost, int> host_receivers_;
   base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
+  base::ScopedMultiSourceObservation<Profile, ProfileObserver>
+      incognito_profile_observations_{this};
   base::ObserverList<AegisServiceObserver> observers_;
   base::RetainingOneShotTimer observer_notification_timer_;
   size_t cdp_ws_clients_ = 0;
@@ -289,6 +301,24 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
 
   void InstallReporterCallbacks();
   void ClearReporterCallbacks();
+  static void RouteBlockedReport(GURL url,
+                                 std::string reason,
+                                 std::string cname_alias,
+                                 std::string source_site,
+                                 std::string document_id);
+  static void RouteStrippedReferrerReport(std::string host,
+                                          std::vector<std::string> keys,
+                                          std::string source_site,
+                                          std::string document_id);
+  static void RouteStrippedParamsReport(std::string host,
+                                        std::vector<std::string> keys,
+                                        std::string source_site,
+                                        std::string document_id);
+  static void RouteMinerSignals(std::string document_id,
+                                std::string site_key,
+                                std::string display_domain,
+                                MinerRuntimeSignals signals);
+  static void RouteCdpClientCount(size_t count);
   void OnBlockedReport(GURL url,
                        std::string reason,
                        std::string cname_alias,
@@ -306,8 +336,11 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
                       std::string site_key,
                       std::string display_domain,
                       MinerRuntimeSignals signals);
+  bool OwnsDocument(const std::string& document_id) const;
   bool IsCurrentProfileDocument(const std::string& document_id,
                                 const std::string& site_key) const;
+  AegisService* SharedRulesService();
+  const AegisService* SharedRulesService() const;
   void ShutdownForProfile();
   void OnModelChat(std::string provider,
                    SummarizeResult fallback,

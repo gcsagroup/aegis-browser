@@ -53,7 +53,7 @@ cp "$ROOT_DIR/args/aegis.gn" "$fixture_out/args.gn"
 
 case "$(uname -s)" in
   Darwin)
-    fixture_binary="$fixture_out/Chromium.app/Contents/MacOS/Chromium"
+    fixture_binary="$fixture_out/GCSA Aegis.app/Contents/MacOS/GCSA Aegis"
     ;;
   Linux)
     fixture_binary="$fixture_out/chrome"
@@ -71,6 +71,16 @@ touch "$fixture_binary"
 actual="$(verify_runnable_browser_output \
   "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn")"
 [[ "$actual" == "$fixture_binary" ]] || fail "有效 component fixture 应通过"
+
+# 实际调用顶层入口，防止 pnpm 仅列出脚本却以 0 退出。
+launch_profile="$fixture_root/launch-profile"
+launch_output="$(CHROMIUM_ROOT="$CHROMIUM_ROOT" OUT_DIR="$fixture_out" \
+  AEGIS_USER_DATA_DIR="$launch_profile" AEGIS_RUN_DRY_RUN=1 \
+  pnpm --dir "$REPO_ROOT" run browser:run)"
+[[ "$launch_output" == *"已验证开发版：$fixture_binary"* ]] || \
+  fail "顶层 browser:run 必须实际进入验证启动脚本"
+[[ "$launch_output" == *"独立 Profile：$launch_profile"* ]] || \
+  fail "顶层 browser:run 必须保留独立资料目录"
 
 manifest="$fixture_out/.aegis/build-manifest.json"
 mkdir -p "$(dirname "$manifest")"

@@ -46,20 +46,51 @@ struct StoredAgentPlan {
   int attempt = 0;
 };
 
+// Copyable task metadata queued from the UI sequence to the storage sequence.
+// It intentionally has no fields for page content, form values, cookies,
+// credentials, screenshots, or full local paths.
+struct AgentTaskStoreRecord {
+  std::string task_id;
+  AgentTaskState state = AgentTaskState::kDraft;
+  AgentMode mode = AgentMode::kAsk;
+  std::string goal_summary;
+  AgentTaskScope scope;
+  bool has_external_side_effect = false;
+  int tool_calls_used = 0;
+  int model_calls_used = 0;
+  int network_requests_used = 0;
+  base::Time created_at;
+};
+
+struct StoredAgentPlanEntry {
+  std::string task_id;
+  StoredAgentPlan stored_plan;
+};
+
+struct StoredAgentState {
+  std::vector<StoredAgentTask> tasks;
+  std::vector<StoredAgentPlanEntry> plans;
+  std::vector<AgentMonitorDefinition> monitors;
+};
+
 // Profile-local storage for resumable metadata and redacted action summaries.
 // Page bodies, screenshots, secrets, form values, cookies and full local paths
 // have no column in this schema.
 class AgentTaskStore {
  public:
-  explicit AgentTaskStore(base::FilePath database_path);
+  explicit AgentTaskStore(base::FilePath database_path, bool in_memory = false);
   AgentTaskStore(const AgentTaskStore&) = delete;
   AgentTaskStore& operator=(const AgentTaskStore&) = delete;
   ~AgentTaskStore();
 
   bool Initialize();
+  std::optional<StoredAgentState> InitializeAndLoad(
+      base::Time unfinished_before,
+      base::Time completed_before);
   bool SaveTask(const AgentTask& task,
                 std::string goal_summary,
                 bool has_external_side_effect);
+  bool SaveTaskRecord(AgentTaskStoreRecord record);
   bool AppendActionSummary(const std::string& task_id,
                            const std::string& action_id,
                            const std::string& tool_name,
@@ -84,18 +115,24 @@ class AgentTaskStore {
 
   static std::optional<AgentTaskScope> DeserializeScope(
       std::string_view scope_json);
+  // Goals and persisted summaries share the same secret/control-character
+  // boundary. Callers must reject unsafe values before queueing asynchronous
+  // storage work so an invalid task is never exposed to the UI.
+  static bool IsSafeSummary(const std::string& value);
 
   const base::FilePath& database_path_for_testing() const {
     return database_path_;
   }
+  bool is_in_memory_for_testing() const { return in_memory_; }
+  bool IsInitializedForTesting() const { return initialized_; }
 
  private:
-  static bool IsSafeSummary(const std::string& value);
   static std::string SerializeScope(const AgentTaskScope& scope);
   static int64_t SerializeTime(base::Time time);
   static base::Time DeserializeTime(int64_t value);
 
   const base::FilePath database_path_;
+  const bool in_memory_;
   sql::Database database_;
   sql::MetaTable meta_table_;
   bool initialized_ = false;

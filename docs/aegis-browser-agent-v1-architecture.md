@@ -27,7 +27,7 @@ Model responses, web-page text, WebMCP results, and tool results are all untrust
 
 ### AegisAgentService
 
-Each regular Profile has one instance that owns tasks, plans, model requests, Actors, browser tools, pending approvals, undo credentials, and monitors. OTR, Guest, and System Profiles do not create the service. When Agent is turned off, the service stops model requests, Actors, pending approvals, and scheduled tasks.
+Each regular Profile and its primary desktop Incognito Profile has a distinct instance that owns tasks, plans, model requests, Actors, browser tools, pending approvals, undo credentials, and monitors. The Incognito instance also supplies its own current-page summary and `chrome://aegis` control plane, so requests and events are routed to the exact owning Profile. Guest, System, and auxiliary OTR Profiles do not create the service. When Agent is turned off, the service stops model requests, Actors, pending approvals, and scheduled tasks.
 
 ### TaskScope and ToolRegistry
 
@@ -43,7 +43,7 @@ Actor Bridge maps approved page tools to Chromium Actor actions. Every observati
 
 ### Browser-native tools
 
-Native tools cover tabs, windows, workspaces, bookmarks, history, permissions, downloads, and monitoring. Bookmark changes use a preview, revision conflict checks, grouped writes, and one-click undo. URL checks use bounded HEAD and Range GET requests. Downloads are managed through DownloadItem and verified against the source, architecture, and SHA-256.
+Native tools cover tabs, windows, workspaces, bookmarks, history, permissions, downloads, and monitoring. Incognito history search is limited to navigation entries in the current Incognito session and never redirects to the regular Profile's HistoryService. Bookmark changes use a preview, revision conflict checks, grouped writes, and one-click undo. URL checks use bounded HEAD and Range GET requests. Downloads are managed through DownloadItem and verified against the source, architecture, and SHA-256.
 
 ### PolicyBroker and ResultVerifier
 
@@ -68,16 +68,25 @@ Monitoring is scheduled only while the browser is running, with at most 3 concur
 
 ## Persistence and recovery
 
-TaskStore uses SQLite within the Profile. Persisted data includes task goals that pass secret marking and length checks, task contracts, redacted event summaries, plan steps and progress, and encrypted monitor targets. Raw tool results, page bodies, screenshots, undo credentials, passwords, OTPs, cookies, card numbers, API keys, and complete local paths must not be persisted. Incomplete tasks are retained for 7 days and terminal tasks for 30 days. The service deletes expired records on startup; if deletion fails, Agent fails closed.
+For a regular Profile, TaskStore uses SQLite within that Profile. Persisted data includes task goals that pass secret marking and length checks, task contracts, redacted event summaries, plan steps and progress, and encrypted monitor targets. Raw tool results, page bodies, screenshots, undo credentials, passwords, OTPs, cookies, card numbers, API keys, and complete local paths must not be persisted. Incomplete tasks are retained for 7 days and terminal tasks for 30 days. The service deletes expired records on startup; if deletion fails, Agent fails closed.
+
+The primary desktop Incognito Profile instead uses a memory-only TaskStore and session-only model credentials, monitor state, privacy events, advanced-download ownership, and learned CNAME aliases. Nothing from that state is written into or recovered through the regular Profile, and closing the Incognito session removes it. Actor journals, diagnostic logs, and traces suppress private URLs, page data, task text, targets, and credential identifiers; Incognito login-quality records are not uploaded. Incognito monitors stay in the in-browser timeline and never post system notifications.
+
+Because process-wide CDP target visibility cannot be isolated by Profile, creating any primary Incognito session immediately stops and blocks every HTTP and pipe remote-debugging transport for the whole process, including a transport started outside Aegis. It stays off after the last Incognito window closes and can be restored only by an explicit enable action in a regular Profile; the native document-bound Agent remains available. Each regular Profile installs this guard during Profile initialization, before its first Browser or renderer exists.
 
 After a crash, a read-only task can be recovered only after user confirmation. Pending actions expire, and external side effects are not replayed automatically. Every recovery requires a new page observation; old nodes and old DocumentTokens are invalid.
 
 Bookmark undo credentials are valid only within the current browser session. The browser does not attempt to replay undo or write operations after a restart.
 
+Explicitly approved bookmark changes and completed downloads retain Chromium's native Incognito persistence semantics and may outlive the Incognito window. They are intentional user-visible effects rather than hidden Agent state. Closing Incognito cancels its active Agent downloads and torrent transfer and revokes all control; already-written torrent bytes are retained. Torrent ownership survives a `chrome://aegis` page refresh only within the same Profile session and can never restore or control another Profile's task.
+
+Guest, System, and auxiliary OTR Profiles receive neither Aegis UI/services nor its network throttle, fingerprint guard, or filter-list configuration. Regular and primary Incognito Profiles use distinct network partition identifiers, so learned CNAME aliases never cross Profile boundaries and are cleared with their owning Profile session.
+
 ## Explicitly unsupported
 
 - Automatic payment, final checkout, money transfer, posting, messaging, or acceptance of legal terms.
 - Arbitrary JavaScript, shell commands, browser remote debugging, or general-purpose local-file access.
+- Process-wide CDP AI Control in Incognito, and all Agent access in Guest, System, or auxiliary OTR Profiles.
 - Unprompted access to passwords, cookies, OTPs, payment cards, or cross-Profile data.
 - System-level monitoring that remains resident after the browser closes.
 - Treating local test success as proof of public release, production signing, or notarization.

@@ -8,6 +8,7 @@ import {getCss} from './aegis_download_panel.css.js';
 import {getHtml} from './aegis_download_panel.html.js';
 
 interface AegisStatus {
+  profileAvailable?: boolean;
   torrentDisclosureAcknowledged?: boolean;
   torrentTaskId?: string;
   torrentSupported?: boolean;
@@ -119,6 +120,8 @@ export class AegisDownloadPanelElement extends CrLitElement {
       requestId_: {type: String},
       taskId_: {type: String},
       taskStatus_: {type: Object},
+      profileAvailable_: {type: Boolean},
+      torrentSupported_: {type: Boolean},
       disclosureAcknowledged_: {type: Boolean},
       controlPending_: {type: Boolean},
       torrentDhtDefault_: {type: Boolean},
@@ -136,6 +139,8 @@ export class AegisDownloadPanelElement extends CrLitElement {
   protected accessor requestId_ = '';
   protected accessor taskId_ = '';
   protected accessor taskStatus_: TorrentStatus|null = null;
+  protected accessor profileAvailable_ = false;
+  protected accessor torrentSupported_ = false;
   protected accessor disclosureAcknowledged_ = false;
   protected accessor controlPending_ = false;
   protected accessor torrentDhtDefault_ =
@@ -173,6 +178,9 @@ export class AegisDownloadPanelElement extends CrLitElement {
   }
 
   protected onToggleClick_() {
+    if (!this.profileAvailable_) {
+      return;
+    }
     this.expanded_ = !this.expanded_;
   }
 
@@ -213,6 +221,11 @@ export class AegisDownloadPanelElement extends CrLitElement {
 
   protected async onInspectClick_() {
     const zh = document.documentElement.lang.startsWith('zh');
+    if (!this.profileAvailable_) {
+      this.previewText_ = zh ? '当前浏览器配置不支持 Aegis。' :
+                               'Aegis is unavailable for this browser profile.';
+      return;
+    }
     const file = this.descriptor_()?.files?.item(0) || null;
     const magnet =
         this.shadowRoot.querySelector<HTMLTextAreaElement>('#magnet')
@@ -222,12 +235,20 @@ export class AegisDownloadPanelElement extends CrLitElement {
     this.working_ = true;
     try {
       if (magnet) {
+        if (!this.torrentSupported_) {
+          throw new Error(zh ? '此平台不支持 BT / Magnet。' :
+                              'BT / Magnet is unavailable on this platform.');
+        }
         const preview: TorrentPreview =
             await sendWithPromise('parseMagnet', magnet);
         this.setTorrentPreview_(preview, zh);
       } else if (file) {
         const name = file.name.toLowerCase();
         if (name.endsWith('.torrent')) {
+          if (!this.torrentSupported_) {
+            throw new Error(zh ? '此平台不支持 BT / Magnet。' :
+                                'BT / Magnet is unavailable on this platform.');
+          }
           if (file.size > 4 * 1024 * 1024) {
             throw new Error(
                 zh ? 'Torrent 元数据超过 4 MiB。' :
@@ -409,9 +430,17 @@ export class AegisDownloadPanelElement extends CrLitElement {
   private async restoreTask_() {
     try {
       const status: AegisStatus = await sendWithPromise('getStatus');
+      this.profileAvailable_ = status.profileAvailable === true;
+      this.torrentSupported_ =
+          this.profileAvailable_ && status.torrentSupported === true;
+      if (!this.profileAvailable_) {
+        this.expanded_ = false;
+        this.resetPreview_();
+        return;
+      }
       this.disclosureAcknowledged_ =
           status.torrentDisclosureAcknowledged === true;
-      if (status.torrentSupported && status.torrentTaskId) {
+      if (this.torrentSupported_ && status.torrentTaskId) {
         this.taskId_ = status.torrentTaskId;
         await this.refreshTask_();
       }

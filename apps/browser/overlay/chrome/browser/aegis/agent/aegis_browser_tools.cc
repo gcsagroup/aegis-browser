@@ -12,25 +12,33 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/command_line.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/location.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/uuid.h"
+#include "build/build_config.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/navigator/browser_navigator.h"
 #include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/undo/bookmark_undo_service_factory.h"
+#endif
 #include "chrome/common/aegis/pref_names.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
@@ -53,8 +61,11 @@
 #include "components/undo/bookmark_undo_service.h"
 #include "components/undo/undo_manager.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/web_contents.h"
 #include "crypto/sha2.h"
 #include "net/base/ip_address.h"
 #include "net/base/load_flags.h"
@@ -74,7 +85,9 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "ui/base/base_window.h"
 #include "ui/base/page_transition_types.h"
+#if !BUILDFLAG(IS_ANDROID)
 #include "ui/base/window_open_disposition.h"
+#endif
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -88,6 +101,10 @@ constexpr size_t kMaxUrlChecksPerCall = 100;
 constexpr size_t kMaxConcurrentUrlChecks = 4;
 constexpr size_t kMaxUrlCheckRedirects = 5;
 constexpr size_t kMaxReturnedTextBytes = 2048;
+constexpr base::TimeDelta kDownloadVerificationPollInterval =
+    base::Milliseconds(500);
+constexpr base::TimeDelta kMaxDownloadVerificationWait = base::Minutes(10);
+constexpr char kAllowLocalFixtureSwitch[] = "aegis-agent-allow-local-fixture";
 
 AgentToolResult ErrorResult(std::string action_id,
                             AgentErrorCode error,
@@ -137,8 +154,8 @@ bool HostMatchesDomain(std::string_view host, std::string_view domain) {
 struct LocatedTab {
   raw_ptr<tabs::TabInterface> tab = nullptr;
   raw_ptr<BrowserWindowInterface> browser = nullptr;
-  raw_ptr<TabStripModel> model = nullptr;
-  int index = TabStripModel::kNoTab;
+  raw_ptr<TabListInterface> tab_list = nullptr;
+  int index = -1;
 };
 
 std::optional<LocatedTab> FindTab(Profile* profile, int32_t tab_id) {
@@ -152,34 +169,35 @@ std::optional<LocatedTab> FindTab(Profile* profile, int32_t tab_id) {
       browser->IsDeleteScheduled()) {
     return std::nullopt;
   }
-  TabStripModel* model = browser->GetTabStripModel();
-  const int index = model ? model->GetIndexOfTab(tab) : TabStripModel::kNoTab;
-  if (!model || index == TabStripModel::kNoTab) {
+  TabListInterface* tab_list = TabListInterface::From(browser);
+  const int index = tab_list ? tab_list->GetIndexOfTab(tab->GetHandle()) : -1;
+  if (!tab_list || index < 0) {
     return std::nullopt;
   }
   return LocatedTab{
-      .tab = tab, .browser = browser, .model = model, .index = index};
+      .tab = tab, .browser = browser, .tab_list = tab_list, .index = index};
 }
 
 std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
   std::vector<LocatedTab> tabs;
   ProfileBrowserCollection::GetForProfile(profile)->ForEach(
-      [&](BrowserWindowInterface* browser) {
-        if (!browser ||
+      [profile, &task, &tabs](BrowserWindowInterface* browser) {
+        if (!browser || browser->GetProfile() != profile ||
             browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
             browser->IsDeleteScheduled()) {
           return true;
         }
-        TabStripModel* model = browser->GetTabStripModel();
-        if (!model) {
+        TabListInterface* tab_list = TabListInterface::From(browser);
+        if (!tab_list) {
           return true;
         }
-        for (int index = 0; index < model->count(); ++index) {
-          tabs::TabInterface* tab = model->GetTabAtIndex(index);
-          if (tab && task.AllowsTab(tab->GetHandle().raw_value())) {
+        for (int index = 0; index < tab_list->GetTabCount(); ++index) {
+          tabs::TabInterface* tab = tab_list->GetTab(index);
+          if (tab && tab->GetProfile() == profile &&
+              task.AllowsTab(tab->GetHandle().raw_value())) {
             tabs.push_back(LocatedTab{.tab = tab,
                                       .browser = browser,
-                                      .model = model,
+                                      .tab_list = tab_list,
                                       .index = index});
           }
         }
@@ -188,20 +206,71 @@ std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
   return tabs;
 }
 
-std::vector<BrowserWindowInterface*> TaskWindows(Profile* profile,
-                                                 const AgentTask& task) {
-  std::vector<BrowserWindowInterface*> windows;
+struct WindowTabMetadata {
+  std::vector<LocatedTab> tabs;
+  int total_count = 0;
+};
+
+std::optional<WindowTabMetadata> ReadWindowTabMetadata(Profile* profile,
+                                                       int32_t window_id) {
+  if (!profile || profile->IsOffTheRecord() || window_id <= 0) {
+    return std::nullopt;
+  }
+  std::optional<WindowTabMetadata> result;
   ProfileBrowserCollection::GetForProfile(profile)->ForEach(
-      [&](BrowserWindowInterface* browser) {
-        if (!browser ||
+      [profile, window_id, &result](BrowserWindowInterface* browser) {
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetSessionID().id() != window_id ||
             browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
             browser->IsDeleteScheduled()) {
           return true;
         }
-        TabStripModel* model = browser->GetTabStripModel();
-        for (int index = 0; model && index < model->count(); ++index) {
-          tabs::TabInterface* tab = model->GetTabAtIndex(index);
-          if (tab && task.AllowsTab(tab->GetHandle().raw_value())) {
+        TabListInterface* list = TabListInterface::From(browser);
+        if (!list) {
+          return false;
+        }
+        result.emplace();
+        for (int index = 0; index < list->GetTabCount(); ++index) {
+          tabs::TabInterface* tab = list->GetTab(index);
+          if (!tab || tab->GetProfile() != profile) {
+            continue;
+          }
+          const GURL& url = tab->GetURL();
+          // Android 的 Agent 是独立标签，不计入用户要整理的浏览内容。
+          if ((url.SchemeIs("chrome") || url.SchemeIs("chrome-untrusted")) &&
+              url.host() == "aegis-agent") {
+            continue;
+          }
+          ++result->total_count;
+          if (result->tabs.size() < kMaxReturnedTabs) {
+            result->tabs.push_back({.tab = tab,
+                                    .browser = browser,
+                                    .tab_list = list,
+                                    .index = index});
+          }
+        }
+        return false;
+      });
+  return result;
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+std::vector<BrowserWindowInterface*> TaskWindows(Profile* profile,
+                                                 const AgentTask& task) {
+  std::vector<BrowserWindowInterface*> windows;
+  ProfileBrowserCollection::GetForProfile(profile)->ForEach(
+      [profile, &task, &windows](BrowserWindowInterface* browser) {
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
+            browser->IsDeleteScheduled()) {
+          return true;
+        }
+        TabListInterface* tab_list = TabListInterface::From(browser);
+        for (int index = 0; tab_list && index < tab_list->GetTabCount();
+             ++index) {
+          tabs::TabInterface* tab = tab_list->GetTab(index);
+          if (tab && tab->GetProfile() == profile &&
+              task.AllowsTab(tab->GetHandle().raw_value())) {
             windows.push_back(browser);
             break;
           }
@@ -225,8 +294,8 @@ BrowserWindowInterface* FindTaskWindow(Profile* profile,
 size_t NormalWindowCount(Profile* profile) {
   size_t count = 0;
   ProfileBrowserCollection::GetForProfile(profile)->ForEach(
-      [&count](BrowserWindowInterface* browser) {
-        if (browser &&
+      [profile, &count](BrowserWindowInterface* browser) {
+        if (browser && browser->GetProfile() == profile &&
             browser->GetType() == BrowserWindowInterface::TYPE_NORMAL &&
             !browser->IsDeleteScheduled()) {
           ++count;
@@ -235,7 +304,119 @@ size_t NormalWindowCount(Profile* profile) {
       });
   return count;
 }
+#endif
 
+struct OffTheRecordHistoryResult {
+  GURL url;
+  std::u16string title;
+  base::Time last_visit;
+  int visit_count = 0;
+};
+
+AgentToolResult SearchOffTheRecordSessionHistory(Profile* profile,
+                                                 const AgentTaskScope& scope,
+                                                 std::string action_id,
+                                                 std::string_view query,
+                                                 std::string_view domain,
+                                                 int days,
+                                                 int max_results) {
+  CHECK(profile);
+  CHECK(profile->IsOffTheRecord());
+
+  const std::string normalized_query = base::ToLowerASCII(query);
+  const std::string requested_domain = base::ToLowerASCII(domain);
+  const base::Time cutoff = base::Time::Now() - base::Days(days);
+  std::map<std::string, OffTheRecordHistoryResult> matches;
+
+  // HistoryService is redirected to the original Profile in incognito. Read
+  // only the in-memory back/forward lists belonging to this exact OTR Profile
+  // instead, so a history search can never expose the regular Profile's DB.
+  ProfileBrowserCollection::GetForProfile(profile)->ForEach(
+      [profile, &scope, &normalized_query, &requested_domain, cutoff,
+       &matches](BrowserWindowInterface* browser) {
+        if (!browser || browser->GetProfile() != profile ||
+            browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
+            browser->IsDeleteScheduled()) {
+          return true;
+        }
+        TabListInterface* tab_list = TabListInterface::From(browser);
+        for (int tab_index = 0; tab_list && tab_index < tab_list->GetTabCount();
+             ++tab_index) {
+          tabs::TabInterface* tab = tab_list->GetTab(tab_index);
+          content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+          if (!tab || tab->GetProfile() != profile || !contents ||
+              contents->GetBrowserContext() != profile) {
+            continue;
+          }
+          content::NavigationController& controller = contents->GetController();
+          for (int entry_index = 0; entry_index < controller.GetEntryCount();
+               ++entry_index) {
+            content::NavigationEntry* entry =
+                controller.GetEntryAtIndex(entry_index);
+            if (!entry) {
+              continue;
+            }
+            const GURL& url = entry->GetURL();
+            const base::Time timestamp = entry->GetTimestamp();
+            if (timestamp.is_null() || timestamp < cutoff ||
+                !scope.AllowsOrigin(url) ||
+                !HostMatchesDomain(base::ToLowerASCII(url.host()),
+                                   requested_domain)) {
+              continue;
+            }
+            std::string searchable = url.spec();
+            searchable.push_back('\n');
+            searchable.append(base::UTF16ToUTF8(entry->GetTitle()));
+            if (!normalized_query.empty() &&
+                !base::ToLowerASCII(searchable).contains(normalized_query)) {
+              continue;
+            }
+            OffTheRecordHistoryResult& match = matches[url.spec()];
+            match.url = url;
+            ++match.visit_count;
+            if (match.last_visit.is_null() || timestamp > match.last_visit) {
+              match.title = entry->GetTitle();
+              match.last_visit = timestamp;
+            }
+          }
+        }
+        return true;
+      });
+
+  std::vector<OffTheRecordHistoryResult> ordered;
+  ordered.reserve(matches.size());
+  for (auto& match : matches) {
+    ordered.push_back(std::move(match.second));
+  }
+  std::ranges::sort(ordered, [](const OffTheRecordHistoryResult& left,
+                                const OffTheRecordHistoryResult& right) {
+    if (left.last_visit != right.last_visit) {
+      return left.last_visit > right.last_visit;
+    }
+    return left.url.spec() < right.url.spec();
+  });
+
+  AgentToolResult result = SuccessResult(
+      std::move(action_id), "approved incognito session history listed");
+  base::ListValue values;
+  for (const OffTheRecordHistoryResult& item : ordered) {
+    if (values.size() >= static_cast<size_t>(max_results)) {
+      break;
+    }
+    base::DictValue value;
+    value.Set("url", SafeUrlForModel(item.url));
+    value.Set("title", BoundedUtf8(base::UTF16ToUTF8(item.title)));
+    value.Set(
+        "last_visit_ms",
+        base::NumberToString(item.last_visit.InMillisecondsSinceUnixEpoch()));
+    value.Set("visit_count", item.visit_count);
+    values.Append(std::move(value));
+  }
+  result.value.Set("results", std::move(values));
+  return result;
+}
+
+#if !BUILDFLAG(IS_ANDROID)
 std::string WindowRevision(Profile* profile, const AgentTask& task) {
   std::string material;
   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
@@ -271,6 +452,7 @@ bool HasActiveDownload(Profile* profile) {
     return item && item->GetState() == download::DownloadItem::IN_PROGRESS;
   });
 }
+#endif
 
 const char* ContentSettingString(ContentSetting setting) {
   switch (setting) {
@@ -300,8 +482,7 @@ std::string TabRevision(Profile* profile, const AgentTask& task) {
     material.push_back('\n');
     material.append(std::to_string(located.browser->GetSessionID().id()));
     material.push_back('\n');
-    if (std::optional<tab_groups::TabGroupId> group =
-            located.model->GetTabGroupForTab(located.index)) {
+    if (std::optional<tab_groups::TabGroupId> group = located.tab->GetGroup()) {
       material.append(group->ToString());
     }
     material.push_back('\n');
@@ -362,6 +543,18 @@ std::array<const bookmarks::BookmarkNode*, 3> LocalBookmarkRoots(
 std::string BookmarkSnapshot(bookmarks::BookmarkModel* model) {
   std::string material;
   for (const bookmarks::BookmarkNode* root : LocalBookmarkRoots(model)) {
+    if (root) {
+      AppendBookmarkSnapshot(root, &material);
+    }
+  }
+  return Hash(material);
+}
+
+std::string BookmarkCheckSnapshot(bookmarks::BookmarkModel* model) {
+  std::string material = BookmarkSnapshot(model);
+  for (const bookmarks::BookmarkNode* root :
+       {model->account_bookmark_bar_node(), model->account_other_node(),
+        model->account_mobile_node()}) {
     if (root) {
       AppendBookmarkSnapshot(root, &material);
     }
@@ -566,7 +759,8 @@ std::string UrlCheckClassification(int net_error,
 
 bool IsUrlCheckTargetAllowed(const AgentTaskScope& scope,
                              const GURL& selected_bookmark_url,
-                             const GURL& target) {
+                             const GURL& target,
+                             bool allow_local_fixture) {
   const auto is_public_target = [](const GURL& url) {
     if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || url.host().empty() ||
         !url.username().empty() || !url.password().empty() ||
@@ -581,10 +775,31 @@ bool IsUrlCheckTargetAllowed(const AgentTaskScope& scope,
            network::IPAddressToIPAddressSpace(address) ==
                network::mojom::IPAddressSpace::kPublic;
   };
-  return is_public_target(selected_bookmark_url) && is_public_target(target) &&
-         (url::Origin::Create(target) ==
-              url::Origin::Create(selected_bookmark_url) ||
-          scope.AllowsOrigin(target));
+  if (is_public_target(selected_bookmark_url) && is_public_target(target)) {
+    return url::Origin::Create(target) ==
+               url::Origin::Create(selected_bookmark_url) ||
+           scope.AllowsOrigin(target);
+  }
+  const auto is_numeric_loopback_fixture = [](const GURL& url) {
+    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() ||
+        !url.HostIsIPAddress() || url.IntPort() <= 0 ||
+        !url.username().empty() || !url.password().empty()) {
+      return false;
+    }
+    net::IPAddress address;
+    return net::ParseURLHostnameToAddress(url.host(), &address) &&
+           address.IsLoopback();
+  };
+  return allow_local_fixture &&
+         is_numeric_loopback_fixture(selected_bookmark_url) &&
+         is_numeric_loopback_fixture(target) &&
+         url::Origin::Create(target) ==
+             url::Origin::Create(selected_bookmark_url);
+}
+
+bool AllowLocalFixtureUrlChecks() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      kAllowLocalFixtureSwitch);
 }
 
 bool IsSha256Hex(std::string_view value) {
@@ -629,8 +844,10 @@ bool CandidateMentions(std::string_view candidate, std::string_view expected) {
 
 bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
                                           const GURL& selected_bookmark_url,
-                                          const GURL& target) {
-  return IsUrlCheckTargetAllowed(scope, selected_bookmark_url, target);
+                                          const GURL& target,
+                                          bool allow_local_fixture) {
+  return IsUrlCheckTargetAllowed(scope, selected_bookmark_url, target,
+                                 allow_local_fixture);
 }
 
 void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item) {
@@ -651,19 +868,20 @@ struct AegisBrowserTools::UrlCheckBatch {
     bool use_get = false;
     bool active = false;
     bool completed = false;
-    base::TimeTicks not_before;
+    bool request_sent = false;
     std::vector<GURL> redirects;
   };
 
   raw_ptr<AgentTask> task = nullptr;
   std::string task_id;
   std::string action_id;
+  std::string selection_ref;
+  bool list_truncated = false;
   std::vector<Entry> entries;
   size_t completed = 0;
   std::vector<std::optional<base::DictValue>> results;
   std::map<size_t, std::unique_ptr<network::SimpleURLLoader>> loaders;
   base::flat_set<std::string> active_origins;
-  base::OneShotTimer retry_timer;
   ToolResultCallback callback;
 };
 
@@ -677,8 +895,10 @@ AegisBrowserTools::~AegisBrowserTools() {
 
 bool AegisBrowserTools::CanHandle(std::string_view tool_name) const {
   return base::StartsWith(tool_name, "tab.") ||
+#if !BUILDFLAG(IS_ANDROID)
          base::StartsWith(tool_name, "window.") ||
          base::StartsWith(tool_name, "workspace.") ||
+#endif
          base::StartsWith(tool_name, "bookmark.") ||
          base::StartsWith(tool_name, "download.") ||
          tool_name == "history.search" || tool_name == "permissions.inspect";
@@ -724,6 +944,7 @@ void AegisBrowserTools::ForgetTask(const std::string& task_id,
                                    bool preserve_bookmark_undo,
                                    bool cancel_active_downloads) {
   history_task_tracker_.TryCancelAll();
+  bookmark_check_selections_.erase(task_id);
   std::erase_if(bookmark_plans_, [&task_id](const auto& entry) {
     return entry.second.task_id == task_id;
   });
@@ -800,21 +1021,40 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
                                        const AgentToolCall& call,
                                        ToolResultCallback callback) {
   if (call.tool_name == "tab.list") {
+    const int32_t window_id = task->scope().tab_metadata_window_id;
+    std::optional<WindowTabMetadata> metadata;
+    if (window_id > 0) {
+      metadata = ReadWindowTabMetadata(profile_, window_id);
+      if (!metadata) {
+        std::move(callback).Run(
+            ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
+                        "任务绑定的窗口已不可用，请在目标窗口重新开始任务。"));
+        return;
+      }
+    }
+    const std::vector<LocatedTab> listed_tabs =
+        metadata ? std::move(metadata->tabs) : TaskTabs(profile_, *task);
     AgentToolResult result = SuccessResult(call.action_id, "tabs listed");
     base::ListValue values;
-    for (const LocatedTab& located : TaskTabs(profile_, *task)) {
+    for (const LocatedTab& located : listed_tabs) {
       base::DictValue value;
       value.Set("tab_id", located.tab->GetHandle().raw_value());
       value.Set("title",
                 BoundedUtf8(base::UTF16ToUTF8(located.tab->GetTitle())));
       value.Set("url", SafeUrlForModel(located.tab->GetURL()));
-      value.Set("active", located.model->active_index() == located.index);
+      value.Set("active", located.tab->IsActivated());
       if (std::optional<tab_groups::TabGroupId> group =
-              located.model->GetTabGroupForTab(located.index)) {
+              located.tab->GetGroup()) {
         value.Set("group_id", group->ToString());
       }
       values.Append(std::move(value));
     }
+    const int tab_count =
+        metadata ? metadata->total_count : static_cast<int>(values.size());
+    result.value.Set("tab_count", tab_count);
+    result.value.Set("list_truncated",
+                     static_cast<size_t>(tab_count) > values.size());
+    result.value.Set("count_scope", metadata ? "current_window" : "task_tabs");
     result.value.Set("tabs", std::move(values));
     result.value.Set("revision", TabRevision(profile_, *task));
     std::move(callback).Run(std::move(result));
@@ -826,19 +1066,17 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
     const GURL url(url_value ? *url_value : std::string());
     BrowserWindowInterface* browser =
         ProfileBrowserCollection::GetForProfile(profile_)->FindTabbedBrowser();
-    if (!url_value || !task->scope().AllowsOrigin(url) || !browser) {
+    TabListInterface* tab_list = browser && browser->GetProfile() == profile_
+                                     ? TabListInterface::From(browser)
+                                     : nullptr;
+    if (!url_value || !task->scope().AllowsOrigin(url) || !tab_list) {
       std::move(callback).Run(
           ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
                       "approved target or tabbed browser is unavailable"));
       return;
     }
-    NavigateParams params(browser, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
-    params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
-    Navigate(&params);
-    tabs::TabInterface* tab = params.navigated_or_inserted_contents
-                                  ? tabs::TabInterface::GetFromContents(
-                                        params.navigated_or_inserted_contents)
-                                  : nullptr;
+    tabs::TabInterface* tab =
+        tab_list->OpenTab(url, tab_list->GetTabCount(), /*foreground=*/false);
     const int32_t tab_id = tab ? tab->GetHandle().raw_value() : 0;
     if (!tab || tab->GetProfile() != profile_ || !task->AdoptOwnedTab(tab_id)) {
       if (tab && tab->GetProfile() == profile_) {
@@ -868,7 +1106,7 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
                                           "task-visible tab is unavailable"));
       return;
     }
-    located->model->ActivateTabAt(located->index);
+    located->tab_list->ActivateTab(located->tab->GetHandle());
     AgentToolResult result = SuccessResult(call.action_id, "tab activated");
     result.value.Set("tab_id", *tab_id);
     std::move(callback).Run(std::move(result));
@@ -902,13 +1140,13 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
   if (call.tool_name == "tab.close") {
     std::ranges::sort(located_tabs,
                       [](const LocatedTab& left, const LocatedTab& right) {
-                        if (left.model != right.model) {
-                          return left.model < right.model;
+                        if (left.tab_list != right.tab_list) {
+                          return left.tab_list < right.tab_list;
                         }
                         return left.index > right.index;
                       });
     for (const LocatedTab& located : located_tabs) {
-      if (!located.model->IsTabClosable(located.tab)) {
+      if (!located.tab_list->IsThisTabListEditable()) {
         std::move(callback).Run(
             ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
                         "one selected tab cannot be closed"));
@@ -916,10 +1154,8 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
       }
     }
     for (const LocatedTab& located : located_tabs) {
-      const int current_index = located.model->GetIndexOfTab(located.tab);
-      if (current_index != TabStripModel::kNoTab) {
-        located.model->CloseWebContentsAt(
-            current_index, TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
+      if (located.tab_list->GetIndexOfTab(located.tab->GetHandle()) >= 0) {
+        located.tab_list->CloseTab(located.tab->GetHandle());
       }
     }
     AgentToolResult result =
@@ -931,30 +1167,36 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
   }
 
   if (call.tool_name == "tab.group") {
-    TabStripModel* model = located_tabs.front().model;
-    if (!model->SupportsTabGroups() ||
-        std::ranges::any_of(located_tabs, [model](const LocatedTab& located) {
-          return located.model != model;
-        })) {
+    TabListInterface* tab_list = located_tabs.front().tab_list;
+    if (!tab_list || std::ranges::any_of(located_tabs,
+                                         [tab_list](const LocatedTab& located) {
+                                           return located.tab_list != tab_list;
+                                         })) {
       std::move(callback).Run(
           ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
                       "selected tabs must share one group-capable window"));
       return;
     }
-    std::vector<int> indices;
+    std::vector<tabs::TabHandle> handles;
     for (const LocatedTab& located : located_tabs) {
-      indices.push_back(located.index);
+      handles.push_back(located.tab->GetHandle());
     }
-    std::ranges::sort(indices);
-    const tab_groups::TabGroupId group_id = model->AddToNewGroup(indices);
+    const std::optional<tab_groups::TabGroupId> group_id =
+        tab_list->CreateTabGroup(handles);
+    if (!group_id) {
+      std::move(callback).Run(
+          ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+                      "selected tabs could not be grouped"));
+      return;
+    }
     const std::string* title = call.arguments.FindString("title");
-    model->ChangeTabGroupVisuals(
-        group_id,
+    tab_list->SetTabGroupVisualData(
+        *group_id,
         tab_groups::TabGroupVisualData(
             title ? base::UTF8ToUTF16(*title) : std::u16string(),
             ParseGroupColor(call.arguments.FindString("color")), false));
     AgentToolResult result = SuccessResult(call.action_id, "tabs grouped");
-    result.value.Set("group_id", group_id.ToString());
+    result.value.Set("group_id", group_id->ToString());
     result.value.Set("revision", TabRevision(profile_, *task));
     std::move(callback).Run(std::move(result));
     return;
@@ -968,6 +1210,12 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
 void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
                                           const AgentToolCall& call,
                                           ToolResultCallback callback) {
+#if BUILDFLAG(IS_ANDROID)
+  std::move(callback).Run(
+      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+                  "window tools are unavailable on Android"));
+  return;
+#else
   if (call.tool_name == "window.list") {
     AgentToolResult result = SuccessResult(call.action_id, "windows listed");
     base::ListValue windows;
@@ -997,7 +1245,8 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
     const GURL url(url_value ? *url_value : std::string());
     BrowserWindowInterface* source =
         ProfileBrowserCollection::GetForProfile(profile_)->FindTabbedBrowser();
-    if (!url_value || !source || !task->scope().AllowsOrigin(url)) {
+    if (!url_value || !source || source->GetProfile() != profile_ ||
+        !task->scope().AllowsOrigin(url)) {
       std::move(callback).Run(
           ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
                       "approved URL or source window is unavailable"));
@@ -1087,11 +1336,18 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
   std::move(callback).Run(ErrorResult(call.action_id,
                                       AgentErrorCode::kToolUnavailable,
                                       "window tool is not implemented"));
+#endif
 }
 
 void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
                                              const AgentToolCall& call,
                                              ToolResultCallback callback) {
+#if BUILDFLAG(IS_ANDROID)
+  std::move(callback).Run(
+      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+                  "workspace tools are unavailable on Android"));
+  return;
+#else
   if (call.tool_name == "workspace.save") {
     const std::string* name = call.arguments.FindString("name");
     const std::string* revision = call.arguments.FindString("revision");
@@ -1105,10 +1361,12 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
     for (const LocatedTab& located : TaskTabs(profile_, *task)) {
       base::DictValue value;
       value.Set("url", SafeUrlForModel(located.tab->GetURL()));
-      value.Set("pinned", located.model->IsTabPinned(located.index));
+      value.Set("pinned", located.tab->IsPinned());
       if (std::optional<tab_groups::TabGroupId> group_id =
-              located.model->GetTabGroupForTab(located.index)) {
-        TabGroup* group = located.model->group_model()->GetTabGroup(*group_id);
+              located.tab->GetGroup()) {
+        TabStripModel* model = located.browser->GetTabStripModel();
+        TabGroup* group =
+            model ? model->group_model()->GetTabGroup(*group_id) : nullptr;
         if (group && group->visual_data()) {
           value.Set("group_key", group_id->ToString());
           value.Set("group_title",
@@ -1177,7 +1435,7 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
     }
     BrowserWindowInterface* browser =
         ProfileBrowserCollection::GetForProfile(profile_)->FindTabbedBrowser();
-    if (!browser) {
+    if (!browser || browser->GetProfile() != profile_) {
       std::move(callback).Run(
           ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
                       "normal browser window is unavailable"));
@@ -1271,18 +1529,39 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
   std::move(callback).Run(ErrorResult(call.action_id,
                                       AgentErrorCode::kToolUnavailable,
                                       "workspace tool is not implemented"));
+#endif
 }
 
 void AegisBrowserTools::ExecuteHistoryTool(AgentTask* task,
                                            const AgentToolCall& call,
                                            ToolResultCallback callback) {
-  history::HistoryService* service = HistoryServiceFactory::GetForProfile(
-      profile_, ServiceAccessType::EXPLICIT_ACCESS);
   const std::string* query = call.arguments.FindString("query");
   const std::string* domain = call.arguments.FindString("domain");
   const std::optional<int> days = call.arguments.FindInt("days");
   const std::optional<int> max_results = call.arguments.FindInt("max_results");
-  if (!service || !query || !days || !max_results) {
+  if (!query || !days || !max_results) {
+    std::move(callback).Run(
+        ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+                    "history service or query is unavailable"));
+    return;
+  }
+
+  if (profile_->IsOffTheRecord()) {
+    if (*days <= 0 || *max_results <= 0) {
+      std::move(callback).Run(
+          ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
+                      "incognito history query is out of range"));
+      return;
+    }
+    std::move(callback).Run(SearchOffTheRecordSessionHistory(
+        profile_, task->scope(), call.action_id, *query,
+        domain ? *domain : std::string(), *days, *max_results));
+    return;
+  }
+
+  history::HistoryService* service = HistoryServiceFactory::GetForProfile(
+      profile_, ServiceAccessType::EXPLICIT_ACCESS);
+  if (!service) {
     std::move(callback).Run(
         ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
                     "history service or query is unavailable"));
@@ -1399,6 +1678,22 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
         model->account_mobile_node()};
     for (const bookmarks::BookmarkNode* root : account_roots) {
       AppendBookmarkList(root, "account_read_only", &nodes, &truncated);
+    }
+    if (task->scope().AllowsTool("bookmark.check_urls")) {
+      BookmarkCheckSelection selection;
+      selection.reference = base::Uuid::GenerateRandomV4().AsLowercaseString();
+      selection.snapshot_hash = BookmarkCheckSnapshot(model);
+      selection.list_truncated = truncated;
+      for (const base::Value& value : nodes) {
+        const base::DictValue& node = value.GetDict();
+        if (node.FindString("kind") && *node.FindString("kind") == "url") {
+          selection.node_ids.push_back(*node.FindString("node_id"));
+        }
+      }
+      result.value.Set("check_selection_ref", selection.reference);
+      result.value.Set("check_selection_count",
+                       static_cast<int>(selection.node_ids.size()));
+      bookmark_check_selections_[task->id()] = std::move(selection);
     }
     result.value.Set("nodes", std::move(nodes));
     result.value.Set("truncated", truncated);
@@ -1584,26 +1879,56 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
 
   if (call.tool_name == "bookmark.check_urls") {
     const base::ListValue* node_ids = call.arguments.FindList("node_ids");
-    if (!node_ids || node_ids->empty() ||
-        node_ids->size() > kMaxUrlChecksPerCall) {
+    const std::string* selection_ref =
+        call.arguments.FindString("selection_ref");
+    base::ListValue selected_ids;
+    bool list_truncated = false;
+    if (selection_ref) {
+      auto selection = bookmark_check_selections_.find(task->id());
+      if (node_ids || selection == bookmark_check_selections_.end() ||
+          selection->second.reference != *selection_ref ||
+          selection->second.snapshot_hash != BookmarkCheckSnapshot(model)) {
+        std::move(callback).Run(
+            ErrorResult(call.action_id, AgentErrorCode::kStaleDocument,
+                        "bookmark selection is stale, ambiguous, or belongs to "
+                        "another task"));
+        return;
+      }
+      for (const std::string& id : selection->second.node_ids) {
+        selected_ids.Append(id);
+      }
+      node_ids = &selected_ids;
+      list_truncated = selection->second.list_truncated;
+    } else if (!node_ids || node_ids->empty() ||
+               node_ids->size() > kMaxUrlChecksPerCall) {
       std::move(callback).Run(
           ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
-                      "URL check requires 1 to 100 bookmark node ids"));
+                      "URL check requires a current selection reference or 1 "
+                      "to 100 node ids"));
       return;
     }
     auto batch = std::make_unique<UrlCheckBatch>();
     batch->task = task;
     batch->task_id = task->id();
     batch->action_id = call.action_id;
+    batch->selection_ref = selection_ref ? *selection_ref : std::string();
+    batch->list_truncated = list_truncated;
     batch->callback = std::move(callback);
     base::flat_set<std::string> unique_ids;
     for (const base::Value& value : *node_ids) {
+      if (!value.is_string()) {
+        std::move(batch->callback)
+            .Run(ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
+                             "bookmark node id is not a string"));
+        return;
+      }
       const std::string& node_id = value.GetString();
       const bookmarks::BookmarkNode* node =
           GetBookmarkNodeByExternalId(model, node_id);
       if (!node || !node->is_url() ||
-          !IsAegisBookmarkUrlCheckTargetAllowed(task->scope(), node->url(),
-                                                node->url()) ||
+          (!selection_ref && !IsAegisBookmarkUrlCheckTargetAllowed(
+                                 task->scope(), node->url(), node->url(),
+                                 AllowLocalFixtureUrlChecks())) ||
           !unique_ids.insert(node_id).second) {
         std::move(batch->callback)
             .Run(ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
@@ -1619,6 +1944,21 @@ void AegisBrowserTools::ExecuteBookmarkTool(AgentTask* task,
           UrlCheckBatch::Entry{.node_id = node_id, .url = node->url()});
     }
     batch->results.resize(batch->entries.size());
+    // 全量选择遇到非公开网址时仅报告未检查，不能扩张访问权限，也不能丢掉其他结果。
+    for (size_t index = 0; index < batch->entries.size(); ++index) {
+      auto& entry = batch->entries[index];
+      if (!IsAegisBookmarkUrlCheckTargetAllowed(task->scope(), entry.url,
+                                                entry.url,
+                                                AllowLocalFixtureUrlChecks())) {
+        base::DictValue skipped;
+        skipped.Set("node_id", entry.node_id);
+        skipped.Set("classification", "scope_blocked");
+        skipped.Set("http_status", 0);
+        batch->results[index] = std::move(skipped);
+        entry.completed = true;
+        ++batch->completed;
+      }
+    }
     const std::string batch_key = task->id() + ":" + call.action_id;
     if (url_check_batches_.contains(batch_key)) {
       std::move(batch->callback)
@@ -1923,53 +2263,109 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
   }
 
   if (call.tool_name == "download.verify") {
-    const bool complete = item->GetState() == download::DownloadItem::COMPLETE;
-    const bool safe = !item->IsDangerous();
-    const std::string actual_hash = item->GetHash().size() == 32u
-                                        ? base::HexEncode(item->GetHash())
-                                        : std::string();
-    const auto expected_it = expected_download_hashes_.find(item->GetGuid());
-    const std::string expected_hash =
-        expected_it == expected_download_hashes_.end() ? std::string()
-                                                       : expected_it->second;
-    const bool hash_matches =
-        !expected_hash.empty() && !actual_hash.empty() &&
-        base::EqualsCaseInsensitiveASCII(expected_hash, actual_hash);
-    const bool safe_and_complete =
-        complete && safe && !item->GetFileExternallyRemoved();
-    const bool verified = safe_and_complete && hash_matches;
-    AgentToolResult result = SuccessResult(
-        call.action_id,
-        verified ? "download state verified" : "download is not yet verified");
-    result.value.Set("download_id", item->GetGuid());
-    result.value.Set("state", DownloadStateString(item->GetState()));
-    result.value.Set("paused", item->IsPaused());
-    result.value.Set("dangerous", item->IsDangerous());
-    result.value.Set("danger_type", static_cast<int>(item->GetDangerType()));
-    result.value.Set("received_bytes",
-                     base::NumberToString(item->GetReceivedBytes()));
-    result.value.Set("total_bytes",
-                     base::NumberToString(item->GetTotalBytes()));
-    result.value.Set(
-        "file_name",
-        BoundedUtf8(item->GetFileNameToReportUser().BaseName().AsUTF8Unsafe()));
-    result.value.Set("final_url", SafeUrlForModel(item->GetURL()));
-    result.value.Set("verified", verified);
-    result.value.Set("safe_and_complete", safe_and_complete);
-    result.value.Set("integrity",
-                     expected_hash.empty()
-                         ? "not_provided"
-                         : (hash_matches ? "match" : "not_matched"));
-    if (!actual_hash.empty()) {
-      result.value.Set("sha256", base::ToLowerASCII(actual_hash));
-    }
-    std::move(callback).Run(std::move(result));
+    FinishDownloadVerification(
+        task->id(), task->scope(), call.action_id, *download_id,
+        base::TimeTicks::Now() + kMaxDownloadVerificationWait,
+        std::move(callback));
     return;
   }
 
   std::move(callback).Run(ErrorResult(call.action_id,
                                       AgentErrorCode::kToolUnavailable,
                                       "download tool is not implemented"));
+}
+
+// DownloadItem completion includes browser safety checks and can lag the
+// network response by several seconds. Keep one read-only verification call
+// pending instead of spending all bounded model retries while the native
+// download is still progressing.
+void AegisBrowserTools::FinishDownloadVerification(
+    std::string task_id,
+    AgentTaskScope scope,
+    std::string action_id,
+    std::string download_id,
+    base::TimeTicks deadline,
+    ToolResultCallback callback) {
+  content::DownloadManager* manager = profile_->GetDownloadManager();
+  auto owned = owned_downloads_.find(task_id);
+  download::DownloadItem* item = manager && owned != owned_downloads_.end() &&
+                                         owned->second.contains(download_id)
+                                     ? manager->GetDownloadByGuid(download_id)
+                                     : nullptr;
+  if (!item) {
+    std::move(callback).Run(
+        ErrorResult(std::move(action_id), AgentErrorCode::kScopeViolation,
+                    "download is no longer owned by this task"));
+    return;
+  }
+  if (!scope.AllowsOrigin(item->GetURL())) {
+    std::move(callback).Run(
+        ErrorResult(std::move(action_id), AgentErrorCode::kScopeViolation,
+                    "download final URL is outside task scope"));
+    return;
+  }
+
+  const bool waiting = ShouldWaitForDownloadVerification(item);
+  if (waiting && base::TimeTicks::Now() < deadline) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&AegisBrowserTools::FinishDownloadVerification,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(task_id),
+                       std::move(scope), std::move(action_id),
+                       std::move(download_id), deadline, std::move(callback)),
+        kDownloadVerificationPollInterval);
+    return;
+  }
+
+  const bool timed_out = waiting;
+  const bool complete = item->GetState() == download::DownloadItem::COMPLETE;
+  const bool safe = !item->IsDangerous();
+  const std::string actual_hash = item->GetHash().size() == 32u
+                                      ? base::HexEncode(item->GetHash())
+                                      : std::string();
+  const auto expected_it = expected_download_hashes_.find(item->GetGuid());
+  const std::string expected_hash =
+      expected_it == expected_download_hashes_.end() ? std::string()
+                                                     : expected_it->second;
+  const bool hash_matches =
+      !expected_hash.empty() && !actual_hash.empty() &&
+      base::EqualsCaseInsensitiveASCII(expected_hash, actual_hash);
+  const bool safe_and_complete =
+      complete && safe && !item->GetFileExternallyRemoved();
+  const bool verified = safe_and_complete && hash_matches;
+  AgentToolResult result = SuccessResult(
+      action_id, verified ? "download state verified"
+                          : (timed_out ? "download verification timed out"
+                                       : "download is not verified"));
+  result.value.Set("download_id", item->GetGuid());
+  result.value.Set("state", DownloadStateString(item->GetState()));
+  result.value.Set("paused", item->IsPaused());
+  result.value.Set("dangerous", item->IsDangerous());
+  result.value.Set("danger_type", static_cast<int>(item->GetDangerType()));
+  result.value.Set("received_bytes",
+                   base::NumberToString(item->GetReceivedBytes()));
+  result.value.Set("total_bytes", base::NumberToString(item->GetTotalBytes()));
+  result.value.Set(
+      "file_name",
+      BoundedUtf8(item->GetFileNameToReportUser().BaseName().AsUTF8Unsafe()));
+  result.value.Set("final_url", SafeUrlForModel(item->GetURL()));
+  result.value.Set("verified", verified);
+  result.value.Set("safe_and_complete", safe_and_complete);
+  result.value.Set("wait_timed_out", timed_out);
+  result.value.Set("integrity", expected_hash.empty()
+                                    ? "not_provided"
+                                    : (hash_matches ? "match" : "not_matched"));
+  if (!actual_hash.empty()) {
+    result.value.Set("sha256", base::ToLowerASCII(actual_hash));
+  }
+  std::move(callback).Run(std::move(result));
+}
+
+// static
+bool AegisBrowserTools::ShouldWaitForDownloadVerification(
+    download::DownloadItem* item) {
+  return item && item->GetState() == download::DownloadItem::IN_PROGRESS &&
+         !item->IsPaused();
 }
 
 void AegisBrowserTools::OnDownloadStarted(
@@ -2042,10 +2438,26 @@ void AegisBrowserTools::PumpUrlCheckRequests(const std::string& batch_key) {
     AgentToolResult result = SuccessResult(
         batch.action_id, "bookmark URLs checked without credentials");
     base::ListValue values;
+    base::DictValue classifications;
     for (std::optional<base::DictValue>& value : batch.results) {
       if (value) {
+        const std::string& classification =
+            *value->FindString("classification");
+        classifications.Set(
+            classification,
+            classifications.FindInt(classification).value_or(0) + 1);
         values.Append(std::move(*value));
       }
+    }
+    result.value.Set("selected_count", static_cast<int>(batch.entries.size()));
+    result.value.Set(
+        "attempted_count",
+        static_cast<int>(std::ranges::count(
+            batch.entries, true, &UrlCheckBatch::Entry::request_sent)));
+    result.value.Set("list_truncated", batch.list_truncated);
+    result.value.Set("classification_counts", std::move(classifications));
+    if (!batch.selection_ref.empty()) {
+      result.value.Set("selection_ref", batch.selection_ref);
     }
     result.value.Set("results", std::move(values));
     ToolResultCallback callback = std::move(batch.callback);
@@ -2054,11 +2466,8 @@ void AegisBrowserTools::PumpUrlCheckRequests(const std::string& batch_key) {
     return;
   }
 
-  batch.retry_timer.Stop();
   while (batch.loaders.size() < kMaxConcurrentUrlChecks) {
-    const base::TimeTicks now = base::TimeTicks::Now();
     std::optional<size_t> candidate;
-    std::optional<base::TimeTicks> earliest_retry;
     for (size_t index = 0; index < batch.entries.size(); ++index) {
       const UrlCheckBatch::Entry& entry = batch.entries[index];
       if (entry.active || entry.completed) {
@@ -2068,22 +2477,10 @@ void AegisBrowserTools::PumpUrlCheckRequests(const std::string& batch_key) {
       if (batch.active_origins.contains(origin)) {
         continue;
       }
-      if (!entry.not_before.is_null() && entry.not_before > now) {
-        if (!earliest_retry || entry.not_before < *earliest_retry) {
-          earliest_retry = entry.not_before;
-        }
-        continue;
-      }
       candidate = index;
       break;
     }
     if (!candidate) {
-      if (earliest_retry) {
-        batch.retry_timer.Start(
-            FROM_HERE, std::max(base::Milliseconds(1), *earliest_retry - now),
-            base::BindOnce(&AegisBrowserTools::PumpUrlCheckRequests,
-                           weak_ptr_factory_.GetWeakPtr(), batch_key));
-      }
       return;
     }
     StartUrlCheckRequest(batch_key, *candidate);
@@ -2102,13 +2499,32 @@ void AegisBrowserTools::StartUrlCheckRequest(const std::string& batch_key,
   UrlCheckBatch& batch = *it->second;
   UrlCheckBatch::Entry& entry = batch.entries[index];
   if (!batch.task || IsTerminalState(batch.task->state()) || entry.active ||
-      entry.completed || !batch.task->ConsumeNetworkRequest()) {
+      entry.completed) {
     ToolResultCallback callback = std::move(batch.callback);
     const std::string action_id = batch.action_id;
     url_check_batches_.erase(it);
     std::move(callback).Run(
         ErrorResult(action_id, AgentErrorCode::kBudgetExhausted,
                     "network budget exhausted during URL check"));
+    return;
+  }
+  if (!batch.task->ConsumeNetworkRequest()) {
+    // 保留已经取得的结果；预算不足的剩余项不能被当成失效链接。
+    for (size_t pending_index = 0; pending_index < batch.entries.size();
+         ++pending_index) {
+      auto& pending = batch.entries[pending_index];
+      if (pending.active || pending.completed) {
+        continue;
+      }
+      base::DictValue skipped;
+      skipped.Set("node_id", pending.node_id);
+      skipped.Set("classification", "not_checked");
+      skipped.Set("http_status", 0);
+      batch.results[pending_index] = std::move(skipped);
+      pending.completed = true;
+      ++batch.completed;
+    }
+    PumpUrlCheckRequests(batch_key);
     return;
   }
 
@@ -2145,12 +2561,18 @@ void AegisBrowserTools::StartUrlCheckRequest(const std::string& batch_key,
             "The profile setting is implemented and disabled by default."
         })");
   entry.active = true;
+  entry.request_sent = true;
   entry.redirects.clear();
   batch.active_origins.insert(url::Origin::Create(entry.url).Serialize());
   std::unique_ptr<network::SimpleURLLoader> loader =
       network::SimpleURLLoader::Create(std::move(request), kTrafficAnnotation);
-  loader->SetURLLoaderFactoryOptions(
-      network::mojom::kURLLoadOptionBlockLocalRequest);
+  if (!IsAegisBookmarkUrlCheckTargetAllowed(batch.task->scope(), entry.url,
+                                            entry.url,
+                                            AllowLocalFixtureUrlChecks()) ||
+      !net::IsLocalhost(entry.url)) {
+    loader->SetURLLoaderFactoryOptions(
+        network::mojom::kURLLoadOptionBlockLocalRequest);
+  }
   loader->SetTimeoutDuration(base::Seconds(10));
   loader->SetRetryOptions(0, network::SimpleURLLoader::RETRY_NEVER);
   loader->SetAllowHttpErrorResults(true);
@@ -2191,7 +2613,8 @@ void AegisBrowserTools::OnUrlCheckRedirect(
   }
 
   if (IsAegisBookmarkUrlCheckTargetAllowed(batch.task->scope(), entry.url,
-                                           target) &&
+                                           target,
+                                           AllowLocalFixtureUrlChecks()) &&
       entry.redirects.size() < kMaxUrlCheckRedirects &&
       (!batch.active_origins.contains(target_origin) || belongs_to_entry)) {
     entry.redirects.push_back(target);
@@ -2203,7 +2626,8 @@ void AegisBrowserTools::OnUrlCheckRedirect(
   checked.Set("node_id", entry.node_id);
   checked.Set("url", SafeUrlForModel(entry.url));
   checked.Set("classification", IsAegisBookmarkUrlCheckTargetAllowed(
-                                    batch.task->scope(), entry.url, target)
+                                    batch.task->scope(), entry.url, target,
+                                    AllowLocalFixtureUrlChecks())
                                     ? "indeterminate"
                                     : "scope_blocked");
   checked.Set("http_status", response_head.headers
@@ -2258,7 +2682,7 @@ void AegisBrowserTools::OnUrlCheckComplete(
   checked.Set("node_id", entry.node_id);
   checked.Set("url", SafeUrlForModel(entry.url));
   const bool final_allowed = IsAegisBookmarkUrlCheckTargetAllowed(
-      batch.task->scope(), entry.url, final_url);
+      batch.task->scope(), entry.url, final_url, AllowLocalFixtureUrlChecks());
   checked.Set("classification",
               final_allowed
                   ? UrlCheckClassification(net_error, response_code, redirected)
@@ -2287,19 +2711,37 @@ void AegisBrowserTools::OnUrlCheckComplete(
   if (response_code == 429) {
     int retry_after_seconds = 5;
     if (response_headers) {
-      const std::optional<std::string> retry_after =
-          response_headers->GetNormalizedHeader("retry-after");
+      std::string retry_after;
       int parsed = 0;
-      if (retry_after && base::StringToInt(*retry_after, &parsed)) {
+      // Retry-After is a non-coalescing response header. Calling
+      // GetNormalizedHeader() for it DCHECKs in assertion-enabled builds.
+      if (response_headers->EnumerateHeader(nullptr, "Retry-After",
+                                            &retry_after) &&
+          base::StringToInt(retry_after, &parsed)) {
         retry_after_seconds = std::clamp(parsed, 1, 60);
       }
     }
-    const base::TimeTicks not_before =
-        base::TimeTicks::Now() + base::Seconds(retry_after_seconds);
-    for (UrlCheckBatch::Entry& pending : batch.entries) {
+    if (batch.results[index]) {
+      batch.results[index]->Set("retry_after_seconds", retry_after_seconds);
+    }
+    // Retry-After is origin-wide backpressure. Do not keep a user task open
+    // while serially retrying every remaining bookmark from that origin.
+    // Report those entries as rate-limited so the bounded read-only batch can
+    // finish and the user can retry it later.
+    for (size_t pending_index = 0; pending_index < batch.entries.size();
+         ++pending_index) {
+      UrlCheckBatch::Entry& pending = batch.entries[pending_index];
       if (!pending.active && !pending.completed &&
           url::Origin::Create(pending.url).Serialize() == origin) {
-        pending.not_before = std::max(pending.not_before, not_before);
+        base::DictValue deferred;
+        deferred.Set("node_id", pending.node_id);
+        deferred.Set("url", SafeUrlForModel(pending.url));
+        deferred.Set("classification", "rate_limited");
+        deferred.Set("http_status", 429);
+        deferred.Set("retry_after_seconds", retry_after_seconds);
+        batch.results[pending_index] = std::move(deferred);
+        pending.completed = true;
+        ++batch.completed;
       }
     }
   }

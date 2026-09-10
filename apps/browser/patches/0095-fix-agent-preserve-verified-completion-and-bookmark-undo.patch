@@ -1,0 +1,292 @@
+From c930fa41ef7e9522f145848f3080ee0cc1edc4d8 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 4 Sep 2026 02:55:19 +0800
+Subject: [PATCH] fix(agent): preserve verified completion and bookmark undo
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 73 +++++++++++++++++++
+ .../browser/aegis/agent/aegis_agent_service.h |  1 +
+ .../agent/aegis_agent_service_unittest.cc     | 72 ++++++++++++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 15 ++++
+ .../aegis/agent/agent_planner_unittest.cc     | 39 ++++++++++
+ 5 files changed, 200 insertions(+)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index ba75b1faa7..e6b3660253 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1475,6 +1475,10 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+       RequestNextModelTurn(task_id);
+       return;
+     }
++    if (expected_tool == "agent.complete" &&
++        FinishWithBrowserVerifiedFallback(task_id)) {
++      return;
++    }
+     Transition(task_id, AgentTaskState::kFailed,
+                "execution model failed twice");
+     FinishRuntime(task_id, false, std::move(error), std::nullopt);
+@@ -1492,6 +1496,10 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+       RequestNextModelTurn(task_id);
+       return;
+     }
++    if (expected_tool == "agent.complete" &&
++        FinishWithBrowserVerifiedFallback(task_id)) {
++      return;
++    }
+     const std::string required_tool_error =
+         "execution model did not produce required tool " + expected_tool +
+         " after 2 attempts";
+@@ -1526,6 +1534,9 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+         RequestNextModelTurn(task_id);
+         return;
+       }
++      if (FinishWithBrowserVerifiedFallback(task_id)) {
++        return;
++      }
+       const std::string completion_error =
+           "execution model did not produce required tool agent.complete "
+           "with browser-verifiable evidence after 2 attempts";
+@@ -1892,6 +1903,68 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+   FinishRuntime(task_id, false, result.message, std::nullopt);
+ }
+ 
++bool AegisAgentService::FinishWithBrowserVerifiedFallback(
++    const std::string& task_id) {
++  auto runtime_it = executions_.find(task_id);
++  AgentTask* task = GetTask(task_id);
++  const AgentTaskPlan* plan = GetPlan(task_id);
++  if (!task || !plan || runtime_it == executions_.end() ||
++      runtime_it->second->next_step != plan->steps.size() ||
++      runtime_it->second->pending_action ||
++      runtime_it->second->final_user_takeover ||
++      (task->state() != AgentTaskState::kRunning &&
++       task->state() != AgentTaskState::kReflecting)) {
++    return false;
++  }
++
++  AgentCompletionSummary completion{
++      .outcome = "completed",
++      .summary =
++          "计划中的浏览器操作均已完成并通过核对。AI 最终整理格式不正确，"
++          "已保留浏览器核对结果。"};
++  base::flat_set<std::string> verified_urls;
++  for (const AgentExecutionEvidence& evidence :
++       runtime_it->second->evidence_history) {
++    if (!evidence.result.ok ||
++        !base::StartsWith(evidence.tool_name, "page.")) {
++      continue;
++    }
++    const std::string* value = evidence.result.value.FindString("url");
++    const GURL url(value ? *value : std::string());
++    if (url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
++        url.username().empty() && url.password().empty() &&
++        !url.has_query() && !url.has_ref() &&
++        task->scope().AllowsOrigin(url)) {
++      verified_urls.insert(url.spec());
++    }
++  }
++  completion.source_urls.assign(verified_urls.begin(), verified_urls.end());
++
++  const std::vector<AgentMonitorDefinition> monitors = GetMonitors(task_id);
++  const bool monitoring =
++      task->mode() == AgentMode::kAutomate &&
++      std::ranges::any_of(
++          monitors, [](const auto& monitor) { return monitor.enabled; });
++  if (monitoring) {
++    completion.outcome = "monitoring";
++    completion.summary =
++        "计划步骤已完成；浏览器会在运行期间按已同意的计划继续监控。";
++    FinishRuntime(task_id, true, std::string(), std::move(completion));
++    ScheduleMonitorTimer();
++    return true;
++  }
++  if (!Transition(task_id, AgentTaskState::kVerifying,
++                  "browser verified all actions; model summary fallback used") ||
++      !CompleteTask(task_id)) {
++    FinishRuntime(task_id, false,
++                  "task completion could not be browser-verified",
++                  std::nullopt);
++    return true;
++  }
++  FinishRuntime(task_id, true, std::string(), std::move(completion));
++  return true;
++}
++
+ void AegisAgentService::FinishRuntime(
+     const std::string& task_id,
+     bool ok,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 552f8a24ae..d109ec61b4 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -261,6 +261,7 @@ class AegisAgentService : public KeyedService {
+   void OnRuntimeToolResult(const std::string& task_id,
+                            AgentToolCall attempted_call,
+                            AgentToolResult result);
++  bool FinishWithBrowserVerifiedFallback(const std::string& task_id);
+   void FinishRuntime(const std::string& task_id,
+                      bool ok,
+                      std::string error,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 0c2e3a5312..8d20ca0103 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -593,6 +593,78 @@ TEST_F(AegisAgentServiceTest,
+   EXPECT_EQ(task->model_calls_used(), 3);
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       KeepsVerifiedTaskCompletedWhenFinalModelFormatFailsTwice) {
++  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++
++  AgentTaskScope scope;
++  scope.allowed_tools = {"tab.list"};
++  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = std::string(kBaseUrl);
++  scope.model_destination.model = "fixture-model";
++
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  AgentTask* task =
++      service->CreateTask("列出当前标签页", AgentMode::kAct, std::move(scope));
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(service->BeginPlanning(task->id()));
++  AgentModelEvent plan_event;
++  plan_event.type = AgentModelEventType::kToolCall;
++  plan_event.tool_call_id = "tab-list-plan";
++  plan_event.tool_name = "agent.submit_plan";
++  plan_event.arguments.Set("schema_version", kAgentSchemaVersion);
++  plan_event.arguments.Set("summary", "列出浏览器允许查看的标签页");
++  base::DictValue step;
++  step.Set("id", "list-tabs");
++  step.Set("title", "读取当前标签页");
++  step.Set("tool", "tab.list");
++  base::ListValue steps;
++  steps.Append(std::move(step));
++  plan_event.arguments.Set("steps", std::move(steps));
++  std::string plan_error;
++  ASSERT_TRUE(service->AcceptModelPlan(task->id(), plan_event, &plan_error))
++      << plan_error;
++  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
++
++  network::TestURLLoaderFactory factory;
++  service->SetTaskModelClientForTesting(
++      task->id(),
++      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      run_result;
++  service->RunTask(task->id(), run_result.GetCallback());
++
++  factory.WaitForRequest(endpoint);
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"list-tabs","name":"tab.list","arguments":"{}"}]})"));
++
++  for (int attempt = 0; attempt < 2; ++attempt) {
++    factory.WaitForRequest(endpoint);
++    EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++        endpoint.spec(),
++        R"({"status":"completed","output":[{"type":"function_call","call_id":"wrong-final","name":"tab.list","arguments":"{}"}]})"));
++  }
++
++  EXPECT_TRUE(run_result.Get<0>()) << run_result.Get<1>();
++  ASSERT_TRUE(run_result.Get<2>());
++  EXPECT_EQ(run_result.Get<2>()->outcome, "completed");
++  EXPECT_THAT(run_result.Get<2>()->summary,
++              HasSubstr("浏览器操作均已完成并通过核对"));
++  EXPECT_TRUE(run_result.Get<2>()->source_urls.empty());
++  EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
++  EXPECT_EQ(task->model_calls_used(), 3);
++}
++
+ TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 119c542607..34bda5e718 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -823,6 +823,21 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+     }
+     earlier_tools.insert(step.tool_name);
+   }
++  // bookmark.apply 会生成由浏览器持有的一次性撤销凭据。即使模型没有把撤销
++  // 写成正向执行步骤，任务完成后仍应允许用户点击撤销；这里只恢复用户已在
++  // maximum_scope 中授予的能力，不会扩大权限。
++  if (plan.scope.AllowsTool("bookmark.apply") &&
++      maximum_scope.AllowsTool("bookmark.undo")) {
++    const AgentToolDescriptor* undo_descriptor =
++        registry.Find("bookmark.undo");
++    if (!undo_descriptor ||
++        !maximum_scope.AllowsDataClass(undo_descriptor->data_class)) {
++      *error = "bookmark undo capability is outside scope";
++      return std::nullopt;
++    }
++    plan.scope.allowed_tools.insert("bookmark.undo");
++    plan.scope.allowed_data_classes.insert(undo_descriptor->data_class);
++  }
+   if (!plan.scope.IsValid() || !plan.scope.IsNoBroaderThan(maximum_scope)) {
+     *error = "browser could not bind the plan to its approved scope";
+     return std::nullopt;
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 89ce65e2a7..1665b1fe93 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -310,6 +310,45 @@ TEST(AegisAgentPlannerTest, RejectsModelDeclaredRiskOrUnapprovedStep) {
+   EXPECT_EQ(error, "task plan step is duplicated or outside scope");
+ }
+ 
++TEST(AegisAgentPlannerTest,
++     BookmarkApplyKeepsBrowserOwnedUndoOutsideForwardSteps) {
++  AgentToolRegistry registry;
++  AgentTaskScope scope = MaximumScope();
++  scope.allowed_origins.clear();
++  scope.allowed_tab_ids.clear();
++  scope.allowed_tools = {"bookmark.plan", "bookmark.apply", "bookmark.undo"};
++  scope.allowed_data_classes = {AgentDataClass::kBookmarks};
++  ASSERT_TRUE(scope.IsValid());
++
++  AgentModelEvent event;
++  event.type = AgentModelEventType::kToolCall;
++  event.tool_call_id = "bookmark-plan";
++  event.tool_name = "agent.submit_plan";
++  event.arguments.Set("schema_version", kAgentSchemaVersion);
++  event.arguments.Set("summary", "Preview and apply bookmark organization");
++  base::ListValue steps;
++  auto add_step = [&steps](std::string_view id, std::string_view title,
++                           std::string_view tool) {
++    base::DictValue step;
++    step.Set("id", id);
++    step.Set("title", title);
++    step.Set("tool", tool);
++    steps.Append(std::move(step));
++  };
++  add_step("preview", "Preview bookmark changes", "bookmark.plan");
++  add_step("apply", "Apply approved bookmark changes", "bookmark.apply");
++  event.arguments.Set("steps", std::move(steps));
++
++  std::string error;
++  const std::optional<AgentTaskPlan> plan =
++      ParseAndValidateTaskPlan(event, scope, registry, &error);
++  ASSERT_TRUE(plan) << error;
++  ASSERT_EQ(plan->steps.size(), 2u);
++  EXPECT_EQ(plan->steps.back().tool_name, "bookmark.apply");
++  EXPECT_TRUE(plan->scope.AllowsTool("bookmark.undo"));
++  EXPECT_TRUE(plan->scope.IsNoBroaderThan(scope));
++}
++
+ TEST(AegisAgentPlannerTest, PreopenedPagePlanMustObserveBeforeActing) {
+   AgentToolRegistry registry;
+   std::string error;
+-- 
+2.52.0
+

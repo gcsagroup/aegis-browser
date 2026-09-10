@@ -13,21 +13,26 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
 #include "chrome/browser/aegis/agent/agent_policy_broker.h"
+#include "chrome/browser/aegis/agent/agent_monitor_summary.h"
 #include "chrome/browser/aegis/agent/agent_workflow.h"
+#include "chrome/browser/aegis/model_provider_policy.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-#include "chrome/browser/ui/navigator/browser_navigator.h"
-#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
 #include "chrome/common/aegis/features.h"
 #include "chrome/common/aegis/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/tabs/public/tab_interface.h"
+#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -123,25 +128,127 @@ std::string MonitorKindName(aegis::agent::AgentMonitorKind kind) {
   }
 }
 
-tabs::TabInterface* ActiveTab(BrowserWindowInterface* browser) {
-  return browser ? browser->GetActiveTabInterface() : nullptr;
+tabs::TabInterface* ContentTab(BrowserWindowInterface* browser) {
+  TabListInterface* tabs = browser ? TabListInterface::From(browser) : nullptr;
+  if (!tabs) {
+    return nullptr;
+  }
+  tabs::TabInterface* active = tabs->GetActiveTab();
+  if (active && active->GetURL().SchemeIsHTTPOrHTTPS()) {
+    return active;
+  }
+  // 全页 Agent 只沿浏览器保存的直接来源标签读取内容，不能按排列位置猜测。
+  // 普通内部页和空白页保持当前目标，使正文任务明确拒绝、书签任务仍可运行。
+  if (active && active->GetURL().SchemeIs("chrome-untrusted") &&
+      active->GetURL().host() == "aegis-agent") {
+    tabs::TabInterface* opener = tabs->GetOpenerForTab(active->GetHandle());
+    if (opener && opener->GetURL().SchemeIsHTTPOrHTTPS()) {
+      for (tabs::TabInterface* tab : tabs->GetAllTabs()) {
+        if (tab == opener) {
+          return opener;
+        }
+      }
+    }
+  }
+  return active;
 }
 
 bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
   return workflow != AgentWorkflowKind::kBrowserSteward;
 }
 
+// Resolving a deictic page reference belongs to the browser, not the model.
+// This keeps common commands reliable and prevents an intent router from
+// turning "this page" into a browser-metadata or web-search task.
+bool GoalRefersToCurrentPage(std::string_view goal) {
+  const std::string lower_goal = base::ToLowerASCII(goal);
+  constexpr std::string_view kCurrentPageReferences[] = {
+      "当前页",          "当前页面",  "当前网页",     "这个页面",
+      "这个网页",        "本页面",    "本网页",       "页面内容",
+      "网页内容",        "this page", "current page", "page content",
+      "the page content"};
+  return std::ranges::any_of(
+      kCurrentPageReferences, [&lower_goal](std::string_view reference) {
+        return lower_goal.find(reference) != std::string::npos;
+      });
+}
+
+bool IsValidSchedule(AgentMode mode, int schedule_interval_minutes) {
+  if (mode != AgentMode::kAutomate) {
+    return schedule_interval_minutes == 0;
+  }
+  return schedule_interval_minutes >= 15 && schedule_interval_minutes <= 10080;
+}
+
+bool GoalRequestsWindowTabMetadata(std::string_view goal) {
+  const std::string lower = base::ToLowerASCII(goal);
+  if (lower.find("标签") == std::string::npos &&
+      lower.find("tab") == std::string::npos) {
+    return false;
+  }
+  constexpr std::string_view references[] = {
+      "当前窗口",       "这个窗口",    "本窗口",  "标签页",    "浏览器标签",
+      "current window", "this window", "my tabs", "open tabs", "browser tabs"};
+  return std::ranges::any_of(references, [&lower](std::string_view reference) {
+    return lower.find(reference) != std::string::npos;
+  });
+}
+
+std::string BindScheduleToGoal(std::string goal,
+                               int schedule_interval_minutes) {
+  if (schedule_interval_minutes == 0) {
+    return goal;
+  }
+  goal.append(
+      "\n\nBrowser-owned schedule: monitor.create must use "
+      "interval_minutes=");
+  goal.append(base::NumberToString(schedule_interval_minutes));
+  goal.append(
+      ". The user selected this frequency; do not change it. "
+      "[AEGIS_SCHEDULE_INTERVAL_MINUTES=");
+  goal.append(base::NumberToString(schedule_interval_minutes));
+  goal.push_back(']');
+  return goal;
+}
+
 std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
-  const size_t https = goal.find("https://");
-  const size_t http = goal.find("http://");
-  const size_t start = std::min(https, http);
+  const std::string lower_goal = base::ToLowerASCII(goal);
+  const size_t https = lower_goal.find("https://");
+  const size_t http = lower_goal.find("http://");
+  const size_t www = lower_goal.find("www.");
+  const size_t start = std::min({https, http, www});
   if (start == std::string_view::npos) {
     return std::nullopt;
   }
-  size_t end = goal.find_first_of(" \t\r\n", start);
-  std::string candidate(goal.substr(start, end == std::string_view::npos
-                                               ? goal.size() - start
-                                               : end - start));
+  size_t end = goal.size();
+  for (size_t index = start; index < goal.size(); ++index) {
+    if (static_cast<unsigned char>(goal[index]) >= 0x80) {
+      end = index;
+      break;
+    }
+  }
+  const bool bare_domain = start == www && www < https && www < http;
+  if (bare_domain) {
+    constexpr std::string_view kBareUrlCharacters = "-._~:/?#[]@!$&'()*+,;=%";
+    for (size_t index = start; index < goal.size(); ++index) {
+      const unsigned char character = goal[index];
+      if (!base::IsAsciiAlphaNumeric(character) &&
+          kBareUrlCharacters.find(character) == std::string_view::npos) {
+        end = std::min(end, index);
+        break;
+      }
+    }
+  }
+  constexpr std::string_view kUrlDelimiters[] = {
+      " ",  "\t", "\r", "\n", ",",  ";",  "!",  "?",  ")",  "]",  "}", "'",
+      "\"", "，", "。", "；", "：", "！", "？", "）", "】", "》", "、"};
+  for (std::string_view delimiter : kUrlDelimiters) {
+    const size_t position = goal.find(delimiter, start);
+    if (position != std::string_view::npos) {
+      end = std::min(end, position);
+    }
+  }
+  std::string candidate(goal.substr(start, end - start));
   constexpr std::string_view kTrailingPunctuation[] = {
       ".",  ",",  ";",  ":",  "!",  "?",  ")",  "]",  "}",  "'",
       "\"", "，", "。", "；", "：", "！", "？", "）", "】", "》"};
@@ -156,56 +263,78 @@ std::optional<GURL> ExplicitUrlFromGoal(std::string_view goal) {
       }
     }
   }
-  const GURL url(candidate);
-  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() ? std::make_optional(url)
-                                                     : std::nullopt;
+  const std::string lower_candidate = base::ToLowerASCII(candidate);
+  const bool has_scheme = base::StartsWith(lower_candidate, "https://") ||
+                          base::StartsWith(lower_candidate, "http://");
+  const GURL url(has_scheme ? candidate : "https://" + candidate);
+  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
+                 url.username().empty() && url.password().empty()
+             ? std::make_optional(url)
+             : std::nullopt;
 }
 
-std::optional<GURL> ResolveAutomaticTaskUrl(Profile* profile,
-                                            std::string_view goal) {
-  if (std::optional<GURL> explicit_url = ExplicitUrlFromGoal(goal)) {
-    return explicit_url;
+std::vector<url::Origin> AutomaticTaskOrigins(const GURL& task_url) {
+  std::vector<url::Origin> origins{url::Origin::Create(task_url)};
+  const std::string registrable =
+      net::registry_controlled_domains::GetDomainAndRegistry(
+          task_url,
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+  if (registrable.empty()) {
+    return origins;
   }
+  const std::string host(task_url.host());
+  std::string sibling;
+  if (host == registrable) {
+    sibling = "www." + registrable;
+  } else if (host == "www." + registrable) {
+    sibling = registrable;
+  } else {
+    return origins;
+  }
+  GURL::Replacements replacements;
+  replacements.SetHostStr(sibling);
+  const GURL sibling_url =
+      url::Origin::Create(task_url).GetURL().ReplaceComponents(replacements);
+  const url::Origin sibling_origin = url::Origin::Create(sibling_url);
+  if (sibling_url.is_valid() && !sibling_origin.opaque()) {
+    origins.push_back(sibling_origin);
+  }
+  return origins;
+}
+
+std::optional<GURL> SearchUrlForQuery(Profile* profile,
+                                      std::string_view query) {
   TemplateURLService* search =
       profile ? TemplateURLServiceFactory::GetForProfile(profile) : nullptr;
-  if (!search) {
+  if (!search || query.empty()) {
     return std::nullopt;
   }
   const GURL url = search->GenerateSearchURLForDefaultSearchProvider(
-      base::UTF8ToUTF16(goal));
+      base::UTF8ToUTF16(query));
   return url.is_valid() && url.SchemeIsHTTPOrHTTPS() ? std::make_optional(url)
                                                      : std::nullopt;
 }
 
 tabs::TabInterface* OpenAutomaticTaskTab(BrowserWindowInterface* browser,
                                          const GURL& url) {
-  if (!browser || !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
+  TabListInterface* tabs = browser ? TabListInterface::From(browser) : nullptr;
+  if (!tabs || !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
     return nullptr;
   }
-  NavigateParams params(browser, url, ui::PAGE_TRANSITION_GENERATED);
-  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  Navigate(&params);
-  return params.navigated_or_inserted_contents
-             ? tabs::TabInterface::GetFromContents(
-                   params.navigated_or_inserted_contents)
-             : nullptr;
+  return tabs->OpenTab(url, tabs->GetTabCount(), /*foreground=*/true);
 }
 
 std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
-    const GURL& active_url,
     const std::vector<std::string>& values) {
   constexpr size_t kMaxApprovedOrigins = 20;
   constexpr size_t kMaxOriginBytes = 2048;
-  if (!active_url.is_valid() || !active_url.SchemeIsHTTPOrHTTPS() ||
-      values.empty() || values.size() > kMaxApprovedOrigins) {
+  if (values.empty() || values.size() > kMaxApprovedOrigins) {
     return std::nullopt;
   }
 
-  const url::Origin active_origin = url::Origin::Create(active_url);
   base::flat_set<std::string> seen;
   std::vector<url::Origin> origins;
   origins.reserve(values.size());
-  bool includes_active_origin = false;
   for (const std::string& value : values) {
     if (value.empty() || value.size() > kMaxOriginBytes) {
       return std::nullopt;
@@ -220,12 +349,29 @@ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
     if (!seen.insert(serialized).second) {
       return std::nullopt;
     }
-    includes_active_origin |= origin == active_origin;
     origins.push_back(origin);
   }
-  return includes_active_origin
-             ? std::optional<std::vector<url::Origin>>(std::move(origins))
-             : std::nullopt;
+  return origins;
+}
+
+bool IncludesOrigin(const std::vector<url::Origin>& origins, const GURL& url) {
+  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
+    return false;
+  }
+  const url::Origin active_origin = url::Origin::Create(url);
+  return std::ranges::any_of(origins, [&](const url::Origin& origin) {
+    return origin == active_origin;
+  });
+}
+
+bool HasUserSetting(PrefService* prefs, const char* name) {
+  const PrefService::Preference* preference =
+      prefs ? prefs->FindPreference(name) : nullptr;
+  return preference && preference->HasUserSetting();
+}
+
+aegis::AegisService* CoreServiceForProfile(Profile* profile) {
+  return aegis::AegisServiceFactory::GetForProfile(profile);
 }
 
 }  // namespace
@@ -249,13 +395,17 @@ AegisAgentPageHandler::AegisAgentPageHandler(
                             weak_ptr_factory_.GetWeakPtr()));
   }
   if (browser_) {
+#if !BUILDFLAG(IS_ANDROID)
     active_tab_subscription_ = browser_->RegisterActiveTabDidChange(
         base::BindRepeating(&AegisAgentPageHandler::OnActiveTabDidChange,
                             weak_ptr_factory_.GetWeakPtr()));
+#endif
   }
   service_ =
-      profile ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
-              : nullptr;
+      profile && profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)
+          ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile)
+          : aegis::agent::AegisAgentServiceFactory::GetForProfileIfExists(
+                profile);
   ObserveService(service_);
   if (service_) {
     ObserveTask(service_->MostRecentTask());
@@ -263,9 +413,11 @@ AegisAgentPageHandler::AegisAgentPageHandler(
 }
 
 void AegisAgentPageHandler::ShowUI() {
+#if !BUILDFLAG(IS_ANDROID)
   if (ui_ && ui_->embedder()) {
     ui_->embedder()->ShowUI();
   }
+#endif
 }
 
 AegisAgentPageHandler::~AegisAgentPageHandler() = default;
@@ -296,13 +448,56 @@ void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
   std::move(callback).Run(BuildSnapshot());
 }
 
+void AegisAgentPageHandler::ConfigureModel(const std::string& provider,
+                                           const std::string& base_url,
+                                           const std::string& model,
+                                           const std::string& api_key,
+                                           bool clear_api_key,
+                                           ConfigureModelCallback callback) {
+  last_error_.clear();
+  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
+  if (!core_service) {
+    last_error_ = "Model settings are unavailable for this profile";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  core_service->SetModelSettings(
+      provider, base_url, model, api_key, clear_api_key,
+      base::BindOnce(&AegisAgentPageHandler::OnModelConfigured,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+void AegisAgentPageHandler::ListModels(const std::string& provider,
+                                       const std::string& base_url,
+                                       const std::string& api_key,
+                                       ListModelsCallback callback) {
+  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
+  if (!core_service) {
+    std::move(callback).Run(
+        false, "Model discovery is unavailable for this profile", {});
+    return;
+  }
+  core_service->ListModels(
+      provider, base_url, api_key,
+      base::BindOnce(&AegisAgentPageHandler::OnModelsListed,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
 void AegisAgentPageHandler::CreateTask(
     const std::string& goal,
     aegis_agent::mojom::AgentMode mode,
     aegis_agent::mojom::Workflow workflow,
     const std::vector<std::string>& approved_origins,
+    int32_t schedule_interval_minutes,
     CreateTaskCallback callback) {
   last_error_.clear();
+  if (profile_ && profile_->GetPrefs() &&
+      base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
+      !profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+    // Pressing the primary start button is an explicit per-Profile opt-in.
+    // Merely opening the panel still leaves the Agent disabled.
+    profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, true);
+  }
   service_ =
       profile_ ? aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_)
                : nullptr;
@@ -312,78 +507,169 @@ void AegisAgentPageHandler::CreateTask(
       ConvertWorkflow(workflow);
   const std::optional<aegis::agent::AgentModelDestination> model_destination =
       service_ ? service_->ConfiguredModelDestination() : std::nullopt;
-  tabs::TabInterface* tab = ActiveTab(browser_);
-  GURL task_url = tab ? tab->GetURL() : GURL();
-  std::vector<std::string> resolved_origin_values = approved_origins;
-  const bool has_current_web_target =
-      tab && task_url.is_valid() && task_url.SchemeIsHTTPOrHTTPS();
+  std::optional<std::vector<url::Origin>> requested_origins;
+  if (!approved_origins.empty()) {
+    requested_origins = ParseApprovedOrigins(approved_origins);
+  }
   const bool invalid_explicit_origins =
-      has_current_web_target && !approved_origins.empty() &&
-      !ParseApprovedOrigins(task_url, approved_origins);
-  const bool browser_only_task = converted_workflow &&
-                                 !WorkflowNeedsWebTarget(*converted_workflow) &&
-                                 resolved_origin_values.empty();
+      !approved_origins.empty() && !requested_origins;
+  std::string resolved_goal =
+      converted_mode ? BindScheduleToGoal(goal, schedule_interval_minutes)
+                     : goal;
   if (!service_ || !service_->IsEnabled()) {
     last_error_ = "Browser Agent is disabled";
   } else if (!converted_mode || !converted_workflow || goal.empty() ||
-             goal.size() > 4096u || invalid_explicit_origins) {
+             resolved_goal.size() > 4096u || invalid_explicit_origins ||
+             !IsValidSchedule(*converted_mode, schedule_interval_minutes)) {
     last_error_ = "Task input is invalid";
   } else if (!model_destination) {
     last_error_ = "Configure a valid Agent model provider before planning";
   } else {
-    const bool has_web_target =
-        tab && tab->GetURL().is_valid() && tab->GetURL().SchemeIsHTTPOrHTTPS();
-    if (!has_web_target && !browser_only_task) {
-      std::optional<GURL> automatic_url;
-      if (!resolved_origin_values.empty()) {
-        const GURL explicit_origin(resolved_origin_values.front());
-        if (explicit_origin.is_valid() &&
-            explicit_origin.SchemeIsHTTPOrHTTPS()) {
-          automatic_url = explicit_origin;
-        }
-      } else {
-        automatic_url = ResolveAutomaticTaskUrl(profile_, goal);
-      }
-      tab = automatic_url ? OpenAutomaticTaskTab(browser_, *automatic_url)
-                          : nullptr;
-      if (tab && resolved_origin_values.empty()) {
-        resolved_origin_values.push_back(
-            url::Origin::Create(*automatic_url).Serialize());
-      }
-      if (tab) {
-        task_url = *automatic_url;
-      }
-    } else if (has_web_target && resolved_origin_values.empty() &&
-               !browser_only_task) {
-      resolved_origin_values.push_back(
-          url::Origin::Create(tab->GetURL()).Serialize());
+    const AgentWorkflowKind resolved_workflow =
+        aegis::agent::ConstrainWorkflowToUserIntent(resolved_goal,
+                                                    *converted_workflow);
+    const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(resolved_goal);
+    const bool use_current_page = !requested_origins && !explicit_url &&
+                                  GoalRefersToCurrentPage(resolved_goal);
+    const bool browser_only = !requested_origins && !explicit_url &&
+                              !use_current_page &&
+                              !WorkflowNeedsWebTarget(resolved_workflow);
+    if (!requested_origins && !explicit_url && !use_current_page &&
+        !browser_only) {
+      service_->RouteGoal(
+          resolved_goal, resolved_workflow,
+          base::BindOnce(&AegisAgentPageHandler::OnGoalRouted,
+                         weak_ptr_factory_.GetWeakPtr(), resolved_goal,
+                         *converted_mode, std::move(requested_origins),
+                         std::move(callback)));
+      return;
     }
+    CreateResolvedTask(std::move(resolved_goal), *converted_mode,
+                       resolved_workflow, std::move(requested_origins),
+                       explicit_url, browser_only, use_current_page,
+                       std::move(callback));
+    return;
+  }
+  std::move(callback).Run(BuildSnapshot());
+}
 
-    std::optional<std::vector<url::Origin>> origins;
-    if (browser_only_task) {
-      origins.emplace();
-    } else if (tab) {
-      origins = ParseApprovedOrigins(task_url, resolved_origin_values);
-    }
-    if (!tab || !origins) {
-      last_error_ = "A related page could not be opened for this task";
+void AegisAgentPageHandler::OnGoalRouted(
+    std::string goal,
+    AgentMode mode,
+    std::optional<std::vector<url::Origin>> requested_origins,
+    CreateTaskCallback callback,
+    bool ok,
+    std::string error,
+    std::optional<aegis::agent::AgentGoalRoute> route) {
+  if (!ok || !route) {
+    last_error_ = !error.empty() ? std::move(error)
+                                 : "AI could not understand the browser goal";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  *route =
+      aegis::agent::ConstrainGoalRouteToUserIntent(goal, std::move(*route));
+  std::optional<GURL> routed_url;
+  bool browser_only = false;
+  bool use_current_page = false;
+  switch (route->entry_kind) {
+    case aegis::agent::AgentGoalEntryKind::kBrowserOnly:
+      // browser_only means no new navigation. Native browser-data workflows
+      // need no page origin; all other workflows bind the public content tab
+      // that was active when the user opened Agent.
+      browser_only = route->workflow == AgentWorkflowKind::kBrowserSteward;
+      use_current_page = !browser_only;
+      break;
+    case aegis::agent::AgentGoalEntryKind::kOpenUrl:
+      routed_url = GURL(route->target);
+      break;
+    case aegis::agent::AgentGoalEntryKind::kWebSearch:
+      routed_url = SearchUrlForQuery(profile_, route->target);
+      break;
+  }
+  if (!browser_only && !use_current_page && !routed_url) {
+    last_error_ = "AI selected a browser target that could not be opened";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  CreateResolvedTask(std::move(goal), mode, route->workflow,
+                     std::move(requested_origins), std::move(routed_url),
+                     browser_only, use_current_page,
+                     std::move(callback));
+}
+
+void AegisAgentPageHandler::CreateResolvedTask(
+    std::string goal,
+    AgentMode mode,
+    AgentWorkflowKind workflow,
+    std::optional<std::vector<url::Origin>> requested_origins,
+    std::optional<GURL> routed_url,
+    bool browser_only,
+    bool use_current_page,
+    CreateTaskCallback callback) {
+  const std::optional<aegis::agent::AgentModelDestination> model_destination =
+      service_ ? service_->ConfiguredModelDestination() : std::nullopt;
+  tabs::TabInterface* tab = ContentTab(browser_);
+  GURL task_url = tab ? tab->GetURL() : GURL();
+  std::optional<std::vector<url::Origin>> origins;
+  if (use_current_page) {
+    if (!tab || !task_url.is_valid() || !task_url.SchemeIsHTTPOrHTTPS()) {
+      last_error_ = "The current public page is unavailable for this task";
       std::move(callback).Run(BuildSnapshot());
       return;
     }
-    std::optional<aegis::agent::AgentTaskScope> scope =
-        aegis::agent::BuildAgentWorkflowScope(*converted_workflow, *origins,
-                                              {tab->GetHandle().raw_value()},
-                                              *model_destination);
-    AgentTask* task =
-        scope ? service_->CreateTask(goal, *converted_mode, std::move(*scope))
-              : nullptr;
-    if (!task) {
-      last_error_ = "Task scope could not be created";
-    } else {
-      service_->ClearPendingInvocationContext();
-      active_task_id_ = task->id();
-      ObserveTask(task);
+    origins = AutomaticTaskOrigins(task_url);
+  } else if (browser_only) {
+    origins.emplace();
+  } else {
+    const bool use_approved_current_page =
+        tab && requested_origins &&
+        IncludesOrigin(*requested_origins, tab->GetURL());
+    if (!use_approved_current_page) {
+      std::optional<GURL> target =
+          requested_origins
+              ? std::make_optional(requested_origins->front().GetURL())
+              : std::move(routed_url);
+      tab = target ? OpenAutomaticTaskTab(browser_, *target) : nullptr;
+      if (tab) {
+        task_url = *target;
+      }
     }
+    if (requested_origins) {
+      origins = std::move(requested_origins);
+    } else if (tab && task_url.is_valid() && task_url.SchemeIsHTTPOrHTTPS()) {
+      origins = AutomaticTaskOrigins(task_url);
+    }
+  }
+  if (!tab || !origins || !model_destination) {
+    last_error_ = "A related page could not be opened for this task";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  std::optional<aegis::agent::AgentTaskScope> scope =
+      mode == AgentMode::kAutomate
+          ? aegis::agent::BuildAgentAutomationScope(
+                workflow, std::move(*origins), {tab->GetHandle().raw_value()},
+                *model_destination)
+          : aegis::agent::BuildAgentWorkflowScope(
+                workflow, std::move(*origins), {tab->GetHandle().raw_value()},
+                *model_destination);
+  if (scope && browser_only && GoalRequestsWindowTabMetadata(goal) &&
+      browser_ && browser_->GetProfile() == profile_ &&
+      !profile_->IsOffTheRecord() &&
+      browser_->GetType() == BrowserWindowInterface::TYPE_NORMAL &&
+      !browser_->IsDeleteScheduled()) {
+    scope->tab_metadata_window_id = browser_->GetSessionID().id();
+  }
+  AgentTask* task =
+      scope ? service_->CreateTask(std::move(goal), mode, std::move(*scope))
+            : nullptr;
+  if (!task) {
+    last_error_ = "Task scope could not be created";
+  } else {
+    service_->ClearPendingInvocationContext();
+    active_task_id_ = task->id();
+    ObserveTask(task);
   }
   std::move(callback).Run(BuildSnapshot());
 }
@@ -551,6 +837,20 @@ void AegisAgentPageHandler::OnPlanReady(const std::string& task_id,
   PushSnapshot();
 }
 
+void AegisAgentPageHandler::OnModelConfigured(ConfigureModelCallback callback,
+                                              bool ok,
+                                              std::string error) {
+  last_error_ = ok ? std::string() : std::move(error);
+  std::move(callback).Run(BuildSnapshot());
+}
+
+void AegisAgentPageHandler::OnModelsListed(ListModelsCallback callback,
+                                           bool ok,
+                                           std::string error,
+                                           std::vector<std::string> models) {
+  std::move(callback).Run(ok, std::move(error), std::move(models));
+}
+
 void AegisAgentPageHandler::OnRunFinished(
     const std::string& task_id,
     bool ok,
@@ -616,7 +916,25 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
   snapshot->agent_enabled =
       profile_ && profile_->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled);
-  tabs::TabInterface* tab = ActiveTab(browser_);
+  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
+  if (core_service) {
+    snapshot->model_provider = core_service->ConfiguredModelProvider();
+    snapshot->model_base_url = core_service->ConfiguredModelBaseUrl();
+    snapshot->model_name = core_service->ConfiguredModelName();
+    PrefService* prefs = profile_->GetPrefs();
+    const std::optional<aegis::ModelProvider> provider =
+        aegis::ParseModelProvider(snapshot->model_provider);
+    snapshot->model_configured =
+        HasUserSetting(prefs, aegis::prefs::kModelProvider) &&
+        HasUserSetting(prefs, aegis::prefs::kModelBaseUrl) &&
+        HasUserSetting(prefs, aegis::prefs::kModelName) && provider &&
+        core_service
+            ->ResolveModelBaseUrl(snapshot->model_provider,
+                                  snapshot->model_base_url)
+            .has_value() &&
+        aegis::IsValidModelName(*provider, snapshot->model_name);
+  }
+  tabs::TabInterface* tab = ContentTab(browser_);
   if (tab) {
     snapshot->active_tab_id = tab->GetHandle().raw_value();
   }
@@ -647,7 +965,14 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
       value->next_run = base::NumberToString(
           monitor.next_run.InMillisecondsFSinceUnixEpoch());
       value->paused = !monitor.enabled;
+      value->session_only = monitor.session_only;
       value->failures = monitor.consecutive_failures;
+      value->last_check_status = static_cast<int>(monitor.last_check_status);
+      value->last_http_status = monitor.last_http_status;
+      value->change_summary =
+          aegis::agent::ReadAgentMonitorSummary(monitor.last_observation);
+      value->change_summary_partial =
+          aegis::agent::IsPartialAgentMonitorSummary(monitor.last_observation);
       snapshot->monitors.push_back(std::move(value));
     }
   }
@@ -706,6 +1031,14 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
             : "cloud";
     plan_value->max_risk = RiskName(max_risk);
     snapshot->plan = std::move(plan_value);
+  }
+
+  if (const aegis::agent::AgentCompletionSummary* completion =
+          service_->GetCompletionSummary(task->id())) {
+    snapshot->result_summary = completion->summary;
+    snapshot->result_outcome = completion->outcome;
+    snapshot->result_sources = completion->source_urls;
+    snapshot->unfinished_items = completion->unfinished_items;
   }
 
   if (const aegis::agent::AgentToolCall* pending =

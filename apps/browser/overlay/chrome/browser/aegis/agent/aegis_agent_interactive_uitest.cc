@@ -98,34 +98,31 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
             side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
         ASSERT_TRUE(contents);
         ASSERT_TRUE(content::WaitForLoadStop(contents));
-        EXPECT_EQ(content::EvalJs(contents, R"JS(
-              new Promise(resolve => {
-                const deadline = Date.now() + 5000;
-                const poll = () => {
-                  const value = document.querySelector('#origins')?.value || '';
-                  if (value || Date.now() >= deadline) {
-                    resolve(value);
-                    return;
-                  }
-                  setTimeout(poll, 10);
-                };
-                poll();
-              })
-            )JS")
-                      .ExtractString(),
-                  expected_origin);
         EXPECT_TRUE(content::EvalJs(contents, R"JS(
           (() => {
-            const modes = [...document.querySelectorAll('#mode-group button')];
-            if (modes.length !== 3) {
+            const quick =
+                [...document.querySelectorAll('#quick-actions button')];
+            const automationButton =
+                document.querySelector('#automation-view-button');
+            const brand = document.querySelector('.mark');
+            if (quick.length !== 6 || !automationButton ||
+                !(brand instanceof HTMLImageElement) ||
+                brand.getAttribute('src') !== 'product_logo.svg' ||
+                brand.getAttribute('alt') !== '' ||
+                document.querySelector('#advanced-settings')) {
               return false;
             }
-            modes[1].click();
-            const updatedModes =
-                [...document.querySelectorAll('#mode-group button')];
-            document.querySelector('#goal').focus();
-            return updatedModes[1].getAttribute('aria-checked') === 'true' &&
-                document.activeElement.id === 'goal' &&
+            automationButton.click();
+            const automationVisible =
+                !document.querySelector('#automation-view').hidden &&
+                document.querySelector('#task-view').hidden &&
+                document.querySelectorAll('#automation-presets button')
+                    .length === 4 &&
+                document.querySelector('#automation-schedule').value === '60';
+            document.querySelector('#task-view-button').click();
+            quick[0].click();
+            return automationVisible &&
+                document.querySelector('#goal').value.length > 0 &&
                 document.querySelector('#start-button').disabled &&
                 document.querySelector('#pause-button').disabled &&
                 document.querySelector('#approve-button').disabled &&
@@ -141,9 +138,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
         scope.allowed_origins = {url::Origin::Create(page_url)};
         scope.allowed_tab_ids = {
             browser()->GetActiveTabInterface()->GetHandle().raw_value()};
-        scope.allowed_tools = {"page.observe", "monitor.create",
-                               "monitor.list", "monitor.pause",
-                               "monitor.delete"};
+        scope.allowed_tools = {"page.observe", "monitor.create", "monitor.list",
+                               "monitor.pause", "monitor.delete"};
         scope.allowed_data_classes = {AgentDataClass::kPublicPage};
         scope.model_destination.provider = "aegis-local";
         scope.model_destination.model = "fixture";
@@ -152,8 +148,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
         ASSERT_TRUE(task);
         monitor_task_id = task->id();
         ASSERT_TRUE(task->TransitionTo(AgentTaskState::kPlanning, "test"));
-        ASSERT_TRUE(task->TransitionTo(AgentTaskState::kAwaitingTaskConsent,
-                                       "test"));
+        ASSERT_TRUE(
+            task->TransitionTo(AgentTaskState::kAwaitingTaskConsent, "test"));
         ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRunning, "test"));
         AgentMonitorDefinition monitor;
         monitor.monitor_id = "monitor-ui-fixture";
@@ -166,8 +162,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
         monitor.interval = base::Minutes(15);
         monitor.next_run = base::Time::Now() + base::Hours(1);
         ASSERT_TRUE(service->UpsertMonitor(std::move(monitor)));
-        ASSERT_TRUE(
-            task->TransitionTo(AgentTaskState::kVerifying, "verified"));
+        ASSERT_TRUE(task->TransitionTo(AgentTaskState::kVerifying, "verified"));
         ASSERT_TRUE(service->CompleteTask(monitor_task_id));
       }),
       Do([&]() {
@@ -176,13 +171,17 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
         ASSERT_TRUE(contents);
         EXPECT_TRUE(content::EvalJs(contents, R"JS(
           new Promise(resolve => {
+            document.querySelector('#automation-view-button').click();
             const deadline = Date.now() + 5000;
             const poll = () => {
               const toggle = document.querySelector(
                   '.monitor-actions button[data-monitor-action="toggle"]');
               const remove = document.querySelector(
                   '.monitor-actions button[data-monitor-action="delete"]');
-              if (toggle && remove && !toggle.disabled && !remove.disabled) {
+              const automationVisible =
+                  !document.querySelector('#automation-view').hidden;
+              if (automationVisible && toggle && remove &&
+                  !toggle.disabled && !remove.disabled) {
                 toggle.click();
                 resolve(true);
                 return;
@@ -232,15 +231,15 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
                        SettingsEntryOpensAgentSidePanel) {
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), GURL(chrome::kChromeUIAegisURL)));
+  ASSERT_TRUE(
+      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
   SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
   ASSERT_TRUE(side_panel);
   ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
 
-  ASSERT_TRUE(content::EvalJs(
-                  browser()->GetActiveTabInterface()->GetContents(), R"JS(
+  ASSERT_TRUE(
+      content::EvalJs(browser()->GetActiveTabInterface()->GetContents(), R"JS(
         (() => {
           const button = document.querySelector('#browser-agent-open');
           if (!(button instanceof HTMLButtonElement) || button.disabled) {
@@ -250,7 +249,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
           return true;
         })()
       )JS")
-                  .ExtractBool());
+          .ExtractBool());
   ASSERT_TRUE(base::test::RunUntil([&]() {
     return side_panel->IsSidePanelEntryShowing(
         SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));

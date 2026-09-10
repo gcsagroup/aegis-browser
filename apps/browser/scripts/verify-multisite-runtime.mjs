@@ -18,10 +18,15 @@ import {
 } from 'node:fs/promises';
 import {homedir, tmpdir} from 'node:os';
 import {createServer as createHttpServer} from 'node:http';
-import {basename, dirname, join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import process from 'node:process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
+import {
+  AEGIS_MAC_APP_BUNDLE_NAME,
+  macAppExecutableName,
+  macAppExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const BROWSER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHROMIUM_ROOT_MARKER = join(BROWSER_ROOT, '.chromium-root');
@@ -86,7 +91,7 @@ const DEFAULT_RELEASE_APP = join(
   'src',
   'out',
   'AegisRelease',
-  'Chromium.app',
+  AEGIS_MAC_APP_BUNDLE_NAME,
 );
 
 function printUsage() {
@@ -94,7 +99,7 @@ function printUsage() {
   node apps/browser/scripts/verify-multisite-runtime.mjs [选项]
 
 选项：
-  --chromium PATH      Release Chromium.app 或 Chromium 可执行文件
+  --chromium PATH      Release GCSA Aegis.app 或浏览器可执行文件
                        默认：${DEFAULT_RELEASE_APP}
   --url URL            覆盖默认站点；可重复指定
   --feature-mode MODE  default、aegis-off、tracker-off、filter-off、
@@ -265,8 +270,11 @@ function parseArgs(argv) {
 
 async function resolveChromiumExecutable(inputPath) {
   let executable = resolve(inputPath);
-  if (basename(executable).endsWith('.app')) {
-    executable = join(executable, 'Contents', 'MacOS', 'Chromium');
+  if (executable.endsWith('.app')) {
+    executable = macAppExecutablePath(
+      executable,
+      await macAppExecutableName(executable),
+    );
   }
   const metadata = await stat(executable).catch(() => null);
   assert(metadata?.isFile(), `Chromium 可执行文件不存在：${executable}`);
@@ -887,15 +895,16 @@ async function runVerification(options, chromiumExecutable) {
   }
   const logPath = join(profileDir, 'chromium.log');
   const netLogPath = join(profileDir, 'netlog.json');
-  const globalCrashpad = join(
+  // 不能把其他平台上不存在的 macOS 目录算作全局崩溃检查通过。
+  const globalCrashpad = process.platform === 'darwin' ? join(
     homedir(),
     'Library',
     'Application Support',
     'Chromium',
     'Crashpad',
     'pending',
-  );
-  const dumpsBefore = new Set(await listDumpFiles(globalCrashpad));
+  ) : null;
+  const dumpsBefore = new Set(globalCrashpad ? await listDumpFiles(globalCrashpad) : []);
   const logFd = openSync(logPath, 'w');
   if (options.threatIndex) {
     const threatDir = join(profileDir, 'Default', 'AegisThreatFeeds');
@@ -1084,7 +1093,7 @@ async function runVerification(options, chromiumExecutable) {
   await terminateOwnedProcess(browserProcess);
   await credentialFixture?.close();
   const profileDumps = await listDumpFiles(profileDir);
-  const dumpsAfter = await listDumpFiles(globalCrashpad);
+  const dumpsAfter = globalCrashpad ? await listDumpFiles(globalCrashpad) : [];
   const newGlobalDumps = dumpsAfter.filter((path) => !dumpsBefore.has(path));
   const logText = await readFile(logPath, 'utf8').catch(() => '');
   const fatalSignals = findFatalSignals(logText);
@@ -1123,6 +1132,12 @@ async function runVerification(options, chromiumExecutable) {
     expectAegisInterstitial: options.expectAegisInterstitial,
     finishedAt: new Date().toISOString(),
     newGlobalDumps,
+    globalCrashpadEvidence: {
+      supported: globalCrashpad !== null,
+      root: globalCrashpad,
+      platform: process.platform,
+      limitation: globalCrashpad ? null : '当前验证器仅覆盖临时 Profile 的 dump 与进程日志，不覆盖该平台全局崩溃目录',
+    },
     outboundAudit,
     passed: !failure,
     profileDir,
@@ -1147,7 +1162,8 @@ async function runVerification(options, chromiumExecutable) {
   process.stdout.write(
     `${options.startupOnly ? '启动观察门' : '多站点门'}通过：` +
       `${results.length}/${results.length}，` +
-      `feature mode=${options.featureMode}，0 dump，0 FATAL。\n`,
+      `feature mode=${options.featureMode}，临时 Profile 0 dump，0 FATAL。` +
+      (globalCrashpad ? '全局 Crashpad 无新增 dump。\n' : '未检查该平台全局崩溃目录。\n'),
   );
 }
 

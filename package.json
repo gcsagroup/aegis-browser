@@ -7,7 +7,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "build": "pnpm --filter @gcsa-aegis/core build",
-    "quality:fast": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm --filter @gcsa-aegis/browser test:scripts && pnpm run contracts:check && pnpm run build",
+    "quality:fast": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm --filter @gcsa-aegis/browser test:scripts && pnpm --filter @gcsa-aegis/browser test:agent-ui && pnpm --filter @gcsa-aegis/browser test:android-target && pnpm --filter @gcsa-aegis/browser test:android-ui && pnpm --filter @gcsa-aegis/browser test:model-relay && pnpm run contracts:check && pnpm run build",
     "contracts:check": "node ./scripts/check-repo-contracts.mjs",
     "threat-feeds:compile": "pnpm --filter @gcsa-aegis/core compile-threat-feeds",
     "threat-feeds:install": "pnpm --filter @gcsa-aegis/browser install-threat-index",
@@ -24,7 +24,7 @@
     "browser:apply-patches": "pnpm --filter @gcsa-aegis/browser apply-patches",
     "browser:build": "pnpm --filter @gcsa-aegis/browser build",
     "browser:build:release": "pnpm --filter @gcsa-aegis/browser build:release",
-    "browser:run": "pnpm --filter @gcsa-aegis/browser run",
+    "browser:run": "pnpm --filter @gcsa-aegis/browser run run",
     "browser:verify:cdp-runtime": "pnpm --filter @gcsa-aegis/browser verify:cdp-runtime",
     "browser:verify:agent-runtime": "pnpm --filter @gcsa-aegis/browser verify:agent-runtime",
     "browser:verify:download-runtime": "pnpm --filter @gcsa-aegis/browser verify:download-runtime",

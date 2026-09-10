@@ -3,12 +3,16 @@
 
 #include "chrome/common/aegis/cdp_target_filter.h"
 
+#include <atomic>
+
 #include "url/gurl.h"
 #include "url/origin.h"
 #include "url/url_constants.h"
 
 namespace aegis {
 namespace {
+
+std::atomic_bool g_remote_cdp_blocked_for_incognito = false;
 
 bool IsRemoteWebTargetType(std::string_view type) {
   return type == "page" || type == "tab" || type == "iframe" ||
@@ -51,9 +55,21 @@ bool IsAllowedBrowserOperation(RemoteCdpTargetOperation operation) {
 
 }  // namespace
 
+void SetRemoteCdpBlockedForIncognito(bool blocked) {
+  g_remote_cdp_blocked_for_incognito.store(blocked, std::memory_order_release);
+}
+
+bool IsRemoteCdpBlockedForIncognito() {
+  return g_remote_cdp_blocked_for_incognito.load(std::memory_order_acquire);
+}
+
 bool ShouldAllowRemoteCdpTargetOperation(RemoteCdpTargetOperation operation,
                                          std::string_view type,
                                          const GURL& url) {
+  if (IsRemoteCdpBlockedForIncognito()) {
+    return false;
+  }
+
   // These commands turn a page target into a browser-protocol bridge or open
   // a privileged local DevTools UI. They are never needed for remote browser
   // automation and must not inherit the page URL allowance.

@@ -20,9 +20,14 @@ import {
 import {createServer as createHttpServer} from 'node:http';
 import {connect as connectTcp} from 'node:net';
 import {homedir, tmpdir} from 'node:os';
-import {basename, dirname, join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {
+  AEGIS_MAC_APP_BUNDLE_NAME,
+  macAppExecutableName,
+  macAppExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const BROWSER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHROMIUM_ROOT_MARKER = join(BROWSER_ROOT, '.chromium-root');
@@ -46,7 +51,7 @@ function resolveDefaultChromiumRoot() {
 const DEFAULT_DEV_OUT = process.env.OUT_DIR?.trim()
   ? resolve(process.env.OUT_DIR.trim())
   : join(resolveDefaultChromiumRoot(), 'src', 'out', 'AegisLocalDev');
-const DEFAULT_CHROMIUM = join(DEFAULT_DEV_OUT, 'Chromium.app');
+const DEFAULT_CHROMIUM = join(DEFAULT_DEV_OUT, AEGIS_MAC_APP_BUNDLE_NAME);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const POLL_INTERVAL_MS = 50;
 
@@ -98,7 +103,7 @@ function printUsage() {
   node apps/browser/scripts/verify-cdp-runtime.mjs [选项]
 
 选项：
-  --chromium PATH   Chromium.app 或 Chromium 可执行文件路径
+  --chromium PATH   GCSA Aegis.app 或浏览器可执行文件路径
                     默认：${DEFAULT_CHROMIUM}
   --timeout-ms N    单步超时，默认 ${DEFAULT_TIMEOUT_MS}
   --headed          使用可见窗口；默认使用 --headless=new
@@ -153,8 +158,11 @@ function parseArgs(argv) {
 
 async function resolveChromiumExecutable(inputPath) {
   let executable = resolve(inputPath);
-  if (basename(executable).endsWith('.app')) {
-    executable = join(executable, 'Contents', 'MacOS', 'Chromium');
+  if (executable.endsWith('.app')) {
+    executable = macAppExecutablePath(
+      executable,
+      await macAppExecutableName(executable),
+    );
   }
   const metadata = await stat(executable).catch(() => null);
   assert(metadata?.isFile(), `Chromium 可执行文件不存在：${executable}`);

@@ -18,6 +18,11 @@ import {homedir, tmpdir} from 'node:os';
 import {basename, dirname, join, resolve} from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {
+  AEGIS_MAC_APP_BUNDLE_NAME,
+  macAppExecutableName,
+  macAppExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MARKER = join(ROOT, '.chromium-root');
@@ -45,7 +50,12 @@ function defaultChromium() {
     }
   }
   return join(
-      chromiumRoot, 'src', 'out', 'AegisLocalDev', 'Chromium.app');
+    chromiumRoot,
+    'src',
+    'out',
+    'AegisLocalDev',
+    AEGIS_MAC_APP_BUNDLE_NAME,
+  );
 }
 
 function parseArgs(argv) {
@@ -82,7 +92,10 @@ function parseArgs(argv) {
 async function executableFrom(inputPath) {
   let executable = resolve(inputPath);
   if (basename(executable).endsWith('.app')) {
-    executable = join(executable, 'Contents', 'MacOS', 'Chromium');
+    executable = macAppExecutablePath(
+      executable,
+      await macAppExecutableName(executable),
+    );
   }
   const metadata = await stat(executable).catch(() => null);
   assert(metadata?.isFile(), 'Chromium 可执行文件不存在：' + executable);

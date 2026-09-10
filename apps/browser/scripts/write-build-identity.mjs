@@ -31,6 +31,11 @@ import {
 } from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {
+  macAppExecutableNameSync,
+  macAppExecutablePath,
+  macAppFrameworkExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const scriptPath = realpathSync(fileURLToPath(import.meta.url));
 const scriptDir = dirname(scriptPath);
@@ -582,10 +587,14 @@ function artifactEvidence(artifactRoot, path) {
       : fail(`artifact is not a file or directory: ${absolutePath}`);
   const result = {name: basename(absolutePath), relativePath, ...evidence};
   if (entry.isDirectory() && basename(absolutePath).endsWith('.app')) {
+    const executableName = macAppExecutableNameSync(absolutePath);
     const criticalFiles = [
       'Contents/Info.plist',
-      'Contents/MacOS/Chromium',
-      'Contents/Frameworks/Chromium Framework.framework/Versions/Current/Chromium Framework',
+      relative(absolutePath, macAppExecutablePath(absolutePath, executableName)),
+      relative(
+        absolutePath,
+        macAppFrameworkExecutablePath(absolutePath, executableName),
+      ),
     ];
     result.criticalFiles = criticalFiles.map((name) => ({
       name,
@@ -1274,6 +1283,45 @@ function runSelfTest() {
         rejected = error instanceof IdentityError;
       }
       assert(rejected, 'path traversal was accepted');
+    });
+    record('品牌 App 身份绑定使用 Info.plist 中的可执行文件名', () => {
+      const app = join(root, 'GCSA Aegis.app');
+      const executableName = 'GCSA Aegis';
+      mkdirSync(join(app, 'Contents', 'MacOS'), {recursive: true});
+      mkdirSync(
+        join(
+          app,
+          'Contents',
+          'Frameworks',
+          `${executableName} Framework.framework`,
+          'Versions',
+          'Current',
+        ),
+        {recursive: true},
+      );
+      writeFileSync(
+        join(app, 'Contents', 'Info.plist'),
+        '<plist><dict><key>CFBundleExecutable</key>' +
+          `<string>${executableName}</string></dict></plist>`,
+      );
+      writeFileSync(macAppExecutablePath(app, executableName), 'browser');
+      writeFileSync(
+        macAppFrameworkExecutablePath(app, executableName),
+        'framework',
+      );
+      const evidence = artifactEvidence(root, app);
+      assert(
+        evidence.criticalFiles.some(
+          (entry) => entry.name === 'Contents/MacOS/GCSA Aegis',
+        ),
+        'branded executable was not bound',
+      );
+      assert(
+        evidence.criticalFiles.some((entry) =>
+          entry.name.endsWith('/GCSA Aegis Framework'),
+        ),
+        'branded framework was not bound',
+      );
     });
     record('artifact 父目录符号链接逃逸会被拒绝', () => {
       const artifactRoot = join(root, 'artifact-root');

@@ -8,6 +8,8 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "sql/database.h"
+#include "sql/meta_table.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -80,6 +82,49 @@ TEST(AegisAgentTaskStoreTest, SavesOnlyRedactedMetadataAndRecoversSafely) {
   ASSERT_TRUE(base::ReadFileToString(path, &database_bytes));
   EXPECT_EQ(database_bytes.find("highly-sensitive-token"), std::string::npos);
   EXPECT_EQ(database_bytes.find("goal stays in memory"), std::string::npos);
+}
+
+TEST(AegisAgentTaskStoreTest, InMemoryStoreNeverCreatesOrRecoversDiskState) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath path =
+      temp_dir.GetPath().AppendASCII("incognito-tasks.sqlite");
+  {
+    AgentTaskStore store(path, /*in_memory=*/true);
+    EXPECT_TRUE(store.is_in_memory_for_testing());
+    ASSERT_TRUE(store.Initialize());
+    AgentTask task("incognito-task", "ephemeral goal", AgentMode::kAsk,
+                   StoreTestScope());
+    ASSERT_TRUE(store.SaveTask(task, "Ephemeral task", false));
+    EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
+    EXPECT_FALSE(base::PathExists(path));
+  }
+
+  AgentTaskStore fresh_store(path, /*in_memory=*/true);
+  ASSERT_TRUE(fresh_store.Initialize());
+  EXPECT_TRUE(fresh_store.LoadUnfinishedTasks().empty());
+  EXPECT_FALSE(base::PathExists(path));
+}
+
+TEST(AegisAgentTaskStoreTest, RoundTripsBrowserBoundWindowMetadataScope) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  AgentTaskStore store(temp_dir.GetPath().AppendASCII("tasks.sqlite"));
+  ASSERT_TRUE(store.Initialize());
+  AgentTaskScope scope = StoreTestScope();
+  scope.allowed_tools.insert("tab.list");
+  scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
+  scope.tab_metadata_window_id = 41;
+  AgentTask task("window-metadata", "统计当前窗口标签", AgentMode::kAsk, scope);
+  ASSERT_TRUE(store.SaveTask(task, "统计当前窗口标签", false));
+  const auto tasks = store.LoadUnfinishedTasks();
+  ASSERT_EQ(tasks.size(), 1u);
+  auto restored = AgentTaskStore::DeserializeScope(tasks[0].scope_json);
+  ASSERT_TRUE(restored);
+  EXPECT_EQ(restored->tab_metadata_window_id, 41);
+  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
+  EXPECT_TRUE(scope.IsNoBroaderThan(*restored));
+  EXPECT_FALSE(restored->AllowsTab(41));
 }
 
 TEST(AegisAgentTaskStoreTest, RejectsBroadenedOrMalformedStoredScope) {
@@ -159,6 +204,8 @@ TEST(AegisAgentTaskStoreTest,
         "5064bb88";
     monitor.target_ciphertext = "fixture-encrypted-bytes";
     monitor.last_value_hash = "sha256:baseline";
+    monitor.last_check_status = AgentMonitorCheckStatus::kRateLimited;
+    monitor.last_http_status = 429;
     monitor.interval = base::Minutes(30);
     monitor.next_run = scheduled_at;
     ASSERT_TRUE(store.SaveMonitor(monitor));
@@ -173,6 +220,9 @@ TEST(AegisAgentTaskStoreTest,
   EXPECT_EQ(recovered[0].origin.Serialize(), "https://fixture.example");
   EXPECT_EQ(recovered[0].target_ciphertext, "fixture-encrypted-bytes");
   EXPECT_EQ(recovered[0].last_value_hash, "sha256:baseline");
+  EXPECT_EQ(recovered[0].last_check_status,
+            AgentMonitorCheckStatus::kRateLimited);
+  EXPECT_EQ(recovered[0].last_http_status, 429);
   EXPECT_EQ(recovered[0].next_run, scheduled_at);
 
   const base::Time restarted_at = base::Time::Now();
@@ -190,6 +240,247 @@ TEST(AegisAgentTaskStoreTest,
   std::string database_bytes;
   ASSERT_TRUE(base::ReadFileToString(path, &database_bytes));
   EXPECT_EQ(database_bytes.find("/private/path"), std::string::npos);
+}
+
+TEST(AegisAgentTaskStoreTest,
+     MigratesVersionFiveMonitorWithoutLosingEncryptedTarget) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("version-five.sqlite");
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    AgentMonitorDefinition monitor;
+    monitor.monitor_id = "migrate-monitor";
+    monitor.task_id = "migrate-owner";
+    monitor.origin = url::Origin::Create(GURL("https://fixture.example/"));
+    monitor.target_hash = "target-hash";
+    monitor.target_ciphertext = "encrypted-private-path";
+    monitor.last_value_hash = "previous-result";
+    monitor.next_run = base::Time::Now();
+    ASSERT_TRUE(store.SaveMonitor(monitor));
+  }
+  {
+    // 还原旧版实际没有结果状态列的数据库结构。
+    sql::Database legacy("AegisAgent");
+    ASSERT_TRUE(legacy.Open(path));
+    ASSERT_TRUE(legacy.Execute(
+        "ALTER TABLE agent_monitors DROP COLUMN last_check_status"));
+    ASSERT_TRUE(legacy.Execute(
+        "ALTER TABLE agent_monitors DROP COLUMN last_http_status"));
+    ASSERT_TRUE(legacy.Execute(
+        "ALTER TABLE agent_monitors DROP COLUMN last_observation_ciphertext"));
+    sql::MetaTable meta;
+    ASSERT_TRUE(meta.Init(&legacy, 5, 1));
+    ASSERT_TRUE(meta.SetVersionNumber(5));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(1));
+  }
+  AgentTaskStore migrated(path);
+  ASSERT_TRUE(migrated.Initialize());
+  const auto monitors = migrated.LoadMonitors();
+  ASSERT_EQ(monitors.size(), 1u);
+  EXPECT_EQ(monitors[0].target_ciphertext, "encrypted-private-path");
+  EXPECT_EQ(monitors[0].last_value_hash, "previous-result");
+  EXPECT_EQ(monitors[0].last_check_status,
+            AgentMonitorCheckStatus::kNotChecked);
+  EXPECT_EQ(monitors[0].last_http_status, 0);
+  EXPECT_TRUE(monitors[0].last_observation_ciphertext.empty());
+}
+
+TEST(AegisAgentTaskStoreTest, MigratesVersionSixWithoutInventingBaseline) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("version-six.sqlite");
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    AgentMonitorDefinition monitor;
+    monitor.monitor_id = "version-six-monitor";
+    monitor.task_id = "version-six-owner";
+    monitor.origin = url::Origin::Create(GURL("https://fixture.example/"));
+    monitor.target_hash = "target-hash";
+    monitor.target_ciphertext = "encrypted-target";
+    monitor.last_value_hash = "old-hash-without-measured-content";
+    monitor.last_check_status = AgentMonitorCheckStatus::kSucceeded;
+    monitor.last_http_status = 200;
+    ASSERT_TRUE(store.SaveMonitor(monitor));
+  }
+  {
+    sql::Database legacy("AegisAgent");
+    ASSERT_TRUE(legacy.Open(path));
+    ASSERT_TRUE(legacy.Execute(
+        "ALTER TABLE agent_monitors DROP COLUMN last_observation_ciphertext"));
+    sql::MetaTable meta;
+    ASSERT_TRUE(meta.Init(&legacy, 6, 1));
+    ASSERT_TRUE(meta.SetVersionNumber(6));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(1));
+  }
+  AgentTaskStore migrated(path);
+  ASSERT_TRUE(migrated.Initialize());
+  const auto monitors = migrated.LoadMonitors();
+  ASSERT_EQ(monitors.size(), 1u);
+  EXPECT_EQ(monitors[0].target_ciphertext, "encrypted-target");
+  EXPECT_EQ(monitors[0].last_check_status, AgentMonitorCheckStatus::kSucceeded);
+  EXPECT_EQ(monitors[0].last_http_status, 200);
+  EXPECT_EQ(monitors[0].last_value_hash, "old-hash-without-measured-content");
+  EXPECT_TRUE(monitors[0].last_observation.empty());
+  EXPECT_TRUE(monitors[0].last_observation_ciphertext.empty());
+}
+
+TEST(AegisAgentTaskStoreTest, MigratesVersionSevenWithoutLosingMonitorState) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("version-seven.sqlite");
+  AgentMonitorDefinition monitor;
+  monitor.monitor_id = "version-seven-monitor";
+  monitor.task_id = "version-seven-owner";
+  monitor.origin = url::Origin::Create(GURL("https://fixture.example/"));
+  monitor.target_hash = "target-hash";
+  monitor.target_ciphertext = std::string("target\0cipher", 13);
+  monitor.last_value_hash = "previous-result-hash";
+  monitor.last_observation_ciphertext = std::string("observation\0cipher", 18);
+  monitor.last_check_status =
+      AgentMonitorCheckStatus::kSecureStorageUnavailable;
+  monitor.last_http_status = 200;
+  monitor.last_run = base::Time::Now();
+  monitor.next_run = monitor.last_run + base::Hours(1);
+  monitor.consecutive_failures = 2;
+  monitor.enabled = false;
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    ASSERT_TRUE(store.SaveMonitor(monitor));
+  }
+  {
+    sql::Database legacy("AegisAgent");
+    ASSERT_TRUE(legacy.Open(path));
+    sql::MetaTable meta;
+    ASSERT_TRUE(meta.Init(&legacy, 7, 1));
+    ASSERT_TRUE(meta.SetVersionNumber(7));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(1));
+  }
+  // 迁移后再次打开，验证迁移是幂等的，暂停状态和密文字节均未丢失。
+  for (int reopen = 0; reopen < 2; ++reopen) {
+    AgentTaskStore migrated(path);
+    ASSERT_TRUE(migrated.Initialize());
+    const auto monitors = migrated.LoadMonitors();
+    ASSERT_EQ(monitors.size(), 1u);
+    EXPECT_EQ(monitors[0].target_ciphertext, monitor.target_ciphertext);
+    EXPECT_EQ(monitors[0].last_observation_ciphertext,
+              monitor.last_observation_ciphertext);
+    EXPECT_EQ(monitors[0].last_value_hash, monitor.last_value_hash);
+    EXPECT_EQ(monitors[0].last_check_status, monitor.last_check_status);
+    EXPECT_EQ(monitors[0].last_http_status, 200);
+    EXPECT_EQ(monitors[0].last_run, monitor.last_run);
+    EXPECT_EQ(monitors[0].next_run, monitor.next_run);
+    EXPECT_EQ(monitors[0].consecutive_failures, 2);
+    EXPECT_FALSE(monitors[0].enabled);
+    EXPECT_TRUE(monitors[0].last_observation.empty());
+  }
+  sql::Database inspected("AegisAgent");
+  ASSERT_TRUE(inspected.Open(path));
+  sql::MetaTable meta;
+  ASSERT_TRUE(meta.Init(&inspected, 8, 8));
+  EXPECT_EQ(meta.GetVersionNumber(), 8);
+  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 8);
+}
+
+TEST(AegisAgentTaskStoreTest,
+     RestoresSummaryFailureWithoutDroppingOtherMonitors) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("summary-status.sqlite");
+  AgentMonitorDefinition monitor;
+  monitor.monitor_id = "summary-failed";
+  monitor.task_id = "summary-owner";
+  monitor.origin = url::Origin::Create(GURL("https://fixture.example/"));
+  monitor.target_hash = "target-hash";
+  monitor.target_ciphertext = "encrypted-target";
+  monitor.last_observation_ciphertext = "encrypted-last-good-summary";
+  monitor.last_check_status = AgentMonitorCheckStatus::kSummaryUnavailable;
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    ASSERT_TRUE(store.SaveMonitor(monitor));
+    monitor.monitor_id = "unrelated";
+    monitor.last_check_status = AgentMonitorCheckStatus::kSucceeded;
+    ASSERT_TRUE(store.SaveMonitor(monitor));
+  }
+  AgentTaskStore restarted(path);
+  ASSERT_TRUE(restarted.Initialize());
+  const auto monitors = restarted.LoadMonitors();
+  ASSERT_EQ(monitors.size(), 2u);
+  EXPECT_EQ(monitors[0].monitor_id, "summary-failed");
+  EXPECT_EQ(monitors[0].last_check_status,
+            AgentMonitorCheckStatus::kSummaryUnavailable);
+  EXPECT_EQ(monitors[0].last_observation_ciphertext,
+            "encrypted-last-good-summary");
+  EXPECT_TRUE(monitors[0].last_observation.empty());
+  EXPECT_EQ(monitors[1].monitor_id, "unrelated");
+  EXPECT_EQ(monitors[1].last_check_status, AgentMonitorCheckStatus::kSucceeded);
+}
+
+TEST(AegisAgentTaskStoreTest, RejectsFutureVersionWithoutRewritingDatabase) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("future.sqlite");
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+  }
+  {
+    sql::Database future("AegisAgent");
+    ASSERT_TRUE(future.Open(path));
+    sql::MetaTable meta;
+    ASSERT_TRUE(meta.Init(&future, 9, 9));
+    ASSERT_TRUE(meta.SetVersionNumber(9));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(9));
+  }
+  std::string before;
+  ASSERT_TRUE(base::ReadFileToString(path, &before));
+  {
+    AgentTaskStore old_reader(path);
+    EXPECT_FALSE(old_reader.Initialize());
+    EXPECT_TRUE(old_reader.LoadMonitors().empty());
+  }
+  std::string after;
+  ASSERT_TRUE(base::ReadFileToString(path, &after));
+  EXPECT_EQ(after, before);
+}
+
+TEST(AegisAgentTaskStoreTest,
+     StoresOnlyEncryptedObservationAndRejectsFallback) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("observation.sqlite");
+  AgentMonitorDefinition monitor;
+  monitor.monitor_id = "private-observation";
+  monitor.task_id = "observation-owner";
+  monitor.origin = url::Origin::Create(GURL("https://fixture.example/"));
+  monitor.target_hash = "target-hash";
+  monitor.target_ciphertext = "encrypted-target";
+  monitor.last_observation =
+      R"({"version":1,"kind":2,"content":["private-baseline-marker"]})";
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    EXPECT_FALSE(store.SaveMonitor(monitor));
+    EXPECT_TRUE(store.LoadMonitors().empty());
+    monitor.last_observation_ciphertext = std::string("cipher\0bytes", 12);
+    ASSERT_TRUE(store.SaveMonitor(monitor));
+    monitor.session_only = true;
+    EXPECT_FALSE(store.SaveMonitor(monitor));
+  }
+  AgentTaskStore recovered(path);
+  ASSERT_TRUE(recovered.Initialize());
+  const auto monitors = recovered.LoadMonitors();
+  ASSERT_EQ(monitors.size(), 1u);
+  EXPECT_TRUE(monitors[0].last_observation.empty());
+  EXPECT_EQ(monitors[0].last_observation_ciphertext,
+            monitor.last_observation_ciphertext);
+  std::string bytes;
+  ASSERT_TRUE(base::ReadFileToString(path, &bytes));
+  EXPECT_EQ(bytes.find("private-baseline-marker"), std::string::npos);
 }
 
 TEST(AegisAgentTaskStoreTest,

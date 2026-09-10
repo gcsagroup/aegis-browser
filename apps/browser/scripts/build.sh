@@ -22,4 +22,4 @@ fi
 
 echo "Building chrome at $OUT (long)…"
 autoninja -C "$OUT" chrome
-echo "Build complete: $OUT/Chromium.app or $OUT/chrome"
+echo "Build complete: $(desktop_app_path "$OUT") or $OUT/chrome"

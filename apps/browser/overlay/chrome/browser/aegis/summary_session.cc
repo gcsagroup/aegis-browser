@@ -9,6 +9,7 @@
 #include "base/functional/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/model_provider_client.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/render_frame_host.h"
@@ -68,8 +69,9 @@ void SummarySession::Begin(PreviewCallback done) {
     FinishPreview(std::move(preview));
     return;
   }
-  AegisService* service = AegisService::GetInstance();
-  if (!service->IsPrivacyAiEnabled() || !service->IsPolicyWorkerEnabled()) {
+  AegisService* service = ServiceForSource();
+  if (!service || !service->IsPrivacyAiEnabled() ||
+      !service->IsPolicyWorkerEnabled()) {
     Preview preview;
     preview.error = "privacy summary or policy worker disabled";
     FinishPreview(std::move(preview));
@@ -128,12 +130,14 @@ void SummarySession::Confirm(ResultCallback done) {
   state_ = State::kRunning;
   result_callback_ = std::move(done);
 
+  AegisService* service = ServiceForSource();
   std::optional<std::string> request_id =
-      AegisService::GetInstance()->SummarizePreparedPage(
-          std::move(original), std::move(prepared), locale_, provider_,
-          base_url_, model_,
-          base::BindOnce(&SummarySession::FinishResult,
-                         weak_factory_.GetWeakPtr()));
+      service ? service->SummarizePreparedPage(
+                    std::move(original), std::move(prepared), locale_,
+                    provider_, base_url_, model_,
+                    base::BindOnce(&SummarySession::FinishResult,
+                                   weak_factory_.GetWeakPtr()))
+              : std::nullopt;
   // Feature/configuration/sensitive-page paths may complete synchronously.
   if (state_ == State::kRunning) {
     active_request_id_ = std::move(request_id);
@@ -149,8 +153,8 @@ void SummarySession::Cancel() {
   }
   capture_client_.reset();
   if (active_request_id_) {
-    AegisService* service = AegisService::GetInstance();
-    if (IsSourceProfileAllowed()) {
+    AegisService* service = ServiceForSource();
+    if (service) {
       service->CancelModelSummaryRequest(*active_request_id_);
     }
     active_request_id_.reset();
@@ -174,13 +178,19 @@ bool SummarySession::IsSourceCurrent() const {
 }
 
 bool SummarySession::IsSourceProfileAllowed() const {
+  return ServiceForSource() != nullptr;
+}
+
+AegisService* SummarySession::ServiceForSource() const {
   content::RenderFrameHost* frame = source_document_.AsRenderFrameHostIfValid();
   content::WebContents* contents =
       frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
   Profile* profile =
       contents ? Profile::FromBrowserContext(contents->GetBrowserContext())
                : nullptr;
-  return AegisService::GetInstance()->IsInitializedForProfile(profile);
+  AegisService* service = AegisServiceFactory::GetForProfile(profile);
+  return service && service->IsInitializedForProfile(profile) ? service
+                                                              : nullptr;
 }
 
 void SummarySession::OnCaptureDisconnected() {
@@ -236,7 +246,13 @@ void SummarySession::OnPageSignals(int32_t password_fields,
     return;
   }
 
-  AegisService* service = AegisService::GetInstance();
+  AegisService* service = ServiceForSource();
+  if (!service) {
+    Preview preview;
+    preview.error = "summary profile changed during capture";
+    FinishPreview(std::move(preview));
+    return;
+  }
   provider_ = service->ConfiguredModelProvider();
   base_url_ = service->ConfiguredModelBaseUrl();
   model_ = service->ConfiguredModelName();

@@ -16,8 +16,36 @@
 #include "base/json/json_writer.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "chrome/common/aegis/security_text.h"
 
 namespace aegis::agent {
+
+bool IsQwenModelName(std::string_view model) {
+  const std::string normalized = base::ToLowerASCII(model);
+  for (size_t start = normalized.find("qwen"); start != std::string::npos;
+       start = normalized.find("qwen", start + 4)) {
+    const size_t end = start + 4;
+    const bool left_boundary = start == 0 || normalized[start - 1] == '/' ||
+                              normalized[start - 1] == '-' ||
+                              normalized[start - 1] == '_';
+    const bool right_boundary =
+        end == normalized.size() || base::IsAsciiDigit(normalized[end]) ||
+        normalized[end] == '-' || normalized[end] == '_';
+    if (left_boundary && right_boundary) {
+      return true;
+    }
+  }
+  return false;
+}
+
+int AgentModelToolOutputTokenLimit(std::string_view tool_name) {
+  if (tool_name == "agent.route_goal" || tool_name == "page.observe" ||
+      tool_name == "page.extract") {
+    return 1024;
+  }
+  return 8192;
+}
+
 namespace {
 
 constexpr size_t kMaxResponseBytes = 2 * 1024 * 1024;
@@ -118,7 +146,8 @@ bool ValidateSchemaNode(const base::Value& value,
 
   if (value.is_string()) {
     const std::string& text = value.GetString();
-    if (!IsValidText(text, kMaxToolArgumentsBytes, true)) {
+    if (!IsValidText(text, kMaxToolArgumentsBytes, true) ||
+        NormalizeSecurityText(text).removed_hidden_codepoints > 0) {
       *error = "tool string is invalid";
       return false;
     }
@@ -889,7 +918,17 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
       !IsValidText(request.system_prompt, kMaxPromptBytes, false) ||
       !IsValidText(request.user_prompt, kMaxPromptBytes, false) ||
       request.max_output_tokens <= 0 || request.max_output_tokens > 32768 ||
-      request.tools.empty() || request.tools.size() > kMaxToolCount) {
+      request.tools.empty() || request.tools.size() > kMaxToolCount ||
+      (!request.required_tool_name.empty() &&
+       !IsValidToolName(request.required_tool_name)) ||
+      (!request.reasoning_effort.empty() &&
+       request.reasoning_effort != "none" &&
+       request.reasoning_effort != "minimal" &&
+       request.reasoning_effort != "low" &&
+       request.reasoning_effort != "medium" &&
+       request.reasoning_effort != "high") ||
+      (request.disable_model_thinking &&
+       request.provider != AgentModelProvider::kOpenAICompatible)) {
     *error = "invalid model request";
     return false;
   }
@@ -905,6 +944,11 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
       *error = "invalid or duplicated tool definition";
       return false;
     }
+  }
+  if (!request.required_tool_name.empty() &&
+      !names.contains(request.required_tool_name)) {
+    *error = "required tool is not exposed by the request";
+    return false;
   }
   return true;
 }
@@ -924,16 +968,37 @@ std::optional<std::string> BuildAgentModelRequestBody(
 
   base::DictValue payload;
   base::ListValue tools;
+  // 覆盖理解、规划、执行、修复和总结的所有 provider。
+  // 在 JSON 编码前删除隐藏载体，不将其解码成可执行指令。
+  const std::string user_prompt =
+      NormalizeSecurityText(request.user_prompt).text;
   switch (request.provider) {
     case AgentModelProvider::kOpenAICompatible:
       payload.Set("model", request.model);
       payload.Set("instructions", request.system_prompt);
-      payload.Set("input", request.user_prompt);
+      payload.Set("input", user_prompt);
       payload.Set("max_output_tokens", request.max_output_tokens);
       payload.Set("parallel_tool_calls", false);
       payload.Set("store", false);
       payload.Set("stream", request.stream);
-      payload.Set("tool_choice", "auto");
+      if (request.required_tool_name.empty()) {
+        payload.Set("tool_choice", "auto");
+      } else {
+        base::DictValue choice;
+        choice.Set("type", "function");
+        choice.Set("name", request.required_tool_name);
+        payload.Set("tool_choice", std::move(choice));
+      }
+      if (!request.reasoning_effort.empty()) {
+        base::DictValue reasoning;
+        reasoning.Set("effort", request.reasoning_effort);
+        payload.Set("reasoning", std::move(reasoning));
+      }
+      if (request.disable_model_thinking) {
+        base::DictValue chat_template_kwargs;
+        chat_template_kwargs.Set("enable_thinking", false);
+        payload.Set("chat_template_kwargs", std::move(chat_template_kwargs));
+      }
       for (const AgentModelToolDefinition& tool : request.tools) {
         tools.Append(BuildOpenAITool(tool));
       }
@@ -944,9 +1009,16 @@ std::optional<std::string> BuildAgentModelRequestBody(
       payload.Set("system", request.system_prompt);
       payload.Set("max_tokens", request.max_output_tokens);
       payload.Set("stream", request.stream);
+      if (!request.required_tool_name.empty()) {
+        base::DictValue choice;
+        choice.Set("type", "tool");
+        choice.Set("name", request.required_tool_name);
+        choice.Set("disable_parallel_tool_use", true);
+        payload.Set("tool_choice", std::move(choice));
+      }
       base::DictValue message;
       message.Set("role", "user");
-      message.Set("content", request.user_prompt);
+      message.Set("content", user_prompt);
       base::ListValue messages;
       messages.Append(std::move(message));
       payload.Set("messages", std::move(messages));
@@ -966,7 +1038,7 @@ std::optional<std::string> BuildAgentModelRequestBody(
       payload.Set("systemInstruction", std::move(system_instruction));
 
       base::DictValue user_part;
-      user_part.Set("text", request.user_prompt);
+      user_part.Set("text", user_prompt);
       base::ListValue user_parts;
       user_parts.Append(std::move(user_part));
       base::DictValue content;
@@ -984,6 +1056,17 @@ std::optional<std::string> BuildAgentModelRequestBody(
       base::ListValue gemini_tools;
       gemini_tools.Append(std::move(declarations));
       payload.Set("tools", std::move(gemini_tools));
+
+      if (!request.required_tool_name.empty()) {
+        base::ListValue allowed_names;
+        allowed_names.Append(request.required_tool_name);
+        base::DictValue function_calling;
+        function_calling.Set("mode", "ANY");
+        function_calling.Set("allowedFunctionNames", std::move(allowed_names));
+        base::DictValue tool_config;
+        tool_config.Set("functionCallingConfig", std::move(function_calling));
+        payload.Set("toolConfig", std::move(tool_config));
+      }
 
       base::DictValue generation_config;
       generation_config.Set("maxOutputTokens", request.max_output_tokens);

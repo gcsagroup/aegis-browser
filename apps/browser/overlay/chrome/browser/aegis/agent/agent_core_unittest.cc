@@ -17,6 +17,16 @@
 namespace aegis::agent {
 namespace {
 
+std::optional<std::string> MonitorObservation(
+    AgentMonitorKind kind,
+    std::initializer_list<std::string_view> texts) {
+  base::ListValue nodes;
+  for (const auto text : texts) {
+    nodes.Append(base::DictValue().Set("text", text));
+  }
+  return ReadAgentMonitorObservation(kind, nodes);
+}
+
 AgentTaskScope TestScope(int max_tool_calls = 4) {
   AgentTaskScope scope;
   scope.allowed_origins = {
@@ -110,6 +120,31 @@ TEST(AegisAgentTypesTest, ScopeRejectsExpansionAndSecrets) {
   EXPECT_TRUE(parent.AllowsTab(7));
   EXPECT_FALSE(parent.AllowsTab(8));
   EXPECT_FALSE(parent.AllowsDataClass(AgentDataClass::kSecret));
+}
+
+TEST(AegisAgentTypesTest, WindowMetadataDoesNotGrantTabActionsOrExpandScope) {
+  AgentTaskScope parent = TestScope();
+  parent.allowed_tools.insert("tab.list");
+  parent.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
+  AgentTaskScope child = parent;
+  child.tab_metadata_window_id = 41;
+  ASSERT_TRUE(child.IsValid());
+  EXPECT_FALSE(child.IsNoBroaderThan(parent));
+  parent.tab_metadata_window_id = 41;
+  EXPECT_TRUE(child.IsNoBroaderThan(parent));
+  EXPECT_FALSE(child.AllowsTab(41));
+  child.tab_metadata_window_id = 42;
+  EXPECT_FALSE(child.IsNoBroaderThan(parent));
+  child.tab_metadata_window_id = 0;
+  EXPECT_TRUE(child.IsNoBroaderThan(parent));
+  child.tab_metadata_window_id = -1;
+  EXPECT_FALSE(child.IsValid());
+  child = parent;
+  child.allowed_tools.erase("tab.list");
+  EXPECT_FALSE(child.IsValid());
+  child = parent;
+  child.allowed_data_classes.erase(AgentDataClass::kBrowserMetadata);
+  EXPECT_FALSE(child.IsValid());
 }
 
 TEST(AegisAgentTaskTest, AdoptsOnlyBoundedAgentOwnedTabs) {
@@ -228,6 +263,128 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
       GetAgentWorkflowTemplate(AgentWorkflowKind::kShopping);
   EXPECT_TRUE(shopping.always_user_takeover_for_final_action);
   EXPECT_TRUE(shopping.tools.contains("shopping.prepare_checkout"));
+
+  std::optional<AgentTaskScope> browser_only = BuildAgentWorkflowScope(
+      AgentWorkflowKind::kBrowserSteward, {}, {7}, destination);
+  ASSERT_TRUE(browser_only);
+  EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.list"));
+  EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.plan"));
+  EXPECT_TRUE(browser_only->allowed_tools.contains("tab.list"));
+  EXPECT_FALSE(browser_only->allowed_tools.contains("tab.create"));
+  EXPECT_FALSE(browser_only->allowed_tools.contains("window.create"));
+}
+
+TEST(AegisAgentWorkflowTest, StewardBudgetCovers500ChecksAndModelRequests) {
+  AgentModelDestination destination;
+  destination.provider = "aegis-local";
+  destination.model = "fixture";
+  const auto scope = BuildAgentWorkflowScope(
+      AgentWorkflowKind::kBrowserSteward, {}, {7}, destination);
+  ASSERT_TRUE(scope);
+  AgentTask task("steward-full-budget", "检查500条收藏", AgentMode::kAsk,
+                 *scope);
+  // 使用真实模板和任务计数：模型请求也计入总网络预算，不能从账目中排除。
+  for (int index = 0; index < scope->budgets.max_model_calls; ++index) {
+    ASSERT_TRUE(task.ConsumeModelCall());
+    ASSERT_TRUE(task.ConsumeNetworkRequest());
+  }
+  for (int index = 0; index < 500; ++index) {
+    ASSERT_TRUE(task.ConsumeNetworkRequest())
+        << "模型开销之后只剩 " << index << " 次网址请求";
+  }
+  EXPECT_EQ(task.network_requests_used(),
+            500 + scope->budgets.max_model_calls);
+  EXPECT_FALSE(task.ConsumeNetworkRequest());
+  EXPECT_FALSE(task.ConsumeModelCall());
+}
+
+TEST(AegisAgentWorkflowTest, StewardBudgetNarrowingPreservesExistingCaps) {
+  AgentModelDestination destination;
+  destination.provider = "aegis-local";
+  destination.model = "fixture";
+  const auto maximum = BuildAgentWorkflowScope(
+      AgentWorkflowKind::kBrowserSteward, {}, {7}, destination);
+  ASSERT_TRUE(maximum);
+  AgentTask task("steward-narrow-budget", "检查收藏但限制总请求", AgentMode::kAsk,
+                 *maximum);
+  ASSERT_TRUE(task.TransitionTo(AgentTaskState::kPlanning, "测试规划"));
+  AgentTaskScope narrower = *maximum;
+  narrower.budgets.max_network_requests = 500;
+  ASSERT_TRUE(task.AdoptPlanScope(narrower));
+  EXPECT_EQ(task.scope().budgets.max_network_requests, 500);
+  ASSERT_TRUE(task.TransitionTo(AgentTaskState::kAwaitingTaskConsent, "测试授权"));
+  EXPECT_FALSE(task.AdoptPlanScope(*maximum));
+  for (int index = 0; index < 500; ++index) {
+    ASSERT_TRUE(task.ConsumeNetworkRequest());
+  }
+  EXPECT_FALSE(task.ConsumeNetworkRequest());
+  EXPECT_EQ(task.network_requests_used(), 500);
+}
+
+TEST(AegisAgentWorkflowTest, AutomationKeepsReadAndMonitorToolsForEveryRoute) {
+  AgentModelDestination destination;
+  destination.provider = "aegis-local";
+  destination.model = "fixture";
+  const url::Origin origin = url::Origin::Create(GURL("https://shop.example/"));
+  AgentToolRegistry registry;
+  for (AgentWorkflowKind kind :
+       {AgentWorkflowKind::kResearch, AgentWorkflowKind::kBrowserSteward,
+        AgentWorkflowKind::kSafeDownload, AgentWorkflowKind::kShopping}) {
+    const auto ordinary = BuildAgentWorkflowScope(kind, {origin}, {7}, destination);
+    const auto scope = BuildAgentAutomationScope(kind, {origin}, {7}, destination);
+    ASSERT_TRUE(ordinary);
+    ASSERT_TRUE(scope);
+    EXPECT_EQ(scope->allowed_origins, ordinary->allowed_origins);
+    EXPECT_EQ(scope->allowed_tab_ids, ordinary->allowed_tab_ids);
+    EXPECT_EQ(scope->model_destination, destination);
+    EXPECT_TRUE(scope->budgets.IsNoBroaderThan(ordinary->budgets));
+    for (const char* monitor : {"monitor.create", "monitor.list", "monitor.pause",
+                                "monitor.delete"}) {
+      EXPECT_TRUE(scope->AllowsTool(monitor));
+    }
+    for (const std::string& tool : scope->allowed_tools) {
+      const AgentToolDescriptor* descriptor = registry.Find(tool);
+      ASSERT_TRUE(descriptor);
+      EXPECT_FALSE(descriptor->has_external_side_effect) << tool;
+      EXPECT_TRUE(descriptor->risk == AgentRiskLevel::kR0ReadOnly ||
+                  tool == "page.navigate" || tool == "tab.create" ||
+                  tool.starts_with("monitor.")) << tool;
+      EXPECT_TRUE(scope->AllowsDataClass(descriptor->data_class));
+    }
+    EXPECT_FALSE(scope->AllowsDataClass(AgentDataClass::kFormData));
+    EXPECT_FALSE(scope->AllowsDataClass(AgentDataClass::kSecret));
+    for (const char* tool : {"download.start", "download.open", "download.resume",
+                             "shopping.prepare_checkout", "form.fill", "page.click",
+                             "bookmark.apply", "bookmark.undo", "workspace.restore",
+                             "tab.close", "window.close"}) {
+      EXPECT_FALSE(scope->AllowsTool(tool)) << tool;
+    }
+    if (kind == AgentWorkflowKind::kSafeDownload) {
+      EXPECT_TRUE(ordinary->AllowsTool("download.start"));
+      EXPECT_FALSE(ordinary->AllowsTool("monitor.create"));
+      EXPECT_TRUE(scope->AllowsTool("download.find_official"));
+    } else if (kind == AgentWorkflowKind::kBrowserSteward) {
+      EXPECT_TRUE(scope->AllowsTool("bookmark.list"));
+      EXPECT_TRUE(scope->AllowsTool("bookmark.check_urls"));
+      EXPECT_TRUE(ordinary->AllowsTool("bookmark.apply"));
+    }
+  }
+}
+
+TEST(AegisAgentWorkflowTest, AutomationDoesNotInventAnOriginOrPrivateDataScope) {
+  AgentModelDestination destination;
+  destination.provider = "aegis-local";
+  destination.model = "fixture";
+  const auto scope = BuildAgentAutomationScope(
+      AgentWorkflowKind::kResearch, {}, {7}, destination);
+  ASSERT_TRUE(scope);
+  EXPECT_TRUE(scope->allowed_origins.empty());
+  EXPECT_FALSE(scope->AllowsTool("monitor.create"));
+  EXPECT_FALSE(scope->AllowsTool("page.navigate"));
+  EXPECT_FALSE(scope->AllowsTool("tab.create"));
+  EXPECT_FALSE(scope->AllowsDataClass(AgentDataClass::kPublicPage));
+  EXPECT_FALSE(scope->AllowsDataClass(AgentDataClass::kBookmarks));
+  EXPECT_FALSE(scope->AllowsDataClass(AgentDataClass::kDownloads));
 }
 
 TEST(AegisAgentToolRegistryTest, SelectRequiresExactActionApproval) {
@@ -237,6 +394,188 @@ TEST(AegisAgentToolRegistryTest, SelectRequiresExactActionApproval) {
   EXPECT_EQ(select->risk, AgentRiskLevel::kR2ExternalSideEffect);
   EXPECT_TRUE(select->has_external_side_effect);
   EXPECT_TRUE(select->requires_document);
+}
+
+TEST(AegisAgentMonitorSchedulerTest,
+     UrlResultNotifiesOnFailuresAndRecoveryWithoutRepeatedNoise) {
+  AgentMonitorDefinition previous;
+  EXPECT_FALSE(ShouldNotifyMonitorUrlResult(
+      previous, AgentMonitorCheckStatus::kSucceeded, "http-200"));
+  for (AgentMonitorCheckStatus failure : {
+           AgentMonitorCheckStatus::kLoginRequired,
+           AgentMonitorCheckStatus::kRateLimited,
+           AgentMonitorCheckStatus::kNetworkError,
+           AgentMonitorCheckStatus::kTimeout}) {
+    previous.last_check_status = AgentMonitorCheckStatus::kNotChecked;
+    EXPECT_TRUE(ShouldNotifyMonitorUrlResult(previous, failure, ""));
+    previous.last_check_status = failure;
+    EXPECT_FALSE(ShouldNotifyMonitorUrlResult(previous, failure, ""));
+    // 首次检查就失败时没有旧结果哈希，恢复也必须提醒。
+    EXPECT_TRUE(ShouldNotifyMonitorUrlResult(
+        previous, AgentMonitorCheckStatus::kSucceeded, "http-200"));
+    previous.last_value_hash = "http-200";
+    // 曾经成功、临时失败、恢复为相同状态码，也不能漏掉恢复通知。
+    EXPECT_TRUE(ShouldNotifyMonitorUrlResult(
+        previous, AgentMonitorCheckStatus::kSucceeded, "http-200"));
+    previous.last_value_hash.clear();
+  }
+}
+
+TEST(AegisAgentMonitorSchedulerTest,
+     UrlResultNotifiesOnHttpChangesAndKeepsStableResultsQuiet) {
+  AgentMonitorDefinition previous;
+  previous.last_check_status = AgentMonitorCheckStatus::kSucceeded;
+  previous.last_value_hash = "http-200";
+  EXPECT_FALSE(ShouldNotifyMonitorUrlResult(
+      previous, AgentMonitorCheckStatus::kSucceeded, "http-200"));
+  EXPECT_TRUE(ShouldNotifyMonitorUrlResult(
+      previous, AgentMonitorCheckStatus::kHttpError, "http-404"));
+  previous.last_check_status = AgentMonitorCheckStatus::kHttpError;
+  previous.last_value_hash = "http-404";
+  EXPECT_FALSE(ShouldNotifyMonitorUrlResult(
+      previous, AgentMonitorCheckStatus::kHttpError, "http-404"));
+  EXPECT_TRUE(ShouldNotifyMonitorUrlResult(
+      previous, AgentMonitorCheckStatus::kHttpError, "http-500"));
+  EXPECT_TRUE(ShouldNotifyMonitorUrlResult(
+      previous, AgentMonitorCheckStatus::kSucceeded, "http-200"));
+}
+
+TEST(AegisAgentMonitorObservationTest, PriceDropsOnlyInTheSameCurrency) {
+  const auto kind = AgentMonitorKind::kPrice;
+  const auto before = MonitorObservation(kind, {"Price USD 1299.00"});
+  const auto lower = MonitorObservation(kind, {"Price USD 1,199.99"});
+  const auto higher = MonitorObservation(kind, {"Price USD 1399"});
+  const auto currency = MonitorObservation(kind, {"Price EUR 999.00"});
+  ASSERT_TRUE(before); ASSERT_TRUE(lower); ASSERT_TRUE(higher);
+  ASSERT_TRUE(currency);
+  EXPECT_TRUE(DidAgentMonitorConditionMatch(kind, *before, *lower));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, *before, *before));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, *before, *higher));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, *before, *currency));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, "", *before));
+}
+
+TEST(AegisAgentMonitorObservationTest, PriceFormattingAndDuplicateNodesAreStable) {
+  const auto kind = AgentMonitorKind::kPrice;
+  // 两边都解析失败不能算格式等价，通过存在性断言防止空值假阳性。
+  for (const auto text : {"售价 ￥1,299.00", "售价 ¥1299", "Price EUR 1.299,50",
+                          "1299.50 EUR", "现价 1299 元", "CNY 1299.00",
+                          "HK$299.00", "HKD 299", "$299", "USD 299"}) {
+    SCOPED_TRACE(text);
+    ASSERT_TRUE(MonitorObservation(kind, {text}));
+  }
+  EXPECT_EQ(MonitorObservation(kind, {"售价 ￥1,299.00", "售价 ￥1,299.00"}),
+            MonitorObservation(kind, {"售价 ¥1299"}));
+  EXPECT_EQ(MonitorObservation(kind, {"Price EUR 1.299,50"}),
+            MonitorObservation(kind, {"1299.50 EUR"}));
+  EXPECT_EQ(MonitorObservation(kind, {"现价 1299 元"}),
+            MonitorObservation(kind, {"CNY 1299.00"}));
+  EXPECT_EQ(MonitorObservation(kind, {"HK$299.00"}),
+            MonitorObservation(kind, {"HKD 299"}));
+  EXPECT_NE(MonitorObservation(kind, {"$299"}),
+            MonitorObservation(kind, {"USD 299"}));
+}
+
+TEST(AegisAgentMonitorObservationTest, RejectsAmbiguousOrNonProductPrices) {
+  const auto kind = AgentMonitorKind::kPrice;
+  EXPECT_FALSE(MonitorObservation(kind, {"$10", "$20"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Original price $100"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Shipping $5"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"库存 100 件"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Price: unknown"}));
+  for (const auto invalid : {"$-1", "-1 USD", "$0", "$12,34,56",
+                             "$1.2345", "$100%", "$99999999999999999"}) {
+    SCOPED_TRACE(invalid);
+    EXPECT_FALSE(MonitorObservation(kind, {invalid}));
+  }
+  EXPECT_EQ(MonitorObservation(kind, {"原价 ￥199", "现价 ￥99"}),
+            MonitorObservation(kind, {"￥99.00"}));
+}
+
+TEST(AegisAgentMonitorObservationTest, OnlyRestockTriggersArrival) {
+  const auto kind = AgentMonitorKind::kInventory;
+  const auto empty = MonitorObservation(kind, {"Out of stock"});
+  const auto ready = MonitorObservation(kind, {"In stock"});
+  ASSERT_TRUE(empty); ASSERT_TRUE(ready);
+  EXPECT_TRUE(DidAgentMonitorConditionMatch(kind, *empty, *ready));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, *ready, *empty));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, *ready, *ready));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, "", *ready));
+  EXPECT_EQ(empty, MonitorObservation(kind, {"没有货"}));
+  EXPECT_EQ(empty, MonitorObservation(kind, {"Not in stock"}));
+  EXPECT_EQ(empty, MonitorObservation(kind, {"Currently unavailable"}));
+  EXPECT_EQ(ready, MonitorObservation(kind, {"现货，有货"}));
+  EXPECT_EQ(ready, MonitorObservation(kind, {"現貨"}));
+}
+
+TEST(AegisAgentMonitorObservationTest, InventoryDoesNotGuessFromConflictingText) {
+  const auto kind = AgentMonitorKind::kInventory;
+  EXPECT_FALSE(MonitorObservation(kind, {"Out of stock", "In stock"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Out of stock; another item in stock"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"预计明天有货"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Pre-order now"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"This service is unavailable"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Available coupons"}));
+  EXPECT_FALSE(MonitorObservation(kind, {"Made in Stockport"}));
+}
+
+TEST(AegisAgentMonitorObservationTest, InputsAndStoredResultsAreBounded) {
+  const auto kind = AgentMonitorKind::kPrice;
+  EXPECT_EQ(MonitorObservation(kind, {"$1\U000e00209.99"}),
+            MonitorObservation(kind, {"$19.99"}));
+  EXPECT_FALSE(MonitorObservation(kind, {std::string(32769, 'x')}));
+  base::ListValue excessive;
+  for (int i = 0; i < 513; ++i) {
+    excessive.Append(base::DictValue().Set("text", "$99"));
+  }
+  EXPECT_FALSE(ReadAgentMonitorObservation(kind, excessive));
+  EXPECT_FALSE(MonitorObservation(kind, {std::string("\xff", 1)}));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, "not json", "{}"));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind,
+      R"({"version":1,"kind":0,"currency":"USD","amount":"100"})",
+      R"({"version":1,"kind":0,"currency":"USD","amount":"-1"})"));
+}
+
+TEST(AegisAgentMonitorObservationTest, PageChangeRequiresTwoMeasuredSnapshots) {
+  const auto kind = AgentMonitorKind::kPageChange;
+  const auto before = MonitorObservation(kind, {"正文第一版"});
+  const auto after = MonitorObservation(kind, {"正文第二版"});
+  ASSERT_TRUE(before); ASSERT_TRUE(after);
+  EXPECT_TRUE(DidAgentMonitorConditionMatch(kind, *before, *after));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, *before, *before));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, "", *before));
+  EXPECT_FALSE(DidAgentMonitorConditionMatch(AgentMonitorKind::kPrice,
+                                            *before, *after));
+  EXPECT_FALSE(MonitorObservation(kind, {}));
+}
+
+TEST(AegisAgentMonitorObservationTest, RejectsInvalidPersistentBaseline) {
+  const auto valid = MonitorObservation(AgentMonitorKind::kPrice, {"USD 19.99"});
+  ASSERT_TRUE(valid);
+  EXPECT_TRUE(IsValidAgentMonitorObservation(AgentMonitorKind::kPrice, *valid));
+  for (const std::string& invalid : {
+      std::string(), std::string("{}"), std::string(32769, 'x'),
+      std::string(R"({"version":2,"kind":0,"currency":"USD","amount":"1999"})"),
+      std::string(R"({"version":1,"kind":0,"currency":"UNKNOWN","amount":"1999"})"),
+      std::string(R"({"version":1,"kind":0,"currency":"USD","amount":"01999"})"),
+      std::string(R"({"version":1,"kind":0,"currency":"USD","amount":"100000000000001"})")}) {
+    EXPECT_FALSE(IsValidAgentMonitorObservation(AgentMonitorKind::kPrice, invalid));
+  }
+  EXPECT_FALSE(IsValidAgentMonitorObservation(AgentMonitorKind::kInventory,
+      R"({"version":1,"kind":1,"available":"true"})"));
+  EXPECT_FALSE(IsValidAgentMonitorObservation(AgentMonitorKind::kPageChange,
+      R"({"version":1,"kind":2,"content":[1]})"));
+  AgentMonitorDefinition monitor{
+      .monitor_id = "bounded-monitor", .task_id = "bounded-owner",
+      .kind = AgentMonitorKind::kPrice,
+      .origin = url::Origin::Create(GURL("https://fixture.example/")),
+      .target_hash = "bounded-target", .last_observation = *valid};
+  ASSERT_TRUE(monitor.IsValid());
+  monitor.last_observation = "invalid-json";
+  EXPECT_FALSE(monitor.IsValid());
+  monitor.last_observation.clear();
+  monitor.last_observation_ciphertext.assign(131073, 'x');
+  EXPECT_FALSE(monitor.IsValid());
 }
 
 TEST(AegisAgentMonitorSchedulerTest, ClaimsThreeAndCollapsesRestartCatchup) {
@@ -307,6 +646,38 @@ TEST(AegisAgentMonitorSchedulerTest, UsesBoundedExponentialBackoff) {
   }
   snapshot = scheduler.Snapshot();
   EXPECT_LE(snapshot[0].next_run, now + base::Hours(24));
+}
+
+TEST(AegisAgentMonitorSchedulerTest,
+     RetainsBoundedCheckStatusAndRejectsInvalidCodes) {
+  const base::Time now = base::Time::Now();
+  AgentMonitorScheduler scheduler;
+  AgentMonitorDefinition monitor{
+      .monitor_id = "status-monitor",
+      .task_id = "status-owner",
+      .origin = url::Origin::Create(GURL("https://fixture.example/")),
+      .target_hash = "fixed-target",
+      .next_run = now};
+  ASSERT_TRUE(scheduler.Upsert(monitor));
+  ASSERT_TRUE(scheduler.MarkFinished(monitor.monitor_id, false, now,
+                                     AgentMonitorCheckStatus::kRateLimited,
+                                     429));
+  auto result = scheduler.Snapshot()[0];
+  EXPECT_EQ(result.last_check_status, AgentMonitorCheckStatus::kRateLimited);
+  EXPECT_EQ(result.last_http_status, 429);
+  EXPECT_EQ(result.consecutive_failures, 1);
+  EXPECT_FALSE(scheduler.MarkFinished(
+      monitor.monitor_id, true, now, AgentMonitorCheckStatus::kSucceeded, 999));
+  EXPECT_FALSE(
+      scheduler.MarkFinished(monitor.monitor_id, true, now,
+                             static_cast<AgentMonitorCheckStatus>(999)));
+  EXPECT_EQ(scheduler.Snapshot()[0].last_http_status, 429);
+  ASSERT_TRUE(scheduler.MarkFinished(monitor.monitor_id, true, now,
+                                     AgentMonitorCheckStatus::kSucceeded, 200));
+  result = scheduler.Snapshot()[0];
+  EXPECT_EQ(result.last_check_status, AgentMonitorCheckStatus::kSucceeded);
+  EXPECT_EQ(result.last_http_status, 200);
+  EXPECT_EQ(result.consecutive_failures, 0);
 }
 
 TEST(AegisAgentPolicyTest, RequiresExactDocumentAndOrigin) {
@@ -493,6 +864,71 @@ TEST(AegisAgentToolRegistryTest, ExposesOnlyScopedFixedSchemas) {
   EXPECT_EQ(error, "tool argument contains an unknown field");
 }
 
+TEST(AegisAgentPolicyTest, BookmarkCheckRequiresExactlyOneSelection) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  auto scope = TestScope();
+  scope.allowed_tools.insert("bookmark.check_urls");
+  AgentTask task("task-selection", "检查收藏", AgentMode::kAsk,
+                 std::move(scope));
+  ConsentTask(&task);
+  AgentToolCall call;
+  call.action_id = "check";
+  call.tool_name = "bookmark.check_urls";
+  EXPECT_EQ(broker.Evaluate(task, call).error, AgentErrorCode::kInvalidRequest);
+  call.arguments.Set("selection_ref", "browser-issued-reference");
+  EXPECT_EQ(broker.Evaluate(task, call).disposition,
+            AgentPolicyDisposition::kAllow);
+  call.arguments.Set("node_ids", base::ListValue());
+  EXPECT_EQ(broker.Evaluate(task, call).error, AgentErrorCode::kInvalidRequest);
+  call.arguments.Remove("selection_ref");
+  EXPECT_EQ(broker.Evaluate(task, call).error, AgentErrorCode::kInvalidRequest);
+  call.arguments.FindList("node_ids")->Append("local:fixture");
+  EXPECT_EQ(broker.Evaluate(task, call).disposition,
+            AgentPolicyDisposition::kAllow);
+}
+
+TEST(AegisAgentResultVerifierTest, BookmarkCoverageMustMatchNativeResults) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("task-coverage", "检查收藏", AgentMode::kAsk, TestScope());
+  AgentToolCall call;
+  call.action_id = "check";
+  call.tool_name = "bookmark.check_urls";
+  call.arguments.Set("selection_ref", "current-reference");
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "原生检查完成";
+  result.value.Set("selection_ref", "current-reference");
+  result.value.Set("selected_count", 1);
+  result.value.Set("attempted_count", 0);
+  result.value.Set("list_truncated", false);
+  base::DictValue counts;
+  counts.Set("not_checked", 1);
+  result.value.Set("classification_counts", std::move(counts));
+  base::ListValue entries;
+  base::DictValue entry;
+  entry.Set("node_id", "local:fixture");
+  entry.Set("classification", "not_checked");
+  entries.Append(std::move(entry));
+  result.value.Set("results", std::move(entries));
+  const auto* descriptor = registry.Find(call.tool_name);
+  ASSERT_TRUE(descriptor);
+  EXPECT_TRUE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("selected_count", 500);
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("selected_count", 1);
+  result.value.Set("selection_ref", "foreign-reference");
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("selection_ref", "current-reference");
+  result.value.FindDict("classification_counts")->Set("live", 500);
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.FindDict("classification_counts")->Remove("live");
+  result.value.FindList("results")->Append("malformed");
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+}
+
 TEST(AegisAgentToolRegistryTest, LoginRequiresAnExactObservedButton) {
   AgentToolRegistry registry;
   AgentTaskScope scope = TestScope();
@@ -598,6 +1034,44 @@ TEST(AegisAgentResultVerifierTest, AcceptsStructuredBrowserFailure) {
       verifier.Verify(task, call, *registry.Find(call.tool_name), failure);
   EXPECT_TRUE(decision.accepted);
   EXPECT_FALSE(decision.postcondition_met);
+}
+
+TEST(AegisAgentResultVerifierTest,
+     AcceptsSessionBoundMonitorWithoutExposingTarget) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTaskScope scope = TestScope();
+  scope.allowed_tools.insert("monitor.create");
+  AgentTask task("task-monitor", "monitor fixture", AgentMode::kAutomate,
+                 std::move(scope));
+  AgentToolCall call;
+  call.action_id = "monitor-create";
+  call.tool_name = "monitor.create";
+
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "session monitor created";
+  result.value.Set("monitor_id", "monitor-1");
+  result.value.Set("target_hash", "sha256:fixture");
+  result.value.Set("origin", "https://shop.example");
+  result.value.Set("interval_minutes", 60);
+  result.value.Set("revision", "sha256:revision");
+  result.value.Set("session_only", true);
+  AgentVerificationDecision decision =
+      verifier.Verify(task, call, *registry.Find(call.tool_name), result);
+  EXPECT_TRUE(decision.accepted) << decision.reason;
+  EXPECT_TRUE(decision.postcondition_met);
+
+  result.value.Set("target_url", "https://shop.example/private");
+  EXPECT_FALSE(verifier.Verify(task, call, *registry.Find(call.tool_name),
+                               result)
+                   .accepted);
+  result.value.Remove("target_url");
+  result.value.Remove("session_only");
+  EXPECT_FALSE(verifier.Verify(task, call, *registry.Find(call.tool_name),
+                               result)
+                   .accepted);
 }
 
 TEST(AegisAgentResultVerifierTest, VerifiesDynamicTabAndWorkspaceOwnership) {

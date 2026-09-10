@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "chrome/common/aegis/cname_cache_partition.h"
 #include "third_party/blink/public/common/loader/url_loader_throttle.h"
 #include "url/gurl.h"
 
@@ -21,6 +22,8 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
  public:
   // Prefs 来自 profile（browser）或 DynamicParams（renderer）。
   static std::unique_ptr<blink::URLLoaderThrottle> MaybeCreate(
+      bool profile_supported,
+      CnameCachePartitionId cname_cache_partition_id,
       bool tracker_blocking_enabled,
       bool cname_uncloak_enabled,
       bool link_sanitize_enabled,
@@ -28,7 +31,8 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
       std::string document_id = std::string(),
       std::string default_source_site = std::string());
 
-  AegisNetThrottle(bool tracker_blocking_enabled,
+  AegisNetThrottle(CnameCachePartitionId cname_cache_partition_id,
+                   bool tracker_blocking_enabled,
                    bool cname_uncloak_enabled,
                    bool link_sanitize_enabled,
                    std::string paused_sites = std::string(),
@@ -66,6 +70,7 @@ class AegisNetThrottle : public blink::URLLoaderThrottle {
   const bool tracker_blocking_enabled_;
   const bool cname_uncloak_enabled_;
   const bool link_sanitize_enabled_;
+  const CnameCachePartitionId cname_cache_partition_id_;
   const std::string paused_sites_;
   const std::string document_id_;
   const std::string default_source_site_;

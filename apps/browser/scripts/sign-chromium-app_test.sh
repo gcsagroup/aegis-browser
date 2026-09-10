@@ -11,7 +11,7 @@ cat > "$FAKE_CODESIGN" <<'EOF'
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_CODESIGN_LOG"
 if [[ " $* " == *" --force "* && " $* " == *" --sign - "* && \
-      "$*" == *"Chromium Helper Sibling.app"* ]]; then
+      "$*" == *"Helper Sibling.app"* ]]; then
   touch "$FAKE_SIBLING_SIGNED"
 fi
 if [[ " $* " == *" --verify "* ]]; then
@@ -25,7 +25,7 @@ if [[ " $* " == *" --verify "* ]]; then
       if [[ "$count" -gt 1 ]]; then exit 0; else exit 1; fi
       ;;
     sibling_sign_then_valid)
-      if [[ "$*" == *"Chromium Helper Sibling.app"* ]]; then
+      if [[ "$*" == *"Helper Sibling.app"* ]]; then
         [[ -f "$FAKE_SIBLING_SIGNED" ]]
       elif [[ "$count" -gt 1 ]]; then
         exit 0
@@ -34,7 +34,7 @@ if [[ " $* " == *" --verify "* ]]; then
       fi
       ;;
     sibling_invalid)
-      if [[ "$*" == *"Chromium Helper Sibling.app"* ]]; then exit 1; else exit 0; fi
+      if [[ "$*" == *"Helper Sibling.app"* ]]; then exit 1; else exit 0; fi
       ;;
     never_valid) exit 1 ;;
     *) exit 2 ;;
@@ -82,6 +82,28 @@ rg -q -- '--force --sign -' "$TEST_ROOT/sign_then_valid/calls.log"
 run_case sibling_sign_then_valid
 rg -q -- '--force --sign - .*Chromium Helper Sibling.app' \
   "$TEST_ROOT/sibling_sign_then_valid/calls.log"
+
+brand_root="$TEST_ROOT/branded"
+brand_app="$brand_root/GCSA Aegis.app"
+mkdir -p "$brand_app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers"
+: > "$brand_app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework"
+cat > "$brand_app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>GCSA Aegis</string>
+</dict></plist>
+EOF
+mkdir -p "$brand_root/GCSA Aegis Helper Sibling.app"
+export FAKE_CODESIGN_MODE=sibling_sign_then_valid
+export FAKE_CODESIGN_LOG="$brand_root/calls.log"
+export FAKE_CODESIGN_COUNT="$brand_root/count"
+export FAKE_SIBLING_SIGNED="$brand_root/sibling-signed"
+CODESIGN="$FAKE_CODESIGN" bash "$SCRIPT_DIR/sign-chromium-app.sh" \
+  "$brand_app" "$brand_root"
+rg -q -- '--force --sign - .*GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework' \
+  "$brand_root/calls.log"
+rg -q -- '--force --sign - .*GCSA Aegis Helper Sibling.app' \
+  "$brand_root/calls.log"
 
 set +e
 run_case never_valid >/dev/null 2>&1

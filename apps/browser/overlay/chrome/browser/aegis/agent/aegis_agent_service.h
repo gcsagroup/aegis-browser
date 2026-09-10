@@ -14,6 +14,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/threading/sequence_bound.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/aegis/agent/aegis_actor_bridge.h"
 #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
@@ -27,6 +28,15 @@
 
 class Profile;
 
+namespace net {
+class HttpResponseHeaders;
+struct RedirectInfo;
+}  // namespace net
+
+namespace network::mojom {
+class URLResponseHead;
+}
+
 namespace os_crypt_async {
 class Encryptor;
 }  // namespace os_crypt_async
@@ -34,6 +44,10 @@ class Encryptor;
 namespace aegis::agent {
 
 class AgentModelClient;
+
+// System notification centers outlive Incognito windows, so only regular
+// Profiles may export Agent monitor events to that surface.
+bool AreAgentSystemNotificationsAllowed(const Profile* profile);
 
 struct AgentInvocationContext {
   int32_t tab_id = 0;
@@ -48,6 +62,8 @@ class AegisAgentService : public KeyedService {
   using ToolResultCallback = base::OnceCallback<void(AgentToolResult)>;
   using PlanReadyCallback =
       base::OnceCallback<void(bool ok, std::string error)>;
+  using GoalRouteCallback = base::OnceCallback<
+      void(bool ok, std::string error, std::optional<AgentGoalRoute> route)>;
   using RunCallback = base::OnceCallback<void(
       bool ok,
       std::string error,
@@ -69,6 +85,7 @@ class AegisAgentService : public KeyedService {
   AgentTask* MostRecentTask();
   const AgentTask* MostRecentTask() const;
   size_t task_count_for_testing() const { return tasks_.size(); }
+  void FlushTaskStoreForTesting(base::OnceCallback<void(bool)> callback);
   bool SetPendingInvocationContext(AgentInvocationContext context);
   const AgentInvocationContext* PendingInvocationContext() const;
   void ClearPendingInvocationContext();
@@ -76,12 +93,21 @@ class AegisAgentService : public KeyedService {
   void RemoveObserver(AegisAgentServiceObserver* observer);
 
   bool BeginPlanning(const std::string& task_id);
+  void RouteGoal(std::string goal,
+                 AgentWorkflowKind requested_workflow,
+                 GoalRouteCallback callback);
+  void SetGoalRouteForTesting(std::optional<AgentGoalRoute> route);
+  void SetGoalRouterClientForTesting(std::unique_ptr<AgentModelClient> client);
+  void SetTaskModelClientForTesting(const std::string& task_id,
+                                    std::unique_ptr<AgentModelClient> client);
   bool AcceptModelPlan(const std::string& task_id,
                        const AgentModelEvent& event,
                        std::string* error);
   void RequestPlan(const std::string& task_id, PlanReadyCallback callback);
   bool SetPlanReady(const std::string& task_id);
   const AgentTaskPlan* GetPlan(const std::string& task_id) const;
+  const AgentCompletionSummary* GetCompletionSummary(
+      const std::string& task_id) const;
   bool GrantTaskConsent(const std::string& task_id);
   bool PauseTask(const std::string& task_id);
   bool ResumeTask(const std::string& task_id);
@@ -128,15 +154,21 @@ class AegisAgentService : public KeyedService {
                         bool paused);
   bool RemoveMonitor(const std::string& task_id, const std::string& monitor_id);
   std::vector<AgentMonitorDefinition> ClaimDueMonitors(base::Time now);
-  bool MarkMonitorFinished(const std::string& task_id,
-                           const std::string& monitor_id,
-                           bool success,
-                           base::Time now);
+  bool MarkMonitorFinished(
+      const std::string& task_id,
+      const std::string& monitor_id,
+      bool success,
+      base::Time now,
+      AgentMonitorCheckStatus status = AgentMonitorCheckStatus::kNotChecked,
+      int http_status = 0);
   std::vector<AgentMonitorDefinition> GetMonitors(
       const std::string& task_id) const;
   std::vector<AgentMonitorDefinition> GetAllMonitors() const;
 
   const AgentToolRegistry& tool_registry() const { return tool_registry_; }
+  bool task_store_is_in_memory_for_testing() const {
+    return task_store_is_in_memory_;
+  }
   std::optional<StoredAgentTask::RecoveryDisposition> recovery_disposition(
       const std::string& task_id) const;
   AegisActorBridge& actor_bridge_for_testing() { return actor_bridge_; }
@@ -145,21 +177,46 @@ class AegisAgentService : public KeyedService {
   void Shutdown() override;
 
  private:
+  friend class AegisAgentServiceTestPeer;
+
   struct ExecutionRuntime;
+  struct MonitorUrlCheck;
+  struct MonitorPageCheck;
   using ActionResults = std::map<std::string, AgentToolResult>;
 
   bool Transition(const std::string& task_id,
                   AgentTaskState state,
                   std::string reason);
+  void FailPlanning(const std::string& task_id,
+                    PlanReadyCallback callback,
+                    std::string error);
+  bool TryReadOnlyPlanningRecovery(const std::string& task_id,
+                                   std::string* error);
   bool PersistTask(const AgentTask& task);
+  AgentTaskStoreRecord MakeTaskStoreRecord(const AgentTask& task) const;
+  bool PersistPlan(const std::string& task_id,
+                   const AgentTaskPlan& plan,
+                   size_t next_step,
+                   int attempt);
   bool PersistPlanProgress(const std::string& task_id,
                            size_t next_step,
                            int attempt);
+  bool PersistMonitor(const AgentMonitorDefinition& monitor);
+  bool DeletePersistedMonitor(const std::string& monitor_id);
+  void AppendPersistedActionSummary(const std::string& task_id,
+                                    const std::string& action_id,
+                                    const std::string& tool_name,
+                                    AgentRiskLevel risk,
+                                    bool ok,
+                                    const std::string& redacted_summary);
+  void OnTaskStoreLoaded(std::optional<StoredAgentState> state);
+  void OnCriticalStoreWriteFinished(bool ok);
   bool ConsumeModelRequestBudget(AgentTask* task);
-  void RestoreUnfinishedTasks();
-  void RestoreMonitors();
-  void RestoreMonitorTargets();
+  void RestoreUnfinishedTasks(StoredAgentState state);
+  void RestoreMonitors(std::vector<AgentMonitorDefinition> monitors);
+  void RestoreMonitorTargets(const std::string& monitor_id = {});
   void OnMonitorTargetsDecryptorReady(
+      const std::string& monitor_id,
       scoped_refptr<os_crypt_async::Encryptor> encryptor);
   void ExecuteMonitorTool(AgentTask* task,
                           const AgentToolCall& call,
@@ -172,23 +229,75 @@ class AegisAgentService : public KeyedService {
   void ScheduleMonitorTimer();
   void OnMonitorTimer();
   void ExecuteDueMonitor(AgentMonitorDefinition monitor);
-  void CleanupDueMonitorActor(const std::string& task_id,
-                              int32_t tab_id,
-                              bool actor_started,
-                              bool task_adopted);
-  void OnDueMonitorObserved(AgentMonitorDefinition monitor,
+  void StartMonitorUrlRequest(const std::string& monitor_id);
+  void OnMonitorUrlRedirect(const std::string& monitor_id,
+                            const std::string& request_id,
+                            const GURL& previous_url,
+                            const net::RedirectInfo& redirect,
+                            const network::mojom::URLResponseHead& response,
+                            std::vector<std::string>* removed_headers);
+  void OnMonitorUrlHeaders(const std::string& monitor_id,
+                           const std::string& request_id,
+                           scoped_refptr<net::HttpResponseHeaders> headers);
+  void FinishMonitorUrlCheck(const std::string& monitor_id,
+                             AgentMonitorCheckStatus status,
+                             int http_status = 0);
+  void StartMonitorPageCheck(AgentMonitorDefinition monitor);
+  void AttachMonitorPage(const std::string& monitor_id,
+                         const std::string& request_id);
+  void OnMonitorPageAttached(const std::string& monitor_id,
+                            const std::string& request_id,
+                            bool attached);
+  void OnMonitorPageLoaded(const std::string& monitor_id,
+                          const std::string& request_id);
+  void OnMonitorPageObserved(const std::string& monitor_id,
+                            const std::string& request_id,
                             AgentToolCall call,
-                            int32_t tab_id,
-                            bool actor_started,
-                            bool task_adopted,
                             AgentToolResult result);
+  void OnMonitorObservationEncryptorReady(
+      const std::string& monitor_id,
+      const std::string& request_id,
+      std::string observation,
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  void RequestMonitorSummary(const std::string& monitor_id,
+                             const std::string& request_id);
+  void OnMonitorSummaryResult(const std::string& monitor_id,
+                              const std::string& request_id,
+                              bool ok,
+                              std::string error,
+                              AgentModelParseResult result);
+  void PersistMonitorObservation(const std::string& monitor_id,
+                                 const std::string& request_id,
+                                 std::string observation);
+  void FinishMonitorPageCheck(
+      const std::string& monitor_id,
+      const std::string& request_id,
+      AgentMonitorCheckStatus status,
+      std::optional<std::string> observation = std::nullopt);
   void ShowMonitorChangeNotification(
       const AgentMonitorDefinition& monitor) const;
+  void RequestPlanAttempt(const std::string& task_id,
+                          int repair_attempt,
+                          std::string previous_error,
+                          PlanReadyCallback callback);
   void OnPlanModelResult(const std::string& task_id,
+                         int repair_attempt,
                          PlanReadyCallback callback,
                          bool ok,
                          std::string error,
                          AgentModelParseResult result);
+  void RouteGoalAttempt(std::string goal,
+                        AgentWorkflowKind requested_workflow,
+                        int repair_attempt,
+                        std::string previous_error,
+                        GoalRouteCallback callback);
+  void OnGoalRouteModelResult(std::string goal,
+                              AgentWorkflowKind requested_workflow,
+                              int repair_attempt,
+                              GoalRouteCallback callback,
+                              bool ok,
+                              std::string error,
+                              AgentModelParseResult result);
   void RequestNextModelTurn(const std::string& task_id);
   void EnsureFreshObservationThenContinue(const std::string& task_id,
                                           bool force_refresh);
@@ -212,6 +321,7 @@ class AegisAgentService : public KeyedService {
   std::optional<AgentToolCall> BindExecutionToolCall(
       const AgentTask& task,
       const AgentPlanStep& step,
+      std::optional<int32_t> preferred_tab_id,
       int attempt,
       const AgentModelEvent& event,
       std::string* error) const;
@@ -221,6 +331,9 @@ class AegisAgentService : public KeyedService {
   void OnRuntimeToolResult(const std::string& task_id,
                            AgentToolCall attempted_call,
                            AgentToolResult result);
+  bool FinishWithBrowserVerifiedFallback(const std::string& task_id);
+  void FinishValidatedRuntimeCompletion(const std::string& task_id,
+                                        AgentCompletionSummary completion);
   void FinishRuntime(const std::string& task_id,
                      bool ok,
                      std::string error,
@@ -234,18 +347,25 @@ class AegisAgentService : public KeyedService {
   void NotifyServiceSnapshotChanged();
 
   raw_ptr<Profile> profile_;
-  AgentTaskStore task_store_;
+  const bool task_store_is_in_memory_;
+  base::SequenceBound<AgentTaskStore> task_store_;
   AgentToolRegistry tool_registry_;
   AgentPolicyBroker policy_broker_;
   AgentResultVerifier result_verifier_;
   AgentMonitorScheduler monitor_scheduler_;
+  std::map<std::string, std::unique_ptr<MonitorUrlCheck>> monitor_url_checks_;
   AegisActorBridge actor_bridge_;
   AegisBrowserTools browser_tools_;
+  std::map<std::string, std::unique_ptr<MonitorPageCheck>> monitor_page_checks_;
   std::map<std::string, std::unique_ptr<AgentTask>> tasks_;
   std::map<std::string, AgentTaskPlan> plans_;
+  std::map<std::string, AgentCompletionSummary> completion_summaries_;
   std::map<std::string, std::pair<size_t, int>> plan_progress_;
   std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
   std::map<std::string, std::string> model_request_ids_;
+  std::unique_ptr<AgentModelClient> goal_router_client_;
+  std::string goal_router_request_id_;
+  std::optional<AgentGoalRoute> goal_route_for_testing_;
   std::map<std::string, std::unique_ptr<ExecutionRuntime>> executions_;
   std::map<std::string, AgentModelCapabilityTracker> model_capabilities_;
   std::map<std::string, ActionResults> action_results_;
@@ -258,7 +378,9 @@ class AegisAgentService : public KeyedService {
   std::optional<AgentInvocationContext> pending_invocation_context_;
   base::ObserverList<AegisAgentServiceObserver> observers_;
   base::OneShotTimer monitor_timer_;
-  bool storage_ready_ = false;
+  // The store accepts queued work immediately. Initialization and every
+  // database operation run in order on a dedicated MayBlock sequence.
+  bool storage_ready_ = true;
   bool shutting_down_ = false;
   base::WeakPtrFactory<AegisAgentService> weak_ptr_factory_{this};
 };

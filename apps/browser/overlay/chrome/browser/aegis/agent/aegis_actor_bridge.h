@@ -51,6 +51,10 @@ class AegisActorBridge {
   bool HasTask(const std::string& agent_task_id) const;
   bool AdoptTab(const std::string& agent_task_id, int32_t tab_id);
   bool ReleaseTab(const std::string& agent_task_id, int32_t tab_id);
+  // 定时检查先绑定全新的空白标签，再由浏览器加载固定目标；不接管用户页面。
+  void AttachBlankMonitorTab(const std::string& agent_task_id,
+                            int32_t tab_id,
+                            base::OnceCallback<void(bool)> callback);
   void ExecutePageTool(const std::string& agent_task_id,
                        const AgentToolCall& call,
                        ToolResultCallback callback);

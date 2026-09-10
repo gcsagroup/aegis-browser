@@ -1,0 +1,200 @@
+From 911f5c45acf3de10741008cf8f40948d57d31b7a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 4 Sep 2026 15:36:40 +0800
+Subject: [PATCH 98/98] fix(branding): use GCSA Aegis in browser identity
+ surfaces
+
+---
+ chrome/app/chromium_strings.grd | 52 ++++++++++++++++-----------------
+ 1 file changed, 26 insertions(+), 26 deletions(-)
+
+diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
+index 12a62d6803..2f46c5b4cc 100644
+--- a/chrome/app/chromium_strings.grd
++++ b/chrome/app/chromium_strings.grd
+@@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         </then>
+         <else>
+           <message name="IDS_PRODUCT_NAME" desc="The Chrome application name" translateable="false">
+-            Chromium
++            GCSA Aegis
+           </message>
+           <message name="IDS_SHORT_PRODUCT_NAME" desc="The Chrome application short name." translateable="false">
+-            Chromium
++            GCSA Aegis
+           </message>
+         </else>
+       </if>
+@@ -309,15 +309,15 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         <message name="IDS_SHORTCUT_NAME_DEV" desc="Unused in Chromium builds" translateable="false">
+         </message>
+         <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
+-          Chromium is a web browser that runs webpages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Chromium.
++          GCSA Aegis is a web browser with built-in privacy, phishing protection, and an AI Agent that works for the user.
+         </message>
+         <message name="IDS_WELCOME_TO_CHROME" desc="Welcoming text announced via screen readers the first time Chrome is launched at the conclusion of installation.">
+-          Welcome to Chromium; new browser window opened
++          Welcome to GCSA Aegis; new browser window opened
+         </message>
+       </if>
+       <if expr="is_macosx or is_linux">
+         <message name="IDS_FIRST_RUN_DIALOG_WINDOW_TITLE" desc="Window title of First Run dialog on Mac and Linux, displayed in title bar">
+-          Welcome to Chromium
++          Welcome to GCSA Aegis
+         </message>
+       </if>
+       <if expr="is_linux">
+@@ -346,7 +346,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+         </message>
+       </if>
+       <message name="IDS_PRODUCT_LOGO_ENTERPRISE_ALT_TEXT" desc="Alt text for the Chromium Enterprise logo image." formatter_data="android_java">
+-        Chromium Enterprise logo
++        GCSA Aegis logo
+       </message>
+       <if expr="is_macosx or is_chromeos">
+         <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
+@@ -355,7 +355,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+       </if>
+       <if expr="not is_macosx and not is_chromeos">
+         <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
+-          Task Manager - Chromium
++          Task Manager - GCSA Aegis
+         </message>
+       </if>
+       <message name="IDS_TASK_MANAGER_SEARCH_PLACEHOLDER" desc="The placeholder text for the Search bar in the Task Manager window">
+@@ -443,7 +443,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+           </then>
+           <else>
+             <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
+-              <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium
++              <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - GCSA Aegis
+             </message>
+           </else>
+         </if>
+@@ -457,7 +457,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+       <if expr="not is_chromeos and not is_macosx">
+         <!-- Captive Portal Browser Window Title Format -->
+         <message name="IDS_CAPTIVE_PORTAL_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in captive portal popup windows">
+-          <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Network Sign-in - Chromium
++          <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Network Sign-in - GCSA Aegis
+         </message>
+       </if>
+       <if expr="is_chromeos">
+@@ -482,7 +482,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </then>
+         <else>
+           <message name="IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window">
+-            <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - Chromium
++            <ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - GCSA Aegis
+           </message>
+         </else>
+       </if>
+@@ -567,18 +567,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+         </message>
+       </if>
+       <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu." translateable="false">
+-        Chromium
++        GCSA Aegis
+       </message>
+       <!-- Hung Browser Detector -->
+       <if expr="is_win">
+         <message name="IDS_BROWSER_HUNGBROWSER_MESSAGE" desc="Content of the dialog box shown when the browser is hung">
+-          Chromium is unresponsive. Relaunch now?
++          GCSA Aegis is unresponsive. Relaunch now?
+         </message>
+       </if>
+       <!-- General app failure messages -->
+       <if expr="not is_chromeos and not is_android">
+         <message name="IDS_COULDNT_STARTUP_PROFILE_ERROR" desc="Error displayed when Chrome cannot start because profiles were not opened correctly.">
+-          Cannot start Chromium because something went wrong when opening your profile. Try to restart Chromium.
++          Cannot start GCSA Aegis because something went wrong when opening your profile. Try to restart GCSA Aegis.
+         </message>
+       </if>
+       <!-- Sharing messages -->
+@@ -681,10 +681,10 @@ Chromium is unable to recover your settings.
+ 
+       <!-- Password manager onboarding strings -->
+       <message name="IDS_PASSWORD_MANAGER_ONBOARDING_DETAILS_C" desc="The explanation text that is shown below the title in the password manager onboarding dialog.">
+-        Chromium lets you know if your passwords are ever compromised
++        GCSA Aegis lets you know if your passwords are ever compromised
+       </message>
+       <message name="IDS_PASSWORD_MANAGER_TITLE_BRAND" desc="The product name used in the title of the password bubble." translateable="false">
+-        Chromium
++        GCSA Aegis
+       </message>
+       <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
+         Password Manager
+@@ -1062,19 +1062,19 @@ Chromium is unable to recover your settings.
+ 
+       <!-- Main Chrome menu -->
+       <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
+-        Customize and control Chromium
++        Customize and control GCSA Aegis
+       </message>
+ 
+       <message name="IDS_APPMENU_TOOLTIP_UPDATE_AVAILABLE" desc="The tooltip to show for the browser menu when an update is available">
+-        Customize and control Chromium. Update is available.
++        Customize and control GCSA Aegis. Update is available.
+       </message>
+ 
+       <message name="IDS_APPMENU_TOOLTIP_ALERT" desc="The tooltip to show for the browser menu when a non-update alert is displayed">
+-        Customize and control Chromium. Something needs your attention - click for details.
++        Customize and control GCSA Aegis. Something needs your attention - click for details.
+       </message>
+ 
+       <message name="IDS_OPEN_IN_CHROME" desc="The text label of the Open in Chrome menu item for the Hosted App app menu">
+-        &amp;Open in Chromium
++        &amp;Open in GCSA Aegis
+       </message>
+ 
+       <if expr="use_titlecase and not is_chromeos">
+@@ -1086,12 +1086,12 @@ Chromium is unable to recover your settings.
+           </then>
+           <else>
+             <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
+-              About &amp;Chromium
++              About &amp;GCSA Aegis
+             </message>
+           </else>
+         </if>
+         <message name="IDS_RELAUNCH_TO_UPDATE" desc="In Title Case: The text label of the relaunch to update Chrome menu item">
+-          Relaunch to Update &amp;Chromium
++          Relaunch to Update &amp;GCSA Aegis
+         </message>
+       </if>
+       <if expr="not use_titlecase and not is_chromeos">
+@@ -1103,12 +1103,12 @@ Chromium is unable to recover your settings.
+           </then>
+           <else>
+             <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
+-              About &amp;Chromium
++              About &amp;GCSA Aegis
+             </message>
+           </else>
+         </if>
+         <message name="IDS_RELAUNCH_TO_UPDATE" desc="The text label of the relaunch to update Chrome menu item">
+-          Relaunch to update &amp;Chromium
++          Relaunch to update &amp;GCSA Aegis
+         </message>
+       </if>
+       <if expr="is_chromeos">
+@@ -1122,13 +1122,13 @@ Chromium is unable to recover your settings.
+ 
+       <if expr="is_macosx">
+         <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome." translateable="false">
+-          Chromium
++          GCSA Aegis
+         </message>
+         <message name="IDS_HELPER_NAME" desc="The helper application's name.  Should contain the Chrome application name (IDS_PRODUCT_NAME). Example: Google Chrome Helper.">
+-          Chromium Helper
++          GCSA Aegis Helper
+         </message>
+         <message name="IDS_SHORT_HELPER_NAME" desc="The helper application's short name, used for the Mac's application menu, activity monitor, etc. Example: Chrome Helper, not Google Chrome Helper.">
+-          Chromium Helper
++          GCSA Aegis Helper
+         </message>
+       </if>
+ 
+-- 
+2.52.0
+

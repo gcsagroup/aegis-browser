@@ -11,6 +11,11 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_split.h"
+#include "build/build_config.h"
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/devtools/remote_debugging_server.h"
+#endif
+#include "chrome/common/aegis/cdp_target_filter.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_socket_factory.h"
@@ -113,6 +118,19 @@ bool HasExplicitRemoteAllowOrigins(std::string_view origins) {
               .empty();
 }
 
+void StopAllRemoteDebuggingTransportsForIncognito() {
+  // Stop these unconditionally. A command-line or third-party HTTP endpoint
+  // is deliberately not owned by AiControl, and a pipe has no address for
+  // AiControl::Start() to discover. Destroying both handlers also detaches
+  // already-connected remote clients before Incognito begins navigating.
+#if BUILDFLAG(IS_ANDROID)
+  content::DevToolsAgentHost::StopRemoteDebuggingServer();
+  content::DevToolsAgentHost::StopRemoteDebuggingPipeHandler();
+#else
+  RemoteDebuggingServer::StopForIncognito();
+#endif
+}
+
 AiControl::AiControl() = default;
 
 AiControl::~AiControl() {
@@ -120,6 +138,9 @@ AiControl::~AiControl() {
 }
 
 bool AiControl::Start() {
+  if (IsRemoteCdpBlockedForIncognito()) {
+    return false;
+  }
   if (active_) {
     const std::string current =
         content::DevToolsAgentHost::GetRemoteDebuggingServerAddress();
@@ -143,18 +164,10 @@ bool AiControl::Start() {
   const std::string existing =
       content::DevToolsAgentHost::GetRemoteDebuggingServerAddress();
   if (!existing.empty()) {
-    int existing_port = 0;
-    if (!IsLoopbackDevToolsAddress(existing, &existing_port)) {
-      LOG(ERROR) << "Aegis AI control: refusing existing non-loopback or "
-                    "invalid CDP endpoint: "
-                 << existing;
-      return false;
-    }
-    active_ = true;
-    started_by_us_ = false;
-    LOG(INFO) << "Aegis AI control: using existing loopback CDP endpoint "
-              << existing;
-    return true;
+    // Aegis must own the server it advertises so opening Incognito can stop
+    // it synchronously. Never adopt a command-line or third-party endpoint.
+    LOG(ERROR) << "Aegis AI control: refusing pre-existing CDP endpoint";
+    return false;
   }
 
   base::FilePath output_dir;

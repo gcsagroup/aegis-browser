@@ -124,6 +124,12 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
            : u"Page copy urges you to sign in immediately",
         reason.weight);
   }
+  if (reason.code == "unicode_text_obfuscation") {
+    return WithoutTechnicalWeight(
+        zh ? u"页面使用隐形字符干扰文本检测，已还原后检查"
+           : u"Invisible characters were removed before checking page text",
+        reason.weight);
+  }
   if (reason.code == "password_on_risky_origin") {
     return WithoutTechnicalWeight(
         zh ? u"在可疑网站上出现了密码框" : u"Password field on a risky site",

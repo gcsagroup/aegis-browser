@@ -1,0 +1,3378 @@
+From ff8f23b1b7d4c04b5d155d33c213f6da2d5393a0 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 2 Sep 2026 04:22:21 +0800
+Subject: [PATCH] feat(aegis): complete cross-platform v2 runtime
+
+---
+ chrome/android/BUILD.gn                       |   1 +
+ chrome/android/chrome_java_resources.gni      |   2 +
+ chrome/android/chrome_java_sources.gni        |   2 +
+ .../res/layout/aegis_agent_bottom_sheet.xml   | 135 ++++++++++++
+ .../java/res/layout/aegis_agent_ntp_card.xml  |  60 ++++++
+ .../java/res/layout/new_tab_page_layout.xml   |   4 +
+ chrome/android/java/res/values/ids.xml        |   2 +
+ .../chrome/browser/ChromeTabbedActivity.java  |  27 +++
+ .../AegisAgentBottomSheetCoordinator.java     | 156 ++++++++++++++
+ .../aegis/AegisAgentNotificationBridge.java   |  72 +++++++
+ .../chrome/browser/ntp/NewTabPage.java        |  27 +++
+ .../TabbedAppMenuPropertiesDelegate.java      |  44 ++++
+ chrome/app/generated_resources.grd            |   3 +
+ .../resources/generated_resources_zh-CN.xtb   |   1 +
+ .../resources/generated_resources_zh-HK.xtb   |   1 +
+ .../resources/generated_resources_zh-TW.xtb   |   1 +
+ chrome/browser/BUILD.gn                       |   2 +-
+ chrome/browser/aegis/BUILD.gn                 |  84 ++++----
+ .../aegis/agent/aegis_agent_browsertest.cc    | 138 ++++++++++++
+ .../aegis/agent/aegis_agent_service.cc        | 154 +++++++++++++-
+ .../browser/aegis/agent/aegis_agent_service.h |  24 ++-
+ .../agent/aegis_agent_service_unittest.cc     | 201 ++++++++++++++++++
+ .../aegis/agent/aegis_browser_tools.cc        | 131 +++++++-----
+ .../browser/aegis/agent/agent_model_client.cc |   8 +-
+ .../agent/agent_model_client_unittest.cc      |  18 ++
+ chrome/browser/aegis/agent/agent_planner.cc   | 186 +++++++++++++++-
+ chrome/browser/aegis/agent/agent_planner.h    |   6 +
+ .../aegis/agent/agent_planner_unittest.cc     |  90 +++++++-
+ chrome/browser/aegis/agent/agent_workflow.cc  |  17 +-
+ chrome/browser/resources/BUILD.gn             |   2 +-
+ chrome/browser/resources/aegis/aegis.ts       |   6 +-
+ chrome/browser/resources/aegis_agent/agent.ts |  38 +++-
+ chrome/browser/ui/BUILD.gn                    |   1 +
+ .../strings/android_chrome_strings.grd        |  75 +++++++
+ .../android_chrome_strings_zh-CN.xtb          |  26 ++-
+ .../android_chrome_strings_zh-TW.xtb          |  26 ++-
+ chrome/browser/ui/toolbar/app_menu_model.cc   |  13 +-
+ chrome/browser/ui/webui/BUILD.gn              |   2 +-
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  34 ++-
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn  |  16 +-
+ .../aegis_agent/aegis_agent_page_handler.cc   |  59 +++--
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  29 ++-
+ .../ui/webui/aegis_agent/aegis_agent_ui.h     |  18 +-
+ .../webui/chrome_untrusted_web_ui_configs.cc  |  15 +-
+ chrome/chrome_paks.gni                        |   2 +-
+ 45 files changed, 1769 insertions(+), 190 deletions(-)
+ create mode 100644 chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml
+ create mode 100644 chrome/android/java/res/layout/aegis_agent_ntp_card.xml
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentNotificationBridge.java
+
+diff --git a/chrome/android/BUILD.gn b/chrome/android/BUILD.gn
+index 0ff13dbee2..4eebb527df 100644
+--- a/chrome/android/BUILD.gn
++++ b/chrome/android/BUILD.gn
+@@ -2966,6 +2966,7 @@ if (_is_default_toolchain) {
+       "java/src/org/chromium/chrome/browser/WarmupManager.java",
+       "java/src/org/chromium/chrome/browser/about_settings/AboutSettingsBridge.java",
+       "java/src/org/chromium/chrome/browser/accessibility/settings/AccessibilitySettingsBridge.java",
++      "java/src/org/chromium/chrome/browser/aegis/AegisAgentNotificationBridge.java",
+       "java/src/org/chromium/chrome/browser/announcement/AnnouncementNotificationManager.java",
+       "java/src/org/chromium/chrome/browser/app/feed/NavigationRecorder.java",
+       "java/src/org/chromium/chrome/browser/app/flags/ChromeCachedFlags.java",
+diff --git a/chrome/android/chrome_java_resources.gni b/chrome/android/chrome_java_resources.gni
+index 7d2c511750..0be20b4399 100644
+--- a/chrome/android/chrome_java_resources.gni
++++ b/chrome/android/chrome_java_resources.gni
+@@ -436,6 +436,8 @@ chrome_java_resources = [
+   "java/res/layout/account_chooser_dialog_item.xml",
+   "java/res/layout/account_chooser_dialog_title.xml",
+   "java/res/layout/account_management_account_row.xml",
++  "java/res/layout/aegis_agent_bottom_sheet.xml",
++  "java/res/layout/aegis_agent_ntp_card.xml",
+   "java/res/layout/app_history_filter.xml",
+   "java/res/layout/auto_pip_permission_dialog.xml",
+   "java/res/layout/auto_sign_in_first_run_dialog.xml",
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+index 42388df2ae..e16f1c7750 100644
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -69,6 +69,8 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/actor/ActorForegroundServiceControllerImpl.java",
+   "java/src/org/chromium/chrome/browser/actor/ActorForegroundServiceImpl.java",
+   "java/src/org/chromium/chrome/browser/actor/ActorForegroundServiceUmaHelper.java",
++  "java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java",
++  "java/src/org/chromium/chrome/browser/aegis/AegisAgentNotificationBridge.java",
+   "java/src/org/chromium/chrome/browser/announcement/AnnouncementNotificationManager.java",
+   "java/src/org/chromium/chrome/browser/app/ChromeActivity.java",
+   "java/src/org/chromium/chrome/browser/app/MainLayoutSwitcher.java",
+diff --git a/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml b/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml
+new file mode 100644
+index 0000000000..e3bf574d1b
+--- /dev/null
++++ b/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml
+@@ -0,0 +1,135 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2026 GCSA -->
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:layout_width="match_parent"
++    android:layout_height="wrap_content"
++    android:orientation="vertical">
++
++    <ImageView
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_gravity="center_horizontal"
++        android:layout_marginTop="8dp"
++        android:importantForAccessibility="no"
++        android:src="@drawable/drag_handlebar"
++        app:tint="@macro/drag_handle_color" />
++
++    <ScrollView
++        android:id="@+id/aegis_agent_sheet_scroll_view"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:fillViewport="true">
++
++        <LinearLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content"
++            android:orientation="vertical"
++            android:paddingHorizontal="24dp"
++            android:paddingTop="16dp"
++            android:paddingBottom="20dp">
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:text="@string/aegis_agent_sheet_title"
++                android:textAppearance="@style/TextAppearance.Headline.Primary" />
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="6dp"
++                android:text="@string/aegis_agent_sheet_subtitle"
++                android:textAppearance="@style/TextAppearance.TextMedium.Secondary" />
++
++            <com.google.android.material.textfield.TextInputLayout
++                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="18dp"
++                app:hintTextAppearance="@style/TextAppearance.TextMedium.Primary"
++                app:shapeAppearanceOverlay="@style/ShapeAppearance.App.MediumComponent">
++
++                <com.google.android.material.textfield.TextInputEditText
++                    android:id="@+id/aegis_agent_sheet_goal"
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:gravity="top|start"
++                    android:hint="@string/aegis_agent_sheet_goal_hint"
++                    android:inputType="textCapSentences|textMultiLine"
++                    android:maxLength="4096"
++                    android:minHeight="112dp"
++                    android:textAppearance="@style/TextAppearance.TextLarge.Primary" />
++            </com.google.android.material.textfield.TextInputLayout>
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="14dp"
++                android:text="@string/aegis_agent_common_tasks"
++                android:textAppearance="@style/TextAppearance.TextMedium.Secondary" />
++
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="4dp"
++                android:orientation="horizontal">
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/aegis_agent_quick_summary"
++                    style="@style/TextButton"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:text="@string/aegis_agent_quick_summary" />
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/aegis_agent_quick_bookmarks"
++                    style="@style/TextButton"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:text="@string/aegis_agent_quick_bookmarks" />
++            </LinearLayout>
++
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:orientation="horizontal">
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/aegis_agent_quick_download"
++                    style="@style/TextButton"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:text="@string/aegis_agent_quick_download" />
++
++                <org.chromium.ui.widget.ButtonCompat
++                    android:id="@+id/aegis_agent_quick_compare"
++                    style="@style/TextButton"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:text="@string/aegis_agent_quick_compare" />
++            </LinearLayout>
++
++            <org.chromium.ui.widget.ButtonCompat
++                android:id="@+id/aegis_agent_sheet_start"
++                style="@style/FilledButton"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="12dp"
++                android:minHeight="@dimen/min_touch_target_size"
++                android:text="@string/aegis_agent_start_task" />
++
++            <org.chromium.ui.widget.ButtonCompat
++                android:id="@+id/aegis_agent_sheet_open_center"
++                style="@style/TextButton"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:minHeight="@dimen/min_touch_target_size"
++                android:text="@string/aegis_agent_open_center" />
++        </LinearLayout>
++    </ScrollView>
++</LinearLayout>
+diff --git a/chrome/android/java/res/layout/aegis_agent_ntp_card.xml b/chrome/android/java/res/layout/aegis_agent_ntp_card.xml
+new file mode 100644
+index 0000000000..d7a01e2886
+--- /dev/null
++++ b/chrome/android/java/res/layout/aegis_agent_ntp_card.xml
+@@ -0,0 +1,60 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Copyright 2026 GCSA -->
++<org.chromium.components.browser_ui.widget.MaterialCardViewNoShadow
++    xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
++    android:id="@+id/aegis_agent_ntp_card"
++    style="@style/MaterialCardStyle"
++    android:layout_width="match_parent"
++    android:layout_height="wrap_content"
++    android:layout_marginHorizontal="@dimen/mvt_container_lateral_margin"
++    android:layout_marginTop="8dp"
++    android:layout_marginBottom="8dp"
++    android:clickable="true"
++    android:focusable="true">
++
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:gravity="center_vertical"
++        android:minHeight="80dp"
++        android:orientation="horizontal"
++        android:paddingHorizontal="18dp"
++        android:paddingVertical="12dp">
++
++        <ImageView
++            android:layout_width="32dp"
++            android:layout_height="32dp"
++            android:importantForAccessibility="no"
++            android:src="@drawable/draft_spark_24dp"
++            app:tint="@macro/default_icon_color_accent1" />
++
++        <LinearLayout
++            android:layout_width="0dp"
++            android:layout_height="wrap_content"
++            android:layout_marginStart="14dp"
++            android:layout_weight="1"
++            android:orientation="vertical">
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:text="@string/aegis_agent_ntp_title"
++                android:textAppearance="@style/TextAppearance.TextLarge.Primary" />
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="2dp"
++                android:maxLines="2"
++                android:text="@string/aegis_agent_ntp_subtitle"
++                android:textAppearance="@style/TextAppearance.TextSmall.Secondary" />
++        </LinearLayout>
++
++        <ImageView
++            android:layout_width="24dp"
++            android:layout_height="24dp"
++            android:importantForAccessibility="no"
++            android:src="@drawable/ic_arrow_forward_blue_24dp" />
++    </LinearLayout>
++</org.chromium.components.browser_ui.widget.MaterialCardViewNoShadow>
+diff --git a/chrome/android/java/res/layout/new_tab_page_layout.xml b/chrome/android/java/res/layout/new_tab_page_layout.xml
+index 052f7c79ab..0ea77b5a96 100644
+--- a/chrome/android/java/res/layout/new_tab_page_layout.xml
++++ b/chrome/android/java/res/layout/new_tab_page_layout.xml
+@@ -44,6 +44,10 @@ found in the LICENSE file.
+         android:layout="@layout/composeplate_view_layout"
+         />
+ 
++    <include
++        android:id="@+id/aegis_agent_ntp_card"
++        layout="@layout/aegis_agent_ntp_card" />
++
+     <!-- Most Visited Tiles -->
+     <ViewStub
+         android:id="@+id/mv_tiles_layout_stub"
+diff --git a/chrome/android/java/res/values/ids.xml b/chrome/android/java/res/values/ids.xml
+index b145eea10b..9ccc46f565 100644
+--- a/chrome/android/java/res/values/ids.xml
++++ b/chrome/android/java/res/values/ids.xml
+@@ -229,6 +229,8 @@ found in the LICENSE file.
+     <item type="id" name="paint_preview_show_id" />
+     <item type="id" name="get_image_descriptions_id" />
+     <item type="id" name="reader_mode_prefs_id" />
++    <item type="id" name="aegis_agent_menu_id" />
++    <item type="id" name="aegis_agent_current_page_menu_id" />
+     <item type="id" name="preferences_id" />
+     <item type="id" name="ntp_customization_id" />
+     <item type="id" name="listen_to_feed_id" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+index 977f05360f..b3de813ca4 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -87,6 +87,7 @@ import org.chromium.chrome.R;
+ import org.chromium.chrome.browser.IntentHandler.ExternalAppId;
+ import org.chromium.chrome.browser.IntentHandler.TabOpenType;
+ import org.chromium.chrome.browser.accessibility.settings.CaretBrowsingDialog;
++import org.chromium.chrome.browser.aegis.AegisAgentBottomSheetCoordinator;
+ import org.chromium.chrome.browser.app.ChromeActivity;
+ import org.chromium.chrome.browser.app.appmenu.AppMenuPropertiesDelegateImpl;
+ import org.chromium.chrome.browser.app.metrics.LaunchCauseMetrics;
+@@ -4141,6 +4142,24 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+                 .closeTabs(TabClosureParams.closeAllTabs().build(), /* allowDialog= */ false);
+     }
+ 
++    private void showAegisAgentComposer(boolean currentPage) {
++        AegisAgentBottomSheetCoordinator.show(
++                this,
++                assertNonNull(mRootUiCoordinator.getBottomSheetController()),
++                currentPage,
++                this::openAegisAgentWorkspace);
++    }
++
++    private void openAegisAgentWorkspace(String goal, boolean autoStart) {
++        Uri.Builder url = Uri.parse("chrome-untrusted://aegis-agent/").buildUpon();
++        if (!goal.isEmpty()) url.appendQueryParameter("goal", goal);
++        if (autoStart) url.appendQueryParameter("autostart", "1");
++        LoadUrlParams params =
++                new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
++        getTabCreator(/* incognito= */ false)
++                .createNewTab(params, TabLaunchType.FROM_CHROME_UI, getActivityTab());
++    }
++
+     @Override
+     public boolean onMenuOrKeyboardAction(
+             final int id,
+@@ -4164,6 +4183,14 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+             TabCreatorUtil.launchNtp(getTabCreator(/* incognito= */ false));
+ 
+             mLocaleManager.showSearchEnginePromoIfNeeded(this, null);
++        } else if (id == R.id.aegis_agent_menu_id) {
++            showAegisAgentComposer(/* currentPage= */ false);
++            RecordUserAction.record("MobileMenuAegisAgent");
++            return true;
++        } else if (id == R.id.aegis_agent_current_page_menu_id) {
++            showAegisAgentComposer(/* currentPage= */ true);
++            RecordUserAction.record("MobileMenuAegisAgentCurrentPage");
++            return true;
+         } else if (id == R.id.new_incognito_tab_menu_id) {
+             if (!mTabModelSelector.isTabStateInitialized()) {
+                 RecordUserAction.record("MobileMenuNewIncognitoTab.BeforeTabRestore");
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java b/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java
+new file mode 100644
+index 0000000000..18ee2a0eeb
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java
+@@ -0,0 +1,156 @@
++// Copyright 2026 GCSA
++
++package org.chromium.chrome.browser.aegis;
++
++import android.content.Context;
++import android.content.res.Resources;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.widget.EditText;
++import android.widget.ScrollView;
++
++import androidx.annotation.StringRes;
++
++import org.chromium.build.annotations.NullMarked;
++import org.chromium.build.annotations.Nullable;
++import org.chromium.chrome.R;
++import org.chromium.components.browser_ui.bottomsheet.BottomSheetContent;
++import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
++
++/** Native, novice-friendly entry composer for Aegis Browser Agent. */
++@NullMarked
++public final class AegisAgentBottomSheetCoordinator {
++    /** Opens the full Agent workspace with an optional goal. */
++    public interface Launcher {
++        void launch(String goal, boolean autoStart);
++    }
++
++    /**
++     * Shows the native task composer.
++     *
++     * @param currentPage Whether this entry was invoked for the visible HTTP(S) page.
++     */
++    public static boolean show(
++            Context context,
++            BottomSheetController controller,
++            boolean currentPage,
++            Launcher launcher) {
++        View view =
++                LayoutInflater.from(context)
++                        .inflate(R.layout.aegis_agent_bottom_sheet, /* root= */ null);
++        ScrollView scrollView = view.findViewById(R.id.aegis_agent_sheet_scroll_view);
++        EditText goal = view.findViewById(R.id.aegis_agent_sheet_goal);
++        if (currentPage) {
++            goal.setText(R.string.aegis_agent_current_page_default_goal);
++            goal.setSelection(goal.length());
++        }
++
++        bindPreset(view, goal, R.id.aegis_agent_quick_summary, R.string.aegis_agent_goal_summary);
++        bindPreset(
++                view, goal, R.id.aegis_agent_quick_bookmarks, R.string.aegis_agent_goal_bookmarks);
++        bindPreset(view, goal, R.id.aegis_agent_quick_download, R.string.aegis_agent_goal_download);
++        bindPreset(view, goal, R.id.aegis_agent_quick_compare, R.string.aegis_agent_goal_compare);
++
++        SheetContent content = new SheetContent(view, scrollView);
++        view.findViewById(R.id.aegis_agent_sheet_start)
++                .setOnClickListener(
++                        ignored -> {
++                            String requestedGoal = goal.getText().toString().trim();
++                            if (requestedGoal.isEmpty()) {
++                                goal.setError(
++                                        context.getString(R.string.aegis_agent_goal_required));
++                                goal.requestFocus();
++                                return;
++                            }
++                            controller.hideContent(content, /* animate= */ true);
++                            launcher.launch(requestedGoal, /* autoStart= */ true);
++                        });
++        view.findViewById(R.id.aegis_agent_sheet_open_center)
++                .setOnClickListener(
++                        ignored -> {
++                            controller.hideContent(content, /* animate= */ true);
++                            launcher.launch(/* goal= */ "", /* autoStart= */ false);
++                        });
++        return controller.requestShowContent(content, /* animate= */ true);
++    }
++
++    private static void bindPreset(
++            View view, EditText goal, int buttonId, @StringRes int goalStringId) {
++        view.findViewById(buttonId)
++                .setOnClickListener(
++                        ignored -> {
++                            goal.setText(goalStringId);
++                            goal.setSelection(goal.length());
++                        });
++    }
++
++    private static final class SheetContent implements BottomSheetContent {
++        private final View mView;
++        private final ScrollView mScrollView;
++
++        SheetContent(View view, ScrollView scrollView) {
++            mView = view;
++            mScrollView = scrollView;
++        }
++
++        @Override
++        public View getContentView() {
++            return mView;
++        }
++
++        @Override
++        public @Nullable View getToolbarView() {
++            return null;
++        }
++
++        @Override
++        public int getVerticalScrollOffset() {
++            return mScrollView.getScrollY();
++        }
++
++        @Override
++        public void destroy() {}
++
++        @Override
++        public int getPriority() {
++            return ContentPriority.HIGH;
++        }
++
++        @Override
++        public float getFullHeightRatio() {
++            return HeightMode.WRAP_CONTENT;
++        }
++
++        @Override
++        public float getHalfHeightRatio() {
++            return HeightMode.DISABLED;
++        }
++
++        @Override
++        public boolean swipeToDismissEnabled() {
++            return true;
++        }
++
++        @Override
++        public String getSheetContentDescription(Context context) {
++            return context.getString(R.string.aegis_agent_sheet_content_description);
++        }
++
++        @Override
++        public @StringRes int getSheetClosedAccessibilityStringId() {
++            return R.string.aegis_agent_sheet_closed;
++        }
++
++        @Override
++        public @StringRes int getSheetHalfHeightAccessibilityStringId() {
++            return Resources.ID_NULL;
++        }
++
++        @Override
++        public @StringRes int getSheetFullHeightAccessibilityStringId() {
++            return R.string.aegis_agent_sheet_opened;
++        }
++    }
++
++    private AegisAgentBottomSheetCoordinator() {}
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentNotificationBridge.java b/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentNotificationBridge.java
+new file mode 100644
+index 0000000000..4bbfdad206
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentNotificationBridge.java
+@@ -0,0 +1,72 @@
++// Copyright 2026 GCSA
++
++package org.chromium.chrome.browser.aegis;
++
++import android.app.Notification;
++import android.app.PendingIntent;
++import android.content.Context;
++import android.content.Intent;
++import android.net.Uri;
++
++import org.jni_zero.CalledByNative;
++import org.jni_zero.JNINamespace;
++
++import org.chromium.base.ContextUtils;
++import org.chromium.build.annotations.NullMarked;
++import org.chromium.chrome.R;
++import org.chromium.chrome.browser.IntentHandler;
++import org.chromium.chrome.browser.browserservices.intents.WebappConstants;
++import org.chromium.chrome.browser.notifications.NotificationUmaTracker;
++import org.chromium.chrome.browser.notifications.NotificationWrapperBuilderFactory;
++import org.chromium.chrome.browser.notifications.channels.ChromeChannelDefinitions;
++import org.chromium.components.browser_ui.notifications.BaseNotificationManagerProxyFactory;
++import org.chromium.components.browser_ui.notifications.NotificationMetadata;
++import org.chromium.components.browser_ui.notifications.NotificationWrapper;
++import org.chromium.components.browser_ui.notifications.PendingIntentProvider;
++
++/** Android system notification bridge for verified Aegis automation changes. */
++@JNINamespace("aegis::agent")
++@NullMarked
++public final class AegisAgentNotificationBridge {
++    private static final String NOTIFICATION_TAG = "aegis_agent_monitor";
++
++    @CalledByNative
++    public static void showMonitorChange(String host, String changeKind, String monitorId) {
++        Context context = ContextUtils.getApplicationContext();
++        int notificationId = monitorId.hashCode();
++        String detail =
++                context.getString(R.string.aegis_agent_monitor_changed_detail, changeKind, host);
++        NotificationWrapper notification =
++                NotificationWrapperBuilderFactory.createNotificationWrapperBuilder(
++                                ChromeChannelDefinitions.ChannelId.ACTOR,
++                                new NotificationMetadata(
++                                        NotificationUmaTracker.SystemNotificationType.ACTOR,
++                                        NOTIFICATION_TAG,
++                                        notificationId))
++                        .setSmallIcon(R.drawable.ic_chrome)
++                        .setContentTitle(context.getString(R.string.aegis_agent_monitor_changed))
++                        .setContentText(detail)
++                        .setBigTextStyle(detail)
++                        .setAutoCancel(true)
++                        .setDefaults(Notification.DEFAULT_ALL)
++                        .setContentIntent(createOpenAgentIntent(context, notificationId))
++                        .buildNotificationWrapper();
++        BaseNotificationManagerProxyFactory.create().notify(notification);
++        NotificationUmaTracker.getInstance()
++                .onNotificationShown(
++                        NotificationUmaTracker.SystemNotificationType.ACTOR,
++                        notification.getNotification());
++    }
++
++    private static PendingIntentProvider createOpenAgentIntent(Context context, int requestCode) {
++        Intent intent =
++                IntentHandler.createTrustedOpenNewTabIntent(context, /* incognito= */ false);
++        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++        intent.putExtra(WebappConstants.REUSE_URL_MATCHING_TAB_ELSE_NEW_TAB, true);
++        intent.setData(Uri.parse("chrome-untrusted://aegis-agent/?view=automation"));
++        return PendingIntentProvider.getActivity(
++                context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT);
++    }
++
++    private AegisAgentNotificationBridge() {}
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+index aebc973901..a343ed2f38 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+@@ -12,6 +12,7 @@ import android.graphics.Bitmap;
+ import android.graphics.Canvas;
+ import android.graphics.Point;
+ import android.graphics.Rect;
++import android.net.Uri;
+ import android.view.LayoutInflater;
+ import android.view.MotionEvent;
+ import android.view.View;
+@@ -36,6 +37,7 @@ import org.chromium.build.annotations.EnsuresNonNull;
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
+ import org.chromium.chrome.R;
++import org.chromium.chrome.browser.aegis.AegisAgentBottomSheetCoordinator;
+ import org.chromium.chrome.browser.app.feed.FeedActionDelegateImpl;
+ import org.chromium.chrome.browser.back_press.BackPressManager;
+ import org.chromium.chrome.browser.bookmarks.BookmarkModel;
+@@ -112,6 +114,7 @@ import org.chromium.components.omnibox.AutocompleteRequestType;
+ import org.chromium.components.omnibox.OmniboxFocusReason;
+ import org.chromium.components.search_engines.TemplateUrlService;
+ import org.chromium.components.search_engines.TemplateUrlService.TemplateUrlServiceObserver;
++import org.chromium.content_public.browser.LoadUrlParams;
+ import org.chromium.content_public.browser.NavigationController;
+ import org.chromium.ui.base.ActivityResultTracker;
+ import org.chromium.ui.base.DeviceFormFactor;
+@@ -509,6 +512,30 @@ public class NewTabPage
+         // TODO(crbug.com/347509698): Remove the log statements after fixing the bug.
+         Log.d(TAG, "NewTabPageLayout inflate");
+         mNewTabPageLayout = (NewTabPageLayout) inflater.inflate(R.layout.new_tab_page_layout, null);
++        mNewTabPageLayout
++                .findViewById(R.id.aegis_agent_ntp_card)
++                .setOnClickListener(
++                        ignored -> {
++                            AegisAgentBottomSheetCoordinator.show(
++                                    activity,
++                                    mBottomSheetController,
++                                    /* currentPage= */ false,
++                                    (goal, autoStart) -> {
++                                        Uri.Builder agentUrl =
++                                                Uri.parse("chrome-untrusted://aegis-agent/")
++                                                        .buildUpon();
++                                        if (!goal.isEmpty()) {
++                                            agentUrl.appendQueryParameter("goal", goal);
++                                        }
++                                        if (autoStart) {
++                                            agentUrl.appendQueryParameter("autostart", "1");
++                                        }
++                                        nativePageHost.loadUrl(
++                                                new LoadUrlParams(agentUrl.build().toString()),
++                                                /* incognito= */ false);
++                                    });
++                            RecordUserAction.record("MobileNTPAegisAgent");
++                        });
+         mNewTabPageCoordinator =
+                 new NewTabPageCoordinator(
+                         mNewTabPageManager,
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+index e248048c4b..d5286fdab8 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+@@ -537,6 +537,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         // Divider Line
+         maybeAddDividerLine(modelList, R.id.divider_line_id);
+ 
++        if (!isIncognitoShowing()) {
++            if (shouldShowAegisCurrentPageItem(currentTab)) {
++                modelList.add(buildAegisCurrentPageItem());
++            }
++            modelList.add(buildAegisAgentItem());
++        }
++
+         // Settings
+         modelList.add(buildSettingsItem());
+ 
+@@ -725,6 +732,13 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         // Divider Line
+         maybeAddDividerLine(modelList, R.id.divider_line_id);
+ 
++        if (!isIncognitoShowing()) {
++            if (shouldShowAegisCurrentPageItem(currentTab)) {
++                modelList.add(buildAegisCurrentPageItem());
++            }
++            modelList.add(buildAegisAgentItem());
++        }
++
+         // Settings
+         modelList.add(buildSettingsItem());
+ 
+@@ -802,6 +816,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         modelList.add(buildCloseAllTabsItem());
+         if (shouldShowSelectTabsItem()) modelList.add(buildSelectTabsItem());
+         if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
++        if (!isIncognitoShowing()) modelList.add(buildAegisAgentItem());
+         modelList.add(buildSettingsItem());
+     }
+ 
+@@ -813,6 +828,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         } else {
+             modelList.add(buildNewIncognitoTabItem());
+         }
++        if (!isIncognitoShowing()) modelList.add(buildAegisAgentItem());
+         modelList.add(buildSettingsItem());
+         if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
+     }
+@@ -2400,6 +2416,34 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+                         shouldShowIconBeforeItem() ? R.drawable.settings_cog : Resources.ID_NULL));
+     }
+ 
++    private ListItem buildAegisAgentItem() {
++        return new ListItem(
++                AppMenuHandler.AppMenuItemType.STANDARD,
++                buildModelForStandardMenuItem(
++                        R.id.aegis_agent_menu_id,
++                        R.string.menu_aegis_agent,
++                        shouldShowIconBeforeItem()
++                                ? R.drawable.draft_spark_24dp
++                                : Resources.ID_NULL));
++    }
++
++    private ListItem buildAegisCurrentPageItem() {
++        return new ListItem(
++                AppMenuHandler.AppMenuItemType.STANDARD,
++                buildModelForStandardMenuItem(
++                        R.id.aegis_agent_current_page_menu_id,
++                        R.string.menu_aegis_agent_current_page,
++                        shouldShowIconBeforeItem()
++                                ? R.drawable.draft_spark_24dp
++                                : Resources.ID_NULL));
++    }
++
++    private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
++        if (currentTab == null || isIncognitoShowing()) return false;
++        String scheme = currentTab.getUrl().getScheme();
++        return "http".equals(scheme) || "https".equals(scheme);
++    }
++
+     @Contract("null -> false")
+     private boolean shouldShowListenToFeedItem(@Nullable Tab currentTab) {
+         if (currentTab == null
+diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
+index 5c0d36402d..03e85b9e5d 100644
+--- a/chrome/app/generated_resources.grd
++++ b/chrome/app/generated_resources.grd
+@@ -1871,6 +1871,9 @@ are declared in tools/grit/grit_args.gni.
+       <message name="IDS_CHROME_WHATS_NEW" desc="The text label of the Help menu item which takes the user to the Chrome What's New page.">
+         What's New
+       </message>
++      <message name="IDS_SHOW_AEGIS_AGENT" desc="The app menu item that opens Aegis Browser Agent.">
++        Aegis Agent
++      </message>
+       <if expr="not use_titlecase">
+         <message name="IDS_IMPORT_SETTINGS_MENU_LABEL" desc="In sentence case: The app menu label to import bookmarks and settings.">
+           Import bookmarks and settings...
+diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
+index 38508e721f..e3547939f4 100644
+--- a/chrome/app/resources/generated_resources_zh-CN.xtb
++++ b/chrome/app/resources/generated_resources_zh-CN.xtb
+@@ -7612,6 +7612,7 @@
+ <translation id="6701535245008341853">无法获取个人资料。</translation>
+ <translation id="6702639462873609204">修改(&amp;E)...</translation>
+ <translation id="6702859741546259407">若要使用“<ph name="FEATURE_NAME" />”功能，请开启蓝牙和 Wi-Fi</translation>
++<translation id="670301599904609742">Aegis 智能体</translation>
+ <translation id="6703109186846420472">、</translation>
+ <translation id="670431355064244920">小焦点</translation>
+ <translation id="6707122714992751648">运行 ChromeOS 诊断测试</translation>
+diff --git a/chrome/app/resources/generated_resources_zh-HK.xtb b/chrome/app/resources/generated_resources_zh-HK.xtb
+index 67e510f3b4..a671513348 100644
+--- a/chrome/app/resources/generated_resources_zh-HK.xtb
++++ b/chrome/app/resources/generated_resources_zh-HK.xtb
+@@ -7625,6 +7625,7 @@
+ <translation id="6701535245008341853">無法取得設定檔。</translation>
+ <translation id="6702639462873609204">編輯(&amp;E)…</translation>
+ <translation id="6702859741546259407">如要使用「<ph name="FEATURE_NAME" />」，請開啟藍牙和 Wi-Fi</translation>
++<translation id="670301599904609742">Aegis 智慧代理</translation>
+ <translation id="6703109186846420472">、</translation>
+ <translation id="670431355064244920">小焦點</translation>
+ <translation id="6707122714992751648">執行 ChromeOS 診斷測試</translation>
+diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
+index 417466915f..5dfe73ffd0 100644
+--- a/chrome/app/resources/generated_resources_zh-TW.xtb
++++ b/chrome/app/resources/generated_resources_zh-TW.xtb
+@@ -7608,6 +7608,7 @@
+ <translation id="6701535245008341853">無法取得設定檔。</translation>
+ <translation id="6702639462873609204">編輯(&amp;E)...</translation>
+ <translation id="6702859741546259407">如要使用<ph name="FEATURE_NAME" />功能，請開啟藍牙和 Wi-Fi</translation>
++<translation id="670301599904609742">Aegis 智慧代理</translation>
+ <translation id="6703109186846420472">、</translation>
+ <translation id="670431355064244920">聚焦範圍：小</translation>
+ <translation id="6707122714992751648">執行 ChromeOS 診斷測試</translation>
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 8944aec454..628380da5e 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -4795,6 +4795,7 @@ group("browser_generated_files") {
+     "//chrome/browser/predictors/lcp_critical_path_predictor:lcp_critical_path_predictor_proto",
+     "//chrome/browser/regional_capabilities",
+     "//chrome/browser/resource_coordinator:mojo_bindings",
++    "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+     "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
+     "//chrome/browser/ui/webui/context_hub:mojo_bindings",
+     "//chrome/browser/ui/webui/location_internals:mojo_bindings",
+@@ -4834,7 +4835,6 @@ group("browser_generated_files") {
+       "//chrome/browser/ui:webui_name_variants",
+       "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
+       "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
+-      "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
+       "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
+       "//chrome/browser/ui/webui/customize_buttons:mojo_bindings",
+       "//chrome/browser/ui/webui/data_sharing:mojo_bindings",
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index dec8d061b6..63762bc835 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -47,28 +47,27 @@ source_set("agent_core") {
+   deps = [
+     "//base",
+     "//crypto",
++    "//net",
+     "//net/base:registry_controlled_domains",
+     "//sql",
+     "//url",
+   ]
+ }
+ 
+-if (!is_android) {
+-  source_set("agent_model_transport") {
+-    sources = [
+-      "agent/agent_model_client.cc",
+-      "agent/agent_model_client.h",
+-    ]
+-    deps = [
+-      ":agent_core",
+-      ":model_provider_policy",
+-      "//base",
+-      "//net",
+-      "//services/network/public/cpp",
+-      "//services/network/public/mojom",
+-      "//url",
+-    ]
+-  }
++source_set("agent_model_transport") {
++  sources = [
++    "agent/agent_model_client.cc",
++    "agent/agent_model_client.h",
++  ]
++  deps = [
++    ":agent_core",
++    ":model_provider_policy",
++    "//base",
++    "//net",
++    "//services/network/public/cpp",
++    "//services/network/public/mojom",
++    "//url",
++  ]
+ }
+ 
+ source_set("aegis") {
+@@ -141,39 +140,46 @@ source_set("aegis") {
+     "//ui/base",
+     "//url",
+   ]
++  sources += [
++    "agent/aegis_actor_bridge.cc",
++    "agent/aegis_actor_bridge.h",
++    "agent/aegis_agent_service.cc",
++    "agent/aegis_agent_service.h",
++    "agent/aegis_agent_service_factory.cc",
++    "agent/aegis_agent_service_factory.h",
++    "agent/aegis_browser_tools.cc",
++    "agent/aegis_browser_tools.h",
++  ]
++  deps += [
++    ":agent_core",
++    ":agent_model_transport",
++    "//chrome/browser/actor",
++    "//chrome/browser/bookmarks",
++    "//chrome/browser/content_settings:content_settings_factory",
++    "//chrome/browser/history",
++    "//chrome/browser/notifications",
++    "//chrome/browser/tab_list",
++    "//chrome/browser/ui/browser_window",
++    "//chrome/browser/undo",
++    "//components/actor/core",
++    "//components/bookmarks/browser",
++    "//components/keyed_service/core",
++    "//components/tab_groups",
++    "//components/undo",
++    "//crypto",
++  ]
+   if (!is_android) {
+     sources += [
+-      "agent/aegis_actor_bridge.cc",
+-      "agent/aegis_actor_bridge.h",
+-      "agent/aegis_agent_service.cc",
+-      "agent/aegis_agent_service.h",
+-      "agent/aegis_agent_service_factory.cc",
+-      "agent/aegis_agent_service_factory.h",
+-      "agent/aegis_browser_tools.cc",
+-      "agent/aegis_browser_tools.h",
+       "summary_session.cc",
+       "summary_session.h",
+     ]
+     deps += [
+-      ":agent_core",
+-      ":agent_model_transport",
+-      "//chrome/browser/actor",
+-      "//chrome/browser/bookmarks",
+-      "//chrome/browser/content_settings:content_settings_factory",
+-      "//chrome/browser/history",
+-      "//chrome/browser/notifications",
+-      "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/tab_contents",
+       "//chrome/browser/ui/tabs:tab_strip",
+-      "//chrome/browser/undo",
+-      "//components/actor/core",
+-      "//components/bookmarks/browser",
+-      "//components/keyed_service/core",
+-      "//components/tab_groups",
+-      "//components/undo",
+-      "//crypto",
+       "//ui/message_center/public/cpp",
+     ]
++  } else {
++    deps += [ "//chrome/android:chrome_jni_headers" ]
+   }
+   if (is_mac) {
+     sources += [
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 07fcf5669a..cb4933c42a 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -1,5 +1,6 @@
+ // Copyright 2026 GCSA
+ 
++#include <algorithm>
+ #include <utility>
+ #include <vector>
+ 
+@@ -9,6 +10,8 @@
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/aegis_phish_blocking_page.h"
++#include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/agent/v2_runtime_spike.h"
+@@ -43,11 +46,13 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/search_engines/template_url.h"
+ #include "components/search_engines/template_url_service.h"
++#include "components/security_interstitials/content/security_interstitial_tab_helper.h"
+ #include "components/tab_groups/tab_group_id.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
++#include "net/dns/mock_host_resolver.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "ui/actions/actions.h"
+ #include "url/gurl.h"
+@@ -433,6 +438,48 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(service->MostRecentTask()->scope().AllowsOrigin(expected));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       NamedSiteDiscoveryStaysOnNamedSiteAndReadOnlyWorkflow) {
++  ConfigureAgentModel(browser()->profile());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const int initial_tab_count = browser()->tab_strip_model()->count();
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(service);
++
++  AgentGoalRoute overly_broad_route;
++  overly_broad_route.workflow = AgentWorkflowKind::kShopping;
++  overly_broad_route.entry_kind = AgentGoalEntryKind::kWebSearch;
++  overly_broad_route.target = "京东 内存";
++  overly_broad_route.summary = "搜索并购买内存";
++  service->SetGoalRouteForTesting(std::move(overly_broad_route));
++
++  const std::string task_id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const result = await BrowserProxy.getInstance().handler
++          .createTask('帮我在 JD 找几款内存', 1, 3, [], 0);
++      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++    })()
++  )JS")
++                                  .ExtractString();
++  ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
++  ASSERT_EQ(browser()->tab_strip_model()->count(), initial_tab_count + 1);
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return browser()->GetActiveTabInterface()->GetURL().host() ==
++           "search.jd.com";
++  }));
++
++  AgentTask* task = service->GetTask(task_id);
++  ASSERT_TRUE(task);
++  EXPECT_TRUE(
++      task->scope().AllowsOrigin(browser()->GetActiveTabInterface()->GetURL()));
++  EXPECT_TRUE(task->scope().AllowsTool("page.extract"));
++  EXPECT_FALSE(task->scope().AllowsTool("shopping.prepare_checkout"));
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        ImplicitCurrentPageGoalBindsActiveTabWithoutNewTab) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+@@ -715,5 +762,96 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       [&]() { return tabs->count() == initial_tab_count; }));
+ }
+ 
++class AegisPrivacyProtectionBrowserTest : public InProcessBrowserTest {
++ public:
++  AegisPrivacyProtectionBrowserTest() {
++    features_.InitWithFeatures(
++        {features::kAegisLinkSanitize, features::kAegisPhishInterstitial},
++        {features::kAegisFilterListUpdater});
++  }
++
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    InProcessBrowserTest::SetUpCommandLine(command_line);
++    command_line->AppendSwitch(::switches::kDisableBackgroundNetworking);
++    command_line->AppendSwitch(::switches::kNoProxyServer);
++  }
++
++  void SetUpOnMainThread() override {
++    host_resolver()->AddRule("paypal-secure-login.com", "127.0.0.1");
++    InProcessBrowserTest::SetUpOnMainThread();
++    AegisService::GetInstance()->SetLinkSanitizeEnabled(true);
++    AegisService::GetInstance()->SetPhishInterstitialEnabled(true);
++  }
++
++ private:
++  base::test::ScopedFeatureList features_;
++};
++
++IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
++                       TrackingParametersAreRemovedBeforePageLoad) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL clean_url =
++      embedded_test_server()->GetURL("/title1.html?keep=yes");
++  const GURL decorated_url(
++      embedded_test_server()->GetURL("/title1.html").spec() +
++      "?keep=yes&utm_source=aegis-fixture&fbclid=fixture-click");
++
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), decorated_url));
++  content::WebContents* contents =
++      browser()->tab_strip_model()->GetActiveWebContents();
++  ASSERT_TRUE(contents);
++  EXPECT_EQ(contents->GetLastCommittedURL(), clean_url);
++  EXPECT_FALSE(contents->GetLastCommittedURL().query().contains("utm_source"));
++  EXPECT_FALSE(contents->GetLastCommittedURL().query().contains("fbclid"));
++
++  bool found_event = false;
++  for (const PrivacyEvent& event :
++       AegisService::GetInstance()->RecentPrivacyEvents()) {
++    if (event.kind != "param") {
++      continue;
++    }
++    found_event = true;
++    EXPECT_NE(
++        std::find(event.details.begin(), event.details.end(), "utm_source"),
++        event.details.end());
++    EXPECT_NE(std::find(event.details.begin(), event.details.end(), "fbclid"),
++              event.details.end());
++  }
++  EXPECT_TRUE(found_event);
++}
++
++IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
++                       BuiltInPhishingFixtureShowsAegisInterstitial) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL phishing_url =
++      embedded_test_server()->GetURL("paypal-secure-login.com", "/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), phishing_url));
++  content::WebContents* contents =
++      browser()->tab_strip_model()->GetActiveWebContents();
++  ASSERT_TRUE(contents);
++  auto* helper =
++      security_interstitials::SecurityInterstitialTabHelper::FromWebContents(
++          contents);
++  ASSERT_TRUE(helper);
++  ASSERT_TRUE(helper->IsDisplayingInterstitial());
++  auto* page =
++      helper->GetBlockingPageForCurrentlyCommittedNavigationForTesting();
++  ASSERT_TRUE(page);
++  EXPECT_EQ(page->GetTypeForTesting(), AegisPhishBlockingPage::kTypeForTesting);
++  EXPECT_TRUE(content::EvalJs(contents, R"JS(
++    document.body.innerText.includes('Aegis') &&
++        document.body.innerText.toLowerCase().includes('phish')
++  )JS")
++                  .ExtractBool());
++
++  bool found_event = false;
++  for (const PrivacyEvent& event :
++       AegisService::GetInstance()->RecentPrivacyEvents()) {
++    found_event |= event.kind == "phish" &&
++                   event.display_domain == "paypal-secure-login.com";
++  }
++  EXPECT_TRUE(found_event);
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index bb330b411d..deb8e92fc7 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -8,6 +8,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/check.h"
+ #include "base/check_deref.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+@@ -16,14 +17,22 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/uuid.h"
++#include "build/build_config.h"
++#if BUILDFLAG(IS_ANDROID)
++#include "base/android/jni_android.h"
++#include "base/android/jni_string.h"
++#endif
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/agent/agent_model_client.h"
+ #include "chrome/browser/aegis/model_provider_policy.h"
+ #include "chrome/browser/browser_process.h"
++#if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/notifications/notification_display_service.h"
+ #include "chrome/browser/notifications/notification_display_service_factory.h"
+ #include "chrome/browser/notifications/notification_handler.h"
++#endif
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+ #include "chrome/common/aegis/features.h"
+@@ -35,9 +44,16 @@
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "crypto/sha2.h"
++#if !BUILDFLAG(IS_ANDROID)
+ #include "ui/base/models/image_model.h"
+ #include "ui/message_center/public/cpp/notification.h"
+ #include "ui/message_center/public/cpp/notifier_id.h"
++#endif
++
++#if BUILDFLAG(IS_ANDROID)
++// Must come after headers that specialize JNI string conversion.
++#include "chrome/android/chrome_jni_headers/AegisAgentNotificationBridge_jni.h"
++#endif
+ 
+ namespace aegis::agent {
+ namespace {
+@@ -48,9 +64,32 @@ constexpr base::TimeDelta kCompletedTaskRetention = base::Days(30);
+ constexpr size_t kMaxInvocationDisplayBytes = 2048;
+ constexpr size_t kMaxSuggestedGoalBytes = 4096;
+ constexpr size_t kMaxRuntimeEvidenceItems = 24;
++constexpr size_t kMaxModelRepairErrorBytes = 512;
+ constexpr std::string_view kScheduleMarker =
+     "[AEGIS_SCHEDULE_INTERVAL_MINUTES=";
+ 
++std::string ModelRepairInstruction(std::string_view stage,
++                                   std::string_view previous_error) {
++  std::string instruction =
++      "\nThis is the single browser-approved format repair attempt for the ";
++  instruction.append(stage);
++  instruction.append(
++      ". The previous native function call was rejected by the browser: ");
++  instruction.append(
++      base::TruncateUTF8ToByteSize(previous_error, kMaxModelRepairErrorBytes));
++  instruction.append(
++      ". Correct only the function arguments, obey the supplied strict schema, "
++      "and return exactly the required native function call with no prose. "
++      "Do not broaden the target, tools, origins, data, or risk.");
++  return instruction;
++}
++
++bool IsRepairablePlanError(std::string_view error) {
++  return !error.contains("could not be stored") &&
++         !error.contains("could not be persisted") &&
++         !error.contains("task is not accepting");
++}
++
+ std::optional<int> BrowserOwnedScheduleInterval(std::string_view goal) {
+   const size_t marker = goal.rfind(kScheduleMarker);
+   if (marker == std::string_view::npos) {
+@@ -544,6 +583,15 @@ bool AegisAgentService::BeginPlanning(const std::string& task_id) {
+ void AegisAgentService::RouteGoal(std::string goal,
+                                   AgentWorkflowKind requested_workflow,
+                                   GoalRouteCallback callback) {
++  RouteGoalAttempt(std::move(goal), requested_workflow,
++                   /*repair_attempt=*/0, std::string(), std::move(callback));
++}
++
++void AegisAgentService::RouteGoalAttempt(std::string goal,
++                                         AgentWorkflowKind requested_workflow,
++                                         int repair_attempt,
++                                         std::string previous_error,
++                                         GoalRouteCallback callback) {
+   if (goal_route_for_testing_) {
+     std::move(callback).Run(true, std::string(), goal_route_for_testing_);
+     return;
+@@ -585,6 +633,10 @@ void AegisAgentService::RouteGoal(std::string goal,
+   request.provider = ProtocolProvider(*provider);
+   request.model = destination->model;
+   request.system_prompt = BuildAgentGoalRouterSystemContract();
++  if (repair_attempt > 0) {
++    request.system_prompt.append(
++        ModelRepairInstruction("goal route", previous_error));
++  }
+   request.user_prompt = *prompt;
+   request.tools.push_back(BuildRouteGoalToolDefinition());
+   request.required_tool_name = "agent.route_goal";
+@@ -595,7 +647,9 @@ void AegisAgentService::RouteGoal(std::string goal,
+       goal_router_client_->Start(
+           std::move(*config), std::move(request),
+           base::BindOnce(&AegisAgentService::OnGoalRouteModelResult,
+-                         weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++                         weak_ptr_factory_.GetWeakPtr(), std::move(goal),
++                         requested_workflow, repair_attempt,
++                         std::move(callback)));
+   if (request_id && goal_router_client_->busy()) {
+     goal_router_request_id_ = std::move(*request_id);
+   }
+@@ -606,12 +660,35 @@ void AegisAgentService::SetGoalRouteForTesting(
+   goal_route_for_testing_ = std::move(route);
+ }
+ 
+-void AegisAgentService::OnGoalRouteModelResult(GoalRouteCallback callback,
+-                                               bool ok,
+-                                               std::string error,
+-                                               AgentModelParseResult result) {
++void AegisAgentService::SetGoalRouterClientForTesting(
++    std::unique_ptr<AgentModelClient> client) {
++  CHECK(!goal_router_client_ || !goal_router_client_->busy());
++  goal_router_client_ = std::move(client);
++}
++
++void AegisAgentService::SetTaskModelClientForTesting(
++    const std::string& task_id,
++    std::unique_ptr<AgentModelClient> client) {
++  CHECK(!model_clients_.contains(task_id) ||
++        !model_clients_.at(task_id)->busy());
++  model_clients_.insert_or_assign(task_id, std::move(client));
++}
++
++void AegisAgentService::OnGoalRouteModelResult(
++    std::string goal,
++    AgentWorkflowKind requested_workflow,
++    int repair_attempt,
++    GoalRouteCallback callback,
++    bool ok,
++    std::string error,
++    AgentModelParseResult result) {
+   goal_router_request_id_.clear();
+   if (!ok) {
++    if (repair_attempt == 0 && !result.error.empty()) {
++      RouteGoalAttempt(std::move(goal), requested_workflow,
++                       /*repair_attempt=*/1, result.error, std::move(callback));
++      return;
++    }
+     std::move(callback).Run(false, std::move(error), std::nullopt);
+     return;
+   }
+@@ -622,6 +699,12 @@ void AegisAgentService::OnGoalRouteModelResult(GoalRouteCallback callback,
+       event ? ParseAndValidateGoalRoute(*event, &validation_error)
+             : std::nullopt;
+   if (!route) {
++    if (repair_attempt == 0) {
++      RouteGoalAttempt(std::move(goal), requested_workflow,
++                       /*repair_attempt=*/1, validation_error,
++                       std::move(callback));
++      return;
++    }
+     std::move(callback).Run(false, std::move(validation_error), std::nullopt);
+     return;
+   }
+@@ -675,6 +758,14 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
+ 
+ void AegisAgentService::RequestPlan(const std::string& task_id,
+                                     PlanReadyCallback callback) {
++  RequestPlanAttempt(task_id, /*repair_attempt=*/0, std::string(),
++                     std::move(callback));
++}
++
++void AegisAgentService::RequestPlanAttempt(const std::string& task_id,
++                                           int repair_attempt,
++                                           std::string previous_error,
++                                           PlanReadyCallback callback) {
+   AgentTask* task = GetTask(task_id);
+   if (!task || (task->state() != AgentTaskState::kDraft &&
+                 task->state() != AgentTaskState::kPlanning)) {
+@@ -735,6 +826,10 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
+   request.provider = ProtocolProvider(*provider);
+   request.model = task->scope().model_destination.model;
+   request.system_prompt = BuildAgentPlannerSystemContract();
++  if (repair_attempt > 0) {
++    request.system_prompt.append(
++        ModelRepairInstruction("task plan", previous_error));
++  }
+   request.user_prompt = std::move(*prompt);
+   request.tools.push_back(BuildSubmitPlanToolDefinition());
+   request.required_tool_name = "agent.submit_plan";
+@@ -746,13 +841,14 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
+           std::move(*config), std::move(request),
+           base::BindOnce(&AegisAgentService::OnPlanModelResult,
+                          weak_ptr_factory_.GetWeakPtr(), task_id,
+-                         std::move(callback)));
++                         repair_attempt, std::move(callback)));
+   if (request_id && client_it->second->busy()) {
+     model_request_ids_[task_id] = std::move(*request_id);
+   }
+ }
+ 
+ void AegisAgentService::OnPlanModelResult(const std::string& task_id,
++                                          int repair_attempt,
+                                           PlanReadyCallback callback,
+                                           bool ok,
+                                           std::string error,
+@@ -763,17 +859,32 @@ void AegisAgentService::OnPlanModelResult(const std::string& task_id,
+     std::move(callback).Run(false, "planning task is no longer active");
+     return;
+   }
++  AgentModelCapabilityTracker& capability =
++      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)];
+   if (!ok) {
++    if (repair_attempt == 0 && !result.error.empty()) {
++      capability.RecordSchemaFailure();
++      task->RecordEvent("planning repair",
++                        "browser requested one bounded plan format repair");
++      RequestPlanAttempt(task_id, /*repair_attempt=*/1, result.error,
++                         std::move(callback));
++      return;
++    }
+     FailPlanning(task_id, std::move(callback), std::move(error));
+     return;
+   }
+   std::string validation_error;
+   std::optional<AgentModelEvent> event =
+       SelectExecutionToolCall(result, "agent.submit_plan", &validation_error);
+-  AgentModelCapabilityTracker& capability =
+-      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)];
+   if (!event || !AcceptModelPlan(task_id, *event, &validation_error)) {
+     capability.RecordSchemaFailure();
++    if (repair_attempt == 0 && IsRepairablePlanError(validation_error)) {
++      task->RecordEvent("planning repair",
++                        "browser requested one bounded plan format repair");
++      RequestPlanAttempt(task_id, /*repair_attempt=*/1, validation_error,
++                         std::move(callback));
++      return;
++    }
+     if (capability.consecutive_schema_failures() >= 2 &&
+         task->mode() != AgentMode::kAsk) {
+       validation_error =
+@@ -1313,6 +1424,11 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+   ExecutionRuntime& runtime = *runtime_it->second;
+   if (!ok) {
+     ++runtime.model_failures;
++    if (!result.error.empty()) {
++      runtime.last_model_error = error;
++      model_capabilities_[ModelCapabilityKey(task->scope().model_destination)]
++          .RecordSchemaFailure();
++    }
+     if (runtime.model_failures < 2) {
+       RequestNextModelTurn(task_id);
+       return;
+@@ -2430,7 +2546,10 @@ void AegisAgentService::ExecuteDueMonitor(AgentMonitorDefinition monitor) {
+   tabs::TabInterface* target_tab = nullptr;
+   ProfileBrowserCollection::GetForProfile(profile_)->ForEach(
+       [&](BrowserWindowInterface* browser) {
+-        for (tabs::TabInterface* tab : browser->GetAllTabInterfaces()) {
++        TabListInterface* tab_list = TabListInterface::From(browser);
++        for (int index = 0; tab_list && index < tab_list->GetTabCount();
++             ++index) {
++          tabs::TabInterface* tab = tab_list->GetTab(index);
+           if (tab && MonitorTargetUrl(tab->GetURL()) == monitor.target_url) {
+             target_tab = tab;
+             return false;
+@@ -2561,6 +2680,18 @@ void AegisAgentService::OnDueMonitorObserved(AgentMonitorDefinition monitor,
+ 
+ void AegisAgentService::ShowMonitorChangeNotification(
+     const AgentMonitorDefinition& monitor) const {
++#if BUILDFLAG(IS_ANDROID)
++  if (!profile_ || shutting_down_) {
++    return;
++  }
++  JNIEnv* env = base::android::AttachCurrentThread();
++  Java_AegisAgentNotificationBridge_showMonitorChange(
++      env, base::android::ConvertUTF8ToJavaString(env, monitor.origin.host()),
++      base::android::ConvertUTF8ToJavaString(
++          env, std::string(MonitorKindName(monitor.kind))),
++      base::android::ConvertUTF8ToJavaString(env, monitor.monitor_id));
++  return;
++#else
+   if (!profile_ || shutting_down_) {
+     return;
+   }
+@@ -2585,6 +2716,7 @@ void AegisAgentService::ShowMonitorChangeNotification(
+       /*delegate=*/nullptr);
+   display_service->Display(NotificationHandler::Type::TRANSIENT, notification,
+                            /*metadata=*/nullptr);
++#endif
+ }
+ 
+ std::optional<StoredAgentTask::RecoveryDisposition>
+@@ -2911,3 +3043,7 @@ void AegisAgentService::RestoreMonitors() {
+ }
+ 
+ }  // namespace aegis::agent
++
++#if BUILDFLAG(IS_ANDROID)
++DEFINE_JNI(AegisAgentNotificationBridge)
++#endif
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 5aa5144787..430839ece4 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -48,10 +48,8 @@ class AegisAgentService : public KeyedService {
+   using ToolResultCallback = base::OnceCallback<void(AgentToolResult)>;
+   using PlanReadyCallback =
+       base::OnceCallback<void(bool ok, std::string error)>;
+-  using GoalRouteCallback = base::OnceCallback<void(
+-      bool ok,
+-      std::string error,
+-      std::optional<AgentGoalRoute> route)>;
++  using GoalRouteCallback = base::OnceCallback<
++      void(bool ok, std::string error, std::optional<AgentGoalRoute> route)>;
+   using RunCallback = base::OnceCallback<void(
+       bool ok,
+       std::string error,
+@@ -84,6 +82,9 @@ class AegisAgentService : public KeyedService {
+                  AgentWorkflowKind requested_workflow,
+                  GoalRouteCallback callback);
+   void SetGoalRouteForTesting(std::optional<AgentGoalRoute> route);
++  void SetGoalRouterClientForTesting(std::unique_ptr<AgentModelClient> client);
++  void SetTaskModelClientForTesting(const std::string& task_id,
++                                    std::unique_ptr<AgentModelClient> client);
+   bool AcceptModelPlan(const std::string& task_id,
+                        const AgentModelEvent& event,
+                        std::string* error);
+@@ -197,12 +198,25 @@ class AegisAgentService : public KeyedService {
+                             AgentToolResult result);
+   void ShowMonitorChangeNotification(
+       const AgentMonitorDefinition& monitor) const;
++  void RequestPlanAttempt(const std::string& task_id,
++                          int repair_attempt,
++                          std::string previous_error,
++                          PlanReadyCallback callback);
+   void OnPlanModelResult(const std::string& task_id,
++                         int repair_attempt,
+                          PlanReadyCallback callback,
+                          bool ok,
+                          std::string error,
+                          AgentModelParseResult result);
+-  void OnGoalRouteModelResult(GoalRouteCallback callback,
++  void RouteGoalAttempt(std::string goal,
++                        AgentWorkflowKind requested_workflow,
++                        int repair_attempt,
++                        std::string previous_error,
++                        GoalRouteCallback callback);
++  void OnGoalRouteModelResult(std::string goal,
++                              AgentWorkflowKind requested_workflow,
++                              int repair_attempt,
++                              GoalRouteCallback callback,
+                               bool ok,
+                               std::string error,
+                               AgentModelParseResult result);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 67ddf4eb1c..de960cad74 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -3,15 +3,18 @@
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ 
+ #include <memory>
++#include <string_view>
+ #include <utility>
+ 
+ #include "base/files/file_util.h"
++#include "base/json/json_reader.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/ui/event_dispatcher.h"
+ #include "chrome/browser/actor/ui/test_support/mock_actor_ui_state_manager.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
++#include "chrome/browser/aegis/agent/agent_model_client.h"
+ #include "chrome/common/actor/action_result.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -22,6 +25,9 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/undo/undo_manager.h"
+ #include "content/public/test/browser_task_environment.h"
++#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
++#include "services/network/test/test_url_loader_factory.h"
++#include "services/network/test/test_utils.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+@@ -55,7 +61,9 @@ class AegisBrowserToolsTestPeer {
+ namespace {
+ 
+ using ::testing::_;
++using ::testing::HasSubstr;
+ using ::testing::Return;
++using ::testing::SizeIs;
+ 
+ std::unique_ptr<actor::ui::ActorUiStateManagerInterface>
+ BuildActorUiStateManagerMock() {
+@@ -201,6 +209,199 @@ TEST_F(AegisAgentServiceTest, ResolvesModelDestinationFromTheOwningProfile) {
+   EXPECT_EQ(second_destination->model, "models/profile-two");
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       RepairsOneMalformedGoalRouteWithoutBroadeningScope) {
++  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++
++  network::TestURLLoaderFactory factory;
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  service->SetGoalRouterClientForTesting(
++      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
++
++  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>>
++      route_result;
++  service->RouteGoal("整理并检查失效收藏夹", AgentWorkflowKind::kResearch,
++                     route_result.GetCallback());
++  factory.WaitForRequest(endpoint);
++  EXPECT_THAT(*factory.pending_requests(), SizeIs(1));
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad-route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"browser_steward\",\"target\":\"\",\"summary\":\"整理收藏夹\"}"}]})"));
++
++  factory.WaitForRequest(endpoint);
++  EXPECT_THAT(*factory.pending_requests(), SizeIs(1));
++  const network::ResourceRequest& repair_request =
++      factory.GetPendingRequest(0)->request;
++  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
++      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
++  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
++  const std::string* repair_instructions =
++      repair_payload->GetDict().FindString("instructions");
++  ASSERT_TRUE(repair_instructions);
++  EXPECT_THAT(*repair_instructions,
++              HasSubstr("single browser-approved format repair"));
++  EXPECT_THAT(*repair_instructions,
++              HasSubstr("Do not broaden the target, tools, origins"));
++
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"fixed-route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"browser_steward\",\"entry_kind\":\"browser_only\",\"target\":\"\",\"summary\":\"先读取收藏夹，再生成分类与失效链接预览\"}"}]})"));
++  EXPECT_TRUE(route_result.Get<0>()) << route_result.Get<1>();
++  ASSERT_TRUE(route_result.Get<2>());
++  EXPECT_EQ(route_result.Get<2>()->workflow,
++            AgentWorkflowKind::kBrowserSteward);
++  EXPECT_EQ(route_result.Get<2>()->entry_kind,
++            AgentGoalEntryKind::kBrowserOnly);
++  EXPECT_TRUE(route_result.Get<2>()->target.empty());
++}
++
++TEST_F(AegisAgentServiceTest,
++       RepairsOneMalformedPlanAndKeepsBrowserOwnedScope) {
++  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++
++  AgentTaskScope scope = ServiceTestScope();
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = std::string(kBaseUrl);
++  scope.model_destination.model = "fixture-model";
++
++  network::TestURLLoaderFactory factory;
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  AgentTask* task =
++      service->CreateTask("总结公开测试页", AgentMode::kAsk, std::move(scope));
++  ASSERT_TRUE(task);
++  service->SetTaskModelClientForTesting(
++      task->id(),
++      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
++
++  base::test::TestFuture<bool, std::string> plan_result;
++  service->RequestPlan(task->id(), plan_result.GetCallback());
++  factory.WaitForRequest(endpoint);
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"总结页面\"}"}]})"));
++
++  factory.WaitForRequest(endpoint);
++  const network::ResourceRequest& repair_request =
++      factory.GetPendingRequest(0)->request;
++  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
++      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
++  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
++  const std::string* repair_instructions =
++      repair_payload->GetDict().FindString("instructions");
++  ASSERT_TRUE(repair_instructions);
++  EXPECT_THAT(*repair_instructions,
++              HasSubstr("single browser-approved format repair"));
++  EXPECT_THAT(*repair_instructions, HasSubstr("task plan"));
++
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"fixed-plan","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"读取并总结公开测试页\",\"steps\":[{\"id\":\"observe\",\"title\":\"读取公开页面\",\"tool\":\"page.observe\"}]}"}]})"));
++  EXPECT_TRUE(plan_result.Get<0>()) << plan_result.Get<1>();
++  const AgentTaskPlan* plan = service->GetPlan(task->id());
++  ASSERT_TRUE(plan);
++  ASSERT_EQ(plan->steps.size(), 1u);
++  EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
++  EXPECT_EQ(plan->scope.allowed_origins, ServiceTestScope().allowed_origins);
++  EXPECT_TRUE(plan->scope.AllowsTool("page.observe"));
++  EXPECT_FALSE(plan->scope.AllowsTool("page.click"));
++}
++
++TEST_F(AegisAgentServiceTest,
++       RepairsOneMalformedExecutionTurnAndCompletesTheTask) {
++  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++
++  AgentTaskScope scope;
++  scope.allowed_tools = {"tab.list"};
++  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = std::string(kBaseUrl);
++  scope.model_destination.model = "fixture-model";
++
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  AgentTask* task =
++      service->CreateTask("列出当前标签页", AgentMode::kAct, std::move(scope));
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(service->BeginPlanning(task->id()));
++  AgentModelEvent plan_event;
++  plan_event.type = AgentModelEventType::kToolCall;
++  plan_event.tool_call_id = "tab-list-plan";
++  plan_event.tool_name = "agent.submit_plan";
++  plan_event.arguments.Set("schema_version", kAgentSchemaVersion);
++  plan_event.arguments.Set("summary", "列出浏览器允许查看的标签页");
++  base::DictValue step;
++  step.Set("id", "list-tabs");
++  step.Set("title", "读取当前标签页");
++  step.Set("tool", "tab.list");
++  base::ListValue steps;
++  steps.Append(std::move(step));
++  plan_event.arguments.Set("steps", std::move(steps));
++  std::string plan_error;
++  ASSERT_TRUE(service->AcceptModelPlan(task->id(), plan_event, &plan_error))
++      << plan_error;
++  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
++
++  network::TestURLLoaderFactory factory;
++  service->SetTaskModelClientForTesting(
++      task->id(),
++      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      run_result;
++  service->RunTask(task->id(), run_result.GetCallback());
++
++  factory.WaitForRequest(endpoint);
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad-execution","name":"tab.list","arguments":"{\"unexpected\":true}"}]})"));
++
++  factory.WaitForRequest(endpoint);
++  const network::ResourceRequest& repair_request =
++      factory.GetPendingRequest(0)->request;
++  const std::optional<base::Value> repair_payload = base::JSONReader::Read(
++      network::GetUploadData(repair_request), base::JSON_PARSE_RFC);
++  ASSERT_TRUE(repair_payload && repair_payload->is_dict());
++  const std::string* repair_input =
++      repair_payload->GetDict().FindString("input");
++  ASSERT_TRUE(repair_input);
++  EXPECT_THAT(*repair_input, HasSubstr("previous_model_call_rejected_because"));
++  EXPECT_THAT(*repair_input,
++              HasSubstr("tool argument contains an unknown field"));
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"fixed-execution","name":"tab.list","arguments":"{}"}]})"));
++
++  factory.WaitForRequest(endpoint);
++  EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"complete-task","name":"agent.complete","arguments":"{\"outcome\":\"completed\",\"summary\":\"已列出当前标签页。\",\"source_urls\":[],\"unfinished_items\":[]}"}]})"));
++
++  EXPECT_TRUE(run_result.Get<0>()) << run_result.Get<1>();
++  ASSERT_TRUE(run_result.Get<2>());
++  EXPECT_EQ(run_result.Get<2>()->outcome, "completed");
++  EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
++  EXPECT_EQ(task->model_calls_used(), 3);
++}
++
+ TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 9b119d10fc..ec5e1590d7 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -20,17 +20,21 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/timer/timer.h"
+ #include "base/uuid.h"
++#include "build/build_config.h"
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/history/history_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
++#include "chrome/browser/undo/bookmark_undo_service_factory.h"
++#if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
+ #include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+-#include "chrome/browser/undo/bookmark_undo_service_factory.h"
++#endif
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/bookmarks/browser/bookmark_node.h"
+@@ -74,7 +78,9 @@
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "ui/base/base_window.h"
+ #include "ui/base/page_transition_types.h"
++#if !BUILDFLAG(IS_ANDROID)
+ #include "ui/base/window_open_disposition.h"
++#endif
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+@@ -137,8 +143,8 @@ bool HostMatchesDomain(std::string_view host, std::string_view domain) {
+ struct LocatedTab {
+   raw_ptr<tabs::TabInterface> tab = nullptr;
+   raw_ptr<BrowserWindowInterface> browser = nullptr;
+-  raw_ptr<TabStripModel> model = nullptr;
+-  int index = TabStripModel::kNoTab;
++  raw_ptr<TabListInterface> tab_list = nullptr;
++  int index = -1;
+ };
+ 
+ std::optional<LocatedTab> FindTab(Profile* profile, int32_t tab_id) {
+@@ -152,13 +158,13 @@ std::optional<LocatedTab> FindTab(Profile* profile, int32_t tab_id) {
+       browser->IsDeleteScheduled()) {
+     return std::nullopt;
+   }
+-  TabStripModel* model = browser->GetTabStripModel();
+-  const int index = model ? model->GetIndexOfTab(tab) : TabStripModel::kNoTab;
+-  if (!model || index == TabStripModel::kNoTab) {
++  TabListInterface* tab_list = TabListInterface::From(browser);
++  const int index = tab_list ? tab_list->GetIndexOfTab(tab->GetHandle()) : -1;
++  if (!tab_list || index < 0) {
+     return std::nullopt;
+   }
+   return LocatedTab{
+-      .tab = tab, .browser = browser, .model = model, .index = index};
++      .tab = tab, .browser = browser, .tab_list = tab_list, .index = index};
+ }
+ 
+ std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
+@@ -170,16 +176,16 @@ std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
+             browser->IsDeleteScheduled()) {
+           return true;
+         }
+-        TabStripModel* model = browser->GetTabStripModel();
+-        if (!model) {
++        TabListInterface* tab_list = TabListInterface::From(browser);
++        if (!tab_list) {
+           return true;
+         }
+-        for (int index = 0; index < model->count(); ++index) {
+-          tabs::TabInterface* tab = model->GetTabAtIndex(index);
++        for (int index = 0; index < tab_list->GetTabCount(); ++index) {
++          tabs::TabInterface* tab = tab_list->GetTab(index);
+           if (tab && task.AllowsTab(tab->GetHandle().raw_value())) {
+             tabs.push_back(LocatedTab{.tab = tab,
+                                       .browser = browser,
+-                                      .model = model,
++                                      .tab_list = tab_list,
+                                       .index = index});
+           }
+         }
+@@ -198,9 +204,10 @@ std::vector<BrowserWindowInterface*> TaskWindows(Profile* profile,
+             browser->IsDeleteScheduled()) {
+           return true;
+         }
+-        TabStripModel* model = browser->GetTabStripModel();
+-        for (int index = 0; model && index < model->count(); ++index) {
+-          tabs::TabInterface* tab = model->GetTabAtIndex(index);
++        TabListInterface* tab_list = TabListInterface::From(browser);
++        for (int index = 0; tab_list && index < tab_list->GetTabCount();
++             ++index) {
++          tabs::TabInterface* tab = tab_list->GetTab(index);
+           if (tab && task.AllowsTab(tab->GetHandle().raw_value())) {
+             windows.push_back(browser);
+             break;
+@@ -237,6 +244,11 @@ size_t NormalWindowCount(Profile* profile) {
+ }
+ 
+ std::string WindowRevision(Profile* profile, const AgentTask& task) {
++#if BUILDFLAG(IS_ANDROID)
++  static_cast<void>(profile);
++  static_cast<void>(task);
++  return Hash("android-window-tools-unavailable");
++#else
+   std::string material;
+   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
+     material.append(std::to_string(browser->GetSessionID().id()));
+@@ -258,6 +270,7 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+     }
+   }
+   return Hash(material);
++#endif
+ }
+ 
+ bool HasActiveDownload(Profile* profile) {
+@@ -300,8 +313,7 @@ std::string TabRevision(Profile* profile, const AgentTask& task) {
+     material.push_back('\n');
+     material.append(std::to_string(located.browser->GetSessionID().id()));
+     material.push_back('\n');
+-    if (std::optional<tab_groups::TabGroupId> group =
+-            located.model->GetTabGroupForTab(located.index)) {
++    if (std::optional<tab_groups::TabGroupId> group = located.tab->GetGroup()) {
+       material.append(group->ToString());
+     }
+     material.push_back('\n');
+@@ -677,8 +689,10 @@ AegisBrowserTools::~AegisBrowserTools() {
+ 
+ bool AegisBrowserTools::CanHandle(std::string_view tool_name) const {
+   return base::StartsWith(tool_name, "tab.") ||
++#if !BUILDFLAG(IS_ANDROID)
+          base::StartsWith(tool_name, "window.") ||
+          base::StartsWith(tool_name, "workspace.") ||
++#endif
+          base::StartsWith(tool_name, "bookmark.") ||
+          base::StartsWith(tool_name, "download.") ||
+          tool_name == "history.search" || tool_name == "permissions.inspect";
+@@ -808,9 +822,9 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+       value.Set("title",
+                 BoundedUtf8(base::UTF16ToUTF8(located.tab->GetTitle())));
+       value.Set("url", SafeUrlForModel(located.tab->GetURL()));
+-      value.Set("active", located.model->active_index() == located.index);
++      value.Set("active", located.tab->IsActivated());
+       if (std::optional<tab_groups::TabGroupId> group =
+-              located.model->GetTabGroupForTab(located.index)) {
++              located.tab->GetGroup()) {
+         value.Set("group_id", group->ToString());
+       }
+       values.Append(std::move(value));
+@@ -826,19 +840,16 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+     const GURL url(url_value ? *url_value : std::string());
+     BrowserWindowInterface* browser =
+         ProfileBrowserCollection::GetForProfile(profile_)->FindTabbedBrowser();
+-    if (!url_value || !task->scope().AllowsOrigin(url) || !browser) {
++    TabListInterface* tab_list =
++        browser ? TabListInterface::From(browser) : nullptr;
++    if (!url_value || !task->scope().AllowsOrigin(url) || !tab_list) {
+       std::move(callback).Run(
+           ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
+                       "approved target or tabbed browser is unavailable"));
+       return;
+     }
+-    NavigateParams params(browser, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+-    params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
+-    Navigate(&params);
+-    tabs::TabInterface* tab = params.navigated_or_inserted_contents
+-                                  ? tabs::TabInterface::GetFromContents(
+-                                        params.navigated_or_inserted_contents)
+-                                  : nullptr;
++    tabs::TabInterface* tab =
++        tab_list->OpenTab(url, tab_list->GetTabCount(), /*foreground=*/false);
+     const int32_t tab_id = tab ? tab->GetHandle().raw_value() : 0;
+     if (!tab || tab->GetProfile() != profile_ || !task->AdoptOwnedTab(tab_id)) {
+       if (tab && tab->GetProfile() == profile_) {
+@@ -868,7 +879,7 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+                                           "task-visible tab is unavailable"));
+       return;
+     }
+-    located->model->ActivateTabAt(located->index);
++    located->tab_list->ActivateTab(located->tab->GetHandle());
+     AgentToolResult result = SuccessResult(call.action_id, "tab activated");
+     result.value.Set("tab_id", *tab_id);
+     std::move(callback).Run(std::move(result));
+@@ -902,13 +913,13 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+   if (call.tool_name == "tab.close") {
+     std::ranges::sort(located_tabs,
+                       [](const LocatedTab& left, const LocatedTab& right) {
+-                        if (left.model != right.model) {
+-                          return left.model < right.model;
++                        if (left.tab_list != right.tab_list) {
++                          return left.tab_list < right.tab_list;
+                         }
+                         return left.index > right.index;
+                       });
+     for (const LocatedTab& located : located_tabs) {
+-      if (!located.model->IsTabClosable(located.tab)) {
++      if (!located.tab_list->IsThisTabListEditable()) {
+         std::move(callback).Run(
+             ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+                         "one selected tab cannot be closed"));
+@@ -916,10 +927,8 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+       }
+     }
+     for (const LocatedTab& located : located_tabs) {
+-      const int current_index = located.model->GetIndexOfTab(located.tab);
+-      if (current_index != TabStripModel::kNoTab) {
+-        located.model->CloseWebContentsAt(
+-            current_index, TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
++      if (located.tab_list->GetIndexOfTab(located.tab->GetHandle()) >= 0) {
++        located.tab_list->CloseTab(located.tab->GetHandle());
+       }
+     }
+     AgentToolResult result =
+@@ -931,30 +940,36 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+   }
+ 
+   if (call.tool_name == "tab.group") {
+-    TabStripModel* model = located_tabs.front().model;
+-    if (!model->SupportsTabGroups() ||
+-        std::ranges::any_of(located_tabs, [model](const LocatedTab& located) {
+-          return located.model != model;
+-        })) {
++    TabListInterface* tab_list = located_tabs.front().tab_list;
++    if (!tab_list || std::ranges::any_of(located_tabs,
++                                         [tab_list](const LocatedTab& located) {
++                                           return located.tab_list != tab_list;
++                                         })) {
+       std::move(callback).Run(
+           ErrorResult(call.action_id, AgentErrorCode::kInvalidRequest,
+                       "selected tabs must share one group-capable window"));
+       return;
+     }
+-    std::vector<int> indices;
++    std::vector<tabs::TabHandle> handles;
+     for (const LocatedTab& located : located_tabs) {
+-      indices.push_back(located.index);
++      handles.push_back(located.tab->GetHandle());
++    }
++    const std::optional<tab_groups::TabGroupId> group_id =
++        tab_list->CreateTabGroup(handles);
++    if (!group_id) {
++      std::move(callback).Run(
++          ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
++                      "selected tabs could not be grouped"));
++      return;
+     }
+-    std::ranges::sort(indices);
+-    const tab_groups::TabGroupId group_id = model->AddToNewGroup(indices);
+     const std::string* title = call.arguments.FindString("title");
+-    model->ChangeTabGroupVisuals(
+-        group_id,
++    tab_list->SetTabGroupVisualData(
++        *group_id,
+         tab_groups::TabGroupVisualData(
+             title ? base::UTF8ToUTF16(*title) : std::u16string(),
+             ParseGroupColor(call.arguments.FindString("color")), false));
+     AgentToolResult result = SuccessResult(call.action_id, "tabs grouped");
+-    result.value.Set("group_id", group_id.ToString());
++    result.value.Set("group_id", group_id->ToString());
+     result.value.Set("revision", TabRevision(profile_, *task));
+     std::move(callback).Run(std::move(result));
+     return;
+@@ -968,6 +983,12 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+                                           const AgentToolCall& call,
+                                           ToolResultCallback callback) {
++#if BUILDFLAG(IS_ANDROID)
++  std::move(callback).Run(
++      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
++                  "window tools are unavailable on Android"));
++  return;
++#else
+   if (call.tool_name == "window.list") {
+     AgentToolResult result = SuccessResult(call.action_id, "windows listed");
+     base::ListValue windows;
+@@ -1087,11 +1108,18 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+   std::move(callback).Run(ErrorResult(call.action_id,
+                                       AgentErrorCode::kToolUnavailable,
+                                       "window tool is not implemented"));
++#endif
+ }
+ 
+ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+                                              const AgentToolCall& call,
+                                              ToolResultCallback callback) {
++#if BUILDFLAG(IS_ANDROID)
++  std::move(callback).Run(
++      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
++                  "workspace tools are unavailable on Android"));
++  return;
++#else
+   if (call.tool_name == "workspace.save") {
+     const std::string* name = call.arguments.FindString("name");
+     const std::string* revision = call.arguments.FindString("revision");
+@@ -1105,10 +1133,12 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+     for (const LocatedTab& located : TaskTabs(profile_, *task)) {
+       base::DictValue value;
+       value.Set("url", SafeUrlForModel(located.tab->GetURL()));
+-      value.Set("pinned", located.model->IsTabPinned(located.index));
++      value.Set("pinned", located.tab->IsPinned());
+       if (std::optional<tab_groups::TabGroupId> group_id =
+-              located.model->GetTabGroupForTab(located.index)) {
+-        TabGroup* group = located.model->group_model()->GetTabGroup(*group_id);
++              located.tab->GetGroup()) {
++        TabStripModel* model = located.browser->GetTabStripModel();
++        TabGroup* group =
++            model ? model->group_model()->GetTabGroup(*group_id) : nullptr;
+         if (group && group->visual_data()) {
+           value.Set("group_key", group_id->ToString());
+           value.Set("group_title",
+@@ -1271,6 +1301,7 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+   std::move(callback).Run(ErrorResult(call.action_id,
+                                       AgentErrorCode::kToolUnavailable,
+                                       "workspace tool is not implemented"));
++#endif
+ }
+ 
+ void AegisBrowserTools::ExecuteHistoryTool(AgentTask* task,
+diff --git a/chrome/browser/aegis/agent/agent_model_client.cc b/chrome/browser/aegis/agent/agent_model_client.cc
+index 2f082713c1..7ecbcc4f2d 100644
+--- a/chrome/browser/aegis/agent/agent_model_client.cc
++++ b/chrome/browser/aegis/agent/agent_model_client.cc
+@@ -298,8 +298,12 @@ void AgentModelClient::OnComplete(Callback done,
+       active_provider_, *body, active_stream_, active_tools_);
+   active_tools_.clear();
+   if (!result.ok()) {
+-    std::string error = std::move(result.error);
+-    std::move(done).Run(false, std::move(error), {});
++    // Preserve the structured parse failure so the browser runtime can
++    // distinguish a repairable model-format error from a transport failure.
++    // The parser only exposes bounded validation text, never the raw provider
++    // response.
++    const std::string error = result.error;
++    std::move(done).Run(false, error, std::move(result));
+     return;
+   }
+   std::move(done).Run(true, std::string(), std::move(result));
+diff --git a/chrome/browser/aegis/agent/agent_model_client_unittest.cc b/chrome/browser/aegis/agent/agent_model_client_unittest.cc
+index 849377060e..282a3a321b 100644
+--- a/chrome/browser/aegis/agent/agent_model_client_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_model_client_unittest.cc
+@@ -187,6 +187,24 @@ TEST_F(AgentModelClientTest, DoesNotLeakProviderErrorOrApiKey) {
+   EXPECT_THAT(result.Get<1>(), Not(HasSubstr("provider-private-body")));
+ }
+ 
++TEST_F(AgentModelClientTest, PreservesBoundedProtocolFailureForOneRepair) {
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  AgentModelClient client(factory_.GetSafeWeakWrapper());
++  AgentModelClientConfig config{.provider = ModelProvider::kOpenAI,
++                                .base_url = "http://127.0.0.1:8765/v1"};
++  base::test::TestFuture<bool, std::string, AgentModelParseResult> result;
++  ASSERT_TRUE(client.Start(
++      std::move(config), Request(AgentModelProvider::kOpenAICompatible, false),
++      result.GetCallback()));
++  Pending(endpoint);
++  EXPECT_TRUE(factory_.SimulateResponseForPendingRequest(
++      endpoint.spec(),
++      R"({"status":"completed","output":[{"type":"function_call","call_id":"bad","name":"page.observe","arguments":"{}"}]})"));
++  EXPECT_FALSE(result.Get<0>());
++  EXPECT_THAT(result.Get<1>(), HasSubstr("required"));
++  EXPECT_EQ(result.Get<1>(), result.Get<2>().error);
++}
++
+ TEST_F(AgentModelClientTest, CancelsOnlyMatchingRequest) {
+   const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+   AgentModelClient client(factory_.GetSafeWeakWrapper());
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index c552e73b42..4102a7e2a7 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -9,6 +9,8 @@
+ 
+ #include "base/containers/flat_set.h"
+ #include "base/json/json_writer.h"
++#include "base/strings/escape.h"
++#include "base/strings/string_util.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+@@ -116,6 +118,138 @@ std::optional<AgentWorkflowKind> ParseWorkflow(std::string_view value) {
+   return std::nullopt;
+ }
+ 
++bool ContainsAsciiWord(std::string_view text, std::string_view word) {
++  size_t position = text.find(word);
++  while (position != std::string_view::npos) {
++    const bool left_boundary =
++        position == 0 || !base::IsAsciiAlphaNumeric(text[position - 1]);
++    const size_t end = position + word.size();
++    const bool right_boundary =
++        end == text.size() || !base::IsAsciiAlphaNumeric(text[end]);
++    if (left_boundary && right_boundary) {
++      return true;
++    }
++    position = text.find(word, position + 1);
++  }
++  return false;
++}
++
++bool GoalRequestsShoppingAuthority(std::string_view goal) {
++  const std::string lower = base::ToLowerASCII(goal);
++  constexpr std::string_view kStrongActions[] = {
++      "下单",     "加入购物车",  "加购物车",    "加购",        "结账",
++      "付款",     "支付",        "买下",        "帮我买",      "代我买",
++      "帮我购物", "add to cart", "checkout",    "place order", "pay for",
++      "buy it",   "buy this",    "purchase it",
++  };
++  if (std::ranges::any_of(kStrongActions, [&lower](std::string_view action) {
++        return lower.find(action) != std::string::npos;
++      })) {
++    return true;
++  }
++  constexpr std::string_view kResearchPhrases[] = {
++      "购买建议", "购买指南", "选购建议", "buying guide", "purchase advice"};
++  if (std::ranges::any_of(kResearchPhrases, [&lower](std::string_view phrase) {
++        return lower.find(phrase) != std::string::npos;
++      })) {
++    return false;
++  }
++  return lower.find("购买") != std::string::npos ||
++         ContainsAsciiWord(lower, "buy") ||
++         ContainsAsciiWord(lower, "purchase");
++}
++
++bool GoalRequestsSafeDownload(std::string_view goal) {
++  const std::string lower = base::ToLowerASCII(goal);
++  constexpr std::string_view kSafeDownloadPhrases[] = {
++      "官方下载",          "官方安装",           "下载地址",      "安装包",
++      "official download", "official installer", "download link",
++  };
++  return std::ranges::any_of(kSafeDownloadPhrases,
++                             [&lower](std::string_view phrase) {
++                               return lower.find(phrase) != std::string::npos;
++                             });
++}
++
++struct NamedSite {
++  std::string_view ascii_alias;
++  std::string_view localized_alias;
++  std::string_view domain;
++  std::string_view homepage;
++  std::string_view search_prefix;
++};
++
++const NamedSite* NamedSiteForGoal(std::string_view goal) {
++  static constexpr NamedSite kSites[] = {
++      {"jd", "京东", "jd.com", "https://www.jd.com/",
++       "https://search.jd.com/Search?keyword="},
++      {"amazon", "亚马逊", "amazon.com", "https://www.amazon.com/",
++       "https://www.amazon.com/s?k="},
++      {"github", "", "github.com", "https://github.com/",
++       "https://github.com/search?q="},
++      {"youtube", "", "youtube.com", "https://www.youtube.com/",
++       "https://www.youtube.com/results?search_query="},
++  };
++  const std::string lower = base::ToLowerASCII(goal);
++  for (const NamedSite& site : kSites) {
++    if (ContainsAsciiWord(lower, site.ascii_alias) ||
++        (!site.localized_alias.empty() &&
++         goal.find(site.localized_alias) != std::string_view::npos)) {
++      return &site;
++    }
++  }
++  return nullptr;
++}
++
++bool GoalRequestsNamedSiteSearch(std::string_view goal) {
++  const std::string lower = base::ToLowerASCII(goal);
++  constexpr std::string_view kSearchActions[] = {
++      "找",       "搜索",    "搜一下",    "查找", "查询",     "推荐",
++      "对比",     "比较",    "几款",      "购买", "find",     "search",
++      "look for", "compare", "recommend", "buy",  "download", "下载",
++  };
++  return std::ranges::any_of(kSearchActions, [&lower](std::string_view action) {
++    return lower.find(action) != std::string::npos;
++  });
++}
++
++std::string BrowserOwnedNamedSiteTarget(std::string_view goal,
++                                        std::string_view proposed_query,
++                                        const NamedSite& site) {
++  if (!GoalRequestsNamedSiteSearch(goal) || proposed_query.empty()) {
++    return std::string(site.homepage);
++  }
++  const GURL search_url(std::string(site.search_prefix) +
++                        base::EscapeQueryParamValue(proposed_query,
++                                                    /*use_plus=*/true));
++  return search_url.is_valid() ? search_url.spec() : std::string(site.homepage);
++}
++
++bool RouteTargetsSite(const AgentGoalRoute& route, const NamedSite& site) {
++  if (route.entry_kind != AgentGoalEntryKind::kOpenUrl) {
++    return false;
++  }
++  const GURL url(route.target);
++  const std::string host = base::ToLowerASCII(url.host());
++  return host == site.domain ||
++         (host.size() > site.domain.size() &&
++          base::EndsWith(host, site.domain) &&
++          host[host.size() - site.domain.size() - 1] == '.');
++}
++
++bool RouteTargetsSiteHomepage(const AgentGoalRoute& route,
++                              const NamedSite& site) {
++  if (!RouteTargetsSite(route, site)) {
++    return false;
++  }
++  const GURL target(route.target);
++  const GURL homepage(site.homepage);
++  return target.DeprecatedGetOriginAsURL() ==
++             homepage.DeprecatedGetOriginAsURL() &&
++         (target.path().empty() || target.path() == "/") &&
++         !target.has_query() && !target.has_ref();
++}
++
+ }  // namespace
+ 
+ AgentModelToolDefinition BuildRouteGoalToolDefinition() {
+@@ -127,16 +261,15 @@ AgentModelToolDefinition BuildRouteGoalToolDefinition() {
+   base::DictValue properties;
+   properties.Set("schema_version",
+                  IntegerSchema(kAgentSchemaVersion, kAgentSchemaVersion));
+-  properties.Set("workflow",
+-                 EnumSchema({"research", "browser_steward", "safe_download",
+-                             "shopping"}));
++  properties.Set("workflow", EnumSchema({"research", "browser_steward",
++                                         "safe_download", "shopping"}));
+   properties.Set("entry_kind",
+                  EnumSchema({"browser_only", "open_url", "web_search"}));
+   properties.Set("target", StringSchema(4096, 0));
+   properties.Set("summary", StringSchema(kMaxPlanTextBytes));
+-  tool.input_schema = StrictObject(std::move(properties),
+-                                   {"schema_version", "workflow",
+-                                    "entry_kind", "target", "summary"});
++  tool.input_schema = StrictObject(
++      std::move(properties),
++      {"schema_version", "workflow", "entry_kind", "target", "summary"});
+   return tool;
+ }
+ 
+@@ -246,6 +379,39 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
+   return route;
+ }
+ 
++AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
++                                              AgentGoalRoute route) {
++  const bool shopping_authority = GoalRequestsShoppingAuthority(user_goal);
++  if (GoalRequestsSafeDownload(user_goal) && !shopping_authority &&
++      route.entry_kind != AgentGoalEntryKind::kBrowserOnly) {
++    route.workflow = AgentWorkflowKind::kSafeDownload;
++  } else if (route.workflow == AgentWorkflowKind::kShopping &&
++             !shopping_authority) {
++    route.workflow = AgentWorkflowKind::kResearch;
++  }
++  const NamedSite* site = NamedSiteForGoal(user_goal);
++  if (site && route.entry_kind != AgentGoalEntryKind::kBrowserOnly) {
++    if (!RouteTargetsSite(route, *site)) {
++      const std::string proposed_query =
++          route.entry_kind == AgentGoalEntryKind::kWebSearch
++              ? route.target
++              : (GoalRequestsNamedSiteSearch(user_goal) ? std::string(user_goal)
++                                                        : std::string());
++      route.entry_kind = AgentGoalEntryKind::kOpenUrl;
++      route.target =
++          BrowserOwnedNamedSiteTarget(user_goal, proposed_query, *site);
++    } else if (GoalRequestsNamedSiteSearch(user_goal) &&
++               RouteTargetsSiteHomepage(route, *site)) {
++      // Smaller local models sometimes identify the right merchant but return
++      // only its homepage. For an explicit find/search/compare request, the
++      // browser can safely turn the user's own text into that site's HTTPS
++      // search URL instead of leaving a novice on an unrelated landing page.
++      route.target = BrowserOwnedNamedSiteTarget(user_goal, user_goal, *site);
++    }
++  }
++  return route;
++}
++
+ AgentModelToolDefinition BuildSubmitPlanToolDefinition() {
+   AgentModelToolDefinition tool;
+   tool.name = "agent.submit_plan";
+@@ -261,6 +427,7 @@ AgentModelToolDefinition BuildSubmitPlanToolDefinition() {
+   base::DictValue steps;
+   steps.Set("type", "array");
+   steps.Set("items", std::move(step));
++  steps.Set("minItems", 1);
+   steps.Set("maxItems", static_cast<int>(kMaxPlanSteps));
+ 
+   base::DictValue properties;
+@@ -268,8 +435,8 @@ AgentModelToolDefinition BuildSubmitPlanToolDefinition() {
+                  IntegerSchema(kAgentSchemaVersion, kAgentSchemaVersion));
+   properties.Set("summary", StringSchema(kMaxPlanTextBytes));
+   properties.Set("steps", std::move(steps));
+-  tool.input_schema = StrictObject(
+-      std::move(properties), {"schema_version", "summary", "steps"});
++  tool.input_schema = StrictObject(std::move(properties),
++                                   {"schema_version", "summary", "steps"});
+   return tool;
+ }
+ 
+@@ -398,8 +565,7 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+     const std::string* title = step.FindString("title");
+     const std::string* tool_name = step.FindString("tool");
+     if (!id || !title || !tool_name || !IsPlanStepId(*id) ||
+-        !step_ids.insert(*id).second ||
+-        !maximum_scope.AllowsTool(*tool_name)) {
++        !step_ids.insert(*id).second || !maximum_scope.AllowsTool(*tool_name)) {
+       *error = "task plan step is duplicated or outside scope";
+       return std::nullopt;
+     }
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index dd4a6595d0..a3fb6b669b 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -54,6 +54,12 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
+     const AgentModelEvent& event,
+     std::string* error);
+ 
++// Narrows a model-proposed route using intent that must remain browser-owned.
++// Product discovery cannot silently gain shopping authority, and a named-site
++// request cannot be redirected to a general search engine or unrelated host.
++AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
++                                              AgentGoalRoute route);
++
+ AgentModelToolDefinition BuildSubmitPlanToolDefinition();
+ 
+ // Fixed contract placed before the user goal. Page text and prior tool results
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index ad86f5a62b..7b1737acd1 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <string>
+ #include <string_view>
++#include <utility>
+ 
+ #include "base/json/json_reader.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
+@@ -82,8 +83,7 @@ TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {
+   EXPECT_EQ(direct->target, "https://example.com/docs");
+ 
+   std::optional<AgentGoalRoute> search = ParseAndValidateGoalRoute(
+-      GoalRouteEvent("research", "web_search", "最新浏览器安全研究"),
+-      &error);
++      GoalRouteEvent("research", "web_search", "最新浏览器安全研究"), &error);
+   ASSERT_TRUE(search) << error;
+   EXPECT_EQ(search->entry_kind, AgentGoalEntryKind::kWebSearch);
+   EXPECT_EQ(search->target, "最新浏览器安全研究");
+@@ -92,8 +92,7 @@ TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {
+ TEST(AegisAgentPlannerTest, GoalRouterRejectsUnsafeOrInconsistentEntry) {
+   std::string error;
+   EXPECT_FALSE(ParseAndValidateGoalRoute(
+-      GoalRouteEvent("browser_steward", "web_search", "整理收藏夹"),
+-      &error));
++      GoalRouteEvent("browser_steward", "web_search", "整理收藏夹"), &error));
+   EXPECT_EQ(error, "goal route contains an invalid search query");
+ 
+   EXPECT_FALSE(ParseAndValidateGoalRoute(
+@@ -122,8 +121,80 @@ TEST(AegisAgentPlannerTest, GoalRouterPromptRequiresIntentBeforeEntry) {
+   const std::optional<base::Value> parsed =
+       base::JSONReader::Read(*prompt, base::JSON_PARSE_RFC);
+   ASSERT_TRUE(parsed && parsed->is_dict());
+-  EXPECT_EQ(*parsed->GetDict().FindString("user_goal"),
+-            "整理并检查失效收藏夹");
++  EXPECT_EQ(*parsed->GetDict().FindString("user_goal"), "整理并检查失效收藏夹");
++}
++
++TEST(AegisAgentPlannerTest, BrowserNarrowsShoppingAndNamedSiteRoutes) {
++  AgentGoalRoute discovery;
++  discovery.workflow = AgentWorkflowKind::kShopping;
++  discovery.entry_kind = AgentGoalEntryKind::kOpenUrl;
++  discovery.target = "https://search.jd.com/Search?keyword=memory";
++  AgentGoalRoute narrowed = ConstrainGoalRouteToUserIntent(
++      "帮我在 JD 找几款内存", std::move(discovery));
++  EXPECT_EQ(narrowed.workflow, AgentWorkflowKind::kResearch);
++  EXPECT_EQ(narrowed.target, "https://search.jd.com/Search?keyword=memory");
++
++  AgentGoalRoute general_search;
++  general_search.workflow = AgentWorkflowKind::kResearch;
++  general_search.entry_kind = AgentGoalEntryKind::kWebSearch;
++  general_search.target = "京东 内存";
++  AgentGoalRoute direct =
++      ConstrainGoalRouteToUserIntent("在京东找内存", std::move(general_search));
++  EXPECT_EQ(direct.entry_kind, AgentGoalEntryKind::kOpenUrl);
++  EXPECT_EQ(GURL(direct.target).host(), "search.jd.com");
++  EXPECT_TRUE(GURL(direct.target).query().contains("keyword="));
++
++  AgentGoalRoute open_site;
++  open_site.workflow = AgentWorkflowKind::kResearch;
++  open_site.entry_kind = AgentGoalEntryKind::kWebSearch;
++  open_site.target = "京东";
++  EXPECT_EQ(
++      ConstrainGoalRouteToUserIntent("打开京东", std::move(open_site)).target,
++      "https://www.jd.com/");
++
++  AgentGoalRoute homepage_for_search;
++  homepage_for_search.workflow = AgentWorkflowKind::kResearch;
++  homepage_for_search.entry_kind = AgentGoalEntryKind::kOpenUrl;
++  homepage_for_search.target = "https://www.jd.com/";
++  AgentGoalRoute direct_from_homepage = ConstrainGoalRouteToUserIntent(
++      "帮我在 JD 找几款内存", std::move(homepage_for_search));
++  EXPECT_EQ(GURL(direct_from_homepage.target).host(), "search.jd.com");
++  EXPECT_TRUE(GURL(direct_from_homepage.target).query().contains("keyword="));
++
++  AgentGoalRoute unrelated_url;
++  unrelated_url.workflow = AgentWorkflowKind::kResearch;
++  unrelated_url.entry_kind = AgentGoalEntryKind::kOpenUrl;
++  unrelated_url.target = "https://example.com/search?q=memory";
++  AgentGoalRoute direct_from_unrelated =
++      ConstrainGoalRouteToUserIntent("在京东找内存", std::move(unrelated_url));
++  EXPECT_EQ(GURL(direct_from_unrelated.target).host(), "search.jd.com");
++  EXPECT_TRUE(GURL(direct_from_unrelated.target).query().contains("keyword="));
++
++  AgentGoalRoute purchase;
++  purchase.workflow = AgentWorkflowKind::kShopping;
++  purchase.entry_kind = AgentGoalEntryKind::kOpenUrl;
++  purchase.target = "https://www.amazon.com/";
++  EXPECT_EQ(ConstrainGoalRouteToUserIntent(
++                "Buy this on Amazon and add it to cart", std::move(purchase))
++                .workflow,
++            AgentWorkflowKind::kShopping);
++
++  AgentGoalRoute official_download;
++  official_download.workflow = AgentWorkflowKind::kResearch;
++  official_download.entry_kind = AgentGoalEntryKind::kWebSearch;
++  official_download.target = "VLC 官方下载地址";
++  EXPECT_EQ(ConstrainGoalRouteToUserIntent("帮我找 VLC 的官方下载地址",
++                                           std::move(official_download))
++                .workflow,
++            AgentWorkflowKind::kSafeDownload);
++
++  AgentGoalRoute browser_only;
++  browser_only.workflow = AgentWorkflowKind::kBrowserSteward;
++  browser_only.entry_kind = AgentGoalEntryKind::kBrowserOnly;
++  EXPECT_EQ(ConstrainGoalRouteToUserIntent("整理收藏夹里的 GitHub 链接",
++                                           std::move(browser_only))
++                .entry_kind,
++            AgentGoalEntryKind::kBrowserOnly);
+ }
+ 
+ TEST(AegisAgentPlannerTest, BrowserOwnsScopeAndModelChoosesOnlySteps) {
+@@ -138,8 +209,8 @@ TEST(AegisAgentPlannerTest, BrowserOwnsScopeAndModelChoosesOnlySteps) {
+   EXPECT_EQ(plan->scope.allowed_tools.size(), 1u);
+   EXPECT_TRUE(plan->scope.allowed_tools.contains("page.observe"));
+   EXPECT_EQ(plan->scope.allowed_data_classes.size(), 1u);
+-  EXPECT_TRUE(plan->scope.allowed_data_classes.contains(
+-      AgentDataClass::kPublicPage));
++  EXPECT_TRUE(
++      plan->scope.allowed_data_classes.contains(AgentDataClass::kPublicPage));
+   EXPECT_EQ(plan->scope.budgets.max_tool_calls,
+             MaximumScope().budgets.max_tool_calls);
+   ASSERT_EQ(plan->steps.size(), 1u);
+@@ -250,8 +321,7 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
+                 .FindDict("model_destination")
+                 ->FindBool("credential_in_browser"),
+             true);
+-  const base::ListValue* catalog =
+-      parsed->GetDict().FindList("tool_catalog");
++  const base::ListValue* catalog = parsed->GetDict().FindList("tool_catalog");
+   ASSERT_TRUE(catalog);
+   ASSERT_EQ(catalog->size(), 3u);
+   EXPECT_TRUE((*catalog)[0].GetDict().FindString("purpose"));
+diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
+index fab61c7c3e..49d4205fc8 100644
+--- a/chrome/browser/aegis/agent/agent_workflow.cc
++++ b/chrome/browser/aegis/agent/agent_workflow.cc
+@@ -3,11 +3,22 @@
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
+ 
+ #include "base/no_destructor.h"
++#include "base/strings/string_util.h"
++#include "build/build_config.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
+ 
+ namespace aegis::agent {
+ namespace {
+ 
++bool IsToolSupportedOnCurrentPlatform(std::string_view tool) {
++#if BUILDFLAG(IS_ANDROID)
++  return !base::StartsWith(tool, "window.") &&
++         !base::StartsWith(tool, "workspace.");
++#else
++  return true;
++#endif
++}
++
+ AgentWorkflowTemplate ResearchTemplate() {
+   AgentWorkflowTemplate value;
+   value.kind = AgentWorkflowKind::kResearch;
+@@ -139,7 +150,11 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
+   AgentTaskScope scope;
+   scope.allowed_origins = std::move(origins);
+   scope.allowed_tab_ids = std::move(tab_ids);
+-  scope.allowed_tools = workflow.tools;
++  for (const std::string& tool : workflow.tools) {
++    if (IsToolSupportedOnCurrentPlatform(tool)) {
++      scope.allowed_tools.insert(tool);
++    }
++  }
+   if (scope.allowed_origins.empty()) {
+     AgentToolRegistry registry;
+     base::flat_set<std::string> browser_only_tools;
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index 968372b0f3..2ae95059df 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -20,6 +20,7 @@ assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
+ 
+ group("resources") {
+   public_deps = [
++    "aegis_agent:resources",
+     "contextual_tasks:resources",
+     "glic:resources",
+     "private_ai_internals:resources",
+@@ -52,7 +53,6 @@ group("resources") {
+       "about_sys:resources",
+       "access_code_cast:resources",
+       "actor_overlay:resources",
+-      "aegis_agent:resources",
+       "app_service_internals:resources",
+       "autofill_ml_internals:resources",
+       "bookmarks:resources",
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 84ee6bb29b..78884e7aab 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -985,7 +985,7 @@ function fillBrowserAgent(status: AegisStatus) {
+   const open = actionButton('browser-agent-open');
+   const statusEl = getRequiredElement('browser-agent-status');
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+-  section.hidden = !!status.isAndroid;
++  section.hidden = false;
+   toggle.checked = !!status.browserAgentEnabled;
+   toggle.disabled = !status.browserAgentAvailable;
+   open.disabled = !status.browserAgentAvailable || !status.browserAgentEnabled;
+@@ -999,8 +999,8 @@ function fillBrowserAgent(status: AegisStatus) {
+         'Enabled. High-risk actions still require approval and payment requires takeover.';
+   } else {
+     statusEl.textContent = zh ?
+-        '默认关闭；启用后可从工具栏或此处打开。' :
+-        'Off by default. Enable it to open from the toolbar or here.';
++        '默认关闭；启用后可从浏览器菜单、工具栏或此处打开。' :
++        'Off by default. Enable it to open from the browser menu, toolbar, or here.';
+   }
+ }
+ 
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 6fd3b3f5c7..c2d08b4231 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -24,6 +24,10 @@ let modelFormInitialized = false;
+ let autoRunTaskId = '';
+ let autoRunInFlight = false;
+ let activeView: 'task'|'automation' = 'task';
++const launchParameters = new URLSearchParams(window.location.search);
++const launchGoal = (launchParameters.get('goal') || '').trim().slice(0, 4096);
++const launchAutoStart =
++    launchParameters.get('autostart') === '1' && launchGoal.length > 0;
+ 
+ function element<T extends HTMLElement>(id: string): T {
+   const value = document.getElementById(id);
+@@ -51,7 +55,8 @@ function inferWorkflow(goal: string): Workflow {
+   if (/下载|安装包|官方版本|download|installer|release/iu.test(goal)) {
+     return Workflow.kSafeDownload;
+   }
+-  if (/购买|购物|比价|价格|下单|结账|到手价|buy|shop|price|checkout|cart/iu.test(goal)) {
++  if (/购买|帮我买|买下|下单|结账|付款|加入购物车|\bbuy\b|purchase|checkout|add\s+to\s+cart/iu
++          .test(goal)) {
+     return Workflow.kShopping;
+   }
+   return Workflow.kResearch;
+@@ -363,11 +368,15 @@ function friendlyError(error: string, hasPlan: boolean): string {
+   if (error.includes('Configure a valid Agent model')) {
+     return loadTimeData.getString('modelMissing');
+   }
++  if (error.includes('invalid agent model configuration') ||
++      error.includes('model configuration is invalid')) {
++    return loadTimeData.getString('modelConfigurationError');
++  }
+   if (error.includes('related page could not be opened')) {
+-    return '无法打开相关网页，请检查网络后重试。';
++    return loadTimeData.getString('relatedPageOpenError');
+   }
+   if (error.includes('current public page is unavailable')) {
+-    return '请先打开一个普通网页，再让 Aegis 处理当前页面。';
++    return loadTimeData.getString('currentPageUnavailableError');
+   }
+   if (error.includes('Task input is invalid')) {
+     return loadTimeData.getString('taskInputError');
+@@ -415,6 +424,13 @@ function friendlyError(error: string, hasPlan: boolean): string {
+       hasPlan ? 'executionGenericError' : 'planningGenericError');
+ }
+ 
++function friendlyModelError(error: string): string {
++  if (error.includes('invalid') || error.includes('unsupported')) {
++    return loadTimeData.getString('modelConfigurationError');
++  }
++  return loadTimeData.getString('modelConnectionError');
++}
++
+ function maybeAutoRun(next: TaskSnapshot) {
+   if (autoRunTaskId && next.taskId === autoRunTaskId &&
+       next.state === 'awaiting_task_consent' && !autoRunInFlight) {
+@@ -595,7 +611,15 @@ function initializeLabels() {
+       loadTimeData.getString('automationGoalPlaceholder');
+ 
+   const goal = element<HTMLTextAreaElement>('goal');
++  if (launchGoal) {
++    goal.value = launchGoal;
++    goalUserEdited = true;
++  }
++  if (launchParameters.get('view') === 'automation') {
++    activeView = 'automation';
++  }
+   goal.addEventListener('input', () => {
++    selectedWorkflow = null;
+     goalUserEdited = true;
+     if (snapshot) {
+       render(snapshot);
+@@ -686,7 +710,8 @@ async function detectModels() {
+         element<HTMLInputElement>('model-base-url').value.trim(),
+         element<HTMLInputElement>('model-api-key').value.trim());
+     if (!response.ok) {
+-      element('model-feedback').textContent = response.error;
++      element('model-feedback').textContent =
++          friendlyModelError(response.error);
+       return;
+     }
+     const options = element<HTMLDataListElement>('model-options');
+@@ -799,4 +824,9 @@ proxy.callbackRouter.onSnapshotChanged.addListener(render);
+ proxy.handler.getSnapshot().then(({snapshot: initial}) => {
+   render(initial);
+   proxy.handler.showUI();
++  // A launcher invocation always represents a new user request. Do not let a
++  // completed (or otherwise retained) previous task silently suppress it.
++  if (launchAutoStart && initial.modelConfigured) {
++    element<HTMLButtonElement>('plan-button').click();
++  }
+ });
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 12828c7e55..9ac7fc0a84 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -1348,6 +1348,7 @@ static_library("ui") {
+       "//chrome/browser/ui/autofill:autofill_ai_ui_utils_impl",
+       "//chrome/browser/ui/exclusive_access",
+       "//chrome/browser/ui/plus_addresses",
++      "//chrome/browser/ui/webui/aegis_agent:impl",
+       "//chrome/browser/ui/webui/bookmarks:bookmarks_android",
+       "//chrome/browser/ui/webui/feed_internals",
+       "//chrome/browser/ui/webui/notifications_internals",
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+index 6e8b1f8a33..53106b5414 100644
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -4348,6 +4348,81 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+       <message name="IDS_MENU_SETTINGS" desc="Menu item for opening browser settings. [CHAR_LIMIT=27]">
+         Settings
+       </message>
++      <message name="IDS_MENU_AEGIS_AGENT" desc="Menu item for opening Aegis Browser Agent. [CHAR_LIMIT=27]">
++        Aegis Agent
++      </message>
++      <message name="IDS_MENU_AEGIS_AGENT_CURRENT_PAGE" desc="Menu item for asking Aegis Browser Agent to work with the current page. [CHAR_LIMIT=32]">
++        Use Aegis on this page
++      </message>
++      <message name="IDS_AEGIS_AGENT_SHEET_TITLE" desc="Title of the Aegis Browser Agent task composer.">
++        What should Aegis do?
++      </message>
++      <message name="IDS_AEGIS_AGENT_SHEET_SUBTITLE" desc="Subtitle explaining how the Aegis Browser Agent handles a task.">
++        Describe the result you want. Aegis will understand, plan, act, and check its work.
++      </message>
++      <message name="IDS_AEGIS_AGENT_SHEET_GOAL_HINT" desc="Hint in the Aegis Browser Agent goal input field.">
++        For example: Find three suitable laptops on JD and compare them
++      </message>
++      <message name="IDS_AEGIS_AGENT_COMMON_TASKS" desc="Heading above common Aegis Browser Agent task presets.">
++        Common tasks
++      </message>
++      <message name="IDS_AEGIS_AGENT_QUICK_SUMMARY" desc="Aegis Browser Agent preset for summarizing the current page. [CHAR_LIMIT=20]">
++        Summarize page
++      </message>
++      <message name="IDS_AEGIS_AGENT_QUICK_BOOKMARKS" desc="Aegis Browser Agent preset for organizing bookmarks. [CHAR_LIMIT=20]">
++        Organize bookmarks
++      </message>
++      <message name="IDS_AEGIS_AGENT_QUICK_DOWNLOAD" desc="Aegis Browser Agent preset for finding official downloads. [CHAR_LIMIT=20]">
++        Find official download
++      </message>
++      <message name="IDS_AEGIS_AGENT_QUICK_COMPARE" desc="Aegis Browser Agent preset for comparing products. [CHAR_LIMIT=20]">
++        Compare products
++      </message>
++      <message name="IDS_AEGIS_AGENT_GOAL_SUMMARY" desc="Goal inserted by the summarize page Aegis preset.">
++        Summarize the current page, list the main points, and cite verifiable sources.
++      </message>
++      <message name="IDS_AEGIS_AGENT_GOAL_BOOKMARKS" desc="Goal inserted by the organize bookmarks Aegis preset.">
++        Review my bookmarks, propose useful categories, and show the changes before applying them.
++      </message>
++      <message name="IDS_AEGIS_AGENT_GOAL_DOWNLOAD" desc="Goal inserted by the official download Aegis preset.">
++        Find the official download for the software I name, verify the source, and let me choose before downloading.
++      </message>
++      <message name="IDS_AEGIS_AGENT_GOAL_COMPARE" desc="Goal inserted by the compare products Aegis preset.">
++        Find suitable products from the site I name and compare price, specifications, and important differences.
++      </message>
++      <message name="IDS_AEGIS_AGENT_CURRENT_PAGE_DEFAULT_GOAL" desc="Default goal when Aegis Browser Agent is invoked for the current page.">
++        Summarize the current page, list the main points, and cite verifiable sources.
++      </message>
++      <message name="IDS_AEGIS_AGENT_GOAL_REQUIRED" desc="Validation error when the Aegis Browser Agent goal is empty.">
++        Tell Aegis what result you want first.
++      </message>
++      <message name="IDS_AEGIS_AGENT_START_TASK" desc="Button that starts planning an Aegis Browser Agent task.">
++        Let Aegis make a plan
++      </message>
++      <message name="IDS_AEGIS_AGENT_OPEN_CENTER" desc="Button that opens the full Aegis Browser Agent workspace.">
++        Open Agent workspace and automations
++      </message>
++      <message name="IDS_AEGIS_AGENT_SHEET_CONTENT_DESCRIPTION" desc="Accessibility description for the Aegis Browser Agent task composer.">
++        Aegis Browser Agent task composer
++      </message>
++      <message name="IDS_AEGIS_AGENT_SHEET_CLOSED" desc="Accessibility announcement when the Aegis Browser Agent task composer closes.">
++        Aegis task composer closed
++      </message>
++      <message name="IDS_AEGIS_AGENT_SHEET_OPENED" desc="Accessibility announcement when the Aegis Browser Agent task composer opens.">
++        Aegis task composer opened
++      </message>
++      <message name="IDS_AEGIS_AGENT_NTP_TITLE" desc="Title of the Aegis Browser Agent card on the new tab page.">
++        Aegis Browser Agent
++      </message>
++      <message name="IDS_AEGIS_AGENT_NTP_SUBTITLE" desc="Subtitle of the Aegis Browser Agent card on the new tab page.">
++        Say what you want. Aegis will understand, plan, and do it.
++      </message>
++      <message name="IDS_AEGIS_AGENT_MONITOR_CHANGED" desc="Title of an Android notification for a verified Aegis automation change.">
++        Aegis found a change
++      </message>
++      <message name="IDS_AEGIS_AGENT_MONITOR_CHANGED_DETAIL" desc="Body of an Android notification for a verified Aegis automation change.">
++        <ph name="CHANGE_KIND">%1$s<ex>page</ex></ph> changed at <ph name="HOST">%2$s<ex>example.com</ex></ph>. Tap to review the evidence.
++      </message>
+       <message name="IDS_MENU_NTP_CUSTOMIZATION" desc="Option in item menu. User can click the 'Customize new tab page' option to open the 'Customize your new tab page' bottom sheet. [CHAR_LIMIT=27]">
+         Customize new tab page
+       </message>
+diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
+index d97d2bfbc4..27797f05ae 100644
+--- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
++++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
+@@ -2058,4 +2058,28 @@
+ <translation id="992745192656291733"><ph name="TAB_COUNT" /> 个标签页</translation>
+ <translation id="996149300115483134">动态卡片上的菜单已关闭</translation>
+ <translation id="99907655649633293"><ph name="TAB_TITLE" />，无痕式标签页</translation>
+-</translationbundle>
+\ No newline at end of file
++<translation id="47643013872120127">Aegis 发现了变化</translation>
++<translation id="55098225068813589">Aegis 浏览器智能体任务输入框</translation>
++<translation id="292920323936340580">已关闭 Aegis 任务输入框</translation>
++<translation id="670301599904609742">Aegis 智能体</translation>
++<translation id="792670094156770650">检查我的收藏夹，提出实用分类，并在应用前展示改动。</translation>
++<translation id="925852093138995710">找到我所说软件的官方下载，核实来源，并在下载前让我选择。</translation>
++<translation id="1544653821167545205">总结页面</translation>
++<translation id="2329134429634295111">从我指定的网站寻找合适商品，对比价格、规格和重要区别。</translation>
++<translation id="2813826711336433966">打开 Agent 工作区和自动化</translation>
++<translation id="2943225941027868675">已打开 Aegis 任务输入框</translation>
++<translation id="3096629552648930040">Aegis 浏览器智能体</translation>
++<translation id="3149955992889027378">例如：在京东找三款合适的笔记本电脑并对比</translation>
++<translation id="4085769736382018559">对比商品</translation>
++<translation id="4187478552823156336"><ph name="CHANGE_KIND" />在 <ph name="HOST" /> 发生变化。点按可查看证据。</translation>
++<translation id="4388860371734506556">希望 Aegis 做什么？</translation>
++<translation id="4741957821560728002">总结当前页面，列出重点，并引用可核实的来源。</translation>
++<translation id="4990662070824466165">找官方下载</translation>
++<translation id="5869704973404121051">让 Aegis 制定计划</translation>
++<translation id="6701959661857321239">整理收藏夹</translation>
++<translation id="6952301047240616464">常用任务</translation>
++<translation id="7043785607856571150">说出你想要的结果，Aegis 会理解、制定计划并执行。</translation>
++<translation id="7514699437829597595">请先告诉 Aegis 你想要什么结果。</translation>
++<translation id="8100004066096796740">使用 Aegis 处理此页面</translation>
++<translation id="9106704778223749968">说出你想要的结果。Aegis 会先理解、制定计划、执行并检查结果。</translation>
++</translationbundle>
+diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
+index 8ac459bb45..bfe11fd03c 100644
+--- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
++++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
+@@ -2060,4 +2060,28 @@
+ <translation id="992745192656291733"><ph name="TAB_COUNT" /> 個分頁</translation>
+ <translation id="996149300115483134">已關閉動態消息資訊卡選單</translation>
+ <translation id="99907655649633293"><ph name="TAB_TITLE" />，無痕分頁</translation>
+-</translationbundle>
+\ No newline at end of file
++<translation id="47643013872120127">Aegis 發現了變化</translation>
++<translation id="55098225068813589">Aegis 瀏覽器智慧代理任務輸入框</translation>
++<translation id="292920323936340580">已關閉 Aegis 任務輸入框</translation>
++<translation id="670301599904609742">Aegis 智慧代理</translation>
++<translation id="792670094156770650">檢查我的書籤，提出實用分類，並在套用前顯示變更。</translation>
++<translation id="925852093138995710">找到我所說軟體的官方下載，核實來源，並在下載前讓我選擇。</translation>
++<translation id="1544653821167545205">總結頁面</translation>
++<translation id="2329134429634295111">從我指定的網站尋找合適商品，比較價格、規格和重要差異。</translation>
++<translation id="2813826711336433966">開啟 Agent 工作區和自動化</translation>
++<translation id="2943225941027868675">已開啟 Aegis 任務輸入框</translation>
++<translation id="3096629552648930040">Aegis 瀏覽器智慧代理</translation>
++<translation id="3149955992889027378">例如：在京東找三款合適的筆記型電腦並比較</translation>
++<translation id="4085769736382018559">比較商品</translation>
++<translation id="4187478552823156336"><ph name="CHANGE_KIND" />在 <ph name="HOST" /> 發生變化。點按可查看證據。</translation>
++<translation id="4388860371734506556">希望 Aegis 做什麼？</translation>
++<translation id="4741957821560728002">總結目前頁面，列出重點，並引用可核實的來源。</translation>
++<translation id="4990662070824466165">找官方下載</translation>
++<translation id="5869704973404121051">讓 Aegis 制定計畫</translation>
++<translation id="6701959661857321239">整理書籤</translation>
++<translation id="6952301047240616464">常用任務</translation>
++<translation id="7043785607856571150">說出你想要的結果，Aegis 會理解、制定計畫並執行。</translation>
++<translation id="7514699437829597595">請先告訴 Aegis 你想要什麼結果。</translation>
++<translation id="8100004066096796740">使用 Aegis 處理此頁面</translation>
++<translation id="9106704778223749968">說出你想要的結果。Aegis 會先理解、制定計畫、執行並檢查結果。</translation>
++</translationbundle>
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
+index 9e84076195..705c3c7b6b 100644
+--- a/chrome/browser/ui/toolbar/app_menu_model.cc
++++ b/chrome/browser/ui/toolbar/app_menu_model.cc
+@@ -12,6 +12,7 @@
+ #include "base/command_line.h"
+ #include "base/debug/debugging_buildflags.h"
+ #include "base/debug/profiler.h"
++#include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/i18n/number_formatting.h"
+ #include "base/i18n/rtl.h"
+@@ -99,6 +100,7 @@
+ #include "chrome/browser/web_applications/web_app_provider.h"
+ #include "chrome/browser/web_applications/web_app_registrar.h"
+ #include "chrome/browser/web_applications/web_app_tab_helper.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/chrome_paths.h"
+ #include "chrome/common/chrome_switches.h"
+@@ -160,10 +162,6 @@
+ #include "ui/gfx/text_elider.h"
+ #include "ui/menus/simple_menu_model.h"
+ 
+-#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || BUILDFLAG(IS_CHROMEOS)
+-#include "base/feature_list.h"
+-#endif
+-
+ #if BUILDFLAG(IS_CHROMEOS)
+ #include "chrome/browser/policy/system_features_disable_list_policy_handler.h"
+ #include "components/policy/core/common/policy_pref_names.h"
+@@ -2129,6 +2127,13 @@ void AppMenuModel::Build() {
+   AddSeparator(ui::SPACING_SEPARATOR);
+ #endif
+ 
++  if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++      browser_->profile()->IsRegularProfile()) {
++    AddItemWithStringIdAndVectorIcon(this, IDC_SHOW_AEGIS_AGENT,
++                                     IDS_SHOW_AEGIS_AGENT, omnibox::kSparkIcon);
++    AddSeparator(ui::SPACING_SEPARATOR);
++  }
++
+   if (!browser_->profile()->IsGuestSession()) {
+     sub_menus_.push_back(
+         std::make_unique<PasswordsAndAutofillSubMenuModel>(this));
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index f6532d65b1..8a2678c079 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -63,6 +63,7 @@ source_set("configs") {
+     "//chrome/browser/ui/webui/accessibility",
+     "//chrome/browser/ui/webui/actor_internals",
+     "//chrome/browser/ui/webui/aegis",
++    "//chrome/browser/ui/webui/aegis_agent",
+     "//chrome/browser/ui/webui/autofill_and_password_manager_internals",
+     "//chrome/browser/ui/webui/browsing_topics",
+     "//chrome/browser/ui/webui/chrome_urls",
+@@ -120,7 +121,6 @@ source_set("configs") {
+       "//chrome/browser/contextual_cueing/internals",
+       "//chrome/browser/glic/selection",
+       "//chrome/browser/ui/webui/access_code_cast",
+-      "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/app_service_internals",
+       "//chrome/browser/ui/webui/autofill_ml_internals",
+       "//chrome/browser/ui/webui/color_pipeline_internals",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index c5b7021b7a..fc1dd46fa3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -29,6 +29,7 @@
+ #include "chrome/browser/download/download_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/aegis/pref_names.h"
++#include "chrome/common/webui_url_constants.h"
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+@@ -45,9 +46,11 @@
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_ui.h"
++#include "content/public/common/referrer.h"
+ #include "mojo/public/cpp/bindings/associated_remote.h"
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #include "ui/base/l10n/l10n_util.h"
++#include "ui/base/page_transition_types.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+@@ -455,13 +458,7 @@ base::DictValue AegisUIHandler::BuildStatus() {
+   status.Set("policyWorkerReady", false);
+   status.Set("policyWorkerError", "");
+   status.Set("privacyAi", service && service->IsPrivacyAiEnabled());
+-#if BUILDFLAG(IS_ANDROID)
+-  status.Set("isAndroid", true);
+-  status.Set("torrentSupported", false);
+-  status.Set("browserAgentAvailable", false);
+-  status.Set("browserAgentEnabled", false);
+-#else
+-  status.Set("isAndroid", false);
++  status.Set("isAndroid", BUILDFLAG(IS_ANDROID));
+   const bool browser_agent_available =
+       regular_profile &&
+       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
+@@ -473,7 +470,6 @@ base::DictValue AegisUIHandler::BuildStatus() {
+   status.Set("torrentSupported", service != nullptr);
+ #else
+   status.Set("torrentSupported", false);
+-#endif
+ #endif
+   status.Set("torrentDisclosureAcknowledged",
+              profile && profile->GetPrefs()->GetBoolean(
+@@ -587,13 +583,6 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+   } else if (module == "aiControl") {
+     service->SetAiControlEnabled(enabled);
+   } else if (module == "browserAgent") {
+-#if BUILDFLAG(IS_ANDROID)
+-    base::DictValue status = BuildStatus();
+-    status.Set("ok", false);
+-    status.Set("error", "Browser Agent is not available on Android in v1");
+-    ResolveJavascriptCallback(callback_id, status);
+-    return;
+-#else
+     Profile* profile = Profile::FromWebUI(web_ui());
+     if (!profile || !profile->IsRegularProfile() ||
+         !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
+@@ -614,7 +603,6 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+       // Creating the service restores and schedules persisted monitors.
+       aegis::agent::AegisAgentServiceFactory::GetForProfile(profile);
+     }
+-#endif
+   }
+ 
+   ResolveJavascriptCallback(callback_id, BuildStatus());
+@@ -628,8 +616,18 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
+   const base::Value& callback_id = args[0];
+   base::DictValue status = BuildStatus();
+ #if BUILDFLAG(IS_ANDROID)
+-  status.Set("ok", false);
+-  status.Set("error", "Browser Agent is not available on Android in v1");
++  Profile* profile = Profile::FromWebUI(web_ui());
++  if (!profile || !profile->IsRegularProfile() ||
++      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
++      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++    status.Set("ok", false);
++    status.Set("error", "Enable Browser Agent before opening it");
++  } else {
++    web_ui()->GetWebContents()->GetController().LoadURL(
++        GURL(chrome::kChromeUIUntrustedAegisAgentURL), content::Referrer(),
++        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
++    status.Set("ok", true);
++  }
+ #else
+   Profile* profile = Profile::FromWebUI(web_ui());
+   BrowserWindowInterface* browser =
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 3591d9d3c3..f8e941f025 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -1,7 +1,5 @@
+ # Copyright 2026 GCSA
+ 
+-assert(!is_android)
+-
+ import("//mojo/public/tools/bindings/mojom.gni")
+ 
+ mojom("mojo_bindings") {
+@@ -18,10 +16,14 @@ source_set("aegis_agent") {
+     ":mojo_bindings",
+     "//base",
+     "//chrome/browser/aegis:agent_core",
+-    "//chrome/browser/ui/webui/top_chrome",
+     "//components/prefs",
++    "//content/public/browser",
+     "//mojo/public/cpp/bindings",
++    "//ui/webui",
+   ]
++  if (!is_android) {
++    public_deps += [ "//chrome/browser/ui/webui/top_chrome" ]
++  }
+ }
+ 
+ source_set("impl") {
+@@ -36,11 +38,10 @@ source_set("impl") {
+     "//chrome/browser/aegis:agent_core",
+     "//chrome/browser/aegis:model_provider_policy",
+     "//chrome/browser/profiles:profile",
+-    "//chrome/browser/search_engines",
+     "//chrome/browser/resources/aegis_agent:resources",
++    "//chrome/browser/search_engines",
++    "//chrome/browser/tab_list",
+     "//chrome/browser/ui/browser_window",
+-    "//chrome/browser/ui/navigator",
+-    "//chrome/browser/ui/webui:theme_source",
+     "//chrome/browser/ui/webui:webui_util",
+     "//chrome/common",
+     "//chrome/common/aegis",
+@@ -52,4 +53,7 @@ source_set("impl") {
+     "//ui/webui",
+     "//url",
+   ]
++  if (!is_android) {
++    deps += [ "//chrome/browser/ui/webui:theme_source" ]
++  }
+ }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index d374c40b61..3b93948046 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -13,6 +13,7 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+@@ -21,9 +22,8 @@
+ #include "chrome/browser/aegis/model_provider_policy.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
++#include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+-#include "chrome/browser/ui/navigator/browser_navigator.h"
+-#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -126,8 +126,38 @@ std::string MonitorKindName(aegis::agent::AgentMonitorKind kind) {
+   }
+ }
+ 
+-tabs::TabInterface* ActiveTab(BrowserWindowInterface* browser) {
+-  return browser ? browser->GetActiveTabInterface() : nullptr;
++tabs::TabInterface* ContentTab(BrowserWindowInterface* browser,
++                               aegis::agent::AegisAgentService* service) {
++  TabListInterface* tabs = browser ? TabListInterface::From(browser) : nullptr;
++  if (!tabs) {
++    return nullptr;
++  }
++  if (service) {
++    const aegis::agent::AgentInvocationContext* invocation =
++        service->PendingInvocationContext();
++    if (invocation) {
++      for (tabs::TabInterface* tab : tabs->GetAllTabs()) {
++        if (tab && tab->GetHandle().raw_value() == invocation->tab_id &&
++            tab->GetURL().SchemeIsHTTPOrHTTPS()) {
++          return tab;
++        }
++      }
++    }
++  }
++  tabs::TabInterface* active = tabs->GetActiveTab();
++  if (active && active->GetURL().SchemeIsHTTPOrHTTPS()) {
++    return active;
++  }
++  // On Android the Agent is a full-page WebUI tab. Preserve the public tab
++  // the user came from so commands such as "summarize this page" keep their
++  // natural meaning after opening the Agent.
++  for (int index = tabs->GetTabCount() - 1; index >= 0; --index) {
++    tabs::TabInterface* tab = tabs->GetTab(index);
++    if (tab && tab->GetURL().SchemeIsHTTPOrHTTPS()) {
++      return tab;
++    }
++  }
++  return active;
+ }
+ 
+ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
+@@ -280,16 +310,11 @@ std::optional<GURL> SearchUrlForQuery(Profile* profile,
+ 
+ tabs::TabInterface* OpenAutomaticTaskTab(BrowserWindowInterface* browser,
+                                          const GURL& url) {
+-  if (!browser || !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++  TabListInterface* tabs = browser ? TabListInterface::From(browser) : nullptr;
++  if (!tabs || !url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
+     return nullptr;
+   }
+-  NavigateParams params(browser, url, ui::PAGE_TRANSITION_GENERATED);
+-  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+-  Navigate(&params);
+-  return params.navigated_or_inserted_contents
+-             ? tabs::TabInterface::GetFromContents(
+-                   params.navigated_or_inserted_contents)
+-             : nullptr;
++  return tabs->OpenTab(url, tabs->GetTabCount(), /*foreground=*/true);
+ }
+ 
+ std::optional<std::vector<url::Origin>> ParseApprovedOrigins(
+@@ -365,9 +390,11 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+                             weak_ptr_factory_.GetWeakPtr()));
+   }
+   if (browser_) {
++#if !BUILDFLAG(IS_ANDROID)
+     active_tab_subscription_ = browser_->RegisterActiveTabDidChange(
+         base::BindRepeating(&AegisAgentPageHandler::OnActiveTabDidChange,
+                             weak_ptr_factory_.GetWeakPtr()));
++#endif
+   }
+   service_ =
+       profile && profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)
+@@ -381,9 +408,11 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+ }
+ 
+ void AegisAgentPageHandler::ShowUI() {
++#if !BUILDFLAG(IS_ANDROID)
+   if (ui_ && ui_->embedder()) {
+     ui_->embedder()->ShowUI();
+   }
++#endif
+ }
+ 
+ AegisAgentPageHandler::~AegisAgentPageHandler() = default;
+@@ -530,6 +559,8 @@ void AegisAgentPageHandler::OnGoalRouted(
+     std::move(callback).Run(BuildSnapshot());
+     return;
+   }
++  *route =
++      aegis::agent::ConstrainGoalRouteToUserIntent(goal, std::move(*route));
+   std::optional<GURL> routed_url;
+   bool browser_only = false;
+   switch (route->entry_kind) {
+@@ -565,7 +596,7 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     CreateTaskCallback callback) {
+   const std::optional<aegis::agent::AgentModelDestination> model_destination =
+       service_ ? service_->ConfiguredModelDestination() : std::nullopt;
+-  tabs::TabInterface* tab = ActiveTab(browser_);
++  tabs::TabInterface* tab = ContentTab(browser_, service_);
+   GURL task_url = tab ? tab->GetURL() : GURL();
+   std::optional<std::vector<url::Origin>> origins;
+   if (use_current_page) {
+@@ -879,7 +910,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+             .has_value() &&
+         aegis::IsValidModelName(*provider, snapshot->model_name);
+   }
+-  tabs::TabInterface* tab = ActiveTab(browser_);
++  tabs::TabInterface* tab = ContentTab(browser_, service_);
+   if (tab) {
+     snapshot->active_tab_id = tab->GetHandle().raw_value();
+   }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index eef03f0f8e..3f19876346 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -9,7 +9,9 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h"
++#if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/webui/theme_source.h"
++#endif
+ #include "chrome/browser/ui/webui/webui_embedding_context.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/webui_url_constants.h"
+@@ -125,6 +127,16 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("modelDetected", "Models detected. Choose one, then save.",
+       "已检测到模型，选择一个后保存。", "已偵測到模型，選擇一個後儲存。");
+   add("modelSaved", "Connection saved", "连接已保存", "連線已儲存");
++  add("modelConfigurationError",
++      "The service address or model name is invalid. Check both fields and "
++      "save again.",
++      "服务地址或模型名称无效，请检查这两项后重新保存。",
++      "服務位址或模型名稱無效，請檢查這兩項後重新儲存。");
++  add("modelConnectionError",
++      "Aegis could not reach the model service. Make sure it is running, then "
++      "try Detect models again.",
++      "无法连接模型服务。请确认服务正在运行，再点“检测可用模型”。",
++      "無法連接模型服務。請確認服務正在執行，再點「偵測可用模型」。");
+   add("quickSummary", "Summarize this page", "总结当前页", "總結目前頁面");
+   add("quickSummaryGoal", "Summarize this page and list the key points",
+       "总结当前页面内容，并列出重点", "總結目前頁面內容，並列出重點");
+@@ -226,6 +238,15 @@ void AddStrings(content::WebUIDataSource* source) {
+       "The task or schedule is invalid. Edit it and try again.",
+       "任务内容或定时设置无效，请修改后重试。",
+       "任務內容或定時設定無效，請修改後重試。");
++  add("relatedPageOpenError",
++      "The related page could not be opened. Check the network and retry this "
++      "task.",
++      "无法打开相关网页。请检查网络后，直接重试这个任务。",
++      "無法開啟相關網頁。請檢查網路後，直接重試這個任務。");
++  add("currentPageUnavailableError",
++      "Open a normal public webpage, then ask Aegis to work with this page.",
++      "请先打开一个普通公开网页，再让 Aegis 处理当前页面。",
++      "請先開啟一個普通公開網頁，再讓 Aegis 處理目前頁面。");
+   add("planningScopeError",
+       "Aegis did not recognize the target correctly. Nothing was changed. "
+       "Please try again.",
+@@ -345,8 +366,8 @@ void AddStrings(content::WebUIDataSource* source) {
+ }  // namespace
+ 
+ AegisAgentUIConfig::AegisAgentUIConfig()
+-    : DefaultTopChromeWebUIConfig(content::kChromeUIUntrustedScheme,
+-                                  chrome::kChromeUIUntrustedAegisAgentHost) {}
++    : AegisAgentUIConfigBase(content::kChromeUIUntrustedScheme,
++                             chrome::kChromeUIUntrustedAegisAgentHost) {}
+ 
+ AegisAgentUIConfig::~AegisAgentUIConfig() = default;
+ 
+@@ -359,7 +380,7 @@ bool AegisAgentUIConfig::IsWebUIEnabled(
+ }
+ 
+ AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
+-    : UntrustedTopChromeWebUIController(web_ui) {
++    : AegisAgentUIControllerBase(web_ui) {
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       web_ui->GetWebContents()->GetBrowserContext(),
+       chrome::kChromeUIUntrustedAegisAgentURL);
+@@ -382,9 +403,11 @@ AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
+       network::mojom::CSPDirectiveName::TrustedTypes,
+       "trusted-types static-types;");
+ 
++#if !BUILDFLAG(IS_ANDROID)
+   Profile* profile = Profile::FromWebUI(web_ui);
+   content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(
+                                            profile, /*serve_untrusted=*/true));
++#endif
+ }
+ 
+ AegisAgentUI::~AegisAgentUI() = default;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
+index 6a978fe03a..12e8bfc145 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
+@@ -5,16 +5,30 @@
+ 
+ #include <memory>
+ 
++#include "build/build_config.h"
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
++#if BUILDFLAG(IS_ANDROID)
++#include "content/public/browser/webui_config.h"
++#include "ui/webui/untrusted_web_ui_controller.h"
++#else
+ #include "chrome/browser/ui/webui/top_chrome/top_chrome_webui_config.h"
+ #include "chrome/browser/ui/webui/top_chrome/untrusted_top_chrome_web_ui_controller.h"
++#endif
+ #include "mojo/public/cpp/bindings/receiver.h"
+ 
+ class AegisAgentPageHandler;
+ 
+ class AegisAgentUI;
+ 
+-class AegisAgentUIConfig : public DefaultTopChromeWebUIConfig<AegisAgentUI> {
++#if BUILDFLAG(IS_ANDROID)
++using AegisAgentUIConfigBase = content::DefaultWebUIConfig<AegisAgentUI>;
++using AegisAgentUIControllerBase = ui::UntrustedWebUIController;
++#else
++using AegisAgentUIConfigBase = DefaultTopChromeWebUIConfig<AegisAgentUI>;
++using AegisAgentUIControllerBase = UntrustedTopChromeWebUIController;
++#endif
++
++class AegisAgentUIConfig : public AegisAgentUIConfigBase {
+  public:
+   AegisAgentUIConfig();
+   ~AegisAgentUIConfig() override;
+@@ -22,7 +36,7 @@ class AegisAgentUIConfig : public DefaultTopChromeWebUIConfig<AegisAgentUI> {
+   bool IsWebUIEnabled(content::BrowserContext* browser_context) override;
+ };
+ 
+-class AegisAgentUI : public UntrustedTopChromeWebUIController,
++class AegisAgentUI : public AegisAgentUIControllerBase,
+                      public aegis_agent::mojom::PageHandlerFactory {
+  public:
+   explicit AegisAgentUI(content::WebUI* web_ui);
+diff --git a/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
+index 2593af3f7c..9c4af6f4dd 100644
+--- a/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
+@@ -9,8 +9,11 @@
+ #include "content/public/browser/webui_config_map.h"
+ #include "printing/buildflags/buildflags.h"
+ 
+-#if defined(TOOLKIT_VIEWS)
++#if defined(TOOLKIT_VIEWS) || BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
++#endif
++
++#if defined(TOOLKIT_VIEWS)
+ #include "chrome/browser/ui/webui/data_sharing/data_sharing_ui.h"
+ #include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_ui.h"
+ #include "components/compose/buildflags.h"
+@@ -43,12 +46,16 @@ void RegisterChromeUntrustedWebUIConfigs() {
+   ash::RegisterAshChromeUntrustedWebUIConfigs();
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+ 
+-#if defined(TOOLKIT_VIEWS) || BUILDFLAG(ENABLE_PRINT_PREVIEW)
++#if defined(TOOLKIT_VIEWS) || BUILDFLAG(IS_ANDROID) || \
++    BUILDFLAG(ENABLE_PRINT_PREVIEW)
+   auto& map = content::WebUIConfigMap::GetInstance();
+-#endif  // defined(TOOLKIT_VIEWS) || BUILDFLAG(ENABLE_PRINT_PREVIEW)
++#endif
+ 
+-#if defined(TOOLKIT_VIEWS)
++#if defined(TOOLKIT_VIEWS) || BUILDFLAG(IS_ANDROID)
+   map.AddUntrustedWebUIConfig(std::make_unique<AegisAgentUIConfig>());
++#endif
++
++#if defined(TOOLKIT_VIEWS)
+   map.AddUntrustedWebUIConfig(
+       std::make_unique<lens::LensOverlayUntrustedUIConfig>());
+   map.AddUntrustedWebUIConfig(
+diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
+index 7be1cad9e3..802decbd57 100644
+--- a/chrome/chrome_paks.gni
++++ b/chrome/chrome_paks.gni
+@@ -120,6 +120,7 @@ template("chrome_extra_paks") {
+     output = "${invoker.output_dir}/resources.pak"
+     sources = [
+       "$root_gen_dir/base/tracing/protos/tracing_proto_resources.pak",
++      "$root_gen_dir/chrome/aegis_agent_resources.pak",
+       "$root_gen_dir/chrome/browser/glic/resources/glic_browser_resources.pak",
+       "$root_gen_dir/chrome/browser_resources.pak",
+       "$root_gen_dir/chrome/chrome_unscaled_resources.pak",
+@@ -215,7 +216,6 @@ template("chrome_extra_paks") {
+         "$root_gen_dir/chrome/about_sys_resources.pak",
+         "$root_gen_dir/chrome/access_code_cast_resources.pak",
+         "$root_gen_dir/chrome/actor_overlay_resources.pak",
+-        "$root_gen_dir/chrome/aegis_agent_resources.pak",
+         "$root_gen_dir/chrome/app_service_internals_resources.pak",
+         "$root_gen_dir/chrome/autofill_ml_internals_resources.pak",
+         "$root_gen_dir/chrome/bookmarks_resources.pak",
+-- 
+2.52.0
+

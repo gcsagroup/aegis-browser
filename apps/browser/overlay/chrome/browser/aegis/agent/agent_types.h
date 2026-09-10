@@ -103,6 +103,8 @@ struct AgentModelDestination {
 struct AgentTaskScope {
   std::vector<url::Origin> allowed_origins;
   base::flat_set<int32_t> allowed_tab_ids;
+  // 浏览器绑定的当前窗口，只允许 tab.list 读取元数据，不授予标签操作权限。
+  int32_t tab_metadata_window_id = 0;
   base::flat_set<std::string> allowed_tools;
   base::flat_set<AgentDataClass> allowed_data_classes;
   AgentBudgets budgets;

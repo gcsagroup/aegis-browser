@@ -13,7 +13,7 @@
 
 ## 当前本地补丁序列
 
-状态“series 中”只表示补丁文件列在当前本地 `series`；不表示已经进入上游 Chromium、通过 Release 或 Android 门禁，也不表示可以发布。2026-08-25 的 49 补丁记录仅保留为历史快照。2026-08-29 的整合源码达到 **67 个 Chromium 补丁 + 2 个嵌套 V8 补丁**：0057–0065 是 Browser Agent 集成，0066 是设置、关于页与更新状态，0067 是视觉品牌。更早的 57/58 补丁诊断证据和 65+2 Agent 验收都不能赋予最终 67+2 源码资格。桌面产物是否匹配必须以新运行的 `browser:status` 和对应验收记录中的新鲜度门为准；每次 series 变化后都要重新验证。
+状态“series 中”只表示补丁文件列在当前本地 `series`；不表示已经进入上游 Chromium、通过发行门禁或可以发布。49、67 和 95 补丁记录只保留为历史快照。当前整合源码包含 **106 个 Chromium 补丁 + 2 个嵌套 V8 补丁**：0057–0065 是原 Browser Agent 集成，0066–0067 是设置/更新和视觉品牌，0068–0105 用 Browser Agent v2 Runtime 替换并强化 v1 执行路径，同时加入跨平台入口、定时自动化、指定站点路由、Profile 隔离、有界恢复、浏览器绑定的标签页/文档能力、正确产品身份、脱离 UI 序列的持久化、确定性销毁和启用断言时安全的限流处理。补丁 0079–0095 重放到 Chromium 源码提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；补丁 0096–0101 生成 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；补丁 0102 生成已提交源码 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。产物资格仍按平台分别判定，并且必须绑定这份精确源码的验收证据。
 
 | ID | 目的 | 状态 |
 |----|------|------|
@@ -84,5 +84,48 @@
 | 0065 | 自动打开任务页面并支持空白标签任务 | series 中 |
 | 0066 | GCSA 设置去除上游 AI/Google 入口、恢复搜索引擎管理，并重做关于页与更新状态 | series 中 |
 | 0067 | 接入 GCSA Logo 与跨平台 App 图标，同时保留 Chromium 内部身份和用户数据目录 | series 中 |
+| 0068 | 增加 Browser Agent v2 原生混合 Runtime 原型 | series 中 |
+| 0069 | 强化 v2 自主 Runtime 与策略边界 | series 中 |
+| 0070 | 简化 Browser Agent v2 新手引导和任务入口 | series 中 |
+| 0071 | 强化模型规划与执行流程 | series 中 |
+| 0072 | 浏览前先由模型理解用户目标 | series 中 |
+| 0073 | 强制使用浏览器原生工具并确定性路由指定站点 | series 中 |
+| 0074 | 将隐含的当前页面任务绑定到活动文档 | series 中 |
+| 0075 | 增加常用任务按钮和定时自动化 | series 中 |
+| 0076 | 修正跨平台构建接线与品牌资源 | series 中 |
+| 0077 | 完成跨平台 Browser Agent v2 Runtime 与入口 | series 中 |
+| 0078 | 模型格式有界失败后恢复安全的只读计划 | series 中 |
+| 0079 | 隔离主无痕 Profile，并收紧 Guest、CDP、NetLog、Actor、CNAME、Advanced 与 Torrent 生命周期 | series 中 |
+| 0080 | 强化本地 Qwen 的当前页计划 | series 中 |
+| 0081 | 执行前验证模型计划顺序 | series 中 |
+| 0082 | 拒绝浏览器打开目标后的重复入口导航 | series 中 |
+| 0083 | 降低本地 Qwen 原生工具轮次延迟 | series 中 |
+| 0084 | 要求定时自动化由浏览器持久保存 | series 中 |
+| 0085 | 对证据绑定的执行轮次做一次不扩权修复 | series 中 |
+| 0086 | 阻止模型路由到非公开 URL | series 中 |
+| 0087 | Agent 工作区使用产品 Logo | series 中 |
+| 0088 | 加入品牌化 Android Agent 入口和任务编辑器 | series 中 |
+| 0089 | 从较弱模型路由中恢复指定站点搜索 | series 中 |
+| 0090 | 收藏夹等浏览器数据任务保持使用原生工具 | series 中 |
+| 0091 | 丢弃 browser-only 路由中无害的冗余目标而不误报失败 | series 中 |
+| 0092 | 校验收藏夹目标语义、修复漏步计划，并确保仅预览任务保持只读 | series 中 |
+| 0093 | 支持显式本地 fixture URL 有效性检查 | series 中 |
+| 0094 | 规范化原生任务完成证据 | series 中 |
+| 0095 | 保留已验证完成状态和收藏夹撤销能力 | series 中 |
+| 0096 | 将模型浏览器能力绑定到实时任务上下文 | series 中 |
+| 0097 | 等待范围内导航提交，并在 Profile 初始化前注册 Aegis 服务 | series 中 |
+| 0098 | 在浏览器身份界面使用 GCSA Aegis 品牌 | series 中 |
+| 0099 | 将 Agent 任务存储移出 UI 序列 | series 中 |
+| 0100 | 在测试夹具销毁前清空 Profile 指针 | series 中 |
+| 0101 | 同源 URL 遇到限流后有界完成剩余收藏夹检查 | series 中 |
+| 0102 | 在有界 URL 检查中安全读取不可合并的 Retry-After | series 中 |
+| 0103 | 等待原生下载完成并验证真实下载结果 | series 中 |
+| 0104 | 修复 Android 无痕隔离守卫编译 | series 中 |
+| 0105 | 注册 Android Agent 通道，修复定时任务安全回退及状态提示 | series 中 |
+| 0106 | 使用缓存语言设置，避免 Windows 界面线程阻塞；补充原生浏览器回归测试 | series 中 |
+
+0103–0105 已从 0102 基线精确重放到 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` 的源码树 `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`，平台实际验收仍是独立门槛。
+
+0106 已从该候选精确重放到 `383d157c6f3601101038aef6ff964e61b6af7b4f`（tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`）。重新构建和跨平台回归验收尚待完成。
 
 在干净、固定版本的 checkout 上运行 `pnpm --filter @gcsa-aegis/browser apply-patches` 进行应用。任何 series 变化都必须重新完成离线重放、冷构建、增量构建和受影响测试。
