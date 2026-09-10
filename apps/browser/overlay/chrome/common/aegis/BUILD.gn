@@ -3,6 +3,14 @@
 
 import("//testing/test.gni")
 
+source_set("security_text") {
+  sources = [
+    "security_text.cc",
+    "security_text.h",
+  ]
+  deps = [ "//base" ]
+}
+
 source_set("aegis") {
   sources = [
     "aegis_block_reporter.cc",
@@ -19,6 +27,7 @@ source_set("aegis") {
     "cdp_target_filter.h",
     "cdp_ws_hook.cc",
     "cdp_ws_hook.h",
+    "cname_cache_partition.h",
     "cname_uncloak.cc",
     "cname_uncloak.h",
     "cookie_classify.cc",
@@ -46,6 +55,7 @@ source_set("aegis") {
     "tracking_query_params.h",
   ]
   deps = [
+    ":security_text",
     "//base",
     "//crypto",
     "//net",
@@ -76,6 +86,7 @@ test("aegis_unittests") {
   ]
   deps = [
     ":aegis",
+    ":security_text",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//net",

@@ -7,6 +7,7 @@ import type {
   ModelBackend,
 } from "../types.js";
 import { scanPii } from "./pii.js";
+import { normalizeSecurityText } from "../security-text.js";
 
 const SYSTEM_PROMPTS: Record<Exclude<LocaleCode, "auto">, string> = {
   "zh-CN":
@@ -79,8 +80,8 @@ export function redactPageSnapshotForModel(
 ): PageSnapshot {
   return {
     url: redactUrlForModel(snapshot.url),
-    title: scanPii(snapshot.title).redacted.slice(0, MAX_PROMPT_TITLE_CHARS),
-    textSample: scanPii(snapshot.textSample).redacted.slice(
+    title: scanPii(normalizeSecurityText(snapshot.title).text).redacted.slice(0, MAX_PROMPT_TITLE_CHARS),
+    textSample: scanPii(normalizeSecurityText(snapshot.textSample).text).redacted.slice(
       0,
       MAX_PROMPT_TEXT_CHARS,
     ),

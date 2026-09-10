@@ -44,6 +44,7 @@
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/actor/actor_constants.h"
+#include "chrome/common/aegis/security_text.h"
 #include "components/actor/core/task_source_info.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "components/tabs/public/tab_handle_factory.h"
@@ -52,6 +53,7 @@
 #include "content/public/browser/web_contents.h"
 #include "crypto/sha2.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace aegis::agent {
 
@@ -246,38 +248,109 @@ void FinishPageExtraction(std::string kind,
   if (requested_fields.empty()) {
     requested_fields = {"title", "summary"};
   }
+  // 字段名命中标题只表示找到了章节，不能把标题本身冒充章节内容。
+  // 这里只组合已获授权、已脱敏的主文档文本，不额外读取 DOM 或表单值。
+  struct Section {
+    std::string heading;
+    std::string body;
+    std::vector<int> source_ids;
+  };
+  std::vector<Section> sections;
+  Section document_body;
+  const auto append_text = [](const base::DictValue& node, Section* section) {
+    const std::string* text = node.FindString("text");
+    if (!text || text->empty()) {
+      return;
+    }
+    if (!section->body.empty()) {
+      section->body.push_back('\n');
+    }
+    section->body.append(*text);
+    if (const std::optional<int> id = node.FindInt("node_id");
+        id && std::ranges::find(section->source_ids, *id) ==
+                  section->source_ids.end()) {
+      section->source_ids.push_back(*id);
+    }
+  };
+  for (const base::Value& node : *nodes) {
+    const base::DictValue& item = node.GetDict();
+    if (item.FindInt("kind") ==
+        optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING) {
+      sections.emplace_back();
+    }
+    if (item.FindInt("kind") !=
+        optimization_guide::proto::CONTENT_ATTRIBUTE_TEXT) {
+      continue;
+    }
+    if (item.FindInt("text_block_kind") ==
+        optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING) {
+      if (sections.empty() || !sections.back().body.empty()) {
+        sections.emplace_back();
+      }
+      if (const std::string* text = item.FindString("text")) {
+        sections.back().heading.append(*text);
+      }
+    } else {
+      append_text(item, &document_body);
+      if (!sections.empty()) {
+        append_text(item, &sections.back());
+      }
+    }
+  }
   base::ListValue fields;
   for (const std::string& requested : requested_fields) {
     const std::string lowered = base::ToLowerASCII(requested);
-    const base::DictValue* best = nullptr;
-    for (const base::Value& node : *nodes) {
-      const base::DictValue& candidate = node.GetDict();
-      const std::string* text = candidate.FindString("text");
-      const std::string* label = candidate.FindString("label");
-      const bool label_match =
-          label && base::ToLowerASCII(*label).contains(lowered);
-      const bool text_match =
-          text && base::ToLowerASCII(*text).contains(lowered);
-      if (label_match || text_match) {
-        best = &candidate;
-        break;
+    Section selected;
+    if (lowered == "title") {
+      if (const std::string* title = result.value.FindString("title")) {
+        selected.body = *title;
       }
-    }
-    if (!best && requested == "title" && !nodes->empty()) {
-      best = &nodes->front().GetDict();
+    } else if (lowered == "summary" || lowered == "content") {
+      selected = document_body;
+    } else {
+      for (const Section& section : sections) {
+        if (!lowered.empty() &&
+            base::ToLowerASCII(section.heading).contains(lowered)) {
+          selected = section;
+          break;
+        }
+      }
+      if (selected.heading.empty()) {
+        for (const base::Value& node : *nodes) {
+          const base::DictValue& candidate = node.GetDict();
+          if (candidate.FindInt("kind") !=
+                  optimization_guide::proto::CONTENT_ATTRIBUTE_TEXT ||
+              candidate.FindInt("text_block_kind") ==
+                  optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING) {
+            continue;
+          }
+          const std::string* text = candidate.FindString("text");
+          // 单独的字段标签不是字段值；保留未知字段的未解析状态。
+          if (text && !lowered.empty() &&
+              base::ToLowerASCII(*text) != lowered &&
+              base::ToLowerASCII(*text).contains(lowered)) {
+            append_text(candidate, &selected);
+            break;
+          }
+        }
+      }
     }
 
     base::DictValue extracted;
     extracted.Set("field", requested);
-    const std::string* value = best ? best->FindString("text") : nullptr;
-    if (best && value && !value->empty()) {
-      extracted.Set("value", *value);
-      if (const std::optional<int> node_id = best->FindInt("node_id")) {
-        extracted.Set("source_node_id", *node_id);
+    const std::string value(
+        base::TruncateUTF8ToByteSize(selected.body, kMaxNodeTextBytes));
+    if (!value.empty()) {
+      extracted.Set("value", value);
+      extracted.Set("truncated", value.size() < selected.body.size());
+      base::ListValue source_ids;
+      for (int id : selected.source_ids) {
+        source_ids.Append(id);
       }
+      extracted.Set("source_node_ids", std::move(source_ids));
       extracted.Set(
           "source_hash",
-          base::HexEncode(crypto::SHA256HashString(requested + "\n" + *value)));
+          base::HexEncode(crypto::SHA256HashString(requested + "\n" + value)));
       extracted.Set("resolved", true);
     } else {
       extracted.Set("resolved", false);
@@ -311,8 +384,11 @@ bool SameDocument(const AgentDocumentRef& left, const AgentDocumentRef& right) {
 }
 
 std::string BoundedText(std::string_view value, size_t remaining) {
-  return std::string(base::TruncateUTF8ToByteSize(
-      value, std::min(remaining, kMaxNodeTextBytes)));
+  // 先保持原有读取上限，再清理副本，不能为去混淆扫描整个超长 DOM 节点。
+  return NormalizeSecurityText(
+             base::TruncateUTF8ToByteSize(
+                 value, std::min(remaining, kMaxNodeTextBytes)))
+      .text;
 }
 
 std::string SafeObservationUrl(std::string_view value) {
@@ -328,10 +404,12 @@ std::string SafeObservationUrl(std::string_view value) {
   return url.ReplaceComponents(replacements).spec();
 }
 
-void AppendMainFrameNodes(const optimization_guide::proto::ContentNode& node,
-                          base::ListValue* nodes,
-                          size_t* used_bytes,
-                          bool* truncated) {
+void AppendMainFrameNodes(
+    const optimization_guide::proto::ContentNode& node,
+    base::ListValue* nodes,
+    size_t* used_bytes,
+    bool* truncated,
+    int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT) {
   if (*used_bytes >= kMaxObservationBytes ||
       nodes->size() >= kMaxObservationNodes) {
     *truncated = true;
@@ -339,6 +417,12 @@ void AppendMainFrameNodes(const optimization_guide::proto::ContentNode& node,
   }
 
   const auto& attributes = node.content_attributes();
+  if (attributes.attribute_type() ==
+          optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING ||
+      attributes.attribute_type() ==
+          optimization_guide::proto::CONTENT_ATTRIBUTE_PARAGRAPH) {
+    text_block_kind = attributes.attribute_type();
+  }
   if (attributes.redaction_decision() ==
       optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY) {
     base::DictValue item;
@@ -361,6 +445,39 @@ void AppendMainFrameNodes(const optimization_guide::proto::ContentNode& node,
     if (!text.empty()) {
       *used_bytes += text.size();
       item.Set("text", std::move(text));
+      if (attributes.has_text_data()) {
+        item.Set("text_block_kind", text_block_kind);
+        item.Set("text_is_heading",
+                 text_block_kind ==
+                     optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING);
+        // 只保留已授权、已脱敏 APC 的相对字号，不冒充 HTML 标题等级。
+        if (attributes.text_data().has_text_style() &&
+            attributes.text_data().text_style().has_text_size()) {
+          const char* size = nullptr;
+          switch (attributes.text_data().text_style().text_size()) {
+            case optimization_guide::proto::TEXT_SIZE_XS:
+              size = "XS";
+              break;
+            case optimization_guide::proto::TEXT_SIZE_S:
+              size = "S";
+              break;
+            case optimization_guide::proto::TEXT_SIZE_M_DEFAULT:
+              size = "M";
+              break;
+            case optimization_guide::proto::TEXT_SIZE_L:
+              size = "L";
+              break;
+            case optimization_guide::proto::TEXT_SIZE_XL:
+              size = "XL";
+              break;
+            default:
+              break;
+          }
+          if (size) {
+            item.Set("text_size", size);
+          }
+        }
+      }
     }
 
     std::string label =
@@ -399,7 +516,7 @@ void AppendMainFrameNodes(const optimization_guide::proto::ContentNode& node,
     return;
   }
   for (const auto& child : node.children_nodes()) {
-    AppendMainFrameNodes(child, nodes, used_bytes, truncated);
+    AppendMainFrameNodes(child, nodes, used_bytes, truncated, text_block_kind);
     if (*truncated) {
       return;
     }
@@ -761,6 +878,30 @@ bool AegisActorBridge::ReleaseTab(const std::string& agent_task_id,
   return true;
 }
 
+void AegisActorBridge::AttachBlankMonitorTab(
+    const std::string& agent_task_id,
+    int32_t tab_id,
+    base::OnceCallback<void(bool)> callback) {
+  actor::ActorTask* task = GetActorTask(agent_task_id);
+  const auto scope = task_scopes_.find(agent_task_id);
+  tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
+  if (!task || scope == task_scopes_.end() || !tab ||
+      tab->GetProfile() != profile_ || !scope->second.AllowsTab(tab_id) ||
+      tab->GetURL() != GURL(url::kAboutBlankURL) ||
+      scope->second.allowed_origins.size() != 1u ||
+      scope->second.allowed_tools != base::flat_set<std::string>{"page.observe"}) {
+    std::move(callback).Run(false);
+    return;
+  }
+  task->AddTab(tab->GetHandle(), /*stop_task_on_detach=*/true,
+               base::BindOnce(
+                   [](base::OnceCallback<void(bool)> ready,
+                      actor::mojom::ActionResultPtr result) {
+                     std::move(ready).Run(result && actor::IsOk(*result));
+                   },
+                   std::move(callback)));
+}
+
 void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
                                        const AgentToolCall& call,
                                        ToolResultCallback callback) {
@@ -1021,12 +1162,29 @@ void AegisActorBridge::OnObservation(
                                         "page changed during observation"));
     return;
   }
-  if (std::optional<std::string> error =
-          actor::ActorKeyedService::ExtractErrorMessageIfFailed(
-              observation_result)) {
+  // 专用后台监控只使用语义节点，不消费截图。截图失败不能抹掉已经成功
+  // 提取的正文；仍要求真实 APC、后续文档身份和范围校验全部通过。
+  const bool semantic_monitor =
+      !post_action && agent_task_id.starts_with("monitor-page-") &&
+      scope_it->second.allowed_origins.size() == 1u &&
+      scope_it->second.allowed_tab_ids.size() == 1u &&
+      scope_it->second.allowed_tools ==
+          base::flat_set<std::string>{"page.observe"};
+  std::optional<std::string> observation_error;
+  if (semantic_monitor) {
+    if (!observation_result.has_value() ||
+        !observation_result.value()->annotated_page_content_result.has_value()) {
+      observation_error = "monitor semantic content is unavailable";
+    }
+  } else {
+    observation_error =
+        actor::ActorKeyedService::ExtractErrorMessageIfFailed(observation_result);
+  }
+  if (observation_error) {
     std::move(callback).Run(ErrorResult(std::move(action_id),
                                         AgentErrorCode::kVerificationFailed,
-                                        "page observation failed: " + *error));
+                                        "page observation failed: " +
+                                            *observation_error));
     return;
   }
 

@@ -43,6 +43,13 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
     base::flat_set<int32_t> tab_ids,
     AgentModelDestination destination);
 
+// 自动化只保留来源读取、必要导航和监控管理；模型选出的工作流不能授予操作权限。
+std::optional<AgentTaskScope> BuildAgentAutomationScope(
+    AgentWorkflowKind kind,
+    std::vector<url::Origin> origins,
+    base::flat_set<int32_t> tab_ids,
+    AgentModelDestination destination);
+
 }  // namespace aegis::agent
 
 #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_WORKFLOW_H_

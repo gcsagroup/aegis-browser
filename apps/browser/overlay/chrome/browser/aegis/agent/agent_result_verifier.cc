@@ -7,6 +7,7 @@
 #include <string_view>
 #include <utility>
 
+#include "base/containers/flat_set.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_util.h"
@@ -87,7 +88,8 @@ bool IsKnownUrlClassification(std::string_view value) {
       "timeout",      "dns_error", "tls_error",     "permanent_http_error",
       "indeterminate"};
   return std::ranges::find(kClassifications, value) != kClassifications.end() ||
-         value == "temporary_http_error" || value == "scope_blocked";
+         value == "temporary_http_error" || value == "scope_blocked" ||
+         value == "not_checked";
 }
 
 }  // namespace
@@ -155,6 +157,21 @@ AgentVerificationDecision AgentResultVerifier::Verify(
     return Accept(true, "fresh browser observation verifies page action");
   }
   if (call.tool_name == "tab.list") {
+    if (task.scope().tab_metadata_window_id > 0 ||
+        value.contains("tab_count")) {
+      const base::ListValue* tabs = value.FindList("tabs");
+      const std::optional<int> count = value.FindInt("tab_count");
+      const std::optional<bool> truncated = value.FindBool("list_truncated");
+      const std::string* count_scope = value.FindString("count_scope");
+      if (!tabs || !count || *count < 0 || !truncated || !count_scope ||
+          *count_scope != (task.scope().tab_metadata_window_id > 0
+                               ? "current_window"
+                               : "task_tabs") ||
+          static_cast<size_t>(*count) < tabs->size() ||
+          *truncated != (static_cast<size_t>(*count) > tabs->size())) {
+        return Reject("tab list coverage is inconsistent");
+      }
+    }
     return HasList(value, "tabs") && HasString(value, "revision")
                ? Accept(true, "tab snapshot is present")
                : Reject("tab list lacks a revision");
@@ -250,11 +267,39 @@ AgentVerificationDecision AgentResultVerifier::Verify(
     if (!results) {
       return Reject("URL check lacks results");
     }
+    base::DictValue counts;
+    base::flat_set<std::string> unique_ids;
     for (const base::Value& checked : *results) {
+      const base::DictValue* entry = checked.GetIfDict();
       const std::string* classification =
-          checked.GetDict().FindString("classification");
-      if (!classification || !IsKnownUrlClassification(*classification)) {
+          entry ? entry->FindString("classification") : nullptr;
+      const std::string* node_id =
+          entry ? entry->FindString("node_id") : nullptr;
+      if (!classification || !IsKnownUrlClassification(*classification) ||
+          !node_id || !unique_ids.insert(*node_id).second) {
         return Reject("URL check contains an unknown classification");
+      }
+      counts.Set(*classification,
+                 counts.FindInt(*classification).value_or(0) + 1);
+    }
+    if (const std::string* reference =
+            call.arguments.FindString("selection_ref")) {
+      const std::string* returned = value.FindString("selection_ref");
+      if (!returned || *returned != *reference) {
+        return Reject("URL check selection does not match its task capability");
+      }
+    }
+    if (value.contains("selected_count") ||
+        call.arguments.contains("selection_ref")) {
+      const auto selected = value.FindInt("selected_count");
+      const auto attempted = value.FindInt("attempted_count");
+      const auto* returned_counts = value.FindDict("classification_counts");
+      if (!selected || *selected < 0 ||
+          static_cast<size_t>(*selected) != results->size() || !attempted ||
+          *attempted < 0 || *attempted > *selected ||
+          !value.FindBool("list_truncated").has_value() || !returned_counts ||
+          *returned_counts != counts) {
+        return Reject("URL check coverage does not match its results");
       }
     }
     return Accept(true, "URL classifications are deterministic");
@@ -273,13 +318,18 @@ AgentVerificationDecision AgentResultVerifier::Verify(
   }
   if (call.tool_name == "monitor.create") {
     const std::string* origin = value.FindString("origin");
-    return HasString(value, "monitor_id") && HasString(value, "target_hash") &&
-                   origin && task.scope().AllowsOrigin(GURL(*origin)) &&
-                   value.FindInt("interval_minutes").value_or(0) >= 15 &&
-                   HasString(value, "revision") &&
-                   !value.FindString("target_url")
-               ? Accept(true, "encrypted page monitor was persisted")
-               : Reject("monitor creation lacks bounded browser evidence");
+    const std::optional<bool> session_only = value.FindBool("session_only");
+    if (!HasString(value, "monitor_id") ||
+        !HasString(value, "target_hash") || !origin ||
+        !task.scope().AllowsOrigin(GURL(*origin)) ||
+        value.FindInt("interval_minutes").value_or(0) < 15 ||
+        !HasString(value, "revision") || !session_only.has_value() ||
+        value.FindString("target_url")) {
+      return Reject("monitor creation lacks bounded browser evidence");
+    }
+    return *session_only
+               ? Accept(true, "session-only page monitor is browser-bound")
+               : Accept(true, "encrypted page monitor was persisted");
   }
   if (call.tool_name == "monitor.list") {
     return HasList(value, "monitors") && HasString(value, "revision")

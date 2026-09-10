@@ -29,3 +29,5 @@ packages/core/dist-worker
 /aegis-settings.xml
 /aegis-uidump*.xml
 /tombstone_*
+# 本机界面检查误命名的输出，只保留在本地。
+/--include-bounds

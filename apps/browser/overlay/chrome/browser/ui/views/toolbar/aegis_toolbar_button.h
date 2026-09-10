@@ -4,8 +4,9 @@
 #define CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service.h"  // nogncheck
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/view_tracker.h"
@@ -39,8 +40,9 @@ class AegisToolbarButton : public ToolbarButton,
   void ClearIntroHighlight();
 
   const raw_ptr<Browser> browser_;
-  raw_ptr<content::WebContents> web_contents_ = nullptr;
-  bool observing_service_ = false;
+  // 页面可先于窗口及工具栏销毁；缓存引用必须随页面生命周期自动失效。
+  base::WeakPtr<content::WebContents> web_contents_;
+  raw_ptr<aegis::AegisService> observed_service_ = nullptr;
   views::ViewTracker bubble_tracker_;
   base::OneShotTimer intro_timer_;
 };

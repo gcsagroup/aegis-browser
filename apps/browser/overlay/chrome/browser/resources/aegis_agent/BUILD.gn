@@ -15,6 +15,7 @@ build_webui("build") {
   static_files = [
     "agent.css",
     "agent.html",
+    "product_logo.svg",
   ]
   ts_files = [
     "agent.ts",

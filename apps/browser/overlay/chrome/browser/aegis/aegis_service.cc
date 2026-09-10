@@ -8,11 +8,12 @@
 
 #include "base/base64.h"
 #include "base/check.h"
+#include "base/containers/flat_set.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/memory/singleton.h"
+#include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -22,14 +23,20 @@
 #include "chrome/browser/aegis/aegis_ai_control.h"
 #include "chrome/browser/aegis/aegis_bounce_observer.h"
 #include "chrome/browser/aegis/aegis_cookie_janitor.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
+#if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/aegis_torrent_client.h"
+#endif
 #include "chrome/browser/aegis/filter_list_updater.h"
 #include "chrome/browser/aegis/model_provider_client.h"
 #include "chrome/browser/aegis/threat_feed_updater.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/common/aegis/aegis_block_reporter.h"
 #include "chrome/common/aegis/builtin_phish_hosts.h"
+#include "chrome/common/aegis/cdp_target_filter.h"
 #include "chrome/common/aegis/cdp_ws_hook.h"
 #include "chrome/common/aegis/features.h"
 #include "chrome/common/aegis/filter_list_matcher.h"
@@ -217,47 +224,96 @@ std::vector<std::string> SafeDetails(const std::vector<std::string>& values) {
   return result;
 }
 
+base::flat_set<AegisService*>& ActiveAegisServices() {
+  static base::NoDestructor<base::flat_set<AegisService*>> services;
+  return *services;
+}
+
+#if !BUILDFLAG(IS_ANDROID)
+constexpr base::TimeDelta kIncognitoAvailabilityPollInterval =
+    base::Milliseconds(50);
+constexpr base::TimeDelta kIncognitoAvailabilitySlowPollInterval =
+    base::Seconds(1);
+constexpr int kIncognitoAvailabilityPollRetries = 80;
+
+bool HasActivePrimaryIncognitoProfile(Profile* requesting_profile) {
+  auto has_primary_incognito = [](Profile* profile) {
+    if (!profile) {
+      return false;
+    }
+    Profile* original = profile->GetOriginalProfile();
+    return original && original->IsRegularProfile() &&
+           original->HasPrimaryOTRProfile();
+  };
+  if (has_primary_incognito(requesting_profile)) {
+    return true;
+  }
+  for (AegisService* service : ActiveAegisServices()) {
+    if (has_primary_incognito(service->profile())) {
+      return true;
+    }
+  }
+  if (!g_browser_process || !g_browser_process->profile_manager()) {
+    return false;
+  }
+  for (Profile* loaded :
+       g_browser_process->profile_manager()->GetLoadedProfiles()) {
+    if (loaded->IsRegularProfile() && loaded->HasPrimaryOTRProfile()) {
+      return true;
+    }
+  }
+  return false;
+}
+#endif
+
 }  // namespace
 
-// static
-AegisService* AegisService::GetInstance() {
-  return base::Singleton<AegisService>::get();
-}
-
-AegisService::AegisService() = default;
-
-AegisService::~AegisService() {
-  ClearReporterCallbacks();
-}
-
-void AegisService::InitializeForProfile(Profile* profile) {
+AegisService::AegisService(Profile* profile)
+    : torrent_owner_id_(base::UnguessableToken::Create().ToString()) {
   CHECK(profile);
-  if (profile->IsOffTheRecord()) {
-    LOG(WARNING) << "Refusing to initialize Aegis for an off-the-record "
-                    "profile";
-    return;
+  CHECK(IsAegisProfileSupported(profile));
+  profile_ = profile;
+  profile_observation_.Observe(profile);
+  if (profile->IsRegularProfile() && profile->HasPrimaryOTRProfile()) {
+#if !BUILDFLAG(IS_ANDROID)
+    Profile* incognito =
+        profile->GetPrimaryOTRProfile(/*create_if_needed=*/false);
+    CHECK(incognito);
+    incognito_profile_observations_.AddObservation(incognito);
+#endif
+    DisableAiControlForIncognito();
   }
   if (!IsEnabled()) {
-    VLOG(1) << "Aegis disabled by feature flag";
+    VLOG(1) << "Aegis product disabled; Incognito guard remains active";
     return;
   }
-  if (initialized_) {
-    if (profile_ == profile) {
-      return;
-    }
-    ShutdownForProfile();
-  }
-  profile_observation_.Observe(profile);
   prefs_ = profile->GetPrefs();
-  profile_ = profile;
   initialized_ = true;
-  MigrateLegacyOllamaSettings(prefs_);
-  if (base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
+  // Torrent ownership is process- and Profile-session-scoped. The registry is
+  // authoritative; never resurrect a task id persisted by an older session.
+  prefs_->SetString(prefs::kLastTorrentTaskId, std::string());
+  if (profile->IsIncognitoProfile() && profile->IsPrimaryOTRProfile()) {
+    DisableAiControlForIncognito();
+  }
+  if (profile->IsOffTheRecord()) {
+    // OTR model credentials are a fresh session namespace. Never inherit or
+    // decrypt the original Profile's persisted ciphertexts. A process-wide
+    // torrent client may still own a regular-Profile task, but its random owner
+    // capability is different and cannot be restored or controlled here.
+    prefs_->SetDict(prefs::kModelApiKeyCiphertexts, base::DictValue());
+  } else {
+    MigrateLegacyOllamaSettings(prefs_);
+  }
+  // Public rule caches are maintained once by the original Profile. Incognito
+  // services consume the in-memory matcher/index without writing to the
+  // original Profile directory.
+  if (!profile->IsOffTheRecord() &&
+      base::FeatureList::IsEnabled(features::kAegisFilterListUpdater)) {
     filter_list_updater_ = std::make_unique<FilterListUpdater>(profile);
     // LoadFromDisk 完成后再决定是否自动更新，避免缓存未读完就重新下载。
     filter_list_updater_->LoadFromDisk();
   }
-  if (IsPhishInterstitialEnabled()) {
+  if (!profile->IsOffTheRecord() && IsPhishInterstitialEnabled()) {
     threat_feed_updater_ = std::make_unique<ThreatFeedUpdater>(profile);
     threat_feed_updater_->LoadFromDisk();
   }
@@ -275,9 +331,13 @@ void AegisService::InitializeForProfile(Profile* profile) {
   LoadModelCredentials();
   InstallReporterCallbacks();
 #if !BUILDFLAG(IS_ANDROID)
-  ai_control_ = std::make_unique<AiControl>();
-  if (IsAiControlEnabled() && !ai_control_->Start() && prefs_) {
-    prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+  if (!profile->IsOffTheRecord()) {
+    ai_control_ = std::make_unique<AiControl>();
+    if (prefs_ && prefs_->GetBoolean(prefs::kAiControlEnabled) &&
+        (IsRemoteCdpBlockedForIncognito() || !IsAiControlAvailable() ||
+         !ai_control_->Start())) {
+      prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+    }
   }
 #endif
   LOG(INFO) << "GCSA-aegis initialized for profile"
@@ -285,19 +345,166 @@ void AegisService::InitializeForProfile(Profile* profile) {
                                            : " (tracker blocking off)");
 }
 
+AegisService::~AegisService() {
+  ShutdownForProfile();
+}
+
 bool AegisService::IsInitializedForProfile(const Profile* profile) const {
-  return initialized_ && profile && !profile->IsOffTheRecord() &&
-         profile_ == profile;
+  return initialized_ && profile_ == profile;
 }
 
 void AegisService::OnProfileWillBeDestroyed(Profile* profile) {
+#if !BUILDFLAG(IS_ANDROID)
+  if (profile_ && profile_ != profile && profile_->IsRegularProfile() &&
+      profile->IsPrimaryOTRProfile() &&
+      profile->GetOriginalProfile() == profile_ &&
+      incognito_profile_observations_.IsObservingSource(profile)) {
+    // ProfileDestroyer sends this notification before it waits for OTR render
+    // processes and erases the Profile from the original Profile's map. Stop
+    // observing the retiring object immediately, then wait through a weak OTR
+    // reference until that exact Profile is actually gone.
+    base::WeakPtr<Profile> retiring_incognito = profile->GetWeakPtr();
+    incognito_profile_observations_.RemoveObservation(profile);
+    content::GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &AegisService::NotifyAiControlAvailabilityWhenIncognitoDestroyed,
+            std::move(retiring_incognito),
+            kIncognitoAvailabilityPollRetries));
+    return;
+  }
+#endif  // !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
+  if (profile_ == profile && profile->IsRegularProfile() &&
+      profile->HasPrimaryOTRProfile()) {
+    // A regular Profile can be unloaded while its last Incognito Profile is
+    // still waiting on renderer teardown. Its own service is about to stop
+    // observing the child, so leave an OTR-weak completion task that can
+    // refresh WebUIs belonging to other regular Profiles.
+    Profile* incognito =
+        profile->GetPrimaryOTRProfile(/*create_if_needed=*/false);
+    CHECK(incognito);
+    content::GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &AegisService::NotifyAiControlAvailabilityWhenIncognitoDestroyed,
+            incognito->GetWeakPtr(), kIncognitoAvailabilityPollRetries));
+  }
+#endif  // !BUILDFLAG(IS_ANDROID)
   if (profile_ == profile) {
     ShutdownForProfile();
   }
 }
 
+void AegisService::OnOffTheRecordProfileCreated(Profile* off_the_record) {
+  if (!profile_ || !profile_->IsRegularProfile() ||
+      !IsAegisProfileSupported(off_the_record) ||
+      off_the_record->GetOriginalProfile() != profile_) {
+    return;
+  }
+#if !BUILDFLAG(IS_ANDROID)
+  if (!incognito_profile_observations_.IsObservingSource(off_the_record)) {
+    incognito_profile_observations_.AddObservation(off_the_record);
+  }
+#endif
+  DisableAiControlForIncognito();
+}
+
+// static
+void AegisService::DisableAiControlForIncognito() {
+  // Set the process-level policy first so no remote operation can race the
+  // asynchronous listener shutdown or the first Incognito tab creation.
+  SetRemoteCdpBlockedForIncognito(true);
+  StopAllRemoteDebuggingTransportsForIncognito();
+#if !BUILDFLAG(IS_ANDROID)
+  std::vector<base::WeakPtr<AegisService>> regular_services;
+  for (AegisService* service : ActiveAegisServices()) {
+    if (!service->profile_ || service->profile_->IsOffTheRecord()) {
+      continue;
+    }
+    regular_services.push_back(service->weak_ptr_factory_.GetWeakPtr());
+  }
+  for (base::WeakPtr<AegisService>& service : regular_services) {
+    if (!service) {
+      continue;
+    }
+    if (service->prefs_) {
+      service->prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+    }
+    if (service->ai_control_) {
+      service->ai_control_->Stop();
+    }
+    service->cdp_ws_clients_ = 0;
+    service->NotifyObservers();
+  }
+#endif
+}
+
+// static
+void AegisService::NotifyAiControlAvailabilityChanged() {
+#if !BUILDFLAG(IS_ANDROID)
+  std::vector<base::WeakPtr<AegisService>> regular_services;
+  for (AegisService* service : ActiveAegisServices()) {
+    if (service->profile_ && service->profile_->IsRegularProfile()) {
+      regular_services.push_back(service->weak_ptr_factory_.GetWeakPtr());
+    }
+  }
+  // Observer callbacks may synchronously tear down another Profile service.
+  // Iterate a weak snapshot rather than the mutable process registry.
+  for (base::WeakPtr<AegisService>& service : regular_services) {
+    if (service) {
+      service->NotifyObservers();
+    }
+  }
+#endif
+}
+
+// static
+void AegisService::NotifyAiControlAvailabilityWhenIncognitoDestroyed(
+    base::WeakPtr<Profile> retiring_incognito,
+    int retries_remaining) {
+#if !BUILDFLAG(IS_ANDROID)
+  if (!retiring_incognito) {
+    // Recompute globally: another primary OTR may have opened while this exact
+    // Profile was retiring, in which case WebUIs must remain unavailable.
+    NotifyAiControlAvailabilityChanged();
+    return;
+  }
+  const bool fast_poll = retries_remaining > 0;
+  content::GetUIThreadTaskRunner({})->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(
+          &AegisService::NotifyAiControlAvailabilityWhenIncognitoDestroyed,
+          std::move(retiring_incognito),
+          fast_poll ? retries_remaining - 1 : 0),
+      fast_poll ? kIncognitoAvailabilityPollInterval
+                : kIncognitoAvailabilitySlowPollInterval);
+#else
+  (void)retiring_incognito;
+  (void)retries_remaining;
+#endif
+}
+
+void AegisService::Shutdown() {
+  ShutdownForProfile();
+}
+
 void AegisService::ShutdownForProfile() {
   profile_observation_.Reset();
+  incognito_profile_observations_.RemoveAllObservations();
+  if (!initialized_) {
+    profile_ = nullptr;
+    return;
+  }
+#if BUILDFLAG(IS_MAC)
+  // The utility process outlives chrome://aegis pages. Revoke this Profile's
+  // capability before clearing any state so a late StartTorrent callback is
+  // immediately cancelled. Already-written user files are intentionally kept.
+  AegisTorrentClient::GetInstance()->RevokeOwnerTasks(torrent_owner_id_);
+#endif
+  if (prefs_) {
+    prefs_->SetString(prefs::kLastTorrentTaskId, std::string());
+  }
   host_receivers_.Clear();
   ClearReporterCallbacks();
   if (ai_control_) {
@@ -323,6 +530,17 @@ void AegisService::ShutdownForProfile() {
   profile_ = nullptr;
   initialized_ = false;
   NotifyObservers();
+}
+
+AegisService* AegisService::SharedRulesService() {
+  if (!profile_ || !profile_->IsOffTheRecord()) {
+    return this;
+  }
+  return AegisServiceFactory::GetForProfile(profile_->GetOriginalProfile());
+}
+
+const AegisService* AegisService::SharedRulesService() const {
+  return const_cast<AegisService*>(this)->SharedRulesService();
 }
 
 bool AegisService::IsEnabled() const {
@@ -372,7 +590,8 @@ void AegisService::SetPhishInterstitialEnabled(bool enabled) {
   if (prefs_) {
     prefs_->SetBoolean(prefs::kPhishInterstitialEnabled, enabled);
   }
-  if (initialized_ && enabled && !threat_feed_updater_) {
+  if (initialized_ && profile_ && !profile_->IsOffTheRecord() && enabled &&
+      !threat_feed_updater_) {
     threat_feed_updater_ = std::make_unique<ThreatFeedUpdater>(profile_);
     threat_feed_updater_->LoadFromDisk();
   } else if (!enabled) {
@@ -410,29 +629,30 @@ bool AegisService::IsFilterListAutoUpdateEnabled() const {
 }
 
 bool AegisService::IsFilterListUpdating() const {
-  return filter_list_updater_ && filter_list_updater_->updating();
+  const AegisService* rules = SharedRulesService();
+  return rules && rules->filter_list_updater_ &&
+         rules->filter_list_updater_->updating();
 }
 
 int AegisService::FilterListHostCount() const {
-  if (prefs_) {
-    return prefs_->GetInteger(prefs::kFilterListHostCount);
-  }
   return static_cast<int>(
       FilterListMatcher::GetInstance()->compiled_host_count());
 }
 
 int64_t AegisService::FilterListLastUpdated() const {
-  if (!prefs_) {
+  const AegisService* rules = SharedRulesService();
+  if (!rules || !rules->prefs_) {
     return 0;
   }
-  return prefs_->GetInt64(prefs::kFilterListLastUpdated);
+  return rules->prefs_->GetInt64(prefs::kFilterListLastUpdated);
 }
 
 std::string AegisService::FilterListLastError() const {
-  if (!prefs_) {
+  const AegisService* rules = SharedRulesService();
+  if (!rules || !rules->prefs_) {
     return std::string();
   }
-  return prefs_->GetString(prefs::kFilterListLastError);
+  return rules->prefs_->GetString(prefs::kFilterListLastError);
 }
 
 void AegisService::SetFilterListAutoUpdateEnabled(bool enabled) {
@@ -566,12 +786,21 @@ void AegisService::SetPrivacyAiEnabled(bool enabled) {
   NotifyObservers();
 }
 
+bool AegisService::IsAiControlAvailable() const {
+#if BUILDFLAG(IS_ANDROID)
+  return false;
+#else
+  return profile_ && !profile_->IsOffTheRecord() && IsEnabled() &&
+         base::FeatureList::IsEnabled(features::kAegisAiControl) &&
+         !HasActivePrimaryIncognitoProfile(profile_);
+#endif
+}
+
 bool AegisService::IsAiControlEnabled() const {
 #if BUILDFLAG(IS_ANDROID)
   return false;
 #else
-  if (!IsEnabled() ||
-      !base::FeatureList::IsEnabled(features::kAegisAiControl)) {
+  if (!IsAiControlAvailable()) {
     return false;
   }
   if (!prefs_) {
@@ -585,6 +814,22 @@ void AegisService::SetAiControlEnabled(bool enabled) {
 #if BUILDFLAG(IS_ANDROID)
   (void)enabled;
 #else
+  if (!profile_ || profile_->IsOffTheRecord()) {
+    return;
+  }
+  // Chromium's remote DevTools server is process-global and cannot constrain
+  // a client to one BrowserContext. Incognito creation disables every Aegis
+  // endpoint; reopening requires a later explicit user action.
+  if (enabled && !IsAiControlAvailable()) {
+    if (prefs_) {
+      prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+    }
+    if (ai_control_) {
+      ai_control_->Stop();
+    }
+    NotifyObservers();
+    return;
+  }
   if (prefs_) {
     prefs_->SetBoolean(prefs::kAiControlEnabled, enabled);
   }
@@ -592,8 +837,15 @@ void AegisService::SetAiControlEnabled(bool enabled) {
     ai_control_ = std::make_unique<AiControl>();
   }
   if (enabled && IsAiControlEnabled()) {
-    if (!ai_control_->Start() && prefs_) {
-      prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+    SetRemoteCdpBlockedForIncognito(false);
+    if (!ai_control_->Start()) {
+      // Clearing the sticky post-Incognito latch is part of a successful
+      // explicit restart. Preserve fail-closed state when the endpoint cannot
+      // be opened or safely adopted.
+      SetRemoteCdpBlockedForIncognito(true);
+      if (prefs_) {
+        prefs_->SetBoolean(prefs::kAiControlEnabled, false);
+      }
     }
     NotifyObservers();
     return;
@@ -720,12 +972,7 @@ size_t AegisService::CdpWebSocketClientCount() const {
 }
 
 void AegisService::SetCdpWebSocketClientCount(size_t count) {
-  if (!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
-    content::GetUIThreadTaskRunner({})->PostTask(
-        FROM_HERE, base::BindOnce(&AegisService::SetCdpWebSocketClientCount,
-                                  base::Unretained(this), count));
-    return;
-  }
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (cdp_ws_clients_ == count) {
     return;
   }
@@ -753,6 +1000,9 @@ void AegisService::ReportBlockedRequest(const std::string& url,
   std::string site_key = source_site;
   const std::string document_id = ResolveDocumentContext(
       local_frame_token, host_receivers_.current_context(), &site_key);
+  if (document_id.empty()) {
+    return;
+  }
   RecordBlockedRequest(GURL(url), reason, cname_alias, document_id, site_key);
 }
 
@@ -764,6 +1014,9 @@ void AegisService::ReportStrippedReferrer(
   std::string site_key = source_site;
   const std::string document_id = ResolveDocumentContext(
       local_frame_token, host_receivers_.current_context(), &site_key);
+  if (document_id.empty()) {
+    return;
+  }
   RecordStrippedReferrer(host, keys, document_id, site_key);
 }
 
@@ -774,7 +1027,66 @@ void AegisService::ReportStrippedParams(const std::string& host,
   std::string site_key = source_site;
   const std::string document_id = ResolveDocumentContext(
       local_frame_token, host_receivers_.current_context(), &site_key);
+  if (document_id.empty()) {
+    return;
+  }
   RecordStrippedParams(host, keys, document_id, site_key);
+}
+
+// static
+void AegisService::RouteBlockedReport(GURL url,
+                                      std::string reason,
+                                      std::string cname_alias,
+                                      std::string source_site,
+                                      std::string document_id) {
+  for (AegisService* service : ActiveAegisServices()) {
+    service->OnBlockedReport(url, reason, cname_alias, source_site,
+                             document_id);
+  }
+}
+
+// static
+void AegisService::RouteStrippedReferrerReport(std::string host,
+                                               std::vector<std::string> keys,
+                                               std::string source_site,
+                                               std::string document_id) {
+  for (AegisService* service : ActiveAegisServices()) {
+    service->OnStrippedReferrerReport(host, keys, source_site, document_id);
+  }
+}
+
+// static
+void AegisService::RouteStrippedParamsReport(std::string host,
+                                             std::vector<std::string> keys,
+                                             std::string source_site,
+                                             std::string document_id) {
+  for (AegisService* service : ActiveAegisServices()) {
+    service->OnStrippedParamsReport(host, keys, source_site, document_id);
+  }
+}
+
+// static
+void AegisService::RouteMinerSignals(std::string document_id,
+                                     std::string site_key,
+                                     std::string display_domain,
+                                     MinerRuntimeSignals signals) {
+  for (AegisService* service : ActiveAegisServices()) {
+    service->OnMinerSignals(document_id, site_key, display_domain, signals);
+  }
+}
+
+// static
+void AegisService::RouteCdpClientCount(size_t count) {
+  if (!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
+    content::GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&AegisService::RouteCdpClientCount, count));
+    return;
+  }
+  for (AegisService* service : ActiveAegisServices()) {
+    if (service->AiControlRunning()) {
+      service->SetCdpWebSocketClientCount(count);
+    }
+  }
 }
 
 void AegisService::OnBlockedReport(GURL url,
@@ -782,6 +1094,9 @@ void AegisService::OnBlockedReport(GURL url,
                                    std::string cname_alias,
                                    std::string source_site,
                                    std::string document_id) {
+  if (!OwnsDocument(document_id)) {
+    return;
+  }
   RecordBlockedRequest(url, reason, cname_alias, document_id, source_site);
 }
 
@@ -789,6 +1104,9 @@ void AegisService::OnStrippedReferrerReport(std::string host,
                                             std::vector<std::string> keys,
                                             std::string source_site,
                                             std::string document_id) {
+  if (!OwnsDocument(document_id)) {
+    return;
+  }
   RecordStrippedReferrer(host, keys, document_id, source_site);
 }
 
@@ -796,29 +1114,36 @@ void AegisService::OnStrippedParamsReport(std::string host,
                                           std::vector<std::string> keys,
                                           std::string source_site,
                                           std::string document_id) {
+  if (!OwnsDocument(document_id)) {
+    return;
+  }
   RecordStrippedParams(host, keys, document_id, source_site);
 }
 
 void AegisService::InstallReporterCallbacks() {
+  const bool install_process_callbacks = ActiveAegisServices().empty();
+  ActiveAegisServices().insert(this);
+  if (!install_process_callbacks) {
+    return;
+  }
   BlockReporter::SetCallbacks(
       content::GetUIThreadTaskRunner({}),
-      base::BindRepeating(&AegisService::OnBlockedReport,
-                          weak_ptr_factory_.GetWeakPtr()),
-      base::BindRepeating(&AegisService::OnStrippedReferrerReport,
-                          weak_ptr_factory_.GetWeakPtr()),
-      base::BindRepeating(&AegisService::OnStrippedParamsReport,
-                          weak_ptr_factory_.GetWeakPtr()));
+      base::BindRepeating(&AegisService::RouteBlockedReport),
+      base::BindRepeating(&AegisService::RouteStrippedReferrerReport),
+      base::BindRepeating(&AegisService::RouteStrippedParamsReport));
   MinerGuardReporter::SetCallback(
       content::GetUIThreadTaskRunner({}),
-      base::BindRepeating(&AegisService::OnMinerSignals,
-                          weak_ptr_factory_.GetWeakPtr()));
-  CdpWsHook::SetClientCountCallback(base::BindRepeating([](size_t count) {
-    AegisService::GetInstance()->SetCdpWebSocketClientCount(count);
-  }));
+      base::BindRepeating(&AegisService::RouteMinerSignals));
+  CdpWsHook::SetClientCountCallback(
+      base::BindRepeating(&AegisService::RouteCdpClientCount));
 }
 
 void AegisService::ClearReporterCallbacks() {
   weak_ptr_factory_.InvalidateWeakPtrs();
+  ActiveAegisServices().erase(this);
+  if (!ActiveAegisServices().empty()) {
+    return;
+  }
   BlockReporter::ClearCallbacks();
   MinerGuardReporter::ClearCallback();
   CdpWsHook::SetClientCountCallback({});
@@ -839,6 +1164,22 @@ bool AegisService::IsCurrentProfileDocument(const std::string& document_id,
     found = SiteKeyForHost(
                 std::string(web_contents->GetLastCommittedURL().host())) ==
             SiteKeyForHost(site_key);
+    return !found;
+  });
+  return found;
+}
+
+bool AegisService::OwnsDocument(const std::string& document_id) const {
+  if (!profile_ || document_id.empty()) {
+    return false;
+  }
+  bool found = false;
+  tabs::ForEachTabInterface([&](tabs::TabInterface* tab) {
+    content::WebContents* web_contents = tab->GetContents();
+    if (web_contents && web_contents->GetBrowserContext() == profile_ &&
+        DocumentIdForWebContents(web_contents) == document_id) {
+      found = true;
+    }
     return !found;
   });
   return found;
@@ -1224,8 +1565,10 @@ void AegisService::SetModelSettings(
     const std::string credential_key =
         ModelCredentialKey(*provider, *normalized_base_url);
     model_api_keys_.erase(credential_key);
-    ScopedDictPrefUpdate update(prefs_, prefs::kModelApiKeyCiphertexts);
-    update->Remove(credential_key);
+    if (!profile_ || !profile_->IsOffTheRecord()) {
+      ScopedDictPrefUpdate update(prefs_, prefs::kModelApiKeyCiphertexts);
+      update->Remove(credential_key);
+    }
     PersistModelConfiguration(normalized_provider, *normalized_base_url,
                               trimmed_model);
     NotifyObservers();
@@ -1241,6 +1584,18 @@ void AegisService::SetModelSettings(
   }
   if (model_credentials_loading_) {
     std::move(done).Run(false, "model credentials are still loading");
+    return;
+  }
+  if (profile_ && profile_->IsOffTheRecord()) {
+    const std::string credential_key =
+        ModelCredentialKey(*provider, *normalized_base_url);
+    model_api_keys_[credential_key] = api_key;
+    model_credentials_loaded_ = true;
+    model_credentials_available_ = true;
+    PersistModelConfiguration(normalized_provider, *normalized_base_url,
+                              trimmed_model);
+    NotifyObservers();
+    std::move(done).Run(true, std::string());
     return;
   }
   if (!g_browser_process || !g_browser_process->os_crypt_async()) {
@@ -1299,6 +1654,10 @@ void AegisService::LoadModelCredentials() {
   if (!prefs_) {
     model_credentials_loaded_ = true;
     model_credentials_available_ = false;
+    return;
+  }
+  if (profile_ && profile_->IsOffTheRecord()) {
+    model_credentials_loaded_ = true;
     return;
   }
   if (prefs_->GetDict(prefs::kModelApiKeyCiphertexts).empty()) {
@@ -1395,11 +1754,12 @@ void AegisService::ListModels(
 }
 
 void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
-  if (!filter_list_updater_) {
+  AegisService* rules = SharedRulesService();
+  if (!rules || !rules->filter_list_updater_) {
     std::move(done).Run(false);
     return;
   }
-  filter_list_updater_->UpdateNow(std::move(done));
+  rules->filter_list_updater_->UpdateNow(std::move(done));
 }
 
 bool AegisService::ShouldBlockUrl(const GURL& url) const {
@@ -1435,11 +1795,12 @@ std::optional<PhishAssessment> AegisService::EvaluatePhish(
 
 PhishAssessment AegisService::AssessPhishUrl(const GURL& url) const {
   PhishAssessment assessment = AssessPhishingUrl(url);
-  if (!threat_feed_updater_) {
+  const AegisService* rules = SharedRulesService();
+  if (!rules || !rules->threat_feed_updater_) {
     return assessment;
   }
   const std::optional<ThreatMatch> match =
-      threat_feed_updater_->Match(url, NowUnixSeconds());
+      rules->threat_feed_updater_->Match(url, NowUnixSeconds());
   if (!match) {
     return assessment;
   }
@@ -1596,9 +1957,10 @@ std::string AegisService::ResolveDocumentContext(
   content::RenderFrameHost* frame = content::RenderFrameHost::FromFrameToken(
       content::GlobalRenderFrameHostToken{render_process_id,
                                           blink::LocalFrameToken(*token)});
-  if (!frame || !frame->GetOutermostMainFrame()) {
+  if (!frame || frame->GetBrowserContext() != profile_ ||
+      !frame->GetOutermostMainFrame()) {
     *site_key = SiteKeyForHost(*site_key);
-    return local_frame_token;
+    return std::string();
   }
   content::RenderFrameHost* main_frame = frame->GetOutermostMainFrame();
   *site_key =

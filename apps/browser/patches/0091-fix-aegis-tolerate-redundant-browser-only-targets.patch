@@ -1,0 +1,52 @@
+From de7bccbc83f94adca5a78cdb279308022aa78e6e Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 02:05:36 +0800
+Subject: [PATCH 91/91] fix(aegis): tolerate redundant browser-only targets
+
+---
+ chrome/browser/aegis/agent/agent_planner.cc          | 9 +++++----
+ chrome/browser/aegis/agent/agent_planner_unittest.cc | 8 ++++++++
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index b76deec8c1..60bfc4ea25 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -391,10 +391,11 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
+   route.summary = *summary;
+   if (*entry_name == "browser_only") {
+     route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
+-    if (!route.target.empty()) {
+-      *error = "browser-only route is inconsistent";
+-      return std::nullopt;
+-    }
++    // Some otherwise-correct local models repeat the user's goal in `target`.
++    // A browser-only route never consumes that field, so discard it instead
++    // of failing a harmless request or spending the single repair attempt.
++    // The browser still derives workflow, scope, origins, and tools itself.
++    route.target.clear();
+   } else if (*entry_name == "open_url") {
+     route.entry_kind = AgentGoalEntryKind::kOpenUrl;
+     const GURL url(route.target);
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 4a7c166fd4..e97e4ee951 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -82,6 +82,14 @@ TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {
+   EXPECT_EQ(current_page->workflow, AgentWorkflowKind::kResearch);
+   EXPECT_EQ(current_page->entry_kind, AgentGoalEntryKind::kBrowserOnly);
+ 
++  std::optional<AgentGoalRoute> redundant_target = ParseAndValidateGoalRoute(
++      GoalRouteEvent("browser_steward", "browser_only",
++                     "整理收藏夹里的 GitHub 链接"),
++      &error);
++  ASSERT_TRUE(redundant_target) << error;
++  EXPECT_EQ(redundant_target->entry_kind, AgentGoalEntryKind::kBrowserOnly);
++  EXPECT_TRUE(redundant_target->target.empty());
++
+   std::optional<AgentGoalRoute> direct = ParseAndValidateGoalRoute(
+       GoalRouteEvent("research", "open_url", "https://example.com/docs"),
+       &error);
+-- 
+2.52.0
+

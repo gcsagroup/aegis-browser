@@ -1,0 +1,291 @@
+From 1c63ce994b2815fe1f3dc07608ff121d987e0441 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 5 Sep 2026 00:00:35 +0800
+Subject: [PATCH] fix(agent): finish bookmark checks after rate limits
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   4 +
+ .../aegis/agent/aegis_agent_browsertest.cc    | 103 +++++++++++++++++-
+ .../aegis/agent/aegis_browser_tools.cc        |  40 ++++---
+ 3 files changed, 121 insertions(+), 26 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 04f68949e1..c2ab010ccb 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -231,6 +231,7 @@ if (!is_android) {
+       ":aegis",
+       "//base",
+       "//base/test:test_support",
++      "//chrome/browser/bookmarks",
+       "//chrome/browser/profiles:profile",
+       "//chrome/browser/renderer_context_menu:test_support",
+       "//chrome/browser/search_engines",
+@@ -243,9 +244,12 @@ if (!is_android) {
+       "//chrome/common/aegis",
+       "//chrome/test:test_support",
+       "//chrome/test:test_support_ui",
++      "//components/bookmarks/browser",
++      "//components/bookmarks/test",
+       "//components/prefs",
+       "//components/search_engines",
+       "//content/test:test_support",
++      "//net:test_support",
+       "//testing/gtest",
+       "//url",
+     ]
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 98934585e4..2ff6b57165 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -1,14 +1,17 @@
+ // Copyright 2026 GCSA
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <memory>
+ #include <utility>
+ #include <vector>
+ 
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
++#include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/scoped_observation.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+@@ -21,6 +24,7 @@
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/agent/v2_runtime_spike.h"
++#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/prefs/incognito_mode_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -54,6 +58,9 @@
+ #include "chrome/common/webui_url_constants.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
++#include "components/bookmarks/browser/bookmark_model.h"
++#include "components/bookmarks/browser/bookmark_node.h"
++#include "components/bookmarks/test/bookmark_test_helpers.h"
+ #include "components/policy/core/common/policy_pref_names.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/search_engines/template_url.h"
+@@ -67,6 +74,9 @@
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "net/dns/mock_host_resolver.h"
++#include "net/http/http_status_code.h"
++#include "net/test/embedded_test_server/http_request.h"
++#include "net/test/embedded_test_server/http_response.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "ui/actions/actions.h"
+ #include "url/gurl.h"
+@@ -284,6 +294,89 @@ class AegisAgentBrowserTest : public InProcessBrowserTest {
+   base::test::ScopedFeatureList features_;
+ };
+ 
++class AegisAgentUrlCheckBrowserTest : public AegisAgentBrowserTest {
++ public:
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    AegisAgentBrowserTest::SetUpCommandLine(command_line);
++    command_line->AppendSwitch("aegis-agent-allow-local-fixture");
++  }
++
++  void SetUpOnMainThread() override {
++    AegisAgentBrowserTest::SetUpOnMainThread();
++    embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
++        &AegisAgentUrlCheckBrowserTest::HandleRequest, base::Unretained(this)));
++  }
++
++  int request_count() const { return request_count_.load(); }
++
++ private:
++  std::unique_ptr<net::test_server::HttpResponse> HandleRequest(
++      const net::test_server::HttpRequest& request) {
++    if (request.relative_url.rfind("/rate-limited-", 0) != 0) {
++      return nullptr;
++    }
++    ++request_count_;
++    auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++    response->set_code(net::HTTP_TOO_MANY_REQUESTS);
++    response->AddCustomHeader("Retry-After", "17");
++    return response;
++  }
++
++  std::atomic<int> request_count_{0};
++};
++
++IN_PROC_BROWSER_TEST_F(AegisAgentUrlCheckBrowserTest,
++                       RateLimitCompletesAllPendingSameOriginBookmarks) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  bookmarks::BookmarkModel* model =
++      BookmarkModelFactory::GetForBrowserContext(browser()->profile());
++  ASSERT_TRUE(model);
++  bookmarks::test::WaitForBookmarkModelToLoad(model);
++
++  base::ListValue node_ids;
++  for (int index = 0; index < 4; ++index) {
++    const bookmarks::BookmarkNode* node = model->AddURL(
++        model->bookmark_bar_node(), index, u"Rate-limited fixture",
++        embedded_test_server()->GetURL("/rate-limited-" +
++                                       base::NumberToString(index)));
++    ASSERT_TRUE(node);
++    node_ids.Append("local:" + node->uuid().AsLowercaseString());
++  }
++
++  AgentTaskScope scope;
++  scope.allowed_tools = {"bookmark.check_urls"};
++  scope.allowed_data_classes = {AgentDataClass::kBookmarks};
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = "http://127.0.0.1:8000/v1";
++  scope.model_destination.model = "fixture-model";
++  ASSERT_TRUE(scope.IsValid());
++  AgentTask task("rate-limit-task", "check fixture bookmarks", AgentMode::kAsk,
++                 std::move(scope));
++  AegisBrowserTools tools(browser()->profile());
++  AgentToolCall call;
++  call.action_id = "check-rate-limited-bookmarks";
++  call.tool_name = "bookmark.check_urls";
++  call.arguments.Set("node_ids", std::move(node_ids));
++
++  base::test::TestFuture<AgentToolResult> future;
++  tools.Execute(&task, call, future.GetCallback());
++  AgentToolResult result = future.Take();
++  ASSERT_TRUE(result.ok) << result.message;
++  const base::ListValue* values = result.value.FindList("results");
++  ASSERT_TRUE(values);
++  ASSERT_EQ(values->size(), 4u);
++  for (const base::Value& value : *values) {
++    const base::DictValue& checked = value.GetDict();
++    const std::string* classification = checked.FindString("classification");
++    ASSERT_TRUE(classification);
++    EXPECT_EQ(*classification, "rate_limited");
++    EXPECT_EQ(checked.FindInt("http_status"), 429);
++    EXPECT_EQ(checked.FindInt("retry_after_seconds"), 17);
++  }
++  EXPECT_EQ(request_count(), 1);
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        ProfileIsolationAndRestrictedProfiles) {
+   Profile* regular = browser()->profile();
+@@ -1275,8 +1368,8 @@ IN_PROC_BROWSER_TEST_F(
+     RegularAegisUiRefreshesAfterDelayedIncognitoDestruction) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+   Profile* regular_profile = browser()->profile();
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+-      browser(), GURL(chrome::kChromeUIAegisURL)));
++  ASSERT_TRUE(
++      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
+   content::WebContents* regular_contents =
+       browser()->tab_strip_model()->GetActiveWebContents();
+   ASSERT_TRUE(regular_contents);
+@@ -1305,9 +1398,9 @@ IN_PROC_BROWSER_TEST_F(
+   std::unique_ptr<content::WebContents> delayed_otr_contents =
+       content::WebContents::Create(
+           content::WebContents::CreateParams(incognito_profile));
+-  ASSERT_TRUE(content::NavigateToURL(
+-      delayed_otr_contents.get(),
+-      embedded_test_server()->GetURL("/title2.html")));
++  ASSERT_TRUE(
++      content::NavigateToURL(delayed_otr_contents.get(),
++                             embedded_test_server()->GetURL("/title2.html")));
+   ProfileDestructionProbe destruction_probe(incognito_profile);
+   ASSERT_TRUE(base::test::RunUntil([&]() {
+     return content::EvalJs(regular_contents, R"JS(
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index caf749213e..63aaf8b3c2 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -805,7 +805,6 @@ struct AegisBrowserTools::UrlCheckBatch {
+     bool use_get = false;
+     bool active = false;
+     bool completed = false;
+-    base::TimeTicks not_before;
+     std::vector<GURL> redirects;
+   };
+ 
+@@ -817,7 +816,6 @@ struct AegisBrowserTools::UrlCheckBatch {
+   std::vector<std::optional<base::DictValue>> results;
+   std::map<size_t, std::unique_ptr<network::SimpleURLLoader>> loaders;
+   base::flat_set<std::string> active_origins;
+-  base::OneShotTimer retry_timer;
+   ToolResultCallback callback;
+ };
+ 
+@@ -2250,11 +2248,8 @@ void AegisBrowserTools::PumpUrlCheckRequests(const std::string& batch_key) {
+     return;
+   }
+ 
+-  batch.retry_timer.Stop();
+   while (batch.loaders.size() < kMaxConcurrentUrlChecks) {
+-    const base::TimeTicks now = base::TimeTicks::Now();
+     std::optional<size_t> candidate;
+-    std::optional<base::TimeTicks> earliest_retry;
+     for (size_t index = 0; index < batch.entries.size(); ++index) {
+       const UrlCheckBatch::Entry& entry = batch.entries[index];
+       if (entry.active || entry.completed) {
+@@ -2264,22 +2259,10 @@ void AegisBrowserTools::PumpUrlCheckRequests(const std::string& batch_key) {
+       if (batch.active_origins.contains(origin)) {
+         continue;
+       }
+-      if (!entry.not_before.is_null() && entry.not_before > now) {
+-        if (!earliest_retry || entry.not_before < *earliest_retry) {
+-          earliest_retry = entry.not_before;
+-        }
+-        continue;
+-      }
+       candidate = index;
+       break;
+     }
+     if (!candidate) {
+-      if (earliest_retry) {
+-        batch.retry_timer.Start(
+-            FROM_HERE, std::max(base::Milliseconds(1), *earliest_retry - now),
+-            base::BindOnce(&AegisBrowserTools::PumpUrlCheckRequests,
+-                           weak_ptr_factory_.GetWeakPtr(), batch_key));
+-      }
+       return;
+     }
+     StartUrlCheckRequest(batch_key, *candidate);
+@@ -2497,12 +2480,27 @@ void AegisBrowserTools::OnUrlCheckComplete(
+         retry_after_seconds = std::clamp(parsed, 1, 60);
+       }
+     }
+-    const base::TimeTicks not_before =
+-        base::TimeTicks::Now() + base::Seconds(retry_after_seconds);
+-    for (UrlCheckBatch::Entry& pending : batch.entries) {
++    if (batch.results[index]) {
++      batch.results[index]->Set("retry_after_seconds", retry_after_seconds);
++    }
++    // Retry-After is origin-wide backpressure. Do not keep a user task open
++    // while serially retrying every remaining bookmark from that origin.
++    // Report those entries as rate-limited so the bounded read-only batch can
++    // finish and the user can retry it later.
++    for (size_t pending_index = 0; pending_index < batch.entries.size();
++         ++pending_index) {
++      UrlCheckBatch::Entry& pending = batch.entries[pending_index];
+       if (!pending.active && !pending.completed &&
+           url::Origin::Create(pending.url).Serialize() == origin) {
+-        pending.not_before = std::max(pending.not_before, not_before);
++        base::DictValue deferred;
++        deferred.Set("node_id", pending.node_id);
++        deferred.Set("url", SafeUrlForModel(pending.url));
++        deferred.Set("classification", "rate_limited");
++        deferred.Set("http_status", 429);
++        deferred.Set("retry_after_seconds", retry_after_seconds);
++        batch.results[pending_index] = std::move(deferred);
++        pending.completed = true;
++        ++batch.completed;
+       }
+     }
+   }
+-- 
+2.52.0
+
+

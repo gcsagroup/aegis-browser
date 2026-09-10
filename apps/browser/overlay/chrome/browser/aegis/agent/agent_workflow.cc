@@ -3,9 +3,21 @@
 #include "chrome/browser/aegis/agent/agent_workflow.h"
 
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
+#include "build/build_config.h"
+#include "chrome/browser/aegis/agent/agent_tool_registry.h"
 
 namespace aegis::agent {
 namespace {
+
+bool IsToolSupportedOnCurrentPlatform(std::string_view tool) {
+#if BUILDFLAG(IS_ANDROID)
+  return !base::StartsWith(tool, "window.") &&
+         !base::StartsWith(tool, "workspace.");
+#else
+  return true;
+#endif
+}
 
 AgentWorkflowTemplate ResearchTemplate() {
   AgentWorkflowTemplate value;
@@ -49,7 +61,8 @@ AgentWorkflowTemplate BrowserStewardTemplate() {
   value.budgets.max_tabs = 20;
   value.budgets.max_tool_calls = 80;
   value.budgets.max_model_calls = 20;
-  value.budgets.max_network_requests = 500;
+  // 500条收藏的单次检查之外，模型请求仍计入总网络预算；新授权计划显示完整上限。
+  value.budgets.max_network_requests = 500 + value.budgets.max_model_calls;
   value.budgets.max_duration = base::Hours(1);
   value.supports_monitoring = true;
   return value;
@@ -138,11 +151,63 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
   AgentTaskScope scope;
   scope.allowed_origins = std::move(origins);
   scope.allowed_tab_ids = std::move(tab_ids);
-  scope.allowed_tools = workflow.tools;
+  for (const std::string& tool : workflow.tools) {
+    if (IsToolSupportedOnCurrentPlatform(tool)) {
+      scope.allowed_tools.insert(tool);
+    }
+  }
+  if (scope.allowed_origins.empty()) {
+    AgentToolRegistry registry;
+    base::flat_set<std::string> browser_only_tools;
+    for (const std::string& tool : scope.allowed_tools) {
+      const AgentToolDescriptor* descriptor = registry.Find(tool);
+      if (descriptor && !descriptor->requires_origin) {
+        browser_only_tools.insert(tool);
+      }
+    }
+    scope.allowed_tools = std::move(browser_only_tools);
+  }
   scope.allowed_data_classes = workflow.data_classes;
   scope.budgets = workflow.budgets;
   scope.model_destination = std::move(destination);
   return scope.IsValid() ? std::make_optional(std::move(scope)) : std::nullopt;
+}
+
+std::optional<AgentTaskScope> BuildAgentAutomationScope(
+    AgentWorkflowKind kind,
+    std::vector<url::Origin> origins,
+    base::flat_set<int32_t> tab_ids,
+    AgentModelDestination destination) {
+  std::optional<AgentTaskScope> scope = BuildAgentWorkflowScope(
+      kind, std::move(origins), std::move(tab_ids), std::move(destination));
+  if (!scope) {
+    return std::nullopt;
+  }
+  AgentToolRegistry registry;
+  base::flat_set<std::string> tools;
+  for (const std::string& tool : scope->allowed_tools) {
+    const AgentToolDescriptor* descriptor = registry.Find(tool);
+    if (descriptor && !descriptor->has_external_side_effect &&
+        (descriptor->risk == AgentRiskLevel::kR0ReadOnly ||
+         tool == "page.navigate" || tool == "tab.create")) {
+      tools.insert(tool);
+    }
+  }
+  // 不依赖下载、购物等一次性模板是否声明监控；创建监控仍需有效来源与文档。
+  for (const char* tool : {"monitor.create", "monitor.list", "monitor.pause",
+                           "monitor.delete"}) {
+    const AgentToolDescriptor* descriptor = registry.Find(tool);
+    if (descriptor &&
+        (!descriptor->requires_origin || !scope->allowed_origins.empty())) {
+      tools.insert(tool);
+    }
+  }
+  scope->allowed_tools = std::move(tools);
+  scope->allowed_data_classes.clear();
+  for (const std::string& tool : scope->allowed_tools) {
+    scope->allowed_data_classes.insert(registry.Find(tool)->data_class);
+  }
+  return scope->IsValid() ? std::move(scope) : std::nullopt;
 }
 
 }  // namespace aegis::agent

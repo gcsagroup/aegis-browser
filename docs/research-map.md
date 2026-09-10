@@ -51,6 +51,6 @@ Current direction: keep deterministic high-confidence checks in the browser, res
 1. Keep research metrics separate from product runtime and release qualification.
 2. Require independent benign and malicious labeling, real-site coverage, obfuscation tests, false-positive measurement, performance budgets, and breakage testing before a detector can affect page behavior.
 3. Do not describe an observe-only signal, synthetic-fixture result, small operator-blinded public pilot, or claims-completeness check as a security authorization.
-4. Re-run affected gates against the same committed source and identity-bound artifact. The current source contains 67 top-level Chromium patches plus 2 nested V8 patches; the earlier 57-patch diagnostic manifest and 65-patch Agent candidate remain historical evidence and do not bind or qualify this head.
+4. Re-run affected gates against the same committed source and identity-bound artifact. The Browser Agent v2 candidate contains 105 top-level Chromium patches plus 2 nested V8 patches and replays to `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` (tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`); the 57-, 65-, 67-, 95-, and 97-patch records remain historical evidence.
 
 The research program remains **No-Go for production blocking and general malicious-JavaScript claims**.

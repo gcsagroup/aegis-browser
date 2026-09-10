@@ -19,8 +19,9 @@ namespace aegis::agent {
 
 namespace {
 
-constexpr int kCurrentVersion = 5;
-constexpr int kCompatibleVersion = 1;
+// v8 增加持久化的摘要失败状态；旧程序不认识该状态，不能继续读取/覆写。
+constexpr int kCurrentVersion = 8;
+constexpr int kCompatibleVersion = 8;
 constexpr size_t kMaxSummaryBytes = 4096;
 
 constexpr char kCreateTasksSql[] = R"(
@@ -63,7 +64,10 @@ constexpr char kCreateMonitorsSql[] = R"(
     next_run_us INTEGER NOT NULL,
     last_run_us INTEGER NOT NULL,
     consecutive_failures INTEGER NOT NULL,
-    enabled INTEGER NOT NULL
+    enabled INTEGER NOT NULL,
+    last_check_status INTEGER NOT NULL DEFAULT 0,
+    last_http_status INTEGER NOT NULL DEFAULT 0,
+    last_observation_ciphertext BLOB NOT NULL DEFAULT X''
   ))";
 
 constexpr char kCreatePlansSql[] = R"(
@@ -118,8 +122,10 @@ std::optional<std::string> SerializePlanSteps(const AgentTaskPlan& plan) {
 
 }  // namespace
 
-AgentTaskStore::AgentTaskStore(base::FilePath database_path)
-    : database_path_(std::move(database_path)), database_("AegisAgent") {}
+AgentTaskStore::AgentTaskStore(base::FilePath database_path, bool in_memory)
+    : database_path_(std::move(database_path)),
+      in_memory_(in_memory),
+      database_("AegisAgent") {}
 
 AgentTaskStore::~AgentTaskStore() = default;
 
@@ -127,7 +133,8 @@ bool AgentTaskStore::Initialize() {
   if (initialized_) {
     return true;
   }
-  if (!database_.Open(database_path_)) {
+  if (!(in_memory_ ? database_.OpenInMemory()
+                   : database_.Open(database_path_))) {
     return false;
   }
   sql::Transaction transaction(&database_);
@@ -171,7 +178,32 @@ bool AgentTaskStore::Initialize() {
        !database_.Execute(
            "ALTER TABLE agent_monitors ADD COLUMN last_value_hash TEXT NOT "
            "NULL DEFAULT ''") ||
-       !meta_table_.SetVersionNumber(kCurrentVersion))) {
+       !meta_table_.SetVersionNumber(5))) {
+    database_.Close();
+    return false;
+  }
+  if (meta_table_.GetVersionNumber() == 5 &&
+      (!database_.Execute(
+           "ALTER TABLE agent_monitors ADD COLUMN last_check_status INTEGER "
+           "NOT NULL DEFAULT 0") ||
+       !database_.Execute(
+           "ALTER TABLE agent_monitors ADD COLUMN last_http_status INTEGER "
+           "NOT NULL DEFAULT 0") ||
+       !meta_table_.SetVersionNumber(6))) {
+    database_.Close();
+    return false;
+  }
+  if (meta_table_.GetVersionNumber() == 6 &&
+      (!database_.Execute(
+           "ALTER TABLE agent_monitors ADD COLUMN last_observation_ciphertext "
+           "BLOB NOT NULL DEFAULT X''") ||
+       !meta_table_.SetVersionNumber(7))) {
+    database_.Close();
+    return false;
+  }
+  if (meta_table_.GetVersionNumber() == 7 &&
+      (!meta_table_.SetVersionNumber(kCurrentVersion) ||
+       !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion))) {
     database_.Close();
     return false;
   }
@@ -184,13 +216,59 @@ bool AgentTaskStore::Initialize() {
   return true;
 }
 
+std::optional<StoredAgentState> AgentTaskStore::InitializeAndLoad(
+    base::Time unfinished_before,
+    base::Time completed_before) {
+  if (!Initialize() || !Prune(unfinished_before, completed_before)) {
+    return std::nullopt;
+  }
+
+  StoredAgentState state;
+  state.tasks = LoadUnfinishedTasks();
+  AgentToolRegistry registry;
+  for (const StoredAgentTask& task : state.tasks) {
+    if (task.state == AgentTaskState::kCompleted) {
+      continue;
+    }
+    std::optional<AgentTaskScope> scope = DeserializeScope(task.scope_json);
+    if (!scope) {
+      continue;
+    }
+    std::optional<StoredAgentPlan> plan =
+        LoadPlan(task.task_id, *scope, registry);
+    if (plan) {
+      state.plans.push_back(
+          {.task_id = task.task_id, .stored_plan = std::move(*plan)});
+    }
+  }
+  state.monitors = LoadMonitors();
+  return state;
+}
+
 bool AgentTaskStore::SaveTask(const AgentTask& task,
                               std::string goal_summary,
                               bool has_external_side_effect) {
-  if (!initialized_ || !IsSafeSummary(goal_summary)) {
+  AgentTaskStoreRecord record{
+      .task_id = task.id(),
+      .state = task.state(),
+      .mode = task.mode(),
+      .goal_summary = std::move(goal_summary),
+      .scope = task.scope(),
+      .has_external_side_effect = has_external_side_effect,
+      .tool_calls_used = task.tool_calls_used(),
+      .model_calls_used = task.model_calls_used(),
+      .network_requests_used = task.network_requests_used(),
+      .created_at = task.created_at(),
+  };
+  return SaveTaskRecord(std::move(record));
+}
+
+bool AgentTaskStore::SaveTaskRecord(AgentTaskStoreRecord record) {
+  if (!initialized_ || record.task_id.empty() ||
+      !IsSafeSummary(record.goal_summary)) {
     return false;
   }
-  const std::string scope_json = SerializeScope(task.scope());
+  const std::string scope_json = SerializeScope(record.scope);
   if (scope_json.empty()) {
     return false;
   }
@@ -204,16 +282,16 @@ bool AgentTaskStore::SaveTask(const AgentTask& task,
       "UPDATE agent_tasks SET state=?,mode=?,goal_summary=?,scope_json=?,"
       "has_external_side_effect=?,tool_calls_used=?,model_calls_used=?,"
       "network_requests_used=?,updated_us=? WHERE task_id=?"));
-  update.BindInt(0, static_cast<int>(task.state()));
-  update.BindInt(1, static_cast<int>(task.mode()));
-  update.BindString(2, goal_summary);
+  update.BindInt(0, static_cast<int>(record.state));
+  update.BindInt(1, static_cast<int>(record.mode));
+  update.BindString(2, record.goal_summary);
   update.BindString(3, scope_json);
-  update.BindBool(4, has_external_side_effect);
-  update.BindInt(5, task.tool_calls_used());
-  update.BindInt(6, task.model_calls_used());
-  update.BindInt(7, task.network_requests_used());
+  update.BindBool(4, record.has_external_side_effect);
+  update.BindInt(5, record.tool_calls_used);
+  update.BindInt(6, record.model_calls_used);
+  update.BindInt(7, record.network_requests_used);
   update.BindInt64(8, SerializeTime(base::Time::Now()));
-  update.BindString(9, task.id());
+  update.BindString(9, record.task_id);
   if (!update.Run()) {
     return false;
   }
@@ -227,16 +305,16 @@ bool AgentTaskStore::SaveTask(const AgentTask& task,
       "has_external_side_effect,tool_calls_used,model_calls_used,"
       "network_requests_used,created_us,updated_us) "
       "VALUES(?,?,?,?,?,?,?,?,?,?,?)"));
-  insert.BindString(0, task.id());
-  insert.BindInt(1, static_cast<int>(task.state()));
-  insert.BindInt(2, static_cast<int>(task.mode()));
-  insert.BindString(3, goal_summary);
+  insert.BindString(0, record.task_id);
+  insert.BindInt(1, static_cast<int>(record.state));
+  insert.BindInt(2, static_cast<int>(record.mode));
+  insert.BindString(3, record.goal_summary);
   insert.BindString(4, scope_json);
-  insert.BindBool(5, has_external_side_effect);
-  insert.BindInt(6, task.tool_calls_used());
-  insert.BindInt(7, task.model_calls_used());
-  insert.BindInt(8, task.network_requests_used());
-  insert.BindInt64(9, SerializeTime(task.created_at()));
+  insert.BindBool(5, record.has_external_side_effect);
+  insert.BindInt(6, record.tool_calls_used);
+  insert.BindInt(7, record.model_calls_used);
+  insert.BindInt(8, record.network_requests_used);
+  insert.BindInt64(9, SerializeTime(record.created_at));
   insert.BindInt64(10, SerializeTime(base::Time::Now()));
   return insert.Run() && transaction.Commit();
 }
@@ -409,7 +487,9 @@ std::optional<StoredAgentPlan> AgentTaskStore::LoadPlan(
 }
 
 bool AgentTaskStore::SaveMonitor(const AgentMonitorDefinition& monitor) {
-  if (!initialized_ || !monitor.IsValid()) {
+  if (!initialized_ || !monitor.IsValid() || monitor.session_only ||
+      (!monitor.last_observation.empty() &&
+       monitor.last_observation_ciphertext.empty())) {
     return false;
   }
   sql::Statement statement(database_.GetCachedStatement(
@@ -417,7 +497,8 @@ bool AgentTaskStore::SaveMonitor(const AgentMonitorDefinition& monitor) {
       "INSERT OR REPLACE INTO agent_monitors("
       "monitor_id,task_id,kind,origin,target_hash,target_ciphertext,"
       "last_value_hash,interval_seconds,next_run_us,last_run_us,"
-      "consecutive_failures,enabled) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"));
+      "consecutive_failures,enabled,last_check_status,last_http_status,"
+      "last_observation_ciphertext) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
   statement.BindString(0, monitor.monitor_id);
   statement.BindString(1, monitor.task_id);
   statement.BindInt(2, static_cast<int>(monitor.kind));
@@ -430,6 +511,9 @@ bool AgentTaskStore::SaveMonitor(const AgentMonitorDefinition& monitor) {
   statement.BindInt64(9, SerializeTime(monitor.last_run));
   statement.BindInt(10, monitor.consecutive_failures);
   statement.BindBool(11, monitor.enabled);
+  statement.BindInt(12, static_cast<int>(monitor.last_check_status));
+  statement.BindInt(13, monitor.last_http_status);
+  statement.BindBlob(14, monitor.last_observation_ciphertext);
   return statement.Run();
 }
 
@@ -442,7 +526,8 @@ std::vector<AgentMonitorDefinition> AgentTaskStore::LoadMonitors() {
       SQL_FROM_HERE,
       "SELECT monitor_id,task_id,kind,origin,target_hash,target_ciphertext,"
       "last_value_hash,interval_seconds,next_run_us,last_run_us,"
-      "consecutive_failures,enabled "
+      "consecutive_failures,enabled,last_check_status,last_http_status,"
+      "last_observation_ciphertext "
       "FROM agent_monitors ORDER BY monitor_id ASC"));
   while (statement.Step()) {
     const int kind = statement.ColumnInt(2);
@@ -464,6 +549,10 @@ std::vector<AgentMonitorDefinition> AgentTaskStore::LoadMonitors() {
     monitor.last_run = DeserializeTime(statement.ColumnInt64(9));
     monitor.consecutive_failures = statement.ColumnInt(10);
     monitor.enabled = statement.ColumnBool(11);
+    monitor.last_check_status =
+        static_cast<AgentMonitorCheckStatus>(statement.ColumnInt(12));
+    monitor.last_http_status = statement.ColumnInt(13);
+    monitor.last_observation_ciphertext = statement.ColumnBlobAsString(14);
     if (!monitor.IsValid()) {
       monitors.clear();
       return monitors;
@@ -501,15 +590,19 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
   const base::ListValue* data_classes = value.FindList("allowed_data_classes");
   const base::DictValue* budgets = value.FindDict("budgets");
   const base::DictValue* destination = value.FindDict("model_destination");
-  if (value.size() != 6u || !origins || !tab_ids || !tools || !data_classes ||
-      !budgets || !destination || budgets->size() != 5u ||
-      destination->size() != 4u || origins->size() > 64u ||
-      tab_ids->size() > 20u || tools->size() > 128u ||
+  const base::Value* metadata_window = value.Find("tab_metadata_window_id");
+  if (value.size() != (metadata_window ? 7u : 6u) ||
+      (metadata_window && !metadata_window->is_int()) || !origins || !tab_ids ||
+      !tools || !data_classes || !budgets || !destination ||
+      budgets->size() != 5u || destination->size() != 4u ||
+      origins->size() > 64u || tab_ids->size() > 20u || tools->size() > 128u ||
       data_classes->size() > 7u) {
     return std::nullopt;
   }
 
   AgentTaskScope scope;
+  scope.tab_metadata_window_id =
+      metadata_window ? metadata_window->GetInt() : 0;
   for (const base::Value& item : *origins) {
     if (!item.is_string()) {
       return std::nullopt;
@@ -702,6 +795,9 @@ std::string AgentTaskStore::SerializeScope(const AgentTaskScope& scope) {
     tab_ids.Append(tab_id);
   }
   value.Set("allowed_tab_ids", std::move(tab_ids));
+  if (scope.tab_metadata_window_id != 0) {
+    value.Set("tab_metadata_window_id", scope.tab_metadata_window_id);
+  }
   base::ListValue tools;
   for (const std::string& tool : scope.allowed_tools) {
     tools.Append(tool);

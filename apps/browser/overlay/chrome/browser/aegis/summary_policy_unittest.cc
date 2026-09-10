@@ -65,6 +65,29 @@ PageSnapshot CloudSnapshot(std::string url) {
   return snapshot;
 }
 
+TEST(AegisSummaryPolicyTest, RemovesHiddenTextBeforeSensitiveDataRedaction) {
+  PageSnapshot original = CloudSnapshot("https://example.test/article");
+  original.title = "文\U000e0020章";
+  original.text_sample =
+      "Be\U000e0020arer abcdefghijklmnop. Visible article. "
+      "\U000e0072\U000e0075\U000e006e";
+  std::string error;
+  const auto prepared = PrepareSummaryForBrowser(original, "zh-CN", &error);
+  ASSERT_TRUE(prepared) << error;
+  const auto prompt =
+      BuildValidatedModelPrompt(original, *prepared, "zh-CN", &error);
+  ASSERT_TRUE(prompt) << error;
+  EXPECT_EQ(prepared->snapshot.title, "文章");
+  EXPECT_EQ(prompt->user.find("abcdefghijklmnop"), std::string::npos);
+  EXPECT_EQ(prompt->user.find("\U000e0020"), std::string::npos);
+  EXPECT_EQ(prompt->user.find("\U000e0072"), std::string::npos);
+  EXPECT_NE(prompt->user.find("Visible article."), std::string::npos);
+  PreparedSummary forged = *prepared;
+  forged.snapshot.text_sample += "\U000e0072";
+  EXPECT_FALSE(ValidatePreparedSummary(original, forged, &error));
+  EXPECT_EQ(error, "prepared summary contains hidden text");
+}
+
 PageSnapshot SensitiveProducerSnapshot() {
   PageSnapshot snapshot;
   snapshot.url =

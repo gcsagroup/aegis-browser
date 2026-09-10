@@ -32,9 +32,10 @@ v1 支持 macOS 桌面端。iOS 暂时跳过，Android 后置。v1 不自动完�
 
 ### AegisAgentService
 
-每个普通 Profile 一份实例，持有任务、计划、模型请求、Actor、浏览器工具、待审批、
-撤销凭证和监控。OTR、Guest、System Profile 不创建服务。关闭 Agent 时，服务停止
-模型请求、Actor、待审批和调度任务。
+每个普通 Profile 及其桌面主无痕 Profile 各有一份独立实例，持有任务、计划、模型请求、
+Actor、浏览器工具、待审批、撤销凭证和监控。无痕实例还提供自己的当前页摘要和
+`chrome://aegis` 控制面，请求和事件会路由到实际所属 Profile。Guest、System 和辅助
+OTR Profile 不创建服务。关闭 Agent 时，服务停止模型请求、Actor、待审批和调度任务。
 
 ### TaskScope 与 ToolRegistry
 
@@ -56,9 +57,10 @@ DocumentToken，并带有观察指纹；导航、恢复、手动改页和用户�
 
 ### 浏览器原生工具
 
-原生工具覆盖标签页、窗口、工作区、收藏夹、历史、权限、下载和监控。收藏夹修改采用
-预览、revision 冲突检查、分组写入和一键撤销；URL 检查使用有界 HEAD 与 Range GET；
-下载通过 DownloadItem 管理并校验来源、架构和 SHA-256。
+原生工具覆盖标签页、窗口、工作区、收藏夹、历史、权限、下载和监控。无痕历史搜索只读取
+当前无痕会话内的导航记录，绝不转向普通 Profile 的 HistoryService。收藏夹修改采用预览、
+revision 冲突检查、分组写入和一键撤销；URL 检查使用有界 HEAD 与 Range GET；下载通过
+DownloadItem 管理并校验来源、架构和 SHA-256。
 
 ### PolicyBroker 与 ResultVerifier
 
@@ -88,20 +90,44 @@ ResultVerifier 检查浏览器真实状态。下载存在、书签树 revision�
 
 ## 持久化与恢复
 
-TaskStore 使用 Profile 内 SQLite。持久化的是通过秘密标记与长度检查的任务目标、任务
-合同、脱敏事件摘要、计划步骤/进度和加密监控目标。原始工具结果、页面正文、截图、
-撤销凭证、密码、OTP、Cookie、卡号、API key 和完整本地路径不得落盘。未完成任务保留
-7 天，终态任务保留 30 天；服务启动时先清理过期记录，清理失败则 Agent fail closed。
+普通 Profile 的 TaskStore 使用该 Profile 内的 SQLite。持久化的是通过秘密标记与长度检查
+的任务目标、任务合同、脱敏事件摘要、计划步骤/进度和加密监控目标。原始工具结果、页面
+正文、截图、撤销凭证、密码、OTP、Cookie、卡号、API key 和完整本地路径不得落盘。
+未完成任务保留 7 天，终态任务保留 30 天；服务启动时先清理过期记录，清理失败则 Agent
+fail closed。
+
+桌面主无痕 Profile 改用纯内存 TaskStore；模型凭据、监控状态、隐私事件、高级下载所有权
+和已学习的 CNAME 别名也只存在于会话内存。任何这类状态都不会写入普通 Profile 或从普通
+Profile 恢复，结束无痕会话即清除。Actor 日志、诊断日志和 trace 会隐藏无痕 URL、页面
+数据、任务文本、目标与凭据标识；无痕登录质量记录不会上传。无痕监控只显示在浏览器内
+时间线，不发送系统通知。
+
+进程级 CDP 无法按 Profile 隔离可见目标，因此创建任一主无痕会话会立即停止并阻断整个
+进程的 HTTP 与 pipe 远程调试传输，包括并非由 Aegis 启动的传输。最后一个无痕窗口关闭后
+它仍保持关闭，只能由用户在普通 Profile 中明确重新启用；原生、绑定文档的 Agent 仍然
+可用。每个普通 Profile 都在初始化时安装该守卫，早于其首个 Browser 或 renderer。
 
 崩溃后只读任务可在用户确认后恢复；待审批动作过期，外部副作用不自动重放。任何恢复
 都要求新的页面观察，旧节点和旧 DocumentToken 无效。
 
 收藏夹撤销凭证仅在当前浏览器会话内有效；浏览器重启后不会尝试重放撤销或写操作。
 
+用户明确批准的收藏夹修改和已完成下载保留 Chromium 原生无痕持久语义，可能在无痕窗口
+关闭后继续存在；它们属于用户可见的明确副作用，不是隐藏的 Agent 状态。关闭无痕会话会
+取消其仍在进行的 Agent 下载和种子传输并撤销控制权；已经写入的种子字节会保留。种子
+所有权只在同一 Profile 会话内跨 `chrome://aegis` 页面刷新保留，不能恢复或控制其他
+Profile 的任务。
+
+Guest、System 和辅助 OTR Profile 不接收 Aegis 界面/服务，也不安装其网络 throttle、指纹
+保护或过滤列表配置。普通与主无痕 Profile 使用不同的网络分区标识，已学习的 CNAME 别名
+不会跨 Profile，并随所属 Profile 会话清除。
+
 ## 明确不支持
 
 - 自动付款、最终下单、转账、发帖、发信或接受法律条款。
 - 任意 JavaScript、shell、浏览器远程调试或通用本地文件访问。
+- 无痕模式中的进程级 CDP“AI 控制”，以及 Guest、System 或辅助 OTR Profile 中的全部
+  Agent 访问。
 - 无提示读取密码、Cookie、OTP、支付卡或跨 Profile 数据。
 - 浏览器关闭后常驻的系统级监控。
 - 把本地测试通过直接解释为公开发布、正式签名或公证完成。

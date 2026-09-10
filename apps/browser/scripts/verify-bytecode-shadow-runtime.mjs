@@ -23,6 +23,10 @@ import {homedir, tmpdir} from 'node:os';
 import {basename, dirname, join, relative, resolve, sep} from 'node:path';
 import process from 'node:process';
 import {fileURLToPath} from 'node:url';
+import {
+  macAppExecutableName,
+  macAppExecutablePath,
+} from './aegis-mac-app.mjs';
 
 const BROWSER_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = resolve(BROWSER_ROOT, '..', '..');
@@ -95,8 +99,8 @@ function printUsage() {
   node apps/browser/scripts/verify-bytecode-shadow-runtime.mjs [选项]
 
 选项：
-  --app PATH          被测 Chromium.app
-  --binary PATH       被测 Chromium 可执行文件；与 --app 二选一
+  --app PATH          被测 GCSA Aegis.app
+  --binary PATH       被测浏览器可执行文件；与 --app 二选一
   --report PATH       JSON 报告路径；拒绝覆盖已有文件
   --timeout-ms N      每个 OFF/ON/CANARY/STRESS fixture 的单一超时预算，默认 ${DEFAULT_TIMEOUT_MS}
   --build-identity PATH
@@ -205,9 +209,12 @@ async function resolveTarget(options) {
   let executable = options.binary;
   if (appPath) {
     const appMetadata = await stat(appPath).catch(() => null);
-    assert(appMetadata?.isDirectory(), `Chromium.app 不存在：${appPath}`);
+    assert(appMetadata?.isDirectory(), `浏览器 .app 不存在：${appPath}`);
     appPath = await realpath(appPath);
-    executable = join(appPath, 'Contents', 'MacOS', 'Chromium');
+    executable = macAppExecutablePath(
+      appPath,
+      await macAppExecutableName(appPath),
+    );
   }
   const executableMetadata = await stat(executable).catch(() => null);
   assert(executableMetadata?.isFile(), `Chromium 可执行文件不存在：${executable}`);
@@ -2273,7 +2280,7 @@ async function verifyBuildIdentity(options, target) {
       reason: '未提供调用方固定的 schema v3 构建身份；结果仅为 research-only 运行证据',
     };
   }
-  assert(target.appPath, '提供构建身份时，被测 binary 必须位于 Chromium.app 内');
+  assert(target.appPath, '提供构建身份时，被测 binary 必须位于浏览器 .app 内');
   const output = await execFileText(process.execPath, [
     BUILD_IDENTITY_SCRIPT,
     '--phase',

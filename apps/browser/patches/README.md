@@ -14,7 +14,7 @@ Patches in this directory are applied on top of the pinned Chromium commit
 
 ## Current local patch series
 
-The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed Release or Android gates, or is publishable. The 49-patch record from 2026-08-25 is retained only as a historical snapshot. The integrated source reached **67 Chromium patches plus 2 nested V8 patches** on 2026-08-29: 0057–0065 contain Browser Agent integration, 0066 contains the Settings/About/update work, and 0067 contains visual branding. Earlier 57/58-patch diagnostics and the 65+2 Agent acceptance do not qualify this final 67+2 source. Desktop artifact matching requires a fresh `browser:status` result and the freshness gates in the corresponding acceptance record; every series change must be revalidated.
+The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-, 67-, and 95-patch records are retained only as historical snapshots. The current integrated source contains **106 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0105 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, bounded recovery, browser-bound tab/document capabilities, correct product identity, off-UI-sequence persistence, deterministic teardown, and assertion-safe rate-limit handling. Patches 0079–0095 replay to Chromium source commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patches 0096–0101 produce `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`). Artifact qualification remains platform-specific and requires acceptance evidence for that exact source.
 
 | ID | Intent | Status |
 |----|--------|--------|
@@ -85,5 +85,48 @@ The status “in series” means only that the patch file is listed in the curre
 | 0065 | Open task pages automatically and support tasks from blank tabs | in series |
 | 0066 | Remove upstream AI/Google entries from GCSA Settings, restore search-engine management, and rebuild About/update status | in series |
 | 0067 | Integrate the GCSA logo and cross-platform app icons while preserving Chromium's internal identity and user-data directory | in series |
+| 0068 | Add the Browser Agent v2 native hybrid runtime spike | in series |
+| 0069 | Harden the autonomous v2 runtime and policy boundaries | in series |
+| 0070 | Simplify Browser Agent v2 onboarding and task entry | in series |
+| 0071 | Harden the model-planning and execution flow | in series |
+| 0072 | Route goals through model understanding before browsing | in series |
+| 0073 | Require provider-native tools and deterministic named-site routing | in series |
+| 0074 | Bind implicit current-page tasks to the active document | in series |
+| 0075 | Add common task shortcuts and scheduled automation | in series |
+| 0076 | Correct cross-platform build integration and branding | in series |
+| 0077 | Complete the cross-platform Browser Agent v2 runtime and entry points | in series |
+| 0078 | Recover safe read-only plans after bounded model-format failures | in series |
+| 0079 | Support isolated primary Incognito Aegis/Agent/Actor/UI; fail closed for Guest/System/auxiliary OTR; latch desktop/Android remote CDP; redact default NetLog API-key headers and private Actor diagnostics; partition CNAME and Advanced/Torrent ownership with close cancellation | in series |
+| 0080 | Harden current-page planning for local Qwen models | in series |
+| 0081 | Validate model plan ordering before execution | in series |
+| 0082 | Reject redundant entry navigation after the browser opens a target | in series |
+| 0083 | Reduce latency for local Qwen native-tool turns | in series |
+| 0084 | Require durable browser-owned scheduled automations | in series |
+| 0085 | Repair evidence-bound execution turns once without broadening scope | in series |
+| 0086 | Block non-public URLs proposed by the model router | in series |
+| 0087 | Use the product logo in the Agent workspace | in series |
+| 0088 | Add the branded Android Agent entry and composer | in series |
+| 0089 | Recover named-site searches from weak model routing | in series |
+| 0090 | Keep bookmark and other browser-data tasks on native tools | in series |
+| 0091 | Tolerate and discard harmless redundant targets on browser-only routes | in series |
+| 0092 | Validate explicit bookmark goals, repair omitted steps, and keep preview-only tasks read-only | in series |
+| 0093 | Support explicit local-fixture URL validity checks | in series |
+| 0094 | Normalize native task-completion evidence | in series |
+| 0095 | Preserve verified completion and bookmark undo | in series |
+| 0096 | Bind model browser capabilities to live task context | in series |
+| 0097 | Wait for scoped navigation to commit and register Aegis services before profile initialization | in series |
+| 0098 | Use GCSA Aegis on browser identity surfaces | in series |
+| 0099 | Move Agent task storage off the UI sequence | in series |
+| 0100 | Clear the test Profile pointer before fixture teardown | in series |
+| 0101 | Finish same-origin bookmark checks after a rate-limit response | in series |
+| 0102 | Read non-coalescing Retry-After safely during bounded URL checks | in series |
+| 0103 | Wait for native download completion and verify the actual download | in series |
+| 0104 | Compile the incognito service guard on Android | in series |
+| 0105 | Register the Android Agent broker and fix safe scheduling fallback and status | in series |
+| 0106 | Use cached UI locale to avoid blocking Windows UI threads; add native browser regression tests | in series |
+
+Patches 0103–0105 replay exactly from the 0102 baseline to source tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb` of commit `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`. Real platform acceptance remains a separate gate.
+
+Patch 0106 replays from that candidate to `383d157c6f3601101038aef6ff964e61b6af7b4f` (tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`). Rebuilds and platform regression acceptance are still pending.
 
 Apply with `pnpm --filter @gcsa-aegis/browser apply-patches` on a clean pinned checkout. Every series change requires a fresh offline replay, cold and incremental builds, and the affected tests.

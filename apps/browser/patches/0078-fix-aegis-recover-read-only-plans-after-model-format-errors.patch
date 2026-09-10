@@ -1,0 +1,362 @@
+From 6627949a477277dfd916c275267d0bba886f376c Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 2 Sep 2026 05:12:10 +0800
+Subject: [PATCH] fix(aegis): recover read-only plans after model format errors
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 43 ++++++---
+ .../browser/aegis/agent/aegis_agent_service.h |  2 +
+ .../agent/aegis_agent_service_unittest.cc     | 48 ++++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 89 +++++++++++++++++++
+ chrome/browser/aegis/agent/agent_planner.h    |  8 ++
+ .../aegis/agent/agent_planner_unittest.cc     | 41 +++++++++
+ 6 files changed, 221 insertions(+), 10 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index deb8e92fc7..9566d0160f 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -776,16 +776,6 @@ void AegisAgentService::RequestPlanAttempt(const std::string& task_id,
+     std::move(callback).Run(false, "task could not enter planning");
+     return;
+   }
+-  const std::string capability_key =
+-      ModelCapabilityKey(task->scope().model_destination);
+-  AgentModelCapabilityTracker& capability = model_capabilities_[capability_key];
+-  if (task->mode() != AgentMode::kAsk &&
+-      capability.consecutive_schema_failures() >= 2) {
+-    FailPlanning(task_id, std::move(callback),
+-                 "configured model is limited to Ask mode after schema "
+-                 "failures");
+-    return;
+-  }
+   std::optional<std::string> prompt =
+       BuildAgentPlanningPrompt(task->goal(), task->scope(), tool_registry_);
+   std::string config_error;
+@@ -870,6 +860,14 @@ void AegisAgentService::OnPlanModelResult(const std::string& task_id,
+                          std::move(callback));
+       return;
+     }
++    if (repair_attempt > 0 && !result.error.empty()) {
++      capability.RecordSchemaFailure();
++      std::string recovery_error;
++      if (TryReadOnlyPlanningRecovery(task_id, &recovery_error)) {
++        std::move(callback).Run(true, std::string());
++        return;
++      }
++    }
+     FailPlanning(task_id, std::move(callback), std::move(error));
+     return;
+   }
+@@ -885,6 +883,12 @@ void AegisAgentService::OnPlanModelResult(const std::string& task_id,
+                          std::move(callback));
+       return;
+     }
++    std::string recovery_error;
++    if (repair_attempt > 0 &&
++        TryReadOnlyPlanningRecovery(task_id, &recovery_error)) {
++      std::move(callback).Run(true, std::string());
++      return;
++    }
+     if (capability.consecutive_schema_failures() >= 2 &&
+         task->mode() != AgentMode::kAsk) {
+       validation_error =
+@@ -2936,6 +2940,25 @@ void AegisAgentService::FailPlanning(const std::string& task_id,
+   std::move(callback).Run(false, std::move(error));
+ }
+ 
++bool AegisAgentService::TryReadOnlyPlanningRecovery(const std::string& task_id,
++                                                    std::string* error) {
++  AgentTask* task = GetTask(task_id);
++  if (!error || !task || task->state() != AgentTaskState::kPlanning) {
++    return false;
++  }
++  std::optional<AgentModelEvent> recovery = BuildBrowserReadOnlyRecoveryPlan(
++      task->goal(), task->scope(), tool_registry_);
++  if (!recovery) {
++    *error = "no safe read-only planning recovery is available";
++    return false;
++  }
++  task->RecordEvent(
++      "planning recovery",
++      "model plan format failed twice; browser kept only approved read-only "
++      "steps");
++  return AcceptModelPlan(task_id, *recovery, error);
++}
++
+ bool AegisAgentService::PersistTask(const AgentTask& task) {
+   auto it = task_has_external_side_effect_.find(task.id());
+   return storage_ready_ &&
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 430839ece4..99895912b6 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -165,6 +165,8 @@ class AegisAgentService : public KeyedService {
+   void FailPlanning(const std::string& task_id,
+                     PlanReadyCallback callback,
+                     std::string error);
++  bool TryReadOnlyPlanningRecovery(const std::string& task_id,
++                                   std::string* error);
+   bool PersistTask(const AgentTask& task);
+   bool PersistPlanProgress(const std::string& task_id,
+                            size_t next_step,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index de960cad74..87d7c31416 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -8,6 +8,7 @@
+ 
+ #include "base/files/file_util.h"
+ #include "base/json/json_reader.h"
++#include "base/strings/strcat.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+@@ -319,6 +320,53 @@ TEST_F(AegisAgentServiceTest,
+   EXPECT_FALSE(plan->scope.AllowsTool("page.click"));
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       UsesApprovedReadOnlyRecoveryAfterTwoMalformedPlans) {
++  constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
++  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++
++  AgentTaskScope scope = ServiceTestScope();
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = std::string(kBaseUrl);
++  scope.model_destination.model = "fixture-model";
++
++  network::TestURLLoaderFactory factory;
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  AgentTask* task =
++      service->CreateTask("总结公开测试页", AgentMode::kAsk, std::move(scope));
++  ASSERT_TRUE(task);
++  service->SetTaskModelClientForTesting(
++      task->id(),
++      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
++
++  base::test::TestFuture<bool, std::string> plan_result;
++  service->RequestPlan(task->id(), plan_result.GetCallback());
++  for (std::string_view call_id : {"bad-plan-one", "bad-plan-two"}) {
++    factory.WaitForRequest(endpoint);
++    const std::string response = base::StrCat(
++        {R"({"status":"completed","output":[{"type":"function_call","call_id":")",
++         call_id,
++         R"(","name":"agent.submit_plan","arguments":"{\"schema_version\":1,\"summary\":\"缺少步骤\"}"}]})"});
++    EXPECT_TRUE(
++        factory.SimulateResponseForPendingRequest(endpoint.spec(), response));
++  }
++
++  EXPECT_TRUE(plan_result.Get<0>()) << plan_result.Get<1>();
++  EXPECT_EQ(task->state(), AgentTaskState::kAwaitingTaskConsent);
++  const AgentTaskPlan* plan = service->GetPlan(task->id());
++  ASSERT_TRUE(plan);
++  ASSERT_EQ(plan->steps.size(), 1u);
++  EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
++  EXPECT_EQ(plan->steps[0].risk, AgentRiskLevel::kR0ReadOnly);
++  EXPECT_FALSE(plan->scope.AllowsTool("page.click"));
++}
++
+ TEST_F(AegisAgentServiceTest,
+        RepairsOneMalformedExecutionTurnAndCompletesTheTask) {
+   constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 4102a7e2a7..57cf10b160 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -3,6 +3,7 @@
+ #include "chrome/browser/aegis/agent/agent_planner.h"
+ 
+ #include <algorithm>
++#include <initializer_list>
+ #include <optional>
+ #include <string_view>
+ #include <utility>
+@@ -10,6 +11,7 @@
+ #include "base/containers/flat_set.h"
+ #include "base/json/json_writer.h"
+ #include "base/strings/escape.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
+ #include "url/gurl.h"
+@@ -89,6 +91,14 @@ bool IsPlanStepId(std::string_view value) {
+          });
+ }
+ 
++bool GoalContainsAny(std::string_view goal,
++                     std::initializer_list<std::string_view> needles) {
++  const std::string lower = base::ToLowerASCII(goal);
++  return std::ranges::any_of(needles, [&lower](std::string_view needle) {
++    return lower.find(needle) != std::string::npos;
++  });
++}
++
+ std::string_view WorkflowName(AgentWorkflowKind workflow) {
+   switch (workflow) {
+     case AgentWorkflowKind::kResearch:
+@@ -519,6 +529,85 @@ std::optional<std::string> BuildAgentPlanningPrompt(
+   return json;
+ }
+ 
++std::optional<AgentModelEvent> BuildBrowserReadOnlyRecoveryPlan(
++    std::string_view user_goal,
++    const AgentTaskScope& maximum_scope,
++    const AgentToolRegistry& registry) {
++  if (user_goal.empty() || !base::IsStringUTF8(user_goal) ||
++      !maximum_scope.IsValid() ||
++      maximum_scope.AllowsTool("shopping.prepare_checkout")) {
++    return std::nullopt;
++  }
++
++  const bool chinese = !base::IsStringASCII(user_goal);
++  AgentModelEvent event;
++  event.type = AgentModelEventType::kToolCall;
++  event.tool_call_id = "browser-read-only-recovery";
++  event.tool_name = "agent.submit_plan";
++  event.arguments.Set("schema_version", kAgentSchemaVersion);
++  event.arguments.Set(
++      "summary", chinese
++                     ? "模型计划格式异常，Aegis 将使用已批准的只读步骤继续。"
++                     : "The model plan format failed; Aegis will continue with "
++                       "approved read-only steps.");
++
++  base::ListValue steps;
++  int next_step = 1;
++  auto add_step = [&](std::string_view tool_name,
++                      std::string_view chinese_title,
++                      std::string_view english_title) {
++    const AgentToolDescriptor* descriptor = registry.Find(tool_name);
++    if (!descriptor || !maximum_scope.AllowsTool(std::string(tool_name)) ||
++        descriptor->risk != AgentRiskLevel::kR0ReadOnly ||
++        descriptor->has_external_side_effect ||
++        !maximum_scope.AllowsDataClass(descriptor->data_class) ||
++        (descriptor->requires_origin &&
++         maximum_scope.allowed_origins.empty())) {
++      return;
++    }
++    base::DictValue step;
++    step.Set("id", "browser-safe-" + base::NumberToString(next_step++));
++    step.Set("title", chinese ? chinese_title : english_title);
++    step.Set("tool", tool_name);
++    steps.Append(std::move(step));
++  };
++
++  const bool bookmark_goal =
++      GoalContainsAny(user_goal, {"收藏", "书签", "bookmark", "favorite"});
++  if (bookmark_goal && maximum_scope.AllowsTool("bookmark.list")) {
++    add_step("bookmark.list", "读取收藏夹", "Read bookmarks");
++    if (GoalContainsAny(user_goal,
++                        {"失效", "死链", "链接", "url", "broken", "dead"})) {
++      add_step("bookmark.check_urls", "检查收藏链接是否有效",
++               "Check bookmark links");
++    }
++    if (GoalContainsAny(user_goal, {"整理", "分类", "organize", "categor"})) {
++      add_step("bookmark.plan", "生成可预览的收藏夹整理方案",
++               "Create a bookmark organization preview");
++    }
++  } else if (maximum_scope.AllowsTool("download.find_official")) {
++    add_step("page.observe", "读取已批准的下载来源页面",
++             "Read the approved download source page");
++    add_step("download.find_official", "核对官方下载来源",
++             "Verify the official download source");
++  } else if (maximum_scope.AllowsTool("page.observe")) {
++    add_step("page.observe", "读取当前页面", "Read the current page");
++    add_step("page.extract", "提取与目标相关的页面内容",
++             "Extract page content relevant to the goal");
++  } else {
++    add_step("tab.list", "读取当前标签页", "Read current tabs");
++    if (steps.empty()) {
++      add_step("window.list", "读取当前窗口", "Read current windows");
++    }
++  }
++
++  if (steps.empty()) {
++    return std::nullopt;
++  }
++  event.arguments.Set("steps", std::move(steps));
++  return event;
++}
++
+ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+     const AgentModelEvent& event,
+     const AgentTaskScope& maximum_scope,
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index a3fb6b669b..ea66963418 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -70,6 +70,14 @@ std::optional<std::string> BuildAgentPlanningPrompt(
+     const AgentTaskScope& maximum_scope,
+     const AgentToolRegistry& registry);
+ 
++// Builds a browser-authored, read-only recovery plan after the configured
++// model has failed its single bounded format repair. This never adds a tool,
++// origin, tab, data class, or budget and is unavailable for shopping scopes.
++std::optional<AgentModelEvent> BuildBrowserReadOnlyRecoveryPlan(
++    std::string_view user_goal,
++    const AgentTaskScope& maximum_scope,
++    const AgentToolRegistry& registry);
++
+ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+     const AgentModelEvent& event,
+     const AgentTaskScope& maximum_scope,
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 7b1737acd1..c4c62a5cc9 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -327,5 +327,46 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
+   EXPECT_TRUE((*catalog)[0].GetDict().FindString("purpose"));
+ }
+ 
++TEST(AegisAgentPlannerTest,
++     BrowserReadOnlyRecoveryKeepsResearchInsideApprovedScope) {
++  AgentToolRegistry registry;
++  AgentTaskScope scope = MaximumScope();
++  scope.allowed_tools.insert("page.extract");
++  const std::optional<AgentModelEvent> recovery =
++      BuildBrowserReadOnlyRecoveryPlan("帮我总结当前页面", scope, registry);
++  ASSERT_TRUE(recovery);
++
++  std::string error;
++  const std::optional<AgentTaskPlan> plan =
++      ParseAndValidateTaskPlan(*recovery, scope, registry, &error);
++  ASSERT_TRUE(plan) << error;
++  ASSERT_EQ(plan->steps.size(), 2u);
++  EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
++  EXPECT_EQ(plan->steps[1].tool_name, "page.extract");
++  EXPECT_TRUE(plan->scope.IsNoBroaderThan(scope));
++  for (const AgentPlanStep& step : plan->steps) {
++    EXPECT_EQ(step.risk, AgentRiskLevel::kR0ReadOnly);
++  }
++}
++
++TEST(AegisAgentPlannerTest,
++     BrowserReadOnlyRecoveryRejectsShoppingAndSideEffectOnlyScopes) {
++  AgentToolRegistry registry;
++  AgentTaskScope shopping = MaximumScope();
++  shopping.allowed_tools.insert("shopping.prepare_checkout");
++  shopping.allowed_data_classes.insert(AgentDataClass::kFormData);
++  EXPECT_FALSE(
++      BuildBrowserReadOnlyRecoveryPlan("帮我买下这个商品", shopping, registry));
++
++  AgentTaskScope writes = MaximumScope();
++  writes.allowed_origins.clear();
++  writes.allowed_tab_ids.clear();
++  writes.allowed_tools = {"bookmark.apply"};
++  writes.allowed_data_classes = {AgentDataClass::kBookmarks};
++  EXPECT_TRUE(writes.IsValid());
++  EXPECT_FALSE(
++      BuildBrowserReadOnlyRecoveryPlan("应用收藏夹方案", writes, registry));
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+-- 
+2.52.0
+

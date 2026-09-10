@@ -8,6 +8,7 @@ import {
   PHISH_BRAND_KEYWORDS,
   SUSPICIOUS_PHISH_TLDS,
 } from "./builtin-hosts.js";
+import { normalizeSecurityText } from "../security-text.js";
 
 const SUSPICIOUS_TLDS = SUSPICIOUS_PHISH_TLDS;
 const BRAND_KEYWORDS = PHISH_BRAND_KEYWORDS;
@@ -300,7 +301,11 @@ export function assessPhishing(
   const isHttp = parsed?.protocol === "http:";
 
   // URL-only already counted @; page path reuses that score.
-  const text = `${snapshot.title}\n${snapshot.textSample}`.toLowerCase();
+  const normalized = normalizeSecurityText(`${snapshot.title}\n${snapshot.textSample}`);
+  const text = normalized.text.toLowerCase();
+  if (normalized.removedHiddenCodepoints > 0) {
+    reasons.push({ code: "unicode_text_obfuscation", weight: 0 });
+  }
   for (const phrase of URGENCY_PHRASES) {
     if (text.includes(phrase.toLowerCase())) {
       score += 10;

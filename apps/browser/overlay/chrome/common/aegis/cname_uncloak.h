@@ -9,18 +9,18 @@
 #include <vector>
 
 #include "base/containers/flat_map.h"
-#include "base/containers/flat_set.h"
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
+#include "chrome/common/aegis/cname_cache_partition.h"
 
 class GURL;
 
 namespace aegis {
 
-// Process-wide cache of first-party hosts whose DNS CNAME chain pointed at a
-// known tracker. Subsequent subresource requests to those hosts are blocked
-// at WillStartRequest without waiting for DNS.
+// Process-wide, BrowserContext-partitioned cache of first-party hosts whose DNS
+// CNAME chain pointed at a known tracker. Subsequent subresource requests in
+// the same context are blocked at WillStartRequest without waiting for DNS.
 class CnameUncloakCache {
  public:
   static CnameUncloakCache* GetInstance();
@@ -28,18 +28,25 @@ class CnameUncloakCache {
   CnameUncloakCache(const CnameUncloakCache&) = delete;
   CnameUncloakCache& operator=(const CnameUncloakCache&) = delete;
 
-  void RememberCloakedHost(std::string_view host, std::string_view alias);
-  bool IsCloakedHost(std::string_view host) const;
-  std::string CloakedAlias(std::string_view host) const;
+  void RememberCloakedHost(CnameCachePartitionId partition_id,
+                           std::string_view host,
+                           std::string_view alias);
+  bool IsCloakedHost(CnameCachePartitionId partition_id,
+                     std::string_view host) const;
+  std::string CloakedAlias(CnameCachePartitionId partition_id,
+                           std::string_view host) const;
+  void ClearPartition(CnameCachePartitionId partition_id);
 
  private:
   friend struct base::DefaultSingletonTraits<CnameUncloakCache>;
   CnameUncloakCache();
   ~CnameUncloakCache();
 
+  using Entries = base::flat_map<std::string, std::string>;
+
   mutable base::Lock lock_;
-  base::flat_set<std::string> hosts_ GUARDED_BY(lock_);
-  base::flat_map<std::string, std::string> aliases_ GUARDED_BY(lock_);
+  base::flat_map<CnameCachePartitionId, Entries> entries_by_partition_
+      GUARDED_BY(lock_);
 };
 
 // True when |dns_aliases| contains a tracker host on a different registrable

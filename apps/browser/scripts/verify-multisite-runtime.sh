@@ -6,6 +6,7 @@ source "$SCRIPT_DIR/common.sh"
 
 SRC="$CHROMIUM_ROOT/src"
 OUT="${OUT_DIR:-$SRC/out/AegisRelease}"
+APP="$(desktop_app_path "$OUT")"
 ARGS_FILE="$ROOT_DIR/args/aegis-release.gn"
 
 for arg in "$@"; do
@@ -19,7 +20,7 @@ binary="$(verify_runnable_browser_output \
   "Release 桌面产物" "$OUT" false "$ARGS_FILE")"
 
 if [[ "$(uname -s)" == Darwin ]] && \
-   ! codesign --verify --deep --strict "$OUT/Chromium.app" >/dev/null 2>&1; then
+   ! codesign --verify --deep --strict "$APP" >/dev/null 2>&1; then
   printf 'Release App 未通过本地严格签名结构校验；请先运行 browser sign。\n' >&2
   exit 1
 fi

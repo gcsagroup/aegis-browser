@@ -1,0 +1,222 @@
+From 443f405fef96f37d8b28c2c5bbbdf4203c995c4c Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Wed, 2 Sep 2026 23:41:37 +0800
+Subject: [PATCH 84/90] fix(aegis): require durable scheduled automations
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  3 ++
+ chrome/browser/aegis/agent/agent_planner.cc   | 29 ++++++++++++++++
+ chrome/browser/aegis/agent/agent_planner.h    |  7 ++++
+ .../aegis/agent/agent_planner_unittest.cc     | 33 ++++++++++++++++++-
+ chrome/browser/resources/aegis_agent/agent.ts |  4 +++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 31 ++++++++++-------
+ 6 files changed, 94 insertions(+), 13 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index efa25d47da..ac258eee1d 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -756,6 +756,9 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
+   if (!plan) {
+     return false;
+   }
++  if (!ValidateTaskPlanForMode(*plan, task->mode(), error)) {
++    return false;
++  }
+   for (const AgentPlanStep& step : plan->steps) {
+     if (!IsToolAvailable(step.tool_name) ||
+         (task->mode() == AgentMode::kAsk &&
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 626183ab8c..b22f4ac3e2 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -463,6 +463,7 @@ Honor negative constraints in the goal. If the user asks for a preview, report,
+ Write the plan summary and step titles in the same primary language as the user's goal.
+ Never request secrets, passwords, OTP values, cookies, payment-card values, arbitrary code execution, or final transaction submission.
+ Final purchase, payment, refund, cancellation, posting, messaging, authorization, and signature always require user takeover.
++When user_goal contains a browser-owned schedule, include exactly one monitor.create step and make it the final listed step. Without a browser-owned schedule, do not include monitor.create.
+ Keep the plan minimal. The browser independently validates every field and computes risk.)";
+ }
+ 
+@@ -525,6 +526,9 @@ std::optional<std::string> BuildAgentPlanningPrompt(
+   dependency_rules.Append(
+       "for a single preopened origin, page.navigate or tab.create requires "
+       "an earlier page.extract step because entry navigation is complete");
++  dependency_rules.Append(
++      "a browser-owned schedule requires exactly one final monitor.create "
++      "step; one-shot tasks must not create a monitor");
+   prompt.Set("plan_dependency_rules", std::move(dependency_rules));
+   base::ListValue data_classes;
+   for (AgentDataClass data_class : maximum_scope.allowed_data_classes) {
+@@ -766,4 +770,29 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+   return plan;
+ }
+ 
++bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
++                             AgentMode mode,
++                             std::string* error) {
++  if (!error) {
++    return false;
++  }
++  error->clear();
++  const size_t monitor_create_steps = std::ranges::count(
++      plan.steps, "monitor.create", &AgentPlanStep::tool_name);
++  if (mode == AgentMode::kAutomate) {
++    if (monitor_create_steps != 1u || plan.steps.empty() ||
++        plan.steps.back().tool_name != "monitor.create") {
++      *error = "scheduled automation plan must end with exactly one "
++               "monitor.create step";
++      return false;
++    }
++    return true;
++  }
++  if (monitor_create_steps != 0u) {
++    *error = "monitor.create requires a scheduled automation task";
++    return false;
++  }
++  return true;
++}
++
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index ea66963418..d0848738ca 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -84,6 +84,13 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+     const AgentToolRegistry& registry,
+     std::string* error);
+ 
++// Enforces lifecycle rules that depend on the user-selected task mode rather
++// than model-owned plan fields. Scheduled tasks must create one durable
++// monitor, while one-shot tasks may not create one implicitly.
++bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
++                             AgentMode mode,
++                             std::string* error);
++
+ }  // namespace aegis::agent
+ 
+ #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 27af268719..a82bfcb225 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -417,7 +417,7 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
+   EXPECT_EQ(*parsed->GetDict().FindString("required_first_tool"),
+             "page.observe");
+   EXPECT_EQ(parsed->GetDict().FindBool("entry_navigation_complete"), true);
+-  EXPECT_EQ(parsed->GetDict().FindList("plan_dependency_rules")->size(), 6u);
++  EXPECT_EQ(parsed->GetDict().FindList("plan_dependency_rules")->size(), 7u);
+   const base::ListValue* catalog = parsed->GetDict().FindList("tool_catalog");
+   ASSERT_TRUE(catalog);
+   ASSERT_EQ(catalog->size(), 3u);
+@@ -465,5 +465,36 @@ TEST(AegisAgentPlannerTest,
+       BuildBrowserReadOnlyRecoveryPlan("应用收藏夹方案", writes, registry));
+ }
+ 
++TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
++  AgentTaskPlan one_shot;
++  one_shot.steps.push_back({.step_id = "step-1",
++                            .title = "Read page",
++                            .tool_name = "page.observe",
++                            .risk = AgentRiskLevel::kR0ReadOnly});
++  std::string error;
++  EXPECT_TRUE(ValidateTaskPlanForMode(one_shot, AgentMode::kAct, &error))
++      << error;
++  EXPECT_FALSE(
++      ValidateTaskPlanForMode(one_shot, AgentMode::kAutomate, &error));
++  EXPECT_EQ(error,
++            "scheduled automation plan must end with exactly one "
++            "monitor.create step");
++
++  AgentTaskPlan scheduled = one_shot;
++  scheduled.steps.push_back({.step_id = "step-2",
++                             .title = "Create monitor",
++                             .tool_name = "monitor.create",
++                             .risk = AgentRiskLevel::kR1Reversible});
++  EXPECT_TRUE(
++      ValidateTaskPlanForMode(scheduled, AgentMode::kAutomate, &error))
++      << error;
++  EXPECT_FALSE(ValidateTaskPlanForMode(scheduled, AgentMode::kAct, &error));
++  EXPECT_EQ(error, "monitor.create requires a scheduled automation task");
++
++  std::swap(scheduled.steps[0], scheduled.steps[1]);
++  EXPECT_FALSE(
++      ValidateTaskPlanForMode(scheduled, AgentMode::kAutomate, &error));
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index c2d08b4231..b333c7d744 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -381,6 +381,10 @@ function friendlyError(error: string, hasPlan: boolean): string {
+   if (error.includes('Task input is invalid')) {
+     return loadTimeData.getString('taskInputError');
+   }
++  if (error.includes('scheduled automation plan') ||
++      error.includes('monitor.create requires a scheduled automation')) {
++    return loadTimeData.getString('automationPlanError');
++  }
+   if (error.includes('goal route') ||
+       error.includes('browser goal') ||
+       error.includes('goal is being understood') ||
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 64d9856ea1..8a1bb5a17a 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -198,25 +198,25 @@ void AddStrings(content::WebUIDataSource* source) {
+       "還沒有自動化任務。");
+   add("automationPrice", "Price drop", "降价提醒", "降價提醒");
+   add("automationPriceGoal",
+-      "Monitor the product I specify and notify me when its price drops",
+-      "监控我指定商品的价格变化，降价时提醒我",
+-      "監控我指定商品的價格變化，降價時提醒我");
++      "Monitor the product on this page and notify me when its price drops",
++      "监控当前页面商品的价格变化，降价时提醒我",
++      "監控目前頁面商品的價格變化，降價時提醒我");
+   add("automationInventory", "Back in stock", "到货提醒", "到貨提醒");
+   add("automationInventoryGoal",
+-      "Monitor the product I specify and notify me when it is back in stock",
+-      "监控我指定商品的库存，恢复到货时提醒我",
+-      "監控我指定商品的庫存，恢復到貨時提醒我");
++      "Monitor the product on this page and notify me when it is back in stock",
++      "监控当前页面商品的库存，恢复到货时提醒我",
++      "監控目前頁面商品的庫存，恢復到貨時提醒我");
+   add("automationPageChange", "Page updates", "网页更新", "網頁更新");
+   add("automationPageChangeGoal",
+-      "Monitor the page I specify and summarize meaningful changes",
+-      "监控我指定网页的内容变化，有重要更新时总结变化",
+-      "監控我指定網頁的內容變化，有重要更新時總結變化");
++      "Monitor this page and summarize meaningful changes",
++      "监控当前页面的内容变化，有重要更新时总结变化",
++      "監控目前頁面的內容變化，有重要更新時總結變化");
+   add("automationUrlStatus", "URL health", "URL 有效性", "URL 有效性");
+   add("automationUrlStatusGoal",
+-      "Check whether the page I specify remains reachable and notify me if it "
++      "Check whether this page remains reachable and notify me if it "
+       "fails",
+-      "定期检查我指定网页是否还能访问，失效时提醒我",
+-      "定期檢查我指定網頁是否還能存取，失效時提醒我");
++      "定期检查当前页面是否还能访问，失效时提醒我",
++      "定期檢查目前頁面是否還能存取，失效時提醒我");
+   add("automationPaused", "Paused", "已暂停", "已暫停");
+   add("automationPausedHelp", "This automation will not run until resumed.",
+       "恢复前不会继续运行。", "恢復前不會繼續執行。");
+@@ -239,6 +239,13 @@ void AddStrings(content::WebUIDataSource* source) {
+       "The task or schedule is invalid. Edit it and try again.",
+       "任务内容或定时设置无效，请修改后重试。",
+       "任務內容或定時設定無效，請修改後重試。");
++  add("automationPlanError",
++      "The AI did not include the required scheduled check. No automation was "
++      "created. Keep this page open and try again.",
++      "AI "
++      "没有生成必需的定时检查步骤，因此没有创建自动化。请保留当前页面并重试。",
++      "AI "
++      "沒有產生必要的定時檢查步驟，因此沒有建立自動化。請保留目前頁面並重試。");
+   add("relatedPageOpenError",
+       "The related page could not be opened. Check the network and retry this "
+       "task.",
+-- 
+2.52.0
+

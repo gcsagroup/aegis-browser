@@ -1,0 +1,34 @@
+From 430f296e93fd3a60863b4621af955aeb63607224 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Thu, 3 Sep 2026 00:21:32 +0800
+Subject: [PATCH 88/90] fix(aegis): brand Android agent entry
+
+---
+ chrome/android/java/res/layout/aegis_agent_ntp_card.xml | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/chrome/android/java/res/layout/aegis_agent_ntp_card.xml b/chrome/android/java/res/layout/aegis_agent_ntp_card.xml
+index d7a01e2886..f6638194c7 100644
+--- a/chrome/android/java/res/layout/aegis_agent_ntp_card.xml
++++ b/chrome/android/java/res/layout/aegis_agent_ntp_card.xml
+@@ -2,7 +2,6 @@
+ <!-- Copyright 2026 GCSA -->
+ <org.chromium.components.browser_ui.widget.MaterialCardViewNoShadow
+     xmlns:android="http://schemas.android.com/apk/res/android"
+-    xmlns:app="http://schemas.android.com/apk/res-auto"
+     android:id="@+id/aegis_agent_ntp_card"
+     style="@style/MaterialCardStyle"
+     android:layout_width="match_parent"
+@@ -26,8 +25,7 @@
+             android:layout_width="32dp"
+             android:layout_height="32dp"
+             android:importantForAccessibility="no"
+-            android:src="@drawable/draft_spark_24dp"
+-            app:tint="@macro/default_icon_color_accent1" />
++            android:src="@mipmap/app_icon" />
+ 
+         <LinearLayout
+             android:layout_width="0dp"
+-- 
+2.52.0
+

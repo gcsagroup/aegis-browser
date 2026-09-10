@@ -15,6 +15,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "chrome/common/aegis/security_text.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
 
@@ -333,8 +334,13 @@ PhishAssessment ApplyPageSignals(PhishAssessment assessment,
   }
 
   int score = assessment.score;
-  const std::string haystack =
-      base::ToLowerASCII(page.title + "\n" + page.text_sample);
+  const SecurityText normalized =
+      NormalizeSecurityText(page.title + "\n" + page.text_sample);
+  const std::string haystack = base::ToLowerASCII(normalized.text);
+  if (normalized.removed_hidden_codepoints > 0) {
+    // 混淆是解释性证据，不能仅凭不可见字符封禁合法页面。
+    assessment.reasons.push_back({"unicode_text_obfuscation", 0, {}});
+  }
 
   for (std::string_view phrase : kUrgencyPhrases) {
     if (haystack.find(base::ToLowerASCII(phrase)) != std::string::npos) {

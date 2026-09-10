@@ -123,7 +123,7 @@ expect_failure "build:release 接受了 AegisRelease symlink" \
 # DIST 路径校验，不会进入真实身份复验。
 package_root="$TEST_ROOT/package/chromium"
 package_out="$package_root/src/out/AegisRelease"
-package_app="$package_out/Chromium.app"
+package_app="$package_out/GCSA Aegis.app"
 package_manifest="$package_out/.aegis/build-manifest.json"
 mkdir -p "$package_app/Contents" "$package_out/.aegis"
 touch "$package_manifest" "$package_manifest.sha256"
@@ -168,7 +168,7 @@ expect_failure "package 接受了源 App 内 DIST_DIR" \
 package_link_root="$TEST_ROOT/package-id-link/chromium"
 package_link_out="$package_link_root/src/out/AegisRelease"
 package_link_escape="$TEST_ROOT/package-id-link/escape"
-mkdir -p "$package_link_out/Chromium.app/Contents" "$package_link_escape"
+mkdir -p "$package_link_out/GCSA Aegis.app/Contents" "$package_link_escape"
 touch "$package_link_escape/build-manifest.json"
 touch "$package_link_escape/build-manifest.json.sha256"
 touch "$package_link_escape/sentinel"

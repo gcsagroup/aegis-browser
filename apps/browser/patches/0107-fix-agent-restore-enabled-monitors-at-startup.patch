@@ -1,0 +1,68 @@
+From 383d157c6f3601101038aef6ff964e61b6af7b4f Mon Sep 17 00:00:00 2001
+From: Aegis local development <aegis-local@invalid>
+Date: Tue, 8 Sep 2026 05:05:00 +0800
+Subject: [PATCH] 修复已启用 Agent 的冷启动监控恢复
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+仅在普通资料启动时恢复已启用的 Agent，避免关闭时创建并缓存空服务。
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.cc b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
+index a1b39d4..94cd00e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
+@@ -21,6 +21,18 @@ AegisAgentServiceFactory* AegisAgentServiceFactory::GetInstance() {
+   return factory.get();
+ }
+ 
++// static
++void AegisAgentServiceFactory::EnsureForProfileAtStartup(Profile* profile) {
++  // 关闭状态不能请求创建：工厂会缓存 Build 返回的 nullptr，阻止之后启用。
++  // 无痕服务仍由其会话入口按需创建，不在启动时恢复持久化监控。
++  if (!aegis::IsAegisProfileSupported(profile) || !profile->IsRegularProfile() ||
++      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
++      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++    return;
++  }
++  GetForProfile(profile);
++}
++
+ // static
+ AegisAgentService* AegisAgentServiceFactory::GetForProfile(Profile* profile) {
+   if (!profile) {
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.h b/chrome/browser/aegis/agent/aegis_agent_service_factory.h
+index 3ee9e06..766b206 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_factory.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service_factory.h
+@@ -20,6 +20,8 @@ class AegisAgentServiceFactory : public ProfileKeyedServiceFactory {
+   AegisAgentServiceFactory& operator=(const AegisAgentServiceFactory&) = delete;
+ 
+   static AegisAgentServiceFactory* GetInstance();
++  // 普通资料启动时恢复已启用的服务；不依赖面板，也不提前创建关闭的服务。
++  static void EnsureForProfileAtStartup(Profile* profile);
+   static AegisAgentService* GetForProfile(Profile* profile);
+   static AegisAgentService* GetForProfileIfExists(Profile* profile);
+ 
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -31,6 +31,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/active_use_util.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
++#include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/browser_features.h"
+ #include "chrome/browser/browser_process.h"
+@@ -1575,6 +1576,9 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
+   // renderer request would leave newly loaded Profiles temporarily unguarded.
+   aegis::AegisServiceFactory::EnsureIncognitoGuardForProfile(profile);
+ 
++  // 已启用资料的独立监控需要在启动时恢复，不能等待用户打开 Agent 面板。
++  aegis::agent::AegisAgentServiceFactory::EnsureForProfileAtStartup(profile);
++
+ #if BUILDFLAG(IS_WIN)
+   // Verify that the profile is not on a network share and if so prepare to show
+   // notification to the user.
+

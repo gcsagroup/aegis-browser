@@ -4,7 +4,7 @@
 
 本目錄保存 GCSA-aegis 的公開產品架構、路線圖、研究邊界、產品頁，以及帶日期的本機稽核記錄。
 
-> **目前邊界 — 2026-08-29：** 整合後的原始碼包含 67 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁。先前的 57 補丁診斷清單和 65 補丁 Agent 驗收屬於歷史快照，不能為目前 HEAD 授予資格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`；兩者都不能泛化為廣義惡意 JavaScript 偵測結論。專案整體仍為發行 No-Go。
+> **目前邊界 — 2026-09-05：** Browser Agent v2 候選原始碼包含 105 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 Chromium 提交 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`（tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`）。平台建置和驗收仍是獨立門禁，這個原始碼身分不代表公開發行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`；兩者都不能泛化為廣義惡意 JavaScript 偵測結論。專案整體仍為發行 No-Go。
 
 ## 從這裡開始
 
@@ -16,8 +16,10 @@
 - [三語產品頁](product.html)
 - [Browser 構建與驗證指南](../apps/browser/README.zh-TW.md)
 - [原生 iOS 工程指南](../apps/ios/README.zh-TW.md)
-- [Browser Agent 使用者指南](aegis-browser-agent-v1-user-guide.zh-TW.md)
+- [Browser Agent v2 使用者指南](aegis-browser-agent-v2-user-guide.zh-TW.md)
+- [Browser Agent v1 歷史使用者指南](aegis-browser-agent-v1-user-guide.zh-TW.md)
 - [Browser Agent 架構](aegis-browser-agent-v1-architecture.zh-TW.md)
+- [Browser Agent v2 架構與原型決策](aegis-browser-agent-v2-architecture.zh-TW.md)
 
 ## 狀態用語
 

@@ -13,7 +13,7 @@
 
 ## 目前本機補丁序列
 
-狀態「series 中」只表示補丁檔案列在目前本機 `series`；不表示已經進入上游 Chromium、通過 Release 或 Android 門檻，也不表示可以發布。2026-08-25 的 49 補丁記錄僅保留為歷史快照。2026-08-29 的整合原始碼達到 **67 個 Chromium 補丁 + 2 個巢狀 V8 補丁**：0057–0065 是 Browser Agent 整合，0066 是設定、關於頁與更新狀態，0067 是視覺品牌。更早的 57/58 補丁診斷證據和 65+2 Agent 驗收都不能賦予最終 67+2 原始碼資格。桌面成品是否匹配必須以新執行的 `browser:status` 和對應驗收記錄中的新鮮度門檻為準；每次 series 變化後都要重新驗證。
+狀態「series 中」只表示補丁檔案列在目前本機 `series`；不表示已經進入上游 Chromium、通過發行門檻或可以發布。49、67 和 95 補丁記錄只保留為歷史快照。目前整合原始碼包含 **106 個 Chromium 補丁 + 2 個巢狀 V8 補丁**：0057–0065 是原 Browser Agent 整合，0066–0067 是設定/更新和視覺品牌，0068–0105 以 Browser Agent v2 Runtime 取代並強化 v1 執行路徑，同時加入跨平台入口、定時自動化、指定網站路由、Profile 隔離、有界恢復、瀏覽器綁定的分頁/文件能力、正確產品身分、脫離 UI 序列的持久化、確定性銷毀和啟用斷言時安全的限流處理。補丁 0079–0095 重放到 Chromium 原始碼提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；補丁 0096–0101 產生 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；補丁 0102 產生已提交原始碼 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。成品資格仍按平台分別判定，且必須綁定這份精確原始碼的驗收證據。
 
 | ID | 目的 | 狀態 |
 |----|------|------|
@@ -84,5 +84,48 @@
 | 0065 | 自動開啟任務頁面並支援空白分頁任務 | series 中 |
 | 0066 | GCSA 設定移除上游 AI/Google 入口、恢復搜尋引擎管理，並重做關於頁與更新狀態 | series 中 |
 | 0067 | 接入 GCSA Logo 與跨平台 App 圖示，同時保留 Chromium 內部身分和使用者資料目錄 | series 中 |
+| 0068 | 增加 Browser Agent v2 原生混合 Runtime 原型 | series 中 |
+| 0069 | 強化 v2 自主 Runtime 與策略邊界 | series 中 |
+| 0070 | 簡化 Browser Agent v2 新手引導和任務入口 | series 中 |
+| 0071 | 強化模型規劃與執行流程 | series 中 |
+| 0072 | 瀏覽前先由模型理解使用者目標 | series 中 |
+| 0073 | 強制使用瀏覽器原生工具並確定性路由指定網站 | series 中 |
+| 0074 | 將隱含的目前頁面任務綁定到作用中文件 | series 中 |
+| 0075 | 增加常用任務按鈕和定時自動化 | series 中 |
+| 0076 | 修正跨平台建置接線與品牌資源 | series 中 |
+| 0077 | 完成跨平台 Browser Agent v2 Runtime 與入口 | series 中 |
+| 0078 | 模型格式有界失敗後恢復安全的唯讀計畫 | series 中 |
+| 0079 | 隔離主要無痕 Profile，並收緊 Guest、CDP、NetLog、Actor、CNAME、Advanced 與 Torrent 生命週期 | series 中 |
+| 0080 | 強化本機 Qwen 的目前頁面計畫 | series 中 |
+| 0081 | 執行前驗證模型計畫順序 | series 中 |
+| 0082 | 拒絕瀏覽器開啟目標後的重複入口導覽 | series 中 |
+| 0083 | 降低本機 Qwen 原生工具輪次延遲 | series 中 |
+| 0084 | 要求定時自動化由瀏覽器持久保存 | series 中 |
+| 0085 | 對證據綁定的執行輪次做一次不擴權修復 | series 中 |
+| 0086 | 阻止模型路由到非公開 URL | series 中 |
+| 0087 | Agent 工作區使用產品 Logo | series 中 |
+| 0088 | 加入品牌化 Android Agent 入口和任務編輯器 | series 中 |
+| 0089 | 從較弱模型路由中恢復指定網站搜尋 | series 中 |
+| 0090 | 書籤等瀏覽器資料任務保持使用原生工具 | series 中 |
+| 0091 | 丟棄 browser-only 路由中無害的冗餘目標而不誤報失敗 | series 中 |
+| 0092 | 驗證書籤目標語意、修復漏步計畫，並確保僅預覽任務維持唯讀 | series 中 |
+| 0093 | 支援明確的本機 fixture URL 有效性檢查 | series 中 |
+| 0094 | 正規化原生任務完成證據 | series 中 |
+| 0095 | 保留已驗證完成狀態和書籤復原能力 | series 中 |
+| 0096 | 將模型瀏覽器能力綁定到即時任務上下文 | series 中 |
+| 0097 | 等待範圍內導覽提交，並在 Profile 初始化前註冊 Aegis 服務 | series 中 |
+| 0098 | 在瀏覽器身分介面使用 GCSA Aegis 品牌 | series 中 |
+| 0099 | 將 Agent 工作儲存移出 UI 序列 | series 中 |
+| 0100 | 在測試夾具銷毀前清空 Profile 指標 | series 中 |
+| 0101 | 同源 URL 遇到限流後有界完成其餘書籤檢查 | series 中 |
+| 0102 | 在有界 URL 檢查中安全讀取不可合併的 Retry-After | series 中 |
+| 0103 | 等待原生下載完成並驗證真實下載結果 | series 中 |
+| 0104 | 讓無痕服務防護在 Android 正確編譯 | series 中 |
+| 0105 | 註冊 Android Agent 通道，修復定時任務安全回退及狀態提示 | series 中 |
+| 0106 | 使用快取語言設定，避免 Windows 介面執行緒阻塞；補充原生瀏覽器回歸測試 | series 中 |
+
+0103–0105 已從 0102 基線精確重放到 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` 的原始碼樹 `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`，平台實際驗收仍是獨立門檻。
+
+0106 已從該候選精確重放到 `383d157c6f3601101038aef6ff964e61b6af7b4f`（tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`）。重新建置與跨平台回歸驗收仍待完成。
 
 在乾淨、固定版本的 checkout 上執行 `pnpm --filter @gcsa-aegis/browser apply-patches` 進行套用。任何 series 變化都必須重新完成離線重放、冷建置、增量建置和受影響測試。

@@ -67,7 +67,11 @@ bool AgentTaskScope::IsValid() const {
       allowed_data_classes.contains(AgentDataClass::kSecret) ||
       std::ranges::any_of(allowed_tab_ids,
                           [](int32_t tab_id) { return tab_id <= 0; }) ||
-      allowed_tab_ids.size() > static_cast<size_t>(budgets.max_tabs)) {
+      allowed_tab_ids.size() > static_cast<size_t>(budgets.max_tabs) ||
+      tab_metadata_window_id < 0 ||
+      (tab_metadata_window_id > 0 &&
+       (!AllowsTool("tab.list") ||
+        !AllowsDataClass(AgentDataClass::kBrowserMetadata)))) {
     return false;
   }
   base::flat_set<std::string> origin_keys;
@@ -103,6 +107,8 @@ bool AgentTaskScope::IsNoBroaderThan(const AgentTaskScope& other) const {
   if (!budgets.IsNoBroaderThan(other.budgets) ||
       model_destination != other.model_destination ||
       !IsSubset(allowed_tab_ids, other.allowed_tab_ids) ||
+      (tab_metadata_window_id != 0 &&
+       tab_metadata_window_id != other.tab_metadata_window_id) ||
       !IsSubset(allowed_tools, other.allowed_tools) ||
       !IsSubset(allowed_data_classes, other.allowed_data_classes)) {
     return false;

@@ -27,7 +27,7 @@ v1 支援 macOS 桌面端。iOS 暫時跳過，Android 後置。v1 不會自動�
 
 ### AegisAgentService
 
-每個一般 Profile 各有一個執行個體，持有任務、計畫、模型請求、Actor、瀏覽器工具、待核准動作、復原憑證和監控。OTR、Guest、System Profile 不會建立服務。關閉 Agent 時，服務會停止模型請求、Actor、待核准動作和排程任務。
+每個一般 Profile 及其桌面主要無痕 Profile 都有獨立的執行個體，持有任務、計畫、模型請求、Actor、瀏覽器工具、待核准動作、復原憑證和監控。無痕執行個體也提供自己的目前頁面摘要和 `chrome://aegis` 控制介面，請求與事件會路由到實際所屬 Profile。Guest、System 和輔助 OTR Profile 不會建立服務。關閉 Agent 時，服務會停止模型請求、Actor、待核准動作和排程任務。
 
 ### TaskScope 與 ToolRegistry
 
@@ -43,7 +43,7 @@ Actor Bridge 將已核准的頁面工具映射為 Chromium Actor 動作。每次
 
 ### 瀏覽器原生工具
 
-原生工具涵蓋分頁、視窗、工作區、書籤、歷史記錄、權限、下載和監控。書籤修改採用預覽、revision 衝突檢查、分組寫入和一鍵復原；URL 檢查使用有界 HEAD 與 Range GET；下載透過 DownloadItem 管理，並驗證來源、架構和 SHA-256。
+原生工具涵蓋分頁、視窗、工作區、書籤、歷史記錄、權限、下載和監控。無痕歷史記錄搜尋只讀取目前無痕工作階段內的導覽記錄，絕不轉向一般 Profile 的 HistoryService。書籤修改採用預覽、revision 衝突檢查、分組寫入和一鍵復原；URL 檢查使用有界 HEAD 與 Range GET；下載透過 DownloadItem 管理，並驗證來源、架構和 SHA-256。
 
 ### PolicyBroker 與 ResultVerifier
 
@@ -68,16 +68,25 @@ ResultVerifier 會檢查瀏覽器真實狀態。下載存在、書籤樹 revisio
 
 ## 持久化與復原
 
-TaskStore 使用 Profile 內的 SQLite。持久化內容包含通過祕密標記和長度檢查的任務目標、任務合約、去識別化事件摘要、計畫步驟/進度和加密監控目標。原始工具結果、頁面本文、截圖、復原憑證、密碼、OTP、Cookie、卡號、API key 和完整本機路徑不得寫入磁碟。未完成任務保留 7 天，終態任務保留 30 天；服務啟動時會先清理過期記錄，清理失敗時 Agent 會 fail closed。
+一般 Profile 的 TaskStore 使用該 Profile 內的 SQLite。持久化內容包含通過祕密標記和長度檢查的任務目標、任務合約、去識別化事件摘要、計畫步驟/進度和加密監控目標。原始工具結果、頁面本文、截圖、復原憑證、密碼、OTP、Cookie、卡號、API key 和完整本機路徑不得寫入磁碟。未完成任務保留 7 天，終態任務保留 30 天；服務啟動時會先清理過期記錄，清理失敗時 Agent 會 fail closed。
+
+桌面主要無痕 Profile 改用純記憶體 TaskStore；模型憑據、監控狀態、隱私事件、進階下載所有權和已學習的 CNAME 別名也只存在於工作階段記憶體。任何這類狀態都不會寫入一般 Profile 或從一般 Profile 復原，結束無痕工作階段即清除。Actor 日誌、診斷日誌和 trace 會隱藏無痕 URL、頁面資料、任務文字、目標與憑據識別碼；無痕登入品質記錄不會上傳。無痕監控只顯示在瀏覽器內時間軸，不傳送系統通知。
+
+處理程序層級 CDP 無法依 Profile 隔離可見目標，因此建立任一主要無痕工作階段會立即停止並阻斷整個處理程序的 HTTP 與 pipe 遠端偵錯傳輸，包括並非由 Aegis 啟動的傳輸。最後一個無痕視窗關閉後仍維持關閉，只能由使用者在一般 Profile 中明確重新啟用；原生且綁定文件的 Agent 仍然可用。每個一般 Profile 都會在初始化時安裝該守衛，早於其第一個 Browser 或 renderer。
 
 當機後，唯讀任務可在使用者確認後復原；待核准動作會過期，外部副作用不會自動重播。任何復原都要求新的頁面觀察，舊節點和舊 DocumentToken 無效。
 
 書籤復原憑證只在目前瀏覽器工作階段內有效；瀏覽器重新啟動後不會嘗試重播復原或寫入操作。
 
+使用者明確核准的書籤修改和已完成下載保留 Chromium 原生無痕持久語意，可能在無痕視窗關閉後繼續存在；它們屬於使用者可見的明確副作用，不是隱藏的 Agent 狀態。關閉無痕工作階段會取消仍在進行的 Agent 下載和種子傳輸並撤銷控制權；已經寫入的種子位元組會保留。種子所有權只在同一 Profile 工作階段內跨 `chrome://aegis` 頁面重新整理保留，不能復原或控制其他 Profile 的任務。
+
+Guest、System 和輔助 OTR Profile 不會收到 Aegis 介面/服務，也不會安裝其網路 throttle、指紋保護或過濾清單設定。一般與主要無痕 Profile 使用不同的網路分區識別碼，已學習的 CNAME 別名不會跨 Profile，並隨所屬 Profile 工作階段清除。
+
 ## 明確不支援
 
 - 自動付款、最終下單、轉帳、發文、傳送訊息或接受法律條款。
 - 任意 JavaScript、shell、瀏覽器遠端偵錯或通用本機檔案存取。
+- 無痕模式中的處理程序層級 CDP「AI 控制」，以及 Guest、System 或輔助 OTR Profile 中的所有 Agent 存取。
 - 無提示讀取密碼、Cookie、OTP、支付卡或跨 Profile 資料。
 - 瀏覽器關閉後常駐的系統層級監控。
 - 把本機測試通過直接解釋為公開發布、正式簽署或公證完成。

@@ -19,14 +19,19 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
+#if BUILDFLAG(IS_MAC)
 #include "chrome/browser/aegis/aegis_torrent_client.h"
+#endif
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
 #include "chrome/browser/aegis/metalink_download_verifier.h"
 #include "chrome/browser/aegis/metalink_parser.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/aegis/pref_names.h"
+#include "chrome/common/webui_url_constants.h"
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -43,9 +48,10 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/referrer.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
-#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -53,16 +59,26 @@ namespace {
 
 constexpr base::TimeDelta kSummaryRequestTtl = base::Minutes(1);
 constexpr base::TimeDelta kMetalinkRequestTtl = base::Minutes(1);
+#if BUILDFLAG(IS_MAC)
 constexpr base::TimeDelta kTorrentRequestTtl = base::Minutes(1);
 constexpr size_t kMaxTorrentBytes = 4 * 1024 * 1024;
 constexpr size_t kMaxMagnetBytes = 16 * 1024;
 constexpr size_t kMaxTorrentFiles = 2048;
+#endif
 constexpr size_t kMaxCaptureUrlBytes = 8192;
 constexpr size_t kMaxCaptureTitleBytes = 4096;
 constexpr size_t kMaxCaptureTextBytes = 64 * 1024;
 constexpr int32_t kMaxCaptureFieldCount = 1'000'000;
 constexpr char kProfileUnavailableError[] =
     "Aegis is unavailable for this profile";
+
+bool IsAegisWebUIProfileSupported(const Profile* profile) {
+#if BUILDFLAG(IS_ANDROID)
+  return profile && profile->IsRegularProfile();
+#else
+  return aegis::IsAegisProfileSupported(profile);
+#endif
+}
 
 std::optional<int> ReadInteger(const base::DictValue& dict, const char* key) {
   if (std::optional<int> value = dict.FindInt(key)) {
@@ -286,6 +302,7 @@ base::DictValue MetalinkToPreview(const aegis::MetalinkParseResult& result) {
   return dict;
 }
 
+#if BUILDFLAG(IS_MAC)
 base::DictValue TorrentToPreview(const aegis::mojom::TorrentPreview& preview) {
   base::DictValue dict;
   dict.Set("ok", preview.ok);
@@ -327,6 +344,7 @@ base::DictValue TorrentStatusToDict(const aegis::mojom::TorrentStatus& status) {
   dict.Set("finished", status.finished);
   return dict;
 }
+#endif
 
 }  // namespace
 
@@ -384,6 +402,7 @@ void AegisUIHandler::RegisterMessages() {
       "startMetalinkDownload",
       base::BindRepeating(&AegisUIHandler::HandleStartMetalinkDownload,
                           base::Unretained(this)));
+#if BUILDFLAG(IS_MAC)
   web_ui()->RegisterMessageCallback(
       "parseTorrent", base::BindRepeating(&AegisUIHandler::HandleParseTorrent,
                                           base::Unretained(this)));
@@ -401,25 +420,43 @@ void AegisUIHandler::RegisterMessages() {
       "controlTorrent",
       base::BindRepeating(&AegisUIHandler::HandleControlTorrent,
                           base::Unretained(this)));
+#endif
 }
 
-// 这是当前进程单例的 fail-closed 过渡边界；在 AegisService 改为
-// ProfileKeyedService 前，每个 WebUI 入口都必须经过此校验。
 aegis::AegisService* AegisUIHandler::ServiceForWebUI() {
   if (!web_ui()) {
     return nullptr;
   }
   Profile* profile = Profile::FromWebUI(web_ui());
-  aegis::AegisService* service = aegis::AegisService::GetInstance();
-  return service->IsInitializedForProfile(profile) ? service : nullptr;
+  return aegis::AegisServiceFactory::GetForProfile(profile);
+}
+
+bool AegisUIHandler::RequireSupportedProfile(const base::Value& callback_id) {
+  Profile* profile = web_ui() ? Profile::FromWebUI(web_ui()) : nullptr;
+  const bool supported = IsAegisWebUIProfileSupported(profile);
+  if (supported && ServiceForWebUI()) {
+    return true;
+  }
+
+  pending_metalink_.reset();
+#if BUILDFLAG(IS_MAC)
+  pending_torrent_.reset();
+#endif
+  base::DictValue response;
+  response.Set("ok", false);
+  response.Set("found", false);
+  response.Set("error", kProfileUnavailableError);
+  ResolveJavascriptCallback(callback_id, response);
+  return false;
 }
 
 base::DictValue AegisUIHandler::BuildStatus() {
-  aegis::AegisService* service = ServiceForWebUI();
   Profile* profile = Profile::FromWebUI(web_ui());
-  const bool regular_profile = profile && !profile->IsOffTheRecord();
+  const bool supported_profile = IsAegisWebUIProfileSupported(profile);
+  aegis::AegisService* service =
+      supported_profile ? ServiceForWebUI() : nullptr;
   base::DictValue status;
-  status.Set("profileAvailable", regular_profile && service != nullptr);
+  status.Set("profileAvailable", supported_profile && service != nullptr);
   status.Set("enabled", service && service->IsEnabled());
   status.Set("trackerBlocking", service && service->IsTrackerBlockingEnabled());
   status.Set("phishInterstitial",
@@ -447,15 +484,13 @@ base::DictValue AegisUIHandler::BuildStatus() {
   status.Set("policyWorkerReady", false);
   status.Set("policyWorkerError", "");
   status.Set("privacyAi", service && service->IsPrivacyAiEnabled());
-#if BUILDFLAG(IS_ANDROID)
-  status.Set("isAndroid", true);
-  status.Set("torrentSupported", false);
-  status.Set("browserAgentAvailable", false);
-  status.Set("browserAgentEnabled", false);
-#else
-  status.Set("isAndroid", false);
+  status.Set("isAndroid", BUILDFLAG(IS_ANDROID));
   const bool browser_agent_available =
-      regular_profile &&
+#if BUILDFLAG(IS_ANDROID)
+      profile && profile->IsRegularProfile() &&
+#else
+      supported_profile &&
+#endif
       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
   status.Set("browserAgentAvailable", browser_agent_available);
   status.Set("browserAgentEnabled",
@@ -463,17 +498,20 @@ base::DictValue AegisUIHandler::BuildStatus() {
                  profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled));
 #if BUILDFLAG(IS_MAC)
   status.Set("torrentSupported", service != nullptr);
+  status.Set("torrentTaskId",
+             service ? aegis::AegisTorrentClient::GetInstance()->CurrentTaskId(
+                           service->torrent_owner_id())
+                     : std::string());
 #else
   status.Set("torrentSupported", false);
-#endif
+  status.Set("torrentTaskId", std::string());
 #endif
   status.Set("torrentDisclosureAcknowledged",
-             profile && profile->GetPrefs()->GetBoolean(
-                            aegis::prefs::kTorrentDisclosureAcknowledged));
-  status.Set("torrentTaskId", profile ? profile->GetPrefs()->GetString(
-                                            aegis::prefs::kLastTorrentTaskId)
-                                      : std::string());
+             supported_profile && profile &&
+                 profile->GetPrefs()->GetBoolean(
+                     aegis::prefs::kTorrentDisclosureAcknowledged));
   status.Set("aiControl", service && service->IsAiControlEnabled());
+  status.Set("aiControlAvailable", service && service->IsAiControlAvailable());
   status.Set("aiControlRunning", service && service->AiControlRunning());
   status.Set("aiControlPort", service ? service->AiControlPort() : 0);
   status.Set("aiControlAddress",
@@ -577,17 +615,24 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
   } else if (module == "privacyAi") {
     service->SetPrivacyAiEnabled(enabled);
   } else if (module == "aiControl") {
+    if (enabled && !service->IsAiControlAvailable()) {
+      base::DictValue status = BuildStatus();
+      status.Set("ok", false);
+      status.Set("error",
+                 "AI control is unavailable while Incognito is active");
+      ResolveJavascriptCallback(args[0], status);
+      return;
+    }
     service->SetAiControlEnabled(enabled);
   } else if (module == "browserAgent") {
-#if BUILDFLAG(IS_ANDROID)
-    base::DictValue status = BuildStatus();
-    status.Set("ok", false);
-    status.Set("error", "Browser Agent is not available on Android in v1");
-    ResolveJavascriptCallback(callback_id, status);
-    return;
-#else
     Profile* profile = Profile::FromWebUI(web_ui());
-    if (!profile || !profile->IsRegularProfile() ||
+#if BUILDFLAG(IS_ANDROID)
+    const bool agent_profile_supported = profile && profile->IsRegularProfile();
+#else
+    const bool agent_profile_supported =
+        aegis::IsAegisProfileSupported(profile);
+#endif
+    if (!agent_profile_supported ||
         !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
       base::DictValue status = BuildStatus();
       status.Set("ok", false);
@@ -606,7 +651,6 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
       // Creating the service restores and schedules persisted monitors.
       aegis::agent::AegisAgentServiceFactory::GetForProfile(profile);
     }
-#endif
   }
 
   ResolveJavascriptCallback(callback_id, BuildStatus());
@@ -620,15 +664,25 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
   const base::Value& callback_id = args[0];
   base::DictValue status = BuildStatus();
 #if BUILDFLAG(IS_ANDROID)
-  status.Set("ok", false);
-  status.Set("error", "Browser Agent is not available on Android in v1");
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (!profile || !profile->IsRegularProfile() ||
+      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
+      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+    status.Set("ok", false);
+    status.Set("error", "Enable Browser Agent before opening it");
+  } else {
+    web_ui()->GetWebContents()->GetController().LoadURL(
+        GURL(chrome::kChromeUIUntrustedAegisAgentURL), content::Referrer(),
+        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+    status.Set("ok", true);
+  }
 #else
   Profile* profile = Profile::FromWebUI(web_ui());
   BrowserWindowInterface* browser =
       FindOwningBrowser(web_ui()->GetWebContents());
   SidePanelUI* side_panel =
       browser ? browser->GetFeatures().side_panel_ui() : nullptr;
-  if (!profile || !profile->IsRegularProfile() || !browser || !side_panel ||
+  if (!aegis::IsAegisProfileSupported(profile) || !browser || !side_panel ||
       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
     status.Set("ok", false);
@@ -889,7 +943,7 @@ void AegisUIHandler::HandleCompletePreparedSummary(
     reject("invalid prepared summary payload");
     return;
   }
-  const std::string locale = l10n_util::GetApplicationLocale(std::string());
+  const std::string locale = g_browser_process->GetApplicationLocale();
   if (active_model_request_id_) {
     aegis::SummarizeResult result;
     result.error = "model request already in progress";
@@ -1038,6 +1092,9 @@ void AegisUIHandler::HandleParseMetalink(const base::ListValue& args) {
   if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
     return;
   }
+  if (!RequireSupportedProfile(args[0])) {
+    return;
+  }
   pending_metalink_.reset();
   aegis::ParseMetalink(
       args[1].GetString(),
@@ -1068,6 +1125,9 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
     return;
   }
   const base::Value& callback_id = args[0];
+  if (!RequireSupportedProfile(callback_id)) {
+    return;
+  }
   const std::string& request_id = args[1].GetString();
   base::DictValue response;
   if (!pending_metalink_ || pending_metalink_->request_id != request_id) {
@@ -1091,9 +1151,13 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
   ResolveJavascriptCallback(callback_id, response);
 }
 
+#if BUILDFLAG(IS_MAC)
 void AegisUIHandler::HandleParseTorrent(const base::ListValue& args) {
   AllowJavascript();
   if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
+    return;
+  }
+  if (!RequireSupportedProfile(args[0])) {
     return;
   }
   pending_torrent_.reset();
@@ -1123,6 +1187,9 @@ void AegisUIHandler::HandleParseTorrent(const base::ListValue& args) {
 void AegisUIHandler::HandleParseMagnet(const base::ListValue& args) {
   AllowJavascript();
   if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
+    return;
+  }
+  if (!RequireSupportedProfile(args[0])) {
     return;
   }
   pending_torrent_.reset();
@@ -1173,6 +1240,9 @@ void AegisUIHandler::HandleStartTorrent(const base::ListValue& args) {
     return;
   }
   const std::string callback_id = args[0].GetString();
+  if (!RequireSupportedProfile(args[0])) {
+    return;
+  }
   const std::string& request_id = args[1].GetString();
   auto fail = [this, &callback_id](std::string error) {
     base::DictValue response;
@@ -1241,9 +1311,15 @@ void AegisUIHandler::HandleStartTorrent(const base::ListValue& args) {
   options->enable_pex = *enable_pex;
   options->download_limit_kib = static_cast<uint32_t>(*download_limit);
   options->upload_limit_kib = static_cast<uint32_t>(*upload_limit);
+  aegis::AegisService* service = ServiceForWebUI();
+  if (!service) {
+    fail(kProfileUnavailableError);
+    return;
+  }
   aegis::AegisTorrentClient::GetInstance()->StartTorrent(
-      std::move(pending.torrent_data), std::move(pending.magnet_uri),
-      destination, std::move(selected_files), std::move(options),
+      service->torrent_owner_id(), std::move(pending.torrent_data),
+      std::move(pending.magnet_uri), destination, std::move(selected_files),
+      std::move(options),
       base::BindOnce(&AegisUIHandler::OnTorrentStarted,
                      weak_factory_.GetWeakPtr(), std::move(callback_id)));
 }
@@ -1271,10 +1347,21 @@ void AegisUIHandler::HandleGetTorrentStatus(const base::ListValue& args) {
   if (args.size() != 2 || !args[0].is_string() || !args[1].is_string()) {
     return;
   }
+  if (!RequireSupportedProfile(args[0])) {
+    return;
+  }
   const std::string& task_id = args[1].GetString();
-  const std::string& expected =
-      Profile::FromWebUI(web_ui())->GetPrefs()->GetString(
-          aegis::prefs::kLastTorrentTaskId);
+  aegis::AegisService* service = ServiceForWebUI();
+  if (!service) {
+    base::DictValue response;
+    response.Set("found", false);
+    response.Set("error", kProfileUnavailableError);
+    ResolveJavascriptCallback(args[0], response);
+    return;
+  }
+  const std::string expected =
+      aegis::AegisTorrentClient::GetInstance()->CurrentTaskId(
+          service->torrent_owner_id());
   if (task_id.empty() || task_id != expected) {
     base::DictValue response;
     response.Set("found", false);
@@ -1283,8 +1370,9 @@ void AegisUIHandler::HandleGetTorrentStatus(const base::ListValue& args) {
     return;
   }
   aegis::AegisTorrentClient::GetInstance()->GetStatus(
-      task_id, base::BindOnce(&AegisUIHandler::OnTorrentStatus,
-                              weak_factory_.GetWeakPtr(), args[0].GetString()));
+      service->torrent_owner_id(), task_id,
+      base::BindOnce(&AegisUIHandler::OnTorrentStatus,
+                     weak_factory_.GetWeakPtr(), args[0].GetString()));
 }
 
 void AegisUIHandler::OnTorrentStatus(std::string callback_id,
@@ -1306,28 +1394,35 @@ void AegisUIHandler::HandleControlTorrent(const base::ListValue& args) {
       !args[2].is_string()) {
     return;
   }
-  const std::string task_id = args[1].GetString();
-  const std::string& expected =
-      Profile::FromWebUI(web_ui())->GetPrefs()->GetString(
-          aegis::prefs::kLastTorrentTaskId);
-  if (task_id.empty() || task_id != expected) {
-    OnTorrentControlled(args[0].GetString(), args[2].GetString(), task_id,
-                        false);
+  if (!RequireSupportedProfile(args[0])) {
     return;
   }
+  const std::string task_id = args[1].GetString();
   const std::string& action = args[2].GetString();
+  aegis::AegisService* service = ServiceForWebUI();
+  if (!service) {
+    OnTorrentControlled(args[0].GetString(), action, task_id, false);
+    return;
+  }
+  const std::string expected =
+      aegis::AegisTorrentClient::GetInstance()->CurrentTaskId(
+          service->torrent_owner_id());
+  if (task_id.empty() || task_id != expected) {
+    OnTorrentControlled(args[0].GetString(), action, task_id, false);
+    return;
+  }
   auto callback = base::BindOnce(&AegisUIHandler::OnTorrentControlled,
                                  weak_factory_.GetWeakPtr(),
                                  args[0].GetString(), action, task_id);
   if (action == "pause") {
-    aegis::AegisTorrentClient::GetInstance()->Pause(task_id,
-                                                    std::move(callback));
+    aegis::AegisTorrentClient::GetInstance()->Pause(
+        service->torrent_owner_id(), task_id, std::move(callback));
   } else if (action == "resume") {
-    aegis::AegisTorrentClient::GetInstance()->Resume(task_id,
-                                                     std::move(callback));
+    aegis::AegisTorrentClient::GetInstance()->Resume(
+        service->torrent_owner_id(), task_id, std::move(callback));
   } else if (action == "cancel") {
-    aegis::AegisTorrentClient::GetInstance()->Cancel(task_id, false,
-                                                     std::move(callback));
+    aegis::AegisTorrentClient::GetInstance()->Cancel(
+        service->torrent_owner_id(), task_id, false, std::move(callback));
   } else {
     OnTorrentControlled(args[0].GetString(), action, task_id, false);
   }
@@ -1340,16 +1435,14 @@ void AegisUIHandler::OnTorrentControlled(std::string callback_id,
   if (!IsJavascriptAllowed()) {
     return;
   }
-  if (action == "cancel") {
+  if (action == "cancel" && ok) {
     PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
     if (prefs->GetString(aegis::prefs::kLastTorrentTaskId) == task_id) {
       prefs->ClearPref(aegis::prefs::kLastTorrentTaskId);
     }
-    // A disconnected service owns no surviving task. Treat cancel as
-    // idempotent so a cleanup-time disconnect cannot leave a stale UI card.
-    ok = true;
   }
   base::DictValue response;
   response.Set("ok", ok);
   ResolveJavascriptCallback(base::Value(callback_id), response);
 }
+#endif

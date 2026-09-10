@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.gcsa.aegis.qa.driver" android:versionCode="1" android:versionName="1">
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+  <queries><package android:name="app.gcsa.aegis" /></queries>
+  <!-- 仅 USB instrumentation 验收；没有联网权限、启动器入口或常驻服务。 -->
+  <application android:label="Aegis UI 验收工具" android:testOnly="true"
+      android:allowBackup="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    <activity android:name=".Driver$Fixture" android:exported="false" />
+  </application>
+  <instrumentation android:name=".Driver" android:targetPackage="app.gcsa.aegis.qa.driver"
+      android:label="Aegis 独立资料 UI 验收" />
+</manifest>

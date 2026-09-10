@@ -1,0 +1,878 @@
+From 54f2d8dcf03ecf53b074b4919769ea652fdf5ab5 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 4 Sep 2026 17:44:13 +0800
+Subject: [PATCH] fix(agent): move task storage off the UI sequence
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 282 ++++++++++++++----
+ .../browser/aegis/agent/aegis_agent_service.h |  30 +-
+ .../agent/aegis_agent_service_unittest.cc     |  30 ++
+ .../browser/aegis/agent/agent_task_store.cc   |  84 ++++--
+ chrome/browser/aegis/agent/agent_task_store.h |  37 ++-
+ 5 files changed, 373 insertions(+), 90 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index f00307ab85..8baa30f811 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -16,6 +16,8 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/task/task_traits.h"
++#include "base/task/thread_pool.h"
+ #include "base/uuid.h"
+ #include "build/build_config.h"
+ #if BUILDFLAG(IS_ANDROID)
+@@ -78,6 +80,12 @@ constexpr base::TimeDelta kEntryNavigationPollInterval =
+ constexpr std::string_view kScheduleMarker =
+     "[AEGIS_SCHEDULE_INTERVAL_MINUTES=";
+ 
++scoped_refptr<base::SequencedTaskRunner> CreateAgentTaskStoreTaskRunner() {
++  return base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
++       base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
++}
++
+ std::string ModelRepairInstruction(std::string_view stage,
+                                    std::string_view previous_error) {
+   std::string instruction =
+@@ -440,11 +448,12 @@ struct AegisAgentService::ExecutionRuntime {
+ 
+ AegisAgentService::AegisAgentService(Profile* profile)
+     : profile_(profile),
+-      task_store_(
+-          CHECK_DEREF(profile).IsOffTheRecord()
+-              ? base::FilePath()
+-              : profile->GetPath().AppendASCII("AegisAgentTasks.sqlite"),
+-          profile->IsOffTheRecord()),
++      task_store_is_in_memory_(CHECK_DEREF(profile).IsOffTheRecord()),
++      task_store_(CreateAgentTaskStoreTaskRunner(),
++                  task_store_is_in_memory_ ? base::FilePath()
++                                           : profile->GetPath().AppendASCII(
++                                                 "AegisAgentTasks.sqlite"),
++                  task_store_is_in_memory_),
+       policy_broker_(&tool_registry_),
+       actor_bridge_(profile),
+       browser_tools_(profile) {
+@@ -457,17 +466,11 @@ AegisAgentService::AegisAgentService(Profile* profile)
+   }
+   actor_bridge_.SetStateEventCallback(base::BindRepeating(
+       &AegisAgentService::OnActorStateEvent, weak_ptr_factory_.GetWeakPtr()));
+-  storage_ready_ = task_store_.Initialize();
+-  if (storage_ready_) {
+-    const base::Time now = base::Time::Now();
+-    storage_ready_ = task_store_.Prune(now - kUnfinishedTaskRetention,
+-                                       now - kCompletedTaskRetention);
+-  }
+-  if (storage_ready_) {
+-    RestoreUnfinishedTasks();
+-    RestoreMonitors();
+-    RestoreMonitorTargets();
+-  }
++  const base::Time now = base::Time::Now();
++  task_store_.AsyncCall(&AgentTaskStore::InitializeAndLoad)
++      .WithArgs(now - kUnfinishedTaskRetention, now - kCompletedTaskRetention)
++      .Then(base::BindOnce(&AegisAgentService::OnTaskStoreLoaded,
++                           weak_ptr_factory_.GetWeakPtr()));
+ }
+ 
+ AegisAgentService::~AegisAgentService() = default;
+@@ -519,7 +522,8 @@ bool AegisAgentService::IsToolAvailable(std::string_view tool_name) const {
+ AgentTask* AegisAgentService::CreateTask(std::string goal,
+                                          AgentMode mode,
+                                          AgentTaskScope scope) {
+-  if (!IsEnabled() || goal.empty() || goal.size() > 4096u || !scope.IsValid()) {
++  if (!IsEnabled() || goal.empty() || goal.size() > 4096u ||
++      !AgentTaskStore::IsSafeSummary(goal) || !scope.IsValid()) {
+     return nullptr;
+   }
+   const std::string task_id = AgentTask::GenerateTaskId();
+@@ -537,6 +541,12 @@ AgentTask* AegisAgentService::CreateTask(std::string goal,
+   return result;
+ }
+ 
++void AegisAgentService::FlushTaskStoreForTesting(
++    base::OnceCallback<void(bool)> callback) {
++  task_store_.AsyncCall(&AgentTaskStore::IsInitializedForTesting)
++      .Then(std::move(callback));
++}
++
+ AgentTask* AegisAgentService::GetTask(const std::string& task_id) {
+   auto it = tasks_.find(task_id);
+   return it == tasks_.end() ? nullptr : it->second.get();
+@@ -781,8 +791,8 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
+   }
+   plans_.insert_or_assign(task_id, std::move(*plan));
+   plan_progress_[task_id] = {0u, 0};
+-  if (!task_store_.SavePlan(task_id, plans_.at(task_id), /*next_step=*/0,
+-                            /*attempt=*/0)) {
++  if (!PersistPlan(task_id, plans_.at(task_id), /*next_step=*/0,
++                   /*attempt=*/0)) {
+     plans_.erase(task_id);
+     plan_progress_.erase(task_id);
+     *error = "validated task plan could not be stored";
+@@ -1110,7 +1120,7 @@ bool AegisAgentService::CancelTask(const std::string& task_id) {
+                             /*cancel_active_downloads=*/true);
+   bookmark_undo_tokens_.erase(task_id);
+   for (const AgentMonitorDefinition& monitor : GetMonitors(task_id)) {
+-    task_store_.DeleteMonitor(monitor.monitor_id);
++    DeletePersistedMonitor(monitor.monitor_id);
+     monitor_scheduler_.Remove(monitor.monitor_id);
+   }
+   ScheduleMonitorTimer();
+@@ -1357,8 +1367,8 @@ void AegisAgentService::EnsureFreshObservationThenContinue(
+   const bool scoped_origin_needed =
+       next_descriptor && next_descriptor->requires_origin;
+   if (!TaskUsesActor(*task) ||
+-      (!force_refresh && !runtime.needs_fresh_observation &&
+-       !document_needed && !scoped_origin_needed)) {
++      (!force_refresh && !runtime.needs_fresh_observation && !document_needed &&
++       !scoped_origin_needed)) {
+     RequestNextModelTurn(task_id);
+     return;
+   }
+@@ -1385,9 +1395,9 @@ void AegisAgentService::EnsureFreshObservationThenContinue(
+       ++runtime.entry_navigation_wait_attempts;
+       runtime.entry_navigation_timer.Start(
+           FROM_HERE, kEntryNavigationPollInterval,
+-          base::BindOnce(
+-              &AegisAgentService::EnsureFreshObservationThenContinue,
+-              weak_ptr_factory_.GetWeakPtr(), task_id, force_refresh));
++          base::BindOnce(&AegisAgentService::EnsureFreshObservationThenContinue,
++                         weak_ptr_factory_.GetWeakPtr(), task_id,
++                         force_refresh));
+       return;
+     }
+     if (!scoped_origin_needed && !document_needed && !runtime.last_tab_id) {
+@@ -1403,8 +1413,7 @@ void AegisAgentService::EnsureFreshObservationThenContinue(
+   }
+   runtime.entry_navigation_timer.Stop();
+   runtime.entry_navigation_wait_attempts = 0;
+-  if (!force_refresh && !runtime.needs_fresh_observation &&
+-      !document_needed) {
++  if (!force_refresh && !runtime.needs_fresh_observation && !document_needed) {
+     RequestNextModelTurn(task_id);
+     return;
+   }
+@@ -2000,15 +2009,13 @@ bool AegisAgentService::FinishWithBrowserVerifiedFallback(
+   base::flat_set<std::string> verified_urls;
+   for (const AgentExecutionEvidence& evidence :
+        runtime_it->second->evidence_history) {
+-    if (!evidence.result.ok ||
+-        !base::StartsWith(evidence.tool_name, "page.")) {
++    if (!evidence.result.ok || !base::StartsWith(evidence.tool_name, "page.")) {
+       continue;
+     }
+     const std::string* value = evidence.result.value.FindString("url");
+     const GURL url(value ? *value : std::string());
+-    if (url.is_valid() && url.SchemeIsHTTPOrHTTPS() &&
+-        url.username().empty() && url.password().empty() &&
+-        !url.has_query() && !url.has_ref() &&
++    if (url.is_valid() && url.SchemeIsHTTPOrHTTPS() && url.username().empty() &&
++        url.password().empty() && !url.has_query() && !url.has_ref() &&
+         task->scope().AllowsOrigin(url)) {
+       verified_urls.insert(url.spec());
+     }
+@@ -2018,8 +2025,8 @@ bool AegisAgentService::FinishWithBrowserVerifiedFallback(
+   const std::vector<AgentMonitorDefinition> monitors = GetMonitors(task_id);
+   const bool monitoring =
+       task->mode() == AgentMode::kAutomate &&
+-      std::ranges::any_of(
+-          monitors, [](const auto& monitor) { return monitor.enabled; });
++      std::ranges::any_of(monitors,
++                          [](const auto& monitor) { return monitor.enabled; });
+   if (monitoring) {
+     completion.outcome = "monitoring";
+     completion.summary =
+@@ -2028,8 +2035,9 @@ bool AegisAgentService::FinishWithBrowserVerifiedFallback(
+     ScheduleMonitorTimer();
+     return true;
+   }
+-  if (!Transition(task_id, AgentTaskState::kVerifying,
+-                  "browser verified all actions; model summary fallback used") ||
++  if (!Transition(
++          task_id, AgentTaskState::kVerifying,
++          "browser verified all actions; model summary fallback used") ||
+       !CompleteTask(task_id)) {
+     FinishRuntime(task_id, false,
+                   "task completion could not be browser-verified",
+@@ -2281,7 +2289,7 @@ bool AegisAgentService::RecordToolResult(const std::string& task_id,
+     auto tool = task_tools->second.find(action_id);
+     if (tool != task_tools->second.end()) {
+       const AgentToolDescriptor* descriptor = tool_registry_.Find(tool->second);
+-      task_store_.AppendActionSummary(
++      AppendPersistedActionSummary(
+           task_id, action_id, tool->second,
+           descriptor ? descriptor->risk : AgentRiskLevel::kBlocked,
+           inserted.first->second.ok,
+@@ -2352,7 +2360,7 @@ bool AegisAgentService::UpsertMonitor(AgentMonitorDefinition monitor) {
+   if (monitor.next_run.is_null()) {
+     monitor.next_run = base::Time::Now() + monitor.interval;
+   }
+-  if (!task_store_.SaveMonitor(monitor)) {
++  if (!PersistMonitor(monitor)) {
+     return false;
+   }
+   const bool upserted = monitor_scheduler_.Upsert(std::move(monitor));
+@@ -2385,8 +2393,7 @@ bool AegisAgentService::SetMonitorPaused(const std::string& task_id,
+   if (it->enabled) {
+     it->next_run = base::Time::Now() + it->interval;
+   }
+-  if (!task_store_.SaveMonitor(*it) ||
+-      !monitor_scheduler_.Upsert(std::move(*it))) {
++  if (!PersistMonitor(*it) || !monitor_scheduler_.Upsert(std::move(*it))) {
+     return false;
+   }
+   ScheduleMonitorTimer();
+@@ -2405,7 +2412,7 @@ bool AegisAgentService::RemoveMonitor(const std::string& task_id,
+   auto it = std::ranges::find_if(monitors, [&](const auto& monitor) {
+     return monitor.monitor_id == monitor_id && monitor.task_id == task_id;
+   });
+-  if (it == monitors.end() || !task_store_.DeleteMonitor(monitor_id)) {
++  if (it == monitors.end() || !DeletePersistedMonitor(monitor_id)) {
+     return false;
+   }
+   const bool removed = monitor_scheduler_.Remove(monitor_id);
+@@ -2432,19 +2439,19 @@ std::vector<AgentMonitorDefinition> AegisAgentService::ClaimDueMonitors(
+         std::ranges::find(task->scope().allowed_origins, monitor.origin) ==
+             task->scope().allowed_origins.end()) {
+       monitor_scheduler_.Remove(monitor.monitor_id);
+-      task_store_.DeleteMonitor(monitor.monitor_id);
++      DeletePersistedMonitor(monitor.monitor_id);
+       continue;
+     }
+     if (!task->ConsumeNetworkRequest()) {
+       monitor.enabled = false;
+       monitor_scheduler_.Upsert(monitor);
+-      task_store_.SaveMonitor(monitor);
++      PersistMonitor(monitor);
+       continue;
+     }
+-    if (!PersistTask(*task) || !task_store_.SaveMonitor(monitor)) {
++    if (!PersistTask(*task) || !PersistMonitor(monitor)) {
+       monitor.enabled = false;
+       monitor_scheduler_.Upsert(monitor);
+-      task_store_.SaveMonitor(monitor);
++      PersistMonitor(monitor);
+       continue;
+     }
+     runnable.push_back(std::move(monitor));
+@@ -2475,7 +2482,7 @@ bool AegisAgentService::MarkMonitorFinished(const std::string& task_id,
+   auto it = std::ranges::find_if(monitors, [&](const auto& monitor) {
+     return monitor.monitor_id == monitor_id && monitor.task_id == task_id;
+   });
+-  const bool persisted = it != monitors.end() && task_store_.SaveMonitor(*it);
++  const bool persisted = it != monitors.end() && PersistMonitor(*it);
+   if (persisted) {
+     ScheduleMonitorTimer();
+     NotifyServiceSnapshotChanged();
+@@ -2709,7 +2716,7 @@ void AegisAgentService::OnMonitorTargetsDecryptorReady(
+       monitor.target_url = target;
+     }
+     monitor_scheduler_.Upsert(monitor);
+-    task_store_.SaveMonitor(monitor);
++    PersistMonitor(monitor);
+   }
+   ScheduleMonitorTimer();
+ }
+@@ -2886,7 +2893,7 @@ void AegisAgentService::OnDueMonitorObserved(AgentMonitorDefinition monitor,
+     return;
+   }
+   if (changed) {
+-    task_store_.AppendActionSummary(
++    AppendPersistedActionSummary(
+         monitor.task_id, "monitor:" + monitor.monitor_id, "monitor.check",
+         AgentRiskLevel::kR0ReadOnly, true,
+         "monitor detected a browser-verified change");
+@@ -3180,11 +3187,47 @@ bool AegisAgentService::TryReadOnlyPlanningRecovery(const std::string& task_id,
+ }
+ 
+ bool AegisAgentService::PersistTask(const AgentTask& task) {
+-  auto it = task_has_external_side_effect_.find(task.id());
+-  return storage_ready_ &&
+-         task_store_.SaveTask(
+-             task, task.goal(),
+-             it != task_has_external_side_effect_.end() && it->second);
++  if (!storage_ready_) {
++    return false;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::SaveTaskRecord)
++      .WithArgs(MakeTaskStoreRecord(task))
++      .Then(base::BindOnce(&AegisAgentService::OnCriticalStoreWriteFinished,
++                           weak_ptr_factory_.GetWeakPtr()));
++  return true;
++}
++
++AgentTaskStoreRecord AegisAgentService::MakeTaskStoreRecord(
++    const AgentTask& task) const {
++  const auto side_effect = task_has_external_side_effect_.find(task.id());
++  return {
++      .task_id = task.id(),
++      .state = task.state(),
++      .mode = task.mode(),
++      .goal_summary = task.goal(),
++      .scope = task.scope(),
++      .has_external_side_effect =
++          side_effect != task_has_external_side_effect_.end() &&
++          side_effect->second,
++      .tool_calls_used = task.tool_calls_used(),
++      .model_calls_used = task.model_calls_used(),
++      .network_requests_used = task.network_requests_used(),
++      .created_at = task.created_at(),
++  };
++}
++
++bool AegisAgentService::PersistPlan(const std::string& task_id,
++                                    const AgentTaskPlan& plan,
++                                    size_t next_step,
++                                    int attempt) {
++  if (!storage_ready_) {
++    return false;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::SavePlan)
++      .WithArgs(task_id, plan, next_step, attempt)
++      .Then(base::BindOnce(&AegisAgentService::OnCriticalStoreWriteFinished,
++                           weak_ptr_factory_.GetWeakPtr()));
++  return true;
+ }
+ 
+ bool AegisAgentService::PersistPlanProgress(const std::string& task_id,
+@@ -3192,13 +3235,113 @@ bool AegisAgentService::PersistPlanProgress(const std::string& task_id,
+                                             int attempt) {
+   auto plan = plans_.find(task_id);
+   if (plan == plans_.end() ||
+-      !task_store_.SavePlan(task_id, plan->second, next_step, attempt)) {
++      !PersistPlan(task_id, plan->second, next_step, attempt)) {
+     return false;
+   }
+   plan_progress_[task_id] = {next_step, attempt};
+   return true;
+ }
+ 
++bool AegisAgentService::PersistMonitor(const AgentMonitorDefinition& monitor) {
++  if (!storage_ready_) {
++    return false;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::SaveMonitor)
++      .WithArgs(monitor)
++      .Then(base::BindOnce(&AegisAgentService::OnCriticalStoreWriteFinished,
++                           weak_ptr_factory_.GetWeakPtr()));
++  return true;
++}
++
++bool AegisAgentService::DeletePersistedMonitor(const std::string& monitor_id) {
++  if (!storage_ready_ || monitor_id.empty()) {
++    return false;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::DeleteMonitor)
++      .WithArgs(monitor_id)
++      .Then(base::BindOnce(&AegisAgentService::OnCriticalStoreWriteFinished,
++                           weak_ptr_factory_.GetWeakPtr()));
++  return true;
++}
++
++void AegisAgentService::AppendPersistedActionSummary(
++    const std::string& task_id,
++    const std::string& action_id,
++    const std::string& tool_name,
++    AgentRiskLevel risk,
++    bool ok,
++    const std::string& redacted_summary) {
++  if (!storage_ready_) {
++    return;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::AppendActionSummary)
++      .WithArgs(task_id, action_id, tool_name, risk, ok, redacted_summary)
++      .Then(base::BindOnce(&AegisAgentService::OnCriticalStoreWriteFinished,
++                           weak_ptr_factory_.GetWeakPtr()));
++}
++
++void AegisAgentService::OnTaskStoreLoaded(
++    std::optional<StoredAgentState> state) {
++  if (shutting_down_) {
++    return;
++  }
++  if (!state) {
++    OnCriticalStoreWriteFinished(false);
++    return;
++  }
++  std::vector<AgentMonitorDefinition> monitors = std::move(state->monitors);
++  RestoreUnfinishedTasks(std::move(*state));
++  RestoreMonitors(std::move(monitors));
++  RestoreMonitorTargets();
++  NotifyServiceSnapshotChanged();
++}
++
++void AegisAgentService::OnCriticalStoreWriteFinished(bool ok) {
++  if (ok || shutting_down_ || !storage_ready_) {
++    return;
++  }
++  storage_ready_ = false;
++  monitor_timer_.Stop();
++  pending_invocation_context_.reset();
++  if (goal_router_client_ && !goal_router_request_id_.empty()) {
++    goal_router_client_->Cancel(goal_router_request_id_);
++  }
++  goal_router_request_id_.clear();
++  for (const auto& [task_id, request_id] : model_request_ids_) {
++    auto client = model_clients_.find(task_id);
++    if (client != model_clients_.end()) {
++      client->second->Cancel(request_id);
++    }
++  }
++  model_request_ids_.clear();
++
++  std::vector<std::string> running_task_ids;
++  running_task_ids.reserve(executions_.size());
++  for (const auto& [task_id, runtime] : executions_) {
++    running_task_ids.push_back(task_id);
++  }
++  for (const auto& [task_id, task] : tasks_) {
++    if (IsTerminalState(task->state())) {
++      continue;
++    }
++    if (TaskUsesActor(*task)) {
++      actor_bridge_.StopTask(task_id, /*completed=*/false);
++    }
++    policy_broker_.RevokeTaskApprovals(task_id);
++    browser_tools_.ForgetTask(task_id, /*preserve_bookmark_undo=*/false,
++                              /*cancel_active_downloads=*/true);
++    task->TransitionTo(
++        AgentTaskState::kFailed,
++        "local task storage is unavailable; check the profile and retry");
++  }
++  for (const std::string& task_id : running_task_ids) {
++    FinishRuntime(task_id, false,
++                  "本地任务存储不可用，请检查浏览器资料目录后重试。",
++                  std::nullopt);
++  }
++  NotifyServiceSnapshotChanged();
++}
++
+ bool AegisAgentService::ConsumeModelRequestBudget(AgentTask* task) {
+   if (!task ||
+       task->model_calls_used() >= task->scope().budgets.max_model_calls ||
+@@ -3210,8 +3353,16 @@ bool AegisAgentService::ConsumeModelRequestBudget(AgentTask* task) {
+   return PersistTask(*task);
+ }
+ 
+-void AegisAgentService::RestoreUnfinishedTasks() {
+-  for (StoredAgentTask& stored : task_store_.LoadUnfinishedTasks()) {
++void AegisAgentService::RestoreUnfinishedTasks(StoredAgentState state) {
++  std::map<std::string, StoredAgentPlan> stored_plans;
++  for (StoredAgentPlanEntry& entry : state.plans) {
++    stored_plans.emplace(std::move(entry.task_id),
++                         std::move(entry.stored_plan));
++  }
++  for (StoredAgentTask& stored : state.tasks) {
++    if (tasks_.contains(stored.task_id)) {
++      continue;
++    }
+     std::optional<AgentTaskScope> scope =
+         AgentTaskStore::DeserializeScope(stored.scope_json);
+     if (!scope) {
+@@ -3246,11 +3397,11 @@ void AegisAgentService::RestoreUnfinishedTasks() {
+     if (stored.state == AgentTaskState::kCompleted) {
+       continue;
+     }
+-    std::optional<StoredAgentPlan> stored_plan =
+-        task_store_.LoadPlan(task_id, restored->scope(), tool_registry_);
+-    if (stored_plan) {
+-      plan_progress_[task_id] = {stored_plan->next_step, stored_plan->attempt};
+-      plans_[task_id] = std::move(stored_plan->plan);
++    auto stored_plan = stored_plans.find(task_id);
++    if (stored_plan != stored_plans.end()) {
++      plan_progress_[task_id] = {stored_plan->second.next_step,
++                                 stored_plan->second.attempt};
++      plans_[task_id] = std::move(stored_plan->second.plan);
+     } else if (!IsTerminalState(restored->state())) {
+       recovery_dispositions_.erase(task_id);
+       restored->TransitionTo(AgentTaskState::kFailed,
+@@ -3260,12 +3411,13 @@ void AegisAgentService::RestoreUnfinishedTasks() {
+   }
+ }
+ 
+-void AegisAgentService::RestoreMonitors() {
++void AegisAgentService::RestoreMonitors(
++    std::vector<AgentMonitorDefinition> monitors) {
+   if (!base::FeatureList::IsEnabled(aegis::features::kAegisAgentWorkflows)) {
+     return;
+   }
+   std::vector<AgentMonitorDefinition> valid;
+-  for (AgentMonitorDefinition& monitor : task_store_.LoadMonitors()) {
++  for (AgentMonitorDefinition& monitor : monitors) {
+     const AgentTask* task = GetTask(monitor.task_id);
+     if (!task || task->mode() != AgentMode::kAutomate ||
+         task->state() == AgentTaskState::kFailed ||
+@@ -3273,14 +3425,14 @@ void AegisAgentService::RestoreMonitors() {
+         task->state() == AgentTaskState::kExpired ||
+         std::ranges::find(task->scope().allowed_origins, monitor.origin) ==
+             task->scope().allowed_origins.end()) {
+-      task_store_.DeleteMonitor(monitor.monitor_id);
++      DeletePersistedMonitor(monitor.monitor_id);
+       continue;
+     }
+     valid.push_back(std::move(monitor));
+   }
+   monitor_scheduler_.Restore(std::move(valid), base::Time::Now());
+   for (const AgentMonitorDefinition& monitor : monitor_scheduler_.Snapshot()) {
+-    task_store_.SaveMonitor(monitor);
++    PersistMonitor(monitor);
+   }
+   ScheduleMonitorTimer();
+ }
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index eea716f040..060449dd28 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -14,6 +14,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/observer_list.h"
++#include "base/threading/sequence_bound.h"
+ #include "base/timer/timer.h"
+ #include "chrome/browser/aegis/agent/aegis_actor_bridge.h"
+ #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+@@ -75,6 +76,7 @@ class AegisAgentService : public KeyedService {
+   AgentTask* MostRecentTask();
+   const AgentTask* MostRecentTask() const;
+   size_t task_count_for_testing() const { return tasks_.size(); }
++  void FlushTaskStoreForTesting(base::OnceCallback<void(bool)> callback);
+   bool SetPendingInvocationContext(AgentInvocationContext context);
+   const AgentInvocationContext* PendingInvocationContext() const;
+   void ClearPendingInvocationContext();
+@@ -153,7 +155,7 @@ class AegisAgentService : public KeyedService {
+ 
+   const AgentToolRegistry& tool_registry() const { return tool_registry_; }
+   bool task_store_is_in_memory_for_testing() const {
+-    return task_store_.is_in_memory_for_testing();
++    return task_store_is_in_memory_;
+   }
+   std::optional<StoredAgentTask::RecoveryDisposition> recovery_disposition(
+       const std::string& task_id) const;
+@@ -175,12 +177,27 @@ class AegisAgentService : public KeyedService {
+   bool TryReadOnlyPlanningRecovery(const std::string& task_id,
+                                    std::string* error);
+   bool PersistTask(const AgentTask& task);
++  AgentTaskStoreRecord MakeTaskStoreRecord(const AgentTask& task) const;
++  bool PersistPlan(const std::string& task_id,
++                   const AgentTaskPlan& plan,
++                   size_t next_step,
++                   int attempt);
+   bool PersistPlanProgress(const std::string& task_id,
+                            size_t next_step,
+                            int attempt);
++  bool PersistMonitor(const AgentMonitorDefinition& monitor);
++  bool DeletePersistedMonitor(const std::string& monitor_id);
++  void AppendPersistedActionSummary(const std::string& task_id,
++                                    const std::string& action_id,
++                                    const std::string& tool_name,
++                                    AgentRiskLevel risk,
++                                    bool ok,
++                                    const std::string& redacted_summary);
++  void OnTaskStoreLoaded(std::optional<StoredAgentState> state);
++  void OnCriticalStoreWriteFinished(bool ok);
+   bool ConsumeModelRequestBudget(AgentTask* task);
+-  void RestoreUnfinishedTasks();
+-  void RestoreMonitors();
++  void RestoreUnfinishedTasks(StoredAgentState state);
++  void RestoreMonitors(std::vector<AgentMonitorDefinition> monitors);
+   void RestoreMonitorTargets();
+   void OnMonitorTargetsDecryptorReady(
+       scoped_refptr<os_crypt_async::Encryptor> encryptor);
+@@ -276,7 +293,8 @@ class AegisAgentService : public KeyedService {
+   void NotifyServiceSnapshotChanged();
+ 
+   raw_ptr<Profile> profile_;
+-  AgentTaskStore task_store_;
++  const bool task_store_is_in_memory_;
++  base::SequenceBound<AgentTaskStore> task_store_;
+   AgentToolRegistry tool_registry_;
+   AgentPolicyBroker policy_broker_;
+   AgentResultVerifier result_verifier_;
+@@ -304,7 +322,9 @@ class AegisAgentService : public KeyedService {
+   std::optional<AgentInvocationContext> pending_invocation_context_;
+   base::ObserverList<AegisAgentServiceObserver> observers_;
+   base::OneShotTimer monitor_timer_;
+-  bool storage_ready_ = false;
++  // The store accepts queued work immediately. Initialization and every
++  // database operation run in order on a dedicated MayBlock sequence.
++  bool storage_ready_ = true;
+   bool shutting_down_ = false;
+   base::WeakPtrFactory<AegisAgentService> weak_ptr_factory_{this};
+ };
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 8d20ca0103..62f3143673 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -11,6 +11,7 @@
+ #include "base/strings/strcat.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
++#include "base/threading/thread_restrictions.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/ui/event_dispatcher.h"
+@@ -147,6 +148,12 @@ class AegisAgentServiceTest : public testing::Test {
+   }
+ 
+  protected:
++  void FlushTaskStore(AegisAgentService* service) {
++    base::test::TestFuture<bool> flushed;
++    service->FlushTaskStoreForTesting(flushed.GetCallback());
++    ASSERT_TRUE(flushed.Get());
++  }
++
+   TestingProfileManager& profile_manager() { return profile_manager_; }
+   raw_ptr<TestingProfile> profile_ = nullptr;
+ 
+@@ -167,6 +174,7 @@ TEST_F(AegisAgentServiceTest, KeepsPrimaryIncognitoTasksAndPrefsIsolated) {
+   AgentTask* regular_task =
+       service->CreateTask("regular task", AgentMode::kAsk, ServiceTestScope());
+   ASSERT_TRUE(regular_task);
++  FlushTaskStore(service);
+   const base::FilePath regular_database =
+       profile_->GetPath().AppendASCII("AegisAgentTasks.sqlite");
+   ASSERT_TRUE(base::PathExists(regular_database));
+@@ -211,6 +219,24 @@ TEST_F(AegisAgentServiceTest, KeepsPrimaryIncognitoTasksAndPrefsIsolated) {
+   EXPECT_TRUE(otr_service->IsEnabled());
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       OpensAndQueuesTaskStorageWhileUiBlockingIsDisallowed) {
++  base::ScopedDisallowBlocking disallow_blocking;
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  ASSERT_TRUE(service->IsEnabled());
++
++  AgentTask* task = service->CreateTask("summarize the approved fixture",
++                                        AgentMode::kAsk, ServiceTestScope());
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(service->BeginPlanning(task->id()));
++  std::string error;
++  EXPECT_TRUE(service->AcceptModelPlan(task->id(), ServicePlanEvent(), &error))
++      << error;
++  EXPECT_TRUE(service->GrantTaskConsent(task->id()));
++}
++
+ TEST_F(AegisAgentServiceTest, RejectsUnsupportedProfileTypes) {
+   Profile* auxiliary_otr = profile_->GetOffTheRecordProfile(
+       Profile::OTRProfileID::CreateUniqueForTesting(),
+@@ -861,9 +887,11 @@ TEST_F(AegisAgentServiceTest,
+     ASSERT_TRUE(original.GrantTaskConsent(task_id));
+     ASSERT_TRUE(task->ConsumeModelCall());
+     original.Shutdown();
++    FlushTaskStore(&original);
+   }
+ 
+   AegisAgentService recovered(profile_);
++  FlushTaskStore(&recovered);
+   AgentTask* task = recovered.GetTask(task_id);
+   ASSERT_TRUE(task);
+   EXPECT_EQ(task->goal(), "recover local fixture");
+@@ -971,9 +999,11 @@ TEST_F(AegisAgentServiceTest,
+     ASSERT_TRUE(task->TransitionTo(AgentTaskState::kVerifying, "verified"));
+     ASSERT_TRUE(original.CompleteTask(task_id));
+     original.Shutdown();
++    FlushTaskStore(&original);
+   }
+ 
+   AegisAgentService recovered(profile_);
++  FlushTaskStore(&recovered);
+   AgentTask* task = recovered.GetTask(task_id);
+   ASSERT_TRUE(task);
+   EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
+diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
+index 66d479eb5b..aecfa12d94 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.cc
++++ b/chrome/browser/aegis/agent/agent_task_store.cc
+@@ -187,13 +187,59 @@ bool AgentTaskStore::Initialize() {
+   return true;
+ }
+ 
++std::optional<StoredAgentState> AgentTaskStore::InitializeAndLoad(
++    base::Time unfinished_before,
++    base::Time completed_before) {
++  if (!Initialize() || !Prune(unfinished_before, completed_before)) {
++    return std::nullopt;
++  }
++
++  StoredAgentState state;
++  state.tasks = LoadUnfinishedTasks();
++  AgentToolRegistry registry;
++  for (const StoredAgentTask& task : state.tasks) {
++    if (task.state == AgentTaskState::kCompleted) {
++      continue;
++    }
++    std::optional<AgentTaskScope> scope = DeserializeScope(task.scope_json);
++    if (!scope) {
++      continue;
++    }
++    std::optional<StoredAgentPlan> plan =
++        LoadPlan(task.task_id, *scope, registry);
++    if (plan) {
++      state.plans.push_back(
++          {.task_id = task.task_id, .stored_plan = std::move(*plan)});
++    }
++  }
++  state.monitors = LoadMonitors();
++  return state;
++}
++
+ bool AgentTaskStore::SaveTask(const AgentTask& task,
+                               std::string goal_summary,
+                               bool has_external_side_effect) {
+-  if (!initialized_ || !IsSafeSummary(goal_summary)) {
++  AgentTaskStoreRecord record{
++      .task_id = task.id(),
++      .state = task.state(),
++      .mode = task.mode(),
++      .goal_summary = std::move(goal_summary),
++      .scope = task.scope(),
++      .has_external_side_effect = has_external_side_effect,
++      .tool_calls_used = task.tool_calls_used(),
++      .model_calls_used = task.model_calls_used(),
++      .network_requests_used = task.network_requests_used(),
++      .created_at = task.created_at(),
++  };
++  return SaveTaskRecord(std::move(record));
++}
++
++bool AgentTaskStore::SaveTaskRecord(AgentTaskStoreRecord record) {
++  if (!initialized_ || record.task_id.empty() ||
++      !IsSafeSummary(record.goal_summary)) {
+     return false;
+   }
+-  const std::string scope_json = SerializeScope(task.scope());
++  const std::string scope_json = SerializeScope(record.scope);
+   if (scope_json.empty()) {
+     return false;
+   }
+@@ -207,16 +253,16 @@ bool AgentTaskStore::SaveTask(const AgentTask& task,
+       "UPDATE agent_tasks SET state=?,mode=?,goal_summary=?,scope_json=?,"
+       "has_external_side_effect=?,tool_calls_used=?,model_calls_used=?,"
+       "network_requests_used=?,updated_us=? WHERE task_id=?"));
+-  update.BindInt(0, static_cast<int>(task.state()));
+-  update.BindInt(1, static_cast<int>(task.mode()));
+-  update.BindString(2, goal_summary);
++  update.BindInt(0, static_cast<int>(record.state));
++  update.BindInt(1, static_cast<int>(record.mode));
++  update.BindString(2, record.goal_summary);
+   update.BindString(3, scope_json);
+-  update.BindBool(4, has_external_side_effect);
+-  update.BindInt(5, task.tool_calls_used());
+-  update.BindInt(6, task.model_calls_used());
+-  update.BindInt(7, task.network_requests_used());
++  update.BindBool(4, record.has_external_side_effect);
++  update.BindInt(5, record.tool_calls_used);
++  update.BindInt(6, record.model_calls_used);
++  update.BindInt(7, record.network_requests_used);
+   update.BindInt64(8, SerializeTime(base::Time::Now()));
+-  update.BindString(9, task.id());
++  update.BindString(9, record.task_id);
+   if (!update.Run()) {
+     return false;
+   }
+@@ -230,16 +276,16 @@ bool AgentTaskStore::SaveTask(const AgentTask& task,
+       "has_external_side_effect,tool_calls_used,model_calls_used,"
+       "network_requests_used,created_us,updated_us) "
+       "VALUES(?,?,?,?,?,?,?,?,?,?,?)"));
+-  insert.BindString(0, task.id());
+-  insert.BindInt(1, static_cast<int>(task.state()));
+-  insert.BindInt(2, static_cast<int>(task.mode()));
+-  insert.BindString(3, goal_summary);
++  insert.BindString(0, record.task_id);
++  insert.BindInt(1, static_cast<int>(record.state));
++  insert.BindInt(2, static_cast<int>(record.mode));
++  insert.BindString(3, record.goal_summary);
+   insert.BindString(4, scope_json);
+-  insert.BindBool(5, has_external_side_effect);
+-  insert.BindInt(6, task.tool_calls_used());
+-  insert.BindInt(7, task.model_calls_used());
+-  insert.BindInt(8, task.network_requests_used());
+-  insert.BindInt64(9, SerializeTime(task.created_at()));
++  insert.BindBool(5, record.has_external_side_effect);
++  insert.BindInt(6, record.tool_calls_used);
++  insert.BindInt(7, record.model_calls_used);
++  insert.BindInt(8, record.network_requests_used);
++  insert.BindInt64(9, SerializeTime(record.created_at));
+   insert.BindInt64(10, SerializeTime(base::Time::Now()));
+   return insert.Run() && transaction.Commit();
+ }
+diff --git a/chrome/browser/aegis/agent/agent_task_store.h b/chrome/browser/aegis/agent/agent_task_store.h
+index c9c28c46d7..750dea9505 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.h
++++ b/chrome/browser/aegis/agent/agent_task_store.h
+@@ -46,6 +46,33 @@ struct StoredAgentPlan {
+   int attempt = 0;
+ };
+ 
++// Copyable task metadata queued from the UI sequence to the storage sequence.
++// It intentionally has no fields for page content, form values, cookies,
++// credentials, screenshots, or full local paths.
++struct AgentTaskStoreRecord {
++  std::string task_id;
++  AgentTaskState state = AgentTaskState::kDraft;
++  AgentMode mode = AgentMode::kAsk;
++  std::string goal_summary;
++  AgentTaskScope scope;
++  bool has_external_side_effect = false;
++  int tool_calls_used = 0;
++  int model_calls_used = 0;
++  int network_requests_used = 0;
++  base::Time created_at;
++};
++
++struct StoredAgentPlanEntry {
++  std::string task_id;
++  StoredAgentPlan stored_plan;
++};
++
++struct StoredAgentState {
++  std::vector<StoredAgentTask> tasks;
++  std::vector<StoredAgentPlanEntry> plans;
++  std::vector<AgentMonitorDefinition> monitors;
++};
++
+ // Profile-local storage for resumable metadata and redacted action summaries.
+ // Page bodies, screenshots, secrets, form values, cookies and full local paths
+ // have no column in this schema.
+@@ -57,9 +84,13 @@ class AgentTaskStore {
+   ~AgentTaskStore();
+ 
+   bool Initialize();
++  std::optional<StoredAgentState> InitializeAndLoad(
++      base::Time unfinished_before,
++      base::Time completed_before);
+   bool SaveTask(const AgentTask& task,
+                 std::string goal_summary,
+                 bool has_external_side_effect);
++  bool SaveTaskRecord(AgentTaskStoreRecord record);
+   bool AppendActionSummary(const std::string& task_id,
+                            const std::string& action_id,
+                            const std::string& tool_name,
+@@ -84,14 +115,18 @@ class AgentTaskStore {
+ 
+   static std::optional<AgentTaskScope> DeserializeScope(
+       std::string_view scope_json);
++  // Goals and persisted summaries share the same secret/control-character
++  // boundary. Callers must reject unsafe values before queueing asynchronous
++  // storage work so an invalid task is never exposed to the UI.
++  static bool IsSafeSummary(const std::string& value);
+ 
+   const base::FilePath& database_path_for_testing() const {
+     return database_path_;
+   }
+   bool is_in_memory_for_testing() const { return in_memory_; }
++  bool IsInitializedForTesting() const { return initialized_; }
+ 
+  private:
+-  static bool IsSafeSummary(const std::string& value);
+   static std::string SerializeScope(const AgentTaskScope& scope);
+   static int64_t SerializeTime(base::Time time);
+   static base::Time DeserializeTime(int64_t value);
+-- 
+2.52.0
+

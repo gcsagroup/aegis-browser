@@ -374,7 +374,8 @@ base::DictValue ToolSchema(std::string_view name) {
   }
   if (name == "bookmark.check_urls") {
     properties.Set("node_ids", StringArraySchema(128, 100));
-    return StrictObject(std::move(properties), {"node_ids"});
+    properties.Set("selection_ref", StringSchema(128));
+    return StrictObject(std::move(properties), {});
   }
   if (name == "bookmark.apply") {
     properties.Set("plan_id", StringSchema(128));
@@ -529,7 +530,9 @@ std::string_view ToolDescription(std::string_view name) {
     return "Hand off to the standard file picker for one explicit upload.";
   }
   if (name == "tab.list") {
-    return "List task-visible browser tabs.";
+    return "读取任务授权的标签元数据；已绑定当前窗口时返回该窗口的 tab_count，"
+           "tabs 是有界明细，list_truncated 标记是否截断。读取元数据不授予"
+           "关闭、分组、激活标签或读取网页正文的权限。";
   }
   if (name == "tab.create") {
     return "Create a tab at an approved URL.";
@@ -568,7 +571,9 @@ std::string_view ToolDescription(std::string_view name) {
     return "Create a dry-run bookmark organization plan.";
   }
   if (name == "bookmark.check_urls") {
-    return "Check bounded bookmark URL availability.";
+    return "检查收藏链接。全量检查时只传 bookmark.list 发出的 selection_ref；"
+           "仅检查指定收藏时只传 1 至 100 个 node_ids。两种选择不能同时提供。"
+           "浏览器核对所属任务和收藏快照，并保留网络预算及来源限制。";
   }
   if (name == "bookmark.apply") {
     return "Apply an approved bookmark plan with undo.";
@@ -598,7 +603,8 @@ std::string_view ToolDescription(std::string_view name) {
     return "Cancel an exact Agent-owned download.";
   }
   if (name == "download.verify") {
-    return "Verify a completed download's evidence.";
+    return "Wait for an Agent-owned download to finish and verify its "
+           "browser evidence.";
   }
   if (name == "download.open") {
     return "Hand a verified Agent-owned download to the user to open.";

@@ -4,6 +4,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 SRC="$CHROMIUM_ROOT/src"
 OUT="${OUT_DIR:-$SRC/out/AegisRelease}"
+APP="$(desktop_app_path "$OUT")"
 PROFILE="${AEGIS_USER_DATA_DIR:-$CHROMIUM_ROOT/profiles/AegisRelease}"
 ARGS_FILE="$ROOT_DIR/args/aegis-release.gn"
 if [[ "${1:-}" == -- ]]; then
@@ -15,8 +16,8 @@ PROFILE="$(resolve_user_data_dir_arg "$PROFILE" "$@")" || {
 }
 ensure_profile_not_in_use "$PROFILE"
 
-if [[ ! -d "$OUT/Chromium.app" ]]; then
-  echo "Missing $OUT/Chromium.app — run: pnpm --filter @gcsa-aegis/browser build:release"
+if [[ ! -d "$APP" ]]; then
+  echo "Missing $APP — run: pnpm --filter @gcsa-aegis/browser build:release"
   exit 1
 fi
 
@@ -24,7 +25,7 @@ binary="$(verify_runnable_browser_output \
   "Release 桌面产物" "$OUT" false "$ARGS_FILE")"
 run_args=("$@")
 if ! has_user_data_dir_arg "$@"; then
-  run_args=("--user-data-dir=$PROFILE" "${run_args[@]}")
+  run_args=("--user-data-dir=$PROFILE" "$@")
 fi
 case "${AEGIS_RUN_DRY_RUN:-0}" in
   0) ;;
@@ -40,4 +41,4 @@ case "${AEGIS_RUN_DRY_RUN:-0}" in
     ;;
 esac
 printf '启动已验证 Release：%s\n独立 Profile：%s\n' "$binary" "$PROFILE"
-open -n "$OUT/Chromium.app" --args "${run_args[@]}"
+open -n "$APP" --args "${run_args[@]}"

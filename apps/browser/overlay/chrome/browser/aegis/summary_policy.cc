@@ -12,6 +12,7 @@
 #include "base/strings/escape.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/common/aegis/security_text.h"
 #include "net/base/url_util.h"
 #include "third_party/re2/src/re2/re2.h"
 #include "url/gurl.h"
@@ -600,9 +601,12 @@ std::optional<PreparedSummary> PrepareSummaryForBrowser(
   prepared.schema_version = kPreparedSummarySchemaVersion;
   prepared.snapshot.url = *safe_url;
   prepared.snapshot.title = std::string(base::TruncateUTF8ToByteSize(
-      RedactValues(original.title, sensitive_values), kMaxSanitizedTitleBytes));
+      RedactRecognizableValues(RedactValues(
+          NormalizeSecurityText(original.title).text, sensitive_values)),
+      kMaxSanitizedTitleBytes));
   prepared.snapshot.text_sample = std::string(base::TruncateUTF8ToByteSize(
-      RedactValues(original.text_sample, sensitive_values),
+      RedactRecognizableValues(RedactValues(
+          NormalizeSecurityText(original.text_sample).text, sensitive_values)),
       kMaxSanitizedTextBytes));
   prepared.snapshot.password_fields = original.password_fields;
   prepared.snapshot.forms = original.forms;
@@ -698,6 +702,9 @@ bool ValidatePreparedSummary(const PageSnapshot& original,
   }
 
   const std::string payload = PreparedPayload(prepared);
+  if (NormalizeSecurityText(payload).removed_hidden_codepoints > 0) {
+    return Reject(error, "prepared summary contains hidden text");
+  }
   if (ContainsRecognizableSensitiveValue(payload)) {
     return Reject(error, "prepared summary still contains sensitive data");
   }

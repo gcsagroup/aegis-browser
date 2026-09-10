@@ -24,6 +24,7 @@ interface ModelDraft {
 }
 
 interface AegisStatus {
+  profileAvailable?: boolean;
   enabled: boolean;
   trackerBlocking: boolean;
   phishInterstitial: boolean;
@@ -43,6 +44,7 @@ interface AegisStatus {
   policyWorkerError: string;
   privacyAi: boolean;
   aiControl?: boolean;
+  aiControlAvailable?: boolean;
   aiControlRunning?: boolean;
   aiControlPort?: number;
   aiControlAddress?: string;
@@ -689,7 +691,6 @@ function applyStatus(status: AegisStatus) {
   updateModelFormatPresentation();
   updateModelControlAvailability();
   if (!android) {
-    checkbox('ai-control').checked = !!status.aiControl;
     fillAiControl(status);
   }
   fillBrowserAgent(status);
@@ -701,6 +702,17 @@ function applyStatus(status: AegisStatus) {
   actionButton('filter-update').disabled = status.filterListUpdating;
   actionButton('summarize').disabled =
       summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
+  if (status.profileAvailable === false) {
+    document
+        .querySelectorAll<HTMLInputElement|HTMLButtonElement|
+                          HTMLSelectElement|HTMLTextAreaElement>(
+            'input, button, select, textarea')
+        .forEach(control => control.disabled = true);
+    showResult(status.error ||
+               (document.documentElement.lang.startsWith('zh') ?
+                    '当前浏览器配置不支持 Aegis。' :
+                    'Aegis is unavailable for this browser profile.'));
+  }
 }
 
 async function setModule(module: ModuleName, enabled: boolean) {
@@ -943,8 +955,18 @@ function kindLabel(kind: string, zh: boolean): string {
 
 function fillAiControl(status: AegisStatus) {
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+  const toggle = checkbox('ai-control');
+  toggle.checked = !!status.aiControl;
+  toggle.disabled = status.aiControlAvailable === false;
   const statusEl = getRequiredElement('ai-control-status');
   const connectEl = getRequiredElement('ai-control-connect');
+  if (status.aiControlAvailable === false) {
+    statusEl.textContent = zh ?
+        '存在无痕会话时不开放进程级 CDP，避免本机调试端点看到私密标签页；原生 Browser Agent 仍可使用。' :
+        'Process-wide CDP is unavailable while Incognito is active so a local debugging endpoint cannot see private tabs; the native Browser Agent remains available.';
+    connectEl.hidden = true;
+    return;
+  }
   const on = !!status.aiControl && !!status.aiControlRunning;
   if (!status.aiControl) {
     statusEl.textContent =
@@ -985,7 +1007,7 @@ function fillBrowserAgent(status: AegisStatus) {
   const open = actionButton('browser-agent-open');
   const statusEl = getRequiredElement('browser-agent-status');
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
-  section.hidden = !!status.isAndroid;
+  section.hidden = false;
   toggle.checked = !!status.browserAgentEnabled;
   toggle.disabled = !status.browserAgentAvailable;
   open.disabled = !status.browserAgentAvailable || !status.browserAgentEnabled;
@@ -999,8 +1021,8 @@ function fillBrowserAgent(status: AegisStatus) {
         'Enabled. High-risk actions still require approval and payment requires takeover.';
   } else {
     statusEl.textContent = zh ?
-        '默认关闭；启用后可从工具栏或此处打开。' :
-        'Off by default. Enable it to open from the toolbar or here.';
+        '默认关闭；启用后可从浏览器菜单、工具栏或此处打开。' :
+        'Off by default. Enable it to open from the browser menu, toolbar, or here.';
   }
 }
 

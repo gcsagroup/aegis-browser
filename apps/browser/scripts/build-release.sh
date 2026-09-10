@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a self-contained (non-component) Chromium.app for distribution.
+# Build a self-contained (non-component) GCSA Aegis.app for distribution.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -49,6 +49,8 @@ IDENTITY_HISTORY_DIR="$IDENTITY_DIR/history"
 BUILD_INPUT="$IDENTITY_DIR/build-input.json"
 BUILD_MANIFEST="$IDENTITY_DIR/build-manifest.json"
 BUILD_LOCK="$IDENTITY_DIR/build.lock"
+APP="$(desktop_app_path "$OUT")"
+LEGACY_APP="$OUT/Chromium.app"
 
 cd "$SRC"
 
@@ -84,7 +86,8 @@ trap release_build_lock EXIT
 # 一旦开始新构建，旧清单与旧 App 都不再代表“当前构建尝试”。在锁内
 # 移到唯一 history 目录，确保 begin 阶段亲自观察到目标 App 不存在。
 if [[ -f "$BUILD_INPUT" || -f "$BUILD_MANIFEST" || \
-      -e "$OUT/Chromium.app" || -L "$OUT/Chromium.app" ]]; then
+      -e "$APP" || -L "$APP" || \
+      -e "$LEGACY_APP" || -L "$LEGACY_APP" ]]; then
   if [[ -L "$IDENTITY_HISTORY_DIR" ]]; then
     echo "Release identity history must not be a symlink: $IDENTITY_HISTORY_DIR" >&2
     exit 1
@@ -110,12 +113,19 @@ if [[ -f "$BUILD_INPUT" || -f "$BUILD_MANIFEST" || \
       mv "$identity_file" "$history/$(basename "$identity_file")"
     fi
   done
-  if [[ -e "$OUT/Chromium.app" || -L "$OUT/Chromium.app" ]]; then
-    mv "$OUT/Chromium.app" "$history/previous-Chromium.app"
+  if [[ -e "$APP" || -L "$APP" ]]; then
+    mv "$APP" "$history/previous-$AEGIS_MAC_APP_BUNDLE_NAME"
+  fi
+  if [[ -e "$LEGACY_APP" || -L "$LEGACY_APP" ]]; then
+    mv "$LEGACY_APP" "$history/legacy-Chromium.app"
   fi
 fi
-if [[ -e "$OUT/Chromium.app" || -L "$OUT/Chromium.app" ]]; then
-  echo "Refusing to begin while the target App still exists: $OUT/Chromium.app" >&2
+if [[ -e "$APP" || -L "$APP" ]]; then
+  echo "Refusing to begin while the target App still exists: $APP" >&2
+  exit 1
+fi
+if [[ -e "$LEGACY_APP" || -L "$LEGACY_APP" ]]; then
+  echo "Refusing to begin while the legacy App still exists: $LEGACY_APP" >&2
   exit 1
 fi
 
@@ -127,7 +137,7 @@ identity_begin=(
   --output "$BUILD_INPUT"
   --out-dir "$OUT"
   --lock "$BUILD_LOCK"
-  --artifact "$OUT/Chromium.app"
+  --artifact "$APP"
 )
 if [[ "${AEGIS_ALLOW_DIRTY_IDENTITY:-0}" == "1" ]]; then
   identity_begin+=(--allow-dirty)
@@ -141,7 +151,7 @@ autoninja -C "$OUT" chrome
 # 本地 ad-hoc 签名会修改 App 内的 Mach-O 字节，必须发生在身份清单
 # finalize 之前。启动流程不得再对已绑定产物做任何签名或修补。
 if [[ "$(uname -s)" == Darwin ]]; then
-  bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$OUT/Chromium.app" "$OUT"
+  bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP" "$OUT"
 fi
 
 echo "Finalizing source-to-artifact identity…"
@@ -150,8 +160,8 @@ node "$ROOT_DIR/scripts/write-build-identity.mjs" \
   --input "$BUILD_INPUT" \
   --output "$BUILD_MANIFEST" \
   --out-dir "$OUT" \
-  --artifact "$OUT/Chromium.app" \
+  --artifact "$APP" \
   --lock "$BUILD_LOCK"
-echo "Build complete: $OUT/Chromium.app"
-du -sh "$OUT/Chromium.app"
+echo "Build complete: $APP"
+du -sh "$APP"
 echo "Build identity: $BUILD_MANIFEST"

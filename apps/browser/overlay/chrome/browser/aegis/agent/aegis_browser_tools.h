@@ -15,6 +15,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
+#include "base/time/time.h"
 #include "chrome/browser/aegis/agent/agent_task.h"
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "components/undo/undo_manager_observer.h"
@@ -47,7 +48,8 @@ namespace aegis::agent {
 
 bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
                                           const GURL& selected_bookmark_url,
-                                          const GURL& target);
+                                          const GURL& target,
+                                          bool allow_local_fixture = false);
 void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item);
 
 // Executes browser-owned tools that must not be implemented through renderer
@@ -95,6 +97,14 @@ class AegisBrowserTools : public UndoManagerObserver {
 
   struct UrlCheckBatch;
 
+  // 引用只属于发出清单的任务；书签变化、重新列出或结束任务都会使其失效。
+  struct BookmarkCheckSelection {
+    std::string reference;
+    std::string snapshot_hash;
+    std::vector<std::string> node_ids;
+    bool list_truncated = false;
+  };
+
   void ExecuteTabTool(AgentTask* task,
                       const AgentToolCall& call,
                       ToolResultCallback callback);
@@ -124,6 +134,13 @@ class AegisBrowserTools : public UndoManagerObserver {
                          ToolResultCallback callback,
                          download::DownloadItem* item,
                          download::DownloadInterruptReason reason);
+  void FinishDownloadVerification(std::string task_id,
+                                  AgentTaskScope scope,
+                                  std::string action_id,
+                                  std::string download_id,
+                                  base::TimeTicks deadline,
+                                  ToolResultCallback callback);
+  static bool ShouldWaitForDownloadVerification(download::DownloadItem* item);
   void PumpUrlCheckRequests(const std::string& batch_key);
   void StartUrlCheckRequest(const std::string& batch_key, size_t index);
   void OnUrlCheckRedirect(const std::string& batch_key,
@@ -148,6 +165,7 @@ class AegisBrowserTools : public UndoManagerObserver {
 
   raw_ptr<Profile> profile_;
   std::map<std::string, BookmarkPlan> bookmark_plans_;
+  std::map<std::string, BookmarkCheckSelection> bookmark_check_selections_;
   std::map<std::string, BookmarkUndoReceipt> bookmark_undo_receipts_;
   std::map<std::string, std::unique_ptr<UrlCheckBatch>> url_check_batches_;
   std::map<std::string, base::flat_set<std::string>> owned_downloads_;
