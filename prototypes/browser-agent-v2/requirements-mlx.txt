@@ -1,0 +1,2 @@
+# 仅用于隔离原型的本地 OpenAI-compatible provider；不是正式产品依赖。
+mlx-lm==0.31.3

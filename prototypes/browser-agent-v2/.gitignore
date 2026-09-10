@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+.venv-browser-use/
+.venv-skyvern/
+.venv-mlx/
+.cache-huggingface/
+.models/
+__pycache__/
+*.pyc
+*.log
+.env
+.env.*
