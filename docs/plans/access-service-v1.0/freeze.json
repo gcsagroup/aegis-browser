@@ -1,0 +1,28 @@
+{
+  "specVersion": "V1.0",
+  "specRevision": 1,
+  "recordedAt": "2026-09-10T10:48:10+00:00",
+  "specificationStatus": "FROZEN",
+  "authority": "spec.zh-CN.md",
+  "designSourceBaseline": "cb35227fcc66f4a451fc93d4b755f3beb0f3a13b",
+  "counts": {
+    "functionalAndDeliveryCases": 104,
+    "performanceMetrics": 13,
+    "deliveryGates": 4
+  },
+  "productRuntimeAcceptance": "NOT_RUN",
+  "performanceMeasurements": "NOT_RUN",
+  "deploymentBindings": "PENDING: specification section 13",
+  "sourceDocumentSha256": "3cddc755f17dadae4ead6c36a529bc19411e22a43ff1132261deff5f77ef836f",
+  "repositoryAdaptation": "Only repository-portable references and artifact navigation; no normative behavior changes.",
+  "files": {
+    "spec.zh-CN.md": {
+      "sha256": "7710b43834689f7caa060d336a23481ff5bbb0b48ed09214a3b938bcad7d674c",
+      "bytes": 96100
+    },
+    "interaction-example.html": {
+      "sha256": "bf5296af20085f6fb364fa9c85f6e291c2abe5ae2a42fdc28a225ece9f7939cd",
+      "bytes": 38178
+    }
+  }
+}

@@ -30,6 +30,8 @@ Do not add results from different patch heads. A historical App, APK, test count
 
 ## Dated plans and audits
 
+- [Access service V1.0 frozen design and acceptance contract (Simplified Chinese; not runtime evidence)](plans/access-service-v1.0/spec.zh-CN.md)
+
 Files whose names include a date are evidence snapshots, plans, or implementation records. Their use of “current” refers to that record's date, not necessarily to the current repository head. Use [Roadmap](roadmap.md) for the current public status, and preserve the dated files as historical evidence rather than silently rewriting their measurements.
 
 ## Language convention
