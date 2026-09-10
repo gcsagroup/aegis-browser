@@ -8,7 +8,7 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 - Android uses the same pinned Chromium `151.0.7922.77` base as desktop.
 - The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
-- The v2 candidate contains 105 top-level Chromium patches and 2 nested V8 patches, replayed exactly to `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` (tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`). The current Android build and physical-device acceptance are still in progress; historical macOS evidence does not qualify an Android artifact.
+- The v2 candidate contains 108 top-level Chromium patches and 2 nested V8 patches, replayed exactly to source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. The current Android build and physical-device acceptance are still in progress; historical macOS evidence does not qualify an Android artifact.
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
 - v2 source resolves the public page behind the full-page Agent tab and binds current-page tasks to that document. Page capture, redaction, navigation invalidation, and results still require physical-device acceptance.
 - v2 source places the process-wide remote-debugging latch in front of Android DevTools HTTP/socket startup, including deferred startup. Once an Incognito Profile trips the latch, pending and later starts are rejected for the rest of the process; physical-device validation remains open.
@@ -52,7 +52,7 @@ An AAB path and Play signing identity must be defined and verified before store 
 
 ## Acceptance criteria
 
-1. Replay all 105 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
+1. Replay all 108 Chromium patches and 2 nested V8 patches from the pinned bases in a clean x86-64 Linux checkout.
 2. Build successfully and create a manifest that binds the repository commit, Chromium commit, both patch-series identities, GN arguments, and APK/AAB SHA-256.
 3. Verify final package ID, version, launcher name, icons, permissions, native libraries, and signing structure.
 4. Uninstall any old build, install the current APK on a representative device, complete First Run, open normal pages and `chrome://aegis`, and exercise core protections.

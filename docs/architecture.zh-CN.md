@@ -47,7 +47,7 @@ Node-only AST 分析、有界行为/来源函数、本地联邦模拟和 V8 Igni
 
 ## 当前源码与产物身份
 
-- Browser Agent v2 候选源码包含 105 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`（tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`）。
+- Browser Agent v2 候选源码包含 108 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到源码树 `319366182c31108e29e62d2f2199aff29a0b86e8`。
 - 57、65 和 67 补丁记录属于历史快照，不能给 v2 候选产物授予资格。
 - 当前整合 HEAD 必须重新完成精确重放、身份绑定构建和受影响运行验收，才能成为当前本地候选。
 - 原生 iOS 源码包含 App、BrowserKit、AegisPolicyKit、AgentKit、Safari/Share extension targets、共享合同向量和 iPhone/iPad Simulator 测试链路；当前证据上限为 `SIMULATOR_QUALIFIED`。

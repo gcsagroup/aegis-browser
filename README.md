@@ -4,7 +4,9 @@
 
 GCSA-aegis is a local-first privacy and security browser project with two product lines: the Chromium fork under [`apps/browser`](apps/browser/README.md) and the native iOS browser under [`apps/ios`](apps/ios/README.md). Core capabilities stay inside each browser product; the project does not revive the retired standalone-extension product.
 
-> **Status — 2026-09-05:** the Browser Agent v2 candidate contains 106 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium commit `383d157c6f3601101038aef6ff964e61b6af7b4f` (tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`). The 57-, 65-, 67-, 95-, and 97-patch records remain historical evidence. The native iOS product remains **SIMULATOR_QUALIFIED** only for its recorded Simulator scope. The project is **release No-Go** pending trusted attestation, production signing, notarization, installed-distribution acceptance, and the separately deferred iOS gates.
+> **Status — 2026-09-10:** the Browser Agent v2 candidate contains 108 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. The 57-, 65-, 67-, 95-, and 97-patch records remain historical evidence. The native iOS product remains **SIMULATOR_QUALIFIED** only for its recorded Simulator scope. The project is **release No-Go** pending trusted attestation, production signing, notarization, installed-distribution acceptance, and the separately deferred iOS gates.
+
+[2026-09-10 main consolidation and verification](docs/audit/main-consolidation-2026-09-10.md)
 
 The Agent entry is visible in a regular desktop Profile and on Android. The first task can configure and enable the user-selected model without requiring a separate workflow choice or pre-opened page. WebMCP and transaction submission remain default-off, and final checkout/payment always requires user takeover.
 

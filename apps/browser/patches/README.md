@@ -14,7 +14,7 @@ Patches in this directory are applied on top of the pinned Chromium commit
 
 ## Current local patch series
 
-The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-, 67-, and 95-patch records are retained only as historical snapshots. The current integrated source contains **106 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0105 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, bounded recovery, browser-bound tab/document capabilities, correct product identity, off-UI-sequence persistence, deterministic teardown, and assertion-safe rate-limit handling. Patches 0079–0095 replay to Chromium source commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patches 0096–0101 produce `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`). Artifact qualification remains platform-specific and requires acceptance evidence for that exact source.
+The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-, 67-, and 95-patch records are retained only as historical snapshots. The current integrated source contains **108 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0105 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, bounded recovery, browser-bound tab/document capabilities, correct product identity, off-UI-sequence persistence, deterministic teardown, and assertion-safe rate-limit handling. Patches 0079–0095 replay to Chromium source commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patches 0096–0101 produce `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`). Artifact qualification remains platform-specific and requires acceptance evidence for that exact source.
 
 | ID | Intent | Status |
 |----|--------|--------|
@@ -124,9 +124,13 @@ The status “in series” means only that the patch file is listed in the curre
 | 0104 | Compile the incognito service guard on Android | in series |
 | 0105 | Register the Android Agent broker and fix safe scheduling fallback and status | in series |
 | 0106 | Use cached UI locale to avoid blocking Windows UI threads; add native browser regression tests | in series |
+| 0107 | Restore enabled Agent monitors at Profile startup | in series |
+| 0108 | Synchronize verified runtime, security text, monitoring and summary fixes | in series |
 
 Patches 0103–0105 replay exactly from the 0102 baseline to source tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb` of commit `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`. Real platform acceptance remains a separate gate.
 
-Patch 0106 replays from that candidate to `383d157c6f3601101038aef6ff964e61b6af7b4f` (tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`). Rebuilds and platform regression acceptance are still pending.
+Patch 0106 replays from that candidate to `383d157c6f3601101038aef6ff964e61b6af7b4f` (tree `2c509e07ec25fa8811adae17f9826e967c9bcee1`). This is a historical source checkpoint, not the current complete series.
+
+The complete 108-patch series was replayed from the pinned base on 2026-09-10 to tree `319366182c31108e29e62d2f2199aff29a0b86e8`; both V8 patches were verified separately. See the [consolidation record](../../../docs/audit/main-consolidation-2026-09-10.md). This publication did not rebuild an App.
 
 Apply with `pnpm --filter @gcsa-aegis/browser apply-patches` on a clean pinned checkout. Every series change requires a fresh offline replay, cold and incremental builds, and the affected tests.
