@@ -1,4 +1,34 @@
-<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 修订 2：网站代理开关与分渠道调试示例">
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Aegis V1.0 修订 3 · 交互预览</title>
+  <style>
+    :root { color-scheme:light dark; }
+    body { margin:0; padding:20px; background:light-dark(#f5f6f8,#181b20); color:light-dark(#252b35,#eef1f5); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .preview-shell { max-width:1100px; margin:0 auto; }
+    .preview-controls { display:flex; flex-wrap:wrap; gap:12px 20px; margin:0 0 20px; padding:16px; border:1px dashed light-dark(#b4bdca,#606b7c); border-radius:10px; }
+    .preview-controls legend { padding:0 8px; font-weight:500; }
+    .preview-controls label { display:grid; gap:4px; flex:1 1 150px; }
+    .preview-controls select { box-sizing:border-box; width:100%; min-height:40px; padding:7px; border:1px solid light-dark(#b4bdca,#606b7c); border-radius:6px; background:light-dark(#fff,#24282f); color:inherit; font:inherit; }
+    .preview-note { margin:0 0 14px; color:light-dark(#606b7c,#b2bdcc); }
+    @media(max-width:560px) { body { padding:10px; } .preview-controls { padding:12px; gap:10px; } }
+  </style>
+</head>
+<body>
+<main class="preview-shell">
+  <p class="preview-note">文档预览 · 示例数据 · 不连接真实服务。下方预览控件不属于产品界面。</p>
+  <fieldset class="preview-controls" aria-label="文档预览控件">
+    <legend>预览设置</legend>
+    <label>预览渠道<select data-preview-state="edition"><option value="beta">Beta</option><option value="release">Release</option><option value="dev">DEV</option><option value="alpha">Alpha</option></select></label>
+    <label>界面入口<select data-preview-state="view"><option value="management">管理页</option><option value="usage">用量卡</option><option value="bubble">工具栏气泡</option></select></label>
+    <label>服务运行状态<select data-preview-state="status"><option value="ready">可用</option><option value="preparing">准备连接</option><option value="recovering">故障恢复中</option><option value="offline">无网络</option><option value="quota">额度用尽</option><option value="signed_out">身份已退出</option></select></label>
+    <label>流量额度<select data-preview-state="quotaMode"><option value="limited">已配置额度</option><option value="unlimited">未设额度，仅统计</option></select></label>
+    <label>流量示例<select data-preview-state="usageScale"><option value="mb">MB 量级</option><option value="gb">GB 量级</option><option value="tb">TB 量级</option><option value="tiny">微量流量</option></select></label>
+  </fieldset>
+<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 修订 3：网站代理开关与分渠道调试示例">
   <style>
     #aegis-user-experience { --ag-bg:light-dark(#f5f6f8,#181b20); --ag-surface:light-dark(#ffffff,#24282f); --ag-text:light-dark(#252b35,#eef1f5); --ag-muted:light-dark(#606b7c,#b2bdcc); --ag-border:light-dark(#dce1e8,#424b57); --ag-accent:light-dark(#b94f00,#ffb36b); --ag-accent-text:light-dark(#ffffff,#24180c); --ag-soft:light-dark(#fff4e9,#392c22); --ag-good:light-dark(#167345,#7ad8a4); --ag-warn:light-dark(#995400,#ffd08d); color:var(--ag-text); font:400 14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     #aegis-user-experience * { box-sizing:border-box; }
@@ -74,10 +104,10 @@
     @media(max-width:560px) { #aegis-user-experience .ag-main { padding:14px; gap:12px; } #aegis-user-experience .ag-panel { padding:16px; } #aegis-user-experience .ag-status-grid,#aegis-user-experience .ag-dev-fields { grid-template-columns:1fr; } #aegis-user-experience .ag-value { font-size:18px; } #aegis-user-experience .ag-numbers { gap:10px; } #aegis-user-experience .ag-chrome { padding:12px 14px; } #aegis-user-experience .ag-bubble-area { padding:14px; } }
     @media(pointer:coarse) { #aegis-user-experience button,#aegis-user-experience select { min-height:44px; } #aegis-user-experience input,#aegis-user-experience select { font-size:16px; } }
   </style>
-  <div class="ag-caption"><span>V1.0 修订 2 · 交互示意 · 示例数据</span><span data-ag="preview-label">Beta · 管理页</span></div>
+  <div class="ag-caption"><span>V1.0 修订 3 · 交互示意 · 示例数据</span><span data-ag="preview-label">Beta · 管理页</span></div>
   <div class="ag-window">
     <div class="ag-chrome">
-      <div class="ag-brand"><i data-lucide="shield-check" aria-hidden="true"></i>Aegis</div>
+      <div class="ag-brand">Aegis</div>
       <span class="ag-location" data-ag="location">访问服务</span>
       <span class="ag-profile">工作 Profile</span>
       <button type="button" data-ag-action="toggle-debug" hidden>调试</button>
@@ -114,7 +144,7 @@
         <div class="ag-result" data-ag="result" hidden><strong data-ag="result-text"></strong></div>
         <div data-ag="rules" aria-label="本站目标与规则">
           <div class="ag-target" data-target="main">
-            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="main"><span>news.example:443<span class="ag-muted ag-small">HTTPS · 当前主导航</span></span></label><span class="ag-chip" data-target-mode="main">DIRECT · 默认</span></div>
+            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="main"><span>news.example<span class="ag-muted ag-small">网站协议组 · HTTP / HTTPS / WS / WSS · 允许端口</span></span></label><span class="ag-chip" data-target-mode="main">DIRECT · 默认</span></div>
             <div class="ag-target-controls"><label class="ag-small">处理策略<select data-target-policy="main" aria-label="news.example 处理策略"><option value="direct">DIRECT · 直连</option><option value="proxy">PROXY · 代理</option><option value="reject">REJECT · 阻止</option></select></label><button type="button" data-target-action="allow" data-id="main">ALLOW</button><button type="button" data-target-action="block" data-id="main">BLOCK</button><button type="button" class="ag-text-button" data-target-action="delete" data-id="main">删除规则</button><button type="button" class="ag-text-button" data-ag-action="blocked-page" hidden>查看阻断页</button></div>
             <div class="ag-target-note" data-target-note="main">默认直连 · 网络连接异常</div>
           </div>
@@ -168,7 +198,7 @@
   <script>
     (() => {
       const root = document.getElementById('aegis-user-experience');
-      // Documentation fixture only: channel previews do not implement build-time security.
+      // Self-contained documentation fixture: no network or real build-time security.
       const state = { edition:'beta', debugView:false, view:'management', status:'ready', quotaMode:'limited', usageScale:'mb' };
       const canDebug = () => state.edition === 'dev' || state.edition === 'alpha';
       let previewEdition = state.edition;
@@ -176,6 +206,7 @@
       const one = key => root.querySelector('[data-ag="' + key + '"]');
       const buttons = action => root.querySelectorAll('[data-ag-action="' + action + '"]');
       const setText = (key, text) => { one(key).textContent = text; };
+      // main represents the complete website protocol group, not a single HTTPS origin.
       const targets = [
         {id:'main',mode:'direct',explicit:false,override:false,issue:'network',revision:0,selected:false},
         {id:'cdn',mode:'direct',explicit:false,override:false,issue:'protection',revision:0,selected:false},
@@ -277,6 +308,12 @@
           // Each channel starts a separate fictional fixture; no profile data migration.
           pending = null; lastUndo = null; notice = ''; siteMessage = ''; state.debugView = false;
           targets.forEach((target,index) => Object.assign(target,initialTargets[index]));
+          saved = {mode:'auto',endpoint:'R1',url:'https://subscription.example/sub'};
+          one('selection-mode').value = saved.mode; one('endpoint').value = saved.endpoint;
+          one('endpoint').disabled = true; subscriptionInput.value = saved.url;
+          buttons('save-dev').forEach(button => { button.disabled = true; });
+          buttons('cancel-dev').forEach(button => { button.disabled = true; });
+          setText('dev-message','5 个候选 · 当前绑定 R1 · 健康时保持（示例）');
           previewEdition = state.edition;
         }
         const dev = canDebug();
@@ -306,6 +343,10 @@
         one('bubble-view').hidden = state.view !== 'bubble';
         one('blocked-view').hidden = state.view !== 'blocked';
         one('dev').hidden = !debug;
+        document.querySelectorAll('[data-preview-state]').forEach(control => {
+          const value = state[control.dataset.previewState];
+          control.value = control.dataset.previewState === 'view' && value === 'blocked' ? 'management' : value;
+        });
         setText('quota-description',hasQuota ? '代理流量 · 上传 + 下载' : '代理流量 · 未设流量额度');
         setText('percent',progress > 0 && progress < 0.01 ? '<0.01%' : Number(progress.toFixed(2)) + '%'); setText('used',used);
         setText('second-label',hasQuota ? '剩余流量' : '上传流量');
@@ -359,7 +400,7 @@
           root.querySelector('[data-target-note="' + target.id + '"]').textContent = detail;
           root.querySelectorAll('[data-target-action][data-id="' + target.id + '"]').forEach(button => { button.disabled = button.dataset.targetAction === 'allow' ? !!pending : button.dataset.targetAction === 'delete' ? !target.explicit : false; });
         });
-        const message = !serviceReady() ? '代理暂不可用，PROXY 策略保留；BLOCK 可在本地执行。' : '工作 Profile · 仅本站 · 精确 HTTPS 目标 · 保存规则';
+        const message = !serviceReady() ? '代理暂不可用，PROXY 策略保留；BLOCK 可在本地执行。' : '工作 Profile · 主域协议组与独立目标分别保存（示例）';
         setText('message',message); setText('bubble-message',notice || message); setText('blocked-message',notice || message);
       }
       buttons('toggle-debug').forEach(button => button.addEventListener('click',() => { if (!canDebug()) return; state.debugView = !state.debugView; render(); }));
@@ -403,14 +444,13 @@
       buttons('cancel-dev').forEach(button=>button.addEventListener('click',()=>{ one('selection-mode').value=saved.mode; one('endpoint').value=saved.endpoint; one('endpoint').disabled=saved.mode==='auto'; subscriptionInput.value=saved.url; buttons('save-dev').forEach(b=>b.disabled=true); buttons('cancel-dev').forEach(b=>b.disabled=true); }));
       one('endpoint').disabled=true;
       render();
-      if (window.Tweak) {
-        const tweaks=new window.Tweak({container:root,onChange:render});
-        tweaks.addSelect(state,'edition',{label:'预览渠道',options:[{label:'Beta',value:'beta'},{label:'Release',value:'release'},{label:'DEV',value:'dev'},{label:'Alpha',value:'alpha'}]});
-        tweaks.addSelect(state,'view',{label:'界面入口',options:[{label:'用量卡',value:'usage'},{label:'管理页',value:'management'},{label:'工具栏气泡',value:'bubble'}]});
-        tweaks.addSelect(state,'status',{label:'服务运行状态',options:[{label:'可用',value:'ready'},{label:'准备连接',value:'preparing'},{label:'故障恢复中',value:'recovering'},{label:'无网络',value:'offline'},{label:'额度用尽',value:'quota'},{label:'身份已退出',value:'signed_out'}]});
-        tweaks.addSelect(state,'quotaMode',{label:'流量额度',options:[{label:'已配置额度',value:'limited'},{label:'未设额度，仅统计',value:'unlimited'}]});
-        tweaks.addSelect(state,'usageScale',{label:'流量示例',options:[{label:'MB 量级',value:'mb'},{label:'GB 量级',value:'gb'},{label:'TB 量级',value:'tb'},{label:'微量流量',value:'tiny'}]});
-      }
+      document.querySelectorAll('[data-preview-state]').forEach(control => control.addEventListener('change',() => {
+        state[control.dataset.previewState] = control.value;
+        render();
+      }));
     })();
   </script>
 </div>
+</main>
+</body>
+</html>

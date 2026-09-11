@@ -1,12 +1,12 @@
 **Aegis Browser 内置访问服务：V1.0 技术方案与验收标准（冻结稿）**
 
-文档索引：[English](../../README.md) · [简体中文](../../README.zh-CN.md) · [繁體中文](../../README.zh-TW.md)。本文件为简体中文设计基线；[冻结清单](freeze.json)记录版本及校验值，[交互示例](interaction-example.html)仅演示本地操作，不连接真实服务。示例默认展示 Beta 简洁界面，渠道预览切换仅为说明文档，不代表真实构建已通过隔离验收。示例为宿主内嵌 HTML 片段，GitHub 文件页仅显示源码。
+文档索引：[English](../../README.md) · [简体中文](../../README.zh-CN.md) · [繁體中文](../../README.zh-TW.md)。本文件为简体中文设计基线；[冻结清单](freeze.json)记录版本及校验值，[交互示例](interaction-example.html)为可直接在浏览器打开的独立 HTML，内置渠道、入口和故障状态预览控件，不依赖外部脚本或宿主。GitHub 文件页仅显示源码，下载后打开即可预览。示例默认展示 Beta 简洁界面，所有操作和数字均为本地虚构数据；渠道预览不代表真实构建已通过隔离验收。
 
-日期：2026-09-11。文档状态：V1.0 冻结修订 2；产品实现及运行验收尚未执行。
+日期：2026-09-11。文档状态：V1.0 冻结修订 3；产品实现及运行验收尚未执行。
 
 本文合并此前设计、完整性复评与渠道交互修订，作为 V1.0 开发和验收的唯一行为基线。修订 2 明确：Beta/Release 只向用户提供当前网站的代理开关；DEV/Alpha 可以在调试界面暴露策略、操作、节点和脱敏诊断。三策略/两动作继续作为底层执行与调试合同，不再作为 Beta/Release 的产品操作。此前快照与评估稿均为过程草稿，不作为已发布版本。本文中的“必须”是验收条件；标为初始预算的数值也是本版本的测试目标，并非已有性能。真实 VPS 参数、内核版本与构建环境按第 13 节绑定，不能用示例替代。
 
-冻结意味着实现者无需再猜测网站开关、调试操作、冲突、撤销和故障的含义；不意味着实现已经证明可行、性能已达标或获准发布。P0 如发现无法满足合同，必须登记失败证据和明确的修订差异，递增规范修订号后重审；不得静默缩小范围、改变语义或放宽指标。具体地址、秘密、负责人和实测容量属于部署绑定项，不是未决的用户行为。当前产品方案版本为 V1.0，冻结修订号为 2。
+冻结意味着实现者无需再猜测网站开关、调试操作、冲突、撤销和故障的含义；不意味着实现已经证明可行、性能已达标或获准发布。P0 如发现无法满足合同，必须登记失败证据和明确的修订差异，递增规范修订号后重审；不得静默缩小范围、改变语义或放宽指标。具体地址、秘密、负责人和实测容量属于部署绑定项，不是未决的用户行为。当前产品方案版本为 V1.0，冻结修订号为 3。修订 3 将网站开关统一到同域 HTTP/HTTPS/WS/WSS 路由范围，并补齐独立渠道预览入口。
 
 **1. 目标、范围与完成含义**
 
@@ -100,7 +100,7 @@ net/services/network 不反向依赖 chrome/browser。网络热路径使用 C++�
 
 **4. 作用域、身份与数据模型**
 
-自动规则键为：渠道命名空间 + Profile + StoragePartition 策略域 + 顶层 SchemefulSite + 精确目标 host + scheme/port。自动规则不扩展子域、不扩大为整个 Profile；仅 DEV/Alpha 调试编辑器可以显式扩大作用域。Beta/Release 开关由浏览器从当前导航生成精确范围，前端不能提交任意目标或策略。
+调试 ALLOW/BLOCK 的精确规则键为：渠道命名空间 + Profile + StoragePartition 策略域 + 顶层 SchemefulSite + 精确目标 host + scheme/port。它们不自动扩展子域或整个 Profile。Beta/Release 网站开关由浏览器从当前导航的规范化 host 生成第 9 节定义的同域协议规则组；前端不能提交任意目标、协议、端口或策略。网站开关的协议组与调试单目标规则不能互相冒充；仅 DEV/Alpha 调试编辑器可以另行显式扩大域名或 Profile 作用域。
 
 Profile、服务账户、网站登录账号分别建模。同一服务账户可明确绑定多个 Profile，凭据和规则仍独立，用量在服务端累计。换节点、新建 Profile 或重新登录既有账户不重置该账户额度。未知身份不通过推断合并账户，也不因匿名新主体无限重复发放资源。
 
@@ -151,6 +151,13 @@ AccessRule
   source(user_action|user_edit|restored), lastUserAction(allow|block|set_mode)
   lifetime(persistent|profile_session|until), expiresAt?, createdByBatchId
   rowRevision, lastOperationSequence
+  siteToggleId?, siteToggleRevision?  // 同域协议规则组的可选归属
+
+SiteProxyRuleGroup
+  siteToggleId, canonicalHost, storagePartitionScope
+  topLevelSites(http_site, https_site), memberRuleIds
+  revision, lastOperationSequence
+  // 选择由成员共同的 mode(direct|proxy) 推导，不另存可漂移的 enabled
 
 RuleMutationOperation
   operationId, kind(allow_batch|allow_target|block_targets|set_mode|delete|undo|expire)
@@ -404,9 +411,13 @@ Beta/Release 管理页沿用指定参考的卡片顺序：本期流量 → 网�
 
 **网站开关的行为合同（所有渠道的简洁界面）**
 
-- 范围由 browser-owned pageToken 的当前主导航确定：本渠道、本 Profile、本 StoragePartition、顶层 SchemefulSite 内的精确主导航 host/scheme/port；失败导航可以使用其可信目标。默认端口规范化，非默认端口在网站标识中显示。不同协议/端口、子域、第三方 CDN、iframe、后续新域名及其他顶层网站不自动加入。内部仍执行第 4/5 节的归属与匹配规则；界面不承诺整个页面的所有资源均已走代理。
+- 域名由 browser-owned pageToken 的当前主导航确定；失败导航可以使用其可信目标。选择键固定为本渠道、本 Profile、本 StoragePartition 和规范化精确 host，不把协议、端口或路径作为不同的网站选择。IDNA、大小写、尾点及 IP 字面量按第 5 节统一规范化；不扩展到子域、相似后缀、第三方 CDN 或其他域名。
+- 同域覆盖固定为 HTTP、HTTPS、WS、WSS 及浏览器本来允许访问的端口，包括非默认端口；浏览器禁止端口、证书校验、混合内容和其他安全限制仍照常执行。开启 https://news.example 后，同域 wss://news.example、https://news.example:8443 等受支持请求使用同一代理选择；http://news.example 跳转到 https://news.example 不丢失选择。已提交选择适用于之后的同域导航，不因页面 token 更新而清除；token 更新仍使尚未提交的旧操作失效。
+- 底层按当前主导航 host 所属站点生成 HTTP 和 HTTPS 两个顶层 SchemefulSite 成员，成员目标均为该精确 host、schemes={http,https,ws,wss}、ports=所有浏览器允许端口；成员共享 siteToggleId 和版本。仅在路由作用域匹配时将 ws/wss 对应到 http/https 的站点族，不改变浏览器实际 origin 或安全隔离。拥有可信同族归属的同域子资源、iframe、Worker 和 WebSocket 均在组内；其他顶层站点对该域名的引用不自动继承本组，无可靠归属的后台请求沿用第 5 节限制。前端只显示域名及一个开关，HTTP→HTTPS 同域跳转读取同一组。
+- 协议组的所有成员通过同一事务、协调器和 policyGeneration 一起准备、提交、撤销与恢复，不逐协议报告成功。成员缺失、版本不同或模式混杂时显示“设置暂不可用”，不能把已有代理组当作关闭或允许缺失成员直连；恢复失败按第 5/6 节处理。调试修改不得只改组内一条记录；更具体的独立调试覆盖仍需显式检查和报告限制，网站开关不能删除他人规则以获得一致结果。
+- 从未创建协议组时，按整个同域覆盖范围的继承结果显示状态：默认均为 DIRECT 才显示关闭，均为 PROXY 可显示开启，混合/受限结果明确说明并禁止冒充全组生效。必须用持久组元数据区分“从未创建”与“已有组但成员损坏”；不能把恢复错误解释为默认直连。
 - 开启执行受限的 SET_SITE_PROXY(true)：仅准备并保存上述范围的 PROXY 路由，protectionOverride 为空，默认持久保存；不触发批量 ALLOW、不进行补充放行发现，也不要求用户选择规则、节点或时效。准备期间明确显示“正在连接”，不能宣称已生效；失败保留原已提交选择并显示“未能开启代理”。原来已开启时发生断网、额度耗尽或退出身份，开关保持开启，连接状态显示不可用，后续受约束请求等待/失败，不能静默直连。
-- 关闭执行 SET_SITE_PROXY(false)：本地发布该范围的显式 DIRECT，清除该功能拥有的代理例外/引用；即使底层存在较宽 PROXY，也不能因简单删除而再次继承代理。正常安全防护和不可覆盖的管理限制继续执行；关闭不是 REJECT，也不是解除防护。无网络、无可用节点、额度耗尽或退出身份时，仍可关闭。明确成功只在本地有效版本确认后显示；保存失败说明未保存，不能冒充重启后仍有效。
+- 关闭执行 SET_SITE_PROXY(false)：对同一协议组的全部成员本地发布显式 DIRECT，清除该功能拥有的代理例外/引用；即使底层存在较宽 PROXY，也不能因简单删除而再次继承代理。正常安全防护和不可覆盖的管理限制继续执行；关闭不是 REJECT，也不是解除防护。无网络、无可用节点、额度耗尽或退出身份时，仍可关闭。明确成功只在本地有效版本确认后显示；保存失败说明未保存，不能冒充重启后仍有效。
 - 开关与连接状态分开；屏幕阅读器的开关状态反映已提交选择，准备阶段用 busy 与文字说明目标动作。准备时仍可取消开启；后续关闭/取消提升操作版本，使旧准备、ACK、探测和重试不能再次开启。不同标签页共享同一 Profile 的已提交状态。已发送的业务按既有路径完成/截止，不迁移或重放；开关改变后新请求不得复用错误路径。
 - 开启和关闭均不改变既有安全防护的允许/阻止状态。若已有手动 REJECT 或不可覆盖管理策略使选择无法生效，不隐式解除它，显示“受防护或管理设置限制”；DEV/Alpha 可在独立调试入口明确处理。不得把技术失败显示成用户主动阻止。
 
@@ -448,7 +459,7 @@ DEV/Alpha 另有订阅卡、自动保持/手动固定、候选状态、来源/�
 
 | 接口 | 输入与必须输出 |
 |---|---|
-| GetSiteProxyState / SetSiteProxy / CancelSiteProxyChange（所有渠道） | 仅接收可信 pageToken 或本 Profile 已保存的网站引用、enabled、expectedRevision 和幂等 operationId；由原生端生成精确范围，返回已提交 enabled、pending、connectionState、durable 及用户可读失败原因；不接受任意 mode、目标列表、protectionOverride、proxyGroupId 或节点配置 |
+| GetSiteProxyState / SetSiteProxy / CancelSiteProxyChange（所有渠道） | 仅接收可信 pageToken 或本 Profile 已保存的网站引用、enabled、expectedRevision 和幂等 operationId；由原生端生成第 9 节完整同域协议组，返回已提交 enabled、pending、connectionState、durable 及用户可读失败原因；组无完整有效状态时 enabled 为 unknown 并说明原因，不冒充关闭；不接受任意 mode、目标列表、scheme/port、protectionOverride、proxyGroupId 或节点配置 |
 | GetPageAccessSummary / GetPageTargets（DEV/Alpha 调试） | browser-owned pageToken；返回有界目标集合、scope、规则版本、mode/来源、可处理与手动拒绝计数、coverage |
 | PrepareRuleMutation | kind、目标引用、expectedRevisions、幂等 operationId；返回差异、精确范围、跳过原因和准备状态；批量 ALLOW 不要求第二次用户确认 |
 | CommitRuleMutation | 已核验 operationId；经同一个协调器执行 ALLOW/BLOCK/SET_MODE/DELETE，返回 policyGeneration、durable、确认/终止状态和每项目结果 |
@@ -537,10 +548,10 @@ PF01 是策略计算预算；真实网络请求的总延迟另测。PF06 的 8 M
 |---|---|---|
 | G0：接入可行 | 固定基线上的原型通过 | P0 有实际构建与运行证据，关键接入无未解决阻断；不能用公开 HEAD 文档代替固定提交验证 |
 | G1：受控 Alpha | 简洁流程和调试视图的有限覆盖版本可试用 | 至少 HTTP→REALITY、两个普通 Profile、网站开关与调试三策略/两动作、阻断及恢复、调试联合规则、自动配置/保持/切换、真实字节统计、账户及物理限制、故障不直连；限定用户与测试容量，明确列出未覆盖场景 |
-| G2：完整功能候选 / Beta | 本文最终功能覆盖已实现 | P1–P7 完成；A01–A89、A91–A112 适用必需场景及 PF01–PF13 通过；四渠道简洁入口/调试隔离、两入站/两出站、OTR/Guest 与底层三策略恢复不能用 Alpha 子集替代 |
+| G2：完整功能候选 / Beta | 本文最终功能覆盖已实现 | P1–P7 完成；A01–A89、A91–A114 适用必需场景及 PF01–PF13 通过；四渠道简洁入口/调试隔离、两入站/两出站、OTR/Guest 与底层三策略恢复不能用 Alpha 子集替代 |
 | G3：可分发候选 / Release | 在已验证平台、规模和拓扑内可分发 | G2 加 A26/A63–A67/A88/A90 的最终包证据、项目发布门禁、全新安装/升级/回滚；实际发布动作按项目授权执行 |
 
-G1 必查 A01–A05、A09–A11、A13–A17、A19–A23、A27–A31、A35–A40、A47–A60、A68–A78、A81–A86、A91–A112 中与 HTTP→REALITY 普通 Profile 链路和 Alpha 界面对应的子场景，并在 Alpha 实际规模测 PF01–PF13。包含未实现协议或其他渠道的混合用例只能记录“指定子场景通过”，未执行子项仍为 NOT_RUN，整行标 coverage=partial，不标 PASS，不能提前计入 G2。
+G1 必查 A01–A05、A09–A11、A13–A17、A19–A23、A27–A31、A35–A40、A47–A60、A68–A78、A81–A86、A91–A114 中与 HTTP→REALITY 普通 Profile 链路和 Alpha 界面对应的子场景，并在 Alpha 实际规模测 PF01–PF13。包含未实现协议或其他渠道的混合用例只能记录“指定子场景通过”，未执行子项仍为 NOT_RUN，整行标 coverage=partial，不标 PASS，不能提前计入 G2。
 
 未完成 HTTP/SOCKS 任一必需入口，或仅有 DEV/Alpha 订阅没有托管服务，均不能称“完整功能完成”。同样，界面每秒变化但未对账服务端字节，不算用量链路完成。发布阶段不存在通过隐藏失败功能就让同一范围验收通过的例外。
 
@@ -617,7 +628,7 @@ pnpm --filter @gcsa-aegis/browser verify:proxy-runtime
 
 ~~~text
 run-manifest.json
-  specVersion=V1.0, specRevision=2, frozenSpecHash, testRunId, startedAt, finishedAt
+  specVersion=V1.0, specRevision=3, frozenSpecHash, testRunId, startedAt, finishedAt
   repository/base/head SHA, chromium/v8 SHA, patchSeriesHash
   channel, buildConfiguration, GN hash, binaryHash, coreVersion/coreHash
   OS/hardware/network, serverDeployment/configHash, fixtureVersion
@@ -636,7 +647,7 @@ Hosted 检查另记录 run/attempt、检查名称、final head、实际结论；
 
 **15. 功能验收矩阵**
 
-以下 A01–A112 为 V1.0 完整功能及交付矩阵；保留此前 A01–A90，A91–A102 对应完整性复评 C01–C12，A103/A104 补齐身份和时效恢复，A105–A112 验收修订 2 的渠道与网站开关合同。表中 ALLOW/BLOCK、手动规则、订阅和节点操作均由 DEV/Alpha 调试界面执行；Beta/Release 用原生测试夹具验证相同底层不变量，并另测调试接口不可调用，不能通过隐藏 UI 免除底层验收。网站开关不得借用带防护例外的 ALLOW 作为替代测试。测试实现必须把复合场景拆成可定位的子项。本文交付时均未执行产品验收，不能将“必须观察到的结果”读成实际结果。
+以下 A01–A114 为 V1.0 完整功能及交付矩阵；保留此前 A01–A90，A91–A102 对应完整性复评 C01–C12，A103/A104 补齐身份和时效恢复，A105–A112 验收渠道与网站开关，A108/A113/A114 覆盖修订 3 的协议组及独立预览。表中 ALLOW/BLOCK、手动规则、订阅和节点操作均由 DEV/Alpha 调试界面执行；Beta/Release 用原生测试夹具验证相同底层不变量，并另测调试接口不可调用，不能通过隐藏 UI 免除底层验收。网站开关不得借用带防护例外的 ALLOW 作为替代测试。测试实现必须把复合场景拆成可定位的子项。本文交付时均未执行产品验收，不能将“必须观察到的结果”读成实际结果。
 
 | 编号 | 场景 | 必须观察到的结果 |
 |---|---|---|
@@ -747,11 +758,13 @@ Hosted 检查另记录 run/attempt、检查名称、final head、实际结论；
 | A105 | Beta/Release 的管理页、气泡、已保存网站、阻断页与错误状态 | 每个网站只有代理开关；无三策略、ALLOW/BLOCK、规则编辑、目标列表、订阅/节点详情或调试日志；用户状态和用量清楚，键盘/屏幕阅读器可操作 |
 | A106 | DEV/Alpha 简洁视图与调试视图切换 | 两渠道均可调试三策略/两动作、订阅、手动节点、来源和脱敏诊断；同一核心执行合同，不从视图切换取得其他渠道/生产授权 |
 | A107 | Beta/Release 中伪造 URL/Pref/启动参数、修改 DOM、直接调用通用 mutation | 编译渠道和原生 handler 均拒绝调试入口；共享核心照常工作；不是只隐藏按钮，未知渠道不能默认开放调试 |
-| A108 | 当前主导航含 CDN/iframe/子域/非默认端口、导航变化及无 pageToken | 开关仅改变第 9 节精确范围，未选第三方及其他协议/端口不自动代理；无可信目标禁用，旧文档不能授权新目标 |
+| A108 | 同域 HTTP/HTTPS/WS/WSS、HTTP→HTTPS 跳转、8443 等非默认端口，以及 CDN/iframe/子域和无 pageToken | 第 9 节同域协议组统一生效，443/8443 等允许端口不需另开开关；可信归属的同域子资源/iframe 使用同一选择；子域、第三方、其他顶层站点及无可靠归属请求不扩大授权；安全限制仍生效，无可信操作目标禁用 |
 | A109 | 在被安全拦截或受管理的网站开启/关闭代理 | 不新增防护例外，不调用 ALLOW/BLOCK，不解除手动 REJECT 或管理限制；界面如实说明限制，不声称代理已修复防护问题 |
 | A110 | 已开启后离线/欠额/退出身份，再关闭；存在较宽 PROXY 继承 | 关闭在本地提交显式 DIRECT，恢复正常防护下的直连，新请求不再继承代理，不生成 REJECT；保存失败不报持久成功 |
 | A111 | 首次开启准备中关闭/取消、晚到 ACK、多标签页及重复点击 | 同一协调器幂等与版本控制；后续关闭使旧开启失效，状态同步；未提交前不报已生效，失败保留原选择，业务不重放 |
 | A112 | 网站开关已生效后节点故障、额度耗尽、重启与渠道晋级 | 开关选择与运行状态分开，已开启不会静默改直连；选择按本渠道/Profile 恢复，调试设置与秘密不自动迁入 Beta/Release；晋级最终包分别验收 |
+| A113 | 协议组发布一半时崩溃、成员缺失、乱序 ACK、同域导航与调试覆盖冲突 | 两个顶层站点成员和四种目标协议按同一代次原子发布/恢复；关闭覆盖整个组，不遗留 WSS 代理；损坏或部分状态显示 unknown 且无旁路；旧操作不能覆盖新选择或删除独立调试规则 |
+| A114 | 离线直接打开独立交互示例，无宿主/Tweak/CDN；切换四渠道和服务状态 | 自带预览控件可切换 Beta/Release/DEV/Alpha、管理页/气泡与故障状态；普通预览无调试入口，DEV/Alpha 可展开；真实产品验收独立执行，不把文档预览当作隔离证据 |
 
 **16. 完成判定与本次交付状态**
 
@@ -775,6 +788,8 @@ Hosted 检查另记录 run/attempt、检查名称、final head、实际结论；
 
 修订 2 关闭“普通界面暴露策略/操作”和“Alpha 无法调试”的渠道差异：第 1/6/9/10/12 节与 A105–A112 为对应合同；上述复评中的 ALLOW/BLOCK/规则 UI 均按 DEV/Alpha 调试范围解释。
 
-V1.0 冻结修订 2 包含 112 项功能/交付验收、13 项性能指标和 4 个阶段门槛。上述行为缺口均已落实为规范与验收，不留给实现者自行选择语义。真实 VPS 容量、内核版本、RSS 上限等未有实测材料的取值仍按第 13 节绑定，相关门槛在绑定和验证前不通过。
+修订 3 关闭本轮 review 的两项问题：网站开关不再仅覆盖主导航 origin，同域 HTTP/HTTPS/WS/WSS 和允许端口按完整组生效（第 4/9 节、A108/A113）；交互示例改为无外部依赖的独立文档预览（A114）。协议组原子发布属于产品验收合同，预览只能演示选择和界面，不能证明真实网络路径。
+
+V1.0 冻结修订 3 包含 114 项功能/交付验收、13 项性能指标和 4 个阶段门槛。上述行为缺口均已落实为规范与验收，不留给实现者自行选择语义。真实 VPS 容量、内核版本、RSS 上限等未有实测材料的取值仍按第 13 节绑定，相关门槛在绑定和验证前不通过。
 
 本次完成需求规范、文档一致性核对及交互原型更新。未修改产品代码、启动代理内核、变更系统网络、导入真实节点、构建 Chromium 或部署服务；没有产生上述产品验收的 PASS 结果。后续交付报告必须引用 V1.0、修订号及冻结文件 hash，区分设计冻结、代码完成、运行验收和可分发状态。

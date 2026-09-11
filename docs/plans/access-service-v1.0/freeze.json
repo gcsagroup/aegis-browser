@@ -1,37 +1,45 @@
 {
   "specVersion": "V1.0",
-  "specRevision": 2,
-  "recordedAt": "2026-09-11T04:55:14+00:00",
+  "specRevision": 3,
+  "recordedAt": "2026-09-11T05:12:52+00:00",
   "specificationStatus": "FROZEN",
   "authority": "spec.zh-CN.md",
   "designSourceBaseline": "cb35227fcc66f4a451fc93d4b755f3beb0f3a13b",
   "counts": {
-    "functionalAndDeliveryCases": 112,
+    "functionalAndDeliveryCases": 114,
     "performanceMetrics": 13,
     "deliveryGates": 4
   },
   "productRuntimeAcceptance": "NOT_RUN",
   "performanceMeasurements": "NOT_RUN",
   "deploymentBindings": "PENDING: specification section 13",
-  "sourceDocumentSha256": "e786a2f60d18d221b9992c5c4a10e8d41691ea9cc466e26f33c42abc4e666446",
-  "repositoryAdaptation": "Revision 2 updates the channel UI and API contract, website proxy toggle semantics, debug access for DEV/Alpha, acceptance matrix, and illustrative example; product code is unchanged.",
+  "sourceDocumentSha256": "df3ba79bb2e6109af06be508b411c347ae19500d99f89694b3ac4a3adfbf6e35",
+  "repositoryAdaptation": "Revision 3 defines a versioned same-host HTTP/HTTPS/WS/WSS rule group across allowed ports and same-host HTTP-to-HTTPS navigation, with atomic updates and recovery. The standalone preview includes native channel controls without host dependencies. Product code is unchanged.",
   "files": {
     "spec.zh-CN.md": {
-      "sha256": "2d6de84f34b99dffd8687f5a065ca81ddb6cb20629d69de33e8066e5154c91e3",
-      "bytes": 105298
+      "sha256": "5257b0e611cd73180554166c6a4c1caa65e059a3e6dc36fa2ca417905304d0ce",
+      "bytes": 109308
     },
     "interaction-example.html": {
-      "sha256": "24759783fb229385fe6cc60e7771763ef707f2345870ae1a5ee97cc5386fbcfd",
-      "bytes": 43041
+      "sha256": "e0455b9494967feeeb00743d00f2225e4adae28e79d57cec1ad9eccd7f2e5c18",
+      "bytes": 45676
     }
   },
   "previousRevision": {
-    "specRevision": 1,
-    "commit": "c9f3441899a85b799e50df9bdf5d916eb9de5f13",
-    "specificationSha256": "7710b43834689f7caa060d336a23481ff5bbb0b48ed09214a3b938bcad7d674c"
+    "specRevision": 2,
+    "commit": "1f8077066b5b7cd827175fb4d88c28cac3c8a549",
+    "specificationSha256": "2d6de84f34b99dffd8687f5a065ca81ddb6cb20629d69de33e8066e5154c91e3"
   },
   "documentChecks": {
     "status": "PASS",
-    "scope": "repository contracts; section/case/gate numbering; revision consistency; local links; whitespace; example JavaScript syntax only"
-  }
+    "scope": "repository contracts; section/case/gate numbering; revision consistency; local links; whitespace; self-contained preview structure and seven offline DOM interaction scenarios",
+    "previewVerification": "OFFLINE_DOM_ONLY: jsdom 26.1.0; no browser rendering, real product channel security, protocol routing, or network acceptance"
+  },
+  "revisionHistory": [
+    {
+      "specRevision": 1,
+      "commit": "c9f3441899a85b799e50df9bdf5d916eb9de5f13",
+      "specificationSha256": "7710b43834689f7caa060d336a23481ff5bbb0b48ed09214a3b938bcad7d674c"
+    }
+  ]
 }
