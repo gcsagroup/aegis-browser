@@ -1,4 +1,4 @@
-<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 三策略、ALLOW/BLOCK 与用量界面示意">
+<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 修订 2：网站代理开关与分渠道调试示例">
   <style>
     #aegis-user-experience { --ag-bg:light-dark(#f5f6f8,#181b20); --ag-surface:light-dark(#ffffff,#24282f); --ag-text:light-dark(#252b35,#eef1f5); --ag-muted:light-dark(#606b7c,#b2bdcc); --ag-border:light-dark(#dce1e8,#424b57); --ag-accent:light-dark(#b94f00,#ffb36b); --ag-accent-text:light-dark(#ffffff,#24180c); --ag-soft:light-dark(#fff4e9,#392c22); --ag-good:light-dark(#167345,#7ad8a4); --ag-warn:light-dark(#995400,#ffd08d); color:var(--ag-text); font:400 14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     #aegis-user-experience * { box-sizing:border-box; }
@@ -66,18 +66,24 @@
     #aegis-user-experience .ag-target-controls label { min-width:130px; }
     #aegis-user-experience .ag-target-note { margin-top:7px; color:var(--ag-muted); font-size:12px; }
     #aegis-user-experience .ag-block-page { max-width:640px; margin:20px auto; }
+    #aegis-user-experience .ag-site-switch { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; text-align:left; }
+    #aegis-user-experience .ag-switch-track { display:block; flex:none; width:40px; height:24px; padding:3px; border-radius:14px; background:var(--ag-border); }
+    #aegis-user-experience .ag-switch-track::after { content:""; display:block; width:18px; height:18px; border-radius:50%; background:var(--ag-surface); }
+    #aegis-user-experience .ag-site-switch[aria-checked="true"] .ag-switch-track { background:var(--ag-accent); }
+    #aegis-user-experience .ag-site-switch[aria-checked="true"] .ag-switch-track::after { transform:translateX(16px); }
     @media(max-width:560px) { #aegis-user-experience .ag-main { padding:14px; gap:12px; } #aegis-user-experience .ag-panel { padding:16px; } #aegis-user-experience .ag-status-grid,#aegis-user-experience .ag-dev-fields { grid-template-columns:1fr; } #aegis-user-experience .ag-value { font-size:18px; } #aegis-user-experience .ag-numbers { gap:10px; } #aegis-user-experience .ag-chrome { padding:12px 14px; } #aegis-user-experience .ag-bubble-area { padding:14px; } }
     @media(pointer:coarse) { #aegis-user-experience button,#aegis-user-experience select { min-height:44px; } #aegis-user-experience input,#aegis-user-experience select { font-size:16px; } }
   </style>
-  <div class="ag-caption"><span>V1.0 · 交互示意 · 示例数据</span><span data-ag="preview-label">普通版 · 管理页</span></div>
+  <div class="ag-caption"><span>V1.0 修订 2 · 交互示意 · 示例数据</span><span data-ag="preview-label">Beta · 管理页</span></div>
   <div class="ag-window">
     <div class="ag-chrome">
       <div class="ag-brand"><i data-lucide="shield-check" aria-hidden="true"></i>Aegis</div>
       <span class="ag-location" data-ag="location">访问服务</span>
       <span class="ag-profile">工作 Profile</span>
+      <button type="button" data-ag-action="toggle-debug" hidden>调试</button>
     </div>
     <div class="ag-main" data-ag="management">
-      <div class="ag-heading"><h2 data-ag="page-title">访问服务</h2><span class="ag-muted ag-small">按网站规则 · 默认直连</span></div>
+      <div class="ag-heading"><h2 data-ag="page-title">访问服务</h2><span class="ag-muted ag-small">选择需要使用代理的网站</span></div>
       <section class="ag-panel ag-usage" aria-label="代理流量用量与额度">
         <div class="ag-panel-head"><h3>本期流量</h3><span class="ag-chip">当前账户 · 示例数据</span></div>
         <div class="ag-heading"><span class="ag-muted ag-small" data-ag="quota-description">代理流量 · 上传 + 下载</span><span data-ag="percent">0.86%</span></div>
@@ -91,10 +97,15 @@
         <div class="ag-cycle"><span data-ag="cycle">下次重置：10 月 1 日 00:00</span><span>最近同步：09-10 16:00:08</span><span>服务端统计 · 直连流量不计入</span></div>
       </section>
       <div class="ag-status-grid">
-        <section class="ag-panel"><h3>直连状态</h3><div class="ag-status"><span class="ag-dot" data-ag="direct-dot"></span><span data-ag="direct-status">可用</span></div><div class="ag-muted ag-small">普通网站按原有规则访问</div></section>
+        <section class="ag-panel"><h3>直连状态</h3><div class="ag-status"><span class="ag-dot" data-ag="direct-dot"></span><span data-ag="direct-status">可用</span></div><div class="ag-muted ag-small">未开启代理的网站正常直连</div></section>
         <section class="ag-panel"><h3>访问服务</h3><div class="ag-status"><span class="ag-dot" data-ag="service-dot"></span><span data-ag="service-status">可用</span></div><div class="ag-muted ag-small" data-ag="service-detail">连接稳定</div></section>
       </div>
-      <section class="ag-panel" aria-label="当前网站访问">
+      <section class="ag-panel" data-simple-only aria-label="当前网站代理设置">
+        <div class="ag-panel-head"><h3>当前网站</h3><span class="ag-site">news.example</span></div>
+        <button type="button" role="switch" aria-checked="false" class="ag-site-switch" data-ag-action="site-proxy"><span>当前网站使用代理</span><span class="ag-switch-track" aria-hidden="true"></span></button>
+        <div class="ag-message" aria-live="polite" data-site-status>未使用代理</div>
+      </section>
+      <section class="ag-panel" data-debug-only hidden aria-label="调试：当前网站目标与规则">
         <div class="ag-panel-head"><h3>网站访问</h3><span class="ag-chip">来自目标标签页</span></div>
         <div class="ag-heading"><span class="ag-site">news.example</span><span class="ag-chip">仅本站 · 保存规则</span></div>
         <div style="margin-top:10px" data-ag="page-summary">本页 2 个目标可处理</div>
@@ -125,8 +136,8 @@
         </div>
         <div class="ag-message" aria-live="polite" data-ag="message">本站规则仅在工作 Profile 内生效</div>
       </section>
-      <section class="ag-panel" data-ag="dev" hidden aria-label="DEV 订阅与节点管理">
-        <div class="ag-panel-head"><h3>订阅与节点</h3><span class="ag-chip">仅 DEV</span></div>
+      <section class="ag-panel" data-ag="dev" hidden aria-label="DEV/Alpha 调试订阅与节点管理">
+        <div class="ag-panel-head"><h3>订阅与节点</h3><span class="ag-chip">DEV / Alpha 调试</span></div>
         <div class="ag-sub-row"><label>订阅来源<input type="url" value="https://subscription.example/sub" aria-label="示例订阅来源"></label><button type="button" data-ag-action="subscription">更新订阅</button></div>
         <div class="ag-dev-fields"><label>选择方式<select data-ag="selection-mode"><option value="auto">自动检测 · 选定并保持</option><option value="pin">手动固定（调试）</option></select></label><label>当前入口<select data-ag="endpoint"><option value="R1">入口 R1</option><option value="R2">入口 R2</option><option value="R3">入口 R3</option><option value="R4">入口 R4</option><option value="R5">入口 R5</option></select></label></div>
         <div class="ag-actions"><button type="button" data-ag-action="save-dev" disabled>保存</button><button type="button" data-ag-action="cancel-dev" disabled>取消</button></div>
@@ -138,11 +149,12 @@
       <section class="ag-bubble" aria-label="地址栏 Aegis 气泡">
         <div class="ag-panel-head"><h3>当前网站</h3><span class="ag-chip">工作</span></div>
         <div class="ag-site">news.example</div>
-        <dl><dt>当前主导航策略</dt><dd data-ag="bubble-policy">DIRECT · 默认</dd><dt>访问服务</dt><dd data-ag="bubble-service">可用</dd><dt data-ag="bubble-quota-label">本期剩余流量</dt><dd data-ag="bubble-quota">99.14 GB</dd></dl>
-        <div data-ag="bubble-summary">本页 2 个目标可处理</div><div class="ag-muted ag-small">作用范围：本站 · 精确目标 · 保存规则</div>
-        <div class="ag-actions"><button type="button" class="ag-primary" data-ag-action="allow">允许本页 2 个目标 · ALLOW</button><button type="button" data-ag-action="choose-block">选择目标并阻止 · BLOCK</button><button type="button" class="ag-text-button" data-ag-action="undo" hidden>撤销本次操作</button></div>
+        <dl><dt data-debug-only hidden>当前主导航策略</dt><dd data-debug-only hidden data-ag="bubble-policy">DIRECT · 默认</dd><dt>访问服务</dt><dd data-ag="bubble-service">可用</dd><dt data-ag="bubble-quota-label">本期剩余流量</dt><dd data-ag="bubble-quota">99.14 GB</dd></dl>
+        <div data-simple-only><button type="button" role="switch" aria-checked="false" class="ag-site-switch" data-ag-action="site-proxy"><span>当前网站使用代理</span><span class="ag-switch-track" aria-hidden="true"></span></button><div class="ag-message" aria-live="polite" data-site-status>未使用代理</div></div>
+        <div data-debug-only hidden data-ag="bubble-summary">本页 2 个目标可处理</div><div data-debug-only hidden class="ag-muted ag-small">作用范围：本站 · 精确目标 · 保存规则</div>
+        <div data-debug-only hidden class="ag-actions"><button type="button" class="ag-primary" data-ag-action="allow">允许本页 2 个目标 · ALLOW</button><button type="button" data-ag-action="choose-block">选择目标并阻止 · BLOCK</button><button type="button" class="ag-text-button" data-ag-action="undo" hidden>撤销本次操作</button></div>
         <button type="button" class="ag-text-button" data-ag-action="management">管理访问服务与用量</button>
-        <div class="ag-message" aria-live="polite" data-ag="bubble-message"></div>
+        <div data-debug-only hidden class="ag-message" aria-live="polite" data-ag="bubble-message"></div>
       </section>
     </div>
     <div class="ag-main" data-ag="blocked-view" hidden>
@@ -156,7 +168,11 @@
   <script>
     (() => {
       const root = document.getElementById('aegis-user-experience');
-      const state = { edition:'ordinary', view:'management', status:'ready', quotaMode:'limited', usageScale:'mb' };
+      // Documentation fixture only: channel previews do not implement build-time security.
+      const state = { edition:'beta', debugView:false, view:'management', status:'ready', quotaMode:'limited', usageScale:'mb' };
+      const canDebug = () => state.edition === 'dev' || state.edition === 'alpha';
+      let previewEdition = state.edition;
+      let siteMessage = '';
       const one = key => root.querySelector('[data-ag="' + key + '"]');
       const buttons = action => root.querySelectorAll('[data-ag-action="' + action + '"]');
       const setText = (key, text) => { one(key).textContent = text; };
@@ -166,6 +182,7 @@
         {id:'api',mode:'proxy',explicit:true,override:true,issue:'protection',revision:0,selected:false},
         {id:'manual',mode:'reject',explicit:true,override:false,issue:'protection',revision:0,selected:false}
       ];
+      const initialTargets = targets.map(target => ({...target}));
       const findTarget = id => targets.find(target => target.id === id);
       const snapshot = target => ({mode:target.mode,explicit:target.explicit,override:target.override});
       const eligible = () => targets.filter(target => target.mode !== 'reject' && (target.mode !== 'proxy' || target.issue === 'protection' && !target.override));
@@ -192,13 +209,14 @@
         report(seq,label + ' · ' + entries.length + ' 个精确目标');
         render();
       }
-      function startProxyChange(list, grant, bulk) {
+      function startProxyChange(list, grant, bulk, siteOnly = false) {
         if (pending || !list.length) return;
         const seq = ++sequence;
         if (!serviceReady()) {
+          if (siteOnly) siteMessage = '未能开启代理，请在连接恢复后重试';
           report(seq,'访问服务暂不可用，原策略保持；待连接恢复后重试 ALLOW。'); render(); return;
         }
-        const operation = {sequence:seq,entries:list.map(target => ({id:target.id,before:snapshot(target),revision:target.revision}))};
+        const operation = {sequence:seq,siteOnly,entries:list.map(target => ({id:target.id,before:snapshot(target),revision:target.revision}))};
         pending = operation;
         report(seq,'正在准备代理连接，完成前保持各目标原策略。');
         render();
@@ -206,6 +224,7 @@
           if (pending !== operation) return;
           pending = null;
           if (!serviceReady()) {
+            if (siteOnly) siteMessage = '未能开启代理，请在连接恢复后重试';
             report(seq,'连接准备未完成，原策略保持；BLOCK 仍可使用。'); render(); return;
           }
           const committed = [];
@@ -216,6 +235,7 @@
             committed.push({id:target.id,before:entry.before,afterRevision:target.revision});
           });
           remember(seq,committed);
+          if (siteOnly) siteMessage = '';
           const skipped = operation.entries.length - committed.length;
           report(seq,committed.length + ' 个目标已' + (grant ? '允许并代理' : '设为 PROXY，防护仍适用') + (skipped ? '；' + skipped + ' 个较新修改保持' : '') + (bulk ? '；手动阻断保持' : ''));
           render();
@@ -253,7 +273,17 @@
         return value.toLocaleString('zh-CN', { maximumFractionDigits:2 }) + ' ' + units[index].label;
       }
       function render() {
-        const dev = state.edition === 'dev';
+        if (previewEdition !== state.edition) {
+          // Each channel starts a separate fictional fixture; no profile data migration.
+          pending = null; lastUndo = null; notice = ''; siteMessage = ''; state.debugView = false;
+          targets.forEach((target,index) => Object.assign(target,initialTargets[index]));
+          previewEdition = state.edition;
+        }
+        const dev = canDebug();
+        const debug = dev && state.debugView;
+        root.querySelectorAll('[data-debug-only]').forEach(element => { element.hidden = !debug; });
+        root.querySelectorAll('[data-simple-only]').forEach(element => { element.hidden = debug; });
+        buttons('toggle-debug').forEach(button => { button.hidden = !dev; button.textContent = debug ? '返回简洁界面' : '调试'; });
         const hasQuota = state.quotaMode === 'limited';
         const spent = hasQuota && state.status === 'quota';
         const offline = state.status === 'offline';
@@ -267,15 +297,15 @@
         const remaining = formatBytes(Math.max(0, example.quotaBytes - usedBytes));
         const uploaded = formatBytes(uploadedBytes);
         const downloaded = formatBytes(usedBytes - uploadedBytes);
-        if (state.view === 'blocked' && findTarget('main').mode !== 'reject') state.view = 'management';
+        if (state.view === 'blocked' && (!debug || findTarget('main').mode !== 'reject')) state.view = 'management';
         root.dataset.view = state.view;
-        setText('preview-label',(dev ? 'DEV' : '普通版') + ' · ' + ({usage:'用量卡',management:'管理页',bubble:'工具栏气泡',blocked:'原生阻断页'}[state.view]));
+        setText('preview-label',({dev:'DEV',alpha:'Alpha',beta:'Beta',release:'Release'}[state.edition]) + (debug ? ' · 调试' : ' · 简洁') + ' · ' + ({usage:'用量卡',management:'管理页',bubble:'工具栏气泡',blocked:'原生阻断页'}[state.view]));
         setText('location',state.view === 'bubble' || state.view === 'blocked' ? 'news.example' : '访问服务');
-        setText('page-title',dev ? '访问管理' : '访问服务');
+        setText('page-title',debug ? '访问调试' : '访问服务');
         one('management').hidden = state.view === 'bubble' || state.view === 'blocked';
         one('bubble-view').hidden = state.view !== 'bubble';
         one('blocked-view').hidden = state.view !== 'blocked';
-        one('dev').hidden = !dev;
+        one('dev').hidden = !debug;
         setText('quota-description',hasQuota ? '代理流量 · 上传 + 下载' : '代理流量 · 未设流量额度');
         setText('percent',progress > 0 && progress < 0.01 ? '<0.01%' : Number(progress.toFixed(2)) + '%'); setText('used',used);
         setText('second-label',hasQuota ? '剩余流量' : '上传流量');
@@ -293,7 +323,17 @@
         one('service-dot').style.background = busy || !serviceReady() ? 'var(--ag-warn)' : 'var(--ag-good)';
         setText('service-status',service); setText('bubble-service',service); setText('bubble-quota',hasQuota ? remaining : used);
         setText('bubble-quota-label',hasQuota ? '本期剩余流量' : '本期已用流量');
-        setText('service-detail',spent ? '等待额度恢复，网站规则已保留' : offline ? '网络恢复后自动检查连接' : state.status === 'signed_out' ? '策略保留；重新取得访问身份后恢复代理' : state.status === 'recovering' ? '后台正在验证备用入口' : busy ? '后台获取并验证访问配置' : '连接稳定');
+        setText('service-detail',spent ? '等待额度恢复，网站选择已保留' : offline ? '网络恢复后自动检查连接' : state.status === 'signed_out' ? '网站选择已保留；重新连接账户后恢复代理' : state.status === 'recovering' ? '正在恢复连接' : busy ? '正在准备连接' : '连接稳定');
+        const main = findTarget('main');
+        const sitePending = pending && pending.siteOnly;
+        buttons('site-proxy').forEach(button => {
+          button.setAttribute('aria-checked',String(main.mode === 'proxy'));
+          button.setAttribute('aria-busy',String(!!sitePending));
+          button.disabled = main.mode === 'reject' || !!(pending && !pending.siteOnly && main.mode !== 'proxy');
+          button.querySelector('span').textContent = sitePending ? '正在连接 · 点击取消' : '当前网站使用代理';
+        });
+        const siteStatus = main.mode === 'reject' ? '受防护或管理设置限制' : sitePending ? '正在连接，尚未生效' : siteMessage || (main.mode === 'proxy' ? (serviceReady() ? '已使用代理' : '代理暂时不可用 · ' + service) : '未使用代理');
+        root.querySelectorAll('[data-site-status]').forEach(element => { element.textContent = siteStatus; });
         const candidates = eligible();
         const blocked = targets.filter(target => target.mode === 'reject').length;
         const selected = targets.filter(target => target.selected);
@@ -322,6 +362,16 @@
         const message = !serviceReady() ? '代理暂不可用，PROXY 策略保留；BLOCK 可在本地执行。' : '工作 Profile · 仅本站 · 精确 HTTPS 目标 · 保存规则';
         setText('message',message); setText('bubble-message',notice || message); setText('blocked-message',notice || message);
       }
+      buttons('toggle-debug').forEach(button => button.addEventListener('click',() => { if (!canDebug()) return; state.debugView = !state.debugView; render(); }));
+      buttons('site-proxy').forEach(button => button.addEventListener('click',() => {
+        const main = findTarget('main');
+        if (main.mode === 'reject') return;
+        siteMessage = '';
+        if (main.mode === 'proxy' || pending && pending.siteOnly) {
+          if (pending && pending.siteOnly) pending = null;
+          changeLocal([main],'direct',true,'已恢复正常直连');
+        } else startProxyChange([main],false,false,true);
+      }));
       buttons('allow').forEach(button => button.addEventListener('click',() => startProxyChange(eligible(),true,true)));
       buttons('block-selected').forEach(button => button.addEventListener('click',() => changeLocal(targets.filter(target => target.selected),'reject',true,'已阻止所选目标')));
       buttons('undo').forEach(button => button.addEventListener('click',undo));
@@ -355,7 +405,7 @@
       render();
       if (window.Tweak) {
         const tweaks=new window.Tweak({container:root,onChange:render});
-        tweaks.addSelect(state,'edition',{label:'预览版本',options:[{label:'普通版',value:'ordinary'},{label:'DEV',value:'dev'}]});
+        tweaks.addSelect(state,'edition',{label:'预览渠道',options:[{label:'Beta',value:'beta'},{label:'Release',value:'release'},{label:'DEV',value:'dev'},{label:'Alpha',value:'alpha'}]});
         tweaks.addSelect(state,'view',{label:'界面入口',options:[{label:'用量卡',value:'usage'},{label:'管理页',value:'management'},{label:'工具栏气泡',value:'bubble'}]});
         tweaks.addSelect(state,'status',{label:'服务运行状态',options:[{label:'可用',value:'ready'},{label:'准备连接',value:'preparing'},{label:'故障恢复中',value:'recovering'},{label:'无网络',value:'offline'},{label:'额度用尽',value:'quota'},{label:'身份已退出',value:'signed_out'}]});
         tweaks.addSelect(state,'quotaMode',{label:'流量额度',options:[{label:'已配置额度',value:'limited'},{label:'未设额度，仅统计',value:'unlimited'}]});
