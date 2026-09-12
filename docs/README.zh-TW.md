@@ -31,6 +31,7 @@
 ## 帶日期的計畫與稽核
 
 - [存取服務 V1.0 凍結方案與驗收合約（簡體中文設計基線，尚無執行驗收）](plans/access-service-v1.0/spec.zh-CN.md)
+- [出站協定與 DPI 評估（簡體中文，尚無真實網路驗收）](plans/access-service-v1.0/egress-dpi-assessment.zh-CN.md)
 
 檔名中帶日期的文件屬於證據快照、計畫或實作記錄。其「目前」只指記錄日期，不一定指目前儲存庫 HEAD。公開現況以[路線圖](roadmap.zh-TW.md)為準；帶日期文件應作為歷史證據保留，不應靜默改寫其中的測量結果。
 

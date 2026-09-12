@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Aegis V1.0 修订 3 · 交互预览</title>
+  <title>Aegis V1.0 修订 4 · 交互预览</title>
   <style>
     :root { color-scheme:light dark; }
     body { margin:0; padding:20px; background:light-dark(#f5f6f8,#181b20); color:light-dark(#252b35,#eef1f5); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
@@ -28,7 +28,7 @@
     <label>流量额度<select data-preview-state="quotaMode"><option value="limited">已配置额度</option><option value="unlimited">未设额度，仅统计</option></select></label>
     <label>流量示例<select data-preview-state="usageScale"><option value="mb">MB 量级</option><option value="gb">GB 量级</option><option value="tb">TB 量级</option><option value="tiny">微量流量</option></select></label>
   </fieldset>
-<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 修订 3：网站代理开关与分渠道调试示例">
+<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 修订 4：网站代理开关与分渠道调试示例">
   <style>
     #aegis-user-experience { --ag-bg:light-dark(#f5f6f8,#181b20); --ag-surface:light-dark(#ffffff,#24282f); --ag-text:light-dark(#252b35,#eef1f5); --ag-muted:light-dark(#606b7c,#b2bdcc); --ag-border:light-dark(#dce1e8,#424b57); --ag-accent:light-dark(#b94f00,#ffb36b); --ag-accent-text:light-dark(#ffffff,#24180c); --ag-soft:light-dark(#fff4e9,#392c22); --ag-good:light-dark(#167345,#7ad8a4); --ag-warn:light-dark(#995400,#ffd08d); color:var(--ag-text); font:400 14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     #aegis-user-experience * { box-sizing:border-box; }
@@ -104,7 +104,7 @@
     @media(max-width:560px) { #aegis-user-experience .ag-main { padding:14px; gap:12px; } #aegis-user-experience .ag-panel { padding:16px; } #aegis-user-experience .ag-status-grid,#aegis-user-experience .ag-dev-fields { grid-template-columns:1fr; } #aegis-user-experience .ag-value { font-size:18px; } #aegis-user-experience .ag-numbers { gap:10px; } #aegis-user-experience .ag-chrome { padding:12px 14px; } #aegis-user-experience .ag-bubble-area { padding:14px; } }
     @media(pointer:coarse) { #aegis-user-experience button,#aegis-user-experience select { min-height:44px; } #aegis-user-experience input,#aegis-user-experience select { font-size:16px; } }
   </style>
-  <div class="ag-caption"><span>V1.0 修订 3 · 交互示意 · 示例数据</span><span data-ag="preview-label">Beta · 管理页</span></div>
+  <div class="ag-caption"><span>V1.0 修订 4 · 交互示意 · 示例数据</span><span data-ag="preview-label">Beta · 管理页</span></div>
   <div class="ag-window">
     <div class="ag-chrome">
       <div class="ag-brand">Aegis</div>
@@ -127,7 +127,7 @@
         <div class="ag-cycle"><span data-ag="cycle">下次重置：10 月 1 日 00:00</span><span>最近同步：09-10 16:00:08</span><span>服务端统计 · 直连流量不计入</span></div>
       </section>
       <div class="ag-status-grid">
-        <section class="ag-panel"><h3>直连状态</h3><div class="ag-status"><span class="ag-dot" data-ag="direct-dot"></span><span data-ag="direct-status">可用</span></div><div class="ag-muted ag-small">未开启代理的网站正常直连</div></section>
+        <section class="ag-panel"><h3>原有连接</h3><div class="ag-status"><span class="ag-dot" data-ag="direct-dot"></span><span data-ag="direct-status">可用</span></div><div class="ag-muted ag-small">未开启的网站沿用浏览器原有连接设置</div></section>
         <section class="ag-panel"><h3>访问服务</h3><div class="ag-status"><span class="ag-dot" data-ag="service-dot"></span><span data-ag="service-status">可用</span></div><div class="ag-muted ag-small" data-ag="service-detail">连接稳定</div></section>
       </div>
       <section class="ag-panel" data-simple-only aria-label="当前网站代理设置">
@@ -144,7 +144,7 @@
         <div class="ag-result" data-ag="result" hidden><strong data-ag="result-text"></strong></div>
         <div data-ag="rules" aria-label="本站目标与规则">
           <div class="ag-target" data-target="main">
-            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="main"><span>news.example<span class="ag-muted ag-small">网站协议组 · HTTP / HTTPS / WS / WSS · 允许端口</span></span></label><span class="ag-chip" data-target-mode="main">DIRECT · 默认</span></div>
+            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="main"><span>news.example:443<span class="ag-muted ag-small">HTTPS · 当前主导航精确目标；不代表网站协议组</span></span></label><span class="ag-chip" data-target-mode="main">DIRECT · 默认</span></div>
             <div class="ag-target-controls"><label class="ag-small">处理策略<select data-target-policy="main" aria-label="news.example 处理策略"><option value="direct">DIRECT · 直连</option><option value="proxy">PROXY · 代理</option><option value="reject">REJECT · 阻止</option></select></label><button type="button" data-target-action="allow" data-id="main">ALLOW</button><button type="button" data-target-action="block" data-id="main">BLOCK</button><button type="button" class="ag-text-button" data-target-action="delete" data-id="main">删除规则</button><button type="button" class="ag-text-button" data-ag-action="blocked-page" hidden>查看阻断页</button></div>
             <div class="ag-target-note" data-target-note="main">默认直连 · 网络连接异常</div>
           </div>
@@ -206,7 +206,10 @@
       const one = key => root.querySelector('[data-ag="' + key + '"]');
       const buttons = action => root.querySelectorAll('[data-ag-action="' + action + '"]');
       const setText = (key, text) => { one(key).textContent = text; };
-      // main represents the complete website protocol group, not a single HTTPS origin.
+      // The website group has its own revision and only DIRECT/PROXY choices.
+      // Debug main is one HTTPS:443 override, never a member of that group.
+      const initialSiteGroup = {id:'site-group',mode:'direct',explicit:false,override:false,revision:0,selected:false};
+      const siteGroup = {...initialSiteGroup};
       const targets = [
         {id:'main',mode:'direct',explicit:false,override:false,issue:'network',revision:0,selected:false},
         {id:'cdn',mode:'direct',explicit:false,override:false,issue:'protection',revision:0,selected:false},
@@ -214,9 +217,10 @@
         {id:'manual',mode:'reject',explicit:true,override:false,issue:'protection',revision:0,selected:false}
       ];
       const initialTargets = targets.map(target => ({...target}));
-      const findTarget = id => targets.find(target => target.id === id);
+      const findTarget = id => id === siteGroup.id ? siteGroup : targets.find(target => target.id === id);
       const snapshot = target => ({mode:target.mode,explicit:target.explicit,override:target.override});
-      const eligible = () => targets.filter(target => target.mode !== 'reject' && (target.mode !== 'proxy' || target.issue === 'protection' && !target.override));
+      const effectiveMode = (target, value = target) => value.explicit || target.id !== 'main' ? value.mode : siteGroup.mode;
+      const eligible = () => targets.filter(target => effectiveMode(target) !== 'reject' && (effectiveMode(target) !== 'proxy' || target.issue === 'protection' && !target.override));
       const serviceReady = () => state.status === 'ready' || state.status === 'quota' && state.quotaMode === 'unlimited';
       let pending = null;
       let sequence = 0;
@@ -237,7 +241,7 @@
           return {id:target.id,before,afterRevision:target.revision};
         });
         remember(seq,entries);
-        report(seq,label + ' · ' + entries.length + ' 个精确目标');
+        report(seq,label + ' · ' + (list[0] === siteGroup ? '网站协议组' : entries.length + ' 个精确目标'));
         render();
       }
       function startProxyChange(list, grant, bulk, siteOnly = false) {
@@ -276,7 +280,7 @@
         if (!lastUndo) return;
         const seq = ++sequence;
         const entries = lastUndo.entries.filter(entry => findTarget(entry.id).revision === entry.afterRevision);
-        if (entries.some(entry => entry.before.mode === 'proxy') && !serviceReady()) {
+        if (entries.some(entry => effectiveMode(findTarget(entry.id), entry.before) === 'proxy') && !serviceReady()) {
           report(seq,'撤销需要恢复原 PROXY 规则；连接未就绪，当前策略保持。'); render(); return;
         }
         const skipped = lastUndo.entries.length - entries.length;
@@ -308,6 +312,7 @@
           // Each channel starts a separate fictional fixture; no profile data migration.
           pending = null; lastUndo = null; notice = ''; siteMessage = ''; state.debugView = false;
           targets.forEach((target,index) => Object.assign(target,initialTargets[index]));
+          Object.assign(siteGroup,initialSiteGroup);
           saved = {mode:'auto',endpoint:'R1',url:'https://subscription.example/sub'};
           one('selection-mode').value = saved.mode; one('endpoint').value = saved.endpoint;
           one('endpoint').disabled = true; subscriptionInput.value = saved.url;
@@ -367,21 +372,24 @@
         setText('service-detail',spent ? '等待额度恢复，网站选择已保留' : offline ? '网络恢复后自动检查连接' : state.status === 'signed_out' ? '网站选择已保留；重新连接账户后恢复代理' : state.status === 'recovering' ? '正在恢复连接' : busy ? '正在准备连接' : '连接稳定');
         const main = findTarget('main');
         const sitePending = pending && pending.siteOnly;
+        const siteChoiceUnknown = !siteGroup.explicit && main.explicit && (main.mode !== 'direct' || main.override);
         buttons('site-proxy').forEach(button => {
-          button.setAttribute('aria-checked',String(main.mode === 'proxy'));
+          button.hidden = siteChoiceUnknown;
+          button.setAttribute('aria-checked',String(siteGroup.mode === 'proxy'));
           button.setAttribute('aria-busy',String(!!sitePending));
-          button.disabled = main.mode === 'reject' || !!(pending && !pending.siteOnly && main.mode !== 'proxy');
+          button.disabled = !!(pending && !pending.siteOnly && siteGroup.mode !== 'proxy');
           button.querySelector('span').textContent = sitePending ? '正在连接 · 点击取消' : '当前网站使用代理';
         });
-        const siteStatus = main.mode === 'reject' ? '受防护或管理设置限制' : sitePending ? '正在连接，尚未生效' : siteMessage || (main.mode === 'proxy' ? (serviceReady() ? '已使用代理' : '代理暂时不可用 · ' + service) : '未使用代理');
+        const siteRestricted = main.explicit && (main.mode !== siteGroup.mode || main.override);
+        const siteStatus = siteChoiceUnknown ? '网站设置暂不可用 · 尚无网站选择，部分访问受独立设置限制' : (sitePending ? '正在连接，尚未生效' : siteMessage || (siteGroup.mode === 'proxy' ? (serviceReady() ? '网站代理已开启' : '代理暂时不可用 · ' + service) : '未使用本服务代理 · 使用浏览器原有连接设置')) + (siteRestricted ? '；部分访问受独立设置限制，网站选择已保留' : '');
         root.querySelectorAll('[data-site-status]').forEach(element => { element.textContent = siteStatus; });
         const candidates = eligible();
-        const blocked = targets.filter(target => target.mode === 'reject').length;
+        const blocked = targets.filter(target => effectiveMode(target) === 'reject').length;
         const selected = targets.filter(target => target.selected);
         const summary = candidates.length ? '本页 ' + candidates.length + ' 个目标可处理' : '本页没有待允许目标';
         setText('page-summary',summary); setText('bubble-summary',summary);
         setText('page-detail',blocked + ' 个手动阻断目标在批量 ALLOW 中保留');
-        setText('bubble-policy',findTarget('main').mode.toUpperCase() + (findTarget('main').explicit ? ' · 用户规则' : ' · 默认'));
+        setText('bubble-policy',effectiveMode(main).toUpperCase() + (main.explicit ? ' · 精确用户规则' : ' · 继承网站选择'));
         one('result').hidden = !notice;
         setText('result-text',notice);
         buttons('allow').forEach(button => { button.disabled = !!pending || !candidates.length; button.textContent = pending ? '正在准备允许操作…' : '允许本页 ' + candidates.length + ' 个目标 · ALLOW'; });
@@ -391,11 +399,12 @@
         buttons('blocked-page').forEach(button => { button.hidden = findTarget('main').mode !== 'reject'; });
         targets.forEach(target => {
           const targetPending = pending && pending.entries.some(entry => entry.id === target.id && entry.revision === target.revision);
-          root.querySelector('[data-target-mode="' + target.id + '"]').textContent = target.mode.toUpperCase() + (target.explicit ? ' · 用户规则' : ' · 默认');
-          root.querySelector('[data-target-policy="' + target.id + '"]').value = target.mode;
+          const mode = effectiveMode(target);
+          root.querySelector('[data-target-mode="' + target.id + '"]').textContent = mode.toUpperCase() + (target.explicit ? ' · 精确用户规则' : target.id === 'main' ? ' · 继承网站选择' : ' · 默认');
+          root.querySelector('[data-target-policy="' + target.id + '"]').value = mode;
           root.querySelector('[data-target-select="' + target.id + '"]').checked = target.selected;
-          let detail = target.mode === 'reject' ? '已阻止；批量 ALLOW 保留，此行 ALLOW 可解除' : target.mode === 'proxy' ? (target.override ? '已允许并代理' : '已选代理；Aegis 防护仍适用') : (target.explicit ? '显式直连；Aegis 防护仍适用' : '继承默认直连') + (target.issue === 'network' ? ' · 网络连接异常' : ' · Aegis 防护拦截');
-          if (target.mode === 'proxy' && !serviceReady()) detail += ' · 访问暂不可用，策略保留';
+          let detail = mode === 'reject' ? '已阻止此精确目标；批量 ALLOW 保留，此行 ALLOW 可解除' : mode === 'proxy' ? (target.override ? '此精确目标已允许并代理' : '已选代理；Aegis 防护仍适用') : (target.explicit ? '沿用原有连接设置；Aegis 防护仍适用' : '继承原有连接设置') + (target.issue === 'network' ? ' · 网络连接异常' : ' · Aegis 防护拦截');
+          if (mode === 'proxy' && !serviceReady()) detail += ' · 访问暂不可用，策略保留';
           if (targetPending) detail += ' · 等待连接准备，原策略保持';
           root.querySelector('[data-target-note="' + target.id + '"]').textContent = detail;
           root.querySelectorAll('[data-target-action][data-id="' + target.id + '"]').forEach(button => { button.disabled = button.dataset.targetAction === 'allow' ? !!pending : button.dataset.targetAction === 'delete' ? !target.explicit : false; });
@@ -405,13 +414,11 @@
       }
       buttons('toggle-debug').forEach(button => button.addEventListener('click',() => { if (!canDebug()) return; state.debugView = !state.debugView; render(); }));
       buttons('site-proxy').forEach(button => button.addEventListener('click',() => {
-        const main = findTarget('main');
-        if (main.mode === 'reject') return;
         siteMessage = '';
-        if (main.mode === 'proxy' || pending && pending.siteOnly) {
+        if (siteGroup.mode === 'proxy' || pending && pending.siteOnly) {
           if (pending && pending.siteOnly) pending = null;
-          changeLocal([main],'direct',true,'已恢复正常直连');
-        } else startProxyChange([main],false,false,true);
+          changeLocal([siteGroup],'direct',true,'网站已沿用浏览器原有连接设置');
+        } else startProxyChange([siteGroup],false,false,true);
       }));
       buttons('allow').forEach(button => button.addEventListener('click',() => startProxyChange(eligible(),true,true)));
       buttons('block-selected').forEach(button => button.addEventListener('click',() => changeLocal(targets.filter(target => target.selected),'reject',true,'已阻止所选目标')));
@@ -424,7 +431,7 @@
       root.querySelectorAll('[data-target-policy]').forEach(select => select.addEventListener('change',() => {
         const target = findTarget(select.dataset.targetPolicy);
         const mode = select.value;
-        if (mode === target.mode) { render(); return; }
+        if (mode === effectiveMode(target)) { render(); return; }
         if (mode === 'proxy') { startProxyChange([target],false,false); render(); }
         else changeLocal([target],mode,true,mode === 'reject' ? '已阻止此目标' : '已设为显式 DIRECT，防护仍适用');
       }));
@@ -432,7 +439,12 @@
         const target = findTarget(button.dataset.id);
         if (button.dataset.targetAction === 'allow') startProxyChange([target],true,false);
         else if (button.dataset.targetAction === 'block') changeLocal([target],'reject',true,'已阻止此目标');
-        else changeLocal([target],'direct',false,'已删除规则，继承默认 DIRECT');
+        else {
+          if (target.id === 'main' && siteGroup.mode === 'proxy' && !serviceReady()) {
+            report(++sequence,'删除后需要恢复网站代理；连接未就绪，当前规则保持。'); render(); return;
+          }
+          changeLocal([target],'direct',false,'已删除精确规则，恢复当前继承结果');
+        }
       }));
       buttons('subscription').forEach(button => button.addEventListener('click',() => { setText('dev-message','订阅更新完成 · 5 个候选 · 保持当前健康绑定（示例）'); }));
       const subscriptionInput = root.querySelector('input[type="url"]');

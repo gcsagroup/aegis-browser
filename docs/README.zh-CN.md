@@ -31,6 +31,7 @@
 ## 带日期的计划与审计
 
 - [访问服务 V1.0 冻结方案与验收合同（简体中文设计基线，尚无运行验收）](plans/access-service-v1.0/spec.zh-CN.md)
+- [出站协议与 DPI 评估（尚无真实网络验收）](plans/access-service-v1.0/egress-dpi-assessment.zh-CN.md)
 
 文件名中带日期的文件属于证据快照、计划或实施记录。其“当前”只指记录日期，不一定指当前仓库 HEAD。公开现状以[路线图](roadmap.zh-CN.md)为准；带日期文件应作为历史证据保留，不应静默改写其中的测量结果。
 
