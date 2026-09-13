@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 1,
+  "defaults": {
+    "policyState": "valid",
+    "effectiveMode": "proxy",
+    "policyScope": "site",
+    "effectiveProxyGroupId": "proxy-group-primary.example",
+    "requireProxyIntent": true,
+    "siteOwnershipReliable": true,
+    "requestOwner": {
+      "channel": "beta",
+      "profileToken": "profile-beta.example",
+      "storagePartitionToken": "partition-main.example"
+    },
+    "snapshotState": "published",
+    "snapshotOwner": {
+      "channel": "beta",
+      "profileToken": "profile-beta.example",
+      "storagePartitionToken": "partition-main.example"
+    },
+    "requestGenerations": {
+      "policyGeneration": 7,
+      "identityGeneration": 11,
+      "selectionGeneration": 13,
+      "networkEpoch": 17,
+      "baseProxyConfigGeneration": 19
+    },
+    "snapshotGenerations": {
+      "policyGeneration": 7,
+      "identityGeneration": 11,
+      "selectionGeneration": 13,
+      "networkEpoch": 17,
+      "baseProxyConfigGeneration": 19
+    },
+    "protectionRestriction": "none",
+    "managedRestriction": "none",
+    "runtimeState": "ready",
+    "registeredEntry": {
+      "registrationId": "entry-beta-main.example",
+      "proxyGroupId": "proxy-group-primary.example",
+      "owner": {
+        "channel": "beta",
+        "profileToken": "profile-beta.example",
+        "storagePartitionToken": "partition-main.example"
+      },
+      "generations": {
+        "policyGeneration": 7,
+        "identityGeneration": 11,
+        "selectionGeneration": 13,
+        "networkEpoch": 17,
+        "baseProxyConfigGeneration": 19
+      }
+    }
+  },
+  "plannerVectors": [
+    {
+      "name": "default_without_selection_preserves_native",
+      "input": {
+        "policyState": "absent",
+        "effectiveMode": "none",
+        "policyScope": "none",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "registeredEntry": null
+      },
+      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
+    },
+    {
+      "name": "direct_preserves_native_configuration",
+      "input": {
+        "effectiveMode": "direct",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "runtimeState": "signed_out",
+        "registeredEntry": null
+      },
+      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
+    },
+    {
+      "name": "reject_denies_without_snapshot_or_entry",
+      "input": {
+        "effectiveMode": "reject",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "snapshotState": "missing",
+        "runtimeState": "stopped",
+        "registeredEntry": null
+      },
+      "expected": { "action": "deny", "reason": "none", "registrationId": null }
+    },
+    {
+      "name": "protection_denial_precedes_missing_snapshot",
+      "input": {
+        "snapshotState": "missing",
+        "protectionRestriction": "deny",
+        "registeredEntry": null
+      },
+      "expected": { "action": "deny", "reason": "protection_restriction", "registrationId": null }
+    },
+    {
+      "name": "proxy_ready_uses_only_registered_entry",
+      "input": {},
+      "expected": { "action": "use_registered_proxy", "reason": "none", "registrationId": "entry-beta-main.example" }
+    },
+    {
+      "name": "proxy_preparing_waits",
+      "input": { "runtimeState": "preparing", "registeredEntry": null },
+      "expected": { "action": "wait", "reason": "proxy_unavailable", "registrationId": null }
+    },
+    {
+      "name": "proxy_recovering_waits",
+      "input": { "runtimeState": "recovering", "registeredEntry": null },
+      "expected": { "action": "wait", "reason": "proxy_unavailable", "registrationId": null }
+    },
+    {
+      "name": "proxy_offline_fails_closed",
+      "input": { "runtimeState": "offline", "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "proxy_unavailable", "registrationId": null }
+    },
+    {
+      "name": "proxy_quota_exhausted_fails_closed",
+      "input": { "runtimeState": "quota_exhausted", "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "quota_exhausted", "registrationId": null }
+    },
+    {
+      "name": "proxy_signed_out_fails_closed",
+      "input": { "runtimeState": "signed_out", "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "signed_out", "registrationId": null }
+    },
+    {
+      "name": "proxy_missing_entry_fails_closed",
+      "input": { "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "proxy_unavailable", "registrationId": null }
+    },
+    {
+      "name": "managed_force_proxy_stops_aegis_proxy",
+      "input": { "managedRestriction": "force_proxy" },
+      "expected": { "action": "fail", "reason": "managed_restriction", "registrationId": null }
+    },
+    {
+      "name": "managed_force_direct_stops_aegis_proxy",
+      "input": { "managedRestriction": "force_direct" },
+      "expected": { "action": "fail", "reason": "managed_restriction", "registrationId": null }
+    },
+    {
+      "name": "managed_custom_proxy_forbidden_stops_aegis_proxy",
+      "input": { "managedRestriction": "custom_proxy_forbidden" },
+      "expected": { "action": "fail", "reason": "managed_restriction", "registrationId": null }
+    },
+    {
+      "name": "direct_under_managed_restriction_preserves_native",
+      "input": {
+        "effectiveMode": "direct",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "managedRestriction": "force_proxy",
+        "registeredEntry": null
+      },
+      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
+    },
+    {
+      "name": "direct_under_managed_force_direct_preserves_native",
+      "input": {
+        "effectiveMode": "direct",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "managedRestriction": "force_direct",
+        "registeredEntry": null
+      },
+      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
+    },
+    {
+      "name": "direct_under_custom_proxy_forbidden_preserves_native",
+      "input": {
+        "effectiveMode": "direct",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "managedRestriction": "custom_proxy_forbidden",
+        "registeredEntry": null
+      },
+      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
+    },
+    {
+      "name": "require_proxy_with_absent_policy_fails",
+      "input": {
+        "policyState": "absent",
+        "effectiveMode": "none",
+        "policyScope": "none",
+        "effectiveProxyGroupId": "",
+        "registeredEntry": null
+      },
+      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
+    },
+    {
+      "name": "require_proxy_with_direct_policy_fails",
+      "input": { "effectiveMode": "direct", "effectiveProxyGroupId": "", "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
+    },
+    {
+      "name": "require_proxy_with_missing_snapshot_waits",
+      "input": { "snapshotState": "missing", "registeredEntry": null },
+      "expected": { "action": "wait", "reason": "missing_snapshot", "registrationId": null }
+    },
+    {
+      "name": "absent_policy_with_missing_snapshot_waits",
+      "input": {
+        "policyState": "absent",
+        "effectiveMode": "none",
+        "policyScope": "none",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "snapshotState": "missing",
+        "registeredEntry": null
+      },
+      "expected": { "action": "wait", "reason": "missing_snapshot", "registrationId": null }
+    },
+    {
+      "name": "restoring_snapshot_waits",
+      "input": { "snapshotState": "restoring", "registeredEntry": null },
+      "expected": { "action": "wait", "reason": "snapshot_not_ready", "registrationId": null }
+    },
+    {
+      "name": "absent_policy_with_restoring_snapshot_waits",
+      "input": {
+        "policyState": "absent",
+        "effectiveMode": "none",
+        "policyScope": "none",
+        "effectiveProxyGroupId": "",
+        "requireProxyIntent": false,
+        "snapshotState": "restoring",
+        "registeredEntry": null
+      },
+      "expected": { "action": "wait", "reason": "snapshot_not_ready", "registrationId": null }
+    },
+    {
+      "name": "corrupt_snapshot_fails",
+      "input": { "snapshotState": "corrupt", "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
+    },
+    {
+      "name": "policy_conflict_fails",
+      "input": { "policyState": "conflict", "registeredEntry": null },
+      "expected": { "action": "fail", "reason": "policy_conflict", "registrationId": null }
+    },
+    {
+      "name": "snapshot_channel_mismatch_fails",
+      "input": { "snapshotOwner": { "channel": "alpha" } },
+      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
+    },
+    {
+      "name": "snapshot_profile_mismatch_fails",
+      "input": { "snapshotOwner": { "profileToken": "profile-other.example" } },
+      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
+    },
+    {
+      "name": "snapshot_partition_mismatch_fails",
+      "input": { "snapshotOwner": { "storagePartitionToken": "partition-other.example" } },
+      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
+    },
+    {
+      "name": "stale_policy_generation_fails",
+      "input": { "snapshotGenerations": { "policyGeneration": 6 } },
+      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
+    },
+    {
+      "name": "stale_identity_generation_fails",
+      "input": { "snapshotGenerations": { "identityGeneration": 10 } },
+      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
+    },
+    {
+      "name": "stale_selection_generation_fails",
+      "input": { "snapshotGenerations": { "selectionGeneration": 12 } },
+      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
+    },
+    {
+      "name": "stale_network_epoch_fails",
+      "input": { "snapshotGenerations": { "networkEpoch": 16 } },
+      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
+    },
+    {
+      "name": "stale_base_proxy_generation_fails",
+      "input": { "snapshotGenerations": { "baseProxyConfigGeneration": 18 } },
+      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
+    },
+    {
+      "name": "entry_owner_mismatch_fails",
+      "input": { "registeredEntry": { "owner": { "profileToken": "profile-other.example" } } },
+      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
+    },
+    {
+      "name": "entry_generation_mismatch_fails",
+      "input": { "registeredEntry": { "generations": { "networkEpoch": 16 } } },
+      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
+    },
+    {
+      "name": "entry_proxy_group_mismatch_fails",
+      "input": { "registeredEntry": { "proxyGroupId": "proxy-group-other.example" } },
+      "expected": { "action": "fail", "reason": "proxy_unavailable", "registrationId": null }
+    },
+    {
+      "name": "unreliable_site_ownership_fails",
+      "input": { "siteOwnershipReliable": false },
+      "expected": { "action": "fail", "reason": "site_ownership_unavailable", "registrationId": null }
+    },
+    {
+      "name": "profile_policy_does_not_borrow_site_ownership",
+      "input": { "policyScope": "profile", "siteOwnershipReliable": false },
+      "expected": { "action": "use_registered_proxy", "reason": "none", "registrationId": "entry-beta-main.example" }
+    },
+    {
+      "name": "unknown_channel_fails",
+      "input": { "requestOwner": { "channel": "invalid" } },
+      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
+    },
+    {
+      "name": "empty_profile_owner_fails",
+      "input": { "requestOwner": { "profileToken": "" } },
+      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
+    },
+    {
+      "name": "unknown_mode_fails",
+      "input": { "effectiveMode": "invalid" },
+      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
+    },
+    {
+      "name": "unknown_runtime_fails",
+      "input": { "runtimeState": "invalid" },
+      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
+    }
+  ]
+}

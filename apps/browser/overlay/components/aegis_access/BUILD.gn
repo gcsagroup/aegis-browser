@@ -1,0 +1,38 @@
+# Copyright 2026 GCSA
+# Intended path: components/aegis_access/BUILD.gn
+
+import("//testing/test.gni")
+
+action("generate_route_planner_vectors") {
+  script = "generate_route_planner_vectors.py"
+  inputs = [ "testdata/route_planner_vectors.json" ]
+  outputs = [ "$target_gen_dir/route_planner_golden_vectors.inc" ]
+  args = [
+    rebase_path(inputs[0], root_build_dir),
+    rebase_path(outputs[0], root_build_dir),
+  ]
+}
+
+source_set("aegis_access") {
+  sources = [
+    "access_route_planner.cc",
+    "access_route_planner.h",
+    "access_route_types.h",
+    "site_proxy_rule_group.cc",
+    "site_proxy_rule_group.h",
+  ]
+}
+
+test("aegis_access_unittests") {
+  sources = [
+    "access_route_planner_contract_test.h",
+    "access_route_planner_unittest.cc",
+  ]
+  include_dirs = [ "$target_gen_dir" ]
+  deps = [
+    ":aegis_access",
+    ":generate_route_planner_vectors",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}

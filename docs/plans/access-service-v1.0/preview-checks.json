@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "scope": "Offline DOM interaction checks for the documentation preview only; not browser rendering, product channel security, protocol routing, or network acceptance",
+  "source": "interaction-example.html",
+  "checks": [
+    "Standalone document initializes without host or external resources",
+    "Four native channel choices expose the correct simple and debug views",
+    "Bubble toggle commits, preserves selection during outage, and disables locally",
+    "Cancelled preparation cannot re-enable the website after its timer finishes",
+    "Failed preparation keeps the prior choice and reports failure",
+    "Changing preview channels resets fictional debug settings",
+    "Independent quota and usage controls work without exposing Release debug controls",
+    "Exact BLOCK preserves the enabled website choice and allows offline group disable",
+    "Exact ALLOW leaves a committed disabled website group unchanged and reports its override",
+    "Deleting an override safely restores the current group inheritance instead of default DIRECT",
+    "Undoing a website change preserves separately owned exact BLOCK rules",
+    "Late exact ALLOW cannot overwrite BLOCK or invent a complete website choice",
+    "Website preparation can commit its own group while preserving a later exact BLOCK"
+  ]
+}
