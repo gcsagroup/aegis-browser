@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="$i18n{language}">
   <head>
     <meta charset="utf-8">
     <meta name="color-scheme" content="light dark">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Aegis Agent</title>
+    <title>$i18n{title}</title>
     <link rel="stylesheet" href="agent.css">
   </head>
   <body>
@@ -20,7 +20,7 @@
 
       <section id="disabled-banner" class="notice" hidden></section>
 
-      <nav class="workspace-tabs" aria-label="Aegis workspace">
+      <nav class="workspace-tabs" aria-label="$i18n{workspaceLabel}">
         <button id="task-view-button" type="button" aria-selected="true"></button>
         <button id="automation-view-button" type="button" aria-selected="false"></button>
       </nav>
@@ -30,7 +30,7 @@
           <label id="goal-label" for="goal"></label>
           <textarea id="goal" rows="5" maxlength="4096" autofocus></textarea>
           <p id="simple-help" class="help"></p>
-          <div id="quick-actions" class="scenario-grid" aria-label="Common tasks"></div>
+          <div id="quick-actions" class="scenario-grid" aria-label="$i18n{quickActionsLabel}"></div>
           <button id="plan-button" class="primary primary-large" type="button"></button>
         </section>
       </section>
@@ -41,7 +41,7 @@
             <h2 id="automation-title"></h2>
             <p id="automation-help" class="help"></p>
           </div>
-          <div id="automation-presets" class="scenario-grid" aria-label="Automation templates"></div>
+          <div id="automation-presets" class="scenario-grid" aria-label="$i18n{automationTemplatesLabel}"></div>
           <label id="automation-goal-label" for="automation-goal"></label>
           <textarea id="automation-goal" rows="4" maxlength="3000"></textarea>
           <div class="schedule-row">
@@ -72,7 +72,7 @@
           <div class="field-grid">
             <label for="model-provider" id="provider-label"></label>
             <select id="model-provider">
-              <option value="openai">OpenAI compatible</option>
+              <option value="openai">$i18n{openaiCompatible}</option>
               <option value="anthropic">Anthropic</option>
               <option value="gemini">Gemini</option>
             </select>
@@ -148,7 +148,7 @@
         <button id="approve-button" class="danger" type="button"></button>
       </section>
 
-      <nav class="controls" aria-label="Task controls">
+      <nav class="controls" aria-label="$i18n{controlsLabel}">
         <button id="pause-button" type="button"></button>
         <button id="resume-button" type="button"></button>
         <button id="takeover-button" type="button"></button>

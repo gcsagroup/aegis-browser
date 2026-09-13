@@ -34,6 +34,8 @@ struct AegisStrings {
   const char* phish_hint;
   const char* fingerprint_label;
   const char* fingerprint_hint;
+  const char* fingerprint_details;
+  const char* technical_details;
   const char* fingerprint_probe;
   const char* miner_guard_label;
   const char* miner_guard_hint;
@@ -119,44 +121,39 @@ struct AegisStrings {
 AegisStrings StringsForLocale(const std::string& locale) {
   if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
     return {
-        .title = "GCSA-aegis",
-        .subtitle = "隱私與安全模組",
-        .overview_title = "保護概覽",
+        .title = "GCSA Aegis",
+        .subtitle = "防護中心",
+        .overview_title = "防護概覽",
         .overview_blocked = "已攔截請求",
         .overview_links = "已清理連結",
         .overview_storage = "Cookie／跳轉清理",
         .overview_scope =
-            "這裡只顯示 Aegis 的本次會話動作與模組狀態，不代表網站本身可信。",
-        .modules_title = "保護模組",
+            "顯示本次瀏覽期間的防護記錄。記錄數量不代表網站可信。",
+        .modules_title = "防護設定",
         .tracker_label = "追蹤器攔截",
-        .tracker_hint =
-            "攔截廣告／分析域名的子資源，以及第一方 /g/collect、gtm.js "
-            "等收集路徑。",
-        .phish_label = "釣魚攔截頁",
+        .tracker_hint = "攔截已識別的廣告和跟蹤請求。",
+        .phish_label = "釣魚網站防護",
         .phish_hint = "打開高風險仿冒站前顯示攔截頁，可選擇繼續造訪。",
         .fingerprint_label = "指紋防護",
-        .fingerprint_hint =
-            "對 Canvas、WebGL、Audio、WebGPU 做穩定化，降低跨站指紋追蹤。"
-            "檢測兩次，同一頁的 Audio 讀數應相同；WebGPU 的 maxBufferSize "
-            "會隨開關變化。",
+        .fingerprint_hint = "減少網站透過裝置特徵跨站識別您的機會。",
+        .fingerprint_details =
+            "對 Canvas、WebGL、Audio、WebGPU 做穩定化。檢測兩次時，同頁 Audio "
+            "讀數應相同；WebGPU 的 maxBufferSize 會隨開關變化。",
+        .technical_details = "技術詳情",
         .fingerprint_probe = "檢測本頁指紋",
         .miner_guard_label = "挖礦腳本偵測（僅觀察）",
         .miner_guard_hint =
-            "由瀏覽器側組合估算頁面 CPU、Worker／Wasm／WebGPU 與挖礦端點訊號。"
-            "符合目前規則時只記錄提醒，不會中止腳本或連線；重新啟用後請重新整理"
-            "頁面。",
-        .filter_list_title = "EasyList 規則",
+            "檢測可能的挖礦活動並記錄提醒，不終止指令碼或連線。重新啟用後請重新"
+            "整理網頁。",
+        .filter_list_title = "廣告與跟蹤過濾規則",
         .filter_list_auto_update = "自動更新過濾列表",
         .filter_list_auto_update_hint =
-            "啟動用本地快取。約每 24 "
-            "小時後台檢查；未變化不重編譯，失敗保留舊快取。",
+            "約每 24 小時檢查一次。更新失敗時繼續使用現有規則。",
         .filter_list_update_now = "立即更新",
         .filter_list_meta =
             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
-        .downloads_title = "下載與鏡像",
-        .downloads_meta =
-            "一般 HTTP(S) 下載會自動使用有界智能並行；也可匯入單文件 "
-            "RFC 5854 Metalink。",
+        .downloads_title = "下載中心",
+        .downloads_meta = "管理普通下載、映象下載、種子和磁力連結下載。",
         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
         .metalink_inspect = "檢查文件",
         .metalink_download = "確認並下載",
@@ -183,29 +180,23 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .torrent_safety =
             "限制 4 MiB 元資料、2048 個文件和 2 TiB；拒絕路徑穿越與符號連結。"
             "預設關閉 UPnP、NAT-PMP 與 LSD，完成即停種。",
-        .link_sanitize_label = "清洗追蹤參數",
-        .link_sanitize_hint =
-            "導覽與跳轉時去掉 utm_、fbclid、gclid，並清洗 Referer "
-            "裡的追蹤參數。",
-        .cookie_janitor_label = "清理廣告/分析 Cookie",
+        .link_sanitize_label = "清理跟蹤引數",
+        .link_sanitize_hint = "移除網址和來源資訊中的已知跟蹤引數。",
+        .cookie_janitor_label = "清理跟蹤 Cookie",
         .cookie_janitor_hint =
-            "按 Cookie 名稱查表分類。刪除的第一方追蹤 Cookie 會標「first-party "
-            "/ name-hit」。"
-            "Facebook 登入 Cookie（c_user / datr）會保留；facebook.com "
-            "不當廣告網路域。",
-        .cname_uncloak_label = "揭開 CNAME 偽裝追蹤",
-        .cname_uncloak_hint = "解析子資源 CNAME，命中追蹤域名則攔截。",
-        .bounce_tracking_label = "攔截跳轉追蹤並立即清 Cookie",
-        .bounce_tracking_hint =
-            "識別 bounce tracking 跳轉，並立即清掉對應 Cookie。",
-        .policy_worker_label = "JS 策略 worker（packages/core）",
+            "清理已識別的廣告和分析 Cookie，並保留規則中的登入例外。",
+        .cname_uncloak_label = "偽裝跟蹤防護",
+        .cname_uncloak_hint = "識別借用網站域名的已知跟蹤服務並攔截請求。",
+        .bounce_tracking_label = "跳轉跟蹤防護",
+        .bounce_tracking_hint = "識別用於跟蹤的頁面跳轉，並清理相關 Cookie。",
+        .policy_worker_label = "本地隱私處理",
         .policy_worker_hint =
-            "在 chrome://aegis 執行 packages/core：釣魚評分、PII 脫敏與摘要。",
-        .privacy_ai_label = "隱私 AI 摘要",
+            "在本機分析可疑網址、隱藏敏感資訊並準備網頁摘要。",
+        .privacy_ai_label = "網頁摘要",
         .privacy_ai_hint =
-            "先脫敏，再用所選相容 API 格式和服務地址摘要。服務地址不是"
-            "數值 loopback 時，傳送前會再次確認。",
-        .privacy_ai_title = "隱私 AI",
+            "先隱藏敏感資訊，再使用所選模型服務生成摘要。傳送到非本機服務前會請"
+            "您確認。",
+        .privacy_ai_title = "摘要與模型設定",
         .privacy_ai_meta =
             "支援 OpenAI 相容、Claude（Anthropic）相容或 Gemini 相容 API；"
             "模型不可用時使用本機啟發式摘要。",
@@ -215,8 +206,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .summary_preview_redacted = "脫敏後文字",
         .summary_preview_destination = "處理位置",
         .summary_preview_scope =
-            "不會顯示或送出完整網址查詢參數；服務地址不是數值 "
-            "loopback 時，確認後才傳送脫敏文本。",
+            "不會傳送完整網址查詢引數。傳送到非本機服務前，請確認處理位置和文字"
+            "範圍。",
         .summary_preview_cancel = "取消",
         .summary_preview_confirm = "確認並摘要",
         .model_provider_label = "API 格式",
@@ -224,89 +215,78 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .model_anthropic_compatible = "Claude（Anthropic）相容",
         .model_gemini_compatible = "Gemini 相容",
         .model_endpoint_label = "服務地址",
-        .model_api_key_label = "API Key",
+        .model_api_key_label = "API 金鑰",
         .model_api_key_hint =
             "可選；如保存，會安全綁定目前 API 格式與服務地址且不回顯。",
         .model_select_label = "模型",
         .model_custom_label = "自訂模型 ID",
         .model_load = "載入模型列表",
         .model_save = "保存模型設定",
-        .model_key_clear = "清除 API Key",
-        .model_hint =
-            "選擇相容 API 格式並填寫可編輯的服務地址；模型列表從目前"
-            "地址載入。",
+        .model_key_clear = "清除 API 金鑰",
+        .model_hint = "填寫模型服務地址，並從該服務獲取可用模型。",
         .model_data_note =
-            "API Key 按 API 格式與標準化服務地址隔離，以系統加密保存"
-            "且不回顯。非本機地址會收到脫敏後的頁面摘錄。",
-        .activity_title = "本次會話",
+            "金鑰與所選服務繫結，加密儲存且不回顯。非本機服務會收到確認後的脫敏"
+            "文字。",
+        .activity_title = "本次瀏覽記錄",
         .activity_hint =
-            "攔截（EasyList / 第一方 collect / CNAME）、Referer 去參、廣告 "
-            "Cookie、bounce 與本機 CDP 連線會自動更新。",
-        .activity_empty =
-            "還沒有記錄。打開帶廣告請求或 utm_ "
-            "的頁面後，攔截與清理會出現在這裡。",
-        .browser_agent_title = "瀏覽器智慧代理",
-        .browser_agent_label = "啟用 Aegis Browser Agent",
+            "檢視已攔截的請求、已清理的跟蹤資訊和本機工具連線記錄。",
+        .activity_empty = "暫無防護記錄。瀏覽網頁後，相關記錄會顯示在這裡。",
+        .browser_agent_title = "AI 助手",
+        .browser_agent_label = "啟用 AI 助手",
         .browser_agent_hint =
             "依計畫執行網頁與瀏覽器操作；寫入、下載與交易步驟仍由瀏覽器"
             "政策檢查，付款前必須由你接管。",
-        .browser_agent_open = "開啟 Agent 側邊欄",
+        .browser_agent_open = "開啟 AI 助手",
         .browser_agent_status = "Agent 功能旗標未啟用。",
-        .ai_control_title = "AI 控制",
-        .ai_control_label = "允許本機 AI agent 經 CDP 控制",
+        .ai_control_title = "本機 AI 工具連線",
+        .ai_control_label = "允許本機 AI 工具讀取和操作網頁",
         .ai_control_hint =
-            "預設關閉。開啟後只在數值 loopback 提供 DevTools，不綁 0.0.0.0。"
-            "遠端 CDP 不列出 chrome://、file:// 等內部頁。",
+            "預設關閉。開啟後允許本機工具連線瀏覽器，讀取網頁內容時不會自動隱藏"
+            "敏感資訊。",
         .ai_control_status = "調試埠與綁定",
         .ai_control_connect =
             "Playwright：chromium.connectOverCDP('http://127.0.0.1:PORT')",
         .ai_control_limit =
-            "限制：遠端 CDP 不列出 chrome:// 與 file://，但網頁 DOM 仍可讀。"
-            "這是你主動打開的能力；chrome://aegis 摘要會先脫敏，CDP 讀 DOM "
-            "不會自動脫敏。",
+            "連線只對本機開放。工具無法透過此介面列出內部頁面，但可以讀取普通網"
+            "頁內容。",
         .note = "模組狀態會立即套用；過濾列表約每天自動更新一次。",
     };
   }
   if (locale.starts_with("zh")) {
     return {
-        .title = "GCSA-aegis",
-        .subtitle = "隐私与安全模块",
-        .overview_title = "保护概览",
+        .title = "GCSA Aegis",
+        .subtitle = "防护中心",
+        .overview_title = "防护概览",
         .overview_blocked = "已拦截请求",
         .overview_links = "已清理链接",
         .overview_storage = "Cookie／跳转清理",
         .overview_scope =
-            "这里只显示 Aegis 的本次会话动作与模块状态，不代表网站本身可信。",
-        .modules_title = "保护模块",
+            "显示本次浏览期间的防护记录。记录数量不代表网站可信。",
+        .modules_title = "防护设置",
         .tracker_label = "跟踪器拦截",
-        .tracker_hint =
-            "拦截广告／分析域名的子资源，以及第一方 /g/collect、gtm.js "
-            "等收集路径。",
-        .phish_label = "钓鱼拦截页",
+        .tracker_hint = "拦截已识别的广告和跟踪请求。",
+        .phish_label = "钓鱼网站防护",
         .phish_hint = "打开高风险仿冒站前显示拦截页，可选择继续访问。",
         .fingerprint_label = "指纹防护",
-        .fingerprint_hint =
-            "对 Canvas、WebGL、Audio、WebGPU 做稳定化，降低跨站指纹追踪。"
-            "检测两次，同一页的 Audio 读数应相同；WebGPU 的 maxBufferSize "
-            "会随开关变化。",
+        .fingerprint_hint = "减少网站通过设备特征跨站识别您的机会。",
+        .fingerprint_details =
+            "对 Canvas、WebGL、Audio、WebGPU 做稳定化。检测两次时，同页 Audio "
+            "读数应相同；WebGPU 的 maxBufferSize 会随开关变化。",
+        .technical_details = "技术详情",
         .fingerprint_probe = "检测本页指纹",
         .miner_guard_label = "挖矿脚本检测（仅观察）",
         .miner_guard_hint =
-            "由浏览器侧组合估算页面 CPU、Worker／Wasm／WebGPU 与挖矿端点信号。"
-            "符合当前规则时只记录提醒，不会终止脚本或连接；重新启用后请刷新页面"
-            "。",
-        .filter_list_title = "EasyList 规则",
+            "检测可能的挖矿活动并记录提醒，不终止脚本或连接。重新启用后请刷新网"
+            "页。",
+        .filter_list_title = "广告与跟踪过滤规则",
         .filter_list_auto_update = "自动更新过滤列表",
         .filter_list_auto_update_hint =
-            "启动用本地缓存。约每 24 "
-            "小时后台检查；未变化不重编译，失败保留旧缓存。",
+            "约每 24 小时检查一次。更新失败时继续使用现有规则。",
         .filter_list_update_now = "立即更新",
         .filter_list_meta =
             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
-        .downloads_title = "下载与镜像",
-        .downloads_meta =
-            "普通 HTTP(S) 下载会自动使用有界智能并行；也可导入单文件 "
-            "RFC 5854 Metalink。",
+        .downloads_title = "下载中心",
+        .downloads_meta = "管理普通下载、镜像下载、种子和磁力链接下载。",
         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
         .metalink_inspect = "检查文件",
         .metalink_download = "确认并下载",
@@ -333,29 +313,23 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .torrent_safety =
             "限制 4 MiB 元数据、2048 个文件和 2 TiB；拒绝路径穿越与符号链接。"
             "默认关闭 UPnP、NAT-PMP 与 LSD，完成即停种。",
-        .link_sanitize_label = "清洗跟踪参数",
-        .link_sanitize_hint =
-            "导航与跳转时去掉 utm_、fbclid、gclid，并清洗 Referer "
-            "里的跟踪参数。",
-        .cookie_janitor_label = "清理广告/分析 Cookie",
+        .link_sanitize_label = "清理跟踪参数",
+        .link_sanitize_hint = "移除网址和来源信息中的已知跟踪参数。",
+        .cookie_janitor_label = "清理跟踪 Cookie",
         .cookie_janitor_hint =
-            "按 Cookie 名称查表分类。删除的第一方跟踪 Cookie 会标「first-party "
-            "/ name-hit」。"
-            "Facebook 登录 Cookie（c_user / datr）会保留；facebook.com "
-            "不当广告网络域。",
-        .cname_uncloak_label = "揭开 CNAME 伪装跟踪",
-        .cname_uncloak_hint = "解析子资源 CNAME，命中跟踪域名则拦截。",
-        .bounce_tracking_label = "拦截跳转跟踪并立即清 Cookie",
-        .bounce_tracking_hint =
-            "识别 bounce tracking 跳转，并立即清掉对应 Cookie。",
-        .policy_worker_label = "JS 策略 worker（packages/core）",
+            "清理已识别的广告和分析 Cookie，并保留规则中的登录例外。",
+        .cname_uncloak_label = "伪装跟踪防护",
+        .cname_uncloak_hint = "识别借用网站域名的已知跟踪服务并拦截请求。",
+        .bounce_tracking_label = "跳转跟踪防护",
+        .bounce_tracking_hint = "识别用于跟踪的页面跳转，并清理相关 Cookie。",
+        .policy_worker_label = "本地隐私处理",
         .policy_worker_hint =
-            "在 chrome://aegis 运行 packages/core：钓鱼评分、PII 脱敏与摘要。",
-        .privacy_ai_label = "隐私 AI 摘要",
+            "在本机分析可疑网址、隐藏敏感信息并准备网页摘要。",
+        .privacy_ai_label = "网页摘要",
         .privacy_ai_hint =
-            "先脱敏，再用所选兼容 API 格式和服务地址摘要。服务地址不是"
-            "数值 loopback 时，发送前会再次确认。",
-        .privacy_ai_title = "隐私 AI",
+            "先隐藏敏感信息，再使用所选模型服务生成摘要。发送到非本机服务前会请"
+            "您确认。",
+        .privacy_ai_title = "摘要与模型设置",
         .privacy_ai_meta =
             "支持 OpenAI 兼容、Claude（Anthropic）兼容或 Gemini 兼容 API；"
             "模型不可用时使用本机启发式摘要。",
@@ -365,8 +339,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .summary_preview_redacted = "脱敏后文字",
         .summary_preview_destination = "处理位置",
         .summary_preview_scope =
-            "不会显示或送出完整网址查询参数；服务地址不是数值 "
-            "loopback 时，确认后才发送脱敏文本。",
+            "不会发送完整网址查询参数。发送到非本机服务前，请确认处理位置和文字"
+            "范围。",
         .summary_preview_cancel = "取消",
         .summary_preview_confirm = "确认并摘要",
         .model_provider_label = "API 格式",
@@ -374,92 +348,81 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .model_anthropic_compatible = "Claude（Anthropic）兼容",
         .model_gemini_compatible = "Gemini 兼容",
         .model_endpoint_label = "服务地址",
-        .model_api_key_label = "API Key",
+        .model_api_key_label = "API 密钥",
         .model_api_key_hint =
             "可选；如保存，会安全绑定当前 API 格式与服务地址且不回显。",
         .model_select_label = "模型",
         .model_custom_label = "自定义模型 ID",
         .model_load = "加载模型列表",
         .model_save = "保存模型设置",
-        .model_key_clear = "清除 API Key",
-        .model_hint =
-            "选择兼容 API 格式并填写可编辑的服务地址；模型列表从当前"
-            "地址加载。",
+        .model_key_clear = "清除 API 密钥",
+        .model_hint = "填写模型服务地址，并从该服务获取可用模型。",
         .model_data_note =
-            "API Key 按 API 格式与规范化服务地址隔离，使用系统加密保存"
-            "且不回显。非本机地址会收到脱敏后的页面摘录。",
-        .activity_title = "本次会话",
+            "密钥与所选服务绑定，加密保存且不回显。非本机服务会收到确认后的脱敏"
+            "文本。",
+        .activity_title = "本次浏览记录",
         .activity_hint =
-            "拦截（EasyList / 第一方 collect / CNAME）、Referer 去参、广告 "
-            "Cookie、bounce 与本机 CDP 连接会自动更新。",
-        .activity_empty =
-            "还没有记录。打开带广告请求或 utm_ "
-            "的页面后，拦截与清理会出现在这里。",
-        .browser_agent_title = "浏览器智能体",
-        .browser_agent_label = "启用 Aegis Browser Agent",
+            "查看已拦截的请求、已清理的跟踪信息和本机工具连接记录。",
+        .activity_empty = "暂无防护记录。浏览网页后，相关记录会显示在这里。",
+        .browser_agent_title = "AI 助手",
+        .browser_agent_label = "启用 AI 助手",
         .browser_agent_hint =
             "按计划执行网页与浏览器操作；写入、下载和交易步骤仍由浏览器"
             "策略检查，付款前必须由你接管。",
-        .browser_agent_open = "打开 Agent 侧边栏",
+        .browser_agent_open = "打开 AI 助手",
         .browser_agent_status = "Agent 功能开关尚未启用。",
-        .ai_control_title = "AI 控制",
-        .ai_control_label = "允许本机 AI agent 经 CDP 控制",
+        .ai_control_title = "本机 AI 工具连接",
+        .ai_control_label = "允许本机 AI 工具读取和操作网页",
         .ai_control_hint =
-            "默认关闭。开启后只在数值 loopback 提供 DevTools，不绑 0.0.0.0。"
-            "远程 CDP 不列出 chrome://、file:// 等内部页。",
+            "默认关闭。开启后允许本机工具连接浏览器，读取网页内容时不会自动隐藏"
+            "敏感信息。",
         .ai_control_status = "调试端口与绑定",
         .ai_control_connect =
             "Playwright：chromium.connectOverCDP('http://127.0.0.1:PORT')",
         .ai_control_limit =
-            "限制：远程 CDP 不列出 chrome:// 与 file://，但网页 DOM 仍可读。"
-            "这是你主动打开的能力；chrome://aegis 摘要会先脱敏，CDP 读 DOM "
-            "不会自动脱敏。",
+            "连接只对本机开放。工具无法通过此接口列出内部页面，但可以读取普通网"
+            "页内容。",
         .note = "模块状态会立即生效；过滤列表大约每天自动更新一次。",
     };
   }
   return {
-      .title = "GCSA-aegis",
-      .subtitle = "Privacy & security modules",
+      .title = "GCSA Aegis",
+      .subtitle = "Protection center",
       .overview_title = "Protection overview",
       .overview_blocked = "Requests blocked",
       .overview_links = "Links cleaned",
       .overview_storage = "Cookie / bounce cleanup",
       .overview_scope =
-          "This shows Aegis actions for this session and module health. It "
-          "does not mean a site is trustworthy.",
-      .modules_title = "Protection modules",
+          "Protection activity during this browser session. Counts do not "
+          "establish that a website is trustworthy.",
+      .modules_title = "Protection settings",
       .tracker_label = "Tracker blocking",
-      .tracker_hint =
-          "Blocks ad/analytics subresources and first-party collect paths "
-          "such as /g/collect and gtm.js. Does not block pages you open.",
-      .phish_label = "Phish interstitial",
+      .tracker_hint = "Block recognized advertising and tracking requests.",
+      .phish_label = "Phishing protection",
       .phish_hint =
           "Shows a warning before high-risk lookalike sites. You can continue.",
       .fingerprint_label = "Fingerprint Guard",
       .fingerprint_hint =
-          "Stabilizes Canvas, WebGL, Audio, and WebGPU to reduce cross-site "
-          "fingerprinting. Probe twice; Audio on this page should stay the "
-          "same. WebGPU maxBufferSize changes with the guard.",
+          "Reduce cross-site identification through device characteristics.",
+      .fingerprint_details =
+          "Canvas, WebGL, Audio and WebGPU stabilization. Audio should remain "
+          "stable on repeated probes; maxBufferSize changes with protection.",
+      .technical_details = "Technical details",
       .fingerprint_probe = "Probe this page fingerprints",
       .miner_guard_label = "Mining script detection (observe-only)",
       .miner_guard_hint =
-          "Combines estimated page CPU, Worker/Wasm/WebGPU use, and strong "
-          "mining endpoint indicators. Rule matches are reported without "
-          "stopping scripts or connections; reload after re-enabling it.",
-      .filter_list_title = "EasyList rules",
+          "Detect possible mining activity and record alerts without stopping "
+          "scripts or connections. Reload pages after re-enabling.",
+      .filter_list_title = "Advertising and tracking filters",
       .filter_list_auto_update = "Auto-update filter lists",
       .filter_list_auto_update_hint =
-          "Uses the local cache on startup. Rechecks about every 24h in the "
-          "background; unchanged lists skip recompile, failures keep the "
-          "cache.",
+          "Check about every 24 hours. Keep existing rules if an update fails.",
       .filter_list_update_now = "Update now",
       .filter_list_meta =
           "No compiled filter list yet. Update to compile EasyList / "
           "EasyPrivacy.",
-      .downloads_title = "Downloads and mirrors",
-      .downloads_meta =
-          "Regular HTTP(S) downloads use bounded smart parallelism. You can "
-          "also import a single-file RFC 5854 Metalink.",
+      .downloads_title = "Downloads",
+      .downloads_meta = "Manage regular, mirror, torrent and magnet downloads.",
       .metalink_file_label = "Metalink file (.meta4 / .metalink)",
       .metalink_inspect = "Inspect file",
       .metalink_download = "Confirm and download",
@@ -490,30 +453,31 @@ AegisStrings StringsForLocale(const std::string& locale) {
           "Metadata is limited to 4 MiB, 2,048 files, and 2 TiB. Path "
           "traversal and symlinks are rejected. UPnP, NAT-PMP, and LSD are "
           "off; completed tasks stop seeding.",
-      .link_sanitize_label = "Strip tracking parameters",
+      .link_sanitize_label = "Remove tracking parameters",
       .link_sanitize_hint =
-          "Removes utm_, fbclid, gclid and similar tracking params from "
-          "navigations, redirects, and the Referer header.",
-      .cookie_janitor_label = "Clear ads/analytics cookies",
+          "Remove known tracking parameters from URLs and referrer "
+          "information.",
+      .cookie_janitor_label = "Clear tracking cookies",
       .cookie_janitor_hint =
-          "Looks up cookie names. Deleted first-party tracking cookies are "
-          "labeled first-party / name-hit. Facebook login cookies (c_user / "
-          "datr) are kept; facebook.com is not treated as an ad network.",
-      .cname_uncloak_label = "Uncloak CNAME tracker aliases",
+          "Clear recognized advertising and analytics cookies while preserving "
+          "sign-in exceptions in the rules.",
+      .cname_uncloak_label = "Disguised tracking protection",
       .cname_uncloak_hint =
-          "Resolves subresource CNAMEs and blocks aliases of tracker hosts.",
-      .bounce_tracking_label = "Clear bounce-tracker cookies immediately",
+          "Block known tracking services that use aliases under a website’s "
+          "domain.",
+      .bounce_tracking_label = "Redirect tracking protection",
       .bounce_tracking_hint =
-          "Detects bounce-tracking hops and clears matching cookies at once.",
-      .policy_worker_label = "JS policy worker (packages/core)",
+          "Detect tracking redirects and clear related cookies.",
+      .policy_worker_label = "Local privacy processing",
       .policy_worker_hint =
-          "Runs packages/core on chrome://aegis for phish scoring, PII "
-          "redaction, and summaries.",
-      .privacy_ai_label = "Privacy AI summary",
+          "Analyze suspicious URLs, redact sensitive information and prepare "
+          "summaries on this device.",
+      .privacy_ai_label = "Page summaries",
       .privacy_ai_hint =
-          "Redacts first, then summarizes through the selected compatible API "
-          "format and endpoint. Non-loopback sending requires confirmation.",
-      .privacy_ai_title = "Privacy AI",
+          "Redact sensitive information before summarizing with the selected "
+          "model service. Sending to a non-local service requires "
+          "confirmation.",
+      .privacy_ai_title = "Summaries and model settings",
       .privacy_ai_meta =
           "Supports OpenAI-compatible, Anthropic (Claude)-compatible, or "
           "Gemini-compatible APIs, with on-device heuristic fallback.",
@@ -523,9 +487,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
       .summary_preview_redacted = "Text after redaction",
       .summary_preview_destination = "Processing destination",
       .summary_preview_scope =
-          "Full URL query parameters are neither shown nor sent. For a "
-          "non-loopback endpoint, redacted text is sent only after "
-          "confirmation.",
+          "Full URL query values are not sent. Confirm the destination and "
+          "text scope before sending to a non-local service.",
       .summary_preview_cancel = "Cancel",
       .summary_preview_confirm = "Confirm and summarize",
       .model_provider_label = "API format",
@@ -543,39 +506,36 @@ AegisStrings StringsForLocale(const std::string& locale) {
       .model_save = "Save model settings",
       .model_key_clear = "Clear API key",
       .model_hint =
-          "Choose a compatible API format and enter an editable endpoint. "
-          "The model list is loaded from the current endpoint.",
+          "Enter the model service address and retrieve its available models.",
       .model_data_note =
-          "API keys are isolated by API format and normalized endpoint, "
-          "OS-encrypted, and never shown again. Non-local endpoints receive "
-          "the redacted page excerpt.",
+          "Keys are bound to the selected service, stored encrypted and not "
+          "shown again. Non-local services receive redacted text after "
+          "confirmation.",
       .activity_title = "This session",
       .activity_hint =
-          "Blocks (EasyList / first-party collect / CNAME), Referer stripping, "
-          "ads cookies, bounce clears, and local CDP connections update live.",
+          "View blocked requests, tracking cleanup and local tool connections.",
       .activity_empty =
-          "Nothing recorded yet. Open a page with ad requests or a utm_ link.",
-      .browser_agent_title = "Browser Agent",
-      .browser_agent_label = "Enable Aegis Browser Agent",
+          "No protection activity yet. Relevant activity will appear as you "
+          "browse.",
+      .browser_agent_title = "AI assistant",
+      .browser_agent_label = "Enable AI assistant",
       .browser_agent_hint =
           "Runs planned page and browser actions. Browser policy still gates "
           "writes, downloads, and transactions; you must take over before "
           "payment.",
-      .browser_agent_open = "Open Agent side panel",
+      .browser_agent_open = "Open AI assistant",
       .browser_agent_status = "The Agent feature flag is not enabled.",
-      .ai_control_title = "AI control",
-      .ai_control_label = "Allow a local AI agent over CDP",
+      .ai_control_title = "Local AI tool access",
+      .ai_control_label = "Allow local AI tools to read and control pages",
       .ai_control_hint =
-          "Off by default. When on, DevTools binds only numeric loopback, "
-          "never 0.0.0.0. Remote CDP does not list chrome:// or file:// pages.",
+          "Off by default. Enabling allows local tools to connect to the "
+          "browser. Page content they read is not automatically redacted.",
       .ai_control_status = "Debug port and bind",
       .ai_control_connect =
           "Playwright: chromium.connectOverCDP('http://127.0.0.1:PORT')",
       .ai_control_limit =
-          "Limit: remote CDP hides chrome:// and file://, but page DOM is "
-          "still "
-          "readable. That is an explicit user choice. chrome://aegis summaries "
-          "are redacted; CDP DOM reads are not.",
+          "Connections are local only. Tools cannot list internal pages "
+          "through this interface, but can read regular page content.",
       .note =
           "Changes apply immediately. Filter lists refresh about once a day.",
   };
@@ -596,6 +556,8 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       profile, chrome::kChromeUIAegisHost);
+  // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
+  source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
 
   const AegisStrings strings =
       StringsForLocale(g_browser_process->GetApplicationLocale());
@@ -613,6 +575,8 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->AddString("phishHint", strings.phish_hint);
   source->AddString("fingerprintLabel", strings.fingerprint_label);
   source->AddString("fingerprintHint", strings.fingerprint_hint);
+  source->AddString("fingerprintDetails", strings.fingerprint_details);
+  source->AddString("technicalDetails", strings.technical_details);
   source->AddString("fingerprintProbe", strings.fingerprint_probe);
   source->AddString("minerGuardLabel", strings.miner_guard_label);
   source->AddString("minerGuardHint", strings.miner_guard_hint);

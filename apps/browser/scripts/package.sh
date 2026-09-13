@@ -19,12 +19,13 @@ else
 fi
 
 VERSION="$(read_pinned_value "$VERSION_FILE" 2>/dev/null || echo "0.0.0")"
-APP_VERSION="${AEGIS_PACKAGE_VERSION:-0.1.0}"
+APP_VERSION="${AEGIS_PACKAGE_VERSION:-1.1.0.3}"
 CPU="$(uname -m)"
+[[ "$CPU" == x86_64 ]] && CPU=x64
 STAMP="$(date -u +%Y%m%d)"
 DIST_ROOT="${DIST_DIR:-$ROOT_DIR/dist}"
 PRODUCT_APP_NAME="GCSA-aegis.app"
-BUNDLE_NAME="GCSA-aegis-${APP_VERSION}-chromium-${VERSION}-mac-${CPU}"
+BUNDLE_NAME="GCSA-aegis-${APP_VERSION}-mac-${CPU}"
 STAGE="$DIST_ROOT/$BUNDLE_NAME"
 FORMATS="${PACKAGE_FORMATS:-app,zip,dmg}"
 IDENTITY_ARTIFACTS=()
@@ -190,6 +191,23 @@ if [[ -L "$IDENTITY" || -L "$IDENTITY.sha256" ]]; then
   echo "Package identity files must not be symlinks: $IDENTITY" >&2
   exit 1
 fi
+# 安装包名称必须与实际 App 的产品版本一致，避免只改文件名造成重复升级。
+source_product_version="$(python3 - "$SOURCE_APP/Contents/Info.plist" <<'PYVERSION'
+import plistlib
+import sys
+try:
+    with open(sys.argv[1], "rb") as stream:
+        version = plistlib.load(stream).get("AegisProductVersion", "")
+    print(version if isinstance(version, str) else "")
+except Exception:
+    print("")
+PYVERSION
+)"
+if [[ "$source_product_version" != "$APP_VERSION" ]]; then
+  echo "App 产品版本与安装包版本不一致，拒绝打包：App=${source_product_version:-缺失}，包=$APP_VERSION" >&2
+  exit 1
+fi
+
 if [[ -e "$IDENTITY" || -e "$IDENTITY.sha256" ]]; then
   if [[ "${AEGIS_REPLACE_PACKAGE_IDENTITY:-0}" != "1" ]]; then
     echo "Refusing to overwrite existing package identity: $IDENTITY" >&2

@@ -4,7 +4,9 @@
 
 This directory contains the public product architecture, roadmap, research boundaries, product page, and dated local audit records for GCSA-aegis.
 
-> **Current boundary — 2026-09-10:** the Browser Agent v2 candidate source contains 108 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. Platform builds and acceptance remain separate gates; this source identity is not public-release qualification. Phase 2 remains a synthetic formal fixture, while Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`; neither generalizes to broad malicious-JavaScript detection. The project remains release No-Go.
+> **2026-09-14 source update: UI corrections and browser updates：** The source now contains 113 top-level Chromium patches plus 2 nested V8 patches. Local macOS acceptance: Ver 1.1 (018), 32 findings addressed, 18 native tests and 116 UI checks passed; 170 changed messages and translation placeholders checked. Windows/Android device acceptance and a real Release installation remain unverified. No binary or tag is published with this source update. [018 验收记录](ui-copy-acceptance.zh-CN.md)
+
+> **Historical boundary — 2026-09-10:** the Browser Agent v2 candidate source contains 108 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. Platform builds and acceptance remain separate gates; this source identity is not public-release qualification. Phase 2 remains a synthetic formal fixture, while Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`; neither generalizes to broad malicious-JavaScript detection. The project remains release No-Go.
 
 [2026-09-10 main consolidation and verification](audit/main-consolidation-2026-09-10.md)
 

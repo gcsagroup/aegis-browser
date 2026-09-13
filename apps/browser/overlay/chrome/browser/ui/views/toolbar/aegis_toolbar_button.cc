@@ -77,40 +77,48 @@ bool UseChinese() {
                           base::CompareCase::INSENSITIVE_ASCII);
 }
 
-std::u16string Copy(std::u16string chinese, std::u16string english) {
+std::u16string Copy(std::u16string chinese,
+                    std::u16string english,
+                    std::u16string traditional) {
+  const auto& locale = g_browser_process->GetApplicationLocale();
+  if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
+    return traditional;
+  }
   return UseChinese() ? std::move(chinese) : std::move(english);
 }
 
 std::u16string EventKind(const std::string& kind) {
   if (kind == "block") {
-    return Copy(u"拦截", u"Blocked");
+    return Copy(u"拦截", u"Blocked", u"攔截");
   }
   if (kind == "param") {
-    return Copy(u"参数清理", u"Cleaned parameters");
+    return Copy(u"参数清理", u"Cleaned parameters", u"引數清理");
   }
   if (kind == "cookie") {
-    return Copy(u"Cookie 清理", u"Cleaned cookies");
+    return Copy(u"Cookie 清理", u"Cleaned cookies", u"Cookie 清理");
   }
   if (kind == "bounce") {
-    return Copy(u"跳转清理", u"Cleared bounce tracking");
+    return Copy(u"跳转清理", u"Cleared bounce tracking", u"跳轉清理");
   }
   if (kind == "phish") {
-    return Copy(u"钓鱼拦截", u"Blocked phishing");
+    return Copy(u"钓鱼拦截", u"Blocked phishing", u"釣魚攔截");
   }
   if (kind == "miner") {
-    return Copy(u"挖矿风险（仅观察）", u"Mining risk (observe-only)");
+    return Copy(u"挖矿风险（仅观察）", u"Mining risk (observe-only)",
+                u"挖礦風險（僅觀察）");
   }
-  return Copy(u"保护动作", u"Protection action");
+  return Copy(u"保护动作", u"Protection action", u"保護動作");
 }
 
 std::u16string ModelFormat(const std::string& provider) {
   if (provider == "anthropic") {
-    return Copy(u"Claude（Anthropic）兼容", u"Anthropic compatible");
+    return Copy(u"Claude（Anthropic）兼容", u"Anthropic compatible",
+                u"Claude（Anthropic）相容");
   }
   if (provider == "gemini") {
-    return Copy(u"Gemini 兼容", u"Gemini compatible");
+    return Copy(u"Gemini 兼容", u"Gemini compatible", u"Gemini 相容");
   }
-  return Copy(u"OpenAI 兼容", u"OpenAI compatible");
+  return Copy(u"OpenAI 兼容", u"OpenAI compatible", u"OpenAI 相容");
 }
 
 views::Label* AddLabel(
@@ -157,8 +165,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
     SetShowCloseButton(true);
     set_margins(gfx::Insets::VH(16, 18));
-    const std::u16string title =
-        Copy(u"Aegis 当前站点保护", u"Aegis site protection");
+    const std::u16string title = Copy(
+        u"Aegis 当前站点保护", u"Aegis site protection", u"Aegis 當前站點保護");
     SetTitle(title);
     SetAccessibleTitle(title);
     set_fixed_width(kBubbleWidth);
@@ -190,33 +198,43 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     protection_panel_ = AddChildView(CreatePanel());
 
     const std::u16string site =
-        summary_.site_key.empty() ? Copy(u"当前内部页面", u"this internal page")
-                                  : base::UTF8ToUTF16(summary_.site_key);
+        summary_.site_key.empty()
+            ? Copy(u"当前内部页面", u"this internal page", u"當前內部頁面")
+            : base::UTF8ToUTF16(summary_.site_key);
     AddLabel(protection_panel_,
              summary_.paused
                  ? Copy(u"此站的跟踪与清理规则已暂停 10 分钟",
-                        u"Tracking and cleanup rules are paused for 10 minutes")
-                 : Copy(u"Aegis 正在保护 ", u"Aegis is protecting ") + site,
+                        u"Tracking and cleanup rules are paused for 10 minutes",
+                        u"此站的跟蹤與清理規則已暫停 10 分鐘")
+                 : Copy(u"Aegis 正在保护 ", u"Aegis is protecting ",
+                        u"Aegis 正在保護 ") +
+                       site,
              views::style::CONTEXT_DIALOG_TITLE);
 
-    AddLabel(protection_panel_, Copy(u"本页已处理 ", u"Handled ") +
-                                    base::NumberToString16(summary_.total) +
-                                    Copy(u" 项", u" items on this page"));
-    AddLabel(protection_panel_, Copy(u"阻止跟踪请求：", u"Blocked requests: ") +
-                                    base::NumberToString16(summary_.blocked));
-    AddLabel(protection_panel_, Copy(u"清理链接/Referer 参数：",
-                                     u"Cleaned link/referrer parameters: ") +
+    AddLabel(protection_panel_,
+             Copy(u"本页已处理 ", u"Handled ", u"本頁已處理 ") +
+                 base::NumberToString16(summary_.total) +
+                 Copy(u" 项", u" items on this page", u" 項"));
+    AddLabel(protection_panel_,
+             Copy(u"阻止跟踪请求：", u"Blocked requests: ", u"阻止跟蹤請求：") +
+                 base::NumberToString16(summary_.blocked));
+    AddLabel(protection_panel_, Copy(u"清理链接与来源跟踪参数：",
+                                     u"Cleaned link/referrer parameters: ",
+                                     u"清理連結與來源跟蹤引數：") +
                                     base::NumberToString16(summary_.params));
     AddLabel(protection_panel_,
-             Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ") +
+             Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ",
+                  u"清理跟蹤 Cookie：") +
                  base::NumberToString16(summary_.cookies));
     AddLabel(protection_panel_,
              Copy(u"挖矿风险提醒（仅观察）：",
-                  u"Mining risk alerts (observe-only): ") +
+                  u"Mining risk alerts (observe-only): ",
+                  u"挖礦風險提醒（僅觀察）：") +
                  base::NumberToString16(summary_.miner_alerts));
 
     if (!summary_.events.empty()) {
-      AddLabel(protection_panel_, Copy(u"最近发生了什么", u"Recent actions"),
+      AddLabel(protection_panel_,
+               Copy(u"最近发生了什么", u"Recent actions", u"最近發生了什麼"),
                views::style::CONTEXT_DIALOG_TITLE);
       const size_t visible_events = std::min<size_t>(5, summary_.events.size());
       for (size_t index = 0; index < visible_events; ++index) {
@@ -235,11 +253,13 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     auto summarize_button = std::make_unique<views::MdTextButton>(
         base::BindRepeating(&AegisPageBubble::OpenSummary,
                             base::Unretained(this)),
-        Copy(u"AI 摘要当前页", u"Summarize this page with AI"));
+        Copy(u"AI 摘要当前页", u"Summarize this page with AI",
+             u"AI 摘要當前頁"));
     summarize_button->SetEnabled(CanSummarizeCurrentPage());
     if (!summarize_button->GetEnabled()) {
-      summarize_button->SetTooltipText(Copy(
-          u"AI 摘要仅支持普通网页", u"AI summary supports web pages only"));
+      summarize_button->SetTooltipText(
+          Copy(u"AI 摘要仅支持普通网页", u"AI summary supports web pages only",
+               u"AI 摘要僅支援一般網頁"));
     }
     protection_panel_->AddChildView(std::move(summarize_button));
 
@@ -248,18 +268,21 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
           base::BindRepeating(&AegisPageBubble::TogglePause,
                               base::Unretained(this)),
           summary_.paused
-              ? Copy(u"恢复此站默认保护", u"Restore protection for this site")
+              ? Copy(u"恢复此站默认保护", u"Restore protection for this site",
+                     u"恢復此站預設保護")
               : Copy(u"为此站暂停 10 分钟并重新加载",
-                     u"Pause this site for 10 minutes and reload")));
+                     u"Pause this site for 10 minutes and reload",
+                     u"為此站暫停 10 分鐘並重新載入")));
     }
     protection_panel_->AddChildView(std::make_unique<views::MdTextButton>(
         base::BindRepeating(&AegisPageBubble::OpenSettings,
                             base::Unretained(this)),
-        Copy(u"打开完整设置", u"Open full settings")));
+        Copy(u"打开防护中心", u"Open full settings", u"開啟防護中心")));
     AddLabel(protection_panel_,
              Copy(u"临时暂停不关闭钓鱼防护，也不会改变全局默认。",
                   u"Temporary pause keeps phishing protection on and "
-                  u"does not change global defaults."));
+                  u"does not change global defaults.",
+                  u"臨時暫停不關閉釣魚防護，也不會改變全域性預設。"));
   }
 
   void BuildProgressPanel() {
@@ -267,21 +290,24 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     progress_panel_->SetVisible(false);
     throbber_ =
         progress_panel_->AddChildView(std::make_unique<views::Throbber>());
-    AddLabel(progress_panel_, Copy(u"AI 摘要当前页", u"AI page summary"),
+    AddLabel(progress_panel_,
+             Copy(u"AI 摘要当前页", u"AI page summary", u"AI 摘要當前頁"),
              views::style::CONTEXT_DIALOG_TITLE);
-    progress_label_ = AddLabel(
-        progress_panel_, Copy(u"正在读取并脱敏当前页…",
-                              u"Reading and redacting the current page…"));
+    progress_label_ = AddLabel(progress_panel_,
+                               Copy(u"正在读取并脱敏当前页…",
+                                    u"Reading and redacting the current page…",
+                                    u"正在讀取並脫敏當前頁…"));
     progress_panel_->AddChildView(std::make_unique<views::MdTextButton>(
         base::BindRepeating(&AegisPageBubble::CancelSummary,
                             base::Unretained(this)),
-        Copy(u"取消摘要", u"Cancel summary")));
+        Copy(u"取消摘要", u"Cancel summary", u"取消摘要")));
   }
 
   void BuildPreviewPanel() {
     preview_panel_ = AddChildView(CreatePanel());
     preview_panel_->SetVisible(false);
-    AddLabel(preview_panel_, Copy(u"摘要前确认", u"Confirm summary"),
+    AddLabel(preview_panel_,
+             Copy(u"摘要前确认", u"Confirm summary", u"摘要前確認"),
              views::style::CONTEXT_DIALOG_TITLE);
     preview_site_label_ = AddLabel(preview_panel_, std::u16string());
     preview_read_label_ = AddLabel(preview_panel_, std::u16string());
@@ -292,17 +318,19 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
         Copy(u"不会显示或送出完整网址查询参数；非本机地址只有确认后才会发送脱敏"
              u"文本。",
              u"Full URL query values are never shown or sent. Redacted text "
-             u"is sent to a non-local endpoint only after confirmation."));
+             u"is sent to a non-local endpoint only after confirmation.",
+             u"不會顯示或送出完整網址查詢引數；非本機地址只有確認後才會傳送脫敏"
+             u"文字。"));
 
     auto buttons = CreateButtonRow();
     buttons->AddChildView(std::make_unique<views::MdTextButton>(
         base::BindRepeating(&AegisPageBubble::CancelSummary,
                             base::Unretained(this)),
-        Copy(u"取消", u"Cancel")));
+        Copy(u"取消", u"Cancel", u"取消")));
     auto confirm = std::make_unique<views::MdTextButton>(
         base::BindRepeating(&AegisPageBubble::ConfirmSummary,
                             base::Unretained(this)),
-        Copy(u"确认并摘要", u"Confirm and summarize"));
+        Copy(u"确认并摘要", u"Confirm and summarize", u"確認並摘要"));
     confirm->SetStyle(ui::ButtonStyle::kProminent);
     confirm_button_ = buttons->AddChildView(std::move(confirm));
     preview_panel_->AddChildView(std::move(buttons));
@@ -311,7 +339,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   void BuildResultPanel() {
     result_panel_ = AddChildView(CreatePanel());
     result_panel_->SetVisible(false);
-    AddLabel(result_panel_, Copy(u"AI 摘要结果", u"AI summary result"),
+    AddLabel(result_panel_,
+             Copy(u"AI 摘要结果", u"AI summary result", u"AI 摘要結果"),
              views::style::CONTEXT_DIALOG_TITLE);
 
     auto scroll_view = std::make_unique<views::ScrollView>();
@@ -327,7 +356,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     result_panel_->AddChildView(std::make_unique<views::MdTextButton>(
         base::BindRepeating(&AegisPageBubble::CancelSummary,
                             base::Unretained(this)),
-        Copy(u"返回站点保护", u"Back to site protection")));
+        Copy(u"返回站点保护", u"Back to site protection", u"返回站點保護")));
   }
 
   void TogglePause() {
@@ -364,7 +393,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                                   : std::string("en"));
     ShowPanel(progress_panel_);
     progress_label_->SetText(Copy(u"正在读取并脱敏当前页…",
-                                  u"Reading and redacting the current page…"));
+                                  u"Reading and redacting the current page…",
+                                  u"正在讀取並脫敏當前頁…"));
     summary_session_->Begin(base::BindOnce(&AegisPageBubble::OnSummaryPrepared,
                                            weak_factory_.GetWeakPtr()));
   }
@@ -375,25 +405,32 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       return;
     }
     preview_ = std::move(preview);
-    preview_site_label_->SetText(Copy(u"来源站点：", u"Source site: ") +
-                                 base::UTF8ToUTF16(preview_.site));
-    preview_read_label_->SetText(
-        Copy(u"将读取的页面文字：", u"Page characters read: ") +
-        base::NumberToString16(preview_.chars_read));
+    preview_site_label_->SetText(
+        Copy(u"来源站点：", u"Source site: ", u"來源站點：") +
+        base::UTF8ToUTF16(preview_.site));
+    preview_read_label_->SetText(Copy(u"将读取的页面文字：",
+                                      u"Page characters read: ",
+                                      u"將讀取的頁面文字：") +
+                                 base::NumberToString16(preview_.chars_read));
     preview_redacted_label_->SetText(
-        Copy(u"脱敏后文字：", u"Characters after redaction: ") +
+        Copy(u"脱敏后文字：", u"Characters after redaction: ",
+             u"脫敏後文字：") +
         base::NumberToString16(preview_.chars_redacted));
 
     const std::u16string processing =
-        !preview_.model_allowed ? Copy(u"本机启发式处理，不调用模型",
-                                       u"On-device heuristic; no model call")
-        : preview_.stayed_on_device ? Copy(u"本机处理", u"On-device processing")
-                                    : Copy(u"远程处理", u"Remote processing");
+        !preview_.model_allowed ? Copy(u"在本机处理，不调用模型",
+                                       u"On-device heuristic; no model call",
+                                       u"在本機處理，不呼叫模型")
+        : preview_.stayed_on_device
+            ? Copy(u"本机处理", u"On-device processing", u"本機處理")
+            : Copy(u"远程处理", u"Remote processing", u"遠端處理");
     preview_destination_label_->SetText(
-        processing + Copy(u" · API 格式：", u" · API format: ") +
-        ModelFormat(preview_.provider) + Copy(u" · 模型：", u" · Model: ") +
+        processing +
+        Copy(u" · API 格式：", u" · API format: ", u" · API 格式：") +
+        ModelFormat(preview_.provider) +
+        Copy(u" · 模型：", u" · Model: ", u" · 模型：") +
         base::UTF8ToUTF16(preview_.model) +
-        Copy(u" · 目标：", u" · Destination: ") +
+        Copy(u" · 目标：", u" · Destination: ", u" · 目標：") +
         base::UTF8ToUTF16(preview_.base_url));
     ShowPanel(preview_panel_);
     confirm_button_->RequestFocus();
@@ -408,13 +445,16 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
         !preview_.model_allowed
             ? Copy(u"正在生成本机启发式摘要，不调用模型…",
                    u"Generating an on-device heuristic summary without a "
-                   u"model call…")
+                   u"model call…",
+                   u"正在生成本機啟發式摘要，不呼叫模型…")
         : preview_.stayed_on_device
             ? Copy(u"本机模型正在生成，最长等待 3 分钟…",
-                   u"The local model is generating; allow up to 3 minutes…")
+                   u"The local model is generating; allow up to 3 minutes…",
+                   u"本機模型正在生成，最長等待 3 分鐘…")
             : Copy(u"兼容模型服务正在生成，最长等待 45 秒…",
                    u"The compatible model service is generating; allow up "
-                   u"to 45 seconds…"));
+                   u"to 45 seconds…",
+                   u"相容模型服務正在生成，最長等待 45 秒…"));
     summary_session_->Confirm(base::BindOnce(
         &AegisPageBubble::OnSummaryFinished, weak_factory_.GetWeakPtr()));
   }
@@ -422,17 +462,18 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   void OnSummaryFinished(aegis::SummarizeResult result) {
     std::u16string text;
     if (!result.ok && result.summary.empty()) {
-      text = Copy(u"摘要失败：", u"Summary failed: ") +
+      text = Copy(u"摘要失败：", u"Summary failed: ", u"摘要失敗：") +
              base::UTF8ToUTF16(result.error);
     } else {
       text = result.stayed_on_device
                  ? Copy(u"本机处理 · 未出网",
-                        u"On-device · did not leave this computer")
-                 : Copy(u"远程处理", u"Remote processing");
-      text += Copy(u"\nAPI 格式：", u"\nAPI format: ") +
+                        u"On-device · did not leave this computer",
+                        u"本機處理 · 未出網")
+                 : Copy(u"远程处理", u"Remote processing", u"遠端處理");
+      text += Copy(u"\nAPI 格式：", u"\nAPI format: ", u"\nAPI 格式：") +
               ModelFormat(preview_.provider);
-      text +=
-          Copy(u"\n模型：", u"\nModel: ") + base::UTF8ToUTF16(preview_.model);
+      text += Copy(u"\n模型：", u"\nModel: ", u"\n模型：") +
+              base::UTF8ToUTF16(preview_.model);
       if (!result.summary.empty()) {
         text += u"\n\n" + base::UTF8ToUTF16(result.summary);
       }
@@ -440,7 +481,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
         text += u"\n• " + base::UTF8ToUTF16(item);
       }
       if (!result.risks.empty()) {
-        text += Copy(u"\n\n风险提示", u"\n\nRisk notes");
+        text += Copy(u"\n\n风险提示", u"\n\nRisk notes", u"\n\n風險提示");
         for (const std::string& item : result.risks) {
           text += u"\n• " + base::UTF8ToUTF16(item);
         }
@@ -448,7 +489,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       if (!result.error.empty()) {
         text += Copy(u"\n\n模型调用未完成，已显示本机启发式结果：",
                      u"\n\nThe model call did not complete; showing the "
-                     u"on-device heuristic result: ") +
+                     u"on-device heuristic result: ",
+                     u"\n\n模型呼叫未完成，已顯示本機啟發式結果：") +
                 base::UTF8ToUTF16(result.error);
       }
     }
@@ -458,7 +500,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   }
 
   void ShowError(std::u16string error) {
-    result_label_->SetText(Copy(u"摘要失败：", u"Summary failed: ") + error);
+    result_label_->SetText(
+        Copy(u"摘要失败：", u"Summary failed: ", u"摘要失敗：") + error);
     ShowPanel(result_panel_);
   }
 
@@ -480,8 +523,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     }
     const std::u16string title =
         panel == protection_panel_
-            ? Copy(u"Aegis 当前站点保护", u"Aegis site protection")
-            : Copy(u"AI 摘要当前页", u"AI page summary");
+            ? Copy(u"Aegis 当前站点保护", u"Aegis site protection",
+                   u"Aegis 當前站點保護")
+            : Copy(u"AI 摘要当前页", u"AI page summary", u"AI 摘要當前頁");
     SetTitle(title);
     SetAccessibleTitle(title);
     PreferredSizeChanged();
@@ -600,8 +644,9 @@ void AegisToolbarButton::Refresh() {
     intro_timer_.Stop();
     SetHighlight(std::u16string(), std::nullopt);
     SetText(std::u16string());
-    const std::u16string status = Copy(u"Aegis：此用户资料不可用",
-                                       u"Aegis: unavailable for this profile");
+    const std::u16string status =
+        Copy(u"Aegis：此用户资料不可用", u"Aegis: unavailable for this profile",
+             u"Aegis：此使用者資料不可用");
     SetTooltipText(status);
     GetViewAccessibility().SetName(status);
     PreferredSizeChanged();
@@ -611,7 +656,7 @@ void AegisToolbarButton::Refresh() {
 
   std::u16string label;
   if (summary.paused) {
-    label = Copy(u"暂停", u"Paused");
+    label = Copy(u"暂停", u"Paused", u"暫停");
   } else if (summary.miner_alerts > 0) {
     label = u"!";
   } else if (summary.total > 0) {
@@ -621,21 +666,26 @@ void AegisToolbarButton::Refresh() {
 
   std::u16string status =
       summary.paused ? Copy(u"Aegis：此站保护已临时暂停",
-                            u"Aegis: protection paused for this site")
+                            u"Aegis: protection paused for this site",
+                            u"Aegis：此站保護已臨時暫停")
       : summary.miner_alerts > 0
           ? Copy(u"Aegis：本页有挖矿风险历史提醒（仅观察，未阻断）",
-                 u"Aegis: prior mining-risk alert (observe-only)")
+                 u"Aegis: prior mining-risk alert (observe-only)",
+                 u"Aegis：本頁有挖礦風險歷史提醒（僅觀察，未阻斷）")
       : summary.total > 0
-          ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ") +
+          ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ",
+                 u"Aegis：本頁已處理 ") +
                 base::NumberToString16(summary.total) +
-                Copy(u" 项", u" items on this page")
-          : Copy(u"Aegis：防护正常", u"Aegis: protection active");
+                Copy(u" 项", u" items on this page", u" 項")
+          : Copy(u"Aegis：防护正常", u"Aegis: protection active",
+                 u"Aegis：防護正常");
   SetTooltipText(status);
   GetViewAccessibility().SetName(status);
   PreferredSizeChanged();
 
   if (summary.total > 0 && service->ShouldShowAwarenessIntro() && GetWidget()) {
-    SetHighlight(Copy(u"Aegis 已保护本页", u"Aegis protected this page"),
+    SetHighlight(Copy(u"Aegis 已保护本页", u"Aegis protected this page",
+                      u"Aegis 已保護本頁"),
                  std::nullopt);
     service->MarkAwarenessIntroShown();
     intro_timer_.Start(FROM_HERE, kIntroDuration,

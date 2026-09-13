@@ -61,11 +61,13 @@ const char* Localized(UiLanguage language,
 
 void AddStrings(content::WebUIDataSource* source) {
   const UiLanguage language = CurrentLanguage();
+  source->AddString("language", g_browser_process->GetApplicationLocale());
   auto add = [&](const char* key, const char* en, const char* zh_cn,
                  const char* zh_tw) {
     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
   };
-  add("title", "Aegis Agent", "Aegis 浏览器智能体", "Aegis 瀏覽器智慧代理");
+  add("title", "GCSA Aegis AI Assistant", "GCSA Aegis AI 助手",
+      "GCSA Aegis AI 助手");
   add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
       "说出目标，Aegis 会先理解、制定计划，再操作浏览器。",
       "說出目標，Aegis 會先理解、制定計畫，再操作瀏覽器。");
@@ -110,24 +112,29 @@ void AddStrings(content::WebUIDataSource* source) {
   add("modelSettings", "AI model", "AI 模型", "AI 模型");
   add("modelMissing", "Connect an AI model before the first task",
       "首次使用前，先连接一个 AI 模型", "首次使用前，先連接一個 AI 模型");
-  add("modelReady", "AI connected", "AI 已连接", "AI 已連接");
+  add("workspaceLabel", "AI assistant workspace", "AI 助手工作区",
+      "AI 助手工作區");
+  add("quickActionsLabel", "Common tasks", "常用任务", "常用任務");
+  add("automationTemplatesLabel", "Automation templates", "自动化模板",
+      "自動化範本");
+  add("controlsLabel", "Task controls", "任务操作", "任務操作");
+  add("openaiCompatible", "OpenAI compatible", "OpenAI 兼容", "OpenAI 相容");
+  add("modelReady", "Model configured", "已配置模型", "已設定模型");
   add("modelHint",
-      "Local OpenAI-compatible servers need no key. Cloud keys are stored by "
-      "the browser and never shown here again.",
-      "本机 OpenAI "
-      "兼容服务不需要密钥；云端密钥由浏览器安全保存，之后不会再次显示。",
-      "本機 OpenAI "
-      "相容服務不需要金鑰；雲端金鑰由瀏覽器安全儲存，之後不會再次顯示。");
+      "API key requirements depend on the service. Saved keys are not "
+      "displayed again.",
+      "是否需要 API 密钥取决于所选服务。已保存的密钥不会再次显示。",
+      "是否需要 API 金鑰取決於所選服務。已儲存的金鑰不會再次顯示。");
   add("providerLabel", "API format", "API 格式", "API 格式");
   add("baseUrlLabel", "Service address", "服务地址", "服務位址");
   add("modelNameLabel", "Model name", "模型名称", "模型名稱");
   add("apiKeyLabel", "API key (optional)", "API 密钥（可选）",
       "API 金鑰（選填）");
   add("detectModels", "Detect models", "检测可用模型", "偵測可用模型");
-  add("saveModel", "Save connection", "保存连接", "儲存連線");
-  add("modelDetected", "Models detected. Choose one, then save.",
-      "已检测到模型，选择一个后保存。", "已偵測到模型，選擇一個後儲存。");
-  add("modelSaved", "Connection saved", "连接已保存", "連線已儲存");
+  add("saveModel", "Save model settings", "保存模型设置", "儲存模型設定");
+  add("modelDetected", "Model list retrieved", "模型列表获取成功",
+      "模型清單取得成功");
+  add("modelSaved", "Model settings saved", "模型设置已保存", "模型設定已儲存");
   add("modelConfigurationError",
       "The API format, service address, model name, or key format is invalid. "
       "Check the inputs and save again.",
@@ -135,7 +142,8 @@ void AddStrings(content::WebUIDataSource* source) {
       "API 格式、服務位址、模型名稱或金鑰格式無效，請檢查輸入後重新儲存。");
   add("modelStorageError",
       "The browser cannot securely save the key yet. Check any system access "
-      "prompt, then enter the key again and retry. Plaintext storage is not used.",
+      "prompt, then enter the key again and retry. Plaintext storage is not "
+      "used.",
       "浏览器暂时无法安全保存密钥。请检查系统授权提示后，重新输入密钥并保存。"
       "不会改用明文保存。",
       "瀏覽器暫時無法安全儲存金鑰。請檢查系統授權提示後，重新輸入金鑰並儲存。"
@@ -158,17 +166,17 @@ void AddStrings(content::WebUIDataSource* source) {
       "Compare three reliable USB hubs and summarize the differences",
       "帮我找三款靠谱的 USB 扩展坞，对比后告诉我区别",
       "幫我找三款可靠的 USB 擴充座，比較後告訴我差異");
-  add("quickSteward", "Tidy bookmarks", "整理收藏夹", "整理書籤");
+  add("quickSteward", "Tidy bookmarks", "整理书签", "整理書籤");
   add("quickStewardGoal",
       "Organize my bookmarks by topic and show a preview before changing "
       "anything",
-      "按主题整理我的收藏夹，修改前先给我看预览",
+      "按主题整理我的书签，修改前先给我看预览",
       "按主題整理我的書籤，修改前先讓我看預覽");
   add("quickUrlCheck", "Check dead links", "检查失效链接", "檢查失效連結");
   add("quickUrlCheckGoal",
       "Check my bookmarks for unreachable links and summarize the results "
       "without changing anything",
-      "检查收藏夹里无法访问或已经失效的链接，只汇总结果，不要修改",
+      "检查书签里无法访问或已经失效的链接，只汇总结果，不要修改",
       "檢查書籤裡無法存取或已經失效的連結，只彙總結果，不要修改");
   add("quickDownload", "Find download", "找官方下载", "找官方下載");
   add("quickDownloadGoal",
@@ -223,7 +231,7 @@ void AddStrings(content::WebUIDataSource* source) {
       "Monitor this page and summarize meaningful changes",
       "监控当前页面的内容变化，有重要更新时总结变化",
       "監控目前頁面的內容變化，有重要更新時總結變化");
-  add("automationUrlStatus", "URL health", "URL 有效性", "URL 有效性");
+  add("automationUrlStatus", "URL health", "链接可用性", "链接可用性");
   add("automationUrlStatusGoal",
       "Check whether this page remains reachable and notify me if it "
       "fails",
@@ -233,8 +241,8 @@ void AddStrings(content::WebUIDataSource* source) {
   add("automationPausedHelp", "This automation will not run until resumed.",
       "恢复前不会继续运行。", "恢復前不會繼續執行。");
   add("automationNextRun", "Next run: $1", "下次运行：$1", "下次執行：$1");
-  add("automationSessionOnly", "This browser session only",
-      "仅本次浏览器会话", "僅本次瀏覽器工作階段");
+  add("automationSessionOnly", "This browser session only", "仅本次浏览器会话",
+      "僅本次瀏覽器工作階段");
   add("automationSessionOnlyHelp",
       "Secure storage is unavailable. Keep this browser open; this automation "
       "will not resume after restart.",
@@ -283,18 +291,22 @@ void AddStrings(content::WebUIDataSource* source) {
       "上次检查未完成，请检查目标后重试。",
       "上次檢查未完成，請檢查目標後重試。");
   add("automationCheckStatus12",
-      "The page did not provide an unambiguous price, stock status, or content. No change was inferred.",
+      "The page did not provide an unambiguous price, stock status, or "
+      "content. No change was inferred.",
       "页面没有提供明确的价格、库存或正文，本次未推断变化。",
       "頁面沒有提供明確的價格、庫存或正文，本次未推斷變化。");
   add("automationCheckStatus13",
-      "Secure storage is unavailable. No plaintext fallback was used; check system authorization and retry.",
+      "Secure storage is unavailable. No plaintext fallback was used; check "
+      "system authorization and retry.",
       "安全存储暂不可用，未改用明文保存；请检查系统授权后重试。",
       "安全儲存暫不可用，未改用明文儲存；請檢查系統授權後重試。");
   add("automationCheckStatus14",
-      "Page content was read, but the AI change summary was unavailable. The previous record is retained for retry.",
+      "Page content was read, but the AI change summary was unavailable. The "
+      "previous record is retained for retry.",
       "已读取页面，但 AI 变化摘要未生成；已保留上次记录，稍后重试。",
       "已讀取頁面，但 AI 變化摘要未產生；已保留上次記錄，稍後重試。");
-  add("automationChangeSummary", "AI change summary", "AI 变化摘要", "AI 變化摘要");
+  add("automationChangeSummary", "AI change summary", "AI 变化摘要",
+      "AI 變化摘要");
   add("automationChangeSummaryPartial",
       "Only the observed excerpts are summarized; more changes may exist.",
       "仅总结已读取的变化片段，可能还有其他更新。",
@@ -422,15 +434,18 @@ void AddStrings(content::WebUIDataSource* source) {
   add("bookmarkUrlLimitError",
       "This task can safely check up to 100 bookmark links at a time. No "
       "bookmark was changed; narrow the selection and retry.",
-      "一次任务最多安全检查 100 个收藏链接。本次未修改收藏夹；请缩小范围后重试。",
-      "一次任務最多安全檢查 100 個書籤連結。本次未修改書籤；請縮小範圍後重試。");
+      "一次任务最多安全检查 100 个收藏链接。本次未修改书签；请缩小范围后重试。",
+      "一次任務最多安全檢查 100 "
+      "個書籤連結。本次未修改書籤；請縮小範圍後重試。");
   add("bookmarkUrlSafetyError",
       "A bookmark address could not be checked safely (for example, a local, "
       "private-network, duplicate, or invalid address). No bookmark was "
       "changed; remove it from the selection and retry.",
-      "收藏链接中包含浏览器无法安全检查的地址（例如本机、内网、重复或格式异常地址）。"
-      "本次未修改收藏夹；请排除该地址后重试。",
-      "書籤連結中包含瀏覽器無法安全檢查的位址（例如本機、內網、重複或格式異常位址）。"
+      "收藏链接中包含浏览器无法安全检查的地址（例如本机、内网、重复或格式异常地"
+      "址）。"
+      "本次未修改书签；请排除该地址后重试。",
+      "書籤連結中包含瀏覽器無法安全檢查的位址（例如本機、內網、重複或格式異常位"
+      "址）。"
       "本次未修改書籤；請排除該位址後重試。");
   add("technicalErrorLabel", "Exact failure detail", "准确失败原因",
       "準確失敗原因");
@@ -474,7 +489,8 @@ void AddStrings(content::WebUIDataSource* source) {
   add("timelineCompletedDetail", "Result checked", "结果已核对", "結果已核對");
   add("timelineMonitorReady", "Automation ready", "监控已创建", "監控已建立");
   add("timelineMonitorReadyDetail",
-      "The setup plan was checked; the independent monitor handles future checks",
+      "The setup plan was checked; the independent monitor handles future "
+      "checks",
       "创建计划已核对，后续检查由独立监控执行",
       "建立計畫已核對，後續檢查由獨立監控執行");
   add("timelineFailed", "Task not completed", "任务未完成", "任務未完成");

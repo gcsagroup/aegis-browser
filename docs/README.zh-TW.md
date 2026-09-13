@@ -4,7 +4,9 @@
 
 本目錄保存 GCSA-aegis 的公開產品架構、路線圖、研究邊界、產品頁，以及帶日期的本機稽核記錄。
 
-> **目前邊界 — 2026-09-10：** Browser Agent v2 候選原始碼包含 108 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 Chromium 提交 原始碼樹 `319366182c31108e29e62d2f2199aff29a0b86e8`。平台建置和驗收仍是獨立門禁，這個原始碼身分不代表公開發行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`；兩者都不能泛化為廣義惡意 JavaScript 偵測結論。專案整體仍為發行 No-Go。
+> **2026-09-14 原始碼更新：介面整改與瀏覽器更新：** 目前原始碼包含 113 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁。本機 macOS 驗收為 Ver 1.1 (018)：32 項整改完成，18 項原生測試、116 項介面回歸通過，170 條改動文案及翻譯佔位符檢查通過。Windows/Android 實機及真實 Release 安裝尚未驗收；本次僅提交原始碼，不發布二進位檔或 tag。 [018 验收记录](ui-copy-acceptance.zh-CN.md)
+
+> **歷史邊界 — 2026-09-10：** Browser Agent v2 候選原始碼包含 108 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 Chromium 提交 原始碼樹 `319366182c31108e29e62d2f2199aff29a0b86e8`。平台建置和驗收仍是獨立門禁，這個原始碼身分不代表公開發行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`；兩者都不能泛化為廣義惡意 JavaScript 偵測結論。專案整體仍為發行 No-Go。
 
 [2026-09-10 main 合併與驗證](audit/main-consolidation-2026-09-10.md)
 

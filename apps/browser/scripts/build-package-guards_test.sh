@@ -239,9 +239,9 @@ identity_escape="$TEST_ROOT/package/output-identity-link-target"
 identity_node_marker="$TEST_ROOT/package/output-identity-node-reached"
 identity_node_log="$TEST_ROOT/package/output-identity-node.log"
 identity_ditto_marker="$TEST_ROOT/package/output-identity-ditto-reached"
-version="$(grep -vE '^\s*(#|$)' "$SCRIPT_DIR/../CHROMIUM_VERSION" | head -n 1 | tr -d '[:space:]')"
 cpu="$(uname -m)"
-identity_base="$identity_dist/GCSA-aegis-0.1.0-chromium-${version}-mac-${cpu}.build-identity.json"
+[[ "$cpu" == x86_64 ]] && cpu=x64
+identity_base="$identity_dist/GCSA-aegis-1.1.0.3-mac-${cpu}.build-identity.json"
 mkdir -p "$identity_dist"
 touch "$identity_escape"
 for identity_link in "$identity_base" "$identity_base.sha256"; do
@@ -263,5 +263,37 @@ for identity_link in "$identity_base" "$identity_base.sha256"; do
   [[ ! -e "$identity_ditto_marker" ]] || fail "identity 叶子 symlink 拒绝后调用了 ditto"
   rm "$identity_link" "$identity_node_marker"
 done
+
+# 用真实 plist 验证包版本必须与编译进 App 的产品版本一致。
+version_dist="$TEST_ROOT/package/product-version-dist"
+version_ditto_marker="$TEST_ROOT/package/product-version-ditto-reached"
+cat > "$package_app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>AegisProductVersion</key><string>1.1.0.1</string>
+</dict></plist>
+PLIST
+expect_failure "package 接受了与 App 不同的产品版本" \
+  "App 产品版本与安装包版本不一致" \
+  env PATH="$FAKE_BIN:$PATH" CHROMIUM_ROOT="$package_root" \
+    AEGIS_ALLOW_DIRTY_IDENTITY=1 AEGIS_BUILD_MANIFEST_SHA256="$fixed_sha" \
+    DIST_DIR="$version_dist" PACKAGE_FORMATS=app FAKE_NODE_MODE=success \
+    FAKE_NODE_REACHED="$identity_node_marker" FAKE_NODE_LOG="$identity_node_log" \
+    FAKE_DITTO_REACHED="$version_ditto_marker" bash "$SCRIPT_DIR/package.sh"
+[[ ! -e "$version_ditto_marker" ]] || fail "版本不符时已经复制安装包"
+python3 - "$package_app/Contents/Info.plist" <<'PYVERSION'
+import plistlib
+import sys
+with open(sys.argv[1], "wb") as stream:
+    plistlib.dump({"AegisProductVersion": "1.1.0.3"}, stream)
+PYVERSION
+expect_failure "正确版本的 package 未到达文件复制" \
+  "FAKE_DITTO_STOP" \
+  env PATH="$FAKE_BIN:$PATH" CHROMIUM_ROOT="$package_root" \
+    AEGIS_ALLOW_DIRTY_IDENTITY=1 AEGIS_BUILD_MANIFEST_SHA256="$fixed_sha" \
+    DIST_DIR="$version_dist" PACKAGE_FORMATS=app FAKE_NODE_MODE=success \
+    FAKE_NODE_REACHED="$identity_node_marker" FAKE_NODE_LOG="$identity_node_log" \
+    FAKE_DITTO_REACHED="$version_ditto_marker" bash "$SCRIPT_DIR/package.sh"
+[[ -f "$version_ditto_marker" ]] || fail "正确版本未调用打包复制"
 
 printf 'PASS: build/package path guard fixtures\n'

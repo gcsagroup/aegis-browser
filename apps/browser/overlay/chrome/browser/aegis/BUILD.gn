@@ -332,6 +332,10 @@ fuzzer_test("aegis_agent_scope_fuzzer") {
 }
 
 test("aegis_browser_unittests") {
+  # 本机验收仅限制链接并行，避免同时打开过多ThinLTO文件；不改优化级别。
+  if (is_mac) {
+    configs += [ "//chrome:aegis_acceptance_link_limits" ]
+  }
   sources = [
     "aegis_ai_control_unittest.cc",
     "aegis_download_prefs_unittest.cc",

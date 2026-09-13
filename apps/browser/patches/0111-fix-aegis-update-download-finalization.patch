@@ -1,0 +1,416 @@
+From 3fb80a602a2d6332038d493e7007aa8c49f2257b Mon Sep 17 00:00:00 2001
+From: GCSA <aegis@gcsa.local>
+Date: Sun, 13 Sep 2026 03:35:12 +0800
+Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E9=A1=B5=E9=9D=A2=E5=85=B3?=
+ =?UTF-8?q?=E9=97=AD=E5=90=8E=E4=BB=8D=E5=AE=8C=E6=88=90=E6=9B=B4=E6=96=B0?=
+ =?UTF-8?q?=E5=8C=85=E5=AE=89=E5=85=A8=E6=A3=80=E6=9F=A5?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/app/app-Info.plist                     |   4 +-
+ .../settings/about_page/about_page.html.ts    |   2 +-
+ .../ui/webui/help/aegis_github_update.cc      | 129 +++++++++++-------
+ .../ui/webui/help/aegis_github_update.h       |  10 +-
+ .../help/aegis_github_update_unittest.cc      |  55 +++++++-
+ .../settings_localized_strings_provider.cc    |   2 +-
+ .../data/webui/settings/about_page_test.ts    |   4 +-
+ 7 files changed, 139 insertions(+), 67 deletions(-)
+
+diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
+index 4d057ce..ea07226 100644
+--- a/chrome/app/app-Info.plist
++++ b/chrome/app/app-Info.plist
+@@ -4,9 +4,9 @@
+ <dict>
+   <!-- 产品更新版本独立于 Chromium 的框架定位版本。 -->
+   <key>AegisProductVersion</key>
+-  <string>1.1.0.1</string>
++  <string>1.1.0.2</string>
+   <key>AegisProductVersionLabel</key>
+-  <string>Ver 1.1 (001)</string>
++  <string>Ver 1.1 (002)</string>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>en</string>
+ 	<key>CFBundleDisplayName</key>
+diff --git a/chrome/browser/resources/settings/about_page/about_page.html.ts b/chrome/browser/resources/settings/about_page/about_page.html.ts
+index 5657197..ba9fc8d 100644
+--- a/chrome/browser/resources/settings/about_page/about_page.html.ts
++++ b/chrome/browser/resources/settings/about_page/about_page.html.ts
+@@ -77,7 +77,7 @@ export function getHtml(this: SettingsAboutPageElement) {
+ <if expr="not _google_chrome and not _is_chrome_for_testing and not is_chromeos">
+       <div class="secondary">$i18n{aegisUpdateHint}</div>
+       <cr-button id="aegisCheckUpdate" @click="${this.onAegisCheckUpdateClick_}"
+-          ?disabled="${this.shouldShowThrobber_()}">$i18n{aegisCheckUpdate}</cr-button>
++          ?disabled="${this.shouldShowThrobber_() || this.shouldShowAegisUpdate_()}">$i18n{aegisCheckUpdate}</cr-button>
+       <cr-button id="aegisShowUpdate" @click="${this.onAegisShowUpdateClick_}"
+           ?hidden="${!this.shouldShowAegisUpdate_()}">$i18n{aegisShowUpdate}</cr-button>
+       <a id="aegisReleases" href="https://github.com/gcsagroup/aegis-browser/releases"
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.cc b/chrome/browser/ui/webui/help/aegis_github_update.cc
+index ea7b244..73712be 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.cc
++++ b/chrome/browser/ui/webui/help/aegis_github_update.cc
+@@ -30,6 +30,10 @@
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+ 
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++#endif
++
+ namespace aegis {
+ namespace {
+ constexpr int64_t kMaxPackageBytes = 2LL * 1024 * 1024 * 1024;
+@@ -57,7 +61,8 @@ std::unique_ptr<network::SimpleURLLoader> MakeLoader(const GURL& url) {
+   request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+   request->load_flags = net::LOAD_DISABLE_CACHE;
+   request->headers.SetHeader("Accept", url == GURL(kReleaseAPI)
+-      ? "application/vnd.github+json" : "application/octet-stream");
++                                           ? "application/vnd.github+json"
++                                           : "application/octet-stream");
+   request->headers.SetHeader("User-Agent", "GCSA-aegis-Updater");
+   auto loader =
+       network::SimpleURLLoader::Create(std::move(request), kAnnotation);
+@@ -163,7 +168,7 @@ std::string GitHubUpdatePlatform() {
+ #endif
+ }
+ 
+-base::FilePath VerifyAndSaveRelease(base::FilePath temporary_file,
++base::FilePath StageVerifiedRelease(base::FilePath temporary_file,
+                                     const ReleaseAsset& asset,
+                                     const base::FilePath& downloads) {
+   // 文件名来自固定匹配的 Release；此处仍独立拒绝路径穿越。
+@@ -182,11 +187,19 @@ base::FilePath VerifyAndSaveRelease(base::FilePath temporary_file,
+   base::FilePath saved;
+   if (valid && !downloads.empty() &&
+       directory.CreateUniqueTempDirUnderPath(
+-          downloads, FILE_PATH_LITERAL("GCSA-update-"))) {
++          downloads, FILE_PATH_LITERAL(".GCSA-update-"))) {
++    bool hidden = true;
++#if BUILDFLAG(IS_WIN)
++    const DWORD attributes =
++        ::GetFileAttributesW(directory.GetPath().value().c_str());
++    hidden = attributes != INVALID_FILE_ATTRIBUTES &&
++             ::SetFileAttributesW(directory.GetPath().value().c_str(),
++                                  attributes | FILE_ATTRIBUTE_HIDDEN);
++#endif
+     auto target = directory.GetPath().Append(name);
+-    if (base::Move(temporary_file, target)) {
++    if (hidden && base::Move(temporary_file, target)) {
+       saved = target;
+-      // 保留校验后的安装包，供用户安装；失败时目录自动回收。
++      // 将暂存目录的所有权交给后续系统检查；失败时目录自动回收。
+       (void)directory.Take();
+     }
+   }
+@@ -196,6 +209,46 @@ base::FilePath VerifyAndSaveRelease(base::FilePath temporary_file,
+   return saved;
+ }
+ 
++namespace {
++// 系统检查和发布只依赖已捕获的文件、元数据，不依赖关于页对象存活。
++void PublishQuarantinedRelease(base::FilePath staged,
++                               base::FilePath downloads,
++                               base::OnceCallback<void(base::FilePath)> reply,
++                               quarantine::mojom::QuarantineFileResult result) {
++  base::ScopedTempDir staging;
++  base::ScopedTempDir destination;
++  base::FilePath saved;
++  if (staging.Set(staged.DirName()) &&
++      result == quarantine::mojom::QuarantineFileResult::OK &&
++      destination.CreateUniqueTempDirUnderPath(
++          downloads, FILE_PATH_LITERAL("GCSA-update-"))) {
++    const auto target = destination.GetPath().Append(staged.BaseName());
++    // 暂存与交付目录在同一父目录下，移动保留系统来源属性。
++    if (base::Move(staged, target)) {
++      saved = target;
++      (void)destination.Take();
++    }
++  }
++  std::move(reply).Run(saved);
++}
++
++void VerifyQuarantineAndPublish(
++    base::FilePath temporary_file,
++    ReleaseAsset asset,
++    base::FilePath downloads,
++    base::OnceCallback<void(base::FilePath)> reply) {
++  auto staged = StageVerifiedRelease(temporary_file, asset, downloads);
++  if (staged.empty()) {
++    std::move(reply).Run({});
++    return;
++  }
++  quarantine::QuarantineFile(staged, asset.url, GURL(kReleasePage),
++                             std::nullopt, std::string(),
++                             base::BindOnce(&PublishQuarantinedRelease, staged,
++                                            downloads, std::move(reply)));
++}
++}  // namespace
++
+ GitHubUpdate::GitHubUpdate(
+     scoped_refptr<network::SharedURLLoaderFactory> factory,
+     base::FilePath downloads,
+@@ -324,54 +377,30 @@ void GitHubUpdate::OnDownloaded(base::FilePath path) {
+     return;
+   }
+   Report(State::kDownloading, "下载完成，正在校验安装包…", 99);
+-  base::ThreadPool::PostTaskAndReplyWithResult(
+-      FROM_HERE, {base::MayBlock()},
+-      base::BindOnce(&VerifyAndSaveRelease, std::move(path), asset_,
+-                     downloads_),
+-      base::BindOnce(&GitHubUpdate::OnSaved, weak_factory_.GetWeakPtr()));
+-}
+-
+-void GitHubUpdate::OnSaved(base::FilePath path) {
+-  if (path.empty()) {
+-    busy_ = false;
+-    Report(State::kError, "安装包校验或保存失败，未保留更新包。");
+-    return;
+-  }
+-  // 保留系统的互联网来源标记；SHA-256 校验不能代替系统签名检查。
+-  auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
+-      [](base::WeakPtr<GitHubUpdate> self, base::FilePath path,
+-         quarantine::mojom::QuarantineFileResult result) {
+-        if (result != quarantine::mojom::QuarantineFileResult::OK) {
+-          base::ThreadPool::PostTask(
+-              FROM_HERE, {base::MayBlock()},
+-              base::BindOnce(base::IgnoreResult(&base::DeleteFile), path));
+-        }
+-        if (!self) {
+-          return;
+-        }
+-        self->busy_ = false;
+-        if (result == quarantine::mojom::QuarantineFileResult::OK) {
+-          self->downloaded_file_ = path;
+-        }
+-        self->Report(
+-            result == quarantine::mojom::QuarantineFileResult::OK
+-                ? State::kReady
+-                : State::kError,
+-            result == quarantine::mojom::QuarantineFileResult::OK
+-                ? "新版 " + self->asset_.version +
+-                      " 已下载并通过 SHA-256 校验。请退出浏览器后打开安装包：" +
+-                      path.AsUTF8Unsafe()
+-                : "无法完成系统下载安全检查，更新包已删除。");
+-      },
+-      weak_factory_.GetWeakPtr(), path));
+-  auto task = base::BindOnce(&quarantine::QuarantineFile, path, asset_.url,
+-                             GURL(kReleasePage), std::nullopt, std::string(),
+-                             std::move(reply));
++  // 完整收尾任务在页面关闭后继续，关机时也先完成文件的安全处理。
++  auto task = base::BindOnce(
++      &VerifyQuarantineAndPublish, std::move(path), asset_, downloads_,
++      base::BindPostTaskToCurrentDefault(
++          base::BindOnce(&GitHubUpdate::OnSaved, weak_factory_.GetWeakPtr())));
+ #if BUILDFLAG(IS_WIN)
+-  base::ThreadPool::CreateCOMSTATaskRunner({base::MayBlock()})
++  base::ThreadPool::CreateCOMSTATaskRunner(
++      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN})
+       ->PostTask(FROM_HERE, std::move(task));
+ #else
+-  base::ThreadPool::PostTask(FROM_HERE, {base::MayBlock()}, std::move(task));
++  base::ThreadPool::PostTask(
++      FROM_HERE, {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
++      std::move(task));
+ #endif
+ }
++
++void GitHubUpdate::OnSaved(base::FilePath path) {
++  busy_ = false;
++  downloaded_file_ = path;
++  Report(path.empty() ? State::kError : State::kReady,
++         path.empty()
++             ? "安装包校验、系统安全检查或保存失败，未保留更新包。"
++             : "新版 " + asset_.version +
++                   " 已下载并通过 SHA-256 校验。请退出浏览器后打开安装包：" +
++                   path.AsUTF8Unsafe());
++}
+ }  // namespace aegis
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index b04dccb..614bc20 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -19,9 +19,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.1。
+-inline constexpr char kProductVersion[] = "1.1.0.1";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (001)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.2。
++inline constexpr char kProductVersion[] = "1.1.0.2";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (002)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+@@ -47,9 +47,9 @@ ReleaseResult ParseGitHubRelease(std::string_view json,
+                                  std::string_view platform);
+ bool IsAllowedReleaseDownloadURL(const GURL& url);
+ std::string GitHubUpdatePlatform();
+-// 在工作线程校验大小和 SHA-256，成功才移入独立下载目录。
++// 校验大小和 SHA-256 后写入隐藏暂存目录；此时仍未对用户交付。
+ // 无论成功失败都接管并清理临时文件；不执行安装包。
+-base::FilePath VerifyAndSaveRelease(base::FilePath temporary_file,
++base::FilePath StageVerifiedRelease(base::FilePath temporary_file,
+                                     const ReleaseAsset& asset,
+                                     const base::FilePath& downloads);
+ 
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
+index 26a997a..1885112 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
++++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
+@@ -1,12 +1,14 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/ui/webui/help/aegis_github_update.h"
+ 
++#include "base/files/file_enumerator.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
++#include "base/task/single_thread_task_runner.h"
+ #include "base/test/task_environment.h"
+ #include "base/values.h"
+ #include "crypto/hash.h"
+@@ -21,7 +23,7 @@ namespace {
+ constexpr char kPlatform[] = "mac-arm64.dmg";
+ constexpr char kPayload[] = "representative update package";
+ 
+-base::DictValue Release(std::string version = "1.1.0.2") {
++base::DictValue Release(std::string version = "1.1.0.3") {
+   base::DictValue asset;
+   const std::string name = "GCSA-aegis-" + version + "-" + kPlatform;
+   asset.Set("name", name);
+@@ -108,20 +110,22 @@ TEST(GitHubReleaseTest, RedirectTrustBoundary) {
+     EXPECT_FALSE(IsAllowedReleaseDownloadURL(GURL(url))) << url;
+   }
+ }
+-TEST(GitHubReleaseTest, SavesOnlyVerifiedPackageAndPreservesExistingFiles) {
++TEST(GitHubReleaseTest, StagesOnlyVerifiedPackageAndPreservesExistingFiles) {
+   base::ScopedTempDir directory;
+   ASSERT_TRUE(directory.CreateUniqueTempDir());
+   auto temporary = directory.GetPath().AppendASCII("payload.part");
+   auto asset = Parse(Release()).asset;
+   ASSERT_TRUE(base::WriteFile(temporary, kPayload));
+-  auto saved = VerifyAndSaveRelease(temporary, asset, directory.GetPath());
++  auto saved = StageVerifiedRelease(temporary, asset, directory.GetPath());
+   ASSERT_FALSE(saved.empty());
++  EXPECT_TRUE(base::StartsWith(saved.DirName().BaseName().AsUTF8Unsafe(),
++                               ".GCSA-update-"));
+   std::string body;
+   ASSERT_TRUE(base::ReadFileToString(saved, &body));
+   EXPECT_EQ(body, kPayload);
+   EXPECT_FALSE(base::PathExists(temporary));
+   ASSERT_TRUE(base::WriteFile(temporary, kPayload));
+-  auto second = VerifyAndSaveRelease(temporary, asset, directory.GetPath());
++  auto second = StageVerifiedRelease(temporary, asset, directory.GetPath());
+   EXPECT_NE(saved, second);
+   EXPECT_TRUE(base::PathExists(saved));
+ }
+@@ -135,13 +139,13 @@ TEST(GitHubReleaseTest, DeletesCorruptTruncatedAndUnsafePackages) {
+         std::string(std::string(kPayload).size(), 'x')}) {
+     ASSERT_TRUE(base::WriteFile(temporary, payload));
+     EXPECT_TRUE(
+-        VerifyAndSaveRelease(temporary, asset, directory.GetPath()).empty());
++        StageVerifiedRelease(temporary, asset, directory.GetPath()).empty());
+     EXPECT_FALSE(base::PathExists(temporary));
+   }
+   ASSERT_TRUE(base::WriteFile(temporary, kPayload));
+   asset.name = "../escape.dmg";
+   EXPECT_TRUE(
+-      VerifyAndSaveRelease(temporary, asset, directory.GetPath()).empty());
++      StageVerifiedRelease(temporary, asset, directory.GetPath()).empty());
+   EXPECT_FALSE(base::PathExists(temporary));
+ }
+ 
+@@ -185,10 +189,49 @@ TEST_F(GitHubUpdateTest, DownloadsAndVerifiesWithoutExecuting) {
+   tasks_.RunUntilIdle();
+   EXPECT_EQ(state_, GitHubUpdate::State::kReady);
+   EXPECT_GE(callbacks_, 4);
++  EXPECT_FALSE(update.GetDownloadedUpdatePath().empty());
++  EXPECT_TRUE(base::StartsWith(
++      update.GetDownloadedUpdatePath().DirName().BaseName().AsUTF8Unsafe(),
++      "GCSA-update-"));
+   update.Check(Callback());
+   EXPECT_EQ(state_, GitHubUpdate::State::kReady);
+   EXPECT_EQ(factory_.NumPending(), 0);
+ }
++TEST_F(GitHubUpdateTest, ClosingPageDoesNotSkipDownloadFinalization) {
++  auto release = Release();
++  auto asset = Parse(release).asset;
++  factory_.AddResponse(kReleaseAPI, JSON(release));
++  factory_.AddResponse(asset.url.spec(), kPayload);
++  auto update = std::make_unique<GitHubUpdate>(factory_.GetSafeWeakWrapper(),
++                                               directory_.GetPath(), kPlatform);
++  update->Check(base::BindRepeating(
++      [](std::unique_ptr<GitHubUpdate>* update, GitHubUpdate::State state,
++         int progress, const std::string& message) {
++        if (state == GitHubUpdate::State::kDownloading && progress == 99 &&
++            message == "下载完成，正在校验安装包…") {
++          base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++              FROM_HERE, base::BindOnce(
++                             [](std::unique_ptr<GitHubUpdate>* update) {
++                               update->reset();
++                             },
++                             update));
++        }
++      },
++      &update));
++  tasks_.RunUntilIdle();
++  EXPECT_FALSE(update);
++  base::FileEnumerator directories(directory_.GetPath(), false,
++                                   base::FileEnumerator::DIRECTORIES);
++  const auto published = directories.Next();
++  ASSERT_FALSE(published.empty());
++  EXPECT_TRUE(
++      base::StartsWith(published.BaseName().AsUTF8Unsafe(), "GCSA-update-"));
++  EXPECT_TRUE(directories.Next().empty());
++  std::string body;
++  ASSERT_TRUE(base::ReadFileToString(published.AppendASCII(asset.name), &body));
++  EXPECT_EQ(kPayload, body);
++}
++
+ TEST_F(GitHubUpdateTest, CorruptDownloadFails) {
+   auto release = Release();
+   factory_.AddResponse(kReleaseAPI, JSON(release));
+diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+index 8c1f396..815b4f1 100644
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -357,7 +357,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+   browser_version = VersionUI::GetAnnotatedVersionStringForUi();
+ #else
+   browser_version = base::StrCat(
+-      {u"Ver 1.1 (001) · Chromium ", base::UTF8ToUTF16(version_info::GetVersionNumber()), u" ",
++      {u"Ver 1.1 (002) · Chromium ", base::UTF8ToUTF16(version_info::GetVersionNumber()), u" ",
+        l10n_util::GetStringUTF16(VersionUI::VersionProcessorVariation())});
+ #endif
+ 
+diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
+index 861a51d..6813b3e 100644
+--- a/chrome/test/data/webui/settings/about_page_test.ts
++++ b/chrome/test/data/webui/settings/about_page_test.ts
+@@ -169,7 +169,7 @@ suite('AllBuilds', function() {
+   // <if expr="not _google_chrome and not _is_chrome_for_testing">
+   test('AegisDownloadProgressAndReadyDoesNotOfferRelaunch', async function() {
+     fireStatusChanged(UpdateStatus.UPDATING,
+-        {message: '正在从 GitHub 下载 1.1.0.2…', progress: 42});
++        {message: '正在从 GitHub 下载 1.1.0.3…', progress: 42});
+     await microtasksFinished();
+     assertTrue(page.$.updateStatusMessage.textContent.includes('42%'));
+     assertTrue(page.shadowRoot.querySelector<HTMLButtonElement>('#aegisCheckUpdate')!.disabled);
+@@ -178,7 +178,7 @@ suite('AllBuilds', function() {
+     await microtasksFinished();
+     assertTrue(page.$.relaunch.hidden);
+     assertFalse(page.shadowRoot.querySelector<HTMLElement>('#aegisShowUpdate')!.hidden);
+-    assertFalse(page.shadowRoot.querySelector<HTMLButtonElement>('#aegisCheckUpdate')!.disabled);
++    assertTrue(page.shadowRoot.querySelector<HTMLButtonElement>('#aegisCheckUpdate')!.disabled);
+     assertTrue(page.$.updateStatusMessage.textContent.includes('请退出浏览器后安装'));
+   });
+ 
+-- 
+2.52.0
+

@@ -8,6 +8,12 @@ The package version remains `0.1.0`, but no `0.1.0` release, Git tag, or binary 
 
 ## [Unreleased]
 
+### 2026-09-14 source update: UI corrections and browser updates
+
+- Patches 0109–0113 add GitHub Release checking and verified installer downloads, shared product-update state, accurate model-configuration status, and trilingual settings and built-in page corrections.
+- Local macOS acceptance: Ver 1.1 (018), 32 findings addressed, 18 native tests and 116 UI checks passed; 170 changed messages and translation placeholders checked. Windows/Android device acceptance and a real Release installation remain unverified. No binary or tag is published with this source update.
+- [018 验收记录](docs/ui-copy-acceptance.zh-CN.md) · [更新流程](docs/github-browser-updates.zh-CN.md)
+
 ### Release status
 
 - Consolidated development history into `main` on 2026-09-10. Patches 0107–0108 cover startup monitor recovery and verified runtime/summary fixes. [Verification record](docs/audit/main-consolidation-2026-09-10.md); no App build or binary release was performed.

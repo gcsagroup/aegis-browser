@@ -38,6 +38,7 @@ function harness(name = models[1]) {
     return fields.get(id);
   };
   let response = {ok: true, models};
+  let modelRequests = 0;
   const saved = [];
   const snapshot = {modelConfigured: true, modelProvider: 'openai',
     modelBaseUrl: 'http://127.0.0.1:8000/v1', modelName: name, lastError: ''};
@@ -45,6 +46,7 @@ function harness(name = models[1]) {
     modelFormInitialized: false, loadTimeData: {getString: key => key},
     document: {createElement: () => ({})}, proxy: {handler: {
       listModels: async () => {
+        modelRequests++;
         if (response instanceof Error) throw response;
         return typeof response === 'function' ? response() : response;
       },
@@ -59,10 +61,22 @@ function harness(name = models[1]) {
   context.render(snapshot);
   context.bindActions();
   const fire = (id, event) => field(id).listeners.get(event)();
-  return {field, context, saved, fire, respond: value => { response = value; }};
+  return {field, context, saved, fire, respond: value => { response = value; },
+    requests: () => modelRequests};
 }
 let passed = 0;
 async function check(label, fn) { await fn(); passed++; console.log('PASS: ' + label); }
+await check('显示已保存配置不主动请求模型服务，也不生成检测成功提示', async () => {
+  const h = harness();
+  h.context.render({...h.context.snapshot, modelBaseUrl: 'http://127.0.0.1:1/v1'});
+  assert.equal(h.requests(), 0);
+  assert.equal(h.field('model-state').textContent, `modelReady · ${models[1]}`);
+  assert(!h.field('model-feedback').textContent);
+  h.respond({ok: false, error: 'connection failed', models: []});
+  await h.fire('detect-models-button', 'click');
+  assert.equal(h.requests(), 1);
+  assert(!h.field('model-feedback').textContent.includes('modelDetected'));
+});
 await check('已保存的长模型名不筛掉其他候选，完整展示服务返回的五项', async () => {
   const h = harness();
   await h.fire('detect-models-button', 'click');

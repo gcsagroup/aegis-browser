@@ -115,6 +115,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
       expanded_: {type: Boolean},
       working_: {type: Boolean},
       previewText_: {type: String},
+      errorDetails_: {type: String},
       previewKind_: {type: String},
       previewFiles_: {type: Array},
       requestId_: {type: String},
@@ -134,6 +135,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
   protected accessor expanded_ = false;
   protected accessor working_ = false;
   protected accessor previewText_ = '';
+  protected accessor errorDetails_ = '';
   protected accessor previewKind_: ''|'metalink'|'torrent' = '';
   protected accessor previewFiles_: TorrentFile[] = [];
   protected accessor requestId_ = '';
@@ -177,6 +179,26 @@ export class AegisDownloadPanelElement extends CrLitElement {
     return document.documentElement.lang.startsWith('zh');
   }
 
+  private errorText_(error: unknown): string {
+    const detail = String(error).replace(/^Error:\s*/, '');
+    const locale = document.documentElement.lang;
+    if (!locale.startsWith('zh') || /[\u3400-\u9fff]/.test(detail)) {
+      return detail;
+    }
+    const tw = /^zh-(?:TW|HK|Hant)/i.test(locale);
+    if (detail.includes('magnet link is invalid or too large')) {
+      return tw ? '磁力連結無效或過長，請檢查後重試。' :
+                  '磁力链接无效或过长，请检查后重试。';
+    }
+    return tw ? '無法完成此操作，請重試或展開技術詳情查看原因。' :
+                '无法完成此操作，请重试或展开技术详情查看原因。';
+  }
+
+  private formatPreviewError_(error: unknown): string {
+    this.errorDetails_ = String(error).replace(/^Error:\s*/, '');
+    return this.errorText_(error);
+  }
+
   protected onToggleClick_() {
     if (!this.profileAvailable_) {
       return;
@@ -214,6 +236,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
     this.requestId_ = '';
     this.previewKind_ = '';
     this.previewText_ = '';
+    this.errorDetails_ = '';
     this.previewFiles_ = [];
     this.selectedFiles_.clear();
     this.requestUpdate();
@@ -222,7 +245,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
   protected async onInspectClick_() {
     const zh = document.documentElement.lang.startsWith('zh');
     if (!this.profileAvailable_) {
-      this.previewText_ = zh ? '当前浏览器配置不支持 Aegis。' :
+      this.previewText_ = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '當前瀏覽器配置不支援 Aegis。' : '当前浏览器配置不支持 Aegis。') :
                                'Aegis is unavailable for this browser profile.';
       return;
     }
@@ -236,8 +259,8 @@ export class AegisDownloadPanelElement extends CrLitElement {
     try {
       if (magnet) {
         if (!this.torrentSupported_) {
-          throw new Error(zh ? '此平台不支持 BT / Magnet。' :
-                              'BT / Magnet is unavailable on this platform.');
+          throw new Error(zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '此平臺不支援 種子與磁力連結。' : '此平台不支持 种子与磁力链接。') :
+                              'Torrent and magnet downloads are unavailable on this platform.');
         }
         const preview: TorrentPreview =
             await sendWithPromise('parseMagnet', magnet);
@@ -246,12 +269,12 @@ export class AegisDownloadPanelElement extends CrLitElement {
         const name = file.name.toLowerCase();
         if (name.endsWith('.torrent')) {
           if (!this.torrentSupported_) {
-            throw new Error(zh ? '此平台不支持 BT / Magnet。' :
-                                'BT / Magnet is unavailable on this platform.');
+            throw new Error(zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '此平臺不支援 種子與磁力連結。' : '此平台不支持 种子与磁力链接。') :
+                                'Torrent and magnet downloads are unavailable on this platform.');
           }
           if (file.size > 4 * 1024 * 1024) {
             throw new Error(
-                zh ? 'Torrent 元数据超过 4 MiB。' :
+                zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Torrent 後設資料超過 4 MiB。' : 'Torrent 元数据超过 4 MiB。') :
                      'Torrent metadata exceeds 4 MiB.');
           }
           const preview: TorrentPreview =
@@ -260,23 +283,23 @@ export class AegisDownloadPanelElement extends CrLitElement {
         } else if (name.endsWith('.meta4') || name.endsWith('.metalink')) {
           if (file.size > 1024 * 1024) {
             throw new Error(
-                zh ? 'Metalink 文件超过 1 MiB。' : 'Metalink exceeds 1 MiB.');
+                zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Metalink 檔案超過 1 MiB。' : 'Metalink 文件超过 1 MiB。') : 'Metalink exceeds 1 MiB.');
           }
           const preview: MetalinkPreview =
               await sendWithPromise('parseMetalink', await file.text());
           this.setMetalinkPreview_(preview, zh);
         } else {
           throw new Error(
-              zh ? '请选择 Metalink 或 Torrent 文件。' :
+              zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇 Metalink 或 Torrent 檔案。' : '请选择 Metalink 或 Torrent 文件。') :
                    'Choose a Metalink or Torrent file.');
         }
       } else {
         throw new Error(
-            zh ? '请选择文件或粘贴 Magnet 链接。' :
+            zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇檔案或貼上 磁力連結。' : '请选择文件或粘贴 磁力链接。') :
                  'Choose a file or paste a Magnet link.');
       }
     } catch (error) {
-      this.previewText_ = String(error);
+      this.previewText_ = this.formatPreviewError_(error);
     } finally {
       this.working_ = false;
     }
@@ -284,19 +307,18 @@ export class AegisDownloadPanelElement extends CrLitElement {
 
   private setMetalinkPreview_(preview: MetalinkPreview, zh: boolean) {
     if (!preview.ok) {
-      this.previewText_ = (zh ? '检查失败：' : 'Inspection failed: ') +
-          (preview.error || 'invalid Metalink');
+      this.previewText_ = this.formatPreviewError_(preview.error || 'invalid Metalink');
       return;
     }
     this.previewKind_ = 'metalink';
     this.requestId_ = preview.requestId || '';
     this.previewText_ = [
-      `${zh ? '文件：' : 'File: '}${preview.fileName || '—'}`,
-      `${zh ? '大小：' : 'Size: '}${formatBytes(preview.fileSize ?? -1)}`,
-      `${zh ? '校验：' : 'Integrity: '}${
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '檔案：' : '文件：') : 'File: '}${preview.fileName || '—'}`,
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '大小：' : '大小：') : 'Size: '}${formatBytes(preview.fileSize ?? -1)}`,
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '校驗：' : '校验：') : 'Integrity: '}${
           (preview.hashAlgorithm ||
            '').toUpperCase()} ${preview.hashHex || ''}`,
-      zh ? '镜像来源（隐藏路径与查询参数）：' :
+      zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '映象來源（隱藏路徑與查詢引數）：' : '镜像来源（隐藏路径与查询参数）：') :
            'Mirror origins (paths and queries hidden):',
       ...(preview.mirrorOrigins || []).map(origin => `• ${origin}`),
     ].join('\n');
@@ -304,8 +326,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
 
   private setTorrentPreview_(preview: TorrentPreview, zh: boolean) {
     if (!preview.ok) {
-      this.previewText_ = (zh ? '检查失败：' : 'Inspection failed: ') +
-          (preview.error || 'invalid torrent');
+      this.previewText_ = this.formatPreviewError_(preview.error || 'invalid torrent');
       return;
     }
     const versions = [
@@ -316,16 +337,16 @@ export class AegisDownloadPanelElement extends CrLitElement {
     this.previewFiles_ = preview.files || [];
     this.selectedFiles_ = new Set(this.previewFiles_.map(file => file.index));
     this.previewText_ = [
-      `${zh ? '名称：' : 'Name: '}${preview.name || '—'}`,
-      `${zh ? '大小：' : 'Size: '}${
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '名稱：' : '名称：') : 'Name: '}${preview.name || '—'}`,
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '大小：' : '大小：') : 'Size: '}${
           preview.totalSize ? formatBytes(preview.totalSize) :
-                              (zh ? '等待元数据' : 'waiting for metadata')}`,
-      `${zh ? '协议：' : 'Protocol: '}${versions || '—'}`,
+                              (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '等待後設資料' : '等待元数据') : 'waiting for metadata')}`,
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '協議：' : '协议：') : 'Protocol: '}${versions || '—'}`,
       `${
-          zh ? 'Tracker 数量（地址不显示）：' :
+          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Tracker 數量（地址不顯示）：' : 'Tracker 数量（地址不显示）：') :
                'Tracker count (addresses hidden): '}${
           preview.trackerCount || 0}`,
-      `${zh ? '文件数：' : 'Files: '}${this.previewFiles_.length}`,
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '檔案數：' : '文件数：') : 'Files: '}${this.previewFiles_.length}`,
     ].join('\n');
   }
 
@@ -355,11 +376,11 @@ export class AegisDownloadPanelElement extends CrLitElement {
           await sendWithPromise('startMetalinkDownload', requestId);
       this.previewText_ = result.ok ?
           (zh ?
-               '已添加到下方原生下载列表；完成后自动校验散列并在需要时切换镜像。' :
+               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已新增到下方原生下載列表；完成後自動校驗雜湊並在需要時切換映象。' : '已添加到下方原生下载列表；完成后自动校验散列并在需要时切换镜像。') :
                'Added to the native download list below. Integrity and mirror failover are automatic.') :
-          (result.error || 'download start failed');
+          this.formatPreviewError_(result.error || 'download start failed');
     } catch (error) {
-      this.previewText_ = String(error);
+      this.previewText_ = this.formatPreviewError_(error);
     } finally {
       this.working_ = false;
     }
@@ -384,17 +405,17 @@ export class AegisDownloadPanelElement extends CrLitElement {
             ?.checked === true;
     if (this.previewFiles_.length && !this.selectedFiles_.size) {
       this.previewText_ =
-          zh ? '请至少选择一个文件。' : 'Select at least one file.';
+          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請至少選擇一個檔案。' : '请至少选择一个文件。') : 'Select at least one file.';
       return;
     }
     if (downloadLimit === null || uploadLimit === null) {
       this.previewText_ = zh ?
-          '速度上限必须是 0–1000000 的整数。' :
+          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '速度上限必須是 0–1000000 的整數。' : '速度上限必须是 0–1000000 的整数。') :
           'Rate limits must be integers from 0 to 1000000.';
       return;
     }
     if (!disclosure) {
-      this.previewText_ = zh ? '开始前请确认 BT 网络隐私说明。' :
+      this.previewText_ = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '開始前請確認 BT 網路隱私說明。' : '开始前请确认 BT 网络隐私说明。') :
                                'Acknowledge the BT privacy disclosure first.';
       return;
     }
@@ -413,7 +434,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
           },
           disclosure);
       if (!result.ok || !result.taskId) {
-        this.previewText_ = result.error || 'torrent start failed';
+        this.previewText_ = this.formatPreviewError_(result.error || 'torrent start failed');
         return;
       }
       this.taskId_ = result.taskId;
@@ -421,7 +442,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
       this.expanded_ = false;
       await this.refreshTask_();
     } catch (error) {
-      this.previewText_ = String(error);
+      this.previewText_ = this.formatPreviewError_(error);
     } finally {
       this.working_ = false;
     }
@@ -519,32 +540,32 @@ export class AegisDownloadPanelElement extends CrLitElement {
 
   protected formatTaskStatus_(zh: boolean, status: TorrentStatus|null): string {
     if (!status) {
-      return zh ? '正在读取任务状态…' : 'Loading task status…';
+      return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '正在讀取任務狀態…' : '正在读取任务状态…') : 'Loading task status…';
     }
     if (!status.found) {
-      return status.error || (zh ? '任务不可用。' : 'Task unavailable.');
+      return (status.error ? this.errorText_(status.error) : '') || (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '任務不可用。' : '任务不可用。') : 'Task unavailable.');
     }
-    const labels: Record<string, [string, string]> = {
-      checking: ['校验文件', 'Checking files'],
-      metadata: ['获取元数据', 'Fetching metadata'],
-      downloading: ['下载中', 'Downloading'],
-      finished: ['已完成', 'Finished'],
-      seeding: ['已完成并停止做种', 'Complete; seeding stopped'],
-      resuming: ['恢复中', 'Resuming'],
+    const labels: Record<string, [string, string, string]> = {
+      checking: ['校验文件', 'Checking files', '校驗檔案'],
+      metadata: ['获取元数据', 'Fetching metadata', '獲取後設資料'],
+      downloading: ['下载中', 'Downloading', '下載中'],
+      finished: ['已完成', 'Finished', '已完成'],
+      seeding: ['已完成并停止做种', 'Complete; seeding stopped', '已完成並停止做種'],
+      resuming: ['恢复中', 'Resuming', '恢復中'],
     };
     const state = status.state || '—';
-    const label = labels[state]?.[zh ? 0 : 1] || state;
+    const label = labels[state]?.[zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 2 : 0) : 1] || state;
     return [
-      `${zh ? '状态：' : 'State: '}${label}`,
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '狀態：' : '状态：') : 'State: '}${label}`,
       `${formatBytes(status.completedBytes || 0)} / ${
           formatBytes(status.totalBytes || 0)} · ${
           ((status.progressPpm || 0) / 10000).toFixed(1)}%`,
-      `${zh ? '下载：' : 'Down: '}${
-          formatBytes(status.downloadRate || 0)}/s · ${zh ? '上传：' : 'Up: '}${
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載：' : '下载：') : 'Down: '}${
+          formatBytes(status.downloadRate || 0)}/s · ${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '上傳：' : '上传：') : 'Up: '}${
           formatBytes(status.uploadRate || 0)}/s`,
-      `${zh ? '节点：' : 'Peers: '}${status.peers || 0} · ${
-          zh ? '种子：' : 'Seeds: '}${status.seeds || 0}`,
-      status.error || '',
+      `${zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '節點：' : '节点：') : 'Peers: '}${status.peers || 0} · ${
+          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '種子：' : '种子：') : 'Seeds: '}${status.seeds || 0}`,
+      status.error ? this.errorText_(status.error) : '',
     ].filter(Boolean)
         .join('\n');
   }

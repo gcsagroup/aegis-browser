@@ -176,3 +176,7 @@ pnpm --filter @gcsa-aegis/browser package:android
 Local inspection, patch replay, and most repository tests can run without GitHub. Bootstrap, fetch, sync, EasyList updates, and missing Chromium dependencies may access external services. A running Chromium build may also generate network traffic independently of Git operations.
 
 Always review the exact command and candidate identity before using network, signing, packaging, or publication credentials.
+
+### Browser updates
+
+About GCSA Aegis checks official GitHub Releases, downloads a matching installer and verifies it. Installation is manual. See [update behavior](../../docs/github-browser-updates.zh-CN.md) and [Ver 1.1 (018) local acceptance](../../docs/ui-copy-acceptance.zh-CN.md).

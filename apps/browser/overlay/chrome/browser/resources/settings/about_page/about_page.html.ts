@@ -30,6 +30,9 @@ export function getHtml(this: SettingsAboutPageElement) {
     <div class="product-heading">
       <div class="product-title">$i18n{aboutProductTitle}</div>
 <if expr="not _google_chrome and not _is_chrome_for_testing">
+      <div class="secondary">$i18n{aegisProductVersion}</div>
+</if>
+<if expr="not _google_chrome and not _is_chrome_for_testing">
       <div class="secondary">$i18n{aboutProductDescription}</div>
 </if>
     </div>
@@ -74,6 +77,20 @@ export function getHtml(this: SettingsAboutPageElement) {
       </span>
 </if>
       <div class="secondary">$i18n{aboutBrowserVersion}</div>
+<if expr="not _google_chrome and not _is_chrome_for_testing and not is_chromeos">
+      <div class="secondary">$i18n{aegisUpdateHint}</div>
+      <div class="secondary" ?hidden="${!this.isAegisDownloadActive_()}">
+        $i18n{aegisDownloadPageHint}
+      </div>
+      <div class="aegis-update-actions">
+      <cr-button id="aegisCheckUpdate" @click="${this.onAegisCheckUpdateClick_}"
+          ?disabled="${this.shouldShowThrobber_() || this.shouldShowAegisUpdate_()}">$i18n{aegisCheckUpdate}</cr-button>
+      <cr-button id="aegisShowUpdate" @click="${this.onAegisShowUpdateClick_}"
+          ?hidden="${!this.shouldShowAegisUpdate_()}">$i18n{aegisShowUpdate}</cr-button>
+      <a id="aegisReleases" href="https://github.com/gcsagroup/aegis-browser/releases"
+          target="_blank" rel="noopener">$i18n{aegisReleases}</a>
+      </div>
+</if>
     </div>
 <if expr="not is_chromeos">
     <div class="separator" ?hidden="${!this.showButtonContainer_}"></div>
@@ -128,7 +145,13 @@ export function getHtml(this: SettingsAboutPageElement) {
 <settings-section>
   <div class="info-sections">
     <div class="info-section">
+<if expr="not _google_chrome and not _is_chrome_for_testing">
+      <h2>$i18n{aegisCreditsTitle}</h2>
+      <div class="secondary">$i18n{aegisCreditsDescription}</div>
+</if>
+<if expr="_google_chrome or _is_chrome_for_testing">
       <div class="secondary">$i18n{aboutProductTitle}</div>
+</if>
       <div class="secondary">$i18n{aboutProductCopyright}</div>
     </div>
 

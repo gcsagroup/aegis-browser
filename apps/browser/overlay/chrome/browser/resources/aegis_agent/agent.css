@@ -157,7 +157,6 @@ h2 {
 .eyebrow {
   color: var(--muted);
   font-size: 11px;
-  text-transform: uppercase;
 }
 
 #target-value,

@@ -175,3 +175,7 @@ pnpm --filter @gcsa-aegis/browser package:android
 本機檢查、補丁重放和多數儲存庫測試不需要 GitHub。Bootstrap、fetch、sync、EasyList 更新和缺少的 Chromium 相依套件可能存取外部服務；執行中的 Chromium 也可能產生與 Git 操作無關的網路流量。
 
 使用網路、簽署、封裝或發布憑證前，必須再次確認精確命令和候選身分。
+
+### 瀏覽器自身更新
+
+「關於 GCSA Aegis」檢查 GitHub 正式版本，自動下載符合平台的安裝套件並校驗，安裝需手動完成。見[更新流程](../../docs/github-browser-updates.zh-CN.md)及[Ver 1.1 (018) 本機驗收](../../docs/ui-copy-acceptance.zh-CN.md)。
