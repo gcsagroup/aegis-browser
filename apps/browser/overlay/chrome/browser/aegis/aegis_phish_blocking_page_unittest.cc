@@ -56,7 +56,7 @@ TEST_F(AegisPhishBlockingPageTest, ShowsEnglishReasonsOnFirstScreen) {
   const std::string* heading = load_time_data.FindString("heading");
   ASSERT_TRUE(primary);
   ASSERT_TRUE(heading);
-  EXPECT_EQ("Aegis detected phishing signals", *heading);
+  EXPECT_EQ("GCSA Aegis detected phishing signals", *heading);
   EXPECT_NE(std::string::npos, primary->find("Risk score 80"));
   EXPECT_NE(std::string::npos, primary->find("Page is collecting credentials"));
   EXPECT_NE(std::string::npos, primary->find("&lt;script&gt;"));
@@ -91,7 +91,7 @@ TEST_F(AegisPhishBlockingPageTest, ShowsChineseReasonsOnFirstScreen) {
   const std::string* heading = load_time_data.FindString("heading");
   ASSERT_TRUE(primary);
   ASSERT_TRUE(heading);
-  EXPECT_EQ("Aegis 检测到疑似钓鱼线索", *heading);
+  EXPECT_EQ("GCSA Aegis 检测到疑似钓鱼线索", *heading);
   EXPECT_NE(std::string::npos, primary->find("没有使用 HTTPS"));
   EXPECT_NE(std::string::npos, primary->find("在可疑网站上出现了密码框"));
   EXPECT_NE(std::string::npos, primary->find("风险分 75"));

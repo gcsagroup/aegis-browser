@@ -906,7 +906,7 @@ async function detectModels() {
     label.textContent = loadTimeData.getString('modelDetected');
     element('model-feedback').textContent =
         response.models.length ?
-        `${loadTimeData.getString('modelDetected')} (${response.models.length})` :
+        `${loadTimeData.getString('modelDetected')} (${response.models.length}) · ${new Date().toLocaleTimeString()}` :
         `${loadTimeData.getString('detectModels')}: 0`;
   } catch {
     element('model-feedback').textContent =

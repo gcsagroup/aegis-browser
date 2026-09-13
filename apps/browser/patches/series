@@ -107,3 +107,8 @@
 0106-fix-aegis-use-cached-ui-locale-on-windows.patch
 0107-fix-agent-restore-enabled-monitors-at-startup.patch
 0108-fix-agent-sync-verified-runtime-and-summary.patch
+0109-feat-aegis-github-browser-updates.patch
+0110-build-preserve-local-link-limits.patch
+0111-fix-aegis-update-download-finalization.patch
+0112-fix-aegis-update-chromium-style.patch
+0113-fix-settings-copy-and-product-status.patch

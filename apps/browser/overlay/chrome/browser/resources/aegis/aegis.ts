@@ -266,7 +266,7 @@ function parsePreparedSummary(value: Record<string, unknown>|null):
 
 function localeCode(): 'zh-CN'|'zh-TW'|'en' {
   const lang = document.documentElement.lang || 'zh-CN';
-  if (lang.startsWith('zh-TW') || lang.startsWith('zh-HK')) {
+  if (/^zh-(?:TW|HK|Hant)/i.test(lang)) {
     return 'zh-TW';
   }
   return lang.startsWith('zh') ? 'zh-CN' : 'en';
@@ -278,25 +278,25 @@ function formatMeta(status: AegisStatus): string {
   const zh = lang.startsWith('zh');
   if (!status.filterListLastUpdated) {
     if (count) {
-      return zh ? `已编译 ${count} 条主机规则。` :
-                  `Compiled ${count} host rules.`;
+      return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `已載入 ${count} 條主機規則。` : `已加载 ${count} 条主机规则。`) :
+                  `Loaded ${count} filter rules.`;
     }
-    return zh ? '尚未下载过滤列表。' : 'No compiled filter list yet.';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '尚未下載過濾列表。' : '尚未下载过滤列表。') : 'No compiled filter list yet.';
   }
   const when = new Date(status.filterListLastUpdated * 1000).toLocaleString();
   const err = status.filterListLastError ?
-      (zh ? ` 上次错误：${status.filterListLastError}` :
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? ` 上次錯誤：${status.filterListLastError}` : ` 上次错误：${status.filterListLastError}`) :
             ` Last error: ${status.filterListLastError}`) :
       '';
-  return zh ? `已编译 ${count} 条主机规则 · 更新于 ${when}${err}` :
-              `Compiled ${count} host rules · updated ${when}${err}`;
+  return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `已載入 ${count} 條主機規則 · 更新於 ${when}${err}` : `已加载 ${count} 条主机规则 · 更新于 ${when}${err}`) :
+              `Loaded ${count} filter rules · updated ${when}${err}`;
 }
 
 function formatPrivacyMeta(status: AegisStatus): string {
   const lang = document.documentElement.lang || 'zh-CN';
   const zh = lang.startsWith('zh');
   if (!status.privacyAi) {
-    return zh ? '隐私摘要已关闭。' : 'Privacy summary is off.';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '隱私摘要已關閉。' : '隐私摘要已关闭。') : 'Privacy summary is off.';
   }
   if (status.policyWorkerReady) {
     const format = normalizeModelApiFormat(status.modelProvider);
@@ -304,15 +304,15 @@ function formatPrivacyMeta(status: AegisStatus): string {
     const model = status.modelName ? ` · ${status.modelName}` : '';
     const name = modelApiFormatLabel(format);
     if (isLocalModelEndpoint(endpoint)) {
-      return zh ? `策略 worker 已就绪。本机服务：${name}${model}` :
-                  `Policy worker ready. Local service: ${name}${model}`;
+      return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `本機服務：${name}${model}` : `本机服务：${name}${model}`) :
+                  `Local service: ${name}${model}`;
     }
-    return zh ? `策略 worker 已就绪。远程 API 格式：${name}${model}` :
-                `Policy worker ready. Remote API format: ${name}${model}`;
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `遠端 API 格式：${name}${model}` : `远程 API 格式：${name}${model}`) :
+                `Remote API format: ${name}${model}`;
   }
   const err = status.policyWorkerError ? ` (${status.policyWorkerError})` : '';
-  return zh ? `策略 worker 未就绪，摘要暂不可用。${err}` :
-              `Policy worker not ready; summaries are unavailable.${err}`;
+  return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `本地隱私處理暫不可用，無法生成摘要。${err}` : `本地隐私处理暂不可用，无法生成摘要。${err}`) :
+              `Local privacy processing is unavailable; summaries cannot be generated.${err}`;
 }
 
 function fillOverview(status: AegisStatus) {
@@ -339,7 +339,7 @@ function fillOverview(status: AegisStatus) {
   const state = getRequiredElement('health-state');
   if (!status.enabled) {
     dot.dataset['state'] = 'off';
-    state.textContent = zh ? 'Aegis 总体防护已关闭' : 'Aegis protection is off';
+    state.textContent = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Aegis 總體防護已關閉' : 'Aegis 总体防护已关闭') : 'Aegis protection is off';
     return;
   }
   const policyUnavailable = status.policyWorker && !status.policyWorkerReady;
@@ -347,19 +347,19 @@ function fillOverview(status: AegisStatus) {
   if (status.minerGuard && minerObserved) {
     dot.dataset['state'] = 'warning';
     state.textContent = zh ?
-        '本次会话曾有页面符合挖矿风险组合规则（历史提醒，未阻断）' :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本次會話曾有頁面符合挖礦風險組合規則（歷史提醒，未阻斷）' : '本次会话曾有页面符合挖矿风险组合规则（历史提醒，未阻断）') :
         'A page in this session matched the mining-risk rule (prior observe-only alert)';
     return;
   }
   if (status.filterListLastError || policyUnavailable) {
     dot.dataset['state'] = 'warning';
     state.textContent = zh ?
-        '核心防护运行中，部分能力需注意' :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '核心防護執行中，部分能力需注意' : '核心防护运行中，部分能力需注意') :
         'Core protection active; some features need attention';
     return;
   }
   dot.dataset['state'] = 'ok';
-  state.textContent = zh ? 'Aegis 防护正在运行' : 'Aegis protection is active';
+  state.textContent = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Aegis 防護正在執行' : 'Aegis 防护正在运行') : 'Aegis protection is active';
 }
 
 function normalizeModelApiFormat(value?: string): ModelApiFormat {
@@ -371,7 +371,7 @@ function normalizeModelApiFormat(value?: string): ModelApiFormat {
 
 function modelApiFormatLabel(format: ModelApiFormat): string {
   const lang = document.documentElement.lang || 'zh-CN';
-  const suffix = lang.startsWith('zh-TW') || lang.startsWith('zh-HK') ? '相容' :
+  const suffix = /^zh-(?:TW|HK|Hant)/i.test(lang) ? '相容' :
       lang.startsWith('zh')                                           ? '兼容' :
                               'compatible';
   if (format === 'openai') {
@@ -423,18 +423,18 @@ function modelListPlaceholder(state: ModelListState): string {
   const lang = document.documentElement.lang || 'zh-CN';
   const zh = lang.startsWith('zh');
   if (state === 'loading') {
-    return zh ? '正在加载模型…' : 'Loading models…';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '正在載入模型…' : '正在加载模型…') : 'Loading models…';
   }
   if (state === 'loaded') {
-    return zh ? '请选择模型' : 'Select a model';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇模型' : '请选择模型') : 'Select a model';
   }
   if (state === 'empty') {
-    return zh ? '未返回可用模型' : 'No models returned';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未返回可用模型' : '未返回可用模型') : 'No models returned';
   }
   if (state === 'error') {
-    return zh ? '模型加载失败' : 'Model loading failed';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '模型載入失敗' : '模型加载失败') : 'Model loading failed';
   }
-  return zh ? '尚未加载模型' : 'Models not loaded';
+  return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '尚未載入模型' : '尚未加载模型') : 'Models not loaded';
 }
 
 function updateCustomModelVisibility() {
@@ -465,7 +465,7 @@ function fillModelList(
   custom.value = CUSTOM_MODEL_VALUE;
   custom.textContent =
       (document.documentElement.lang || 'zh-CN').startsWith('zh') ?
-      '自定义模型…' :
+      (localeCode() === 'zh-TW' ? '自訂模型…' : '自定义模型…') :
       'Custom model…';
   select.appendChild(custom);
   select.value = selectedModelIsListed ? selectedModel : '';
@@ -523,21 +523,22 @@ function renderCredentialState() {
   const detail = credentialStates.get(contextKey)?.trim();
   if (typed) {
     state.textContent = zh ?
-        '将使用新输入的 API Key；保存成功后不会回显。' :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '將使用新輸入的 API 金鑰；儲存成功後不會回顯。' : '将使用新输入的 API 密钥；保存成功后不会回显。') :
         'The new API key will be used and will not be shown after saving.';
     return;
   }
   if (configured) {
     state.textContent = zh ?
-        `当前 API 格式与地址已配置密钥且不会回显${
-            detail ? ` · ${detail}` : ''}` :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `當前 API 格式與地址已配置金鑰且不會回顯${
+            detail ? ` · ${detail}` : ''}` : `当前 API 格式与地址已配置密钥且不会回显${
+            detail ? ` · ${detail}` : ''}`) :
         `A key is configured for this API format and endpoint and is hidden${
             detail ? ` · ${detail}` : ''}`;
     return;
   }
   state.textContent = zh ?
-      'API Key 可选；当前 API 格式与地址尚未配置密钥。' :
-      'The API key is optional and is not configured for this API format and endpoint.';
+      (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '尚未配置 API 金鑰；是否需要金鑰取決於所選服務。' : '尚未配置 API 密钥；是否需要密钥取决于所选服务。') :
+      'No API key is configured. Key requirements depend on the selected service.';
 }
 
 function updateModelFormatPresentation() {
@@ -551,14 +552,16 @@ function updateModelFormatPresentation() {
   const note = getRequiredElement('model-data-note');
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   note.textContent = local ?
-      (zh ? `当前为数值 loopback 本机地址，使用 ${formatName}；` +
-               'API Key 可选且保存后不回显。' :
-            `The current numeric-loopback endpoint uses ${formatName}; ` +
-               'the API key is optional and hidden after saving.') :
-      (zh ? `脱敏后的页面文本会发往当前地址，使用 ${formatName}；` +
-               'API Key 可选且保存后不回显。' :
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `在本機處理，使用 ${formatName}；` +
+               '是否需要 API 金鑰取決於服務，儲存後不回顯。' : `在本机处理，使用 ${formatName}；` +
+               '是否需要 API 密钥取决于服务，保存后不回显。') :
+            `Processing on this device using ${formatName}; ` +
+               'key requirements depend on the service. Saved keys are hidden.') :
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `脫敏後的頁面文字會發往當前地址，使用 ${formatName}；` +
+               '是否需要 API 金鑰取決於服務，儲存後不回顯。' : `脱敏后的页面文本会发往当前地址，使用 ${formatName}；` +
+               '是否需要 API 密钥取决于服务，保存后不回显。') :
             `Redacted page text is sent to the current endpoint using ${
-                formatName}; the API key is optional and hidden after saving.`);
+                formatName}; key requirements depend on the service. Saved keys are hidden.`);
   renderCredentialState();
   updateCustomModelVisibility();
 }
@@ -620,16 +623,16 @@ function formatModelStatus(result: ModelListResult): string {
   const name = modelApiFormatLabel(format);
   if (!result.ok) {
     const error = result.error ? ` (${result.error})` : '';
-    return zh ? `${name} 模型加载失败${error}` :
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `${name} 模型載入失敗${error}` : `${name} 模型加载失败${error}`) :
                 `Failed to load ${name} models${error}`;
   }
   const count = result.models?.length || 0;
   if (count === 0) {
     return zh ?
-        `当前地址已按 ${name} 连接，但未返回可用模型。` :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `當前地址已按 ${name} 連線，但未返回可用模型。` : `当前地址已按 ${name} 连接，但未返回可用模型。`) :
         `The current endpoint connected as ${name}, but returned no models.`;
   }
-  return zh ? `已从当前地址按 ${name} 加载 ${count} 个模型。` :
+  return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `已從當前地址按 ${name} 載入 ${count} 個模型。` : `已从当前地址按 ${name} 加载 ${count} 个模型。`) :
               `Loaded ${count} models from the current endpoint as ${name}.`;
 }
 
@@ -710,7 +713,7 @@ function applyStatus(status: AegisStatus) {
         .forEach(control => control.disabled = true);
     showResult(status.error ||
                (document.documentElement.lang.startsWith('zh') ?
-                    '当前浏览器配置不支持 Aegis。' :
+                    (localeCode() === 'zh-TW' ? '目前瀏覽器設定不支援 Aegis。' : '当前浏览器配置不支持 Aegis。') :
                     'Aegis is unavailable for this browser profile.'));
   }
 }
@@ -719,10 +722,6 @@ async function setModule(module: ModuleName, enabled: boolean) {
   const status: AegisStatus =
       await sendWithPromise('setModuleEnabled', module, enabled);
   applyStatus(status);
-  if (module === 'privacyAi' && enabled && !status.isAndroid &&
-      isLocalModelEndpoint(textField('model-endpoint').value)) {
-    void loadModels();
-  }
 }
 
 function bindToggle(id: string, module: ModuleName) {
@@ -743,7 +742,7 @@ function siteFromUrl(value: string): string {
     const url = new URL(value);
     return url.hostname || url.origin;
   } catch {
-    return document.documentElement.lang.startsWith('zh') ? '当前页面' :
+    return document.documentElement.lang.startsWith('zh') ? (localeCode() === 'zh-TW' ? '目前頁面' : '当前页面') :
                                                             'current page';
   }
 }
@@ -761,10 +760,10 @@ function summaryBackendLabel(value: string|undefined, zh: boolean): string {
     return modelApiFormatLabel(format);
   }
   if (value === 'heuristic') {
-    return zh ? '启发式摘要' : 'Heuristic summary';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本地文字摘要' : '本地文字摘要') : 'Local text summary';
   }
-  return value ? (zh ? '兼容 API' : 'Compatible API') :
-                 (zh ? '未知' : 'Unknown');
+  return value ? (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '相容 API' : '兼容 API') : 'Compatible API') :
+                 (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未知' : '未知') : 'Unknown');
 }
 
 function summaryErrorLabel(value: string, zh: boolean): string {
@@ -772,19 +771,19 @@ function summaryErrorLabel(value: string, zh: boolean): string {
     return value;
   }
   if (value === 'model request timed out') {
-    return '模型请求超时';
+    return localeCode() === 'zh-TW' ? '模型請求逾時' : '模型请求超时';
   }
   if (value === 'model request already in progress') {
-    return '已有模型请求正在进行';
+    return localeCode() === 'zh-TW' ? '已有模型請求正在進行' : '已有模型请求正在进行';
   }
   if (value.startsWith('model network request failed')) {
-    return value.replace('model network request failed', '模型网络请求失败');
+    return value.replace('model network request failed', localeCode() === 'zh-TW' ? '模型網路請求失敗' : '模型网络请求失败');
   }
   if (value === 'model summary blocked: sensitive host label') {
-    return '检测到敏感站点，已跳过模型调用';
+    return localeCode() === 'zh-TW' ? '偵測到敏感網站，已略過模型呼叫' : '检测到敏感站点，已跳过模型调用';
   }
   if (value === 'model summary blocked: password field detected') {
-    return '检测到密码字段，已跳过模型调用';
+    return localeCode() === 'zh-TW' ? '偵測到密碼欄位，已略過模型呼叫' : '检测到密码字段，已跳过模型调用';
   }
   return value;
 }
@@ -803,42 +802,42 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
   const usedFormat =
       backendFormat || (modelAttempted ? configuredFormat : null);
   const location = result.stayedOnDevice === true ?
-      (zh ? '本机处理 · 未出网' : 'On-device · did not leave this computer') :
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本機處理 · 未出網' : '本机处理 · 未出网') : 'On-device · did not leave this computer') :
       result.stayedOnDevice === false ?
-      (zh ? '远程处理 · 脱敏文本已出网' :
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '遠端處理 · 脫敏文字已出網' : '远程处理 · 脱敏文本已出网') :
             'Remote processing · redacted text left this device') :
-      (zh ? '处理位置未知' : 'Processing location unknown');
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '處理位置未知' : '处理位置未知') : 'Processing location unknown');
   const format = usedFormat ? modelApiFormatLabel(usedFormat) :
-                              (zh ? '本机启发式' : 'On-device heuristic');
+                              (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本地文書處理' : '本地文字处理') : 'On-device heuristic');
   const lines = [
     location,
-    (zh ? 'API 格式：' : 'API format: ') + format,
-    (zh ? '后端：' : 'Backend: ') +
+    (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'API 格式：' : 'API 格式：') : 'API format: ') + format,
+    (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '後端：' : '后端：') : 'Backend: ') +
         (result.backend === 'heuristic' && modelAttempted ?
-             (zh ? '启发式摘要（模型调用失败后降级）' :
+             (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本地文字摘要（模型呼叫失敗後降級）' : '本地文字摘要（模型调用失败后降级）') :
                    'Heuristic summary (fallback after model failure)') :
              summaryBackendLabel(result.backend, zh)),
   ];
   if (usedFormat && status.modelName) {
-    lines.push((zh ? '模型：' : 'Model: ') + status.modelName);
+    lines.push((zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '模型：' : '模型：') : 'Model: ') + status.modelName);
   }
   const destination =
       result.destination || (remoteAttempted ? status.modelBaseUrl : 'local');
   lines.push(
-      (zh ? '目标：' : 'Destination: ') +
-      (destination === 'local' ? (zh ? '本机' : 'On-device') :
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '目標：' : '目标：') : 'Destination: ') +
+      (destination === 'local' ? (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本機' : '本机') : 'On-device') :
                                  (destination || '—')));
   if (result.charsIn) {
     lines.push(
-        (zh ? '处理字数：' : 'Characters read: ') + String(result.charsIn));
+        (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '處理字數：' : '处理字数：') : 'Characters read: ') + String(result.charsIn));
   }
   if (result.charsSent) {
     lines.push(
-        (zh ? '发给模型：' : 'Sent to model: ') + String(result.charsSent));
+        (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '發給模型：' : '发给模型：') : 'Sent to model: ') + String(result.charsSent));
   }
   lines.push('');
   if (result.url) {
-    lines.push((zh ? '来源站点：' : 'Source site: ') + siteFromUrl(result.url));
+    lines.push((zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '來源站點：' : '来源站点：') : 'Source site: ') + siteFromUrl(result.url));
   }
   if (result.summary) {
     lines.push(result.summary);
@@ -851,7 +850,7 @@ function formatSummary(result: SummarizeResult, status: AegisStatus): string {
   }
   if (result.error) {
     lines.push(
-        (zh ? '降级原因：' : 'Fallback reason: ') +
+        (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '降級原因：' : '降级原因：') : 'Fallback reason: ') +
         summaryErrorLabel(result.error, zh));
   }
   return lines.filter((line, i, arr) => line !== '' || arr[i - 1] !== '')
@@ -889,32 +888,35 @@ async function confirmSummaryPreview(
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   const format = normalizeModelApiFormat(status.modelProvider);
   const endpoint = status.modelBaseUrl || MODEL_ENDPOINTS[format];
-  const model = status.modelName || (zh ? '未选择模型' : 'No model selected');
+  const model = status.modelName || (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未選擇模型' : '未选择模型') : 'No model selected');
   const local = isLocalModelEndpoint(endpoint);
   const formatName = modelApiFormatLabel(format);
   let destination: string;
   if (isSensitiveSummarySource(captured.snapshot)) {
     destination = zh ?
-        `敏感页面：强制本机处理 · API 格式：本机启发式 · 模型：不调用` +
-            `（已配置 ${formatName} · ${model}）· 目标：本机；不发送到外网。` :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `敏感頁面：強制本機處理 · API 格式：本地文書處理 · 模型：不呼叫` +
+            `（已配置 ${formatName} · ${model}）· 目標：本機；不傳送到外網。` : `敏感页面：强制本机处理 · API 格式：本地文字处理 · 模型：不调用` +
+            `（已配置 ${formatName} · ${model}）· 目标：本机；不发送到外网。`) :
         `Sensitive page: forced on-device · API format: on-device heuristic · ` +
             `Model: not used (configured ${formatName} · ${model}) · ` +
             'Destination: on-device; nothing is sent remotely.';
   } else if (local) {
     destination = zh ?
-        `本机处理 · API 格式：${formatName} · 模型：${model} · ` +
-            `目标：${endpoint}` :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `本機處理 · API 格式：${formatName} · 模型：${model} · ` +
+            `目標：${endpoint}` : `本机处理 · API 格式：${formatName} · 模型：${model} · ` +
+            `目标：${endpoint}`) :
         `On-device · API format: ${formatName} · Model: ${model} · ` +
             `Destination: ${endpoint}`;
   } else {
     destination = zh ?
-        `远程处理 · API 格式：${formatName} · 模型：${model} · ` +
-            `目标：${endpoint}；仅发送脱敏文本。` :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `遠端處理 · API 格式：${formatName} · 模型：${model} · ` +
+            `目標：${endpoint}；僅傳送脫敏文字。` : `远程处理 · API 格式：${formatName} · 模型：${model} · ` +
+            `目标：${endpoint}；仅发送脱敏文本。`) :
         `Remote · API format: ${formatName} · Model: ${model} · ` +
             `Destination: ${endpoint}; only redacted text is sent.`;
   }
   getRequiredElement('summary-preview-site').textContent =
-      (zh ? '来源站点：' : 'Source site: ') +
+      (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '來源站點：' : '来源站点：') : 'Source site: ') +
       siteFromUrl(captured.snapshot.url);
   getRequiredElement('summary-preview-read').textContent =
       String(captured.snapshot.textSample.length);
@@ -936,21 +938,21 @@ function kindLabel(kind: string, zh: boolean): string {
     return 'Cookie';
   }
   if (kind === 'bounce') {
-    return zh ? '跳转' : 'Bounce';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '跳轉' : '跳转') : 'Bounce';
   }
   if (kind === 'block') {
-    return zh ? '拦截' : 'Block';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '攔截' : '拦截') : 'Block';
   }
   if (kind === 'phish') {
-    return zh ? '钓鱼' : 'Phish';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '釣魚' : '钓鱼') : 'Phish';
   }
   if (kind === 'miner') {
-    return zh ? '挖矿风险' : 'Mining risk';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '挖礦風險' : '挖矿风险') : 'Mining risk';
   }
   if (kind === 'cdp') {
-    return zh ? '控制' : 'CDP';
+    return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '控制' : '控制') : 'CDP';
   }
-  return zh ? '参数' : 'Param';
+  return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '引數' : '参数') : 'Param';
 }
 
 function fillAiControl(status: AegisStatus) {
@@ -962,22 +964,22 @@ function fillAiControl(status: AegisStatus) {
   const connectEl = getRequiredElement('ai-control-connect');
   if (status.aiControlAvailable === false) {
     statusEl.textContent = zh ?
-        '存在无痕会话时不开放进程级 CDP，避免本机调试端点看到私密标签页；原生 Browser Agent 仍可使用。' :
-        'Process-wide CDP is unavailable while Incognito is active so a local debugging endpoint cannot see private tabs; the native Browser Agent remains available.';
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '為保護無痕分頁，無痕視窗開啟期間暫停本機工具連線；內建 AI 助手仍可使用。' : '为保护无痕标签页，无痕窗口打开期间暂停本机工具连接；内置 AI 助手仍可使用。') :
+        'Local tool connections pause while an Incognito window is open to protect private tabs. The built-in AI assistant remains available.';
     connectEl.hidden = true;
     return;
   }
   const on = !!status.aiControl && !!status.aiControlRunning;
   if (!status.aiControl) {
     statusEl.textContent =
-        zh ? 'AI 控制已关闭（默认）。' : 'AI control is off (default).';
+        zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'AI 控制已關閉（預設）。' : 'AI 控制已关闭（默认）。') : 'AI control is off (default).';
     connectEl.hidden = true;
     return;
   }
   if (!on) {
     statusEl.textContent = zh ?
-        '已请求启用，但尚未确认安全的 loopback 监听；连接入口保持关闭。' :
-        'Enabled, but a safe loopback listener is not yet confirmed; connection details remain hidden.';
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '正在準備本機連線，連線入口暫不可用。' : '正在准备本机连接，连接入口暂不可用。') :
+        'Preparing the local connection. Connection details are not available yet.';
     connectEl.hidden = true;
     return;
   }
@@ -986,17 +988,15 @@ function fillAiControl(status: AegisStatus) {
   const loopback = status.aiControlLoopbackOnly === true;
   const clients = status.aiControlClients || 0;
   const clientsText = zh ?
-      (clients ? `当前 ${clients} 个本机 agent 已连接` :
-                 '当前没有 agent 连接') :
+      (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? (clients ? `當前 ${clients} 個本機工具 已連線` :
+                 '當前沒有工具 連線') : (clients ? `当前 ${clients} 个本机工具 已连接` :
+                 '当前没有工具 连接')) :
       (clients ? `${clients} local agent(s) connected` : 'no agent connected');
-  statusEl.textContent = zh ?
-      `调试端口 ${port} · 绑定 ${address} · ${
-          loopback ? '仅 loopback' : '绑定范围未知'} · ${clientsText}` :
-      `Port ${port} · bind ${address} · ${
-          loopback ? 'loopback only' : 'bind scope unknown'} · ${clientsText}`;
+  statusEl.textContent = clientsText;
   connectEl.hidden = !on;
   if (on) {
     connectEl.textContent =
+        `Address: ${address} · Port: ${port} · ${loopback ? 'Loopback' : 'Unknown binding'}\n` +
         `await chromium.connectOverCDP('http://127.0.0.1:${port}')`;
   }
 }
@@ -1013,15 +1013,15 @@ function fillBrowserAgent(status: AegisStatus) {
   open.disabled = !status.browserAgentAvailable || !status.browserAgentEnabled;
   if (!status.browserAgentAvailable) {
     statusEl.textContent = zh ?
-        '当前构建未启用 Browser Agent 功能开关。' :
-        'The Browser Agent feature flag is not enabled in this build.';
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '此版本暫無法使用 AI 助手。' : '此版本暂不可使用 AI 助手。') :
+        'The AI assistant is unavailable in this build.';
   } else if (status.browserAgentEnabled) {
     statusEl.textContent = zh ?
-        '已启用。高风险操作仍需逐项批准，付款必须手动接管。' :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已啟用。高風險操作仍需逐項批准，付款必須手動接管。' : '已启用。高风险操作仍需逐项批准，付款必须手动接管。') :
         'Enabled. High-risk actions still require approval and payment requires takeover.';
   } else {
     statusEl.textContent = zh ?
-        '默认关闭；启用后可从浏览器菜单、工具栏或此处打开。' :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '預設關閉；啟用後可從瀏覽器選單、工具欄或此處開啟。' : '默认关闭；启用后可从浏览器菜单、工具栏或此处打开。') :
         'Off by default. Enable it to open from the browser menu, toolbar, or here.';
   }
 }
@@ -1043,7 +1043,7 @@ function fillActivityLog(events: PrivacyEvent[]) {
     kind.textContent = kindLabel(event.kind, zh);
     li.appendChild(kind);
     const target =
-        event.domain || event.site || (zh ? '当前页面' : 'this page');
+        event.domain || event.site || (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '當前頁面' : '当前页面') : 'this page');
     const reason = event.reason ? ` · ${event.reason}` : '';
     const details =
         event.details?.length ? ` · ${event.details.join(', ')}` : '';
@@ -1186,7 +1186,7 @@ async function probeFingerprint() {
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   const on = checkbox('fingerprint').checked;
   actionButton('fp-probe').disabled = true;
-  result.textContent = zh ? '正在读取本页指纹…' : 'Reading this page…';
+  result.textContent = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '正在讀取本頁指紋…' : '正在读取本页指纹…') : 'Reading this page…';
   try {
     const canvas = probeCanvas();
     const webgl = probeWebGL();
@@ -1196,16 +1196,16 @@ async function probeFingerprint() {
     if (on) {
       lines.push(
           zh ?
-              'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。' :
+              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Fingerprint Guard 開著：讀數按站點穩定化。關開後請重新整理本頁再測。' : 'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。') :
               'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
     } else {
       lines.push(
           zh ?
-              'Fingerprint Guard 关着：这是浏览器原始读数。关开后请刷新本页再测。' :
+              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Fingerprint Guard 關著：這是瀏覽器原始讀數。關開後請重新整理本頁再測。' : 'Fingerprint Guard 关着：这是浏览器原始读数。关开后请刷新本页再测。') :
               'Fingerprint Guard is off: this is the raw browser reading. Toggle, reload, then probe again.');
     }
     if (canvas) {
-      lines.push(zh ? `Canvas 读数 ${canvas}` : `Canvas ${canvas}`);
+      lines.push(zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `Canvas 讀數 ${canvas}` : `Canvas 读数 ${canvas}`) : `Canvas ${canvas}`);
     }
     if (webgl.line) {
       lines.push(webgl.line);
@@ -1213,33 +1213,33 @@ async function probeFingerprint() {
     if (audio.hash) {
       let note = '';
       if (!audio.sameRead) {
-        note = zh ? '（同一缓冲读两次不一致）' :
+        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（同一緩衝讀兩次不一致）' : '（同一缓冲读两次不一致）') :
                     ' (same buffer changed on second read)';
       } else if (lastAudioHash && lastAudioHash === audio.hash) {
-        note = zh ? '（与上次相同，已按站点稳定）' :
+        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與上次相同，已按站點穩定）' : '（与上次相同，已按站点稳定）') :
                     ' (same as last probe; stable per site)';
       }
       lastAudioHash = audio.hash;
       lines.push(
-          (zh ? `Audio 读数 ${audio.hash}` : `Audio ${audio.hash}`) + note);
+          (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `Audio 讀數 ${audio.hash}` : `Audio 读数 ${audio.hash}`) : `Audio ${audio.hash}`) + note);
     }
     if (webgpu.line) {
       lines.push(webgpu.line);
     }
     if (on && (webgl.marked || webgpu.marked)) {
       lines.push(
-          zh ? 'WebGL / WebGPU 已换成带 Aegis 的稳定化字符串。' :
+          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'WebGL / WebGPU 已換成帶 Aegis 的穩定化字串。' : 'WebGL / WebGPU 已换成带 Aegis 的稳定化字符串。') :
                'WebGL / WebGPU strings are replaced with Aegis-stable values.');
     } else if (on && (webgl.line || webgpu.line)) {
       lines.push(
           zh ?
-              '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。' :
+              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未看到 Aegis 標記。關掉再開啟防護後，請重新整理本頁再測。' : '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。') :
               'No Aegis marker yet. Toggle the guard, reload, then probe again.');
     }
     result.textContent = lines.filter(Boolean).join('\n');
   } catch (err) {
     result.textContent =
-        zh ? `读取失败：${String(err)}` : `Probe failed: ${String(err)}`;
+        zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `讀取失敗：${String(err)}` : `读取失败：${String(err)}`) : `Probe failed: ${String(err)}`;
   } finally {
     actionButton('fp-probe').disabled = false;
   }
@@ -1278,13 +1278,13 @@ async function summarizeActiveTab() {
   showResult(
       isSensitiveSummarySource(captured.snapshot) ?
           (zh ?
-               '正在生成本机启发式摘要，不调用模型…' :
+               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '正在生成本機本地文字摘要，不呼叫模型…' : '正在生成本机本地文字摘要，不调用模型…') :
                'Generating an on-device heuristic summary without calling a model…') :
           isLocalModelEndpoint(status.modelBaseUrl || '') ?
-          (zh ? '本机模型正在生成，最长等待 3 分钟…' :
+          (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '本機模型正在生成，最長等待 3 分鐘…' : '本机模型正在生成，最长等待 3 分钟…') :
                 'The local model is generating; allow up to 3 minutes…') :
           (zh ?
-               '兼容模型服务正在生成，最长等待 45 秒…' :
+               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '相容模型服務正在生成，最長等待 45 秒…' : '兼容模型服务正在生成，最长等待 45 秒…') :
                'The compatible model service is generating; allow up to 45 seconds…'));
   const result: SummarizeResult = await sendWithPromise(
       'completePreparedSummary', captured.requestId, prepared);
@@ -1321,7 +1321,7 @@ function bindModelControls() {
     updateModelControlAvailability();
     const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
     getRequiredElement('model-status').textContent = zh ?
-        `已切换到 ${modelApiFormatLabel(activeModelFormat)}，请加载模型。` :
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `已切換到 ${modelApiFormatLabel(activeModelFormat)}，請載入模型。` : `已切换到 ${modelApiFormatLabel(activeModelFormat)}，请加载模型。`) :
         `Switched to ${
             modelApiFormatLabel(activeModelFormat)}. Load models to continue.`;
   });
@@ -1340,7 +1340,7 @@ function bindModelControls() {
       fillModelList([], draft?.modelName || '', 'idle');
       const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
       getRequiredElement('model-status').textContent = zh ?
-          '服务地址已更改，请从当前地址重新加载模型。' :
+          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '服務地址已更改，請從當前地址重新載入模型。' : '服务地址已更改，请从当前地址重新加载模型。') :
           'The endpoint changed. Reload models from the current endpoint.';
     }
     markModelFormChanged();
@@ -1457,8 +1457,8 @@ async function saveModelSettings(clearKey: boolean) {
         loadedModels.length > 0 ? 'loaded' : 'idle');
     const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
     getRequiredElement('model-status').textContent = clearKey ?
-        (zh ? 'API Key 已清除。' : 'API key cleared.') :
-        (zh ? '模型设置已保存。' : 'Model settings saved.');
+        (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'API 金鑰已清除。' : 'API 密钥已清除。') : 'API key cleared.') :
+        (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '模型設定已儲存。' : '模型设置已保存。') : 'Model settings saved.');
   } catch (error) {
     if (serial === modelSettingsRequestSerial &&
         isCurrentModelSnapshot(snapshot)) {
@@ -1511,10 +1511,6 @@ async function init() {
       }
     })();
   });
-  if (status.privacyAi && !status.isAndroid &&
-      isLocalModelEndpoint(textField('model-endpoint').value)) {
-    void loadModels();
-  }
   addWebUiListener('aegis-status-changed', (next: AegisStatus) => {
     next = withRendererPolicyWorkerStatus(next);
     applyModelStatus(next);

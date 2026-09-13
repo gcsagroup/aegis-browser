@@ -1,5 +1,5 @@
 <!doctype html>
-<html dir="$i18n{textdirection}" lang="$i18n{language}">
+<html dir="$i18n{textdirection}" lang="$i18n{aegisLocale}">
   <head>
     <meta charset="utf-8">
     <title>$i18n{title}</title>
@@ -18,7 +18,7 @@
           </div>
         </div>
         <div class="metrics" role="group"
-             aria-label="session protection totals">
+             aria-label="$i18n{overviewTitle}">
           <div class="metric">
             <span class="metric-value" id="overview-blocked">0</span>
             <span class="metric-label">$i18n{overviewBlocked}</span>
@@ -34,13 +34,13 @@
         </div>
         <p class="scope-note">$i18n{overviewScope}</p>
       </section>
-      <section class="activity" aria-label="session activity">
+      <section class="activity" aria-label="$i18n{activityTitle}">
         <h2>$i18n{activityTitle}</h2>
         <p class="meta">$i18n{activityHint}</p>
         <ul id="activity-log" class="log"></ul>
         <p class="meta" id="activity-empty">$i18n{activityEmpty}</p>
       </section>
-      <section class="modules" aria-label="modules">
+      <section class="modules" aria-label="$i18n{modulesTitle}">
         <h2>$i18n{modulesTitle}</h2>
         <label class="row">
           <span class="copy">
@@ -63,11 +63,15 @@
           </span>
           <input id="fingerprint" type="checkbox">
         </label>
+        <details>
+          <summary>$i18n{technicalDetails}</summary>
+          <p class="meta">$i18n{fingerprintDetails}</p>
         <div class="probe">
           <button id="fp-probe" type="button">$i18n{fingerprintProbe}</button>
           <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
           <p class="meta" id="fp-result"></p>
         </div>
+        </details>
         <label class="row">
           <span class="copy">
             <span class="name">$i18n{minerGuardLabel}</span>
@@ -118,7 +122,7 @@
           <input id="privacy-ai" type="checkbox">
         </label>
       </section>
-      <section class="filters" aria-label="filter lists">
+      <section class="filters" aria-label="$i18n{filterListTitle}">
         <h2>$i18n{filterListTitle}</h2>
         <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
         <label class="row">
@@ -130,13 +134,13 @@
         </label>
         <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
       </section>
-      <section class="downloads" aria-label="downloads and mirrors">
+      <section class="downloads" aria-label="$i18n{downloadsTitle}">
         <h2>$i18n{downloadsTitle}</h2>
         <p class="meta">$i18n{downloadsMeta}</p>
         <p><a href="chrome://downloads">$i18n{downloadsTitle}</a></p>
-        <p class="scope-note">$i18n{torrentSafety}</p>
+        <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
       </section>
-      <section class="privacy" aria-label="privacy ai">
+      <section class="privacy" aria-label="$i18n{privacyAiTitle}">
         <h2>$i18n{privacyAiTitle}</h2>
         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
         <div id="model-fields">
@@ -186,7 +190,7 @@
         <pre class="result" id="privacy-result" hidden></pre>
       </section>
       <section class="browser-agent" id="browser-agent-section"
-               aria-label="browser agent">
+               aria-label="$i18n{browserAgentTitle}">
         <h2>$i18n{browserAgentTitle}</h2>
         <label class="row">
           <span class="copy">
@@ -202,7 +206,7 @@
         </div>
         <p class="meta" id="browser-agent-status">$i18n{browserAgentStatus}</p>
       </section>
-      <section class="ai-control" id="ai-control-section" aria-label="ai control">
+      <section class="ai-control" id="ai-control-section" aria-label="$i18n{aiControlTitle}">
         <h2>$i18n{aiControlTitle}</h2>
         <label class="row">
           <span class="copy">
@@ -212,7 +216,10 @@
           <input id="ai-control" type="checkbox">
         </label>
         <p class="meta" id="ai-control-status">$i18n{aiControlStatus}</p>
-        <pre class="result" id="ai-control-connect" hidden></pre>
+        <details>
+          <summary>$i18n{technicalDetails}</summary>
+          <pre class="result" id="ai-control-connect" hidden></pre>
+        </details>
         <p class="meta">$i18n{aiControlLimit}</p>
       </section>
       <p class="note">$i18n{note}</p>

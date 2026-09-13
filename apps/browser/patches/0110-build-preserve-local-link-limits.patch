@@ -1,0 +1,76 @@
+From 7260ec4f44c6777fa596870efbce2006570c860f Mon Sep 17 00:00:00 2001
+From: GCSA <aegis@gcsa.local>
+Date: Sun, 13 Sep 2026 03:06:52 +0800
+Subject: [PATCH] =?UTF-8?q?build(aegis):=20=E4=BF=9D=E7=95=99=E6=9C=AC?=
+ =?UTF-8?q?=E6=9C=BA=E9=AA=8C=E6=94=B6=E7=9A=84=E9=93=BE=E6=8E=A5=E8=B5=84?=
+ =?UTF-8?q?=E6=BA=90=E9=99=90=E5=88=B6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/BUILD.gn               | 9 +++++++++
+ chrome/browser/aegis/BUILD.gn | 4 ++++
+ chrome/test/BUILD.gn          | 4 ++++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index 973a46b..0dda8c1 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -1186,6 +1186,14 @@ if (is_win) {
+     }
+   }
+ 
++  # 独立验收目录的链接资源限制，不改变代码优化等级或系统上限。
++  config("aegis_acceptance_link_limits") {
++    ldflags = [
++      "-Wl,--thinlto-jobs=1",
++      "-Wl,--threads=1",
++    ]
++  }
++
+   mac_framework_bundle("chrome_framework") {
+     output_name = chrome_framework_name
+ 
+@@ -1199,6 +1207,7 @@ if (is_win) {
+     configs += [ "//build/config/compiler:wexit_time_destructors" ]
+     configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
+     configs += [ "//build/config/compiler:thinlto_optimize_max" ]
++    configs += [ ":aegis_acceptance_link_limits" ]
+ 
+     info_plist_target = ":chrome_framework_plist"
+     extra_substitutions = [
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 5543d5a..0a6c891 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -332,6 +332,10 @@ fuzzer_test("aegis_agent_scope_fuzzer") {
+ }
+ 
+ test("aegis_browser_unittests") {
++  # 本机验收仅限制链接并行，避免同时打开过多ThinLTO文件；不改优化级别。
++  if (is_mac) {
++    configs += [ "//chrome:aegis_acceptance_link_limits" ]
++  }
+   sources = [
+     "aegis_ai_control_unittest.cc",
+     "aegis_download_prefs_unittest.cc",
+diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
+index f309ed1..acda71e 100644
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -2215,6 +2215,10 @@ if (!is_android) {
+   test("browser_tests") {
+     use_xvfb = use_xvfb_in_this_config
+ 
++    if (is_mac) {
++      configs += [ "//chrome:aegis_acceptance_link_limits" ]
++    }
++
+     configs += [ "//build/config:precompiled_headers" ]
+     configs += [ ":disable_thinlto_cache_flags" ]
+     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+-- 
+2.52.0
+

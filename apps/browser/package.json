@@ -17,7 +17,7 @@
     "package": "bash ./scripts/package.sh",
     "package:android": "bash ./scripts/package-android.sh",
     "identity": "node ./scripts/write-build-identity.mjs",
-    "test:agent-ui": "node ./scripts/agent-ui-status_test.mjs && node ./scripts/agent-model-selection_test.mjs",
+    "test:agent-ui": "node ./scripts/agent-ui-status_test.mjs && node ./scripts/agent-model-selection_test.mjs && node ./scripts/summary-model-requests_test.mjs && node ./scripts/download-error-copy_test.mjs && node ./scripts/ui-locale-aliases_test.mjs",
     "test:android-target": "node --test ./scripts/verify-android-agent-target_test.mjs",
     "test:android-ui": "node --check ./scripts/android-agent-ui.mjs && node --test ./scripts/android-agent-ui_test.mjs",
     "test:model-relay": "node --check ./scripts/agent-winrm-model-relay.mjs && node ./scripts/agent-winrm-model-relay.mjs --self-test && node --test ./scripts/verify-agent-local-model_test.mjs",

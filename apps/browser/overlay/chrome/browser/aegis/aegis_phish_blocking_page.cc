@@ -29,40 +29,45 @@ std::u16string WithoutTechnicalWeight(std::u16string label, int) {
   return label;
 }
 
-std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
+std::u16string ReasonLabel(const PhishReason& reason, bool zh, bool tw) {
   const std::u16string detail =
       base::EscapeForHTML(base::UTF8ToUTF16(reason.detail));
   if (reason.code == "seed_host") {
     return WithoutTechnicalWeight(
-        zh ? u"命中内置钓鱼名单" : u"Listed in the built-in phishing set",
+        zh ? (tw ? u"命中內建釣魚名單" : u"命中内置钓鱼名单")
+           : u"Listed in the built-in phishing set",
         reason.weight);
   }
   if (reason.code == "insecure_http") {
-    return WithoutTechnicalWeight(
-        zh ? u"没有使用 HTTPS，连接可能被篡改" : u"Not using HTTPS",
-        reason.weight);
+    return WithoutTechnicalWeight(zh ? (tw ? u"沒有使用 HTTPS，連線可能被篡改"
+                                           : u"没有使用 HTTPS，连接可能被篡改")
+                                     : u"Not using HTTPS",
+                                  reason.weight);
   }
   if (reason.code == "ip_hostname") {
     return WithoutTechnicalWeight(
-        zh ? u"用 IP 地址当网址，仿冒站常用这一招"
+        zh ? (tw ? u"用 IP 地址當網址，仿冒站常用這一招"
+                 : u"用 IP 地址当网址，仿冒站常用这一招")
            : u"Uses a raw IP address instead of a normal domain",
         reason.weight);
   }
   if (reason.code == "punycode_host") {
     return WithoutTechnicalWeight(
-        zh ? u"域名含国际化编码，可能在用相似字符仿冒品牌"
+        zh ? (tw ? u"域名含國際化編碼，可能在用相似字元仿冒品牌"
+                 : u"域名含国际化编码，可能在用相似字符仿冒品牌")
            : u"Internationalized domain that may mimic a brand",
         reason.weight);
   }
   if (reason.code == "deep_subdomain") {
     return WithoutTechnicalWeight(
-        zh ? u"子域名层数异常多，用来把真域名藏在后面"
+        zh ? (tw ? u"子域名層數異常多，用來把真域名藏在後面"
+                 : u"子域名层数异常多，用来把真域名藏在后面")
            : u"Unusually deep subdomain, often used to hide the real site",
         reason.weight);
   }
   if (reason.code == "suspicious_tld") {
-    std::u16string label =
-        zh ? u"顶级域风险较高" : u"High-risk top-level domain";
+    std::u16string label = zh ? (tw ? u"頂級域風險較高" : u"顶级域风险较高")
+                              : u"High-risk top-level domain";
     if (!detail.empty()) {
       label += u" (.";
       label += detail;
@@ -73,9 +78,9 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
   if (reason.code == "brand_spoof_host") {
     std::u16string label;
     if (zh) {
-      label = u"看起来像「";
+      label = (tw ? u"看起來像「" : u"看起来像「");
       label += detail.empty() ? u"知名品牌" : detail;
-      label += u"」，但不是该品牌的正站";
+      label += (tw ? u"」，但不是該品牌的正站" : u"」，但不是该品牌的正站");
     } else {
       label = u"Looks like \"";
       label += detail.empty() ? u"a known brand" : detail;
@@ -84,7 +89,8 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
     return WithoutTechnicalWeight(std::move(label), reason.weight);
   }
   if (reason.code == "brand_lookalike_host") {
-    std::u16string label = zh ? u"域名只改了品牌中的少数字符，疑似仿冒「"
+    std::u16string label = zh ? (tw ? u"域名只改了品牌中的少數字符，疑似仿冒「"
+                                    : u"域名只改了品牌中的少数字符，疑似仿冒「")
                               : u"Domain uses a near-match of \"";
     label += detail.empty() ? (zh ? u"知名品牌" : u"a known brand") : detail;
     label += zh ? u"」" : u"\"";
@@ -92,77 +98,87 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
   }
   if (reason.code == "brand_in_path") {
     return WithoutTechnicalWeight(
-        zh ? u"把品牌名称放在路径中，不能证明这是品牌正站"
+        zh ? (tw ? u"把品牌名稱放在路徑中，不能證明這是品牌正站"
+                 : u"把品牌名称放在路径中，不能证明这是品牌正站")
            : u"Brand name appears only in the path, not the real domain",
         reason.weight);
   }
   if (reason.code == "credential_path") {
     return WithoutTechnicalWeight(
-        zh ? u"网址路径在诱导登录或验证账号"
+        zh ? (tw ? u"網址路徑在誘導登入或驗證賬號"
+                 : u"网址路径在诱导登录或验证账号")
            : u"URL path asks for sign-in or account verification",
         reason.weight);
   }
   if (reason.code == "shortened_url") {
     return WithoutTechnicalWeight(
-        zh ? u"短链接隐藏了最终去向"
+        zh ? (tw ? u"短連結隱藏了最終去向" : u"短链接隐藏了最终去向")
            : u"Short link hides its final destination",
         reason.weight);
   }
   if (reason.code == "at_symbol_trick") {
     return WithoutTechnicalWeight(
-        zh ? u"网址含 @，用来掩盖真实去向"
+        zh ? (tw ? u"網址含 @，用來掩蓋真實去向"
+                 : u"网址含 @，用来掩盖真实去向")
            : u"URL uses @ to hide the real destination",
         reason.weight);
   }
   if (reason.code == "invalid_url") {
-    return WithoutTechnicalWeight(zh ? u"地址无效" : u"Invalid URL",
-                                  reason.weight);
+    return WithoutTechnicalWeight(
+        zh ? (tw ? u"地址無效" : u"地址无效") : u"Invalid URL", reason.weight);
   }
   if (reason.code == "urgency_language") {
     return WithoutTechnicalWeight(
-        zh ? u"页面催你马上登录，或声称账号异常"
+        zh ? (tw ? u"頁面催你馬上登入，或聲稱賬號異常"
+                 : u"页面催你马上登录，或声称账号异常")
            : u"Page copy urges you to sign in immediately",
         reason.weight);
   }
   if (reason.code == "unicode_text_obfuscation") {
     return WithoutTechnicalWeight(
-        zh ? u"页面使用隐形字符干扰文本检测，已还原后检查"
+        zh ? (tw ? u"頁面使用隱形字元干擾文字檢測，已還原後檢查"
+                 : u"页面使用隐形字符干扰文本检测，已还原后检查")
            : u"Invisible characters were removed before checking page text",
         reason.weight);
   }
   if (reason.code == "password_on_risky_origin") {
     return WithoutTechnicalWeight(
-        zh ? u"在可疑网站上出现了密码框" : u"Password field on a risky site",
+        zh ? (tw ? u"在可疑網站上出現了密碼框" : u"在可疑网站上出现了密码框")
+           : u"Password field on a risky site",
         reason.weight);
   }
   if (reason.code == "credential_form") {
     return WithoutTechnicalWeight(
-        zh ? u"页面在收集账号或密码" : u"Page is collecting credentials",
+        zh ? (tw ? u"頁面在收集賬號或密碼" : u"页面在收集账号或密码")
+           : u"Page is collecting credentials",
         reason.weight);
   }
   if (reason.code == "cross_site_credential_submit") {
     return WithoutTechnicalWeight(
-        zh ? u"密码会被提交到另一个网站"
+        zh ? (tw ? u"密碼會被提交到另一個網站" : u"密码会被提交到另一个网站")
            : u"Password form submits to a different site",
         reason.weight);
   }
   if (reason.code == "brand_credential_page") {
     return WithoutTechnicalWeight(
-        zh ? u"页面借用品牌名称并要求输入密码"
+        zh ? (tw ? u"頁面借用品牌名稱並要求輸入密碼"
+                 : u"页面借用品牌名称并要求输入密码")
            : u"Page uses a brand name while requesting a password",
         reason.weight);
   }
   if (reason.code == "threat_feed_match") {
-    std::u16string label = zh ? u"命中本地威胁情报名单"
-                              : u"Matched the local threat reputation index";
+    std::u16string label =
+        zh ? (tw ? u"命中本地威脅情報名單" : u"命中本地威胁情报名单")
+           : u"Matched the local threat reputation index";
     if (!detail.empty()) {
       label += u" (" + detail + u")";
     }
     return WithoutTechnicalWeight(std::move(label), reason.weight);
   }
   if (reason.code == "threat_feed_domain_match") {
-    std::u16string label = zh ? u"域名命中本地危险网站名单"
-                              : u"Domain matched a local warning list";
+    std::u16string label =
+        zh ? (tw ? u"域名命中本地危險網站名單" : u"域名命中本地危险网站名单")
+           : u"Domain matched a local warning list";
     if (!detail.empty()) {
       label += u" (" + detail + u")";
     }
@@ -170,27 +186,31 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
   }
   if (reason.code == "stale_threat_feed_match") {
     return WithoutTechnicalWeight(
-        zh ? u"命中过期的本地威胁情报，已作为辅助风险信号"
+        zh ? (tw ? u"命中過期的本地威脅情報，已作為輔助風險訊號"
+                 : u"命中过期的本地威胁情报，已作为辅助风险信号")
            : u"Matched stale local threat data; used as a supporting signal",
         reason.weight);
   }
   if (reason.code == "lightweight_model_blend") {
     return WithoutTechnicalWeight(
-        zh ? u"本地规则也发现了相似风险" : u"Local rules found similar risk",
+        zh ? (tw ? u"本地規則也發現了相似風險" : u"本地规则也发现了相似风险")
+           : u"Local rules found similar risk",
         reason.weight);
   }
   return WithoutTechnicalWeight(
       base::EscapeForHTML(base::UTF8ToUTF16(reason.code)), reason.weight);
 }
 
-std::u16string FormatReasons(const PhishAssessment& assessment, bool zh) {
+std::u16string FormatReasons(const PhishAssessment& assessment,
+                             bool zh,
+                             bool tw) {
   std::u16string text;
   for (const PhishReason& reason : assessment.reasons) {
     if (!text.empty()) {
       text += u"<br>";
     }
     text += u"• ";
-    text += ReasonLabel(reason, zh);
+    text += ReasonLabel(reason, zh, tw);
   }
   return text;
 }
@@ -273,30 +293,38 @@ void AegisPhishBlockingPage::PopulateInterstitialStrings(
 
   const std::string locale = g_browser_process->GetApplicationLocale();
   const bool zh = IsChineseLocale(locale);
+  const bool tw = locale.starts_with("zh-TW") || locale.starts_with("zh-HK");
   const std::u16string score_text =
       base::UTF8ToUTF16(base::NumberToString(assessment_.score));
 
-  load_time_data.Set("tabTitle", zh ? u"疑似钓鱼网站" : u"Suspected phishing");
-  load_time_data.Set("heading", zh ? u"Aegis 检测到疑似钓鱼线索"
-                                   : u"Aegis detected phishing signals");
+  load_time_data.Set("tabTitle", zh ? (tw ? u"疑似釣魚網站" : u"疑似钓鱼网站")
+                                    : u"Suspected phishing");
+  load_time_data.Set("heading", zh ? (tw ? u"GCSA Aegis 檢測到疑似釣魚線索"
+                                         : u"GCSA Aegis 检测到疑似钓鱼线索")
+                                   : u"GCSA Aegis detected phishing signals");
   std::u16string primary =
-      zh ? u"Aegis 因为以下可见线索拦截了这个页面："
-         : u"Aegis blocked this page because of these visible signals:";
+      zh ? (tw ? u"GCSA Aegis 因為以下可見線索攔截了這個頁面："
+               : u"GCSA Aegis 因为以下可见线索拦截了这个页面：")
+         : u"GCSA Aegis blocked this page because of these visible signals:";
   primary += u"<br><br>";
-  primary += FormatReasons(assessment_, zh);
+  primary += FormatReasons(assessment_, zh, tw);
   primary += u"<br><br>";
-  primary += zh ? u"风险分 " : u"Risk score ";
+  primary += zh ? (tw ? u"風險分 " : u"风险分 ") : u"Risk score ";
   primary += score_text;
-  primary += zh ? u"，拦截阈值 " : u"; block threshold ";
+  primary +=
+      zh ? (tw ? u"，攔截閾值 " : u"，拦截阈值 ") : u"; block threshold ";
   primary += base::UTF8ToUTF16(base::NumberToString(kPhishBlockThreshold));
-  primary += zh ? u"。继续访问可能泄露账号或支付信息。"
+  primary += zh ? (tw ? u"。繼續訪問可能洩露賬號或支付資訊。"
+                      : u"。继续访问可能泄露账号或支付信息。")
                 : u". Continuing may expose account or payment details.";
   load_time_data.Set("primaryParagraph", primary);
   load_time_data.Set("explanationParagraph", std::u16string());
-  load_time_data.Set("primaryButtonText",
-                     zh ? u"返回安全页面" : u"Back to safety");
-  load_time_data.Set("proceedButtonText",
-                     zh ? u"仅继续一次" : u"Continue once");
+  load_time_data.Set(
+      "primaryButtonText",
+      zh ? (tw ? u"返回安全頁面" : u"返回安全页面") : u"Back to safety");
+  load_time_data.Set(
+      "proceedButtonText",
+      zh ? (tw ? u"僅繼續一次" : u"仅继续一次") : u"Continue once");
   load_time_data.Set("optInLink", std::u16string());
   load_time_data.Set("enhancedProtectionMessage", std::u16string());
 }

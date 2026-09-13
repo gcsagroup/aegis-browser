@@ -1,0 +1,169 @@
+From f5346cf407d13d315ff6fe87ccde2b8c31ea3426 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 13 Sep 2026 05:01:21 +0800
+Subject: [PATCH] Fix GitHub updater Chromium style and bump Ver 1.1 (003)
+
+---
+ chrome/app/app-Info.plist                           |  4 ++--
+ chrome/browser/ui/webui/help/BUILD.gn               | 13 +++++++------
+ chrome/browser/ui/webui/help/aegis_github_update.h  |  6 +++---
+ .../ui/webui/help/aegis_github_update_unittest.cc   |  2 +-
+ chrome/browser/ui/webui/help/version_updater.cc     |  6 ++++++
+ chrome/browser/ui/webui/help/version_updater.h      |  2 +-
+ .../settings/settings_localized_strings_provider.cc |  2 +-
+ 7 files changed, 21 insertions(+), 14 deletions(-)
+ create mode 100644 chrome/browser/ui/webui/help/version_updater.cc
+
+diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
+index ea07226701..77fcd36f3a 100644
+--- a/chrome/app/app-Info.plist
++++ b/chrome/app/app-Info.plist
+@@ -4,9 +4,9 @@
+ <dict>
+   <!-- 产品更新版本独立于 Chromium 的框架定位版本。 -->
+   <key>AegisProductVersion</key>
+-  <string>1.1.0.2</string>
++  <string>1.1.0.3</string>
+   <key>AegisProductVersionLabel</key>
+-  <string>Ver 1.1 (002)</string>
++  <string>Ver 1.1 (003)</string>
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>en</string>
+ 	<key>CFBundleDisplayName</key>
+diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
+index 641db50d1b..05d287abde 100644
+--- a/chrome/browser/ui/webui/help/BUILD.gn
++++ b/chrome/browser/ui/webui/help/BUILD.gn
+@@ -8,6 +8,7 @@ import("//testing/test.gni")
+ 
+ source_set("help") {
+   public = [ "version_updater.h" ]
++  sources = [ "version_updater.cc" ]
+   public_deps = [ "//base" ]
+   deps = [
+     "//chrome/app:generated_resources_grit",
+@@ -16,7 +17,7 @@ source_set("help") {
+   ]
+ 
+   if (is_chromeos) {
+-    sources = [
++    sources += [
+       "help_utils_chromeos.cc",
+       "version_updater_chromeos.cc",
+     ]
+@@ -43,7 +44,7 @@ source_set("help") {
+ 
+   if (is_mac) {
+     if (enable_updater) {
+-      sources = [ "version_updater_mac.mm" ]
++      sources += [ "version_updater_mac.mm" ]
+       deps += [
+         "//base:i18n",
+         "//chrome/app:branded_strings",
+@@ -52,7 +53,7 @@ source_set("help") {
+       ]
+       frameworks = [ "Foundation.framework" ]
+     } else {
+-      sources = [ "version_updater_basic.cc" ]
++      sources += [ "version_updater_basic.cc" ]
+       deps += [
+         ":aegis_github_update",
+         "//chrome/common",
+@@ -66,7 +67,7 @@ source_set("help") {
+ 
+   if (is_win) {
+     if (is_chrome_branded) {
+-      sources = [ "version_updater_win.cc" ]
++      sources += [ "version_updater_win.cc" ]
+       deps += [
+         "//chrome/app:generated_resources_grit",
+         "//chrome/browser:browser_process",
+@@ -78,7 +79,7 @@ source_set("help") {
+         "//ui/gfx",
+       ]
+     } else {
+-      sources = [ "version_updater_basic.cc" ]
++      sources += [ "version_updater_basic.cc" ]
+       deps += [
+         ":aegis_github_update",
+         "//chrome/common",
+@@ -91,7 +92,7 @@ source_set("help") {
+   }
+ 
+   if (is_linux) {
+-    sources = [ "version_updater_basic.cc" ]
++    sources += [ "version_updater_basic.cc" ]
+     deps += [
+       ":aegis_github_update",
+       "//chrome/common",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 614bc20d4c..019bbdea70 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -19,9 +19,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.2。
+-inline constexpr char kProductVersion[] = "1.1.0.2";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (002)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.3。
++inline constexpr char kProductVersion[] = "1.1.0.3";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (003)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
+index 1885112f1b..3adf78a965 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
++++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
+@@ -23,7 +23,7 @@ namespace {
+ constexpr char kPlatform[] = "mac-arm64.dmg";
+ constexpr char kPayload[] = "representative update package";
+ 
+-base::DictValue Release(std::string version = "1.1.0.3") {
++base::DictValue Release(std::string version = "1.1.0.4") {
+   base::DictValue asset;
+   const std::string name = "GCSA-aegis-" + version + "-" + kPlatform;
+   asset.Set("name", name);
+diff --git a/chrome/browser/ui/webui/help/version_updater.cc b/chrome/browser/ui/webui/help/version_updater.cc
+new file mode 100644
+index 0000000000..470dac6e96
+--- /dev/null
++++ b/chrome/browser/ui/webui/help/version_updater.cc
+@@ -0,0 +1,6 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/ui/webui/help/version_updater.h"
++
++base::FilePath VersionUpdater::GetDownloadedUpdatePath() const {
++  return {};
++}
+diff --git a/chrome/browser/ui/webui/help/version_updater.h b/chrome/browser/ui/webui/help/version_updater.h
+index 43b2888344..f4878215ca 100644
+--- a/chrome/browser/ui/webui/help/version_updater.h
++++ b/chrome/browser/ui/webui/help/version_updater.h
+@@ -87,7 +87,7 @@ class VersionUpdater {
+ 
+   virtual ~VersionUpdater() = default;
+   // 仅返回已经完成下载与校验的本地更新包，不接受前端传入路径。
+-  virtual base::FilePath GetDownloadedUpdatePath() const { return {}; }
++  virtual base::FilePath GetDownloadedUpdatePath() const;
+ 
+   // Sub-classes must implement this method to create the respective
+   // specialization. |web_contents| may be null, in which case any required UX
+diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+index 815b4f1241..062f0beb97 100644
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -357,7 +357,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+   browser_version = VersionUI::GetAnnotatedVersionStringForUi();
+ #else
+   browser_version = base::StrCat(
+-      {u"Ver 1.1 (002) · Chromium ", base::UTF8ToUTF16(version_info::GetVersionNumber()), u" ",
++      {u"Ver 1.1 (003) · Chromium ", base::UTF8ToUTF16(version_info::GetVersionNumber()), u" ",
+        l10n_util::GetStringUTF16(VersionUI::VersionProcessorVariation())});
+ #endif
+ 
+-- 
+2.52.0
+
