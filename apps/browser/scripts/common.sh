@@ -101,9 +101,13 @@ verify_runnable_browser_output() {
     return 1
   fi
 
-  artifact_epoch="$(portable_file_mtime "$binary")"
-  head_epoch="$(git -C "$src" show -s --format=%ct HEAD 2>/dev/null || true)"
-  if [[ -n "$head_epoch" && "$artifact_epoch" -lt "$head_epoch" ]]; then
+  artifact_epoch="$(portable_file_mtime "$binary")" || return 1
+  if ! head_epoch="$(git -C "$src" show -s --format=%ct HEAD 2>/dev/null)" ||
+    [[ ! "$head_epoch" =~ ^[0-9]+$ ]]; then
+    printf '%s 无法读取 Chromium checkout HEAD 时间，拒绝启动。\n' "$label" >&2
+    return 1
+  fi
+  if [[ "$artifact_epoch" -lt "$head_epoch" ]]; then
     printf '%s 早于 Chromium checkout HEAD，拒绝启动旧产物。\n' "$label" >&2
     return 1
   fi

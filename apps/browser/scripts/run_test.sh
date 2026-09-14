@@ -49,6 +49,9 @@ if [[ "${AEGIS_TEST_STAT_INVALID:-0}" == 1 ]]; then
   printf '%s\n' 'filesystem information, not an epoch'
   exit 0
 fi
+if [[ -n "${AEGIS_TEST_STAT_EXIT:-}" ]]; then
+  exit "$AEGIS_TEST_STAT_EXIT"
+fi
 case "${AEGIS_TEST_UNAME:?}" in
   Darwin)
     [[ "$#" -eq 3 && "$1" == -f && "$2" == %m && "$3" == "$AEGIS_TEST_MTIME_FILE" ]]
@@ -63,25 +66,28 @@ esac
 EOF
 chmod +x "$mtime_tools/uname" "$mtime_tools/stat"
 mtime_path="$mtime_tools:$PATH"
+mtime_runner="$fixture_root/mtime-runner.sh"
+cat > "$mtime_runner" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$1"
+portable_file_mtime "$2"
+EOF
 darwin_mtime="$(env \
   PATH="$mtime_path" AEGIS_TEST_UNAME=Darwin AEGIS_TEST_MTIME_FILE="$mtime_input" \
-  bash -c 'source "$1"; portable_file_mtime "$2"' \
-  bash "$SCRIPT_DIR/common.sh" "$mtime_input")"
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input")"
 [[ "$darwin_mtime" == 1700000001 ]] || fail "BSD stat mtime 参数必须明确"
 linux_mtime="$(env \
   PATH="$mtime_path" AEGIS_TEST_UNAME=Linux AEGIS_TEST_MTIME_FILE="$mtime_input" \
-  bash -c 'source "$1"; portable_file_mtime "$2"' \
-  bash "$SCRIPT_DIR/common.sh" "$mtime_input")"
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input")"
 [[ "$linux_mtime" == 1700000002 ]] || fail "GNU stat mtime 参数必须明确"
 if env PATH="$mtime_path" AEGIS_TEST_UNAME=Darwin \
   AEGIS_TEST_MTIME_FILE="$mtime_input" AEGIS_TEST_STAT_INVALID=1 \
-  bash -c 'source "$1"; portable_file_mtime "$2"' \
-  bash "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
   fail "非整数 stat 输出必须拒绝"
 fi
 if env PATH="$mtime_path" AEGIS_TEST_UNAME=FreeBSD AEGIS_TEST_MTIME_FILE="$mtime_input" \
-  bash -c 'source "$1"; portable_file_mtime "$2"' \
-  bash "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
   fail "未知 stat 平台必须拒绝"
 fi
 
@@ -103,7 +109,8 @@ git -C "$fixture_src/v8" -c user.name=Aegis -c user.email=aegis@localhost \
   commit -q --allow-empty -m base
 cp "$ROOT_DIR/args/aegis.gn" "$fixture_out/args.gn"
 
-case "$(uname -s)" in
+fixture_host="$(uname -s)"
+case "$fixture_host" in
   Darwin)
     fixture_binary="$fixture_out/GCSA Aegis.app/Contents/MacOS/GCSA Aegis"
     ;;
@@ -123,6 +130,30 @@ touch "$fixture_binary"
 actual="$(verify_runnable_browser_output \
   "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn")"
 [[ "$actual" == "$fixture_binary" ]] || fail "有效 component fixture 应通过"
+
+if PATH="$mtime_path" AEGIS_TEST_UNAME="$fixture_host" \
+  AEGIS_TEST_MTIME_FILE="$fixture_binary" AEGIS_TEST_STAT_INVALID=1 \
+  verify_runnable_browser_output \
+    "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn" \
+    >/dev/null 2>&1; then
+  fail "启动验证必须拒绝非整数 stat 输出"
+fi
+if PATH="$mtime_path" AEGIS_TEST_UNAME="$fixture_host" \
+  AEGIS_TEST_MTIME_FILE="$fixture_binary" AEGIS_TEST_STAT_EXIT=73 \
+  verify_runnable_browser_output \
+    "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn" \
+    >/dev/null 2>&1; then
+  fail "启动验证必须拒绝 stat 失败"
+fi
+
+mv "$fixture_src/.git" "$fixture_src/.git.saved"
+if verify_runnable_browser_output \
+  "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn" \
+  >/dev/null 2>&1; then
+  mv "$fixture_src/.git.saved" "$fixture_src/.git"
+  fail "启动验证必须拒绝缺失的 Chromium HEAD 时间"
+fi
+mv "$fixture_src/.git.saved" "$fixture_src/.git"
 
 # 实际调用顶层入口，防止 pnpm 仅列出脚本却以 0 退出。
 launch_profile="$fixture_root/launch-profile"
