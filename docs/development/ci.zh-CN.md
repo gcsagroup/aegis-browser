@@ -32,6 +32,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 | Bash / PowerShell | 独立 Linux kcov 与 Windows Pester required jobs | 只代表列明脚本的行为/行覆盖；macOS 专属 shell 分支和真实 Windows UI 仍按报告列为未测。 |
 | Java | Android instrumentation | 专用 emulator CI 另行串行接入；在该结果出现前保持 `SEPARATE_FOLLOW_UP`。 |
 
+产品交付仍以 macOS 为第一优先级；`ios-coverage` 只验证仓库中既有 iOS 代码，不改变产品路线图或平台排程。
+
 HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆盖率。native 分类仍可对未知产品路径给出 `REVIEW_REQUIRED`；本质量工作不会把它改成 `NOT_APPLICABLE`。
 
 ## Codacy Production 准备状态
@@ -46,7 +48,7 @@ HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆
 
 ## PR、main 与证据身份
 
-`.github/workflows/quality.yml` 对所有目标为 `main` 的 PR（含 Draft）和 `main` push 运行基础门；普通开发分支不重复执行 push 全量门。固定检查名是 `quality-gate`。它仅在 `quality` 明确为 `success` 时成功，failure、cancelled、skipped、timeout 或缺失均不得放行。
+`.github/workflows/quality.yml` 对所有目标为 `main` 的 PR（含 Draft）和 `main` push 运行基础门；普通开发分支不重复执行 push 全量门。固定汇总检查名是 `quality-gate`。它仅在 `quality`、`ios-coverage`、`shell-coverage`、`powershell-coverage` 四个必需 job 都明确为 `success` 时成功；failure、cancelled、skipped、timeout 或缺失均不得放行。
 
 报告区分四种身份：
 
@@ -63,7 +65,7 @@ PR 检查测试 M；main push 检查 S。协调者必须从 GitHub API 回读最
 
 首次 CI PR 在保护尚不存在时按分步方式初始化：
 
-1. 本地最终 HEAD 全量通过，并让 Draft PR 的真实托管 `quality` 与 `quality-gate` 成功。
+1. 本地最终 HEAD 全量通过，并让 Draft PR 的四个必需执行 job 与 `quality-gate` 全部成功。
 2. 保存仓库合并设置、main 保护与规则集快照；记录实际 check 名和 GitHub Actions 来源。
 3. 增量启用 PR 必需、严格 base 同步、`quality-gate` 必需、禁止强推/删除以及管理员不可绕过；保留任何更严格旧设置。
 4. 回读设置，确认管理员账号和合并身份不在 bypass 列表。套餐或 API 拒绝时保持阻塞，不关闭必需检查或使用管理员绕过。

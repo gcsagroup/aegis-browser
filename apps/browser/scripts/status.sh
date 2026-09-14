@@ -47,10 +47,6 @@ sha256_file() {
   fi
 }
 
-file_mtime() {
-  stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null
-}
-
 read_patch_header_sha() {
   awk 'NR == 1 && $1 == "From" && $2 ~ /^[0-9a-f]{40}$/ { print $2 }' "$1"
 }
@@ -246,7 +242,7 @@ check_freshness() {
   local args_template="$3"
   local artifact_epoch head_epoch newer_input
 
-  artifact_epoch="$(file_mtime "$artifact" || true)"
+  artifact_epoch="$(portable_file_mtime "$artifact" || true)"
   head_epoch="$(git -C "$SRC" show -s --format=%ct HEAD 2>/dev/null || true)"
   if [[ -z "$artifact_epoch" ]]; then
     fail "$label 无法读取修改时间：$artifact"

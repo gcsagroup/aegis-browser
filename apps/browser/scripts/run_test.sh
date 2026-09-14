@@ -33,6 +33,58 @@ fixture_src="$CHROMIUM_ROOT/src"
 fixture_out="$fixture_src/out/Test"
 mkdir -p "$fixture_out"
 
+mtime_tools="$fixture_root/mtime-tools"
+mtime_input="$fixture_root/mtime-input"
+mkdir -p "$mtime_tools"
+touch "$mtime_input"
+cat > "$mtime_tools/uname" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${AEGIS_TEST_UNAME:?}"
+EOF
+cat > "$mtime_tools/stat" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${AEGIS_TEST_STAT_INVALID:-0}" == 1 ]]; then
+  printf '%s\n' 'filesystem information, not an epoch'
+  exit 0
+fi
+case "${AEGIS_TEST_UNAME:?}" in
+  Darwin)
+    [[ "$#" -eq 3 && "$1" == -f && "$2" == %m && "$3" == "$AEGIS_TEST_MTIME_FILE" ]]
+    printf '%s\n' 1700000001
+    ;;
+  Linux)
+    [[ "$#" -eq 3 && "$1" == -c && "$2" == %Y && "$3" == "$AEGIS_TEST_MTIME_FILE" ]]
+    printf '%s\n' 1700000002
+    ;;
+  *) exit 91 ;;
+esac
+EOF
+chmod +x "$mtime_tools/uname" "$mtime_tools/stat"
+mtime_path="$mtime_tools:$PATH"
+darwin_mtime="$(env \
+  PATH="$mtime_path" AEGIS_TEST_UNAME=Darwin AEGIS_TEST_MTIME_FILE="$mtime_input" \
+  bash -c 'source "$1"; portable_file_mtime "$2"' \
+  bash "$SCRIPT_DIR/common.sh" "$mtime_input")"
+[[ "$darwin_mtime" == 1700000001 ]] || fail "BSD stat mtime 参数必须明确"
+linux_mtime="$(env \
+  PATH="$mtime_path" AEGIS_TEST_UNAME=Linux AEGIS_TEST_MTIME_FILE="$mtime_input" \
+  bash -c 'source "$1"; portable_file_mtime "$2"' \
+  bash "$SCRIPT_DIR/common.sh" "$mtime_input")"
+[[ "$linux_mtime" == 1700000002 ]] || fail "GNU stat mtime 参数必须明确"
+if env PATH="$mtime_path" AEGIS_TEST_UNAME=Darwin \
+  AEGIS_TEST_MTIME_FILE="$mtime_input" AEGIS_TEST_STAT_INVALID=1 \
+  bash -c 'source "$1"; portable_file_mtime "$2"' \
+  bash "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
+  fail "非整数 stat 输出必须拒绝"
+fi
+if env PATH="$mtime_path" AEGIS_TEST_UNAME=FreeBSD AEGIS_TEST_MTIME_FILE="$mtime_input" \
+  bash -c 'source "$1"; portable_file_mtime "$2"' \
+  bash "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
+  fail "未知 stat 平台必须拒绝"
+fi
+
 profile_fixture="$fixture_root/profile"
 mkdir -p "$profile_fixture"
 ln -s "fixture-$$" "$profile_fixture/SingletonLock"
