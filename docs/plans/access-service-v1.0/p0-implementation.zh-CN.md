@@ -10,7 +10,7 @@
 
 首切片属于 P0 的可独立执行原生原型基础，不代表 P0 完成。交付生产语言 C++ 的纯路由决策函数、网站协议组完整性验证、无秘密黄金向量和实际原生单元执行结果。TypeScript 仅作共享合同/向量消费，不在网络热路径运行。
 
-当前 main 已有 `AegisServiceFactory`，使用 `ProfileSelections::BuildForRegularAndIncognito()`；不重复迁移单例。当前未找到可用的固定 Chromium 构建绑定，主任务正在确认。Apple clang++ 21 在本机可用，足以独立编译本切片的标准 C++ 实现；不证明 Chromium ABI、GN 集成或真实网络行为。
+当前 main 已有 `AegisServiceFactory`，使用 `ProfileSelections::BuildForRegularAndIncognito()`；不重复迁移单例。开工时尚未找到可用的固定 Chromium 构建绑定，首轮因此使用本机 Apple clang++ 21 独立编译本切片的标准 C++ 实现；该首轮证据不证明 Chromium ABI、GN 集成或真实网络行为。后续固定 checkout 绑定与验证见“首切片实现与当前证据”。
 
 开工时已实际核验外盘 APFS 挂载、工作区可写、约 697 GiB 可用；该容量仅是 2026-09-14 开工记录，不作为长期常量。
 
@@ -82,7 +82,7 @@
 
 必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 Astra high review 审查最终实现和测试；Sol 修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
-P0 剩余：可信归属与 canonicalization、完整规则匹配、同步回调外等待、定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、固定源码构建及真实浏览器路径。当前缺 Chromium 构建绑定，不创建或下载新的大型 checkout，不改固定 App。
+P0 剩余：可信归属与 canonicalization、完整规则匹配、同步回调外等待、定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
 本切片可报告 native_unit=PASS（实际执行后）、合同子项通过；对应 A76/A108/A113/A115/A116 等只记录所覆盖的纯决策子场景，整行仍 partial/NOT_RUN，G0 仍 NOT_RUN 或明确环境 BLOCKED。P0 不因本切片通过而结束，运行/性能/部署/分发状态不提升。
 
@@ -98,7 +98,18 @@ P0 剩余：可信归属与 canonicalization、完整规则匹配、同步回调
 - `pnpm --filter @gcsa-aegis/core exec vitest run src/access/route-planner-vectors.test.ts`（pnpm 9.15.0）：1 个测试 PASS，证明 TypeScript 可读取共享向量并完成结构检查；没有 TypeScript 路由实现，因此不将它报告为 TS/C++ 行为对照。
 - `0114-feat-aegis-add-access-route-planning-contract.patch` 在临时 Git 仓库从空基线应用成功，只有新增 `components/aegis_access/` 路径，且与 overlay 逐字一致；本次核验的 patch SHA-256 为 `256d72ba00b4399f2bba0bc04043998cda4dbb5afa8d0022555966e0cbd95346`。
 
-仓库 `test:scripts` 已接入原生 runner；GN 提供独立 `//components/aegis_access:aegis_access_unittests` 与向量生成 action。当前没有固定 Chromium checkout 构建绑定，因此未运行 GN 生成、Chromium 编译、Network Service 接线或浏览器网络用例，不把本机 clang PASS 报告为 GN、G0、A76/A108/A113/A115/A116 整行或真实网络 PASS。最终提交 SHA、全仓质量结果及独立审查结论由主任务在停止修改后补录。
+仓库 `test:scripts` 已接入原生 runner 和 GN 接线回归；GN 提供独立 `//components/aegis_access:aegis_access_unittests` 与向量生成 action。首次在已应用 114+2 补丁的 Chromium 151 精确 checkout 生成 `out/AegisLocalDev` 时，`gn gen` 成功生成 31,692 个目标，但该独立 BUILD 文件没有从根图可达，`gn desc` 返回 `matches no targets`。修复使用 Chromium 根 `BUILD.gn` 明确提供的 `root_extra_deps`：仅在产品开发配置 `apps/browser/args/aegis.gn` 把该 test 接入 test-only `gn_all`，未加入 release args，也未让 `chrome` 依赖测试可执行文件。`0114` 仍只添加 11 个 `components/aegis_access/` 路径，源码补丁和 `series` 字节未变；新增接线属于仓库产品 GN args。
+
+本次验证的已打补丁 Chromium 源码身份为 commit `9727517827d72fe07f0237b181188457ad1de264`、tree `e7cd873e136fd1258cfe0c0fd4f6536077f3a9e3`；嵌套 V8 身份为 commit `7d57cd02dbfbd275f757206ac54ca63310e54fa6`、tree `5a6be89cfa0c35d8eb6ee81aec3cb8100780f7e9`。
+
+修复后实际证据：
+
+- `gn gen out/AegisLocalDev`：PASS，生成 31,696 个目标、读取 4,830 个文件；`root_extra_deps` 的当前值为 `//components/aegis_access:aegis_access_unittests`。
+- `gn desc out/AegisLocalDev //components/aegis_access:aegis_access_unittests outputs`：返回 `//out/AegisLocalDev/aegis_access_unittests`，确认目标已在正常 `aegis.gn` 图中可发现。
+- `gn path out/AegisLocalDev //chrome:chrome //components/aegis_access:aegis_access_unittests`：`No non-data paths found`，确认生产 Chrome 目标没有链接该测试。
+- `bash apps/browser/scripts/aegis-access-gn-wiring_test.sh` 与原生 487 次断言检查均 PASS；`aegis.gn` SHA-256 为 `4daf1f62b105d8b7cff80a62cef8a0ae2742973b654173de040f13c0d6b83886`，`series` 仍为 `fbc6c99de7eb2c0e2e4abda2179af4e9671fce1dc1cc79659475e8292a4fb1c0`，`0114` 仍为 `256d72ba00b4399f2bba0bc04043998cda4dbb5afa8d0022555966e0cbd95346`。
+
+独立目标构建最初被系统 Python 3.9 的工具链环境阻止；改用 hooks 固定的 CPython 3.11.9 后，Ninja 首次构建 exit 0，末尾为 `[3405/3405] LINK ./aegis_access_unittests`。执行 `out/AegisLocalDev/aegis_access_unittests` exit 0：实际运行 `AccessRoutePlannerTest.SharedRoutePlannerContract` 与 `SiteProxyRuleGroupTest.CompleteAtomicGroupContract` 两个 GTest，输出 `SUCCESS: all tests passed.`；随后同目标增量构建 exit 0，输出 `ninja: no work to do.`。这些结果把本切片证据提升为固定 Chromium 151 GN 独立目标 build/runtime PASS。Network Service 接线、完整 Chrome 构建和浏览器网络用例仍未执行，因此 G0、A76/A108/A113/A115/A116 整行和真实网络仍不能报告 PASS。最终仓库提交 SHA、全仓质量结果及独立审查结论由主任务在停止修改后补录。
 
 ## 回滚
 

@@ -14,7 +14,7 @@ Patches in this directory are applied on top of the pinned Chromium commit
 
 ## Current local patch series
 
-The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-, 67-, and 95-patch records are retained only as historical snapshots. The current integrated source contains **108 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0105 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, bounded recovery, browser-bound tab/document capabilities, correct product identity, off-UI-sequence persistence, deterministic teardown, and assertion-safe rate-limit handling. Patches 0079–0095 replay to Chromium source commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patches 0096–0101 produce `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`). Artifact qualification remains platform-specific and requires acceptance evidence for that exact source.
+The status “in series” means only that the patch file is listed in the current local `series`; it does not mean that the patch has landed upstream, passed release gates, or is publishable. The 49-, 67-, and 95-patch records are retained only as historical snapshots. The current integrated source contains **114 Chromium patches plus 2 nested V8 patches**: 0057–0065 contain the original Browser Agent integration, 0066–0067 contain Settings/update and visual branding, and 0068–0108 replace and harden the v1 execution path with the Browser Agent v2 runtime, cross-platform entry points, scheduled automation, named-site routing, profile isolation, bounded recovery, browser-bound tab/document capabilities, correct product identity, off-UI-sequence persistence, deterministic teardown, and assertion-safe rate-limit handling. Patches 0109–0113 add and harden GitHub browser updates and product status/copy; patch 0114 adds the access-route planning contract. Patches 0079–0095 replay to Chromium source commit `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patches 0096–0101 produce `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`). Artifact qualification remains platform-specific and requires acceptance evidence for that exact source.
 
 | ID | Intent | Status |
 |----|--------|--------|
@@ -126,6 +126,12 @@ The status “in series” means only that the patch file is listed in the curre
 | 0106 | Use cached UI locale to avoid blocking Windows UI threads; add native browser regression tests | in series |
 | 0107 | Restore enabled Agent monitors at Profile startup | in series |
 | 0108 | Synchronize verified runtime, security text, monitoring and summary fixes | in series |
+| 0109 | Add GitHub browser update discovery and package download | in series |
+| 0110 | Preserve link resource limits used by local acceptance builds | in series |
+| 0111 | Finish update-package security checks after the page closes | in series |
+| 0112 | Fix GitHub updater Chromium style and bump Ver 1.1 (003) | in series |
+| 0113 | Correct Settings copy and product status, with expanded translations | in series |
+| 0114 | Add the native access-route planning and site-group contract | in series |
 
 Patches 0103–0105 replay exactly from the 0102 baseline to source tree `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb` of commit `1e1341b51e3254d4638bc1917b140f30d4c1e9d7`. Real platform acceptance remains a separate gate.
 
