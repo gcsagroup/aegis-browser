@@ -1,0 +1,29 @@
+# Copyright 2026 GCSA
+# Intended path: chrome/browser/aegis/access/BUILD.gn
+
+import("//testing/test.gni")
+
+source_set("access_rule_store") {
+  sources = [
+    "access_rule_store.cc",
+    "access_rule_store.h",
+  ]
+  deps = [
+    "//base",
+    "//components/aegis_access",
+    "//sql",
+  ]
+}
+
+test("access_rule_store_unittests") {
+  sources = [ "access_rule_store_unittest.cc" ]
+  deps = [
+    ":access_rule_store",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//components/aegis_access",
+    "//sql",
+    "//testing/gtest",
+    "//url",
+  ]
+}
