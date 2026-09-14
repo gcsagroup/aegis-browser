@@ -533,7 +533,10 @@ test('quality entrypoint returns nonzero and writes FAIL when the test command f
   const result = run(process.execPath, [
     join(cwd, 'scripts/ci/run-quality.mjs'), '--scope', 'full', '--base', base,
     '--report-dir', '.artifacts/ci/failure',
-  ], {cwd, env: {PATH: `${join(cwd, 'fake-bin')}:${process.env.PATH}`}});
+  ], {cwd, env: {
+    GITHUB_ACTIONS: 'false',
+    PATH: `${join(cwd, 'fake-bin')}:${process.env.PATH}`,
+  }});
   assert.notEqual(result.status, 0);
   assert.equal(existsSync(join(reportDirectory, 'report.json')), true, `${result.stdout}\n${result.stderr}`);
   const report = JSON.parse(readFileSync(join(reportDirectory, 'report.json'), 'utf8'));

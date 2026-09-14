@@ -120,8 +120,13 @@ kcov_binary_sha256="$(sha256sum "$kcov_bin" | awk '{print $1}')"
 BROWSER_SCRIPTS="$REPO_ROOT/apps/browser/scripts"
 FIXTURE_DIR="$SCRIPT_DIR/platform-tests"
 fixture_output="$work_dir/fixture-coverage"
+[[ -f "$FIXTURE_DIR/kcov-parent-fixture.sh" && ! -x "$FIXTURE_DIR/kcov-parent-fixture.sh" ]] || {
+  printf '%s\n' 'kcov entrypoint fixture must remain a non-executable regular file' >&2
+  exit 1
+}
 "$kcov_bin" \
   --include-path="$FIXTURE_DIR" \
+  --bash-parser=/bin/bash \
   --bash-parse-files-in-dir="$FIXTURE_DIR" \
   --bash-handle-sh-invocation \
   "$fixture_output" "$FIXTURE_DIR/kcov-parent-fixture.sh" >/dev/null
@@ -172,8 +177,8 @@ test_results_file="$work_dir/test-results.txt"
 : > "$test_results_file"
 for test_name in "${tests[@]}"; do
   test_path="$BROWSER_SCRIPTS/$test_name"
-  [[ -x "$test_path" ]] || {
-    printf 'Coverage test is missing or not executable: %s\n' "$test_path" >&2
+  [[ -f "$test_path" ]] || {
+    printf 'Coverage test is missing or not a regular file: %s\n' "$test_path" >&2
     exit 1
   }
   output="$work_dir/runs/${test_name%.sh}"
@@ -182,6 +187,7 @@ for test_name in "${tests[@]}"; do
   "$kcov_bin" \
     --include-path="$BROWSER_SCRIPTS" \
     --exclude-pattern=_test.sh \
+    --bash-parser=/bin/bash \
     --bash-parse-files-in-dir="$BROWSER_SCRIPTS" \
     --bash-handle-sh-invocation \
     "$output" "$test_path"
