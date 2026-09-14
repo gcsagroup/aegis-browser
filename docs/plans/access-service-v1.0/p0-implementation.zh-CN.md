@@ -121,15 +121,17 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 
 - 首次引入 `//net` 依赖时直接 Ninja 先因系统 Python 3.9 无法解析工具脚本的联合类型语法而失败；改为 checkout 已有 CPython 3.11.9 后继续构建成功。这是工具链环境失败，不是产品测试失败。
 - `buildtools/mac/gn gen out/AegisLocalDev`：PASS，生成 31,697 个目标、读取 4,830 个文件。
-- `third_party/ninja/ninja -C out/AegisLocalDev aegis_access_unittests`：PASS；新 Chromium 源码提交 `0bb6cfc2e7` 生成 0115 顺序补丁。
+- `third_party/ninja/ninja -C out/AegisLocalDev aegis_access_unittests`：PASS；初版 Chromium 源码提交为 `0bb6cfc2e7`，独立审查修正后以等价压缩提交 `83ff75c84f7425b79212c30425b329fe60e0ecd3` 重新生成 0115 顺序补丁。
 - `out/AegisLocalDev/aegis_access_unittests --gtest_color=no`：21 个 GTest PASS，包含原 42 条路由向量/网站组合同、5 组请求规范化测试、14 条共享匹配向量及补充边界回归。
 - `packages/core/node_modules/.bin/vitest run packages/core/src/access/policy-matcher-vectors.test.ts packages/core/src/access/route-planner-vectors.test.ts`：2 文件、2 测试 PASS。首次 pnpm 包装命令被 pnpm 10 的 `verify-deps-before-run=install` 默认行为尝试更新依赖，并因未批准 esbuild build script 中止；未批准脚本，也未保留它对 workspace 配置的建议修改。随后直接调用已安装的 Vitest 二进制确认定向用例。
-- `0115-feat-aegis-add-trusted-policy-context-matching.patch` 从 0114 后的父提交应用成功，应用结果与 overlay 逐文件一致；补丁 SHA-256 为 `3bfc096122a74be5d05bd37b57ec1c38685e5fe7e42c07401efa62ec0bc21904`。
-- `CHROMIUM_ROOT=/Volumes/ExternalSSD/repositories/aegis-chromium-151 bash apps/browser/scripts/status.sh` 确认 115 个顶层补丁的稳定 patch-id、checkout HEAD `0bb6cfc2e79b00989e3a4507917d00ec683152ff`、overlay 等价及 2 个 V8 补丁均匹配；整体命令仍 FAIL，因为开发目录缺少完整 `GCSA Aegis.app` 可执行文件，Release/Android 也未构建。该状态不提升完整浏览器门槛。
+- `0115-feat-aegis-add-trusted-policy-context-matching.patch` 从 0114 后的父提交应用成功，应用结果与 overlay 逐文件一致；审查修正后的补丁 SHA-256 为 `cdcd077b4e1b53b81b315ca2fa9b7bd768508fce8e24495c93fa45d2eeaab4c8`。
+- `CHROMIUM_ROOT=/Volumes/ExternalSSD/repositories/aegis-chromium-151 bash apps/browser/scripts/status.sh` 确认 115 个顶层补丁的稳定 patch-id、checkout HEAD `83ff75c84f7425b79212c30425b329fe60e0ecd3`、overlay 等价及 2 个 V8 补丁均匹配；整体命令仍 exit 1，因为开发目录缺少完整 `GCSA Aegis.app` 可执行文件，Release/Android 也未构建。该状态不提升完整浏览器门槛。
 
 仓库全量快速门禁随后以 `pnpm_config_verify_deps_before_run=false pnpm run quality:fast` 执行 PASS。该显式配置只关闭运行脚本前的隐式依赖安装，不跳过 lint、typecheck、test、browser scripts、Agent UI、Android target/UI、model relay、仓库合同或 build：core 共 28 个文件、170 个测试 PASS；browser 原生 runner 完成 487 次断言检查；GN 接线、脚本 fixture、Android 目标 38 项、Android UI 13 项、model relay 22 项、合同检查和两段 tsup 构建均通过。工作树没有修改 `package.json`、`pnpm-lock.yaml` 或 `pnpm-workspace.yaml`。
 
-这些结果仅证明固定 Chromium API 上的规范化与纯匹配决策可编译、可运行，以及仓库快速门禁通过。0115 尚需个人 Fork PR、独立 review 与同一最终 HEAD 的 hosted CI；Network Service 派发、等待/取消、连接复用、真实 HTTP/WS、Xray、企业策略、性能及 DPI 均未执行，G0 与 A76/A108/A113/A115/A116/A117/A118 整行仍不是 PASS。
+独立 Astra high review 在个人 Fork PR #3 的 `a3d2fb0f36bd2c01f21e8b61235feb8f46681082` 上隔离复现两个阻塞：根 host 同时命中精确规则和 `includeSubdomains=true` 后缀规则时，旧实现按请求字符串相等误把后缀规则标成 exact；未知 `RequestAttributionKind` 整数值会穿过无 `default` 的 switch 并生成 context。修复把 exact 定义绑定到规则类型 `includeSubdomains=false`，并对未知枚举明确返回 `invalid_attribution` 且无 context；同一 GTest 补充根域名下后缀 selector 更窄/相同以及正反规则排列的回归，互斥 metadata 和异常枚举均检查无 context。修复后的固定 Chromium 目标重新编译 4 个对象并链接成功，21 个 GTest 全部 PASS；0115 也已从 0114 父提交重新应用并与 overlay 逐文件一致。原 `a3d2fb0` 保留，仓库修复使用后续独立提交，供同一 reviewer 在新 HEAD 复审。
+
+这些结果仅证明固定 Chromium API 上的规范化与纯匹配决策可编译、可运行，以及仓库快速门禁通过。PR #3 尚需修复 HEAD 的独立复审与 hosted CI；Network Service 派发、等待/取消、连接复用、真实 HTTP/WS、Xray、企业策略、性能及 DPI 均未执行，G0 与 A76/A108/A113/A115/A116/A117/A118 整行仍不是 PASS。
 
 ## 回滚
 

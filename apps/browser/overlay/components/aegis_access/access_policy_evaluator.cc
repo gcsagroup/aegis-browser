@@ -290,9 +290,11 @@ std::vector<Candidate> MatchingCandidates(
         !Contains(rule.ports, request.port())) {
       continue;
     }
-    result.push_back(Candidate{std::cref(rule),
-                               request.exact_host() == rule.destination_host,
-                               HostLabelCount(rule.destination_host)});
+    result.push_back(
+        Candidate{std::cref(rule),
+                  !rule.include_subdomains &&
+                      request.exact_host() == rule.destination_host,
+                  HostLabelCount(rule.destination_host)});
   }
   return result;
 }

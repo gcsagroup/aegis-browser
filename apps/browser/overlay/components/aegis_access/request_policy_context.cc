@@ -154,6 +154,8 @@ RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
       break;
     case RequestAttributionKind::kInvalid:
       return Error(RequestContextError::kInvalidAttribution);
+    default:
+      return Error(RequestContextError::kInvalidAttribution);
   }
 
   const std::string registrable_domain =

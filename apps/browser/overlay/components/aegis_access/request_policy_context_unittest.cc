@@ -98,10 +98,19 @@ TEST(RequestPolicyContextTest, RejectsUntrustedOrAmbiguousShapes) {
 
   metadata = DocumentMetadata(GURL("https://top.example/"));
   metadata.pending_navigation_token = "unexpected";
-  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
-                                             GURL("https://target.example/"))
-                .error,
+  const RequestPolicyContextResult ambiguous = CanonicalizeBrowserOwnedRequest(
+      metadata, GURL("https://target.example/"));
+  EXPECT_EQ(ambiguous.error, RequestContextError::kInvalidAttribution);
+  EXPECT_FALSE(ambiguous.context.has_value());
+
+  metadata = DocumentMetadata(GURL("https://top.example/"));
+  metadata.attribution_kind = static_cast<RequestAttributionKind>(99);
+  const RequestPolicyContextResult unknown_attribution =
+      CanonicalizeBrowserOwnedRequest(metadata,
+                                      GURL("https://target.example/"));
+  EXPECT_EQ(unknown_attribution.error,
             RequestContextError::kInvalidAttribution);
+  EXPECT_FALSE(unknown_attribution.context.has_value());
 
   metadata = DocumentMetadata(GURL("data:text/plain,opaque"));
   EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,

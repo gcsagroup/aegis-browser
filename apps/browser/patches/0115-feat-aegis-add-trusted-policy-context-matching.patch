@@ -1,19 +1,19 @@
-From 0bb6cfc2e79b00989e3a4507917d00ec683152ff Mon Sep 17 00:00:00 2001
+From 83ff75c84f7425b79212c30425b329fe60e0ecd3 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
-Date: Mon, 14 Sep 2026 15:18:18 +0800
+Date: Mon, 14 Sep 2026 15:38:14 +0800
 Subject: [PATCH] feat(aegis): add trusted policy context matching
 
 ---
  components/aegis_access/BUILD.gn              |  19 +
- .../aegis_access/access_policy_evaluator.cc   | 414 ++++++++++++++++++
+ .../aegis_access/access_policy_evaluator.cc   | 416 ++++++++++++++++++
  .../aegis_access/access_policy_evaluator.h    |  83 ++++
- .../access_policy_evaluator_unittest.cc       | 295 +++++++++++++
+ .../access_policy_evaluator_unittest.cc       | 326 ++++++++++++++
  .../generate_policy_matcher_vectors.py        | 240 ++++++++++
- .../aegis_access/request_policy_context.cc    | 173 ++++++++
+ .../aegis_access/request_policy_context.cc    | 175 ++++++++
  .../aegis_access/request_policy_context.h     | 123 ++++++
- .../request_policy_context_unittest.cc        | 138 ++++++
+ .../request_policy_context_unittest.cc        | 147 +++++++
  .../testdata/policy_matcher_vectors.json      | 124 ++++++
- 9 files changed, 1609 insertions(+)
+ 9 files changed, 1653 insertions(+)
  create mode 100644 components/aegis_access/access_policy_evaluator.cc
  create mode 100644 components/aegis_access/access_policy_evaluator.h
  create mode 100644 components/aegis_access/access_policy_evaluator_unittest.cc
@@ -74,10 +74,10 @@ index e0f22ed4fc..75f24a0972 100644
    ]
 diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
 new file mode 100644
-index 0000000000..d5d8f064e2
+index 0000000000..44b2969cf2
 --- /dev/null
 +++ b/components/aegis_access/access_policy_evaluator.cc
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,416 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/access_policy_evaluator.h"
@@ -370,9 +370,11 @@ index 0000000000..d5d8f064e2
 +        !Contains(rule.ports, request.port())) {
 +      continue;
 +    }
-+    result.push_back(Candidate{std::cref(rule),
-+                               request.exact_host() == rule.destination_host,
-+                               HostLabelCount(rule.destination_host)});
++    result.push_back(
++        Candidate{std::cref(rule),
++                  !rule.include_subdomains &&
++                      request.exact_host() == rule.destination_host,
++                  HostLabelCount(rule.destination_host)});
 +  }
 +  return result;
 +}
@@ -583,10 +585,10 @@ index 0000000000..46bf6e5cce
 +#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_POLICY_EVALUATOR_H_
 diff --git a/components/aegis_access/access_policy_evaluator_unittest.cc b/components/aegis_access/access_policy_evaluator_unittest.cc
 new file mode 100644
-index 0000000000..ae7c55bc6f
+index 0000000000..5cdce01467
 --- /dev/null
 +++ b/components/aegis_access/access_policy_evaluator_unittest.cc
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,326 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/access_policy_evaluator.h"
@@ -719,19 +721,50 @@ index 0000000000..ae7c55bc6f
 +}
 +
 +TEST(AccessPolicyEvaluatorTest, ExactHostBeatsExplicitSuffix) {
-+  AccessPolicyRule suffix = Rule("suffix", PolicyScope::kSite,
-+                                 "example.test", AccessMode::kReject);
++  AccessPolicyRule suffix =
++      Rule("suffix", PolicyScope::kSite, "example.test", AccessMode::kReject);
 +  suffix.include_subdomains = true;
-+  AccessPolicyRule exact = Rule("exact", PolicyScope::kSite,
-+                                "cdn.example.test", AccessMode::kDirect);
-+  ExpectMatch(EvaluateAccessPolicy(DocumentContext(),
-+                                   Snapshot({suffix, exact})),
-+              "exact", PolicyScope::kSite, AccessMode::kDirect);
++  AccessPolicyRule exact = Rule("exact", PolicyScope::kSite, "cdn.example.test",
++                                AccessMode::kDirect);
++  ExpectMatch(
++      EvaluateAccessPolicy(DocumentContext(), Snapshot({suffix, exact})),
++      "exact", PolicyScope::kSite, AccessMode::kDirect);
++
++  AccessPolicyRule exact_root = Rule("exact-root", PolicyScope::kProfile,
++                                     "example.test", AccessMode::kReject);
++  AccessPolicyRule narrower_suffix =
++      Rule("narrower-suffix", PolicyScope::kProfile, "example.test",
++           AccessMode::kDirect);
++  narrower_suffix.include_subdomains = true;
++  narrower_suffix.schemes = {RequestScheme::kHttps};
++  narrower_suffix.ports = RulePortSelector{PortScope::kExplicitSubset, {443}};
++
++  for (const std::vector<AccessPolicyRule>& rules :
++       {std::vector<AccessPolicyRule>{exact_root, narrower_suffix},
++        std::vector<AccessPolicyRule>{narrower_suffix, exact_root}}) {
++    ExpectMatch(EvaluateAccessPolicy(
++                    ProfileOnlyContext("https://example.test/resource"),
++                    Snapshot(rules)),
++                "exact-root", PolicyScope::kProfile, AccessMode::kReject);
++  }
++
++  AccessPolicyRule same_selector_suffix = narrower_suffix;
++  same_selector_suffix.rule_id = "same-selector-suffix";
++  same_selector_suffix.schemes = exact_root.schemes;
++  same_selector_suffix.ports = exact_root.ports;
++  for (const std::vector<AccessPolicyRule>& rules :
++       {std::vector<AccessPolicyRule>{exact_root, same_selector_suffix},
++        std::vector<AccessPolicyRule>{same_selector_suffix, exact_root}}) {
++    ExpectMatch(EvaluateAccessPolicy(
++                    ProfileOnlyContext("https://example.test/resource"),
++                    Snapshot(rules)),
++                "exact-root", PolicyScope::kProfile, AccessMode::kReject);
++  }
 +}
 +
 +TEST(AccessPolicyEvaluatorTest, LongestDnsLabelSuffixWins) {
-+  AccessPolicyRule broad = Rule("broad", PolicyScope::kSite,
-+                                "example.test", AccessMode::kReject);
++  AccessPolicyRule broad =
++      Rule("broad", PolicyScope::kSite, "example.test", AccessMode::kReject);
 +  broad.include_subdomains = true;
 +  AccessPolicyRule narrow = Rule("narrow", PolicyScope::kSite,
 +                                 "cdn.example.test", AccessMode::kProxy);
@@ -1130,10 +1163,10 @@ index 0000000000..1d8bd624f0
 +    main()
 diff --git a/components/aegis_access/request_policy_context.cc b/components/aegis_access/request_policy_context.cc
 new file mode 100644
-index 0000000000..fc2b357679
+index 0000000000..cfa197b352
 --- /dev/null
 +++ b/components/aegis_access/request_policy_context.cc
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,175 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/request_policy_context.h"
@@ -1290,6 +1323,8 @@ index 0000000000..fc2b357679
 +      break;
 +    case RequestAttributionKind::kInvalid:
 +      return Error(RequestContextError::kInvalidAttribution);
++    default:
++      return Error(RequestContextError::kInvalidAttribution);
 +  }
 +
 +  const std::string registrable_domain =
@@ -1438,10 +1473,10 @@ index 0000000000..6176bed346
 +#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_POLICY_CONTEXT_H_
 diff --git a/components/aegis_access/request_policy_context_unittest.cc b/components/aegis_access/request_policy_context_unittest.cc
 new file mode 100644
-index 0000000000..6dfee618b1
+index 0000000000..70ea53256a
 --- /dev/null
 +++ b/components/aegis_access/request_policy_context_unittest.cc
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,147 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/request_policy_context.h"
@@ -1542,10 +1577,19 @@ index 0000000000..6dfee618b1
 +
 +  metadata = DocumentMetadata(GURL("https://top.example/"));
 +  metadata.pending_navigation_token = "unexpected";
-+  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
-+                                             GURL("https://target.example/"))
-+                .error,
++  const RequestPolicyContextResult ambiguous = CanonicalizeBrowserOwnedRequest(
++      metadata, GURL("https://target.example/"));
++  EXPECT_EQ(ambiguous.error, RequestContextError::kInvalidAttribution);
++  EXPECT_FALSE(ambiguous.context.has_value());
++
++  metadata = DocumentMetadata(GURL("https://top.example/"));
++  metadata.attribution_kind = static_cast<RequestAttributionKind>(99);
++  const RequestPolicyContextResult unknown_attribution =
++      CanonicalizeBrowserOwnedRequest(metadata,
++                                      GURL("https://target.example/"));
++  EXPECT_EQ(unknown_attribution.error,
 +            RequestContextError::kInvalidAttribution);
++  EXPECT_FALSE(unknown_attribution.context.has_value());
 +
 +  metadata = DocumentMetadata(GURL("data:text/plain,opaque"));
 +  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
@@ -1710,3 +1754,6 @@ index 0000000000..dbaba5e3b1
 +    }
 +  ]
 +}
+-- 
+2.50.1 (Apple Git-155)
+

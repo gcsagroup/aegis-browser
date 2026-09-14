@@ -130,19 +130,50 @@ TEST(AccessPolicyEvaluatorTest, SiteScopeBeatsProfileScope) {
 }
 
 TEST(AccessPolicyEvaluatorTest, ExactHostBeatsExplicitSuffix) {
-  AccessPolicyRule suffix = Rule("suffix", PolicyScope::kSite,
-                                 "example.test", AccessMode::kReject);
+  AccessPolicyRule suffix =
+      Rule("suffix", PolicyScope::kSite, "example.test", AccessMode::kReject);
   suffix.include_subdomains = true;
-  AccessPolicyRule exact = Rule("exact", PolicyScope::kSite,
-                                "cdn.example.test", AccessMode::kDirect);
-  ExpectMatch(EvaluateAccessPolicy(DocumentContext(),
-                                   Snapshot({suffix, exact})),
-              "exact", PolicyScope::kSite, AccessMode::kDirect);
+  AccessPolicyRule exact = Rule("exact", PolicyScope::kSite, "cdn.example.test",
+                                AccessMode::kDirect);
+  ExpectMatch(
+      EvaluateAccessPolicy(DocumentContext(), Snapshot({suffix, exact})),
+      "exact", PolicyScope::kSite, AccessMode::kDirect);
+
+  AccessPolicyRule exact_root = Rule("exact-root", PolicyScope::kProfile,
+                                     "example.test", AccessMode::kReject);
+  AccessPolicyRule narrower_suffix =
+      Rule("narrower-suffix", PolicyScope::kProfile, "example.test",
+           AccessMode::kDirect);
+  narrower_suffix.include_subdomains = true;
+  narrower_suffix.schemes = {RequestScheme::kHttps};
+  narrower_suffix.ports = RulePortSelector{PortScope::kExplicitSubset, {443}};
+
+  for (const std::vector<AccessPolicyRule>& rules :
+       {std::vector<AccessPolicyRule>{exact_root, narrower_suffix},
+        std::vector<AccessPolicyRule>{narrower_suffix, exact_root}}) {
+    ExpectMatch(EvaluateAccessPolicy(
+                    ProfileOnlyContext("https://example.test/resource"),
+                    Snapshot(rules)),
+                "exact-root", PolicyScope::kProfile, AccessMode::kReject);
+  }
+
+  AccessPolicyRule same_selector_suffix = narrower_suffix;
+  same_selector_suffix.rule_id = "same-selector-suffix";
+  same_selector_suffix.schemes = exact_root.schemes;
+  same_selector_suffix.ports = exact_root.ports;
+  for (const std::vector<AccessPolicyRule>& rules :
+       {std::vector<AccessPolicyRule>{exact_root, same_selector_suffix},
+        std::vector<AccessPolicyRule>{same_selector_suffix, exact_root}}) {
+    ExpectMatch(EvaluateAccessPolicy(
+                    ProfileOnlyContext("https://example.test/resource"),
+                    Snapshot(rules)),
+                "exact-root", PolicyScope::kProfile, AccessMode::kReject);
+  }
 }
 
 TEST(AccessPolicyEvaluatorTest, LongestDnsLabelSuffixWins) {
-  AccessPolicyRule broad = Rule("broad", PolicyScope::kSite,
-                                "example.test", AccessMode::kReject);
+  AccessPolicyRule broad =
+      Rule("broad", PolicyScope::kSite, "example.test", AccessMode::kReject);
   broad.include_subdomains = true;
   AccessPolicyRule narrow = Rule("narrow", PolicyScope::kSite,
                                  "cdn.example.test", AccessMode::kProxy);
