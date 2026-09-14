@@ -205,7 +205,7 @@ try {
       swift: {status: 'SEPARATE_REPORTING_WORKFLOW', totals: null, note: 'Product-only xccov runs in the filtered iOS Coverage workflow; it is outside the current Mac quality gate and Codacy conversion remains pending'},
       bash: {status: 'SEPARATE_REQUIRED_JOB', totals: null, note: 'Behavior tests and syntax checks exist; line coverage is produced by the Linux coverage job'},
       powershell: {status: 'SEPARATE_REQUIRED_JOB', totals: null, note: 'Windows Pester coverage runs separately and does not establish UI acceptance'},
-      java: {status: 'SEPARATE_FOLLOW_UP', totals: null, note: 'Android instrumentation coverage requires its dedicated emulator workflow'},
+      java: {status: 'SEPARATE_REPORTING_WORKFLOW', totals: null, note: 'Driver.java instrumentation-helper JaCoCo runs in the dedicated Android Java Coverage workflow; it is outside the Mac quality gate and does not measure browser runtime'},
     },
     nonCodeOrUninstrumented: ['HTML', 'CSS', 'JSON/data', 'GN/GNI'],
   };

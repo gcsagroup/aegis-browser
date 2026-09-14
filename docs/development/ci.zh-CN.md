@@ -30,7 +30,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 | Python | `local-pypi-proxy.py` 与两个 Access vector generators | 固定 coverage.py 隔离 venv；复用 proxy 4 项测试和 native 生成器调用，另有两个拒绝 fixture，combine 后生成 XML/JSON/LCOV/text；两个 prototype worker 未测。 |
 | Swift | `apps/ios` 的 25 个产品 Swift 文件 | 独立 `iOS Coverage` workflow 在双 Simulator 上生成 xccov JSON，状态为 `SEPARATE_REPORTING_WORKFLOW`；它不属于当前 macOS 必需门，也不是实机、签名或发布证据，Codacy 转换仍待办。 |
 | Bash / PowerShell | 独立 Linux kcov 与 Windows Pester required jobs | 只代表列明脚本的行为/行覆盖；macOS 专属 shell 分支和真实 Windows UI 仍按报告列为未测。 |
-| Java | Android instrumentation | 专用 emulator CI 另行串行接入；在该结果出现前保持 `SEPARATE_FOLLOW_UP`。 |
+| Java | `Driver.java` Android instrumentation 验收工具 | 独立 `Android Java Coverage` workflow 在专用 API 36 emulator 上执行六项 fixture 并生成 JaCoCo exec/XML，状态为 `SEPARATE_REPORTING_WORKFLOW`；它不属于 macOS `quality-gate`，也不代表浏览器 Java runtime、真机或发布验收。 |
 
 产品交付仍以 macOS 为第一优先级；`ios-coverage` 只验证仓库中既有 iOS 代码，不改变产品路线图或平台排程。
 
@@ -51,6 +51,8 @@ HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆
 `.github/workflows/quality.yml` 对所有目标为 `main` 的 PR（含 Draft）和 `main` push 运行 macOS 优先基础门；普通开发分支不重复执行 push 全量门。固定汇总检查名是 `quality-gate`。它仅在 `quality`、`shell-coverage`、`powershell-coverage` 三个必需 job 都明确为 `success` 时成功；failure、cancelled、skipped、timeout 或缺失均不得放行。
 
 `.github/workflows/ios-coverage.yml` 是独立报告 workflow。只有 `apps/ios/**`、共享 Agent Contract v1 向量或该 workflow 自身变化的 PR/main push 才自动运行，也可通过 `workflow_dispatch` 手动生成报告。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护只要求 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
+
+`.github/workflows/android-java-coverage.yml` 也是独立报告 workflow。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
 
 报告区分四种身份：
 

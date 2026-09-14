@@ -975,6 +975,82 @@ TEST(AccessRuleStoreTest, InvalidJournalStateNeverLooksCommittedOrMissing) {
   }
 }
 
+TEST(AccessRuleStoreTest, CorruptJournalRevisionUpperBoundFailsClosed) {
+  for (bool with_committed_group : {false, true}) {
+    SCOPED_TRACE(with_committed_group);
+    base::ScopedTempDir temp;
+    ASSERT_TRUE(temp.CreateUniqueTempDir());
+    const AccessStoreBinding binding =
+        AccessRuleStoreTestPeer::Persistent(temp.GetPath());
+    {
+      AccessRuleStore store(binding);
+      ASSERT_EQ(store.Open(), StoreStatus::kValid);
+      if (with_committed_group) {
+        Commit(&store,
+               Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)),
+               1);
+      }
+      Prepare(&store, Mutation("corrupt-revision", AccessMode::kProxy,
+                               with_committed_group ? 1 : 0));
+      ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+          &store, "UPDATE access_mutation_journal SET "
+                  "expected_revision=9223372036854775807 WHERE "
+                  "operation_id='corrupt-revision'"));
+    }
+    AccessRuleStore reopened(binding);
+    ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+    const auto recovery = reopened.LoadRecoveryState();
+    EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
+    EXPECT_FALSE(recovery.value.has_value());
+    EXPECT_EQ(recovery.detail, "invalid_journal_version");
+    const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
+    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
+    EXPECT_FALSE(snapshot.value.has_value());
+  }
+}
+
+TEST(AccessRuleStoreTest, LastRepresentableJournalRevisionRemainsValid) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const AccessStoreBinding binding =
+      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
+  constexpr uint64_t maximum_revision =
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+  PendingMutationRecord last;
+  {
+    AccessRuleStore store(binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kDirect)), 1);
+    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+        &store, "UPDATE access_site_groups SET revision=9223372036854775806"));
+    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+        &store,
+        "UPDATE access_rules SET site_toggle_revision=9223372036854775806,"
+        "row_revision=9223372036854775806"));
+    last = Prepare(&store, Mutation("last-revision", AccessMode::kProxy,
+                                    maximum_revision - 1));
+    EXPECT_EQ(last.target_revision, maximum_revision);
+  }
+  AccessRuleStore reopened(binding);
+  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+  const auto recovery = reopened.LoadRecoveryState();
+  ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
+  ASSERT_TRUE(recovery.value.has_value());
+  ASSERT_EQ(recovery.value->pending.size(), 1u);
+  EXPECT_EQ(recovery.value->pending.front().target_revision, maximum_revision);
+  Commit(&reopened, last, 2);
+  const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
+  ASSERT_EQ(snapshot.status, StoreStatus::kValid);
+  ASSERT_TRUE(snapshot.value.has_value());
+  ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
+  EXPECT_EQ(snapshot.value->site_groups.front().group.revision,
+            maximum_revision);
+  const auto exhausted = reopened.PrepareSiteGroupMutation(
+      Mutation("exhausted", AccessMode::kDirect, maximum_revision));
+  EXPECT_EQ(exhausted.status, StoreStatus::kConflict);
+  EXPECT_FALSE(exhausted.value.has_value());
+}
+
 TEST(AccessRuleStoreTest, UnknownSchemaAndIoErrorsRemainDistinct) {
   base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());

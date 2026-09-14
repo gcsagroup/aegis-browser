@@ -69,6 +69,8 @@ docs/              架構、路線圖、研究映射、產品頁與稽核紀錄
 
 ## 授權
 
+感謝讓 Aegis 成為可能的開源專案維護者與貢獻者。[第三方開源鳴謝](THIRD_PARTY_NOTICES.md)列出了瀏覽器基礎、直接相依套件、可選實驗元件與開發工具。
+
 GCSA 原創原始碼採用 Apache-2.0。Chromium、libtorrent 與其他第三方元件保留各自授權；詳見 [LICENSE](LICENSE) 與[第三方聲明](THIRD_PARTY_NOTICES.md)。
 
 ## 測試

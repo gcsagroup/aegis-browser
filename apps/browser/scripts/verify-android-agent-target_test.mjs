@@ -41,8 +41,10 @@ test('只用打开的 Profile 文件证明目录，不根据参数或缓存推�
 
 test('未知、锁定或灭屏状态不能当作可交互', () => {
   assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_ON'), unlocked);
+  assert.deepEqual(parseKeyguard('KeyguardServiceDelegate\n showing=false\n screenState=2\n interactiveState=2'), unlocked);
   for (const policy of ['', 'showing=false', 'KeyguardServiceDelegate\n showing=true\n screenState=SCREEN_STATE_ON',
-    'KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_OFF']) {
+    'KeyguardServiceDelegate\n showing=false\n screenState=SCREEN_STATE_OFF',
+    'KeyguardServiceDelegate\n showing=false\n screenState=1']) {
     const report = {...good(), keyguard: parseKeyguard(policy)};
     assert.throws(() => verifyTarget(report, hash, profile));
   }

@@ -69,6 +69,8 @@ On 2026-08-28, authorization was granted to synchronize the source repository to
 
 ## License
 
+Thanks to the open-source maintainers and contributors who make Aegis possible. See [third-party acknowledgements](THIRD_PARTY_NOTICES.md) for the browser foundation, direct dependencies, optional experiments, and development tools.
+
 GCSA-authored source is Apache-2.0. Chromium, libtorrent, and other third-party components retain their own licenses; see [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Tests

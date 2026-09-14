@@ -71,6 +71,8 @@ docs/              架构、路线图、研究映射、产品页与审计记录
 
 ## 许可证
 
+感谢让 Aegis 成为可能的开源项目维护者与贡献者。[第三方开源鸣谢](THIRD_PARTY_NOTICES.md)列出了浏览器基础、直接依赖、可选实验组件与开发工具。
+
 GCSA 原创源码采用 Apache-2.0。Chromium、libtorrent 与其他第三方组件保留各自许可证；详见 [LICENSE](LICENSE) 与[第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ## 测试

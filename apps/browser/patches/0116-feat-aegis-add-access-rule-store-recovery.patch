@@ -1,15 +1,15 @@
-From 040e2c777f9ab5856ae937ca69626cc998b39e12 Mon Sep 17 00:00:00 2001
+From f1675637d40fb67ae2e99ca012da780fd98a70d8 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
-Date: Mon, 14 Sep 2026 18:50:48 +0800
+Date: Mon, 14 Sep 2026 20:20:38 +0800
 Subject: [PATCH] feat(aegis): add atomic access rule store recovery
 
 ---
  chrome/browser/aegis/access/BUILD.gn          |   32 +
- .../browser/aegis/access/access_rule_store.cc | 1625 +++++++++++++++++
+ .../browser/aegis/access/access_rule_store.cc | 1627 +++++++++++++++++
  .../browser/aegis/access/access_rule_store.h  |  291 +++
- .../access/access_rule_store_unittest.cc      | 1213 ++++++++++++
+ .../access/access_rule_store_unittest.cc      | 1289 +++++++++++++
  .../histograms/metadata/sql/histograms.xml    |    1 +
- 5 files changed, 3162 insertions(+)
+ 5 files changed, 3240 insertions(+)
  create mode 100644 chrome/browser/aegis/access/BUILD.gn
  create mode 100644 chrome/browser/aegis/access/access_rule_store.cc
  create mode 100644 chrome/browser/aegis/access/access_rule_store.h
@@ -55,10 +55,10 @@ index 0000000000..645480e477
 +}
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
 new file mode 100644
-index 0000000000..5e9cfcf973
+index 0000000000..1bc85cd042
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_rule_store.cc
-@@ -0,0 +1,1625 @@
+@@ -0,0 +1,1627 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_rule_store.h"
@@ -1288,7 +1288,9 @@ index 0000000000..5e9cfcf973
 +  const int64_t created_at_micros = row.ColumnInt64(19);
 +  const int64_t completed_at_micros = row.ColumnInt64(20);
 +  const AccessMode mode = static_cast<AccessMode>(row.ColumnInt(13));
-+  if (expected_revision < 0 || target_revision <= 0 || sequence <= 0 ||
++  if (expected_revision < 0 ||
++      expected_revision == std::numeric_limits<int64_t>::max() ||
++      target_revision <= 0 || sequence <= 0 ||
 +      committed_generation < 0 || target_revision != expected_revision + 1 ||
 +      created_at_micros <= 0 ||
 +      (state == kPrepared &&
@@ -1983,10 +1985,10 @@ index 0000000000..843cebb382
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_RULE_STORE_H_
 diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
 new file mode 100644
-index 0000000000..bbd42e5a9f
+index 0000000000..462fbe4886
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
-@@ -0,0 +1,1213 @@
+@@ -0,0 +1,1289 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_rule_store.h"
@@ -2962,6 +2964,82 @@ index 0000000000..bbd42e5a9f
 +    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
 +    EXPECT_FALSE(snapshot.value.has_value());
 +  }
++}
++
++TEST(AccessRuleStoreTest, CorruptJournalRevisionUpperBoundFailsClosed) {
++  for (bool with_committed_group : {false, true}) {
++    SCOPED_TRACE(with_committed_group);
++    base::ScopedTempDir temp;
++    ASSERT_TRUE(temp.CreateUniqueTempDir());
++    const AccessStoreBinding binding =
++        AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++    {
++      AccessRuleStore store(binding);
++      ASSERT_EQ(store.Open(), StoreStatus::kValid);
++      if (with_committed_group) {
++        Commit(&store,
++               Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)),
++               1);
++      }
++      Prepare(&store, Mutation("corrupt-revision", AccessMode::kProxy,
++                               with_committed_group ? 1 : 0));
++      ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++          &store, "UPDATE access_mutation_journal SET "
++                  "expected_revision=9223372036854775807 WHERE "
++                  "operation_id='corrupt-revision'"));
++    }
++    AccessRuleStore reopened(binding);
++    ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++    const auto recovery = reopened.LoadRecoveryState();
++    EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(recovery.value.has_value());
++    EXPECT_EQ(recovery.detail, "invalid_journal_version");
++    const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
++    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(snapshot.value.has_value());
++  }
++}
++
++TEST(AccessRuleStoreTest, LastRepresentableJournalRevisionRemainsValid) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const AccessStoreBinding binding =
++      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  constexpr uint64_t maximum_revision =
++      static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
++  PendingMutationRecord last;
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kDirect)), 1);
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store, "UPDATE access_site_groups SET revision=9223372036854775806"));
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store,
++        "UPDATE access_rules SET site_toggle_revision=9223372036854775806,"
++        "row_revision=9223372036854775806"));
++    last = Prepare(&store, Mutation("last-revision", AccessMode::kProxy,
++                                    maximum_revision - 1));
++    EXPECT_EQ(last.target_revision, maximum_revision);
++  }
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  const auto recovery = reopened.LoadRecoveryState();
++  ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
++  ASSERT_TRUE(recovery.value.has_value());
++  ASSERT_EQ(recovery.value->pending.size(), 1u);
++  EXPECT_EQ(recovery.value->pending.front().target_revision, maximum_revision);
++  Commit(&reopened, last, 2);
++  const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(snapshot.status, StoreStatus::kValid);
++  ASSERT_TRUE(snapshot.value.has_value());
++  ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
++  EXPECT_EQ(snapshot.value->site_groups.front().group.revision,
++            maximum_revision);
++  const auto exhausted = reopened.PrepareSiteGroupMutation(
++      Mutation("exhausted", AccessMode::kDirect, maximum_revision));
++  EXPECT_EQ(exhausted.status, StoreStatus::kConflict);
++  EXPECT_FALSE(exhausted.value.has_value());
 +}
 +
 +TEST(AccessRuleStoreTest, UnknownSchemaAndIoErrorsRemainDistinct) {

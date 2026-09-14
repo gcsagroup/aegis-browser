@@ -1227,7 +1227,9 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
   const int64_t created_at_micros = row.ColumnInt64(19);
   const int64_t completed_at_micros = row.ColumnInt64(20);
   const AccessMode mode = static_cast<AccessMode>(row.ColumnInt(13));
-  if (expected_revision < 0 || target_revision <= 0 || sequence <= 0 ||
+  if (expected_revision < 0 ||
+      expected_revision == std::numeric_limits<int64_t>::max() ||
+      target_revision <= 0 || sequence <= 0 ||
       committed_generation < 0 || target_revision != expected_revision + 1 ||
       created_at_micros <= 0 ||
       (state == kPrepared &&
