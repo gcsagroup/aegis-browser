@@ -1,0 +1,87 @@
+name: Quality
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Exact ancestor SHA used as the trusted comparison base
+        required: true
+        type: string
+      target_sha:
+        description: Exact SHA selected on main for this diagnostic run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'main' || format('dispatch-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: quality
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 9.15.0
+          run_install: false
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: 3.11.9
+      - name: Run full quality gate
+        env:
+          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
+          CI_EVENT: ${{ github.event_name }}
+          CI_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || inputs.target_sha }}
+          CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+          CI_REF: ${{ github.ref }}
+          CI_TESTED_SHA: ${{ github.sha }}
+          REPORT_DIR: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/ci/run-quality.mjs --scope full --base "$CI_BASE_SHA" --report-dir "$REPORT_DIR"
+      - name: Upload quality evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: quality-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  quality-gate:
+    name: quality-gate
+    if: ${{ always() }}
+    needs:
+      - quality
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Check out gate implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require every mandatory job to succeed
+        env:
+          REQUIRED_RESULTS: '{"quality":"${{ needs.quality.result }}"}'
+        run: node scripts/ci/check-required-results.mjs

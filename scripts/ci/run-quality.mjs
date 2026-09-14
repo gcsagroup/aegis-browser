@@ -1,0 +1,201 @@
+#!/usr/bin/env node
+import {spawn} from 'node:child_process';
+import {mkdirSync, cpSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {join, resolve} from 'node:path';
+import {
+  fail,
+  git,
+  isInside,
+  parseArgs,
+  repoRoot,
+  repositorySlug,
+  resolveCommit,
+  sourceSnapshot,
+} from './common.mjs';
+
+const requiredVersions = {
+  node: '22.23.1',
+  pnpm: '9.15.0',
+  python: '3.11.9',
+};
+
+const {values} = parseArgs(process.argv.slice(2), ['scope', 'base', 'report-dir', 'public-base']);
+if ((values.scope ?? 'full') !== 'full') fail('Only --scope full is supported');
+if (!values.base) fail('--base is required');
+
+const startedAt = new Date().toISOString();
+const defaultDirectory = `.artifacts/ci/local-${startedAt.replace(/[:.]/gu, '-')}`;
+const reportDirectory = resolve(repoRoot, values['report-dir'] ?? defaultDirectory);
+const evidenceRoot = resolve(repoRoot, '.artifacts/ci');
+if (!isInside(evidenceRoot, reportDirectory)) fail(`Report directory must stay under ${evidenceRoot}`);
+mkdirSync(reportDirectory, {recursive: true});
+const logPath = join(reportDirectory, 'run-quality.log');
+const reportPath = join(reportDirectory, 'report.json');
+const checks = [];
+const versions = {};
+let initialSource;
+let finalSource;
+let nativeIntegration = 'UNKNOWN';
+let failure;
+
+function appendLog(message) {
+  writeFileSync(logPath, message, {flag: 'a'});
+}
+
+function commandLabel(command, args) {
+  return [command, ...args].map((part) => (/^[A-Za-z0-9_./:=@+-]+$/u.test(part) ? part : JSON.stringify(part))).join(' ');
+}
+
+async function command(name, executable, args, options = {}) {
+  const check = {name, startedAt: new Date().toISOString(), result: 'RUNNING'};
+  checks.push(check);
+  const label = commandLabel(executable, args);
+  appendLog(`\n$ ${label}\n`);
+  process.stdout.write(`\n[${name}] ${label}\n`);
+  let stdout = '';
+  let stderr = '';
+  const exitCode = await new Promise((resolveExit, reject) => {
+    const child = spawn(executable, args, {
+      cwd: options.cwd ?? repoRoot,
+      env: options.env ?? process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.on('error', reject);
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      appendLog(text);
+      process.stdout.write(text);
+    });
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      appendLog(text);
+      process.stderr.write(text);
+    });
+    child.on('close', resolveExit);
+  });
+  check.exitCode = exitCode;
+  check.finishedAt = new Date().toISOString();
+  check.result = exitCode === 0 ? 'PASS' : 'FAIL';
+  if (exitCode !== 0) throw new Error(`${name} failed with exit code ${exitCode}`);
+  return {stdout, stderr};
+}
+
+async function captureVersion(name, executable, args, expected, pattern = /([0-9]+(?:\.[0-9]+){1,2})/u) {
+  const result = await command(`preflight:${name}`, executable, args);
+  const match = pattern.exec(`${result.stdout}\n${result.stderr}`);
+  if (!match) throw new Error(`Could not parse ${name} version`);
+  versions[name] = match[1];
+  if (expected && versions[name] !== expected) {
+    const check = checks.at(-1);
+    check.result = 'FAIL';
+    check.detail = `expected ${expected}, got ${versions[name]}`;
+    throw new Error(`${name} must be ${expected}, got ${versions[name]}`);
+  }
+}
+
+function writeReport(result) {
+  const currentCommit = (() => {
+    try { return resolveCommit('HEAD'); } catch { return null; }
+  })();
+  const base = (() => {
+    try { return resolveCommit(values.base); } catch { return values.base; }
+  })();
+  const event = process.env.GITHUB_ACTIONS === 'true' ? process.env.CI_EVENT : 'local';
+  const report = {
+    schemaVersion: 1,
+    repository: process.env.GITHUB_REPOSITORY ?? repositorySlug(),
+    event,
+    pullRequest: process.env.CI_PR_NUMBER ? Number(process.env.CI_PR_NUMBER) : null,
+    headSha: process.env.CI_HEAD_SHA ?? currentCommit,
+    baseSha: process.env.CI_BASE_SHA ?? base,
+    testedSha: process.env.CI_TESTED_SHA ?? currentCommit,
+    testedTree: currentCommit ? git(['rev-parse', `${currentCommit}^{tree}`]).trim() : null,
+    runId: process.env.GITHUB_RUN_ID ?? null,
+    runAttempt: process.env.GITHUB_RUN_ATTEMPT ? Number(process.env.GITHUB_RUN_ATTEMPT) : null,
+    scope: 'full',
+    result,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    tools: versions,
+    inputSource: initialSource ?? null,
+    finalSource: finalSource ?? null,
+    sourceStable: Boolean(initialSource && finalSource && initialSource.digest === finalSource.digest && initialSource.files === finalSource.files),
+    nativeIntegration,
+    checks,
+    failure: failure ? {message: failure.message} : null,
+  };
+  const temporary = `${reportPath}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(report, null, 2)}\n`);
+  renameSync(temporary, reportPath);
+}
+
+try {
+  await captureVersion('node', process.execPath, ['--version'], requiredVersions.node, /v([0-9]+(?:\.[0-9]+){2})/u);
+  await captureVersion('pnpm', 'pnpm', ['--version'], requiredVersions.pnpm);
+  await captureVersion('python', 'python3', ['--version'], requiredVersions.python);
+  await captureVersion('git', 'git', ['--version'], null);
+  await captureVersion('ripgrep', 'rg', ['--version'], null);
+  await captureVersion('clang', 'clang++', ['--version'], null);
+  const base = resolveCommit(values.base);
+
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const required = ['CI_EVENT', 'CI_BASE_SHA', 'CI_HEAD_SHA', 'CI_TESTED_SHA', 'CI_REF'];
+    for (const name of required) if (!process.env[name]) throw new Error(`CI metadata is missing ${name}`);
+    await command('ci-identity', process.execPath, [
+      'scripts/ci/verify-ci-identity.mjs',
+      '--event', process.env.CI_EVENT,
+      '--base', process.env.CI_BASE_SHA,
+      '--head', process.env.CI_HEAD_SHA,
+      '--tested', process.env.CI_TESTED_SHA,
+      '--ref', process.env.CI_REF,
+    ]);
+    if (base !== resolveCommit(process.env.CI_BASE_SHA)) throw new Error('--base does not match trusted CI metadata');
+  }
+
+  initialSource = sourceSnapshot();
+  appendLog(`input-source ${JSON.stringify(initialSource)}\n`);
+  await command('install', 'pnpm', ['install', '--frozen-lockfile']);
+  await command('quality:fast', 'pnpm', ['run', 'quality:fast']);
+  await command('access-freeze', process.execPath, ['scripts/ci/check-access-freeze.mjs', '--base', base]);
+
+  const previewDirectory = join(reportDirectory, 'preview-work');
+  rmSync(previewDirectory, {recursive: true, force: true});
+  mkdirSync(previewDirectory, {recursive: true});
+  for (const name of ['interaction-example.html', 'verify-preview.cjs']) {
+    cpSync(join(repoRoot, 'docs/plans/access-service-v1.0', name), join(previewDirectory, name));
+  }
+  const preview = await command('preview', process.execPath, [join(previewDirectory, 'verify-preview.cjs')]);
+  const previewResult = JSON.parse(preview.stdout);
+  if (previewResult.status !== 'PASS' || previewResult.checks?.length !== 13) {
+    throw new Error('Preview verification must report PASS with exactly 13 scenarios');
+  }
+  writeFileSync(join(reportDirectory, 'preview-result.json'), `${JSON.stringify(previewResult, null, 2)}\n`);
+
+  await command('ci-tests', 'pnpm', ['run', 'ci:test']);
+  await command('workflow-validation', 'pnpm', ['run', 'ci:validate-workflow']);
+  if (values['public-base']) {
+    await command('public-export', process.execPath, [
+      'scripts/ci/check-public-diff.mjs', '--base', values['public-base'], '--head', 'HEAD',
+    ]);
+  }
+  const classification = await command('native-classification', process.execPath, [
+    'scripts/ci/classify-native-changes.mjs', '--base', base, '--head', 'HEAD', '--include-worktree',
+  ]);
+  nativeIntegration = JSON.parse(classification.stdout).status;
+  finalSource = sourceSnapshot();
+  if (initialSource.digest !== finalSource.digest || initialSource.files !== finalSource.files) {
+    throw new Error(`Source changed during quality run: ${initialSource.digest}/${initialSource.files} -> ${finalSource.digest}/${finalSource.files}`);
+  }
+  checks.push({name: 'source-stability', result: 'PASS', startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), exitCode: 0});
+  writeReport('PASS');
+  console.log(`Quality gate PASS; report: ${reportPath}`);
+} catch (error) {
+  failure = error;
+  try { finalSource = sourceSnapshot(); } catch {}
+  writeReport('FAIL');
+  console.error(`Quality gate FAIL: ${error.message}`);
+  console.error(`Failure report: ${reportPath}`);
+  process.exitCode = 1;
+}

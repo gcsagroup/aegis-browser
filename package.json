@@ -7,6 +7,10 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "build": "pnpm --filter @gcsa-aegis/core build",
+    "ci:quality": "node ./scripts/ci/run-quality.mjs",
+    "ci:test": "node --test ./scripts/ci/tests/*.test.mjs",
+    "ci:validate-workflow": "node ./scripts/ci/validate-workflow.mjs .github/workflows/quality.yml",
+    "ci:check-public-diff": "node ./scripts/ci/check-public-diff.mjs",
     "quality:fast": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm --filter @gcsa-aegis/browser test:scripts && pnpm --filter @gcsa-aegis/browser test:agent-ui && pnpm --filter @gcsa-aegis/browser test:android-target && pnpm --filter @gcsa-aegis/browser test:android-ui && pnpm --filter @gcsa-aegis/browser test:model-relay && pnpm run contracts:check && pnpm run build",
     "contracts:check": "node ./scripts/check-repo-contracts.mjs",
     "threat-feeds:compile": "pnpm --filter @gcsa-aegis/core compile-threat-feeds",
@@ -40,5 +44,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "yaml": "2.8.1"
   }
 }
