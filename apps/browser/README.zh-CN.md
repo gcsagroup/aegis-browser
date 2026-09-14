@@ -68,7 +68,7 @@ export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-chromium"
 pnpm --filter @gcsa-aegis/browser bootstrap
 
 # 拉取固定 Chromium 源码，需要数十 GB 空间。
-pnpm --filter @gcsa-aegis/browser fetch
+pnpm --filter @gcsa-aegis/browser run fetch
 
 # 按顺序重放 Chromium 和嵌套 V8 补丁。
 pnpm --filter @gcsa-aegis/browser apply-patches

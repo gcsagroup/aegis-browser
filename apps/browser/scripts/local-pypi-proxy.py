@@ -46,6 +46,28 @@ class Handler(BaseHTTPRequestHandler):
 
         self._proxy(path)
 
+    def do_HEAD(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        local_file = self._local_file(path)
+        if local_file is not None:
+            self._send_file(local_file, include_body=False)
+            return
+
+        if path in {"/simple", "/simple/"}:
+            self._send_bytes(
+                self._root_simple_html(),
+                "text/html; charset=utf-8",
+                include_body=False,
+            )
+            return
+
+        m = re.match(r"^/simple/([^/]+)/?$", path)
+        if m:
+            self._send_merged_simple(m.group(1), include_body=False)
+            return
+
+        self._proxy(path, method="HEAD")
+
     def _local_file(self, path: str) -> Path | None:
         rel = path.lstrip("/")
         if not rel or rel.endswith("/"):
@@ -85,16 +107,16 @@ class Handler(BaseHTTPRequestHandler):
                 uniq.append(w)
         return uniq
 
-    def _send_merged_simple(self, pkg: str) -> None:
+    def _send_merged_simple(self, pkg: str, include_body: bool = True) -> None:
         local = self._local_wheels(pkg)
         # requirements 都是精确 pin；本地已有 wheel 时直接返回本地列表，
         # 避免每个包都等上游 simple 超时，把 vpython 安装拖到不可用。
         if local:
-            links = "\n".join(
-                f'<a href="/simple/{pkg}/{w.name}">{w.name}</a><br/>' for w in local
+            self._send_bytes(
+                self._local_simple_html(pkg, local),
+                "text/html; charset=utf-8",
+                include_body=include_body,
             )
-            html = f"<!DOCTYPE html><html><body>\n{links}\n</body></html>\n"
-            self._send_bytes(html.encode(), "text/html; charset=utf-8")
             return
 
         # 本地没有 wheel 才回源；仍优先用更小的 PyPI simple JSON。
@@ -109,11 +131,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if not upstream:
-            links = "\n".join(
-                f'<a href="/simple/{pkg}/{w.name}">{w.name}</a><br/>' for w in local
+            self._send_bytes(
+                self._local_simple_html(pkg, local),
+                "text/html; charset=utf-8",
+                include_body=include_body,
             )
-            html = f"<!DOCTYPE html><html><body>\n{links}\n</body></html>\n"
-            self._send_bytes(html.encode(), "text/html; charset=utf-8")
             return
 
         # Inject absolute local links near the top of <body>
@@ -133,7 +155,18 @@ class Handler(BaseHTTPRequestHandler):
                 html = inject + upstream
         else:
             html = upstream
-        self._send_bytes(html.encode() if isinstance(html, str) else html, "text/html; charset=utf-8")
+        self._send_bytes(
+            html.encode() if isinstance(html, str) else html,
+            "text/html; charset=utf-8",
+            include_body=include_body,
+        )
+
+    def _local_simple_html(self, pkg: str, local: list[Path]) -> bytes:
+        links = "\n".join(
+            f'<a href="/simple/{pkg}/{wheel.name}">{wheel.name}</a><br/>'
+            for wheel in local
+        )
+        return f"<!DOCTYPE html><html><body>\n{links}\n</body></html>\n".encode()
 
     def _root_simple_html(self) -> bytes:
         pkgs = sorted(
@@ -199,45 +232,70 @@ class Handler(BaseHTTPRequestHandler):
             )
         return urllib.request.build_opener()
 
-    def _proxy(self, path: str) -> None:
+    def _proxy(self, path: str, method: str = "GET") -> None:
         url = PYPI + path
         try:
             opener = self._opener()
-            req = urllib.request.Request(url, headers={"User-Agent": "gcsa-aegis-pypi-proxy"})
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "gcsa-aegis-pypi-proxy"},
+                method=method,
+            )
             with opener.open(req, timeout=90) as resp:
-                data = resp.read()
                 ctype = resp.headers.get("Content-Type", "application/octet-stream")
-                self._send_bytes(data, ctype)
+                if method == "HEAD":
+                    self.send_response(resp.status)
+                    self.send_header("Content-Type", ctype)
+                    content_length = resp.headers.get("Content-Length")
+                    if content_length is not None:
+                        self.send_header("Content-Length", content_length)
+                    self.end_headers()
+                else:
+                    self._send_bytes(resp.read(), ctype)
         except urllib.error.HTTPError as e:
-            body = e.read()
+            body = b"" if method == "HEAD" else e.read()
             self.send_response(e.code)
             self.send_header("Content-Type", e.headers.get("Content-Type", "text/plain"))
-            self.send_header("Content-Length", str(len(body)))
+            content_length = e.headers.get("Content-Length")
+            if method != "HEAD":
+                content_length = str(len(body))
+            if content_length is not None:
+                self.send_header("Content-Length", content_length)
             self.end_headers()
-            self.wfile.write(body)
+            if method != "HEAD":
+                self.wfile.write(body)
         except Exception as e:  # noqa: BLE001
             msg = str(e).encode()
             self.send_response(502)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", str(len(msg)))
             self.end_headers()
-            self.wfile.write(msg)
+            if method != "HEAD":
+                self.wfile.write(msg)
 
-    def _send_file(self, path: Path) -> None:
-        data = path.read_bytes()
+    def _send_file(self, path: Path, include_body: bool = True) -> None:
+        size = path.stat().st_size
         ctype = (
             "text/html; charset=utf-8"
             if path.suffix in {".html", ""}
             else "application/octet-stream"
         )
-        self._send_bytes(data, ctype)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.end_headers()
+        if include_body:
+            self.wfile.write(path.read_bytes())
 
-    def _send_bytes(self, data: bytes, ctype: str) -> None:
+    def _send_bytes(
+        self, data: bytes, ctype: str, include_body: bool = True
+    ) -> None:
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        if include_body:
+            self.wfile.write(data)
 
 
 def main() -> int:

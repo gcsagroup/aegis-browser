@@ -20,7 +20,7 @@
     "script-risk:score-blind": "pnpm --filter @gcsa-aegis/core score:script-risk-blind",
     "browser:bootstrap": "pnpm --filter @gcsa-aegis/browser bootstrap",
     "browser:bootstrap:libtorrent": "pnpm --filter @gcsa-aegis/browser bootstrap:libtorrent",
-    "browser:fetch": "pnpm --filter @gcsa-aegis/browser fetch",
+    "browser:fetch": "pnpm --filter @gcsa-aegis/browser run fetch",
     "browser:apply-patches": "pnpm --filter @gcsa-aegis/browser apply-patches",
     "browser:build": "pnpm --filter @gcsa-aegis/browser build",
     "browser:build:release": "pnpm --filter @gcsa-aegis/browser build:release",

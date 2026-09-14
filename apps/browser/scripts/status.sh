@@ -299,7 +299,7 @@ check_desktop_output() {
     return
   fi
   if [[ "$actual_component" != "$expected_component" ]]; then
-    fail "$label 类型不符：component=$actual_component，预期=$expected_component"
+    fail "${label} 类型不符：component=${actual_component}，预期=$expected_component"
   else
     ok "$label 类型 component=$actual_component"
   fi
@@ -477,7 +477,7 @@ else
      git -C "$SRC" show-ref --verify --quiet "refs/tags/$version"; then
     tag_sha="$(git -C "$SRC" rev-parse "refs/tags/${version}^{commit}" 2>/dev/null || true)"
     if [[ "$tag_sha" != "$base_sha" ]]; then
-      fail "tag $version 指向 $tag_sha，预期 $base_sha"
+      fail "tag ${version} 指向 ${tag_sha}，预期 $base_sha"
     else
       ok "tag $version 匹配 base 钉扎"
     fi
