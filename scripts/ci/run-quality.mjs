@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {spawn} from 'node:child_process';
-import {mkdirSync, cpSync, renameSync, rmSync, writeFileSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {existsSync, lstatSync, mkdirSync, cpSync, realpathSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {join, relative, resolve, sep} from 'node:path';
 import {
   fail,
   git,
@@ -28,7 +28,29 @@ const defaultDirectory = `.artifacts/ci/local-${startedAt.replace(/[:.]/gu, '-')
 const reportDirectory = resolve(repoRoot, values['report-dir'] ?? defaultDirectory);
 const evidenceRoot = resolve(repoRoot, '.artifacts/ci');
 if (!isInside(evidenceRoot, reportDirectory)) fail(`Report directory must stay under ${evidenceRoot}`);
-mkdirSync(reportDirectory, {recursive: true});
+
+function createFreshReportDirectory() {
+  const segments = relative(repoRoot, reportDirectory).split(sep);
+  let cursor = repoRoot;
+  for (const [index, segment] of segments.entries()) {
+    cursor = join(cursor, segment);
+    if (existsSync(cursor)) {
+      const stat = lstatSync(cursor);
+      if (stat.isSymbolicLink()) fail(`Report path must not traverse a symbolic link: ${cursor}`);
+      if (!stat.isDirectory()) fail(`Report path ancestor is not a directory: ${cursor}`);
+      if (index === segments.length - 1) fail(`Report directory already exists: ${cursor}`);
+    } else {
+      mkdirSync(cursor);
+    }
+  }
+  const canonicalEvidenceRoot = realpathSync(evidenceRoot);
+  const canonicalReportDirectory = realpathSync(reportDirectory);
+  if (!isInside(canonicalEvidenceRoot, canonicalReportDirectory)) {
+    fail(`Canonical report directory must stay under ${canonicalEvidenceRoot}`);
+  }
+}
+
+createFreshReportDirectory();
 const logPath = join(reportDirectory, 'run-quality.log');
 const reportPath = join(reportDirectory, 'report.json');
 const checks = [];
@@ -167,8 +189,6 @@ try {
   const nativeCoverageDirectory = join(coverageRoot, 'cpp-access-standalone');
   const pythonCoverageDirectory = join(coverageRoot, 'python');
   const pythonVenv = join(reportDirectory, '.python-coverage-venv');
-  rmSync(coverageRoot, {recursive: true, force: true});
-  rmSync(pythonVenv, {recursive: true, force: true});
   mkdirSync(javascriptRawDirectory, {recursive: true});
   mkdirSync(pythonCoverageDirectory, {recursive: true});
   await command('python-coverage-venv', 'python3', ['-m', 'venv', pythonVenv]);
@@ -230,7 +250,6 @@ try {
   });
 
   const previewDirectory = join(reportDirectory, 'preview-work');
-  rmSync(previewDirectory, {recursive: true, force: true});
   mkdirSync(previewDirectory, {recursive: true});
   for (const name of ['interaction-example.html', 'verify-preview.cjs']) {
     cpSync(join(repoRoot, 'docs/plans/access-service-v1.0', name), join(previewDirectory, name));

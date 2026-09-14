@@ -453,6 +453,41 @@ test('V8 raw validator requires real production Node subprocess evidence', () =>
   }
 });
 
+test('quality entrypoint refuses existing or symlinked report paths without deleting sentinels', () => {
+  const cwd = initRepo();
+  mkdirSync(join(cwd, 'scripts/ci'), {recursive: true});
+  cpSync(join(scripts, 'run-quality.mjs'), join(cwd, 'scripts/ci/run-quality.mjs'));
+  cpSync(join(scripts, 'common.mjs'), join(cwd, 'scripts/ci/common.mjs'));
+  writeFileSync(join(cwd, '.gitignore'), '.artifacts/\n');
+  const base = commitAll(cwd, 'fixture');
+  const existing = join(cwd, '.artifacts/ci/existing');
+  mkdirSync(existing, {recursive: true});
+  const existingSentinel = join(existing, 'sentinel.txt');
+  writeFileSync(existingSentinel, 'preserve existing report\n');
+  let result = run(process.execPath, [
+    join(cwd, 'scripts/ci/run-quality.mjs'), '--scope', 'full', '--base', base,
+    '--report-dir', '.artifacts/ci/existing',
+  ], {cwd});
+  assert.notEqual(result.status, 0, 'Existing report directory unexpectedly passed');
+  assert.equal(readFileSync(existingSentinel, 'utf8'), 'preserve existing report\n');
+
+  const outside = mkdtempSync(join(tmpdir(), 'aegis-report-outside-'));
+  try {
+    const outsideSentinel = join(outside, 'sentinel.txt');
+    writeFileSync(outsideSentinel, 'preserve outside report\n');
+    symlinkSync(outside, join(cwd, '.artifacts/ci/escape'));
+    result = run(process.execPath, [
+      join(cwd, 'scripts/ci/run-quality.mjs'), '--scope', 'full', '--base', base,
+      '--report-dir', '.artifacts/ci/escape/new-report',
+    ], {cwd});
+    assert.notEqual(result.status, 0, 'Symlinked report ancestor unexpectedly passed');
+    assert.equal(readFileSync(outsideSentinel, 'utf8'), 'preserve outside report\n');
+    assert.equal(existsSync(join(outside, 'new-report')), false);
+  } finally {
+    rmSync(outside, {recursive: true, force: true});
+  }
+});
+
 test('quality entrypoint returns nonzero and writes FAIL when the test command fails', () => {
   const cwd = initRepo();
   mkdirSync(join(cwd, 'scripts/ci'), {recursive: true});
