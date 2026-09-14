@@ -1,6 +1,6 @@
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {existsSync, lstatSync, readFileSync, readlinkSync} from 'node:fs';
+import {lstatSync, readFileSync, readlinkSync} from 'node:fs';
 import {dirname, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -85,8 +85,13 @@ export function sourceSnapshot(cwd = repoRoot) {
     const absolute = resolve(cwd, path);
     let mode = 'missing';
     let content = Buffer.alloc(0);
-    if (existsSync(absolute)) {
-      const stat = lstatSync(absolute);
+    let stat;
+    try {
+      stat = lstatSync(absolute);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    if (stat) {
       if (stat.isSymbolicLink()) {
         mode = 'symlink';
         content = Buffer.from(readlinkSync(absolute));

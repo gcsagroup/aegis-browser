@@ -7,8 +7,22 @@ function classify(path) {
   if (/^apps\/browser\/(?:CHROMIUM_COMMIT|CHROMIUM_VERSION)$/u.test(path)) return 'REQUIRED';
   if (/\.(?:cc|h|gn|gni)$/u.test(path)) return 'REQUIRED';
   if (/^apps\/browser\/scripts\/(?:apply-patches|build|fetch-chromium|seed-|sync-)/u.test(path)) return 'REQUIRED';
-  if (/^(?:apps\/browser|packages\/core)\//u.test(path)) return 'REVIEW_REQUIRED';
-  return 'NOT_APPLICABLE';
+  if (
+    /^docs\//u.test(path) ||
+    /^(?:README(?:\.[^.]+)?\.md|package\.json|pnpm-lock\.yaml|\.mise\.toml)$/u.test(path) ||
+    /^scripts\/ci\//u.test(path) ||
+    path === '.github/workflows/quality.yml'
+  ) {
+    return 'NOT_APPLICABLE';
+  }
+  return 'REVIEW_REQUIRED';
+}
+
+function nulPaths(args, cwd) {
+  return git(args, {cwd, encoding: 'buffer'})
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean);
 }
 
 try {
@@ -17,12 +31,11 @@ try {
   const base = resolveCommit(values.base, cwd);
   const head = resolveCommit(values.head ?? 'HEAD', cwd);
   const paths = new Set(
-    git(['diff', '--name-only', `${base}...${head}`], {cwd})
-      .trim().split(/\r?\n/u).filter(Boolean),
+    nulPaths(['diff', '--name-only', '-z', '--no-renames', `${base}...${head}`], cwd),
   );
   if (process.argv.includes('--include-worktree')) {
-    for (const path of git(['diff', '--name-only', head], {cwd}).trim().split(/\r?\n/u).filter(Boolean)) paths.add(path);
-    for (const path of git(['ls-files', '--others', '--exclude-standard'], {cwd}).trim().split(/\r?\n/u).filter(Boolean)) paths.add(path);
+    for (const path of nulPaths(['diff', '--name-only', '-z', '--no-renames', head], cwd)) paths.add(path);
+    for (const path of nulPaths(['ls-files', '-z', '--others', '--exclude-standard'], cwd)) paths.add(path);
   }
   let status = 'NOT_APPLICABLE';
   for (const path of paths) {

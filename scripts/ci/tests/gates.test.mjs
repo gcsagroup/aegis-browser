@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -79,6 +79,22 @@ test('source snapshot detects tracked and untracked source changes but excludes 
   assert.notEqual(result.status, 0);
 });
 
+test('source snapshot binds dangling symlink target bytes', () => {
+  const cwd = initRepo();
+  writeFileSync(join(cwd, '.gitignore'), '.artifacts/\n');
+  commitAll(cwd, 'base');
+  symlinkSync('missing-first', join(cwd, 'dangling-link'));
+  let result = run(process.execPath, [join(scripts, 'source-snapshot.mjs'), '--repo', cwd], {cwd});
+  assert.equal(result.status, 0, result.stderr);
+  const first = JSON.parse(result.stdout);
+  unlinkSync(join(cwd, 'dangling-link'));
+  symlinkSync('missing-second', join(cwd, 'dangling-link'));
+  result = run(process.execPath, [join(scripts, 'source-snapshot.mjs'), '--repo', cwd], {cwd});
+  assert.equal(result.status, 0, result.stderr);
+  const second = JSON.parse(result.stdout);
+  assert.notEqual(first.digest, second.digest);
+});
+
 test('freeze gate uses the trusted base and rejects file or self-consistent manifest mutation', () => {
   const cwd = initRepo();
   const directory = join(cwd, 'docs/plans/access-service-v1.0');
@@ -146,6 +162,47 @@ test('public export preserves existing upstream instructions and rejects case va
   assert.notEqual(result.status, 0, 'history-only personal file unexpectedly passed');
 });
 
+test('public export rejects external, personal, chained, and history-only symlink targets', () => {
+  const cwd = initRepo();
+  mkdirSync(join(cwd, 'docs'), {recursive: true});
+  mkdirSync(join(cwd, 'links'), {recursive: true});
+  writeFileSync(join(cwd, 'docs', 'guide.md'), 'guide\n');
+  writeFileSync(join(cwd, 'AGENTS.md'), 'upstream personal file\n');
+  symlinkSync('guide.md', join(cwd, 'docs', 'legal-link.md'));
+  symlinkSync('../AGENTS.md', join(cwd, 'links', 'private-alias'));
+  const base = commitAll(cwd, 'base with untouched links');
+  writeFileSync(join(cwd, 'public.txt'), 'safe\n');
+  const safeHead = commitAll(cwd, 'safe public change');
+  let result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', base, '--head', safeHead, '--repo', cwd]);
+  assert.equal(result.status, 0, result.stderr);
+
+  symlinkSync('/definitely-missing/AGENTS.md', join(cwd, 'public-guide.md'));
+  const absoluteHead = commitAll(cwd, 'absolute personal symlink');
+  result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', base, '--head', absoluteHead, '--repo', cwd]);
+  assert.notEqual(result.status, 0);
+
+  const chainRepo = initRepo();
+  mkdirSync(join(chainRepo, 'links'), {recursive: true});
+  writeFileSync(join(chainRepo, 'AGENTS.md'), 'upstream personal file\n');
+  symlinkSync('../AGENTS.md', join(chainRepo, 'links', 'private-alias'));
+  const chainBase = commitAll(chainRepo, 'base alias');
+  symlinkSync('links/private-alias', join(chainRepo, 'public-guide.md'));
+  const chainHead = commitAll(chainRepo, 'chained alias');
+  result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', chainBase, '--head', chainHead, '--repo', chainRepo]);
+  assert.notEqual(result.status, 0);
+
+  const escapeRepo = initRepo();
+  writeFileSync(join(escapeRepo, 'base.txt'), 'base\n');
+  const escapeBase = commitAll(escapeRepo, 'base');
+  mkdirSync(join(escapeRepo, 'docs'), {recursive: true});
+  symlinkSync('../../outside.txt', join(escapeRepo, 'docs', 'escape-link'));
+  commitAll(escapeRepo, 'add escaping link');
+  git(escapeRepo, 'rm', 'docs/escape-link');
+  const escapeHead = commitAll(escapeRepo, 'remove escaping link');
+  result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', escapeBase, '--head', escapeHead, '--repo', escapeRepo]);
+  assert.notEqual(result.status, 0, 'history-only escaping symlink unexpectedly passed');
+});
+
 test('CI identity binds a pull request to the exact B/H/M graph', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, 'file.txt'), 'base\n');
@@ -184,7 +241,7 @@ test('workflow validator accepts the gate and rejects mutable action refs or wea
   assert.notEqual(result.status, 0);
 });
 
-test('native classification is conservative for Chromium paths', () => {
+test('native classification is NUL-safe, rename-safe, and conservative for unknown production paths', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, 'README.md'), 'base\n');
   const base = commitAll(cwd, 'base');
@@ -200,4 +257,34 @@ test('native classification is conservative for Chromium paths', () => {
   result = run(process.execPath, [join(scripts, 'classify-native-changes.mjs'), '--base', base, '--head', nativeHead, '--repo', cwd]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, 'REQUIRED');
+
+  const unicodeRepo = initRepo();
+  writeFileSync(join(unicodeRepo, 'README.md'), 'base\n');
+  const unicodeBase = commitAll(unicodeRepo, 'base');
+  mkdirSync(join(unicodeRepo, 'apps/browser/overlay/components/aegis'), {recursive: true});
+  writeFileSync(join(unicodeRepo, 'apps/browser/overlay/components/aegis/中文.cc'), 'native\n');
+  result = run(process.execPath, [join(scripts, 'classify-native-changes.mjs'), '--base', unicodeBase, '--head', 'HEAD', '--repo', unicodeRepo, '--include-worktree'], {cwd: unicodeRepo});
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, 'REQUIRED');
+
+  const renameRepo = initRepo();
+  mkdirSync(join(renameRepo, 'apps/browser/overlay/components/aegis'), {recursive: true});
+  writeFileSync(join(renameRepo, 'apps/browser/overlay/components/aegis/original.cc'), 'native\n');
+  const renameBase = commitAll(renameRepo, 'base native file');
+  mkdirSync(join(renameRepo, 'docs'), {recursive: true});
+  git(renameRepo, 'mv', 'apps/browser/overlay/components/aegis/original.cc', 'docs/guide.md');
+  const renameHead = commitAll(renameRepo, 'rename native into docs');
+  result = run(process.execPath, [join(scripts, 'classify-native-changes.mjs'), '--base', renameBase, '--head', renameHead, '--repo', renameRepo]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, 'REQUIRED');
+
+  const iosRepo = initRepo();
+  writeFileSync(join(iosRepo, 'README.md'), 'base\n');
+  const iosBase = commitAll(iosRepo, 'base');
+  mkdirSync(join(iosRepo, 'apps/ios/AgentKit'), {recursive: true});
+  writeFileSync(join(iosRepo, 'apps/ios/AgentKit/AgentBroker.swift'), 'production\n');
+  const iosHead = commitAll(iosRepo, 'ios production');
+  result = run(process.execPath, [join(scripts, 'classify-native-changes.mjs'), '--base', iosBase, '--head', iosHead, '--repo', iosRepo]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).status, 'REVIEW_REQUIRED');
 });
