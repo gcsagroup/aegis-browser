@@ -577,6 +577,64 @@ TEST(AccessRuleStoreTest, CounterOverflowFailsWithoutJournal) {
   EXPECT_EQ(store.LoadRecoveryState().status, StoreStatus::kValid);
 }
 
+TEST(AccessRuleStoreTest, FreshDatabaseInitializesOperationSequence) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  AccessRuleStore store(AccessRuleStoreTestPeer::Persistent(temp.GetPath()));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  PendingMutationRecord first =
+      Prepare(&store, Mutation("first-sequence", AccessMode::kProxy));
+  EXPECT_EQ(first.operation_sequence, 1u);
+}
+
+TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
+  base::ScopedTempDir missing_temp;
+  ASSERT_TRUE(missing_temp.CreateUniqueTempDir());
+  const AccessStoreBinding missing_binding =
+      AccessRuleStoreTestPeer::Persistent(missing_temp.GetPath());
+  {
+    AccessRuleStore store(missing_binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    Commit(&store,
+           Prepare(&store, Mutation("missing-counter", AccessMode::kDirect)),
+           1);
+    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+        &store, "DELETE FROM access_store_counters WHERE singleton=1"));
+  }
+  AccessRuleStore missing_counter(missing_binding);
+  EXPECT_EQ(missing_counter.Open(), StoreStatus::kCorrupt);
+  StoreResult<StoredPolicySnapshot> missing_snapshot =
+      missing_counter.ReadCommittedSnapshot("partition-A");
+  EXPECT_EQ(missing_snapshot.status, StoreStatus::kCorrupt);
+  EXPECT_FALSE(missing_snapshot.value.has_value());
+  StoreResult<PendingMutationRecord> missing_mutation =
+      missing_counter.PrepareSiteGroupMutation(
+          Mutation("must-not-prepare", AccessMode::kProxy, 1));
+  EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
+  EXPECT_FALSE(missing_mutation.value.has_value());
+
+  base::ScopedTempDir lagging_temp;
+  ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
+  const AccessStoreBinding lagging_binding =
+      AccessRuleStoreTestPeer::Persistent(lagging_temp.GetPath());
+  {
+    AccessRuleStore store(lagging_binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    Commit(&store,
+           Prepare(&store, Mutation("sequence-one", AccessMode::kProxy)), 1);
+    Commit(&store,
+           Prepare(&store, Mutation("sequence-two", AccessMode::kDirect, 1)),
+           2);
+    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+        &store,
+        "UPDATE access_store_counters SET operation_sequence=1 WHERE "
+        "singleton=1"));
+  }
+  AccessRuleStore lagging_counter(lagging_binding);
+  EXPECT_EQ(lagging_counter.Open(), StoreStatus::kCorrupt);
+  EXPECT_EQ(lagging_counter.LoadRecoveryState().status, StoreStatus::kCorrupt);
+}
+
 TEST(AccessRuleStoreTest, CanonicalizesUnsortedSchemesAndRejectsDuplicates) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
@@ -796,6 +854,33 @@ TEST(AccessRuleStoreTest, DetectsMissingOrphanMixedRevisionOwnerAndJournal) {
   }
 }
 
+TEST(AccessRuleStoreTest, InvalidJournalStateNeverLooksCommittedOrMissing) {
+  for (bool with_committed_group : {false, true}) {
+    SCOPED_TRACE(with_committed_group);
+    AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+        ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    if (with_committed_group) {
+      Commit(&store,
+             Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)), 1);
+    }
+    Prepare(&store, Mutation("corrupt-state", AccessMode::kProxy,
+                             with_committed_group ? 1 : 0));
+    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+        &store,
+        "UPDATE access_mutation_journal SET state=99 WHERE "
+        "operation_id='corrupt-state'"));
+
+    StoreResult<RecoveryState> recovery = store.LoadRecoveryState();
+    EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
+    EXPECT_FALSE(recovery.value.has_value());
+    StoreResult<StoredPolicySnapshot> snapshot =
+        store.ReadCommittedSnapshot("partition-A");
+    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
+    EXPECT_FALSE(snapshot.value.has_value());
+  }
+}
+
 TEST(AccessRuleStoreTest, UnknownSchemaAndIoErrorsRemainDistinct) {
   base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -901,7 +986,10 @@ TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
   ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, proxy),
             StoreStatus::kValid);
 
-  Commit(&store, Prepare(&store, Mutation("close", AccessMode::kDirect, 1)), 2);
+  PendingMutationRecord close =
+      Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
+  EXPECT_EQ(close.operation_sequence, 54u);
+  Commit(&store, close, 2);
   StoreResult<StoredPolicySnapshot> snapshot =
       store.ReadCommittedSnapshot("partition-A");
   ASSERT_EQ(snapshot.status, StoreStatus::kValid) << snapshot.detail;

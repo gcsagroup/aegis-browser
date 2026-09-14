@@ -512,6 +512,7 @@ StoreStatus AccessRuleStore::Open() {
                        has_rules || has_journal;
   const bool complete =
       has_identity && has_counters && has_groups && has_rules && has_journal;
+  const bool initialize_schema = !has_any;
   if (has_meta) {
     sql::Statement version(database_.GetUniqueStatement(
         "SELECT value FROM meta WHERE key='version'"));
@@ -540,11 +541,11 @@ StoreStatus AccessRuleStore::Open() {
     terminal_status_ = StoreStatus::kIoError;
     return terminal_status_;
   }
-  if (!has_any && (!database_.Execute(kCreateIdentitySql) ||
-                   !database_.Execute(kCreateCountersSql) ||
-                   !database_.Execute(kCreateGroupsSql) ||
-                   !database_.Execute(kCreateRulesSql) ||
-                   !database_.Execute(kCreateJournalSql))) {
+  if (initialize_schema && (!database_.Execute(kCreateIdentitySql) ||
+                            !database_.Execute(kCreateCountersSql) ||
+                            !database_.Execute(kCreateGroupsSql) ||
+                            !database_.Execute(kCreateRulesSql) ||
+                            !database_.Execute(kCreateJournalSql))) {
     terminal_status_ = StoreStatus::kIoError;
     return terminal_status_;
   }
@@ -580,9 +581,43 @@ StoreStatus AccessRuleStore::Open() {
       return terminal_status_;
     }
   }
-  if (!database_.Execute("INSERT OR IGNORE INTO access_store_counters"
-                         "(singleton,operation_sequence) VALUES(1,0)") ||
-      !transaction.Commit()) {
+  if (initialize_schema &&
+      !database_.Execute("INSERT INTO access_store_counters"
+                         "(singleton,operation_sequence) VALUES(1,0)")) {
+    terminal_status_ = StoreStatus::kIoError;
+    return terminal_status_;
+  }
+  sql::Statement counter(database_.GetUniqueStatement(
+      "SELECT operation_sequence FROM access_store_counters WHERE "
+      "singleton=1"));
+  if (!counter.Step()) {
+    terminal_status_ =
+        counter.Succeeded() ? StoreStatus::kCorrupt : StoreStatus::kIoError;
+    return terminal_status_;
+  }
+  const int64_t operation_sequence = counter.ColumnInt64(0);
+  sql::Statement persisted_sequences(database_.GetUniqueStatement(
+      "SELECT COALESCE(MAX(persisted_sequence),0),"
+      "COALESCE(MIN(persisted_sequence),0),COUNT(*) FROM "
+      "(SELECT last_operation_sequence AS persisted_sequence FROM "
+      "access_site_groups UNION ALL SELECT last_operation_sequence AS "
+      "persisted_sequence FROM access_rules UNION ALL SELECT "
+      "operation_sequence AS persisted_sequence FROM "
+      "access_mutation_journal)"));
+  if (!persisted_sequences.Step()) {
+    terminal_status_ = StoreStatus::kIoError;
+    return terminal_status_;
+  }
+  const int64_t maximum_persisted_sequence = persisted_sequences.ColumnInt64(0);
+  const int64_t minimum_persisted_sequence = persisted_sequences.ColumnInt64(1);
+  const int64_t persisted_sequence_count = persisted_sequences.ColumnInt64(2);
+  if (operation_sequence < 0 ||
+      (persisted_sequence_count > 0 && minimum_persisted_sequence <= 0) ||
+      operation_sequence < maximum_persisted_sequence) {
+    terminal_status_ = StoreStatus::kCorrupt;
+    return terminal_status_;
+  }
+  if (!transaction.Commit()) {
     terminal_status_ = StoreStatus::kIoError;
     return terminal_status_;
   }
@@ -609,21 +644,20 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
     return SnapshotError(StoreStatus::kInvalidArgument, "invalid_partition");
   }
   if (check_recovery) {
-    sql::Statement pending(database_.GetUniqueStatement(
-        "SELECT operation_id FROM access_mutation_journal WHERE state=? AND "
+    sql::Statement journal(database_.GetUniqueStatement(
+        "SELECT operation_id FROM access_mutation_journal WHERE "
         "storage_partition_token=? ORDER BY operation_sequence"));
-    pending.BindInt(0, kPrepared);
-    pending.BindString(1, partition);
+    journal.BindString(0, partition);
     bool has_pending = false;
-    while (pending.Step()) {
-      has_pending = true;
+    while (journal.Step()) {
       StoreResult<PendingMutationRecord> loaded =
-          LoadMutation(pending.ColumnString(0), true);
+          LoadMutation(journal.ColumnString(0), false);
       if (!loaded.value.has_value()) {
         return SnapshotError(loaded.status, loaded.detail);
       }
+      has_pending |= loaded.value->phase == MutationPhase::kPrepared;
     }
-    if (!pending.Succeeded()) {
+    if (!journal.Succeeded()) {
       return SnapshotError(StoreStatus::kIoError, "journal_read_failed");
     }
     if (has_pending) {
@@ -1144,7 +1178,10 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
   if (expected_revision < 0 || target_revision <= 0 || sequence <= 0 ||
       committed_generation < 0 || target_revision != expected_revision + 1 ||
       created_at_micros <= 0 ||
-      (state == kPrepared && completed_at_micros != 0) ||
+      (state == kPrepared &&
+       (committed_generation != 0 || completed_at_micros != 0)) ||
+      (state == kCommitted && committed_generation == 0) ||
+      (state == kSuperseded && committed_generation != 0) ||
       (state != kPrepared && completed_at_micros < created_at_micros) ||
       (mode != AccessMode::kDirect && mode != AccessMode::kProxy)) {
     return MutationError(StoreStatus::kCorrupt, "invalid_journal_version");
@@ -1221,16 +1258,17 @@ StoreResult<RecoveryState> AccessRuleStore::LoadRecoveryState() {
   }
   RecoveryState recovery;
   sql::Statement rows(database_.GetUniqueStatement(
-      "SELECT operation_id FROM access_mutation_journal WHERE state=? "
-      "ORDER BY operation_sequence"));
-  rows.BindInt(0, kPrepared);
+      "SELECT operation_id FROM access_mutation_journal ORDER BY "
+      "operation_sequence"));
   while (rows.Step()) {
     StoreResult<PendingMutationRecord> loaded =
-        LoadMutation(rows.ColumnString(0), true);
+        LoadMutation(rows.ColumnString(0), false);
     if (!loaded.value.has_value()) {
       return {loaded.status, std::nullopt, loaded.detail};
     }
-    recovery.pending.push_back(std::move(*loaded.value));
+    if (loaded.value->phase == MutationPhase::kPrepared) {
+      recovery.pending.push_back(std::move(*loaded.value));
+    }
   }
   if (!rows.Succeeded()) {
     return {StoreStatus::kIoError, std::nullopt, "recovery_read_failed"};
@@ -1519,7 +1557,12 @@ StoreStatus AccessRuleStore::ImportIndependentRuleForTesting(
   if (collision.Step()) {
     return StoreStatus::kConflict;
   }
-  if (!collision.Succeeded() ||
+  sql::Statement advance_counter(database_.GetUniqueStatement(
+      "UPDATE access_store_counters SET operation_sequence="
+      "MAX(operation_sequence,?) WHERE singleton=1"));
+  advance_counter.BindInt64(0, rule.policy.last_operation_sequence);
+  if (!collision.Succeeded() || !advance_counter.Run() ||
+      database_.GetLastChangeCount() != 1 ||
       !BindAndRunRuleInsert(&database_, rule, binding_.durable_profile_id()) ||
       !transaction.Commit()) {
     return StoreStatus::kIoError;
