@@ -1,15 +1,15 @@
-From 6d5d5ad9a61efd743a809889d66c8280e285974f Mon Sep 17 00:00:00 2001
+From 040e2c777f9ab5856ae937ca69626cc998b39e12 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
-Date: Mon, 14 Sep 2026 18:06:50 +0800
-Subject: [PATCH] feat(aegis): add access rule store recovery
+Date: Mon, 14 Sep 2026 18:50:48 +0800
+Subject: [PATCH] feat(aegis): add atomic access rule store recovery
 
 ---
- chrome/browser/aegis/access/BUILD.gn          |   29 +
- .../browser/aegis/access/access_rule_store.cc | 1530 +++++++++++++++++
- .../browser/aegis/access/access_rule_store.h  |  291 ++++
- .../access/access_rule_store_unittest.cc      | 1031 +++++++++++
+ chrome/browser/aegis/access/BUILD.gn          |   32 +
+ .../browser/aegis/access/access_rule_store.cc | 1625 +++++++++++++++++
+ .../browser/aegis/access/access_rule_store.h  |  291 +++
+ .../access/access_rule_store_unittest.cc      | 1213 ++++++++++++
  .../histograms/metadata/sql/histograms.xml    |    1 +
- 5 files changed, 2882 insertions(+)
+ 5 files changed, 3162 insertions(+)
  create mode 100644 chrome/browser/aegis/access/BUILD.gn
  create mode 100644 chrome/browser/aegis/access/access_rule_store.cc
  create mode 100644 chrome/browser/aegis/access/access_rule_store.h
@@ -17,10 +17,10 @@ Subject: [PATCH] feat(aegis): add access rule store recovery
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
 new file mode 100644
-index 0000000000..3222dc5646
+index 0000000000..645480e477
 --- /dev/null
 +++ b/chrome/browser/aegis/access/BUILD.gn
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,32 @@
 +# Copyright 2026 GCSA
 +# Intended path: chrome/browser/aegis/access/BUILD.gn
 +
@@ -34,7 +34,9 @@ index 0000000000..3222dc5646
 +  deps = [
 +    "//base",
 +    "//components/aegis_access",
++    "//net",
 +    "//sql",
++    "//url",
 +  ]
 +}
 +
@@ -45,6 +47,7 @@ index 0000000000..3222dc5646
 +    "//base/test:run_all_unittests",
 +    "//base/test:test_support",
 +    "//components/aegis_access",
++    "//net",
 +    "//sql",
 +    "//testing/gtest",
 +    "//url",
@@ -52,10 +55,10 @@ index 0000000000..3222dc5646
 +}
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
 new file mode 100644
-index 0000000000..8b9dbfea6f
+index 0000000000..5e9cfcf973
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_rule_store.cc
-@@ -0,0 +1,1530 @@
+@@ -0,0 +1,1625 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_rule_store.h"
@@ -70,8 +73,10 @@ index 0000000000..8b9dbfea6f
 +#include "base/functional/bind.h"
 +#include "base/functional/callback_helpers.h"
 +#include "base/time/time.h"
++#include "net/base/schemeful_site.h"
 +#include "sql/statement.h"
 +#include "sql/transaction.h"
++#include "url/gurl.h"
 +
 +namespace aegis::access {
 +namespace {
@@ -228,6 +233,56 @@ index 0000000000..8b9dbfea6f
 +bool IsCompleteOwner(const OwnershipKey& owner) {
 +  return IsKnownChannel(owner.channel) && Bounded(owner.profile_token) &&
 +         Bounded(owner.storage_partition_token);
++}
++
++std::optional<std::pair<std::string, std::string>> CanonicalSitesForHost(
++    std::string_view canonical_host) {
++  GURL::Replacements replacements;
++  replacements.SetHostStr(canonical_host);
++  const GURL http_url =
++      GURL("http://site.invalid/").ReplaceComponents(replacements);
++  const GURL https_url =
++      GURL("https://site.invalid/").ReplaceComponents(replacements);
++  if (!http_url.is_valid() || !https_url.is_valid() ||
++      http_url.host() != canonical_host || https_url.host() != canonical_host) {
++    return std::nullopt;
++  }
++  const net::SchemefulSite http_site(http_url);
++  const net::SchemefulSite https_site(https_url);
++  if (http_site.opaque() || https_site.opaque()) {
++    return std::nullopt;
++  }
++  return std::pair(http_site.Serialize(), https_site.Serialize());
++}
++
++aegis_access::GroupValidation ValidateBoundSiteGroup(
++    const OwnershipKey& expected_owner,
++    const SiteProxyRuleGroup* group,
++    const std::vector<SiteProxyRuleMember>& members) {
++  aegis_access::GroupValidation validation =
++      ValidateSiteProxyRuleGroup(expected_owner, group, members);
++  if (validation.error != GroupValidationError::kNone) {
++    return validation;
++  }
++  const auto expected_sites = CanonicalSitesForHost(group->canonical_host);
++  if (!expected_sites.has_value() ||
++      group->http_top_level_site != expected_sites->first ||
++      group->https_top_level_site != expected_sites->second) {
++    validation.selection = aegis_access::GroupSelection::kUnknown;
++    validation.error = GroupValidationError::kTopLevelSiteMismatch;
++    return validation;
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    const std::string& expected_site =
++        member.rule_id == group->member_rule_ids[0] ? expected_sites->first
++                                                    : expected_sites->second;
++    if (member.top_level_site != expected_site) {
++      validation.selection = aegis_access::GroupSelection::kUnknown;
++      validation.error = GroupValidationError::kTopLevelSiteMismatch;
++      return validation;
++    }
++  }
++  return validation;
 +}
 +
 +int SchemeMask(const std::vector<RequestScheme>& schemes) {
@@ -570,6 +625,7 @@ index 0000000000..8b9dbfea6f
 +                       has_rules || has_journal;
 +  const bool complete =
 +      has_identity && has_counters && has_groups && has_rules && has_journal;
++  const bool initialize_schema = !has_any;
 +  if (has_meta) {
 +    sql::Statement version(database_.GetUniqueStatement(
 +        "SELECT value FROM meta WHERE key='version'"));
@@ -598,11 +654,11 @@ index 0000000000..8b9dbfea6f
 +    terminal_status_ = StoreStatus::kIoError;
 +    return terminal_status_;
 +  }
-+  if (!has_any && (!database_.Execute(kCreateIdentitySql) ||
-+                   !database_.Execute(kCreateCountersSql) ||
-+                   !database_.Execute(kCreateGroupsSql) ||
-+                   !database_.Execute(kCreateRulesSql) ||
-+                   !database_.Execute(kCreateJournalSql))) {
++  if (initialize_schema && (!database_.Execute(kCreateIdentitySql) ||
++                            !database_.Execute(kCreateCountersSql) ||
++                            !database_.Execute(kCreateGroupsSql) ||
++                            !database_.Execute(kCreateRulesSql) ||
++                            !database_.Execute(kCreateJournalSql))) {
 +    terminal_status_ = StoreStatus::kIoError;
 +    return terminal_status_;
 +  }
@@ -638,9 +694,43 @@ index 0000000000..8b9dbfea6f
 +      return terminal_status_;
 +    }
 +  }
-+  if (!database_.Execute("INSERT OR IGNORE INTO access_store_counters"
-+                         "(singleton,operation_sequence) VALUES(1,0)") ||
-+      !transaction.Commit()) {
++  if (initialize_schema &&
++      !database_.Execute("INSERT INTO access_store_counters"
++                         "(singleton,operation_sequence) VALUES(1,0)")) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  sql::Statement counter(database_.GetUniqueStatement(
++      "SELECT operation_sequence FROM access_store_counters WHERE "
++      "singleton=1"));
++  if (!counter.Step()) {
++    terminal_status_ =
++        counter.Succeeded() ? StoreStatus::kCorrupt : StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  const int64_t operation_sequence = counter.ColumnInt64(0);
++  sql::Statement persisted_sequences(database_.GetUniqueStatement(
++      "SELECT COALESCE(MAX(persisted_sequence),0),"
++      "COALESCE(MIN(persisted_sequence),0),COUNT(*) FROM "
++      "(SELECT last_operation_sequence AS persisted_sequence FROM "
++      "access_site_groups UNION ALL SELECT last_operation_sequence AS "
++      "persisted_sequence FROM access_rules UNION ALL SELECT "
++      "operation_sequence AS persisted_sequence FROM "
++      "access_mutation_journal)"));
++  if (!persisted_sequences.Step()) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  const int64_t maximum_persisted_sequence = persisted_sequences.ColumnInt64(0);
++  const int64_t minimum_persisted_sequence = persisted_sequences.ColumnInt64(1);
++  const int64_t persisted_sequence_count = persisted_sequences.ColumnInt64(2);
++  if (operation_sequence < 0 ||
++      (persisted_sequence_count > 0 && minimum_persisted_sequence <= 0) ||
++      operation_sequence < maximum_persisted_sequence) {
++    terminal_status_ = StoreStatus::kCorrupt;
++    return terminal_status_;
++  }
++  if (!transaction.Commit()) {
 +    terminal_status_ = StoreStatus::kIoError;
 +    return terminal_status_;
 +  }
@@ -667,21 +757,20 @@ index 0000000000..8b9dbfea6f
 +    return SnapshotError(StoreStatus::kInvalidArgument, "invalid_partition");
 +  }
 +  if (check_recovery) {
-+    sql::Statement pending(database_.GetUniqueStatement(
-+        "SELECT operation_id FROM access_mutation_journal WHERE state=? AND "
++    sql::Statement journal(database_.GetUniqueStatement(
++        "SELECT operation_id FROM access_mutation_journal WHERE "
 +        "storage_partition_token=? ORDER BY operation_sequence"));
-+    pending.BindInt(0, kPrepared);
-+    pending.BindString(1, partition);
++    journal.BindString(0, partition);
 +    bool has_pending = false;
-+    while (pending.Step()) {
-+      has_pending = true;
++    while (journal.Step()) {
 +      StoreResult<PendingMutationRecord> loaded =
-+          LoadMutation(pending.ColumnString(0), true);
++          LoadMutation(journal.ColumnString(0), false);
 +      if (!loaded.value.has_value()) {
 +        return SnapshotError(loaded.status, loaded.detail);
 +      }
++      has_pending |= loaded.value->phase == MutationPhase::kPrepared;
 +    }
-+    if (!pending.Succeeded()) {
++    if (!journal.Succeeded()) {
 +      return SnapshotError(StoreStatus::kIoError, "journal_read_failed");
 +    }
 +    if (has_pending) {
@@ -800,8 +889,8 @@ index 0000000000..8b9dbfea6f
 +          rule.policy.last_operation_sequence,
 +      });
 +    }
-+    if (ValidateSiteProxyRuleGroup(snapshot.owner, &stored.group,
-+                                   validation_members)
++    if (ValidateBoundSiteGroup(snapshot.owner, &stored.group,
++                               validation_members)
 +            .error != GroupValidationError::kNone) {
 +      return SnapshotError(StoreStatus::kCorrupt, "invalid_site_group");
 +    }
@@ -1087,8 +1176,8 @@ index 0000000000..8b9dbfea6f
 +    member.last_operation_sequence = record.operation_sequence;
 +  }
 +  if ((mode != AccessMode::kDirect && mode != AccessMode::kProxy) ||
-+      ValidateSiteProxyRuleGroup(expected_owner, &record.candidate.group,
-+                                 stamped_members)
++      ValidateBoundSiteGroup(expected_owner, &record.candidate.group,
++                             stamped_members)
 +              .error != GroupValidationError::kNone) {
 +    return MutationError(StoreStatus::kInvalidArgument,
 +                         "invalid_site_group_candidate");
@@ -1202,7 +1291,10 @@ index 0000000000..8b9dbfea6f
 +  if (expected_revision < 0 || target_revision <= 0 || sequence <= 0 ||
 +      committed_generation < 0 || target_revision != expected_revision + 1 ||
 +      created_at_micros <= 0 ||
-+      (state == kPrepared && completed_at_micros != 0) ||
++      (state == kPrepared &&
++       (committed_generation != 0 || completed_at_micros != 0)) ||
++      (state == kCommitted && committed_generation == 0) ||
++      (state == kSuperseded && committed_generation != 0) ||
 +      (state != kPrepared && completed_at_micros < created_at_micros) ||
 +      (mode != AccessMode::kDirect && mode != AccessMode::kProxy)) {
 +    return MutationError(StoreStatus::kCorrupt, "invalid_journal_version");
@@ -1279,16 +1371,17 @@ index 0000000000..8b9dbfea6f
 +  }
 +  RecoveryState recovery;
 +  sql::Statement rows(database_.GetUniqueStatement(
-+      "SELECT operation_id FROM access_mutation_journal WHERE state=? "
-+      "ORDER BY operation_sequence"));
-+  rows.BindInt(0, kPrepared);
++      "SELECT operation_id FROM access_mutation_journal ORDER BY "
++      "operation_sequence"));
 +  while (rows.Step()) {
 +    StoreResult<PendingMutationRecord> loaded =
-+        LoadMutation(rows.ColumnString(0), true);
++        LoadMutation(rows.ColumnString(0), false);
 +    if (!loaded.value.has_value()) {
 +      return {loaded.status, std::nullopt, loaded.detail};
 +    }
-+    recovery.pending.push_back(std::move(*loaded.value));
++    if (loaded.value->phase == MutationPhase::kPrepared) {
++      recovery.pending.push_back(std::move(*loaded.value));
++    }
 +  }
 +  if (!rows.Succeeded()) {
 +    return {StoreStatus::kIoError, std::nullopt, "recovery_read_failed"};
@@ -1530,7 +1623,7 @@ index 0000000000..8b9dbfea6f
 +      });
 +    }
 +    const aegis_access::GroupValidation validation =
-+        ValidateSiteProxyRuleGroup(stored.owner, &group.group, members);
++        ValidateBoundSiteGroup(stored.owner, &group.group, members);
 +    if (validation.error != GroupValidationError::kNone) {
 +      return {StoreStatus::kCorrupt, std::nullopt, "invalid_site_group"};
 +    }
@@ -1577,7 +1670,12 @@ index 0000000000..8b9dbfea6f
 +  if (collision.Step()) {
 +    return StoreStatus::kConflict;
 +  }
-+  if (!collision.Succeeded() ||
++  sql::Statement advance_counter(database_.GetUniqueStatement(
++      "UPDATE access_store_counters SET operation_sequence="
++      "MAX(operation_sequence,?) WHERE singleton=1"));
++  advance_counter.BindInt64(0, rule.policy.last_operation_sequence);
++  if (!collision.Succeeded() || !advance_counter.Run() ||
++      database_.GetLastChangeCount() != 1 ||
 +      !BindAndRunRuleInsert(&database_, rule, binding_.durable_profile_id()) ||
 +      !transaction.Commit()) {
 +    return StoreStatus::kIoError;
@@ -1885,10 +1983,10 @@ index 0000000000..843cebb382
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_RULE_STORE_H_
 diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
 new file mode 100644
-index 0000000000..e4508ce60b
+index 0000000000..bbd42e5a9f
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
-@@ -0,0 +1,1031 @@
+@@ -0,0 +1,1213 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_rule_store.h"
@@ -2049,6 +2147,15 @@ index 0000000000..e4508ce60b
 +      },
 +  };
 +  return request;
++}
++
++void SetTopLevelSites(SiteGroupMutationRequest* request,
++                      std::string http_site,
++                      std::string https_site) {
++  request->candidate_group.http_top_level_site = http_site;
++  request->candidate_group.https_top_level_site = https_site;
++  request->candidate_members[0].top_level_site = std::move(http_site);
++  request->candidate_members[1].top_level_site = std::move(https_site);
 +}
 +
 +PendingMutationRecord Prepare(AccessRuleStore* store,
@@ -2468,6 +2575,64 @@ index 0000000000..e4508ce60b
 +  EXPECT_EQ(store.LoadRecoveryState().status, StoreStatus::kValid);
 +}
 +
++TEST(AccessRuleStoreTest, FreshDatabaseInitializesOperationSequence) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  AccessRuleStore store(AccessRuleStoreTestPeer::Persistent(temp.GetPath()));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  PendingMutationRecord first =
++      Prepare(&store, Mutation("first-sequence", AccessMode::kProxy));
++  EXPECT_EQ(first.operation_sequence, 1u);
++}
++
++TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
++  base::ScopedTempDir missing_temp;
++  ASSERT_TRUE(missing_temp.CreateUniqueTempDir());
++  const AccessStoreBinding missing_binding =
++      AccessRuleStoreTestPeer::Persistent(missing_temp.GetPath());
++  {
++    AccessRuleStore store(missing_binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store,
++           Prepare(&store, Mutation("missing-counter", AccessMode::kDirect)),
++           1);
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store, "DELETE FROM access_store_counters WHERE singleton=1"));
++  }
++  AccessRuleStore missing_counter(missing_binding);
++  EXPECT_EQ(missing_counter.Open(), StoreStatus::kCorrupt);
++  StoreResult<StoredPolicySnapshot> missing_snapshot =
++      missing_counter.ReadCommittedSnapshot("partition-A");
++  EXPECT_EQ(missing_snapshot.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(missing_snapshot.value.has_value());
++  StoreResult<PendingMutationRecord> missing_mutation =
++      missing_counter.PrepareSiteGroupMutation(
++          Mutation("must-not-prepare", AccessMode::kProxy, 1));
++  EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(missing_mutation.value.has_value());
++
++  base::ScopedTempDir lagging_temp;
++  ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
++  const AccessStoreBinding lagging_binding =
++      AccessRuleStoreTestPeer::Persistent(lagging_temp.GetPath());
++  {
++    AccessRuleStore store(lagging_binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store,
++           Prepare(&store, Mutation("sequence-one", AccessMode::kProxy)), 1);
++    Commit(&store,
++           Prepare(&store, Mutation("sequence-two", AccessMode::kDirect, 1)),
++           2);
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store,
++        "UPDATE access_store_counters SET operation_sequence=1 WHERE "
++        "singleton=1"));
++  }
++  AccessRuleStore lagging_counter(lagging_binding);
++  EXPECT_EQ(lagging_counter.Open(), StoreStatus::kCorrupt);
++  EXPECT_EQ(lagging_counter.LoadRecoveryState().status, StoreStatus::kCorrupt);
++}
++
 +TEST(AccessRuleStoreTest, CanonicalizesUnsortedSchemesAndRejectsDuplicates) {
 +  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
 +      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
@@ -2492,6 +2657,91 @@ index 0000000000..e4508ce60b
 +      RequestScheme::kWs};
 +  EXPECT_EQ(store.PrepareSiteGroupMutation(duplicate).status,
 +            StoreStatus::kInvalidArgument);
++}
++
++TEST(AccessRuleStoreTest, ValidatesCanonicalSchemefulSitesAtPrepareBoundary) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  struct SiteCase {
++    const char* host;
++    const char* http_site;
++    const char* https_site;
++  };
++  constexpr SiteCase cases[] = {
++      {"www.example.com", "http://example.com", "https://example.com"},
++      {"www.tenant.github.io", "http://tenant.github.io",
++       "https://tenant.github.io"},
++      {"192.0.2.1", "http://192.0.2.1", "https://192.0.2.1"},
++      {"[2001:db8::1]", "http://[2001:db8::1]", "https://[2001:db8::1]"},
++  };
++  size_t case_index = 0;
++  for (const auto& site_case : cases) {
++    SCOPED_TRACE(site_case.host);
++    const std::string suffix = std::to_string(case_index++);
++    SiteGroupMutationRequest request = Mutation(
++        "canonical-site-" + suffix, AccessMode::kProxy, 0,
++        Owner(ChannelNamespace::kBeta, "profile-A", "partition-" + suffix),
++        site_case.host);
++    SetTopLevelSites(&request, site_case.http_site, site_case.https_site);
++    StoreResult<PendingMutationRecord> prepared =
++        store.PrepareSiteGroupMutation(request);
++    ASSERT_EQ(prepared.status, StoreStatus::kValid) << prepared.detail;
++    ASSERT_TRUE(prepared.value);
++    EXPECT_EQ(
++        store.SupersedePreparedMutation(prepared.value->operation_id,
++                                        prepared.value->request_fingerprint),
++        StoreStatus::kValid);
++  }
++}
++
++TEST(AccessRuleStoreTest, RejectsTopLevelSiteFromDifferentRegistrableDomain) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  SiteGroupMutationRequest request = Mutation("wrong-site", AccessMode::kProxy);
++  SetTopLevelSites(&request, "http://other.example", "https://other.example");
++  StoreResult<PendingMutationRecord> prepared =
++      store.PrepareSiteGroupMutation(request);
++  EXPECT_EQ(prepared.status, StoreStatus::kInvalidArgument);
++  EXPECT_FALSE(prepared.value.has_value());
++  EXPECT_EQ(store.LoadRecoveryState().status, StoreStatus::kValid);
++}
++
++TEST(AccessRuleStoreTest, CorruptTopLevelSiteFailsClosedOnReadAndAdapter) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  Commit(&store, Prepare(&store, Mutation("seed-site", AccessMode::kProxy)), 1);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_site_groups SET "
++      "http_top_level_site='http://other.example',"
++      "https_top_level_site='https://other.example'"));
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_rules SET top_level_site='http://other.example' WHERE "
++      "rule_id='toggle-news.example:http'"));
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_rules SET top_level_site='https://other.example' WHERE "
++      "rule_id='toggle-news.example:https'"));
++  StoreResult<StoredPolicySnapshot> corrupted =
++      store.ReadCommittedSnapshot("partition-A");
++  EXPECT_EQ(corrupted.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(corrupted.value.has_value());
++
++  StoredPolicySnapshot stored = StoredSnapshotForAdapter();
++  stored.site_groups[0].group.http_top_level_site = "http://other.example";
++  stored.site_groups[0].group.https_top_level_site = "https://other.example";
++  stored.site_groups[0].members[0].policy.top_level_site =
++      "http://other.example";
++  stored.site_groups[0].members[1].policy.top_level_site =
++      "https://other.example";
++  StoreResult<MatcherRuleSetCandidate> candidate =
++      AccessRuleStore::AdaptMatcherSnapshot(stored);
++  EXPECT_EQ(candidate.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(candidate.value.has_value());
 +}
 +
 +TEST(AccessRuleStoreTest, AdapterRejectsInvalidAtomicSiteGroups) {
@@ -2687,6 +2937,33 @@ index 0000000000..e4508ce60b
 +  }
 +}
 +
++TEST(AccessRuleStoreTest, InvalidJournalStateNeverLooksCommittedOrMissing) {
++  for (bool with_committed_group : {false, true}) {
++    SCOPED_TRACE(with_committed_group);
++    AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++        ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    if (with_committed_group) {
++      Commit(&store,
++             Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)), 1);
++    }
++    Prepare(&store, Mutation("corrupt-state", AccessMode::kProxy,
++                             with_committed_group ? 1 : 0));
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store,
++        "UPDATE access_mutation_journal SET state=99 WHERE "
++        "operation_id='corrupt-state'"));
++
++    StoreResult<RecoveryState> recovery = store.LoadRecoveryState();
++    EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(recovery.value.has_value());
++    StoreResult<StoredPolicySnapshot> snapshot =
++        store.ReadCommittedSnapshot("partition-A");
++    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(snapshot.value.has_value());
++  }
++}
++
 +TEST(AccessRuleStoreTest, UnknownSchemaAndIoErrorsRemainDistinct) {
 +  base::ScopedTempDir temp;
 +  ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -2792,7 +3069,10 @@ index 0000000000..e4508ce60b
 +  ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, proxy),
 +            StoreStatus::kValid);
 +
-+  Commit(&store, Prepare(&store, Mutation("close", AccessMode::kDirect, 1)), 2);
++  PendingMutationRecord close =
++      Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
++  EXPECT_EQ(close.operation_sequence, 54u);
++  Commit(&store, close, 2);
 +  StoreResult<StoredPolicySnapshot> snapshot =
 +      store.ReadCommittedSnapshot("partition-A");
 +  ASSERT_EQ(snapshot.status, StoreStatus::kValid) << snapshot.detail;

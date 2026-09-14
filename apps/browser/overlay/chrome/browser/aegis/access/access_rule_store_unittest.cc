@@ -686,14 +686,15 @@ TEST(AccessRuleStoreTest, ValidatesCanonicalSchemefulSitesAtPrepareBoundary) {
       {"192.0.2.1", "http://192.0.2.1", "https://192.0.2.1"},
       {"[2001:db8::1]", "http://[2001:db8::1]", "https://[2001:db8::1]"},
   };
-  for (size_t i = 0; i < std::size(cases); ++i) {
-    SCOPED_TRACE(cases[i].host);
-    const std::string suffix = std::to_string(i);
+  size_t case_index = 0;
+  for (const auto& site_case : cases) {
+    SCOPED_TRACE(site_case.host);
+    const std::string suffix = std::to_string(case_index++);
     SiteGroupMutationRequest request = Mutation(
         "canonical-site-" + suffix, AccessMode::kProxy, 0,
         Owner(ChannelNamespace::kBeta, "profile-A", "partition-" + suffix),
-        cases[i].host);
-    SetTopLevelSites(&request, cases[i].http_site, cases[i].https_site);
+        site_case.host);
+    SetTopLevelSites(&request, site_case.http_site, site_case.https_site);
     StoreResult<PendingMutationRecord> prepared =
         store.PrepareSiteGroupMutation(request);
     ASSERT_EQ(prepared.status, StoreStatus::kValid) << prepared.detail;
