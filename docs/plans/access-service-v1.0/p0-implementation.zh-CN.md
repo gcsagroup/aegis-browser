@@ -82,7 +82,7 @@
 
 必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 Astra high review 审查最终实现和测试；Sol 修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
-P0 剩余：可信归属与 canonicalization、完整规则匹配、同步回调外等待、定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
+P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步回调外等待、定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
 本切片可报告 native_unit=PASS（实际执行后）、合同子项通过；对应 A76/A108/A113/A115/A116 等只记录所覆盖的纯决策子场景，整行仍 partial/NOT_RUN，G0 仍 NOT_RUN 或明确环境 BLOCKED。P0 不因本切片通过而结束，运行/性能/部署/分发状态不提升。
 
@@ -110,6 +110,26 @@ P0 剩余：可信归属与 canonicalization、完整规则匹配、同步回调
 - `bash apps/browser/scripts/aegis-access-gn-wiring_test.sh` 与原生 487 次断言检查均 PASS；`aegis.gn` SHA-256 为 `4daf1f62b105d8b7cff80a62cef8a0ae2742973b654173de040f13c0d6b83886`，`series` 仍为 `fbc6c99de7eb2c0e2e4abda2179af4e9671fce1dc1cc79659475e8292a4fb1c0`，`0114` 仍为 `256d72ba00b4399f2bba0bc04043998cda4dbb5afa8d0022555966e0cbd95346`。
 
 独立目标构建最初被系统 Python 3.9 的工具链环境阻止；改用 hooks 固定的 CPython 3.11.9 后，Ninja 首次构建 exit 0，末尾为 `[3405/3405] LINK ./aegis_access_unittests`。执行 `out/AegisLocalDev/aegis_access_unittests` exit 0：实际运行 `AccessRoutePlannerTest.SharedRoutePlannerContract` 与 `SiteProxyRuleGroupTest.CompleteAtomicGroupContract` 两个 GTest，输出 `SUCCESS: all tests passed.`；随后同目标增量构建 exit 0，输出 `ninja: no work to do.`。这些结果把本切片证据提升为固定 Chromium 151 GN 独立目标 build/runtime PASS。Network Service 接线、完整 Chrome 构建和浏览器网络用例仍未执行，因此 G0、A76/A108/A113/A115/A116 整行和真实网络仍不能报告 PASS。最终仓库提交 SHA、全仓质量结果及独立审查结论由主任务在停止修改后补录。
+
+## 后续切片：浏览器所有权适配边界与完整规则匹配
+
+`request_policy_context.{h,cc}` 新增只能由原生适配器构造的不可变 `RequestPolicyContext`。适配器校验 channel/Profile/StoragePartition 所有权键、request ID 与 document/pending-navigation/profile-only 三种互斥形态；使用固定 Chromium 的 GURL、`SchemefulSite` 与包含私有规则的 Public Suffix List 生成精确 canonical host、有效端口、顶层网站和 registrable domain。query、fragment、正文、Cookie 与凭据不进入结果。该类型阻止匹配器直接消费网页提交的字符串字段，但尚未把 Browser/Renderer/Network Service 的真实 request ID、document token 或终止句柄接入 RequestOwnershipRegistry，因此不能单独声称端到端可信归属完成。
+
+`access_policy_evaluator.{h,cc}` 对已发布只读规则快照执行无 I/O 匹配：先验证快照、所有权、canonical host/顶层网站、唯一 rule ID/规范化规则键、排序去重后的 scheme/port 集合和 mode/代理组/防护例外形状；再固定按本站优先于 Profile、精确 host 优先于显式后缀、后缀 DNS 标签最长优先、scheme/port 严格集合包含关系更具体的顺序选择。显式后缀必须处于公有及私有 PSL 允许的 registrable domain 内，不能用 `appspot.com` 等私有后缀跨租户扩张。多个不可比较的最具体候选、重复键、非规范存储或所有权漂移均返回 conflict/invalid，不随机选择或退回 DIRECT；缺规则保持 absent/inherit。profile-only 归属不借用活动页身份，跳过本站规则后仍可匹配明确属于同一 Profile/StoragePartition 的全局规则。
+
+共享黄金向量位于 `testdata/policy_matcher_vectors.json`。Python 生成器把 14 个规范化/PSL/优先级/冲突用例生成到 GN C++ fixture；TypeScript 测试读取同一 JSON 并验证结构与名称唯一性。2026-09-14 在已应用 114+2 补丁、Chromium `151.0.7922.77` 的 checkout 上执行：
+
+- 首次引入 `//net` 依赖时直接 Ninja 先因系统 Python 3.9 无法解析工具脚本的联合类型语法而失败；改为 checkout 已有 CPython 3.11.9 后继续构建成功。这是工具链环境失败，不是产品测试失败。
+- `buildtools/mac/gn gen out/AegisLocalDev`：PASS，生成 31,697 个目标、读取 4,830 个文件。
+- `third_party/ninja/ninja -C out/AegisLocalDev aegis_access_unittests`：PASS；新 Chromium 源码提交 `0bb6cfc2e7` 生成 0115 顺序补丁。
+- `out/AegisLocalDev/aegis_access_unittests --gtest_color=no`：21 个 GTest PASS，包含原 42 条路由向量/网站组合同、5 组请求规范化测试、14 条共享匹配向量及补充边界回归。
+- `packages/core/node_modules/.bin/vitest run packages/core/src/access/policy-matcher-vectors.test.ts packages/core/src/access/route-planner-vectors.test.ts`：2 文件、2 测试 PASS。首次 pnpm 包装命令被 pnpm 10 的 `verify-deps-before-run=install` 默认行为尝试更新依赖，并因未批准 esbuild build script 中止；未批准脚本，也未保留它对 workspace 配置的建议修改。随后直接调用已安装的 Vitest 二进制确认定向用例。
+- `0115-feat-aegis-add-trusted-policy-context-matching.patch` 从 0114 后的父提交应用成功，应用结果与 overlay 逐文件一致；补丁 SHA-256 为 `3bfc096122a74be5d05bd37b57ec1c38685e5fe7e42c07401efa62ec0bc21904`。
+- `CHROMIUM_ROOT=/Volumes/ExternalSSD/repositories/aegis-chromium-151 bash apps/browser/scripts/status.sh` 确认 115 个顶层补丁的稳定 patch-id、checkout HEAD `0bb6cfc2e79b00989e3a4507917d00ec683152ff`、overlay 等价及 2 个 V8 补丁均匹配；整体命令仍 FAIL，因为开发目录缺少完整 `GCSA Aegis.app` 可执行文件，Release/Android 也未构建。该状态不提升完整浏览器门槛。
+
+仓库全量快速门禁随后以 `pnpm_config_verify_deps_before_run=false pnpm run quality:fast` 执行 PASS。该显式配置只关闭运行脚本前的隐式依赖安装，不跳过 lint、typecheck、test、browser scripts、Agent UI、Android target/UI、model relay、仓库合同或 build：core 共 28 个文件、170 个测试 PASS；browser 原生 runner 完成 487 次断言检查；GN 接线、脚本 fixture、Android 目标 38 项、Android UI 13 项、model relay 22 项、合同检查和两段 tsup 构建均通过。工作树没有修改 `package.json`、`pnpm-lock.yaml` 或 `pnpm-workspace.yaml`。
+
+这些结果仅证明固定 Chromium API 上的规范化与纯匹配决策可编译、可运行，以及仓库快速门禁通过。0115 尚需个人 Fork PR、独立 review 与同一最终 HEAD 的 hosted CI；Network Service 派发、等待/取消、连接复用、真实 HTTP/WS、Xray、企业策略、性能及 DPI 均未执行，G0 与 A76/A108/A113/A115/A116/A117/A118 整行仍不是 PASS。
 
 ## 回滚
 

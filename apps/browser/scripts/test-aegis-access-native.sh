@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BROWSER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPONENT_DIR="$BROWSER_DIR/overlay/components/aegis_access"
 VECTOR_FILE="$COMPONENT_DIR/testdata/route_planner_vectors.json"
+POLICY_VECTOR_FILE="$COMPONENT_DIR/testdata/policy_matcher_vectors.json"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/aegis-access-native.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -26,6 +27,13 @@ fi
 
 python3 "$COMPONENT_DIR/generate_route_planner_vectors.py" \
   "$VECTOR_FILE" "$TEST_ROOT/route_planner_golden_vectors.inc"
+python3 "$COMPONENT_DIR/generate_policy_matcher_vectors.py" \
+  "$POLICY_VECTOR_FILE" "$TEST_ROOT/policy_matcher_golden_vectors.inc"
+if [[ "$(rg -c '^vectors.push_back' \
+  "$TEST_ROOT/policy_matcher_golden_vectors.inc")" != 14 ]]; then
+  printf 'FAIL: expected 14 shared policy matcher vectors\n' >&2
+  exit 1
+fi
 
 "$CXX_BIN" \
   -std=c++20 \

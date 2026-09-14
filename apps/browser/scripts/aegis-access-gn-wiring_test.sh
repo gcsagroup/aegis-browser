@@ -7,6 +7,7 @@ ARGS_FILE="$BROWSER_DIR/args/aegis.gn"
 BUILD_SCRIPT="$SCRIPT_DIR/build.sh"
 COMPONENT_BUILD="$BROWSER_DIR/overlay/components/aegis_access/BUILD.gn"
 PATCH_FILE="$BROWSER_DIR/patches/0114-feat-aegis-add-access-route-planning-contract.patch"
+MATCHER_PATCH_FILE="$BROWSER_DIR/patches/0115-feat-aegis-add-trusted-policy-context-matching.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 TARGET="//components/aegis_access:aegis_access_unittests"
 
@@ -25,8 +26,17 @@ rg -Fq 'test("aegis_access_unittests")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the independent access test"
 rg -Fq '+test("aegis_access_unittests")' "$PATCH_FILE" ||
   fail "patch 0114 does not deliver the independent access test"
+rg -Fq '+    "access_policy_evaluator.cc",' "$MATCHER_PATCH_FILE" ||
+  fail "patch 0115 does not deliver the policy matcher"
+rg -Fq '+action("generate_policy_matcher_vectors")' "$MATCHER_PATCH_FILE" ||
+  fail "patch 0115 does not deliver the shared matcher vectors"
 [[ "$(rg -F -c '0114-feat-aegis-add-access-route-planning-contract.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0114 must appear once in series"
+[[ "$(rg -F -c '0115-feat-aegis-add-trusted-policy-context-matching.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0115 must appear once in series"
+[[ "$(tail -n 1 "$SERIES_FILE")" == \
+  "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
+  fail "patch 0115 must follow the existing series"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

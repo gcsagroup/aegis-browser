@@ -13,25 +13,44 @@ action("generate_route_planner_vectors") {
   ]
 }
 
+action("generate_policy_matcher_vectors") {
+  script = "generate_policy_matcher_vectors.py"
+  inputs = [ "testdata/policy_matcher_vectors.json" ]
+  outputs = [ "$target_gen_dir/policy_matcher_golden_vectors.inc" ]
+  args = [
+    rebase_path(inputs[0], root_build_dir),
+    rebase_path(outputs[0], root_build_dir),
+  ]
+}
+
 source_set("aegis_access") {
   sources = [
+    "access_policy_evaluator.cc",
+    "access_policy_evaluator.h",
     "access_route_planner.cc",
     "access_route_planner.h",
     "access_route_types.h",
+    "request_policy_context.cc",
+    "request_policy_context.h",
     "site_proxy_rule_group.cc",
     "site_proxy_rule_group.h",
   ]
+  public_deps = [ "//net" ]
 }
 
 test("aegis_access_unittests") {
   sources = [
+    "access_policy_evaluator_unittest.cc",
     "access_route_planner_contract_test.h",
     "access_route_planner_unittest.cc",
+    "request_policy_context_unittest.cc",
   ]
   include_dirs = [ "$target_gen_dir" ]
   deps = [
     ":aegis_access",
+    ":generate_policy_matcher_vectors",
     ":generate_route_planner_vectors",
+    "//base",
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]
