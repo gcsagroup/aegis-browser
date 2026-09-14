@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "policyVectors": [
+    {
+      "name": "site exact proxy",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "site-proxy", "scope": "site", "host": "cdn.example.test", "mode": "proxy" }
+      ],
+      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "site-proxy" }
+    },
+    {
+      "name": "site beats profile",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "profile-reject", "scope": "profile", "host": "cdn.example.test", "mode": "reject" },
+        { "id": "site-proxy", "scope": "site", "host": "cdn.example.test", "mode": "proxy" }
+      ],
+      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "site-proxy" }
+    },
+    {
+      "name": "exact beats suffix",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "suffix-reject", "scope": "site", "host": "example.test", "includeSubdomains": true, "mode": "reject" },
+        { "id": "exact-direct", "scope": "site", "host": "cdn.example.test", "mode": "direct" }
+      ],
+      "expected": { "state": "valid", "mode": "direct", "scope": "site", "ruleId": "exact-direct" }
+    },
+    {
+      "name": "longest suffix wins",
+      "context": { "targetUrl": "https://asset.cdn.example.test/resource" },
+      "rules": [
+        { "id": "broad-reject", "scope": "site", "host": "example.test", "includeSubdomains": true, "mode": "reject" },
+        { "id": "narrow-proxy", "scope": "site", "host": "cdn.example.test", "includeSubdomains": true, "mode": "proxy" }
+      ],
+      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "narrow-proxy" }
+    },
+    {
+      "name": "narrow scheme port wins",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "broad-reject", "scope": "site", "host": "cdn.example.test", "mode": "reject" },
+        { "id": "narrow-proxy", "scope": "site", "host": "cdn.example.test", "schemes": ["https"], "portScope": "explicit", "explicitPorts": [443], "mode": "proxy" }
+      ],
+      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "narrow-proxy" }
+    },
+    {
+      "name": "incomparable selectors conflict",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "scheme-direct", "scope": "site", "host": "cdn.example.test", "schemes": ["https"], "mode": "direct" },
+        { "id": "port-proxy", "scope": "site", "host": "cdn.example.test", "portScope": "explicit", "explicitPorts": [443], "mode": "proxy" }
+      ],
+      "expected": { "state": "conflict" }
+    },
+    {
+      "name": "duplicate key conflict",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "first", "scope": "site", "host": "cdn.example.test", "mode": "direct" },
+        { "id": "second", "scope": "site", "host": "cdn.example.test", "mode": "reject" }
+      ],
+      "expected": { "state": "conflict" }
+    },
+    {
+      "name": "profile only skips site",
+      "context": { "targetUrl": "https://cdn.example.test/resource", "attribution": "profile_only" },
+      "rules": [
+        { "id": "site-proxy", "scope": "site", "host": "cdn.example.test", "mode": "proxy" },
+        { "id": "profile-direct", "scope": "profile", "host": "cdn.example.test", "mode": "direct" }
+      ],
+      "expected": { "state": "valid", "mode": "direct", "scope": "profile", "ruleId": "profile-direct" }
+    },
+    {
+      "name": "no match inherits",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "other", "scope": "site", "host": "other.example.test", "mode": "reject" }
+      ],
+      "expected": { "state": "absent" }
+    },
+    {
+      "name": "private psl tenant suffix",
+      "context": { "targetUrl": "https://asset.foo.appspot.com/resource", "attribution": "profile_only" },
+      "rules": [
+        { "id": "tenant-proxy", "scope": "profile", "host": "foo.appspot.com", "includeSubdomains": true, "mode": "proxy" }
+      ],
+      "expected": { "state": "valid", "mode": "proxy", "scope": "profile", "ruleId": "tenant-proxy" }
+    },
+    {
+      "name": "private psl cross tenant absent",
+      "context": { "targetUrl": "https://asset.bar.appspot.com/resource", "attribution": "profile_only" },
+      "rules": [
+        { "id": "tenant-proxy", "scope": "profile", "host": "foo.appspot.com", "includeSubdomains": true, "mode": "proxy" }
+      ],
+      "expected": { "state": "absent" }
+    },
+    {
+      "name": "private psl suffix itself invalid",
+      "context": { "targetUrl": "https://asset.foo.appspot.com/resource", "attribution": "profile_only" },
+      "rules": [
+        { "id": "invalid-suffix", "scope": "profile", "host": "appspot.com", "includeSubdomains": true, "mode": "reject" }
+      ],
+      "expected": { "state": "invalid" }
+    },
+    {
+      "name": "idn canonical exact",
+      "context": { "targetUrl": "https://b%C3%BCcher.example/resource", "attribution": "profile_only" },
+      "rules": [
+        { "id": "idn-proxy", "scope": "profile", "host": "xn--bcher-kva.example", "mode": "proxy", "protectionOverride": "tracker" }
+      ],
+      "expected": { "state": "valid", "mode": "proxy", "scope": "profile", "ruleId": "idn-proxy" }
+    },
+    {
+      "name": "non canonical stored host invalid",
+      "context": { "targetUrl": "https://cdn.example.test/resource" },
+      "rules": [
+        { "id": "invalid-host", "scope": "site", "host": "CDN.EXAMPLE.TEST", "mode": "direct" }
+      ],
+      "expected": { "state": "invalid" }
+    }
+  ]
+}

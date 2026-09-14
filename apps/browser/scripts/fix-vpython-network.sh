@@ -58,16 +58,18 @@ patch_requirements() {
   local req="$1"
   [[ -f "$req" ]] || return 0
   local dirty=0
-  if grep -q 'pyyaml==5\.4\.1+chromium' "$req" || grep -q '^pyyaml==5\.4\.1$' "$req"; then
-    sed -i.bak -E 's/^pyyaml==5\.4\.1([+]chromium\.[0-9]+)?$/pyyaml==6.0.2/' "$req"
+  if grep -qE '^pyyaml==5\.4\.1([+]chromium\.1)?$' "$req"; then
+    sed -i.bak -E 's/^pyyaml==5\.4\.1([+]chromium\.1)?$/pyyaml==6.0.2/' "$req"
     dirty=1
   fi
-  if grep -qE 'crcmod==1\.7([+]chromium\.[0-9]+)?' "$req"; then
-    sed -i.bak -E 's/^crcmod==1\.7([+]chromium\.[0-9]+)?$/crcmod==1.7/' "$req"
+  if grep -q '^crcmod==1\.7+chromium\.4$' "$req"; then
+    sed -i.bak 's/^crcmod==1\.7+chromium\.4$/crcmod==1.7/' "$req"
     dirty=1
   fi
-  if grep -qE '\+chromium\.[0-9]+' "$req"; then
-    sed -i.bak -E 's/\+chromium\.[0-9]+//g' "$req"
+  # Chromium 151's exact aioquic pin has a validated public-wheel fallback.
+  # Keep mappings exact: other +chromium builds may contain downstream changes.
+  if grep -q '^aioquic==1\.2\.0+chromium\.1$' "$req"; then
+    sed -i.bak 's/^aioquic==1\.2\.0+chromium\.1$/aioquic==1.2.0/' "$req"
     dirty=1
   fi
   # Yanked / unavailable on public PyPI — bump to nearest public wheel.
@@ -266,24 +268,37 @@ ensure_proxy() {
   return 1
 }
 
-# Keep loopback off Clash / system proxy.
-export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}"
-
-shopt -s nullglob
-found=0
-for root in "${VPYTHON_STORE_ROOTS[@]}"; do
-  for req in "$root"/wheels+*/contents/requirements.txt; do
-    found=1
-    patch_requirements "$req"
-    prefetch_requirements_wheels "$req"
+scan_cached_requirements() {
+  local root req
+  local found=0
+  shopt -s nullglob
+  for root in "${VPYTHON_STORE_ROOTS[@]}"; do
+    for req in \
+      "$root"/wheels+*/contents/requirements.txt \
+      "$root"/vpython_requirements+*/contents/requirements.txt; do
+      found=1
+      patch_requirements "$req"
+      prefetch_requirements_wheels "$req"
+    done
   done
-done
-if [[ "$found" -eq 0 ]]; then
-  echo "No cached wheels requirements yet — will patch after first vpython attempt if needed."
+  if [[ "$found" -eq 0 ]]; then
+    echo "No cached wheels requirements yet — will patch after first vpython attempt if needed."
+  fi
+}
+
+main() {
+  # Keep loopback off Clash / system proxy.
+  export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}"
+
+  scan_cached_requirements
+
+  ensure_local_wheel 'crcmod==1.7'
+  ensure_proxy || true
+
+  echo "VPYTHON_AR_URL=$VPYTHON_AR_URL"
+  echo "NO_PROXY=$NO_PROXY"
+}
+
+if [[ "${AEGIS_FIX_VPYTHON_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
 fi
-
-ensure_local_wheel 'crcmod==1.7'
-ensure_proxy || true
-
-echo "VPYTHON_AR_URL=$VPYTHON_AR_URL"
-echo "NO_PROXY=$NO_PROXY"

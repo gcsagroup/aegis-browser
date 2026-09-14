@@ -101,9 +101,13 @@ verify_runnable_browser_output() {
     return 1
   fi
 
-  artifact_epoch="$(stat -f '%m' "$binary" 2>/dev/null || stat -c '%Y' "$binary")"
-  head_epoch="$(git -C "$src" show -s --format=%ct HEAD 2>/dev/null || true)"
-  if [[ -n "$head_epoch" && "$artifact_epoch" -lt "$head_epoch" ]]; then
+  artifact_epoch="$(portable_file_mtime "$binary")" || return 1
+  if ! head_epoch="$(git -C "$src" show -s --format=%ct HEAD 2>/dev/null)" ||
+    [[ ! "$head_epoch" =~ ^[0-9]+$ ]]; then
+    printf '%s 无法读取 Chromium checkout HEAD 时间，拒绝启动。\n' "$label" >&2
+    return 1
+  fi
+  if [[ "$artifact_epoch" -lt "$head_epoch" ]]; then
     printf '%s 早于 Chromium checkout HEAD，拒绝启动旧产物。\n' "$label" >&2
     return 1
   fi
@@ -195,6 +199,25 @@ portable_sha256_file() {
   else
     return 1
   fi
+}
+
+portable_file_mtime() {
+  local path="$1"
+  local host output
+  host="$(uname -s)"
+  case "$host" in
+    Darwin) output="$(stat -f '%m' "$path")" || return 1 ;;
+    Linux) output="$(stat -c '%Y' "$path")" || return 1 ;;
+    *)
+      printf '当前宿主不支持读取文件修改时间：%s\n' "$host" >&2
+      return 1
+      ;;
+  esac
+  if [[ ! "$output" =~ ^[0-9]+$ ]]; then
+    printf '文件修改时间不是 epoch 秒：%s\n' "$path" >&2
+    return 1
+  fi
+  printf '%s\n' "$output"
 }
 
 verify_release_manifest_inputs() {

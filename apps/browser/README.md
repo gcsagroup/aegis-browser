@@ -68,7 +68,7 @@ Run commands from the repository root. Bootstrap, fetch, sync, and dependency do
 pnpm --filter @gcsa-aegis/browser bootstrap
 
 # Fetch the pinned Chromium source. This requires tens of gigabytes.
-pnpm --filter @gcsa-aegis/browser fetch
+pnpm --filter @gcsa-aegis/browser run fetch
 
 # Replay the ordered Chromium and nested V8 patch series.
 pnpm --filter @gcsa-aegis/browser apply-patches

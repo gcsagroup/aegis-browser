@@ -1,0 +1,1759 @@
+From 83ff75c84f7425b79212c30425b329fe60e0ecd3 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 14 Sep 2026 15:38:14 +0800
+Subject: [PATCH] feat(aegis): add trusted policy context matching
+
+---
+ components/aegis_access/BUILD.gn              |  19 +
+ .../aegis_access/access_policy_evaluator.cc   | 416 ++++++++++++++++++
+ .../aegis_access/access_policy_evaluator.h    |  83 ++++
+ .../access_policy_evaluator_unittest.cc       | 326 ++++++++++++++
+ .../generate_policy_matcher_vectors.py        | 240 ++++++++++
+ .../aegis_access/request_policy_context.cc    | 175 ++++++++
+ .../aegis_access/request_policy_context.h     | 123 ++++++
+ .../request_policy_context_unittest.cc        | 147 +++++++
+ .../testdata/policy_matcher_vectors.json      | 124 ++++++
+ 9 files changed, 1653 insertions(+)
+ create mode 100644 components/aegis_access/access_policy_evaluator.cc
+ create mode 100644 components/aegis_access/access_policy_evaluator.h
+ create mode 100644 components/aegis_access/access_policy_evaluator_unittest.cc
+ create mode 100755 components/aegis_access/generate_policy_matcher_vectors.py
+ create mode 100644 components/aegis_access/request_policy_context.cc
+ create mode 100644 components/aegis_access/request_policy_context.h
+ create mode 100644 components/aegis_access/request_policy_context_unittest.cc
+ create mode 100644 components/aegis_access/testdata/policy_matcher_vectors.json
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index e0f22ed4fc..75f24a0972 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -13,25 +13,44 @@ action("generate_route_planner_vectors") {
+   ]
+ }
+ 
++action("generate_policy_matcher_vectors") {
++  script = "generate_policy_matcher_vectors.py"
++  inputs = [ "testdata/policy_matcher_vectors.json" ]
++  outputs = [ "$target_gen_dir/policy_matcher_golden_vectors.inc" ]
++  args = [
++    rebase_path(inputs[0], root_build_dir),
++    rebase_path(outputs[0], root_build_dir),
++  ]
++}
++
+ source_set("aegis_access") {
+   sources = [
++    "access_policy_evaluator.cc",
++    "access_policy_evaluator.h",
+     "access_route_planner.cc",
+     "access_route_planner.h",
+     "access_route_types.h",
++    "request_policy_context.cc",
++    "request_policy_context.h",
+     "site_proxy_rule_group.cc",
+     "site_proxy_rule_group.h",
+   ]
++  public_deps = [ "//net" ]
+ }
+ 
+ test("aegis_access_unittests") {
+   sources = [
++    "access_policy_evaluator_unittest.cc",
+     "access_route_planner_contract_test.h",
+     "access_route_planner_unittest.cc",
++    "request_policy_context_unittest.cc",
+   ]
+   include_dirs = [ "$target_gen_dir" ]
+   deps = [
+     ":aegis_access",
++    ":generate_policy_matcher_vectors",
+     ":generate_route_planner_vectors",
++    "//base",
+     "//base/test:run_all_unittests",
+     "//testing/gtest",
+   ]
+diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
+new file mode 100644
+index 0000000000..44b2969cf2
+--- /dev/null
++++ b/components/aegis_access/access_policy_evaluator.cc
+@@ -0,0 +1,416 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_policy_evaluator.h"
++
++#include <algorithm>
++#include <compare>
++#include <functional>
++#include <set>
++#include <tuple>
++#include <utility>
++
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include "net/base/schemeful_site.h"
++#include "net/base/url_util.h"
++#include "url/url_canon.h"
++
++namespace aegis_access {
++namespace {
++
++bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsComplete(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
++         !owner.storage_partition_token.empty();
++}
++
++bool IsKnownScheme(RequestScheme scheme) {
++  switch (scheme) {
++    case RequestScheme::kHttp:
++    case RequestScheme::kHttps:
++    case RequestScheme::kWs:
++    case RequestScheme::kWss:
++      return true;
++    case RequestScheme::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsKnownProtectionOverride(ProtectionOverride protection_override) {
++  switch (protection_override) {
++    case ProtectionOverride::kNone:
++    case ProtectionOverride::kTracker:
++    case ProtectionOverride::kEasyList:
++    case ProtectionOverride::kCname:
++      return true;
++    case ProtectionOverride::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsCanonicalHost(const std::string& host, bool include_subdomains) {
++  url::CanonHostInfo host_info;
++  const std::string canonical = net::CanonicalizeHost(host, &host_info);
++  if (canonical.empty() || canonical != host ||
++      host_info.family == url::CanonHostInfo::BROKEN) {
++    return false;
++  }
++  if (!include_subdomains) {
++    return true;
++  }
++  if (host_info.IsIPAddress()) {
++    return false;
++  }
++  return !net::registry_controlled_domains::GetDomainAndRegistry(
++              canonical,
++              net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)
++              .empty();
++}
++
++bool IsCanonicalTopLevelSite(const std::string& value) {
++  if (value.empty()) {
++    return false;
++  }
++  const net::SchemefulSite site = net::SchemefulSite::Deserialize(value);
++  return !site.opaque() && site.GetURL().SchemeIsHTTPOrHTTPS() &&
++         site.Serialize() == value;
++}
++
++bool IsStrictlySorted(const std::vector<RequestScheme>& schemes) {
++  if (schemes.empty()) {
++    return false;
++  }
++  for (size_t i = 0; i < schemes.size(); ++i) {
++    if (!IsKnownScheme(schemes[i]) ||
++        (i > 0 && schemes[i - 1] >= schemes[i])) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool IsStrictlySorted(const std::vector<uint16_t>& ports) {
++  if (ports.empty()) {
++    return false;
++  }
++  for (size_t i = 0; i < ports.size(); ++i) {
++    if (ports[i] == 0 || (i > 0 && ports[i - 1] >= ports[i])) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool IsValidRule(const AccessPolicyRule& rule,
++                 const OwnershipKey& snapshot_owner) {
++  if (rule.rule_id.empty() || !IsComplete(rule.owner) ||
++      rule.owner != snapshot_owner || rule.row_revision == 0 ||
++      rule.last_operation_sequence == 0 ||
++      !IsCanonicalHost(rule.destination_host, rule.include_subdomains) ||
++      !IsStrictlySorted(rule.schemes) ||
++      !IsKnownProtectionOverride(rule.protection_override)) {
++    return false;
++  }
++
++  if (rule.scope == PolicyScope::kSite) {
++    if (!IsCanonicalTopLevelSite(rule.top_level_site)) {
++      return false;
++    }
++  } else if (rule.scope == PolicyScope::kProfile) {
++    if (!rule.top_level_site.empty()) {
++      return false;
++    }
++  } else {
++    return false;
++  }
++
++  if (rule.ports.scope == PortScope::kAllBrowserPermitted) {
++    if (!rule.ports.explicit_ports.empty()) {
++      return false;
++    }
++  } else if (rule.ports.scope == PortScope::kExplicitSubset) {
++    if (!IsStrictlySorted(rule.ports.explicit_ports)) {
++      return false;
++    }
++  } else {
++    return false;
++  }
++
++  if (rule.mode == AccessMode::kProxy) {
++    return !rule.proxy_group_id.empty();
++  }
++  if (rule.mode == AccessMode::kDirect ||
++      rule.mode == AccessMode::kReject) {
++    return rule.proxy_group_id.empty() &&
++           rule.protection_override == ProtectionOverride::kNone;
++  }
++  return false;
++}
++
++struct RuleKey {
++  int channel;
++  std::string profile_token;
++  std::string storage_partition_token;
++  PolicyScope scope;
++  std::string top_level_site;
++  std::string destination_host;
++  bool include_subdomains;
++  std::vector<RequestScheme> schemes;
++  PortScope port_scope;
++  std::vector<uint16_t> explicit_ports;
++
++  friend auto operator<=>(const RuleKey&, const RuleKey&) = default;
++};
++
++RuleKey MakeRuleKey(const AccessPolicyRule& rule) {
++  return RuleKey{static_cast<int>(rule.owner.channel),
++                 rule.owner.profile_token,
++                 rule.owner.storage_partition_token,
++                 rule.scope,
++                 rule.top_level_site,
++                 rule.destination_host,
++                 rule.include_subdomains,
++                 rule.schemes,
++                 rule.ports.scope,
++                 rule.ports.explicit_ports};
++}
++
++bool HasDuplicateRuleKey(const std::vector<AccessPolicyRule>& rules) {
++  std::set<RuleKey> keys;
++  std::set<std::string> rule_ids;
++  for (const AccessPolicyRule& rule : rules) {
++    if (!rule_ids.insert(rule.rule_id).second ||
++        !keys.insert(MakeRuleKey(rule)).second) {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool Contains(const std::vector<RequestScheme>& schemes,
++              RequestScheme scheme) {
++  return std::binary_search(schemes.begin(), schemes.end(), scheme);
++}
++
++bool Contains(const RulePortSelector& ports, uint16_t port) {
++  if (ports.scope == PortScope::kAllBrowserPermitted) {
++    return true;
++  }
++  return std::binary_search(ports.explicit_ports.begin(),
++                            ports.explicit_ports.end(), port);
++}
++
++bool HostMatches(const RequestPolicyContext& request,
++                 const AccessPolicyRule& rule) {
++  if (request.exact_host() == rule.destination_host) {
++    return true;
++  }
++  if (!rule.include_subdomains || request.registrable_domain().empty()) {
++    return false;
++  }
++  const std::string rule_domain =
++      net::registry_controlled_domains::GetDomainAndRegistry(
++          rule.destination_host,
++          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
++  return !rule_domain.empty() &&
++         request.registrable_domain() == rule_domain &&
++         net::IsSubdomainOf(request.exact_host(), rule.destination_host);
++}
++
++size_t HostLabelCount(const std::string& host) {
++  if (host.empty()) {
++    return 0;
++  }
++  const size_t length = host.back() == '.' ? host.size() - 1 : host.size();
++  return 1 + static_cast<size_t>(
++                 std::count(host.begin(), host.begin() + length, '.'));
++}
++
++bool VectorSubset(const std::vector<RequestScheme>& left,
++                  const std::vector<RequestScheme>& right) {
++  return std::includes(right.begin(), right.end(), left.begin(), left.end());
++}
++
++bool VectorSubset(const std::vector<uint16_t>& left,
++                  const std::vector<uint16_t>& right) {
++  return std::includes(right.begin(), right.end(), left.begin(), left.end());
++}
++
++bool PortSubset(const RulePortSelector& left,
++                const RulePortSelector& right) {
++  if (right.scope == PortScope::kAllBrowserPermitted) {
++    return true;
++  }
++  if (left.scope == PortScope::kAllBrowserPermitted) {
++    return false;
++  }
++  return VectorSubset(left.explicit_ports, right.explicit_ports);
++}
++
++bool SelectorMoreSpecific(const AccessPolicyRule& left,
++                          const AccessPolicyRule& right) {
++  const bool schemes_subset = VectorSubset(left.schemes, right.schemes);
++  const bool ports_subset = PortSubset(left.ports, right.ports);
++  if (!schemes_subset || !ports_subset) {
++    return false;
++  }
++  return left.schemes != right.schemes || left.ports != right.ports;
++}
++
++struct Candidate {
++  std::reference_wrapper<const AccessPolicyRule> rule;
++  bool exact_host;
++  size_t host_labels;
++};
++
++std::vector<Candidate> MatchingCandidates(
++    const RequestPolicyContext& request,
++    const PublishedAccessPolicySnapshot& snapshot,
++    PolicyScope scope) {
++  std::vector<Candidate> result;
++  for (const AccessPolicyRule& rule : snapshot.rules) {
++    if (rule.scope != scope ||
++        (scope == PolicyScope::kSite &&
++         (!request.site_ownership_reliable() ||
++          rule.top_level_site != request.top_level_site())) ||
++        !HostMatches(request, rule) || !Contains(rule.schemes, request.scheme()) ||
++        !Contains(rule.ports, request.port())) {
++      continue;
++    }
++    result.push_back(
++        Candidate{std::cref(rule),
++                  !rule.include_subdomains &&
++                      request.exact_host() == rule.destination_host,
++                  HostLabelCount(rule.destination_host)});
++  }
++  return result;
++}
++
++void KeepBestHostSpecificity(std::vector<Candidate>* candidates) {
++  const bool has_exact =
++      std::ranges::any_of(*candidates, [](const Candidate& candidate) {
++        return candidate.exact_host;
++      });
++  if (has_exact) {
++    std::erase_if(*candidates, [](const Candidate& candidate) {
++      return !candidate.exact_host;
++    });
++    return;
++  }
++  const size_t longest =
++      std::ranges::max_element(*candidates, {}, &Candidate::host_labels)
++          ->host_labels;
++  std::erase_if(*candidates, [longest](const Candidate& candidate) {
++    return candidate.host_labels != longest;
++  });
++}
++
++void KeepMaximalSelectors(std::vector<Candidate>* candidates) {
++  std::vector<Candidate> maximal;
++  for (const Candidate& candidate : *candidates) {
++    const bool dominated =
++        std::ranges::any_of(*candidates, [&candidate](const Candidate& other) {
++          return &candidate.rule.get() != &other.rule.get() &&
++                 SelectorMoreSpecific(other.rule.get(), candidate.rule.get());
++        });
++    if (!dominated) {
++      maximal.push_back(candidate);
++    }
++  }
++  *candidates = std::move(maximal);
++}
++
++PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
++                        uint64_t policy_generation) {
++  return PolicyMatchResult{state,
++                           AccessMode::kInvalid,
++                           PolicyScope::kInvalid,
++                           {},
++                           {},
++                           ProtectionOverride::kInvalid,
++                           policy_generation,
++                           reason};
++}
++
++}  // namespace
++
++PolicyMatchResult EvaluateAccessPolicy(
++    const RequestPolicyContext& request,
++    const PublishedAccessPolicySnapshot& snapshot) {
++  if (!IsComplete(snapshot.owner) || snapshot.policy_generation == 0) {
++    return Error(PolicyState::kInvalid,
++                 PolicyMatchReason::kInvalidSnapshot,
++                 snapshot.policy_generation);
++  }
++  if (request.owner() != snapshot.owner) {
++    return Error(PolicyState::kInvalid,
++                 PolicyMatchReason::kOwnershipMismatch,
++                 snapshot.policy_generation);
++  }
++  for (const AccessPolicyRule& rule : snapshot.rules) {
++    if (!IsValidRule(rule, snapshot.owner)) {
++      const PolicyMatchReason reason =
++          rule.owner != snapshot.owner
++              ? PolicyMatchReason::kOwnershipMismatch
++              : PolicyMatchReason::kInvalidRule;
++      return Error(PolicyState::kInvalid, reason,
++                   snapshot.policy_generation);
++    }
++  }
++  if (HasDuplicateRuleKey(snapshot.rules)) {
++    return Error(PolicyState::kConflict,
++                 PolicyMatchReason::kPolicyConflict,
++                 snapshot.policy_generation);
++  }
++
++  std::vector<Candidate> candidates =
++      MatchingCandidates(request, snapshot, PolicyScope::kSite);
++  PolicyScope selected_scope = PolicyScope::kSite;
++  if (candidates.empty()) {
++    candidates = MatchingCandidates(request, snapshot, PolicyScope::kProfile);
++    selected_scope = PolicyScope::kProfile;
++  }
++  if (candidates.empty()) {
++    return PolicyMatchResult{PolicyState::kAbsent,
++                             AccessMode::kNone,
++                             PolicyScope::kNone,
++                             {},
++                             {},
++                             ProtectionOverride::kNone,
++                             snapshot.policy_generation,
++                             PolicyMatchReason::kNoMatchingRule};
++  }
++
++  KeepBestHostSpecificity(&candidates);
++  KeepMaximalSelectors(&candidates);
++  if (candidates.size() != 1) {
++    return Error(PolicyState::kConflict,
++                 PolicyMatchReason::kPolicyConflict,
++                 snapshot.policy_generation);
++  }
++
++  const AccessPolicyRule& rule = candidates.front().rule.get();
++  return PolicyMatchResult{PolicyState::kValid,
++                           rule.mode,
++                           selected_scope,
++                           rule.proxy_group_id,
++                           rule.rule_id,
++                           rule.protection_override,
++                           snapshot.policy_generation,
++                           PolicyMatchReason::kNone};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/access_policy_evaluator.h b/components/aegis_access/access_policy_evaluator.h
+new file mode 100644
+index 0000000000..46bf6e5cce
+--- /dev/null
++++ b/components/aegis_access/access_policy_evaluator.h
+@@ -0,0 +1,83 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_POLICY_EVALUATOR_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_POLICY_EVALUATOR_H_
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "components/aegis_access/request_policy_context.h"
++
++namespace aegis_access {
++
++struct RulePortSelector {
++  PortScope scope = PortScope::kInvalid;
++  std::vector<uint16_t> explicit_ports;
++
++  friend bool operator==(const RulePortSelector&,
++                         const RulePortSelector&) = default;
++};
++
++struct AccessPolicyRule {
++  std::string rule_id;
++  OwnershipKey owner;
++  PolicyScope scope = PolicyScope::kInvalid;
++  std::string top_level_site;
++  std::string destination_host;
++  bool include_subdomains = false;
++  std::vector<RequestScheme> schemes;
++  RulePortSelector ports;
++  AccessMode mode = AccessMode::kInvalid;
++  std::string proxy_group_id;
++  ProtectionOverride protection_override = ProtectionOverride::kInvalid;
++  uint64_t row_revision = 0;
++  uint64_t last_operation_sequence = 0;
++
++  friend bool operator==(const AccessPolicyRule&,
++                         const AccessPolicyRule&) = default;
++};
++
++struct PublishedAccessPolicySnapshot {
++  OwnershipKey owner;
++  uint64_t policy_generation = 0;
++  std::vector<AccessPolicyRule> rules;
++
++  friend bool operator==(const PublishedAccessPolicySnapshot&,
++                         const PublishedAccessPolicySnapshot&) = default;
++};
++
++enum class PolicyMatchReason {
++  kNone,
++  kNoMatchingRule,
++  kOwnershipMismatch,
++  kInvalidSnapshot,
++  kInvalidRule,
++  kPolicyConflict,
++};
++
++struct PolicyMatchResult {
++  PolicyState policy_state = PolicyState::kInvalid;
++  AccessMode effective_mode = AccessMode::kInvalid;
++  PolicyScope policy_scope = PolicyScope::kInvalid;
++  std::string effective_proxy_group_id;
++  std::string matched_rule_id;
++  ProtectionOverride protection_override = ProtectionOverride::kInvalid;
++  uint64_t policy_generation = 0;
++  PolicyMatchReason reason = PolicyMatchReason::kInvalidSnapshot;
++
++  friend bool operator==(const PolicyMatchResult&,
++                         const PolicyMatchResult&) = default;
++};
++
++// Evaluates an immutable, already-published rule snapshot without I/O. It
++// validates normalized rule shapes before matching and fails closed when the
++// winning rule is ambiguous. Site rules are ignored when the browser-owned
++// context cannot prove a top-level site; Profile rules may still match.
++PolicyMatchResult EvaluateAccessPolicy(
++    const RequestPolicyContext& request,
++    const PublishedAccessPolicySnapshot& snapshot);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_POLICY_EVALUATOR_H_
+diff --git a/components/aegis_access/access_policy_evaluator_unittest.cc b/components/aegis_access/access_policy_evaluator_unittest.cc
+new file mode 100644
+index 0000000000..5cdce01467
+--- /dev/null
++++ b/components/aegis_access/access_policy_evaluator_unittest.cc
+@@ -0,0 +1,326 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_policy_evaluator.h"
++
++#include <optional>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/check.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis_access {
++namespace {
++
++OwnershipKey TestOwner() {
++  return OwnershipKey{ChannelNamespace::kBeta, "profile-beta",
++                      "partition-main"};
++}
++
++RequestPolicyContext DocumentContext(
++    const std::string& target_url = "https://cdn.example.test/resource",
++    const std::string& top_frame_url = "https://www.example.test/page") {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-1", TestOwner(), RequestAttributionKind::kDocument,
++      "document-1", {}, net::SchemefulSite(GURL(top_frame_url))};
++  RequestPolicyContextResult result =
++      CanonicalizeBrowserOwnedRequest(metadata, GURL(target_url));
++  CHECK(result.context.has_value());
++  return std::move(*result.context);
++}
++
++RequestPolicyContext ProfileOnlyContext(
++    const std::string& target_url = "https://cdn.example.test/resource") {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-profile", TestOwner(), RequestAttributionKind::kProfileOnly,
++      {}, {}, std::nullopt};
++  RequestPolicyContextResult result =
++      CanonicalizeBrowserOwnedRequest(metadata, GURL(target_url));
++  CHECK(result.context.has_value());
++  return std::move(*result.context);
++}
++
++AccessPolicyRule Rule(std::string rule_id,
++                      PolicyScope scope,
++                      std::string host,
++                      AccessMode mode) {
++  return AccessPolicyRule{
++      std::move(rule_id),
++      TestOwner(),
++      scope,
++      scope == PolicyScope::kSite ? "https://example.test" : "",
++      std::move(host),
++      false,
++      {RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
++       RequestScheme::kWss},
++      RulePortSelector{PortScope::kAllBrowserPermitted, {}},
++      mode,
++      mode == AccessMode::kProxy ? "proxy-primary" : "",
++      ProtectionOverride::kNone,
++      1,
++      1};
++}
++
++PublishedAccessPolicySnapshot Snapshot(std::vector<AccessPolicyRule> rules) {
++  return PublishedAccessPolicySnapshot{TestOwner(), 7, std::move(rules)};
++}
++
++struct GoldenPolicyVector {
++  std::string name;
++  std::string target_url;
++  std::string top_frame_url;
++  RequestAttributionKind attribution_kind;
++  std::vector<AccessPolicyRule> rules;
++  PolicyState expected_state;
++  AccessMode expected_mode;
++  PolicyScope expected_scope;
++  std::string expected_rule_id;
++  PolicyMatchReason expected_reason;
++};
++
++std::vector<GoldenPolicyVector> BuildGoldenPolicyVectors() {
++  std::vector<GoldenPolicyVector> vectors;
++#include "policy_matcher_golden_vectors.inc"
++  return vectors;
++}
++
++void ExpectMatch(const PolicyMatchResult& result,
++                 const std::string& rule_id,
++                 PolicyScope scope,
++                 AccessMode mode) {
++  EXPECT_EQ(result.policy_state, PolicyState::kValid);
++  EXPECT_EQ(result.reason, PolicyMatchReason::kNone);
++  EXPECT_EQ(result.matched_rule_id, rule_id);
++  EXPECT_EQ(result.policy_scope, scope);
++  EXPECT_EQ(result.effective_mode, mode);
++  EXPECT_EQ(result.policy_generation, 7u);
++}
++
++TEST(AccessPolicyEvaluatorTest, SharedPolicyMatcherContract) {
++  const std::vector<GoldenPolicyVector> vectors = BuildGoldenPolicyVectors();
++  ASSERT_EQ(vectors.size(), 14u);
++  for (const GoldenPolicyVector& vector : vectors) {
++    RequestPolicyContext context =
++        vector.attribution_kind == RequestAttributionKind::kProfileOnly
++            ? ProfileOnlyContext(vector.target_url)
++            : DocumentContext(vector.target_url, vector.top_frame_url);
++    const PublishedAccessPolicySnapshot snapshot = Snapshot(vector.rules);
++    const PolicyMatchResult first = EvaluateAccessPolicy(context, snapshot);
++    const PolicyMatchResult second = EvaluateAccessPolicy(context, snapshot);
++    EXPECT_EQ(first.policy_state, vector.expected_state) << vector.name;
++    EXPECT_EQ(first.effective_mode, vector.expected_mode) << vector.name;
++    EXPECT_EQ(first.policy_scope, vector.expected_scope) << vector.name;
++    EXPECT_EQ(first.matched_rule_id, vector.expected_rule_id) << vector.name;
++    EXPECT_EQ(first.reason, vector.expected_reason) << vector.name;
++    EXPECT_EQ(first.policy_generation, 7u) << vector.name;
++    EXPECT_EQ(first, second) << vector.name;
++  }
++}
++
++TEST(AccessPolicyEvaluatorTest, SiteScopeBeatsProfileScope) {
++  AccessPolicyRule site = Rule("site-proxy", PolicyScope::kSite,
++                               "cdn.example.test", AccessMode::kProxy);
++  AccessPolicyRule profile = Rule("profile-reject", PolicyScope::kProfile,
++                                  "cdn.example.test", AccessMode::kReject);
++  ExpectMatch(EvaluateAccessPolicy(DocumentContext(),
++                                   Snapshot({profile, site})),
++              "site-proxy", PolicyScope::kSite, AccessMode::kProxy);
++}
++
++TEST(AccessPolicyEvaluatorTest, ExactHostBeatsExplicitSuffix) {
++  AccessPolicyRule suffix =
++      Rule("suffix", PolicyScope::kSite, "example.test", AccessMode::kReject);
++  suffix.include_subdomains = true;
++  AccessPolicyRule exact = Rule("exact", PolicyScope::kSite, "cdn.example.test",
++                                AccessMode::kDirect);
++  ExpectMatch(
++      EvaluateAccessPolicy(DocumentContext(), Snapshot({suffix, exact})),
++      "exact", PolicyScope::kSite, AccessMode::kDirect);
++
++  AccessPolicyRule exact_root = Rule("exact-root", PolicyScope::kProfile,
++                                     "example.test", AccessMode::kReject);
++  AccessPolicyRule narrower_suffix =
++      Rule("narrower-suffix", PolicyScope::kProfile, "example.test",
++           AccessMode::kDirect);
++  narrower_suffix.include_subdomains = true;
++  narrower_suffix.schemes = {RequestScheme::kHttps};
++  narrower_suffix.ports = RulePortSelector{PortScope::kExplicitSubset, {443}};
++
++  for (const std::vector<AccessPolicyRule>& rules :
++       {std::vector<AccessPolicyRule>{exact_root, narrower_suffix},
++        std::vector<AccessPolicyRule>{narrower_suffix, exact_root}}) {
++    ExpectMatch(EvaluateAccessPolicy(
++                    ProfileOnlyContext("https://example.test/resource"),
++                    Snapshot(rules)),
++                "exact-root", PolicyScope::kProfile, AccessMode::kReject);
++  }
++
++  AccessPolicyRule same_selector_suffix = narrower_suffix;
++  same_selector_suffix.rule_id = "same-selector-suffix";
++  same_selector_suffix.schemes = exact_root.schemes;
++  same_selector_suffix.ports = exact_root.ports;
++  for (const std::vector<AccessPolicyRule>& rules :
++       {std::vector<AccessPolicyRule>{exact_root, same_selector_suffix},
++        std::vector<AccessPolicyRule>{same_selector_suffix, exact_root}}) {
++    ExpectMatch(EvaluateAccessPolicy(
++                    ProfileOnlyContext("https://example.test/resource"),
++                    Snapshot(rules)),
++                "exact-root", PolicyScope::kProfile, AccessMode::kReject);
++  }
++}
++
++TEST(AccessPolicyEvaluatorTest, LongestDnsLabelSuffixWins) {
++  AccessPolicyRule broad =
++      Rule("broad", PolicyScope::kSite, "example.test", AccessMode::kReject);
++  broad.include_subdomains = true;
++  AccessPolicyRule narrow = Rule("narrow", PolicyScope::kSite,
++                                 "cdn.example.test", AccessMode::kProxy);
++  narrow.include_subdomains = true;
++  ExpectMatch(EvaluateAccessPolicy(
++                  DocumentContext("https://asset.cdn.example.test/file"),
++                  Snapshot({broad, narrow})),
++              "narrow", PolicyScope::kSite, AccessMode::kProxy);
++}
++
++TEST(AccessPolicyEvaluatorTest, NarrowerSchemeAndPortSelectorWins) {
++  AccessPolicyRule broad = Rule("broad", PolicyScope::kSite,
++                                "cdn.example.test", AccessMode::kReject);
++  AccessPolicyRule narrow = Rule("narrow", PolicyScope::kSite,
++                                 "cdn.example.test", AccessMode::kProxy);
++  narrow.schemes = {RequestScheme::kHttps};
++  narrow.ports = RulePortSelector{PortScope::kExplicitSubset, {443}};
++  ExpectMatch(EvaluateAccessPolicy(DocumentContext(),
++                                   Snapshot({broad, narrow})),
++              "narrow", PolicyScope::kSite, AccessMode::kProxy);
++}
++
++TEST(AccessPolicyEvaluatorTest, IncomparableSelectorsFailClosed) {
++  AccessPolicyRule scheme_specific =
++      Rule("scheme", PolicyScope::kSite, "cdn.example.test",
++           AccessMode::kDirect);
++  scheme_specific.schemes = {RequestScheme::kHttps};
++  AccessPolicyRule port_specific =
++      Rule("port", PolicyScope::kSite, "cdn.example.test",
++           AccessMode::kProxy);
++  port_specific.ports =
++      RulePortSelector{PortScope::kExplicitSubset, {443}};
++  const PolicyMatchResult result = EvaluateAccessPolicy(
++      DocumentContext(), Snapshot({scheme_specific, port_specific}));
++  EXPECT_EQ(result.policy_state, PolicyState::kConflict);
++  EXPECT_EQ(result.reason, PolicyMatchReason::kPolicyConflict);
++}
++
++TEST(AccessPolicyEvaluatorTest, DuplicateNormalizedKeyFailsClosed) {
++  AccessPolicyRule first = Rule("first", PolicyScope::kSite,
++                                "cdn.example.test", AccessMode::kDirect);
++  AccessPolicyRule second = first;
++  second.rule_id = "second";
++  second.mode = AccessMode::kReject;
++  const PolicyMatchResult result =
++      EvaluateAccessPolicy(DocumentContext(), Snapshot({first, second}));
++  EXPECT_EQ(result.policy_state, PolicyState::kConflict);
++  EXPECT_EQ(result.reason, PolicyMatchReason::kPolicyConflict);
++}
++
++TEST(AccessPolicyEvaluatorTest, DuplicateRuleIdentityFailsClosed) {
++  AccessPolicyRule first = Rule("duplicate", PolicyScope::kSite,
++                                "cdn.example.test", AccessMode::kDirect);
++  AccessPolicyRule second = Rule("duplicate", PolicyScope::kProfile,
++                                 "other.example.test", AccessMode::kReject);
++  const PolicyMatchResult result =
++      EvaluateAccessPolicy(DocumentContext(), Snapshot({first, second}));
++  EXPECT_EQ(result.policy_state, PolicyState::kConflict);
++  EXPECT_EQ(result.reason, PolicyMatchReason::kPolicyConflict);
++}
++
++TEST(AccessPolicyEvaluatorTest, UnreliableSiteOwnershipUsesProfileRuleOnly) {
++  AccessPolicyRule site = Rule("site", PolicyScope::kSite,
++                               "cdn.example.test", AccessMode::kProxy);
++  AccessPolicyRule profile = Rule("profile", PolicyScope::kProfile,
++                                  "cdn.example.test", AccessMode::kDirect);
++  ExpectMatch(EvaluateAccessPolicy(ProfileOnlyContext(),
++                                   Snapshot({site, profile})),
++              "profile", PolicyScope::kProfile, AccessMode::kDirect);
++}
++
++TEST(AccessPolicyEvaluatorTest, NoRuleReturnsInheritance) {
++  const PolicyMatchResult result = EvaluateAccessPolicy(
++      DocumentContext(),
++      Snapshot({Rule("other", PolicyScope::kSite, "other.example.test",
++                     AccessMode::kReject)}));
++  EXPECT_EQ(result.policy_state, PolicyState::kAbsent);
++  EXPECT_EQ(result.effective_mode, AccessMode::kNone);
++  EXPECT_EQ(result.policy_scope, PolicyScope::kNone);
++  EXPECT_EQ(result.reason, PolicyMatchReason::kNoMatchingRule);
++}
++
++TEST(AccessPolicyEvaluatorTest, PrivatePslPreventsCrossTenantSuffix) {
++  AccessPolicyRule invalid = Rule("invalid-private-suffix",
++                                  PolicyScope::kProfile, "appspot.com",
++                                  AccessMode::kReject);
++  invalid.include_subdomains = true;
++  const PolicyMatchResult invalid_result = EvaluateAccessPolicy(
++      ProfileOnlyContext("https://asset.foo.appspot.com/file"),
++      Snapshot({invalid}));
++  EXPECT_EQ(invalid_result.policy_state, PolicyState::kInvalid);
++  EXPECT_EQ(invalid_result.reason, PolicyMatchReason::kInvalidRule);
++
++  AccessPolicyRule tenant = Rule("tenant", PolicyScope::kProfile,
++                                 "foo.appspot.com", AccessMode::kProxy);
++  tenant.include_subdomains = true;
++  ExpectMatch(EvaluateAccessPolicy(
++                  ProfileOnlyContext("https://asset.foo.appspot.com/file"),
++                  Snapshot({tenant})),
++              "tenant", PolicyScope::kProfile, AccessMode::kProxy);
++
++  const PolicyMatchResult other_tenant = EvaluateAccessPolicy(
++      ProfileOnlyContext("https://asset.bar.appspot.com/file"),
++      Snapshot({tenant}));
++  EXPECT_EQ(other_tenant.policy_state, PolicyState::kAbsent);
++}
++
++TEST(AccessPolicyEvaluatorTest, InvalidStoredNormalizationFailsClosed) {
++  AccessPolicyRule host = Rule("host", PolicyScope::kSite,
++                               "CDN.EXAMPLE.TEST", AccessMode::kDirect);
++  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext(), Snapshot({host})).reason,
++            PolicyMatchReason::kInvalidRule);
++
++  AccessPolicyRule schemes = Rule("schemes", PolicyScope::kSite,
++                                  "cdn.example.test", AccessMode::kDirect);
++  schemes.schemes = {RequestScheme::kHttps, RequestScheme::kHttp};
++  EXPECT_EQ(
++      EvaluateAccessPolicy(DocumentContext(), Snapshot({schemes})).reason,
++      PolicyMatchReason::kInvalidRule);
++
++  AccessPolicyRule ports = Rule("ports", PolicyScope::kSite,
++                                "cdn.example.test", AccessMode::kDirect);
++  ports.ports = RulePortSelector{PortScope::kExplicitSubset, {443, 443}};
++  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext(), Snapshot({ports})).reason,
++            PolicyMatchReason::kInvalidRule);
++}
++
++TEST(AccessPolicyEvaluatorTest, OwnershipMismatchFailsClosed) {
++  PublishedAccessPolicySnapshot snapshot = Snapshot(
++      {Rule("rule", PolicyScope::kSite, "cdn.example.test",
++            AccessMode::kDirect)});
++  snapshot.owner.profile_token = "profile-other";
++  const PolicyMatchResult result =
++      EvaluateAccessPolicy(DocumentContext(), snapshot);
++  EXPECT_EQ(result.policy_state, PolicyState::kInvalid);
++  EXPECT_EQ(result.reason, PolicyMatchReason::kOwnershipMismatch);
++}
++
++TEST(AccessPolicyEvaluatorTest, ProxyCarriesLimitedProtectionOverride) {
++  AccessPolicyRule rule = Rule("allow", PolicyScope::kSite,
++                               "cdn.example.test", AccessMode::kProxy);
++  rule.protection_override = ProtectionOverride::kTracker;
++  const PolicyMatchResult result =
++      EvaluateAccessPolicy(DocumentContext(), Snapshot({rule}));
++  ExpectMatch(result, "allow", PolicyScope::kSite, AccessMode::kProxy);
++  EXPECT_EQ(result.protection_override, ProtectionOverride::kTracker);
++}
++
++}  // namespace
++}  // namespace aegis_access
+diff --git a/components/aegis_access/generate_policy_matcher_vectors.py b/components/aegis_access/generate_policy_matcher_vectors.py
+new file mode 100755
+index 0000000000..1d8bd624f0
+--- /dev/null
++++ b/components/aegis_access/generate_policy_matcher_vectors.py
+@@ -0,0 +1,240 @@
++#!/usr/bin/env python3
++
++import json
++import pathlib
++import sys
++
++
++ENUMS = {
++    "attribution": {
++        "document": "RequestAttributionKind::kDocument",
++        "profile_only": "RequestAttributionKind::kProfileOnly",
++    },
++    "scope": {
++        "none": "PolicyScope::kNone",
++        "site": "PolicyScope::kSite",
++        "profile": "PolicyScope::kProfile",
++        "invalid": "PolicyScope::kInvalid",
++    },
++    "scheme": {
++        "http": "RequestScheme::kHttp",
++        "https": "RequestScheme::kHttps",
++        "ws": "RequestScheme::kWs",
++        "wss": "RequestScheme::kWss",
++    },
++    "portScope": {
++        "all": "PortScope::kAllBrowserPermitted",
++        "explicit": "PortScope::kExplicitSubset",
++    },
++    "mode": {
++        "none": "AccessMode::kNone",
++        "direct": "AccessMode::kDirect",
++        "proxy": "AccessMode::kProxy",
++        "reject": "AccessMode::kReject",
++        "invalid": "AccessMode::kInvalid",
++    },
++    "protectionOverride": {
++        "none": "ProtectionOverride::kNone",
++        "tracker": "ProtectionOverride::kTracker",
++        "easylist": "ProtectionOverride::kEasyList",
++        "cname": "ProtectionOverride::kCname",
++    },
++    "state": {
++        "absent": "PolicyState::kAbsent",
++        "valid": "PolicyState::kValid",
++        "conflict": "PolicyState::kConflict",
++        "invalid": "PolicyState::kInvalid",
++    },
++    "reason": {
++        "none": "PolicyMatchReason::kNone",
++        "no_matching_rule": "PolicyMatchReason::kNoMatchingRule",
++        "ownership_mismatch": "PolicyMatchReason::kOwnershipMismatch",
++        "invalid_snapshot": "PolicyMatchReason::kInvalidSnapshot",
++        "invalid_rule": "PolicyMatchReason::kInvalidRule",
++        "policy_conflict": "PolicyMatchReason::kPolicyConflict",
++    },
++}
++
++FULL_SCHEMES = ["http", "https", "ws", "wss"]
++
++
++def require_dict(value, label):
++    if not isinstance(value, dict):
++        raise ValueError(f"{label} must be an object")
++    return value
++
++
++def require_keys(value, allowed, label):
++    unknown = set(value) - allowed
++    if unknown:
++        raise ValueError(f"{label} has unknown keys: {sorted(unknown)}")
++
++
++def string(value, label):
++    if not isinstance(value, str):
++        raise ValueError(f"{label} must be a string")
++    return json.dumps(value, ensure_ascii=True)
++
++
++def boolean(value, label):
++    if not isinstance(value, bool):
++        raise ValueError(f"{label} must be a boolean")
++    return "true" if value else "false"
++
++
++def enum(kind, value, label):
++    try:
++        return ENUMS[kind][value]
++    except (KeyError, TypeError):
++        raise ValueError(f"{label} has unsupported value {value!r}") from None
++
++
++def vector(values, emit, label):
++    if not isinstance(values, list):
++        raise ValueError(f"{label} must be an array")
++    return "{" + ", ".join(emit(value, label) for value in values) + "}"
++
++
++def uint16(value, label):
++    if isinstance(value, bool) or not isinstance(value, int) or not 0 < value <= 65535:
++        raise ValueError(f"{label} must be an integer in 1..65535")
++    return f"{value}u"
++
++
++def emit_rule(rule, vector_name, index):
++    label = f"{vector_name}.rules[{index}]"
++    require_dict(rule, label)
++    require_keys(
++        rule,
++        {
++            "id", "scope", "topLevelSite", "host", "includeSubdomains",
++            "schemes", "portScope", "explicitPorts", "mode",
++            "proxyGroupId", "protectionOverride",
++        },
++        label,
++    )
++    scope = rule.get("scope")
++    top_level_site = rule.get(
++        "topLevelSite", "https://example.test" if scope == "site" else "")
++    mode = rule.get("mode")
++    proxy_group = rule.get(
++        "proxyGroupId", "proxy-primary" if mode == "proxy" else "")
++    schemes = rule.get("schemes", FULL_SCHEMES)
++    port_scope = rule.get("portScope", "all")
++    explicit_ports = rule.get("explicitPorts", [])
++    return """AccessPolicyRule{{
++        {rule_id}, TestOwner(), {scope}, {top_level_site}, {host},
++        {include_subdomains}, {schemes},
++        RulePortSelector{{{port_scope}, {ports}}}, {mode}, {proxy_group},
++        {protection_override}, 1u, 1u}}""".format(
++        rule_id=string(rule.get("id"), f"{label}.id"),
++        scope=enum("scope", scope, f"{label}.scope"),
++        top_level_site=string(top_level_site, f"{label}.topLevelSite"),
++        host=string(rule.get("host"), f"{label}.host"),
++        include_subdomains=boolean(
++            rule.get("includeSubdomains", False),
++            f"{label}.includeSubdomains",
++        ),
++        schemes=vector(
++            schemes,
++            lambda value, item_label: enum("scheme", value, item_label),
++            f"{label}.schemes",
++        ),
++        port_scope=enum("portScope", port_scope, f"{label}.portScope"),
++        ports=vector(explicit_ports, uint16, f"{label}.explicitPorts"),
++        mode=enum("mode", mode, f"{label}.mode"),
++        proxy_group=string(proxy_group, f"{label}.proxyGroupId"),
++        protection_override=enum(
++            "protectionOverride",
++            rule.get("protectionOverride", "none"),
++            f"{label}.protectionOverride",
++        ),
++    )
++
++
++def expected_defaults(state):
++    if state == "absent":
++        return {
++            "mode": "none", "scope": "none", "ruleId": "",
++            "reason": "no_matching_rule",
++        }
++    if state == "conflict":
++        return {
++            "mode": "invalid", "scope": "invalid", "ruleId": "",
++            "reason": "policy_conflict",
++        }
++    if state == "invalid":
++        return {
++            "mode": "invalid", "scope": "invalid", "ruleId": "",
++            "reason": "invalid_rule",
++        }
++    return {"reason": "none"}
++
++
++def emit_vector(value, index):
++    label = f"policyVectors[{index}]"
++    value = require_dict(value, label)
++    require_keys(value, {"name", "context", "rules", "expected"}, label)
++    name = value.get("name")
++    if not isinstance(name, str) or not name:
++        raise ValueError(f"{label}.name must be non-empty")
++    context = require_dict(value.get("context"), f"{name}.context")
++    require_keys(context, {"targetUrl", "topFrameUrl", "attribution"},
++                 f"{name}.context")
++    target_url = string(context.get("targetUrl"), f"{name}.targetUrl")
++    top_frame_url = string(
++        context.get("topFrameUrl", "https://www.example.test/page"),
++        f"{name}.topFrameUrl",
++    )
++    attribution = enum(
++        "attribution", context.get("attribution", "document"),
++        f"{name}.attribution")
++    rules = value.get("rules")
++    if not isinstance(rules, list):
++        raise ValueError(f"{name}.rules must be an array")
++    emitted_rules = ",\n      ".join(
++        emit_rule(rule, name, rule_index)
++        for rule_index, rule in enumerate(rules)
++    )
++    expected = require_dict(value.get("expected"), f"{name}.expected")
++    require_keys(expected, {"state", "mode", "scope", "ruleId", "reason"},
++                 f"{name}.expected")
++    state = expected.get("state")
++    merged_expected = {**expected_defaults(state), **expected}
++    return f"""vectors.push_back(GoldenPolicyVector{{
++    {string(name, f"{name}.name")}, {target_url}, {top_frame_url},
++    {attribution},
++    {{{emitted_rules}}},
++    {enum("state", state, f"{name}.expected.state")},
++    {enum("mode", merged_expected.get("mode"), f"{name}.expected.mode")},
++    {enum("scope", merged_expected.get("scope"), f"{name}.expected.scope")},
++    {string(merged_expected.get("ruleId"), f"{name}.expected.ruleId")},
++    {enum("reason", merged_expected.get("reason"), f"{name}.expected.reason")},
++}});"""
++
++
++def main():
++    if len(sys.argv) != 3:
++        raise SystemExit(
++            "usage: generate_policy_matcher_vectors.py INPUT.json OUTPUT.inc")
++    input_path = pathlib.Path(sys.argv[1])
++    output_path = pathlib.Path(sys.argv[2])
++    parsed = require_dict(json.loads(input_path.read_text()), "vector file")
++    require_keys(parsed, {"schemaVersion", "policyVectors"}, "vector file")
++    if parsed.get("schemaVersion") != 1:
++        raise ValueError("schemaVersion must be 1")
++    vectors = parsed.get("policyVectors")
++    if not isinstance(vectors, list) or not vectors:
++        raise ValueError("policyVectors must be a non-empty array")
++    names = [value.get("name") for value in vectors if isinstance(value, dict)]
++    if len(names) != len(vectors) or len(set(names)) != len(names):
++        raise ValueError("policy vector names must be present and unique")
++    content = ["// Generated from the shared policy matcher vectors."]
++    content.extend(emit_vector(value, index)
++                   for index, value in enumerate(vectors))
++    output_path.parent.mkdir(parents=True, exist_ok=True)
++    output_path.write_text("\n".join(content) + "\n")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/components/aegis_access/request_policy_context.cc b/components/aegis_access/request_policy_context.cc
+new file mode 100644
+index 0000000000..cfa197b352
+--- /dev/null
++++ b/components/aegis_access/request_policy_context.cc
+@@ -0,0 +1,175 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/request_policy_context.h"
++
++#include <utility>
++
++#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include "url/url_constants.h"
++
++namespace aegis_access {
++namespace {
++
++bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsComplete(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
++         !owner.storage_partition_token.empty();
++}
++
++std::optional<RequestScheme> SchemeForUrl(const GURL& url) {
++  if (url.SchemeIs(url::kHttpScheme)) {
++    return RequestScheme::kHttp;
++  }
++  if (url.SchemeIs(url::kHttpsScheme)) {
++    return RequestScheme::kHttps;
++  }
++  if (url.SchemeIs(url::kWsScheme)) {
++    return RequestScheme::kWs;
++  }
++  if (url.SchemeIs(url::kWssScheme)) {
++    return RequestScheme::kWss;
++  }
++  return std::nullopt;
++}
++
++RequestPolicyContextResult Error(RequestContextError error) {
++  return RequestPolicyContextResult{error, std::nullopt};
++}
++
++bool IsUsableTopLevelSite(const net::SchemefulSite& site) {
++  return !site.opaque() && site.GetURL().SchemeIsHTTPOrHTTPS() &&
++         !site.Serialize().empty();
++}
++
++}  // namespace
++
++RequestPolicyContext::RequestPolicyContext(
++    std::string request_id,
++    OwnershipKey owner,
++    RequestAttributionKind attribution_kind,
++    std::string document_token,
++    std::string pending_navigation_token,
++    bool site_ownership_reliable,
++    std::string top_level_site,
++    std::string exact_host,
++    std::string registrable_domain,
++    RequestScheme scheme,
++    uint16_t port)
++    : request_id_(std::move(request_id)),
++      owner_(std::move(owner)),
++      attribution_kind_(attribution_kind),
++      document_token_(std::move(document_token)),
++      pending_navigation_token_(std::move(pending_navigation_token)),
++      site_ownership_reliable_(site_ownership_reliable),
++      top_level_site_(std::move(top_level_site)),
++      exact_host_(std::move(exact_host)),
++      registrable_domain_(std::move(registrable_domain)),
++      scheme_(scheme),
++      port_(port) {}
++
++RequestPolicyContext::RequestPolicyContext(const RequestPolicyContext&) =
++    default;
++RequestPolicyContext::RequestPolicyContext(RequestPolicyContext&&) noexcept =
++    default;
++RequestPolicyContext& RequestPolicyContext::operator=(
++    const RequestPolicyContext&) = default;
++RequestPolicyContext& RequestPolicyContext::operator=(
++    RequestPolicyContext&&) noexcept = default;
++RequestPolicyContext::~RequestPolicyContext() = default;
++
++RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
++    const BrowserOwnedRequestMetadata& metadata,
++    const GURL& request_url) {
++  if (!IsComplete(metadata.owner)) {
++    return Error(RequestContextError::kInvalidOwner);
++  }
++  if (metadata.request_id.empty()) {
++    return Error(RequestContextError::kInvalidRequestId);
++  }
++  if (!request_url.is_valid()) {
++    return Error(RequestContextError::kInvalidUrl);
++  }
++  const std::optional<RequestScheme> scheme = SchemeForUrl(request_url);
++  if (!scheme.has_value()) {
++    return Error(RequestContextError::kUnsupportedScheme);
++  }
++  if (request_url.host().empty()) {
++    return Error(RequestContextError::kMissingHost);
++  }
++  const int effective_port = request_url.EffectiveIntPort();
++  if (effective_port <= 0 || effective_port > 65535) {
++    return Error(RequestContextError::kInvalidPort);
++  }
++
++  bool site_ownership_reliable = false;
++  std::string top_level_site;
++  switch (metadata.attribution_kind) {
++    case RequestAttributionKind::kDocument:
++      if (metadata.document_token.empty() ||
++          !metadata.pending_navigation_token.empty() ||
++          !metadata.top_frame_site.has_value()) {
++        return Error(RequestContextError::kInvalidAttribution);
++      }
++      if (!IsUsableTopLevelSite(*metadata.top_frame_site)) {
++        return Error(RequestContextError::kInvalidTopLevelSite);
++      }
++      site_ownership_reliable = true;
++      top_level_site = metadata.top_frame_site->Serialize();
++      break;
++    case RequestAttributionKind::kPendingNavigation: {
++      if (!metadata.document_token.empty() ||
++          metadata.pending_navigation_token.empty() ||
++          metadata.top_frame_site.has_value()) {
++        return Error(RequestContextError::kInvalidAttribution);
++      }
++      if (!request_url.SchemeIsHTTPOrHTTPS()) {
++        return Error(RequestContextError::kInvalidTopLevelSite);
++      }
++      const net::SchemefulSite pending_site(request_url);
++      if (!IsUsableTopLevelSite(pending_site)) {
++        return Error(RequestContextError::kInvalidTopLevelSite);
++      }
++      site_ownership_reliable = true;
++      top_level_site = pending_site.Serialize();
++      break;
++    }
++    case RequestAttributionKind::kProfileOnly:
++      if (!metadata.document_token.empty() ||
++          !metadata.pending_navigation_token.empty() ||
++          metadata.top_frame_site.has_value()) {
++        return Error(RequestContextError::kInvalidAttribution);
++      }
++      break;
++    case RequestAttributionKind::kInvalid:
++      return Error(RequestContextError::kInvalidAttribution);
++    default:
++      return Error(RequestContextError::kInvalidAttribution);
++  }
++
++  const std::string registrable_domain =
++      net::registry_controlled_domains::GetDomainAndRegistry(
++          request_url,
++          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
++  return RequestPolicyContextResult{
++      RequestContextError::kNone,
++      RequestPolicyContext(
++          metadata.request_id, metadata.owner, metadata.attribution_kind,
++          metadata.document_token, metadata.pending_navigation_token,
++          site_ownership_reliable, std::move(top_level_site),
++          std::string(request_url.host()), registrable_domain, *scheme,
++          static_cast<uint16_t>(effective_port))};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/request_policy_context.h b/components/aegis_access/request_policy_context.h
+new file mode 100644
+index 0000000000..6176bed346
+--- /dev/null
++++ b/components/aegis_access/request_policy_context.h
+@@ -0,0 +1,123 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_POLICY_CONTEXT_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_POLICY_CONTEXT_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++
++#include "components/aegis_access/access_route_types.h"
++#include "components/aegis_access/site_proxy_rule_group.h"
++#include "net/base/schemeful_site.h"
++#include "url/gurl.h"
++
++namespace aegis_access {
++
++enum class RequestAttributionKind {
++  kDocument,
++  kPendingNavigation,
++  kProfileOnly,
++  kInvalid,
++};
++
++// This metadata must be supplied by the browser-side ownership adapter. It is
++// deliberately not a wire format and must never be populated from renderer or
++// page-provided Profile/partition identifiers.
++struct BrowserOwnedRequestMetadata {
++  std::string request_id;
++  OwnershipKey owner;
++  RequestAttributionKind attribution_kind = RequestAttributionKind::kInvalid;
++  std::string document_token;
++  std::string pending_navigation_token;
++  std::optional<net::SchemefulSite> top_frame_site;
++};
++
++enum class RequestContextError {
++  kNone,
++  kInvalidOwner,
++  kInvalidRequestId,
++  kInvalidAttribution,
++  kInvalidUrl,
++  kUnsupportedScheme,
++  kMissingHost,
++  kInvalidPort,
++  kInvalidTopLevelSite,
++};
++
++struct RequestPolicyContextResult;
++
++// Immutable normalized context. Construction is restricted to the native
++// adapter below so policy matching cannot consume arbitrary string fields.
++class RequestPolicyContext {
++ public:
++  RequestPolicyContext(const RequestPolicyContext&);
++  RequestPolicyContext(RequestPolicyContext&&) noexcept;
++  RequestPolicyContext& operator=(const RequestPolicyContext&);
++  RequestPolicyContext& operator=(RequestPolicyContext&&) noexcept;
++  ~RequestPolicyContext();
++
++  const std::string& request_id() const { return request_id_; }
++  const OwnershipKey& owner() const { return owner_; }
++  RequestAttributionKind attribution_kind() const {
++    return attribution_kind_;
++  }
++  const std::string& document_token() const { return document_token_; }
++  const std::string& pending_navigation_token() const {
++    return pending_navigation_token_;
++  }
++  bool site_ownership_reliable() const { return site_ownership_reliable_; }
++  const std::string& top_level_site() const { return top_level_site_; }
++  const std::string& exact_host() const { return exact_host_; }
++  const std::string& registrable_domain() const {
++    return registrable_domain_;
++  }
++  RequestScheme scheme() const { return scheme_; }
++  uint16_t port() const { return port_; }
++
++ private:
++  friend RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
++      const BrowserOwnedRequestMetadata& metadata,
++      const GURL& request_url);
++
++  RequestPolicyContext(std::string request_id,
++                       OwnershipKey owner,
++                       RequestAttributionKind attribution_kind,
++                       std::string document_token,
++                       std::string pending_navigation_token,
++                       bool site_ownership_reliable,
++                       std::string top_level_site,
++                       std::string exact_host,
++                       std::string registrable_domain,
++                       RequestScheme scheme,
++                       uint16_t port);
++
++  std::string request_id_;
++  OwnershipKey owner_;
++  RequestAttributionKind attribution_kind_;
++  std::string document_token_;
++  std::string pending_navigation_token_;
++  bool site_ownership_reliable_;
++  std::string top_level_site_;
++  std::string exact_host_;
++  std::string registrable_domain_;
++  RequestScheme scheme_;
++  uint16_t port_;
++};
++
++struct RequestPolicyContextResult {
++  RequestContextError error = RequestContextError::kInvalidAttribution;
++  std::optional<RequestPolicyContext> context;
++};
++
++// Canonicalizes URL and site fields using Chromium's pinned GURL,
++// SchemefulSite and public/private suffix implementations. It performs no I/O
++// and does not turn syntactically valid renderer data into trusted ownership;
++// callers must source metadata from a browser-owned registry or navigation.
++RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
++    const BrowserOwnedRequestMetadata& metadata,
++    const GURL& request_url);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_POLICY_CONTEXT_H_
+diff --git a/components/aegis_access/request_policy_context_unittest.cc b/components/aegis_access/request_policy_context_unittest.cc
+new file mode 100644
+index 0000000000..70ea53256a
+--- /dev/null
++++ b/components/aegis_access/request_policy_context_unittest.cc
+@@ -0,0 +1,147 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/request_policy_context.h"
++
++#include <optional>
++#include <string>
++
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis_access {
++namespace {
++
++OwnershipKey TestOwner() {
++  return OwnershipKey{ChannelNamespace::kBeta, "profile-beta",
++                      "partition-main"};
++}
++
++BrowserOwnedRequestMetadata DocumentMetadata(const GURL& top_frame_url) {
++  return BrowserOwnedRequestMetadata{
++      "request-document", TestOwner(), RequestAttributionKind::kDocument,
++      "document-token", {}, net::SchemefulSite(top_frame_url)};
++}
++
++TEST(RequestPolicyContextTest, CanonicalizesDocumentRequestWithPrivatePsl) {
++  const BrowserOwnedRequestMetadata metadata =
++      DocumentMetadata(GURL("https://shop.foo.appspot.com/page"));
++  const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
++      metadata,
++      GURL("https://B%C3%9CCHER.example:8443/path?secret=yes#fragment"));
++
++  ASSERT_EQ(result.error, RequestContextError::kNone);
++  ASSERT_TRUE(result.context.has_value());
++  EXPECT_EQ(result.context->request_id(), "request-document");
++  EXPECT_EQ(result.context->owner(), TestOwner());
++  EXPECT_EQ(result.context->attribution_kind(),
++            RequestAttributionKind::kDocument);
++  EXPECT_EQ(result.context->document_token(), "document-token");
++  EXPECT_TRUE(result.context->pending_navigation_token().empty());
++  EXPECT_TRUE(result.context->site_ownership_reliable());
++  EXPECT_EQ(result.context->top_level_site(),
++            "https://foo.appspot.com");
++  EXPECT_EQ(result.context->exact_host(), "xn--bcher-kva.example");
++  EXPECT_EQ(result.context->registrable_domain(),
++            "xn--bcher-kva.example");
++  EXPECT_EQ(result.context->scheme(), RequestScheme::kHttps);
++  EXPECT_EQ(result.context->port(), 8443u);
++}
++
++TEST(RequestPolicyContextTest, DerivesPendingNavigationSiteFromTarget) {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-navigation", TestOwner(),
++      RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
++      std::nullopt};
++  const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
++      metadata, GURL("http://deep.example.test:8080/path?q=ignored"));
++
++  ASSERT_EQ(result.error, RequestContextError::kNone);
++  ASSERT_TRUE(result.context.has_value());
++  EXPECT_TRUE(result.context->site_ownership_reliable());
++  EXPECT_EQ(result.context->top_level_site(), "http://example.test");
++  EXPECT_EQ(result.context->exact_host(), "deep.example.test");
++  EXPECT_EQ(result.context->scheme(), RequestScheme::kHttp);
++  EXPECT_EQ(result.context->port(), 8080u);
++}
++
++TEST(RequestPolicyContextTest, PreservesProfileOnlyOwnershipWithoutSite) {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-profile", TestOwner(), RequestAttributionKind::kProfileOnly,
++      {}, {}, std::nullopt};
++  const RequestPolicyContextResult result =
++      CanonicalizeBrowserOwnedRequest(metadata, GURL("wss://socket.example/"));
++
++  ASSERT_EQ(result.error, RequestContextError::kNone);
++  ASSERT_TRUE(result.context.has_value());
++  EXPECT_FALSE(result.context->site_ownership_reliable());
++  EXPECT_TRUE(result.context->top_level_site().empty());
++  EXPECT_EQ(result.context->scheme(), RequestScheme::kWss);
++  EXPECT_EQ(result.context->port(), 443u);
++}
++
++TEST(RequestPolicyContextTest, RejectsUntrustedOrAmbiguousShapes) {
++  BrowserOwnedRequestMetadata metadata =
++      DocumentMetadata(GURL("https://top.example/"));
++
++  metadata.owner.profile_token.clear();
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
++                                             GURL("https://target.example/"))
++                .error,
++            RequestContextError::kInvalidOwner);
++
++  metadata = DocumentMetadata(GURL("https://top.example/"));
++  metadata.request_id.clear();
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
++                                             GURL("https://target.example/"))
++                .error,
++            RequestContextError::kInvalidRequestId);
++
++  metadata = DocumentMetadata(GURL("https://top.example/"));
++  metadata.pending_navigation_token = "unexpected";
++  const RequestPolicyContextResult ambiguous = CanonicalizeBrowserOwnedRequest(
++      metadata, GURL("https://target.example/"));
++  EXPECT_EQ(ambiguous.error, RequestContextError::kInvalidAttribution);
++  EXPECT_FALSE(ambiguous.context.has_value());
++
++  metadata = DocumentMetadata(GURL("https://top.example/"));
++  metadata.attribution_kind = static_cast<RequestAttributionKind>(99);
++  const RequestPolicyContextResult unknown_attribution =
++      CanonicalizeBrowserOwnedRequest(metadata,
++                                      GURL("https://target.example/"));
++  EXPECT_EQ(unknown_attribution.error,
++            RequestContextError::kInvalidAttribution);
++  EXPECT_FALSE(unknown_attribution.context.has_value());
++
++  metadata = DocumentMetadata(GURL("data:text/plain,opaque"));
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
++                                             GURL("https://target.example/"))
++                .error,
++            RequestContextError::kInvalidTopLevelSite);
++
++  metadata = DocumentMetadata(GURL("https://top.example/"));
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
++                                             GURL("ftp://target.example/"))
++                .error,
++            RequestContextError::kUnsupportedScheme);
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata, GURL("not a url"))
++                .error,
++            RequestContextError::kInvalidUrl);
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(metadata,
++                                             GURL("https://target.example:0/"))
++                .error,
++            RequestContextError::kInvalidPort);
++}
++
++TEST(RequestPolicyContextTest, RejectsWebSocketAsPendingTopLevelNavigation) {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-navigation", TestOwner(),
++      RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
++      std::nullopt};
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(
++                metadata, GURL("wss://socket.example/path"))
++                .error,
++            RequestContextError::kInvalidTopLevelSite);
++}
++
++}  // namespace
++}  // namespace aegis_access
+diff --git a/components/aegis_access/testdata/policy_matcher_vectors.json b/components/aegis_access/testdata/policy_matcher_vectors.json
+new file mode 100644
+index 0000000000..dbaba5e3b1
+--- /dev/null
++++ b/components/aegis_access/testdata/policy_matcher_vectors.json
+@@ -0,0 +1,124 @@
++{
++  "schemaVersion": 1,
++  "policyVectors": [
++    {
++      "name": "site exact proxy",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "site-proxy", "scope": "site", "host": "cdn.example.test", "mode": "proxy" }
++      ],
++      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "site-proxy" }
++    },
++    {
++      "name": "site beats profile",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "profile-reject", "scope": "profile", "host": "cdn.example.test", "mode": "reject" },
++        { "id": "site-proxy", "scope": "site", "host": "cdn.example.test", "mode": "proxy" }
++      ],
++      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "site-proxy" }
++    },
++    {
++      "name": "exact beats suffix",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "suffix-reject", "scope": "site", "host": "example.test", "includeSubdomains": true, "mode": "reject" },
++        { "id": "exact-direct", "scope": "site", "host": "cdn.example.test", "mode": "direct" }
++      ],
++      "expected": { "state": "valid", "mode": "direct", "scope": "site", "ruleId": "exact-direct" }
++    },
++    {
++      "name": "longest suffix wins",
++      "context": { "targetUrl": "https://asset.cdn.example.test/resource" },
++      "rules": [
++        { "id": "broad-reject", "scope": "site", "host": "example.test", "includeSubdomains": true, "mode": "reject" },
++        { "id": "narrow-proxy", "scope": "site", "host": "cdn.example.test", "includeSubdomains": true, "mode": "proxy" }
++      ],
++      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "narrow-proxy" }
++    },
++    {
++      "name": "narrow scheme port wins",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "broad-reject", "scope": "site", "host": "cdn.example.test", "mode": "reject" },
++        { "id": "narrow-proxy", "scope": "site", "host": "cdn.example.test", "schemes": ["https"], "portScope": "explicit", "explicitPorts": [443], "mode": "proxy" }
++      ],
++      "expected": { "state": "valid", "mode": "proxy", "scope": "site", "ruleId": "narrow-proxy" }
++    },
++    {
++      "name": "incomparable selectors conflict",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "scheme-direct", "scope": "site", "host": "cdn.example.test", "schemes": ["https"], "mode": "direct" },
++        { "id": "port-proxy", "scope": "site", "host": "cdn.example.test", "portScope": "explicit", "explicitPorts": [443], "mode": "proxy" }
++      ],
++      "expected": { "state": "conflict" }
++    },
++    {
++      "name": "duplicate key conflict",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "first", "scope": "site", "host": "cdn.example.test", "mode": "direct" },
++        { "id": "second", "scope": "site", "host": "cdn.example.test", "mode": "reject" }
++      ],
++      "expected": { "state": "conflict" }
++    },
++    {
++      "name": "profile only skips site",
++      "context": { "targetUrl": "https://cdn.example.test/resource", "attribution": "profile_only" },
++      "rules": [
++        { "id": "site-proxy", "scope": "site", "host": "cdn.example.test", "mode": "proxy" },
++        { "id": "profile-direct", "scope": "profile", "host": "cdn.example.test", "mode": "direct" }
++      ],
++      "expected": { "state": "valid", "mode": "direct", "scope": "profile", "ruleId": "profile-direct" }
++    },
++    {
++      "name": "no match inherits",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "other", "scope": "site", "host": "other.example.test", "mode": "reject" }
++      ],
++      "expected": { "state": "absent" }
++    },
++    {
++      "name": "private psl tenant suffix",
++      "context": { "targetUrl": "https://asset.foo.appspot.com/resource", "attribution": "profile_only" },
++      "rules": [
++        { "id": "tenant-proxy", "scope": "profile", "host": "foo.appspot.com", "includeSubdomains": true, "mode": "proxy" }
++      ],
++      "expected": { "state": "valid", "mode": "proxy", "scope": "profile", "ruleId": "tenant-proxy" }
++    },
++    {
++      "name": "private psl cross tenant absent",
++      "context": { "targetUrl": "https://asset.bar.appspot.com/resource", "attribution": "profile_only" },
++      "rules": [
++        { "id": "tenant-proxy", "scope": "profile", "host": "foo.appspot.com", "includeSubdomains": true, "mode": "proxy" }
++      ],
++      "expected": { "state": "absent" }
++    },
++    {
++      "name": "private psl suffix itself invalid",
++      "context": { "targetUrl": "https://asset.foo.appspot.com/resource", "attribution": "profile_only" },
++      "rules": [
++        { "id": "invalid-suffix", "scope": "profile", "host": "appspot.com", "includeSubdomains": true, "mode": "reject" }
++      ],
++      "expected": { "state": "invalid" }
++    },
++    {
++      "name": "idn canonical exact",
++      "context": { "targetUrl": "https://b%C3%BCcher.example/resource", "attribution": "profile_only" },
++      "rules": [
++        { "id": "idn-proxy", "scope": "profile", "host": "xn--bcher-kva.example", "mode": "proxy", "protectionOverride": "tracker" }
++      ],
++      "expected": { "state": "valid", "mode": "proxy", "scope": "profile", "ruleId": "idn-proxy" }
++    },
++    {
++      "name": "non canonical stored host invalid",
++      "context": { "targetUrl": "https://cdn.example.test/resource" },
++      "rules": [
++        { "id": "invalid-host", "scope": "site", "host": "CDN.EXAMPLE.TEST", "mode": "direct" }
++      ],
++      "expected": { "state": "invalid" }
++    }
++  ]
++}
+-- 
+2.50.1 (Apple Git-155)
+

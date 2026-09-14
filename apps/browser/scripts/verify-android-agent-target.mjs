@@ -39,9 +39,10 @@ export function activeProfileRoots(fdListing) {
 export function parseKeyguard(policy) {
   const delegate = policy.split('KeyguardServiceDelegate')[1];
   const showing = delegate?.match(/\bshowing=(true|false)\b/);
-  const screen = delegate?.match(/\bscreenState=(SCREEN_STATE_\w+)/);
+  // Current Android releases dump the integer constant; older releases used its symbolic name.
+  const screen = delegate?.match(/\bscreenState=(SCREEN_STATE_\w+|\d+)\b/);
   return {known: !!showing && !!screen, unlocked: showing?.[1] === 'false',
-    screenOn: screen?.[1] === 'SCREEN_STATE_ON'};
+    screenOn: screen?.[1] === 'SCREEN_STATE_ON' || screen?.[1] === '2'};
 }
 
 export function verifyTarget(report, expectedHash, expectedProfile) {

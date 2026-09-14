@@ -1,0 +1,7 @@
+[run]
+branch = True
+parallel = True
+[report]
+omit =
+    */*_test.py
+    */test_*.py

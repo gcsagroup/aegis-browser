@@ -1,0 +1,3295 @@
+From f1675637d40fb67ae2e99ca012da780fd98a70d8 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 14 Sep 2026 20:20:38 +0800
+Subject: [PATCH] feat(aegis): add atomic access rule store recovery
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   32 +
+ .../browser/aegis/access/access_rule_store.cc | 1627 +++++++++++++++++
+ .../browser/aegis/access/access_rule_store.h  |  291 +++
+ .../access/access_rule_store_unittest.cc      | 1289 +++++++++++++
+ .../histograms/metadata/sql/histograms.xml    |    1 +
+ 5 files changed, 3240 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/BUILD.gn
+ create mode 100644 chrome/browser/aegis/access/access_rule_store.cc
+ create mode 100644 chrome/browser/aegis/access/access_rule_store.h
+ create mode 100644 chrome/browser/aegis/access/access_rule_store_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+new file mode 100644
+index 0000000000..645480e477
+--- /dev/null
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -0,0 +1,32 @@
++# Copyright 2026 GCSA
++# Intended path: chrome/browser/aegis/access/BUILD.gn
++
++import("//testing/test.gni")
++
++source_set("access_rule_store") {
++  sources = [
++    "access_rule_store.cc",
++    "access_rule_store.h",
++  ]
++  deps = [
++    "//base",
++    "//components/aegis_access",
++    "//net",
++    "//sql",
++    "//url",
++  ]
++}
++
++test("access_rule_store_unittests") {
++  sources = [ "access_rule_store_unittest.cc" ]
++  deps = [
++    ":access_rule_store",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//components/aegis_access",
++    "//net",
++    "//sql",
++    "//testing/gtest",
++    "//url",
++  ]
++}
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+new file mode 100644
+index 0000000000..1bc85cd042
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -0,0 +1,1627 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_rule_store.h"
++
++#include <algorithm>
++#include <cctype>
++#include <limits>
++#include <set>
++#include <string_view>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/time/time.h"
++#include "net/base/schemeful_site.h"
++#include "sql/statement.h"
++#include "sql/transaction.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++namespace {
++
++constexpr int kSchemaVersion = 1;
++constexpr int kCompatibleVersion = 1;
++constexpr int kPrepared = 0;
++constexpr int kCommitted = 1;
++constexpr int kSuperseded = 2;
++constexpr int kCompleteSchemeMask = 0x0f;
++constexpr size_t kMaxIdBytes = 256;
++constexpr size_t kMaxSiteBytes = 512;
++constexpr size_t kMaxMutationJournalRows = 128;
++constexpr base::TimeDelta kMutationRetention = base::Days(7);
++
++constexpr char kCreateIdentitySql[] = R"sql(
++  CREATE TABLE access_store_identity(
++    singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton=1),
++    schema_version INTEGER NOT NULL,
++    channel INTEGER NOT NULL,
++    durable_profile_id TEXT NOT NULL,
++    profile_path TEXT NOT NULL
++  ))sql";
++
++constexpr char kCreateCountersSql[] = R"sql(
++  CREATE TABLE access_store_counters(
++    singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton=1),
++    operation_sequence INTEGER NOT NULL
++  ))sql";
++
++constexpr char kCreateGroupsSql[] = R"sql(
++  CREATE TABLE access_site_groups(
++    channel INTEGER NOT NULL,
++    durable_profile_id TEXT NOT NULL,
++    storage_partition_token TEXT NOT NULL,
++    site_toggle_id TEXT NOT NULL,
++    canonical_host TEXT NOT NULL,
++    http_top_level_site TEXT NOT NULL,
++    https_top_level_site TEXT NOT NULL,
++    http_member_rule_id TEXT NOT NULL,
++    https_member_rule_id TEXT NOT NULL,
++    revision INTEGER NOT NULL,
++    last_operation_sequence INTEGER NOT NULL,
++    committed_policy_generation INTEGER NOT NULL,
++    PRIMARY KEY(storage_partition_token, site_toggle_id),
++    UNIQUE(storage_partition_token, canonical_host)
++  ))sql";
++
++constexpr char kCreateRulesSql[] = R"sql(
++  CREATE TABLE access_rules(
++    channel INTEGER NOT NULL,
++    durable_profile_id TEXT NOT NULL,
++    storage_partition_token TEXT NOT NULL,
++    rule_id TEXT NOT NULL,
++    site_toggle_id TEXT NOT NULL,
++    site_toggle_revision INTEGER NOT NULL,
++    scope INTEGER NOT NULL,
++    top_level_site TEXT NOT NULL,
++    destination_host TEXT NOT NULL,
++    include_subdomains INTEGER NOT NULL,
++    schemes_mask INTEGER NOT NULL,
++    port_scope INTEGER NOT NULL,
++    explicit_ports TEXT NOT NULL,
++    mode INTEGER NOT NULL,
++    proxy_group_id TEXT NOT NULL,
++    protection_override INTEGER NOT NULL,
++    source INTEGER NOT NULL,
++    lifetime INTEGER NOT NULL,
++    expires_at_micros INTEGER NOT NULL,
++    created_by_batch_id TEXT NOT NULL,
++    row_revision INTEGER NOT NULL,
++    last_operation_sequence INTEGER NOT NULL,
++    PRIMARY KEY(storage_partition_token, rule_id)
++  ))sql";
++
++constexpr char kCreateJournalSql[] = R"sql(
++  CREATE TABLE access_mutation_journal(
++    operation_id TEXT PRIMARY KEY NOT NULL,
++    request_fingerprint TEXT NOT NULL,
++    state INTEGER NOT NULL,
++    schema_version INTEGER NOT NULL,
++    channel INTEGER NOT NULL,
++    durable_profile_id TEXT NOT NULL,
++    profile_path TEXT NOT NULL,
++    storage_partition_token TEXT NOT NULL,
++    site_toggle_id TEXT NOT NULL,
++    canonical_host TEXT NOT NULL,
++    http_top_level_site TEXT NOT NULL,
++    https_top_level_site TEXT NOT NULL,
++    http_member_rule_id TEXT NOT NULL,
++    https_member_rule_id TEXT NOT NULL,
++    target_mode INTEGER NOT NULL,
++    proxy_group_id TEXT NOT NULL,
++    expected_revision INTEGER NOT NULL,
++    target_revision INTEGER NOT NULL,
++    operation_sequence INTEGER NOT NULL,
++    committed_policy_generation INTEGER NOT NULL,
++    created_at_micros INTEGER NOT NULL,
++    completed_at_micros INTEGER NOT NULL,
++    before_image TEXT NOT NULL,
++    after_image TEXT NOT NULL
++  ))sql";
++
++bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool FitsSqlInt64(uint64_t value) {
++  return value <= static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
++}
++
++bool Bounded(std::string_view value, size_t maximum = kMaxIdBytes) {
++  return !value.empty() && value.size() <= maximum;
++}
++
++bool IsCanonicalHostLike(std::string_view host) {
++  if (!Bounded(host, 253) || host.back() == '.') {
++    return false;
++  }
++  const bool bracketed_ipv6 = host.front() == '[' && host.back() == ']';
++  for (unsigned char character : host) {
++    if (character >= 0x80 || std::isspace(character) ||
++        std::isupper(character) || character == '/' || character == '\\' ||
++        character == '@' || character == '?' || character == '#' ||
++        character == '%') {
++      return false;
++    }
++    if (character == ':' && !bracketed_ipv6) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool IsSchemefulSiteLike(std::string_view value, std::string_view scheme) {
++  return Bounded(value, kMaxSiteBytes) && value.starts_with(scheme) &&
++         IsCanonicalHostLike(value.substr(scheme.size()));
++}
++
++OwnershipKey OwnerFor(const AccessStoreBinding& binding,
++                      const std::string& partition) {
++  return {binding.channel(), binding.runtime_profile_token(), partition};
++}
++
++bool IsCompleteOwner(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && Bounded(owner.profile_token) &&
++         Bounded(owner.storage_partition_token);
++}
++
++std::optional<std::pair<std::string, std::string>> CanonicalSitesForHost(
++    std::string_view canonical_host) {
++  GURL::Replacements replacements;
++  replacements.SetHostStr(canonical_host);
++  const GURL http_url =
++      GURL("http://site.invalid/").ReplaceComponents(replacements);
++  const GURL https_url =
++      GURL("https://site.invalid/").ReplaceComponents(replacements);
++  if (!http_url.is_valid() || !https_url.is_valid() ||
++      http_url.host() != canonical_host || https_url.host() != canonical_host) {
++    return std::nullopt;
++  }
++  const net::SchemefulSite http_site(http_url);
++  const net::SchemefulSite https_site(https_url);
++  if (http_site.opaque() || https_site.opaque()) {
++    return std::nullopt;
++  }
++  return std::pair(http_site.Serialize(), https_site.Serialize());
++}
++
++aegis_access::GroupValidation ValidateBoundSiteGroup(
++    const OwnershipKey& expected_owner,
++    const SiteProxyRuleGroup* group,
++    const std::vector<SiteProxyRuleMember>& members) {
++  aegis_access::GroupValidation validation =
++      ValidateSiteProxyRuleGroup(expected_owner, group, members);
++  if (validation.error != GroupValidationError::kNone) {
++    return validation;
++  }
++  const auto expected_sites = CanonicalSitesForHost(group->canonical_host);
++  if (!expected_sites.has_value() ||
++      group->http_top_level_site != expected_sites->first ||
++      group->https_top_level_site != expected_sites->second) {
++    validation.selection = aegis_access::GroupSelection::kUnknown;
++    validation.error = GroupValidationError::kTopLevelSiteMismatch;
++    return validation;
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    const std::string& expected_site =
++        member.rule_id == group->member_rule_ids[0] ? expected_sites->first
++                                                    : expected_sites->second;
++    if (member.top_level_site != expected_site) {
++      validation.selection = aegis_access::GroupSelection::kUnknown;
++      validation.error = GroupValidationError::kTopLevelSiteMismatch;
++      return validation;
++    }
++  }
++  return validation;
++}
++
++int SchemeMask(const std::vector<RequestScheme>& schemes) {
++  int mask = 0;
++  for (RequestScheme scheme : schemes) {
++    int bit = 0;
++    switch (scheme) {
++      case RequestScheme::kHttp:
++        bit = 1 << 0;
++        break;
++      case RequestScheme::kHttps:
++        bit = 1 << 1;
++        break;
++      case RequestScheme::kWs:
++        bit = 1 << 2;
++        break;
++      case RequestScheme::kWss:
++        bit = 1 << 3;
++        break;
++      case RequestScheme::kInvalid:
++        return 0;
++    }
++    if ((mask & bit) != 0) {
++      return 0;
++    }
++    mask |= bit;
++  }
++  return mask;
++}
++
++std::vector<RequestScheme> SchemesFromMask(int mask) {
++  std::vector<RequestScheme> result;
++  if ((mask & (1 << 0)) != 0) {
++    result.push_back(RequestScheme::kHttp);
++  }
++  if ((mask & (1 << 1)) != 0) {
++    result.push_back(RequestScheme::kHttps);
++  }
++  if ((mask & (1 << 2)) != 0) {
++    result.push_back(RequestScheme::kWs);
++  }
++  if ((mask & (1 << 3)) != 0) {
++    result.push_back(RequestScheme::kWss);
++  }
++  return result;
++}
++
++std::string SerializePorts(const std::vector<uint16_t>& ports) {
++  std::string result;
++  for (uint16_t port : ports) {
++    if (!result.empty()) {
++      result.push_back(',');
++    }
++    result.append(std::to_string(port));
++  }
++  return result;
++}
++
++std::optional<std::vector<uint16_t>> ParsePorts(std::string_view value) {
++  std::vector<uint16_t> ports;
++  if (value.empty()) {
++    return ports;
++  }
++  size_t begin = 0;
++  while (begin < value.size()) {
++    const size_t end = value.find(',', begin);
++    const std::string_view field =
++        value.substr(begin, end == std::string_view::npos ? value.size() - begin
++                                                          : end - begin);
++    if (field.empty() || field.size() > 5) {
++      return std::nullopt;
++    }
++    uint32_t parsed = 0;
++    for (char c : field) {
++      if (c < '0' || c > '9') {
++        return std::nullopt;
++      }
++      parsed = parsed * 10 + static_cast<uint32_t>(c - '0');
++    }
++    if (parsed == 0 || parsed > 65535 ||
++        (!ports.empty() && ports.back() >= parsed)) {
++      return std::nullopt;
++    }
++    ports.push_back(static_cast<uint16_t>(parsed));
++    if (end == std::string_view::npos) {
++      break;
++    }
++    begin = end + 1;
++  }
++  return ports;
++}
++
++bool KnownSource(StoredRuleSource source) {
++  return source == StoredRuleSource::kUserAction ||
++         source == StoredRuleSource::kUserEdit ||
++         source == StoredRuleSource::kRestored ||
++         source == StoredRuleSource::kTestFixture;
++}
++
++bool KnownLifetime(StoredRuleLifetime lifetime) {
++  return lifetime == StoredRuleLifetime::kPersistent ||
++         lifetime == StoredRuleLifetime::kProfileSession ||
++         lifetime == StoredRuleLifetime::kUntil;
++}
++
++bool ValidateStoredRule(const StoredAccessRule& rule,
++                        const OwnershipKey& owner,
++                        bool independent) {
++  const AccessPolicyRule& policy = rule.policy;
++  if (!IsCompleteOwner(owner) || policy.owner != owner ||
++      !Bounded(policy.rule_id) ||
++      !IsCanonicalHostLike(policy.destination_host) ||
++      policy.row_revision == 0 || policy.last_operation_sequence == 0 ||
++      !FitsSqlInt64(policy.row_revision) ||
++      !FitsSqlInt64(policy.last_operation_sequence) ||
++      !KnownSource(rule.source) || !KnownLifetime(rule.lifetime) ||
++      SchemeMask(policy.schemes) == 0 ||
++      !std::ranges::is_sorted(policy.schemes)) {
++    return false;
++  }
++  if (policy.scope == PolicyScope::kSite) {
++    if (!IsSchemefulSiteLike(policy.top_level_site, "http://") &&
++        !IsSchemefulSiteLike(policy.top_level_site, "https://")) {
++      return false;
++    }
++  } else if (policy.scope != PolicyScope::kProfile ||
++             !policy.top_level_site.empty()) {
++    return false;
++  }
++  if (policy.ports.scope == PortScope::kAllBrowserPermitted) {
++    if (!policy.ports.explicit_ports.empty()) {
++      return false;
++    }
++  } else if (policy.ports.scope == PortScope::kExplicitSubset) {
++    if (policy.ports.explicit_ports.empty() ||
++        !std::ranges::is_sorted(policy.ports.explicit_ports) ||
++        std::ranges::adjacent_find(policy.ports.explicit_ports) !=
++            policy.ports.explicit_ports.end() ||
++        policy.ports.explicit_ports.front() == 0) {
++      return false;
++    }
++  } else {
++    return false;
++  }
++  if (policy.mode == AccessMode::kProxy) {
++    if (!Bounded(policy.proxy_group_id)) {
++      return false;
++    }
++  } else if (policy.mode == AccessMode::kDirect ||
++             policy.mode == AccessMode::kReject) {
++    if (!policy.proxy_group_id.empty() ||
++        policy.protection_override != ProtectionOverride::kNone) {
++      return false;
++    }
++  } else {
++    return false;
++  }
++  if (rule.lifetime == StoredRuleLifetime::kUntil) {
++    if (rule.expires_at_micros <= 0) {
++      return false;
++    }
++  } else if (rule.expires_at_micros != 0) {
++    return false;
++  }
++  if (independent) {
++    return rule.site_toggle_id.empty() && rule.site_toggle_revision == 0;
++  }
++  return Bounded(rule.site_toggle_id) && rule.site_toggle_revision != 0 &&
++         policy.scope == PolicyScope::kSite &&
++         policy.row_revision == rule.site_toggle_revision &&
++         rule.lifetime == StoredRuleLifetime::kPersistent &&
++         rule.expires_at_micros == 0;
++}
++
++void AppendImageField(std::string* output, std::string_view value) {
++  output->append(std::to_string(value.size()));
++  output->push_back(':');
++  output->append(value);
++}
++
++std::string GroupImage(const StoredSiteGroup* stored) {
++  if (!stored) {
++    return "missing";
++  }
++  std::string result = "group:";
++  const SiteProxyRuleGroup& group = stored->group;
++  AppendImageField(&result, group.site_toggle_id);
++  AppendImageField(&result, group.canonical_host);
++  AppendImageField(&result, group.http_top_level_site);
++  AppendImageField(&result, group.https_top_level_site);
++  result.append(std::to_string(group.revision)).push_back(':');
++  result.append(std::to_string(group.last_operation_sequence)).push_back(':');
++  for (const StoredAccessRule& member : stored->members) {
++    AppendImageField(&result, member.policy.rule_id);
++    result.append(std::to_string(static_cast<int>(member.policy.mode)))
++        .push_back(':');
++    AppendImageField(&result, member.policy.proxy_group_id);
++  }
++  return result;
++}
++
++StoreResult<StoredPolicySnapshot> SnapshotError(StoreStatus status,
++                                                std::string detail) {
++  return {status, std::nullopt, std::move(detail)};
++}
++
++StoreResult<PendingMutationRecord> MutationError(StoreStatus status,
++                                                 std::string detail) {
++  return {status, std::nullopt, std::move(detail)};
++}
++
++int64_t NowMicros() {
++  return base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds();
++}
++
++bool BindAndRunRuleInsert(sql::Database* database,
++                          const StoredAccessRule& rule,
++                          const std::string& durable_profile_id) {
++  const AccessPolicyRule& policy = rule.policy;
++  sql::Statement insert(database->GetUniqueStatement(
++      "INSERT INTO access_rules(channel,durable_profile_id,"
++      "storage_partition_token,rule_id,site_toggle_id,site_toggle_revision,"
++      "scope,top_level_site,destination_host,include_subdomains,schemes_mask,"
++      "port_scope,explicit_ports,mode,proxy_group_id,protection_override,"
++      "source,lifetime,expires_at_micros,created_by_batch_id,row_revision,"
++      "last_operation_sequence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
++      "?,?,?)"));
++  insert.BindInt(0, static_cast<int>(policy.owner.channel));
++  insert.BindString(1, durable_profile_id);
++  insert.BindString(2, policy.owner.storage_partition_token);
++  insert.BindString(3, policy.rule_id);
++  insert.BindString(4, rule.site_toggle_id);
++  insert.BindInt64(5, rule.site_toggle_revision);
++  insert.BindInt(6, static_cast<int>(policy.scope));
++  insert.BindString(7, policy.top_level_site);
++  insert.BindString(8, policy.destination_host);
++  insert.BindBool(9, policy.include_subdomains);
++  insert.BindInt(10, SchemeMask(policy.schemes));
++  insert.BindInt(11, static_cast<int>(policy.ports.scope));
++  insert.BindString(12, SerializePorts(policy.ports.explicit_ports));
++  insert.BindInt(13, static_cast<int>(policy.mode));
++  insert.BindString(14, policy.proxy_group_id);
++  insert.BindInt(15, static_cast<int>(policy.protection_override));
++  insert.BindInt(16, static_cast<int>(rule.source));
++  insert.BindInt(17, static_cast<int>(rule.lifetime));
++  insert.BindInt64(18, rule.expires_at_micros);
++  insert.BindString(19, rule.created_by_batch_id);
++  insert.BindInt64(20, policy.row_revision);
++  insert.BindInt64(21, policy.last_operation_sequence);
++  return insert.Run();
++}
++
++}  // namespace
++
++AccessStoreBinding::AccessStoreBinding(AccessStoreKind kind,
++                                       ChannelNamespace channel,
++                                       std::string durable_profile_id,
++                                       std::string runtime_profile_token,
++                                       base::FilePath profile_path,
++                                       base::FilePath database_path)
++    : kind_(kind),
++      channel_(channel),
++      durable_profile_id_(std::move(durable_profile_id)),
++      runtime_profile_token_(std::move(runtime_profile_token)),
++      profile_path_(std::move(profile_path)),
++      database_path_(std::move(database_path)) {}
++
++AccessStoreBinding::AccessStoreBinding(const AccessStoreBinding&) = default;
++
++AccessStoreBinding::AccessStoreBinding(AccessStoreBinding&&) = default;
++
++AccessStoreBinding& AccessStoreBinding::operator=(const AccessStoreBinding&) =
++    default;
++
++AccessStoreBinding& AccessStoreBinding::operator=(AccessStoreBinding&&) =
++    default;
++
++AccessStoreBinding::~AccessStoreBinding() = default;
++
++AccessRuleStore::AccessRuleStore(AccessStoreBinding binding)
++    : binding_(std::move(binding)), database_("AegisAccess") {}
++
++AccessRuleStore::~AccessRuleStore() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++}
++
++bool AccessRuleStore::IsBindingValid() const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!IsKnownChannel(binding_.channel()) ||
++      !Bounded(binding_.durable_profile_id()) ||
++      !Bounded(binding_.runtime_profile_token())) {
++    return false;
++  }
++  if (binding_.kind() == AccessStoreKind::kSystemProfile) {
++    return false;
++  }
++  if (binding_.kind() == AccessStoreKind::kEphemeralProfile) {
++    return binding_.profile_path().empty() && binding_.database_path().empty();
++  }
++  return binding_.profile_path().IsAbsolute() &&
++         !binding_.profile_path().ReferencesParent() &&
++         binding_.database_path() ==
++             binding_.profile_path().AppendASCII("access.db") &&
++         binding_.database_path().DirName() == binding_.profile_path() &&
++         binding_.database_path().BaseName() ==
++             base::FilePath(FILE_PATH_LITERAL("access.db"));
++}
++
++bool AccessRuleStore::ShouldFail(FailurePointForTesting point) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return failure_point_for_testing_ == point;
++}
++
++StoreStatus AccessRuleStore::Open() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (is_open_) {
++    return StoreStatus::kValid;
++  }
++  if (!IsBindingValid()) {
++    terminal_status_ = StoreStatus::kInvalidArgument;
++    return terminal_status_;
++  }
++  const bool opened = binding_.kind() == AccessStoreKind::kEphemeralProfile
++                          ? database_.OpenInMemory()
++                          : database_.Open(binding_.database_path());
++  if (!opened) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  base::ScopedClosureRunner close_on_failure(base::BindOnce(
++      [](sql::Database* database) { database->Close(); }, &database_));
++
++  const bool has_meta = database_.DoesTableExist("meta");
++  const bool has_identity = database_.DoesTableExist("access_store_identity");
++  const bool has_counters = database_.DoesTableExist("access_store_counters");
++  const bool has_groups = database_.DoesTableExist("access_site_groups");
++  const bool has_rules = database_.DoesTableExist("access_rules");
++  const bool has_journal = database_.DoesTableExist("access_mutation_journal");
++  const bool has_any = has_meta || has_identity || has_counters || has_groups ||
++                       has_rules || has_journal;
++  const bool complete =
++      has_identity && has_counters && has_groups && has_rules && has_journal;
++  const bool initialize_schema = !has_any;
++  if (has_meta) {
++    sql::Statement version(database_.GetUniqueStatement(
++        "SELECT value FROM meta WHERE key='version'"));
++    sql::Statement compatible(database_.GetUniqueStatement(
++        "SELECT value FROM meta WHERE key='last_compatible_version'"));
++    if (!version.Step() || !compatible.Step()) {
++      terminal_status_ = StoreStatus::kCorrupt;
++      return terminal_status_;
++    }
++    const int stored_version = version.ColumnInt(0);
++    const int stored_compatible = compatible.ColumnInt(0);
++    if (stored_version != kSchemaVersion ||
++        stored_compatible > kCompatibleVersion) {
++      terminal_status_ = StoreStatus::kIncompatible;
++      return terminal_status_;
++    }
++  }
++  if (has_any && (!has_meta || !complete)) {
++    terminal_status_ = StoreStatus::kCorrupt;
++    return terminal_status_;
++  }
++
++  sql::Transaction transaction(&database_);
++  if (!transaction.Begin() ||
++      !meta_table_.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  if (initialize_schema && (!database_.Execute(kCreateIdentitySql) ||
++                            !database_.Execute(kCreateCountersSql) ||
++                            !database_.Execute(kCreateGroupsSql) ||
++                            !database_.Execute(kCreateRulesSql) ||
++                            !database_.Execute(kCreateJournalSql))) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++
++  const std::string trusted_path =
++      binding_.kind() == AccessStoreKind::kPersistentProfile
++          ? binding_.profile_path().AsUTF8Unsafe()
++          : "<ephemeral>";
++  sql::Statement identity(database_.GetUniqueStatement(
++      "SELECT schema_version,channel,durable_profile_id,profile_path FROM "
++      "access_store_identity WHERE singleton=1"));
++  if (identity.Step()) {
++    if (identity.ColumnInt(0) != kSchemaVersion ||
++        identity.ColumnInt(1) != static_cast<int>(binding_.channel()) ||
++        identity.ColumnString(2) != binding_.durable_profile_id() ||
++        identity.ColumnString(3) != trusted_path) {
++      terminal_status_ = StoreStatus::kConflict;
++      return terminal_status_;
++    }
++  } else if (!identity.Succeeded()) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  } else {
++    sql::Statement insert(database_.GetUniqueStatement(
++        "INSERT INTO access_store_identity(singleton,schema_version,channel,"
++        "durable_profile_id,profile_path) VALUES(1,?,?,?,?)"));
++    insert.BindInt(0, kSchemaVersion);
++    insert.BindInt(1, static_cast<int>(binding_.channel()));
++    insert.BindString(2, binding_.durable_profile_id());
++    insert.BindString(3, trusted_path);
++    if (!insert.Run()) {
++      terminal_status_ = StoreStatus::kIoError;
++      return terminal_status_;
++    }
++  }
++  if (initialize_schema &&
++      !database_.Execute("INSERT INTO access_store_counters"
++                         "(singleton,operation_sequence) VALUES(1,0)")) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  sql::Statement counter(database_.GetUniqueStatement(
++      "SELECT operation_sequence FROM access_store_counters WHERE "
++      "singleton=1"));
++  if (!counter.Step()) {
++    terminal_status_ =
++        counter.Succeeded() ? StoreStatus::kCorrupt : StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  const int64_t operation_sequence = counter.ColumnInt64(0);
++  sql::Statement persisted_sequences(database_.GetUniqueStatement(
++      "SELECT COALESCE(MAX(persisted_sequence),0),"
++      "COALESCE(MIN(persisted_sequence),0),COUNT(*) FROM "
++      "(SELECT last_operation_sequence AS persisted_sequence FROM "
++      "access_site_groups UNION ALL SELECT last_operation_sequence AS "
++      "persisted_sequence FROM access_rules UNION ALL SELECT "
++      "operation_sequence AS persisted_sequence FROM "
++      "access_mutation_journal)"));
++  if (!persisted_sequences.Step()) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  const int64_t maximum_persisted_sequence = persisted_sequences.ColumnInt64(0);
++  const int64_t minimum_persisted_sequence = persisted_sequences.ColumnInt64(1);
++  const int64_t persisted_sequence_count = persisted_sequences.ColumnInt64(2);
++  if (operation_sequence < 0 ||
++      (persisted_sequence_count > 0 && minimum_persisted_sequence <= 0) ||
++      operation_sequence < maximum_persisted_sequence) {
++    terminal_status_ = StoreStatus::kCorrupt;
++    return terminal_status_;
++  }
++  if (!transaction.Commit()) {
++    terminal_status_ = StoreStatus::kIoError;
++    return terminal_status_;
++  }
++  close_on_failure.ReplaceClosure(base::NullCallback());
++  is_open_ = true;
++  terminal_status_ = StoreStatus::kValid;
++  return terminal_status_;
++}
++
++StoreResult<StoredPolicySnapshot> AccessRuleStore::ReadCommittedSnapshot(
++    const std::string& partition) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return ReadCommittedSnapshotInternal(partition, true);
++}
++
++StoreResult<StoredPolicySnapshot>
++AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
++                                               bool check_recovery) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_) {
++    return SnapshotError(terminal_status_, "store_not_open");
++  }
++  if (!Bounded(partition)) {
++    return SnapshotError(StoreStatus::kInvalidArgument, "invalid_partition");
++  }
++  if (check_recovery) {
++    sql::Statement journal(database_.GetUniqueStatement(
++        "SELECT operation_id FROM access_mutation_journal WHERE "
++        "storage_partition_token=? ORDER BY operation_sequence"));
++    journal.BindString(0, partition);
++    bool has_pending = false;
++    while (journal.Step()) {
++      StoreResult<PendingMutationRecord> loaded =
++          LoadMutation(journal.ColumnString(0), false);
++      if (!loaded.value.has_value()) {
++        return SnapshotError(loaded.status, loaded.detail);
++      }
++      has_pending |= loaded.value->phase == MutationPhase::kPrepared;
++    }
++    if (!journal.Succeeded()) {
++      return SnapshotError(StoreStatus::kIoError, "journal_read_failed");
++    }
++    if (has_pending) {
++      return SnapshotError(StoreStatus::kRecoveryRequired,
++                           "prepared_mutation_present");
++    }
++  }
++
++  StoredPolicySnapshot snapshot;
++  snapshot.owner = OwnerFor(binding_, partition);
++  std::set<std::string> group_ids;
++  sql::Statement groups(database_.GetUniqueStatement(
++      "SELECT channel,durable_profile_id,site_toggle_id,canonical_host,"
++      "http_top_level_site,https_top_level_site,http_member_rule_id,"
++      "https_member_rule_id,revision,last_operation_sequence,"
++      "committed_policy_generation FROM access_site_groups WHERE "
++      "storage_partition_token=? ORDER BY site_toggle_id"));
++  groups.BindString(0, partition);
++  while (groups.Step()) {
++    if (groups.ColumnInt(0) != static_cast<int>(binding_.channel()) ||
++        groups.ColumnString(1) != binding_.durable_profile_id()) {
++      return SnapshotError(StoreStatus::kConflict, "group_owner_mismatch");
++    }
++    StoredSiteGroup stored;
++    stored.group.site_toggle_id = groups.ColumnString(2);
++    stored.group.canonical_host = groups.ColumnString(3);
++    stored.group.owner = snapshot.owner;
++    stored.group.http_top_level_site = groups.ColumnString(4);
++    stored.group.https_top_level_site = groups.ColumnString(5);
++    stored.group.member_rule_ids = {groups.ColumnString(6),
++                                    groups.ColumnString(7)};
++    const int64_t revision = groups.ColumnInt64(8);
++    const int64_t sequence = groups.ColumnInt64(9);
++    const int64_t generation = groups.ColumnInt64(10);
++    if (revision <= 0 || sequence <= 0 || generation <= 0 ||
++        !group_ids.insert(stored.group.site_toggle_id).second) {
++      return SnapshotError(StoreStatus::kCorrupt, "invalid_group_row");
++    }
++    stored.group.revision = static_cast<uint64_t>(revision);
++    stored.group.last_operation_sequence = static_cast<uint64_t>(sequence);
++    stored.policy_generation = static_cast<uint64_t>(generation);
++
++    sql::Statement members(database_.GetUniqueStatement(
++        "SELECT channel,durable_profile_id,rule_id,site_toggle_revision,scope,"
++        "top_level_site,destination_host,include_subdomains,schemes_mask,"
++        "port_scope,explicit_ports,mode,proxy_group_id,protection_override,"
++        "source,lifetime,expires_at_micros,created_by_batch_id,row_revision,"
++        "last_operation_sequence FROM access_rules WHERE "
++        "storage_partition_token=? AND site_toggle_id=? ORDER BY rule_id"));
++    members.BindString(0, partition);
++    members.BindString(1, stored.group.site_toggle_id);
++    while (members.Step()) {
++      if (members.ColumnInt(0) != static_cast<int>(binding_.channel()) ||
++          members.ColumnString(1) != binding_.durable_profile_id()) {
++        return SnapshotError(StoreStatus::kConflict, "member_owner_mismatch");
++      }
++      const int scheme_mask = members.ColumnInt(8);
++      const auto ports = ParsePorts(members.ColumnString(10));
++      if ((scheme_mask & ~kCompleteSchemeMask) != 0 || scheme_mask == 0 ||
++          !ports.has_value()) {
++        return SnapshotError(StoreStatus::kCorrupt, "invalid_rule_encoding");
++      }
++      StoredAccessRule rule;
++      rule.policy.rule_id = members.ColumnString(2);
++      rule.policy.owner = snapshot.owner;
++      rule.site_toggle_id = stored.group.site_toggle_id;
++      const int64_t toggle_revision = members.ColumnInt64(3);
++      rule.policy.scope = static_cast<PolicyScope>(members.ColumnInt(4));
++      rule.policy.top_level_site = members.ColumnString(5);
++      rule.policy.destination_host = members.ColumnString(6);
++      rule.policy.include_subdomains = members.ColumnBool(7);
++      rule.policy.schemes = SchemesFromMask(scheme_mask);
++      rule.policy.ports.scope = static_cast<PortScope>(members.ColumnInt(9));
++      rule.policy.ports.explicit_ports = *ports;
++      rule.policy.mode = static_cast<AccessMode>(members.ColumnInt(11));
++      rule.policy.proxy_group_id = members.ColumnString(12);
++      rule.policy.protection_override =
++          static_cast<ProtectionOverride>(members.ColumnInt(13));
++      rule.source = static_cast<StoredRuleSource>(members.ColumnInt(14));
++      rule.lifetime = static_cast<StoredRuleLifetime>(members.ColumnInt(15));
++      rule.expires_at_micros = members.ColumnInt64(16);
++      rule.created_by_batch_id = members.ColumnString(17);
++      const int64_t row_revision = members.ColumnInt64(18);
++      const int64_t operation_sequence = members.ColumnInt64(19);
++      if (toggle_revision <= 0 || row_revision <= 0 ||
++          operation_sequence <= 0) {
++        return SnapshotError(StoreStatus::kCorrupt, "invalid_rule_revision");
++      }
++      rule.site_toggle_revision = static_cast<uint64_t>(toggle_revision);
++      rule.policy.row_revision = static_cast<uint64_t>(row_revision);
++      rule.policy.last_operation_sequence =
++          static_cast<uint64_t>(operation_sequence);
++      if (!ValidateStoredRule(rule, snapshot.owner, false)) {
++        return SnapshotError(StoreStatus::kCorrupt, "invalid_group_member");
++      }
++      stored.members.push_back(std::move(rule));
++    }
++    if (!members.Succeeded()) {
++      return SnapshotError(StoreStatus::kIoError, "member_read_failed");
++    }
++    std::vector<SiteProxyRuleMember> validation_members;
++    for (const StoredAccessRule& rule : stored.members) {
++      validation_members.push_back({
++          rule.policy.rule_id,
++          rule.policy.owner,
++          rule.site_toggle_id,
++          rule.site_toggle_revision,
++          rule.policy.top_level_site,
++          rule.policy.destination_host,
++          rule.policy.schemes,
++          rule.policy.ports.scope,
++          rule.policy.include_subdomains,
++          rule.policy.mode,
++          rule.policy.proxy_group_id,
++          rule.policy.protection_override,
++          rule.policy.last_operation_sequence,
++      });
++    }
++    if (ValidateBoundSiteGroup(snapshot.owner, &stored.group,
++                               validation_members)
++            .error != GroupValidationError::kNone) {
++      return SnapshotError(StoreStatus::kCorrupt, "invalid_site_group");
++    }
++    snapshot.policy_generation =
++        std::max(snapshot.policy_generation, stored.policy_generation);
++    snapshot.site_groups.push_back(std::move(stored));
++  }
++  if (!groups.Succeeded()) {
++    return SnapshotError(StoreStatus::kIoError, "group_read_failed");
++  }
++
++  sql::Statement rules(database_.GetUniqueStatement(
++      "SELECT channel,durable_profile_id,rule_id,site_toggle_id,"
++      "site_toggle_revision,scope,top_level_site,destination_host,"
++      "include_subdomains,schemes_mask,port_scope,explicit_ports,mode,"
++      "proxy_group_id,protection_override,source,lifetime,expires_at_micros,"
++      "created_by_batch_id,row_revision,last_operation_sequence FROM "
++      "access_rules WHERE storage_partition_token=? ORDER BY rule_id"));
++  rules.BindString(0, partition);
++  while (rules.Step()) {
++    const std::string group_id = rules.ColumnString(3);
++    if (!group_id.empty()) {
++      if (!group_ids.contains(group_id)) {
++        return SnapshotError(StoreStatus::kCorrupt, "orphan_group_member");
++      }
++      continue;
++    }
++    if (rules.ColumnInt(0) != static_cast<int>(binding_.channel()) ||
++        rules.ColumnString(1) != binding_.durable_profile_id()) {
++      return SnapshotError(StoreStatus::kConflict,
++                           "independent_owner_mismatch");
++    }
++    const int scheme_mask = rules.ColumnInt(9);
++    const auto ports = ParsePorts(rules.ColumnString(11));
++    if ((scheme_mask & ~kCompleteSchemeMask) != 0 || scheme_mask == 0 ||
++        !ports.has_value()) {
++      return SnapshotError(StoreStatus::kCorrupt,
++                           "invalid_independent_encoding");
++    }
++    StoredAccessRule rule;
++    rule.policy.rule_id = rules.ColumnString(2);
++    rule.policy.owner = snapshot.owner;
++    rule.site_toggle_revision = rules.ColumnInt64(4);
++    rule.policy.scope = static_cast<PolicyScope>(rules.ColumnInt(5));
++    rule.policy.top_level_site = rules.ColumnString(6);
++    rule.policy.destination_host = rules.ColumnString(7);
++    rule.policy.include_subdomains = rules.ColumnBool(8);
++    rule.policy.schemes = SchemesFromMask(scheme_mask);
++    rule.policy.ports.scope = static_cast<PortScope>(rules.ColumnInt(10));
++    rule.policy.ports.explicit_ports = *ports;
++    rule.policy.mode = static_cast<AccessMode>(rules.ColumnInt(12));
++    rule.policy.proxy_group_id = rules.ColumnString(13);
++    rule.policy.protection_override =
++        static_cast<ProtectionOverride>(rules.ColumnInt(14));
++    rule.source = static_cast<StoredRuleSource>(rules.ColumnInt(15));
++    rule.lifetime = static_cast<StoredRuleLifetime>(rules.ColumnInt(16));
++    rule.expires_at_micros = rules.ColumnInt64(17);
++    rule.created_by_batch_id = rules.ColumnString(18);
++    const int64_t row_revision = rules.ColumnInt64(19);
++    const int64_t operation_sequence = rules.ColumnInt64(20);
++    if (row_revision <= 0 || operation_sequence <= 0) {
++      return SnapshotError(StoreStatus::kCorrupt,
++                           "invalid_independent_revision");
++    }
++    rule.policy.row_revision = static_cast<uint64_t>(row_revision);
++    rule.policy.last_operation_sequence =
++        static_cast<uint64_t>(operation_sequence);
++    if (!ValidateStoredRule(rule, snapshot.owner, true)) {
++      return SnapshotError(StoreStatus::kCorrupt, "invalid_independent_rule");
++    }
++    snapshot.independent_rules.push_back(std::move(rule));
++  }
++  if (!rules.Succeeded()) {
++    return SnapshotError(StoreStatus::kIoError, "rule_read_failed");
++  }
++
++  if (snapshot.site_groups.empty() && snapshot.independent_rules.empty()) {
++    return {StoreStatus::kMissing, std::move(snapshot), "empty_partition"};
++  }
++  return {StoreStatus::kValid, std::move(snapshot), {}};
++}
++
++StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
++    const SiteGroupMutationRequest& request) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_) {
++    return MutationError(terminal_status_, "store_not_open");
++  }
++  if (!Bounded(request.operation_id) || !Bounded(request.request_fingerprint) ||
++      !Bounded(request.candidate_group.site_toggle_id) ||
++      !IsCanonicalHostLike(request.candidate_group.canonical_host) ||
++      request.candidate_group.member_rule_ids.size() != 2 ||
++      request.candidate_members.size() != 2 ||
++      !FitsSqlInt64(request.expected_revision)) {
++    return MutationError(StoreStatus::kInvalidArgument, "invalid_request");
++  }
++  const OwnershipKey expected_owner = request.candidate_group.owner;
++  if (!IsCompleteOwner(expected_owner) ||
++      expected_owner.channel != binding_.channel() ||
++      expected_owner.profile_token != binding_.runtime_profile_token() ||
++      request.candidate_group.revision != 0 ||
++      request.candidate_group.last_operation_sequence != 0) {
++    return MutationError(StoreStatus::kConflict, "untrusted_owner_or_version");
++  }
++  for (const SiteProxyRuleMember& member : request.candidate_members) {
++    if (member.owner != expected_owner || member.group_revision != 0 ||
++        member.last_operation_sequence != 0) {
++      return MutationError(StoreStatus::kConflict, "unstamped_member");
++    }
++  }
++  const std::set<std::string> declared_ids(
++      request.candidate_group.member_rule_ids.begin(),
++      request.candidate_group.member_rule_ids.end());
++  const std::set<std::string> member_ids = {
++      request.candidate_members[0].rule_id,
++      request.candidate_members[1].rule_id};
++  if (declared_ids.size() != 2 || declared_ids != member_ids) {
++    return MutationError(StoreStatus::kInvalidArgument, "member_id_mismatch");
++  }
++
++  sql::Transaction transaction(&database_);
++  if (!transaction.Begin()) {
++    return MutationError(StoreStatus::kIoError, "prepare_begin_failed");
++  }
++  const int64_t now_micros = NowMicros();
++  const int64_t retention_cutoff =
++      now_micros - kMutationRetention.InMicroseconds();
++  sql::Statement prune(database_.GetUniqueStatement(
++      "DELETE FROM access_mutation_journal WHERE state IN (?,?) AND "
++      "completed_at_micros>0 AND completed_at_micros<=?"));
++  prune.BindInt(0, kCommitted);
++  prune.BindInt(1, kSuperseded);
++  prune.BindInt64(2, retention_cutoff);
++  if (!prune.Run()) {
++    return MutationError(StoreStatus::kIoError, "journal_prune_failed");
++  }
++  if (ShouldFail(FailurePointForTesting::kPrepareAfterRetentionCleanup)) {
++    return MutationError(StoreStatus::kIoError, "injected_prune_failure");
++  }
++  StoreResult<PendingMutationRecord> existing =
++      LoadMutation(request.operation_id, false);
++  if (existing.value.has_value()) {
++    if (existing.value->request_fingerprint == request.request_fingerprint) {
++      return existing;
++    }
++    return MutationError(StoreStatus::kConflict, "operation_id_reused");
++  }
++  if (existing.status == StoreStatus::kCorrupt ||
++      existing.status == StoreStatus::kIoError) {
++    return existing;
++  }
++  sql::Statement journal_count(database_.GetUniqueStatement(
++      "SELECT COUNT(*) FROM access_mutation_journal"));
++  if (!journal_count.Step() || journal_count.ColumnInt64(0) < 0) {
++    return MutationError(StoreStatus::kIoError, "journal_count_failed");
++  }
++  if (journal_count.ColumnInt64(0) >=
++      static_cast<int64_t>(kMaxMutationJournalRows)) {
++    return MutationError(StoreStatus::kCapacity, "journal_capacity");
++  }
++  StoreResult<StoredPolicySnapshot> current = ReadCommittedSnapshotInternal(
++      expected_owner.storage_partition_token, false);
++  if (current.status != StoreStatus::kMissing &&
++      current.status != StoreStatus::kValid) {
++    return MutationError(current.status, current.detail);
++  }
++  const StoredSiteGroup* before = nullptr;
++  if (current.value.has_value()) {
++    for (const StoredSiteGroup& group : current.value->site_groups) {
++      if (group.group.canonical_host ==
++              request.candidate_group.canonical_host ||
++          group.group.site_toggle_id ==
++              request.candidate_group.site_toggle_id) {
++        if (before != nullptr ||
++            group.group.canonical_host !=
++                request.candidate_group.canonical_host ||
++            group.group.site_toggle_id !=
++                request.candidate_group.site_toggle_id) {
++          return MutationError(StoreStatus::kConflict,
++                               "site_identity_conflict");
++        }
++        before = &group;
++      }
++    }
++  }
++  const uint64_t current_revision = before ? before->group.revision : 0;
++  if (current_revision != request.expected_revision) {
++    return MutationError(StoreStatus::kConflict, "revision_conflict");
++  }
++  sql::Statement pending(database_.GetUniqueStatement(
++      "SELECT 1 FROM access_mutation_journal WHERE state=? AND "
++      "storage_partition_token=? AND site_toggle_id=? LIMIT 1"));
++  pending.BindInt(0, kPrepared);
++  pending.BindString(1, expected_owner.storage_partition_token);
++  pending.BindString(2, request.candidate_group.site_toggle_id);
++  if (pending.Step()) {
++    return MutationError(StoreStatus::kRecoveryRequired,
++                         "pending_mutation_exists");
++  }
++  if (!pending.Succeeded()) {
++    return MutationError(StoreStatus::kIoError, "pending_read_failed");
++  }
++
++  sql::Statement counters(
++      database_.GetUniqueStatement("SELECT operation_sequence FROM "
++                                   "access_store_counters WHERE singleton=1"));
++  if (!counters.Step()) {
++    return MutationError(StoreStatus::kCorrupt, "missing_counters");
++  }
++  const int64_t sequence = counters.ColumnInt64(0);
++  if (sequence < 0) {
++    return MutationError(StoreStatus::kCorrupt, "invalid_counters");
++  }
++  if (sequence == std::numeric_limits<int64_t>::max() ||
++      current_revision ==
++          static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
++    return MutationError(StoreStatus::kConflict, "counter_overflow");
++  }
++
++  PendingMutationRecord record;
++  record.phase = MutationPhase::kPrepared;
++  record.operation_id = request.operation_id;
++  record.request_fingerprint = request.request_fingerprint;
++  record.owner = expected_owner;
++  record.expected_revision = current_revision;
++  record.target_revision = current_revision + 1;
++  record.operation_sequence = static_cast<uint64_t>(sequence) + 1;
++  record.committed_policy_generation = 0;
++  record.created_at_micros = now_micros;
++  record.completed_at_micros = 0;
++  record.candidate.group = request.candidate_group;
++  record.candidate.group.revision = record.target_revision;
++  record.candidate.group.last_operation_sequence = record.operation_sequence;
++  record.candidate.policy_generation = 0;
++  const AccessMode mode = request.candidate_members[0].mode;
++  std::vector<SiteProxyRuleMember> normalized_members =
++      request.candidate_members;
++  std::ranges::sort(normalized_members, [&](const SiteProxyRuleMember& left,
++                                            const SiteProxyRuleMember& right) {
++    const bool left_is_http =
++        left.top_level_site == request.candidate_group.http_top_level_site;
++    const bool right_is_http =
++        right.top_level_site == request.candidate_group.http_top_level_site;
++    return left_is_http != right_is_http ? left_is_http
++                                         : left.rule_id < right.rule_id;
++  });
++  record.candidate.group.member_rule_ids = {normalized_members[0].rule_id,
++                                            normalized_members[1].rule_id};
++  for (SiteProxyRuleMember member : normalized_members) {
++    if (SchemeMask(member.schemes) != kCompleteSchemeMask) {
++      return MutationError(StoreStatus::kInvalidArgument,
++                           "invalid_member_schemes");
++    }
++    member.schemes = {RequestScheme::kHttp, RequestScheme::kHttps,
++                      RequestScheme::kWs, RequestScheme::kWss};
++    member.group_revision = record.target_revision;
++    member.last_operation_sequence = record.operation_sequence;
++    StoredAccessRule stored;
++    stored.policy = {
++        .rule_id = member.rule_id,
++        .owner = member.owner,
++        .scope = PolicyScope::kSite,
++        .top_level_site = member.top_level_site,
++        .destination_host = member.exact_host,
++        .include_subdomains = member.include_subdomains,
++        .schemes = member.schemes,
++        .ports = {member.ports, {}},
++        .mode = member.mode,
++        .proxy_group_id = member.proxy_group_id,
++        .protection_override = member.protection_override,
++        .row_revision = record.target_revision,
++        .last_operation_sequence = record.operation_sequence,
++    };
++    stored.site_toggle_id = member.site_toggle_id;
++    stored.site_toggle_revision = record.target_revision;
++    stored.source = StoredRuleSource::kUserAction;
++    stored.lifetime = StoredRuleLifetime::kPersistent;
++    record.candidate.members.push_back(std::move(stored));
++  }
++  std::vector<SiteProxyRuleMember> stamped_members = normalized_members;
++  for (SiteProxyRuleMember& member : stamped_members) {
++    member.group_revision = record.target_revision;
++    member.last_operation_sequence = record.operation_sequence;
++  }
++  if ((mode != AccessMode::kDirect && mode != AccessMode::kProxy) ||
++      ValidateBoundSiteGroup(expected_owner, &record.candidate.group,
++                             stamped_members)
++              .error != GroupValidationError::kNone) {
++    return MutationError(StoreStatus::kInvalidArgument,
++                         "invalid_site_group_candidate");
++  }
++  record.before_image = GroupImage(before);
++  record.after_image = GroupImage(&record.candidate);
++
++  sql::Statement update(database_.GetUniqueStatement(
++      "UPDATE access_store_counters SET operation_sequence=? WHERE "
++      "singleton=1 AND operation_sequence=?"));
++  update.BindInt64(0, record.operation_sequence);
++  update.BindInt64(1, sequence);
++  if (!update.Run() || database_.GetLastChangeCount() != 1) {
++    return MutationError(StoreStatus::kConflict, "counter_conflict");
++  }
++  if (ShouldFail(FailurePointForTesting::kPrepareAfterCounterUpdate) ||
++      ShouldFail(FailurePointForTesting::kPrepareBeforeJournalInsert)) {
++    return MutationError(StoreStatus::kIoError, "injected_prepare_failure");
++  }
++
++  sql::Statement insert(database_.GetUniqueStatement(
++      "INSERT INTO access_mutation_journal(operation_id,request_fingerprint,"
++      "state,schema_version,channel,durable_profile_id,profile_path,"
++      "storage_partition_token,site_toggle_id,canonical_host,"
++      "http_top_level_site,https_top_level_site,http_member_rule_id,"
++      "https_member_rule_id,target_mode,proxy_group_id,expected_revision,"
++      "target_revision,operation_sequence,committed_policy_generation,"
++      "created_at_micros,completed_at_micros,before_image,"
++      "after_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
++  insert.BindString(0, record.operation_id);
++  insert.BindString(1, record.request_fingerprint);
++  insert.BindInt(2, kPrepared);
++  insert.BindInt(3, kSchemaVersion);
++  insert.BindInt(4, static_cast<int>(record.owner.channel));
++  insert.BindString(5, binding_.durable_profile_id());
++  insert.BindString(6, binding_.kind() == AccessStoreKind::kPersistentProfile
++                           ? binding_.profile_path().AsUTF8Unsafe()
++                           : "<ephemeral>");
++  insert.BindString(7, record.owner.storage_partition_token);
++  insert.BindString(8, record.candidate.group.site_toggle_id);
++  insert.BindString(9, record.candidate.group.canonical_host);
++  insert.BindString(10, record.candidate.group.http_top_level_site);
++  insert.BindString(11, record.candidate.group.https_top_level_site);
++  insert.BindString(12, record.candidate.group.member_rule_ids[0]);
++  insert.BindString(13, record.candidate.group.member_rule_ids[1]);
++  insert.BindInt(14, static_cast<int>(mode));
++  insert.BindString(15, record.candidate.members[0].policy.proxy_group_id);
++  insert.BindInt64(16, record.expected_revision);
++  insert.BindInt64(17, record.target_revision);
++  insert.BindInt64(18, record.operation_sequence);
++  insert.BindInt64(19, 0);
++  insert.BindInt64(20, record.created_at_micros);
++  insert.BindInt64(21, 0);
++  insert.BindString(22, record.before_image);
++  insert.BindString(23, record.after_image);
++  if (!insert.Run() ||
++      ShouldFail(FailurePointForTesting::kPrepareAfterJournalInsert) ||
++      !transaction.Commit()) {
++    return MutationError(StoreStatus::kIoError, "journal_write_failed");
++  }
++  return {StoreStatus::kValid, std::move(record), {}};
++}
++
++StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
++    const std::string& operation_id,
++    bool prepared_only) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_) {
++    return MutationError(terminal_status_, "store_not_open");
++  }
++  sql::Statement row(database_.GetUniqueStatement(
++      "SELECT request_fingerprint,state,schema_version,channel,"
++      "durable_profile_id,profile_path,storage_partition_token,site_toggle_id,"
++      "canonical_host,http_top_level_site,https_top_level_site,"
++      "http_member_rule_id,https_member_rule_id,target_mode,proxy_group_id,"
++      "expected_revision,target_revision,operation_sequence,"
++      "committed_policy_generation,created_at_micros,completed_at_micros,"
++      "before_image,after_image FROM access_mutation_journal WHERE "
++      "operation_id=?"));
++  row.BindString(0, operation_id);
++  if (!row.Step()) {
++    return row.Succeeded()
++               ? MutationError(StoreStatus::kMissing, "mutation_missing")
++               : MutationError(StoreStatus::kIoError, "mutation_read_failed");
++  }
++  const int state = row.ColumnInt(1);
++  if ((prepared_only && state != kPrepared) || state < kPrepared ||
++      state > kSuperseded) {
++    return MutationError(state < kPrepared || state > kSuperseded
++                             ? StoreStatus::kCorrupt
++                             : StoreStatus::kMissing,
++                         "mutation_not_prepared");
++  }
++  const std::string trusted_path =
++      binding_.kind() == AccessStoreKind::kPersistentProfile
++          ? binding_.profile_path().AsUTF8Unsafe()
++          : "<ephemeral>";
++  if (row.ColumnInt(2) != kSchemaVersion ||
++      row.ColumnInt(3) != static_cast<int>(binding_.channel()) ||
++      row.ColumnString(4) != binding_.durable_profile_id() ||
++      row.ColumnString(5) != trusted_path) {
++    return MutationError(StoreStatus::kConflict, "journal_owner_mismatch");
++  }
++  const int64_t expected_revision = row.ColumnInt64(15);
++  const int64_t target_revision = row.ColumnInt64(16);
++  const int64_t sequence = row.ColumnInt64(17);
++  const int64_t committed_generation = row.ColumnInt64(18);
++  const int64_t created_at_micros = row.ColumnInt64(19);
++  const int64_t completed_at_micros = row.ColumnInt64(20);
++  const AccessMode mode = static_cast<AccessMode>(row.ColumnInt(13));
++  if (expected_revision < 0 ||
++      expected_revision == std::numeric_limits<int64_t>::max() ||
++      target_revision <= 0 || sequence <= 0 ||
++      committed_generation < 0 || target_revision != expected_revision + 1 ||
++      created_at_micros <= 0 ||
++      (state == kPrepared &&
++       (committed_generation != 0 || completed_at_micros != 0)) ||
++      (state == kCommitted && committed_generation == 0) ||
++      (state == kSuperseded && committed_generation != 0) ||
++      (state != kPrepared && completed_at_micros < created_at_micros) ||
++      (mode != AccessMode::kDirect && mode != AccessMode::kProxy)) {
++    return MutationError(StoreStatus::kCorrupt, "invalid_journal_version");
++  }
++  PendingMutationRecord record;
++  record.phase = state == kPrepared    ? MutationPhase::kPrepared
++                 : state == kCommitted ? MutationPhase::kCommitted
++                                       : MutationPhase::kSuperseded;
++  record.operation_id = operation_id;
++  record.request_fingerprint = row.ColumnString(0);
++  record.owner = OwnerFor(binding_, row.ColumnString(6));
++  record.expected_revision = static_cast<uint64_t>(expected_revision);
++  record.target_revision = static_cast<uint64_t>(target_revision);
++  record.operation_sequence = static_cast<uint64_t>(sequence);
++  record.committed_policy_generation =
++      static_cast<uint64_t>(committed_generation);
++  record.created_at_micros = created_at_micros;
++  record.completed_at_micros = completed_at_micros;
++  record.before_image = row.ColumnString(21);
++  record.after_image = row.ColumnString(22);
++  record.candidate.group = {
++      .site_toggle_id = row.ColumnString(7),
++      .canonical_host = row.ColumnString(8),
++      .owner = record.owner,
++      .http_top_level_site = row.ColumnString(9),
++      .https_top_level_site = row.ColumnString(10),
++      .member_rule_ids = {row.ColumnString(11), row.ColumnString(12)},
++      .revision = record.target_revision,
++      .last_operation_sequence = record.operation_sequence,
++  };
++  record.candidate.policy_generation = record.committed_policy_generation;
++  const std::string proxy_group_id = row.ColumnString(14);
++  const std::vector<RequestScheme> schemes = {
++      RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
++      RequestScheme::kWss};
++  for (size_t i = 0; i < 2; ++i) {
++    StoredAccessRule member;
++    member.policy = {
++        .rule_id = record.candidate.group.member_rule_ids[i],
++        .owner = record.owner,
++        .scope = PolicyScope::kSite,
++        .top_level_site = i == 0 ? record.candidate.group.http_top_level_site
++                                 : record.candidate.group.https_top_level_site,
++        .destination_host = record.candidate.group.canonical_host,
++        .include_subdomains = false,
++        .schemes = schemes,
++        .ports = {PortScope::kAllBrowserPermitted, {}},
++        .mode = mode,
++        .proxy_group_id = proxy_group_id,
++        .protection_override = ProtectionOverride::kNone,
++        .row_revision = record.target_revision,
++        .last_operation_sequence = record.operation_sequence,
++    };
++    member.site_toggle_id = record.candidate.group.site_toggle_id;
++    member.site_toggle_revision = record.target_revision;
++    member.source = StoredRuleSource::kUserAction;
++    member.lifetime = StoredRuleLifetime::kPersistent;
++    record.candidate.members.push_back(std::move(member));
++  }
++  if (!Bounded(record.request_fingerprint) ||
++      GroupImage(&record.candidate) != record.after_image) {
++    return MutationError(StoreStatus::kCorrupt, "journal_image_mismatch");
++  }
++  return {
++      state == kPrepared ? StoreStatus::kRecoveryRequired : StoreStatus::kValid,
++      std::move(record),
++      {}};
++}
++
++StoreResult<RecoveryState> AccessRuleStore::LoadRecoveryState() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_) {
++    return {terminal_status_, std::nullopt, "store_not_open"};
++  }
++  RecoveryState recovery;
++  sql::Statement rows(database_.GetUniqueStatement(
++      "SELECT operation_id FROM access_mutation_journal ORDER BY "
++      "operation_sequence"));
++  while (rows.Step()) {
++    StoreResult<PendingMutationRecord> loaded =
++        LoadMutation(rows.ColumnString(0), false);
++    if (!loaded.value.has_value()) {
++      return {loaded.status, std::nullopt, loaded.detail};
++    }
++    if (loaded.value->phase == MutationPhase::kPrepared) {
++      recovery.pending.push_back(std::move(*loaded.value));
++    }
++  }
++  if (!rows.Succeeded()) {
++    return {StoreStatus::kIoError, std::nullopt, "recovery_read_failed"};
++  }
++  return {recovery.pending.empty() ? StoreStatus::kValid
++                                   : StoreStatus::kRecoveryRequired,
++          std::move(recovery),
++          {}};
++}
++
++StoreStatus AccessRuleStore::SupersedePreparedMutation(
++    const std::string& operation_id,
++    const std::string& fingerprint) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_ || !Bounded(operation_id) || !Bounded(fingerprint)) {
++    return StoreStatus::kInvalidArgument;
++  }
++  sql::Statement update(database_.GetUniqueStatement(
++      "UPDATE access_mutation_journal SET state=?,completed_at_micros="
++      "MAX(created_at_micros,?) WHERE operation_id=? AND "
++      "request_fingerprint=? AND state=?"));
++  update.BindInt(0, kSuperseded);
++  update.BindInt64(1, NowMicros());
++  update.BindString(2, operation_id);
++  update.BindString(3, fingerprint);
++  update.BindInt(4, kPrepared);
++  if (!update.Run()) {
++    return StoreStatus::kIoError;
++  }
++  return database_.GetLastChangeCount() == 1 ? StoreStatus::kValid
++                                             : StoreStatus::kConflict;
++}
++
++StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
++    const PendingMutationRecord& expected,
++    uint64_t committed_policy_generation) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_) {
++    return MutationError(terminal_status_, "store_not_open");
++  }
++  if (committed_policy_generation == 0 ||
++      !FitsSqlInt64(committed_policy_generation)) {
++    return MutationError(StoreStatus::kInvalidArgument,
++                         "invalid_committed_generation");
++  }
++  sql::Transaction transaction(&database_);
++  if (!transaction.Begin()) {
++    return MutationError(StoreStatus::kIoError, "commit_begin_failed");
++  }
++  StoreResult<PendingMutationRecord> loaded =
++      LoadMutation(expected.operation_id, true);
++  if (!loaded.value.has_value()) {
++    return loaded;
++  }
++  const PendingMutationRecord& record = *loaded.value;
++  if (expected.phase != MutationPhase::kPrepared ||
++      expected.request_fingerprint != record.request_fingerprint ||
++      expected.owner != record.owner ||
++      expected.expected_revision != record.expected_revision ||
++      expected.target_revision != record.target_revision ||
++      expected.operation_sequence != record.operation_sequence ||
++      expected.committed_policy_generation !=
++          record.committed_policy_generation ||
++      expected.before_image != record.before_image ||
++      expected.after_image != record.after_image ||
++      expected.candidate != record.candidate) {
++    return MutationError(StoreStatus::kConflict, "prepared_record_mismatch");
++  }
++  StoreResult<StoredPolicySnapshot> current = ReadCommittedSnapshotInternal(
++      record.owner.storage_partition_token, false);
++  if (current.status != StoreStatus::kMissing &&
++      current.status != StoreStatus::kValid) {
++    return MutationError(current.status, current.detail);
++  }
++  const StoredSiteGroup* before = nullptr;
++  if (current.value.has_value()) {
++    for (const StoredSiteGroup& group : current.value->site_groups) {
++      if (group.group.site_toggle_id == record.candidate.group.site_toggle_id) {
++        before = &group;
++        break;
++      }
++    }
++  }
++  if ((before ? before->group.revision : 0) != record.expected_revision ||
++      GroupImage(before) != record.before_image) {
++    return MutationError(StoreStatus::kConflict, "committed_base_changed");
++  }
++  sql::Statement latest_generation(database_.GetUniqueStatement(
++      "SELECT COALESCE(MAX(committed_policy_generation),0) FROM "
++      "access_site_groups"));
++  if (!latest_generation.Step()) {
++    return MutationError(StoreStatus::kIoError, "generation_read_failed");
++  }
++  if (latest_generation.ColumnInt64(0) < 0 ||
++      committed_policy_generation <=
++          static_cast<uint64_t>(latest_generation.ColumnInt64(0))) {
++    return MutationError(StoreStatus::kConflict, "generation_not_monotonic");
++  }
++
++  sql::Statement delete_rules(database_.GetUniqueStatement(
++      "DELETE FROM access_rules WHERE storage_partition_token=? AND "
++      "site_toggle_id=?"));
++  delete_rules.BindString(0, record.owner.storage_partition_token);
++  delete_rules.BindString(1, record.candidate.group.site_toggle_id);
++  if (!delete_rules.Run() ||
++      ShouldFail(FailurePointForTesting::kCommitAfterRuleDelete)) {
++    return MutationError(StoreStatus::kIoError, "rule_replace_failed");
++  }
++  sql::Statement delete_group(database_.GetUniqueStatement(
++      "DELETE FROM access_site_groups WHERE storage_partition_token=? AND "
++      "site_toggle_id=?"));
++  delete_group.BindString(0, record.owner.storage_partition_token);
++  delete_group.BindString(1, record.candidate.group.site_toggle_id);
++  if (!delete_group.Run() ||
++      ShouldFail(FailurePointForTesting::kCommitAfterGroupDelete)) {
++    return MutationError(StoreStatus::kIoError, "group_replace_failed");
++  }
++
++  const SiteProxyRuleGroup& group = record.candidate.group;
++  sql::Statement insert_group(database_.GetUniqueStatement(
++      "INSERT INTO access_site_groups(channel,durable_profile_id,"
++      "storage_partition_token,site_toggle_id,canonical_host,"
++      "http_top_level_site,https_top_level_site,http_member_rule_id,"
++      "https_member_rule_id,revision,last_operation_sequence,"
++      "committed_policy_generation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"));
++  insert_group.BindInt(0, static_cast<int>(record.owner.channel));
++  insert_group.BindString(1, binding_.durable_profile_id());
++  insert_group.BindString(2, record.owner.storage_partition_token);
++  insert_group.BindString(3, group.site_toggle_id);
++  insert_group.BindString(4, group.canonical_host);
++  insert_group.BindString(5, group.http_top_level_site);
++  insert_group.BindString(6, group.https_top_level_site);
++  insert_group.BindString(7, group.member_rule_ids[0]);
++  insert_group.BindString(8, group.member_rule_ids[1]);
++  insert_group.BindInt64(9, group.revision);
++  insert_group.BindInt64(10, group.last_operation_sequence);
++  insert_group.BindInt64(11, committed_policy_generation);
++  if (!insert_group.Run() ||
++      ShouldFail(FailurePointForTesting::kCommitAfterGroupInsert)) {
++    return MutationError(StoreStatus::kIoError, "group_insert_failed");
++  }
++  for (size_t i = 0; i < record.candidate.members.size(); ++i) {
++    if (!BindAndRunRuleInsert(&database_, record.candidate.members[i],
++                              binding_.durable_profile_id()) ||
++        (i == 0 &&
++         ShouldFail(FailurePointForTesting::kCommitAfterFirstMemberInsert))) {
++      return MutationError(StoreStatus::kIoError, "member_insert_failed");
++    }
++  }
++  if (ShouldFail(FailurePointForTesting::kCommitBeforeJournalUpdate)) {
++    return MutationError(StoreStatus::kIoError, "journal_commit_injected");
++  }
++  sql::Statement mark(database_.GetUniqueStatement(
++      "UPDATE access_mutation_journal SET state=?,"
++      "committed_policy_generation=?,completed_at_micros=? WHERE "
++      "operation_id=? AND "
++      "request_fingerprint=? AND state=? AND operation_sequence=? AND "
++      "committed_policy_generation=0"));
++  mark.BindInt(0, kCommitted);
++  mark.BindInt64(1, committed_policy_generation);
++  const int64_t completed_at_micros =
++      std::max(record.created_at_micros, NowMicros());
++  mark.BindInt64(2, completed_at_micros);
++  mark.BindString(3, record.operation_id);
++  mark.BindString(4, record.request_fingerprint);
++  mark.BindInt(5, kPrepared);
++  mark.BindInt64(6, record.operation_sequence);
++  if (!mark.Run() || database_.GetLastChangeCount() != 1 ||
++      ShouldFail(FailurePointForTesting::kCommitAfterJournalUpdate) ||
++      !transaction.Commit()) {
++    return MutationError(StoreStatus::kIoError, "journal_commit_failed");
++  }
++  PendingMutationRecord committed = record;
++  committed.phase = MutationPhase::kCommitted;
++  committed.committed_policy_generation = committed_policy_generation;
++  committed.completed_at_micros = completed_at_micros;
++  committed.candidate.policy_generation = committed_policy_generation;
++  return {StoreStatus::kValid, std::move(committed), {}};
++}
++
++StoreResult<MatcherRuleSetCandidate> AccessRuleStore::AdaptMatcherSnapshot(
++    const StoredPolicySnapshot& stored) {
++  if (!IsCompleteOwner(stored.owner) || stored.policy_generation == 0) {
++    return {StoreStatus::kCorrupt, std::nullopt, "invalid_snapshot_header"};
++  }
++  MatcherRuleSetCandidate matcher;
++  matcher.owner = stored.owner;
++  matcher.committed_policy_generation = stored.policy_generation;
++  std::set<std::string> rule_ids;
++  std::set<std::string> normalized_keys;
++  uint64_t maximum_group_generation = 0;
++  auto append_rule = [&](const StoredAccessRule& rule,
++                         bool independent) -> StoreStatus {
++    if (!ValidateStoredRule(rule, stored.owner, independent)) {
++      return StoreStatus::kCorrupt;
++    }
++    std::string key =
++        std::to_string(static_cast<int>(rule.policy.scope)) + "\n" +
++        rule.policy.top_level_site + "\n" + rule.policy.destination_host +
++        "\n" + std::to_string(rule.policy.include_subdomains) + "\n" +
++        std::to_string(SchemeMask(rule.policy.schemes)) + "\n" +
++        std::to_string(static_cast<int>(rule.policy.ports.scope)) + "\n" +
++        SerializePorts(rule.policy.ports.explicit_ports);
++    if (!rule_ids.insert(rule.policy.rule_id).second ||
++        !normalized_keys.insert(std::move(key)).second) {
++      return StoreStatus::kConflict;
++    }
++    matcher.rules.push_back(rule.policy);
++    return StoreStatus::kValid;
++  };
++  for (const StoredSiteGroup& group : stored.site_groups) {
++    if (group.group.owner != stored.owner || group.policy_generation == 0 ||
++        group.policy_generation > stored.policy_generation ||
++        group.members.size() != 2) {
++      return {StoreStatus::kCorrupt, std::nullopt, "invalid_group_owner"};
++    }
++    maximum_group_generation =
++        std::max(maximum_group_generation, group.policy_generation);
++    std::vector<SiteProxyRuleMember> members;
++    members.reserve(group.members.size());
++    for (const StoredAccessRule& rule : group.members) {
++      if (!ValidateStoredRule(rule, stored.owner, false)) {
++        return {StoreStatus::kCorrupt, std::nullopt, "invalid_group_rule"};
++      }
++      members.push_back({
++          .rule_id = rule.policy.rule_id,
++          .owner = rule.policy.owner,
++          .site_toggle_id = rule.site_toggle_id,
++          .group_revision = rule.site_toggle_revision,
++          .top_level_site = rule.policy.top_level_site,
++          .exact_host = rule.policy.destination_host,
++          .schemes = rule.policy.schemes,
++          .ports = rule.policy.ports.scope,
++          .include_subdomains = rule.policy.include_subdomains,
++          .mode = rule.policy.mode,
++          .proxy_group_id = rule.policy.proxy_group_id,
++          .protection_override = rule.policy.protection_override,
++          .last_operation_sequence = rule.policy.last_operation_sequence,
++      });
++    }
++    const aegis_access::GroupValidation validation =
++        ValidateBoundSiteGroup(stored.owner, &group.group, members);
++    if (validation.error != GroupValidationError::kNone) {
++      return {StoreStatus::kCorrupt, std::nullopt, "invalid_site_group"};
++    }
++    for (const StoredAccessRule& rule : group.members) {
++      const StoreStatus status = append_rule(rule, false);
++      if (status != StoreStatus::kValid) {
++        return {status, std::nullopt, "invalid_group_rule"};
++      }
++    }
++  }
++  if (!stored.site_groups.empty() &&
++      stored.policy_generation != maximum_group_generation) {
++    return {StoreStatus::kCorrupt, std::nullopt,
++            "snapshot_generation_mismatch"};
++  }
++  for (const StoredAccessRule& rule : stored.independent_rules) {
++    const StoreStatus status = append_rule(rule, true);
++    if (status != StoreStatus::kValid) {
++      return {status, std::nullopt, "invalid_independent_rule"};
++    }
++  }
++  return {StoreStatus::kValid, std::move(matcher), {}};
++}
++
++StoreStatus AccessRuleStore::ImportIndependentRuleForTesting(
++    const StoredAccessRule& rule) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_ || rule.source != StoredRuleSource::kTestFixture ||
++      rule.lifetime != StoredRuleLifetime::kPersistent ||
++      !ValidateStoredRule(rule, rule.policy.owner, true) ||
++      rule.policy.owner.channel != binding_.channel() ||
++      rule.policy.owner.profile_token != binding_.runtime_profile_token()) {
++    return StoreStatus::kInvalidArgument;
++  }
++  sql::Transaction transaction(&database_);
++  if (!transaction.Begin()) {
++    return StoreStatus::kIoError;
++  }
++  sql::Statement collision(database_.GetUniqueStatement(
++      "SELECT 1 FROM access_rules WHERE storage_partition_token=? AND "
++      "rule_id=?"));
++  collision.BindString(0, rule.policy.owner.storage_partition_token);
++  collision.BindString(1, rule.policy.rule_id);
++  if (collision.Step()) {
++    return StoreStatus::kConflict;
++  }
++  sql::Statement advance_counter(database_.GetUniqueStatement(
++      "UPDATE access_store_counters SET operation_sequence="
++      "MAX(operation_sequence,?) WHERE singleton=1"));
++  advance_counter.BindInt64(0, rule.policy.last_operation_sequence);
++  if (!collision.Succeeded() || !advance_counter.Run() ||
++      database_.GetLastChangeCount() != 1 ||
++      !BindAndRunRuleInsert(&database_, rule, binding_.durable_profile_id()) ||
++      !transaction.Commit()) {
++    return StoreStatus::kIoError;
++  }
++  return StoreStatus::kValid;
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+new file mode 100644
+index 0000000000..843cebb382
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -0,0 +1,291 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_RULE_STORE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_RULE_STORE_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/sequence_checker.h"
++#include "components/aegis_access/access_policy_evaluator.h"
++#include "components/aegis_access/site_proxy_rule_group.h"
++#include "sql/database.h"
++#include "sql/meta_table.h"
++
++namespace aegis::access {
++
++using aegis_access::AccessMode;
++using aegis_access::AccessPolicyRule;
++using aegis_access::ChannelNamespace;
++using aegis_access::GroupValidationError;
++using aegis_access::OwnershipKey;
++using aegis_access::PolicyScope;
++using aegis_access::PortScope;
++using aegis_access::ProtectionOverride;
++using aegis_access::RequestScheme;
++using aegis_access::SiteProxyRuleGroup;
++using aegis_access::SiteProxyRuleMember;
++
++// This binding is produced by a trusted native Profile/storage adapter. The
++// durable owner id must be stable across BrowserContext incarnations; an
++// in-process BrowserContext token is not a durable owner id.
++enum class AccessStoreKind {
++  kPersistentProfile,
++  kEphemeralProfile,
++  kSystemProfile,
++};
++
++class AccessStoreBinding {
++ public:
++  AccessStoreBinding(const AccessStoreBinding&);
++  AccessStoreBinding(AccessStoreBinding&&);
++  AccessStoreBinding& operator=(const AccessStoreBinding&);
++  AccessStoreBinding& operator=(AccessStoreBinding&&);
++  ~AccessStoreBinding();
++
++  AccessStoreKind kind() const { return kind_; }
++  ChannelNamespace channel() const { return channel_; }
++  const std::string& durable_profile_id() const { return durable_profile_id_; }
++  const std::string& runtime_profile_token() const {
++    return runtime_profile_token_;
++  }
++  const base::FilePath& profile_path() const { return profile_path_; }
++  const base::FilePath& database_path() const { return database_path_; }
++
++  friend bool operator==(const AccessStoreBinding&,
++                         const AccessStoreBinding&) = default;
++
++ private:
++  friend class TrustedAccessStoreBindingFactory;
++  friend class AccessRuleStoreTestPeer;
++
++  AccessStoreBinding(AccessStoreKind kind,
++                     ChannelNamespace channel,
++                     std::string durable_profile_id,
++                     std::string runtime_profile_token,
++                     base::FilePath profile_path,
++                     base::FilePath database_path);
++
++  AccessStoreKind kind_ = AccessStoreKind::kSystemProfile;
++  ChannelNamespace channel_ = ChannelNamespace::kInvalid;
++  std::string durable_profile_id_;
++  std::string runtime_profile_token_;
++  base::FilePath profile_path_;
++  base::FilePath database_path_;
++};
++
++enum class StoreStatus {
++  kMissing,
++  kValid,
++  kRecoveryRequired,
++  kCorrupt,
++  kIncompatible,
++  kIoError,
++  kConflict,
++  kCapacity,
++  kInvalidArgument,
++};
++
++template <typename T>
++struct StoreResult {
++  StoreStatus status = StoreStatus::kIoError;
++  std::optional<T> value;
++  std::string detail;
++
++  friend bool operator==(const StoreResult&, const StoreResult&) = default;
++};
++
++enum class StoredRuleSource {
++  kUserAction,
++  kUserEdit,
++  kRestored,
++  kTestFixture,
++  kInvalid,
++};
++
++enum class StoredRuleLifetime {
++  kPersistent,
++  kProfileSession,
++  kUntil,
++  kInvalid,
++};
++
++struct StoredAccessRule {
++  AccessPolicyRule policy;
++  std::string site_toggle_id;
++  uint64_t site_toggle_revision = 0;
++  StoredRuleSource source = StoredRuleSource::kInvalid;
++  StoredRuleLifetime lifetime = StoredRuleLifetime::kInvalid;
++  int64_t expires_at_micros = 0;
++  std::string created_by_batch_id;
++
++  friend bool operator==(const StoredAccessRule&,
++                         const StoredAccessRule&) = default;
++};
++
++struct StoredSiteGroup {
++  SiteProxyRuleGroup group;
++  std::vector<StoredAccessRule> members;
++  uint64_t policy_generation = 0;
++
++  friend bool operator==(const StoredSiteGroup&,
++                         const StoredSiteGroup&) = default;
++};
++
++// A database read is deliberately called "stored", never "published". A
++// caller must separately publish/acknowledge it before a network consumer may
++// treat it as authoritative.
++struct StoredPolicySnapshot {
++  OwnershipKey owner;
++  uint64_t policy_generation = 0;
++  std::vector<StoredSiteGroup> site_groups;
++  std::vector<StoredAccessRule> independent_rules;
++
++  friend bool operator==(const StoredPolicySnapshot&,
++                         const StoredPolicySnapshot&) = default;
++};
++
++// A validated, non-authoritative matcher input candidate. The browser-side
++// publisher must explicitly wrap these rules in its separately acknowledged
++// PublishedAccessPolicySnapshot; database reads never perform that promotion.
++struct MatcherRuleSetCandidate {
++  OwnershipKey owner;
++  uint64_t committed_policy_generation = 0;
++  std::vector<AccessPolicyRule> rules;
++};
++
++enum class MutationPhase {
++  kPrepared,
++  kCommitted,
++  kSuperseded,
++  kInvalid,
++};
++
++struct SiteGroupMutationRequest {
++  std::string operation_id;
++  std::string request_fingerprint;
++  uint64_t expected_revision = 0;
++  SiteProxyRuleGroup candidate_group;
++  std::vector<SiteProxyRuleMember> candidate_members;
++
++  friend bool operator==(const SiteGroupMutationRequest&,
++                         const SiteGroupMutationRequest&) = default;
++};
++
++struct PendingMutationRecord {
++  MutationPhase phase = MutationPhase::kInvalid;
++  std::string operation_id;
++  std::string request_fingerprint;
++  OwnershipKey owner;
++  uint64_t expected_revision = 0;
++  uint64_t target_revision = 0;
++  uint64_t operation_sequence = 0;
++  // Zero while PREPARED. A future publisher supplies the committed generation
++  // only at CommitPreparedMutation after its own publication protocol.
++  uint64_t committed_policy_generation = 0;
++  int64_t created_at_micros = 0;
++  int64_t completed_at_micros = 0;
++  std::string before_image;
++  std::string after_image;
++  StoredSiteGroup candidate;
++
++  friend bool operator==(const PendingMutationRecord&,
++                         const PendingMutationRecord&) = default;
++};
++
++struct RecoveryState {
++  std::vector<PendingMutationRecord> pending;
++
++  friend bool operator==(const RecoveryState&, const RecoveryState&) = default;
++};
++
++class AccessRuleStore {
++ public:
++  // Faults occur before the named durable boundary. The surrounding SQL
++  // transaction must roll back, so a reopen sees the complete old or new
++  // committed snapshot and never a partial member pair.
++  enum class FailurePointForTesting {
++    kNone,
++    kPrepareAfterRetentionCleanup,
++    kPrepareAfterCounterUpdate,
++    kPrepareBeforeJournalInsert,
++    kPrepareAfterJournalInsert,
++    kCommitAfterRuleDelete,
++    kCommitAfterGroupDelete,
++    kCommitAfterGroupInsert,
++    kCommitAfterFirstMemberInsert,
++    kCommitBeforeJournalUpdate,
++    kCommitAfterJournalUpdate,
++  };
++
++  explicit AccessRuleStore(AccessStoreBinding binding);
++  AccessRuleStore(const AccessRuleStore&) = delete;
++  AccessRuleStore& operator=(const AccessRuleStore&) = delete;
++  ~AccessRuleStore();
++
++  StoreStatus Open();
++  bool is_open() const { return is_open_; }
++  const AccessStoreBinding& binding() const { return binding_; }
++
++  StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
++      const std::string& storage_partition_token);
++  StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
++      const SiteGroupMutationRequest& request);
++  StoreResult<PendingMutationRecord> CommitPreparedMutation(
++      const PendingMutationRecord& expected,
++      uint64_t committed_policy_generation);
++  StoreStatus SupersedePreparedMutation(const std::string& operation_id,
++                                        const std::string& fingerprint);
++  StoreResult<RecoveryState> LoadRecoveryState();
++
++  // Converts a fully validated stored snapshot into the existing matcher
++  // input shape. The returned value is a candidate for a later publication;
++  // this adapter itself performs no publication and grants no authority.
++  static StoreResult<MatcherRuleSetCandidate> AdaptMatcherSnapshot(
++      const StoredPolicySnapshot& stored);
++
++ private:
++  friend class AccessRuleStoreTestPeer;
++
++  // Restricted friend-only fixture seam for persistence/matcher regressions.
++  // It is intentionally unavailable to production callers.
++  StoreStatus ImportIndependentRuleForTesting(const StoredAccessRule& rule);
++  void SetFailurePointForTesting(FailurePointForTesting point) {
++    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++    failure_point_for_testing_ = point;
++  }
++  bool ExecuteSqlForTesting(const std::string& sql) {
++    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++    return database_.Execute(sql);
++  }
++  void CloseForTesting() {
++    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++    database_.Close();
++    is_open_ = false;
++    terminal_status_ = StoreStatus::kIoError;
++  }
++  StoreResult<StoredPolicySnapshot> ReadCommittedSnapshotInternal(
++      const std::string& storage_partition_token,
++      bool check_recovery);
++  StoreResult<PendingMutationRecord> LoadMutation(
++      const std::string& operation_id,
++      bool prepared_only);
++  bool IsBindingValid() const;
++  bool ShouldFail(FailurePointForTesting point) const;
++
++  AccessStoreBinding binding_;
++  sql::Database database_;
++  sql::MetaTable meta_table_;
++  bool is_open_ = false;
++  StoreStatus terminal_status_ = StoreStatus::kIoError;
++  FailurePointForTesting failure_point_for_testing_ =
++      FailurePointForTesting::kNone;
++  SEQUENCE_CHECKER(sequence_checker_);
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_RULE_STORE_H_
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+new file mode 100644
+index 0000000000..462fbe4886
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -0,0 +1,1289 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_rule_store.h"
++
++#include <array>
++#include <limits>
++#include <memory>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "components/aegis_access/access_route_planner.h"
++#include "components/aegis_access/request_policy_context.h"
++#include "sql/database.h"
++#include "sql/meta_table.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++
++using aegis_access::BrowserOwnedRequestMetadata;
++using aegis_access::CanonicalizeBrowserOwnedRequest;
++using aegis_access::EvaluateAccessPolicy;
++using aegis_access::GenerationTuple;
++using aegis_access::GroupSelection;
++using aegis_access::ManagedRestriction;
++using aegis_access::PlanAccessRoute;
++using aegis_access::PolicyMatchReason;
++using aegis_access::PolicyMatchResult;
++using aegis_access::PolicyState;
++using aegis_access::ProtectionRestriction;
++using aegis_access::ProxyRuntimeState;
++using aegis_access::PublishedAccessPolicySnapshot;
++using aegis_access::RegisteredProxyEntry;
++using aegis_access::RequestAttributionKind;
++using aegis_access::RequestContextError;
++using aegis_access::RequestPolicyContext;
++using aegis_access::RequestPolicyContextResult;
++using aegis_access::RouteAction;
++using aegis_access::RouteInput;
++using aegis_access::RoutePlan;
++using aegis_access::RulePortSelector;
++using aegis_access::SnapshotState;
++
++class AccessRuleStoreTestPeer {
++ public:
++  static AccessStoreBinding Persistent(
++      const base::FilePath& profile_path,
++      ChannelNamespace channel = ChannelNamespace::kBeta,
++      std::string durable_profile_id = "durable-profile-A",
++      std::string runtime_profile_token = "profile-A") {
++    return AccessStoreBinding(AccessStoreKind::kPersistentProfile, channel,
++                              std::move(durable_profile_id),
++                              std::move(runtime_profile_token), profile_path,
++                              profile_path.AppendASCII("access.db"));
++  }
++
++  static AccessStoreBinding Ephemeral(
++      ChannelNamespace channel = ChannelNamespace::kBeta,
++      std::string durable_profile_id = "ephemeral-A",
++      std::string runtime_profile_token = "ephemeral-A") {
++    return AccessStoreBinding(AccessStoreKind::kEphemeralProfile, channel,
++                              std::move(durable_profile_id),
++                              std::move(runtime_profile_token), {}, {});
++  }
++
++  static AccessStoreBinding System() {
++    return AccessStoreBinding(AccessStoreKind::kSystemProfile,
++                              ChannelNamespace::kBeta, "system", "system", {},
++                              {});
++  }
++
++  static AccessStoreBinding WithDatabasePath(
++      const base::FilePath& profile_path,
++      const base::FilePath& database_path) {
++    return AccessStoreBinding(AccessStoreKind::kPersistentProfile,
++                              ChannelNamespace::kBeta, "durable-profile-A",
++                              "profile-A", profile_path, database_path);
++  }
++
++  static StoreStatus Import(AccessRuleStore* store,
++                            const StoredAccessRule& rule) {
++    return store->ImportIndependentRuleForTesting(rule);
++  }
++
++  static bool Sql(AccessRuleStore* store, const std::string& sql) {
++    return store->ExecuteSqlForTesting(sql);
++  }
++
++  static void FailAt(AccessRuleStore* store,
++                     AccessRuleStore::FailurePointForTesting point) {
++    store->SetFailurePointForTesting(point);
++  }
++
++  static void Close(AccessRuleStore* store) { store->CloseForTesting(); }
++};
++
++namespace {
++
++OwnershipKey Owner(ChannelNamespace channel = ChannelNamespace::kBeta,
++                   std::string profile = "profile-A",
++                   std::string partition = "partition-A") {
++  return {channel, std::move(profile), std::move(partition)};
++}
++
++std::vector<RequestScheme> AllSchemes() {
++  return {RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
++          RequestScheme::kWss};
++}
++
++SiteGroupMutationRequest Mutation(std::string operation_id,
++                                  AccessMode mode,
++                                  uint64_t expected_revision = 0,
++                                  OwnershipKey owner = Owner(),
++                                  std::string host = "news.example") {
++  const std::string http_site = "http://" + host;
++  const std::string https_site = "https://" + host;
++  const std::string toggle = "toggle-" + host;
++  const std::string proxy = mode == AccessMode::kProxy ? "proxy-profile-A" : "";
++  SiteGroupMutationRequest request;
++  request.operation_id = std::move(operation_id);
++  request.request_fingerprint = "fingerprint-" + request.operation_id;
++  request.expected_revision = expected_revision;
++  request.candidate_group = {
++      .site_toggle_id = toggle,
++      .canonical_host = host,
++      .owner = owner,
++      .http_top_level_site = http_site,
++      .https_top_level_site = https_site,
++      .member_rule_ids = {toggle + ":http", toggle + ":https"},
++  };
++  request.candidate_members = {
++      SiteProxyRuleMember{
++          .rule_id = toggle + ":http",
++          .owner = owner,
++          .site_toggle_id = toggle,
++          .top_level_site = http_site,
++          .exact_host = host,
++          .schemes = AllSchemes(),
++          .ports = PortScope::kAllBrowserPermitted,
++          .mode = mode,
++          .proxy_group_id = proxy,
++          .protection_override = ProtectionOverride::kNone,
++      },
++      SiteProxyRuleMember{
++          .rule_id = toggle + ":https",
++          .owner = owner,
++          .site_toggle_id = toggle,
++          .top_level_site = https_site,
++          .exact_host = host,
++          .schemes = AllSchemes(),
++          .ports = PortScope::kAllBrowserPermitted,
++          .mode = mode,
++          .proxy_group_id = proxy,
++          .protection_override = ProtectionOverride::kNone,
++      },
++  };
++  return request;
++}
++
++void SetTopLevelSites(SiteGroupMutationRequest* request,
++                      std::string http_site,
++                      std::string https_site) {
++  request->candidate_group.http_top_level_site = http_site;
++  request->candidate_group.https_top_level_site = https_site;
++  request->candidate_members[0].top_level_site = std::move(http_site);
++  request->candidate_members[1].top_level_site = std::move(https_site);
++}
++
++PendingMutationRecord Prepare(AccessRuleStore* store,
++                              const SiteGroupMutationRequest& request) {
++  StoreResult<PendingMutationRecord> result =
++      store->PrepareSiteGroupMutation(request);
++  EXPECT_EQ(result.status, StoreStatus::kValid) << result.detail;
++  EXPECT_TRUE(result.value.has_value());
++  return result.value.value_or(PendingMutationRecord{});
++}
++
++PendingMutationRecord Commit(AccessRuleStore* store,
++                             const PendingMutationRecord& pending,
++                             uint64_t generation) {
++  StoreResult<PendingMutationRecord> result =
++      store->CommitPreparedMutation(pending, generation);
++  EXPECT_EQ(result.status, StoreStatus::kValid) << result.detail;
++  EXPECT_TRUE(result.value.has_value());
++  return result.value.value_or(PendingMutationRecord{});
++}
++
++const StoredSiteGroup* FindGroup(const StoredPolicySnapshot& snapshot,
++                                 const std::string& host) {
++  for (const StoredSiteGroup& group : snapshot.site_groups) {
++    if (group.group.canonical_host == host) {
++      return &group;
++    }
++  }
++  return nullptr;
++}
++
++GroupSelection Selection(const StoredSiteGroup& group) {
++  std::vector<SiteProxyRuleMember> members;
++  for (const StoredAccessRule& rule : group.members) {
++    members.push_back({
++        rule.policy.rule_id,
++        rule.policy.owner,
++        rule.site_toggle_id,
++        rule.site_toggle_revision,
++        rule.policy.top_level_site,
++        rule.policy.destination_host,
++        rule.policy.schemes,
++        rule.policy.ports.scope,
++        rule.policy.include_subdomains,
++        rule.policy.mode,
++        rule.policy.proxy_group_id,
++        rule.policy.protection_override,
++        rule.policy.last_operation_sequence,
++    });
++  }
++  return ValidateSiteProxyRuleGroup(group.group.owner, &group.group, members)
++      .selection;
++}
++
++StoredAccessRule IndependentRule(std::string id,
++                                 AccessMode mode,
++                                 std::string host,
++                                 std::string top_site,
++                                 std::vector<RequestScheme> schemes,
++                                 RulePortSelector ports,
++                                 uint64_t revision) {
++  StoredAccessRule rule;
++  rule.policy = {
++      .rule_id = std::move(id),
++      .owner = Owner(),
++      .scope = PolicyScope::kSite,
++      .top_level_site = std::move(top_site),
++      .destination_host = std::move(host),
++      .include_subdomains = false,
++      .schemes = std::move(schemes),
++      .ports = std::move(ports),
++      .mode = mode,
++      .proxy_group_id = mode == AccessMode::kProxy ? "independent-proxy" : "",
++      .protection_override = ProtectionOverride::kNone,
++      .row_revision = revision,
++      .last_operation_sequence = revision,
++  };
++  rule.source = StoredRuleSource::kTestFixture;
++  rule.lifetime = StoredRuleLifetime::kPersistent;
++  return rule;
++}
++
++StoredPolicySnapshot StoredSnapshotForAdapter(
++    uint64_t group_generation = 7,
++    uint64_t snapshot_generation = 7) {
++  SiteGroupMutationRequest request = Mutation("adapter", AccessMode::kProxy);
++  StoredSiteGroup stored_group;
++  stored_group.group = request.candidate_group;
++  stored_group.group.revision = 1;
++  stored_group.group.last_operation_sequence = 1;
++  stored_group.policy_generation = group_generation;
++  for (const SiteProxyRuleMember& member : request.candidate_members) {
++    StoredAccessRule rule;
++    rule.policy = {
++        .rule_id = member.rule_id,
++        .owner = member.owner,
++        .scope = PolicyScope::kSite,
++        .top_level_site = member.top_level_site,
++        .destination_host = member.exact_host,
++        .include_subdomains = member.include_subdomains,
++        .schemes = member.schemes,
++        .ports = {member.ports, {}},
++        .mode = member.mode,
++        .proxy_group_id = member.proxy_group_id,
++        .protection_override = member.protection_override,
++        .row_revision = 1,
++        .last_operation_sequence = 1,
++    };
++    rule.site_toggle_id = request.candidate_group.site_toggle_id;
++    rule.site_toggle_revision = 1;
++    rule.source = StoredRuleSource::kUserAction;
++    rule.lifetime = StoredRuleLifetime::kPersistent;
++    stored_group.members.push_back(std::move(rule));
++  }
++  return {
++      .owner = Owner(),
++      .policy_generation = snapshot_generation,
++      .site_groups = {std::move(stored_group)},
++  };
++}
++
++TEST(AccessRuleStoreTest, RejectsSystemAndUntrustedPersistentPaths) {
++  AccessRuleStore system(AccessRuleStoreTestPeer::System());
++  EXPECT_EQ(system.Open(), StoreStatus::kInvalidArgument);
++
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  AccessRuleStore wrong_name(AccessRuleStoreTestPeer::WithDatabasePath(
++      temp.GetPath(), temp.GetPath().AppendASCII("other.db")));
++  EXPECT_EQ(wrong_name.Open(), StoreStatus::kInvalidArgument);
++
++  const base::FilePath relative(FILE_PATH_LITERAL("relative-profile"));
++  AccessRuleStore relative_path(AccessRuleStoreTestPeer::WithDatabasePath(
++      relative, relative.AppendASCII("access.db")));
++  EXPECT_EQ(relative_path.Open(), StoreStatus::kInvalidArgument);
++}
++
++TEST(AccessRuleStoreTest, EmptyPersistentDatabaseIsMissingAndOwnerBound) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const AccessStoreBinding binding =
++      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    StoreResult<StoredPolicySnapshot> empty =
++        store.ReadCommittedSnapshot("partition-A");
++    EXPECT_EQ(empty.status, StoreStatus::kMissing);
++    ASSERT_TRUE(empty.value);
++    EXPECT_EQ(empty.value->owner, Owner());
++  }
++  EXPECT_TRUE(base::PathExists(temp.GetPath().AppendASCII("access.db")));
++
++  AccessRuleStore wrong_owner(AccessRuleStoreTestPeer::Persistent(
++      temp.GetPath(), ChannelNamespace::kBeta, "durable-profile-B",
++      "profile-B"));
++  EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
++}
++
++TEST(AccessRuleStoreTest, ReopenRebindsStoredRowsToCurrentRuntimeOwner) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const AccessStoreBinding old_binding = AccessRuleStoreTestPeer::Persistent(
++      temp.GetPath(), ChannelNamespace::kBeta, "durable-profile-A",
++      "runtime-old");
++  {
++    AccessRuleStore store(old_binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store,
++           Prepare(&store,
++                   Mutation("old-runtime", AccessMode::kProxy, 0,
++                            Owner(ChannelNamespace::kBeta, "runtime-old"))),
++           1);
++  }
++
++  const AccessStoreBinding new_binding = AccessRuleStoreTestPeer::Persistent(
++      temp.GetPath(), ChannelNamespace::kBeta, "durable-profile-A",
++      "runtime-new");
++  AccessRuleStore reopened(new_binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  StoreResult<StoredPolicySnapshot> stored =
++      reopened.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(stored.status, StoreStatus::kValid) << stored.detail;
++  ASSERT_TRUE(stored.value);
++  const OwnershipKey new_owner = Owner(ChannelNamespace::kBeta, "runtime-new");
++  EXPECT_EQ(stored.value->owner, new_owner);
++  ASSERT_EQ(stored.value->site_groups.size(), 1u);
++  EXPECT_EQ(stored.value->site_groups[0].group.owner, new_owner);
++  for (const StoredAccessRule& rule : stored.value->site_groups[0].members) {
++    EXPECT_EQ(rule.policy.owner, new_owner);
++  }
++  StoreResult<MatcherRuleSetCandidate> candidate =
++      AccessRuleStore::AdaptMatcherSnapshot(*stored.value);
++  ASSERT_EQ(candidate.status, StoreStatus::kValid) << candidate.detail;
++  ASSERT_TRUE(candidate.value);
++  PublishedAccessPolicySnapshot published{
++      candidate.value->owner, candidate.value->committed_policy_generation,
++      candidate.value->rules};
++
++  BrowserOwnedRequestMetadata new_metadata{
++      "new-request",
++      new_owner,
++      RequestAttributionKind::kDocument,
++      "new-document",
++      {},
++      net::SchemefulSite(GURL("https://news.example/"))};
++  RequestPolicyContextResult new_context = CanonicalizeBrowserOwnedRequest(
++      new_metadata, GURL("https://news.example/"));
++  ASSERT_TRUE(new_context.context);
++  EXPECT_EQ(EvaluateAccessPolicy(*new_context.context, published).policy_state,
++            PolicyState::kValid);
++
++  BrowserOwnedRequestMetadata old_metadata{
++      "old-request",
++      Owner(ChannelNamespace::kBeta, "runtime-old"),
++      RequestAttributionKind::kDocument,
++      "old-document",
++      {},
++      net::SchemefulSite(GURL("https://news.example/"))};
++  RequestPolicyContextResult old_context = CanonicalizeBrowserOwnedRequest(
++      old_metadata, GURL("https://news.example/"));
++  ASSERT_TRUE(old_context.context);
++  PolicyMatchResult rejected =
++      EvaluateAccessPolicy(*old_context.context, published);
++  EXPECT_EQ(rejected.policy_state, PolicyState::kInvalid);
++  EXPECT_EQ(rejected.reason, PolicyMatchReason::kOwnershipMismatch);
++}
++
++TEST(AccessRuleStoreTest, EphemeralProfileNeverCreatesAccessDb) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral());
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
++            StoreStatus::kMissing);
++  PendingMutationRecord pending =
++      Prepare(&store, Mutation("ephemeral-enable", AccessMode::kProxy, 0,
++                               Owner(ChannelNamespace::kBeta, "ephemeral-A")));
++  Commit(&store, pending, 1);
++  EXPECT_TRUE(store.binding().database_path().empty());
++  EXPECT_TRUE(store.binding().profile_path().empty());
++}
++
++TEST(AccessRuleStoreTest, PrepareIsDurableButDoesNotReplaceCommittedRows) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const AccessStoreBinding binding =
++      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  PendingMutationRecord pending;
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    pending = Prepare(&store, Mutation("enable", AccessMode::kProxy));
++    EXPECT_EQ(pending.operation_sequence, 1u);
++    EXPECT_EQ(pending.committed_policy_generation, 0u);
++    EXPECT_EQ(pending.candidate.policy_generation, 0u);
++    EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
++              StoreStatus::kRecoveryRequired);
++  }
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  StoreResult<RecoveryState> recovery = reopened.LoadRecoveryState();
++  ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
++  ASSERT_TRUE(recovery.value);
++  ASSERT_EQ(recovery.value->pending.size(), 1u);
++  EXPECT_EQ(recovery.value->pending[0], pending);
++  ASSERT_EQ(reopened.SupersedePreparedMutation(pending.operation_id,
++                                               pending.request_fingerprint),
++            StoreStatus::kValid);
++  EXPECT_EQ(reopened.ReadCommittedSnapshot("partition-A").status,
++            StoreStatus::kMissing);
++}
++
++TEST(AccessRuleStoreTest, CommitReopensAsCompleteNewVersion) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const AccessStoreBinding binding =
++      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    PendingMutationRecord pending =
++        Prepare(&store, Mutation("enable", AccessMode::kProxy));
++    PendingMutationRecord committed = Commit(&store, pending, 7);
++    EXPECT_EQ(committed.phase, MutationPhase::kCommitted);
++    EXPECT_EQ(committed.committed_policy_generation, 7u);
++  }
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  StoreResult<StoredPolicySnapshot> snapshot =
++      reopened.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(snapshot.status, StoreStatus::kValid) << snapshot.detail;
++  ASSERT_TRUE(snapshot.value);
++  ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
++  EXPECT_EQ(snapshot.value->policy_generation, 7u);
++  EXPECT_EQ(Selection(snapshot.value->site_groups[0]),
++            GroupSelection::kEnabled);
++  EXPECT_EQ(reopened.LoadRecoveryState().status, StoreStatus::kValid);
++}
++
++TEST(AccessRuleStoreTest, EveryPrepareBoundaryRollsBackOnReopen) {
++  constexpr std::array points = {
++      AccessRuleStore::FailurePointForTesting::kPrepareAfterRetentionCleanup,
++      AccessRuleStore::FailurePointForTesting::kPrepareAfterCounterUpdate,
++      AccessRuleStore::FailurePointForTesting::kPrepareBeforeJournalInsert,
++      AccessRuleStore::FailurePointForTesting::kPrepareAfterJournalInsert,
++  };
++  for (size_t i = 0; i < points.size(); ++i) {
++    SCOPED_TRACE(i);
++    base::ScopedTempDir temp;
++    ASSERT_TRUE(temp.CreateUniqueTempDir());
++    const AccessStoreBinding binding =
++        AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++    {
++      AccessRuleStore store(binding);
++      ASSERT_EQ(store.Open(), StoreStatus::kValid);
++      AccessRuleStoreTestPeer::FailAt(&store, points[i]);
++      EXPECT_EQ(store
++                    .PrepareSiteGroupMutation(
++                        Mutation("prepare-failure", AccessMode::kProxy))
++                    .status,
++                StoreStatus::kIoError);
++    }
++    AccessRuleStore reopened(binding);
++    ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++    EXPECT_EQ(reopened.LoadRecoveryState().status, StoreStatus::kValid);
++    EXPECT_EQ(reopened.ReadCommittedSnapshot("partition-A").status,
++              StoreStatus::kMissing);
++    EXPECT_EQ(Prepare(&reopened, Mutation("after-rollback", AccessMode::kProxy))
++                  .operation_sequence,
++              1u);
++  }
++}
++
++TEST(AccessRuleStoreTest, EveryCommitBoundaryKeepsCompleteOldVersion) {
++  constexpr std::array points = {
++      AccessRuleStore::FailurePointForTesting::kCommitAfterRuleDelete,
++      AccessRuleStore::FailurePointForTesting::kCommitAfterGroupDelete,
++      AccessRuleStore::FailurePointForTesting::kCommitAfterGroupInsert,
++      AccessRuleStore::FailurePointForTesting::kCommitAfterFirstMemberInsert,
++      AccessRuleStore::FailurePointForTesting::kCommitBeforeJournalUpdate,
++      AccessRuleStore::FailurePointForTesting::kCommitAfterJournalUpdate,
++  };
++  for (size_t i = 0; i < points.size(); ++i) {
++    SCOPED_TRACE(i);
++    base::ScopedTempDir temp;
++    ASSERT_TRUE(temp.CreateUniqueTempDir());
++    const AccessStoreBinding binding =
++        AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++    PendingMutationRecord closing;
++    {
++      AccessRuleStore store(binding);
++      ASSERT_EQ(store.Open(), StoreStatus::kValid);
++      Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kProxy)), 3);
++      closing = Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
++      AccessRuleStoreTestPeer::FailAt(&store, points[i]);
++      EXPECT_EQ(store.CommitPreparedMutation(closing, 4).status,
++                StoreStatus::kIoError);
++    }
++    AccessRuleStore reopened(binding);
++    ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++    StoreResult<RecoveryState> recovery = reopened.LoadRecoveryState();
++    ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
++    ASSERT_TRUE(recovery.value);
++    ASSERT_EQ(recovery.value->pending.size(), 1u);
++    ASSERT_EQ(reopened.SupersedePreparedMutation(closing.operation_id,
++                                                 closing.request_fingerprint),
++              StoreStatus::kValid);
++    StoreResult<StoredPolicySnapshot> old =
++        reopened.ReadCommittedSnapshot("partition-A");
++    ASSERT_EQ(old.status, StoreStatus::kValid) << old.detail;
++    ASSERT_TRUE(old.value);
++    const StoredSiteGroup* group = FindGroup(*old.value, "news.example");
++    ASSERT_NE(group, nullptr);
++    EXPECT_EQ(group->members.size(), 2u);
++    EXPECT_EQ(Selection(*group), GroupSelection::kEnabled);
++    EXPECT_EQ(group->policy_generation, 3u);
++  }
++}
++
++TEST(AccessRuleStoreTest, RevisionSequenceFingerprintAndGenerationAreBound) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  PendingMutationRecord pending =
++      Prepare(&store, Mutation("bound", AccessMode::kProxy));
++
++  PendingMutationRecord altered = pending;
++  altered.request_fingerprint = "other";
++  EXPECT_EQ(store.CommitPreparedMutation(altered, 1).status,
++            StoreStatus::kConflict);
++  EXPECT_EQ(store.CommitPreparedMutation(pending, 0).status,
++            StoreStatus::kInvalidArgument);
++  Commit(&store, pending, 5);
++
++  EXPECT_EQ(
++      store.PrepareSiteGroupMutation(Mutation("stale", AccessMode::kDirect, 0))
++          .status,
++      StoreStatus::kConflict);
++  PendingMutationRecord next =
++      Prepare(&store, Mutation("next", AccessMode::kDirect, 1));
++  EXPECT_EQ(store.CommitPreparedMutation(next, 5).status,
++            StoreStatus::kConflict);
++  Commit(&store, next, 6);
++}
++
++TEST(AccessRuleStoreTest, CounterOverflowFailsWithoutJournal) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_store_counters SET operation_sequence="
++      "9223372036854775807 WHERE singleton=1"));
++  EXPECT_EQ(
++      store.PrepareSiteGroupMutation(Mutation("overflow", AccessMode::kProxy))
++          .status,
++      StoreStatus::kConflict);
++  EXPECT_EQ(store.LoadRecoveryState().status, StoreStatus::kValid);
++}
++
++TEST(AccessRuleStoreTest, FreshDatabaseInitializesOperationSequence) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  AccessRuleStore store(AccessRuleStoreTestPeer::Persistent(temp.GetPath()));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  PendingMutationRecord first =
++      Prepare(&store, Mutation("first-sequence", AccessMode::kProxy));
++  EXPECT_EQ(first.operation_sequence, 1u);
++}
++
++TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
++  base::ScopedTempDir missing_temp;
++  ASSERT_TRUE(missing_temp.CreateUniqueTempDir());
++  const AccessStoreBinding missing_binding =
++      AccessRuleStoreTestPeer::Persistent(missing_temp.GetPath());
++  {
++    AccessRuleStore store(missing_binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store,
++           Prepare(&store, Mutation("missing-counter", AccessMode::kDirect)),
++           1);
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store, "DELETE FROM access_store_counters WHERE singleton=1"));
++  }
++  AccessRuleStore missing_counter(missing_binding);
++  EXPECT_EQ(missing_counter.Open(), StoreStatus::kCorrupt);
++  StoreResult<StoredPolicySnapshot> missing_snapshot =
++      missing_counter.ReadCommittedSnapshot("partition-A");
++  EXPECT_EQ(missing_snapshot.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(missing_snapshot.value.has_value());
++  StoreResult<PendingMutationRecord> missing_mutation =
++      missing_counter.PrepareSiteGroupMutation(
++          Mutation("must-not-prepare", AccessMode::kProxy, 1));
++  EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(missing_mutation.value.has_value());
++
++  base::ScopedTempDir lagging_temp;
++  ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
++  const AccessStoreBinding lagging_binding =
++      AccessRuleStoreTestPeer::Persistent(lagging_temp.GetPath());
++  {
++    AccessRuleStore store(lagging_binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store,
++           Prepare(&store, Mutation("sequence-one", AccessMode::kProxy)), 1);
++    Commit(&store,
++           Prepare(&store, Mutation("sequence-two", AccessMode::kDirect, 1)),
++           2);
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store,
++        "UPDATE access_store_counters SET operation_sequence=1 WHERE "
++        "singleton=1"));
++  }
++  AccessRuleStore lagging_counter(lagging_binding);
++  EXPECT_EQ(lagging_counter.Open(), StoreStatus::kCorrupt);
++  EXPECT_EQ(lagging_counter.LoadRecoveryState().status, StoreStatus::kCorrupt);
++}
++
++TEST(AccessRuleStoreTest, CanonicalizesUnsortedSchemesAndRejectsDuplicates) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  SiteGroupMutationRequest unsorted = Mutation("unsorted", AccessMode::kProxy);
++  for (SiteProxyRuleMember& member : unsorted.candidate_members) {
++    member.schemes = {RequestScheme::kWss, RequestScheme::kHttp,
++                      RequestScheme::kWs, RequestScheme::kHttps};
++  }
++  PendingMutationRecord canonical = Prepare(&store, unsorted);
++  for (const StoredAccessRule& member : canonical.candidate.members) {
++    EXPECT_EQ(member.policy.schemes, AllSchemes());
++  }
++  ASSERT_EQ(store.SupersedePreparedMutation(canonical.operation_id,
++                                            canonical.request_fingerprint),
++            StoreStatus::kValid);
++
++  SiteGroupMutationRequest duplicate =
++      Mutation("duplicate", AccessMode::kProxy);
++  duplicate.candidate_members[0].schemes = {
++      RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
++      RequestScheme::kWs};
++  EXPECT_EQ(store.PrepareSiteGroupMutation(duplicate).status,
++            StoreStatus::kInvalidArgument);
++}
++
++TEST(AccessRuleStoreTest, ValidatesCanonicalSchemefulSitesAtPrepareBoundary) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  struct SiteCase {
++    const char* host;
++    const char* http_site;
++    const char* https_site;
++  };
++  constexpr SiteCase cases[] = {
++      {"www.example.com", "http://example.com", "https://example.com"},
++      {"www.tenant.github.io", "http://tenant.github.io",
++       "https://tenant.github.io"},
++      {"192.0.2.1", "http://192.0.2.1", "https://192.0.2.1"},
++      {"[2001:db8::1]", "http://[2001:db8::1]", "https://[2001:db8::1]"},
++  };
++  size_t case_index = 0;
++  for (const auto& site_case : cases) {
++    SCOPED_TRACE(site_case.host);
++    const std::string suffix = std::to_string(case_index++);
++    SiteGroupMutationRequest request = Mutation(
++        "canonical-site-" + suffix, AccessMode::kProxy, 0,
++        Owner(ChannelNamespace::kBeta, "profile-A", "partition-" + suffix),
++        site_case.host);
++    SetTopLevelSites(&request, site_case.http_site, site_case.https_site);
++    StoreResult<PendingMutationRecord> prepared =
++        store.PrepareSiteGroupMutation(request);
++    ASSERT_EQ(prepared.status, StoreStatus::kValid) << prepared.detail;
++    ASSERT_TRUE(prepared.value);
++    EXPECT_EQ(
++        store.SupersedePreparedMutation(prepared.value->operation_id,
++                                        prepared.value->request_fingerprint),
++        StoreStatus::kValid);
++  }
++}
++
++TEST(AccessRuleStoreTest, RejectsTopLevelSiteFromDifferentRegistrableDomain) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  SiteGroupMutationRequest request = Mutation("wrong-site", AccessMode::kProxy);
++  SetTopLevelSites(&request, "http://other.example", "https://other.example");
++  StoreResult<PendingMutationRecord> prepared =
++      store.PrepareSiteGroupMutation(request);
++  EXPECT_EQ(prepared.status, StoreStatus::kInvalidArgument);
++  EXPECT_FALSE(prepared.value.has_value());
++  EXPECT_EQ(store.LoadRecoveryState().status, StoreStatus::kValid);
++}
++
++TEST(AccessRuleStoreTest, CorruptTopLevelSiteFailsClosedOnReadAndAdapter) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  Commit(&store, Prepare(&store, Mutation("seed-site", AccessMode::kProxy)), 1);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_site_groups SET "
++      "http_top_level_site='http://other.example',"
++      "https_top_level_site='https://other.example'"));
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_rules SET top_level_site='http://other.example' WHERE "
++      "rule_id='toggle-news.example:http'"));
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_rules SET top_level_site='https://other.example' WHERE "
++      "rule_id='toggle-news.example:https'"));
++  StoreResult<StoredPolicySnapshot> corrupted =
++      store.ReadCommittedSnapshot("partition-A");
++  EXPECT_EQ(corrupted.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(corrupted.value.has_value());
++
++  StoredPolicySnapshot stored = StoredSnapshotForAdapter();
++  stored.site_groups[0].group.http_top_level_site = "http://other.example";
++  stored.site_groups[0].group.https_top_level_site = "https://other.example";
++  stored.site_groups[0].members[0].policy.top_level_site =
++      "http://other.example";
++  stored.site_groups[0].members[1].policy.top_level_site =
++      "https://other.example";
++  StoreResult<MatcherRuleSetCandidate> candidate =
++      AccessRuleStore::AdaptMatcherSnapshot(stored);
++  EXPECT_EQ(candidate.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(candidate.value.has_value());
++}
++
++TEST(AccessRuleStoreTest, AdapterRejectsInvalidAtomicSiteGroups) {
++  auto expect_rejected = [](const StoredPolicySnapshot& snapshot) {
++    StoreResult<MatcherRuleSetCandidate> result =
++        AccessRuleStore::AdaptMatcherSnapshot(snapshot);
++    EXPECT_EQ(result.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(result.value.has_value());
++  };
++
++  StoredPolicySnapshot missing_member = StoredSnapshotForAdapter();
++  missing_member.site_groups[0].members.pop_back();
++  expect_rejected(missing_member);
++
++  StoredPolicySnapshot mixed_mode = StoredSnapshotForAdapter();
++  mixed_mode.site_groups[0].members[1].policy.mode = AccessMode::kDirect;
++  mixed_mode.site_groups[0].members[1].policy.proxy_group_id.clear();
++  expect_rejected(mixed_mode);
++
++  StoredPolicySnapshot mixed_owner = StoredSnapshotForAdapter();
++  mixed_owner.site_groups[0].members[1].policy.owner.profile_token =
++      "other-runtime";
++  expect_rejected(mixed_owner);
++
++  StoredPolicySnapshot mixed_revision = StoredSnapshotForAdapter();
++  mixed_revision.site_groups[0].members[1].site_toggle_revision = 2;
++  mixed_revision.site_groups[0].members[1].policy.row_revision = 2;
++  expect_rejected(mixed_revision);
++
++  StoredPolicySnapshot mismatched_toggle = StoredSnapshotForAdapter();
++  mismatched_toggle.site_groups[0].members[1].site_toggle_id = "other-toggle";
++  expect_rejected(mismatched_toggle);
++}
++
++TEST(AccessRuleStoreTest, AdapterRejectsSnapshotGenerationMismatch) {
++  StoredPolicySnapshot stale_group = StoredSnapshotForAdapter(7, 8);
++  StoreResult<MatcherRuleSetCandidate> result =
++      AccessRuleStore::AdaptMatcherSnapshot(stale_group);
++  EXPECT_EQ(result.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(result.value.has_value());
++
++  StoredPolicySnapshot future_group = StoredSnapshotForAdapter(8, 7);
++  result = AccessRuleStore::AdaptMatcherSnapshot(future_group);
++  EXPECT_EQ(result.status, StoreStatus::kCorrupt);
++  EXPECT_FALSE(result.value.has_value());
++}
++
++TEST(AccessRuleStoreTest, CompletionTimeNeverPrecedesCreatedTime) {
++  constexpr int64_t kFutureMicros = std::numeric_limits<int64_t>::max() - 1000;
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++
++  SiteGroupMutationRequest supersede_request =
++      Mutation("future-supersede", AccessMode::kProxy);
++  PendingMutationRecord supersede = Prepare(&store, supersede_request);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store, "UPDATE access_mutation_journal SET created_at_micros=" +
++                  std::to_string(kFutureMicros) +
++                  " WHERE operation_id='future-supersede'"));
++  ASSERT_EQ(store.SupersedePreparedMutation(supersede.operation_id,
++                                            supersede.request_fingerprint),
++            StoreStatus::kValid);
++  StoreResult<PendingMutationRecord> superseded =
++      store.PrepareSiteGroupMutation(supersede_request);
++  ASSERT_EQ(superseded.status, StoreStatus::kValid) << superseded.detail;
++  ASSERT_TRUE(superseded.value);
++  EXPECT_EQ(superseded.value->phase, MutationPhase::kSuperseded);
++  EXPECT_EQ(superseded.value->created_at_micros, kFutureMicros);
++  EXPECT_EQ(superseded.value->completed_at_micros, kFutureMicros);
++
++  SiteGroupMutationRequest commit_request =
++      Mutation("future-commit", AccessMode::kProxy);
++  Prepare(&store, commit_request);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store, "UPDATE access_mutation_journal SET created_at_micros=" +
++                  std::to_string(kFutureMicros) +
++                  " WHERE operation_id='future-commit'"));
++  StoreResult<RecoveryState> recovery = store.LoadRecoveryState();
++  ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
++  ASSERT_TRUE(recovery.value);
++  ASSERT_EQ(recovery.value->pending.size(), 1u);
++  PendingMutationRecord committed =
++      Commit(&store, recovery.value->pending[0], 1);
++  EXPECT_EQ(committed.created_at_micros, kFutureMicros);
++  EXPECT_EQ(committed.completed_at_micros, kFutureMicros);
++  StoreResult<PendingMutationRecord> replay =
++      store.PrepareSiteGroupMutation(commit_request);
++  ASSERT_EQ(replay.status, StoreStatus::kValid) << replay.detail;
++  ASSERT_TRUE(replay.value);
++  EXPECT_EQ(replay.value->phase, MutationPhase::kCommitted);
++  EXPECT_EQ(replay.value->completed_at_micros, kFutureMicros);
++}
++
++TEST(AccessRuleStoreTest, JournalRetentionNeverDeletesPreparedAndIsBounded) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  PendingMutationRecord completed = Commit(
++      &store,
++      Prepare(&store, Mutation("expired-completed", AccessMode::kProxy)), 1);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_mutation_journal SET completed_at_micros=1 WHERE "
++      "operation_id='expired-completed'"));
++  SiteGroupMutationRequest reuse = Mutation(
++      "expired-completed", AccessMode::kDirect, 0, Owner(), "fresh.example");
++  reuse.request_fingerprint = "fresh-fingerprint";
++  PendingMutationRecord fresh = Prepare(&store, reuse);
++  EXPECT_GT(fresh.operation_sequence, completed.operation_sequence);
++
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &store,
++      "UPDATE access_mutation_journal SET created_at_micros=1 WHERE "
++      "operation_id='expired-completed'"));
++  StoreResult<RecoveryState> retained = store.LoadRecoveryState();
++  ASSERT_EQ(retained.status, StoreStatus::kRecoveryRequired);
++  ASSERT_TRUE(retained.value);
++  ASSERT_EQ(retained.value->pending.size(), 1u);
++  EXPECT_EQ(retained.value->pending[0].operation_id, "expired-completed");
++
++  AccessRuleStore bounded(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-bounded", "runtime-bounded"));
++  ASSERT_EQ(bounded.Open(), StoreStatus::kValid);
++  PendingMutationRecord first;
++  for (size_t i = 0; i < 128; ++i) {
++    const std::string suffix = std::to_string(i);
++    SiteGroupMutationRequest request =
++        Mutation("pending-" + suffix, AccessMode::kProxy, 0,
++                 Owner(ChannelNamespace::kBeta, "runtime-bounded",
++                       "partition-" + suffix),
++                 "site-" + suffix + ".example");
++    PendingMutationRecord pending = Prepare(&bounded, request);
++    if (i == 0) {
++      first = pending;
++    }
++  }
++  SiteGroupMutationRequest overflow = Mutation(
++      "capacity-overflow", AccessMode::kProxy, 0,
++      Owner(ChannelNamespace::kBeta, "runtime-bounded", "partition-new"),
++      "new.example");
++  EXPECT_EQ(bounded.PrepareSiteGroupMutation(overflow).status,
++            StoreStatus::kCapacity);
++  ASSERT_EQ(bounded.SupersedePreparedMutation(first.operation_id,
++                                              first.request_fingerprint),
++            StoreStatus::kValid);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++      &bounded,
++      "UPDATE access_mutation_journal SET completed_at_micros=1 WHERE "
++      "operation_id='pending-0'"));
++  EXPECT_EQ(Prepare(&bounded, overflow).operation_sequence, 129u);
++}
++
++TEST(AccessRuleStoreTest, DetectsMissingOrphanMixedRevisionOwnerAndJournal) {
++  struct Corruption {
++    const char* sql;
++    StoreStatus expected;
++    bool journal;
++  };
++  constexpr Corruption corruptions[] = {
++      {"DELETE FROM access_rules WHERE rule_id='toggle-news.example:http'",
++       StoreStatus::kCorrupt, false},
++      {"DELETE FROM access_site_groups", StoreStatus::kCorrupt, false},
++      {"UPDATE access_rules SET mode=1 WHERE "
++       "rule_id='toggle-news.example:http'",
++       StoreStatus::kCorrupt, false},
++      {"UPDATE access_rules SET site_toggle_revision=99 WHERE "
++       "rule_id='toggle-news.example:http'",
++       StoreStatus::kCorrupt, false},
++      {"UPDATE access_rules SET durable_profile_id='profile-B' WHERE "
++       "rule_id='toggle-news.example:http'",
++       StoreStatus::kConflict, false},
++      {"UPDATE access_mutation_journal SET after_image='broken' WHERE "
++       "operation_id='pending'",
++       StoreStatus::kCorrupt, true},
++  };
++  for (const Corruption& corruption : corruptions) {
++    SCOPED_TRACE(corruption.sql);
++    AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++        ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kProxy)), 1);
++    if (corruption.journal) {
++      Prepare(&store, Mutation("pending", AccessMode::kDirect, 1));
++    }
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(&store, corruption.sql));
++    if (corruption.journal) {
++      EXPECT_EQ(store.LoadRecoveryState().status, corruption.expected);
++    } else {
++      EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
++                corruption.expected);
++    }
++  }
++}
++
++TEST(AccessRuleStoreTest, InvalidJournalStateNeverLooksCommittedOrMissing) {
++  for (bool with_committed_group : {false, true}) {
++    SCOPED_TRACE(with_committed_group);
++    AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++        ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    if (with_committed_group) {
++      Commit(&store,
++             Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)), 1);
++    }
++    Prepare(&store, Mutation("corrupt-state", AccessMode::kProxy,
++                             with_committed_group ? 1 : 0));
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store,
++        "UPDATE access_mutation_journal SET state=99 WHERE "
++        "operation_id='corrupt-state'"));
++
++    StoreResult<RecoveryState> recovery = store.LoadRecoveryState();
++    EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(recovery.value.has_value());
++    StoreResult<StoredPolicySnapshot> snapshot =
++        store.ReadCommittedSnapshot("partition-A");
++    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(snapshot.value.has_value());
++  }
++}
++
++TEST(AccessRuleStoreTest, CorruptJournalRevisionUpperBoundFailsClosed) {
++  for (bool with_committed_group : {false, true}) {
++    SCOPED_TRACE(with_committed_group);
++    base::ScopedTempDir temp;
++    ASSERT_TRUE(temp.CreateUniqueTempDir());
++    const AccessStoreBinding binding =
++        AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++    {
++      AccessRuleStore store(binding);
++      ASSERT_EQ(store.Open(), StoreStatus::kValid);
++      if (with_committed_group) {
++        Commit(&store,
++               Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)),
++               1);
++      }
++      Prepare(&store, Mutation("corrupt-revision", AccessMode::kProxy,
++                               with_committed_group ? 1 : 0));
++      ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++          &store, "UPDATE access_mutation_journal SET "
++                  "expected_revision=9223372036854775807 WHERE "
++                  "operation_id='corrupt-revision'"));
++    }
++    AccessRuleStore reopened(binding);
++    ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++    const auto recovery = reopened.LoadRecoveryState();
++    EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(recovery.value.has_value());
++    EXPECT_EQ(recovery.detail, "invalid_journal_version");
++    const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
++    EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
++    EXPECT_FALSE(snapshot.value.has_value());
++  }
++}
++
++TEST(AccessRuleStoreTest, LastRepresentableJournalRevisionRemainsValid) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const AccessStoreBinding binding =
++      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  constexpr uint64_t maximum_revision =
++      static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
++  PendingMutationRecord last;
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kDirect)), 1);
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store, "UPDATE access_site_groups SET revision=9223372036854775806"));
++    ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
++        &store,
++        "UPDATE access_rules SET site_toggle_revision=9223372036854775806,"
++        "row_revision=9223372036854775806"));
++    last = Prepare(&store, Mutation("last-revision", AccessMode::kProxy,
++                                    maximum_revision - 1));
++    EXPECT_EQ(last.target_revision, maximum_revision);
++  }
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  const auto recovery = reopened.LoadRecoveryState();
++  ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
++  ASSERT_TRUE(recovery.value.has_value());
++  ASSERT_EQ(recovery.value->pending.size(), 1u);
++  EXPECT_EQ(recovery.value->pending.front().target_revision, maximum_revision);
++  Commit(&reopened, last, 2);
++  const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(snapshot.status, StoreStatus::kValid);
++  ASSERT_TRUE(snapshot.value.has_value());
++  ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
++  EXPECT_EQ(snapshot.value->site_groups.front().group.revision,
++            maximum_revision);
++  const auto exhausted = reopened.PrepareSiteGroupMutation(
++      Mutation("exhausted", AccessMode::kDirect, maximum_revision));
++  EXPECT_EQ(exhausted.status, StoreStatus::kConflict);
++  EXPECT_FALSE(exhausted.value.has_value());
++}
++
++TEST(AccessRuleStoreTest, UnknownSchemaAndIoErrorsRemainDistinct) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  const base::FilePath database_path = temp.GetPath().AppendASCII("access.db");
++  {
++    sql::Database database("AegisAccess");
++    ASSERT_TRUE(database.Open(database_path));
++    sql::MetaTable meta;
++    ASSERT_TRUE(meta.Init(&database, 99, 99));
++  }
++  AccessRuleStore incompatible(
++      AccessRuleStoreTestPeer::Persistent(temp.GetPath()));
++  EXPECT_EQ(incompatible.Open(), StoreStatus::kIncompatible);
++
++  base::ScopedTempDir meta_only_dir;
++  ASSERT_TRUE(meta_only_dir.CreateUniqueTempDir());
++  {
++    sql::Database database("AegisAccess");
++    ASSERT_TRUE(
++        database.Open(meta_only_dir.GetPath().AppendASCII("access.db")));
++    sql::MetaTable meta;
++    ASSERT_TRUE(meta.Init(&database, 1, 1));
++  }
++  AccessRuleStore meta_only(
++      AccessRuleStoreTestPeer::Persistent(meta_only_dir.GetPath()));
++  EXPECT_EQ(meta_only.Open(), StoreStatus::kCorrupt);
++
++  base::ScopedTempDir file_parent;
++  ASSERT_TRUE(file_parent.CreateUniqueTempDir());
++  const base::FilePath not_directory =
++      file_parent.GetPath().AppendASCII("profile-file");
++  ASSERT_TRUE(base::WriteFile(not_directory, "not a directory"));
++  AccessRuleStore io_error(AccessRuleStoreTestPeer::Persistent(not_directory));
++  EXPECT_EQ(io_error.Open(), StoreStatus::kIoError);
++}
++
++TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
++  constexpr std::array channels = {
++      ChannelNamespace::kDev, ChannelNamespace::kAlpha, ChannelNamespace::kBeta,
++      ChannelNamespace::kRelease};
++  base::ScopedTempDir root;
++  ASSERT_TRUE(root.CreateUniqueTempDir());
++  for (size_t i = 0; i < channels.size(); ++i) {
++    const std::string profile = "profile-" + std::to_string(i);
++    const base::FilePath path =
++        root.GetPath().AppendASCII("channel-" + std::to_string(i));
++    ASSERT_TRUE(base::CreateDirectory(path));
++    AccessRuleStore store(AccessRuleStoreTestPeer::Persistent(
++        path, channels[i], "durable-" + profile, profile));
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    Commit(
++        &store,
++        Prepare(&store, Mutation("partition-A-op", AccessMode::kProxy, 0,
++                                 Owner(channels[i], profile, "partition-A"))),
++        10 + i * 2);
++    EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
++              StoreStatus::kValid);
++    EXPECT_EQ(store.ReadCommittedSnapshot("partition-B").status,
++              StoreStatus::kMissing);
++    Commit(&store,
++           Prepare(&store, Mutation("partition-B-op", AccessMode::kDirect, 0,
++                                    Owner(channels[i], profile, "partition-B"),
++                                    "other.example")),
++           11 + i * 2);
++    EXPECT_EQ(store.ReadCommittedSnapshot("partition-B").status,
++              StoreStatus::kValid);
++  }
++
++  const base::FilePath profile_a = root.GetPath().AppendASCII("profile-a");
++  const base::FilePath profile_b = root.GetPath().AppendASCII("profile-b");
++  ASSERT_TRUE(base::CreateDirectory(profile_a));
++  ASSERT_TRUE(base::CreateDirectory(profile_b));
++  AccessRuleStore first(AccessRuleStoreTestPeer::Persistent(
++      profile_a, ChannelNamespace::kBeta, "durable-first", "first"));
++  AccessRuleStore second(AccessRuleStoreTestPeer::Persistent(
++      profile_b, ChannelNamespace::kBeta, "durable-second", "second"));
++  ASSERT_EQ(first.Open(), StoreStatus::kValid);
++  ASSERT_EQ(second.Open(), StoreStatus::kValid);
++  Commit(&first,
++         Prepare(&first, Mutation("first-only", AccessMode::kProxy, 0,
++                                  Owner(ChannelNamespace::kBeta, "first"))),
++         1);
++  EXPECT_EQ(second.ReadCommittedSnapshot("partition-A").status,
++            StoreStatus::kMissing);
++}
++
++TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)), 1);
++
++  StoredAccessRule reject = IndependentRule(
++      "independent-reject", AccessMode::kReject, "cdn.news.example",
++      "https://news.example", {RequestScheme::kHttps},
++      {PortScope::kExplicitSubset, {443}}, 51);
++  StoredAccessRule proxy = IndependentRule(
++      "independent-proxy", AccessMode::kProxy, "api.news.example",
++      "https://news.example", {RequestScheme::kHttps, RequestScheme::kWss},
++      {PortScope::kExplicitSubset, {443, 8443}}, 53);
++  ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, reject),
++            StoreStatus::kValid);
++  ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, proxy),
++            StoreStatus::kValid);
++
++  PendingMutationRecord close =
++      Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
++  EXPECT_EQ(close.operation_sequence, 54u);
++  Commit(&store, close, 2);
++  StoreResult<StoredPolicySnapshot> snapshot =
++      store.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(snapshot.status, StoreStatus::kValid) << snapshot.detail;
++  ASSERT_TRUE(snapshot.value);
++  ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
++  EXPECT_EQ(Selection(snapshot.value->site_groups[0]),
++            GroupSelection::kDisabled);
++  ASSERT_EQ(snapshot.value->independent_rules.size(), 2u);
++  EXPECT_EQ(snapshot.value->independent_rules[0].policy.mode,
++            AccessMode::kProxy);
++  EXPECT_EQ(snapshot.value->independent_rules[1].policy.mode,
++            AccessMode::kReject);
++  EXPECT_EQ(snapshot.value->independent_rules[0].policy.ports.explicit_ports,
++            (std::vector<uint16_t>{443, 8443}));
++}
++
++RequestPolicyContext Context(const GURL& top, const GURL& request) {
++  BrowserOwnedRequestMetadata metadata{
++      "request",  Owner(), RequestAttributionKind::kDocument,
++      "document", {},      net::SchemefulSite(top)};
++  RequestPolicyContextResult result =
++      CanonicalizeBrowserOwnedRequest(metadata, request);
++  EXPECT_EQ(result.error, RequestContextError::kNone);
++  return std::move(*result.context);
++}
++
++TEST(AccessRuleStoreTest, StoredSnapshotFeedsRealMatcherAndPlanner) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)), 31);
++  StoreResult<StoredPolicySnapshot> stored =
++      store.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(stored.status, StoreStatus::kValid) << stored.detail;
++  ASSERT_TRUE(stored.value);
++  StoreResult<MatcherRuleSetCandidate> candidate =
++      AccessRuleStore::AdaptMatcherSnapshot(*stored.value);
++  ASSERT_EQ(candidate.status, StoreStatus::kValid) << candidate.detail;
++  ASSERT_TRUE(candidate.value);
++
++  // Publication is deliberately explicit in the fixture, separate from the
++  // database read and validation adapter.
++  PublishedAccessPolicySnapshot published{
++      candidate.value->owner, candidate.value->committed_policy_generation,
++      candidate.value->rules};
++  const struct {
++    const char* top;
++    const char* request;
++  } matching[] = {
++      {"http://news.example/", "http://news.example/path"},
++      {"https://news.example/", "https://news.example/path"},
++      {"http://news.example/", "ws://news.example/socket"},
++      {"https://news.example/", "wss://news.example/socket"},
++      {"https://news.example/", "https://news.example:8443/path"},
++  };
++  for (const auto& test : matching) {
++    SCOPED_TRACE(test.request);
++    PolicyMatchResult match = EvaluateAccessPolicy(
++        Context(GURL(test.top), GURL(test.request)), published);
++    ASSERT_EQ(match.policy_state, PolicyState::kValid);
++    ASSERT_EQ(match.effective_mode, AccessMode::kProxy);
++    const GenerationTuple generations{31, 3, 5, 7, 11};
++    RouteInput input{
++        .policy_state = match.policy_state,
++        .effective_mode = match.effective_mode,
++        .policy_scope = match.policy_scope,
++        .effective_proxy_group_id = match.effective_proxy_group_id,
++        .require_proxy_intent = true,
++        .site_ownership_reliable = true,
++        .request_owner = Owner(),
++        .snapshot_state = SnapshotState::kPublished,
++        .snapshot_owner = Owner(),
++        .request_generations = generations,
++        .snapshot_generations = generations,
++        .protection_restriction = ProtectionRestriction::kNone,
++        .managed_restriction = ManagedRestriction::kNone,
++        .runtime_state = ProxyRuntimeState::kReady,
++        .registered_proxy_entry =
++            RegisteredProxyEntry{"entry-profile-A", "proxy-profile-A", Owner(),
++                                 generations},
++    };
++    RoutePlan plan = PlanAccessRoute(input);
++    EXPECT_EQ(plan.action, RouteAction::kUseRegisteredProxy);
++    ASSERT_TRUE(plan.registered_proxy_entry);
++    EXPECT_EQ(plan.registered_proxy_entry->registration_id, "entry-profile-A");
++  }
++
++  const struct {
++    const char* top;
++    const char* request;
++  } non_matching[] = {
++      {"https://news.example/", "https://sub.news.example/"},
++      {"https://news.example/", "https://cdn.example/"},
++      {"https://other.example/", "https://news.example/"},
++  };
++  for (const auto& test : non_matching) {
++    SCOPED_TRACE(test.request);
++    PolicyMatchResult match = EvaluateAccessPolicy(
++        Context(GURL(test.top), GURL(test.request)), published);
++    EXPECT_EQ(match.policy_state, PolicyState::kAbsent);
++    EXPECT_EQ(match.reason, PolicyMatchReason::kNoMatchingRule);
++  }
++}
++
++TEST(AccessRuleStoreTest, UnsupportedIndependentFixtureShapeIsRejected) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  StoredAccessRule invalid = IndependentRule(
++      "invalid", AccessMode::kProxy, "api.news.example", "https://news.example",
++      {RequestScheme::kHttps}, {PortScope::kExplicitSubset, {8443}}, 1);
++  invalid.source = StoredRuleSource::kUserEdit;
++  EXPECT_EQ(AccessRuleStoreTestPeer::Import(&store, invalid),
++            StoreStatus::kInvalidArgument);
++  invalid.source = StoredRuleSource::kTestFixture;
++  invalid.lifetime = StoredRuleLifetime::kUntil;
++  invalid.expires_at_micros = 123456789;
++  EXPECT_EQ(AccessRuleStoreTestPeer::Import(&store, invalid),
++            StoreStatus::kInvalidArgument);
++  invalid.lifetime = StoredRuleLifetime::kProfileSession;
++  invalid.expires_at_micros = 0;
++  EXPECT_EQ(AccessRuleStoreTestPeer::Import(&store, invalid),
++            StoreStatus::kInvalidArgument);
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
+index a5bb0e939d..83e1053b3c 100644
+--- a/tools/metrics/histograms/metadata/sql/histograms.xml
++++ b/tools/metrics/histograms/metadata/sql/histograms.xml
+@@ -32,6 +32,7 @@ chromium-metrics-reviews@google.com.
+ <variants name="DatabaseTag">
+   <variant name="AccessibilityAnnotator" summary="AccessibilityAnnotator"/>
+   <variant name="Activity" summary="Activity"/>
++  <variant name="AegisAccess" summary="Aegis access rule storage"/>
+   <variant name="AegisAgent" summary="Aegis Browser Agent task storage"/>
+   <variant name="Affiliation" summary="Affiliation"/>
+   <variant name="AggregationService" summary="AggregationService"/>
+-- 
+2.50.1 (Apple Git-155)
+
