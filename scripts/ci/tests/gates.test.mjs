@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -16,6 +16,7 @@ function run(command, args, options = {}) {
     env: {...process.env, ...(options.env ?? {})},
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
+    input: options.input,
   });
 }
 
@@ -96,6 +97,87 @@ test('fixed ripgrep installer selects pinned releases and rejects unknown platfo
   const unsupported = run('bash', ['-c', 'source "$1"; select_ripgrep_release "$2" "$3"', 'bash', join(scripts, 'install-ripgrep.sh'), 'Linux', 'riscv64']);
   assert.notEqual(unsupported.status, 0);
   assert.match(unsupported.stderr, /Unsupported ripgrep platform: Linux\/riscv64/u);
+});
+
+test('Bash coverage keeps only real production shell sources and retains zero-hit files', () => {
+  const runnerPath = join(scripts, 'run-shell-coverage.sh');
+  const runnerSource = readFileSync(runnerPath, 'utf8');
+  const normalizer = runnerSource.match(
+    /# BEGIN_SHELL_COVERAGE_REPORT_PYTHON[\s\S]*?<<'PY'\n([\s\S]*?)\nPY\n# END_SHELL_COVERAGE_REPORT_PYTHON/u,
+  );
+  assert.ok(normalizer, 'shell coverage report normalizer must remain testable');
+
+  const directory = mkdtempSync(join(root, '.artifacts', 'shell-coverage-filter-'));
+  try {
+    const browserScripts = join(root, 'apps/browser/scripts');
+    const production = readdirSync(browserScripts, {withFileTypes: true})
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.sh') && !entry.name.endsWith('_test.sh'))
+      .map((entry) => `apps/browser/scripts/${entry.name}`)
+      .sort();
+    const required = new Set([
+      'apps/browser/scripts/common.sh',
+      'apps/browser/scripts/run.sh',
+      'apps/browser/scripts/status.sh',
+    ]);
+    const classes = production.map((path) =>
+      `<class filename="${path}"><lines><line number="1" hits="${required.has(path) ? 1 : 0}"/></lines></class>`,
+    );
+    classes.push(
+      '<class filename="apps/browser/scripts/verify-agent-runtime.mjs"><lines><line number="1" hits="999"/></lines></class>',
+    );
+    const input = join(directory, 'polluted-cobertura.xml');
+    const output = join(directory, 'output');
+    const results = join(directory, 'test-results.txt');
+    mkdirSync(output);
+    writeFileSync(input, `<coverage><packages><package><classes>${classes.join('')}</classes></package></packages></coverage>\n`);
+    writeFileSync(results, 'run_test.sh\tPASS\n');
+
+    const result = run('python3', ['-', root, browserScripts, input, output, results], {
+      input: normalizer[1],
+      env: {
+        KCOV_VERSION_OUTPUT: 'kcov 43',
+        KCOV_BINARY_SHA256: '1'.repeat(64),
+        KCOV_SOURCE_URL: 'https://example.invalid/kcov.tar.gz',
+        KCOV_SOURCE_SHA256: '2'.repeat(64),
+        KCOV_SOURCE_COMMIT: 'a39874f938ce13f7a65f253120d1ec946b349ffe',
+        KCOV_SOURCE_TAG: 'v43',
+        TESTED_SHA: git(root, 'rev-parse', 'HEAD'),
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const metadata = JSON.parse(readFileSync(join(output, 'metadata.json'), 'utf8'));
+    assert.deepEqual(metadata.scope.reportedProductionFiles, production);
+    assert.deepEqual(metadata.scope.unmeasuredProductionFiles, []);
+    assert.equal(metadata.totals.lines.covered, required.size);
+    assert.equal(metadata.totals.lines.total, production.length);
+    const lcov = readFileSync(join(output, 'lcov.info'), 'utf8');
+    const cobertura = readFileSync(join(output, 'cobertura.xml'), 'utf8');
+    assert.doesNotMatch(lcov, /\.mjs/u);
+    assert.doesNotMatch(cobertura, /\.mjs/u);
+    assert.match(lcov, /SF:apps\/browser\/scripts\/build-release\.sh\nDA:1,0/u);
+
+    const incompleteInput = join(directory, 'incomplete-cobertura.xml');
+    const incompleteOutput = join(directory, 'incomplete-output');
+    mkdirSync(incompleteOutput);
+    writeFileSync(incompleteInput, `<coverage><packages><package><classes>${classes.filter((entry) => !entry.includes('build-release.sh')).join('')}</classes></package></packages></coverage>\n`);
+    const incomplete = run('python3', ['-', root, browserScripts, incompleteInput, incompleteOutput, results], {
+      input: normalizer[1],
+      env: {
+        KCOV_VERSION_OUTPUT: 'kcov 43',
+        KCOV_BINARY_SHA256: '1'.repeat(64),
+        KCOV_SOURCE_URL: 'https://example.invalid/kcov.tar.gz',
+        KCOV_SOURCE_SHA256: '2'.repeat(64),
+        KCOV_SOURCE_COMMIT: 'a39874f938ce13f7a65f253120d1ec946b349ffe',
+        KCOV_SOURCE_TAG: 'v43',
+        TESTED_SHA: git(root, 'rev-parse', 'HEAD'),
+      },
+    });
+    assert.notEqual(incomplete.status, 0);
+    assert.match(incomplete.stderr, /omits production Bash sources: apps\/browser\/scripts\/build-release\.sh/u);
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
 });
 
 test('source snapshot detects tracked and untracked source changes but excludes ignored evidence', () => {
@@ -284,8 +366,9 @@ test('CI identity binds a pull request to the exact B/H/M graph', () => {
   assert.notEqual(result.status, 0);
 });
 
-test('workflow validator accepts every required coverage job and rejects weakened behavior', () => {
+test('workflow validator separates required Mac gates from the filtered iOS report', () => {
   const workflow = join(root, '.github/workflows/quality.yml');
+  const iosWorkflow = join(root, '.github/workflows/ios-coverage.yml');
   let result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow]);
   assert.equal(result.status, 0, result.stderr);
   const cwd = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
@@ -305,6 +388,20 @@ test('workflow validator accepts every required coverage job and rejects weakene
   const missingResult = join(cwd, 'missing-required-result.yml');
   writeFileSync(missingResult, source.replace(',"shell-coverage":"${{ needs.shell-coverage.result }}"', ''));
   result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), missingResult]);
+  assert.notEqual(result.status, 0);
+  const filteredMain = join(cwd, 'filtered-main.yml');
+  writeFileSync(filteredMain, source.replace('    branches:\n      - main\n', '    branches:\n      - main\n    paths:\n      - apps/browser/**\n'));
+  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), filteredMain]);
+  assert.notEqual(result.status, 0);
+
+  const iosSource = readFileSync(iosWorkflow, 'utf8');
+  const missingVectors = join(cwd, 'ios-missing-vectors.yml');
+  writeFileSync(missingVectors, iosSource.replaceAll('      - packages/core/src/agent/contracts/v1/**\n', ''));
+  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow, missingVectors]);
+  assert.notEqual(result.status, 0);
+  const driftedIosTool = join(cwd, 'ios-drifted-tool.yml');
+  writeFileSync(driftedIosTool, iosSource.replace('node-version: 22.23.1', 'node-version: 22.23.0'));
+  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow, driftedIosTool]);
   assert.notEqual(result.status, 0);
 });
 

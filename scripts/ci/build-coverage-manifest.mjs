@@ -202,7 +202,7 @@ try {
         totals: pythonTotals,
         note: 'Proxy and two vector generators only; prototype workers are not measured',
       },
-      swift: {status: 'SEPARATE_REQUIRED_JOB', totals: null, note: 'Product-only xccov runs in ios-coverage; Codacy conversion remains pending'},
+      swift: {status: 'SEPARATE_REPORTING_WORKFLOW', totals: null, note: 'Product-only xccov runs in the filtered iOS Coverage workflow; it is outside the current Mac quality gate and Codacy conversion remains pending'},
       bash: {status: 'SEPARATE_REQUIRED_JOB', totals: null, note: 'Behavior tests and syntax checks exist; line coverage is produced by the Linux coverage job'},
       powershell: {status: 'SEPARATE_REQUIRED_JOB', totals: null, note: 'Windows Pester coverage runs separately and does not establish UI acceptance'},
       java: {status: 'SEPARATE_FOLLOW_UP', totals: null, note: 'Android instrumentation coverage requires its dedicated emulator workflow'},

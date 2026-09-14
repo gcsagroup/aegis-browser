@@ -203,6 +203,7 @@ merged_cobertura="$(find "$merged_output" -type f -path '*/kcov-merged/cobertura
   exit 1
 }
 
+# BEGIN_SHELL_COVERAGE_REPORT_PYTHON
 KCOV_VERSION_OUTPUT="$kcov_version_output" \
 KCOV_BINARY_SHA256="$kcov_binary_sha256" \
 KCOV_SOURCE_URL="$KCOV_SOURCE_URL" \
@@ -227,6 +228,13 @@ input_xml = Path(sys.argv[3])
 output = Path(sys.argv[4])
 results_path = Path(sys.argv[5])
 
+production_sources = {
+    path.resolve(): path.relative_to(repo).as_posix()
+    for path in scope.glob('*.sh')
+    if path.is_file() and not path.is_symlink() and not path.name.endswith('_test.sh')
+}
+expected_production = set(production_sources.values())
+
 def resolve_source(raw):
     path = Path(raw)
     candidates = [path, repo / path, scope / path, scope / path.name]
@@ -242,9 +250,9 @@ def resolve_source(raw):
 line_hits = defaultdict(dict)
 for source in ET.parse(input_xml).findall('.//class'):
     resolved = resolve_source(source.get('filename', ''))
-    if resolved is None or resolved.name.endswith('_test.sh'):
+    if resolved not in production_sources:
         continue
-    relative = resolved.relative_to(repo).as_posix()
+    relative = production_sources[resolved]
     for line in source.findall('./lines/line'):
         number = int(line.get('number', '0'))
         hits = int(line.get('hits', '0'))
@@ -255,6 +263,9 @@ if not line_hits:
     raise SystemExit('Merged kcov report contains no production Bash source')
 if any(path.endswith('_test.sh') or '/platform-tests/' in path for path in line_hits):
     raise SystemExit('Merged kcov report contains harness or fixture source')
+missing_production = sorted(expected_production - set(line_hits))
+if missing_production:
+    raise SystemExit('Merged kcov report omits production Bash sources: ' + ', '.join(missing_production))
 required_hits = [
     'apps/browser/scripts/common.sh',
     'apps/browser/scripts/status.sh',
@@ -314,11 +325,7 @@ tests = []
 for line in results_path.read_text(encoding='utf-8').splitlines():
     name, result = line.split('\t', 1)
     tests.append({'entry': f'apps/browser/scripts/{name}', 'result': result})
-all_production = sorted(
-    path.relative_to(repo).as_posix()
-    for path in scope.glob('*.sh')
-    if not path.name.endswith('_test.sh')
-)
+all_production = sorted(expected_production)
 unmeasured = [path for path in all_production if path not in line_hits]
 summary = (
     f'tool={os.environ["KCOV_VERSION_OUTPUT"]}\n'
@@ -380,3 +387,4 @@ for name in ('lcov.info', 'cobertura.xml', 'coverage.txt', 'metadata.json'):
         raise SystemExit(f'Coverage output is missing or empty: {path}')
 print(json.dumps(metadata))
 PY
+# END_SHELL_COVERAGE_REPORT_PYTHON

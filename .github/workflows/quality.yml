@@ -71,43 +71,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  ios-coverage:
-    name: ios-coverage
-    runs-on: macos-26
-    timeout-minutes: 60
-    env:
-      IOS_REPORT_DIR: /tmp/aegis-ios-${{ github.run_id }}-${{ github.run_attempt }}
-    steps:
-      - name: Check out tested source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Install Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 22.23.1
-      - name: Run iPhone and iPad tests with Swift coverage
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-        run: bash apps/ios/scripts/run-simulator-tests.sh --execute --output-dir "$IOS_REPORT_DIR"
-      - name: Upload Swift coverage evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: swift-coverage-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ env.IOS_REPORT_DIR }}/*.xcresult
-            ${{ env.IOS_REPORT_DIR }}/*-xcodebuild.log
-            ${{ env.IOS_REPORT_DIR }}/*-summary.json
-            ${{ env.IOS_REPORT_DIR }}/*-coverage.json
-            ${{ env.IOS_REPORT_DIR }}/*-coverage.txt
-            ${{ env.IOS_REPORT_DIR }}/ios-input-sha256-*.txt
-            ${{ env.IOS_REPORT_DIR }}/run-metadata.txt
-            ${{ env.IOS_REPORT_DIR }}/simulator-runtime.json
-          if-no-files-found: error
-          retention-days: 14
-
   shell-coverage:
     name: shell-coverage
     runs-on: ubuntu-24.04
@@ -206,7 +169,6 @@ jobs:
     if: ${{ always() }}
     needs:
       - quality
-      - ios-coverage
       - shell-coverage
       - powershell-coverage
     runs-on: macos-15
@@ -219,5 +181,5 @@ jobs:
           persist-credentials: false
       - name: Require every mandatory job to succeed
         env:
-          REQUIRED_RESULTS: '{"quality":"${{ needs.quality.result }}","ios-coverage":"${{ needs.ios-coverage.result }}","shell-coverage":"${{ needs.shell-coverage.result }}","powershell-coverage":"${{ needs.powershell-coverage.result }}"}'
+          REQUIRED_RESULTS: '{"quality":"${{ needs.quality.result }}","shell-coverage":"${{ needs.shell-coverage.result }}","powershell-coverage":"${{ needs.powershell-coverage.result }}"}'
         run: node scripts/ci/check-required-results.mjs
