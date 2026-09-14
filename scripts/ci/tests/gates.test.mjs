@@ -79,9 +79,23 @@ test('required result gate fails closed for every non-success state', () => {
   assert.equal(success.status, 0, success.stderr);
 });
 
-test('fixed ripgrep installer is syntactically valid', () => {
+test('fixed ripgrep installer selects pinned releases and rejects unknown platforms', () => {
   const result = run('bash', ['-n', join(scripts, 'install-ripgrep.sh')]);
   assert.equal(result.status, 0, result.stderr);
+
+  for (const [operatingSystem, architecture, expected] of [
+    ['Darwin', 'arm64', 'aarch64-apple-darwin 3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4'],
+    ['Darwin', 'x86_64', 'x86_64-apple-darwin af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1'],
+    ['Linux', 'x86_64', 'x86_64-unknown-linux-musl 33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c'],
+  ]) {
+    const selected = run('bash', ['-c', 'source "$1"; select_ripgrep_release "$2" "$3"', 'bash', join(scripts, 'install-ripgrep.sh'), operatingSystem, architecture]);
+    assert.equal(selected.status, 0, selected.stderr);
+    assert.equal(selected.stdout.trim(), expected);
+  }
+
+  const unsupported = run('bash', ['-c', 'source "$1"; select_ripgrep_release "$2" "$3"', 'bash', join(scripts, 'install-ripgrep.sh'), 'Linux', 'riscv64']);
+  assert.notEqual(unsupported.status, 0);
+  assert.match(unsupported.stderr, /Unsupported ripgrep platform: Linux\/riscv64/u);
 });
 
 test('source snapshot detects tracked and untracked source changes but excludes ignored evidence', () => {

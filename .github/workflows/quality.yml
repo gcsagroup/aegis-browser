@@ -96,7 +96,15 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: swift-coverage-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.IOS_REPORT_DIR }}
+          path: |
+            ${{ env.IOS_REPORT_DIR }}/*.xcresult
+            ${{ env.IOS_REPORT_DIR }}/*-xcodebuild.log
+            ${{ env.IOS_REPORT_DIR }}/*-summary.json
+            ${{ env.IOS_REPORT_DIR }}/*-coverage.json
+            ${{ env.IOS_REPORT_DIR }}/*-coverage.txt
+            ${{ env.IOS_REPORT_DIR }}/ios-input-sha256-*.txt
+            ${{ env.IOS_REPORT_DIR }}/run-metadata.txt
+            ${{ env.IOS_REPORT_DIR }}/simulator-runtime.json
           if-no-files-found: error
           retention-days: 14
 

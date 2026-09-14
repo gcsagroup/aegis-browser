@@ -115,6 +115,14 @@ try {
     iosRun.env?.DEVELOPER_DIR !== '/Applications/Xcode_26.6.app/Contents/Developer' ||
     !String(iosCoverage.env?.IOS_REPORT_DIR ?? '').startsWith('/tmp/aegis-ios-')
   ) fail('ios-coverage must use the frozen simulator coverage interface with Xcode 26.6');
+  const iosUpload = array(iosCoverage.steps).find((step) => String(step.uses ?? '').startsWith('actions/upload-artifact@'));
+  if (
+    String(iosUpload?.with?.path ?? '').includes('DerivedData') ||
+    !String(iosUpload?.with?.path ?? '').includes('*.xcresult') ||
+    !String(iosUpload?.with?.path ?? '').includes('*-xcodebuild.log') ||
+    !String(iosUpload?.with?.path ?? '').includes('*-coverage.json') ||
+    !String(iosUpload?.with?.path ?? '').includes('run-metadata.txt')
+  ) fail('ios-coverage must upload compact test, coverage, and diagnostic evidence without DerivedData');
   const shellRun = array(shellCoverage.steps).find((step) => String(step.run ?? '').includes('run-shell-coverage.sh'));
   if (!shellRun || !String(shellRun.run).includes('--tested-sha "$GITHUB_SHA"') || !shellRun.env?.REPORT_DIR) {
     fail('shell-coverage must bind the coverage report to GITHUB_SHA');
