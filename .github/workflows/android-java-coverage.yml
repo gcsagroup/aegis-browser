@@ -1,12 +1,6 @@
 name: Android Java Coverage
 
 on:
-  pull_request:
-    branches:
-      - main
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:

@@ -3,7 +3,7 @@
 These badges are manually recorded snapshots from a successful iOS Simulator
 test run, not automatically updated coverage for the current `main` commit.
 They measure the native iOS product's Swift source, not a macOS product or the
-Chromium browser. The README's live Quality badge separately includes the
+Chromium browser. The README's live CI badge separately includes the
 mandatory macOS quality job plus Linux Bash and Windows PowerShell coverage;
 it does not represent a full macOS Chromium build.
 
@@ -57,7 +57,7 @@ acceptance, UI completeness, signing, or release qualification.
 Use a successful existing iOS Coverage run and download its evidence. Verify
 the exact tested SHA, clean tree, input stability, both Simulator results,
 summary hashes, and raw xccov counts before updating this record and both SVGs
-in a reviewed commit. Keep the README date and SHA synchronized. If an artifact
+in a reviewed commit. Keep the SVG titles and this audit record's date and SHA synchronized. If an artifact
 has expired, obtain a new successful run rather than treating an older badge
 as current evidence. No external badge service, secret, or automated repository
 write permission is required.

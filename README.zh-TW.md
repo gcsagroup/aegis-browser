@@ -2,14 +2,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
-[![品質門](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml)
+[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml) [![iOS Swift iPhone 快照：83.57%](assets/badges/swift-iphone-snapshot.svg)](docs/audit/swift-coverage-snapshot-2026-09-14.md)
 
 CI 包含必要的 macOS 品質任務及 Linux/Windows 覆蓋率任務，不代表完整 macOS Chromium 建置。
-
-[![iOS Swift iPhone 快照：83.57%](assets/badges/swift-iphone-snapshot.svg)](docs/audit/swift-coverage-snapshot-2026-09-14.md)
-[![iOS Swift iPad 快照：84.99%](assets/badges/swift-ipad-snapshot.svg)](docs/audit/swift-coverage-snapshot-2026-09-14.md)
-
-Swift 模擬器測試覆蓋率快照（單元 + UI 測試）：**2026-09-14**，測試 SHA `66ca5ee`（並非目前 `main` 覆蓋率）。兩個數值分別來自 iOS 模擬器產品 Swift 原始碼測量，尚無僅單元測試的獨立百分比；詳見[範圍與證據](docs/audit/swift-coverage-snapshot-2026-09-14.md)。
 
 GCSA-aegis 是一個本機優先的隱私與安全瀏覽器專案，現有兩條產品線：[`apps/browser`](apps/browser/README.zh-TW.md) 下的 Chromium 分支，以及 [`apps/ios`](apps/ios/README.zh-TW.md) 下的原生 iOS 瀏覽器。核心能力整合在各自的瀏覽器產品內；專案不會復活已退役的獨立擴充功能產品。
 
