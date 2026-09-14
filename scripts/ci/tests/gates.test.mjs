@@ -25,8 +25,8 @@ function git(cwd, ...args) {
   return result.stdout.trim();
 }
 
-function initRepo() {
-  const directory = mkdtempSync(join(tmpdir(), 'aegis-ci-test-'));
+function initRepo(directory = mkdtempSync(join(tmpdir(), 'aegis-ci-test-'))) {
+  mkdirSync(directory, {recursive: true});
   git(directory, 'init', '-b', 'main');
   git(directory, 'config', 'user.name', 'CI Test');
   git(directory, 'config', 'user.email', 'ci@example.invalid');
@@ -201,6 +201,28 @@ test('public export rejects external, personal, chained, and history-only symlin
   const escapeHead = commitAll(escapeRepo, 'remove escaping link');
   result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', escapeBase, '--head', escapeHead, '--repo', escapeRepo]);
   assert.notEqual(result.status, 0, 'history-only escaping symlink unexpectedly passed');
+
+  const componentContainer = mkdtempSync(join(tmpdir(), 'aegis-rereview-'));
+  const componentRepo = initRepo(join(componentContainer, 'repo'));
+  mkdirSync(join(componentContainer, 'private', 'subdir'), {recursive: true});
+  writeFileSync(join(componentContainer, 'private', 'secret.txt'), 'outside\n');
+  writeFileSync(join(componentRepo, 'base.txt'), 'base\n');
+  symlinkSync('../private/subdir', join(componentRepo, 'existing-link'));
+  const componentBase = commitAll(componentRepo, 'base with external predecessor link');
+  symlinkSync('existing-link/../secret.txt', join(componentRepo, 'public-guide.md'));
+  const componentHead = commitAll(componentRepo, 'link through predecessor and parent');
+  result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', componentBase, '--head', componentHead, '--repo', componentRepo]);
+  assert.notEqual(result.status, 0, 'component-wise escape through an existing symlink unexpectedly passed');
+
+  const internalRepo = initRepo();
+  mkdirSync(join(internalRepo, 'docs'), {recursive: true});
+  mkdirSync(join(internalRepo, 'links'), {recursive: true});
+  writeFileSync(join(internalRepo, 'docs', 'guide.md'), 'guide\n');
+  const internalBase = commitAll(internalRepo, 'base with internal target');
+  symlinkSync('../docs/guide.md', join(internalRepo, 'links', 'public-guide.md'));
+  const internalHead = commitAll(internalRepo, 'safe parent-relative link');
+  result = run(process.execPath, [join(scripts, 'check-public-diff.mjs'), '--base', internalBase, '--head', internalHead, '--repo', internalRepo]);
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test('CI identity binds a pull request to the exact B/H/M graph', () => {

@@ -36,54 +36,48 @@ function symlinkTarget(entry, cwd) {
   return target;
 }
 
-function validateRepositoryPath(path, context) {
-  if (
-    posix.isAbsolute(path) ||
-    /^[A-Za-z]:[\\/]/u.test(path) ||
-    path.startsWith('\\\\') ||
-    path === '..' ||
-    path.startsWith('../')
-  ) {
-    fail(`Public export symlink escapes the repository at ${context}: ${path}`);
+function symlinkComponents(target, context) {
+  if (posix.isAbsolute(target) || /^[A-Za-z]:[\\/]/u.test(target) || target.startsWith('\\\\')) {
+    fail(`Public export symlink has an absolute/external target at ${context}: ${target}`);
   }
-  for (const component of path.split(/[\\/]/u)) {
-    if (isPersonalInstruction(component)) {
-      fail(`Public export symlink resolves through a personal instruction at ${context}: ${path}`);
-    }
-  }
+  return target.replaceAll('\\', '/').split('/');
 }
 
 function resolveSymlinkChain(ref, linkPath, target, cwd) {
-  if (posix.isAbsolute(target) || /^[A-Za-z]:[\\/]/u.test(target) || target.startsWith('\\\\')) {
-    fail(`Public export symlink has an absolute/external target at ${linkPath}: ${target}`);
-  }
-  let pending = posix.normalize(posix.join(posix.dirname(linkPath), target.replaceAll('\\', '/')));
+  const directory = posix.dirname(linkPath);
+  const resolved = directory === '.' ? [] : directory.split('/').filter(Boolean);
+  let pending = symlinkComponents(target, linkPath);
   const seen = new Set();
-  for (let depth = 0; depth < 32; depth += 1) {
-    validateRepositoryPath(pending, linkPath);
-    const components = pending.split('/').filter(Boolean);
-    let followed = false;
-    for (let index = 0; index < components.length; index += 1) {
-      const prefix = components.slice(0, index + 1).join('/');
-      const entry = treeEntry(ref, prefix, cwd);
-      if (entry?.mode !== '120000') continue;
-      const suffix = components.slice(index + 1).join('/');
-      const nestedTarget = symlinkTarget(entry, cwd);
-      const key = `${prefix}\0${nestedTarget}\0${suffix}`;
-      if (seen.has(key)) fail(`Public export symlink chain cycles at ${prefix}`);
-      seen.add(key);
-      if (posix.isAbsolute(nestedTarget) || /^[A-Za-z]:[\\/]/u.test(nestedTarget) || nestedTarget.startsWith('\\\\')) {
-        fail(`Public export symlink chain escapes the repository at ${prefix}: ${nestedTarget}`);
+  let hops = 0;
+  while (pending.length > 0) {
+    const component = pending.shift();
+    if (!component || component === '.') continue;
+    if (component === '..') {
+      if (resolved.length === 0) {
+        fail(`Public export symlink escapes the repository at ${linkPath}: ${target}`);
       }
-      pending = posix.normalize(
-        posix.join(posix.dirname(prefix), nestedTarget.replaceAll('\\', '/'), suffix),
-      );
-      followed = true;
-      break;
+      resolved.pop();
+      continue;
     }
-    if (!followed) return;
+
+    if (isPersonalInstruction(component)) {
+      fail(`Public export symlink resolves through a personal instruction at ${linkPath}: ${component}`);
+    }
+    resolved.push(component);
+    const prefix = resolved.join('/');
+    const entry = treeEntry(ref, prefix, cwd);
+    if (entry?.mode !== '120000') continue;
+
+    hops += 1;
+    if (hops > 32) fail(`Public export symlink chain exceeds 32 hops at ${linkPath}`);
+    const key = `${prefix}\0${entry.object}`;
+    if (seen.has(key)) fail(`Public export symlink chain cycles at ${prefix}`);
+    seen.add(key);
+
+    const nestedTarget = symlinkTarget(entry, cwd);
+    resolved.pop();
+    pending = [...symlinkComponents(nestedTarget, prefix), ...pending];
   }
-  fail(`Public export symlink chain exceeds 32 hops at ${linkPath}`);
 }
 
 function inspectChangedPath(ref, path, cwd, leaks) {
