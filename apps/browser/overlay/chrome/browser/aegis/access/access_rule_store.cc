@@ -12,8 +12,10 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/time/time.h"
+#include "net/base/schemeful_site.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "url/gurl.h"
 
 namespace aegis::access {
 namespace {
@@ -170,6 +172,56 @@ OwnershipKey OwnerFor(const AccessStoreBinding& binding,
 bool IsCompleteOwner(const OwnershipKey& owner) {
   return IsKnownChannel(owner.channel) && Bounded(owner.profile_token) &&
          Bounded(owner.storage_partition_token);
+}
+
+std::optional<std::pair<std::string, std::string>> CanonicalSitesForHost(
+    std::string_view canonical_host) {
+  GURL::Replacements replacements;
+  replacements.SetHostStr(canonical_host);
+  const GURL http_url =
+      GURL("http://site.invalid/").ReplaceComponents(replacements);
+  const GURL https_url =
+      GURL("https://site.invalid/").ReplaceComponents(replacements);
+  if (!http_url.is_valid() || !https_url.is_valid() ||
+      http_url.host() != canonical_host || https_url.host() != canonical_host) {
+    return std::nullopt;
+  }
+  const net::SchemefulSite http_site(http_url);
+  const net::SchemefulSite https_site(https_url);
+  if (http_site.opaque() || https_site.opaque()) {
+    return std::nullopt;
+  }
+  return std::pair(http_site.Serialize(), https_site.Serialize());
+}
+
+aegis_access::GroupValidation ValidateBoundSiteGroup(
+    const OwnershipKey& expected_owner,
+    const SiteProxyRuleGroup* group,
+    const std::vector<SiteProxyRuleMember>& members) {
+  aegis_access::GroupValidation validation =
+      ValidateSiteProxyRuleGroup(expected_owner, group, members);
+  if (validation.error != GroupValidationError::kNone) {
+    return validation;
+  }
+  const auto expected_sites = CanonicalSitesForHost(group->canonical_host);
+  if (!expected_sites.has_value() ||
+      group->http_top_level_site != expected_sites->first ||
+      group->https_top_level_site != expected_sites->second) {
+    validation.selection = aegis_access::GroupSelection::kUnknown;
+    validation.error = GroupValidationError::kTopLevelSiteMismatch;
+    return validation;
+  }
+  for (const SiteProxyRuleMember& member : members) {
+    const std::string& expected_site =
+        member.rule_id == group->member_rule_ids[0] ? expected_sites->first
+                                                    : expected_sites->second;
+    if (member.top_level_site != expected_site) {
+      validation.selection = aegis_access::GroupSelection::kUnknown;
+      validation.error = GroupValidationError::kTopLevelSiteMismatch;
+      return validation;
+    }
+  }
+  return validation;
 }
 
 int SchemeMask(const std::vector<RequestScheme>& schemes) {
@@ -776,8 +828,8 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
           rule.policy.last_operation_sequence,
       });
     }
-    if (ValidateSiteProxyRuleGroup(snapshot.owner, &stored.group,
-                                   validation_members)
+    if (ValidateBoundSiteGroup(snapshot.owner, &stored.group,
+                               validation_members)
             .error != GroupValidationError::kNone) {
       return SnapshotError(StoreStatus::kCorrupt, "invalid_site_group");
     }
@@ -1063,8 +1115,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
     member.last_operation_sequence = record.operation_sequence;
   }
   if ((mode != AccessMode::kDirect && mode != AccessMode::kProxy) ||
-      ValidateSiteProxyRuleGroup(expected_owner, &record.candidate.group,
-                                 stamped_members)
+      ValidateBoundSiteGroup(expected_owner, &record.candidate.group,
+                             stamped_members)
               .error != GroupValidationError::kNone) {
     return MutationError(StoreStatus::kInvalidArgument,
                          "invalid_site_group_candidate");
@@ -1510,7 +1562,7 @@ StoreResult<MatcherRuleSetCandidate> AccessRuleStore::AdaptMatcherSnapshot(
       });
     }
     const aegis_access::GroupValidation validation =
-        ValidateSiteProxyRuleGroup(stored.owner, &group.group, members);
+        ValidateBoundSiteGroup(stored.owner, &group.group, members);
     if (validation.error != GroupValidationError::kNone) {
       return {StoreStatus::kCorrupt, std::nullopt, "invalid_site_group"};
     }

@@ -160,6 +160,15 @@ SiteGroupMutationRequest Mutation(std::string operation_id,
   return request;
 }
 
+void SetTopLevelSites(SiteGroupMutationRequest* request,
+                      std::string http_site,
+                      std::string https_site) {
+  request->candidate_group.http_top_level_site = http_site;
+  request->candidate_group.https_top_level_site = https_site;
+  request->candidate_members[0].top_level_site = std::move(http_site);
+  request->candidate_members[1].top_level_site = std::move(https_site);
+}
+
 PendingMutationRecord Prepare(AccessRuleStore* store,
                               const SiteGroupMutationRequest& request) {
   StoreResult<PendingMutationRecord> result =
@@ -659,6 +668,90 @@ TEST(AccessRuleStoreTest, CanonicalizesUnsortedSchemesAndRejectsDuplicates) {
       RequestScheme::kWs};
   EXPECT_EQ(store.PrepareSiteGroupMutation(duplicate).status,
             StoreStatus::kInvalidArgument);
+}
+
+TEST(AccessRuleStoreTest, ValidatesCanonicalSchemefulSitesAtPrepareBoundary) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  struct SiteCase {
+    const char* host;
+    const char* http_site;
+    const char* https_site;
+  };
+  constexpr SiteCase cases[] = {
+      {"www.example.com", "http://example.com", "https://example.com"},
+      {"www.tenant.github.io", "http://tenant.github.io",
+       "https://tenant.github.io"},
+      {"192.0.2.1", "http://192.0.2.1", "https://192.0.2.1"},
+      {"[2001:db8::1]", "http://[2001:db8::1]", "https://[2001:db8::1]"},
+  };
+  for (size_t i = 0; i < std::size(cases); ++i) {
+    SCOPED_TRACE(cases[i].host);
+    const std::string suffix = std::to_string(i);
+    SiteGroupMutationRequest request = Mutation(
+        "canonical-site-" + suffix, AccessMode::kProxy, 0,
+        Owner(ChannelNamespace::kBeta, "profile-A", "partition-" + suffix),
+        cases[i].host);
+    SetTopLevelSites(&request, cases[i].http_site, cases[i].https_site);
+    StoreResult<PendingMutationRecord> prepared =
+        store.PrepareSiteGroupMutation(request);
+    ASSERT_EQ(prepared.status, StoreStatus::kValid) << prepared.detail;
+    ASSERT_TRUE(prepared.value);
+    EXPECT_EQ(
+        store.SupersedePreparedMutation(prepared.value->operation_id,
+                                        prepared.value->request_fingerprint),
+        StoreStatus::kValid);
+  }
+}
+
+TEST(AccessRuleStoreTest, RejectsTopLevelSiteFromDifferentRegistrableDomain) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  SiteGroupMutationRequest request = Mutation("wrong-site", AccessMode::kProxy);
+  SetTopLevelSites(&request, "http://other.example", "https://other.example");
+  StoreResult<PendingMutationRecord> prepared =
+      store.PrepareSiteGroupMutation(request);
+  EXPECT_EQ(prepared.status, StoreStatus::kInvalidArgument);
+  EXPECT_FALSE(prepared.value.has_value());
+  EXPECT_EQ(store.LoadRecoveryState().status, StoreStatus::kValid);
+}
+
+TEST(AccessRuleStoreTest, CorruptTopLevelSiteFailsClosedOnReadAndAdapter) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  Commit(&store, Prepare(&store, Mutation("seed-site", AccessMode::kProxy)), 1);
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+      &store,
+      "UPDATE access_site_groups SET "
+      "http_top_level_site='http://other.example',"
+      "https_top_level_site='https://other.example'"));
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+      &store,
+      "UPDATE access_rules SET top_level_site='http://other.example' WHERE "
+      "rule_id='toggle-news.example:http'"));
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+      &store,
+      "UPDATE access_rules SET top_level_site='https://other.example' WHERE "
+      "rule_id='toggle-news.example:https'"));
+  StoreResult<StoredPolicySnapshot> corrupted =
+      store.ReadCommittedSnapshot("partition-A");
+  EXPECT_EQ(corrupted.status, StoreStatus::kCorrupt);
+  EXPECT_FALSE(corrupted.value.has_value());
+
+  StoredPolicySnapshot stored = StoredSnapshotForAdapter();
+  stored.site_groups[0].group.http_top_level_site = "http://other.example";
+  stored.site_groups[0].group.https_top_level_site = "https://other.example";
+  stored.site_groups[0].members[0].policy.top_level_site =
+      "http://other.example";
+  stored.site_groups[0].members[1].policy.top_level_site =
+      "https://other.example";
+  StoreResult<MatcherRuleSetCandidate> candidate =
+      AccessRuleStore::AdaptMatcherSnapshot(stored);
+  EXPECT_EQ(candidate.status, StoreStatus::kCorrupt);
+  EXPECT_FALSE(candidate.value.has_value());
 }
 
 TEST(AccessRuleStoreTest, AdapterRejectsInvalidAtomicSiteGroups) {

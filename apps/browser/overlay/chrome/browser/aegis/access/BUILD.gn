@@ -11,7 +11,9 @@ source_set("access_rule_store") {
   deps = [
     "//base",
     "//components/aegis_access",
+    "//net",
     "//sql",
+    "//url",
   ]
 }
 
@@ -22,6 +24,7 @@ test("access_rule_store_unittests") {
     "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//components/aegis_access",
+    "//net",
     "//sql",
     "//testing/gtest",
     "//url",

@@ -19,6 +19,13 @@ for file in access_rule_store.h access_rule_store.cc \
   [[ -f "$STORE_DIR/$file" ]] || fail "missing store overlay $file"
 done
 
+store_target_block="$(awk '/^source_set\("access_rule_store"\)/,/^}/' \
+  "$STORE_DIR/BUILD.gn")"
+for dependency in '//net' '//url'; do
+  [[ "$store_target_block" == *"\"$dependency\""* ]] ||
+    fail "store target must directly depend on $dependency"
+done
+
 [[ "$(rg -F -c "$TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "store GTest must appear once in developer root_extra_deps"
 if rg -Fq "$TARGET" "$BROWSER_DIR/args/aegis-release.gn"; then
