@@ -165,6 +165,16 @@ launch_output="$(CHROMIUM_ROOT="$CHROMIUM_ROOT" OUT_DIR="$fixture_out" \
 [[ "$launch_output" == *"独立 Profile：$launch_profile"* ]] || \
   fail "顶层 browser:run 必须保留独立资料目录"
 
+# pnpm 的 Node/生命周期 shell 边界不会被 kcov 的 Bash 后代追踪可靠归属。
+# 直接执行同一仓库源码，既保留上面的顶层接线检查，也让覆盖率绑定真实 run.sh。
+direct_launch_output="$(CHROMIUM_ROOT="$CHROMIUM_ROOT" OUT_DIR="$fixture_out" \
+  AEGIS_USER_DATA_DIR="$launch_profile" AEGIS_RUN_DRY_RUN=1 \
+  bash "$SCRIPT_DIR/run.sh")"
+[[ "$direct_launch_output" == *"已验证开发版：$fixture_binary"* ]] || \
+  fail "直接 run.sh 必须实际完成构建产物验证"
+[[ "$direct_launch_output" == *"独立 Profile：$launch_profile"* ]] || \
+  fail "直接 run.sh 必须保留独立资料目录"
+
 manifest="$fixture_out/.aegis/build-manifest.json"
 mkdir -p "$(dirname "$manifest")"
 printf '{"schemaVersion":2,"kind":"incomplete"}\n' > "$manifest"
