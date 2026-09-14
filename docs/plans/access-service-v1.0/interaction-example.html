@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Aegis V1.0 修订 4 · 交互预览</title>
+  <style>
+    :root { color-scheme:light dark; }
+    body { margin:0; padding:20px; background:light-dark(#f5f6f8,#181b20); color:light-dark(#252b35,#eef1f5); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    .preview-shell { max-width:1100px; margin:0 auto; }
+    .preview-controls { display:flex; flex-wrap:wrap; gap:12px 20px; margin:0 0 20px; padding:16px; border:1px dashed light-dark(#b4bdca,#606b7c); border-radius:10px; }
+    .preview-controls legend { padding:0 8px; font-weight:500; }
+    .preview-controls label { display:grid; gap:4px; flex:1 1 150px; }
+    .preview-controls select { box-sizing:border-box; width:100%; min-height:40px; padding:7px; border:1px solid light-dark(#b4bdca,#606b7c); border-radius:6px; background:light-dark(#fff,#24282f); color:inherit; font:inherit; }
+    .preview-note { margin:0 0 14px; color:light-dark(#606b7c,#b2bdcc); }
+    @media(max-width:560px) { body { padding:10px; } .preview-controls { padding:12px; gap:10px; } }
+  </style>
+</head>
+<body>
+<main class="preview-shell">
+  <p class="preview-note">文档预览 · 示例数据 · 不连接真实服务。下方预览控件不属于产品界面。</p>
+  <fieldset class="preview-controls" aria-label="文档预览控件">
+    <legend>预览设置</legend>
+    <label>预览渠道<select data-preview-state="edition"><option value="beta">Beta</option><option value="release">Release</option><option value="dev">DEV</option><option value="alpha">Alpha</option></select></label>
+    <label>界面入口<select data-preview-state="view"><option value="management">管理页</option><option value="usage">用量卡</option><option value="bubble">工具栏气泡</option></select></label>
+    <label>服务运行状态<select data-preview-state="status"><option value="ready">可用</option><option value="preparing">准备连接</option><option value="recovering">故障恢复中</option><option value="offline">无网络</option><option value="quota">额度用尽</option><option value="signed_out">身份已退出</option></select></label>
+    <label>流量额度<select data-preview-state="quotaMode"><option value="limited">已配置额度</option><option value="unlimited">未设额度，仅统计</option></select></label>
+    <label>流量示例<select data-preview-state="usageScale"><option value="mb">MB 量级</option><option value="gb">GB 量级</option><option value="tb">TB 量级</option><option value="tiny">微量流量</option></select></label>
+  </fieldset>
+<div id="aegis-user-experience" data-view="management" aria-label="Aegis V1.0 修订 4：网站代理开关与分渠道调试示例">
+  <style>
+    #aegis-user-experience { --ag-bg:light-dark(#f5f6f8,#181b20); --ag-surface:light-dark(#ffffff,#24282f); --ag-text:light-dark(#252b35,#eef1f5); --ag-muted:light-dark(#606b7c,#b2bdcc); --ag-border:light-dark(#dce1e8,#424b57); --ag-accent:light-dark(#b94f00,#ffb36b); --ag-accent-text:light-dark(#ffffff,#24180c); --ag-soft:light-dark(#fff4e9,#392c22); --ag-good:light-dark(#167345,#7ad8a4); --ag-warn:light-dark(#995400,#ffd08d); color:var(--ag-text); font:400 14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #aegis-user-experience * { box-sizing:border-box; }
+    #aegis-user-experience [hidden] { display:none!important; }
+    #aegis-user-experience .ag-caption { color:var(--ag-muted); font-size:12px; margin:0 0 10px; display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; }
+    #aegis-user-experience .ag-window { background:var(--ag-bg); border:1px solid var(--ag-border); border-radius:14px; overflow:hidden; }
+    #aegis-user-experience .ag-chrome { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:14px 22px; background:var(--ag-surface); border-bottom:1px solid var(--ag-border); }
+    #aegis-user-experience .ag-brand { display:flex; align-items:center; gap:8px; font-weight:500; }
+    #aegis-user-experience .ag-brand i { color:var(--ag-accent); }
+    #aegis-user-experience .ag-location { color:var(--ag-muted); flex:1; min-width:100px; overflow-wrap:anywhere; }
+    #aegis-user-experience .ag-profile { padding:4px 10px; border-radius:20px; background:var(--ag-bg); white-space:nowrap; }
+    #aegis-user-experience .ag-main { padding:24px; display:grid; gap:16px; }
+    #aegis-user-experience .ag-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    #aegis-user-experience h2 { margin:0; font-size:22px; line-height:1.35; font-weight:500; }
+    #aegis-user-experience h3 { margin:0; font-size:15px; line-height:1.4; font-weight:500; }
+    #aegis-user-experience .ag-muted { color:var(--ag-muted); }
+    #aegis-user-experience .ag-small { font-size:12px; }
+    #aegis-user-experience .ag-panel { background:var(--ag-surface); padding:20px; border-radius:12px; border:1px solid var(--ag-border); }
+    #aegis-user-experience .ag-panel-head { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-bottom:16px; }
+    #aegis-user-experience .ag-meter { height:14px; border-radius:7px; background:var(--ag-bg); overflow:hidden; margin:14px 0 18px; }
+    #aegis-user-experience .ag-meter-fill { height:100%; width:0.864%; border-radius:7px; background:var(--ag-accent); }
+    #aegis-user-experience .ag-numbers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+    #aegis-user-experience .ag-value { display:block; font-size:22px; font-weight:500; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+    #aegis-user-experience .ag-cycle { background:var(--ag-soft); color:var(--ag-text); padding:10px 12px; margin-top:16px; border-radius:6px; display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12px; }
+    #aegis-user-experience .ag-transfer-detail { margin-top:14px; display:flex; flex-wrap:wrap; gap:6px 20px; color:var(--ag-muted); font-size:12px; }
+    #aegis-user-experience[data-view="usage"] .ag-caption,#aegis-user-experience[data-view="usage"] .ag-chrome,#aegis-user-experience[data-view="usage"] .ag-main > :not(.ag-usage) { display:none!important; }
+    #aegis-user-experience[data-view="usage"] .ag-window { border:0; background:transparent; border-radius:0; }
+    #aegis-user-experience[data-view="usage"] .ag-main { padding:0; }
+    #aegis-user-experience .ag-status-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    #aegis-user-experience .ag-status { display:flex; align-items:center; gap:8px; font-weight:500; margin-top:8px; }
+    #aegis-user-experience .ag-dot { display:inline-block; width:8px; height:8px; background:var(--ag-good); border-radius:50%; flex:none; }
+    #aegis-user-experience .ag-good { color:var(--ag-good); }
+    #aegis-user-experience .ag-warn { color:var(--ag-warn); }
+    #aegis-user-experience .ag-site { font-size:17px; font-weight:500; overflow-wrap:anywhere; }
+    #aegis-user-experience .ag-chip { display:inline-flex; align-items:center; padding:3px 9px; border-radius:6px; background:var(--ag-bg); color:var(--ag-muted); font-size:12px; }
+    #aegis-user-experience .ag-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:16px; }
+    #aegis-user-experience button { font:inherit; color:var(--ag-text); background:var(--ag-surface); border:1px solid var(--ag-border); border-radius:7px; padding:8px 13px; cursor:pointer; }
+    #aegis-user-experience button.ag-primary { background:var(--ag-accent); color:var(--ag-accent-text); border-color:var(--ag-accent); font-weight:500; }
+    #aegis-user-experience button:disabled { cursor:default; opacity:.55; }
+    #aegis-user-experience .ag-text-button { border-color:transparent; background:transparent; padding-left:0; color:var(--ag-muted); }
+    #aegis-user-experience .ag-result { margin-top:12px; padding:12px; background:var(--ag-bg); border-radius:7px; }
+    #aegis-user-experience .ag-result strong { font-weight:500; }
+    #aegis-user-experience .ag-rule { display:flex; flex-wrap:wrap; gap:4px 16px; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--ag-border); overflow-wrap:anywhere; }
+    #aegis-user-experience .ag-rule:last-child { border-bottom:0; }
+    #aegis-user-experience .ag-sub-row { display:flex; flex-wrap:wrap; align-items:end; gap:10px; }
+    #aegis-user-experience .ag-sub-row label { flex:1; min-width:min(240px,100%); }
+    #aegis-user-experience input,#aegis-user-experience select { display:block; width:100%; padding:9px 10px; margin-top:5px; border:1px solid var(--ag-border); background:var(--ag-bg); color:var(--ag-text); font:inherit; border-radius:7px; }
+    #aegis-user-experience .ag-dev-fields { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px; }
+    #aegis-user-experience details { margin-top:12px; }
+    #aegis-user-experience summary { cursor:pointer; padding:6px 0; color:var(--ag-muted); }
+    #aegis-user-experience .ag-bubble-area { background:var(--ag-bg); padding:22px; display:flex; justify-content:flex-end; }
+    #aegis-user-experience .ag-bubble { width:min(100%,420px); background:var(--ag-surface); border:1px solid var(--ag-border); border-radius:12px; padding:22px; }
+    #aegis-user-experience .ag-bubble .ag-primary { width:100%; }
+    #aegis-user-experience .ag-bubble dl { margin:16px 0; display:grid; grid-template-columns:auto 1fr; gap:8px 18px; }
+    #aegis-user-experience .ag-bubble dt { color:var(--ag-muted); }
+    #aegis-user-experience .ag-bubble dd { margin:0; text-align:right; }
+    #aegis-user-experience .ag-message { min-height:20px; font-size:12px; color:var(--ag-muted); margin-top:12px; }
+    #aegis-user-experience .ag-target { padding:14px 0; border-bottom:1px solid var(--ag-border); }
+    #aegis-user-experience .ag-target:last-child { border-bottom:0; }
+    #aegis-user-experience .ag-target-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+    #aegis-user-experience .ag-target-label { display:flex; align-items:center; gap:10px; overflow-wrap:anywhere; }
+    #aegis-user-experience .ag-target-label input { display:inline-block; width:18px; height:18px; margin:0; flex:none; }
+    #aegis-user-experience .ag-target-label span span { display:block; }
+    #aegis-user-experience .ag-target-controls { display:flex; align-items:end; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    #aegis-user-experience .ag-target-controls label { min-width:130px; }
+    #aegis-user-experience .ag-target-note { margin-top:7px; color:var(--ag-muted); font-size:12px; }
+    #aegis-user-experience .ag-block-page { max-width:640px; margin:20px auto; }
+    #aegis-user-experience .ag-site-switch { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; text-align:left; }
+    #aegis-user-experience .ag-switch-track { display:block; flex:none; width:40px; height:24px; padding:3px; border-radius:14px; background:var(--ag-border); }
+    #aegis-user-experience .ag-switch-track::after { content:""; display:block; width:18px; height:18px; border-radius:50%; background:var(--ag-surface); }
+    #aegis-user-experience .ag-site-switch[aria-checked="true"] .ag-switch-track { background:var(--ag-accent); }
+    #aegis-user-experience .ag-site-switch[aria-checked="true"] .ag-switch-track::after { transform:translateX(16px); }
+    @media(max-width:560px) { #aegis-user-experience .ag-main { padding:14px; gap:12px; } #aegis-user-experience .ag-panel { padding:16px; } #aegis-user-experience .ag-status-grid,#aegis-user-experience .ag-dev-fields { grid-template-columns:1fr; } #aegis-user-experience .ag-value { font-size:18px; } #aegis-user-experience .ag-numbers { gap:10px; } #aegis-user-experience .ag-chrome { padding:12px 14px; } #aegis-user-experience .ag-bubble-area { padding:14px; } }
+    @media(pointer:coarse) { #aegis-user-experience button,#aegis-user-experience select { min-height:44px; } #aegis-user-experience input,#aegis-user-experience select { font-size:16px; } }
+  </style>
+  <div class="ag-caption"><span>V1.0 修订 4 · 交互示意 · 示例数据</span><span data-ag="preview-label">Beta · 管理页</span></div>
+  <div class="ag-window">
+    <div class="ag-chrome">
+      <div class="ag-brand">Aegis</div>
+      <span class="ag-location" data-ag="location">访问服务</span>
+      <span class="ag-profile">工作 Profile</span>
+      <button type="button" data-ag-action="toggle-debug" hidden>调试</button>
+    </div>
+    <div class="ag-main" data-ag="management">
+      <div class="ag-heading"><h2 data-ag="page-title">访问服务</h2><span class="ag-muted ag-small">选择需要使用代理的网站</span></div>
+      <section class="ag-panel ag-usage" aria-label="代理流量用量与额度">
+        <div class="ag-panel-head"><h3>本期流量</h3><span class="ag-chip">当前账户 · 示例数据</span></div>
+        <div class="ag-heading"><span class="ag-muted ag-small" data-ag="quota-description">代理流量 · 上传 + 下载</span><span data-ag="percent">0.86%</span></div>
+        <div class="ag-meter" role="progressbar" aria-label="本期已用流量占账户额度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0.864" data-ag="meter"><div class="ag-meter-fill" data-ag="meter-fill"></div></div>
+        <div class="ag-numbers">
+          <div><span class="ag-muted ag-small">已用流量</span><span class="ag-value" data-ag="used">864 MB</span></div>
+          <div><span class="ag-muted ag-small" data-ag="second-label">剩余流量</span><span class="ag-value" data-ag="remaining">99.14 GB</span></div>
+          <div><span class="ag-muted ag-small" data-ag="third-label">本期流量额度</span><span class="ag-value" data-ag="total">100 GB</span></div>
+        </div>
+        <div class="ag-transfer-detail" data-ag="transfer-detail"><span data-ag="uploaded">上传 86.4 MB</span><span data-ag="downloaded">下载 777.6 MB</span></div>
+        <div class="ag-cycle"><span data-ag="cycle">下次重置：10 月 1 日 00:00</span><span>最近同步：09-10 16:00:08</span><span>服务端统计 · 直连流量不计入</span></div>
+      </section>
+      <div class="ag-status-grid">
+        <section class="ag-panel"><h3>原有连接</h3><div class="ag-status"><span class="ag-dot" data-ag="direct-dot"></span><span data-ag="direct-status">可用</span></div><div class="ag-muted ag-small">未开启的网站沿用浏览器原有连接设置</div></section>
+        <section class="ag-panel"><h3>访问服务</h3><div class="ag-status"><span class="ag-dot" data-ag="service-dot"></span><span data-ag="service-status">可用</span></div><div class="ag-muted ag-small" data-ag="service-detail">连接稳定</div></section>
+      </div>
+      <section class="ag-panel" data-simple-only aria-label="当前网站代理设置">
+        <div class="ag-panel-head"><h3>当前网站</h3><span class="ag-site">news.example</span></div>
+        <button type="button" role="switch" aria-checked="false" class="ag-site-switch" data-ag-action="site-proxy"><span>当前网站使用代理</span><span class="ag-switch-track" aria-hidden="true"></span></button>
+        <div class="ag-message" aria-live="polite" data-site-status>未使用代理</div>
+      </section>
+      <section class="ag-panel" data-debug-only hidden aria-label="调试：当前网站目标与规则">
+        <div class="ag-panel-head"><h3>网站访问</h3><span class="ag-chip">来自目标标签页</span></div>
+        <div class="ag-heading"><span class="ag-site">news.example</span><span class="ag-chip">仅本站 · 保存规则</span></div>
+        <div style="margin-top:10px" data-ag="page-summary">本页 2 个目标可处理</div>
+        <div class="ag-muted ag-small" data-ag="page-detail">1 个手动阻断目标将保留</div>
+        <div class="ag-actions"><button type="button" class="ag-primary" data-ag-action="allow">允许本页 2 个目标 · ALLOW</button><button type="button" data-ag-action="block-selected" disabled>阻止所选 0 个目标 · BLOCK</button><button type="button" class="ag-text-button" data-ag-action="undo" hidden>撤销本次操作</button></div>
+        <div class="ag-result" data-ag="result" hidden><strong data-ag="result-text"></strong></div>
+        <div data-ag="rules" aria-label="本站目标与规则">
+          <div class="ag-target" data-target="main">
+            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="main"><span>news.example:443<span class="ag-muted ag-small">HTTPS · 当前主导航精确目标；不代表网站协议组</span></span></label><span class="ag-chip" data-target-mode="main">DIRECT · 默认</span></div>
+            <div class="ag-target-controls"><label class="ag-small">处理策略<select data-target-policy="main" aria-label="news.example 处理策略"><option value="direct">DIRECT · 直连</option><option value="proxy">PROXY · 代理</option><option value="reject">REJECT · 阻止</option></select></label><button type="button" data-target-action="allow" data-id="main">ALLOW</button><button type="button" data-target-action="block" data-id="main">BLOCK</button><button type="button" class="ag-text-button" data-target-action="delete" data-id="main">删除规则</button><button type="button" class="ag-text-button" data-ag-action="blocked-page" hidden>查看阻断页</button></div>
+            <div class="ag-target-note" data-target-note="main">默认直连 · 网络连接异常</div>
+          </div>
+          <div class="ag-target" data-target="cdn">
+            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="cdn"><span>cdn.assets.example:443<span class="ag-muted ag-small">HTTPS · 页面资源</span></span></label><span class="ag-chip" data-target-mode="cdn">DIRECT · 默认</span></div>
+            <div class="ag-target-controls"><label class="ag-small">处理策略<select data-target-policy="cdn" aria-label="cdn.assets.example 处理策略"><option value="direct">DIRECT · 直连</option><option value="proxy">PROXY · 代理</option><option value="reject">REJECT · 阻止</option></select></label><button type="button" data-target-action="allow" data-id="cdn">ALLOW</button><button type="button" data-target-action="block" data-id="cdn">BLOCK</button><button type="button" class="ag-text-button" data-target-action="delete" data-id="cdn">删除规则</button></div>
+            <div class="ag-target-note" data-target-note="cdn">默认直连 · Aegis 防护拦截</div>
+          </div>
+          <div class="ag-target" data-target="api">
+            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="api"><span>api.news.example:443<span class="ag-muted ag-small">HTTPS · 页面接口</span></span></label><span class="ag-chip" data-target-mode="api">PROXY · 用户规则</span></div>
+            <div class="ag-target-controls"><label class="ag-small">处理策略<select data-target-policy="api" aria-label="api.news.example 处理策略"><option value="direct">DIRECT · 直连</option><option value="proxy">PROXY · 代理</option><option value="reject">REJECT · 阻止</option></select></label><button type="button" data-target-action="allow" data-id="api">ALLOW</button><button type="button" data-target-action="block" data-id="api">BLOCK</button><button type="button" class="ag-text-button" data-target-action="delete" data-id="api">删除规则</button></div>
+            <div class="ag-target-note" data-target-note="api">已允许并代理</div>
+          </div>
+          <div class="ag-target" data-target="manual">
+            <div class="ag-target-head"><label class="ag-target-label"><input type="checkbox" data-target-select="manual"><span>ads.track.example:443<span class="ag-muted ag-small">HTTPS · 手动阻断目标</span></span></label><span class="ag-chip" data-target-mode="manual">REJECT · 用户规则</span></div>
+            <div class="ag-target-controls"><label class="ag-small">处理策略<select data-target-policy="manual" aria-label="ads.track.example 处理策略"><option value="direct">DIRECT · 直连</option><option value="proxy">PROXY · 代理</option><option value="reject">REJECT · 阻止</option></select></label><button type="button" data-target-action="allow" data-id="manual">ALLOW</button><button type="button" data-target-action="block" data-id="manual">BLOCK</button><button type="button" class="ag-text-button" data-target-action="delete" data-id="manual">删除规则</button></div>
+            <div class="ag-target-note" data-target-note="manual">批量 ALLOW 保留；此行 ALLOW 可明确解除</div>
+          </div>
+        </div>
+        <div class="ag-message" aria-live="polite" data-ag="message">本站规则仅在工作 Profile 内生效</div>
+      </section>
+      <section class="ag-panel" data-ag="dev" hidden aria-label="DEV/Alpha 调试订阅与节点管理">
+        <div class="ag-panel-head"><h3>订阅与节点</h3><span class="ag-chip">DEV / Alpha 调试</span></div>
+        <div class="ag-sub-row"><label>订阅来源<input type="url" value="https://subscription.example/sub" aria-label="示例订阅来源"></label><button type="button" data-ag-action="subscription">更新订阅</button></div>
+        <div class="ag-dev-fields"><label>选择方式<select data-ag="selection-mode"><option value="auto">自动检测 · 选定并保持</option><option value="pin">手动固定（调试）</option></select></label><label>当前入口<select data-ag="endpoint"><option value="R1">入口 R1</option><option value="R2">入口 R2</option><option value="R3">入口 R3</option><option value="R4">入口 R4</option><option value="R5">入口 R5</option></select></label></div>
+        <div class="ag-actions"><button type="button" data-ag-action="save-dev" disabled>保存</button><button type="button" data-ag-action="cancel-dev" disabled>取消</button></div>
+        <div class="ag-message" aria-live="polite" data-ag="dev-message">5 个候选 · 当前绑定 R1 · 健康时保持</div>
+        <details><summary>候选状态与诊断</summary><div class="ag-rule"><span>R1 / R2</span><span class="ag-muted ag-small">共享容量组 A（示例）</span></div><div class="ag-rule"><span>R3</span><span class="ag-muted ag-small">容量组 B · 可用</span></div><div class="ag-rule"><span>R4 / R5</span><span class="ag-muted ag-small">共享容量组 C（示例）</span></div><div class="ag-small ag-muted" style="padding-top:10px">最近切换：无 · 可继续展开协议参数与脱敏日志</div></details>
+      </section>
+    </div>
+    <div class="ag-bubble-area" data-ag="bubble-view" hidden>
+      <section class="ag-bubble" aria-label="地址栏 Aegis 气泡">
+        <div class="ag-panel-head"><h3>当前网站</h3><span class="ag-chip">工作</span></div>
+        <div class="ag-site">news.example</div>
+        <dl><dt data-debug-only hidden>当前主导航策略</dt><dd data-debug-only hidden data-ag="bubble-policy">DIRECT · 默认</dd><dt>访问服务</dt><dd data-ag="bubble-service">可用</dd><dt data-ag="bubble-quota-label">本期剩余流量</dt><dd data-ag="bubble-quota">99.14 GB</dd></dl>
+        <div data-simple-only><button type="button" role="switch" aria-checked="false" class="ag-site-switch" data-ag-action="site-proxy"><span>当前网站使用代理</span><span class="ag-switch-track" aria-hidden="true"></span></button><div class="ag-message" aria-live="polite" data-site-status>未使用代理</div></div>
+        <div data-debug-only hidden data-ag="bubble-summary">本页 2 个目标可处理</div><div data-debug-only hidden class="ag-muted ag-small">作用范围：本站 · 精确目标 · 保存规则</div>
+        <div data-debug-only hidden class="ag-actions"><button type="button" class="ag-primary" data-ag-action="allow">允许本页 2 个目标 · ALLOW</button><button type="button" data-ag-action="choose-block">选择目标并阻止 · BLOCK</button><button type="button" class="ag-text-button" data-ag-action="undo" hidden>撤销本次操作</button></div>
+        <button type="button" class="ag-text-button" data-ag-action="management">管理访问服务与用量</button>
+        <div data-debug-only hidden class="ag-message" aria-live="polite" data-ag="bubble-message"></div>
+      </section>
+    </div>
+    <div class="ag-main" data-ag="blocked-view" hidden>
+      <section class="ag-panel ag-block-page" aria-label="Aegis 原生阻断页">
+        <span class="ag-chip">REJECT · 用户规则</span><h2 style="margin-top:14px">已阻止此目标</h2><p class="ag-site">https://news.example:443</p><p class="ag-muted">工作 Profile · 仅当前网站范围 · 精确目标</p>
+        <div class="ag-actions"><button type="button" class="ag-primary" data-ag-action="unblock-main">允许此目标并使用代理 · ALLOW</button><button type="button" data-ag-action="management">查看规则</button><button type="button" class="ag-text-button" data-ag-action="undo" hidden>撤销本次操作</button></div>
+        <div class="ag-message" aria-live="polite" data-ag="blocked-message"></div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('aegis-user-experience');
+      // Self-contained documentation fixture: no network or real build-time security.
+      const state = { edition:'beta', debugView:false, view:'management', status:'ready', quotaMode:'limited', usageScale:'mb' };
+      const canDebug = () => state.edition === 'dev' || state.edition === 'alpha';
+      let previewEdition = state.edition;
+      let siteMessage = '';
+      const one = key => root.querySelector('[data-ag="' + key + '"]');
+      const buttons = action => root.querySelectorAll('[data-ag-action="' + action + '"]');
+      const setText = (key, text) => { one(key).textContent = text; };
+      // The website group has its own revision and only DIRECT/PROXY choices.
+      // Debug main is one HTTPS:443 override, never a member of that group.
+      const initialSiteGroup = {id:'site-group',mode:'direct',explicit:false,override:false,revision:0,selected:false};
+      const siteGroup = {...initialSiteGroup};
+      const targets = [
+        {id:'main',mode:'direct',explicit:false,override:false,issue:'network',revision:0,selected:false},
+        {id:'cdn',mode:'direct',explicit:false,override:false,issue:'protection',revision:0,selected:false},
+        {id:'api',mode:'proxy',explicit:true,override:true,issue:'protection',revision:0,selected:false},
+        {id:'manual',mode:'reject',explicit:true,override:false,issue:'protection',revision:0,selected:false}
+      ];
+      const initialTargets = targets.map(target => ({...target}));
+      const findTarget = id => id === siteGroup.id ? siteGroup : targets.find(target => target.id === id);
+      const snapshot = target => ({mode:target.mode,explicit:target.explicit,override:target.override});
+      const effectiveMode = (target, value = target) => value.explicit || target.id !== 'main' ? value.mode : siteGroup.mode;
+      const eligible = () => targets.filter(target => effectiveMode(target) !== 'reject' && (effectiveMode(target) !== 'proxy' || target.issue === 'protection' && !target.override));
+      const serviceReady = () => state.status === 'ready' || state.status === 'quota' && state.quotaMode === 'unlimited';
+      let pending = null;
+      let sequence = 0;
+      let latestNotice = 0;
+      let notice = '';
+      let lastUndo = null;
+      function report(seq, text) {
+        if (seq >= latestNotice) { latestNotice = seq; notice = text; }
+      }
+      function remember(seq, entries) {
+        if (entries.length && (!lastUndo || seq >= lastUndo.sequence)) lastUndo = {sequence:seq,entries};
+      }
+      function changeLocal(list, mode, explicit, label) {
+        const seq = ++sequence;
+        const entries = list.map(target => {
+          const before = snapshot(target);
+          Object.assign(target,{mode,explicit,override:false,revision:target.revision + 1,selected:false});
+          return {id:target.id,before,afterRevision:target.revision};
+        });
+        remember(seq,entries);
+        report(seq,label + ' · ' + (list[0] === siteGroup ? '网站协议组' : entries.length + ' 个精确目标'));
+        render();
+      }
+      function startProxyChange(list, grant, bulk, siteOnly = false) {
+        if (pending || !list.length) return;
+        const seq = ++sequence;
+        if (!serviceReady()) {
+          if (siteOnly) siteMessage = '未能开启代理，请在连接恢复后重试';
+          report(seq,'访问服务暂不可用，原策略保持；待连接恢复后重试 ALLOW。'); render(); return;
+        }
+        const operation = {sequence:seq,siteOnly,entries:list.map(target => ({id:target.id,before:snapshot(target),revision:target.revision}))};
+        pending = operation;
+        report(seq,'正在准备代理连接，完成前保持各目标原策略。');
+        render();
+        setTimeout(() => {
+          if (pending !== operation) return;
+          pending = null;
+          if (!serviceReady()) {
+            if (siteOnly) siteMessage = '未能开启代理，请在连接恢复后重试';
+            report(seq,'连接准备未完成，原策略保持；BLOCK 仍可使用。'); render(); return;
+          }
+          const committed = [];
+          operation.entries.forEach(entry => {
+            const target = findTarget(entry.id);
+            if (target.revision !== entry.revision || bulk && target.mode === 'reject') return;
+            Object.assign(target,{mode:'proxy',explicit:true,override:grant,revision:target.revision + 1});
+            committed.push({id:target.id,before:entry.before,afterRevision:target.revision});
+          });
+          remember(seq,committed);
+          if (siteOnly) siteMessage = '';
+          const skipped = operation.entries.length - committed.length;
+          report(seq,committed.length + ' 个目标已' + (grant ? '允许并代理' : '设为 PROXY，防护仍适用') + (skipped ? '；' + skipped + ' 个较新修改保持' : '') + (bulk ? '；手动阻断保持' : ''));
+          render();
+        },850);
+      }
+      function undo() {
+        if (!lastUndo) return;
+        const seq = ++sequence;
+        const entries = lastUndo.entries.filter(entry => findTarget(entry.id).revision === entry.afterRevision);
+        if (entries.some(entry => effectiveMode(findTarget(entry.id), entry.before) === 'proxy') && !serviceReady()) {
+          report(seq,'撤销需要恢复原 PROXY 规则；连接未就绪，当前策略保持。'); render(); return;
+        }
+        const skipped = lastUndo.entries.length - entries.length;
+        entries.forEach(entry => {
+          const target = findTarget(entry.id);
+          Object.assign(target,entry.before,{revision:target.revision + 1,selected:false});
+        });
+        lastUndo = null;
+        report(seq,'已恢复 ' + entries.length + ' 个目标的操作前状态' + (skipped ? '；' + skipped + ' 个较新修改未覆盖' : ''));
+        render();
+      }
+      const usageExamples = {
+        mb: { usedBytes:864000000, quotaBytes:100000000000 },
+        gb: { usedBytes:24000000000, quotaBytes:100000000000 },
+        tb: { usedBytes:1200000000000, quotaBytes:5000000000000 },
+        tiny: { usedBytes:3500, quotaBytes:100000000000 }
+      };
+      function formatBytes(bytes) {
+        if (bytes === 0) return '0 MB';
+        if (bytes < 10000) return '<0.01 MB';
+        const units = [{ size:1000000, label:'MB' }, { size:1000000000, label:'GB' }, { size:1000000000000, label:'TB' }];
+        let index = bytes >= units[2].size ? 2 : bytes >= units[1].size ? 1 : 0;
+        let value = Math.round(bytes / units[index].size * 100) / 100;
+        if (value >= 1000 && index < 2) { index += 1; value = Math.round(bytes / units[index].size * 100) / 100; }
+        return value.toLocaleString('zh-CN', { maximumFractionDigits:2 }) + ' ' + units[index].label;
+      }
+      function render() {
+        if (previewEdition !== state.edition) {
+          // Each channel starts a separate fictional fixture; no profile data migration.
+          pending = null; lastUndo = null; notice = ''; siteMessage = ''; state.debugView = false;
+          targets.forEach((target,index) => Object.assign(target,initialTargets[index]));
+          Object.assign(siteGroup,initialSiteGroup);
+          saved = {mode:'auto',endpoint:'R1',url:'https://subscription.example/sub'};
+          one('selection-mode').value = saved.mode; one('endpoint').value = saved.endpoint;
+          one('endpoint').disabled = true; subscriptionInput.value = saved.url;
+          buttons('save-dev').forEach(button => { button.disabled = true; });
+          buttons('cancel-dev').forEach(button => { button.disabled = true; });
+          setText('dev-message','5 个候选 · 当前绑定 R1 · 健康时保持（示例）');
+          previewEdition = state.edition;
+        }
+        const dev = canDebug();
+        const debug = dev && state.debugView;
+        root.querySelectorAll('[data-debug-only]').forEach(element => { element.hidden = !debug; });
+        root.querySelectorAll('[data-simple-only]').forEach(element => { element.hidden = debug; });
+        buttons('toggle-debug').forEach(button => { button.hidden = !dev; button.textContent = debug ? '返回简洁界面' : '调试'; });
+        const hasQuota = state.quotaMode === 'limited';
+        const spent = hasQuota && state.status === 'quota';
+        const offline = state.status === 'offline';
+        const busy = !!pending || state.status === 'preparing' || state.status === 'recovering';
+        const service = {ready:pending ? '正在准备连接' : '可用',preparing:'正在准备连接',recovering:'正在恢复连接',quota:spent ? '本期流量已用完' : '可用',offline:'等待网络',signed_out:'已退出访问身份'}[state.status];
+        const example = usageExamples[state.usageScale];
+        const usedBytes = spent ? example.quotaBytes : example.usedBytes;
+        const uploadedBytes = Math.floor(usedBytes / 10);
+        const progress = Math.min(100, usedBytes / example.quotaBytes * 100);
+        const used = formatBytes(usedBytes);
+        const remaining = formatBytes(Math.max(0, example.quotaBytes - usedBytes));
+        const uploaded = formatBytes(uploadedBytes);
+        const downloaded = formatBytes(usedBytes - uploadedBytes);
+        if (state.view === 'blocked' && (!debug || findTarget('main').mode !== 'reject')) state.view = 'management';
+        root.dataset.view = state.view;
+        setText('preview-label',({dev:'DEV',alpha:'Alpha',beta:'Beta',release:'Release'}[state.edition]) + (debug ? ' · 调试' : ' · 简洁') + ' · ' + ({usage:'用量卡',management:'管理页',bubble:'工具栏气泡',blocked:'原生阻断页'}[state.view]));
+        setText('location',state.view === 'bubble' || state.view === 'blocked' ? 'news.example' : '访问服务');
+        setText('page-title',debug ? '访问调试' : '访问服务');
+        one('management').hidden = state.view === 'bubble' || state.view === 'blocked';
+        one('bubble-view').hidden = state.view !== 'bubble';
+        one('blocked-view').hidden = state.view !== 'blocked';
+        one('dev').hidden = !debug;
+        document.querySelectorAll('[data-preview-state]').forEach(control => {
+          const value = state[control.dataset.previewState];
+          control.value = control.dataset.previewState === 'view' && value === 'blocked' ? 'management' : value;
+        });
+        setText('quota-description',hasQuota ? '代理流量 · 上传 + 下载' : '代理流量 · 未设流量额度');
+        setText('percent',progress > 0 && progress < 0.01 ? '<0.01%' : Number(progress.toFixed(2)) + '%'); setText('used',used);
+        setText('second-label',hasQuota ? '剩余流量' : '上传流量');
+        setText('third-label',hasQuota ? '本期流量额度' : '下载流量');
+        setText('remaining',hasQuota ? remaining : uploaded);
+        setText('total',hasQuota ? formatBytes(example.quotaBytes) : downloaded);
+        setText('uploaded','上传 ' + uploaded); setText('downloaded','下载 ' + downloaded);
+        one('percent').hidden = !hasQuota; one('meter').hidden = !hasQuota;
+        one('transfer-detail').hidden = !hasQuota;
+        root.querySelector('.ag-numbers').style.marginTop = hasQuota ? '0' : '16px';
+        setText('cycle',hasQuota ? '下次重置：10 月 1 日 00:00' : '统计周期：2026 年 9 月');
+        one('meter').setAttribute('aria-valuenow',String(progress)); one('meter-fill').style.width = progress + '%';
+        setText('direct-status',offline ? '无网络' : '可用');
+        one('direct-dot').style.background = offline ? 'var(--ag-warn)' : 'var(--ag-good)';
+        one('service-dot').style.background = busy || !serviceReady() ? 'var(--ag-warn)' : 'var(--ag-good)';
+        setText('service-status',service); setText('bubble-service',service); setText('bubble-quota',hasQuota ? remaining : used);
+        setText('bubble-quota-label',hasQuota ? '本期剩余流量' : '本期已用流量');
+        setText('service-detail',spent ? '等待额度恢复，网站选择已保留' : offline ? '网络恢复后自动检查连接' : state.status === 'signed_out' ? '网站选择已保留；重新连接账户后恢复代理' : state.status === 'recovering' ? '正在恢复连接' : busy ? '正在准备连接' : '连接稳定');
+        const main = findTarget('main');
+        const sitePending = pending && pending.siteOnly;
+        const siteChoiceUnknown = !siteGroup.explicit && main.explicit && (main.mode !== 'direct' || main.override);
+        buttons('site-proxy').forEach(button => {
+          button.hidden = siteChoiceUnknown;
+          button.setAttribute('aria-checked',String(siteGroup.mode === 'proxy'));
+          button.setAttribute('aria-busy',String(!!sitePending));
+          button.disabled = !!(pending && !pending.siteOnly && siteGroup.mode !== 'proxy');
+          button.querySelector('span').textContent = sitePending ? '正在连接 · 点击取消' : '当前网站使用代理';
+        });
+        const siteRestricted = main.explicit && (main.mode !== siteGroup.mode || main.override);
+        const siteStatus = siteChoiceUnknown ? '网站设置暂不可用 · 尚无网站选择，部分访问受独立设置限制' : (sitePending ? '正在连接，尚未生效' : siteMessage || (siteGroup.mode === 'proxy' ? (serviceReady() ? '网站代理已开启' : '代理暂时不可用 · ' + service) : '未使用本服务代理 · 使用浏览器原有连接设置')) + (siteRestricted ? '；部分访问受独立设置限制，网站选择已保留' : '');
+        root.querySelectorAll('[data-site-status]').forEach(element => { element.textContent = siteStatus; });
+        const candidates = eligible();
+        const blocked = targets.filter(target => effectiveMode(target) === 'reject').length;
+        const selected = targets.filter(target => target.selected);
+        const summary = candidates.length ? '本页 ' + candidates.length + ' 个目标可处理' : '本页没有待允许目标';
+        setText('page-summary',summary); setText('bubble-summary',summary);
+        setText('page-detail',blocked + ' 个手动阻断目标在批量 ALLOW 中保留');
+        setText('bubble-policy',effectiveMode(main).toUpperCase() + (main.explicit ? ' · 精确用户规则' : ' · 继承网站选择'));
+        one('result').hidden = !notice;
+        setText('result-text',notice);
+        buttons('allow').forEach(button => { button.disabled = !!pending || !candidates.length; button.textContent = pending ? '正在准备允许操作…' : '允许本页 ' + candidates.length + ' 个目标 · ALLOW'; });
+        buttons('block-selected').forEach(button => { button.disabled = !selected.length; button.textContent = '阻止所选 ' + selected.length + ' 个目标 · BLOCK'; });
+        buttons('undo').forEach(button => { button.hidden = !lastUndo; });
+        buttons('unblock-main').forEach(button => { button.disabled = !!pending; });
+        buttons('blocked-page').forEach(button => { button.hidden = findTarget('main').mode !== 'reject'; });
+        targets.forEach(target => {
+          const targetPending = pending && pending.entries.some(entry => entry.id === target.id && entry.revision === target.revision);
+          const mode = effectiveMode(target);
+          root.querySelector('[data-target-mode="' + target.id + '"]').textContent = mode.toUpperCase() + (target.explicit ? ' · 精确用户规则' : target.id === 'main' ? ' · 继承网站选择' : ' · 默认');
+          root.querySelector('[data-target-policy="' + target.id + '"]').value = mode;
+          root.querySelector('[data-target-select="' + target.id + '"]').checked = target.selected;
+          let detail = mode === 'reject' ? '已阻止此精确目标；批量 ALLOW 保留，此行 ALLOW 可解除' : mode === 'proxy' ? (target.override ? '此精确目标已允许并代理' : '已选代理；Aegis 防护仍适用') : (target.explicit ? '沿用原有连接设置；Aegis 防护仍适用' : '继承原有连接设置') + (target.issue === 'network' ? ' · 网络连接异常' : ' · Aegis 防护拦截');
+          if (mode === 'proxy' && !serviceReady()) detail += ' · 访问暂不可用，策略保留';
+          if (targetPending) detail += ' · 等待连接准备，原策略保持';
+          root.querySelector('[data-target-note="' + target.id + '"]').textContent = detail;
+          root.querySelectorAll('[data-target-action][data-id="' + target.id + '"]').forEach(button => { button.disabled = button.dataset.targetAction === 'allow' ? !!pending : button.dataset.targetAction === 'delete' ? !target.explicit : false; });
+        });
+        const message = !serviceReady() ? '代理暂不可用，PROXY 策略保留；BLOCK 可在本地执行。' : '工作 Profile · 主域协议组与独立目标分别保存（示例）';
+        setText('message',message); setText('bubble-message',notice || message); setText('blocked-message',notice || message);
+      }
+      buttons('toggle-debug').forEach(button => button.addEventListener('click',() => { if (!canDebug()) return; state.debugView = !state.debugView; render(); }));
+      buttons('site-proxy').forEach(button => button.addEventListener('click',() => {
+        siteMessage = '';
+        if (siteGroup.mode === 'proxy' || pending && pending.siteOnly) {
+          if (pending && pending.siteOnly) pending = null;
+          changeLocal([siteGroup],'direct',true,'网站已沿用浏览器原有连接设置');
+        } else startProxyChange([siteGroup],false,false,true);
+      }));
+      buttons('allow').forEach(button => button.addEventListener('click',() => startProxyChange(eligible(),true,true)));
+      buttons('block-selected').forEach(button => button.addEventListener('click',() => changeLocal(targets.filter(target => target.selected),'reject',true,'已阻止所选目标')));
+      buttons('undo').forEach(button => button.addEventListener('click',undo));
+      buttons('choose-block').forEach(button => button.addEventListener('click',() => { state.view='management'; render(); }));
+      buttons('blocked-page').forEach(button => button.addEventListener('click',() => { state.view='blocked'; render(); }));
+      buttons('unblock-main').forEach(button => button.addEventListener('click',() => startProxyChange([findTarget('main')],true,false)));
+      buttons('management').forEach(button => button.addEventListener('click',() => { state.view='management'; render(); }));
+      root.querySelectorAll('[data-target-select]').forEach(input => input.addEventListener('change',() => { findTarget(input.dataset.targetSelect).selected = input.checked; render(); }));
+      root.querySelectorAll('[data-target-policy]').forEach(select => select.addEventListener('change',() => {
+        const target = findTarget(select.dataset.targetPolicy);
+        const mode = select.value;
+        if (mode === effectiveMode(target)) { render(); return; }
+        if (mode === 'proxy') { startProxyChange([target],false,false); render(); }
+        else changeLocal([target],mode,true,mode === 'reject' ? '已阻止此目标' : '已设为显式 DIRECT，防护仍适用');
+      }));
+      root.querySelectorAll('[data-target-action]').forEach(button => button.addEventListener('click',() => {
+        const target = findTarget(button.dataset.id);
+        if (button.dataset.targetAction === 'allow') startProxyChange([target],true,false);
+        else if (button.dataset.targetAction === 'block') changeLocal([target],'reject',true,'已阻止此目标');
+        else {
+          if (target.id === 'main' && siteGroup.mode === 'proxy' && !serviceReady()) {
+            report(++sequence,'删除后需要恢复网站代理；连接未就绪，当前规则保持。'); render(); return;
+          }
+          changeLocal([target],'direct',false,'已删除精确规则，恢复当前继承结果');
+        }
+      }));
+      buttons('subscription').forEach(button => button.addEventListener('click',() => { setText('dev-message','订阅更新完成 · 5 个候选 · 保持当前健康绑定（示例）'); }));
+      const subscriptionInput = root.querySelector('input[type="url"]');
+      const devFields=[one('selection-mode'),one('endpoint'),subscriptionInput];
+      const dirty=() => { one('endpoint').disabled=one('selection-mode').value==='auto'; buttons('save-dev').forEach(b=>b.disabled=false); buttons('cancel-dev').forEach(b=>b.disabled=false); };
+      devFields.forEach(field=>field.addEventListener('input',dirty));
+      let saved={mode:'auto',endpoint:'R1',url:'https://subscription.example/sub'};
+      buttons('save-dev').forEach(button=>button.addEventListener('click',()=>{ saved={mode:one('selection-mode').value,endpoint:one('endpoint').value,url:subscriptionInput.value}; setText('dev-message',(saved.mode==='pin'?'调试固定 ':'自动保持 ') + saved.endpoint + ' · 已保存（示例）'); buttons('save-dev').forEach(b=>b.disabled=true); buttons('cancel-dev').forEach(b=>b.disabled=true); }));
+      buttons('cancel-dev').forEach(button=>button.addEventListener('click',()=>{ one('selection-mode').value=saved.mode; one('endpoint').value=saved.endpoint; one('endpoint').disabled=saved.mode==='auto'; subscriptionInput.value=saved.url; buttons('save-dev').forEach(b=>b.disabled=true); buttons('cancel-dev').forEach(b=>b.disabled=true); }));
+      one('endpoint').disabled=true;
+      render();
+      document.querySelectorAll('[data-preview-state]').forEach(control => control.addEventListener('change',() => {
+        state[control.dataset.previewState] = control.value;
+        render();
+      }));
+    })();
+  </script>
+</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,1856 @@
+From 23888d5cd8bf1bc20c5727fe52c5b5cda5b74a72 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Mon, 14 Sep 2026 06:59:05 +0800
+Subject: [PATCH] Aegis: add access route planning contract
+
+---
+ components/aegis_access/BUILD.gn              |  38 ++
+ .../aegis_access/access_route_planner.cc      | 246 +++++++++++++
+ .../aegis_access/access_route_planner.h       |  17 +
+ .../access_route_planner_contract_test.h      | 324 +++++++++++++++++
+ .../access_route_planner_native_test.cc       |  42 +++
+ .../access_route_planner_unittest.cc          |  29 ++
+ components/aegis_access/access_route_types.h  | 164 +++++++++
+ .../generate_route_planner_vectors.py         | 281 +++++++++++++++
+ .../aegis_access/site_proxy_rule_group.cc     | 162 +++++++++
+ .../aegis_access/site_proxy_rule_group.h      | 123 +++++++
+ .../testdata/route_planner_vectors.json       | 331 ++++++++++++++++++
+ 11 files changed, 1757 insertions(+)
+ create mode 100644 components/aegis_access/BUILD.gn
+ create mode 100644 components/aegis_access/access_route_planner.cc
+ create mode 100644 components/aegis_access/access_route_planner.h
+ create mode 100644 components/aegis_access/access_route_planner_contract_test.h
+ create mode 100644 components/aegis_access/access_route_planner_native_test.cc
+ create mode 100644 components/aegis_access/access_route_planner_unittest.cc
+ create mode 100644 components/aegis_access/access_route_types.h
+ create mode 100644 components/aegis_access/generate_route_planner_vectors.py
+ create mode 100644 components/aegis_access/site_proxy_rule_group.cc
+ create mode 100644 components/aegis_access/site_proxy_rule_group.h
+ create mode 100644 components/aegis_access/testdata/route_planner_vectors.json
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+new file mode 100644
+index 0000000..e0f22ed
+--- /dev/null
++++ b/components/aegis_access/BUILD.gn
+@@ -0,0 +1,38 @@
++# Copyright 2026 GCSA
++# Intended path: components/aegis_access/BUILD.gn
++
++import("//testing/test.gni")
++
++action("generate_route_planner_vectors") {
++  script = "generate_route_planner_vectors.py"
++  inputs = [ "testdata/route_planner_vectors.json" ]
++  outputs = [ "$target_gen_dir/route_planner_golden_vectors.inc" ]
++  args = [
++    rebase_path(inputs[0], root_build_dir),
++    rebase_path(outputs[0], root_build_dir),
++  ]
++}
++
++source_set("aegis_access") {
++  sources = [
++    "access_route_planner.cc",
++    "access_route_planner.h",
++    "access_route_types.h",
++    "site_proxy_rule_group.cc",
++    "site_proxy_rule_group.h",
++  ]
++}
++
++test("aegis_access_unittests") {
++  sources = [
++    "access_route_planner_contract_test.h",
++    "access_route_planner_unittest.cc",
++  ]
++  include_dirs = [ "$target_gen_dir" ]
++  deps = [
++    ":aegis_access",
++    ":generate_route_planner_vectors",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
+diff --git a/components/aegis_access/access_route_planner.cc b/components/aegis_access/access_route_planner.cc
+new file mode 100644
+index 0000000..a36389e
+--- /dev/null
++++ b/components/aegis_access/access_route_planner.cc
+@@ -0,0 +1,246 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_route_planner.h"
++
++namespace aegis_access {
++namespace {
++
++bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsComplete(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
++         !owner.storage_partition_token.empty();
++}
++
++bool IsComplete(const GenerationTuple& generations) {
++  return generations.policy_generation != 0 &&
++         generations.identity_generation != 0 &&
++         generations.selection_generation != 0 &&
++         generations.network_epoch != 0 &&
++         generations.base_proxy_config_generation != 0;
++}
++
++bool IsKnown(ProtectionRestriction restriction) {
++  switch (restriction) {
++    case ProtectionRestriction::kNone:
++    case ProtectionRestriction::kDeny:
++      return true;
++    case ProtectionRestriction::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsKnown(ManagedRestriction restriction) {
++  switch (restriction) {
++    case ManagedRestriction::kNone:
++    case ManagedRestriction::kForceProxy:
++    case ManagedRestriction::kForceDirect:
++    case ManagedRestriction::kCustomProxyForbidden:
++      return true;
++    case ManagedRestriction::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsKnown(ProxyRuntimeState state) {
++  switch (state) {
++    case ProxyRuntimeState::kStopped:
++    case ProxyRuntimeState::kPreparing:
++    case ProxyRuntimeState::kReady:
++    case ProxyRuntimeState::kRecovering:
++    case ProxyRuntimeState::kOffline:
++    case ProxyRuntimeState::kQuotaExhausted:
++    case ProxyRuntimeState::kSignedOut:
++    case ProxyRuntimeState::kUnavailable:
++      return true;
++    case ProxyRuntimeState::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsKnown(SnapshotState state) {
++  switch (state) {
++    case SnapshotState::kMissing:
++    case SnapshotState::kRestoring:
++    case SnapshotState::kPublished:
++    case SnapshotState::kCorrupt:
++      return true;
++    case SnapshotState::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsValidPolicyShape(const RouteInput& input) {
++  switch (input.policy_state) {
++    case PolicyState::kAbsent:
++      return input.effective_mode == AccessMode::kNone &&
++             input.policy_scope == PolicyScope::kNone &&
++             input.effective_proxy_group_id.empty();
++    case PolicyState::kValid:
++      if (input.policy_scope != PolicyScope::kSite &&
++          input.policy_scope != PolicyScope::kProfile) {
++        return false;
++      }
++      if (input.effective_mode == AccessMode::kProxy) {
++        return !input.effective_proxy_group_id.empty();
++      }
++      return (input.effective_mode == AccessMode::kDirect ||
++              input.effective_mode == AccessMode::kReject) &&
++             input.effective_proxy_group_id.empty();
++    case PolicyState::kConflict:
++    case PolicyState::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++RoutePlan MakePlan(const RouteInput& input,
++                   RouteAction action,
++                   RouteReason reason) {
++  return RoutePlan{action, input.effective_mode, reason,
++                   input.request_generations, std::nullopt};
++}
++
++}  // namespace
++
++RoutePlan PlanAccessRoute(const RouteInput& input) {
++  // Fix error precedence before examining any runtime branch. Unknown enum
++  // values and contradictory policy shapes never reach a permissive result.
++  if (input.policy_state == PolicyState::kConflict) {
++    return MakePlan(input, RouteAction::kFail, RouteReason::kPolicyConflict);
++  }
++  if (!IsValidPolicyShape(input) ||
++      !IsKnown(input.protection_restriction) ||
++      !IsKnown(input.managed_restriction) || !IsKnown(input.runtime_state) ||
++      !IsKnown(input.snapshot_state) ||
++      !IsComplete(input.request_generations)) {
++    return MakePlan(input, RouteAction::kFail, RouteReason::kInvalidPolicy);
++  }
++  if (!IsComplete(input.request_owner)) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kOwnershipMismatch);
++  }
++  if (input.policy_state == PolicyState::kValid &&
++      input.policy_scope == PolicyScope::kSite &&
++      !input.site_ownership_reliable) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kSiteOwnershipUnavailable);
++  }
++
++  // Locally reliable denial is safe even while a runtime snapshot is absent.
++  if (input.protection_restriction == ProtectionRestriction::kDeny) {
++    return MakePlan(input, RouteAction::kDeny,
++                    RouteReason::kProtectionRestriction);
++  }
++  if (input.policy_state == PolicyState::kValid &&
++      input.effective_mode == AccessMode::kReject) {
++    return MakePlan(input, RouteAction::kDeny, RouteReason::kNone);
++  }
++
++  if (input.snapshot_state == SnapshotState::kMissing) {
++    return MakePlan(input, RouteAction::kWait,
++                    RouteReason::kMissingSnapshot);
++  } else if (input.snapshot_state == SnapshotState::kRestoring) {
++    return MakePlan(input, RouteAction::kWait,
++                    RouteReason::kSnapshotNotReady);
++  } else if (input.snapshot_state == SnapshotState::kCorrupt) {
++    return MakePlan(input, RouteAction::kFail, RouteReason::kInvalidPolicy);
++  } else {
++    if (!IsComplete(input.snapshot_owner) ||
++        input.request_owner != input.snapshot_owner) {
++      return MakePlan(input, RouteAction::kFail,
++                      RouteReason::kOwnershipMismatch);
++    }
++    if (!IsComplete(input.snapshot_generations) ||
++        input.request_generations != input.snapshot_generations) {
++      return MakePlan(input, RouteAction::kFail,
++                      RouteReason::kStaleGeneration);
++    }
++  }
++
++  if (input.require_proxy_intent &&
++      (input.policy_state != PolicyState::kValid ||
++       input.effective_mode != AccessMode::kProxy)) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kInvalidPolicy);
++  }
++
++  if (input.policy_state == PolicyState::kAbsent ||
++      input.effective_mode == AccessMode::kDirect) {
++    return MakePlan(input, RouteAction::kPreserveNative, RouteReason::kNone);
++  }
++
++  // Only PROXY reaches this point. Managed restrictions preserve the selected
++  // mode while stopping the affected business operation.
++  if (input.managed_restriction != ManagedRestriction::kNone) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kManagedRestriction);
++  }
++
++  switch (input.runtime_state) {
++    case ProxyRuntimeState::kPreparing:
++    case ProxyRuntimeState::kRecovering:
++      return MakePlan(input, RouteAction::kWait,
++                      RouteReason::kProxyUnavailable);
++    case ProxyRuntimeState::kQuotaExhausted:
++      return MakePlan(input, RouteAction::kFail,
++                      RouteReason::kQuotaExhausted);
++    case ProxyRuntimeState::kSignedOut:
++      return MakePlan(input, RouteAction::kFail, RouteReason::kSignedOut);
++    case ProxyRuntimeState::kStopped:
++    case ProxyRuntimeState::kOffline:
++    case ProxyRuntimeState::kUnavailable:
++      return MakePlan(input, RouteAction::kFail,
++                      RouteReason::kProxyUnavailable);
++    case ProxyRuntimeState::kReady:
++      break;
++    case ProxyRuntimeState::kInvalid:
++      return MakePlan(input, RouteAction::kFail,
++                      RouteReason::kInvalidPolicy);
++  }
++
++  if (!input.registered_proxy_entry.has_value() ||
++      input.registered_proxy_entry->registration_id.empty() ||
++      input.registered_proxy_entry->proxy_group_id.empty()) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kProxyUnavailable);
++  }
++  if (!IsComplete(input.registered_proxy_entry->owner) ||
++      input.registered_proxy_entry->owner != input.request_owner) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kOwnershipMismatch);
++  }
++  if (!IsComplete(input.registered_proxy_entry->generations) ||
++      input.registered_proxy_entry->generations !=
++          input.request_generations) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kStaleGeneration);
++  }
++  if (input.registered_proxy_entry->proxy_group_id !=
++      input.effective_proxy_group_id) {
++    return MakePlan(input, RouteAction::kFail,
++                    RouteReason::kProxyUnavailable);
++  }
++
++  RoutePlan plan = MakePlan(input, RouteAction::kUseRegisteredProxy,
++                            RouteReason::kNone);
++  plan.registered_proxy_entry = input.registered_proxy_entry;
++  return plan;
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/access_route_planner.h b/components/aegis_access/access_route_planner.h
+new file mode 100644
+index 0000000..ad01387
+--- /dev/null
++++ b/components/aegis_access/access_route_planner.h
+@@ -0,0 +1,17 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_PLANNER_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_PLANNER_H_
++
++#include "components/aegis_access/access_route_types.h"
++
++namespace aegis_access {
++
++// Produces a declarative route plan from an already matched policy and an
++// immutable runtime snapshot. This function performs no I/O and never builds
++// or reorders Chromium's native proxy configuration.
++RoutePlan PlanAccessRoute(const RouteInput& input);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_PLANNER_H_
+diff --git a/components/aegis_access/access_route_planner_contract_test.h b/components/aegis_access/access_route_planner_contract_test.h
+new file mode 100644
+index 0000000..be8ac8f
+--- /dev/null
++++ b/components/aegis_access/access_route_planner_contract_test.h
+@@ -0,0 +1,324 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_PLANNER_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_PLANNER_CONTRACT_TEST_H_
++
++#include <algorithm>
++#include <optional>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "components/aegis_access/access_route_planner.h"
++#include "components/aegis_access/site_proxy_rule_group.h"
++
++namespace aegis_access::test {
++
++class ContractTestObserver {
++ public:
++  virtual ~ContractTestObserver() = default;
++  virtual void Expect(bool condition, const std::string& label) = 0;
++};
++
++struct GoldenRouteVector {
++  std::string name;
++  RouteInput input;
++  RouteAction expected_action;
++  RouteReason expected_reason;
++  std::optional<std::string> expected_registration_id;
++};
++
++inline OwnershipKey TestOwner() {
++  return OwnershipKey{ChannelNamespace::kBeta, "profile-beta.example",
++                      "partition-main.example"};
++}
++
++inline GenerationTuple TestGenerations() {
++  return GenerationTuple{7, 11, 13, 17, 19};
++}
++
++inline RouteInput ReadyProxyInput() {
++  const OwnershipKey owner = TestOwner();
++  const GenerationTuple generations = TestGenerations();
++  return RouteInput{
++      PolicyState::kValid,
++      AccessMode::kProxy,
++      PolicyScope::kSite,
++      "proxy-group-primary.example",
++      true,
++      true,
++      owner,
++      SnapshotState::kPublished,
++      owner,
++      generations,
++      generations,
++      ProtectionRestriction::kNone,
++      ManagedRestriction::kNone,
++      ProxyRuntimeState::kReady,
++      RegisteredProxyEntry{"entry-beta-main.example",
++                           "proxy-group-primary.example", owner, generations},
++  };
++}
++
++inline std::vector<GoldenRouteVector> BuildGoldenRouteVectors() {
++  std::vector<GoldenRouteVector> vectors;
++#include "route_planner_golden_vectors.inc"
++  return vectors;
++}
++
++inline void RunRoutePlannerContractTests(ContractTestObserver& observer) {
++  const std::vector<GoldenRouteVector> vectors = BuildGoldenRouteVectors();
++  observer.Expect(vectors.size() == 42, "shared vector count");
++  for (const GoldenRouteVector& vector : vectors) {
++    const RouteInput before = vector.input;
++    const RoutePlan first = PlanAccessRoute(vector.input);
++    const RoutePlan second = PlanAccessRoute(vector.input);
++    observer.Expect(first.action == vector.expected_action,
++                    vector.name + ": action");
++    observer.Expect(first.reason == vector.expected_reason,
++                    vector.name + ": reason");
++    observer.Expect(first.effective_mode == vector.input.effective_mode,
++                    vector.name + ": mode is preserved");
++    observer.Expect(first.generations == vector.input.request_generations,
++                    vector.name + ": request generations are preserved");
++    observer.Expect(vector.input == before, vector.name + ": input is immutable");
++    observer.Expect(first == second, vector.name + ": result is deterministic");
++    observer.Expect(first.registered_proxy_entry.has_value() ==
++                        vector.expected_registration_id.has_value(),
++                    vector.name + ": entry presence");
++    if (first.registered_proxy_entry.has_value() &&
++        vector.expected_registration_id.has_value()) {
++      observer.Expect(first.registered_proxy_entry->registration_id ==
++                          *vector.expected_registration_id,
++                      vector.name + ": opaque registration id");
++      observer.Expect(first.registered_proxy_entry->proxy_group_id ==
++                          vector.input.effective_proxy_group_id,
++                      vector.name + ": logical proxy group binding");
++    }
++  }
++
++  RouteInput input = ReadyProxyInput();
++  input.effective_mode = static_cast<AccessMode>(999);
++  observer.Expect(PlanAccessRoute(input).action == RouteAction::kFail,
++                  "out-of-range mode fails");
++  input = ReadyProxyInput();
++  input.runtime_state = static_cast<ProxyRuntimeState>(999);
++  observer.Expect(PlanAccessRoute(input).action == RouteAction::kFail,
++                  "out-of-range runtime fails");
++  input = ReadyProxyInput();
++  input.request_owner.channel = static_cast<ChannelNamespace>(999);
++  observer.Expect(PlanAccessRoute(input).action == RouteAction::kFail,
++                  "out-of-range channel fails");
++}
++
++inline SiteProxyRuleGroup ValidGroup() {
++  return SiteProxyRuleGroup{
++      "site-toggle-example", "www.example.test", TestOwner(),
++      "http://example.test", "https://example.test",
++      {"rule-http-example", "rule-https-example"}, 23, 29};
++}
++
++inline std::vector<SiteProxyRuleMember> ValidMembers(AccessMode mode) {
++  const std::string proxy_group =
++      mode == AccessMode::kProxy ? "proxy-group-primary.example" : "";
++  const std::vector<RequestScheme> schemes = {
++      RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
++      RequestScheme::kWss};
++  return {
++      SiteProxyRuleMember{
++          "rule-http-example", TestOwner(), "site-toggle-example", 23,
++          "http://example.test", "www.example.test", schemes,
++          PortScope::kAllBrowserPermitted, false, mode, proxy_group,
++          ProtectionOverride::kNone, 29},
++      SiteProxyRuleMember{
++          "rule-https-example", TestOwner(), "site-toggle-example", 23,
++          "https://example.test", "www.example.test", schemes,
++          PortScope::kAllBrowserPermitted, false, mode, proxy_group,
++          ProtectionOverride::kNone, 29},
++  };
++}
++
++inline void ExpectGroup(ContractTestObserver& observer,
++                        const std::string& label,
++                        const OwnershipKey& expected_owner,
++                        const SiteProxyRuleGroup* group,
++                        const std::vector<SiteProxyRuleMember>& members,
++                        GroupPresence presence,
++                        GroupSelection selection,
++                        GroupValidationError error) {
++  const std::optional<SiteProxyRuleGroup> group_before =
++      group == nullptr ? std::nullopt
++                       : std::optional<SiteProxyRuleGroup>(*group);
++  const std::vector<SiteProxyRuleMember> members_before = members;
++  const GroupValidation first =
++      ValidateSiteProxyRuleGroup(expected_owner, group, members);
++  const GroupValidation second =
++      ValidateSiteProxyRuleGroup(expected_owner, group, members);
++  observer.Expect(first.presence == presence, label + ": presence");
++  observer.Expect(first.selection == selection, label + ": selection");
++  observer.Expect(first.error == error, label + ": error");
++  observer.Expect(first == second, label + ": deterministic");
++  observer.Expect(members == members_before, label + ": members immutable");
++  if (group != nullptr) {
++    observer.Expect(group_before.has_value() && *group == *group_before,
++                    label + ": group immutable");
++  }
++}
++
++inline void ExpectUnknown(ContractTestObserver& observer,
++                          const std::string& label,
++                          const SiteProxyRuleGroup& group,
++                          const std::vector<SiteProxyRuleMember>& members,
++                          GroupValidationError error) {
++  ExpectGroup(observer, label, TestOwner(), &group, members,
++              GroupPresence::kPresent, GroupSelection::kUnknown, error);
++}
++
++inline void RunSiteProxyRuleGroupContractTests(
++    ContractTestObserver& observer) {
++  SiteProxyRuleGroup group = ValidGroup();
++  std::vector<SiteProxyRuleMember> members = ValidMembers(AccessMode::kDirect);
++  ExpectGroup(observer, "valid direct group", TestOwner(), &group, members,
++              GroupPresence::kPresent, GroupSelection::kDisabled,
++              GroupValidationError::kNone);
++
++  members = ValidMembers(AccessMode::kProxy);
++  ExpectGroup(observer, "valid proxy group", TestOwner(), &group, members,
++              GroupPresence::kPresent, GroupSelection::kEnabled,
++              GroupValidationError::kNone);
++  std::reverse(members.begin(), members.end());
++  ExpectGroup(observer, "valid proxy group reversed", TestOwner(), &group,
++              members, GroupPresence::kPresent, GroupSelection::kEnabled,
++              GroupValidationError::kNone);
++
++  ExpectGroup(observer, "absent group", TestOwner(), nullptr, {},
++              GroupPresence::kAbsent, GroupSelection::kUnknown,
++              GroupValidationError::kMissingGroup);
++
++  group = ValidGroup();
++  group.site_toggle_id.clear();
++  ExpectUnknown(observer, "empty group id", group,
++                ValidMembers(AccessMode::kDirect),
++                GroupValidationError::kInvalidGroup);
++
++  group = ValidGroup();
++  OwnershipKey other_owner = TestOwner();
++  other_owner.profile_token = "profile-other.example";
++  ExpectGroup(observer, "external owner mismatch", other_owner, &group,
++              ValidMembers(AccessMode::kDirect), GroupPresence::kPresent,
++              GroupSelection::kUnknown,
++              GroupValidationError::kOwnershipMismatch);
++
++  group = ValidGroup();
++  members = ValidMembers(AccessMode::kDirect);
++  members.pop_back();
++  ExpectUnknown(observer, "missing member", group, members,
++                GroupValidationError::kMemberCountMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members.push_back(members.back());
++  ExpectUnknown(observer, "extra member", group, members,
++                GroupValidationError::kMemberCountMismatch);
++
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].rule_id = members[0].rule_id;
++  ExpectUnknown(observer, "duplicate member", group, members,
++                GroupValidationError::kDuplicateMember);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].rule_id = "rule-not-listed.example";
++  ExpectUnknown(observer, "member ids differ from group", group, members,
++                GroupValidationError::kMemberIdsMismatch);
++
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].owner.channel = ChannelNamespace::kAlpha;
++  ExpectUnknown(observer, "member channel mismatch", group, members,
++                GroupValidationError::kOwnershipMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].owner.profile_token = "profile-other.example";
++  ExpectUnknown(observer, "member profile mismatch", group, members,
++                GroupValidationError::kOwnershipMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].owner.storage_partition_token = "partition-other.example";
++  ExpectUnknown(observer, "member partition mismatch", group, members,
++                GroupValidationError::kOwnershipMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].site_toggle_id = "site-toggle-other";
++  ExpectUnknown(observer, "member group id mismatch", group, members,
++                GroupValidationError::kOwnershipMismatch);
++
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].exact_host = "sub.www.example.test";
++  ExpectUnknown(observer, "exact host mismatch", group, members,
++                GroupValidationError::kHostMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].top_level_site = "https://other.example";
++  ExpectUnknown(observer, "top-level site mismatch", group, members,
++                GroupValidationError::kTopLevelSiteMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].group_revision = 22;
++  ExpectUnknown(observer, "revision mismatch", group, members,
++                GroupValidationError::kRevisionMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].last_operation_sequence = 28;
++  ExpectUnknown(observer, "operation sequence mismatch", group, members,
++                GroupValidationError::kOperationSequenceMismatch);
++
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].schemes.pop_back();
++  ExpectUnknown(observer, "scheme missing", group, members,
++                GroupValidationError::kSchemesMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].schemes[3] = RequestScheme::kHttp;
++  ExpectUnknown(observer, "scheme duplicate", group, members,
++                GroupValidationError::kSchemesMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].ports = PortScope::kExplicitSubset;
++  ExpectUnknown(observer, "explicit port subset", group, members,
++                GroupValidationError::kPortsMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].include_subdomains = true;
++  ExpectUnknown(observer, "subdomain expansion", group, members,
++                GroupValidationError::kSubdomainsNotAllowed);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].protection_override = ProtectionOverride::kTracker;
++  ExpectUnknown(observer, "protection override", group, members,
++                GroupValidationError::kProtectionOverrideNotAllowed);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].mode = AccessMode::kReject;
++  ExpectUnknown(observer, "reject member", group, members,
++                GroupValidationError::kUnsupportedMode);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].mode = AccessMode::kProxy;
++  members[1].proxy_group_id = "proxy-group-primary.example";
++  ExpectUnknown(observer, "mixed modes", group, members,
++                GroupValidationError::kModeMismatch);
++  members = ValidMembers(AccessMode::kDirect);
++  members[1].proxy_group_id = "proxy-group-primary.example";
++  ExpectUnknown(observer, "direct member has proxy group", group, members,
++                GroupValidationError::kProxyGroupMismatch);
++  members = ValidMembers(AccessMode::kProxy);
++  members[1].proxy_group_id = "proxy-group-other.example";
++  ExpectUnknown(observer, "proxy group mismatch", group, members,
++                GroupValidationError::kProxyGroupMismatch);
++
++  members = ValidMembers(AccessMode::kDirect);
++  members[0].exact_host = "host-error.example";
++  members[1].owner.profile_token = "profile-error.example";
++  ExpectUnknown(observer, "double error owner before host", group, members,
++                GroupValidationError::kOwnershipMismatch);
++  std::reverse(members.begin(), members.end());
++  ExpectUnknown(observer, "double error owner before host reversed", group,
++                members, GroupValidationError::kOwnershipMismatch);
++
++  members = ValidMembers(AccessMode::kDirect);
++  members[0].schemes.pop_back();
++  members[1].group_revision = 22;
++  ExpectUnknown(observer, "double error revision before schemes", group,
++                members, GroupValidationError::kRevisionMismatch);
++  std::reverse(members.begin(), members.end());
++  ExpectUnknown(observer, "double error revision before schemes reversed",
++                group, members, GroupValidationError::kRevisionMismatch);
++}
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_PLANNER_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+new file mode 100644
+index 0000000..a8b606d
+--- /dev/null
++++ b/components/aegis_access/access_route_planner_native_test.cc
+@@ -0,0 +1,42 @@
++// Copyright 2026 GCSA
++
++#include <iostream>
++#include <string>
++
++#include "components/aegis_access/access_route_planner_contract_test.h"
++
++namespace {
++
++class NativeObserver : public aegis_access::test::ContractTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    ++checks_;
++    if (!condition) {
++      ++failures_;
++      std::cerr << "FAIL: " << label << '\n';
++    }
++  }
++
++  int checks() const { return checks_; }
++  int failures() const { return failures_; }
++
++ private:
++  int checks_ = 0;
++  int failures_ = 0;
++};
++
++}  // namespace
++
++int main() {
++  NativeObserver observer;
++  aegis_access::test::RunRoutePlannerContractTests(observer);
++  aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
++  if (observer.failures() != 0) {
++    std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
++              << " failures, " << observer.checks() << " checks)\n";
++    return 1;
++  }
++  std::cout << "PASS: aegis_access native unit (" << observer.checks()
++            << " checks)\n";
++  return 0;
++}
+diff --git a/components/aegis_access/access_route_planner_unittest.cc b/components/aegis_access/access_route_planner_unittest.cc
+new file mode 100644
+index 0000000..2bbf910
+--- /dev/null
++++ b/components/aegis_access/access_route_planner_unittest.cc
+@@ -0,0 +1,29 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/access_route_planner_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestObserver : public ContractTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(AccessRoutePlannerTest, SharedRoutePlannerContract) {
++  GtestObserver observer;
++  RunRoutePlannerContractTests(observer);
++}
++
++TEST(SiteProxyRuleGroupTest, CompleteAtomicGroupContract) {
++  GtestObserver observer;
++  RunSiteProxyRuleGroupContractTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
+diff --git a/components/aegis_access/access_route_types.h b/components/aegis_access/access_route_types.h
+new file mode 100644
+index 0000000..dc93138
+--- /dev/null
++++ b/components/aegis_access/access_route_types.h
+@@ -0,0 +1,164 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_TYPES_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_TYPES_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++
++namespace aegis_access {
++
++enum class ChannelNamespace {
++  kDev,
++  kAlpha,
++  kBeta,
++  kRelease,
++  kInvalid,
++};
++
++struct OwnershipKey {
++  ChannelNamespace channel = ChannelNamespace::kInvalid;
++  std::string profile_token;
++  std::string storage_partition_token;
++
++  friend bool operator==(const OwnershipKey&, const OwnershipKey&) = default;
++};
++
++struct GenerationTuple {
++  uint64_t policy_generation = 0;
++  uint64_t identity_generation = 0;
++  uint64_t selection_generation = 0;
++  uint64_t network_epoch = 0;
++  uint64_t base_proxy_config_generation = 0;
++
++  friend bool operator==(const GenerationTuple&, const GenerationTuple&) =
++      default;
++};
++
++enum class AccessMode {
++  kNone,
++  kDirect,
++  kProxy,
++  kReject,
++  kInvalid,
++};
++
++enum class PolicyState {
++  kAbsent,
++  kValid,
++  kConflict,
++  kInvalid,
++};
++
++enum class PolicyScope {
++  kNone,
++  kSite,
++  kProfile,
++  kInvalid,
++};
++
++enum class SnapshotState {
++  kMissing,
++  kRestoring,
++  kPublished,
++  kCorrupt,
++  kInvalid,
++};
++
++enum class ProtectionRestriction {
++  kNone,
++  kDeny,
++  kInvalid,
++};
++
++enum class ManagedRestriction {
++  kNone,
++  kForceProxy,
++  kForceDirect,
++  kCustomProxyForbidden,
++  kInvalid,
++};
++
++enum class ProxyRuntimeState {
++  kStopped,
++  kPreparing,
++  kReady,
++  kRecovering,
++  kOffline,
++  kQuotaExhausted,
++  kSignedOut,
++  kUnavailable,
++  kInvalid,
++};
++
++struct RegisteredProxyEntry {
++  std::string registration_id;
++  std::string proxy_group_id;
++  OwnershipKey owner;
++  GenerationTuple generations;
++
++  friend bool operator==(const RegisteredProxyEntry&,
++                         const RegisteredProxyEntry&) = default;
++};
++
++enum class RouteAction {
++  kPreserveNative,
++  kUseRegisteredProxy,
++  kWait,
++  kDeny,
++  kFail,
++};
++
++enum class RouteReason {
++  kNone,
++  kMissingSnapshot,
++  kSnapshotNotReady,
++  kStaleGeneration,
++  kOwnershipMismatch,
++  kSiteOwnershipUnavailable,
++  kInvalidPolicy,
++  kPolicyConflict,
++  kManagedRestriction,
++  kProtectionRestriction,
++  kProxyUnavailable,
++  kQuotaExhausted,
++  kSignedOut,
++};
++
++struct RouteInput {
++  PolicyState policy_state = PolicyState::kInvalid;
++  AccessMode effective_mode = AccessMode::kInvalid;
++  PolicyScope policy_scope = PolicyScope::kInvalid;
++  std::string effective_proxy_group_id;
++  bool require_proxy_intent = false;
++  bool site_ownership_reliable = false;
++
++  OwnershipKey request_owner;
++  SnapshotState snapshot_state = SnapshotState::kInvalid;
++  OwnershipKey snapshot_owner;
++  GenerationTuple request_generations;
++  GenerationTuple snapshot_generations;
++
++  ProtectionRestriction protection_restriction =
++      ProtectionRestriction::kInvalid;
++  ManagedRestriction managed_restriction = ManagedRestriction::kInvalid;
++  ProxyRuntimeState runtime_state = ProxyRuntimeState::kInvalid;
++  std::optional<RegisteredProxyEntry> registered_proxy_entry;
++
++  friend bool operator==(const RouteInput&, const RouteInput&) = default;
++};
++
++struct RoutePlan {
++  RouteAction action = RouteAction::kFail;
++  AccessMode effective_mode = AccessMode::kInvalid;
++  RouteReason reason = RouteReason::kInvalidPolicy;
++  GenerationTuple generations;
++  std::optional<RegisteredProxyEntry> registered_proxy_entry;
++
++  friend bool operator==(const RoutePlan&, const RoutePlan&) = default;
++};
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_TYPES_H_
+diff --git a/components/aegis_access/generate_route_planner_vectors.py b/components/aegis_access/generate_route_planner_vectors.py
+new file mode 100644
+index 0000000..75a3dd7
+--- /dev/null
++++ b/components/aegis_access/generate_route_planner_vectors.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++
++import json
++import pathlib
++import sys
++
++
++ENUMS = {
++    "policyState": {
++        "absent": "PolicyState::kAbsent",
++        "valid": "PolicyState::kValid",
++        "conflict": "PolicyState::kConflict",
++        "invalid": "PolicyState::kInvalid",
++    },
++    "effectiveMode": {
++        "none": "AccessMode::kNone",
++        "direct": "AccessMode::kDirect",
++        "proxy": "AccessMode::kProxy",
++        "reject": "AccessMode::kReject",
++        "invalid": "AccessMode::kInvalid",
++    },
++    "policyScope": {
++        "none": "PolicyScope::kNone",
++        "site": "PolicyScope::kSite",
++        "profile": "PolicyScope::kProfile",
++        "invalid": "PolicyScope::kInvalid",
++    },
++    "snapshotState": {
++        "missing": "SnapshotState::kMissing",
++        "restoring": "SnapshotState::kRestoring",
++        "published": "SnapshotState::kPublished",
++        "corrupt": "SnapshotState::kCorrupt",
++        "invalid": "SnapshotState::kInvalid",
++    },
++    "protectionRestriction": {
++        "none": "ProtectionRestriction::kNone",
++        "deny": "ProtectionRestriction::kDeny",
++        "invalid": "ProtectionRestriction::kInvalid",
++    },
++    "managedRestriction": {
++        "none": "ManagedRestriction::kNone",
++        "force_proxy": "ManagedRestriction::kForceProxy",
++        "force_direct": "ManagedRestriction::kForceDirect",
++        "custom_proxy_forbidden": "ManagedRestriction::kCustomProxyForbidden",
++        "invalid": "ManagedRestriction::kInvalid",
++    },
++    "runtimeState": {
++        "stopped": "ProxyRuntimeState::kStopped",
++        "preparing": "ProxyRuntimeState::kPreparing",
++        "ready": "ProxyRuntimeState::kReady",
++        "recovering": "ProxyRuntimeState::kRecovering",
++        "offline": "ProxyRuntimeState::kOffline",
++        "quota_exhausted": "ProxyRuntimeState::kQuotaExhausted",
++        "signed_out": "ProxyRuntimeState::kSignedOut",
++        "unavailable": "ProxyRuntimeState::kUnavailable",
++        "invalid": "ProxyRuntimeState::kInvalid",
++    },
++    "channel": {
++        "dev": "ChannelNamespace::kDev",
++        "alpha": "ChannelNamespace::kAlpha",
++        "beta": "ChannelNamespace::kBeta",
++        "release": "ChannelNamespace::kRelease",
++        "invalid": "ChannelNamespace::kInvalid",
++    },
++    "action": {
++        "preserve_native": "RouteAction::kPreserveNative",
++        "use_registered_proxy": "RouteAction::kUseRegisteredProxy",
++        "wait": "RouteAction::kWait",
++        "deny": "RouteAction::kDeny",
++        "fail": "RouteAction::kFail",
++    },
++    "reason": {
++        "none": "RouteReason::kNone",
++        "missing_snapshot": "RouteReason::kMissingSnapshot",
++        "snapshot_not_ready": "RouteReason::kSnapshotNotReady",
++        "stale_generation": "RouteReason::kStaleGeneration",
++        "ownership_mismatch": "RouteReason::kOwnershipMismatch",
++        "site_ownership_unavailable": "RouteReason::kSiteOwnershipUnavailable",
++        "invalid_policy": "RouteReason::kInvalidPolicy",
++        "policy_conflict": "RouteReason::kPolicyConflict",
++        "managed_restriction": "RouteReason::kManagedRestriction",
++        "protection_restriction": "RouteReason::kProtectionRestriction",
++        "proxy_unavailable": "RouteReason::kProxyUnavailable",
++        "quota_exhausted": "RouteReason::kQuotaExhausted",
++        "signed_out": "RouteReason::kSignedOut",
++    },
++}
++
++INPUT_KEYS = {
++    "policyState", "effectiveMode", "policyScope", "effectiveProxyGroupId",
++    "requireProxyIntent", "siteOwnershipReliable", "requestOwner",
++    "snapshotState", "snapshotOwner", "requestGenerations",
++    "snapshotGenerations", "protectionRestriction", "managedRestriction",
++    "runtimeState", "registeredEntry",
++}
++OWNER_KEYS = {"channel", "profileToken", "storagePartitionToken"}
++GENERATION_KEYS = {
++    "policyGeneration", "identityGeneration", "selectionGeneration",
++    "networkEpoch", "baseProxyConfigGeneration",
++}
++ENTRY_KEYS = {"registrationId", "proxyGroupId", "owner", "generations"}
++
++
++def require_dict(value, label):
++    if not isinstance(value, dict):
++        raise ValueError(f"{label} must be an object")
++    return value
++
++
++def require_keys(value, allowed, label):
++    unknown = set(value) - allowed
++    if unknown:
++        raise ValueError(f"{label} has unknown keys: {sorted(unknown)}")
++
++
++def merge_object(base, override, allowed, label):
++    require_dict(base, f"{label} base")
++    require_dict(override, label)
++    require_keys(override, allowed, label)
++    return {**base, **override}
++
++
++def merge_input(defaults, override):
++    require_keys(defaults, INPUT_KEYS, "defaults")
++    require_keys(override, INPUT_KEYS, "input")
++    merged = {**defaults, **override}
++    for key in ("requestOwner", "snapshotOwner"):
++        merged[key] = merge_object(
++            defaults[key], override.get(key, {}), OWNER_KEYS, key)
++    for key in ("requestGenerations", "snapshotGenerations"):
++        merged[key] = merge_object(
++            defaults[key], override.get(key, {}), GENERATION_KEYS, key)
++    if override.get("registeredEntry", object()) is None:
++        merged["registeredEntry"] = None
++    else:
++        entry_override = override.get("registeredEntry", {})
++        entry = merge_object(
++            defaults["registeredEntry"], entry_override, ENTRY_KEYS,
++            "registeredEntry")
++        entry["owner"] = merge_object(
++            defaults["registeredEntry"]["owner"],
++            entry_override.get("owner", {}), OWNER_KEYS,
++            "registeredEntry.owner")
++        entry["generations"] = merge_object(
++            defaults["registeredEntry"]["generations"],
++            entry_override.get("generations", {}), GENERATION_KEYS,
++            "registeredEntry.generations")
++        merged["registeredEntry"] = entry
++    return merged
++
++
++def enum(kind, value, label):
++    try:
++        return ENUMS[kind][value]
++    except (KeyError, TypeError):
++        raise ValueError(f"{label} has unsupported value {value!r}") from None
++
++
++def string(value, label):
++    if not isinstance(value, str):
++        raise ValueError(f"{label} must be a string")
++    return json.dumps(value, ensure_ascii=True)
++
++
++def boolean(value, label):
++    if not isinstance(value, bool):
++        raise ValueError(f"{label} must be a boolean")
++    return "true" if value else "false"
++
++
++def uint(value, label):
++    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
++        raise ValueError(f"{label} must be a non-negative integer")
++    return f"{value}u"
++
++
++def owner(value, label):
++    require_dict(value, label)
++    require_keys(value, OWNER_KEYS, label)
++    return "OwnershipKey{{{}, {}, {}}}".format(
++        enum("channel", value["channel"], f"{label}.channel"),
++        string(value["profileToken"], f"{label}.profileToken"),
++        string(value["storagePartitionToken"],
++               f"{label}.storagePartitionToken"),
++    )
++
++
++def generations(value, label):
++    require_dict(value, label)
++    require_keys(value, GENERATION_KEYS, label)
++    return "GenerationTuple{{{}, {}, {}, {}, {}}}".format(
++        uint(value["policyGeneration"], f"{label}.policyGeneration"),
++        uint(value["identityGeneration"], f"{label}.identityGeneration"),
++        uint(value["selectionGeneration"], f"{label}.selectionGeneration"),
++        uint(value["networkEpoch"], f"{label}.networkEpoch"),
++        uint(value["baseProxyConfigGeneration"],
++             f"{label}.baseProxyConfigGeneration"),
++    )
++
++
++def entry(value, label):
++    if value is None:
++        return "std::nullopt"
++    require_dict(value, label)
++    require_keys(value, ENTRY_KEYS, label)
++    return "RegisteredProxyEntry{{{}, {}, {}, {}}}".format(
++        string(value["registrationId"], f"{label}.registrationId"),
++        string(value["proxyGroupId"], f"{label}.proxyGroupId"),
++        owner(value["owner"], f"{label}.owner"),
++        generations(value["generations"], f"{label}.generations"),
++    )
++
++
++def emit_vector(vector, defaults, index):
++    require_dict(vector, f"plannerVectors[{index}]")
++    name = vector.get("name")
++    if not isinstance(name, str) or not name:
++        raise ValueError(f"plannerVectors[{index}].name must be non-empty")
++    input_value = merge_input(defaults, require_dict(vector.get("input"),
++                                                       f"{name}.input"))
++    expected = require_dict(vector.get("expected"), f"{name}.expected")
++    require_keys(expected, {"action", "reason", "registrationId"},
++                 f"{name}.expected")
++    registration = expected["registrationId"]
++    if registration is None:
++        expected_entry = "std::nullopt"
++    else:
++        expected_entry = (
++            "std::optional<std::string>{" +
++            string(registration, f"{name}.expected.registrationId") + "}")
++    return f'''vectors.push_back(GoldenRouteVector{{
++    {string(name, f"{name}.name")},
++    RouteInput{{
++        {enum("policyState", input_value["policyState"], f"{name}.policyState")},
++        {enum("effectiveMode", input_value["effectiveMode"], f"{name}.effectiveMode")},
++        {enum("policyScope", input_value["policyScope"], f"{name}.policyScope")},
++        {string(input_value["effectiveProxyGroupId"], f"{name}.effectiveProxyGroupId")},
++        {boolean(input_value["requireProxyIntent"], f"{name}.requireProxyIntent")},
++        {boolean(input_value["siteOwnershipReliable"], f"{name}.siteOwnershipReliable")},
++        {owner(input_value["requestOwner"], f"{name}.requestOwner")},
++        {enum("snapshotState", input_value["snapshotState"], f"{name}.snapshotState")},
++        {owner(input_value["snapshotOwner"], f"{name}.snapshotOwner")},
++        {generations(input_value["requestGenerations"], f"{name}.requestGenerations")},
++        {generations(input_value["snapshotGenerations"], f"{name}.snapshotGenerations")},
++        {enum("protectionRestriction", input_value["protectionRestriction"], f"{name}.protectionRestriction")},
++        {enum("managedRestriction", input_value["managedRestriction"], f"{name}.managedRestriction")},
++        {enum("runtimeState", input_value["runtimeState"], f"{name}.runtimeState")},
++        {entry(input_value["registeredEntry"], f"{name}.registeredEntry")},
++    }},
++    {enum("action", expected["action"], f"{name}.expected.action")},
++    {enum("reason", expected["reason"], f"{name}.expected.reason")},
++    {expected_entry},
++}});'''
++
++
++def main():
++    if len(sys.argv) != 3:
++        raise SystemExit(
++            "usage: generate_route_planner_vectors.py INPUT.json OUTPUT.inc")
++    input_path = pathlib.Path(sys.argv[1])
++    output_path = pathlib.Path(sys.argv[2])
++    parsed = require_dict(json.loads(input_path.read_text()), "vector file")
++    if parsed.get("schemaVersion") != 1:
++        raise ValueError("schemaVersion must be 1")
++    defaults = require_dict(parsed.get("defaults"), "defaults")
++    vectors = parsed.get("plannerVectors")
++    if not isinstance(vectors, list) or not vectors:
++        raise ValueError("plannerVectors must be a non-empty array")
++    names = [vector.get("name") for vector in vectors
++             if isinstance(vector, dict)]
++    if len(names) != len(vectors) or len(set(names)) != len(names):
++        raise ValueError("planner vector names must be present and unique")
++    content = ["// Generated from the shared route planner vectors."]
++    content.extend(emit_vector(vector, defaults, index)
++                   for index, vector in enumerate(vectors))
++    output_path.parent.mkdir(parents=True, exist_ok=True)
++    output_path.write_text("\n".join(content) + "\n")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/components/aegis_access/site_proxy_rule_group.cc b/components/aegis_access/site_proxy_rule_group.cc
+new file mode 100644
+index 0000000..2b1a502
+--- /dev/null
++++ b/components/aegis_access/site_proxy_rule_group.cc
+@@ -0,0 +1,162 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/site_proxy_rule_group.h"
++
++#include <set>
++
++namespace aegis_access {
++namespace {
++
++GroupValidation Unknown(GroupValidationError error) {
++  return GroupValidation{GroupPresence::kPresent, GroupSelection::kUnknown,
++                         error};
++}
++
++bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsComplete(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
++         !owner.storage_partition_token.empty();
++}
++
++bool HasCompleteSchemeSet(const std::vector<RequestScheme>& schemes) {
++  if (schemes.size() != 4) {
++    return false;
++  }
++  const std::set<RequestScheme> actual(schemes.begin(), schemes.end());
++  const std::set<RequestScheme> expected = {
++      RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
++      RequestScheme::kWss};
++  return actual == expected;
++}
++
++}  // namespace
++
++GroupValidation ValidateSiteProxyRuleGroup(
++    const OwnershipKey& expected_owner,
++    const SiteProxyRuleGroup* group,
++    const std::vector<SiteProxyRuleMember>& members) {
++  if (group == nullptr) {
++    return GroupValidation{GroupPresence::kAbsent, GroupSelection::kUnknown,
++                           GroupValidationError::kMissingGroup};
++  }
++  if (group->site_toggle_id.empty() || group->canonical_host.empty() ||
++      !IsComplete(group->owner) || group->http_top_level_site.empty() ||
++      group->https_top_level_site.empty() ||
++      group->http_top_level_site == group->https_top_level_site ||
++      group->revision == 0 || group->last_operation_sequence == 0) {
++    return Unknown(GroupValidationError::kInvalidGroup);
++  }
++  if (!IsComplete(expected_owner) || group->owner != expected_owner) {
++    return Unknown(GroupValidationError::kOwnershipMismatch);
++  }
++  if (members.size() != 2) {
++    return Unknown(GroupValidationError::kMemberCountMismatch);
++  }
++  if (group->member_rule_ids.size() != 2 ||
++      group->member_rule_ids[0].empty() ||
++      group->member_rule_ids[1].empty() ||
++      group->member_rule_ids[0] == group->member_rule_ids[1]) {
++    return Unknown(GroupValidationError::kMemberIdsMismatch);
++  }
++  if (members[0].rule_id.empty() || members[1].rule_id.empty() ||
++      members[0].rule_id == members[1].rule_id) {
++    return Unknown(GroupValidationError::kDuplicateMember);
++  }
++
++  const std::set<std::string> expected_ids(group->member_rule_ids.begin(),
++                                            group->member_rule_ids.end());
++  const std::set<std::string> actual_ids = {members[0].rule_id,
++                                            members[1].rule_id};
++  if (actual_ids != expected_ids) {
++    return Unknown(GroupValidationError::kMemberIdsMismatch);
++  }
++
++  for (const SiteProxyRuleMember& member : members) {
++    if (!IsComplete(member.owner) || member.owner != group->owner ||
++        member.site_toggle_id != group->site_toggle_id) {
++      return Unknown(GroupValidationError::kOwnershipMismatch);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.exact_host != group->canonical_host) {
++      return Unknown(GroupValidationError::kHostMismatch);
++    }
++  }
++
++  const std::set<std::string> expected_sites = {group->http_top_level_site,
++                                                group->https_top_level_site};
++  const std::set<std::string> actual_sites = {members[0].top_level_site,
++                                              members[1].top_level_site};
++  if (actual_sites != expected_sites || actual_sites.size() != 2) {
++    return Unknown(GroupValidationError::kTopLevelSiteMismatch);
++  }
++
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.group_revision != group->revision) {
++      return Unknown(GroupValidationError::kRevisionMismatch);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.last_operation_sequence != group->last_operation_sequence) {
++      return Unknown(GroupValidationError::kOperationSequenceMismatch);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (!HasCompleteSchemeSet(member.schemes)) {
++      return Unknown(GroupValidationError::kSchemesMismatch);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.ports != PortScope::kAllBrowserPermitted) {
++      return Unknown(GroupValidationError::kPortsMismatch);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.include_subdomains) {
++      return Unknown(GroupValidationError::kSubdomainsNotAllowed);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.protection_override != ProtectionOverride::kNone) {
++      return Unknown(GroupValidationError::kProtectionOverrideNotAllowed);
++    }
++  }
++  for (const SiteProxyRuleMember& member : members) {
++    if (member.mode != AccessMode::kDirect &&
++        member.mode != AccessMode::kProxy) {
++      return Unknown(GroupValidationError::kUnsupportedMode);
++    }
++  }
++
++  if (members[0].mode != members[1].mode) {
++    return Unknown(GroupValidationError::kModeMismatch);
++  }
++  if (members[0].mode == AccessMode::kDirect) {
++    if (!members[0].proxy_group_id.empty() ||
++        !members[1].proxy_group_id.empty()) {
++      return Unknown(GroupValidationError::kProxyGroupMismatch);
++    }
++    return GroupValidation{GroupPresence::kPresent, GroupSelection::kDisabled,
++                           GroupValidationError::kNone};
++  }
++  if (members[0].proxy_group_id.empty() ||
++      members[0].proxy_group_id != members[1].proxy_group_id) {
++    return Unknown(GroupValidationError::kProxyGroupMismatch);
++  }
++  return GroupValidation{GroupPresence::kPresent, GroupSelection::kEnabled,
++                         GroupValidationError::kNone};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/site_proxy_rule_group.h b/components/aegis_access/site_proxy_rule_group.h
+new file mode 100644
+index 0000000..4be4017
+--- /dev/null
++++ b/components/aegis_access/site_proxy_rule_group.h
+@@ -0,0 +1,123 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_SITE_PROXY_RULE_GROUP_H_
++#define COMPONENTS_AEGIS_ACCESS_SITE_PROXY_RULE_GROUP_H_
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "components/aegis_access/access_route_types.h"
++
++namespace aegis_access {
++
++enum class RequestScheme {
++  kHttp,
++  kHttps,
++  kWs,
++  kWss,
++  kInvalid,
++};
++
++enum class PortScope {
++  kAllBrowserPermitted,
++  kExplicitSubset,
++  kInvalid,
++};
++
++enum class ProtectionOverride {
++  kNone,
++  kTracker,
++  kEasyList,
++  kCname,
++  kInvalid,
++};
++
++struct SiteProxyRuleGroup {
++  std::string site_toggle_id;
++  std::string canonical_host;
++  OwnershipKey owner;
++  std::string http_top_level_site;
++  std::string https_top_level_site;
++  std::vector<std::string> member_rule_ids;
++  uint64_t revision = 0;
++  uint64_t last_operation_sequence = 0;
++
++  friend bool operator==(const SiteProxyRuleGroup&,
++                         const SiteProxyRuleGroup&) = default;
++};
++
++struct SiteProxyRuleMember {
++  std::string rule_id;
++  OwnershipKey owner;
++  std::string site_toggle_id;
++  uint64_t group_revision = 0;
++  std::string top_level_site;
++  std::string exact_host;
++  std::vector<RequestScheme> schemes;
++  PortScope ports = PortScope::kInvalid;
++  bool include_subdomains = false;
++  AccessMode mode = AccessMode::kInvalid;
++  std::string proxy_group_id;
++  ProtectionOverride protection_override = ProtectionOverride::kInvalid;
++  uint64_t last_operation_sequence = 0;
++
++  friend bool operator==(const SiteProxyRuleMember&,
++                         const SiteProxyRuleMember&) = default;
++};
++
++enum class GroupSelection {
++  kEnabled,
++  kDisabled,
++  kUnknown,
++};
++
++enum class GroupPresence {
++  kAbsent,
++  kPresent,
++};
++
++enum class GroupValidationError {
++  kNone,
++  kMissingGroup,
++  kInvalidGroup,
++  kMemberCountMismatch,
++  kMemberIdsMismatch,
++  kDuplicateMember,
++  kOwnershipMismatch,
++  kHostMismatch,
++  kTopLevelSiteMismatch,
++  kRevisionMismatch,
++  kOperationSequenceMismatch,
++  kSchemesMismatch,
++  kPortsMismatch,
++  kSubdomainsNotAllowed,
++  kProtectionOverrideNotAllowed,
++  kUnsupportedMode,
++  kModeMismatch,
++  kProxyGroupMismatch,
++};
++
++struct GroupValidation {
++  GroupPresence presence = GroupPresence::kPresent;
++  GroupSelection selection = GroupSelection::kUnknown;
++  GroupValidationError error = GroupValidationError::kInvalidGroup;
++
++  friend bool operator==(const GroupValidation&, const GroupValidation&) =
++      default;
++};
++
++// Validates the atomic HTTP/HTTPS member pair supplied by a trusted adapter.
++// expected_owner comes from the native service/storage context, independently
++// of the stored group. The other inputs must already contain canonical
++// browser-owned identifiers; this function does not parse URLs, derive
++// registrable domains, or perform I/O. An absent group remains absent/unknown;
++// only a later matcher with a published snapshot may resolve inheritance.
++GroupValidation ValidateSiteProxyRuleGroup(
++    const OwnershipKey& expected_owner,
++    const SiteProxyRuleGroup* group,
++    const std::vector<SiteProxyRuleMember>& members);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_SITE_PROXY_RULE_GROUP_H_
+diff --git a/components/aegis_access/testdata/route_planner_vectors.json b/components/aegis_access/testdata/route_planner_vectors.json
+new file mode 100644
+index 0000000..0321e9b
+--- /dev/null
++++ b/components/aegis_access/testdata/route_planner_vectors.json
+@@ -0,0 +1,331 @@
++{
++  "schemaVersion": 1,
++  "defaults": {
++    "policyState": "valid",
++    "effectiveMode": "proxy",
++    "policyScope": "site",
++    "effectiveProxyGroupId": "proxy-group-primary.example",
++    "requireProxyIntent": true,
++    "siteOwnershipReliable": true,
++    "requestOwner": {
++      "channel": "beta",
++      "profileToken": "profile-beta.example",
++      "storagePartitionToken": "partition-main.example"
++    },
++    "snapshotState": "published",
++    "snapshotOwner": {
++      "channel": "beta",
++      "profileToken": "profile-beta.example",
++      "storagePartitionToken": "partition-main.example"
++    },
++    "requestGenerations": {
++      "policyGeneration": 7,
++      "identityGeneration": 11,
++      "selectionGeneration": 13,
++      "networkEpoch": 17,
++      "baseProxyConfigGeneration": 19
++    },
++    "snapshotGenerations": {
++      "policyGeneration": 7,
++      "identityGeneration": 11,
++      "selectionGeneration": 13,
++      "networkEpoch": 17,
++      "baseProxyConfigGeneration": 19
++    },
++    "protectionRestriction": "none",
++    "managedRestriction": "none",
++    "runtimeState": "ready",
++    "registeredEntry": {
++      "registrationId": "entry-beta-main.example",
++      "proxyGroupId": "proxy-group-primary.example",
++      "owner": {
++        "channel": "beta",
++        "profileToken": "profile-beta.example",
++        "storagePartitionToken": "partition-main.example"
++      },
++      "generations": {
++        "policyGeneration": 7,
++        "identityGeneration": 11,
++        "selectionGeneration": 13,
++        "networkEpoch": 17,
++        "baseProxyConfigGeneration": 19
++      }
++    }
++  },
++  "plannerVectors": [
++    {
++      "name": "default_without_selection_preserves_native",
++      "input": {
++        "policyState": "absent",
++        "effectiveMode": "none",
++        "policyScope": "none",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "registeredEntry": null
++      },
++      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
++    },
++    {
++      "name": "direct_preserves_native_configuration",
++      "input": {
++        "effectiveMode": "direct",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "runtimeState": "signed_out",
++        "registeredEntry": null
++      },
++      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
++    },
++    {
++      "name": "reject_denies_without_snapshot_or_entry",
++      "input": {
++        "effectiveMode": "reject",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "snapshotState": "missing",
++        "runtimeState": "stopped",
++        "registeredEntry": null
++      },
++      "expected": { "action": "deny", "reason": "none", "registrationId": null }
++    },
++    {
++      "name": "protection_denial_precedes_missing_snapshot",
++      "input": {
++        "snapshotState": "missing",
++        "protectionRestriction": "deny",
++        "registeredEntry": null
++      },
++      "expected": { "action": "deny", "reason": "protection_restriction", "registrationId": null }
++    },
++    {
++      "name": "proxy_ready_uses_only_registered_entry",
++      "input": {},
++      "expected": { "action": "use_registered_proxy", "reason": "none", "registrationId": "entry-beta-main.example" }
++    },
++    {
++      "name": "proxy_preparing_waits",
++      "input": { "runtimeState": "preparing", "registeredEntry": null },
++      "expected": { "action": "wait", "reason": "proxy_unavailable", "registrationId": null }
++    },
++    {
++      "name": "proxy_recovering_waits",
++      "input": { "runtimeState": "recovering", "registeredEntry": null },
++      "expected": { "action": "wait", "reason": "proxy_unavailable", "registrationId": null }
++    },
++    {
++      "name": "proxy_offline_fails_closed",
++      "input": { "runtimeState": "offline", "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "proxy_unavailable", "registrationId": null }
++    },
++    {
++      "name": "proxy_quota_exhausted_fails_closed",
++      "input": { "runtimeState": "quota_exhausted", "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "quota_exhausted", "registrationId": null }
++    },
++    {
++      "name": "proxy_signed_out_fails_closed",
++      "input": { "runtimeState": "signed_out", "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "signed_out", "registrationId": null }
++    },
++    {
++      "name": "proxy_missing_entry_fails_closed",
++      "input": { "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "proxy_unavailable", "registrationId": null }
++    },
++    {
++      "name": "managed_force_proxy_stops_aegis_proxy",
++      "input": { "managedRestriction": "force_proxy" },
++      "expected": { "action": "fail", "reason": "managed_restriction", "registrationId": null }
++    },
++    {
++      "name": "managed_force_direct_stops_aegis_proxy",
++      "input": { "managedRestriction": "force_direct" },
++      "expected": { "action": "fail", "reason": "managed_restriction", "registrationId": null }
++    },
++    {
++      "name": "managed_custom_proxy_forbidden_stops_aegis_proxy",
++      "input": { "managedRestriction": "custom_proxy_forbidden" },
++      "expected": { "action": "fail", "reason": "managed_restriction", "registrationId": null }
++    },
++    {
++      "name": "direct_under_managed_restriction_preserves_native",
++      "input": {
++        "effectiveMode": "direct",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "managedRestriction": "force_proxy",
++        "registeredEntry": null
++      },
++      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
++    },
++    {
++      "name": "direct_under_managed_force_direct_preserves_native",
++      "input": {
++        "effectiveMode": "direct",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "managedRestriction": "force_direct",
++        "registeredEntry": null
++      },
++      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
++    },
++    {
++      "name": "direct_under_custom_proxy_forbidden_preserves_native",
++      "input": {
++        "effectiveMode": "direct",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "managedRestriction": "custom_proxy_forbidden",
++        "registeredEntry": null
++      },
++      "expected": { "action": "preserve_native", "reason": "none", "registrationId": null }
++    },
++    {
++      "name": "require_proxy_with_absent_policy_fails",
++      "input": {
++        "policyState": "absent",
++        "effectiveMode": "none",
++        "policyScope": "none",
++        "effectiveProxyGroupId": "",
++        "registeredEntry": null
++      },
++      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
++    },
++    {
++      "name": "require_proxy_with_direct_policy_fails",
++      "input": { "effectiveMode": "direct", "effectiveProxyGroupId": "", "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
++    },
++    {
++      "name": "require_proxy_with_missing_snapshot_waits",
++      "input": { "snapshotState": "missing", "registeredEntry": null },
++      "expected": { "action": "wait", "reason": "missing_snapshot", "registrationId": null }
++    },
++    {
++      "name": "absent_policy_with_missing_snapshot_waits",
++      "input": {
++        "policyState": "absent",
++        "effectiveMode": "none",
++        "policyScope": "none",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "snapshotState": "missing",
++        "registeredEntry": null
++      },
++      "expected": { "action": "wait", "reason": "missing_snapshot", "registrationId": null }
++    },
++    {
++      "name": "restoring_snapshot_waits",
++      "input": { "snapshotState": "restoring", "registeredEntry": null },
++      "expected": { "action": "wait", "reason": "snapshot_not_ready", "registrationId": null }
++    },
++    {
++      "name": "absent_policy_with_restoring_snapshot_waits",
++      "input": {
++        "policyState": "absent",
++        "effectiveMode": "none",
++        "policyScope": "none",
++        "effectiveProxyGroupId": "",
++        "requireProxyIntent": false,
++        "snapshotState": "restoring",
++        "registeredEntry": null
++      },
++      "expected": { "action": "wait", "reason": "snapshot_not_ready", "registrationId": null }
++    },
++    {
++      "name": "corrupt_snapshot_fails",
++      "input": { "snapshotState": "corrupt", "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
++    },
++    {
++      "name": "policy_conflict_fails",
++      "input": { "policyState": "conflict", "registeredEntry": null },
++      "expected": { "action": "fail", "reason": "policy_conflict", "registrationId": null }
++    },
++    {
++      "name": "snapshot_channel_mismatch_fails",
++      "input": { "snapshotOwner": { "channel": "alpha" } },
++      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
++    },
++    {
++      "name": "snapshot_profile_mismatch_fails",
++      "input": { "snapshotOwner": { "profileToken": "profile-other.example" } },
++      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
++    },
++    {
++      "name": "snapshot_partition_mismatch_fails",
++      "input": { "snapshotOwner": { "storagePartitionToken": "partition-other.example" } },
++      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
++    },
++    {
++      "name": "stale_policy_generation_fails",
++      "input": { "snapshotGenerations": { "policyGeneration": 6 } },
++      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
++    },
++    {
++      "name": "stale_identity_generation_fails",
++      "input": { "snapshotGenerations": { "identityGeneration": 10 } },
++      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
++    },
++    {
++      "name": "stale_selection_generation_fails",
++      "input": { "snapshotGenerations": { "selectionGeneration": 12 } },
++      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
++    },
++    {
++      "name": "stale_network_epoch_fails",
++      "input": { "snapshotGenerations": { "networkEpoch": 16 } },
++      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
++    },
++    {
++      "name": "stale_base_proxy_generation_fails",
++      "input": { "snapshotGenerations": { "baseProxyConfigGeneration": 18 } },
++      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
++    },
++    {
++      "name": "entry_owner_mismatch_fails",
++      "input": { "registeredEntry": { "owner": { "profileToken": "profile-other.example" } } },
++      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
++    },
++    {
++      "name": "entry_generation_mismatch_fails",
++      "input": { "registeredEntry": { "generations": { "networkEpoch": 16 } } },
++      "expected": { "action": "fail", "reason": "stale_generation", "registrationId": null }
++    },
++    {
++      "name": "entry_proxy_group_mismatch_fails",
++      "input": { "registeredEntry": { "proxyGroupId": "proxy-group-other.example" } },
++      "expected": { "action": "fail", "reason": "proxy_unavailable", "registrationId": null }
++    },
++    {
++      "name": "unreliable_site_ownership_fails",
++      "input": { "siteOwnershipReliable": false },
++      "expected": { "action": "fail", "reason": "site_ownership_unavailable", "registrationId": null }
++    },
++    {
++      "name": "profile_policy_does_not_borrow_site_ownership",
++      "input": { "policyScope": "profile", "siteOwnershipReliable": false },
++      "expected": { "action": "use_registered_proxy", "reason": "none", "registrationId": "entry-beta-main.example" }
++    },
++    {
++      "name": "unknown_channel_fails",
++      "input": { "requestOwner": { "channel": "invalid" } },
++      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
++    },
++    {
++      "name": "empty_profile_owner_fails",
++      "input": { "requestOwner": { "profileToken": "" } },
++      "expected": { "action": "fail", "reason": "ownership_mismatch", "registrationId": null }
++    },
++    {
++      "name": "unknown_mode_fails",
++      "input": { "effectiveMode": "invalid" },
++      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
++    },
++    {
++      "name": "unknown_runtime_fails",
++      "input": { "runtimeState": "invalid" },
++      "expected": { "action": "fail", "reason": "invalid_policy", "registrationId": null }
++    }
++  ]
++}
+-- 
+2.50.1 (Apple Git-155)
+

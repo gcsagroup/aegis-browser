@@ -12,6 +12,8 @@ This directory contains the public product architecture, roadmap, research bound
 
 ## Start here
 
+- [Access service V1.0 design overview (Simplified Chinese)](plans/access-service-v1.0/overview.zh-CN.md)
+- [Access service P0 implementation and evidence (Simplified Chinese)](plans/access-service-v1.0/p0-implementation.zh-CN.md)
 - [Project overview](../README.md)
 - [Architecture](architecture.md)
 - [Roadmap and release gates](roadmap.md)

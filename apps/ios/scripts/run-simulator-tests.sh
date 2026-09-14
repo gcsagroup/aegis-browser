@@ -28,7 +28,7 @@ usage() {
 
 选项：
   --dry-run              只读预演（默认）
-  --execute              创建缺失设备并依次运行 iPhone/iPad 测试
+  --execute              创建缺失设备，依次运行 iPhone/iPad 测试并导出产品 Swift coverage
   --project PATH         指定 .xcodeproj
   --workspace PATH       指定 .xcworkspace
   --scheme NAME          Scheme，默认 Aegis
@@ -38,7 +38,8 @@ usage() {
   -h, --help             显示帮助
 
 安全边界：脚本从不 erase、delete、shutdown、uninstall 或清理任何 Simulator，也不会删除或
-覆盖已有测试产物。xcodebuild 可按系统正常行为启动目标 Simulator。
+覆盖已有测试产物。每台设备保留 xcresult、原始 xccov JSON 与产品 Swift 文件级汇总；
+xcodebuild 可按系统正常行为启动目标 Simulator。
 EOF
 }
 
@@ -114,12 +115,13 @@ case "$OUTPUT_DIR" in
   *'/../'*|*'/..') die "输出目录不能包含父目录跳转" ;;
 esac
 
-for required_tool in node xcodebuild xcrun; do
+for required_tool in git node shasum xcodebuild xcrun; do
   command -v "$required_tool" >/dev/null 2>&1 || die "缺少工具：$required_tool"
 done
 
 node "${SCRIPT_DIR}/verify-fixtures.mjs"
 node "${IOS_ROOT}/Tests/SharedWebExtension/SafariNavigationIdentityTests.mjs"
+node --test "${SCRIPT_DIR}/test-summarize-xccov.mjs"
 
 if [[ -z "$RUNTIME_ID" ]]; then
   RUNTIME_ID="$({ xcrun simctl list runtimes -j; } | node -e '
@@ -260,7 +262,7 @@ ensure_device() {
 PHONE_DESTINATION="$(ensure_device "$PHONE_NAME" "$PHONE_TYPE")"
 TABLET_DESTINATION="$(ensure_device "$TABLET_NAME" "$TABLET_TYPE")"
 
-COMMON_ARGS=("${CONTAINER_ARGS[@]}" -scheme "$SCHEME" -configuration Debug)
+COMMON_ARGS=("${CONTAINER_ARGS[@]}" -scheme "$SCHEME" -configuration Debug -enableCodeCoverage YES)
 if [[ -n "$TEST_PLAN" ]]; then
   COMMON_ARGS+=(-testPlan "$TEST_PLAN")
 fi
@@ -305,12 +307,52 @@ fi
 [[ ! -e "$OUTPUT_DIR" ]] || die "输出目录已存在，拒绝覆盖：$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
+REPO_ROOT="$(git -C "${IOS_ROOT}" rev-parse --show-toplevel)"
+GIT_SHA="$(git -C "${IOS_ROOT}" rev-parse HEAD)"
+if [[ -n "$(git -C "${IOS_ROOT}" status --short)" ]]; then
+  GIT_TREE_STATE="dirty"
+else
+  GIT_TREE_STATE="clean"
+fi
+XCODE_VERSION="$(xcodebuild -version | tr '\n' ' ')"
+
+write_input_manifest() {
+  local destination="$1"
+  (
+    cd "$REPO_ROOT"
+    git ls-files --cached --others --exclude-standard -- apps/ios \
+      | LC_ALL=C sort \
+      | while IFS= read -r input_path; do
+          [[ -n "$input_path" ]] || continue
+          shasum -a 256 "$input_path"
+        done
+  ) > "$destination"
+}
+
+write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt"
+INPUT_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-before.txt" | awk '{print $1}')"
+xcrun simctl list runtimes -j \
+  | env AEGIS_RUNTIME_ID="$RUNTIME_ID" node -e '
+      const fs = require("node:fs");
+      const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+      const runtime = (payload.runtimes ?? []).find((item) => item.identifier === process.env.AEGIS_RUNTIME_ID);
+      if (!runtime) process.exit(1);
+      process.stdout.write(`${JSON.stringify(runtime, null, 2)}\n`);
+    ' > "${OUTPUT_DIR}/simulator-runtime.json"
+
 {
   printf 'started_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'project_or_workspace=%s\n' "$CONTAINER_LABEL"
   printf 'scheme=%s\n' "$SCHEME"
   printf 'test_plan=%s\n' "${TEST_PLAN:-<scheme-default>}"
   printf 'runtime=%s\n' "$RUNTIME_ID"
+  printf 'git_sha=%s\n' "$GIT_SHA"
+  printf 'git_tree_state=%s\n' "$GIT_TREE_STATE"
+  printf 'input_manifest_sha256=%s\n' "$INPUT_MANIFEST_SHA256"
+  printf 'host_os=%s\n' "$(sw_vers -productName) $(sw_vers -productVersion) $(sw_vers -buildVersion)"
+  printf 'host_arch=%s\n' "$(uname -m)"
+  printf 'developer_dir=%s\n' "$(xcode-select -p)"
+  printf 'node_version=%s\n' "$(node --version)"
   printf 'iphone=%s|%s\n' "$PHONE_NAME" "$PHONE_DESTINATION"
   printf 'ipad=%s|%s\n' "$TABLET_NAME" "$TABLET_DESTINATION"
   xcodebuild -version
@@ -323,7 +365,11 @@ run_test() {
   shift 3
   local status
   local summary_path="${result_path%.*}-summary.json"
+  local coverage_path="${result_path%.*}-coverage.json"
+  local swift_coverage_path="${result_path%.*}-swift-coverage.json"
+  local swift_coverage_text_path="${result_path%.*}-swift-coverage.txt"
   local summary_status=0
+  local coverage_status=0
 
   printf '\n运行 %s Simulator 测试……\n' "$label"
   set +e
@@ -350,26 +396,64 @@ run_test() {
     ' || summary_status=$?
   fi
 
+  if [[ -d "$result_path" ]]; then
+    xcrun xccov view --report --json "$result_path" > "$coverage_path" \
+      || coverage_status=$?
+    if [[ "$coverage_status" -eq 0 ]]; then
+      node "${SCRIPT_DIR}/summarize-xccov.mjs" \
+        --xccov-json "$coverage_path" \
+        --ios-root "$IOS_ROOT" \
+        --output-json "$swift_coverage_path" \
+        --output-text "$swift_coverage_text_path" \
+        --device-label "$label" \
+        --git-sha "$GIT_SHA" \
+        --git-tree-state "$GIT_TREE_STATE" \
+        --input-manifest-sha256 "$INPUT_MANIFEST_SHA256" \
+        --runtime-id "$RUNTIME_ID" \
+        --device-name "$([[ "$label" == "iPhone" ]] && printf '%s' "$PHONE_NAME" || printf '%s' "$TABLET_NAME")" \
+        --device-udid "$([[ "$label" == "iPhone" ]] && printf '%s' "$PHONE_DESTINATION" || printf '%s' "$TABLET_DESTINATION")" \
+        --xcode-version "$XCODE_VERSION" \
+        || coverage_status=$?
+    fi
+  else
+    coverage_status=1
+  fi
+
   if [[ "$status" -ne 0 ]]; then
     return "$status"
   fi
-  return "$summary_status"
+  if [[ "$summary_status" -ne 0 ]]; then
+    return "$summary_status"
+  fi
+  return "$coverage_status"
 }
 
 phone_status=0
 tablet_status=0
+input_status=0
 run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebuild.log" \
   "${PHONE_COMMAND[@]}" || phone_status=$?
 run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
   "${TABLET_COMMAND[@]}" || tablet_status=$?
 
-printf 'iphone_exit=%s\nipad_exit=%s\n' "$phone_status" "$tablet_status" \
+write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-after.txt"
+if ! cmp -s \
+  "${OUTPUT_DIR}/ios-input-sha256-before.txt" \
+  "${OUTPUT_DIR}/ios-input-sha256-after.txt"; then
+  printf '错误：测试执行期间 apps/ios 输入发生变化；前后 SHA-256 清单已保留。\n' >&2
+  input_status=1
+fi
+
+printf 'iphone_exit=%s\nipad_exit=%s\ninput_stability_exit=%s\nfinished_at_utc=%s\n' \
+  "$phone_status" "$tablet_status" "$input_status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   >> "${OUTPUT_DIR}/run-metadata.txt"
 
 printf '\n测试产物：%s\n' "$OUTPUT_DIR"
-if [[ "$phone_status" -ne 0 || "$tablet_status" -ne 0 ]]; then
-  printf 'SIMULATOR_TESTS=FAIL（iPhone=%s, iPad=%s）\n' "$phone_status" "$tablet_status" >&2
+if [[ "$phone_status" -ne 0 || "$tablet_status" -ne 0 || "$input_status" -ne 0 ]]; then
+  printf 'SIMULATOR_TESTS=FAIL（iPhone=%s, iPad=%s, input_stability=%s）\n' \
+    "$phone_status" "$tablet_status" "$input_status" >&2
   exit 1
 fi
 
 printf 'SIMULATOR_TESTS=PASS\n'
+printf 'IOS_COVERAGE=PASS\n'

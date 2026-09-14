@@ -12,6 +12,8 @@
 
 ## 從這裡開始
 
+- [存取服務 V1.0 設計總覽（簡體中文）](plans/access-service-v1.0/overview.zh-CN.md)
+- [存取服務 P0 實作與證據（簡體中文）](plans/access-service-v1.0/p0-implementation.zh-CN.md)
 - [專案概覽](../README.zh-TW.md)
 - [架構](architecture.zh-TW.md)
 - [路線圖與發行門禁](roadmap.zh-TW.md)

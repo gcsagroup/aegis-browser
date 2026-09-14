@@ -10,6 +10,14 @@ symbol_level = 1
 blink_symbol_level = 0
 v8_symbol_level = 0
 
+# Keep the independent access-route test in the generated developer graph.
+# Chromium attaches root_extra_deps to its test-only gn_all target; building
+# the production `chrome` target does not link or run this executable.
+root_extra_deps = [
+  "//chrome/browser/aegis/access:access_rule_store_unittests",
+  "//components/aegis_access:aegis_access_unittests",
+]
+
 # Faster local iteration on Apple Silicon
 target_cpu = "arm64"
 

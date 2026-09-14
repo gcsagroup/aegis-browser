@@ -33,6 +33,64 @@ fixture_src="$CHROMIUM_ROOT/src"
 fixture_out="$fixture_src/out/Test"
 mkdir -p "$fixture_out"
 
+mtime_tools="$fixture_root/mtime-tools"
+mtime_input="$fixture_root/mtime-input"
+mkdir -p "$mtime_tools"
+touch "$mtime_input"
+cat > "$mtime_tools/uname" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${AEGIS_TEST_UNAME:?}"
+EOF
+cat > "$mtime_tools/stat" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${AEGIS_TEST_STAT_INVALID:-0}" == 1 ]]; then
+  printf '%s\n' 'filesystem information, not an epoch'
+  exit 0
+fi
+if [[ -n "${AEGIS_TEST_STAT_EXIT:-}" ]]; then
+  exit "$AEGIS_TEST_STAT_EXIT"
+fi
+case "${AEGIS_TEST_UNAME:?}" in
+  Darwin)
+    [[ "$#" -eq 3 && "$1" == -f && "$2" == %m && "$3" == "$AEGIS_TEST_MTIME_FILE" ]]
+    printf '%s\n' 1700000001
+    ;;
+  Linux)
+    [[ "$#" -eq 3 && "$1" == -c && "$2" == %Y && "$3" == "$AEGIS_TEST_MTIME_FILE" ]]
+    printf '%s\n' 1700000002
+    ;;
+  *) exit 91 ;;
+esac
+EOF
+chmod +x "$mtime_tools/uname" "$mtime_tools/stat"
+mtime_path="$mtime_tools:$PATH"
+mtime_runner="$fixture_root/mtime-runner.sh"
+cat > "$mtime_runner" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$1"
+portable_file_mtime "$2"
+EOF
+darwin_mtime="$(env \
+  PATH="$mtime_path" AEGIS_TEST_UNAME=Darwin AEGIS_TEST_MTIME_FILE="$mtime_input" \
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input")"
+[[ "$darwin_mtime" == 1700000001 ]] || fail "BSD stat mtime 参数必须明确"
+linux_mtime="$(env \
+  PATH="$mtime_path" AEGIS_TEST_UNAME=Linux AEGIS_TEST_MTIME_FILE="$mtime_input" \
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input")"
+[[ "$linux_mtime" == 1700000002 ]] || fail "GNU stat mtime 参数必须明确"
+if env PATH="$mtime_path" AEGIS_TEST_UNAME=Darwin \
+  AEGIS_TEST_MTIME_FILE="$mtime_input" AEGIS_TEST_STAT_INVALID=1 \
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
+  fail "非整数 stat 输出必须拒绝"
+fi
+if env PATH="$mtime_path" AEGIS_TEST_UNAME=FreeBSD AEGIS_TEST_MTIME_FILE="$mtime_input" \
+  bash "$mtime_runner" "$SCRIPT_DIR/common.sh" "$mtime_input" >/dev/null 2>&1; then
+  fail "未知 stat 平台必须拒绝"
+fi
+
 profile_fixture="$fixture_root/profile"
 mkdir -p "$profile_fixture"
 ln -s "fixture-$$" "$profile_fixture/SingletonLock"
@@ -51,7 +109,8 @@ git -C "$fixture_src/v8" -c user.name=Aegis -c user.email=aegis@localhost \
   commit -q --allow-empty -m base
 cp "$ROOT_DIR/args/aegis.gn" "$fixture_out/args.gn"
 
-case "$(uname -s)" in
+fixture_host="$(uname -s)"
+case "$fixture_host" in
   Darwin)
     fixture_binary="$fixture_out/GCSA Aegis.app/Contents/MacOS/GCSA Aegis"
     ;;
@@ -72,6 +131,30 @@ actual="$(verify_runnable_browser_output \
   "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn")"
 [[ "$actual" == "$fixture_binary" ]] || fail "有效 component fixture 应通过"
 
+if PATH="$mtime_path" AEGIS_TEST_UNAME="$fixture_host" \
+  AEGIS_TEST_MTIME_FILE="$fixture_binary" AEGIS_TEST_STAT_INVALID=1 \
+  verify_runnable_browser_output \
+    "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn" \
+    >/dev/null 2>&1; then
+  fail "启动验证必须拒绝非整数 stat 输出"
+fi
+if PATH="$mtime_path" AEGIS_TEST_UNAME="$fixture_host" \
+  AEGIS_TEST_MTIME_FILE="$fixture_binary" AEGIS_TEST_STAT_EXIT=73 \
+  verify_runnable_browser_output \
+    "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn" \
+    >/dev/null 2>&1; then
+  fail "启动验证必须拒绝 stat 失败"
+fi
+
+mv "$fixture_src/.git" "$fixture_src/.git.saved"
+if verify_runnable_browser_output \
+  "fixture component" "$fixture_out" true "$ROOT_DIR/args/aegis.gn" \
+  >/dev/null 2>&1; then
+  mv "$fixture_src/.git.saved" "$fixture_src/.git"
+  fail "启动验证必须拒绝缺失的 Chromium HEAD 时间"
+fi
+mv "$fixture_src/.git.saved" "$fixture_src/.git"
+
 # 实际调用顶层入口，防止 pnpm 仅列出脚本却以 0 退出。
 launch_profile="$fixture_root/launch-profile"
 launch_output="$(CHROMIUM_ROOT="$CHROMIUM_ROOT" OUT_DIR="$fixture_out" \
@@ -81,6 +164,16 @@ launch_output="$(CHROMIUM_ROOT="$CHROMIUM_ROOT" OUT_DIR="$fixture_out" \
   fail "顶层 browser:run 必须实际进入验证启动脚本"
 [[ "$launch_output" == *"独立 Profile：$launch_profile"* ]] || \
   fail "顶层 browser:run 必须保留独立资料目录"
+
+# pnpm 的 Node/生命周期 shell 边界不会被 kcov 的 Bash 后代追踪可靠归属。
+# 直接执行同一仓库源码，既保留上面的顶层接线检查，也让覆盖率绑定真实 run.sh。
+direct_launch_output="$(CHROMIUM_ROOT="$CHROMIUM_ROOT" OUT_DIR="$fixture_out" \
+  AEGIS_USER_DATA_DIR="$launch_profile" AEGIS_RUN_DRY_RUN=1 \
+  bash "$SCRIPT_DIR/run.sh")"
+[[ "$direct_launch_output" == *"已验证开发版：$fixture_binary"* ]] || \
+  fail "直接 run.sh 必须实际完成构建产物验证"
+[[ "$direct_launch_output" == *"独立 Profile：$launch_profile"* ]] || \
+  fail "直接 run.sh 必须保留独立资料目录"
 
 manifest="$fixture_out/.aegis/build-manifest.json"
 mkdir -p "$(dirname "$manifest")"

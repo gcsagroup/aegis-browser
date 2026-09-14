@@ -31,3 +31,6 @@ packages/core/dist-worker
 /tombstone_*
 # 本机界面检查误命名的输出，只保留在本地。
 /--include-bounds
+
+# Access-service local credentials and test bindings are never source artifacts.
+/.local/access-service/

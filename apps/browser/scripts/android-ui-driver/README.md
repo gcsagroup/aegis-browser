@@ -30,6 +30,43 @@ node apps/browser/scripts/android-agent-ui.mjs self-test \
 
 `self-test` 会安装设备上尚不存在的测试工具，完成后关闭自己的夹具 Activity，保留工具 APK 及自测证据。浏览器新包必须另外完成安装和独立 Profile 启动，本工具不会自动完成这两项。
 
+## Java coverage 验收
+
+coverage 只在 GitHub 托管的专用 API 36 emulator 中运行 `self-test`，不用于浏览器操作或用户设备。先从 Maven Central 下载固定的 JaCoCo 0.8.14 CLI 与 runtime；脚本同时校验 Central 发布的 SHA-1 和仓库冻结的 SHA-256。JaCoCo 采用 [Eclipse Public License 2.0](https://www.jacoco.org/jacoco/trunk/doc/license.html)，工件只进入临时构建目录和测试证据，不提交到仓库，也不进入产品或发行包。
+
+```sh
+node apps/browser/scripts/android-agent-ui.mjs fetch-jacoco \
+  --output /绝对路径/新的-jacoco-目录
+
+node apps/browser/scripts/android-agent-ui.mjs build \
+  --sdk "$ANDROID_SDK_ROOT" \
+  --jdk "$JAVA_HOME" \
+  --output /绝对路径/新的-normal-构建目录
+
+node apps/browser/scripts/android-agent-ui.mjs build \
+  --sdk "$ANDROID_SDK_ROOT" \
+  --jdk "$JAVA_HOME" \
+  --output /绝对路径/新的-coverage-构建目录 \
+  --coverage \
+  --jacoco-dir /绝对路径/新的-jacoco-目录
+
+node apps/browser/scripts/android-agent-ui.mjs verify-build-modes \
+  --normal-build /绝对路径/新的-normal-构建目录 \
+  --coverage-build /绝对路径/新的-coverage-构建目录 \
+  --output /绝对路径/新的构建模式验证.json
+
+node apps/browser/scripts/android-agent-ui.mjs self-test \
+  --adb "$ANDROID_SDK_ROOT/platform-tools/adb" \
+  --serial emulator-5554 \
+  --driver-build /绝对路径/新的-coverage-构建目录 \
+  --coverage-output /绝对路径/新的-coverage-报告目录 \
+  --output /绝对路径/新的自测结果.json
+```
+
+`javac` 产生的未插桩 class 保存在 `classes-original`；coverage 构建只把插桩副本与 runtime 交给 `d8`，并只在 coverage APK 的 classpath 根目录加入 `jacoco-agent.properties`。该配置固定 `output=none` 和 `dumponexit=false`，禁止 JaCoCo 在 Android 根目录写默认 `jacoco.exec`；exec 只由受控 instrumentation 结果从内存导出。normal APK 必须没有此配置以及 JaCoCo probe/runtime marker，coverage APK 必须包含；两种构建还要有完全相同的源码哈希、原始 class 清单和 checkout HEAD。emulator 返回的真实 exec 使用未插桩 class 生成 `jacoco.xml`，`summary.json` 记录 `Driver.java` 的 covered/missed/total 行计数、由这些计数计算的百分比、exec/XML 哈希和六项具名 fixture。源码字符串扫描或手写 JSON 不能作为 coverage。
+
+六项 fixture 固定为 `unicode-input`、`stale-snapshot-rejected`、`wrong-package-rejected`、`password-edit-rejected`、`click-updates-result` 和 `password-value-hidden`。报告始终保留 `browserTested=false`、`runtimeTested=false` 和 `releaseEligible=false`；Java helper coverage 不能证明浏览器 runtime、Chromium 集成或发行状态。
+
 ```sh
 node apps/browser/scripts/android-agent-ui.mjs snapshot \
   --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \

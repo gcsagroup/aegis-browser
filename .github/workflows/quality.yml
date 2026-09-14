@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Exact ancestor SHA used as the trusted comparison base
+        required: true
+        type: string
+      target_sha:
+        description: Exact SHA selected on main for this diagnostic run
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'main' || format('dispatch-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: quality
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 9.15.0
+          run_install: false
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.11.9
+      - name: Install fixed ripgrep
+        timeout-minutes: 5
+        run: bash scripts/ci/install-ripgrep.sh
+      - name: Run full quality gate
+        env:
+          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
+          CI_EVENT: ${{ github.event_name }}
+          CI_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || inputs.target_sha }}
+          CI_PR_NUMBER: ${{ github.event.pull_request.number }}
+          CI_REF: ${{ github.ref }}
+          CI_TESTED_SHA: ${{ github.sha }}
+          REPORT_DIR: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/ci/run-quality.mjs --scope full --base "$CI_BASE_SHA" --report-dir "$REPORT_DIR"
+      - name: Upload quality evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: quality-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  shell-coverage:
+    name: shell-coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 9.15.0
+          run_install: false
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.11.9
+      - name: Install fixed ripgrep
+        run: bash scripts/ci/install-ripgrep.sh
+      - name: Install ephemeral kcov build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            binutils-dev cmake g++ libcurl4-openssl-dev libdw-dev libelf-dev \
+            libiberty-dev libssl-dev libstdc++-12-dev zlib1g-dev
+      - name: Run eight Bash behavior tests with production coverage
+        env:
+          REPORT_DIR: ${{ github.workspace }}/.artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}/coverage/bash
+        run: bash scripts/ci/run-shell-coverage.sh --tested-sha "$GITHUB_SHA" --report-dir "$REPORT_DIR"
+      - name: Upload Bash coverage evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: bash-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}/coverage/bash
+          if-no-files-found: error
+          retention-days: 14
+
+  powershell-coverage:
+    name: powershell-coverage
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Download and verify Pester 5.7.1 without global installation
+        shell: powershell
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'Pester.5.7.1.nupkg'
+          $zip = Join-Path $env:RUNNER_TEMP 'Pester.5.7.1.zip'
+          $module = Join-Path $env:RUNNER_TEMP 'Pester.5.7.1'
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri 'https://www.powershellgallery.com/api/v2/package/Pester/5.7.1' `
+            -OutFile $package
+          $actual = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = '4a27904c6814a5fbe4758f8e49861f6a1994aee77b71165a5c43c0371ba6c580'
+          if ($actual -ne $expected) { throw "Pester package SHA256 mismatch: $actual" }
+          Copy-Item -LiteralPath $package -Destination $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath $module
+      - name: Run PowerShell safety-boundary coverage
+        shell: powershell
+        env:
+          REPORT_DIR: ${{ github.workspace }}\.artifacts\ci\github-${{ github.run_id }}-${{ github.run_attempt }}\coverage\powershell
+        run: |
+          $module = Join-Path $env:RUNNER_TEMP 'Pester.5.7.1\Pester.psd1'
+          $package = Join-Path $env:RUNNER_TEMP 'Pester.5.7.1.nupkg'
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File scripts/ci/run-powershell-coverage.ps1 `
+            -TestedSha $env:GITHUB_SHA -ReportDir $env:REPORT_DIR `
+            -PesterModulePath $module -PesterPackagePath $package
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload PowerShell coverage evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: powershell-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}/coverage/powershell
+          if-no-files-found: error
+          retention-days: 14
+
+  quality-gate:
+    name: quality-gate
+    if: ${{ always() }}
+    needs:
+      - quality
+      - shell-coverage
+      - powershell-coverage
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Check out gate implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require every mandatory job to succeed
+        env:
+          REQUIRED_RESULTS: '{"quality":"${{ needs.quality.result }}","shell-coverage":"${{ needs.shell-coverage.result }}","powershell-coverage":"${{ needs.powershell-coverage.result }}"}'
+        run: node scripts/ci/check-required-results.mjs

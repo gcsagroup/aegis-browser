@@ -99,7 +99,7 @@ update_src_to_pin() {
   echo "Updating existing checkout to $COMMIT..."
   git remote set-url origin "$CHROMIUM_SRC_URL" || true
   if [[ "$(git rev-parse HEAD 2>/dev/null || true)" == "$COMMIT" ]]; then
-    echo "src 已在 $COMMIT，跳过 checkout --force（避免冲掉已 rsync 的 v8 等嵌套仓）"
+    echo "src 已在 ${COMMIT}，跳过 checkout --force（避免冲掉已 rsync 的 v8 等嵌套仓）"
   elif git cat-file -e "${COMMIT}^{commit}" 2>/dev/null; then
     git checkout --force "$COMMIT"
   else
