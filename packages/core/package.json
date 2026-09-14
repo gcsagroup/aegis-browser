@@ -2,6 +2,7 @@
   "name": "@gcsa-aegis/core",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -37,14 +38,15 @@
     "predict:script-risk-blind": "node ./scripts/predict-script-risk-blind.mjs",
     "score:script-risk-blind": "node ./scripts/score-script-risk-blind.mjs",
     "bundle-policy-worker": "tsup src/policy-worker-entry.ts --format iife --platform browser --target es2020 --minify --outDir dist-worker --clean",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "lint": "eslint \"src/**/*.ts\" --max-warnings 0"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "3.2.7",
     "@types/node": "^26.2.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
-    "vitest": "^3.0.8"
+    "vitest": "3.2.7"
   }
 }

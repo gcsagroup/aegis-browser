@@ -49,18 +49,37 @@ try {
 
   const jobs = workflow.jobs ?? {};
   const quality = jobs.quality;
+  const iosCoverage = jobs['ios-coverage'];
+  const shellCoverage = jobs['shell-coverage'];
+  const powershellCoverage = jobs['powershell-coverage'];
   const gate = jobs['quality-gate'];
-  if (!quality || !gate || Object.keys(jobs).length !== 2) fail('Workflow must contain only quality and quality-gate jobs');
+  const expectedJobs = ['ios-coverage', 'powershell-coverage', 'quality', 'quality-gate', 'shell-coverage'];
+  if (JSON.stringify(Object.keys(jobs).sort()) !== JSON.stringify(expectedJobs)) {
+    fail(`Workflow job set must be exactly: ${expectedJobs.join(', ')}`);
+  }
   if (quality.name !== 'quality') fail('Quality job check name must be quality');
   if (quality['runs-on'] !== 'macos-15') fail('Quality job must use macos-15');
   if (quality['timeout-minutes'] !== 40) fail('Quality job timeout must be 40 minutes');
   if ('if' in quality) fail('Required quality job may not be conditional');
+  for (const [id, job, runner, timeout] of [
+    ['ios-coverage', iosCoverage, 'macos-26', 60],
+    ['shell-coverage', shellCoverage, 'ubuntu-24.04', 30],
+    ['powershell-coverage', powershellCoverage, 'windows-2025', 20],
+  ]) {
+    if (job?.name !== id) fail(`${id} job check name must be ${id}`);
+    if (job?.['runs-on'] !== runner) fail(`${id} job must use ${runner}`);
+    if (job?.['timeout-minutes'] !== timeout) fail(`${id} timeout must be ${timeout} minutes`);
+    if ('if' in job) fail(`Required ${id} job may not be conditional`);
+  }
   if (gate.name !== 'quality-gate') fail('Required summary check name must be quality-gate');
   if (!String(gate.if).includes('always()')) fail('quality-gate must run with always()');
-  if (!array(gate.needs).includes('quality')) fail('quality-gate must require quality');
+  const expectedNeeds = ['ios-coverage', 'powershell-coverage', 'quality', 'shell-coverage'];
+  if (JSON.stringify(array(gate.needs).sort()) !== JSON.stringify(expectedNeeds)) {
+    fail(`quality-gate needs must be exactly: ${expectedNeeds.join(', ')}`);
+  }
   if (gate['timeout-minutes'] !== 5) fail('quality-gate timeout must be 5 minutes');
 
-  const allSteps = [...array(quality.steps), ...array(gate.steps)];
+  const allSteps = Object.values(jobs).flatMap((job) => array(job.steps));
   for (const step of allSteps) {
     if (step.uses) {
       if (String(step.uses).startsWith('./')) continue;
@@ -72,10 +91,14 @@ try {
     }
   }
   const checkoutSteps = allSteps.filter((step) => String(step.uses ?? '').startsWith('actions/checkout@'));
-  if (checkoutSteps.length !== 2) fail('Both jobs must use the approved checkout action exactly once');
+  if (checkoutSteps.length !== 5) fail('Every job must use the approved checkout action exactly once');
   for (const step of checkoutSteps) {
     if (step.with?.['persist-credentials'] !== false) fail('Checkout must disable persisted credentials');
     if (step.with?.['fetch-depth'] !== 0) fail('Checkout must fetch history for identity validation');
+  }
+  for (const [id, job] of Object.entries(jobs)) {
+    const count = array(job.steps).filter((step) => String(step.uses ?? '').startsWith('actions/checkout@')).length;
+    if (count !== 1) fail(`${id} must use the approved checkout action exactly once`);
   }
   const qualityRun = array(quality.steps).find((step) => String(step.run ?? '').includes('run-quality.mjs'));
   if (!qualityRun) fail('Quality job must call the shared run-quality entrypoint');
@@ -86,11 +109,39 @@ try {
   if (!ripgrepInstall || ripgrepInstall['timeout-minutes'] !== 5) {
     fail('Quality job must install the fixed ripgrep tool before preflight');
   }
+  const iosRun = array(iosCoverage.steps).find((step) => String(step.run ?? '').includes('run-simulator-tests.sh'));
+  if (
+    !iosRun || !String(iosRun.run).includes('--execute') || !String(iosRun.run).includes('$IOS_REPORT_DIR') ||
+    iosRun.env?.DEVELOPER_DIR !== '/Applications/Xcode_26.6.app/Contents/Developer' ||
+    !String(iosCoverage.env?.IOS_REPORT_DIR ?? '').startsWith('/tmp/aegis-ios-')
+  ) fail('ios-coverage must use the frozen simulator coverage interface with Xcode 26.6');
+  const shellRun = array(shellCoverage.steps).find((step) => String(step.run ?? '').includes('run-shell-coverage.sh'));
+  if (!shellRun || !String(shellRun.run).includes('--tested-sha "$GITHUB_SHA"') || !shellRun.env?.REPORT_DIR) {
+    fail('shell-coverage must bind the coverage report to GITHUB_SHA');
+  }
+  const powershellRun = array(powershellCoverage.steps).find((step) => String(step.run ?? '').includes('run-powershell-coverage.ps1'));
+  if (
+    !powershellRun || !String(powershellRun.run).includes('-TestedSha $env:GITHUB_SHA') ||
+    !String(powershellRun.run).includes('-PesterModulePath $module') || !powershellRun.env?.REPORT_DIR
+  ) fail('powershell-coverage must bind Pester coverage to GITHUB_SHA and the verified module');
   const gateRun = array(gate.steps).find((step) => String(step.run ?? '').includes('check-required-results.mjs'));
   if (!gateRun || !gateRun.env?.REQUIRED_RESULTS) fail('quality-gate must fail closed through check-required-results.mjs');
-  const upload = array(quality.steps).find((step) => String(step.uses ?? '').startsWith('actions/upload-artifact@'));
-  if (!upload || !String(upload.if).includes('always()') || upload.with?.['retention-days'] !== 14) {
-    fail('Evidence upload must run always and retain artifacts for 14 days');
+  for (const id of expectedNeeds) {
+    if (!String(gateRun.env.REQUIRED_RESULTS).includes(`needs.${id}.result`)) {
+      fail(`quality-gate required results must include ${id}`);
+    }
+  }
+  for (const [id, job] of [
+    ['quality', quality],
+    ['ios-coverage', iosCoverage],
+    ['shell-coverage', shellCoverage],
+    ['powershell-coverage', powershellCoverage],
+  ]) {
+    const uploads = array(job.steps).filter((step) => String(step.uses ?? '').startsWith('actions/upload-artifact@'));
+    if (
+      uploads.length !== 1 || !String(uploads[0].if).includes('always()') ||
+      uploads[0].with?.['retention-days'] !== 14
+    ) fail(`${id} evidence upload must run always and retain artifacts for 14 days`);
   }
   if (/pull_request_target|workflow_run|self-hosted/u.test(source)) {
     fail('Untrusted or self-hosted execution trigger detected');

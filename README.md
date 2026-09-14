@@ -2,6 +2,8 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
+[![Quality](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml)
+
 GCSA-aegis is a local-first privacy and security browser project with two product lines: the Chromium fork under [`apps/browser`](apps/browser/README.md) and the native iOS browser under [`apps/ios`](apps/ios/README.md). Core capabilities stay inside each browser product; the project does not revive the retired standalone-extension product.
 
 > **2026-09-14 source update: UI corrections and browser updates：** The source now contains 113 top-level Chromium patches plus 2 nested V8 patches. Local macOS acceptance: Ver 1.1 (018), 32 findings addressed, 18 native tests and 116 UI checks passed; 170 changed messages and translation placeholders checked. Windows/Android device acceptance and a real Release installation remain unverified. No binary or tag is published with this source update. [018 验收记录](docs/ui-copy-acceptance.zh-CN.md)
@@ -28,7 +30,7 @@ Historical Chromium test counts, manifests, and artifact hashes remain in dated 
 
 ## Quick start
 
-The JavaScript toolchain is pinned to Node.js `24.14.0` and pnpm `9.15.0`.
+The JavaScript toolchain is pinned to Node.js `22.23.1` and pnpm `9.15.0`.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -67,7 +69,7 @@ On 2026-08-28, authorization was granted to synchronize the source repository to
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+GCSA-authored source is Apache-2.0. Chromium, libtorrent, and other third-party components retain their own licenses; see [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Tests
 
@@ -76,4 +78,4 @@ pnpm run quality:fast
 bash apps/ios/scripts/run-simulator-tests.sh --dry-run
 ```
 
-These commands cover the repository's fast JavaScript/script gates and a non-mutating iOS Simulator preflight. Native Chromium builds, current-head browser runtime matrices, iOS `--execute` results, real-device checks, signing, packaging, installation, and store acceptance remain separate gates.
+These commands cover the repository's fast JavaScript/script gates and a non-mutating iOS Simulator preflight. The [CI guide](docs/development/ci.zh-CN.md) defines the measured per-language coverage scopes and Codacy preparation state. Coverage percentages are never combined into a whole-repository value. Native Chromium builds, current-head browser runtime matrices, iOS `--execute` results, real-device checks, signing, packaging, installation, and store acceptance remain separate gates.

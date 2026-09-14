@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
+[![品質門](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml)
+
 GCSA-aegis 是一個本機優先的隱私與安全瀏覽器專案，現有兩條產品線：[`apps/browser`](apps/browser/README.zh-TW.md) 下的 Chromium 分支，以及 [`apps/ios`](apps/ios/README.zh-TW.md) 下的原生 iOS 瀏覽器。核心能力整合在各自的瀏覽器產品內；專案不會復活已退役的獨立擴充功能產品。
 
 > **2026-09-14 原始碼更新：介面整改與瀏覽器更新：** 目前原始碼包含 113 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁。本機 macOS 驗收為 Ver 1.1 (018)：32 項整改完成，18 項原生測試、116 項介面回歸通過，170 條改動文案及翻譯佔位符檢查通過。Windows/Android 實機及真實 Release 安裝尚未驗收；本次僅提交原始碼，不發布二進位檔或 tag。 [018 验收记录](docs/ui-copy-acceptance.zh-CN.md)
@@ -28,7 +30,7 @@ GCSA-aegis 是一個本機優先的隱私與安全瀏覽器專案，現有兩條
 
 ## 快速開始
 
-JavaScript 工具鏈固定為 Node.js `24.14.0` 和 pnpm `9.15.0`。
+JavaScript 工具鏈固定為 Node.js `22.23.1` 和 pnpm `9.15.0`。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -67,7 +69,7 @@ docs/              架構、路線圖、研究映射、產品頁與稽核紀錄
 
 ## 授權
 
-Apache-2.0，見 [LICENSE](LICENSE)。
+GCSA 原創原始碼採用 Apache-2.0。Chromium、libtorrent 與其他第三方元件保留各自授權；詳見 [LICENSE](LICENSE) 與[第三方聲明](THIRD_PARTY_NOTICES.md)。
 
 ## 測試
 
@@ -76,4 +78,4 @@ pnpm run quality:fast
 bash apps/ios/scripts/run-simulator-tests.sh --dry-run
 ```
 
-這些命令涵蓋儲存庫快速 JavaScript/腳本門檻和不產生變更的 iOS Simulator 預檢。Chromium 原生建置與目前頭執行矩陣、iOS `--execute` 結果、真機、簽署、封裝、安裝和商店驗收仍是獨立門檻。
+這些命令涵蓋儲存庫快速 JavaScript/腳本門檻和不產生變更的 iOS Simulator 預檢。[CI 指南](docs/development/ci.zh-CN.md)定義各語言實際量測範圍與 Codacy 準備狀態；不同語言百分比不得合併成「全儲存庫覆蓋率」。Chromium 原生建置與目前頭執行矩陣、iOS `--execute` 結果、真機、簽署、封裝、安裝和商店驗收仍是獨立門檻。

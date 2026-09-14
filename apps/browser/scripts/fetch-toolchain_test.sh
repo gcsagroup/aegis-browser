@@ -86,5 +86,12 @@ else
   fail 'shell variables next to Chinese punctuation must use braces'
 fi
 
-PYTHONDONTWRITEBYTECODE=1 python3 "$SCRIPT_DIR/local-pypi-proxy_test.py"
+if [[ -n "${AEGIS_PYTHON_COVERAGE_BIN:-}" ]]; then
+  PYTHONDONTWRITEBYTECODE=1 \
+    "$AEGIS_PYTHON_COVERAGE_BIN" run \
+    --source="${AEGIS_PYTHON_COVERAGE_SOURCE:?}" --parallel-mode \
+    "$SCRIPT_DIR/local-pypi-proxy_test.py"
+else
+  PYTHONDONTWRITEBYTECODE=1 python3 "$SCRIPT_DIR/local-pypi-proxy_test.py"
+fi
 printf 'PASS: Chromium fetch toolchain fixtures\n'

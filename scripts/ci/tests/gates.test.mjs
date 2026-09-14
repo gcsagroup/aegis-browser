@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, join, resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {dirname, join, relative, resolve, sep} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 
@@ -37,6 +37,29 @@ function commitAll(cwd, message) {
   git(cwd, 'add', '-A');
   git(cwd, 'commit', '-m', message);
   return git(cwd, 'rev-parse', 'HEAD');
+}
+
+function coverageRecord(path) {
+  return `TN:\nSF:${path}\nFNF:1\nFNH:1\nDA:1,1\nLF:1\nLH:1\nBRF:0\nBRH:0\nend_of_record\n`;
+}
+
+function createCoverageFixture() {
+  const directory = mkdtempSync(join(root, '.artifacts', 'coverage-validator-'));
+  const sourceDirectory = join(directory, 'source');
+  const coverageDirectory = join(directory, 'coverage');
+  mkdirSync(sourceDirectory, {recursive: true});
+  mkdirSync(coverageDirectory, {recursive: true});
+  writeFileSync(join(sourceDirectory, 'covered.ts'), 'export const covered = true;\n');
+  writeFileSync(join(sourceDirectory, 'uncovered.ts'), 'export const uncovered = true;\n');
+  const sourcePaths = ['covered.ts', 'uncovered.ts'].map((name) => relative(root, join(sourceDirectory, name)).split(sep).join('/'));
+  writeFileSync(join(coverageDirectory, 'lcov.info'), sourcePaths.map(coverageRecord).join(''));
+  writeFileSync(join(coverageDirectory, 'coverage-summary.json'), `${JSON.stringify({
+    total: Object.fromEntries(['lines', 'statements', 'functions', 'branches'].map((name) => [
+      name,
+      name === 'branches' ? {total: 0, covered: 0, pct: 100} : {total: 2, covered: 2, pct: 100},
+    ])),
+  })}\n`);
+  return {directory, sourceDirectory, coverageDirectory, sourcePaths};
 }
 
 test('required result gate fails closed for every non-success state', () => {
@@ -247,7 +270,7 @@ test('CI identity binds a pull request to the exact B/H/M graph', () => {
   assert.notEqual(result.status, 0);
 });
 
-test('workflow validator accepts the gate and rejects mutable action refs or weakened summary behavior', () => {
+test('workflow validator accepts every required coverage job and rejects weakened behavior', () => {
   const workflow = join(root, '.github/workflows/quality.yml');
   let result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow]);
   assert.equal(result.status, 0, result.stderr);
@@ -260,6 +283,14 @@ test('workflow validator accepts the gate and rejects mutable action refs or wea
   const skipped = join(cwd, 'skipped.yml');
   writeFileSync(skipped, source.replace('if: ${{ always() }}\n    needs:', 'if: ${{ success() }}\n    needs:'));
   result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), skipped]);
+  assert.notEqual(result.status, 0);
+  const missing = join(cwd, 'missing-required-job.yml');
+  writeFileSync(missing, source.replace('      - shell-coverage\n', ''));
+  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), missing]);
+  assert.notEqual(result.status, 0);
+  const missingResult = join(cwd, 'missing-required-result.yml');
+  writeFileSync(missingResult, source.replace(',"shell-coverage":"${{ needs.shell-coverage.result }}"', ''));
+  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), missingResult]);
   assert.notEqual(result.status, 0);
 });
 
@@ -309,4 +340,154 @@ test('native classification is NUL-safe, rename-safe, and conservative for unkno
   result = run(process.execPath, [join(scripts, 'classify-native-changes.mjs'), '--base', iosBase, '--head', iosHead, '--repo', iosRepo]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).status, 'REVIEW_REQUIRED');
+});
+
+test('ESLint flat configuration accepts valid CI code and rejects a correctness error', () => {
+  const directory = mkdtempSync(join(scripts, 'lint-fixture-'));
+  try {
+    const valid = join(directory, 'valid.mjs');
+    const invalid = join(directory, 'invalid.mjs');
+    writeFileSync(valid, 'export const answer = 42;\n');
+    writeFileSync(invalid, 'export const answer = missingIdentifier;\n');
+    let result = run(join(root, 'node_modules/.bin/eslint'), ['--config', join(root, 'eslint.config.mjs'), valid]);
+    assert.equal(result.status, 0, result.stderr);
+    result = run(join(root, 'node_modules/.bin/eslint'), ['--config', join(root, 'eslint.config.mjs'), invalid]);
+    assert.notEqual(result.status, 0, 'ESLint accepted an undefined identifier');
+    assert.match(result.stdout, /no-undef/u);
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
+});
+
+test('coverage validator accepts current complete production LCOV', () => {
+  const fixture = createCoverageFixture();
+  try {
+    const result = run(process.execPath, [
+      join(scripts, 'validate-coverage.mjs'),
+      '--coverage-dir', fixture.coverageDirectory,
+      '--source-root', fixture.sourceDirectory,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.productionFiles, 2);
+    assert.equal(report.reportedFiles, 2);
+  } finally {
+    rmSync(fixture.directory, {recursive: true, force: true});
+  }
+});
+
+test('coverage validator rejects missing, empty, corrupt, unsafe, stale, and incomplete reports', () => {
+  const cases = [
+    ['missing', (fixture) => unlinkSync(join(fixture.coverageDirectory, 'lcov.info'))],
+    ['empty', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), '')],
+    ['corrupt', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), 'not-lcov\n')],
+    ['unterminated', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), fixture.sourcePaths.map(coverageRecord).join('').replace(/end_of_record\n$/u, ''))],
+    ['duplicate DA', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), fixture.sourcePaths.map((path) => coverageRecord(path).replace('LF:1', 'DA:1,1\nLF:2')).join(''))],
+    ['contradictory line totals', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), fixture.sourcePaths.map((path) => coverageRecord(path).replace('LH:1', 'LH:0')).join(''))],
+    ['absolute source', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), coverageRecord(join(fixture.sourceDirectory, 'covered.ts')))],
+    ['escaping source', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), coverageRecord('../outside.ts'))],
+    ['nonexistent source', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), coverageRecord(`${relative(root, fixture.sourceDirectory).split(sep).join('/')}/missing.ts`))],
+    ['missing untested production file', (fixture) => writeFileSync(join(fixture.coverageDirectory, 'lcov.info'), coverageRecord(fixture.sourcePaths[0]))],
+    ['extra test source', (fixture) => {
+      const testPath = join(fixture.sourceDirectory, 'covered.test.ts');
+      writeFileSync(testPath, 'export const fixture = true;\n');
+      writeFileSync(
+        join(fixture.coverageDirectory, 'lcov.info'),
+        `${fixture.sourcePaths.map(coverageRecord).join('')}${coverageRecord(relative(root, testPath).split(sep).join('/'))}`,
+      );
+    }],
+    ['stale', (fixture) => {
+      const old = new Date('2020-01-01T00:00:00Z');
+      utimesSync(join(fixture.coverageDirectory, 'lcov.info'), old, old);
+      utimesSync(join(fixture.coverageDirectory, 'coverage-summary.json'), old, old);
+    }],
+    ['impossible JSON totals', (fixture) => {
+      const path = join(fixture.coverageDirectory, 'coverage-summary.json');
+      const summary = JSON.parse(readFileSync(path, 'utf8'));
+      summary.total.lines.covered = 3;
+      writeFileSync(path, `${JSON.stringify(summary)}\n`);
+    }],
+    ['JSON and LCOV disagree', (fixture) => {
+      const path = join(fixture.coverageDirectory, 'coverage-summary.json');
+      const summary = JSON.parse(readFileSync(path, 'utf8'));
+      summary.total.lines = {total: 3, covered: 2, pct: 66.66};
+      writeFileSync(path, `${JSON.stringify(summary)}\n`);
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    const fixture = createCoverageFixture();
+    try {
+      mutate(fixture);
+      const args = [
+        join(scripts, 'validate-coverage.mjs'),
+        '--coverage-dir', fixture.coverageDirectory,
+        '--source-root', fixture.sourceDirectory,
+      ];
+      if (name === 'stale') args.push('--not-before', '2026-01-01T00:00:00Z');
+      const result = run(process.execPath, args);
+      assert.notEqual(result.status, 0, `${name} coverage unexpectedly passed`);
+    } finally {
+      rmSync(fixture.directory, {recursive: true, force: true});
+    }
+  }
+});
+
+test('V8 raw validator requires real production Node subprocess evidence', () => {
+  const directory = mkdtempSync(join(root, '.artifacts', 'v8-raw-validator-'));
+  try {
+    const urls = [
+      'apps/browser/scripts/verify-agent-runtime.mjs',
+      'scripts/check-repo-contracts.mjs',
+    ].map((path) => pathToFileURL(join(root, path)).href);
+    writeFileSync(join(directory, 'coverage-valid.json'), `${JSON.stringify({result: urls.map((url) => ({url}))})}\n`);
+    let result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
+    assert.equal(result.status, 0, result.stderr);
+    writeFileSync(join(directory, 'coverage-valid.json'), `${JSON.stringify({result: [{url: urls[0]}]})}\n`);
+    result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
+    assert.notEqual(result.status, 0, 'V8 report missing an executed production subprocess unexpectedly passed');
+    writeFileSync(join(directory, 'coverage-valid.json'), '{broken\n');
+    result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
+    assert.notEqual(result.status, 0, 'Corrupt V8 raw coverage unexpectedly passed');
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
+});
+
+test('quality entrypoint returns nonzero and writes FAIL when the test command fails', () => {
+  const cwd = initRepo();
+  mkdirSync(join(cwd, 'scripts/ci'), {recursive: true});
+  mkdirSync(join(cwd, 'fake-bin'), {recursive: true});
+  mkdirSync(join(cwd, 'packages/core'), {recursive: true});
+  mkdirSync(join(cwd, 'apps/browser'), {recursive: true});
+  cpSync(join(scripts, 'run-quality.mjs'), join(cwd, 'scripts/ci/run-quality.mjs'));
+  cpSync(join(scripts, 'common.mjs'), join(cwd, 'scripts/ci/common.mjs'));
+  cpSync(join(scripts, 'check-license-metadata.mjs'), join(cwd, 'scripts/ci/check-license-metadata.mjs'));
+  cpSync(join(root, 'LICENSE'), join(cwd, 'LICENSE'));
+  cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(cwd, 'THIRD_PARTY_NOTICES.md'));
+  for (const path of ['package.json', 'packages/core/package.json', 'apps/browser/package.json']) {
+    writeFileSync(join(cwd, path), '{"license":"Apache-2.0"}\n');
+  }
+  symlinkSync(join(root, 'node_modules'), join(cwd, 'node_modules'));
+  writeFileSync(join(cwd, '.gitignore'), '.artifacts/\n');
+  const fake = (name, source) => {
+    const path = join(cwd, 'fake-bin', name);
+    writeFileSync(path, `#!/bin/sh\n${source}\n`);
+    chmodSync(path, 0o755);
+  };
+  fake('pnpm', 'if [ "$1" = "--version" ]; then echo 9.15.0; exit 0; fi\nif [ "$1" = "install" ]; then exit 0; fi\nexit 0');
+  fake('corepack', 'if [ "$1" = "pnpm" ] && [ "$2" = "--version" ]; then echo 9.15.0; exit 0; fi\nif [ "$1" = "pnpm" ] && [ "$2" = "run" ] && [ "$3" = "quality:fast" ]; then exit 23; fi\nexit 0');
+  fake('python3', 'if [ "$1" = "--version" ]; then echo "Python 3.11.9"; exit 0; fi\nif [ "$1" = "-m" ] && [ "$2" = "venv" ]; then mkdir -p "$3/bin"; printf "#!/bin/sh\\nexit 0\\n" > "$3/bin/python"; printf "#!/bin/sh\\necho \\"Coverage.py, version 7.16.1\\"\\nexit 0\\n" > "$3/bin/coverage"; chmod +x "$3/bin/python" "$3/bin/coverage"; exit 0; fi\nexit 0');
+  fake('rg', 'echo "ripgrep 14.1.1"');
+  fake('clang++', 'echo "clang version 21.0.0"');
+  const base = commitAll(cwd, 'fixture');
+  const reportDirectory = join(cwd, '.artifacts/ci/failure');
+  const result = run(process.execPath, [
+    join(cwd, 'scripts/ci/run-quality.mjs'), '--scope', 'full', '--base', base,
+    '--report-dir', '.artifacts/ci/failure',
+  ], {cwd, env: {PATH: `${join(cwd, 'fake-bin')}:${process.env.PATH}`}});
+  assert.notEqual(result.status, 0);
+  assert.equal(existsSync(join(reportDirectory, 'report.json')), true, `${result.stdout}\n${result.stderr}`);
+  const report = JSON.parse(readFileSync(join(reportDirectory, 'report.json'), 'utf8'));
+  assert.equal(report.result, 'FAIL');
+  assert.equal(report.checks.find((check) => check.name === 'quality:fast')?.result, 'FAIL');
 });

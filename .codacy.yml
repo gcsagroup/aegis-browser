@@ -1,0 +1,13 @@
+---
+exclude_paths:
+  - ".artifacts/**"
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/dist-worker/**"
+  - "**/build/**"
+  - "apps/browser/depot_tools/**"
+  - "apps/browser/.chromium-root/**"
+  - "apps/browser/patches/**"
+  - "apps/browser/overlay/third_party/aegis_policy/easylist_compiled.json"
+  - "**/*.min.js"
+  - "**/*.map"
