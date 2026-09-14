@@ -56,6 +56,11 @@ test('required result gate fails closed for every non-success state', () => {
   assert.equal(success.status, 0, success.stderr);
 });
 
+test('fixed ripgrep installer is syntactically valid', () => {
+  const result = run('bash', ['-n', join(scripts, 'install-ripgrep.sh')]);
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test('source snapshot detects tracked and untracked source changes but excludes ignored evidence', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, '.gitignore'), '.artifacts/\n');
@@ -170,7 +175,7 @@ test('workflow validator accepts the gate and rejects mutable action refs or wea
   const cwd = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const source = readFileSync(workflow, 'utf8');
   const mutable = join(cwd, 'mutable.yml');
-  writeFileSync(mutable, source.replace('actions/checkout@11d5960a326750d5838078e36cf38b85af677262', 'actions/checkout@v4'));
+  writeFileSync(mutable, source.replace('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', 'actions/checkout@v7'));
   result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), mutable]);
   assert.notEqual(result.status, 0);
   const skipped = join(cwd, 'skipped.yml');

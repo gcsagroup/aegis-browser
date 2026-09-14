@@ -4,11 +4,11 @@ import {resolve} from 'node:path';
 import YAML from 'yaml';
 
 const expectedActions = new Set([
-  'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
-  'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
-  'actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1',
-  'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
-  'pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1',
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+  'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
+  'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+  'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
 ]);
 
 function fail(message) {
@@ -81,6 +81,10 @@ try {
   if (!qualityRun) fail('Quality job must call the shared run-quality entrypoint');
   for (const name of ['CI_BASE_SHA', 'CI_HEAD_SHA', 'CI_TESTED_SHA', 'CI_EVENT', 'CI_REF', 'REPORT_DIR']) {
     if (!qualityRun.env?.[name]) fail(`Quality entrypoint environment is missing ${name}`);
+  }
+  const ripgrepInstall = array(quality.steps).find((step) => String(step.run ?? '') === 'bash scripts/ci/install-ripgrep.sh');
+  if (!ripgrepInstall || ripgrepInstall['timeout-minutes'] !== 5) {
+    fail('Quality job must install the fixed ripgrep tool before preflight');
   }
   const gateRun = array(gate.steps).find((step) => String(step.run ?? '').includes('check-required-results.mjs'));
   if (!gateRun || !gateRun.env?.REQUIRED_RESULTS) fail('quality-gate must fail closed through check-required-results.mjs');
