@@ -1,5 +1,12 @@
 name: Chromium 三平台上游检查
 on:
+  push:
+    branches: [main, codex/ci/chromium-three-platform]
+    paths:
+      - '.github/workflows/chromium-upstream.yml'
+      - 'apps/browser/scripts/check-chromium-upstream*.py'
+      - 'apps/browser/scripts/ci/**'
+      - 'apps/browser/CHROMIUM_*'
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -25,7 +32,9 @@ jobs:
           key: chromium-upstream-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: chromium-upstream-
       - name: 运行监控回归
-        run: python apps/browser/scripts/check-chromium-upstream_test.py
+        run: |
+          python apps/browser/scripts/check-chromium-upstream_test.py
+          python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
       - name: 分平台核对官方来源
         run: python apps/browser/scripts/check-chromium-upstream.py --output ci-evidence/upstream
       - name: 汇总候选和未解决漏洞

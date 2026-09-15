@@ -11,6 +11,25 @@
 
 工作流只读仓库，不创建 Release、不合并 PR、不正式签名公证、不替换现用 App。不会绕过源码冲突或测试失败；失败时保留补丁名、Git 现场、日志及旧产物。上游检测不具备自动进行语义适配的能力；新版本仍需生成并修正候选分支，修复提交后构建自动继续。当前未接入自动写代码的代理。
 
+## 当前优先方案：GitHub 托管
+
+2026-09-16 用户选择优先使用 GitHub 提供的机器。上游监控及 23 项脚本回归使用公开仓库的标准 `ubuntu-latest`，不依赖自托管机器或 `AEGIS_BUILD_RUNNERS_READY`。审核分支推送可以验证实际云端执行；合入默认分支后才有每小时定时运行。首次云端没有 `.chromium-root` 时记录源码路径为空，不伪造本机安装证据。
+
+完整 Chromium 构建需要独立评估。GitHub 公布标准机器存储为 14 GB，托管任务上限 6 小时；Windows/Linux 可使用付费大规格机器。以下为 2026-09-16 官方价格快照，仅计算机器运行费用，不包含存储、税费或组织套餐：
+
+| 平台 | 评估规格 | 每分钟美元 | 运行 2 小时 | 运行 6 小时 |
+| --- | --- | --- | --- | --- |
+| Android 的 Linux x64 构建 | 32 核、128 GB 内存、1200 GB 存储 | 0.082 | 9.84 | 29.52 |
+| Windows x64 构建 | 32 核、128 GB 内存、1200 GB 存储 | 0.162 | 19.44 | 58.32 |
+
+2 小时与 6 小时只是成本场景，不是已经测得的构建时长。大规格机器需要组织的 Team 或 Enterprise Cloud 套餐，公开仓库也收费。付费执行需先确定预算；目前没有启动付费机器，也没有新增预算或付款信息。
+
+Mac 大规格机器公布存储仍为 14 GB，完整 Mac 构建暂沿用现有环境。Android 托管 Linux 可运行模拟器测试，但不能替代现有 ARM64 真机验收；APK 构建、模拟器与真机结果分别记录。
+
+现有 `chromium-candidate.yml` 是专用源码目录方案，保持就绪开关关闭。它不能仅更换 `runs-on` 就当作托管完整构建：还需要适配首次依赖准备、六小时时限、缓存/产物交接、工具链与真实验收。下面的自托管注册说明保留为备选，不是免费上游检查的前置要求。
+
+来源：[标准机器](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[大规格机器](https://docs.github.com/en/actions/reference/runners/larger-runners)、[时限](https://docs.github.com/en/actions/reference/limits)、[计费](https://docs.github.com/en/billing/reference/actions-runner-pricing)。
+
 ## 构建机接入
 
 | 平台 | GitHub runner 标签 | 固定输出 | 候选产物 |
