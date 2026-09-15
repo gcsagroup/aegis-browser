@@ -133,6 +133,16 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 
 这些结果仅证明固定 Chromium API 上的规范化与纯匹配决策可编译、可运行，以及仓库快速门禁通过。PR #3 尚需修复 HEAD 的独立复审与 hosted CI；Network Service 派发、等待/取消、连接复用、真实 HTTP/WS、Xray、企业策略、性能及 DPI 均未执行，G0 与 A76/A108/A113/A115/A116/A117/A118 整行仍不是 PASS。
 
+## 0117：首个 `ProxyInfo` 网络适配切片
+
+2026-09-16 在 `origin/develop` 基线继续实现网络侧最小切片。新增 `access_proxy_route_adapter.{h,cc}`，把已经完成验证的 `RoutePlan` 应用到 Chromium `net::ProxyInfo`，但尚未把策略发布/RequestOwnershipRegistry 通过 Mojo 接入真实 Network Service delegate。
+
+本切片固定三条行为：`kPreserveNative` 完全不修改 Chromium 已有代理解析结果；`kUseRegisteredProxy` 只接受与 RoutePlan 的 registration/group/owner/generation 全部一致的 numeric loopback HTTP 登记入口，并把代理列表替换为唯一该入口；`kWait/kDeny/kFail` 会返回 `kMustAbort`，要求更高层在网络发送前中止，同时清空代理候选作为二次 no-DIRECT 保护。伪造、远程、缺端口或未知 transport 的登记入口同样 fail closed。opaque registration id 不被解释成 host/port，真实地址必须来自独立可信登记状态；SOCKS5 保留到后续完整验收切片。
+
+新增 `AccessProxyRouteAdapterTest` 覆盖原生配置保持、矛盾的 `kPreserveNative+kProxy` fail closed、单一 `127.0.0.1` HTTP 代理、失败态 `kMustAbort` 与去除 DIRECT、无效/不可信入口 fail closed、IPv6 loopback HTTP。固定 Chromium 151 `gn gen out/AegisLocalDev` 在临时补齐 0116 overlay 后成功生成 31,700 个目标；完整 Ninja build 被当前主机 Xcode 27 SDK 与 Chromium bundled lld/TAPI 不兼容阻塞，失败发生在 libc++/Rust host tool 链接阶段。为隔离产品代码，随后直接执行 Ninja 为 0117 生成的两条 clang C++ 编译命令，`access_proxy_route_adapter.cc` 与 `access_proxy_route_adapter_unittest.cc` 均 exit 0。临时同步到 Chromium checkout 的 0116/0117 文件已恢复清理，未把验证副本留在固定源码树。
+
+该结果只把“RoutePlan → Chromium ProxyInfo”提升到固定 Chromium API 编译通过，不代表真实浏览器请求已经经过 localhost proxy。下一步仍需建立 Profile/StoragePartition 绑定的 Network Service 传输合同，把可信 request context、published snapshot、runtime registration 送到对应 NetworkContext，并对真实 HTTP/HTTPS 请求验证代理命中、OFF 保留原生配置、代理失效不直连。G0 继续保持未通过。 Chromium 151 的 `HttpStreamFactory::JobController` 对空 `ProxyInfo` 明确返回 `ERR_NO_SUPPORTED_PROXIES`，因此清空代理列表不会隐式回落 DIRECT；不过 `kMustAbort` 仍要求上层在发送前主动终止，避免把网络栈错误码当成策略控制面。最终 `0117` patch 从当前组件基线重放后与 overlay 四个文件逐字一致，SHA-256 为 `7e534c2543f1922f3eecedd9ecf981e8d0e39abc13672bae1fb2de93eb7b8227`。随后使用 Chromium 151 Ninja 生成的实际 clang 命令重新编译最终 production/test 两个 0117 对象，均 exit 0；仓库 `quality:fast` 也在固定 Node 22.23.1 / pnpm 9.15.0 依赖安装后完整 PASS，包括 28 个 core 测试文件、170 个测试、Access native 487 checks、浏览器脚本/Agent UI/本地模型/仓库合同及 core build。
+
 ## 回滚
 
 本切片尚无运行时入口或数据迁移，回滚其代码、GN/补丁与测试入口的独立提交即可；不删除用户现有文档、凭据、Profile 或构建缓存。后续真实接入单独交付，不能用回滚规划器来清除已持久 PROXY 意图或将其静默变成 DIRECT。

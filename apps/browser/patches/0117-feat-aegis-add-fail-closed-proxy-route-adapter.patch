@@ -1,0 +1,390 @@
+From bc687d9d80383a9399a89f9864b9b7686e9c2656 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 16 Sep 2026 00:38:51 +0800
+Subject: [PATCH] feat(aegis): add fail-closed proxy route adapter
+
+---
+ components/aegis_access/BUILD.gn              |   3 +
+ .../access_proxy_route_adapter.cc             |  99 +++++++++++
+ .../aegis_access/access_proxy_route_adapter.h |  66 +++++++
+ .../access_proxy_route_adapter_unittest.cc    | 168 ++++++++++++++++++
+ 4 files changed, 336 insertions(+)
+ create mode 100644 components/aegis_access/access_proxy_route_adapter.cc
+ create mode 100644 components/aegis_access/access_proxy_route_adapter.h
+ create mode 100644 components/aegis_access/access_proxy_route_adapter_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 75f24a0..ce67177 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -25,6 +25,8 @@ action("generate_policy_matcher_vectors") {
+ 
+ source_set("aegis_access") {
+   sources = [
++    "access_proxy_route_adapter.cc",
++    "access_proxy_route_adapter.h",
+     "access_policy_evaluator.cc",
+     "access_policy_evaluator.h",
+     "access_route_planner.cc",
+@@ -40,6 +42,7 @@ source_set("aegis_access") {
+ 
+ test("aegis_access_unittests") {
+   sources = [
++    "access_proxy_route_adapter_unittest.cc",
+     "access_policy_evaluator_unittest.cc",
+     "access_route_planner_contract_test.h",
+     "access_route_planner_unittest.cc",
+diff --git a/components/aegis_access/access_proxy_route_adapter.cc b/components/aegis_access/access_proxy_route_adapter.cc
+new file mode 100644
+index 0000000..f0a3569
+--- /dev/null
++++ b/components/aegis_access/access_proxy_route_adapter.cc
+@@ -0,0 +1,99 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_proxy_route_adapter.h"
++
++#include <optional>
++
++#include "net/base/proxy_chain.h"
++#include "net/base/proxy_server.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "net/proxy_resolution/proxy_list.h"
++
++namespace aegis_access {
++namespace {
++
++bool IsNumericLoopback(const std::string& host) {
++  return host == "127.0.0.1" || host == "::1" || host == "[::1]";
++}
++
++net::ProxyServer::Scheme ToProxyScheme(RegisteredProxyTransport transport) {
++  switch (transport) {
++    case RegisteredProxyTransport::kHttp:
++      return net::ProxyServer::SCHEME_HTTP;
++    case RegisteredProxyTransport::kInvalid:
++      return net::ProxyServer::SCHEME_INVALID;
++  }
++  return net::ProxyServer::SCHEME_INVALID;
++}
++
++bool MatchesPlan(const RegisteredProxyEntry& registration,
++                 const RegisteredProxyEndpoint& endpoint) {
++  return endpoint.registration_id == registration.registration_id &&
++         endpoint.proxy_group_id == registration.proxy_group_id &&
++         endpoint.owner == registration.owner &&
++         endpoint.generations == registration.generations;
++}
++
++void BlockWithoutDirectFallback(net::ProxyInfo* proxy_info) {
++  net::ProxyList empty;
++  proxy_info->OverrideProxyList(empty);
++}
++
++}  // namespace
++
++ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
++    const RoutePlan& plan,
++    const RegisteredProxyEndpoint* endpoint,
++    net::ProxyInfo* proxy_info) {
++  if (!proxy_info) {
++    return ProxyRouteApplyStatus::kInvalidEndpoint;
++  }
++
++  switch (plan.action) {
++    case RouteAction::kPreserveNative:
++      if (plan.effective_mode == AccessMode::kNone ||
++          plan.effective_mode == AccessMode::kDirect) {
++        return ProxyRouteApplyStatus::kPreservedNative;
++      }
++      BlockWithoutDirectFallback(proxy_info);
++      return ProxyRouteApplyStatus::kInvalidEndpoint;
++    case RouteAction::kWait:
++    case RouteAction::kDeny:
++    case RouteAction::kFail:
++      BlockWithoutDirectFallback(proxy_info);
++      return ProxyRouteApplyStatus::kMustAbort;
++    case RouteAction::kUseRegisteredProxy:
++      break;
++  }
++
++  if (plan.effective_mode != AccessMode::kProxy ||
++      !plan.registered_proxy_entry.has_value() ||
++      plan.registered_proxy_entry->registration_id.empty() ||
++      plan.registered_proxy_entry->proxy_group_id.empty() ||
++      plan.generations != plan.registered_proxy_entry->generations || !endpoint ||
++      !MatchesPlan(*plan.registered_proxy_entry, *endpoint) ||
++      !IsNumericLoopback(endpoint->host) || endpoint->port == 0) {
++    BlockWithoutDirectFallback(proxy_info);
++    return ProxyRouteApplyStatus::kInvalidEndpoint;
++  }
++
++  const net::ProxyServer::Scheme scheme = ToProxyScheme(endpoint->transport);
++  if (scheme == net::ProxyServer::SCHEME_INVALID) {
++    BlockWithoutDirectFallback(proxy_info);
++    return ProxyRouteApplyStatus::kInvalidEndpoint;
++  }
++
++  const net::ProxyServer server = net::ProxyServer::FromSchemeHostAndPort(
++      scheme, endpoint->host, std::optional<uint16_t>(endpoint->port));
++  if (!server.is_valid()) {
++    BlockWithoutDirectFallback(proxy_info);
++    return ProxyRouteApplyStatus::kInvalidEndpoint;
++  }
++
++  net::ProxyList proxy_list;
++  proxy_list.SetSingleProxyChain(net::ProxyChain(server));
++  proxy_info->OverrideProxyList(proxy_list);
++  return ProxyRouteApplyStatus::kAppliedProxy;
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/access_proxy_route_adapter.h b/components/aegis_access/access_proxy_route_adapter.h
+new file mode 100644
+index 0000000..0f105e3
+--- /dev/null
++++ b/components/aegis_access/access_proxy_route_adapter.h
+@@ -0,0 +1,66 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_ROUTE_ADAPTER_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_ROUTE_ADAPTER_H_
++
++#include <cstdint>
++#include <string>
++
++#include "components/aegis_access/access_route_types.h"
++
++namespace net {
++class ProxyInfo;
++}
++
++namespace aegis_access {
++
++enum class RegisteredProxyTransport {
++  kHttp,
++  kInvalid,
++};
++
++// Resolved by a trusted browser/network adapter from the opaque registration
++// id carried by RoutePlan. V1's first network slice intentionally accepts only
++// numeric loopback endpoints so policy decisions cannot inject arbitrary proxy
++// destinations before the managed proxy runtime exists.
++struct RegisteredProxyEndpoint {
++  std::string registration_id;
++  std::string proxy_group_id;
++  OwnershipKey owner;
++  GenerationTuple generations;
++  RegisteredProxyTransport transport = RegisteredProxyTransport::kInvalid;
++  std::string host;
++  uint16_t port = 0;
++
++  friend bool operator==(const RegisteredProxyEndpoint&,
++                         const RegisteredProxyEndpoint&) = default;
++};
++
++enum class ProxyRouteApplyStatus {
++  kPreservedNative,
++  kAppliedProxy,
++  kMustAbort,
++  kInvalidEndpoint,
++};
++
++// Applies a previously validated route decision to Chromium's ProxyInfo.
++//
++// - kPreserveNative does not mutate |proxy_info|.
++// - kUseRegisteredProxy replaces its proxy list with exactly one registered
++//   loopback proxy, so there is no implicit DIRECT fallback.
++// - kWait/kDeny/kFail clear the proxy list as a secondary no-DIRECT guard and
++//   return kMustAbort. The caller must stop the request before network send;
++//   ProxyDelegate callbacks cannot themselves surface a route-policy error.
++//   A higher-level dispatcher may retry kWait after state changes.
++//
++// The endpoint is separately supplied by trusted registration state. Opaque
++// ids in RoutePlan are never interpreted as host/port values. This first P0
++// network slice accepts HTTP loopback only; SOCKS5 is a later acceptance item.
++ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
++    const RoutePlan& plan,
++    const RegisteredProxyEndpoint* endpoint,
++    net::ProxyInfo* proxy_info);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_ROUTE_ADAPTER_H_
+diff --git a/components/aegis_access/access_proxy_route_adapter_unittest.cc b/components/aegis_access/access_proxy_route_adapter_unittest.cc
+new file mode 100644
+index 0000000..22a6cd5
+--- /dev/null
++++ b/components/aegis_access/access_proxy_route_adapter_unittest.cc
+@@ -0,0 +1,168 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_proxy_route_adapter.h"
++
++#include "net/base/proxy_chain.h"
++
++#include "net/proxy_resolution/proxy_info.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access {
++namespace {
++
++OwnershipKey TestOwner() {
++  return OwnershipKey{ChannelNamespace::kDev, "profile-dev", "partition-main"};
++}
++
++GenerationTuple TestGenerations() {
++  return GenerationTuple{1, 2, 3, 4, 5};
++}
++
++RegisteredProxyEntry TestRegistration() {
++  return RegisteredProxyEntry{"registration-local", "proxy-group-local",
++                              TestOwner(), TestGenerations()};
++}
++
++RegisteredProxyEndpoint TestEndpoint() {
++  return RegisteredProxyEndpoint{"registration-local",
++                                 "proxy-group-local",
++                                 TestOwner(),
++                                 TestGenerations(),
++                                 RegisteredProxyTransport::kHttp,
++                                 "127.0.0.1",
++                                 18080};
++}
++
++RoutePlan TestPlan(RouteAction action) {
++  RoutePlan plan;
++  plan.action = action;
++  plan.reason = RouteReason::kNone;
++  plan.generations = TestGenerations();
++  switch (action) {
++    case RouteAction::kPreserveNative:
++      plan.effective_mode = AccessMode::kDirect;
++      break;
++    case RouteAction::kUseRegisteredProxy:
++      plan.effective_mode = AccessMode::kProxy;
++      plan.registered_proxy_entry = TestRegistration();
++      break;
++    case RouteAction::kWait:
++    case RouteAction::kFail:
++      plan.effective_mode = AccessMode::kProxy;
++      break;
++    case RouteAction::kDeny:
++      plan.effective_mode = AccessMode::kReject;
++      break;
++  }
++  return plan;
++}
++
++TEST(AccessProxyRouteAdapterTest, PreserveNativeLeavesExistingProxyUntouched) {
++  RoutePlan direct = TestPlan(RouteAction::kPreserveNative);
++  net::ProxyInfo info;
++  info.UseNamedProxy("http://native.example:3128;direct://");
++  const std::string before = info.proxy_list().ToPacString();
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(direct, nullptr, &info),
++            ProxyRouteApplyStatus::kPreservedNative);
++  EXPECT_EQ(info.proxy_list().ToPacString(), before);
++}
++
++TEST(AccessProxyRouteAdapterTest, MalformedPreserveNativeFailsClosed) {
++  RoutePlan malformed = TestPlan(RouteAction::kPreserveNative);
++  malformed.effective_mode = AccessMode::kProxy;
++  net::ProxyInfo info;
++  info.UseNamedProxy("http://native.example:3128;direct://");
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(malformed, nullptr, &info),
++            ProxyRouteApplyStatus::kInvalidEndpoint);
++  EXPECT_TRUE(info.is_empty());
++  EXPECT_FALSE(info.is_direct());
++}
++
++TEST(AccessProxyRouteAdapterTest, ProxyUsesOnlyRegisteredLoopbackEndpoint) {
++  net::ProxyInfo info;
++  info.UseNamedProxy("http://native.example:3128;direct://");
++  const RegisteredProxyEndpoint endpoint = TestEndpoint();
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
++                                      &endpoint, &info),
++            ProxyRouteApplyStatus::kAppliedProxy);
++  ASSERT_EQ(info.proxy_list().size(), 1u);
++  EXPECT_FALSE(info.is_direct());
++  EXPECT_EQ(info.proxy_chain().First().GetHost(), "127.0.0.1");
++  EXPECT_EQ(info.proxy_chain().First().GetPort(), 18080u);
++}
++
++TEST(AccessProxyRouteAdapterTest, FailureStatesRemoveDirectFallback) {
++  for (RouteAction action :
++       {RouteAction::kWait, RouteAction::kDeny, RouteAction::kFail}) {
++    SCOPED_TRACE(static_cast<int>(action));
++    net::ProxyInfo info;
++    info.UseNamedProxy("http://native.example:3128;direct://");
++
++    EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(action), nullptr, &info),
++              ProxyRouteApplyStatus::kMustAbort);
++    EXPECT_TRUE(info.is_empty());
++    EXPECT_FALSE(info.is_direct());
++  }
++}
++
++TEST(AccessProxyRouteAdapterTest, InvalidOrUntrustedEndpointFailsClosed) {
++  RoutePlan malformed_mode = TestPlan(RouteAction::kUseRegisteredProxy);
++  malformed_mode.effective_mode = AccessMode::kDirect;
++  RoutePlan stale_plan = TestPlan(RouteAction::kUseRegisteredProxy);
++  stale_plan.generations.network_epoch++;
++
++  for (const RoutePlan* malformed : {&malformed_mode, &stale_plan}) {
++    const RegisteredProxyEndpoint endpoint = TestEndpoint();
++    net::ProxyInfo info;
++    info.UseNamedProxy("http://native.example:3128;direct://");
++    EXPECT_EQ(ApplyRoutePlanToProxyInfo(*malformed, &endpoint, &info),
++              ProxyRouteApplyStatus::kInvalidEndpoint);
++    EXPECT_TRUE(info.is_empty());
++    EXPECT_FALSE(info.is_direct());
++  }
++
++  RegisteredProxyEndpoint remote = TestEndpoint();
++  remote.host = "proxy.example";
++
++  RegisteredProxyEndpoint missing_port = TestEndpoint();
++  missing_port.port = 0;
++
++  RegisteredProxyEndpoint invalid_transport = TestEndpoint();
++  invalid_transport.transport = RegisteredProxyTransport::kInvalid;
++
++  RegisteredProxyEndpoint mismatched = TestEndpoint();
++  mismatched.registration_id = "different-registration";
++
++  for (const RegisteredProxyEndpoint* endpoint :
++       {&remote, &missing_port, &invalid_transport, &mismatched}) {
++    net::ProxyInfo info;
++    info.UseNamedProxy("http://native.example:3128;direct://");
++    EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
++                                        endpoint, &info),
++              ProxyRouteApplyStatus::kInvalidEndpoint);
++    EXPECT_TRUE(info.is_empty());
++    EXPECT_FALSE(info.is_direct());
++  }
++}
++
++TEST(AccessProxyRouteAdapterTest, SupportsNumericIpv6HttpLoopback) {
++  RegisteredProxyEndpoint endpoint = TestEndpoint();
++  endpoint.host = "::1";
++  endpoint.port = 19090;
++  net::ProxyInfo info;
++  info.UseDirect();
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
++                                      &endpoint, &info),
++            ProxyRouteApplyStatus::kAppliedProxy);
++  ASSERT_EQ(info.proxy_list().size(), 1u);
++  EXPECT_TRUE(info.proxy_chain().First().is_http());
++  EXPECT_EQ(info.proxy_chain().First().GetHost(), "[::1]");
++  EXPECT_EQ(info.proxy_chain().First().GetPort(), 19090u);
++}
++
++}  // namespace
++}  // namespace aegis_access
+-- 
+2.54.0 (Apple Git-157)
+

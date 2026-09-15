@@ -115,3 +115,4 @@
 0114-feat-aegis-add-access-route-planning-contract.patch
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
+0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch
