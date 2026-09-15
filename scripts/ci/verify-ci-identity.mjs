@@ -33,8 +33,8 @@ try {
   } else {
     if (head !== tested) fail(`${event} must test its exact head SHA`);
     requireAncestor(base, head, cwd);
-    if (event === 'workflow_dispatch' && values.ref !== 'refs/heads/main') {
-      fail(`workflow_dispatch is restricted to refs/heads/main, got ${values.ref ?? 'missing'}`);
+    if (!['refs/heads/main', 'refs/heads/develop'].includes(values.ref)) {
+      fail(`${event} is restricted to refs/heads/main or refs/heads/develop, got ${values.ref ?? 'missing'}`);
     }
   }
   const trees = Object.fromEntries(
