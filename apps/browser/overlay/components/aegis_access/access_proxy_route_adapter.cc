@@ -39,16 +39,9 @@ void BlockWithoutDirectFallback(net::ProxyInfo* proxy_info) {
   proxy_info->OverrideProxyList(empty);
 }
 
-}  // namespace
-
-ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
+std::optional<ProxyRouteApplyStatus> ApplyNonProxyRouteAction(
     const RoutePlan& plan,
-    const RegisteredProxyEndpoint* endpoint,
     net::ProxyInfo* proxy_info) {
-  if (!proxy_info) {
-    return ProxyRouteApplyStatus::kInvalidEndpoint;
-  }
-
   switch (plan.action) {
     case RouteAction::kPreserveNative:
       if (plan.effective_mode == AccessMode::kNone ||
@@ -63,35 +56,83 @@ ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
       BlockWithoutDirectFallback(proxy_info);
       return ProxyRouteApplyStatus::kMustAbort;
     case RouteAction::kUseRegisteredProxy:
-      break;
+      return std::nullopt;
   }
+  return ProxyRouteApplyStatus::kInvalidEndpoint;
+}
 
-  if (plan.effective_mode != AccessMode::kProxy ||
-      !plan.registered_proxy_entry.has_value() ||
-      plan.registered_proxy_entry->registration_id.empty() ||
-      plan.registered_proxy_entry->proxy_group_id.empty() ||
-      plan.generations != plan.registered_proxy_entry->generations || !endpoint ||
-      !MatchesPlan(*plan.registered_proxy_entry, *endpoint) ||
-      !IsNumericLoopback(endpoint->host) || endpoint->port == 0) {
-    BlockWithoutDirectFallback(proxy_info);
-    return ProxyRouteApplyStatus::kInvalidEndpoint;
+bool IsPlanCompatibleWithEndpoint(const RoutePlan& plan,
+                                  const RegisteredProxyEndpoint* endpoint) {
+  if (plan.effective_mode != AccessMode::kProxy) {
+    return false;
   }
+  if (!plan.registered_proxy_entry.has_value()) {
+    return false;
+  }
+  const RegisteredProxyEntry& registration = *plan.registered_proxy_entry;
+  if (registration.registration_id.empty()) {
+    return false;
+  }
+  if (registration.proxy_group_id.empty()) {
+    return false;
+  }
+  if (plan.generations != registration.generations) {
+    return false;
+  }
+  if (!endpoint) {
+    return false;
+  }
+  if (!MatchesPlan(registration, *endpoint)) {
+    return false;
+  }
+  if (!IsNumericLoopback(endpoint->host)) {
+    return false;
+  }
+  return endpoint->port != 0;
+}
 
-  const net::ProxyServer::Scheme scheme = ToProxyScheme(endpoint->transport);
+std::optional<net::ProxyServer> BuildLoopbackProxyServer(
+    const RegisteredProxyEndpoint& endpoint) {
+  const net::ProxyServer::Scheme scheme = ToProxyScheme(endpoint.transport);
   if (scheme == net::ProxyServer::SCHEME_INVALID) {
+    return std::nullopt;
+  }
+  net::ProxyServer server = net::ProxyServer::FromSchemeHostAndPort(
+      scheme, endpoint.host, std::optional<uint16_t>(endpoint.port));
+  if (!server.is_valid()) {
+    return std::nullopt;
+  }
+  return server;
+}
+
+}  // namespace
+
+ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
+    const RoutePlan& plan,
+    const RegisteredProxyEndpoint* endpoint,
+    net::ProxyInfo* proxy_info) {
+  if (!proxy_info) {
+    return ProxyRouteApplyStatus::kInvalidEndpoint;
+  }
+
+  if (std::optional<ProxyRouteApplyStatus> terminal_status =
+          ApplyNonProxyRouteAction(plan, proxy_info)) {
+    return *terminal_status;
+  }
+
+  if (!IsPlanCompatibleWithEndpoint(plan, endpoint)) {
     BlockWithoutDirectFallback(proxy_info);
     return ProxyRouteApplyStatus::kInvalidEndpoint;
   }
 
-  const net::ProxyServer server = net::ProxyServer::FromSchemeHostAndPort(
-      scheme, endpoint->host, std::optional<uint16_t>(endpoint->port));
-  if (!server.is_valid()) {
+  std::optional<net::ProxyServer> server = BuildLoopbackProxyServer(*endpoint);
+  if (!server.has_value()) {
     BlockWithoutDirectFallback(proxy_info);
     return ProxyRouteApplyStatus::kInvalidEndpoint;
   }
 
   net::ProxyList proxy_list;
-  proxy_list.SetSingleProxyChain(net::ProxyChain(server));
+  proxy_list.SetSingleProxyChain(net::ProxyChain(*server));
   proxy_info->OverrideProxyList(proxy_list);
   return ProxyRouteApplyStatus::kAppliedProxy;
 }

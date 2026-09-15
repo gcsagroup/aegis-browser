@@ -164,5 +164,21 @@ TEST(AccessProxyRouteAdapterTest, SupportsNumericIpv6HttpLoopback) {
   EXPECT_EQ(info.proxy_chain().First().GetPort(), 19090u);
 }
 
+TEST(AccessProxyRouteAdapterTest, SupportsBracketedIpv6HttpLoopback) {
+  RegisteredProxyEndpoint endpoint = TestEndpoint();
+  endpoint.host = "[::1]";
+  endpoint.port = 19091;
+  net::ProxyInfo info;
+  info.UseDirect();
+
+  EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
+                                      &endpoint, &info),
+            ProxyRouteApplyStatus::kAppliedProxy);
+  ASSERT_EQ(info.proxy_list().size(), 1u);
+  EXPECT_TRUE(info.proxy_chain().First().is_http());
+  EXPECT_EQ(info.proxy_chain().First().GetHost(), "[::1]");
+  EXPECT_EQ(info.proxy_chain().First().GetPort(), 19091u);
+}
+
 }  // namespace
 }  // namespace aegis_access

@@ -1,14 +1,14 @@
-From bc687d9d80383a9399a89f9864b9b7686e9c2656 Mon Sep 17 00:00:00 2001
+From 985d7bc5439f04adefe4466bf2a6f9a1296dfc90 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
-Date: Wed, 16 Sep 2026 00:38:51 +0800
+Date: Wed, 16 Sep 2026 02:09:16 +0800
 Subject: [PATCH] feat(aegis): add fail-closed proxy route adapter
 
 ---
  components/aegis_access/BUILD.gn              |   3 +
- .../access_proxy_route_adapter.cc             |  99 +++++++++++
+ .../access_proxy_route_adapter.cc             | 140 +++++++++++++
  .../aegis_access/access_proxy_route_adapter.h |  66 +++++++
- .../access_proxy_route_adapter_unittest.cc    | 168 ++++++++++++++++++
- 4 files changed, 336 insertions(+)
+ .../access_proxy_route_adapter_unittest.cc    | 184 ++++++++++++++++++
+ 4 files changed, 393 insertions(+)
  create mode 100644 components/aegis_access/access_proxy_route_adapter.cc
  create mode 100644 components/aegis_access/access_proxy_route_adapter.h
  create mode 100644 components/aegis_access/access_proxy_route_adapter_unittest.cc
@@ -36,10 +36,10 @@ index 75f24a0..ce67177 100644
      "access_route_planner_unittest.cc",
 diff --git a/components/aegis_access/access_proxy_route_adapter.cc b/components/aegis_access/access_proxy_route_adapter.cc
 new file mode 100644
-index 0000000..f0a3569
+index 0000000..f427a5b
 --- /dev/null
 +++ b/components/aegis_access/access_proxy_route_adapter.cc
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,140 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/access_proxy_route_adapter.h"
@@ -81,16 +81,9 @@ index 0000000..f0a3569
 +  proxy_info->OverrideProxyList(empty);
 +}
 +
-+}  // namespace
-+
-+ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
++std::optional<ProxyRouteApplyStatus> ApplyNonProxyRouteAction(
 +    const RoutePlan& plan,
-+    const RegisteredProxyEndpoint* endpoint,
 +    net::ProxyInfo* proxy_info) {
-+  if (!proxy_info) {
-+    return ProxyRouteApplyStatus::kInvalidEndpoint;
-+  }
-+
 +  switch (plan.action) {
 +    case RouteAction::kPreserveNative:
 +      if (plan.effective_mode == AccessMode::kNone ||
@@ -105,35 +98,83 @@ index 0000000..f0a3569
 +      BlockWithoutDirectFallback(proxy_info);
 +      return ProxyRouteApplyStatus::kMustAbort;
 +    case RouteAction::kUseRegisteredProxy:
-+      break;
++      return std::nullopt;
 +  }
++  return ProxyRouteApplyStatus::kInvalidEndpoint;
++}
 +
-+  if (plan.effective_mode != AccessMode::kProxy ||
-+      !plan.registered_proxy_entry.has_value() ||
-+      plan.registered_proxy_entry->registration_id.empty() ||
-+      plan.registered_proxy_entry->proxy_group_id.empty() ||
-+      plan.generations != plan.registered_proxy_entry->generations || !endpoint ||
-+      !MatchesPlan(*plan.registered_proxy_entry, *endpoint) ||
-+      !IsNumericLoopback(endpoint->host) || endpoint->port == 0) {
-+    BlockWithoutDirectFallback(proxy_info);
-+    return ProxyRouteApplyStatus::kInvalidEndpoint;
++bool IsPlanCompatibleWithEndpoint(const RoutePlan& plan,
++                                  const RegisteredProxyEndpoint* endpoint) {
++  if (plan.effective_mode != AccessMode::kProxy) {
++    return false;
 +  }
++  if (!plan.registered_proxy_entry.has_value()) {
++    return false;
++  }
++  const RegisteredProxyEntry& registration = *plan.registered_proxy_entry;
++  if (registration.registration_id.empty()) {
++    return false;
++  }
++  if (registration.proxy_group_id.empty()) {
++    return false;
++  }
++  if (plan.generations != registration.generations) {
++    return false;
++  }
++  if (!endpoint) {
++    return false;
++  }
++  if (!MatchesPlan(registration, *endpoint)) {
++    return false;
++  }
++  if (!IsNumericLoopback(endpoint->host)) {
++    return false;
++  }
++  return endpoint->port != 0;
++}
 +
-+  const net::ProxyServer::Scheme scheme = ToProxyScheme(endpoint->transport);
++std::optional<net::ProxyServer> BuildLoopbackProxyServer(
++    const RegisteredProxyEndpoint& endpoint) {
++  const net::ProxyServer::Scheme scheme = ToProxyScheme(endpoint.transport);
 +  if (scheme == net::ProxyServer::SCHEME_INVALID) {
++    return std::nullopt;
++  }
++  net::ProxyServer server = net::ProxyServer::FromSchemeHostAndPort(
++      scheme, endpoint.host, std::optional<uint16_t>(endpoint.port));
++  if (!server.is_valid()) {
++    return std::nullopt;
++  }
++  return server;
++}
++
++}  // namespace
++
++ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
++    const RoutePlan& plan,
++    const RegisteredProxyEndpoint* endpoint,
++    net::ProxyInfo* proxy_info) {
++  if (!proxy_info) {
++    return ProxyRouteApplyStatus::kInvalidEndpoint;
++  }
++
++  if (std::optional<ProxyRouteApplyStatus> terminal_status =
++          ApplyNonProxyRouteAction(plan, proxy_info)) {
++    return *terminal_status;
++  }
++
++  if (!IsPlanCompatibleWithEndpoint(plan, endpoint)) {
 +    BlockWithoutDirectFallback(proxy_info);
 +    return ProxyRouteApplyStatus::kInvalidEndpoint;
 +  }
 +
-+  const net::ProxyServer server = net::ProxyServer::FromSchemeHostAndPort(
-+      scheme, endpoint->host, std::optional<uint16_t>(endpoint->port));
-+  if (!server.is_valid()) {
++  std::optional<net::ProxyServer> server = BuildLoopbackProxyServer(*endpoint);
++  if (!server.has_value()) {
 +    BlockWithoutDirectFallback(proxy_info);
 +    return ProxyRouteApplyStatus::kInvalidEndpoint;
 +  }
 +
 +  net::ProxyList proxy_list;
-+  proxy_list.SetSingleProxyChain(net::ProxyChain(server));
++  proxy_list.SetSingleProxyChain(net::ProxyChain(*server));
 +  proxy_info->OverrideProxyList(proxy_list);
 +  return ProxyRouteApplyStatus::kAppliedProxy;
 +}
@@ -213,10 +254,10 @@ index 0000000..0f105e3
 +#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_ROUTE_ADAPTER_H_
 diff --git a/components/aegis_access/access_proxy_route_adapter_unittest.cc b/components/aegis_access/access_proxy_route_adapter_unittest.cc
 new file mode 100644
-index 0000000..22a6cd5
+index 0000000..5756bed
 --- /dev/null
 +++ b/components/aegis_access/access_proxy_route_adapter_unittest.cc
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,184 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/access_proxy_route_adapter.h"
@@ -381,6 +422,22 @@ index 0000000..22a6cd5
 +  EXPECT_TRUE(info.proxy_chain().First().is_http());
 +  EXPECT_EQ(info.proxy_chain().First().GetHost(), "[::1]");
 +  EXPECT_EQ(info.proxy_chain().First().GetPort(), 19090u);
++}
++
++TEST(AccessProxyRouteAdapterTest, SupportsBracketedIpv6HttpLoopback) {
++  RegisteredProxyEndpoint endpoint = TestEndpoint();
++  endpoint.host = "[::1]";
++  endpoint.port = 19091;
++  net::ProxyInfo info;
++  info.UseDirect();
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
++                                      &endpoint, &info),
++            ProxyRouteApplyStatus::kAppliedProxy);
++  ASSERT_EQ(info.proxy_list().size(), 1u);
++  EXPECT_TRUE(info.proxy_chain().First().is_http());
++  EXPECT_EQ(info.proxy_chain().First().GetHost(), "[::1]");
++  EXPECT_EQ(info.proxy_chain().First().GetPort(), 19091u);
 +}
 +
 +}  // namespace
