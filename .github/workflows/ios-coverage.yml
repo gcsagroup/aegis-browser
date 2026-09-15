@@ -2,20 +2,6 @@
 name: iOS Coverage
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - apps/ios/**
-      - packages/core/src/agent/contracts/v1/**
-      - .github/workflows/ios-coverage.yml
-  push:
-    branches:
-      - main
-    paths:
-      - apps/ios/**
-      - packages/core/src/agent/contracts/v1/**
-      - .github/workflows/ios-coverage.yml
   workflow_dispatch:
 
 permissions:

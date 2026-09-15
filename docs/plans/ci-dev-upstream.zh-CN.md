@@ -1,6 +1,6 @@
 # DEV 到上游的 CI、审查与自动合并实施方案
 
-日期：2026-09-14。状态：实施设计，尚未代表 CI 已建立或合并门槛已启用。
+日期：2026-09-14（初始设计与观察）。2026-09-15 范围更新：当前只关注 macOS；自动 CI 仅 `quality` 与 `quality-gate`，后者只依赖并严格要求 `quality=success`。Linux/Windows 覆盖率及 iOS/Android 工作流均仅手动运行，不属于当前合并门。Android 与 WinRM 专属套件保留在 `quality:other-platforms` 显式入口；共享与 Mac 测试仍由 `quality:fast` 执行。本文历史 SHA/初始观察保留，当前操作以 [CI 指南](../development/ci.zh-CN.md) 为准。
 
 ## 1. 目标与当前事实
 
@@ -46,7 +46,7 @@ CI 实现采用 Sol xhigh；架构调整采用 Astra high；独立 review 使用
 
 1. 环境预检：Node、pnpm、Python、C++ 编译器、Git、ripgrep、必要的 shell 工具；不满足时明确非零退出。
 2. 锁文件安装：固定 pnpm，使用 `pnpm install --frozen-lockfile`，不得静默改写依赖声明或工作区配置。
-3. `pnpm run quality:fast`，完整保留现有阶段，不通过删测试或吞错误修复 CI。
+3. `pnpm run quality:fast`，保留 Mac 与共享阶段；仅将其他平台专属阶段移入显式手动入口，不删除测试或吞错误修复 CI。
 4. 冻结合同校验：本期修订4的 `freeze.json` 本身、覆盖范围及受保护文件须与可信目标base中的已批准冻结版本一致；再校验哈希、字节数、必需文件、修订与数量一致性。不能只拿候选提交自己的清单验证自己的文件，也不能把历史 `documentChecks: PASS` 当作本次执行结果。上游首次引入冻结文件、目标base尚无清单时，使用已独立验证的冻结提交 `d60b5952b40e511d6f98f3f33be926dbe7ab1eb7` 的清单与文件作为初始基准，由可信协调端固定来源和对象，不能让PR参数自选“可信基准”。未来有明确授权的重新冻结应单独审查并更新基准，不夹带在普通CI/功能PR中。
 5. 交互预览：运行既有 `verify-preview.cjs`；将其 `jsdom@26.1.0` 依赖纳入锁文件，消除本机 `NODE_PATH` 隐式依赖。保持冻结脚本字节不变，在外围解决结果输出和依赖问题。
 6. 本次改动涉及 workflow/门禁脚本时执行其有意义的单元和行为回归，以及 workflow 语法/表达式校验。

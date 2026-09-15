@@ -6,9 +6,11 @@ import {dirname, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
+import YAML from 'yaml';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const scripts = join(root, 'scripts/ci');
+mkdirSync(join(root, '.artifacts'), {recursive: true});
 
 function run(command, args, options = {}) {
   return spawnSync(command, args, {
@@ -69,6 +71,9 @@ test('required result gate fails closed for every non-success state', () => {
       env: {REQUIRED_RESULTS: JSON.stringify({quality: state})},
     });
     assert.notEqual(result.status, 0, `state ${state || 'missing'} unexpectedly passed`);
+  }
+  for (const results of [{}, {other: 'success'}, {quality: 'success', extra: 'success'}]) {
+    assert.notEqual(run(process.execPath, [join(scripts, 'check-required-results.mjs')], {env: {REQUIRED_RESULTS: JSON.stringify(results)}}).status, 0);
   }
   const absent = run(process.execPath, [join(scripts, 'check-required-results.mjs')], {
     env: {REQUIRED_RESULTS: ''},
@@ -366,43 +371,61 @@ test('CI identity binds a pull request to the exact B/H/M graph', () => {
   assert.notEqual(result.status, 0);
 });
 
-test('workflow validator separates required Mac gates from the filtered iOS report', () => {
-  const workflow = join(root, '.github/workflows/quality.yml');
-  const iosWorkflow = join(root, '.github/workflows/ios-coverage.yml');
-  let result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow]);
+test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
+  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml']
+    .map((name) => join(root, '.github/workflows', name));
+  const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
+  const validate = (args) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args]);
+  const result = validate(paths);
   assert.equal(result.status, 0, result.stderr);
-  const cwd = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
-  const source = readFileSync(workflow, 'utf8');
-  const mutable = join(cwd, 'mutable.yml');
-  writeFileSync(mutable, source.replace('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', 'actions/checkout@v7'));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), mutable]);
-  assert.notEqual(result.status, 0);
-  const skipped = join(cwd, 'skipped.yml');
-  writeFileSync(skipped, source.replace('if: ${{ always() }}\n    needs:', 'if: ${{ success() }}\n    needs:'));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), skipped]);
-  assert.notEqual(result.status, 0);
-  const missing = join(cwd, 'missing-required-job.yml');
-  writeFileSync(missing, source.replace('      - shell-coverage\n', ''));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), missing]);
-  assert.notEqual(result.status, 0);
-  const missingResult = join(cwd, 'missing-required-result.yml');
-  writeFileSync(missingResult, source.replace(',"shell-coverage":"${{ needs.shell-coverage.result }}"', ''));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), missingResult]);
-  assert.notEqual(result.status, 0);
-  const filteredMain = join(cwd, 'filtered-main.yml');
-  writeFileSync(filteredMain, source.replace('    branches:\n      - main\n', '    branches:\n      - main\n    paths:\n      - apps/browser/**\n'));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), filteredMain]);
-  assert.notEqual(result.status, 0);
+  const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
+  const mutations = [
+    [0, (w) => { w.jobs.quality.steps[0].uses = 'actions/checkout@v7'; }],
+    [0, (w) => { w.jobs['quality-gate'].if = '${{ success() }}'; }],
+    [0, (w) => { w.jobs['quality-gate'].needs = []; }],
+    [0, (w) => { w.jobs['quality-gate'].needs.push('shell-coverage'); }],
+    [0, (w) => { w.jobs.quality['runs-on'] = 'ubuntu-24.04'; }],
+    [0, (w) => { w.jobs.quality.if = '${{ false }}'; }],
+    [0, (w) => { w.jobs.extra = structuredClone(w.jobs.quality); }],
+    [0, (w) => { w.on.pull_request.paths = ['apps/browser/**']; }],
+    ...['{}', '{"replacement":"success"}', '{"quality":"success"}', '{"quality":"${{ needs.quality.result }}","extra":"success"}'].map((value) =>
+      [0, (w) => { w.jobs['quality-gate'].steps[1].env.REQUIRED_RESULTS = value; }]),
+    [0, (w) => { w.jobs['quality-gate'].steps[1].run += ' || true'; }],
+    [0, (w) => { w.jobs['quality-gate'].steps[1].if = '${{ false }}'; }],
+    ...[1, 2, 3].flatMap((index) => [
+      [index, (w) => { w.on.push = {branches: ['main']}; }],
+      [index, (w) => { w.permissions.contents = 'write'; }],
+      [index, (w) => { Object.values(w.jobs)[0]['continue-on-error'] = true; }],
+      [index, (w) => { Object.values(w.jobs)[0].permissions = {'contents': 'write'}; }],
+      [index, (w) => { Object.values(w.jobs)[0].steps[0].with['persist-credentials'] = true; }],
+      [index, (w) => { Object.values(w.jobs)[0].steps[0].uses = 'actions/checkout@v7'; }],
+    ]),
+    [1, (w) => { w.jobs['ios-coverage'].steps[1].with['node-version'] = '22.23.0'; }],
+  ];
+  try {
+    for (const [number, [index, mutate]] of mutations.entries()) {
+      const copy = structuredClone(originals[index]);
+      mutate(copy);
+      const path = join(directory, `mutation-${number}.yml`);
+      writeFileSync(path, YAML.stringify(copy));
+      const args = [...paths];
+      args[index] = path;
+      assert.notEqual(validate(args).status, 0, `workflow mutation ${number} unexpectedly passed`);
+    }
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
+});
 
-  const iosSource = readFileSync(iosWorkflow, 'utf8');
-  const missingVectors = join(cwd, 'ios-missing-vectors.yml');
-  writeFileSync(missingVectors, iosSource.replaceAll('      - packages/core/src/agent/contracts/v1/**\n', ''));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow, missingVectors]);
-  assert.notEqual(result.status, 0);
-  const driftedIosTool = join(cwd, 'ios-drifted-tool.yml');
-  writeFileSync(driftedIosTool, iosSource.replace('node-version: 22.23.1', 'node-version: 22.23.0'));
-  result = run(process.execPath, [join(scripts, 'validate-workflow.mjs'), workflow, driftedIosTool]);
-  assert.notEqual(result.status, 0);
+test('Mac quality chain retains shared tests and isolates platform-specific execution', () => {
+  const rootScripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts;
+  const browserScripts = JSON.parse(readFileSync(join(root, 'apps/browser/package.json'), 'utf8')).scripts;
+  assert.doesNotMatch(rootScripts['quality:fast'], /test:android|test:model-relay|test:winrm/u);
+  for (const name of ['test:scripts', 'test:agent-ui', 'test:local-model']) assert.ok(rootScripts['quality:fast'].includes(name));
+  assert.match(browserScripts['test:local-model'], /verify-agent-local-model_test/u);
+  assert.doesNotMatch(browserScripts['test:scripts'], /package-android|winrm-model-relay/u);
+  for (const name of ['test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScripts['test:scripts'].includes(name));
+  for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android', 'test:winrm-model-relay']) assert.ok(rootScripts['quality:other-platforms'].includes(name));
 });
 
 test('native classification is NUL-safe, rename-safe, and conservative for unknown production paths', () => {
