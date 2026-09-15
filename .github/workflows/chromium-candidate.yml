@@ -1,0 +1,89 @@
+name: Chromium 三平台候选构建
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/upstream/**']
+permissions:
+  contents: read
+concurrency:
+  group: aegis-candidate-build
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 验证编排脚本
+        run: python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
+      - name: 检查构建机接入状态
+        env:
+          RUNNERS_READY: ${{ vars.AEGIS_BUILD_RUNNERS_READY }}
+        run: |
+          if [ "$RUNNERS_READY" != true ]; then
+            echo '::error::三平台专用构建机尚未确认就绪，请按 docs/github-upstream-ci.zh-CN.md 接入。'
+            exit 1
+          fi
+      - name: 获取本次官方版本证据
+        run: python apps/browser/scripts/check-chromium-upstream.py --output ci-evidence/upstream
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-upstream
+          path: ci-evidence/upstream
+          if-no-files-found: error
+  build:
+    needs: preflight
+    timeout-minutes: 1440
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: mac
+            labels: '["self-hosted", "macOS", "ARM64", "aegis-upstream"]'
+          - platform: windows
+            labels: '["self-hosted", "Windows", "X64", "aegis-upstream"]'
+          - platform: android
+            labels: '["self-hosted", "Linux", "X64", "aegis-upstream"]'
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-upstream
+          path: ci-evidence/upstream
+      - name: 核对源码、构建、测试及验收
+        # 专用机器预装 Python 3.12+；配置由机器环境 AEGIS_CI_CONFIG 指定。
+        run: python apps/browser/scripts/ci/candidate.py build --platform ${{ matrix.platform }} --evidence ci-evidence
+      - name: 记录平台结果
+        if: always()
+        run: python apps/browser/scripts/ci/candidate.py summary --evidence ci-evidence
+      - name: 保存产物和失败现场
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence
+          if-no-files-found: error
+          retention-days: 14
+  summary:
+    needs: [preflight, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 三平台完成状态
+        env:
+          PREFLIGHT: ${{ needs.preflight.result }}
+          BUILDS: ${{ needs.build.result }}
+        run: |
+          echo "前置检查：$PREFLIGHT；三平台构建与配置的验收：$BUILDS" >> "$GITHUB_STEP_SUMMARY"
+          echo '安装包、运行验收、漏洞回归和正式发布是独立状态；本流程不发布 Release 或替换用户 App。' >> "$GITHUB_STEP_SUMMARY"
+          test "$PREFLIGHT" = success && test "$BUILDS" = success
