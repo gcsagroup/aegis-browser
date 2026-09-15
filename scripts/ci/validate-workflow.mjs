@@ -8,6 +8,10 @@ const expectedActions = new Set([
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
   'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+  'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903',
+  'actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a',
+  'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+  'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d',
   'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
 ]);
 
@@ -22,6 +26,12 @@ function array(value) {
 try {
   const path = resolve(process.argv[2] ?? '.github/workflows/quality.yml');
   const iosPath = resolve(process.argv[3] ?? '.github/workflows/ios-coverage.yml');
+  const otherPath = resolve(process.argv[4] ?? '.github/workflows/other-platform-coverage.yml');
+  const androidPath = resolve(process.argv[5] ?? '.github/workflows/android-java-coverage.yml');
+  const otherSource = readFileSync(otherPath, 'utf8');
+  const androidSource = readFileSync(androidPath, 'utf8');
+  const otherWorkflow = YAML.parse(otherSource);
+  const androidWorkflow = YAML.parse(androidSource);
   const source = readFileSync(path, 'utf8');
   const iosSource = readFileSync(iosPath, 'utf8');
   const workflow = YAML.parse(source);
@@ -38,24 +48,16 @@ try {
     if (!array(config.branches).includes('main')) fail(`${event} must target main`);
     if ('paths' in config || 'paths-ignore' in config) fail(`${event} may not filter paths`);
   }
-  const iosTriggers = iosWorkflow.on ?? {};
-  const iosTriggerNames = Object.keys(iosTriggers).sort();
-  if (JSON.stringify(iosTriggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
-    fail(`Unexpected iOS workflow triggers: ${iosTriggerNames.join(', ')}`);
-  }
-  const requiredIosPaths = [
-    '.github/workflows/ios-coverage.yml',
-    'apps/ios/**',
-    'packages/core/src/agent/contracts/v1/**',
-  ];
-  for (const event of ['pull_request', 'push']) {
-    const config = iosTriggers[event] ?? {};
-    if (!array(config.branches).includes('main')) fail(`iOS ${event} must target main`);
-    const paths = array(config.paths);
-    for (const requiredPath of requiredIosPaths) {
-      if (!paths.includes(requiredPath)) fail(`iOS ${event} paths must include ${requiredPath}`);
+  for (const [label, manual] of [['iOS', iosWorkflow], ['Other platform', otherWorkflow], ['Android', androidWorkflow]]) {
+    if (JSON.stringify(Object.keys(manual?.on ?? {})) !== JSON.stringify(['workflow_dispatch'])) {
+      fail(`${label} workflow must be manual-only`);
     }
-    if ('paths-ignore' in config) fail(`iOS ${event} may not use paths-ignore`);
+    if (manual.permissions?.contents !== 'read' || Object.values(manual.permissions ?? {}).includes('write')) {
+      fail(`${label} workflow permissions must be read-only`);
+    }
+    if (!manual.concurrency || manual.concurrency['cancel-in-progress'] == null) {
+      fail(`${label} workflow must define concurrency and cancellation policy`);
+    }
   }
   const dispatchInputs = triggers.workflow_dispatch?.inputs ?? {};
   for (const input of ['base_sha', 'target_sha']) {
@@ -81,10 +83,12 @@ try {
   const iosJobs = iosWorkflow.jobs ?? {};
   const quality = jobs.quality;
   const iosCoverage = iosJobs['ios-coverage'];
-  const shellCoverage = jobs['shell-coverage'];
-  const powershellCoverage = jobs['powershell-coverage'];
+  const shellCoverage = otherWorkflow.jobs?.['shell-coverage'];
+  const powershellCoverage = otherWorkflow.jobs?.['powershell-coverage'];
   const gate = jobs['quality-gate'];
-  const expectedJobs = ['powershell-coverage', 'quality', 'quality-gate', 'shell-coverage'];
+  const expectedJobs = ['quality', 'quality-gate'];
+  if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
+  if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
   if (JSON.stringify(Object.keys(jobs).sort()) !== JSON.stringify(expectedJobs)) {
     fail(`Workflow job set must be exactly: ${expectedJobs.join(', ')}`);
   }
@@ -102,22 +106,27 @@ try {
     if (job?.name !== id) fail(`${id} job check name must be ${id}`);
     if (job?.['runs-on'] !== runner) fail(`${id} job must use ${runner}`);
     if (job?.['timeout-minutes'] !== timeout) fail(`${id} timeout must be ${timeout} minutes`);
-    if ('if' in job) fail(`Required ${id} job may not be conditional`);
+    if ('if' in job) fail(`Manual ${id} job may not be conditional`);
   }
   if (iosCoverage?.name !== 'ios-coverage') fail('iOS report job check name must be ios-coverage');
   if (iosCoverage?.['runs-on'] !== 'macos-26') fail('iOS report job must use macos-26');
   if (iosCoverage?.['timeout-minutes'] !== 60) fail('iOS report timeout must be 60 minutes');
-  if ('if' in iosCoverage) fail('iOS report job may not be conditional within its filtered workflow');
+  if ('if' in iosCoverage) fail('iOS report job may not be conditional within its manual workflow');
   if ('continue-on-error' in iosCoverage) fail('iOS report job must preserve test failures');
   if (gate.name !== 'quality-gate') fail('Required summary check name must be quality-gate');
-  if (!String(gate.if).includes('always()')) fail('quality-gate must run with always()');
-  const expectedNeeds = ['powershell-coverage', 'quality', 'shell-coverage'];
+  if (gate.if !== '${{ always() }}') fail('quality-gate must run with always()');
+  const expectedNeeds = ['quality'];
   if (JSON.stringify(array(gate.needs).sort()) !== JSON.stringify(expectedNeeds)) {
     fail(`quality-gate needs must be exactly: ${expectedNeeds.join(', ')}`);
   }
   if (gate['timeout-minutes'] !== 5) fail('quality-gate timeout must be 5 minutes');
 
-  const allJobs = {...jobs, 'ios-report/ios-coverage': iosCoverage};
+  if (gate['runs-on'] !== 'macos-15') fail('quality-gate must use macos-15');
+  const allJobs = {...jobs, ...otherWorkflow.jobs, ...androidWorkflow.jobs, 'ios-report/ios-coverage': iosCoverage};
+  for (const [id, job] of Object.entries(allJobs)) {
+    if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
+    if (job.permissions && (job.permissions === 'write-all' || Object.values(job.permissions).some((value) => value !== 'read' && value !== 'none'))) fail(`${id} permissions must be read-only`);
+  }
   const allSteps = Object.values(allJobs).flatMap((job) => array(job.steps));
   for (const step of allSteps) {
     if ('continue-on-error' in step) fail(`Step may not suppress failures: ${step.name ?? 'unnamed step'}`);
@@ -131,7 +140,7 @@ try {
     }
   }
   const checkoutSteps = allSteps.filter((step) => String(step.uses ?? '').startsWith('actions/checkout@'));
-  if (checkoutSteps.length !== 5) fail('Every job must use the approved checkout action exactly once');
+  if (checkoutSteps.length !== 6) fail('Every job must use the approved checkout action exactly once');
   for (const step of checkoutSteps) {
     if (step.with?.['persist-credentials'] !== false) fail('Checkout must disable persisted credentials');
     if (step.with?.['fetch-depth'] !== 0) fail('Checkout must fetch history for identity validation');
@@ -176,10 +185,12 @@ try {
   ) fail('powershell-coverage must bind Pester coverage to GITHUB_SHA and the verified module');
   const gateRun = array(gate.steps).find((step) => String(step.run ?? '').includes('check-required-results.mjs'));
   if (!gateRun || !gateRun.env?.REQUIRED_RESULTS) fail('quality-gate must fail closed through check-required-results.mjs');
-  for (const id of expectedNeeds) {
-    if (!String(gateRun.env.REQUIRED_RESULTS).includes(`needs.${id}.result`)) {
-      fail(`quality-gate required results must include ${id}`);
-    }
+  const requiredResults = JSON.parse(gateRun.env.REQUIRED_RESULTS);
+  if (JSON.stringify(requiredResults) !== JSON.stringify({quality: '${{ needs.quality.result }}'})) {
+    fail('quality-gate required results must be exactly the quality result expression');
+  }
+  if (gateRun.run !== 'node scripts/ci/check-required-results.mjs' || 'if' in gateRun) {
+    fail('quality-gate must execute the fail-closed checker unconditionally');
   }
   for (const [id, job] of [
     ['quality', quality],
@@ -193,7 +204,7 @@ try {
       uploads[0].with?.['retention-days'] !== 14
     ) fail(`${id} evidence upload must run always and retain artifacts for 14 days`);
   }
-  if (/pull_request_target|workflow_run|self-hosted/u.test(`${source}\n${iosSource}`)) {
+  if (/pull_request_target|workflow_run|self-hosted/u.test(`${source}\n${iosSource}\n${otherSource}\n${androidSource}`)) {
     fail('Untrusted or self-hosted execution trigger detected');
   }
   console.log(JSON.stringify({status: 'PASS', path, iosPath, jobs: Object.keys(jobs), iosJobs: Object.keys(iosJobs)}));
