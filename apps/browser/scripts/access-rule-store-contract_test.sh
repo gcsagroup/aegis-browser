@@ -45,9 +45,9 @@ rg -Fq '+class AccessRuleStore' "$PATCH_FILE" ||
   fail "0116 must deliver the production store"
 [[ "$(rg -F -c '0116-feat-aegis-add-access-rule-store-recovery.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0116 must appear once in series"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
+[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
   '0116-feat-aegis-add-access-rule-store-recovery.patch' ]] ||
-  fail "0116 must be the current series tail"
+  fail "0116 must immediately precede the current access patch"
 
 if [[ -e "$BROWSER_DIR/overlay/components/aegis_access/access_rule_store.cc" ||
       -e "$BROWSER_DIR/overlay/components/aegis_access/access_rule_store.h" ]]; then

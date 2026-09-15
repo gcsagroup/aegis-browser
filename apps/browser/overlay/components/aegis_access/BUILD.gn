@@ -25,6 +25,8 @@ action("generate_policy_matcher_vectors") {
 
 source_set("aegis_access") {
   sources = [
+    "access_proxy_route_adapter.cc",
+    "access_proxy_route_adapter.h",
     "access_policy_evaluator.cc",
     "access_policy_evaluator.h",
     "access_route_planner.cc",
@@ -40,6 +42,7 @@ source_set("aegis_access") {
 
 test("aegis_access_unittests") {
   sources = [
+    "access_proxy_route_adapter_unittest.cc",
     "access_policy_evaluator_unittest.cc",
     "access_route_planner_contract_test.h",
     "access_route_planner_unittest.cc",
