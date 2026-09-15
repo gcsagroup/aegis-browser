@@ -4,7 +4,7 @@
 
 ## 分支职责与日常路径
 
-个人 Fork 的默认分支为 `develop`：日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI，再准备上游导出。`main` 只镜像 `gcsagroup/aegis-browser:main`，不接收个人日常功能/CI PR。上游通过后再同步镜像，不能将本地绿灯当作镜像同步或上游通过。
+个人 Fork 的默认分支为 `develop`：日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI，再准备上游导出。`main` 只镜像 `gcsagroup/aegis-browser:main`，不接收个人日常功能/CI PR。上游通过后由协调者显式核实身份并只快进同步镜像，不能强推或创建额外合并提交，不能将本地绿灯当作镜像同步或上游通过。
 
 2026-09-15 的分支迁移取代之前 DEV main 的工作方式；PR #20 的 main-only 验证方案已废止，不能沿用其目标分支或旧结果放行 develop。既有历史 SHA/报告保留原事件和分支身份。
 

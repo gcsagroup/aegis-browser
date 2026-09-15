@@ -19,6 +19,9 @@ try {
   const cwd = resolve(values.repo ?? repoRoot);
   const event = values.event;
   if (!['pull_request', 'push', 'workflow_dispatch'].includes(event)) fail(`Unsupported CI event: ${event}`);
+  for (const name of ['base', 'head', 'tested']) {
+    if (!/^[0-9a-f]{40}$/u.test(values[name] ?? '')) fail(`${name} must be an immutable full 40-character SHA`);
+  }
   const base = resolveCommit(values.base, cwd);
   const head = resolveCommit(values.head, cwd);
   const tested = resolveCommit(values.tested, cwd);
