@@ -4,9 +4,9 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml) [![iOS Swift iPhone 快照：83.57%](assets/badges/swift-iphone-snapshot.svg)](docs/audit/swift-coverage-snapshot-2026-09-14.md)
+[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE)
 
-CI 包含必需的 macOS 质量任务及 Linux/Windows 覆盖率任务，不代表完整 macOS Chromium 构建。
+当前只关注 macOS。CI 自动运行 macOS 质量门；Linux、Windows、iOS 和 Android 验证后置，保留手动入口。完整 Chromium 构建仍是独立门禁。
 
 GCSA-aegis 是一个本地优先的隐私与安全浏览器项目，现有两条产品线：[`apps/browser`](apps/browser/README.zh-CN.md) 下的 Chromium 分支，以及 [`apps/ios`](apps/ios/README.zh-CN.md) 下的原生 iOS 浏览器。核心能力集成在各自的浏览器产品内；项目不会复活已退役的独立扩展产品。
 

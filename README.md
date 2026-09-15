@@ -2,9 +2,9 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml) [![iOS Swift iPhone snapshot: 83.57%](assets/badges/swift-iphone-snapshot.svg)](docs/audit/swift-coverage-snapshot-2026-09-14.md)
+[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE)
 
-CI includes the mandatory macOS quality job plus Linux/Windows coverage; it is not a full macOS Chromium build.
+Current focus: macOS only. CI runs the macOS quality gate; Linux, Windows, iOS and Android validation is deferred and available manually. Full Chromium builds remain a separate gate.
 
 GCSA-aegis is a local-first privacy and security browser project with two product lines: the Chromium fork under [`apps/browser`](apps/browser/README.md) and the native iOS browser under [`apps/ios`](apps/ios/README.md). Core capabilities stay inside each browser product; the project does not revive the retired standalone-extension product.
 
