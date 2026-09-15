@@ -374,7 +374,6 @@ test('CI identity binds a pull request to the exact B/H/M graph', () => {
   }
 });
 
-
 test('push and dispatch identity allow main and develop while rejecting other refs and SHA drift', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, 'file.txt'), 'base\n');
@@ -382,6 +381,7 @@ test('push and dispatch identity allow main and develop while rejecting other re
   writeFileSync(join(cwd, 'file.txt'), 'head\n');
   const head = commitAll(cwd, 'head');
   git(cwd, 'branch', 'develop');
+  git(cwd, 'tag', 'diagnostic-target');
   const verify = (event, ref, b = base, h = head, tested = head) => run(process.execPath, [
     join(scripts, 'verify-ci-identity.mjs'), '--event', event, '--base', b,
     '--head', h, '--tested', tested, '--ref', ref, '--repo', cwd,
@@ -393,6 +393,11 @@ test('push and dispatch identity allow main and develop while rejecting other re
       assert.equal(result.status, 0, result.stderr);
       assert.notEqual(verify(event, `refs/heads/${branch}`, base, base).status, 0, 'target must match tested SHA');
       assert.notEqual(verify(event, `refs/heads/${branch}`, base, head, base).status, 0, 'checkout must match tested SHA');
+    }
+    for (const mutable of ['HEAD', 'HEAD~1', head.slice(0, 8), 'diagnostic-target']) {
+      assert.notEqual(verify(event, 'refs/heads/develop', mutable).status, 0, 'base must be a full SHA');
+      assert.notEqual(verify(event, 'refs/heads/develop', base, mutable).status, 0, 'head must be a full SHA');
+      assert.notEqual(verify(event, 'refs/heads/develop', base, head, mutable).status, 0, 'tested must be a full SHA');
     }
     for (const ref of ['refs/heads/feature', 'refs/tags/main', 'refs/heads/develop-extra', '']) {
       assert.notEqual(verify(event, ref).status, 0, `${event} accepted ${ref}`);
