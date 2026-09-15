@@ -350,25 +350,58 @@ test('public export rejects external, personal, chained, and history-only symlin
 });
 
 test('CI identity binds a pull request to the exact B/H/M graph', () => {
+  for (const branch of ['main', 'develop']) {
+    const cwd = initRepo();
+    if (branch === 'develop') git(cwd, 'checkout', '-b', branch);
+    writeFileSync(join(cwd, 'file.txt'), 'base\n');
+    const base = commitAll(cwd, 'base');
+    git(cwd, 'checkout', '-b', 'feature');
+    writeFileSync(join(cwd, 'file.txt'), 'head\n');
+    const head = commitAll(cwd, 'head');
+    git(cwd, 'checkout', branch);
+    git(cwd, 'merge', '--no-ff', 'feature', '-m', 'merge candidate');
+    const tested = git(cwd, 'rev-parse', 'HEAD');
+    let result = run(process.execPath, [
+      join(scripts, 'verify-ci-identity.mjs'), '--event', 'pull_request',
+      '--base', base, '--head', head, '--tested', tested, '--repo', cwd,
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    result = run(process.execPath, [
+      join(scripts, 'verify-ci-identity.mjs'), '--event', 'pull_request',
+      '--base', base, '--head', base, '--tested', tested, '--repo', cwd,
+    ]);
+    assert.notEqual(result.status, 0);
+  }
+});
+
+
+test('push and dispatch identity allow main and develop while rejecting other refs and SHA drift', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, 'file.txt'), 'base\n');
   const base = commitAll(cwd, 'base');
-  git(cwd, 'checkout', '-b', 'feature');
   writeFileSync(join(cwd, 'file.txt'), 'head\n');
   const head = commitAll(cwd, 'head');
-  git(cwd, 'checkout', 'main');
-  git(cwd, 'merge', '--no-ff', 'feature', '-m', 'merge candidate');
-  const tested = git(cwd, 'rev-parse', 'HEAD');
-  let result = run(process.execPath, [
-    join(scripts, 'verify-ci-identity.mjs'), '--event', 'pull_request',
-    '--base', base, '--head', head, '--tested', tested, '--repo', cwd,
+  git(cwd, 'branch', 'develop');
+  const verify = (event, ref, b = base, h = head, tested = head) => run(process.execPath, [
+    join(scripts, 'verify-ci-identity.mjs'), '--event', event, '--base', b,
+    '--head', h, '--tested', tested, '--ref', ref, '--repo', cwd,
   ]);
-  assert.equal(result.status, 0, result.stderr);
-  result = run(process.execPath, [
-    join(scripts, 'verify-ci-identity.mjs'), '--event', 'pull_request',
-    '--base', base, '--head', base, '--tested', tested, '--repo', cwd,
-  ]);
-  assert.notEqual(result.status, 0);
+  for (const event of ['push', 'workflow_dispatch']) {
+    for (const branch of ['main', 'develop']) {
+      git(cwd, 'checkout', branch);
+      const result = verify(event, `refs/heads/${branch}`);
+      assert.equal(result.status, 0, result.stderr);
+      assert.notEqual(verify(event, `refs/heads/${branch}`, base, base).status, 0, 'target must match tested SHA');
+      assert.notEqual(verify(event, `refs/heads/${branch}`, base, head, base).status, 0, 'checkout must match tested SHA');
+    }
+    for (const ref of ['refs/heads/feature', 'refs/tags/main', 'refs/heads/develop-extra', '']) {
+      assert.notEqual(verify(event, ref).status, 0, `${event} accepted ${ref}`);
+    }
+  }
+  git(cwd, 'checkout', '--orphan', 'unrelated');
+  const unrelated = commitAll(cwd, 'unrelated root');
+  git(cwd, 'checkout', 'develop');
+  for (const event of ['push', 'workflow_dispatch']) assert.notEqual(verify(event, 'refs/heads/develop', unrelated).status, 0, 'unrelated base must fail');
 });
 
 test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
@@ -380,6 +413,14 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
   assert.equal(result.status, 0, result.stderr);
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const mutations = [
+    ...['pull_request', 'push'].flatMap((event) => [
+      [0, (w) => { w.on[event].branches = ['main']; }],
+      [0, (w) => { w.on[event].branches = ['develop']; }],
+      [0, (w) => { w.on[event].branches.push('feature'); }],
+      [0, (w) => { w.on[event]['branches-ignore'] = ['develop']; }],
+    ]),
+    [0, (w) => { w.concurrency.group = 'main'; }],
+    [0, (w) => { w.concurrency['cancel-in-progress'] = true; }],
     [0, (w) => { w.jobs.quality.steps[0].uses = 'actions/checkout@v7'; }],
     [0, (w) => { w.jobs['quality-gate'].if = '${{ success() }}'; }],
     [0, (w) => { w.jobs['quality-gate'].needs = []; }],

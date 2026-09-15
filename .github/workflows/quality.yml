@@ -4,9 +4,11 @@ on:
   pull_request:
     branches:
       - main
+      - develop
   push:
     branches:
       - main
+      - develop
   workflow_dispatch:
     inputs:
       base_sha:
@@ -14,7 +16,7 @@ on:
         required: true
         type: string
       target_sha:
-        description: Exact SHA selected on main for this diagnostic run
+        description: Exact SHA selected on main or develop for this diagnostic run
         required: true
         type: string
 
@@ -22,7 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'main' || format('dispatch-{0}', github.run_id) }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}', github.ref) || format('dispatch-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
