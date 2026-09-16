@@ -2,126 +2,110 @@
 
 **English** | [简体中文](roadmap.zh-CN.md) | [繁體中文](roadmap.zh-TW.md)
 
-## Status vocabulary
+## Product order
 
-- **Historical prototype:** useful evidence of direction, not a current deliverable.
-- **In source:** code or a patch exists; build and runtime status are separate.
-- **Source synchronized:** patch lineage, overlay, and the external checkout agree.
-- **Simulator-qualified:** the named iOS source and test scope ran together on the designated iPhone and iPad Simulators; real-device, signing, distribution, and store status remain separate.
-- **Gate passed:** the named source, artifact, platform, and representative test scope passed together.
-- **Release-qualified:** the same distributable artifact passed identity, trust, signing, installation, privacy, platform, and rollout gates.
+Aegis follows one explicit platform sequence:
 
-## Current conclusion — 2026-09-10
+> **macOS first → iOS / iPadOS next → other platforms later**
 
-The Browser Agent v2 candidate contains 108 top-level Chromium patches plus 2 nested V8 patches. It replays exactly to Chromium source tree `319366182c31108e29e62d2f2199aff29a0b86e8`; the 57-, 65-, 67-, 95-, and 97-patch records remain historical snapshots. Platform artifact identity and affected runtime acceptance remain separate gates.
+The existing iOS codebase is not discarded while macOS is the active milestone. Shared security fixes and contract maintenance may continue, but macOS release qualification is the current product goal. A macOS release does not wait for iOS distribution readiness.
 
-The native iOS product has a SwiftUI/WKWebView browser, isolated standard/private profiles, embedded Safari/Share extensions, Agent Broker, four offline deterministic workflows, shared Agent Contract v1 vectors, and an iPhone/iPad Simulator chain. Its current ceiling is **SIMULATOR_QUALIFIED**. Real-device validation is `NOT_RUN`; default-browser entitlement is `PENDING`; formal signing, Archive, TestFlight, and App Store delivery are `NOT_RUN`.
+## Evidence vocabulary
 
-Project status is **release No-Go**. Neither product line has a trusted current-source distribution package and completed release gate set.
+- **In source:** code exists; build and runtime status are separate.
+- **Verified:** the named source and stated test scope passed together.
+- **Simulator-qualified:** the named iOS source and test scope passed on the designated Simulators; real-device and distribution status remain separate.
+- **Release-qualified:** the same distributable artifact passed identity, build, runtime, privacy, signing, installation and rollout gates for that platform.
 
-## Historical phases
+Badges and historical audit records are supporting evidence for their stated scope only. They do not automatically grant release qualification.
 
-### Phase 0 — Scaffold
+## Current focus — macOS
 
-The monorepo, trilingual product page, and core policy prototype established the product direction.
+Aegis for macOS is the active product line. The Chromium source, repository quality gates, standalone native C++ tests and selected integration tests exist, but the project is still **not release-qualified**. Full current-source Chromium runtime evidence and the final signed/notarized distribution chain remain separate work.
 
-### Phase 1 — Extension prototype
+### MAC-1 — Core browser and Access Service
 
-The MV3 extension demonstrated selected tracker, phishing, and privacy-summary ideas. It is no longer a standalone product or release target.
+**Goal:** close the current browser-integration and network-routing gaps without weakening fail-closed behavior.
 
-### Phase 2 — Core prototype
+Exit criteria:
 
-Link sanitization, cookie classification, PII redaction, phishing heuristics, and generated policy assets moved into reusable, testable code. Research-only evaluators remain separate from browser decisions.
+- Access routing, Profile/StoragePartition ownership and NetworkContext integration are covered by unit/regression tests.
+- Required Chromium targets compile against the current pinned source and the relevant GoogleTest/browser scenarios run in a qualified environment.
+- Selected HTTP/HTTPS proxy, unavailable-proxy and native-direct scenarios demonstrate the intended behavior without silent DIRECT fallback.
+- Browser Agent, privacy controls and native browser surfaces keep their explicit security and user-consent boundaries.
 
-## Phase 3 — Chromium product line
+### MAC-2 — Stability and release candidate
 
-### M0: Baseline and recovery — complete
+**Goal:** turn the integrated source into a reproducible, identity-bound macOS candidate.
 
-- Chromium is pinned to version `151.0.7922.77` and base commit `ff37cfca210138f2a40b843b4a8195ab7e4fc7ff`.
-- Local recovery points and evidence-preservation boundaries exist.
+Exit criteria:
 
-### M1: Chromium convergence and fast gates — complete
+- Clean replay/build from the pinned Chromium source and ordered patch series is reproducible.
+- Representative browsing, profile isolation, downloads, Agent flows, update behavior, crash/restart handling and real-network scenarios pass on the same candidate.
+- Performance, privacy/egress and regression review cover the candidate rather than historical patch heads.
+- The installed application identity and evidence map back to the exact repository, Chromium, V8, patch-series and build inputs.
 
-- The historical browser-only convergence retired the separate extension product and concentrated Chromium capability in `apps/browser`.
-- This boundary prohibits a standalone `apps/extension`; it does not prohibit a later native platform browser with embedded extensions.
-- The workspace has frozen JavaScript dependencies and repeatable fast quality gates.
+### MAC-3 — macOS distribution
 
-### M2: Chromium integration and local build identity — partial
+**Goal:** qualify the first stable Aegis distribution for macOS.
 
-- The ordered source now contains 108 top-level Chromium patches and 2 nested V8 patches.
-- The 57-patch diagnostic manifest and 65-patch Agent candidate retain their recorded local evidence, but only for those historical heads.
-- The 65-patch candidate passed its named native, browser, fixture, lifecycle, and local UI scope; it was not a signed, notarized, installed distribution package.
-- The 108-patch v2 source passed exact chained replay and repository fast gates; exact platform manifests, device tests, and runtime acceptance remain open until recorded together.
+Exit criteria:
 
-### M3–M4: Security boundaries and stability — partial
+- Developer ID signing and notarization succeed for the exact candidate.
+- Packaging, clean installation, launch, upgrade and rollback are tested on representative supported systems.
+- Release notes, third-party notices, privacy boundaries and distribution authorization are reviewed for that exact artifact.
+- A separate explicit release decision authorizes publication. Source merge or CI success alone is not publication authorization.
 
-- Chromium-native tracker, link, cookie, phishing, fingerprint, download, summary, and local-automation controls exist in source.
-- Selected historical native, browser, and runtime gates passed for named earlier patch heads.
-- MinerGuard and the V8 bytecode shadow remain observe-only. Research evaluators do not authorize blocking or production security claims.
-- A fixed-research-protocol bytecode-shadow v5 pilot passed 4/4 runs across two public sites on the current diagnostic artifact; its report remains `research-only` with `releaseEligible=false`.
-- Complete product-wide egress attribution, telemetry/update/crash-reporting review, representative feature-behavior matrices, startup stress, false-positive evaluation, and broader current-head reruns remain open.
+## Next focus — iOS / iPadOS
 
-### M5: Android — deferred
+The native iOS product already contains a SwiftUI/WKWebView browser, standard/private profile isolation, embedded Safari/Share extensions, AgentKit and an established Simulator test baseline. The next phase starts from that code and refreshes its evidence against current source; it is not a restart from zero.
 
-- A qualified x86-64 Linux build environment is not available in the current evidence set.
-- There is no identity-bound current-source APK/AAB or real-device acceptance for the current source.
-- Android page summary and platform-specific behavior need current-source verification.
+### IOS-1 — Current-source real-device baseline
 
-### M6: Chromium internal release candidate — pending
+**Goal:** bind the existing native product to current committed source and move beyond Simulator-only evidence.
 
-A Chromium internal RC requires a clean, identity-bound current-source build; affected tests and runtime gates; product identity; signing and notarization preparation; packaging; installed-App acceptance; privacy/egress review; and rollback evidence. None may be inferred from source synchronization.
+Exit criteria:
 
-## Phase 4 — Native iOS product line
+- Reproducible Debug/Release builds and regenerated Xcode project inputs are reviewed against current source.
+- iPhone and iPad real-device navigation, private mode, lifecycle, accessibility and representative-site behavior pass.
+- Safari extension, Share/App Group and standard/private isolation are validated end to end on device.
 
-### I0: Project and product topology — simulator-qualified scope
+### IOS-2 — Product completion
 
-- The native Xcode project defines the Aegis app, BrowserKit, AegisPolicyKit, AgentKit, embedded Safari/Share extensions, and unit/UI test targets for iPhone and iPad.
-- The iOS app is a product line; its extension targets remain embedded components, not standalone products.
+**Goal:** complete the privacy, policy and Agent path required for an iOS product rather than a Simulator demo.
 
-### I1: Browser shell and profile isolation — simulator-qualified scope
+Exit criteria:
 
-- SwiftUI/WKWebView tabs, navigation, standard history/bookmarks, iPhone compact UI, and iPad sidebar exist.
-- Standard and private profiles separate data stores, user-content controllers, and extension state. Private mode is non-persistent and disables history, bookmarks, and Agent use.
-- Minimum-OS, multi-runtime, lifecycle, real-site, and real-device matrices remain open.
+- PolicyKit protections cover the intended live navigation/outbound paths with privacy regression tests.
+- Agent authorization, consent, recovery and embedded-extension boundaries are verified on real devices.
+- Production model routing, live-site behavior and any newly enabled network/download capability receive explicit security and privacy review.
 
-### I2: Embedded extensions and policy path — partial
+### IOS-3 — Distribution
 
-- Safari has a gesture/lease-bound read-only snapshot gate whose authorization is bound to a document token and navigation epoch; Share has a bounded, expiring, single-consumption HTTP(S) URL inbox.
-- BrowserSession main-frame navigation now applies LinkSanitizer and PhishingScorer for tracking-parameter cleanup and high-risk URL blocking. PII outbound enforcement is not connected to a live data path.
-- Real Safari permissions, App Group behavior, Share-to-app lifecycle, and device end-to-end acceptance remain open.
+**Goal:** qualify Aegis for TestFlight and App Store delivery.
 
-### I3: Agent Contract v1 and four workflows — simulator-qualified offline scope
+Exit criteria:
 
-- AgentKit implements the shared contract codec/vectors, grants, document leases, resource registry, one-time capabilities, Broker, consent states, and recovery boundaries. R1/R2 approval uses a random ID, a TTL of at most 60 seconds, a complete action digest, exact resume checks, and burn-before-validation issuance.
-- Deep research, browser manager, safe download, and shopping assistant are deterministic and offline-verifiable.
-- Local bookmark apply/undo transactions, an authenticated encrypted journal, crash-recovery resolution, and an Agent double-confirmation entry point after restart are implemented in Simulator scope. Live DOM extraction, actual downloads, production model routing, payment, and order submission are not implemented release evidence.
-- Final named evidence uses Aegis-Debug, Xcode 26.6, and iOS Simulator 26.5: iPhone 17 passed 80 of 81 with the iPad-only sidebar test skipped; iPad Air 11-inch (M4) passed 81 of 81. The 39/39 focused security unit tests and 2/2 critical UI tests are subsets of those full suites, not additional totals.
+- Required entitlement, Development Team and provisioning configuration are approved and reproducible.
+- Formal signing and Archive pass for the exact candidate.
+- TestFlight installation/upgrade testing, Privacy Manifest, App Store privacy metadata and required compliance material are complete.
+- App Store submission remains an explicit release decision, separate from source readiness.
 
-### I4: Device and distribution — pending
+## Later platforms
 
-- Real-device browser, private-mode, Safari, Share, lifecycle, performance, accessibility, and privacy acceptance are `NOT_RUN`.
-- Default-browser entitlement and approval are `PENDING`.
-- Development Team/provisioning, formal signing, Archive, TestFlight, App Store metadata/privacy declarations, installation, upgrade, and rollback are `NOT_RUN`.
+Windows, Android and Linux remain later evaluation tracks. Existing code and manual test/build entry points are preserved, but they do not block the macOS → iOS roadmap and currently carry no release-date commitment.
 
-## Cross-product work
-### M6: macOS local release candidate — complete; distribution qualification pending
+## Shared engineering work
 
-The exact current source has a clean, identity-bound macOS local build, affected tests, fixture runtime evidence, A1–A10 acceptance, a completed fixed-range security review, and verified fixes for all 11 findings. Product identity, trusted build attestation, Developer ID signing, notarization, distribution packaging, installed-App acceptance, full Chromium outbound review, Android, and release authorization remain open; therefore formal release remains No-Go.
+Some work spans platforms and continues throughout the roadmap:
 
-### M7: Documentation and publication boundaries — in progress
+- shared policy and Agent Contract compatibility;
+- CI, test evidence and source-identity integrity;
+- security reviews and dependency/license maintenance;
+- documentation that separates source status, test evidence and release claims.
 
-- Public README, architecture, and roadmap describe both product lines in English, Simplified Chinese, and Traditional Chinese.
-- Dated audit records remain historical snapshots and do not override this roadmap.
-- Source publication, package publication, TestFlight, App Store, and production deployment remain distinct decisions.
+Historical patch counts, old test totals and dated acceptance records remain in [audit records](audit/README.md); they are not kept as moving roadmap milestones.
 
-## GitHub source synchronization
+## Release rule
 
-The 2026-08-28 authorization covers SSH synchronization of source branches to `git@github.com:gcsagroup/aegis-browser.git`. It does not cover Git tags, GitHub Releases, binaries, signing credentials, notarization, Play uploads, TestFlight, App Store submission, or production deployment.
-
-## Release exit criteria
-
-1. Commit and reproduce the exact current source and nested lineages for both product lines from a clean state.
-2. Produce identity-bound current-source Chromium and iOS distribution candidates on qualified hosts.
-3. Pass affected unit, browser, runtime, privacy, egress, performance, representative-site, Simulator, and real-device gates on those exact candidates.
-4. Complete Chromium identity/signing/notarization/packaging gates and iOS entitlement/provisioning/signing/Archive/TestFlight/App Store gates as applicable.
-5. Complete installation, upgrade, rollback, privacy/egress, third-party notice, documentation, and distribution-authorization review for the exact release candidate.
+Each platform qualifies independently. For any release candidate, the evidence must describe the **same exact source and artifact** through build, runtime, privacy, signing, installation and distribution review. Passing one platform never grants release status to another.
