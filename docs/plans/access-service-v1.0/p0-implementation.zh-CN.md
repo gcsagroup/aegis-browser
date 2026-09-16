@@ -133,6 +133,46 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 
 这些结果仅证明固定 Chromium API 上的规范化与纯匹配决策可编译、可运行，以及仓库快速门禁通过。PR #3 尚需修复 HEAD 的独立复审与 hosted CI；Network Service 派发、等待/取消、连接复用、真实 HTTP/WS、Xray、企业策略、性能及 DPI 均未执行，G0 与 A76/A108/A113/A115/A116/A117/A118 整行仍不是 PASS。
 
+## 0117：首个 `ProxyInfo` 网络适配切片
+
+2026-09-16 在 `origin/develop` 基线继续实现网络侧最小切片。新增 `access_proxy_route_adapter.{h,cc}`，把已经完成验证的 `RoutePlan` 应用到 Chromium `net::ProxyInfo`，但尚未把策略发布/RequestOwnershipRegistry 通过 Mojo 接入真实 Network Service delegate。
+
+本切片固定三条行为：`kPreserveNative` 完全不修改 Chromium 已有代理解析结果；`kUseRegisteredProxy` 只接受与 RoutePlan 的 registration/group/owner/generation 全部一致的 numeric loopback HTTP 登记入口，并把代理列表替换为唯一该入口；`kWait/kDeny/kFail` 会返回 `kMustAbort`，要求更高层在网络发送前中止，同时清空代理候选作为二次 no-DIRECT 保护。伪造、远程、缺端口或未知 transport 的登记入口同样 fail closed。opaque registration id 不被解释成 host/port，真实地址必须来自独立可信登记状态；SOCKS5 保留到后续完整验收切片。
+
+新增 `AccessProxyRouteAdapterTest` 覆盖原生配置保持、矛盾的 `kPreserveNative+kProxy` fail closed、单一 `127.0.0.1` HTTP 代理、失败态 `kMustAbort` 与去除 DIRECT、无效/不可信入口 fail closed，以及 `::1` / `[::1]` 两种 Chromium 接受的 IPv6 loopback HTTP 形态。固定 Chromium 151 `gn gen out/AegisLocalDev` 在临时补齐 0116 overlay 后成功生成 31,700 个目标；完整 Ninja build 被当前主机 Xcode 27 SDK 与 Chromium bundled lld/TAPI 不兼容阻塞，失败发生在 libc++/Rust host tool 链接阶段。为隔离产品代码，随后直接执行 Ninja 为 0117 生成的两条 clang C++ 编译命令，`access_proxy_route_adapter.cc` 与 `access_proxy_route_adapter_unittest.cc` 均 exit 0。临时同步到 Chromium checkout 的 0116/0117 文件已恢复清理，未把验证副本留在固定源码树。
+
+该结果只把“RoutePlan → Chromium ProxyInfo”提升到固定 Chromium API 编译通过，不代表真实浏览器请求已经经过 localhost proxy。下一步仍需建立 Profile/StoragePartition 绑定的 Network Service 传输合同，把可信 request context、published snapshot、runtime registration 送到对应 NetworkContext，并对真实 HTTP/HTTPS 请求验证代理命中、OFF 保留原生配置、代理失效不直连。G0 继续保持未通过。 Chromium 151 的 `HttpStreamFactory::JobController` 对空 `ProxyInfo` 明确返回 `ERR_NO_SUPPORTED_PROXIES`，因此清空代理列表不会隐式回落 DIRECT；不过 `kMustAbort` 仍要求上层在发送前主动终止，避免把网络栈错误码当成策略控制面。最终 `0117` patch 从当前组件基线重放后与 overlay 四个文件逐字一致；Codacy review 后把安全校验拆成独立 helper 并补齐 bracketed IPv6 回归，更新后的 SHA-256 为 `fbf5ad0c9bbd7a845f541c2865defc735a19f0dc0a0eaf805f74bbbcaf431bc4`。随后使用 Chromium 151 Ninja 生成的实际 clang 命令重新编译最终 production/test 两个 0117 对象，均 exit 0；仓库 `quality:fast` 也在固定 Node 22.23.1 / pnpm 9.15.0 依赖安装后完整 PASS，包括 28 个 core 测试文件、170 个测试、Access native 487 checks、浏览器脚本/Agent UI/本地模型/仓库合同及 core build。
+
+## 0118：Profile / StoragePartition NetworkContext 传输切片
+
+2026-09-16 在已合并的 0117 基线继续加入 `AccessNetworkContextTransport`。该对象按 Profile 生命周期挂载，并以浏览器拥有的 `relative_partition_path` 分隔 StoragePartition；`ProfileNetworkContextService` 在构造对应 `NetworkContextParams` 时安装一个初始 inert 的 `CustomProxyConfig` 更新通道。Aegis 只在该 NetworkContext 尚未存在 custom-proxy config、更新 receiver 或 connection observer 时接管，避免覆盖其他 Chromium 功能的代理所有权。
+
+本切片只发布规范化 exact host 选择。选中的 HTTP/HTTPS 请求由 Chromium `NetworkServiceProxyDelegate` 覆写为 0117 已校验的唯一 numeric-loopback HTTP endpoint；未选择 host、子域名和 OFF 状态让 custom config 得到 DIRECT，从而 delegate 不覆盖 Chromium 原生代理结果。POST 等首次非幂等发送允许沿同一已选择入口；单一入口即使处于 proxy retry bad map 中也不会获得 DIRECT/native 备用。发布入口必须与当前 Profile + StoragePartition 的运行时 ownership key 完全一致，跨 Profile owner、非规范 host、重复 host 或另一个 custom-proxy owner 均拒绝。
+
+最终 `AccessNetworkContextTransportTest` 覆盖 OFF 保留原生代理、HTTP/HTTPS exact-host 命中、其他 host/子域名不命中、POST、bad-proxy no-DIRECT、清除选择恢复原生、StoragePartition 隔离、跨 Profile ownership 拒绝、已有 config/receiver/observer 不被覆盖及非规范 host 拒绝。固定 Chromium 151 的 production transport 对象和最终 unittest 对象均使用实际 Ninja clang 命令编译通过；unittest 曾被 `-Werror` 捕获一个未使用常量并已修复。`ProfileNetworkContextService` 精确对象验证持续被该 checkout 缺失的既有生成物阻挡；逐步补齐 Mojo/buildflag 后，`server_certificate_database.pb.h` 的生成需要运行 checkout 自带 `protoc`，而它因当前 Xcode 27 SDK 与 Chromium bundled lld/TAPI 已知不兼容导致 `libc++_chrome.dylib` 无法生成/加载。因此该项记录为环境 BLOCKED，不报告 Profile 对象 PASS，也不把该 host-tool 链接错误归因于 0118。完整 GTest runtime 同样尚未报告 PASS。最终 `0118` patch 从 0117 后父状态重放并与 overlay/net integration 六个文件逐字一致，SHA-256 为 `c9b2230ea879c2fc6acd146d760ebf1cec20c38652b6057a2ad6d4c3caf9e811`。
+
+该切片仍不是端到端代理验收：尚未用真实浏览器 URLLoader/socket 对 localhost fixture 完成 HTTP/HTTPS 往返，也没有把 RequestOwnershipRegistry、published snapshot 和 runtime registration 以每请求可信上下文送进 Network Service；Xray、SOCKS5、WS、认证、计量和连接池代次仍在后续切片。G0 继续保持未通过。下一 PR 应优先做真实 localhost fixture + 浏览器请求闭环，并验证代理不可达时实际请求失败而不是直连。
+
+## 0119：真实 localhost Proxy NetworkService 验收切片
+
+2026-09-16 在已合并的 0118 基线上增加 `AccessLocalProxyAcceptanceTest`，不改变生产路由语义，只把 0117/0118 已冻结的单一 numeric-loopback HTTP proxy 配置送入真实 Chromium Network Service / URLLoader / socket 路径。测试使用 `EmbeddedTestServer` 同时建立 HTTP origin、HTTPS origin 与本机 HTTP proxy；`target.example` 只在测试进程的 `MockHostResolver` 中映射到 `127.0.0.1`，避免 localhost implicit bypass 掩盖代理选择，同时确保一旦发生 DIRECT fallback，仍能实际命中存活的 origin 并被测试发现。
+
+四个验收用例分别固定：OFF 时 HTTP 请求走原生 direct origin 且 proxy 未收到请求；选中 HTTP 时请求实际抵达 localhost proxy 而 origin 不被访问；选中 HTTPS 时 Network Service 对 localhost HTTP proxy 建立 CONNECT 隧道并抵达 HTTPS origin；选中 proxy 停止后，在 origin 仍存活且域名仍可解析的条件下请求必须失败，origin 计数保持 0，从行为上防止静默 DIRECT fallback。该测试复用 `ApplyRoutePlanToProxyInfo` 生成与 0118 相同的单一 proxy list，并设置 exact-host `reverse_bypass` custom config；0118 自身仍负责 Profile/StoragePartition ownership 与配置发布边界，两层测试职责不混合。
+
+固定 Chromium 151 `gn gen out/AegisLocalDev` 成功生成 31,703 个目标、读取 4,831 个文件。完整测试目标首次尝试被 checkout 缺失的既有 `aegis_libtorrent/.../signal_error_code.cpp` 阻断；把验收下沉到独立 `aegis_access_unittests` 后，完整链接又在既有 Xcode 27 SDK 与 Chromium bundled lld/TAPI 不兼容处失败，无法生成 `libc++_chrome.dylib`，因此四个 GTest runtime 当前记录为环境 BLOCKED，不能报告 PASS。为隔离 0119 源码本身，随后使用 Ninja 为最终测试生成的实际 clang `-Werror` 命令编译 `access_local_proxy_acceptance_unittest.cc`；补齐 9 个缺失的 Mojo/buildflag 生成输入后，第 10 次对象编译 exit 0。最终 0119 patch 只包含 components 测试 BUILD 与验收源码，SHA-256 为 `23b073253e12e854a709cb3570fdbf873e232f9c8388187af05ce25a87dbd87d`。
+
+因此 0119 把真实 HTTP/HTTPS/fail-closed socket 行为固化为可执行 Chromium 回归，但本机环境尚未提供该二进制的 runtime PASS；G0 继续保持未通过。后续若修复/切换可兼容的 Chromium macOS toolchain，应优先运行这四个用例并把 runtime 结果绑定到精确 patch/source SHA；之后再继续 RequestOwnershipRegistry、每请求可信上下文、Xray/SOCKS5/WS/认证/计量及连接池代次。
+
+## 0120：Access C++ GoogleTest 回归加固
+
+2026-09-16 在 0119 基线上只增强测试，不修改生产路由实现。继续复用 Chromium 已内置的 GoogleTest、`EmbeddedTestServer`、`MockHostResolver` 与 Network Service test support，不新增 Catch2、Boost.Test 等第三方测试框架或新的供应链依赖。
+
+`AccessProxyRouteAdapterTest` 新增 `kNone` 原生代理保持、缺失/空 registration identity、proxy group / Profile owner / StoragePartition owner / generation tuple 不匹配以及空 `ProxyInfo` 指针回归，所有不可信 endpoint 继续要求清空代理候选并 fail closed。`AccessNetworkContextTransportTest` 新增跨 partition/非法 channel ownership、绝对路径/父目录引用/超长 partition key、空/超量/重复/非规范 host 发布拒绝，并验证失败发布不会覆盖已经生效的可信选择。`AccessLocalProxyAcceptanceTest` 增加选中配置下未选 host 仍走 native direct，以及 HTTPS 选中 proxy 停止后 origin 仍存活但请求必须失败的 no-DIRECT 回归。
+
+固定 Chromium 151 checkout 的完整 Ninja 图仍会先被既有缺失 `third_party/aegis_libtorrent/.../signal_error_code.cpp` 阻断，因此不能把该全局依赖错误解释成 0120 测试失败。绕开无关全局依赖后，使用 Ninja 为最终三个测试对象生成的精确 clang `-Werror` 命令直接编译 `access_proxy_route_adapter_unittest.cc`、`access_local_proxy_acceptance_unittest.cc` 与 `access_network_context_transport_unittest.cc`，三者均 exit 0。完整 GTest 二进制 runtime 仍受既有 checkout/toolchain 环境限制，未报告 PASS。最终 0120 patch SHA-256 为 `9af49a1e18a0fbceb763f46fa81a81b0154d577de1ff036dd9b2002c994bca6c`。
+
+0120 的作用是提高 0117–0119 的单元/回归保护密度，不改变 G0 状态，也不把编译通过冒充真实浏览器运行通过。后续 toolchain 环境可完整链接时，应优先执行全部 `aegis_access_unittests` 与 `access_network_context_transport_unittests`，再继续 RequestOwnershipRegistry、每请求可信上下文及后续代理 transport。
+
 ## 回滚
 
 本切片尚无运行时入口或数据迁移，回滚其代码、GN/补丁与测试入口的独立提交即可；不删除用户现有文档、凭据、Profile 或构建缓存。后续真实接入单独交付，不能用回滚规划器来清除已持久 PROXY 意图或将其静默变成 DIRECT。
