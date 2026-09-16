@@ -1,0 +1,64 @@
+name: C++ Unit Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - '.github/workflows/cpp-unit-tests.yml'
+      - 'apps/browser/overlay/components/aegis_access/**'
+      - 'apps/browser/overlay/chrome/browser/aegis/access/**'
+      - 'apps/browser/patches/**'
+      - 'apps/browser/scripts/aegis-access-gn-wiring_test.sh'
+      - 'apps/browser/scripts/access-rule-store-contract_test.sh'
+      - 'apps/browser/scripts/test-aegis-access-native.sh'
+      - 'apps/browser/README.md'
+      - 'apps/browser/README.zh-CN.md'
+      - 'apps/browser/README.zh-TW.md'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - '.github/workflows/cpp-unit-tests.yml'
+      - 'apps/browser/overlay/components/aegis_access/**'
+      - 'apps/browser/overlay/chrome/browser/aegis/access/**'
+      - 'apps/browser/patches/**'
+      - 'apps/browser/scripts/aegis-access-gn-wiring_test.sh'
+      - 'apps/browser/scripts/access-rule-store-contract_test.sh'
+      - 'apps/browser/scripts/test-aegis-access-native.sh'
+      - 'apps/browser/README.md'
+      - 'apps/browser/README.zh-CN.md'
+      - 'apps/browser/README.zh-TW.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cpp-unit-tests:
+    name: c++-unit-tests
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out tested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.11.9
+      - name: Install fixed ripgrep
+        timeout-minutes: 5
+        run: bash scripts/ci/install-ripgrep.sh
+      - name: Run standalone C++20 unit tests
+        run: bash apps/browser/scripts/test-aegis-access-native.sh
+      - name: Verify Chromium GoogleTest wiring and regression patch
+        run: bash apps/browser/scripts/aegis-access-gn-wiring_test.sh
