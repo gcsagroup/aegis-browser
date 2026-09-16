@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
@@ -213,6 +214,64 @@ TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership) 
 }
 
 TEST_F(AccessNetworkContextTransportTest,
+       RejectsCrossPartitionAndInvalidChannelOwnership) {
+  const base::FilePath source_partition(FILE_PATH_LITERAL("source"));
+  const base::FilePath target_partition(FILE_PATH_LITERAL("target"));
+
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      target_partition, {kTargetHost}, EndpointFor(source_partition)));
+
+  aegis_access::RegisteredProxyEndpoint invalid_channel =
+      EndpointFor(target_partition);
+  invalid_channel.owner.channel = aegis_access::ChannelNamespace::kInvalid;
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      target_partition, {kTargetHost}, invalid_channel));
+}
+
+TEST_F(AccessNetworkContextTransportTest, RejectsInvalidPartitionPaths) {
+  const base::FilePath absolute(FILE_PATH_LITERAL("/absolute"));
+  const base::FilePath parent(FILE_PATH_LITERAL("partition/../escape"));
+  const base::FilePath too_long =
+      base::FilePath::FromUTF8Unsafe(std::string(1025, 'a'));
+
+  for (const base::FilePath* partition : {&absolute, &parent, &too_long}) {
+    EXPECT_FALSE(transport_->OwnerForPartition(
+                                aegis_access::ChannelNamespace::kDev, *partition)
+                     .has_value());
+    EXPECT_FALSE(transport_->ClearProxySelection(*partition));
+
+    network::mojom::NetworkContextParams params;
+    EXPECT_FALSE(AccessNetworkContextTransport::ConfigureNetworkContext(
+        profile_.get(), *partition, &params));
+  }
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       RejectedPublishDoesNotClobberExistingSelection) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  const auto endpoint = EndpointFor(partition);
+  ASSERT_TRUE(transport_->PublishProxySelection(partition, {kTargetHost}, endpoint));
+  transport_->FlushClientsForTesting(partition);
+
+  EXPECT_FALSE(transport_->PublishProxySelection(partition, {}, endpoint));
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, std::vector<std::string>(257, kTargetHost), endpoint));
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, {kTargetHost, kTargetHost}, endpoint));
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, {"TARGET.example"}, endpoint));
+  transport_->FlushClientsForTesting(partition);
+
+  const net::ProxyInfo result =
+      Resolve(delegate.get(), "https://target.example/still-selected");
+  ASSERT_EQ(result.proxy_list().size(), 1u);
+  EXPECT_FALSE(result.is_direct());
+  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
+  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
+}
+
+TEST_F(AccessNetworkContextTransportTest,
        DoesNotOverwriteAnotherCustomProxyOwner) {
   {
     network::mojom::NetworkContextParams params;
@@ -248,7 +307,7 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
   EXPECT_FALSE(transport_->PublishProxySelection(
       partition, {"TARGET.example"}, endpoint));
   EXPECT_FALSE(transport_->PublishProxySelection(
-      partition, {kTargetHost, kTargetHost}, endpoint));
+      partition, {"target.example."}, endpoint));
 }
 
 }  // namespace
