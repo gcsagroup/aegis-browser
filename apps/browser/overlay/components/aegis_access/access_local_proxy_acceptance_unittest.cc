@@ -239,6 +239,13 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
     return client.completion_status().error_code;
   }
 
+  void ExpectNativeDirectPath(const GURL& url) {
+    EXPECT_EQ(net::OK, Fetch(url));
+    EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
+    EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
+    EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
+  }
+
   void StopProxy() {
     ASSERT_FALSE(proxy_stopped_);
     ASSERT_TRUE(proxy_server_.ShutdownAndWaitUntilComplete());
@@ -265,10 +272,7 @@ TEST_F(AccessLocalProxyAcceptanceTest, OffHttpRequestUsesNativeDirectPath) {
   const GURL target = http_origin_.GetURL(kTargetHost, "/off");
   CreateNetworkContext(target, false);
 
-  EXPECT_EQ(net::OK, Fetch(target));
-  EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
-  EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
-  EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
+  ExpectNativeDirectPath(target);
 }
 
 TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
@@ -286,10 +290,7 @@ TEST_F(AccessLocalProxyAcceptanceTest,
   const GURL target = http_origin_.GetURL(kOtherHost, "/not-selected");
   CreateNetworkContext(target, true);
 
-  EXPECT_EQ(net::OK, Fetch(target));
-  EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
-  EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
-  EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
+  ExpectNativeDirectPath(target);
 }
 
 TEST_F(AccessLocalProxyAcceptanceTest,
