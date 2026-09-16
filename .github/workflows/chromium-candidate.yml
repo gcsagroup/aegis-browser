@@ -1,8 +1,6 @@
 name: Chromium 三平台候选构建
 on:
   workflow_dispatch:
-  push:
-    branches: ['codex/upstream/**']
 permissions:
   contents: read
 concurrency:

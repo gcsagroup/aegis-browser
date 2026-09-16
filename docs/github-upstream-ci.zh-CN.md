@@ -4,8 +4,8 @@
 
 ## 两条工作流
 
-- `.github/workflows/chromium-upstream.yml`：每小时第 17 分钟及手动触发，运行监控回归，独立核对三平台正式 Stable、公告和源码提交，保存结果。使用 GitHub 托管 Linux，不读取本机安装状态；云端报告没有本机 App 证据时，不能解除本机漏洞状态。GitHub 定时调度可能延迟，不能承诺严格一小时 SLA。
-- `.github/workflows/chromium-candidate.yml`：手动触发，或推送 `codex/upstream/**` 候选分支时运行。前置官方检查通过后，同时执行三个构建任务，一个失败不取消其他平台。每台机器沿用自己的固定源码与输出目录，不重新检出、清理或覆盖其他开发工作区。
+- `.github/workflows/chromium-upstream.yml`：`main` 变更、每小时第 17 分钟及手动触发，运行监控回归，独立核对三平台正式 Stable、公告和源码提交，保存结果。使用 GitHub 托管 Linux，不读取本机安装状态；云端报告没有本机 App 证据时，不能解除本机漏洞状态。GitHub 定时调度可能延迟，不能承诺严格一小时 SLA。同一监控组只保留最新运行，避免多个 run 并发更新同一份状态；跨 run cache 只保存 `latest.json`、`last-success.json` 和 `state.json`，完整来源与历史证据只进入当次 artifact，避免每小时重复缓存整个证据树。首次切换会兼容恢复旧 `chromium-upstream-*` cache，再立即丢弃其中的 `runs/`、`sources/` 等历史体积数据，仅迁移必要状态，避免丢失 45 天窗口外仍需持续保留的漏洞记录。
+- `.github/workflows/chromium-candidate.yml`：在三台专用 runner 尚未验收并显式启用前只允许手动触发，不因候选分支 push 自动消耗 GitHub 托管 runner。前置官方检查通过后，同时执行三个构建任务，一个失败不取消其他平台。每台机器沿用自己的固定源码与输出目录，不重新检出、清理或覆盖其他开发工作区。
 
 候选执行顺序：核对该平台官方版本与候选双 pin → 对干净基线应用完整补丁 → 临时索引复现整个 Chromium/V8 源码树 → 递增产品构建号 → GN 检查 → 编译 → 原生测试 → 生成候选包 → 运行机器配置的实际验收程序 → 校验本次产物哈希与验收记录 → 上传日志与产物。
 
@@ -26,7 +26,7 @@
 
 Mac 大规格机器公布存储仍为 14 GB，完整 Mac 构建暂沿用现有环境。Android 托管 Linux 可运行模拟器测试，但不能替代现有 ARM64 真机验收；APK 构建、模拟器与真机结果分别记录。
 
-现有 `chromium-candidate.yml` 是专用源码目录方案，保持就绪开关关闭。它不能仅更换 `runs-on` 就当作托管完整构建：还需要适配首次依赖准备、六小时时限、缓存/产物交接、工具链与真实验收。下面的自托管注册说明保留为备选，不是免费上游检查的前置要求。
+现有 `chromium-candidate.yml` 是专用源码目录方案，保持就绪开关关闭，并且当前只保留 `workflow_dispatch` 手动入口。它不能仅更换 `runs-on` 就当作托管完整构建：还需要适配首次依赖准备、六小时时限、缓存/产物交接、工具链与真实验收。三台 runner 真正验收并设置 `AEGIS_BUILD_RUNNERS_READY=true` 后，如需恢复候选分支自动触发，应作为单独可审查变更重新启用。下面的自托管注册说明保留为备选，不是免费上游检查的前置要求。
 
 来源：[标准机器](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[大规格机器](https://docs.github.com/en/actions/reference/runners/larger-runners)、[时限](https://docs.github.com/en/actions/reference/limits)、[计费](https://docs.github.com/en/billing/reference/actions-runner-pricing)。
 
