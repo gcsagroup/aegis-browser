@@ -122,6 +122,9 @@ class CandidateTests(unittest.TestCase):
         self.assertIn('ci-evidence/upstream/last-success.json', workflow)
         self.assertIn('ci-evidence/upstream/state.json', workflow)
         self.assertNotIn('path: ci-evidence/upstream\n', workflow)
+        self.assertIn('chromium-upstream-state-', workflow)
+        self.assertIn('chromium-upstream-', workflow)
+        self.assertIn('rm -rf ci-evidence/upstream/runs ci-evidence/upstream/sources', workflow)
 
     def test_candidate_workflow_is_manual_until_dedicated_runners_are_ready(self):
         workflow = (ci.ROOT / '.github/workflows/chromium-candidate.yml').read_text()
