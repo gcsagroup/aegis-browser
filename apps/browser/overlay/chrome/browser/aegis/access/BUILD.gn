@@ -3,6 +3,23 @@
 
 import("//testing/test.gni")
 
+source_set("access_network_context_transport") {
+  sources = [
+    "access_network_context_transport.cc",
+    "access_network_context_transport.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//components/aegis_access",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
 source_set("access_rule_store") {
   sources = [
     "access_rule_store.cc",
@@ -13,6 +30,23 @@ source_set("access_rule_store") {
     "//components/aegis_access",
     "//net",
     "//sql",
+    "//url",
+  ]
+}
+
+test("access_network_context_transport_unittests") {
+  sources = [ "access_network_context_transport_unittest.cc" ]
+  deps = [
+    ":access_network_context_transport",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:test_support",
+    "//components/aegis_access",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network:network_service",
+    "//services/network/public/mojom",
+    "//testing/gtest",
     "//url",
   ]
 }
