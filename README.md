@@ -1,38 +1,46 @@
-# GCSA-aegis
+# Aegis
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Current platform: macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
-Current focus: macOS only. CI runs the macOS quality gate; Linux, Windows, iOS and Android validation is deferred and available manually. Full Chromium builds remain a separate gate.
+**A local-first privacy and security browser with a controllable AI Agent. macOS comes first; iPhone and iPad are next.**
 
-GCSA-aegis is a local-first privacy and security browser project with two product lines: the Chromium fork under [`apps/browser`](apps/browser/README.md) and the native iOS browser under [`apps/ios`](apps/ios/README.md). Core capabilities stay inside each browser product; the project does not revive the retired standalone-extension product.
+Aegis integrates privacy controls, security checks, native browser capabilities and an AI Agent directly into the browser. The project is under active development and is not release-qualified.
 
-> **2026-09-14 source update: UI corrections and browser updates：** The source now contains 113 top-level Chromium patches plus 2 nested V8 patches. Local macOS acceptance: Ver 1.1 (018), 32 findings addressed, 18 native tests and 116 UI checks passed; 170 changed messages and translation placeholders checked. Windows/Android device acceptance and a real Release installation remain unverified. No binary or tag is published with this source update. [018 验收记录](docs/ui-copy-acceptance.zh-CN.md)
+## Platform priority
 
-> **Historical status — 2026-09-10:** the Browser Agent v2 candidate contains 108 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. The 57-, 65-, 67-, 95-, and 97-patch records remain historical evidence. The native iOS product remains **SIMULATOR_QUALIFIED** only for its recorded Simulator scope. The project is **release No-Go** pending trusted attestation, production signing, notarization, installed-distribution acceptance, and the separately deferred iOS gates.
+| Platform | Priority | Current direction |
+| --- | --- | --- |
+| **macOS** | **Now** | Finish Chromium integration, Access Service, runtime regression coverage, stability and a signed/notarized distribution candidate. |
+| **iOS / iPadOS** | **Next** | Continue from the existing native SwiftUI/WKWebView code and recorded Simulator baseline, then complete real-device and distribution work. |
+| Windows / Android / Linux | Later | Keep existing source and evaluation entry points; no near-term release commitment. |
 
-[2026-09-10 main consolidation and verification](docs/audit/main-consolidation-2026-09-10.md)
+See the [roadmap](docs/roadmap.md) for milestone exit criteria. macOS may qualify independently; it does not wait for iOS distribution readiness.
 
-The Agent entry is visible in a regular desktop Profile and on Android. The first task can configure and enable the user-selected model without requiring a separate workflow choice or pre-opened page. WebMCP and transaction submission remain default-off, and final checkout/payment always requires user takeover.
+## What Aegis contains
 
-## Product shape
+- **Privacy and tracking controls:** tracker rules, link cleanup, cookie classification, phishing signals and selected fingerprinting mitigations.
+- **Browser Agent:** model configuration, visible plans, browser-controlled tool execution and explicit user takeover for sensitive actions.
+- **Access Service:** native policy and proxy-routing components, including fail-closed routing and NetworkContext integration.
+- **Native browser integration:** Chromium-native download, settings and browser surfaces rather than a standalone extension product.
+- **Native iOS product:** SwiftUI/WKWebView, isolated standard/private profiles, embedded Safari/Share extensions and AgentKit.
 
-- **Chromium product line:** [`apps/browser`](apps/browser/README.md) owns the Chromium pin, patch stack, browser integration, build, and platform packaging boundaries.
-- **Native iOS product line:** [`apps/ios`](apps/ios/README.md) implements a SwiftUI/WKWebView browser, isolated standard and private profiles, embedded Safari/Share extensions, and an Agent Broker.
-- **Shared policy and contract source:** [`packages/core`](packages/core) provides testable policies, generated assets, and Agent Contract v1 schemas and golden vectors shared by TypeScript and Swift.
-- **iOS Agent scope:** four controlled, offline-verifiable workflows—deep research, browser manager, safe download, and shopping assistant—return deterministic results. They are not evidence of a production remote-model path.
-- **Extension boundary:** the Safari and Share targets are embedded components of the iOS app. A separate `apps/extension` product remains prohibited.
+Detailed engineering boundaries live in the [Browser guide](apps/browser/README.md), [iOS guide](apps/ios/README.md) and [architecture](docs/architecture.md).
 
-## Evidence boundary
+## Engineering evidence
 
-Synchronized source, a clean external Chromium checkout, and iOS Simulator qualification are different evidence classes. None proves that the corresponding current source has passed every build, runtime, signing, installation, real-device, privacy, store, and release gate.
+The badges above report different scopes:
 
-Historical Chromium test counts, manifests, and artifact hashes remain in dated audit records and must not be combined across patch heads or presented as current release evidence. Research evidence is also split: Phase 2 is a synthetic formal fixture, while Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`; neither result generalizes to broad malicious-JavaScript detection. For iOS, `SIMULATOR_QUALIFIED` is limited to the named Simulator chain; it is not real-device, distribution, or App Store evidence.
+- **CI** is the repository quality gate for public `main`.
+- **C++ Unit Tests** runs standalone C++20 Access tests plus Chromium GoogleTest wiring/patch contracts. It does **not** claim that the full Chromium GoogleTest binary or every browser runtime scenario passed.
+- **License** and platform badges describe repository metadata and current product priority, not release status.
+
+Full Chromium builds, current browser runtime behavior, real-network scenarios, Developer ID signing, notarization, installation and upgrade acceptance remain separate macOS release gates.
 
 ## Quick start
 
-The JavaScript toolchain is pinned to Node.js `22.23.1` and pnpm `9.15.0`.
+The repository pins Node.js `22.23.1`, pnpm `9.15.0` and Python `3.11.9`.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -40,46 +48,38 @@ pnpm run quality:fast
 pnpm --filter @gcsa-aegis/browser status
 ```
 
-Preparing and building Chromium requires a large external checkout. Read the [Browser guide](apps/browser/README.md) before running network, build, packaging, or runtime commands. For the native app, read the [iOS engineering guide](apps/ios/README.md); its safe default test entry point is:
+Chromium development requires a separate large checkout; start with the [Browser engineering guide](apps/browser/README.md). Native Apple-platform work starts with the [iOS engineering guide](apps/ios/README.md).
 
-```bash
-bash apps/ios/scripts/run-simulator-tests.sh --dry-run
-```
+## Roadmap
 
-## Repository layout
+1. **MAC-1 — Core browser and Access Service:** close current Chromium integration, routing and regression gaps.
+2. **MAC-2 — Stability and release candidate:** reproducible current-source build, representative runtime/privacy/performance checks and installed-App acceptance.
+3. **MAC-3 — macOS distribution:** Developer ID signing, notarization, packaging, clean install/upgrade/rollback and explicit release authorization.
+4. **IOS-1 — Real-device baseline:** refresh the existing native iOS code against current source and complete iPhone/iPad device and lifecycle validation.
+5. **IOS-2 — Product completion:** finish embedded extension, policy, privacy and Agent integration on device.
+6. **IOS-3 — Distribution:** entitlement/provisioning, signing, Archive, TestFlight and App Store readiness.
 
-```text
-apps/browser       Chromium pin, overlays, patches, build and verification scripts
-apps/ios           Native iOS app, embedded extensions, AgentKit, and Simulator tests
-packages/core      Shared policies, detectors, generated assets, and Agent Contract v1
-docs/              Architecture, roadmap, research map, product page, and audit records
-```
+Windows, Android and Linux remain later evaluation tracks and do not block the macOS → iOS roadmap.
 
-## Documentation
+## Contributing
 
-- [Documentation index](docs/README.md)
-- [Architecture](docs/architecture.md)
-- [Roadmap and release gates](docs/roadmap.md)
-- [iOS engineering guide](apps/ios/README.md)
-- [Research-to-implementation map](docs/research-map.md)
-- [Trilingual product page](docs/product.html)
-- [Changelog](CHANGELOG.md)
+Contributions are welcome. Keep each pull request focused and include the tests or evidence relevant to the change.
 
-## GitHub synchronization boundary
+1. Fork this repository.
+2. Create a topic branch from the current `main`.
+3. Make one focused change and add or update relevant tests.
+4. Run the applicable local checks documented for the affected component.
+5. Push the branch to your fork and open a pull request against this repository's `main`.
+6. In the PR description, explain the problem, scope, test evidence and any remaining limitations.
+7. Address review feedback on the same PR; do not rewrite unrelated history.
 
-On 2026-08-28, authorization was granted to synchronize the source repository to `git@github.com:gcsagroup/aegis-browser.git` over SSH. That authorization covers source branch synchronization only. It does **not** authorize creating or publishing a Git tag, GitHub Release, binary, package, signing credential, notarization submission, Play upload, TestFlight build, App Store submission, or production deployment.
+For Chromium changes, read the [Browser guide](apps/browser/README.md). For iOS changes, read the [iOS guide](apps/ios/README.md).
 
-## License
+## Documentation and license
 
-Thanks to the open-source maintainers and contributors who make Aegis possible. See [third-party acknowledgements](THIRD_PARTY_NOTICES.md) for the browser foundation, direct dependencies, optional experiments, and development tools.
+- [Roadmap](docs/roadmap.md) · [Documentation index](docs/README.md) · [Architecture](docs/architecture.md)
+- [Browser engineering guide](apps/browser/README.md) · [iOS engineering guide](apps/ios/README.md)
+- [Research and limitations](docs/research-map.md) · [Historical audit records](docs/audit/README.md)
+- [Changelog](CHANGELOG.md) · [Third-party acknowledgements](THIRD_PARTY_NOTICES.md)
 
-GCSA-authored source is Apache-2.0. Chromium, libtorrent, and other third-party components retain their own licenses; see [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
-
-## Tests
-
-```bash
-pnpm run quality:fast
-bash apps/ios/scripts/run-simulator-tests.sh --dry-run
-```
-
-These commands cover the repository's fast JavaScript/script gates and a non-mutating iOS Simulator preflight. The [CI guide](docs/development/ci.zh-CN.md) defines the measured per-language coverage scopes and Codacy preparation state. Coverage percentages are never combined into a whole-repository value. Native Chromium builds, current-head browser runtime matrices, iOS `--execute` results, real-device checks, signing, packaging, installation, and store acceptance remain separate gates.
+GCSA-authored source uses [Apache-2.0](LICENSE). Chromium, libtorrent and other third-party components retain their own licenses.
