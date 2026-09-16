@@ -163,6 +163,16 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 
 因此 0119 把真实 HTTP/HTTPS/fail-closed socket 行为固化为可执行 Chromium 回归，但本机环境尚未提供该二进制的 runtime PASS；G0 继续保持未通过。后续若修复/切换可兼容的 Chromium macOS toolchain，应优先运行这四个用例并把 runtime 结果绑定到精确 patch/source SHA；之后再继续 RequestOwnershipRegistry、每请求可信上下文、Xray/SOCKS5/WS/认证/计量及连接池代次。
 
+## 0120：Access C++ GoogleTest 回归加固
+
+2026-09-16 在 0119 基线上只增强测试，不修改生产路由实现。继续复用 Chromium 已内置的 GoogleTest、`EmbeddedTestServer`、`MockHostResolver` 与 Network Service test support，不新增 Catch2、Boost.Test 等第三方测试框架或新的供应链依赖。
+
+`AccessProxyRouteAdapterTest` 新增 `kNone` 原生代理保持、缺失/空 registration identity、proxy group / Profile owner / StoragePartition owner / generation tuple 不匹配以及空 `ProxyInfo` 指针回归，所有不可信 endpoint 继续要求清空代理候选并 fail closed。`AccessNetworkContextTransportTest` 新增跨 partition/非法 channel ownership、绝对路径/父目录引用/超长 partition key、空/超量/重复/非规范 host 发布拒绝，并验证失败发布不会覆盖已经生效的可信选择。`AccessLocalProxyAcceptanceTest` 增加选中配置下未选 host 仍走 native direct，以及 HTTPS 选中 proxy 停止后 origin 仍存活但请求必须失败的 no-DIRECT 回归。
+
+固定 Chromium 151 checkout 的完整 Ninja 图仍会先被既有缺失 `third_party/aegis_libtorrent/.../signal_error_code.cpp` 阻断，因此不能把该全局依赖错误解释成 0120 测试失败。绕开无关全局依赖后，使用 Ninja 为最终三个测试对象生成的精确 clang `-Werror` 命令直接编译 `access_proxy_route_adapter_unittest.cc`、`access_local_proxy_acceptance_unittest.cc` 与 `access_network_context_transport_unittest.cc`，三者均 exit 0。完整 GTest 二进制 runtime 仍受既有 checkout/toolchain 环境限制，未报告 PASS。最终 0120 patch SHA-256 为 `9af49a1e18a0fbceb763f46fa81a81b0154d577de1ff036dd9b2002c994bca6c`。
+
+0120 的作用是提高 0117–0119 的单元/回归保护密度，不改变 G0 状态，也不把编译通过冒充真实浏览器运行通过。后续 toolchain 环境可完整链接时，应优先执行全部 `aegis_access_unittests` 与 `access_network_context_transport_unittests`，再继续 RequestOwnershipRegistry、每请求可信上下文及后续代理 transport。
+
 ## 回滚
 
 本切片尚无运行时入口或数据迁移，回滚其代码、GN/补丁与测试入口的独立提交即可；不删除用户现有文档、凭据、Profile 或构建缓存。后续真实接入单独交付，不能用回滚规划器来清除已持久 PROXY 意图或将其静默变成 DIRECT。
