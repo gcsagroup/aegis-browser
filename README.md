@@ -50,7 +50,7 @@ mise exec -- python3 --version
 mise exec -- pnpm --filter @gcsa-aegis/browser status
 ```
 
-For the full local quality gate and repository workflow, follow the [CI and development guide](docs/development/ci.zh-CN.md). Preparing Chromium requires a separate large checkout; follow the [Browser local workflow](apps/browser/README.md#local-workflow) and [workspace guide](WORKSPACES.zh-CN.md).
+For the full local quality gate and repository workflow, follow the [CI and development guide (Chinese)](docs/development/ci.zh-CN.md). Preparing Chromium requires a separate large checkout; follow the [Browser local workflow](apps/browser/README.md#local-workflow) and [workspace guide (Chinese)](WORKSPACES.zh-CN.md).
 
 ## Development workflow
 
@@ -60,7 +60,7 @@ This `develop` branch is the maintenance and integration line. Normal changes fo
 latest develop → feature branch → local validation → PR → review / CI → merge → develop push CI
 ```
 
-Public promotion to the repository's default `main` and then to upstream is a separate reviewed step. The exact branch, review, CI and upstream-export rules are maintained in [docs/development/ci.zh-CN.md](docs/development/ci.zh-CN.md).
+Public promotion to the repository's default `main` and then to upstream is a separate reviewed step. The exact branch, review, CI and upstream-export rules are maintained in the [CI and development guide (Chinese)](docs/development/ci.zh-CN.md).
 
 ## Roadmap
 
