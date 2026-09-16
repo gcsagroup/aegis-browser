@@ -13,7 +13,7 @@ Aegis 把隱私控制、安全檢查、原生瀏覽器能力和 AI Agent 直接�
 | 平台 | 優先級 | 目前方向 |
 | --- | --- | --- |
 | **macOS** | **目前主線** | 完成 Chromium 產品、Access Service、真實執行回歸、穩定性，以及可簽署/公證的發布候選。 |
-| **iOS / iPadOS** | **下一主線** | 基於現有 SwiftUI/WKWebView 與 Simulator-qualified 基線繼續開發，補齊真機與散布鏈路。 |
+| **iOS / iPadOS** | **下一主線** | 基於現有 SwiftUI/WKWebView 程式碼與已記錄的 Simulator 基線繼續開發，補齊真機與散布鏈路。 |
 | Windows / Android / Linux | 後續 | 保留現有原始碼與手動驗證入口，目前不承諾近期發布。 |
 
 完整階段定義見[路線圖](docs/roadmap.zh-TW.md)。macOS 滿足自己的發布條件後可以獨立發布，不需要等待 iOS 達到散布狀態。

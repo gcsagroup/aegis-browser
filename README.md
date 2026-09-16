@@ -13,7 +13,7 @@ Aegis integrates privacy controls, security checks, native browser capabilities 
 | Platform | Priority | Current direction |
 | --- | --- | --- |
 | **macOS** | **Now** | Finish the Chromium product, Access Service, runtime regression coverage, stability and a signed/notarized distribution candidate. |
-| **iOS / iPadOS** | **Next** | Continue from the existing native SwiftUI/WKWebView and Simulator-qualified baseline, then complete real-device and distribution work. |
+| **iOS / iPadOS** | **Next** | Continue from the existing native SwiftUI/WKWebView code and recorded Simulator baseline, then complete real-device and distribution work. |
 | Windows / Android / Linux | Later | Keep existing source and manual validation entry points; no near-term release commitment. |
 
 The full milestone definition is in the [roadmap](docs/roadmap.md). macOS may reach release qualification independently; it does not wait for iOS distribution readiness.

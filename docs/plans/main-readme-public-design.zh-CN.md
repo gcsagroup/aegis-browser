@@ -38,8 +38,8 @@
 ```markdown
 [![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml)
 [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml)
-[![License: Apache-2.0](../../assets/badges/license.svg)](../../LICENSE)
-[![Current platform: macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](../../apps/browser)
+[![License: Apache-2.0](https://raw.githubusercontent.com/gcsagroup/aegis-browser/main/assets/badges/license.svg)](https://github.com/gcsagroup/aegis-browser/blob/main/LICENSE)
+[![Current platform: macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](https://github.com/gcsagroup/aegis-browser/tree/main/apps/browser)
 ```
 
 其中 C++ workflow 必须先真实存在于上游 `main`，并至少有一轮 `main` push 成功后才展示。公共 README 不引用个人 Fork 的 Codacy 或 Actions 状态；如果未来上游自身接入 Codacy，再增加对应上游徽章。
@@ -87,7 +87,7 @@ Contributions are welcome. Keep each pull request focused and include the tests 
 6. In the PR description, explain the problem, scope, test evidence and any remaining limitations.
 7. Address review feedback on the same PR; do not rewrite unrelated history.
 
-For Chromium changes, read `apps/browser/README.md`. For iOS changes, read `apps/ios/README.md`. Maintainers handle internal integration and release promotion after review.
+For Chromium changes, read `apps/browser/README.md`. For iOS changes, read `apps/ios/README.md`.
 ```
 
 简体中文对应内容：
@@ -105,7 +105,7 @@ For Chromium changes, read `apps/browser/README.md`. For iOS changes, read `apps
 6. 在 PR 描述中说明问题、改动范围、测试证据和仍存在的限制。
 7. 在同一个 PR 中处理 Review 反馈，不改写无关历史。
 
-Chromium 改动请先阅读 `apps/browser/README.zh-CN.md`；iOS 改动请阅读 `apps/ios/README.zh-CN.md`。Review 之后的内部集成与发布晋升由维护者处理，贡献者不需要了解内部维护分支。
+Chromium 改动请先阅读 `apps/browser/README.zh-CN.md`；iOS 改动请阅读 `apps/ios/README.zh-CN.md`。
 ```
 
 ## 与 develop README 的差异
