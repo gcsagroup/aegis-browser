@@ -1,0 +1,60 @@
+name: Chromium 三平台上游检查
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/chromium-upstream.yml'
+      - 'apps/browser/scripts/check-chromium-upstream*.py'
+      - 'apps/browser/scripts/ci/**'
+      - 'apps/browser/CHROMIUM_*'
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: chromium-upstream-monitor
+  cancel-in-progress: true
+jobs:
+  monitor:
+    if: github.event_name != 'schedule' || github.repository == 'gcsagroup/aegis-browser'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ci-evidence/upstream/latest.json
+            ci-evidence/upstream/last-success.json
+            ci-evidence/upstream/state.json
+          key: chromium-upstream-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            chromium-upstream-state-
+            chromium-upstream-
+      - name: 收敛恢复的历史缓存
+        run: |
+          rm -rf ci-evidence/upstream/runs ci-evidence/upstream/sources
+          rm -f ci-evidence/upstream/summary.md ci-evidence/upstream/check.lock
+      - name: 运行监控回归
+        run: |
+          python apps/browser/scripts/check-chromium-upstream_test.py
+          python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
+      - name: 分平台核对官方来源
+        run: python apps/browser/scripts/check-chromium-upstream.py --output ci-evidence/upstream
+      - name: 汇总候选和未解决漏洞
+        if: always()
+        run: python apps/browser/scripts/ci/candidate.py summary --evidence ci-evidence
+      - name: 保存核查证据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence
+          if-no-files-found: error
+          retention-days: 30

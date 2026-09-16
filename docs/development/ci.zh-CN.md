@@ -4,7 +4,7 @@
 
 ## 规则入口与本机配置
 
-本指南的 `develop` 版本是日常开发、PR 审查、合并与上游同步流程的唯一维护入口。历史方案只用于追溯，不另行维护同一套操作规则。镜像 `main` 可能尚未包含最新 DEV 流程，开始交付任务时应先刷新并读取 `origin/develop` 对应版本。
+本指南的 `develop` 版本是日常开发、PR 审查、合并与公开晋升流程的唯一维护入口。历史方案只用于追溯，不另行维护同一套操作规则。晋升用 `main` 可能尚未包含最新 DEV 流程，开始交付任务时应先刷新并读取 `origin/develop` 对应版本。
 
 个人偏好和本机模型覆盖设置放在本机 `AGENTS.md`，通过 `.git/info/exclude`（或已有本机排除规则）忽略，不提交仓库。通用模型分工见下节；个人文件引用本指南，不复制整套分支流程。Git worktree 不会自动复制未跟踪文件；新工作区如需个人入口，应在本机配置并用 `git check-ignore AGENTS.md` 验证。已跟踪的文件不能依靠 ignore 隐藏，须单独处理，不能为清理而删除用户文件。
 
@@ -32,7 +32,7 @@
 
 ## 分支职责与日常路径
 
-个人 Fork 的默认分支为 `develop`：日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI，再准备上游导出。`main` 只镜像 `gcsagroup/aegis-browser:main`，不接收个人日常功能/CI PR。上游通过后由协调者显式核实身份并只快进同步镜像，不能强推或创建额外合并提交，不能将本地绿灯当作镜像同步或上游通过。
+个人 Fork 的默认分支为 `develop`：日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR，而作为公开晋升暂存线：准备晋升时先确认个人 `main` 没有未发布的独有提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop；随后通过 `develop -> main` PR、最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
 
 2026-09-15 的分支迁移取代之前 DEV main 的工作方式；PR #20 的 main-only 验证方案已废止，不能沿用其目标分支或旧结果放行 develop。既有历史 SHA/报告保留原事件和分支身份。
 
@@ -99,7 +99,7 @@ README 的 CI 与 Codacy Grade 徽章均选择个人 Fork 的 `develop`。2026-0
 - `B`：目标 base 的精确 SHA；
 - `H`：PR 最终 head；
 - `M`：GitHub PR 合并候选，必须恰好以 B/H 为两个父提交；
-- `S`：合并后 DEV develop 的实际提交。
+- `S`：PR 合并后目标分支（`develop` 或个人 `main`）的实际提交。
 
 PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API 回读最新 run/job、run attempt、check source、H/B/M/S 和冲突状态，不能仅信任候选代码生成的报告或评论。PR 同步、base 前移、rebase、修复或 run attempt 更新后，旧结果不能转用。
 
@@ -113,13 +113,13 @@ PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API �
 2. 保存仓库合并设置、develop/main 保护与规则集快照；记录实际 check 名和 GitHub Actions 来源。
 3. 增量启用 PR 必需、严格 base 同步、`quality-gate` 必需、禁止强推/删除；人工审批、最后推送批准、旧批准失效及管理员策略按实际服务端配置记录，不擅自降低已有规则。
 4. 回读设置，记录管理员账号和合并身份的 bypass 状态；不得把管理员可绕过误报为不可绕过。套餐或 API 拒绝时报告限制，不关闭必需检查。
-5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；等待 S 的真实 develop push run 成功后才允许继续上游导出。
+5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；日常功能先等待 S 的真实 develop push run 成功。公开晋升还必须完成最新 upstream/main → 个人 main 快进同步、main → develop 对齐、`develop -> main` PR，并等待个人 main 的 S push run 成功后才允许创建上游 PR。
 
-GitHub 原生 auto-merge 可保持关闭。当前自动推进由协调任务执行，独立模型 review 是外部证据，并不等同 GitHub 已强制一名独立人类批准。
+对 `develop` 或个人 `main` 的交付 PR，在服务端保护能够阻止未完成 Review/CI 的前提下，创建 PR 后开启 GitHub 原生 auto-merge；Review、Codacy 或 CI 发现问题时先修复并 push 新 HEAD，让 review 与检查覆盖最终提交。若仓库只有同一管理员身份、GitHub 人类 Approve 无法满足，则不得伪造自我批准；只能在独立 Review 与所有必需检查成功后由管理员精确合并。独立模型 Review 是外部证据，并不等同 GitHub 已强制一名独立人类批准。
 
 ## 上游公开导出
 
-不要从 DEV develop 直接创建携带个人历史的上游分支。以最新 `upstream/main` 新建隔离分支，只应用已经在 DEV 合并且公开允许的差异，然后运行：
+不要从 DEV `develop` 直接向上游提 PR。先按本指南完成个人 `main` 的晋升：个人 main 已 fast-forward 吸收最新 `upstream/main`，develop 已反向吸收该 main，`develop -> main` PR 已 Review/CI/合并且 main push CI 成功。随后以个人 `main` 的精确 SHA 作为上游 PR head，并以最新 `upstream/main` 为 base；创建上游 PR 前，在独立干净 worktree 中 checkout 该 `origin/main` 精确 SHA，使下列 `HEAD` 明确等于待发布的个人 main，再运行：
 
 ```bash
 node scripts/ci/check-public-diff.mjs \
