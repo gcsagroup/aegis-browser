@@ -82,7 +82,7 @@
 
 必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 Astra high review 审查最终实现和测试；Sol 修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
-P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步回调外等待、定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
+P0 剩余：RequestOwnershipRegistry 的浏览器/导航真实适配与入口接线、同步回调外等待、批量定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
 本切片可报告 native_unit=PASS（实际执行后）、合同子项通过；对应 A76/A108/A113/A115/A116 等只记录所覆盖的纯决策子场景，整行仍 partial/NOT_RUN，G0 仍 NOT_RUN 或明确环境 BLOCKED。P0 不因本切片通过而结束，运行/性能/部署/分发状态不提升。
 
@@ -172,6 +172,16 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 固定 Chromium 151 checkout 的完整 Ninja 图仍会先被既有缺失 `third_party/aegis_libtorrent/.../signal_error_code.cpp` 阻断，因此不能把该全局依赖错误解释成 0120 测试失败。绕开无关全局依赖后，使用 Ninja 为最终三个测试对象生成的精确 clang `-Werror` 命令直接编译 `access_proxy_route_adapter_unittest.cc`、`access_local_proxy_acceptance_unittest.cc` 与 `access_network_context_transport_unittest.cc`，三者均 exit 0。完整 GTest 二进制 runtime 仍受既有 checkout/toolchain 环境限制，未报告 PASS。最终 0120 patch SHA-256 为 `9af49a1e18a0fbceb763f46fa81a81b0154d577de1ff036dd9b2002c994bca6c`。
 
 0120 的作用是提高 0117–0119 的单元/回归保护密度，不改变 G0 状态，也不把编译通过冒充真实浏览器运行通过。后续 toolchain 环境可完整链接时，应优先执行全部 `aegis_access_unittests` 与 `access_network_context_transport_unittests`，再继续 RequestOwnershipRegistry、每请求可信上下文及后续代理 transport。
+
+## 0121：有界 RequestOwnershipRegistry 核心与终止句柄合同
+
+2026-09-16 在 0120 基线上新增纯 C++ `RequestOwnershipRegistry` 核心状态机，并把通用 `RequestScheme` 提升到 Access 路由类型。Registry 只接受已经规范化的 browser-owned record：request ID、channel/Profile/StoragePartition owner、完整 generation tuple、document 或 pending-navigation token、可靠顶层站点、exact host、scheme/port。`RequestPolicyContext::ToOwnershipRecord()` 是现有 Chromium 规范化边界到 Registry record 的生产桥；Registry 自身不解析 URL，也不把 renderer/page 自报字符串升级为可信归属。
+
+本切片固定 `new → dispatched → streaming → completed/cancelled` 的最小生命周期。登记容量显式有界；无效记录、重复 request ID、跨 Profile/StoragePartition owner、过时代次、非法状态跃迁和缺失 termination handle 均 fail closed，失败操作不替换、不消费已有可信记录。对 dispatched/streaming 请求取消时，Registry 在调用外部 `RequestTerminationHandle::Terminate()` 前先删除本地 entry，因此重入或迟到回调只能看到 `not_found`，不能二次取消/完成同一请求。普通完成只回收 entry，不误调用终止句柄；尚未派发的 new 请求可本地取消而无需伪造外部 handle。
+
+测试随 feat 同步进入源码：共享 contract 同时提供 unit 与 regression 两组，standalone C++20 runner 直接编译生产 Registry 并实际执行；初次执行在仓库固定 ripgrep 15.2.0 前置下为 `PASS: aegis_access native unit (541 checks)`，其中新增 54 条检查覆盖注册/查询/dispatch/stream/complete、Profile-only 不借页面身份，以及容量溢出、重复 ID、不可信 owner、stale generation、非法 lifecycle、缺 handle、跨 Profile/StoragePartition、reentrant cancel、重复 cancel 和 late completion 等回归。GN 另提供独立 `//components/aegis_access:request_ownership_registry_unittests`，避免 Registry 的基础运行证据只能依赖 0119 后较重的 Network Service 测试目标；顺序补丁为 `0121-feat-aegis-add-request-ownership-registry.patch`，生成时 SHA-256 为 `beca127f3e49d691f5e81c7c2fd0ff3096889be66f83e1e9422bfd9268d414f5`。
+
+证据边界保持不变：本切片尚未把真实 Browser/Navigation/URLLoader request ID 与 document token、具体 URLLoader/stream cancellation handle 接入 Registry，也没有实现按站点扫描并终止 HTTP/2/HTTP/3 共享连接中的匹配 stream；这些属于下一浏览器适配/定向取消 feat。541-check standalone PASS 证明 Registry 状态机与回归合同实际运行，不代表 Chromium Network Service runtime、完整 Chrome 或 G0 已通过。
 
 ## 回滚
 
