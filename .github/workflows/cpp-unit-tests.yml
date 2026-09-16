@@ -13,9 +13,6 @@ on:
       - 'apps/browser/scripts/aegis-access-gn-wiring_test.sh'
       - 'apps/browser/scripts/access-rule-store-contract_test.sh'
       - 'apps/browser/scripts/test-aegis-access-native.sh'
-      - 'apps/browser/README.md'
-      - 'apps/browser/README.zh-CN.md'
-      - 'apps/browser/README.zh-TW.md'
   push:
     branches:
       - main
@@ -28,9 +25,6 @@ on:
       - 'apps/browser/scripts/aegis-access-gn-wiring_test.sh'
       - 'apps/browser/scripts/access-rule-store-contract_test.sh'
       - 'apps/browser/scripts/test-aegis-access-native.sh'
-      - 'apps/browser/README.md'
-      - 'apps/browser/README.zh-CN.md'
-      - 'apps/browser/README.zh-TW.md'
   workflow_dispatch:
 
 permissions:
@@ -62,3 +56,5 @@ jobs:
         run: bash apps/browser/scripts/test-aegis-access-native.sh
       - name: Verify Chromium GoogleTest wiring and regression patch
         run: bash apps/browser/scripts/aegis-access-gn-wiring_test.sh
+      - name: Run AccessRuleStore contract regression explicitly
+        run: bash apps/browser/scripts/access-rule-store-contract_test.sh
