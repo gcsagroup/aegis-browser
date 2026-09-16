@@ -79,4 +79,11 @@ Chromium 改动请先阅读 [Browser 指南](apps/browser/README.zh-CN.md)；iOS
 
 | 文档 | 许可证与鸣谢 |
 | --- | --- |
-| [路线图](docs/roadmap.zh-CN.md) · [文档索引](docs/README.zh-CN.md) · [架构](docs/architecture.zh-CN.md)<br>[Browser 工程指南](apps/browser/README.zh-CN.md) · [iOS 工程指南](apps/ios/README.zh-CN.md)<br>[研究与限制](docs/research-map.zh-CN.md) · [历史审计记录](docs/audit/README.zh-CN.md)<br>[变更记录](CHANGELOG.md) | GCSA 原创源码采用 [Apache-2.0](LICENSE)。<br>Chromium、libtorrent 与其他第三方组件保留各自许可证。<br>[第三方开源鸣谢](THIRD_PARTY_NOTICES.md) |
+| [路线图](docs/roadmap.zh-CN.md) | GCSA 原创源码采用 [Apache-2.0](LICENSE)。 |
+| [文档索引](docs/README.zh-CN.md) | Chromium、libtorrent 与其他第三方组件保留各自许可证。 |
+| [架构](docs/architecture.zh-CN.md) | [第三方开源鸣谢](THIRD_PARTY_NOTICES.md) |
+| [Browser 工程指南](apps/browser/README.zh-CN.md) | |
+| [iOS 工程指南](apps/ios/README.zh-CN.md) | |
+| [研究与限制](docs/research-map.zh-CN.md) | |
+| [历史审计记录](docs/audit/README.zh-CN.md) | |
+| [变更记录](CHANGELOG.md) | |
