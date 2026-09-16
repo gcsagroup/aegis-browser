@@ -75,9 +75,6 @@ Windows 與 Android 保持後續評估，不阻塞 macOS → iOS 的產品路線
 
 ## 文件與授權
 
-- [路線圖](docs/roadmap.zh-TW.md) · [文件索引](docs/README.zh-TW.md) · [架構](docs/architecture.zh-TW.md)
-- [Browser 工程指南](apps/browser/README.zh-TW.md) · [iOS 工程指南](apps/ios/README.zh-TW.md)
-- [研究與限制](docs/research-map.zh-TW.md) · [歷史稽核紀錄](docs/audit/README.zh-TW.md)
-- [變更紀錄](CHANGELOG.md) · [第三方開源致謝](THIRD_PARTY_NOTICES.md)
-
-GCSA 原創原始碼採用 [Apache-2.0](LICENSE)。Chromium、libtorrent 與其他第三方元件保留各自授權。
+| 文件 | 授權與致謝 |
+| --- | --- |
+| [路線圖](docs/roadmap.zh-TW.md) · [文件索引](docs/README.zh-TW.md) · [架構](docs/architecture.zh-TW.md)<br>[Browser 工程指南](apps/browser/README.zh-TW.md) · [iOS 工程指南](apps/ios/README.zh-TW.md)<br>[研究與限制](docs/research-map.zh-TW.md) · [歷史稽核紀錄](docs/audit/README.zh-TW.md)<br>[變更紀錄](CHANGELOG.md) | GCSA 原創原始碼採用 [Apache-2.0](LICENSE)。<br>Chromium、libtorrent 與其他第三方元件保留各自授權。<br>[第三方開源致謝](THIRD_PARTY_NOTICES.md) |
