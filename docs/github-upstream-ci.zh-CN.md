@@ -49,7 +49,7 @@ Mac 大规格机器公布存储仍为 14 GB，完整 Mac 构建暂沿用现有�
   "sourceRoot": "/Volumes/AegisBuild/upstream-candidate/src",
   "jobs": 6,
   "minFreeGiB": 100,
-  "acceptanceCommand": ["python", "/Volumes/AegisBuild/acceptance/run.py"]
+  "acceptanceCommand": ["/opt/aegis-ci/python/bin/python3", "/Volumes/AegisBuild/acceptance/run.py"]
 }
 ```
 
@@ -75,7 +75,7 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 
 ## 真实验收接口
 
-`acceptanceCommand` 是由维护者在专用机器配置的参数数组，不经过 shell，也不接受 PR 文本作为命令。执行器会追加：
+`acceptanceCommand` 是由维护者在专用机器配置的参数数组，不经过 shell，也不接受 PR 文本作为命令。首项必须是专用机器上已存在、可执行的**绝对路径**；执行器禁止对该首项做 PATH 查找，以免本机 PATH 污染把验收替换成其他程序。执行器会追加：
 
 ```text
 --artifact <本次ZIP/EXE/APK> --source <src> --out <out>
