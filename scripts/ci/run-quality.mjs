@@ -219,6 +219,15 @@ try {
   await command('quality:fast', 'corepack', ['pnpm', 'run', 'quality:fast'], {
     env: instrumentedEnvironment,
   });
+  for (const test of [
+    'apps/browser/scripts/check-chromium-upstream_test.py',
+    'apps/browser/scripts/ci/candidate_test.py',
+  ]) {
+    await command(`python-coverage-${test.split('/').at(-1)}`, coverageExecutable, [
+      'run', '--parallel-mode', '--branch',
+      '--source', instrumentedEnvironment.AEGIS_PYTHON_COVERAGE_SOURCE, test,
+    ], {env: instrumentedEnvironment});
+  }
   await command('javascript-coverage-raw-validation', process.execPath, [
     'scripts/ci/validate-v8-raw.mjs', '--raw-dir', javascriptRawDirectory,
   ]);

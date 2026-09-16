@@ -2,6 +2,8 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
+[![Upstream CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+
 ## Overview
 
 GCSA-aegis is a Chromium-based browser project that brings privacy controls, security checks and an AI Agent into the browser. Its local-first approach aims to reduce unnecessary data sharing and give users more control over browsing and automated tasks.
@@ -42,7 +44,7 @@ For dependency installation and the complete quality gate, use the CI guide abov
 
 ## Development workflow
 
-Create a feature branch from the latest DEV `develop`, submit its PR to `develop`, and verify the merged commit's CI. Approved public changes can then be exported separately to upstream `main`, with their own review and CI. The personal repository's `main` only mirrors upstream through an explicit fast-forward sync.
+Create a feature branch from the latest DEV `develop`, submit its PR to `develop`, and verify the merged commit's CI. For a public promotion, first fast-forward the personal `main` to the latest upstream `main`, merge that updated `main` back into `develop`, then promote `develop` to the personal `main` through a reviewed PR. After the personal `main` merge and push CI succeed, submit that exact promoted state to upstream `main` for its own review and CI.
 
 See the [CI and upstream workflow guide](docs/development/ci.zh-CN.md) for the full process. Source integration does not publish a binary or release.
 
