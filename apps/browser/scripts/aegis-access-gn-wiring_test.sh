@@ -12,6 +12,7 @@ MATCHER_PATCH_FILE="$BROWSER_DIR/patches/0115-feat-aegis-add-trusted-policy-cont
 PROXY_ADAPTER_PATCH_FILE="$BROWSER_DIR/patches/0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch"
 NETWORK_TRANSPORT_PATCH_FILE="$BROWSER_DIR/patches/0118-feat-aegis-bind-profile-network-context-proxy.patch"
 NETWORK_ACCEPTANCE_PATCH_FILE="$BROWSER_DIR/patches/0119-test-aegis-local-proxy-network-acceptance.patch"
+CPP_REGRESSION_PATCH_FILE="$BROWSER_DIR/patches/0120-test-aegis-expand-access-cpp-regressions.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
@@ -60,6 +61,14 @@ rg -Fq '//chrome/browser/aegis/access:access_network_context_transport' \
 rg -Fq '+    "access_local_proxy_acceptance_unittest.cc",' \
   "$NETWORK_ACCEPTANCE_PATCH_FILE" ||
   fail "patch 0119 does not deliver the localhost proxy acceptance regression"
+rg -Fq 'EndpointIdentityTupleMismatchFailsClosed' "$CPP_REGRESSION_PATCH_FILE" ||
+  fail "patch 0120 does not expand proxy identity regression coverage"
+rg -Fq 'RejectedPublishDoesNotClobberExistingSelection' \
+  "$CPP_REGRESSION_PATCH_FILE" ||
+  fail "patch 0120 does not cover transactional selection rejection"
+rg -Fq 'UnavailableSelectedProxyFailsHttpsWithoutDirectFallback' \
+  "$CPP_REGRESSION_PATCH_FILE" ||
+  fail "patch 0120 does not cover HTTPS dead-proxy fail-closed behavior"
 [[ "$(rg -F -c '0114-feat-aegis-add-access-route-planning-contract.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0114 must appear once in series"
 [[ "$(rg -F -c '0115-feat-aegis-add-trusted-policy-context-matching.patch' \
@@ -70,21 +79,26 @@ rg -Fq '+    "access_local_proxy_acceptance_unittest.cc",' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0118 must appear once in series"
 [[ "$(rg -F -c '0119-test-aegis-local-proxy-network-acceptance.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0119 must appear once in series"
-[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(rg -F -c '0120-test-aegis-expand-access-cpp-regressions.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0120 must appear once in series"
+[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
   "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
   fail "patch 0115 must immediately precede patch 0116"
-[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
   "0116-feat-aegis-add-access-rule-store-recovery.patch" ]] ||
   fail "patch 0116 must immediately precede patch 0117"
-[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
   "0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch" ]] ||
   fail "patch 0117 must immediately precede patch 0118"
-[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
   "0118-feat-aegis-bind-profile-network-context-proxy.patch" ]] ||
   fail "patch 0118 must immediately precede patch 0119"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
+[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
   "0119-test-aegis-local-proxy-network-acceptance.patch" ]] ||
-  fail "patch 0119 must be the current series tail"
+  fail "patch 0119 must immediately precede patch 0120"
+[[ "$(tail -n 1 "$SERIES_FILE")" == \
+  "0120-test-aegis-expand-access-cpp-regressions.patch" ]] ||
+  fail "patch 0120 must be the current series tail"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

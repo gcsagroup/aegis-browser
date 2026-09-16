@@ -1,0 +1,338 @@
+From 982f6ccf387b4494c11a6a2345e06497e47f2fc2 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 16 Sep 2026 14:50:24 +0800
+Subject: [PATCH] test(aegis): expand access C++ regression coverage
+
+---
+ ...cess_network_context_transport_unittest.cc | 99 ++++++++++++++-----
+ .../access_local_proxy_acceptance_unittest.cc | 33 ++++++-
+ .../access_proxy_route_adapter_unittest.cc    | 69 +++++++++++++
+ 3 files changed, 173 insertions(+), 28 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index c0ffd19..1834ca2 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -5,6 +5,7 @@
+ #include <memory>
+ #include <string>
+ #include <utility>
++#include <vector>
+ 
+ #include "base/test/task_environment.h"
+ #include "base/time/time.h"
+@@ -72,6 +73,18 @@ class AccessNetworkContextTransportTest : public testing::Test {
+     return result;
+   }
+ 
++  void ExpectProxyResolution(
++      network::NetworkServiceProxyDelegate* delegate,
++      const std::string& url,
++      const std::string& method = "GET",
++      const net::ProxyRetryInfoMap& retry_info = net::ProxyRetryInfoMap()) {
++    const net::ProxyInfo result = Resolve(delegate, url, method, retry_info);
++    ASSERT_EQ(result.proxy_list().size(), 1u);
++    EXPECT_FALSE(result.is_direct());
++    EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
++    EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
++  }
++
+   base::test::TaskEnvironment task_environment_;
+   std::unique_ptr<TestingProfile> profile_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+@@ -94,19 +107,8 @@ TEST_F(AccessNetworkContextTransportTest,
+       partition, {kTargetHost}, EndpointFor(partition)));
+   transport_->FlushClientsForTesting(partition);
+ 
+-  const net::ProxyInfo target =
+-      Resolve(delegate.get(), "https://target.example/path");
+-  ASSERT_EQ(target.proxy_list().size(), 1u);
+-  EXPECT_FALSE(target.is_direct());
+-  EXPECT_EQ(target.proxy_chain().First().GetHost(), "127.0.0.1");
+-  EXPECT_EQ(target.proxy_chain().First().GetPort(), kProxyPort);
+-
+-  const net::ProxyInfo http_target =
+-      Resolve(delegate.get(), "http://target.example/plain");
+-  ASSERT_EQ(http_target.proxy_list().size(), 1u);
+-  EXPECT_FALSE(http_target.is_direct());
+-  EXPECT_EQ(http_target.proxy_chain().First().GetHost(), "127.0.0.1");
+-  EXPECT_EQ(http_target.proxy_chain().First().GetPort(), kProxyPort);
++  ExpectProxyResolution(delegate.get(), "https://target.example/path");
++  ExpectProxyResolution(delegate.get(), "http://target.example/plain");
+ 
+   const net::ProxyInfo other =
+       Resolve(delegate.get(), "https://other.example/path");
+@@ -127,10 +129,8 @@ TEST_F(AccessNetworkContextTransportTest,
+       partition, {kTargetHost}, EndpointFor(partition)));
+   transport_->FlushClientsForTesting(partition);
+ 
+-  const net::ProxyInfo result =
+-      Resolve(delegate.get(), "https://target.example/submit", "POST");
+-  ASSERT_EQ(result.proxy_list().size(), 1u);
+-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
++  ExpectProxyResolution(delegate.get(), "https://target.example/submit",
++                        "POST");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+@@ -146,12 +146,9 @@ TEST_F(AccessNetworkContextTransportTest,
+       "127.0.0.1:18080", net::ProxyServer::SCHEME_HTTP)];
+   failed.bad_until = base::TimeTicks::Now() + base::Days(2);
+ 
+-  const net::ProxyInfo result = Resolve(
+-      delegate.get(), "https://target.example/fail-closed", "GET", retry_info);
+-  ASSERT_EQ(result.proxy_list().size(), 1u);
+-  EXPECT_FALSE(result.is_direct());
+-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
+-  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
++  ExpectProxyResolution(delegate.get(),
++                        "https://target.example/fail-closed", "GET",
++                        retry_info);
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+@@ -212,6 +209,60 @@ TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership)
+                                                  endpoint));
+ }
+ 
++TEST_F(AccessNetworkContextTransportTest,
++       RejectsCrossPartitionAndInvalidChannelOwnership) {
++  const base::FilePath source_partition(FILE_PATH_LITERAL("source"));
++  const base::FilePath target_partition(FILE_PATH_LITERAL("target"));
++
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      target_partition, {kTargetHost}, EndpointFor(source_partition)));
++
++  aegis_access::RegisteredProxyEndpoint invalid_channel =
++      EndpointFor(target_partition);
++  invalid_channel.owner.channel = aegis_access::ChannelNamespace::kInvalid;
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      target_partition, {kTargetHost}, invalid_channel));
++}
++
++TEST_F(AccessNetworkContextTransportTest, RejectsInvalidPartitionPaths) {
++  const base::FilePath absolute(FILE_PATH_LITERAL("/absolute"));
++  const base::FilePath parent(FILE_PATH_LITERAL("partition/../escape"));
++  const base::FilePath too_long =
++      base::FilePath::FromUTF8Unsafe(std::string(1025, 'a'));
++
++  for (const base::FilePath* partition : {&absolute, &parent, &too_long}) {
++    EXPECT_FALSE(transport_->OwnerForPartition(
++                                aegis_access::ChannelNamespace::kDev, *partition)
++                     .has_value());
++    EXPECT_FALSE(transport_->ClearProxySelection(*partition));
++
++    network::mojom::NetworkContextParams params;
++    EXPECT_FALSE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), *partition, &params));
++  }
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       RejectedPublishDoesNotClobberExistingSelection) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  const auto endpoint = EndpointFor(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(partition, {kTargetHost}, endpoint));
++  transport_->FlushClientsForTesting(partition);
++
++  EXPECT_FALSE(transport_->PublishProxySelection(partition, {}, endpoint));
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, std::vector<std::string>(257, kTargetHost), endpoint));
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {kTargetHost, kTargetHost}, endpoint));
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {"TARGET.example"}, endpoint));
++  transport_->FlushClientsForTesting(partition);
++
++  ExpectProxyResolution(delegate.get(),
++                        "https://target.example/still-selected");
++}
++
+ TEST_F(AccessNetworkContextTransportTest,
+        DoesNotOverwriteAnotherCustomProxyOwner) {
+   {
+@@ -248,7 +299,7 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
+   EXPECT_FALSE(transport_->PublishProxySelection(
+       partition, {"TARGET.example"}, endpoint));
+   EXPECT_FALSE(transport_->PublishProxySelection(
+-      partition, {kTargetHost, kTargetHost}, endpoint));
++      partition, {"target.example."}, endpoint));
+ }
+ 
+ }  // namespace
+diff --git a/components/aegis_access/access_local_proxy_acceptance_unittest.cc b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
+index 3506496..7a2b5a1 100644
+--- a/components/aegis_access/access_local_proxy_acceptance_unittest.cc
++++ b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
+@@ -40,6 +40,7 @@ namespace aegis_access {
+ namespace {
+ 
+ constexpr char kTargetHost[] = "target.example";
++constexpr char kOtherHost[] = "other.example";
+ constexpr char kLoopbackAddress[] = "127.0.0.1";
+ 
+ class HostResolverFactory final : public net::HostResolver::Factory {
+@@ -135,6 +136,7 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
+ 
+     auto resolver = std::make_unique<net::MockHostResolver>();
+     resolver->rules()->AddRule(kTargetHost, kLoopbackAddress);
++    resolver->rules()->AddRule(kOtherHost, kLoopbackAddress);
+     resolver->set_synchronous_mode(true);
+     network_service_ = network::NetworkService::CreateForTesting();
+     network_service_->set_host_resolver_factory_for_testing(
+@@ -237,6 +239,13 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
+     return client.completion_status().error_code;
+   }
+ 
++  void ExpectNativeDirectPath(const GURL& url) {
++    EXPECT_EQ(net::OK, Fetch(url));
++    EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
++    EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
++    EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
++  }
++
+   void StopProxy() {
+     ASSERT_FALSE(proxy_stopped_);
+     ASSERT_TRUE(proxy_server_.ShutdownAndWaitUntilComplete());
+@@ -263,10 +272,7 @@ TEST_F(AccessLocalProxyAcceptanceTest, OffHttpRequestUsesNativeDirectPath) {
+   const GURL target = http_origin_.GetURL(kTargetHost, "/off");
+   CreateNetworkContext(target, false);
+ 
+-  EXPECT_EQ(net::OK, Fetch(target));
+-  EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
+-  EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
+-  EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
++  ExpectNativeDirectPath(target);
+ }
+ 
+ TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
+@@ -279,6 +285,14 @@ TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
+   EXPECT_EQ(0u, http_origin_requests_.load(std::memory_order_relaxed));
+ }
+ 
++TEST_F(AccessLocalProxyAcceptanceTest,
++       NonSelectedHostPreservesNativeDirectPath) {
++  const GURL target = http_origin_.GetURL(kOtherHost, "/not-selected");
++  CreateNetworkContext(target, true);
++
++  ExpectNativeDirectPath(target);
++}
++
+ TEST_F(AccessLocalProxyAcceptanceTest,
+        SelectedHttpsRequestTraversesConnectProxyToOrigin) {
+   const GURL target =
+@@ -301,5 +315,16 @@ TEST_F(AccessLocalProxyAcceptanceTest,
+   EXPECT_EQ(0u, http_origin_requests_.load(std::memory_order_relaxed));
+ }
+ 
++TEST_F(AccessLocalProxyAcceptanceTest,
++       UnavailableSelectedProxyFailsHttpsWithoutDirectFallback) {
++  const GURL target =
++      https_origin_.GetURL(kTargetHost, "/https-proxy-down");
++  CreateNetworkContext(target, true);
++  StopProxy();
++
++  EXPECT_NE(net::OK, Fetch(target));
++  EXPECT_EQ(0u, https_origin_requests_.load(std::memory_order_relaxed));
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+diff --git a/components/aegis_access/access_proxy_route_adapter_unittest.cc b/components/aegis_access/access_proxy_route_adapter_unittest.cc
+index 5756bed..8b1a814 100644
+--- a/components/aegis_access/access_proxy_route_adapter_unittest.cc
++++ b/components/aegis_access/access_proxy_route_adapter_unittest.cc
+@@ -57,6 +57,17 @@ RoutePlan TestPlan(RouteAction action) {
+   return plan;
+ }
+ 
++void ExpectInvalidEndpointFailsClosed(
++    const RoutePlan& plan,
++    const RegisteredProxyEndpoint* endpoint) {
++  net::ProxyInfo info;
++  info.UseNamedProxy("http://native.example:3128;direct://");
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(plan, endpoint, &info),
++            ProxyRouteApplyStatus::kInvalidEndpoint);
++  EXPECT_TRUE(info.is_empty());
++  EXPECT_FALSE(info.is_direct());
++}
++
+ TEST(AccessProxyRouteAdapterTest, PreserveNativeLeavesExistingProxyUntouched) {
+   RoutePlan direct = TestPlan(RouteAction::kPreserveNative);
+   net::ProxyInfo info;
+@@ -68,6 +79,18 @@ TEST(AccessProxyRouteAdapterTest, PreserveNativeLeavesExistingProxyUntouched) {
+   EXPECT_EQ(info.proxy_list().ToPacString(), before);
+ }
+ 
++TEST(AccessProxyRouteAdapterTest, PreserveNativeAlsoAllowsInheritedNoneMode) {
++  RoutePlan inherited = TestPlan(RouteAction::kPreserveNative);
++  inherited.effective_mode = AccessMode::kNone;
++  net::ProxyInfo info;
++  info.UseNamedProxy("http://native.example:3128;direct://");
++  const std::string before = info.proxy_list().ToPacString();
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(inherited, nullptr, &info),
++            ProxyRouteApplyStatus::kPreservedNative);
++  EXPECT_EQ(info.proxy_list().ToPacString(), before);
++}
++
+ TEST(AccessProxyRouteAdapterTest, MalformedPreserveNativeFailsClosed) {
+   RoutePlan malformed = TestPlan(RouteAction::kPreserveNative);
+   malformed.effective_mode = AccessMode::kProxy;
+@@ -148,6 +171,52 @@ TEST(AccessProxyRouteAdapterTest, InvalidOrUntrustedEndpointFailsClosed) {
+   }
+ }
+ 
++TEST(AccessProxyRouteAdapterTest, MissingRegistrationIdentityFailsClosed) {
++  const RegisteredProxyEndpoint endpoint = TestEndpoint();
++
++  RoutePlan missing = TestPlan(RouteAction::kUseRegisteredProxy);
++  missing.registered_proxy_entry.reset();
++  ExpectInvalidEndpointFailsClosed(missing, &endpoint);
++
++  RoutePlan empty_registration = TestPlan(RouteAction::kUseRegisteredProxy);
++  empty_registration.registered_proxy_entry->registration_id.clear();
++  ExpectInvalidEndpointFailsClosed(empty_registration, &endpoint);
++
++  RoutePlan empty_group = TestPlan(RouteAction::kUseRegisteredProxy);
++  empty_group.registered_proxy_entry->proxy_group_id.clear();
++  ExpectInvalidEndpointFailsClosed(empty_group, &endpoint);
++}
++
++TEST(AccessProxyRouteAdapterTest, EndpointIdentityTupleMismatchFailsClosed) {
++  RegisteredProxyEndpoint wrong_group = TestEndpoint();
++  wrong_group.proxy_group_id = "proxy-group-other";
++
++  RegisteredProxyEndpoint wrong_owner = TestEndpoint();
++  wrong_owner.owner.profile_token = "profile-other";
++
++  RegisteredProxyEndpoint wrong_partition = TestEndpoint();
++  wrong_partition.owner.storage_partition_token = "partition-other";
++
++  RegisteredProxyEndpoint stale_endpoint = TestEndpoint();
++  stale_endpoint.generations.network_epoch++;
++
++  const RoutePlan plan = TestPlan(RouteAction::kUseRegisteredProxy);
++  for (const RegisteredProxyEndpoint* endpoint :
++       {&wrong_group, &wrong_owner, &wrong_partition, &stale_endpoint}) {
++    SCOPED_TRACE(endpoint->registration_id + ":" + endpoint->proxy_group_id +
++                 ":" + endpoint->owner.profile_token + ":" +
++                 endpoint->owner.storage_partition_token);
++    ExpectInvalidEndpointFailsClosed(plan, endpoint);
++  }
++}
++
++TEST(AccessProxyRouteAdapterTest, NullProxyInfoIsRejected) {
++  const RegisteredProxyEndpoint endpoint = TestEndpoint();
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(
++                TestPlan(RouteAction::kUseRegisteredProxy), &endpoint, nullptr),
++            ProxyRouteApplyStatus::kInvalidEndpoint);
++}
++
+ TEST(AccessProxyRouteAdapterTest, SupportsNumericIpv6HttpLoopback) {
+   RegisteredProxyEndpoint endpoint = TestEndpoint();
+   endpoint.host = "::1";
+-- 
+2.54.0 (Apple Git-157)
+
