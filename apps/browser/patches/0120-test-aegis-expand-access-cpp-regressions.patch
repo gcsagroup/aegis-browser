@@ -1,16 +1,16 @@
-From 9b7aac178f177213975e534b3f251918fbe2deaa Mon Sep 17 00:00:00 2001
+From 982f6ccf387b4494c11a6a2345e06497e47f2fc2 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
-Date: Wed, 16 Sep 2026 14:37:06 +0800
+Date: Wed, 16 Sep 2026 14:50:24 +0800
 Subject: [PATCH] test(aegis): expand access C++ regression coverage
 
 ---
- ...cess_network_context_transport_unittest.cc | 61 +++++++++++++++-
- .../access_local_proxy_acceptance_unittest.cc | 24 +++++++
- .../access_proxy_route_adapter_unittest.cc    | 69 +++++++++++++++++++
- 3 files changed, 153 insertions(+), 1 deletion(-)
+ ...cess_network_context_transport_unittest.cc | 99 ++++++++++++++-----
+ .../access_local_proxy_acceptance_unittest.cc | 33 ++++++-
+ .../access_proxy_route_adapter_unittest.cc    | 69 +++++++++++++
+ 3 files changed, 173 insertions(+), 28 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
-index c0ffd19..dbf38a0 100644
+index c0ffd19..1834ca2 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 @@ -5,6 +5,7 @@
@@ -21,7 +21,77 @@ index c0ffd19..dbf38a0 100644
  
  #include "base/test/task_environment.h"
  #include "base/time/time.h"
-@@ -212,6 +213,64 @@ TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership)
+@@ -72,6 +73,18 @@ class AccessNetworkContextTransportTest : public testing::Test {
+     return result;
+   }
+ 
++  void ExpectProxyResolution(
++      network::NetworkServiceProxyDelegate* delegate,
++      const std::string& url,
++      const std::string& method = "GET",
++      const net::ProxyRetryInfoMap& retry_info = net::ProxyRetryInfoMap()) {
++    const net::ProxyInfo result = Resolve(delegate, url, method, retry_info);
++    ASSERT_EQ(result.proxy_list().size(), 1u);
++    EXPECT_FALSE(result.is_direct());
++    EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
++    EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
++  }
++
+   base::test::TaskEnvironment task_environment_;
+   std::unique_ptr<TestingProfile> profile_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+@@ -94,19 +107,8 @@ TEST_F(AccessNetworkContextTransportTest,
+       partition, {kTargetHost}, EndpointFor(partition)));
+   transport_->FlushClientsForTesting(partition);
+ 
+-  const net::ProxyInfo target =
+-      Resolve(delegate.get(), "https://target.example/path");
+-  ASSERT_EQ(target.proxy_list().size(), 1u);
+-  EXPECT_FALSE(target.is_direct());
+-  EXPECT_EQ(target.proxy_chain().First().GetHost(), "127.0.0.1");
+-  EXPECT_EQ(target.proxy_chain().First().GetPort(), kProxyPort);
+-
+-  const net::ProxyInfo http_target =
+-      Resolve(delegate.get(), "http://target.example/plain");
+-  ASSERT_EQ(http_target.proxy_list().size(), 1u);
+-  EXPECT_FALSE(http_target.is_direct());
+-  EXPECT_EQ(http_target.proxy_chain().First().GetHost(), "127.0.0.1");
+-  EXPECT_EQ(http_target.proxy_chain().First().GetPort(), kProxyPort);
++  ExpectProxyResolution(delegate.get(), "https://target.example/path");
++  ExpectProxyResolution(delegate.get(), "http://target.example/plain");
+ 
+   const net::ProxyInfo other =
+       Resolve(delegate.get(), "https://other.example/path");
+@@ -127,10 +129,8 @@ TEST_F(AccessNetworkContextTransportTest,
+       partition, {kTargetHost}, EndpointFor(partition)));
+   transport_->FlushClientsForTesting(partition);
+ 
+-  const net::ProxyInfo result =
+-      Resolve(delegate.get(), "https://target.example/submit", "POST");
+-  ASSERT_EQ(result.proxy_list().size(), 1u);
+-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
++  ExpectProxyResolution(delegate.get(), "https://target.example/submit",
++                        "POST");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+@@ -146,12 +146,9 @@ TEST_F(AccessNetworkContextTransportTest,
+       "127.0.0.1:18080", net::ProxyServer::SCHEME_HTTP)];
+   failed.bad_until = base::TimeTicks::Now() + base::Days(2);
+ 
+-  const net::ProxyInfo result = Resolve(
+-      delegate.get(), "https://target.example/fail-closed", "GET", retry_info);
+-  ASSERT_EQ(result.proxy_list().size(), 1u);
+-  EXPECT_FALSE(result.is_direct());
+-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
+-  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
++  ExpectProxyResolution(delegate.get(),
++                        "https://target.example/fail-closed", "GET",
++                        retry_info);
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+@@ -212,6 +209,60 @@ TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership)
                                                   endpoint));
  }
  
@@ -75,18 +145,14 @@ index c0ffd19..dbf38a0 100644
 +      partition, {"TARGET.example"}, endpoint));
 +  transport_->FlushClientsForTesting(partition);
 +
-+  const net::ProxyInfo result =
-+      Resolve(delegate.get(), "https://target.example/still-selected");
-+  ASSERT_EQ(result.proxy_list().size(), 1u);
-+  EXPECT_FALSE(result.is_direct());
-+  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
-+  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
++  ExpectProxyResolution(delegate.get(),
++                        "https://target.example/still-selected");
 +}
 +
  TEST_F(AccessNetworkContextTransportTest,
         DoesNotOverwriteAnotherCustomProxyOwner) {
    {
-@@ -248,7 +307,7 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
+@@ -248,7 +299,7 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
    EXPECT_FALSE(transport_->PublishProxySelection(
        partition, {"TARGET.example"}, endpoint));
    EXPECT_FALSE(transport_->PublishProxySelection(
@@ -96,7 +162,7 @@ index c0ffd19..dbf38a0 100644
  
  }  // namespace
 diff --git a/components/aegis_access/access_local_proxy_acceptance_unittest.cc b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
-index 3506496..fc7f877 100644
+index 3506496..7a2b5a1 100644
 --- a/components/aegis_access/access_local_proxy_acceptance_unittest.cc
 +++ b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
 @@ -40,6 +40,7 @@ namespace aegis_access {
@@ -115,7 +181,33 @@ index 3506496..fc7f877 100644
      resolver->set_synchronous_mode(true);
      network_service_ = network::NetworkService::CreateForTesting();
      network_service_->set_host_resolver_factory_for_testing(
-@@ -279,6 +281,17 @@ TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
+@@ -237,6 +239,13 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
+     return client.completion_status().error_code;
+   }
+ 
++  void ExpectNativeDirectPath(const GURL& url) {
++    EXPECT_EQ(net::OK, Fetch(url));
++    EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
++    EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
++    EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
++  }
++
+   void StopProxy() {
+     ASSERT_FALSE(proxy_stopped_);
+     ASSERT_TRUE(proxy_server_.ShutdownAndWaitUntilComplete());
+@@ -263,10 +272,7 @@ TEST_F(AccessLocalProxyAcceptanceTest, OffHttpRequestUsesNativeDirectPath) {
+   const GURL target = http_origin_.GetURL(kTargetHost, "/off");
+   CreateNetworkContext(target, false);
+ 
+-  EXPECT_EQ(net::OK, Fetch(target));
+-  EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
+-  EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
+-  EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
++  ExpectNativeDirectPath(target);
+ }
+ 
+ TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
+@@ -279,6 +285,14 @@ TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
    EXPECT_EQ(0u, http_origin_requests_.load(std::memory_order_relaxed));
  }
  
@@ -124,16 +216,13 @@ index 3506496..fc7f877 100644
 +  const GURL target = http_origin_.GetURL(kOtherHost, "/not-selected");
 +  CreateNetworkContext(target, true);
 +
-+  EXPECT_EQ(net::OK, Fetch(target));
-+  EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
-+  EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
-+  EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
++  ExpectNativeDirectPath(target);
 +}
 +
  TEST_F(AccessLocalProxyAcceptanceTest,
         SelectedHttpsRequestTraversesConnectProxyToOrigin) {
    const GURL target =
-@@ -301,5 +314,16 @@ TEST_F(AccessLocalProxyAcceptanceTest,
+@@ -301,5 +315,16 @@ TEST_F(AccessLocalProxyAcceptanceTest,
    EXPECT_EQ(0u, http_origin_requests_.load(std::memory_order_relaxed));
  }
  
