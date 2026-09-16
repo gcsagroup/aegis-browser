@@ -153,6 +153,16 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 
 该切片仍不是端到端代理验收：尚未用真实浏览器 URLLoader/socket 对 localhost fixture 完成 HTTP/HTTPS 往返，也没有把 RequestOwnershipRegistry、published snapshot 和 runtime registration 以每请求可信上下文送进 Network Service；Xray、SOCKS5、WS、认证、计量和连接池代次仍在后续切片。G0 继续保持未通过。下一 PR 应优先做真实 localhost fixture + 浏览器请求闭环，并验证代理不可达时实际请求失败而不是直连。
 
+## 0119：真实 localhost Proxy NetworkService 验收切片
+
+2026-09-16 在已合并的 0118 基线上增加 `AccessLocalProxyAcceptanceTest`，不改变生产路由语义，只把 0117/0118 已冻结的单一 numeric-loopback HTTP proxy 配置送入真实 Chromium Network Service / URLLoader / socket 路径。测试使用 `EmbeddedTestServer` 同时建立 HTTP origin、HTTPS origin 与本机 HTTP proxy；`target.example` 只在测试进程的 `MockHostResolver` 中映射到 `127.0.0.1`，避免 localhost implicit bypass 掩盖代理选择，同时确保一旦发生 DIRECT fallback，仍能实际命中存活的 origin 并被测试发现。
+
+四个验收用例分别固定：OFF 时 HTTP 请求走原生 direct origin 且 proxy 未收到请求；选中 HTTP 时请求实际抵达 localhost proxy 而 origin 不被访问；选中 HTTPS 时 Network Service 对 localhost HTTP proxy 建立 CONNECT 隧道并抵达 HTTPS origin；选中 proxy 停止后，在 origin 仍存活且域名仍可解析的条件下请求必须失败，origin 计数保持 0，从行为上防止静默 DIRECT fallback。该测试复用 `ApplyRoutePlanToProxyInfo` 生成与 0118 相同的单一 proxy list，并设置 exact-host `reverse_bypass` custom config；0118 自身仍负责 Profile/StoragePartition ownership 与配置发布边界，两层测试职责不混合。
+
+固定 Chromium 151 `gn gen out/AegisLocalDev` 成功生成 31,703 个目标、读取 4,831 个文件。完整测试目标首次尝试被 checkout 缺失的既有 `aegis_libtorrent/.../signal_error_code.cpp` 阻断；把验收下沉到独立 `aegis_access_unittests` 后，完整链接又在既有 Xcode 27 SDK 与 Chromium bundled lld/TAPI 不兼容处失败，无法生成 `libc++_chrome.dylib`，因此四个 GTest runtime 当前记录为环境 BLOCKED，不能报告 PASS。为隔离 0119 源码本身，随后使用 Ninja 为最终测试生成的实际 clang `-Werror` 命令编译 `access_local_proxy_acceptance_unittest.cc`；补齐 9 个缺失的 Mojo/buildflag 生成输入后，第 10 次对象编译 exit 0。最终 0119 patch 只包含 components 测试 BUILD 与验收源码，SHA-256 为 `23b073253e12e854a709cb3570fdbf873e232f9c8388187af05ce25a87dbd87d`。
+
+因此 0119 把真实 HTTP/HTTPS/fail-closed socket 行为固化为可执行 Chromium 回归，但本机环境尚未提供该二进制的 runtime PASS；G0 继续保持未通过。后续若修复/切换可兼容的 Chromium macOS toolchain，应优先运行这四个用例并把 runtime 结果绑定到精确 patch/source SHA；之后再继续 RequestOwnershipRegistry、每请求可信上下文、Xray/SOCKS5/WS/认证/计量及连接池代次。
+
 ## 回滚
 
 本切片尚无运行时入口或数据迁移，回滚其代码、GN/补丁与测试入口的独立提交即可；不删除用户现有文档、凭据、Profile 或构建缓存。后续真实接入单独交付，不能用回滚规划器来清除已持久 PROXY 意图或将其静默变成 DIRECT。
