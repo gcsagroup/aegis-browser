@@ -73,15 +73,17 @@ mise exec -- pnpm --filter @gcsa-aegis/browser status
 
 Windows 与 Android 保持后续评估，不阻塞 macOS → iOS 的产品路线。
 
-## 文档与许可证
+## 文档
 
-| 文档 | 许可证与鸣谢 |
-| --- | --- |
-| [路线图](docs/roadmap.zh-CN.md) | GCSA 原创源码采用 [Apache-2.0](LICENSE)。 |
-| [文档索引](docs/README.zh-CN.md) | Chromium、libtorrent 与其他第三方组件保留各自许可证。 |
-| [架构](docs/architecture.zh-CN.md) | [第三方开源鸣谢](THIRD_PARTY_NOTICES.md) |
-| [Browser 工程指南](apps/browser/README.zh-CN.md) | |
-| [iOS 工程指南](apps/ios/README.zh-CN.md) | |
-| [研究与限制](docs/research-map.zh-CN.md) | |
-| [历史审计记录](docs/audit/README.zh-CN.md) | |
-| [变更记录](CHANGELOG.md) | |
+- [路线图](docs/roadmap.zh-CN.md) · [文档索引](docs/README.zh-CN.md) · [架构](docs/architecture.zh-CN.md)
+- [Browser 工程指南](apps/browser/README.zh-CN.md) · [iOS 工程指南](apps/ios/README.zh-CN.md)
+- [研究与限制](docs/research-map.zh-CN.md) · [历史审计记录](docs/audit/README.zh-CN.md)
+- [变更记录](CHANGELOG.md)
+
+## 许可证
+
+GCSA 原创源码采用 [Apache-2.0](LICENSE)。Chromium、libtorrent 与其他第三方组件保留各自许可证。
+
+## 鸣谢
+
+[第三方开源鸣谢](THIRD_PARTY_NOTICES.md)记录了浏览器基础、依赖组件与开发工具。
