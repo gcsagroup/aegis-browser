@@ -32,7 +32,9 @@
 
 ## 分支职责与日常路径
 
-个人 Fork 的默认分支为 `develop`：日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR，而作为公开晋升暂存线：准备晋升时先确认个人 `main` 没有未发布的独有提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop；随后通过 `develop -> main` PR、最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
+个人 Fork 的 GitHub 默认分支为 `main`，用于仓库默认入口、对外展示和公开晋升；开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
+
+当前 README 采用临时镜像规则：个人 `main` 的 `README.md`、`README.zh-CN.md`、`README.zh-TW.md` 必须与当次 `upstream/main` 对应文件逐字一致；`develop` 上的 README 修改继续保留用于开发，但在公开晋升时暂不带入 `main`。promotion 分支应从最终 `develop` 创建，再从已刷新后的 `upstream/main` 恢复这三份 README，确认三者 blob/hash 一致后才向个人 `main` 提 PR。该规则只忽略这三份 README，不允许借此丢弃其他 develop 改动。
 
 2026-09-15 的分支迁移取代之前 DEV main 的工作方式；PR #20 的 main-only 验证方案已废止，不能沿用其目标分支或旧结果放行 develop。既有历史 SHA/报告保留原事件和分支身份。
 
@@ -113,13 +115,13 @@ PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API �
 2. 保存仓库合并设置、develop/main 保护与规则集快照；记录实际 check 名和 GitHub Actions 来源。
 3. 增量启用 PR 必需、严格 base 同步、`quality-gate` 必需、禁止强推/删除；人工审批、最后推送批准、旧批准失效及管理员策略按实际服务端配置记录，不擅自降低已有规则。
 4. 回读设置，记录管理员账号和合并身份的 bypass 状态；不得把管理员可绕过误报为不可绕过。套餐或 API 拒绝时报告限制，不关闭必需检查。
-5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；日常功能先等待 S 的真实 develop push run 成功。公开晋升还必须完成最新 upstream/main → 个人 main 快进同步、main → develop 对齐、`develop -> main` PR，并等待个人 main 的 S push run 成功后才允许创建上游 PR。
+5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；日常功能先等待 S 的真实 develop push run 成功。公开晋升还必须完成最新 upstream/main → 个人 main 快进同步、main → develop 对齐，再从最终 develop 创建 promotion 分支、按 README 镜像规则恢复三份 README 后向个人 main 提 PR，并等待个人 main 的 S push run 成功后才允许创建上游 PR。
 
 对 `develop` 或个人 `main` 的交付 PR，在服务端保护能够阻止未完成 Review/CI 的前提下，创建 PR 后开启 GitHub 原生 auto-merge；Review、Codacy 或 CI 发现问题时先修复并 push 新 HEAD，让 review 与检查覆盖最终提交。若仓库只有同一管理员身份、GitHub 人类 Approve 无法满足，则不得伪造自我批准；只能在独立 Review 与所有必需检查成功后由管理员精确合并。独立模型 Review 是外部证据，并不等同 GitHub 已强制一名独立人类批准。
 
 ## 上游公开导出
 
-不要从 DEV `develop` 直接向上游提 PR。先按本指南完成个人 `main` 的晋升：个人 main 已 fast-forward 吸收最新 `upstream/main`，develop 已反向吸收该 main，`develop -> main` PR 已 Review/CI/合并且 main push CI 成功。随后以个人 `main` 的精确 SHA 作为上游 PR head，并以最新 `upstream/main` 为 base；创建上游 PR 前，在独立干净 worktree 中 checkout 该 `origin/main` 精确 SHA，使下列 `HEAD` 明确等于待发布的个人 main，再运行：
+不要从 DEV `develop` 直接向上游提 PR。先按本指南完成个人 `main` 的晋升：个人 main 已 fast-forward 吸收最新 `upstream/main`，develop 已反向吸收该 main，最终 develop 已生成 promotion 分支并按 README 镜像规则恢复三份 README，该 promotion PR 已 Review/CI/合并且 main push CI 成功。随后以个人 `main` 的精确 SHA 作为上游 PR head，并以最新 `upstream/main` 为 base；创建上游 PR 前，在独立干净 worktree 中 checkout 该 `origin/main` 精确 SHA，使下列 `HEAD` 明确等于待发布的个人 main，再运行：
 
 ```bash
 node scripts/ci/check-public-diff.mjs \
