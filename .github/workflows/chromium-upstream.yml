@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   monitor:
+    if: github.event_name != 'schedule' || github.repository == 'gcsagroup/aegis-browser'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
