@@ -119,7 +119,7 @@ PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API �
 
 ## 上游公开导出
 
-不要从 DEV `develop` 直接向上游提 PR。先按本指南完成个人 `main` 的晋升：个人 main 已 fast-forward 吸收最新 `upstream/main`，develop 已反向吸收该 main，`develop -> main` PR 已 Review/CI/合并且 main push CI 成功。随后以个人 `main` 的精确 SHA 作为上游 PR head，并以最新 `upstream/main` 为 base；创建上游 PR 前运行：
+不要从 DEV `develop` 直接向上游提 PR。先按本指南完成个人 `main` 的晋升：个人 main 已 fast-forward 吸收最新 `upstream/main`，develop 已反向吸收该 main，`develop -> main` PR 已 Review/CI/合并且 main push CI 成功。随后以个人 `main` 的精确 SHA 作为上游 PR head，并以最新 `upstream/main` 为 base；创建上游 PR 前，在独立干净 worktree 中 checkout 该 `origin/main` 精确 SHA，使下列 `HEAD` 明确等于待发布的个人 main，再运行：
 
 ```bash
 node scripts/ci/check-public-diff.mjs \
