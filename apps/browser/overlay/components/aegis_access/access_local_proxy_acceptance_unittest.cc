@@ -40,6 +40,7 @@ namespace aegis_access {
 namespace {
 
 constexpr char kTargetHost[] = "target.example";
+constexpr char kOtherHost[] = "other.example";
 constexpr char kLoopbackAddress[] = "127.0.0.1";
 
 class HostResolverFactory final : public net::HostResolver::Factory {
@@ -135,6 +136,7 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
 
     auto resolver = std::make_unique<net::MockHostResolver>();
     resolver->rules()->AddRule(kTargetHost, kLoopbackAddress);
+    resolver->rules()->AddRule(kOtherHost, kLoopbackAddress);
     resolver->set_synchronous_mode(true);
     network_service_ = network::NetworkService::CreateForTesting();
     network_service_->set_host_resolver_factory_for_testing(
@@ -237,6 +239,13 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
     return client.completion_status().error_code;
   }
 
+  void ExpectNativeDirectPath(const GURL& url) {
+    EXPECT_EQ(net::OK, Fetch(url));
+    EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
+    EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
+    EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
+  }
+
   void StopProxy() {
     ASSERT_FALSE(proxy_stopped_);
     ASSERT_TRUE(proxy_server_.ShutdownAndWaitUntilComplete());
@@ -263,10 +272,7 @@ TEST_F(AccessLocalProxyAcceptanceTest, OffHttpRequestUsesNativeDirectPath) {
   const GURL target = http_origin_.GetURL(kTargetHost, "/off");
   CreateNetworkContext(target, false);
 
-  EXPECT_EQ(net::OK, Fetch(target));
-  EXPECT_EQ(1u, http_origin_requests_.load(std::memory_order_relaxed));
-  EXPECT_EQ(0u, proxy_http_requests_.load(std::memory_order_relaxed));
-  EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
+  ExpectNativeDirectPath(target);
 }
 
 TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
@@ -277,6 +283,14 @@ TEST_F(AccessLocalProxyAcceptanceTest, SelectedHttpRequestReachesProxyFixture) {
   EXPECT_EQ(1u, proxy_http_requests_.load(std::memory_order_relaxed));
   EXPECT_EQ(0u, proxy_connect_requests_.load(std::memory_order_relaxed));
   EXPECT_EQ(0u, http_origin_requests_.load(std::memory_order_relaxed));
+}
+
+TEST_F(AccessLocalProxyAcceptanceTest,
+       NonSelectedHostPreservesNativeDirectPath) {
+  const GURL target = http_origin_.GetURL(kOtherHost, "/not-selected");
+  CreateNetworkContext(target, true);
+
+  ExpectNativeDirectPath(target);
 }
 
 TEST_F(AccessLocalProxyAcceptanceTest,
@@ -299,6 +313,17 @@ TEST_F(AccessLocalProxyAcceptanceTest,
 
   EXPECT_NE(net::OK, Fetch(target));
   EXPECT_EQ(0u, http_origin_requests_.load(std::memory_order_relaxed));
+}
+
+TEST_F(AccessLocalProxyAcceptanceTest,
+       UnavailableSelectedProxyFailsHttpsWithoutDirectFallback) {
+  const GURL target =
+      https_origin_.GetURL(kTargetHost, "/https-proxy-down");
+  CreateNetworkContext(target, true);
+  StopProxy();
+
+  EXPECT_NE(net::OK, Fetch(target));
+  EXPECT_EQ(0u, https_origin_requests_.load(std::memory_order_relaxed));
 }
 
 }  // namespace
