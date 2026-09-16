@@ -1,58 +1,83 @@
-# GCSA-aegis
+# Aegis
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![上游 CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=develop&event=push)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml?query=branch%3Adevelop) [![C++ 单元测试](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=develop&event=push)](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml?query=branch%3Adevelop) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=develop)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![当前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
-## 项目简介
+**一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。先做好 macOS，再推进 iPhone 与 iPad。**
 
-GCSA-aegis 是一个基于 Chromium 的浏览器项目，将隐私控制、安全检查和 AI Agent 整合到浏览器中。项目采用本地优先的方式，目标是减少不必要的数据共享，让用户更自主地管理浏览和自动化任务。
+Aegis 把隐私控制、安全检查、原生浏览器能力和 AI Agent 直接集成到浏览器中，而不是把扩展作为产品本体。项目仍在持续开发，当前尚未达到正式发行资格。
 
-## 项目检查
+## 平台优先级
 
-[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=develop)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml?query=branch%3Adevelop) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=develop)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+| 平台 | 优先级 | 当前方向 |
+| --- | --- | --- |
+| **macOS** | **当前主线** | 完成 Chromium 产品、Access Service、真实运行回归、稳定性，以及可签名/公证的发行候选。 |
+| **iOS / iPadOS** | **下一主线** | 基于现有 SwiftUI/WKWebView 与 Simulator-qualified 基线继续开发，补齐真机与分发链路。 |
+| Windows / Android / Linux | 后续 | 保留现有源码与手动验证入口，当前不承诺近期发行。 |
 
-CI 和 Codacy Grade 指向个人开发仓库的 `develop` 分支，分别反映不同检查；徽章不代表发行验收通过。
+完整阶段定义见[路线图](docs/roadmap.zh-CN.md)。macOS 满足自己的发行条件后可以独立发布，不需要等待 iOS 达到分发状态。
 
-## 开发状态
+## Aegis 当前包含什么
 
-**当前优先开发 macOS，项目仍在开发中，尚未达到发行验收标准。** 自动 CI 覆盖仓库质量检查、共享策略、脚本和独立原生测试。完整 Chromium 构建、当前浏览器运行行为、真实网络验证、签名、公证及安装包验收仍是独立门禁。
+- **隐私与追踪控制：** 追踪规则、链接清理、Cookie 分类、钓鱼信号以及部分指纹表面的保护。
+- **浏览器 Agent：** 模型配置、可见计划、浏览器控制的工具执行，以及敏感动作前的明确用户接管。
+- **Access Service：** 原生策略与代理路由组件，包括 fail-closed 路由与 NetworkContext 接入工作。
+- **原生下载与浏览器集成：** 能力落在 Chromium 原生下载、设置和浏览器模块，而不是独立扩展产品。
+- **原生 iOS 产品：** 已存在 SwiftUI/WKWebView 代码、普通/私密配置隔离、内嵌 Safari/Share extensions 与 AgentKit。
 
-Linux、Windows、iOS 和 Android 工作后置。既有平台代码与手动验证入口保留在相关文档中。
+详细边界见 [Browser](apps/browser/README.zh-CN.md)、[iOS](apps/ios/README.zh-CN.md) 和[架构](docs/architecture.zh-CN.md)。
 
-## 已实现的核心能力
+## 当前工程证据
 
-源码包含以下组件，并通过单元测试或夹具检查验证明确范围内的行为：
+顶部徽章刻意代表不同范围：
 
-- **隐私与追踪控制：** [共享策略](packages/core/src/policy.ts)组合追踪规则、链接参数清理、Cookie 分类和文本隐私检查。
-- **钓鱼风险评估：** [检测器](packages/core/src/phish/detector.ts)评估网址与页面信号并返回风险原因。现有测试范围不等于真实环境检测准确率。
-- **浏览器 Agent：** [桌面 Agent 界面](apps/browser/overlay/chrome/browser/resources/aegis_agent/agent.ts)提供任务状态与模型选择控制，并有[界面逻辑检查](apps/browser/scripts/agent-ui-status_test.mjs)。模型配置及端到端运行验证仍需另行完成。
-- **访问规则：** [原生路由与策略组件](apps/browser/overlay/components/aegis_access)实现站点规则匹配和路由规划。独立测试不代表生产网络行为已验证。
+- **CI**：当前开发分支的仓库级质量门。
+- **C++ 单元测试**：执行 standalone C++20 Access 测试，以及 Chromium GoogleTest wiring / patch contract；它**不代表**完整 Chromium GoogleTest 可执行文件或全部真实浏览器网络场景已经通过。
+- **Codacy Grade**：静态分析，不等于运行验收或发行验收。
 
-## 在 macOS 上开始开发
+完整 Chromium 构建、当前浏览器运行行为、真实网络场景、Developer ID 签名、公证、安装与升级验收仍属于 macOS 独立发行门禁。
 
-使用 [.mise.toml](.mise.toml) 固定的版本，并遵循[环境与质量指南](docs/development/ci.zh-CN.md)。安装固定工具后，先检查环境与浏览器工作区：
+## macOS 开发入口
+
+工具链由 [.mise.toml](.mise.toml) 固定：
 
 ```bash
+mise install
 mise exec -- node --version
 mise exec -- pnpm --version
 mise exec -- python3 --version
 mise exec -- pnpm --filter @gcsa-aegis/browser status
 ```
 
-依赖安装和完整质量门见上述 CI 指南。准备和构建 Chromium 请遵循 [Mac 本地构建流程](apps/browser/README.zh-CN.md#本地流程)及[工作区说明](WORKSPACES.zh-CN.md)。Chromium 需要独立的大型源码 checkout；状态命令不会下载或构建它。固定版本记录在 [CHROMIUM_VERSION](apps/browser/CHROMIUM_VERSION)。
+完整本地质量门与仓库流程见 [CI 与开发指南](docs/development/ci.zh-CN.md)。Chromium 需要独立的大型源码 checkout；构建与运行请阅读 [Browser 本地流程](apps/browser/README.zh-CN.md#本地流程)和[工作区说明](WORKSPACES.zh-CN.md)。
 
 ## 开发协作流程
 
-从最新 DEV `develop` 创建功能分支，向 `develop` 提交 PR，并验证合并提交的 CI。准备公共晋升时，先将个人 `main` 快进到最新上游 `main`，再把更新后的 `main` 合回 `develop`，随后通过经过 Review 的 PR 将 `develop` 晋升到个人 `main`。个人 `main` 合并且 push CI 成功后，再把这份精确晋升状态提交到上游 `main`，接受上游自己的 Review 与 CI。
+当前 `develop` 是维护与集成主线，日常改动遵循：
 
-完整流程见 [CI 与上游工作指南](docs/development/ci.zh-CN.md)。源码集成不等于发布二进制或发行版本。
+```text
+最新 develop → 功能分支 → 本地验证 → PR → Review / CI → 合并 → develop push CI
+```
 
-## 文档、许可证与鸣谢
+向默认 `main` 以及上游公开晋升属于独立的受审步骤。精确分支、Review、CI 与上游导出规则统一维护在 [docs/development/ci.zh-CN.md](docs/development/ci.zh-CN.md)。
 
-- [文档索引](docs/README.zh-CN.md)、[架构](docs/architecture.zh-CN.md)与[路线图](docs/roadmap.zh-CN.md)
-- [研究与限制](docs/research-map.zh-CN.md)及[历史审计记录](docs/audit/README.zh-CN.md)
-- 后置平台：[iOS](apps/ios/README.zh-CN.md) 和 [Android](apps/browser/docs/android.zh-CN.md)
-- [变更记录](CHANGELOG.md)与[第三方开源鸣谢](THIRD_PARTY_NOTICES.md)
+## Roadmap
 
-GCSA 原创源码采用 [Apache-2.0](LICENSE)。Chromium、libtorrent 与其他第三方组件保留各自许可证。感谢这些开源项目的维护者与贡献者。
+1. **MAC-1 — 核心浏览器与 Access Service：** 收敛当前 Chromium 集成、路由和必要回归缺口。
+2. **MAC-2 — 稳定性与发行候选：** 当前源码可复现构建、代表性运行/隐私/性能检查和安装 App 验收。
+3. **MAC-3 — macOS 分发：** Developer ID 签名、公证、打包、全新安装/升级/回滚与明确发行授权。
+4. **IOS-1 — 真机基线：** 在现有原生 iOS 代码上重新绑定当前源码，完成 iPhone/iPad 真机和生命周期验证。
+5. **IOS-2 — 产品完善：** 在真机上补齐内嵌扩展、策略、隐私与 Agent 集成。
+6. **IOS-3 — 分发：** entitlement/provisioning、签名、Archive、TestFlight 与 App Store 准备。
+
+Windows 与 Android 保持后续评估，不阻塞 macOS → iOS 的产品路线。
+
+## 文档与许可证
+
+- [路线图](docs/roadmap.zh-CN.md) · [文档索引](docs/README.zh-CN.md) · [架构](docs/architecture.zh-CN.md)
+- [Browser 工程指南](apps/browser/README.zh-CN.md) · [iOS 工程指南](apps/ios/README.zh-CN.md)
+- [研究与限制](docs/research-map.zh-CN.md) · [历史审计记录](docs/audit/README.zh-CN.md)
+- [变更记录](CHANGELOG.md) · [第三方开源鸣谢](THIRD_PARTY_NOTICES.md)
+
+GCSA 原创源码采用 [Apache-2.0](LICENSE)。Chromium、libtorrent 与其他第三方组件保留各自许可证。
