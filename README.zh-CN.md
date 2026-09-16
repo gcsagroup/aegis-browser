@@ -1,58 +1,87 @@
 # GCSA-aegis
 
+本机开发与验收请先看[唯一源码入口及工作区说明](WORKSPACES.zh-CN.md)。旧补丁身份不代表当前 App。
+
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![上游 CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
-## 项目简介
+当前只关注 macOS。CI 自动运行 macOS 质量门；Linux、Windows、iOS 和 Android 验证后置，保留手动入口。完整 Chromium 构建仍是独立门禁。
 
-GCSA-aegis 是一个基于 Chromium 的浏览器项目，将隐私控制、安全检查和 AI Agent 整合到浏览器中。项目采用本地优先的方式，目标是减少不必要的数据共享，让用户更自主地管理浏览和自动化任务。
+GCSA-aegis 是一个本地优先的隐私与安全浏览器项目，现有两条产品线：[`apps/browser`](apps/browser/README.zh-CN.md) 下的 Chromium 分支，以及 [`apps/ios`](apps/ios/README.zh-CN.md) 下的原生 iOS 浏览器。核心能力集成在各自的浏览器产品内；项目不会复活已退役的独立扩展产品。
 
-## 项目检查
+> **2026-09-14 源码更新：界面整改与浏览器更新：** 当前源码包含 113 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁。本地 macOS 验收为 Ver 1.1 (018)：32 项整改完成，18 项原生测试、116 项界面回归通过，170 条改动文案及翻译占位符检查通过。Windows/Android 实机及真实 Release 安装尚未验收；本次仅提交源码，不发布二进制或 tag。 [018 验收记录](docs/ui-copy-acceptance.zh-CN.md)
 
-[![CI](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=develop)](https://github.com/quinn521/aegis-browser/actions/workflows/quality.yml?query=branch%3Adevelop) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=develop)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+> **历史状态 — 2026-09-10：** Browser Agent v2 候选源码包含 108 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 Chromium 提交 源码树 `319366182c31108e29e62d2f2199aff29a0b86e8`。57、65、67、95 和 97 补丁记录只保留为历史证据。原生 iOS 产品仍只在已记录的 Simulator 范围内为 **SIMULATOR_QUALIFIED**。项目整体仍是 **发行 No-Go**，还需受信任证明、正式签名、公证、已安装分发包验收，以及本轮明确后置的 iOS 门禁。
 
-CI 和 Codacy Grade 指向个人开发仓库的 `develop` 分支，分别反映不同检查；徽章不代表发行验收通过。
+[2026-09-10 main 合并与验证](docs/audit/main-consolidation-2026-09-10.md)
 
-## 开发状态
+普通桌面 Profile 和 Android 都会显示 Agent 入口。第一次任务可直接配置并启用用户选择的模型，不要求用户先选工作流或预先打开网页。WebMCP 与交易提交能力继续默认关闭，最终结账/付款必须由用户接管。
 
-**当前优先开发 macOS，项目仍在开发中，尚未达到发行验收标准。** 自动 CI 覆盖仓库质量检查、共享策略、脚本和独立原生测试。完整 Chromium 构建、当前浏览器运行行为、真实网络验证、签名、公证及安装包验收仍是独立门禁。
+## 产品形态
 
-Linux、Windows、iOS 和 Android 工作后置。既有平台代码与手动验证入口保留在相关文档中。
+- **Chromium 产品线：** [`apps/browser`](apps/browser/README.zh-CN.md) 负责 Chromium 固定版本、补丁栈、浏览器集成、构建和平台打包边界。
+- **原生 iOS 产品线：** [`apps/ios`](apps/ios/README.zh-CN.md) 已实现 SwiftUI/WKWebView 浏览器、普通与私密配置隔离、内嵌 Safari/Share extensions 和 Agent Broker。
+- **共享策略与合同源：** [`packages/core`](packages/core) 提供可测试策略、生成资产，以及由 TypeScript 与 Swift 共用的 Agent Contract v1 Schema 和 Golden Vectors。
+- **iOS Agent 范围：** 深度研究、浏览器管家、安全下载和购物助手四个受控工作流返回确定性结果，可离线验证；这不构成生产远程模型链路的证据。
+- **扩展边界：** Safari 与 Share target 是 iOS App 的内嵌组件；独立 `apps/extension` 产品仍被禁止。
 
-## 已实现的核心能力
+## 证据边界
 
-源码包含以下组件，并通过单元测试或夹具检查验证明确范围内的行为：
+源码同步、干净的外部 Chromium checkout 和 iOS Simulator 资格属于不同证据层级，均不能证明对应当前源码已经通过全部构建、运行、签名、安装、真机、隐私、商店和发布门禁。
 
-- **隐私与追踪控制：** [共享策略](packages/core/src/policy.ts)组合追踪规则、链接参数清理、Cookie 分类和文本隐私检查。
-- **钓鱼风险评估：** [检测器](packages/core/src/phish/detector.ts)评估网址与页面信号并返回风险原因。现有测试范围不等于真实环境检测准确率。
-- **浏览器 Agent：** [桌面 Agent 界面](apps/browser/overlay/chrome/browser/resources/aegis_agent/agent.ts)提供任务状态与模型选择控制，并有[界面逻辑检查](apps/browser/scripts/agent-ui-status_test.mjs)。模型配置及端到端运行验证仍需另行完成。
-- **访问规则：** [原生路由与策略组件](apps/browser/overlay/components/aegis_access)实现站点规则匹配和路由规划。独立测试不代表生产网络行为已验证。
+历史 Chromium 测试数量、清单和产物哈希保留在带日期的审计记录中，不得跨补丁 HEAD 拼接或写成当前发行证据。研究证据也必须分开：Phase 2 是 synthetic formal fixture，Phase 3 是 13 样本 operator-blinded public pilot，召回率为 `1/3`；两者都不能泛化为广义恶意 JavaScript 检测结论。iOS 的 `SIMULATOR_QUALIFIED` 仅限具名 Simulator 链路，不是真机、分发或 App Store 证据。
 
-## 在 macOS 上开始开发
+## 快速开始
 
-使用 [.mise.toml](.mise.toml) 固定的版本，并遵循[环境与质量指南](docs/development/ci.zh-CN.md)。安装固定工具后，先检查环境与浏览器工作区：
+JavaScript 工具链固定为 Node.js `22.23.1` 和 pnpm `9.15.0`。
 
 ```bash
-mise exec -- node --version
-mise exec -- pnpm --version
-mise exec -- python3 --version
-mise exec -- pnpm --filter @gcsa-aegis/browser status
+pnpm install --frozen-lockfile
+pnpm run quality:fast
+pnpm --filter @gcsa-aegis/browser status
 ```
 
-依赖安装和完整质量门见上述 CI 指南。准备和构建 Chromium 请遵循 [Mac 本地构建流程](apps/browser/README.zh-CN.md#本地流程)及[工作区说明](WORKSPACES.zh-CN.md)。Chromium 需要独立的大型源码 checkout；状态命令不会下载或构建它。固定版本记录在 [CHROMIUM_VERSION](apps/browser/CHROMIUM_VERSION)。
+准备和构建 Chromium 需要大型外部 checkout。执行联网、构建、打包或运行命令前，请先阅读[浏览器指南](apps/browser/README.zh-CN.md)。原生 App 的构建与测试说明见 [iOS 工程指南](apps/ios/README.zh-CN.md)；其安全默认测试入口是：
 
-## 开发协作流程
+```bash
+bash apps/ios/scripts/run-simulator-tests.sh --dry-run
+```
 
-从最新 DEV `develop` 创建功能分支，向 `develop` 提交 PR，并验证合并提交的 CI。准备公共晋升时，先将个人 `main` 快进到最新上游 `main`，再把更新后的 `main` 合回 `develop`，随后通过经过 Review 的 PR 将 `develop` 晋升到个人 `main`。个人 `main` 合并且 push CI 成功后，再把这份精确晋升状态提交到上游 `main`，接受上游自己的 Review 与 CI。
+## 仓库结构
 
-完整流程见 [CI 与上游工作指南](docs/development/ci.zh-CN.md)。源码集成不等于发布二进制或发行版本。
+```text
+apps/browser       Chromium 固定版本、overlay、补丁、构建与验证脚本
+apps/ios           原生 iOS App、内嵌扩展、AgentKit 与 Simulator 测试
+packages/core      共享策略、检测器、生成资产与 Agent Contract v1
+docs/              架构、路线图、研究映射、产品页与审计记录
+```
 
-## 文档、许可证与鸣谢
+## 文档
 
-- [文档索引](docs/README.zh-CN.md)、[架构](docs/architecture.zh-CN.md)与[路线图](docs/roadmap.zh-CN.md)
-- [研究与限制](docs/research-map.zh-CN.md)及[历史审计记录](docs/audit/README.zh-CN.md)
-- 后置平台：[iOS](apps/ios/README.zh-CN.md) 和 [Android](apps/browser/docs/android.zh-CN.md)
-- [变更记录](CHANGELOG.md)与[第三方开源鸣谢](THIRD_PARTY_NOTICES.md)
+- [文档索引](docs/README.zh-CN.md)
+- [架构](docs/architecture.zh-CN.md)
+- [路线图与发布门禁](docs/roadmap.zh-CN.md)
+- [iOS 工程指南](apps/ios/README.zh-CN.md)
+- [研究到实现映射](docs/research-map.zh-CN.md)
+- [三语产品页](docs/product.html)
+- [更新日志](CHANGELOG.md)
 
-GCSA 原创源码采用 [Apache-2.0](LICENSE)。Chromium、libtorrent 与其他第三方组件保留各自许可证。感谢这些开源项目的维护者与贡献者。
+## GitHub 同步边界
+
+2026-08-28 已授权通过 SSH 将源码仓库同步到 `git@github.com:gcsagroup/aegis-browser.git`。该授权仅覆盖源码分支同步，不授权创建或发布 Git tag、GitHub Release、二进制、安装包、签名凭据、公证提交、Play 上传、TestFlight 构建、App Store 提交或生产部署。
+
+## 许可证
+
+感谢让 Aegis 成为可能的开源项目维护者与贡献者。[第三方开源鸣谢](THIRD_PARTY_NOTICES.md)列出了浏览器基础、直接依赖、可选实验组件与开发工具。
+
+GCSA 原创源码采用 Apache-2.0。Chromium、libtorrent 与其他第三方组件保留各自许可证；详见 [LICENSE](LICENSE) 与[第三方声明](THIRD_PARTY_NOTICES.md)。
+
+## 测试
+
+```bash
+pnpm run quality:fast
+bash apps/ios/scripts/run-simulator-tests.sh --dry-run
+```
+
+这些命令覆盖仓库快速 JavaScript/脚本门禁和不产生变更的 iOS Simulator 预检。[CI 指南](docs/development/ci.zh-CN.md)定义各语言实际测量范围与 Codacy 准备状态；不同语言百分比不得合并成“全仓覆盖率”。Chromium 原生构建与当前头运行矩阵、iOS `--execute` 结果、真机、签名、打包、安装和商店验收仍是独立门禁。
