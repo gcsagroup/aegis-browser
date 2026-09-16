@@ -2,126 +2,110 @@
 
 [English](roadmap.md) | **简体中文** | [繁體中文](roadmap.zh-TW.md)
 
-## 状态词汇
+## 产品顺序
 
-- **历史原型：** 只能证明方向，不能代表当前可交付物。
-- **已进入源码：** 代码或补丁存在；构建和运行状态另算。
-- **源码已同步：** 补丁血统、overlay 和外部 checkout 一致。
-- **Simulator-qualified：** 具名 iOS 源码与测试范围在指定 iPhone/iPad Simulator 上共同运行；真机、签名、分发和商店状态另算。
-- **门禁已通过：** 具名源码、产物、平台和代表性测试范围共同通过。
-- **具备发布资格：** 同一可分发产物通过身份、信任、签名、安装、隐私、平台和投放门禁。
+Aegis 采用一条明确的平台路线：
 
-## 当前结论 — 2026-09-10
+> **先 macOS → 再 iOS / iPadOS → 其他平台后置**
 
-Browser Agent v2 候选源码包含 108 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 Chromium 提交 源码树 `319366182c31108e29e62d2f2199aff29a0b86e8`；57、65、67、95 和 97 补丁记录只保留为历史快照。平台产物身份和受影响运行验收仍是独立门禁。
+macOS 是当前产品目标，但现有 iOS 代码不会停摆或废弃；共享安全修复和合同维护可以继续。macOS 满足自己的发行条件即可独立发布，不需要等待 iOS 达到分发状态。
 
-原生 iOS 产品已具备 SwiftUI/WKWebView 浏览器、普通/私密隔离、内嵌 Safari/Share extensions、Agent Broker、四个离线确定性工作流、共享 Agent Contract v1 向量，以及 iPhone/iPad Simulator 链路。当前证据上限为 **SIMULATOR_QUALIFIED**。真机验证为 `NOT_RUN`；默认浏览器 entitlement 为 `PENDING`；正式签名、Archive、TestFlight 和 App Store 交付均为 `NOT_RUN`。
+## 证据词汇
 
-项目整体为 **release No-Go**。两条产品线都没有同时具备可信当前源码分发包和完整发布门禁证据。
+- **已进入源码：** 代码存在；构建与运行状态另算。
+- **已验证：** 具名源码与声明的测试范围在同一身份下通过。
+- **Simulator-qualified：** 具名 iOS 源码与测试范围在指定 Simulator 上通过；真机与分发状态仍需单独证明。
+- **具备发布资格：** 同一个可分发产物完成该平台的身份、构建、运行、隐私、签名、安装和发布门禁。
 
-## 历史阶段
+徽章与历史审计记录只证明各自明确声明的范围，不会自动授予发行资格。
 
-### 阶段 0 — 脚手架
+## 当前主线 — macOS
 
-Monorepo、三语产品页和核心策略原型建立了产品方向。
+Aegis for macOS 是当前开发主线。Chromium 源码、仓库质量门、独立 C++ 原生测试和部分集成验证已经存在，但项目仍然**不具备正式发行资格**。完整当前源码的 Chromium 运行证据，以及最终签名/公证/分发链仍需独立完成。
 
-### 阶段 1 — 扩展原型
+### MAC-1 — 核心浏览器与 Access Service
 
-MV3 扩展验证了部分追踪器、钓鱼和隐私摘要思路。它不再是独立产品或发布目标。
+**目标：** 在不削弱 fail-closed 边界的前提下，收敛当前浏览器集成与网络路由缺口。
 
-### 阶段 2 — 核心原型
+完成标准：
 
-链接清理、Cookie 分类、PII 脱敏、钓鱼启发式和生成策略资产进入可复用、可测试代码。仅研究评估器仍与浏览器决策分离。
+- Access 路由、Profile/StoragePartition ownership 和 NetworkContext 接入具备对应单元/回归测试。
+- 必要 Chromium 目标能针对当前固定源码真实编译，并在合格环境运行相应 GoogleTest / browser 场景。
+- HTTP/HTTPS 代理、代理不可用以及原生直连场景能够证明预期行为，不出现静默 DIRECT fallback。
+- Browser Agent、隐私控制与浏览器原生能力继续保持明确的安全和用户同意边界。
 
-## 阶段 3 — Chromium 产品线
+### MAC-2 — 稳定性与发行候选
 
-### M0：基线与恢复 — 完成
+**目标：** 把已集成源码收敛为可复现、身份绑定的 macOS 候选。
 
-- Chromium 固定为版本 `151.0.7922.77` 和基础提交 `ff37cfca210138f2a40b843b4a8195ab7e4fc7ff`。
-- 已有本地恢复点和证据保留边界。
+完成标准：
 
-### M1：Chromium 收敛与快速门禁 — 完成
+- 从固定 Chromium 源码与有序补丁序列开始的干净重放/构建可复现。
+- 同一候选通过代表性浏览、配置隔离、下载、Agent、更新、崩溃/重启以及真实网络场景。
+- 性能、隐私/出站与回归审查绑定当前候选，而不是历史补丁头。
+- 安装 App 的身份能够精确映射到仓库、Chromium、V8、补丁序列和构建输入。
 
-- 历史 browser-only 收敛退役了独立扩展产品，并把 Chromium 能力集中到 `apps/browser`。
-- 该边界禁止独立 `apps/extension`，不禁止之后建立带内嵌扩展的原生平台浏览器。
-- Workspace 已冻结 JavaScript 依赖，并有可重复快速质量门禁。
+### MAC-3 — macOS 分发
 
-### M2：Chromium 集成与本地构建身份 — 部分完成
+**目标：** 让首个稳定 Aegis macOS 安装包具备正式分发资格。
 
-- 有序源码现包含 108 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁。
-- 57 补丁诊断清单和 65 补丁 Agent 候选保留各自已记录的本地证据，但只覆盖对应历史 HEAD。
-- 65 补丁候选通过了具名原生、浏览器、fixture、生命周期和本地 UI 范围；它不是已签名、公证和安装验收的分发包。
-- 108 补丁 v2 源码已通过连续精确重放和仓库快速门禁；各平台精确清单、设备测试和运行验收必须记录在一起后才算完成。
+完成标准：
 
-### M3–M4：安全边界与稳定性 — 部分完成
+- 同一候选完成 Developer ID 签名与公证。
+- 在代表性受支持系统验证打包、全新安装、启动、升级和回滚。
+- 针对该精确产物完成发布说明、第三方声明、隐私边界和分发授权复核。
+- 最后由单独的明确发行决定授权发布；源码合并或 CI 成功本身不代表授权发布。
 
-- Chromium 原生追踪器、链接、Cookie、钓鱼、指纹、下载、摘要和本地自动化控制已进入源码。
-- 具名早期补丁头通过过部分历史原生、浏览器和运行门禁。
-- MinerGuard 和 V8 字节码影子仍是 observe-only；研究评估器不授权拦截或生产安全声明。
-- 当前诊断产物上的 bytecode-shadow v5 按固定研究协议在两个公开站点完成 4/4 运行；其报告仍为 `research-only`，且 `releaseEligible=false`。
-- 完整的产品级出站归因、遥测/更新/崩溃报告复核、代表性功能行为矩阵、启动压力、误报评估和更广泛的当前头重跑仍未完成。
+## 下一主线 — iOS / iPadOS
 
-### M5：Android — 后置
+原生 iOS 产品已经具备 SwiftUI/WKWebView 浏览器、普通/私密配置隔离、内嵌 Safari/Share extensions、AgentKit 与既有 Simulator 测试基线。下一阶段从这些代码继续，并把证据更新到当前源码；不是从零开始重写。
 
-- 当前证据集中没有合格的 x86-64 Linux 构建环境。
-- 当前源码没有绑定身份的 APK/AAB，也没有真机验收。
-- Android 页面摘要和平台特定行为需要当前源码验证。
+### IOS-1 — 当前源码真机基线
 
-### M6：Chromium 内部候选版本 — 待完成
+**目标：** 将现有原生产品绑定到当前已提交源码，并突破 Simulator-only 证据上限。
 
-Chromium 内部 RC 需要干净、绑定身份的当前源码构建、受影响测试和运行门禁、产品身份、签名与公证准备、打包、已安装 App 验收、隐私/出站复核和回滚证据。不得从源码同步推导这些结论。
+完成标准：
 
-## 阶段 4 — 原生 iOS 产品线
+- 当前源码的 Debug/Release 构建以及 Xcode 工程生成输入可复现并完成差异审查。
+- iPhone 与 iPad 真机上的导航、私密模式、生命周期、无障碍和代表性站点行为通过。
+- Safari extension、Share/App Group 与普通/私密隔离完成真机端到端验证。
 
-### I0：工程与产品拓扑 — Simulator-qualified 范围
+### IOS-2 — 产品完善
 
-- 原生 Xcode 工程定义 Aegis App、BrowserKit、AegisPolicyKit、AgentKit、内嵌 Safari/Share extensions 和 iPhone/iPad 单元/UI 测试 targets。
-- iOS App 是产品线；其 extension targets 仍是内嵌组件，不是独立产品。
+**目标：** 补齐真正 iOS 产品所需的隐私、策略和 Agent 链路，而不是停留在 Simulator demo。
 
-### I1：浏览器外壳与配置隔离 — Simulator-qualified 范围
+完成标准：
 
-- 已有 SwiftUI/WKWebView 标签页、导航、普通历史/收藏、iPhone 紧凑界面和 iPad 侧栏。
-- 普通与私密配置隔离数据存储、用户内容控制器和扩展状态；私密模式不持久化，并禁用历史、收藏和 Agent。
-- 最低系统、多 runtime、生命周期、真实站点和真机矩阵仍待完成。
+- PolicyKit 保护覆盖预期真实导航/出站路径，并有隐私回归测试。
+- Agent 授权、同意、恢复与内嵌扩展边界在真机完成验证。
+- 生产模型路由、真实站点以及任何新增网络/下载能力均经过明确的安全与隐私审查。
 
-### I2：内嵌扩展与策略路径 — 部分完成
+### IOS-3 — 分发
 
-- Safari 已有手势/租约约束的只读快照门，并以 document token 与 navigation epoch 绑定授权文档；Share 已有有界、会过期且只能消费一次的 HTTP(S) URL inbox。
-- BrowserSession 主框架导航已接入 LinkSanitizer 与 PhishingScorer，并提供追踪参数清理和高风险 URL 拦截；PII 出站保护仍未接入真实数据链。
-- 真实 Safari 权限、App Group 行为、Share 到 App 生命周期和真机端到端验收仍未完成。
+**目标：** 让 Aegis 具备 TestFlight 与 App Store 交付条件。
 
-### I3：Agent Contract v1 与四个工作流 — Simulator-qualified 离线范围
+完成标准：
 
-- AgentKit 已实现共享合同 codec/向量、授权、文档租约、资源登记、一次性能力、Broker、同意状态和恢复边界。R1/R2 批准使用随机 ID、最长 60 秒 TTL、完整动作摘要、精确恢复校验和签发前销毁。
-- 深度研究、浏览器管家、安全下载和购物助手可离线确定性验证。
-- 本地收藏应用/撤销事务、认证加密 journal、崩溃恢复判定和跨重启后的 Agent 双确认撤销入口已在 Simulator 范围实现；真实 DOM 抽取、实际下载、生产模型路由、支付和下单仍不属于已实现发布证据。
-- 最终具名证据使用 Aegis-Debug、Xcode 26.6 与 iOS Simulator 26.5：iPhone 17 共 81 项，80 通过，按设计跳过仅适用于 iPad 的侧栏测试；iPad Air 11-inch (M4) 81/81 通过。39/39 安全定向单元测试和 2/2 关键 UI 测试是上述完整套件的子集，不能另行相加。
+- 所需 entitlement、Development Team 与 provisioning 配置获批且可复现。
+- 精确候选完成正式签名与 Archive。
+- 完成 TestFlight 安装/升级、Privacy Manifest、App Store 隐私元数据和必要合规材料。
+- App Store 提交仍是单独的发行决定，不由源码完成状态自动触发。
 
-### I4：真机与分发 — 待完成
+## 后续平台
 
-- 真机浏览器、私密模式、Safari、Share、生命周期、性能、无障碍和隐私验收为 `NOT_RUN`。
-- 默认浏览器 entitlement 与批准为 `PENDING`。
-- Development Team/provisioning、正式签名、Archive、TestFlight、App Store 元数据/隐私声明、安装、升级和回滚均为 `NOT_RUN`。
+Windows、Android 与 Linux 保留为后续评估方向。现有源码和手动测试/构建入口继续保留，但它们不阻塞 macOS → iOS 路线，当前也不承诺发布日期。
 
-## 跨产品工作
-### M6：macOS 本地发行候选 — 已完成；分发资格待完成
+## 跨平台持续工作
 
-精确当前源码已有干净、带身份绑定的 macOS 本地构建、受影响测试、fixture 运行证据、A1–A10 验收、完整固定提交区间安全审计，以及 11 项发现的修复验证。产品身份、受信任构建证明、Developer ID 签名、公证、分发打包、安装 App 验收、完整 Chromium 出站审查、Android 和发行授权仍未完成，因此正式发行仍为 No-Go。
+以下工作贯穿整个 Roadmap：
 
-### M7：文档与发布边界 — 进行中
+- 共享策略与 Agent Contract 兼容性；
+- CI、测试证据和源码身份完整性；
+- 安全审查、依赖与许可证维护；
+- 明确区分源码状态、测试证据与发行声明的文档。
 
-- 公共 README、架构和路线图用英文、简体中文和繁体中文描述两条产品线。
-- 带日期的审计记录仍是历史快照，不能覆盖本路线图。
-- 源码发布、安装包发布、TestFlight、App Store 和生产部署仍是不同决策。
+历史补丁数量、旧测试总数和带日期的验收结果继续保留在[审计记录](audit/README.zh-CN.md)中，不再作为不断变化的 Roadmap 里程碑。
 
-## GitHub 源码同步
+## 发布规则
 
-2026-08-28 授权覆盖通过 SSH 将源码分支同步到 `git@github.com:gcsagroup/aegis-browser.git`，不覆盖 Git tag、GitHub Release、二进制、签名凭据、公证、Play 上传、TestFlight、App Store 提交或生产部署。
-
-## 发布退出标准
-
-1. 从干净状态提交并复现两条产品线的精确当前源码及嵌套血统。
-2. 在合格主机上产出绑定身份的当前源码 Chromium 与 iOS 分发候选。
-3. 在这些精确候选上通过受影响单元、浏览器、运行、隐私、出站、性能、代表性站点、Simulator 和真机门禁。
-4. 分别完成 Chromium 身份/签名/公证/打包门禁，以及 iOS entitlement/provisioning/签名/Archive/TestFlight/App Store 门禁。
-5. 对精确候选完成安装、升级、回滚、隐私/出站、第三方声明、文档与分发授权复核。
+每个平台独立获得发行资格。任意发行候选都必须让构建、运行、隐私、签名、安装和分发审查指向**同一份精确源码和产物**。一个平台通过永远不会自动授予另一个平台发行状态。
