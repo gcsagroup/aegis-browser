@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
+[![上游 CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard) [![Current platform: macOS](https://img.shields.io/badge/platform-macOS-555?logo=apple&logoColor=white)](apps/browser)
+
 ## 專案簡介
 
 GCSA-aegis 是一個以 Chromium 為基礎的瀏覽器專案，將隱私控制、安全檢查與 AI Agent 整合到瀏覽器中。專案採用本機優先的方式，目標是減少不必要的資料分享，讓使用者更自主地管理瀏覽與自動化任務。
@@ -42,7 +44,7 @@ mise exec -- pnpm --filter @gcsa-aegis/browser status
 
 ## 開發協作流程
 
-從最新 DEV `develop` 建立功能分支，向 `develop` 提交 PR，並驗證合併提交的 CI。經過批准的公開變更隨後可獨立匯出至上游 `main`，接受上游自己的審查與 CI。個人儲存庫的 `main` 只透過明確的快轉同步鏡像上游。
+從最新 DEV `develop` 建立功能分支，向 `develop` 提交 PR，並驗證合併提交的 CI。準備公開晉升時，先將個人 `main` 快轉到最新上游 `main`，再把更新後的 `main` 合回 `develop`，接著透過經過 Review 的 PR 將 `develop` 晉升到個人 `main`。個人 `main` 合併且 push CI 成功後，再把這份精確晉升狀態提交到上游 `main`，接受上游自己的 Review 與 CI。
 
 完整流程見 [CI 與上游工作指南](docs/development/ci.zh-CN.md)。原始碼整合不等於發布二進位檔或發行版本。
 
