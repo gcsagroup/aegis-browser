@@ -2,7 +2,7 @@
 
 # GCSA-aegis Browser
 
-[![C++ Unit Tests](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml)
+[![C++ 单元测试](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml)
 
 GCSA-aegis Browser 是把隐私与安全能力直接集成到浏览器层和引擎层的 Chromium fork。它不是 Electron 壳，也不把扩展当成产品本体。
 
