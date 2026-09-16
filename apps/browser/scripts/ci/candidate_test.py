@@ -118,6 +118,7 @@ class CandidateTests(unittest.TestCase):
         self.assertIn('branches: [main]', workflow)
         self.assertNotIn('codex/ci/chromium-three-platform', workflow)
         self.assertIn('cancel-in-progress: true', workflow)
+        self.assertIn("github.event_name != 'schedule' || github.repository == 'gcsagroup/aegis-browser'", workflow)
         self.assertIn('ci-evidence/upstream/latest.json', workflow)
         self.assertIn('ci-evidence/upstream/last-success.json', workflow)
         self.assertIn('ci-evidence/upstream/state.json', workflow)
