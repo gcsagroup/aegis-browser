@@ -45,7 +45,8 @@ try {
   }
   for (const event of ['pull_request', 'push']) {
     const config = triggers[event] ?? {};
-    if (!array(config.branches).includes('main')) fail(`${event} must target main`);
+    if (JSON.stringify(array(config.branches).sort()) !== JSON.stringify(['develop', 'main'])) fail(`${event} must target exactly main and develop`);
+    if ('branches-ignore' in config) fail(`${event} may not exclude branches`);
     if ('paths' in config || 'paths-ignore' in config) fail(`${event} may not filter paths`);
   }
   for (const [label, manual] of [['iOS', iosWorkflow], ['Other platform', otherWorkflow], ['Android', androidWorkflow]]) {
@@ -72,8 +73,9 @@ try {
   for (const [name, permission] of Object.entries(iosWorkflow.permissions ?? {})) {
     if (permission === 'write') fail(`iOS workflow permission ${name} may not be write`);
   }
-  if (!workflow.concurrency || workflow.concurrency['cancel-in-progress'] == null) {
-    fail('Workflow must define concurrency and cancellation policy');
+  const expectedConcurrency = "${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && format('push-{0}', github.ref) || format('dispatch-{0}', github.run_id) }}";
+  if (workflow.concurrency?.group !== expectedConcurrency || workflow.concurrency?.['cancel-in-progress'] !== "${{ github.event_name == 'pull_request' }}") {
+    fail('Workflow concurrency must isolate branch pushes, PRs and diagnostic runs; cancel only stale PR runs');
   }
   if (!iosWorkflow.concurrency || iosWorkflow.concurrency['cancel-in-progress'] == null) {
     fail('iOS workflow must define concurrency and cancellation policy');
