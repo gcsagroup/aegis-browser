@@ -45,9 +45,9 @@ rg -Fq '+class AccessRuleStore' "$PATCH_FILE" ||
   fail "0116 must deliver the production store"
 [[ "$(rg -F -c '0116-feat-aegis-add-access-rule-store-recovery.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0116 must appear once in series"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
-  '0116-feat-aegis-add-access-rule-store-recovery.patch' ]] ||
-  fail "0116 must be the current series tail"
+next_after_0116="$(awk '$0 == "0116-feat-aegis-add-access-rule-store-recovery.patch" { getline; print; exit }' "$SERIES_FILE")"
+[[ "$next_after_0116" == '0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch' ]] ||
+  fail "0116 must immediately precede 0117"
 
 if [[ -e "$BROWSER_DIR/overlay/components/aegis_access/access_rule_store.cc" ||
       -e "$BROWSER_DIR/overlay/components/aegis_access/access_rule_store.h" ]]; then
