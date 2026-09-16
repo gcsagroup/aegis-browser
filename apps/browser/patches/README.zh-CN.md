@@ -13,7 +13,7 @@
 
 ## 当前本地补丁序列
 
-状态“series 中”只表示补丁文件列在当前本地 `series`；不表示已经进入上游 Chromium、通过发行门禁或可以发布。49、67 和 95 补丁记录只保留为历史快照。当前整合源码包含 **117 个 Chromium 补丁 + 2 个嵌套 V8 补丁**：0057–0065 是原 Browser Agent 集成，0066–0067 是设置/更新和视觉品牌，0068–0108 用 Browser Agent v2 Runtime 替换并强化 v1 执行路径，同时加入跨平台入口、定时自动化、指定站点路由、Profile 隔离、有界恢复、浏览器绑定的标签页/文档能力、正确产品身份、脱离 UI 序列的持久化、确定性销毁和启用断言时安全的限流处理。补丁 0109–0113 增加并强化 GitHub 浏览器更新及产品状态/文案；补丁 0114–0116 增加访问路由规划、可信策略匹配及 Profile 规则库原子持久化/恢复合同。补丁 0117 增加首个 fail-closed `net::ProxyInfo` 路由适配器，仅接受已登记的 numeric-loopback HTTP 代理入口且不提供 DIRECT fallback。补丁 0079–0095 重放到 Chromium 源码提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；补丁 0096–0101 生成 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；补丁 0102 生成已提交源码 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。产物资格仍按平台分别判定，并且必须绑定这份精确源码的验收证据。
+状态“series 中”只表示补丁文件列在当前本地 `series`；不表示已经进入上游 Chromium、通过发行门禁或可以发布。49、67 和 95 补丁记录只保留为历史快照。当前整合源码包含 **118 个 Chromium 补丁 + 2 个嵌套 V8 补丁**：0057–0065 是原 Browser Agent 集成，0066–0067 是设置/更新和视觉品牌，0068–0108 用 Browser Agent v2 Runtime 替换并强化 v1 执行路径，同时加入跨平台入口、定时自动化、指定站点路由、Profile 隔离、有界恢复、浏览器绑定的标签页/文档能力、正确产品身份、脱离 UI 序列的持久化、确定性销毁和启用断言时安全的限流处理。补丁 0109–0113 增加并强化 GitHub 浏览器更新及产品状态/文案；补丁 0114–0116 增加访问路由规划、可信策略匹配及 Profile 规则库原子持久化/恢复合同。补丁 0117 增加首个 fail-closed `net::ProxyInfo` 路由适配器，仅接受已登记的 numeric-loopback HTTP 代理入口且不提供 DIRECT fallback；补丁 0118 通过 Chromium 原生 custom-proxy delegate 将精确 host 选择绑定到 Profile/StoragePartition NetworkContext，未选中的 host 保留 Chromium 原生代理结果。补丁 0079–0095 重放到 Chromium 源码提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；补丁 0096–0101 生成 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；补丁 0102 生成已提交源码 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。产物资格仍按平台分别判定，并且必须绑定这份精确源码的验收证据。
 
 | ID | 目的 | 状态 |
 |----|------|------|
@@ -134,6 +134,7 @@
 | 0115 | 增加可信请求归属规范化与策略匹配 | series 中 |
 | 0116 | 增加 Profile 访问规则原子持久化与恢复 | series 中 |
 | 0117 | 将已登记的 loopback HTTP 代理以 fail-closed 方式应用到 Chromium `ProxyInfo`，不提供 DIRECT fallback | series 中 |
+| 0118 | 将精确站点的 localhost HTTP 代理选择绑定到 Profile/StoragePartition NetworkContext | series 中 |
 
 0103–0105 已从 0102 基线精确重放到 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` 的源码树 `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`，平台实际验收仍是独立门槛。
 
