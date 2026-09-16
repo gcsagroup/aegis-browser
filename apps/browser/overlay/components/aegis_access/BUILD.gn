@@ -42,6 +42,7 @@ source_set("aegis_access") {
 
 test("aegis_access_unittests") {
   sources = [
+    "access_local_proxy_acceptance_unittest.cc",
     "access_proxy_route_adapter_unittest.cc",
     "access_policy_evaluator_unittest.cc",
     "access_route_planner_contract_test.h",
@@ -55,6 +56,14 @@ test("aegis_access_unittests") {
     ":generate_route_planner_vectors",
     "//base",
     "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//mojo/public/cpp/bindings",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//services/network:test_support",
     "//testing/gtest",
+    "//url",
   ]
 }
