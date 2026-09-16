@@ -113,6 +113,22 @@ class CandidateTests(unittest.TestCase):
             self.assertIn('device missing', (path / 'summary.md').read_text())
             self.assertIn('未执行', (path / 'summary.md').read_text())
 
+    def test_upstream_monitor_avoids_stale_branch_and_evidence_cache_growth(self):
+        workflow = (ci.ROOT / '.github/workflows/chromium-upstream.yml').read_text()
+        self.assertIn('branches: [main]', workflow)
+        self.assertNotIn('codex/ci/chromium-three-platform', workflow)
+        self.assertIn('cancel-in-progress: true', workflow)
+        self.assertIn('ci-evidence/upstream/latest.json', workflow)
+        self.assertIn('ci-evidence/upstream/last-success.json', workflow)
+        self.assertIn('ci-evidence/upstream/state.json', workflow)
+        self.assertNotIn('path: ci-evidence/upstream\n', workflow)
+
+    def test_candidate_workflow_is_manual_until_dedicated_runners_are_ready(self):
+        workflow = (ci.ROOT / '.github/workflows/chromium-candidate.yml').read_text()
+        trigger = workflow.split('permissions:', 1)[0]
+        self.assertIn('workflow_dispatch:', trigger)
+        self.assertNotIn('\n  push:', trigger)
+
 
 if __name__ == '__main__':
     unittest.main()
