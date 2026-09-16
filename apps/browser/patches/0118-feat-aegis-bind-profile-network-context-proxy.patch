@@ -1,0 +1,754 @@
+From a0d6350b7cc9766174da8778bf057b5ff56e8960 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 16 Sep 2026 11:25:08 +0800
+Subject: [PATCH] feat(aegis): bind profile network context proxy transport
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  34 +++
+ .../access_network_context_transport.cc       | 281 ++++++++++++++++++
+ .../access/access_network_context_transport.h |  94 ++++++
+ ...cess_network_context_transport_unittest.cc | 255 ++++++++++++++++
+ chrome/browser/net/BUILD.gn                   |   1 +
+ .../net/profile_network_context_service.cc    |   4 +
+ 6 files changed, 669 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_network_context_transport.cc
+ create mode 100644 chrome/browser/aegis/access/access_network_context_transport.h
+ create mode 100644 chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 645480e..78bca45 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -3,6 +3,23 @@
+ 
+ import("//testing/test.gni")
+ 
++source_set("access_network_context_transport") {
++  sources = [
++    "access_network_context_transport.cc",
++    "access_network_context_transport.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/aegis:profile_support",
++    "//chrome/browser/profiles:profile",
++    "//components/aegis_access",
++    "//mojo/public/cpp/bindings",
++    "//net",
++    "//services/network/public/mojom",
++    "//url",
++  ]
++}
++
+ source_set("access_rule_store") {
+   sources = [
+     "access_rule_store.cc",
+@@ -17,6 +34,23 @@ source_set("access_rule_store") {
+   ]
+ }
+ 
++test("access_network_context_transport_unittests") {
++  sources = [ "access_network_context_transport_unittest.cc" ]
++  deps = [
++    ":access_network_context_transport",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//chrome/browser/profiles:test_support",
++    "//components/aegis_access",
++    "//mojo/public/cpp/bindings",
++    "//net",
++    "//services/network:network_service",
++    "//services/network/public/mojom",
++    "//testing/gtest",
++    "//url",
++  ]
++}
++
+ test("access_rule_store_unittests") {
+   sources = [ "access_rule_store_unittest.cc" ]
+   deps = [
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+new file mode 100644
+index 0000000..42a961c
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -0,0 +1,281 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/functional/callback_helpers.h"
++#include "base/uuid.h"
++#include "chrome/browser/aegis/aegis_profile_support.h"
++#include "chrome/browser/profiles/profile.h"
++#include "net/proxy_resolution/proxy_config.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++namespace {
++
++const void* const kTransportUserDataKey = &kTransportUserDataKey;
++constexpr size_t kMaxExactHosts = 256;
++constexpr size_t kMaxPartitionKeyBytes = 1024;
++
++bool IsKnownChannel(aegis_access::ChannelNamespace channel) {
++  switch (channel) {
++    case aegis_access::ChannelNamespace::kDev:
++    case aegis_access::ChannelNamespace::kAlpha:
++    case aegis_access::ChannelNamespace::kBeta:
++    case aegis_access::ChannelNamespace::kRelease:
++      return true;
++    case aegis_access::ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsCanonicalExactHost(const std::string& host) {
++  if (host.empty()) {
++    return false;
++  }
++  const GURL url("https://" + host + "/");
++  return url.is_valid() && url.has_host() && url.host() == host;
++}
++
++aegis_access::RoutePlan RoutePlanForEndpoint(
++    const aegis_access::RegisteredProxyEndpoint& endpoint) {
++  aegis_access::RoutePlan plan;
++  plan.action = aegis_access::RouteAction::kUseRegisteredProxy;
++  plan.effective_mode = aegis_access::AccessMode::kProxy;
++  plan.reason = aegis_access::RouteReason::kNone;
++  plan.generations = endpoint.generations;
++  plan.registered_proxy_entry = aegis_access::RegisteredProxyEntry{
++      endpoint.registration_id, endpoint.proxy_group_id, endpoint.owner,
++      endpoint.generations};
++  return plan;
++}
++
++}  // namespace
++
++// static
++AccessNetworkContextTransport* AccessNetworkContextTransport::Get(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  return static_cast<AccessNetworkContextTransport*>(
++      profile->GetUserData(kTransportUserDataKey));
++}
++
++// static
++AccessNetworkContextTransport* AccessNetworkContextTransport::GetOrCreate(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  if (auto* existing = Get(profile)) {
++    return existing;
++  }
++  auto transport = std::unique_ptr<AccessNetworkContextTransport>(
++      new AccessNetworkContextTransport());
++  auto* result = transport.get();
++  profile->SetUserData(kTransportUserDataKey, std::move(transport));
++  return result;
++}
++
++AccessNetworkContextTransport::AccessNetworkContextTransport()
++    : runtime_profile_token_(
++          base::Uuid::GenerateRandomV4().AsLowercaseString()) {}
++
++AccessNetworkContextTransport::~AccessNetworkContextTransport() = default;
++
++// static
++bool AccessNetworkContextTransport::ConfigureNetworkContext(
++    Profile* profile,
++    const base::FilePath& relative_partition_path,
++    network::mojom::NetworkContextParams* network_context_params) {
++  if (!aegis::IsAegisProfileSupported(profile) || !network_context_params ||
++      network_context_params->initial_custom_proxy_config ||
++      network_context_params->custom_proxy_config_client_receiver.is_valid() ||
++      network_context_params->custom_proxy_connection_observer_remote.is_valid()) {
++    return false;
++  }
++  AccessNetworkContextTransport* transport = GetOrCreate(profile);
++  const std::optional<std::string> key = PartitionKey(relative_partition_path);
++  if (!transport || !key) {
++    return false;
++  }
++
++  PartitionState& state = transport->partitions_[*key];
++  network_context_params->initial_custom_proxy_config =
++      transport->BuildConfig(state);
++  mojo::PendingRemote<network::mojom::CustomProxyConfigClient> client;
++  network_context_params->custom_proxy_config_client_receiver =
++      client.InitWithNewPipeAndPassReceiver();
++  state.clients.Add(std::move(client));
++  return true;
++}
++
++std::optional<aegis_access::OwnershipKey>
++AccessNetworkContextTransport::OwnerForPartition(
++    aegis_access::ChannelNamespace channel,
++    const base::FilePath& relative_partition_path) const {
++  if (!IsKnownChannel(channel)) {
++    return std::nullopt;
++  }
++  const std::optional<std::string> partition_token =
++      PartitionToken(relative_partition_path);
++  if (!partition_token) {
++    return std::nullopt;
++  }
++  return aegis_access::OwnershipKey{channel, runtime_profile_token_,
++                                    *partition_token};
++}
++
++bool AccessNetworkContextTransport::PublishProxySelection(
++    const base::FilePath& relative_partition_path,
++    std::vector<std::string> exact_hosts,
++    const aegis_access::RegisteredProxyEndpoint& endpoint) {
++  const std::optional<std::string> key = PartitionKey(relative_partition_path);
++  const std::optional<aegis_access::OwnershipKey> expected_owner =
++      OwnerForPartition(endpoint.owner.channel, relative_partition_path);
++  if (!key || !expected_owner || endpoint.owner != *expected_owner ||
++      exact_hosts.empty() || exact_hosts.size() > kMaxExactHosts) {
++    return false;
++  }
++
++  std::sort(exact_hosts.begin(), exact_hosts.end());
++  if (std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) !=
++      exact_hosts.end()) {
++    return false;
++  }
++  if (!std::ranges::all_of(exact_hosts, IsCanonicalExactHost)) {
++    return false;
++  }
++
++  PartitionState candidate;
++  candidate.endpoint = endpoint;
++  candidate.exact_hosts = std::move(exact_hosts);
++  network::mojom::CustomProxyConfigPtr candidate_config =
++      BuildConfig(candidate);
++  if (!candidate_config ||
++      candidate_config->rules.type ==
++          net::ProxyConfig::ProxyRules::Type::EMPTY) {
++    return false;
++  }
++
++  PartitionState& state = partitions_[*key];
++  state.endpoint = std::move(candidate.endpoint);
++  state.exact_hosts = std::move(candidate.exact_hosts);
++  Broadcast(state);
++  return true;
++}
++
++bool AccessNetworkContextTransport::ClearProxySelection(
++    const base::FilePath& relative_partition_path) {
++  const std::optional<std::string> key = PartitionKey(relative_partition_path);
++  if (!key) {
++    return false;
++  }
++  auto it = partitions_.find(*key);
++  if (it == partitions_.end()) {
++    return true;
++  }
++  it->second.endpoint.reset();
++  it->second.exact_hosts.clear();
++  Broadcast(it->second);
++  return true;
++}
++
++network::mojom::CustomProxyConfigPtr
++AccessNetworkContextTransport::BuildConfigForTesting(
++    const base::FilePath& relative_partition_path) const {
++  const std::optional<std::string> key = PartitionKey(relative_partition_path);
++  if (!key) {
++    return nullptr;
++  }
++  auto it = partitions_.find(*key);
++  if (it == partitions_.end()) {
++    return network::mojom::CustomProxyConfig::New();
++  }
++  return BuildConfig(it->second);
++}
++
++void AccessNetworkContextTransport::FlushClientsForTesting(
++    const base::FilePath& relative_partition_path) {
++  const std::optional<std::string> key = PartitionKey(relative_partition_path);
++  if (!key) {
++    return;
++  }
++  auto it = partitions_.find(*key);
++  if (it != partitions_.end()) {
++    it->second.clients.FlushForTesting();
++  }
++}
++
++// static
++std::optional<std::string> AccessNetworkContextTransport::PartitionKey(
++    const base::FilePath& relative_partition_path) {
++  if (relative_partition_path.IsAbsolute() ||
++      relative_partition_path.ReferencesParent()) {
++    return std::nullopt;
++  }
++  const std::string value = relative_partition_path.AsUTF8Unsafe();
++  if (value.size() > kMaxPartitionKeyBytes) {
++    return std::nullopt;
++  }
++  return value.empty() ? std::optional<std::string>("<default>")
++                       : std::optional<std::string>("partition:" + value);
++}
++
++std::optional<std::string> AccessNetworkContextTransport::PartitionToken(
++    const base::FilePath& relative_partition_path) const {
++  return PartitionKey(relative_partition_path);
++}
++
++network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
++    const PartitionState& state) const {
++  auto config = network::mojom::CustomProxyConfig::New();
++  if (!state.endpoint.has_value() || state.exact_hosts.empty()) {
++    return config;
++  }
++
++  net::ProxyInfo proxy_info;
++  proxy_info.UseDirect();
++  const aegis_access::ProxyRouteApplyStatus status =
++      aegis_access::ApplyRoutePlanToProxyInfo(RoutePlanForEndpoint(*state.endpoint),
++                                              &*state.endpoint, &proxy_info);
++  if (status != aegis_access::ProxyRouteApplyStatus::kAppliedProxy ||
++      proxy_info.is_empty() || proxy_info.is_direct()) {
++    return nullptr;
++  }
++
++  config->rules.type =
++      net::ProxyConfig::ProxyRules::Type::PROXY_LIST_PER_SCHEME;
++  config->rules.proxies_for_http = proxy_info.proxy_list();
++  config->rules.proxies_for_https = proxy_info.proxy_list();
++  for (const std::string& host : state.exact_hosts) {
++    if (!config->rules.bypass_rules.AddRuleFromString(host)) {
++      return nullptr;
++    }
++  }
++  // Positive rules become the only destinations that do NOT bypass this
++  // custom proxy. A non-selected URL resolves to DIRECT inside the custom
++  // config, causing NetworkServiceProxyDelegate to preserve the native result.
++  config->rules.reverse_bypass = true;
++  config->should_override_existing_config = true;
++  config->allow_non_idempotent_methods = true;
++  return config;
++}
++
++void AccessNetworkContextTransport::Broadcast(PartitionState& state) {
++  network::mojom::CustomProxyConfigPtr config = BuildConfig(state);
++  if (!config) {
++    return;
++  }
++  for (auto& client : state.clients) {
++    client->OnCustomProxyConfigUpdated(config->Clone(), base::DoNothing());
++  }
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+new file mode 100644
+index 0000000..1d44efd
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -0,0 +1,94 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
++
++#include <map>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include "base/files/file_path.h"
++#include "base/supports_user_data.h"
++#include "components/aegis_access/access_proxy_route_adapter.h"
++#include "components/aegis_access/access_route_types.h"
++#include "mojo/public/cpp/bindings/remote_set.h"
++#include "services/network/public/mojom/network_context.mojom-forward.h"
++
++class Profile;
++
++namespace aegis::access {
++
++// Profile-owned transport state for the first Network Service integration
++// slice. This is deliberately not another KeyedService: its lifetime is the
++// exact BrowserContext/Profile and it stores independent state per
++// StoragePartition policy domain.
++//
++// The current slice supports one registered localhost HTTP entry per partition
++// and an exact-host allowlist. Future per-request routing can replace this
++// transport without changing the AccessRuleStore or RoutePlan contracts.
++class AccessNetworkContextTransport : public base::SupportsUserData::Data {
++ public:
++  static AccessNetworkContextTransport* Get(Profile* profile);
++  static AccessNetworkContextTransport* GetOrCreate(Profile* profile);
++
++  AccessNetworkContextTransport(const AccessNetworkContextTransport&) = delete;
++  AccessNetworkContextTransport& operator=(
++      const AccessNetworkContextTransport&) = delete;
++  ~AccessNetworkContextTransport() override;
++
++  // Installs an initially inert CustomProxyConfig channel for this exact
++  // Profile + StoragePartition. Existing custom-proxy ownership is never
++  // overwritten. Returns true when Aegis owns the channel after the call.
++  static bool ConfigureNetworkContext(
++      Profile* profile,
++      const base::FilePath& relative_partition_path,
++      network::mojom::NetworkContextParams* network_context_params);
++
++  // Returns the trusted runtime owner key for the partition. The Profile token
++  // is unique to this Profile lifetime; the partition token is derived only
++  // from the browser-owned relative partition path.
++  std::optional<aegis_access::OwnershipKey> OwnerForPartition(
++      aegis_access::ChannelNamespace channel,
++      const base::FilePath& relative_partition_path) const;
++
++  // Publishes one already-registered localhost HTTP entry for a set of exact
++  // canonical hosts. Endpoint ownership must match OwnerForPartition().
++  // Non-selected hosts keep Chromium's native proxy result.
++  bool PublishProxySelection(
++      const base::FilePath& relative_partition_path,
++      std::vector<std::string> exact_hosts,
++      const aegis_access::RegisteredProxyEndpoint& endpoint);
++
++  // Clears the custom selection while keeping the update channel installed.
++  // New requests then use Chromium's native proxy result again.
++  bool ClearProxySelection(const base::FilePath& relative_partition_path);
++
++  network::mojom::CustomProxyConfigPtr BuildConfigForTesting(
++      const base::FilePath& relative_partition_path) const;
++  void FlushClientsForTesting(const base::FilePath& relative_partition_path);
++
++ private:
++  struct PartitionState {
++    std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
++    std::vector<std::string> exact_hosts;
++    mojo::RemoteSet<network::mojom::CustomProxyConfigClient> clients;
++  };
++
++  AccessNetworkContextTransport();
++
++  static std::optional<std::string> PartitionKey(
++      const base::FilePath& relative_partition_path);
++  std::optional<std::string> PartitionToken(
++      const base::FilePath& relative_partition_path) const;
++  network::mojom::CustomProxyConfigPtr BuildConfig(
++      const PartitionState& state) const;
++  void Broadcast(PartitionState& state);
++
++  std::string runtime_profile_token_;
++  std::map<std::string, PartitionState> partitions_;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+new file mode 100644
+index 0000000..c0ffd19
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -0,0 +1,255 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++
++#include <memory>
++#include <string>
++#include <utility>
++
++#include "base/test/task_environment.h"
++#include "base/time/time.h"
++#include "chrome/test/base/testing_profile.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/proxy_string_util.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "services/network/network_service_proxy_delegate.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++namespace {
++
++constexpr char kTargetHost[] = "target.example";
++constexpr uint16_t kProxyPort = 18080;
++
++class AccessNetworkContextTransportTest : public testing::Test {
++ protected:
++  AccessNetworkContextTransportTest() = default;
++
++  void SetUp() override {
++    profile_ = TestingProfile::Builder().Build();
++    transport_ = AccessNetworkContextTransport::GetOrCreate(profile_.get());
++    ASSERT_TRUE(transport_);
++  }
++
++  aegis_access::RegisteredProxyEndpoint EndpointFor(
++      const base::FilePath& partition) {
++    std::optional<aegis_access::OwnershipKey> owner =
++        transport_->OwnerForPartition(aegis_access::ChannelNamespace::kDev,
++                                      partition);
++    EXPECT_TRUE(owner.has_value());
++    return aegis_access::RegisteredProxyEndpoint{
++        "registration-local", "proxy-group-local", *owner,
++        aegis_access::GenerationTuple{1, 2, 3, 4, 5},
++        aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1",
++        kProxyPort};
++  }
++
++  std::unique_ptr<network::NetworkServiceProxyDelegate> CreateDelegate(
++      const base::FilePath& partition) {
++    network::mojom::NetworkContextParams params;
++    EXPECT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), partition, &params));
++    EXPECT_TRUE(params.initial_custom_proxy_config);
++    EXPECT_TRUE(params.custom_proxy_config_client_receiver.is_valid());
++    return std::make_unique<network::NetworkServiceProxyDelegate>(
++        std::move(params.initial_custom_proxy_config),
++        std::move(params.custom_proxy_config_client_receiver),
++        mojo::PendingRemote<network::mojom::CustomProxyConnectionObserver>());
++  }
++
++  net::ProxyInfo Resolve(
++      network::NetworkServiceProxyDelegate* delegate,
++      const std::string& url,
++      const std::string& method = "GET",
++      const net::ProxyRetryInfoMap& retry_info = net::ProxyRetryInfoMap()) {
++    net::ProxyInfo result;
++    result.UseNamedProxy("http://native.example:3128;direct://");
++    delegate->OnResolveProxy(GURL(url), net::NetworkAnonymizationKey(), method,
++                             retry_info, &result);
++    return result;
++  }
++
++  base::test::TaskEnvironment task_environment_;
++  std::unique_ptr<TestingProfile> profile_;
++  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
++};
++
++TEST_F(AccessNetworkContextTransportTest, OffPreservesNativeProxyResult) {
++  auto delegate = CreateDelegate(base::FilePath());
++
++  const net::ProxyInfo result =
++      Resolve(delegate.get(), "https://target.example/path");
++  EXPECT_EQ(result.proxy_list().ToPacString(),
++            "PROXY native.example:3128; DIRECT");
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       ExactTargetUsesOnlyLoopbackAndOtherHostPreservesNative) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, EndpointFor(partition)));
++  transport_->FlushClientsForTesting(partition);
++
++  const net::ProxyInfo target =
++      Resolve(delegate.get(), "https://target.example/path");
++  ASSERT_EQ(target.proxy_list().size(), 1u);
++  EXPECT_FALSE(target.is_direct());
++  EXPECT_EQ(target.proxy_chain().First().GetHost(), "127.0.0.1");
++  EXPECT_EQ(target.proxy_chain().First().GetPort(), kProxyPort);
++
++  const net::ProxyInfo http_target =
++      Resolve(delegate.get(), "http://target.example/plain");
++  ASSERT_EQ(http_target.proxy_list().size(), 1u);
++  EXPECT_FALSE(http_target.is_direct());
++  EXPECT_EQ(http_target.proxy_chain().First().GetHost(), "127.0.0.1");
++  EXPECT_EQ(http_target.proxy_chain().First().GetPort(), kProxyPort);
++
++  const net::ProxyInfo other =
++      Resolve(delegate.get(), "https://other.example/path");
++  EXPECT_EQ(other.proxy_list().ToPacString(),
++            "PROXY native.example:3128; DIRECT");
++
++  const net::ProxyInfo subdomain =
++      Resolve(delegate.get(), "https://sub.target.example/path");
++  EXPECT_EQ(subdomain.proxy_list().ToPacString(),
++            "PROXY native.example:3128; DIRECT");
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       NonIdempotentFirstSendUsesSelectedProxy) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, EndpointFor(partition)));
++  transport_->FlushClientsForTesting(partition);
++
++  const net::ProxyInfo result =
++      Resolve(delegate.get(), "https://target.example/submit", "POST");
++  ASSERT_EQ(result.proxy_list().size(), 1u);
++  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       BadSelectedProxyNeverFallsBackToNativeDirect) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, EndpointFor(partition)));
++  transport_->FlushClientsForTesting(partition);
++
++  net::ProxyRetryInfoMap retry_info;
++  net::ProxyRetryInfo& failed = retry_info[net::ProxyUriToProxyChain(
++      "127.0.0.1:18080", net::ProxyServer::SCHEME_HTTP)];
++  failed.bad_until = base::TimeTicks::Now() + base::Days(2);
++
++  const net::ProxyInfo result = Resolve(
++      delegate.get(), "https://target.example/fail-closed", "GET", retry_info);
++  ASSERT_EQ(result.proxy_list().size(), 1u);
++  EXPECT_FALSE(result.is_direct());
++  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
++  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       ClearSelectionRestoresNativeProxyResult) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, EndpointFor(partition)));
++  transport_->FlushClientsForTesting(partition);
++  ASSERT_EQ(Resolve(delegate.get(), "https://target.example/")
++                .proxy_list()
++                .size(),
++            1u);
++
++  ASSERT_TRUE(transport_->ClearProxySelection(partition));
++  transport_->FlushClientsForTesting(partition);
++  const net::ProxyInfo restored =
++      Resolve(delegate.get(), "https://target.example/");
++  EXPECT_EQ(restored.proxy_list().ToPacString(),
++            "PROXY native.example:3128; DIRECT");
++}
++
++TEST_F(AccessNetworkContextTransportTest, StoragePartitionsAreIsolated) {
++  const base::FilePath default_partition;
++  const base::FilePath isolated_partition(FILE_PATH_LITERAL("isolated/site"));
++  auto default_delegate = CreateDelegate(default_partition);
++  auto isolated_delegate = CreateDelegate(isolated_partition);
++
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      default_partition, {kTargetHost}, EndpointFor(default_partition)));
++  transport_->FlushClientsForTesting(default_partition);
++
++  EXPECT_EQ(Resolve(default_delegate.get(), "https://target.example/")
++                .proxy_chain()
++                .First()
++                .GetHost(),
++            "127.0.0.1");
++  EXPECT_EQ(Resolve(isolated_delegate.get(), "https://target.example/")
++                .proxy_list()
++                .ToPacString(),
++            "PROXY native.example:3128; DIRECT");
++}
++
++TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership) {
++  auto other_profile = TestingProfile::Builder().Build();
++  auto* other_transport =
++      AccessNetworkContextTransport::GetOrCreate(other_profile.get());
++  ASSERT_TRUE(other_transport);
++  const base::FilePath partition;
++  std::optional<aegis_access::OwnershipKey> other_owner =
++      other_transport->OwnerForPartition(aegis_access::ChannelNamespace::kDev,
++                                         partition);
++  ASSERT_TRUE(other_owner.has_value());
++
++  aegis_access::RegisteredProxyEndpoint endpoint = EndpointFor(partition);
++  endpoint.owner = *other_owner;
++  EXPECT_FALSE(transport_->PublishProxySelection(partition, {kTargetHost},
++                                                 endpoint));
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       DoesNotOverwriteAnotherCustomProxyOwner) {
++  {
++    network::mojom::NetworkContextParams params;
++    params.initial_custom_proxy_config =
++        network::mojom::CustomProxyConfig::New();
++    EXPECT_FALSE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), base::FilePath(), &params));
++  }
++
++  {
++    network::mojom::NetworkContextParams params;
++    mojo::Remote<network::mojom::CustomProxyConfigClient> existing_client;
++    params.custom_proxy_config_client_receiver =
++        existing_client.BindNewPipeAndPassReceiver();
++    EXPECT_FALSE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), base::FilePath(), &params));
++  }
++
++  {
++    network::mojom::NetworkContextParams params;
++    mojo::PendingRemote<network::mojom::CustomProxyConnectionObserver> observer;
++    auto observer_receiver = observer.InitWithNewPipeAndPassReceiver();
++    ASSERT_TRUE(observer_receiver.is_valid());
++    params.custom_proxy_connection_observer_remote = std::move(observer);
++    EXPECT_FALSE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), base::FilePath(), &params));
++  }
++}
++
++TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
++  const base::FilePath partition;
++  const auto endpoint = EndpointFor(partition);
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {"TARGET.example"}, endpoint));
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {kTargetHost, kTargetHost}, endpoint));
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
+index 220d27e..2cc67a9 100644
+--- a/chrome/browser/net/BUILD.gn
++++ b/chrome/browser/net/BUILD.gn
+@@ -160,6 +160,7 @@ source_set("impl") {
+   deps = [
+     ":key_pinning_proto",
+     "//base:build_time",
++    "//chrome/browser/aegis/access:access_network_context_transport",
+     "//chrome/browser:browser_features",
+     "//chrome/browser:browser_process",
+     "//chrome/browser:browser_process_platform_part",
+diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
+index c30ac81..907dc16 100644
+--- a/chrome/browser/net/profile_network_context_service.cc
++++ b/chrome/browser/net/profile_network_context_service.cc
+@@ -35,6 +35,7 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/content_settings/cookie_settings_factory.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/domain_reliability/service_factory.h"
+ #include "chrome/browser/first_party_sets/first_party_sets_policy_service.h"
+ #include "chrome/browser/first_party_sets/first_party_sets_policy_service_factory.h"
+@@ -1474,6 +1475,9 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+ 
+   proxy_config_monitor_->AddToNetworkContextParams(network_context_params);
+ 
++  aegis::access::AccessNetworkContextTransport::ConfigureNetworkContext(
++      profile_, relative_partition_path, network_context_params);
++
+   network_context_params->enable_certificate_reporting = true;
+ 
+   SCTReportingService* sct_reporting_service =
+-- 
+2.54.0 (Apple Git-157)
+

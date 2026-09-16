@@ -19,6 +19,9 @@ try {
   const cwd = resolve(values.repo ?? repoRoot);
   const event = values.event;
   if (!['pull_request', 'push', 'workflow_dispatch'].includes(event)) fail(`Unsupported CI event: ${event}`);
+  for (const name of ['base', 'head', 'tested']) {
+    if (!/^[0-9a-f]{40}$/u.test(values[name] ?? '')) fail(`${name} must be an immutable full 40-character SHA`);
+  }
   const base = resolveCommit(values.base, cwd);
   const head = resolveCommit(values.head, cwd);
   const tested = resolveCommit(values.tested, cwd);
@@ -33,8 +36,8 @@ try {
   } else {
     if (head !== tested) fail(`${event} must test its exact head SHA`);
     requireAncestor(base, head, cwd);
-    if (event === 'workflow_dispatch' && values.ref !== 'refs/heads/main') {
-      fail(`workflow_dispatch is restricted to refs/heads/main, got ${values.ref ?? 'missing'}`);
+    if (!['refs/heads/main', 'refs/heads/develop'].includes(values.ref)) {
+      fail(`${event} is restricted to refs/heads/main or refs/heads/develop, got ${values.ref ?? 'missing'}`);
     }
   }
   const trees = Object.fromEntries(
