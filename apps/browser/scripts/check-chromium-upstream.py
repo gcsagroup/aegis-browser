@@ -3,7 +3,6 @@
 import argparse
 import concurrent.futures
 import datetime as dt
-import fcntl
 import hashlib
 import html
 import json
@@ -11,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 import urllib.parse
@@ -42,8 +42,12 @@ def digest(value):
 
 def fetch_json(url):
     # curl 使用本机正常 TLS 配置；失败不关闭证书校验，不冒充无更新。
+    curl = shutil.which("curl")
+    if not curl:
+        raise RuntimeError("缺少 curl，无法核对官方来源")
+    curl = str(Path(curl).resolve(strict=True))
     result = subprocess.run(
-        ["curl", "--fail", "--silent", "--show-error", "--location",
+        [curl, "--fail", "--silent", "--show-error", "--location",
          "--proto", "=https", "--proto-redir", "=https", "--max-time", "40",
          "--max-filesize", "8388608", "--retry", "1", "--retry-all-errors", url],
         capture_output=True, timeout=90, check=False)
@@ -158,21 +162,19 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
-def check(root, out):
-    now = dt.datetime.now(dt.timezone.utc)
-    report = {"checkedAt": now.isoformat(), "errors": [], "candidates": {},
-              "unresolvedExploited": [], "securityUpdates": [], "local": {}, "sources": {}}
-    try:
-        report["local"] = local_identity(root)
-    except Exception as exc:
-        report["errors"].append({"source": "local", "message": str(exc)})
+def source_urls(now):
     start = (now - dt.timedelta(days=45)).date().isoformat() + "T00:00:00Z"
     urls = {"announcements": FEED + "?" + urllib.parse.urlencode(
         {"alt": "json", "max-results": 150, "published-min": start})}
     for platform, api in PLATFORMS.items():
         urls[platform + "Dash"] = "https://chromiumdash.appspot.com/fetch_releases?" + urllib.parse.urlencode(
             {"channel": "Stable", "platform": platform, "num": 40})
-        urls[platform + "History"] = f"https://versionhistory.googleapis.com/v1/chrome/platforms/{api}/channels/stable/versions?pageSize=50"
+        urls[platform + "History"] = (
+            f"https://versionhistory.googleapis.com/v1/chrome/platforms/{api}/channels/stable/versions?pageSize=50")
+    return urls
+
+
+def fetch_sources(urls, report):
     payloads = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(fetch_json, url): (key, url) for key, url in urls.items()}
@@ -183,15 +185,22 @@ def check(root, out):
                 report["sources"][key] = {"url": url, "sha256": digest(payloads[key])}
             except Exception as exc:
                 report["errors"].append({"source": key, "message": str(exc)})
-    posts = []
+    return payloads
+
+
+def parse_posts(payloads, report):
     try:
         feed = payloads["announcements"]
         # 固定回查窗口必须完整；截断时失败，不悄悄漏掉公告。
         if any(x.get("rel") == "next" for x in feed["feed"].get("link", [])):
             raise ValueError("45 天公告超出单页上限，需要分页复核")
-        posts = announcements(feed)
+        return announcements(feed)
     except Exception as exc:
         report["errors"].append({"source": "announcementParsing", "message": str(exc)})
+        return []
+
+
+def collect_candidates(report, payloads, posts):
     for platform in PLATFORMS:
         try:
             candidate = select_candidate(platform, payloads[platform + "Dash"],
@@ -206,6 +215,9 @@ def check(root, out):
             report["sources"][platform + "Tag"] = {"url": url, "sha256": digest(tag)}
         except Exception as exc:
             report["errors"].append({"source": platform, "message": str(exc)})
+
+
+def reconcile_security_state(report, out, posts):
     unknown_artifacts = [x["path"] for x in report["local"].get("artifacts", [])
                          if not x.get("chromiumVersion")]
     if unknown_artifacts:
@@ -220,21 +232,27 @@ def check(root, out):
     if baseline:
         # 版本落后只说明需核验，不能当作精确受影响判定或回补证明。
         for post in posts:
-            if post["cves"] and post["versions"] and version_key(baseline) < version_key(max(post["versions"], key=version_key)):
+            latest = max(post["versions"], key=version_key) if post["versions"] else None
+            if post["cves"] and latest and version_key(baseline) < version_key(latest):
                 report["securityUpdates"].append(post)
-            if post["exploited"] and post["versions"] and version_key(baseline) < version_key(max(post["versions"], key=version_key)):
+            if post["exploited"] and latest and version_key(baseline) < version_key(latest):
                 report["unresolvedExploited"].append({"cves": post["exploited"], "url": post["url"],
                     "fixedVersions": post["versions"], "published": post["published"],
                     "status": "基线早于修复公告，需核验源码回补与实际产物"})
     # 本地身份读取失败或包版本未知时，不能因为缺少比较值清除已有漏洞。
     known_urls = {x["url"] for x in report["unresolvedExploited"]}
     for item in previous.get("unresolvedExploited", []):
-        if item["url"] not in known_urls and (not identity_complete or
-                version_key(baseline) < version_key(max(item["fixedVersions"], key=version_key))):
+        if item["url"] in known_urls:
+            continue
+        if not identity_complete:
             report["unresolvedExploited"].append(item)
-    report["errors"].sort(key=lambda x: (x["source"], x["message"]))
-    report["unresolvedExploited"].sort(key=lambda x: x["url"])
-    report["securityUpdates"].sort(key=lambda x: x["url"])
+            continue
+        fixed = max(item["fixedVersions"], key=version_key)
+        if version_key(baseline) < version_key(fixed):
+            report["unresolvedExploited"].append(item)
+
+
+def persist_report(report, out, payloads, now):
     state_path = out / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     report["notification"], state = notice(report, state, now.timestamp())
@@ -253,7 +271,46 @@ def check(root, out):
             if not path.exists():
                 atomic_json(path, payload)
     atomic_json(state_path, state)
+
+
+def check(root, out):
+    now = dt.datetime.now(dt.timezone.utc)
+    report = {"checkedAt": now.isoformat(), "errors": [], "candidates": {},
+              "unresolvedExploited": [], "securityUpdates": [], "local": {}, "sources": {}}
+    try:
+        report["local"] = local_identity(root)
+    except Exception as exc:
+        report["errors"].append({"source": "local", "message": str(exc)})
+    payloads = fetch_sources(source_urls(now), report)
+    posts = parse_posts(payloads, report)
+    collect_candidates(report, payloads, posts)
+    reconcile_security_state(report, out, posts)
+    report["errors"].sort(key=lambda x: (x["source"], x["message"]))
+    report["unresolvedExploited"].sort(key=lambda x: x["url"])
+    report["securityUpdates"].sort(key=lambda x: x["url"])
+    persist_report(report, out, payloads, now)
     return report
+
+
+def try_lock(lock):
+    if os.name == "nt":
+        import msvcrt
+        lock.seek(0, os.SEEK_END)
+        if lock.tell() == 0:
+            lock.write("0")
+            lock.flush()
+        lock.seek(0)
+        try:
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        return True
+    import fcntl
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
 
 
 def main():
@@ -263,10 +320,8 @@ def main():
     args = parser.parse_args()
     out = args.output or args.root / ".artifacts/chromium-upstream/monitor"
     out.mkdir(parents=True, exist_ok=True)
-    with (out / "check.lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+    with (out / "check.lock").open("a+") as lock:
+        if not try_lock(lock):
             print(json.dumps({"status": "already-running", "notification": {"notify": False}}))
             return 0
         report = check(args.root, out)

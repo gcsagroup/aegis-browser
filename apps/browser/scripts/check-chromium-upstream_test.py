@@ -1,5 +1,6 @@
 """上游监测的错误分类、Early Stable 排除和通知去重回归。"""
 import importlib.util
+import inspect
 from pathlib import Path
 import sys
 import tempfile
@@ -67,6 +68,18 @@ class UpstreamTests(unittest.TestCase):
     def test_empty_announcement_is_failure(self):
         with self.assertRaises(ValueError):
             upstream.announcements({"feed": {"entry": []}})
+
+    def test_lock_is_nonblocking_and_exclusive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'lock'
+            with path.open('a+') as first, path.open('a+') as second:
+                self.assertTrue(upstream.try_lock(first))
+                self.assertFalse(upstream.try_lock(second))
+
+    def test_windows_only_lock_module_is_not_imported_at_module_load(self):
+        source = inspect.getsource(upstream)
+        self.assertNotIn('\nimport fcntl\n', source)
+        self.assertIn('    import fcntl\n', source)
 
     def test_failure_preserves_success_and_deduplicates(self):
         report = {"errors": [{"source": "Mac", "message": "timeout"}], "local": {}, "candidates": {}, "unresolvedExploited": []}
