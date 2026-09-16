@@ -143,6 +143,16 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 
 该结果只把“RoutePlan → Chromium ProxyInfo”提升到固定 Chromium API 编译通过，不代表真实浏览器请求已经经过 localhost proxy。下一步仍需建立 Profile/StoragePartition 绑定的 Network Service 传输合同，把可信 request context、published snapshot、runtime registration 送到对应 NetworkContext，并对真实 HTTP/HTTPS 请求验证代理命中、OFF 保留原生配置、代理失效不直连。G0 继续保持未通过。 Chromium 151 的 `HttpStreamFactory::JobController` 对空 `ProxyInfo` 明确返回 `ERR_NO_SUPPORTED_PROXIES`，因此清空代理列表不会隐式回落 DIRECT；不过 `kMustAbort` 仍要求上层在发送前主动终止，避免把网络栈错误码当成策略控制面。最终 `0117` patch 从当前组件基线重放后与 overlay 四个文件逐字一致；Codacy review 后把安全校验拆成独立 helper 并补齐 bracketed IPv6 回归，更新后的 SHA-256 为 `fbf5ad0c9bbd7a845f541c2865defc735a19f0dc0a0eaf805f74bbbcaf431bc4`。随后使用 Chromium 151 Ninja 生成的实际 clang 命令重新编译最终 production/test 两个 0117 对象，均 exit 0；仓库 `quality:fast` 也在固定 Node 22.23.1 / pnpm 9.15.0 依赖安装后完整 PASS，包括 28 个 core 测试文件、170 个测试、Access native 487 checks、浏览器脚本/Agent UI/本地模型/仓库合同及 core build。
 
+## 0118：Profile / StoragePartition NetworkContext 传输切片
+
+2026-09-16 在已合并的 0117 基线继续加入 `AccessNetworkContextTransport`。该对象按 Profile 生命周期挂载，并以浏览器拥有的 `relative_partition_path` 分隔 StoragePartition；`ProfileNetworkContextService` 在构造对应 `NetworkContextParams` 时安装一个初始 inert 的 `CustomProxyConfig` 更新通道。Aegis 只在该 NetworkContext 尚未存在 custom-proxy config、更新 receiver 或 connection observer 时接管，避免覆盖其他 Chromium 功能的代理所有权。
+
+本切片只发布规范化 exact host 选择。选中的 HTTP/HTTPS 请求由 Chromium `NetworkServiceProxyDelegate` 覆写为 0117 已校验的唯一 numeric-loopback HTTP endpoint；未选择 host、子域名和 OFF 状态让 custom config 得到 DIRECT，从而 delegate 不覆盖 Chromium 原生代理结果。POST 等首次非幂等发送允许沿同一已选择入口；单一入口即使处于 proxy retry bad map 中也不会获得 DIRECT/native 备用。发布入口必须与当前 Profile + StoragePartition 的运行时 ownership key 完全一致，跨 Profile owner、非规范 host、重复 host 或另一个 custom-proxy owner 均拒绝。
+
+最终 `AccessNetworkContextTransportTest` 覆盖 OFF 保留原生代理、HTTP/HTTPS exact-host 命中、其他 host/子域名不命中、POST、bad-proxy no-DIRECT、清除选择恢复原生、StoragePartition 隔离、跨 Profile ownership 拒绝、已有 config/receiver/observer 不被覆盖及非规范 host 拒绝。固定 Chromium 151 的 production transport 对象和最终 unittest 对象均使用实际 Ninja clang 命令编译通过；unittest 曾被 `-Werror` 捕获一个未使用常量并已修复。`ProfileNetworkContextService` 精确对象验证持续被该 checkout 缺失的既有生成物阻挡；逐步补齐 Mojo/buildflag 后，`server_certificate_database.pb.h` 的生成需要运行 checkout 自带 `protoc`，而它因当前 Xcode 27 SDK 与 Chromium bundled lld/TAPI 已知不兼容导致 `libc++_chrome.dylib` 无法生成/加载。因此该项记录为环境 BLOCKED，不报告 Profile 对象 PASS，也不把该 host-tool 链接错误归因于 0118。完整 GTest runtime 同样尚未报告 PASS。最终 `0118` patch 从 0117 后父状态重放并与 overlay/net integration 六个文件逐字一致，SHA-256 为 `c9b2230ea879c2fc6acd146d760ebf1cec20c38652b6057a2ad6d4c3caf9e811`。
+
+该切片仍不是端到端代理验收：尚未用真实浏览器 URLLoader/socket 对 localhost fixture 完成 HTTP/HTTPS 往返，也没有把 RequestOwnershipRegistry、published snapshot 和 runtime registration 以每请求可信上下文送进 Network Service；Xray、SOCKS5、WS、认证、计量和连接池代次仍在后续切片。G0 继续保持未通过。下一 PR 应优先做真实 localhost fixture + 浏览器请求闭环，并验证代理不可达时实际请求失败而不是直连。
+
 ## 回滚
 
 本切片尚无运行时入口或数据迁移，回滚其代码、GN/补丁与测试入口的独立提交即可；不删除用户现有文档、凭据、Profile 或构建缓存。后续真实接入单独交付，不能用回滚规划器来清除已持久 PROXY 意图或将其静默变成 DIRECT。
