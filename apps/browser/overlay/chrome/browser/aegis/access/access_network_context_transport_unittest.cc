@@ -73,6 +73,18 @@ class AccessNetworkContextTransportTest : public testing::Test {
     return result;
   }
 
+  void ExpectProxyResolution(
+      network::NetworkServiceProxyDelegate* delegate,
+      const std::string& url,
+      const std::string& method = "GET",
+      const net::ProxyRetryInfoMap& retry_info = net::ProxyRetryInfoMap()) {
+    const net::ProxyInfo result = Resolve(delegate, url, method, retry_info);
+    ASSERT_EQ(result.proxy_list().size(), 1u);
+    EXPECT_FALSE(result.is_direct());
+    EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
+    EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
+  }
+
   base::test::TaskEnvironment task_environment_;
   std::unique_ptr<TestingProfile> profile_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
@@ -95,19 +107,8 @@ TEST_F(AccessNetworkContextTransportTest,
       partition, {kTargetHost}, EndpointFor(partition)));
   transport_->FlushClientsForTesting(partition);
 
-  const net::ProxyInfo target =
-      Resolve(delegate.get(), "https://target.example/path");
-  ASSERT_EQ(target.proxy_list().size(), 1u);
-  EXPECT_FALSE(target.is_direct());
-  EXPECT_EQ(target.proxy_chain().First().GetHost(), "127.0.0.1");
-  EXPECT_EQ(target.proxy_chain().First().GetPort(), kProxyPort);
-
-  const net::ProxyInfo http_target =
-      Resolve(delegate.get(), "http://target.example/plain");
-  ASSERT_EQ(http_target.proxy_list().size(), 1u);
-  EXPECT_FALSE(http_target.is_direct());
-  EXPECT_EQ(http_target.proxy_chain().First().GetHost(), "127.0.0.1");
-  EXPECT_EQ(http_target.proxy_chain().First().GetPort(), kProxyPort);
+  ExpectProxyResolution(delegate.get(), "https://target.example/path");
+  ExpectProxyResolution(delegate.get(), "http://target.example/plain");
 
   const net::ProxyInfo other =
       Resolve(delegate.get(), "https://other.example/path");
@@ -128,10 +129,8 @@ TEST_F(AccessNetworkContextTransportTest,
       partition, {kTargetHost}, EndpointFor(partition)));
   transport_->FlushClientsForTesting(partition);
 
-  const net::ProxyInfo result =
-      Resolve(delegate.get(), "https://target.example/submit", "POST");
-  ASSERT_EQ(result.proxy_list().size(), 1u);
-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
+  ExpectProxyResolution(delegate.get(), "https://target.example/submit",
+                        "POST");
 }
 
 TEST_F(AccessNetworkContextTransportTest,
@@ -147,12 +146,9 @@ TEST_F(AccessNetworkContextTransportTest,
       "127.0.0.1:18080", net::ProxyServer::SCHEME_HTTP)];
   failed.bad_until = base::TimeTicks::Now() + base::Days(2);
 
-  const net::ProxyInfo result = Resolve(
-      delegate.get(), "https://target.example/fail-closed", "GET", retry_info);
-  ASSERT_EQ(result.proxy_list().size(), 1u);
-  EXPECT_FALSE(result.is_direct());
-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
-  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
+  ExpectProxyResolution(delegate.get(),
+                        "https://target.example/fail-closed", "GET",
+                        retry_info);
 }
 
 TEST_F(AccessNetworkContextTransportTest,
@@ -263,12 +259,8 @@ TEST_F(AccessNetworkContextTransportTest,
       partition, {"TARGET.example"}, endpoint));
   transport_->FlushClientsForTesting(partition);
 
-  const net::ProxyInfo result =
-      Resolve(delegate.get(), "https://target.example/still-selected");
-  ASSERT_EQ(result.proxy_list().size(), 1u);
-  EXPECT_FALSE(result.is_direct());
-  EXPECT_EQ(result.proxy_chain().First().GetHost(), "127.0.0.1");
-  EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
+  ExpectProxyResolution(delegate.get(),
+                        "https://target.example/still-selected");
 }
 
 TEST_F(AccessNetworkContextTransportTest,
