@@ -75,9 +75,6 @@ Windows and Android remain later evaluation tracks and do not block the macOS 鈫
 
 ## Documentation and license
 
-- [Roadmap](docs/roadmap.md) 路 [Documentation index](docs/README.md) 路 [Architecture](docs/architecture.md)
-- [Browser engineering guide](apps/browser/README.md) 路 [iOS engineering guide](apps/ios/README.md)
-- [Research and limitations](docs/research-map.md) 路 [Historical audit records](docs/audit/README.md)
-- [Changelog](CHANGELOG.md) 路 [Third-party acknowledgements](THIRD_PARTY_NOTICES.md)
-
-GCSA-authored source uses [Apache-2.0](LICENSE). Chromium, libtorrent and other third-party components retain their own licenses.
+| Documentation | License & acknowledgements |
+| --- | --- |
+| [Roadmap](docs/roadmap.md) 路 [Documentation index](docs/README.md) 路 [Architecture](docs/architecture.md)<br>[Browser engineering guide](apps/browser/README.md) 路 [iOS engineering guide](apps/ios/README.md)<br>[Research and limitations](docs/research-map.md) 路 [Historical audit records](docs/audit/README.md)<br>[Changelog](CHANGELOG.md) | GCSA-authored source uses [Apache-2.0](LICENSE).<br>Chromium, libtorrent and other third-party components retain their own licenses.<br>[Third-party acknowledgements](THIRD_PARTY_NOTICES.md) |
