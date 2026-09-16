@@ -1,5 +1,6 @@
 """验证版本、补丁、平台隔离和产物验收约束。"""
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import subprocess
@@ -54,6 +55,31 @@ class CandidateTests(unittest.TestCase):
             report['errors'] = ['network failed']
             with self.assertRaises(ValueError):
                 ci.candidate_pin('mac', report, browser)
+
+    def test_acceptance_command_requires_absolute_executable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / 'acceptance'
+            executable.write_text('#!/bin/sh\nexit 0\n')
+            executable.chmod(0o755)
+            self.assertEqual(ci.command_argv([str(executable), '--fixture'], allow_path_lookup=False),
+                             [str(executable.resolve()), '--fixture'])
+            with self.assertRaisesRegex(ValueError, '绝对可执行文件路径'):
+                ci.command_argv(['python3', 'acceptance.py'], allow_path_lookup=False)
+
+    def test_system_tool_resolution_is_absolute(self):
+        resolved = Path(ci.system_tool('git'))
+        self.assertTrue(resolved.is_absolute())
+        self.assertTrue(resolved.is_file())
+
+    def test_windows_system_tool_uses_system_root(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                ci.os.environ, {'SystemRoot': directory}, clear=False):
+            system32 = Path(directory) / 'System32'
+            system32.mkdir()
+            taskkill = system32 / 'taskkill.exe'
+            taskkill.write_text('fixture')
+            self.assertEqual(ci.windows_system_executable('taskkill.exe'),
+                             str(taskkill.resolve()))
 
     def test_real_git_replay_detects_wrong_tree_and_preserves_worktree(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -118,6 +144,7 @@ class CandidateTests(unittest.TestCase):
         self.assertIn('branches: [main]', workflow)
         self.assertNotIn('codex/ci/chromium-three-platform', workflow)
         self.assertIn('cancel-in-progress: true', workflow)
+        self.assertIn("github.event_name != 'schedule' || github.repository == 'gcsagroup/aegis-browser'", workflow)
         self.assertIn('ci-evidence/upstream/latest.json', workflow)
         self.assertIn('ci-evidence/upstream/last-success.json', workflow)
         self.assertIn('ci-evidence/upstream/state.json', workflow)
@@ -125,6 +152,11 @@ class CandidateTests(unittest.TestCase):
         self.assertIn('chromium-upstream-state-', workflow)
         self.assertIn('chromium-upstream-', workflow)
         self.assertIn('rm -rf ci-evidence/upstream/runs ci-evidence/upstream/sources', workflow)
+
+    def test_patch_conflict_is_preserved_for_manual_review(self):
+        source = inspect.getsource(ci.apply_if_base)
+        self.assertIn("raise RuntimeError('补丁冲突已保留：' + name)", source)
+        self.assertNotIn("'am', '--abort'", source)
 
     def test_candidate_workflow_is_manual_until_dedicated_runners_are_ready(self):
         workflow = (ci.ROOT / '.github/workflows/chromium-candidate.yml').read_text()

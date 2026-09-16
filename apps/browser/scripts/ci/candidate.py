@@ -44,8 +44,16 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def system_tool(name):
+    found = shutil.which(name)
+    if not found:
+        raise ValueError(f'缺少所需工具：{name}')
+    return str(Path(found).resolve(strict=True))
+
+
 def git(src, *args, env=None):
-    return subprocess.check_output(['git', '-C', str(src), *args], env=env, text=True).strip()
+    return subprocess.check_output(
+        [system_tool('git'), '-C', str(src), *args], env=env, text=True).strip()
 
 
 def series(directory):
@@ -71,7 +79,7 @@ def apply_if_base(src, base, patches, log):
         for name in series(patches):
             output.write('正在应用：' + name + '\n')
             output.flush()
-            result = subprocess.run(['git', '-C', str(src), '-c', 'user.name=Aegis CI',
+            result = subprocess.run([system_tool('git'), '-C', str(src), '-c', 'user.name=Aegis CI',
                 '-c', 'user.email=aegis-ci@users.noreply.github.com', 'am', '--3way', str(patches / name)],
                 stdout=output, stderr=subprocess.STDOUT)
             if result.returncode:
@@ -141,15 +149,44 @@ def validate_receipt(receipt, artifact_hash, run_id):
         raise ValueError('验收记录缺少实际日志文件')
 
 
-def run(command, cwd, log, source, minimum):
+def command_argv(command, *, allow_path_lookup=True):
+    if not isinstance(command, (list, tuple)) or not command:
+        raise ValueError('命令参数必须是非空数组')
+    if not all(isinstance(item, (str, os.PathLike)) for item in command):
+        raise ValueError('命令参数必须是路径或字符串')
+    executable = Path(command[0])
+    if executable.is_absolute():
+        resolved = executable.resolve(strict=True)
+    elif allow_path_lookup:
+        resolved = Path(system_tool(str(executable)))
+    else:
+        raise ValueError('验收命令必须使用绝对可执行文件路径')
+    if not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise ValueError('命令首项不是可执行文件：' + str(resolved))
+    return [str(resolved), *(str(item) for item in command[1:])]
+
+
+def windows_system_executable(name):
+    system_root = os.environ.get('SystemRoot')
+    if not system_root:
+        raise RuntimeError('Windows 缺少 SystemRoot，无法安全定位系统工具')
+    executable = (Path(system_root) / 'System32' / name).resolve(strict=True)
+    if not executable.is_file():
+        raise RuntimeError('Windows 系统工具不存在：' + str(executable))
+    return str(executable)
+
+
+def run(command, cwd, log, source, minimum, *, allow_path_lookup=True):
+    argv = command_argv(command, allow_path_lookup=allow_path_lookup)
     with log.open('w', encoding='utf-8') as stream:
         options = {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}
-        process = subprocess.Popen([str(x) for x in command], cwd=cwd, stdout=stream, stderr=subprocess.STDOUT, **options)
+        process = subprocess.Popen(argv, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT, shell=False, **options)
         started = time.monotonic()
         while process.poll() is None:
             if shutil.disk_usage(source).free < minimum * 1024**3 or time.monotonic() - started > 23 * 3600:
                 if os.name == 'nt':
-                    subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], check=False)
+                    subprocess.run([windows_system_executable('taskkill.exe'), '/PID',
+                                    str(process.pid), '/T', '/F'], check=False)
                 else:
                     import signal
                     os.killpg(process.pid, signal.SIGTERM)
@@ -244,9 +281,11 @@ def build(name, evidence):
                 acceptance = config.get('acceptanceCommand')
                 if not isinstance(acceptance, list) or not acceptance or not all(isinstance(x, str) for x in acceptance):
                     raise ValueError('候选包已生成，但未配置真实运行验收命令，不能标记通过')
+                acceptance = command_argv(acceptance, allow_path_lookup=False)
                 receipt = evidence / 'acceptance.json'
                 run([*acceptance, '--artifact', artifact, '--source', src, '--out', out, '--evidence', evidence,
-                     '--receipt', receipt, '--run-id', run_id], src, evidence / 'acceptance.log', src, minimum)
+                     '--receipt', receipt, '--run-id', run_id], src, evidence / 'acceptance.log', src, minimum,
+                    allow_path_lookup=False)
                 accepted = json.loads(receipt.read_text())
                 validate_receipt(accepted, result['artifactSha256'], run_id)
                 for item in accepted['evidenceFiles']:

@@ -4,7 +4,7 @@
 
 ## 两条工作流
 
-- `.github/workflows/chromium-upstream.yml`：`main` 变更、每小时第 17 分钟及手动触发，运行监控回归，独立核对三平台正式 Stable、公告和源码提交，保存结果。使用 GitHub 托管 Linux，不读取本机安装状态；云端报告没有本机 App 证据时，不能解除本机漏洞状态。GitHub 定时调度可能延迟，不能承诺严格一小时 SLA。同一监控组只保留最新运行，避免多个 run 并发更新同一份状态；跨 run cache 只保存 `latest.json`、`last-success.json` 和 `state.json`，完整来源与历史证据只进入当次 artifact，避免每小时重复缓存整个证据树。首次切换会兼容恢复旧 `chromium-upstream-*` cache，再立即丢弃其中的 `runs/`、`sources/` 等历史体积数据，仅迁移必要状态，避免丢失 45 天窗口外仍需持续保留的漏洞记录。
+- `.github/workflows/chromium-upstream.yml`：`main` 变更、每小时第 17 分钟及手动触发，运行监控回归，独立核对三平台正式 Stable、公告和源码提交，保存结果。定时 job 只允许规范上游仓库 `gcsagroup/aegis-browser` 执行；Fork 即使默认分支也包含该 workflow，schedule 只会跳过 job，避免重复消耗托管 runner，仍可用手动/PR 入口验证。使用 GitHub 托管 Linux，不读取本机安装状态；云端报告没有本机 App 证据时，不能解除本机漏洞状态。GitHub 定时调度可能延迟，不能承诺严格一小时 SLA。同一监控组只保留最新运行，避免多个 run 并发更新同一份状态；跨 run cache 只保存 `latest.json`、`last-success.json` 和 `state.json`，完整来源与历史证据只进入当次 artifact，避免每小时重复缓存整个证据树。首次切换会兼容恢复旧 `chromium-upstream-*` cache，再立即丢弃其中的 `runs/`、`sources/` 等历史体积数据，仅迁移必要状态，避免丢失 45 天窗口外仍需持续保留的漏洞记录。
 - `.github/workflows/chromium-candidate.yml`：在三台专用 runner 尚未验收并显式启用前只允许手动触发，不因候选分支 push 自动消耗 GitHub 托管 runner。前置官方检查通过后，同时执行三个构建任务，一个失败不取消其他平台。每台机器沿用自己的固定源码与输出目录，不重新检出、清理或覆盖其他开发工作区。
 
 候选执行顺序：核对该平台官方版本与候选双 pin → 对干净基线应用完整补丁 → 临时索引复现整个 Chromium/V8 源码树 → 递增产品构建号 → GN 检查 → 编译 → 原生测试 → 生成候选包 → 运行机器配置的实际验收程序 → 校验本次产物哈希与验收记录 → 上传日志与产物。
@@ -49,7 +49,7 @@ Mac 大规格机器公布存储仍为 14 GB，完整 Mac 构建暂沿用现有�
   "sourceRoot": "/Volumes/AegisBuild/upstream-candidate/src",
   "jobs": 6,
   "minFreeGiB": 100,
-  "acceptanceCommand": ["python", "/Volumes/AegisBuild/acceptance/run.py"]
+  "acceptanceCommand": ["/opt/aegis-ci/python/bin/python3", "/Volumes/AegisBuild/acceptance/run.py"]
 }
 ```
 
@@ -75,7 +75,7 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 
 ## 真实验收接口
 
-`acceptanceCommand` 是由维护者在专用机器配置的参数数组，不经过 shell，也不接受 PR 文本作为命令。执行器会追加：
+`acceptanceCommand` 是由维护者在专用机器配置的参数数组，不经过 shell，也不接受 PR 文本作为命令。首项必须是专用机器上已存在、可执行的**绝对路径**；执行器禁止对该首项做 PATH 查找，以免本机 PATH 污染把验收替换成其他程序。执行器会追加：
 
 ```text
 --artifact <本次ZIP/EXE/APK> --source <src> --out <out>

@@ -1,5 +1,7 @@
 # DEV 到上游的 CI、审查与自动合并实施方案
 
+> **2026-09-15 分支职责更新：** 以下初始方案的 DEV main 路径已被取代。个人默认开发与 PR/合并目标为 `develop`；个人 `main` 仅镜像上游。公共 CI 同时验证 main/develop，人工补跑只接受这两个分支；导出来自已验证的 DEV develop 提交。PR #20 的 main-only 验证方案废止，当前操作以 [CI 指南](../development/ci.zh-CN.md) 为准。历史观察和 SHA 不改写、不转作 develop 证据。
+
 日期：2026-09-14（初始设计与观察）。2026-09-15 范围更新：当前只关注 macOS；自动 CI 仅 `quality` 与 `quality-gate`，后者只依赖并严格要求 `quality=success`。Linux/Windows 覆盖率及 iOS/Android 工作流均仅手动运行，不属于当前合并门。Android 与 WinRM 专属套件保留在 `quality:other-platforms` 显式入口；共享与 Mac 测试仍由 `quality:fast` 执行。本文历史 SHA/初始观察保留，当前操作以 [CI 指南](../development/ci.zh-CN.md) 为准。
 
 ## 1. 目标与当前事实
