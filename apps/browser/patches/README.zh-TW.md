@@ -13,7 +13,7 @@
 
 ## 目前本機補丁序列
 
-狀態「series 中」只表示補丁檔案列在目前本機 `series`；不表示已經進入上游 Chromium、通過發行門檻或可以發布。49、67 和 95 補丁記錄只保留為歷史快照。目前整合原始碼包含 **117 個 Chromium 補丁 + 2 個巢狀 V8 補丁**：0057–0065 是原 Browser Agent 整合，0066–0067 是設定/更新和視覺品牌，0068–0108 以 Browser Agent v2 Runtime 取代並強化 v1 執行路徑，同時加入跨平台入口、定時自動化、指定網站路由、Profile 隔離、有界恢復、瀏覽器綁定的分頁/文件能力、正確產品身分、脫離 UI 序列的持久化、確定性銷毀和啟用斷言時安全的限流處理。補丁 0109–0113 增加並強化 GitHub 瀏覽器更新及產品狀態/文案；補丁 0114–0116 增加存取路由規劃、可信策略匹配及 Profile 規則庫原子持久化/復原合約。補丁 0117 增加首個 fail-closed `net::ProxyInfo` 路由介面卡，只接受已登記的 numeric-loopback HTTP Proxy 入口且不提供 DIRECT fallback。補丁 0079–0095 重放到 Chromium 原始碼提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；補丁 0096–0101 產生 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；補丁 0102 產生已提交原始碼 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。成品資格仍按平台分別判定，且必須綁定這份精確原始碼的驗收證據。
+狀態「series 中」只表示補丁檔案列在目前本機 `series`；不表示已經進入上游 Chromium、通過發行門檻或可以發布。49、67 和 95 補丁記錄只保留為歷史快照。目前整合原始碼包含 **118 個 Chromium 補丁 + 2 個巢狀 V8 補丁**：0057–0065 是原 Browser Agent 整合，0066–0067 是設定/更新和視覺品牌，0068–0108 以 Browser Agent v2 Runtime 取代並強化 v1 執行路徑，同時加入跨平台入口、定時自動化、指定網站路由、Profile 隔離、有界恢復、瀏覽器綁定的分頁/文件能力、正確產品身分、脫離 UI 序列的持久化、確定性銷毀和啟用斷言時安全的限流處理。補丁 0109–0113 增加並強化 GitHub 瀏覽器更新及產品狀態/文案；補丁 0114–0116 增加存取路由規劃、可信策略匹配及 Profile 規則庫原子持久化/復原合約。補丁 0117 增加首個 fail-closed `net::ProxyInfo` 路由介面卡，只接受已登記的 numeric-loopback HTTP Proxy 入口且不提供 DIRECT fallback；補丁 0118 透過 Chromium 原生 custom-proxy delegate 將精確 host 選擇綁定到 Profile/StoragePartition NetworkContext，未選取的 host 保留 Chromium 原生 Proxy 結果。補丁 0079–0095 重放到 Chromium 原始碼提交 `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`；補丁 0096–0101 產生 `1c63ce994b2815fe1f3dc07608ff121d987e0441`（tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`）；補丁 0102 產生已提交原始碼 `13807aaf086948bdff0370e356718d0c2ac54d27`（tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`）。成品資格仍按平台分別判定，且必須綁定這份精確原始碼的驗收證據。
 
 | ID | 目的 | 狀態 |
 |----|------|------|
@@ -134,6 +134,7 @@
 | 0115 | 增加可信請求歸屬正規化與策略匹配 | series 中 |
 | 0116 | 增加 Profile 存取規則原子持久化與復原 | series 中 |
 | 0117 | 將已登記的 loopback HTTP Proxy 以 fail-closed 方式套用到 Chromium `ProxyInfo`，不提供 DIRECT fallback | series 中 |
+| 0118 | 將精確網站的 localhost HTTP Proxy 選擇綁定到 Profile/StoragePartition NetworkContext | series 中 |
 
 0103–0105 已從 0102 基線精確重放到 `1e1341b51e3254d4638bc1917b140f30d4c1e9d7` 的原始碼樹 `babd10e2e757d7b57f1b7ef18eac26ee5becc9cb`，平台實際驗收仍是獨立門檻。
 
