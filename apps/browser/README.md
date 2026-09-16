@@ -2,6 +2,8 @@
 
 # GCSA-aegis Browser
 
+[![C++ Unit Tests](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main)](https://github.com/quinn521/aegis-browser/actions/workflows/cpp-unit-tests.yml)
+
 GCSA-aegis Browser is a Chromium fork that integrates privacy and security controls in the browser and engine layers. It is not an Electron shell and does not treat an extension as the product.
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
