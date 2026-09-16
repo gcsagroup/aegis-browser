@@ -8,7 +8,7 @@
 #include <string>
 
 #include "components/aegis_access/access_route_types.h"
-#include "components/aegis_access/site_proxy_rule_group.h"
+#include "components/aegis_access/request_ownership_registry.h"
 #include "net/base/schemeful_site.h"
 #include "url/gurl.h"
 
@@ -74,6 +74,9 @@ class RequestPolicyContext {
   }
   RequestScheme scheme() const { return scheme_; }
   uint16_t port() const { return port_; }
+
+  RequestOwnershipRecord ToOwnershipRecord(
+      const GenerationTuple& generations) const;
 
  private:
   friend RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
