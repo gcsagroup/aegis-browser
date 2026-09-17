@@ -82,7 +82,7 @@
 
 必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 Astra high review 审查最终实现和测试；Sol 修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
-P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步回调外等待、定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
+P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真实适配及入口接线、同步回调外等待、真实 URLLoader/导航/HTTP2/HTTP3 终止句柄、BLOCK 发布后的执行点 ACK/2 秒预算、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
 本切片可报告 native_unit=PASS（实际执行后）、合同子项通过；对应 A76/A108/A113/A115/A116 等只记录所覆盖的纯决策子场景，整行仍 partial/NOT_RUN，G0 仍 NOT_RUN 或明确环境 BLOCKED。P0 不因本切片通过而结束，运行/性能/部署/分发状态不提升。
 
@@ -172,6 +172,40 @@ P0 剩余：浏览器真实 RequestOwnershipRegistry/导航入口接线、同步
 固定 Chromium 151 checkout 的完整 Ninja 图仍会先被既有缺失 `third_party/aegis_libtorrent/.../signal_error_code.cpp` 阻断，因此不能把该全局依赖错误解释成 0120 测试失败。绕开无关全局依赖后，使用 Ninja 为最终三个测试对象生成的精确 clang `-Werror` 命令直接编译 `access_proxy_route_adapter_unittest.cc`、`access_local_proxy_acceptance_unittest.cc` 与 `access_network_context_transport_unittest.cc`，三者均 exit 0。完整 GTest 二进制 runtime 仍受既有 checkout/toolchain 环境限制，未报告 PASS。最终 0120 patch SHA-256 为 `9af49a1e18a0fbceb763f46fa81a81b0154d577de1ff036dd9b2002c994bca6c`。
 
 0120 的作用是提高 0117–0119 的单元/回归保护密度，不改变 G0 状态，也不把编译通过冒充真实浏览器运行通过。后续 toolchain 环境可完整链接时，应优先执行全部 `aegis_access_unittests` 与 `access_network_context_transport_unittests`，再继续 RequestOwnershipRegistry、每请求可信上下文及后续代理 transport。
+
+## 0121：有界 RequestOwnershipRegistry 核心与终止句柄合同
+
+2026-09-16 在 0120 基线上新增纯 C++ `RequestOwnershipRegistry` 核心状态机，并把通用 `RequestScheme` 提升到 Access 路由类型。Registry 只接受已经规范化的 browser-owned record：request ID、channel/Profile/StoragePartition owner、完整 generation tuple、document 或 pending-navigation token、可靠顶层站点、exact host、scheme/port。`RequestPolicyContext::ToOwnershipRecord()` 是现有 Chromium 规范化边界到 Registry record 的生产桥；Registry 自身不解析 URL，也不把 renderer/page 自报字符串升级为可信归属。
+
+本切片固定 `new → dispatched → streaming → completed/cancelled` 的最小生命周期。登记容量显式有界；无效记录、重复 request ID、跨 Profile/StoragePartition owner、过时代次、非法状态跃迁和缺失 termination handle 均 fail closed，失败操作不替换、不消费已有可信记录。对 dispatched/streaming 请求取消时，Registry 在调用外部 `RequestTerminationHandle::Terminate()` 前先删除本地 entry，因此重入或迟到回调只能看到 `not_found`，不能二次取消/完成同一请求。普通完成只回收 entry，不误调用终止句柄；尚未派发的 new 请求可本地取消而无需伪造外部 handle。
+
+测试随 feat 同步进入源码：共享 contract 同时提供 unit 与 regression 两组，standalone C++20 runner 直接编译生产 Registry 并实际执行；初次执行在仓库固定 ripgrep 15.2.0 前置下为 `PASS: aegis_access native unit (541 checks)`，其中新增 54 条检查覆盖注册/查询/dispatch/stream/complete、Profile-only 不借页面身份，以及容量溢出、重复 ID、不可信 owner、stale generation、非法 lifecycle、缺 handle、跨 Profile/StoragePartition、reentrant cancel、重复 cancel 和 late completion 等回归。GN 另提供独立 `//components/aegis_access:request_ownership_registry_unittests`，避免 Registry 的基础运行证据只能依赖 0119 后较重的 Network Service 测试目标；顺序补丁为 `0121-feat-aegis-add-request-ownership-registry.patch`，生成时 SHA-256 为 `beca127f3e49d691f5e81c7c2fd0ff3096889be66f83e1e9422bfd9268d414f5`。
+
+证据边界保持不变：本切片尚未把真实 Browser/Navigation/URLLoader request ID 与 document token、具体 URLLoader/stream cancellation handle 接入 Registry，也没有实现按站点扫描并终止 HTTP/2/HTTP/3 共享连接中的匹配 stream；这些属于下一浏览器适配/定向取消 feat。541-check standalone PASS 证明 Registry 状态机与回归合同实际运行，不代表 Chromium Network Service runtime、完整 Chrome 或 G0 已通过。
+
+## 0122：精确页面目标的定向在途取消核心
+
+2026-09-16 在 0121 Registry 基线上新增 `CancelMatchingPageTarget`。取消选择器只接受 browser-owned 的 channel/Profile/StoragePartition owner、互斥的 document 或 pending-navigation token、规范化 top-level site，以及 exact host/scheme/port。只有 `site_ownership_reliable=true` 且上述作用域全部精确匹配的请求才进入批次；Profile-only/无法唯一归属的后台请求不借当前页面身份，同一站点的其他 document、其他 Profile/StoragePartition、其他 host/scheme/port 也不被误杀。
+
+该接口有意**不把 generation tuple 放入取消选择器**。冻结 BLOCK 合同要求新 policyGeneration 发布后仍终止此前已派发的命中在途请求，且 identityGeneration 对本地 BLOCK 只用于诊断；若要求旧请求与新 BLOCK 的 generation 相等，会把正应终止的旧 generation 请求漏掉。单请求 `Lookup/Cancel` 仍保持 0121 的严格 generation 校验，只有这个 page-scoped BLOCK 批量路径按冻结语义跨 generation 匹配。
+
+批次执行先验证 selector 和所有命中 entry，再把全部命中请求一次性移出 Registry，最后才调用外部 `RequestTerminationHandle`；因此第一个终止回调发生时，同批其他命中 request ID 也已经不可见，避免重入/迟到回调观察或操作半取消批次。`kNew` 尚未派发请求只从 Registry 移除，不伪造外部终止；dispatched/streaming 请求各自调用已登记 handle 一次，重复同一 selector 返回空成功批次而不会二次终止。
+
+本 feat 同步增加独立 unit 与 regression contract，并由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 真实执行为 `PASS: aegis_access native unit (605 checks)`，较 0121 增加 64 条检查，覆盖跨 policy/identity/network generation 的命中取消、new/dispatched/streaming 结果、pending navigation、重复批次，以及其他 document/Profile/partition/background/host/scheme/port/top-level-site 隔离、无效 selector fail-closed、完整批次先删除后回调和 document/pending attribution 分离。顺序补丁为 `0122-feat-aegis-add-targeted-request-cancellation.patch`，当前 SHA-256 为 `094d29c0a26df7c05b995c1dfecc9b80515d5c6d61c9da9ecb9b3e7e0e968cf7`。
+
+证据边界：0122 完成 Registry 层的精确选择、批量原子移除和终止句柄调用合同，但仍未把真实 Browser/Navigation/URLLoader/下载/媒体/SSE/ws/wss/HTTP2/HTTP3 stream handle 接到 Registry，也没有安装 BLOCK 的新请求 dispatch barrier 或 2 秒协调预算。因此不能把 605-check standalone PASS 报告为真实浏览器在途取消或 G0 PASS；下一 feat 应把这些 browser-owned handle/派发入口接到 0121/0122 已冻结的 Registry API。
+
+## 0123：browser-owned 新请求 dispatch BLOCK barrier 核心
+
+2026-09-16 在 0122 精确定向取消基线上新增纯 C++ `RequestDispatchBarrierRegistry`，直接复用 `RequestCancellationSelector` 作为 browser-owned 页面目标作用域。协调层可在收到 BLOCK 操作的同一任务内先调用 `InstallBlockBarrier`，无需等待数据库、远端服务、代理准备或在途取消 ACK；后续 `EvaluateRequest` 对 exact owner + document/pending token + top-level site + host/scheme/port 命中返回 `kBlock`，对其他标签页、Profile、StoragePartition、站点、host/scheme/port 及 profile-only/background 请求保持 `kAllow`。输入 record 非法时返回 `kInvalidRequest+kBlock`，不把 malformed controlled request 当成放行。
+
+Barrier 使用 browser-owned `operation_id + operation_sequence` 管理同一 scope 的版本。相同 operation 精确重装是幂等；更高 sequence 原子替换旧 barrier；更低/相同但不同 operation 的 install 返回 stale，不覆盖新状态。释放必须同时匹配 exact selector、operation id 和 sequence；旧 ACK、迟到撤销或错误 sequence 只能返回 `kStaleOperation`，不会清除较新的 BLOCK。Barrier 匹配有意不读取 RequestOwnershipRecord 的 generation tuple，因此发布 G+1 BLOCK 后，G/G-1 以及新 generation 的命中请求都会继续被本地屏障拒绝。
+
+失败/超时保持 barrier 不需要额外“失败转移”：Registry 只有精确 `ReleaseBlockBarrier` 才能删除屏障。上层持久化失败、策略发布失败、在途取消未确认或 2 秒 ACK 超时时不调用精确 release，屏障自然保持；只有版本化撤销/解除 BLOCK 的 owning operation 才能释放。这一层不自行实现磁盘事务、计时器或 renderer 字符串归属推导。
+
+本 feat 随生产代码加入独立 unit 与 regression contract，并继续由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 首轮真实执行为 `PASS: aegis_access native unit (646 checks)`，较 0122 增加 41 条检查，覆盖安装/查询/精确释放、跨所有 generation 的同步阻断、pending navigation、nonmatch 放行、幂等重装、容量上限、非法 barrier/request fail-closed、新 operation 替换、stale install/release 不覆盖/不清除新 barrier，以及 document/Profile/partition/background/site/host/scheme/port 隔离。顺序补丁为 `0123-feat-aegis-add-request-dispatch-block-barriers.patch`，当前 SHA-256 为 `fb009f770f3c482c7119cd5c622120164f896602438af2f20fb5f843f0a32e06`。
+
+证据边界：0123 完成的是可独立执行的 BLOCK dispatch barrier 状态机，还未把 barrier 真正接入 `AegisNetThrottle::WillStartRequest`、Navigation/预取/preconnect/Service Worker/BFCache 等 Chromium 派发入口，也未实现执行点 ACK 与 2 秒/5 秒预算。现有 `AegisNetThrottle` 的 `request_initiator`/source-site 仍不能被当作 Access Service 的可信 page ownership；真实接线必须使用 browser-owned document/navigation metadata。646-check PASS 不代表真实浏览器 BLOCK 入口或 G0 PASS。
 
 ## 回滚
 
