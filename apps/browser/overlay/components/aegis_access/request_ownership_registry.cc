@@ -51,6 +51,11 @@ bool HasExactlyOneAttributionToken(const RequestOwnershipRecord& record) {
          record.pending_navigation_token.empty();
 }
 
+bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector) {
+  return selector.document_token.empty() !=
+         selector.pending_navigation_token.empty();
+}
+
 bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
   return !record.request_id.empty() && IsComplete(record.owner) &&
          IsComplete(record.generations) && !record.exact_host.empty() &&
@@ -68,6 +73,29 @@ bool HasValidAttribution(const RequestOwnershipRecord& record) {
 
 bool IsValidRecord(const RequestOwnershipRecord& record) {
   return HasValidRequestMetadata(record) && HasValidAttribution(record);
+}
+
+bool IsValidSelector(const RequestCancellationSelector& selector) {
+  return IsComplete(selector.owner) &&
+         HasExactlyOneAttributionToken(selector) &&
+         !selector.top_level_site.empty() && !selector.exact_host.empty() &&
+         IsKnown(selector.scheme) && selector.port != 0;
+}
+
+bool MatchesSelector(const RequestOwnershipRecord& record,
+                     const RequestCancellationSelector& selector) {
+  if (!record.site_ownership_reliable || record.owner != selector.owner ||
+      record.top_level_site != selector.top_level_site ||
+      record.exact_host != selector.exact_host ||
+      record.scheme != selector.scheme || record.port != selector.port) {
+    return false;
+  }
+  if (!selector.document_token.empty()) {
+    return record.document_token == selector.document_token &&
+           record.pending_navigation_token.empty();
+  }
+  return record.document_token.empty() &&
+         record.pending_navigation_token == selector.pending_navigation_token;
 }
 
 RequestOwnershipStatus ValidateExpected(
@@ -231,6 +259,55 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Cancel(
   if (termination_handle) {
     termination_handle->Terminate();
     result.termination_invoked = true;
+  }
+  return result;
+}
+
+RequestOwnershipBatchCancelResult
+RequestOwnershipRegistry::CancelMatchingPageTarget(
+    const RequestCancellationSelector& selector) {
+  if (!IsValidSelector(selector)) {
+    return {RequestOwnershipStatus::kInvalidCancellationSelector, {}};
+  }
+  for (const auto& item : entries_) {
+    const Entry& entry = item.second;
+    if (!MatchesSelector(entry.record, selector)) {
+      continue;
+    }
+    if (entry.lifecycle != RequestOwnershipLifecycle::kNew &&
+        !entry.termination_handle) {
+      return {RequestOwnershipStatus::kMissingTerminationHandle, {}};
+    }
+  }
+  struct PendingCancellation {
+    RequestOwnershipRecord record;
+    RequestOwnershipLifecycle lifecycle;
+    std::unique_ptr<RequestTerminationHandle> termination_handle;
+  };
+  std::vector<PendingCancellation> pending;
+  for (auto it = entries_.begin(); it != entries_.end();) {
+    if (!MatchesSelector(it->second.record, selector)) {
+      ++it;
+      continue;
+    }
+    pending.push_back(PendingCancellation{
+        std::move(it->second.record), it->second.lifecycle,
+        std::move(it->second.termination_handle)});
+    it = entries_.erase(it);
+  }
+  RequestOwnershipBatchCancelResult result;
+  result.status = RequestOwnershipStatus::kOk;
+  result.cancellations.reserve(pending.size());
+  for (auto& cancellation : pending) {
+    RequestOwnershipTerminalResult terminal;
+    terminal.status = RequestOwnershipStatus::kOk;
+    terminal.record = std::move(cancellation.record);
+    terminal.previous_lifecycle = cancellation.lifecycle;
+    if (cancellation.termination_handle) {
+      cancellation.termination_handle->Terminate();
+      terminal.termination_invoked = true;
+    }
+    result.cancellations.push_back(std::move(terminal));
   }
   return result;
 }

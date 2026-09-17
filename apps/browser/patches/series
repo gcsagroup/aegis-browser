@@ -120,3 +120,4 @@
 0119-test-aegis-local-proxy-network-acceptance.patch
 0120-test-aegis-expand-access-cpp-regressions.patch
 0121-feat-aegis-add-request-ownership-registry.patch
+0122-feat-aegis-add-targeted-request-cancellation.patch

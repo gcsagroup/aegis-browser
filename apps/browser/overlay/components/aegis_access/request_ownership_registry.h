@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "components/aegis_access/access_route_types.h"
 
@@ -29,6 +30,7 @@ enum class RequestOwnershipStatus {
   kStaleGeneration,
   kInvalidLifecycle,
   kMissingTerminationHandle,
+  kInvalidCancellationSelector,
 };
 
 // The browser-side adapter owns concrete URLLoader/navigation/stream handles.
@@ -78,6 +80,25 @@ struct RequestOwnershipTerminalResult {
   bool termination_invoked = false;
 };
 
+// Exact page-scoped BLOCK selector. It intentionally carries no generation
+// tuple: a newly published BLOCK must still terminate matching requests that
+// were dispatched under an older policy/identity/network generation. Browser
+// code must source the owner and page token from trusted navigation state.
+struct RequestCancellationSelector {
+  OwnershipKey owner;
+  std::string document_token;
+  std::string pending_navigation_token;
+  std::string top_level_site;
+  std::string exact_host;
+  RequestScheme scheme = RequestScheme::kInvalid;
+  uint16_t port = 0;
+};
+
+struct RequestOwnershipBatchCancelResult {
+  RequestOwnershipStatus status = RequestOwnershipStatus::kOk;
+  std::vector<RequestOwnershipTerminalResult> cancellations;
+};
+
 // Bounded request ownership state. Every mutable operation rechecks the exact
 // owner and generation tuple supplied by the browser caller. Mismatches never
 // consume or replace the registered entry. Terminal operations erase the entry
@@ -114,6 +135,9 @@ class RequestOwnershipRegistry {
       const std::string& request_id,
       const OwnershipKey& expected_owner,
       const GenerationTuple& expected_generations);
+
+  RequestOwnershipBatchCancelResult CancelMatchingPageTarget(
+      const RequestCancellationSelector& selector);
 
   size_t size() const { return entries_.size(); }
   size_t max_entries() const { return max_entries_; }
