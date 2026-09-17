@@ -67,6 +67,7 @@ fi
   -I"$BROWSER_DIR/overlay" \
   "$COMPONENT_DIR/access_route_planner.cc" \
   "$COMPONENT_DIR/site_proxy_rule_group.cc" \
+  "$COMPONENT_DIR/request_ownership_registry.cc" \
   "$COMPONENT_DIR/access_route_planner_native_test.cc" \
   -o "$TEST_ROOT/aegis_access_native_test"
 
@@ -104,7 +105,8 @@ if [[ -n "$COVERAGE_DIR" ]]; then
       source = substr($0, 4)
       route = project_root "apps/browser/overlay/components/aegis_access/access_route_planner.cc"
       group = project_root "apps/browser/overlay/components/aegis_access/site_proxy_rule_group.cc"
-      keep = (source == route || source == group)
+      ownership = project_root "apps/browser/overlay/components/aegis_access/request_ownership_registry.cc"
+      keep = (source == route || source == group || source == ownership)
       if (keep) {
         print "SF:" substr(source, length(project_root) + 1)
       }
@@ -113,8 +115,8 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     keep { print }
     /^end_of_record$/ { keep = 0 }
   ' "$COVERAGE_DIR/lcov.unfiltered.info" > "$COVERAGE_DIR/lcov.info"
-  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 2 ]]; then
-    printf 'FAIL: native LCOV must contain exactly the two standalone production units\n' >&2
+  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 3 ]]; then
+    printf 'FAIL: native LCOV must contain exactly the three standalone production units\n' >&2
     exit 1
   fi
   rm "$COVERAGE_DIR/lcov.unfiltered.info"
@@ -124,12 +126,14 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     --sources \
     "$COMPONENT_DIR/access_route_planner.cc" \
     "$COMPONENT_DIR/site_proxy_rule_group.cc" \
+    "$COMPONENT_DIR/request_ownership_registry.cc" \
     > "$COVERAGE_DIR/coverage-summary.json"
   "$LLVM_COV" report "$TEST_ROOT/aegis_access_native_test" \
     -instr-profile="$COVERAGE_DIR/aegis-access.profdata" \
     --sources \
     "$COMPONENT_DIR/access_route_planner.cc" \
     "$COMPONENT_DIR/site_proxy_rule_group.cc" \
+    "$COMPONENT_DIR/request_ownership_registry.cc" \
     > "$COVERAGE_DIR/coverage.txt"
 else
   "$TEST_ROOT/aegis_access_native_test"

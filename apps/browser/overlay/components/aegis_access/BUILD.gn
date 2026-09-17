@@ -23,6 +23,18 @@ action("generate_policy_matcher_vectors") {
   ]
 }
 
+source_set("access_route_types") {
+  sources = [ "access_route_types.h" ]
+}
+
+source_set("request_ownership_registry") {
+  sources = [
+    "request_ownership_registry.cc",
+    "request_ownership_registry.h",
+  ]
+  public_deps = [ ":access_route_types" ]
+}
+
 source_set("aegis_access") {
   sources = [
     "access_proxy_route_adapter.cc",
@@ -31,13 +43,32 @@ source_set("aegis_access") {
     "access_policy_evaluator.h",
     "access_route_planner.cc",
     "access_route_planner.h",
-    "access_route_types.h",
     "request_policy_context.cc",
     "request_policy_context.h",
     "site_proxy_rule_group.cc",
     "site_proxy_rule_group.h",
   ]
-  public_deps = [ "//net" ]
+  public_deps = [
+    ":access_route_types",
+    ":request_ownership_registry",
+    "//net",
+  ]
+}
+
+test("request_ownership_registry_unittests") {
+  sources = [
+    "request_cancellation_contract_test.h",
+    "request_dispatch_barrier_contract_test.h",
+    "request_ownership_registry_contract_test.h",
+    "request_ownership_registry_test_support.h",
+    "request_ownership_registry_unit_test.h",
+    "request_ownership_registry_unittest.cc",
+  ]
+  deps = [
+    ":request_ownership_registry",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
 }
 
 test("aegis_access_unittests") {

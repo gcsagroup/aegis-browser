@@ -89,6 +89,21 @@ RequestPolicyContext& RequestPolicyContext::operator=(
     RequestPolicyContext&&) noexcept = default;
 RequestPolicyContext::~RequestPolicyContext() = default;
 
+RequestOwnershipRecord RequestPolicyContext::ToOwnershipRecord(
+    const GenerationTuple& generations) const {
+  return RequestOwnershipRecord{
+      request_id_,
+      owner_,
+      generations,
+      document_token_,
+      pending_navigation_token_,
+      site_ownership_reliable_,
+      top_level_site_,
+      exact_host_,
+      scheme_,
+      port_};
+}
+
 RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
     const BrowserOwnedRequestMetadata& metadata,
     const GURL& request_url) {
