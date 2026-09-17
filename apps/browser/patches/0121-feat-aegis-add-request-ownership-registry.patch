@@ -1,6 +1,6 @@
-From 836cf99fe26e9d1354e7d85a5210da6d3225a96e Mon Sep 17 00:00:00 2001
+From c87e1b86d014688435e6ae12f94013682e701c32 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
-Date: Wed, 16 Sep 2026 19:39:59 +0800
+Date: Thu, 17 Sep 2026 20:30:54 +0800
 Subject: [PATCH] feat(aegis): add request ownership registry
 
 ---

@@ -27,6 +27,14 @@ source_set("access_route_types") {
   sources = [ "access_route_types.h" ]
 }
 
+source_set("browser_request_metadata_seed") {
+  sources = [
+    "browser_request_metadata_seed.cc",
+    "browser_request_metadata_seed.h",
+  ]
+  public_deps = [ ":access_route_types" ]
+}
+
 source_set("request_ownership_registry") {
   sources = [
     "request_ownership_registry.cc",
@@ -60,6 +68,18 @@ source_set("aegis_access") {
     ":access_route_types",
     ":request_ownership_registry",
     "//net",
+  ]
+}
+
+test("browser_request_metadata_seed_unittests") {
+  sources = [
+    "browser_request_metadata_seed_contract_test.h",
+    "browser_request_metadata_seed_unittest.cc",
+  ]
+  deps = [
+    ":browser_request_metadata_seed",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
   ]
 }
 
