@@ -122,3 +122,4 @@
 0121-feat-aegis-add-request-ownership-registry.patch
 0122-feat-aegis-add-targeted-request-cancellation.patch
 0123-feat-aegis-add-request-dispatch-block-barriers.patch
+0124-feat-aegis-enforce-request-dispatch-gate.patch

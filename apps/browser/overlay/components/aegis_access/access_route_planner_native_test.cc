@@ -4,6 +4,7 @@
 #include <string>
 
 #include "components/aegis_access/access_route_planner_contract_test.h"
+#include "components/aegis_access/request_dispatch_gate_contract_test.h"
 #include "components/aegis_access/request_ownership_registry_contract_test.h"
 
 namespace {
@@ -39,6 +40,8 @@ int main() {
   aegis_access::test::RunTargetedRequestCancellationRegressionTests(observer);
   aegis_access::test::RunRequestDispatchBarrierUnitTests(observer);
   aegis_access::test::RunRequestDispatchBarrierRegressionTests(observer);
+  aegis_access::test::RunRequestDispatchGateUnitTests(observer);
+  aegis_access::test::RunRequestDispatchGateRegressionTests(observer);
   if (observer.failures() != 0) {
     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
               << " failures, " << observer.checks() << " checks)\n";
