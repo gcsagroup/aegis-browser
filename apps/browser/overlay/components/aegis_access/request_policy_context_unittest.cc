@@ -79,6 +79,28 @@ TEST(RequestPolicyContextTest, PreservesProfileOnlyOwnershipWithoutSite) {
   EXPECT_EQ(result.context->port(), 443u);
 }
 
+TEST(RequestPolicyContextTest, ExportsNormalizedOwnershipRecord) {
+  const BrowserOwnedRequestMetadata metadata =
+      DocumentMetadata(GURL("https://top.example/page"));
+  const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
+      metadata, GURL("https://CDN.example:8443/asset?ignored=yes"));
+  ASSERT_TRUE(result.context.has_value());
+
+  const GenerationTuple generations{1, 2, 3, 4, 5};
+  const RequestOwnershipRecord record =
+      result.context->ToOwnershipRecord(generations);
+  EXPECT_EQ(record.request_id, result.context->request_id());
+  EXPECT_EQ(record.owner, TestOwner());
+  EXPECT_EQ(record.generations, generations);
+  EXPECT_EQ(record.document_token, "document-token");
+  EXPECT_TRUE(record.pending_navigation_token.empty());
+  EXPECT_TRUE(record.site_ownership_reliable);
+  EXPECT_EQ(record.top_level_site, "https://top.example");
+  EXPECT_EQ(record.exact_host, "cdn.example");
+  EXPECT_EQ(record.scheme, RequestScheme::kHttps);
+  EXPECT_EQ(record.port, 8443u);
+}
+
 TEST(RequestPolicyContextTest, RejectsUntrustedOrAmbiguousShapes) {
   BrowserOwnedRequestMetadata metadata =
       DocumentMetadata(GURL("https://top.example/"));
