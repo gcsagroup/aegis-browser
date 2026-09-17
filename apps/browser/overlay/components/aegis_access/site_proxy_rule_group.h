@@ -11,14 +11,6 @@
 
 namespace aegis_access {
 
-enum class RequestScheme {
-  kHttp,
-  kHttps,
-  kWs,
-  kWss,
-  kInvalid,
-};
-
 enum class PortScope {
   kAllBrowserPermitted,
   kExplicitSubset,

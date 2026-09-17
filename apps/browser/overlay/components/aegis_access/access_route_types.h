@@ -26,6 +26,9 @@ struct OwnershipKey {
 };
 
 struct GenerationTuple {
+  // Zero is reserved for "not published / not initialized". Browser-owned
+  // generation sources publish live counters starting at 1 and increment from
+  // there, so consumers may treat any zero field as an incomplete tuple.
   uint64_t policy_generation = 0;
   uint64_t identity_generation = 0;
   uint64_t selection_generation = 0;
@@ -34,6 +37,14 @@ struct GenerationTuple {
 
   friend bool operator==(const GenerationTuple&, const GenerationTuple&) =
       default;
+};
+
+enum class RequestScheme {
+  kHttp,
+  kHttps,
+  kWs,
+  kWss,
+  kInvalid,
 };
 
 enum class AccessMode {
