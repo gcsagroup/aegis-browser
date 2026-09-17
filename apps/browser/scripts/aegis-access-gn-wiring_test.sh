@@ -14,6 +14,7 @@ NETWORK_TRANSPORT_PATCH_FILE="$BROWSER_DIR/patches/0118-feat-aegis-bind-profile-
 NETWORK_ACCEPTANCE_PATCH_FILE="$BROWSER_DIR/patches/0119-test-aegis-local-proxy-network-acceptance.patch"
 CPP_REGRESSION_PATCH_FILE="$BROWSER_DIR/patches/0120-test-aegis-expand-access-cpp-regressions.patch"
 OWNERSHIP_PATCH_FILE="$BROWSER_DIR/patches/0121-feat-aegis-add-request-ownership-registry.patch"
+TARGETED_CANCEL_PATCH_FILE="$BROWSER_DIR/patches/0122-feat-aegis-add-targeted-request-cancellation.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
@@ -87,6 +88,12 @@ rg -Fq '+class RequestOwnershipRegistry' "$OWNERSHIP_PATCH_FILE" ||
   fail "patch 0121 does not deliver RequestOwnershipRegistry"
 rg -Fq 'RunRequestOwnershipRegistryRegressionTests' "$OWNERSHIP_PATCH_FILE" ||
   fail "patch 0121 does not carry shared ownership regression coverage"
+rg -Fq 'CancelMatchingPageTarget' "$TARGETED_CANCEL_PATCH_FILE" ||
+  fail "patch 0122 does not deliver targeted request cancellation"
+rg -Fq 'RunTargetedRequestCancellationUnitTests' "$TARGETED_CANCEL_PATCH_FILE" ||
+  fail "patch 0122 does not carry targeted cancellation unit coverage"
+rg -Fq 'RunTargetedRequestCancellationRegressionTests' "$TARGETED_CANCEL_PATCH_FILE" ||
+  fail "patch 0122 does not carry targeted cancellation regression coverage"
 [[ "$(rg -F -c '0114-feat-aegis-add-access-route-planning-contract.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0114 must appear once in series"
 [[ "$(rg -F -c '0115-feat-aegis-add-trusted-policy-context-matching.patch' \
@@ -101,27 +108,32 @@ rg -Fq 'RunRequestOwnershipRegistryRegressionTests' "$OWNERSHIP_PATCH_FILE" ||
   "$SERIES_FILE")" == 1 ]] || fail "0120 must appear once in series"
 [[ "$(rg -F -c '0121-feat-aegis-add-request-ownership-registry.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0121 must appear once in series"
-[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(rg -F -c '0122-feat-aegis-add-targeted-request-cancellation.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0122 must appear once in series"
+[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
   "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
   fail "patch 0115 must immediately precede patch 0116"
-[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
   "0116-feat-aegis-add-access-rule-store-recovery.patch" ]] ||
   fail "patch 0116 must immediately precede patch 0117"
-[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
   "0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch" ]] ||
   fail "patch 0117 must immediately precede patch 0118"
-[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
   "0118-feat-aegis-bind-profile-network-context-proxy.patch" ]] ||
   fail "patch 0118 must immediately precede patch 0119"
-[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
   "0119-test-aegis-local-proxy-network-acceptance.patch" ]] ||
   fail "patch 0119 must immediately precede patch 0120"
-[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
   "0120-test-aegis-expand-access-cpp-regressions.patch" ]] ||
   fail "patch 0120 must immediately precede patch 0121"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
+[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
   "0121-feat-aegis-add-request-ownership-registry.patch" ]] ||
-  fail "patch 0121 must be the current series tail"
+  fail "patch 0121 must immediately precede patch 0122"
+[[ "$(tail -n 1 "$SERIES_FILE")" == \
+  "0122-feat-aegis-add-targeted-request-cancellation.patch" ]] ||
+  fail "patch 0122 must be the current series tail"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
