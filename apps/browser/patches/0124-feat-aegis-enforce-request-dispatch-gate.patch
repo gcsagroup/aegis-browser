@@ -1,0 +1,446 @@
+From 28ec0380fb3168dc7709b71b434cf1611a59dcf6 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 16 Sep 2026 21:03:34 +0800
+Subject: [PATCH] feat(aegis): enforce request dispatch gate
+
+---
+ components/aegis_access/BUILD.gn              |  21 ++
+ .../access_route_planner_native_test.cc       |   3 +
+ .../aegis_access/request_dispatch_gate.cc     |  45 +++++
+ .../aegis_access/request_dispatch_gate.h      |  38 ++++
+ .../request_dispatch_gate_contract_test.h     | 232 +++++++++++++++++++++++
+ .../request_dispatch_gate_unittest.cc         |  29 +++
+ 6 files changed, 368 insertions(+)
+ create mode 100644 components/aegis_access/request_dispatch_gate.cc
+ create mode 100644 components/aegis_access/request_dispatch_gate.h
+ create mode 100644 components/aegis_access/request_dispatch_gate_contract_test.h
+ create mode 100644 components/aegis_access/request_dispatch_gate_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 471a998..8978882 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -35,6 +35,14 @@ source_set("request_ownership_registry") {
+   public_deps = [ ":access_route_types" ]
+ }
+ 
++source_set("request_dispatch_gate") {
++  sources = [
++    "request_dispatch_gate.cc",
++    "request_dispatch_gate.h",
++  ]
++  public_deps = [ ":request_ownership_registry" ]
++}
++
+ source_set("aegis_access") {
+   sources = [
+     "access_proxy_route_adapter.cc",
+@@ -67,6 +75,19 @@ test("request_ownership_registry_unittests") {
+   ]
+ }
+ 
++test("request_dispatch_gate_unittests") {
++  sources = [
++    "request_dispatch_gate_contract_test.h",
++    "request_dispatch_gate_unittest.cc",
++    "request_ownership_registry_contract_test.h",
++  ]
++  deps = [
++    ":request_dispatch_gate",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("aegis_access_unittests") {
+   sources = [
+     "access_local_proxy_acceptance_unittest.cc",
+diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+index 272d4ee..c26b3b4 100644
+--- a/components/aegis_access/access_route_planner_native_test.cc
++++ b/components/aegis_access/access_route_planner_native_test.cc
+@@ -4,6 +4,7 @@
+ #include <string>
+ 
+ #include "components/aegis_access/access_route_planner_contract_test.h"
++#include "components/aegis_access/request_dispatch_gate_contract_test.h"
+ #include "components/aegis_access/request_ownership_registry_contract_test.h"
+ 
+ namespace {
+@@ -39,6 +40,8 @@ int main() {
+   aegis_access::test::RunTargetedRequestCancellationRegressionTests(observer);
+   aegis_access::test::RunRequestDispatchBarrierUnitTests(observer);
+   aegis_access::test::RunRequestDispatchBarrierRegressionTests(observer);
++  aegis_access::test::RunRequestDispatchGateUnitTests(observer);
++  aegis_access::test::RunRequestDispatchGateRegressionTests(observer);
+   if (observer.failures() != 0) {
+     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
+               << " failures, " << observer.checks() << " checks)\n";
+diff --git a/components/aegis_access/request_dispatch_gate.cc b/components/aegis_access/request_dispatch_gate.cc
+new file mode 100644
+index 0000000..befaa1c
+--- /dev/null
++++ b/components/aegis_access/request_dispatch_gate.cc
+@@ -0,0 +1,45 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/request_dispatch_gate.h"
++
++#include <utility>
++
++namespace aegis_access {
++
++RequestDispatchGateResult EvaluateAndRegisterRequestForDispatch(
++    RequestOwnershipRecord record,
++    const RequestDispatchBarrierRegistry* barriers,
++    RequestOwnershipRegistry* ownership_registry) {
++  if (!barriers || !ownership_registry) {
++    return {RequestDispatchGateStatus::kInvalidDependencies,
++            RequestDispatchDecision::kBlock,
++            RequestDispatchBarrierStatus::kInvalidRequest,
++            RequestOwnershipStatus::kInvalidRecord, std::nullopt};
++  }
++
++  const RequestDispatchEvaluationResult barrier_result =
++      barriers->EvaluateRequest(record);
++  if (barrier_result.decision != RequestDispatchDecision::kAllow ||
++      barrier_result.status != RequestDispatchBarrierStatus::kOk) {
++    const RequestDispatchGateStatus status =
++        barrier_result.status == RequestDispatchBarrierStatus::kInvalidRequest
++            ? RequestDispatchGateStatus::kInvalidRequest
++            : RequestDispatchGateStatus::kBlockedByBarrier;
++    return {status, RequestDispatchDecision::kBlock, barrier_result.status,
++            RequestOwnershipStatus::kInvalidRecord, barrier_result.barrier};
++  }
++
++  const RequestOwnershipStatus ownership_status =
++      ownership_registry->Register(std::move(record));
++  if (ownership_status != RequestOwnershipStatus::kOk) {
++    return {RequestDispatchGateStatus::kRegistrationFailed,
++            RequestDispatchDecision::kBlock, barrier_result.status,
++            ownership_status, std::nullopt};
++  }
++
++  return {RequestDispatchGateStatus::kAllowRegistered,
++          RequestDispatchDecision::kAllow, barrier_result.status,
++          RequestOwnershipStatus::kOk, std::nullopt};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/request_dispatch_gate.h b/components/aegis_access/request_dispatch_gate.h
+new file mode 100644
+index 0000000..fbb067f
+--- /dev/null
++++ b/components/aegis_access/request_dispatch_gate.h
+@@ -0,0 +1,38 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_GATE_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_GATE_H_
++
++#include <optional>
++
++#include "components/aegis_access/request_ownership_registry.h"
++
++namespace aegis_access {
++
++enum class RequestDispatchGateStatus {
++  kAllowRegistered,
++  kBlockedByBarrier,
++  kInvalidRequest,
++  kRegistrationFailed,
++  kInvalidDependencies,
++};
++
++struct RequestDispatchGateResult {
++  RequestDispatchGateStatus status =
++      RequestDispatchGateStatus::kInvalidDependencies;
++  RequestDispatchDecision decision = RequestDispatchDecision::kBlock;
++  RequestDispatchBarrierStatus barrier_status =
++      RequestDispatchBarrierStatus::kInvalidRequest;
++  RequestOwnershipStatus ownership_status =
++      RequestOwnershipStatus::kInvalidRecord;
++  std::optional<RequestDispatchBarrier> barrier;
++};
++
++RequestDispatchGateResult EvaluateAndRegisterRequestForDispatch(
++    RequestOwnershipRecord record,
++    const RequestDispatchBarrierRegistry* barriers,
++    RequestOwnershipRegistry* ownership_registry);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_GATE_H_
+diff --git a/components/aegis_access/request_dispatch_gate_contract_test.h b/components/aegis_access/request_dispatch_gate_contract_test.h
+new file mode 100644
+index 0000000..d4f596e
+--- /dev/null
++++ b/components/aegis_access/request_dispatch_gate_contract_test.h
+@@ -0,0 +1,232 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_GATE_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_GATE_CONTRACT_TEST_H_
++
++#include "components/aegis_access/request_dispatch_gate.h"
++#include "components/aegis_access/request_ownership_registry_contract_test.h"
++
++namespace aegis_access::test {
++
++namespace request_dispatch_gate_test_detail {
++
++inline void ExpectAllowRegistersOwnership(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestDispatchBarrierRegistry& barriers,
++    RequestOwnershipRegistry& ownership) {
++  const RequestOwnershipRecord allowed = DocumentOwnershipRecord("gate-unit-allow");
++  const RequestDispatchGateResult allowed_result =
++      EvaluateAndRegisterRequestForDispatch(allowed, &barriers, &ownership);
++  observer.Expect(allowed_result.status == RequestDispatchGateStatus::kAllowRegistered &&
++                      allowed_result.decision == RequestDispatchDecision::kAllow &&
++                      allowed_result.ownership_status == RequestOwnershipStatus::kOk,
++                  "dispatch gate unit registers before allow");
++  observer.Expect(ownership.Lookup(allowed.request_id, allowed.owner,
++                                   allowed.generations)
++                      .status == RequestOwnershipStatus::kOk,
++                  "dispatch gate unit allowed request is registered");
++}
++
++inline void ExpectBarrierBlocksBeforeRegistration(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestDispatchBarrierRegistry& barriers,
++    RequestOwnershipRegistry& ownership) {
++  const RequestDispatchBarrier barrier = DocumentBlockBarrier();
++  observer.Expect(barriers.InstallBlockBarrier(barrier) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "dispatch gate unit installs barrier");
++  const RequestDispatchGateResult blocked = EvaluateAndRegisterRequestForDispatch(
++      DocumentOwnershipRecord("gate-unit-blocked"), &barriers, &ownership);
++  observer.Expect(blocked.status == RequestDispatchGateStatus::kBlockedByBarrier &&
++                      blocked.decision == RequestDispatchDecision::kBlock &&
++                      blocked.barrier.has_value(),
++                  "dispatch gate unit blocks matching barrier");
++  observer.Expect(ownership.size() == 1u,
++                  "dispatch gate unit blocked request is never registered");
++}
++
++inline void ExpectMalformedRequestFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestDispatchBarrierRegistry& barriers,
++    RequestOwnershipRegistry& ownership) {
++  RequestOwnershipRecord invalid = DocumentOwnershipRecord("gate-unit-invalid");
++  invalid.generations.policy_generation = 0;
++  const RequestDispatchGateResult invalid_result =
++      EvaluateAndRegisterRequestForDispatch(invalid, &barriers, &ownership);
++  observer.Expect(invalid_result.status == RequestDispatchGateStatus::kInvalidRequest &&
++                      invalid_result.decision == RequestDispatchDecision::kBlock,
++                  "dispatch gate unit malformed request fails closed");
++}
++
++inline void ExpectPendingNavigationBlocksBeforeRegistration(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry pending_barriers(2);
++  RequestOwnershipRegistry pending_ownership(2);
++  observer.Expect(pending_barriers.InstallBlockBarrier(
++                      RequestDispatchBarrier{"pending-gate", 8,
++                                             PendingCancellationSelector()}) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "dispatch gate unit installs pending barrier");
++  observer.Expect(EvaluateAndRegisterRequestForDispatch(
++                      PendingOwnershipRecord("gate-unit-pending"),
++                      &pending_barriers, &pending_ownership)
++                      .decision == RequestDispatchDecision::kBlock &&
++                      pending_ownership.size() == 0u,
++                  "dispatch gate unit blocks pending navigation before register");
++}
++
++inline void ExpectMissingDependenciesFailClosed(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestDispatchBarrierRegistry& barriers,
++    RequestOwnershipRegistry& ownership) {
++  observer.Expect(EvaluateAndRegisterRequestForDispatch(
++                      DocumentOwnershipRecord("gate-null-barriers"), nullptr,
++                      &ownership)
++                      .status == RequestDispatchGateStatus::kInvalidDependencies,
++                  "dispatch gate unit missing barrier registry fails closed");
++  observer.Expect(EvaluateAndRegisterRequestForDispatch(
++                      DocumentOwnershipRecord("gate-null-ownership"), &barriers,
++                      nullptr)
++                      .status == RequestDispatchGateStatus::kInvalidDependencies,
++                  "dispatch gate unit missing ownership registry fails closed");
++}
++
++inline void ExpectGenerationBarrierCannotBeBypassed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  observer.Expect(barriers.InstallBlockBarrier(DocumentBlockBarrier()) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "dispatch gate regression installs generation-independent barrier");
++  RequestOwnershipRecord old_generation =
++      DocumentOwnershipRecord("gate-regression-old-generation");
++  old_generation.generations = GenerationTuple{1, 2, 3, 4, 5};
++  RequestOwnershipRecord new_generation =
++      DocumentOwnershipRecord("gate-regression-new-generation");
++  new_generation.generations = GenerationTuple{101, 102, 103, 104, 105};
++  for (const auto& record : {old_generation, new_generation}) {
++    const RequestDispatchGateResult result =
++        EvaluateAndRegisterRequestForDispatch(record, &barriers, &ownership);
++    observer.Expect(result.status == RequestDispatchGateStatus::kBlockedByBarrier &&
++                        result.decision == RequestDispatchDecision::kBlock,
++                    "dispatch gate regression generations cannot bypass barrier");
++  }
++  observer.Expect(ownership.size() == 0u,
++                  "dispatch gate regression generation bypass registers nothing");
++}
++
++inline void ExpectOwnerIsolation(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  observer.Expect(barriers.InstallBlockBarrier(DocumentBlockBarrier()) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "dispatch gate regression installs owner isolation barrier");
++  RequestOwnershipRecord other_profile =
++      DocumentOwnershipRecord("gate-regression-other-profile");
++  other_profile.owner.profile_token = "other-profile";
++  RequestOwnershipRecord other_partition =
++      DocumentOwnershipRecord("gate-regression-other-partition");
++  other_partition.owner.storage_partition_token = "other-partition";
++  for (const auto& record : {other_profile, other_partition}) {
++    const RequestDispatchGateResult result =
++        EvaluateAndRegisterRequestForDispatch(record, &barriers, &ownership);
++    observer.Expect(result.status == RequestDispatchGateStatus::kAllowRegistered &&
++                        result.decision == RequestDispatchDecision::kAllow &&
++                        ownership.Lookup(record.request_id, record.owner,
++                                         record.generations)
++                                .status == RequestOwnershipStatus::kOk,
++                    "dispatch gate regression isolates Profile and partition");
++  }
++}
++
++inline void ExpectDuplicateRegistrationFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  const RequestOwnershipRecord duplicate =
++      DocumentOwnershipRecord("gate-regression-duplicate");
++  observer.Expect(ownership.Register(duplicate) == RequestOwnershipStatus::kOk,
++                  "dispatch gate regression seeds duplicate");
++  const RequestDispatchGateResult result =
++      EvaluateAndRegisterRequestForDispatch(duplicate, &barriers, &ownership);
++  observer.Expect(result.status == RequestDispatchGateStatus::kRegistrationFailed &&
++                      result.decision == RequestDispatchDecision::kBlock &&
++                      result.ownership_status ==
++                          RequestOwnershipStatus::kDuplicateRequestId &&
++                      ownership.size() == 1u,
++                  "dispatch gate regression duplicate never falls through to allow");
++}
++
++inline void ExpectCapacityFailureFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(1);
++  observer.Expect(ownership.Register(
++                      ProfileOwnershipRecord("gate-regression-capacity-seed")) ==
++                      RequestOwnershipStatus::kOk,
++                  "dispatch gate regression fills ownership capacity");
++  const RequestDispatchGateResult result = EvaluateAndRegisterRequestForDispatch(
++      DocumentOwnershipRecord("gate-regression-capacity-new"), &barriers,
++      &ownership);
++  observer.Expect(result.status == RequestDispatchGateStatus::kRegistrationFailed &&
++                      result.decision == RequestDispatchDecision::kBlock &&
++                      result.ownership_status ==
++                          RequestOwnershipStatus::kCapacityExceeded &&
++                      ownership.size() == 1u,
++                  "dispatch gate regression capacity failure never dispatches");
++}
++
++inline void ExpectBarrierPrecedesRegistryMutation(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  const RequestOwnershipRecord existing =
++      ProfileOwnershipRecord("gate-regression-existing-background");
++  observer.Expect(ownership.Register(existing) == RequestOwnershipStatus::kOk,
++                  "dispatch gate regression seeds unrelated request");
++  observer.Expect(barriers.InstallBlockBarrier(DocumentBlockBarrier()) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "dispatch gate regression installs page barrier");
++  const RequestDispatchGateResult blocked =
++      EvaluateAndRegisterRequestForDispatch(
++          DocumentOwnershipRecord("gate-regression-blocked-new"), &barriers,
++          &ownership);
++  observer.Expect(blocked.status == RequestDispatchGateStatus::kBlockedByBarrier &&
++                      ownership.size() == 1u &&
++                      ownership.Lookup(existing.request_id, existing.owner,
++                                       existing.generations)
++                              .status == RequestOwnershipStatus::kOk,
++                  "dispatch gate regression block precedes registry mutation");
++}
++
++}  // namespace request_dispatch_gate_test_detail
++
++inline void RunRequestDispatchGateUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  request_dispatch_gate_test_detail::ExpectAllowRegistersOwnership(
++      observer, barriers, ownership);
++  request_dispatch_gate_test_detail::ExpectBarrierBlocksBeforeRegistration(
++      observer, barriers, ownership);
++  request_dispatch_gate_test_detail::ExpectMalformedRequestFailsClosed(
++      observer, barriers, ownership);
++  request_dispatch_gate_test_detail::ExpectPendingNavigationBlocksBeforeRegistration(
++      observer);
++  request_dispatch_gate_test_detail::ExpectMissingDependenciesFailClosed(
++      observer, barriers, ownership);
++}
++
++inline void RunRequestDispatchGateRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  request_dispatch_gate_test_detail::ExpectGenerationBarrierCannotBeBypassed(observer);
++  request_dispatch_gate_test_detail::ExpectOwnerIsolation(observer);
++  request_dispatch_gate_test_detail::ExpectDuplicateRegistrationFailsClosed(observer);
++  request_dispatch_gate_test_detail::ExpectCapacityFailureFailsClosed(observer);
++  request_dispatch_gate_test_detail::ExpectBarrierPrecedesRegistryMutation(observer);
++}
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_GATE_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/request_dispatch_gate_unittest.cc b/components/aegis_access/request_dispatch_gate_unittest.cc
+new file mode 100644
+index 0000000..385dbb5
+--- /dev/null
++++ b/components/aegis_access/request_dispatch_gate_unittest.cc
+@@ -0,0 +1,29 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/request_dispatch_gate_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestDispatchGateObserver : public RequestOwnershipRegistryTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(RequestDispatchGateTest, SharedUnitContract) {
++  GtestDispatchGateObserver observer;
++  RunRequestDispatchGateUnitTests(observer);
++}
++
++TEST(RequestDispatchGateRegressionTest, SharedRegressionContract) {
++  GtestDispatchGateObserver observer;
++  RunRequestDispatchGateRegressionTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
