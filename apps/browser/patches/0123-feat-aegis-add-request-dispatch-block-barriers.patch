@@ -1,15 +1,29 @@
-From 5e5ed3a5375b3f96f9c83477f45decec25f330d4 Mon Sep 17 00:00:00 2001
+From 17fb2993651683504426c5b08c189b3bd59f0d61 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
-Date: Wed, 16 Sep 2026 20:13:13 +0800
+Date: Thu, 17 Sep 2026 20:39:30 +0800
 Subject: [PATCH] feat(aegis): add request dispatch block barriers
 
 ---
+ .../access_route_planner_native_test.cc       |   2 +
  .../request_ownership_registry.cc             |  91 +++++++
  .../aegis_access/request_ownership_registry.h |  59 ++++
  ...request_ownership_registry_contract_test.h | 256 ++++++++++++++++++
  .../request_ownership_registry_unittest.cc    |  10 +
- 4 files changed, 416 insertions(+)
+ 5 files changed, 418 insertions(+)
 
+diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+index 8dbf1c4..272d4ee 100644
+--- a/components/aegis_access/access_route_planner_native_test.cc
++++ b/components/aegis_access/access_route_planner_native_test.cc
+@@ -37,6 +37,8 @@ int main() {
+   aegis_access::test::RunRequestOwnershipRegistryRegressionTests(observer);
+   aegis_access::test::RunTargetedRequestCancellationUnitTests(observer);
+   aegis_access::test::RunTargetedRequestCancellationRegressionTests(observer);
++  aegis_access::test::RunRequestDispatchBarrierUnitTests(observer);
++  aegis_access::test::RunRequestDispatchBarrierRegressionTests(observer);
+   if (observer.failures() != 0) {
+     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
+               << " failures, " << observer.checks() << " checks)\n";
 diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
 index 4beac8c..4aea22b 100644
 --- a/components/aegis_access/request_ownership_registry.cc
