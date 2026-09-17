@@ -35,6 +35,8 @@ int main() {
   aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
   aegis_access::test::RunRequestOwnershipRegistryUnitTests(observer);
   aegis_access::test::RunRequestOwnershipRegistryRegressionTests(observer);
+  aegis_access::test::RunTargetedRequestCancellationUnitTests(observer);
+  aegis_access::test::RunTargetedRequestCancellationRegressionTests(observer);
   if (observer.failures() != 0) {
     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
               << " failures, " << observer.checks() << " checks)\n";

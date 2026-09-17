@@ -82,7 +82,7 @@
 
 必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 Astra high review 审查最终实现和测试；Sol 修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
-P0 剩余：RequestOwnershipRegistry 的浏览器/导航真实适配与入口接线、同步回调外等待、批量定向在途取消、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
+P0 剩余：RequestOwnershipRegistry 的浏览器/导航真实适配与入口接线、同步回调外等待、真实 URLLoader/导航/HTTP2/HTTP3 终止句柄与新请求 dispatch barrier、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
 本切片可报告 native_unit=PASS（实际执行后）、合同子项通过；对应 A76/A108/A113/A115/A116 等只记录所覆盖的纯决策子场景，整行仍 partial/NOT_RUN，G0 仍 NOT_RUN 或明确环境 BLOCKED。P0 不因本切片通过而结束，运行/性能/部署/分发状态不提升。
 
@@ -182,6 +182,18 @@ P0 剩余：RequestOwnershipRegistry 的浏览器/导航真实适配与入口接
 测试随 feat 同步进入源码：共享 contract 同时提供 unit 与 regression 两组，standalone C++20 runner 直接编译生产 Registry 并实际执行；初次执行在仓库固定 ripgrep 15.2.0 前置下为 `PASS: aegis_access native unit (541 checks)`，其中新增 54 条检查覆盖注册/查询/dispatch/stream/complete、Profile-only 不借页面身份，以及容量溢出、重复 ID、不可信 owner、stale generation、非法 lifecycle、缺 handle、跨 Profile/StoragePartition、reentrant cancel、重复 cancel 和 late completion 等回归。GN 另提供独立 `//components/aegis_access:request_ownership_registry_unittests`，避免 Registry 的基础运行证据只能依赖 0119 后较重的 Network Service 测试目标；顺序补丁为 `0121-feat-aegis-add-request-ownership-registry.patch`，生成时 SHA-256 为 `beca127f3e49d691f5e81c7c2fd0ff3096889be66f83e1e9422bfd9268d414f5`。
 
 证据边界保持不变：本切片尚未把真实 Browser/Navigation/URLLoader request ID 与 document token、具体 URLLoader/stream cancellation handle 接入 Registry，也没有实现按站点扫描并终止 HTTP/2/HTTP/3 共享连接中的匹配 stream；这些属于下一浏览器适配/定向取消 feat。541-check standalone PASS 证明 Registry 状态机与回归合同实际运行，不代表 Chromium Network Service runtime、完整 Chrome 或 G0 已通过。
+
+## 0122：精确页面目标的定向在途取消核心
+
+2026-09-16 在 0121 Registry 基线上新增 `CancelMatchingPageTarget`。取消选择器只接受 browser-owned 的 channel/Profile/StoragePartition owner、互斥的 document 或 pending-navigation token、规范化 top-level site，以及 exact host/scheme/port。只有 `site_ownership_reliable=true` 且上述作用域全部精确匹配的请求才进入批次；Profile-only/无法唯一归属的后台请求不借当前页面身份，同一站点的其他 document、其他 Profile/StoragePartition、其他 host/scheme/port 也不被误杀。
+
+该接口有意**不把 generation tuple 放入取消选择器**。冻结 BLOCK 合同要求新 policyGeneration 发布后仍终止此前已派发的命中在途请求，且 identityGeneration 对本地 BLOCK 只用于诊断；若要求旧请求与新 BLOCK 的 generation 相等，会把正应终止的旧 generation 请求漏掉。单请求 `Lookup/Cancel` 仍保持 0121 的严格 generation 校验，只有这个 page-scoped BLOCK 批量路径按冻结语义跨 generation 匹配。
+
+批次执行先验证 selector 和所有命中 entry，再把全部命中请求一次性移出 Registry，最后才调用外部 `RequestTerminationHandle`；因此第一个终止回调发生时，同批其他命中 request ID 也已经不可见，避免重入/迟到回调观察或操作半取消批次。`kNew` 尚未派发请求只从 Registry 移除，不伪造外部终止；dispatched/streaming 请求各自调用已登记 handle 一次，重复同一 selector 返回空成功批次而不会二次终止。
+
+本 feat 同步增加独立 unit 与 regression contract，并由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 真实执行为 `PASS: aegis_access native unit (605 checks)`，较 0121 增加 64 条检查，覆盖跨 policy/identity/network generation 的命中取消、new/dispatched/streaming 结果、pending navigation、重复批次，以及其他 document/Profile/partition/background/host/scheme/port/top-level-site 隔离、无效 selector fail-closed、完整批次先删除后回调和 document/pending attribution 分离。顺序补丁为 `0122-feat-aegis-add-targeted-request-cancellation.patch`，当前 SHA-256 为 `094d29c0a26df7c05b995c1dfecc9b80515d5c6d61c9da9ecb9b3e7e0e968cf7`。
+
+证据边界：0122 完成 Registry 层的精确选择、批量原子移除和终止句柄调用合同，但仍未把真实 Browser/Navigation/URLLoader/下载/媒体/SSE/ws/wss/HTTP2/HTTP3 stream handle 接到 Registry，也没有安装 BLOCK 的新请求 dispatch barrier 或 2 秒协调预算。因此不能把 605-check standalone PASS 报告为真实浏览器在途取消或 G0 PASS；下一 feat 应把这些 browser-owned handle/派发入口接到 0121/0122 已冻结的 Registry API。
 
 ## 回滚
 
