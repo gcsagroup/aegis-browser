@@ -35,6 +35,14 @@ source_set("request_ownership_registry") {
   public_deps = [ ":access_route_types" ]
 }
 
+source_set("request_dispatch_gate") {
+  sources = [
+    "request_dispatch_gate.cc",
+    "request_dispatch_gate.h",
+  ]
+  public_deps = [ ":request_ownership_registry" ]
+}
+
 source_set("aegis_access") {
   sources = [
     "access_proxy_route_adapter.cc",
@@ -62,6 +70,19 @@ test("request_ownership_registry_unittests") {
   ]
   deps = [
     ":request_ownership_registry",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("request_dispatch_gate_unittests") {
+  sources = [
+    "request_dispatch_gate_contract_test.h",
+    "request_dispatch_gate_unittest.cc",
+    "request_ownership_registry_contract_test.h",
+  ]
+  deps = [
+    ":request_dispatch_gate",
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]

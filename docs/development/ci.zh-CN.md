@@ -82,7 +82,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 | --- | --- | --- |
 | TypeScript | `packages/core/src` 的 28 个生产 `.ts`；同次 Vitest 170 项单测 | LCOV、JSON summary、text；所有未执行生产文件仍进分母。Access 的 TS vectors 只校验共享结构，不等价于 C++ 行为覆盖。 |
 | JavaScript | `scripts/ci`、core 工具与 `apps/browser/scripts` 中受控的 Node `.js/.mjs/.cjs` | c8 从同次 Node 子进程的 V8 数据生成报告，并用 `--all` 纳入未执行生产脚本；renderer/WebUI JavaScript 未测。 |
-| C++ | `aegis_access` standalone 的 `access_route_planner.cc`、`site_proxy_rule_group.cc` 与 `request_ownership_registry.cc` | 同次 native binary 执行路由/协议组合同以及 RequestOwnershipRegistry 单元与回归合同，并使用匹配 clang/llvm profile 生成 LCOV；完整 Chromium、GURL/SQLite、GN/GTest 和浏览器集成证据仍单独记录。 |
+| C++ | `aegis_access` standalone 的 `access_route_planner.cc`、`site_proxy_rule_group.cc`、`request_ownership_registry.cc` 与 `request_dispatch_gate.cc` | 同次 native binary 执行路由/协议组合同、RequestOwnershipRegistry 以及 dispatch gate 的单元与回归合同，并使用匹配 clang/llvm profile 生成 LCOV；完整 Chromium、GURL/SQLite、GN/GTest 和浏览器集成证据仍单独记录。 |
 | Python | `local-pypi-proxy.py` 与两个 Access vector generators | 固定 coverage.py 隔离 venv；复用 proxy 4 项测试和 native 生成器调用，另有两个拒绝 fixture，combine 后生成 XML/JSON/LCOV/text；两个 prototype worker 未测。 |
 | Swift | `apps/ios` 的 25 个产品 Swift 文件 | 独立 `iOS Coverage` workflow 在双 Simulator 上生成 xccov JSON，状态为 `MANUAL_REPORTING_WORKFLOW`；它不属于当前 macOS 必需门，也不是实机、签名或发布证据，Codacy 转换仍待办。 |
 | Bash / PowerShell | 手动 Linux kcov 与 Windows Pester coverage jobs | 只代表列明脚本的行为/行覆盖；macOS 专属 shell 分支和真实 Windows UI 仍按报告列为未测。 |
