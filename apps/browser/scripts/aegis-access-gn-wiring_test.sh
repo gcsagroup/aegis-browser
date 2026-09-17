@@ -15,6 +15,7 @@ NETWORK_ACCEPTANCE_PATCH_FILE="$BROWSER_DIR/patches/0119-test-aegis-local-proxy-
 CPP_REGRESSION_PATCH_FILE="$BROWSER_DIR/patches/0120-test-aegis-expand-access-cpp-regressions.patch"
 OWNERSHIP_PATCH_FILE="$BROWSER_DIR/patches/0121-feat-aegis-add-request-ownership-registry.patch"
 TARGETED_CANCEL_PATCH_FILE="$BROWSER_DIR/patches/0122-feat-aegis-add-targeted-request-cancellation.patch"
+DISPATCH_BARRIER_PATCH_FILE="$BROWSER_DIR/patches/0123-feat-aegis-add-request-dispatch-block-barriers.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
@@ -94,6 +95,14 @@ rg -Fq 'RunTargetedRequestCancellationUnitTests' "$TARGETED_CANCEL_PATCH_FILE" |
   fail "patch 0122 does not carry targeted cancellation unit coverage"
 rg -Fq 'RunTargetedRequestCancellationRegressionTests' "$TARGETED_CANCEL_PATCH_FILE" ||
   fail "patch 0122 does not carry targeted cancellation regression coverage"
+rg -Fq 'class RequestDispatchBarrierRegistry' "$DISPATCH_BARRIER_PATCH_FILE" ||
+  fail "patch 0123 does not deliver the dispatch barrier registry"
+rg -Fq 'InstallBlockBarrier' "$DISPATCH_BARRIER_PATCH_FILE" ||
+  fail "patch 0123 does not deliver synchronous barrier installation"
+rg -Fq 'RunRequestDispatchBarrierUnitTests' "$DISPATCH_BARRIER_PATCH_FILE" ||
+  fail "patch 0123 does not carry dispatch barrier unit coverage"
+rg -Fq 'RunRequestDispatchBarrierRegressionTests' "$DISPATCH_BARRIER_PATCH_FILE" ||
+  fail "patch 0123 does not carry dispatch barrier regression coverage"
 [[ "$(rg -F -c '0114-feat-aegis-add-access-route-planning-contract.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0114 must appear once in series"
 [[ "$(rg -F -c '0115-feat-aegis-add-trusted-policy-context-matching.patch' \
@@ -110,30 +119,35 @@ rg -Fq 'RunTargetedRequestCancellationRegressionTests' "$TARGETED_CANCEL_PATCH_F
   "$SERIES_FILE")" == 1 ]] || fail "0121 must appear once in series"
 [[ "$(rg -F -c '0122-feat-aegis-add-targeted-request-cancellation.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0122 must appear once in series"
-[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(rg -F -c '0123-feat-aegis-add-request-dispatch-block-barriers.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0123 must appear once in series"
+[[ "$(tail -n 9 "$SERIES_FILE" | head -n 1)" == \
   "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
   fail "patch 0115 must immediately precede patch 0116"
-[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
   "0116-feat-aegis-add-access-rule-store-recovery.patch" ]] ||
   fail "patch 0116 must immediately precede patch 0117"
-[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
   "0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch" ]] ||
   fail "patch 0117 must immediately precede patch 0118"
-[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
   "0118-feat-aegis-bind-profile-network-context-proxy.patch" ]] ||
   fail "patch 0118 must immediately precede patch 0119"
-[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
   "0119-test-aegis-local-proxy-network-acceptance.patch" ]] ||
   fail "patch 0119 must immediately precede patch 0120"
-[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
   "0120-test-aegis-expand-access-cpp-regressions.patch" ]] ||
   fail "patch 0120 must immediately precede patch 0121"
-[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
   "0121-feat-aegis-add-request-ownership-registry.patch" ]] ||
   fail "patch 0121 must immediately precede patch 0122"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
+[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
   "0122-feat-aegis-add-targeted-request-cancellation.patch" ]] ||
-  fail "patch 0122 must be the current series tail"
+  fail "patch 0122 must immediately precede patch 0123"
+[[ "$(tail -n 1 "$SERIES_FILE")" == \
+  "0123-feat-aegis-add-request-dispatch-block-barriers.patch" ]] ||
+  fail "patch 0123 must be the current series tail"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
