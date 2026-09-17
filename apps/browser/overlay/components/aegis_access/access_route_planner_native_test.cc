@@ -4,10 +4,12 @@
 #include <string>
 
 #include "components/aegis_access/access_route_planner_contract_test.h"
+#include "components/aegis_access/request_ownership_registry_contract_test.h"
 
 namespace {
 
-class NativeObserver : public aegis_access::test::ContractTestObserver {
+class NativeObserver : public aegis_access::test::ContractTestObserver,
+                       public aegis_access::test::RequestOwnershipRegistryTestObserver {
  public:
   void Expect(bool condition, const std::string& label) override {
     ++checks_;
@@ -31,6 +33,12 @@ int main() {
   NativeObserver observer;
   aegis_access::test::RunRoutePlannerContractTests(observer);
   aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
+  aegis_access::test::RunRequestOwnershipRegistryUnitTests(observer);
+  aegis_access::test::RunRequestOwnershipRegistryRegressionTests(observer);
+  aegis_access::test::RunTargetedRequestCancellationUnitTests(observer);
+  aegis_access::test::RunTargetedRequestCancellationRegressionTests(observer);
+  aegis_access::test::RunRequestDispatchBarrierUnitTests(observer);
+  aegis_access::test::RunRequestDispatchBarrierRegressionTests(observer);
   if (observer.failures() != 0) {
     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
               << " failures, " << observer.checks() << " checks)\n";
