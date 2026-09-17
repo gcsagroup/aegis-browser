@@ -35,5 +35,15 @@ TEST(TargetedRequestCancellationRegressionTest, SharedRegressionContract) {
   RunTargetedRequestCancellationRegressionTests(observer);
 }
 
+TEST(RequestDispatchBarrierTest, SharedUnitContract) {
+  GtestOwnershipObserver observer;
+  RunRequestDispatchBarrierUnitTests(observer);
+}
+
+TEST(RequestDispatchBarrierRegressionTest, SharedRegressionContract) {
+  GtestOwnershipObserver observer;
+  RunRequestDispatchBarrierRegressionTests(observer);
+}
+
 }  // namespace
 }  // namespace aegis_access::test

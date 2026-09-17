@@ -121,3 +121,4 @@
 0120-test-aegis-expand-access-cpp-regressions.patch
 0121-feat-aegis-add-request-ownership-registry.patch
 0122-feat-aegis-add-targeted-request-cancellation.patch
+0123-feat-aegis-add-request-dispatch-block-barriers.patch
