@@ -48,6 +48,8 @@
 
 上游公开 PR 使用同一套仓库指令，但 GitHub Copilot 自动 Review 的服务端策略独立配置在 `gcsagroup/aegis-browser`，仅针对上游 `main` 的 PR；推荐每次新 push 自动复审、Draft 不自动 Review，并保持 Copilot approval 不计入必需审批。这样 Copilot 提供第二视角，但不会获得绕过人工与确定性门禁的合并权。
 
+PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经是非 `release` 的 Conventional Commit 标题时保持人工标题；标题为 `release: ...` 或非 Conventional 格式时，从 PR 提交消息（含 squash/merge commit body）提取候选：优先最后一个 `feat(...)`，没有 feature 时使用最后一个非 `release` Conventional Commit，并移除末尾 `(#123)`。找不到明确候选时不改标题。该 workflow 使用 `pull_request_target` 只为更新 PR 元数据，固定 checkout 目标分支的 base SHA、关闭凭据持久化，禁止执行 PR head 代码或读取仓库 secret。
+
 ## 分支职责与日常路径
 
 个人 Fork 的 GitHub 默认分支为 `main`，用于仓库默认入口、对外展示和公开晋升；开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
