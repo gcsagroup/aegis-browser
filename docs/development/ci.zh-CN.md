@@ -32,6 +32,22 @@
 
 所有 `feat(...)` 功能 PR 都必须在同一 PR 内同时交付两类可执行测试：**单元测试**直接验证新增逻辑、边界和错误返回；**回归测试**固定至少一个既有安全/兼容性不变量或本功能可能重新引入的历史故障。两类测试都必须在最终 HEAD 实际执行并通过，缺任一类不得合并；不能以静态字符串检查、仅编译通过、增加 mock 数量或其他模块的既有测试代替。若改动实际上只有文档，应使用 `docs(...)` 而不是用 `feat(...)` 绕过该门槛。
 
+## Codex + GitHub Copilot + Codacy 三层职责
+
+三层工具各自负责不同证据，不能互相替代：
+
+| 层 | 主要职责 | 不能替代 |
+| --- | --- | --- |
+| Codex | 设计、实现、修复、测试执行、按本指南准备 PR 与证据 | 独立 Review、托管 CI、Codacy 服务端分析、GitHub 服务端保护 |
+| GitHub Copilot code review | 在 GitHub PR 上读取项目上下文做语义 Review，重点发现行为、接口、安全/隐私、状态机、测试缺口和治理问题 | Codacy 的确定性扫描、独立 reviewer、必需检查、人类审批 |
+| Codacy Production | 静态质量与安全规则、复杂度/重复代码及已接入指标的持续分析 | 业务语义 Review、真实运行测试、Chromium/设备/签名/发布证据 |
+
+仓库级 Copilot 规则放在 `.github/copilot-instructions.md`；对 CI/治理文件的额外约束放在 `.github/instructions/ci-governance.instructions.md`。Copilot 应优先报告可复现的语义问题，不重复低价值格式噪音。服务端是否启用自动 Review、是否在每次 push 后复审、是否允许 Copilot approval 计入合并条件，都必须从 GitHub 实时回读，不能由这些 Markdown 文件推断。
+
+日常 `develop` 路径为：Codex 在隔离分支实现并跑最终 HEAD 本地门 → GitHub PR 上进行 Copilot Review 与独立 Review → `quality-gate`、Codacy 和实际保护条件分别核验 → 合并到 `develop` → 再核验 S 的真实 push CI。任一 Review 或门禁发现问题都回到原实现者修复，新的 HEAD 使旧 Review/检查证据失效时必须重新覆盖。
+
+上游公开 PR 使用同一套仓库指令，但 GitHub Copilot 自动 Review 的服务端策略独立配置在 `gcsagroup/aegis-browser`，仅针对上游 `main` 的 PR；推荐每次新 push 自动复审、Draft 不自动 Review，并保持 Copilot approval 不计入必需审批。这样 Copilot 提供第二视角，但不会获得绕过人工与确定性门禁的合并权。
+
 ## 分支职责与日常路径
 
 个人 Fork 的 GitHub 默认分支为 `main`，用于仓库默认入口、对外展示和公开晋升；开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
