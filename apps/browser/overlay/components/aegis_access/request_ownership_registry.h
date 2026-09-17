@@ -99,6 +99,65 @@ struct RequestOwnershipBatchCancelResult {
   std::vector<RequestOwnershipTerminalResult> cancellations;
 };
 
+enum class RequestDispatchDecision {
+  kAllow,
+  kBlock,
+};
+
+enum class RequestDispatchBarrierStatus {
+  kOk,
+  kInvalidBarrier,
+  kCapacityExceeded,
+  kStaleOperation,
+  kNotFound,
+  kInvalidRequest,
+};
+
+// A BLOCK barrier is installed synchronously before persistence, remote work or
+// cancellation acknowledgements. operation_sequence is the browser-owned
+// operationSequence from the frozen BLOCK contract; it is deliberately
+// independent of request GenerationTuple so a new BLOCK also catches requests
+// created under older generations.
+struct RequestDispatchBarrier {
+  std::string operation_id;
+  uint64_t operation_sequence = 0;
+  RequestCancellationSelector selector;
+};
+
+struct RequestDispatchEvaluationResult {
+  RequestDispatchBarrierStatus status = RequestDispatchBarrierStatus::kOk;
+  RequestDispatchDecision decision = RequestDispatchDecision::kAllow;
+  std::optional<RequestDispatchBarrier> barrier;
+};
+
+// Temporary/local BLOCK barriers used by browser-owned dispatch entry points.
+// Failures and timeouts do not need a special "keep" transition: a barrier
+// remains installed until the exact owning operation explicitly releases it.
+class RequestDispatchBarrierRegistry {
+ public:
+  explicit RequestDispatchBarrierRegistry(size_t max_barriers);
+  RequestDispatchBarrierRegistry(const RequestDispatchBarrierRegistry&) = delete;
+  RequestDispatchBarrierRegistry& operator=(
+      const RequestDispatchBarrierRegistry&) = delete;
+  ~RequestDispatchBarrierRegistry();
+
+  RequestDispatchBarrierStatus InstallBlockBarrier(
+      RequestDispatchBarrier barrier);
+  RequestDispatchEvaluationResult EvaluateRequest(
+      const RequestOwnershipRecord& record) const;
+  RequestDispatchBarrierStatus ReleaseBlockBarrier(
+      const RequestCancellationSelector& selector,
+      const std::string& operation_id,
+      uint64_t operation_sequence);
+
+  size_t size() const { return barriers_.size(); }
+  size_t max_barriers() const { return max_barriers_; }
+
+ private:
+  size_t max_barriers_;
+  std::vector<RequestDispatchBarrier> barriers_;
+};
+
 // Bounded request ownership state. Every mutable operation rechecks the exact
 // owner and generation tuple supplied by the browser caller. Mismatches never
 // consume or replace the registered entry. Terminal operations erase the entry

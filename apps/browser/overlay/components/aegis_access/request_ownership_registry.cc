@@ -98,6 +98,21 @@ bool MatchesSelector(const RequestOwnershipRecord& record,
          record.pending_navigation_token == selector.pending_navigation_token;
 }
 
+bool SameSelector(const RequestCancellationSelector& left,
+                  const RequestCancellationSelector& right) {
+  return left.owner == right.owner &&
+         left.document_token == right.document_token &&
+         left.pending_navigation_token == right.pending_navigation_token &&
+         left.top_level_site == right.top_level_site &&
+         left.exact_host == right.exact_host && left.scheme == right.scheme &&
+         left.port == right.port;
+}
+
+bool IsValidBarrier(const RequestDispatchBarrier& barrier) {
+  return !barrier.operation_id.empty() && barrier.operation_sequence != 0 &&
+         IsValidSelector(barrier.selector);
+}
+
 RequestOwnershipStatus ValidateExpected(
     const RequestOwnershipRecord& record,
     const OwnershipKey& expected_owner,
@@ -112,6 +127,82 @@ RequestOwnershipStatus ValidateExpected(
 }
 
 }  // namespace
+
+RequestDispatchBarrierRegistry::RequestDispatchBarrierRegistry(
+    size_t max_barriers)
+    : max_barriers_(max_barriers) {}
+
+RequestDispatchBarrierRegistry::~RequestDispatchBarrierRegistry() = default;
+
+RequestDispatchBarrierStatus
+RequestDispatchBarrierRegistry::InstallBlockBarrier(
+    RequestDispatchBarrier barrier) {
+  if (!IsValidBarrier(barrier)) {
+    return RequestDispatchBarrierStatus::kInvalidBarrier;
+  }
+
+  for (auto& existing : barriers_) {
+    if (!SameSelector(existing.selector, barrier.selector)) {
+      continue;
+    }
+    if (existing.operation_sequence == barrier.operation_sequence &&
+        existing.operation_id == barrier.operation_id) {
+      return RequestDispatchBarrierStatus::kOk;
+    }
+    if (barrier.operation_sequence <= existing.operation_sequence) {
+      return RequestDispatchBarrierStatus::kStaleOperation;
+    }
+    existing = std::move(barrier);
+    return RequestDispatchBarrierStatus::kOk;
+  }
+
+  if (barriers_.size() >= max_barriers_) {
+    return RequestDispatchBarrierStatus::kCapacityExceeded;
+  }
+  barriers_.push_back(std::move(barrier));
+  return RequestDispatchBarrierStatus::kOk;
+}
+
+RequestDispatchEvaluationResult
+RequestDispatchBarrierRegistry::EvaluateRequest(
+    const RequestOwnershipRecord& record) const {
+  if (!IsValidRecord(record)) {
+    return {RequestDispatchBarrierStatus::kInvalidRequest,
+            RequestDispatchDecision::kBlock, std::nullopt};
+  }
+  for (const auto& barrier : barriers_) {
+    if (MatchesSelector(record, barrier.selector)) {
+      return {RequestDispatchBarrierStatus::kOk,
+              RequestDispatchDecision::kBlock, barrier};
+    }
+  }
+  return {RequestDispatchBarrierStatus::kOk,
+          RequestDispatchDecision::kAllow, std::nullopt};
+}
+
+RequestDispatchBarrierStatus
+RequestDispatchBarrierRegistry::ReleaseBlockBarrier(
+    const RequestCancellationSelector& selector,
+    const std::string& operation_id,
+    uint64_t operation_sequence) {
+  if (!IsValidSelector(selector) || operation_id.empty() ||
+      operation_sequence == 0) {
+    return RequestDispatchBarrierStatus::kInvalidBarrier;
+  }
+
+  for (auto it = barriers_.begin(); it != barriers_.end(); ++it) {
+    if (!SameSelector(it->selector, selector)) {
+      continue;
+    }
+    if (it->operation_sequence != operation_sequence ||
+        it->operation_id != operation_id) {
+      return RequestDispatchBarrierStatus::kStaleOperation;
+    }
+    barriers_.erase(it);
+    return RequestDispatchBarrierStatus::kOk;
+  }
+  return RequestDispatchBarrierStatus::kNotFound;
+}
 
 RequestOwnershipRegistry::RequestOwnershipRegistry(size_t max_entries)
     : max_entries_(max_entries) {}

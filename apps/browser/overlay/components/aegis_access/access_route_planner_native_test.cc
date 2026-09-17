@@ -37,6 +37,8 @@ int main() {
   aegis_access::test::RunRequestOwnershipRegistryRegressionTests(observer);
   aegis_access::test::RunTargetedRequestCancellationUnitTests(observer);
   aegis_access::test::RunTargetedRequestCancellationRegressionTests(observer);
+  aegis_access::test::RunRequestDispatchBarrierUnitTests(observer);
+  aegis_access::test::RunRequestDispatchBarrierRegressionTests(observer);
   if (observer.failures() != 0) {
     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
               << " failures, " << observer.checks() << " checks)\n";
