@@ -1,0 +1,10 @@
+// Copyright 2026 GCSA
+
+#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_CONTRACT_TEST_H_
+#define COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_CONTRACT_TEST_H_
+
+#include "components/aegis_access/request_cancellation_contract_test.h"
+#include "components/aegis_access/request_dispatch_barrier_contract_test.h"
+#include "components/aegis_access/request_ownership_registry_unit_test.h"
+
+#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_CONTRACT_TEST_H_
