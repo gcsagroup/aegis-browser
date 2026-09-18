@@ -399,6 +399,12 @@ rg -Fq 'ReleaseBlockBarrierForReadyPublication' "$POLICY_PUBLICATION_ACK_PATCH_F
 rg -Fq 'RealCustomProxyConfigCallbackAcknowledgesPublication' \
   "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
   fail "patch 0137 must test the real NetworkContext ACK callback"
+rg -Fq 'std::move(all_clients_settled).Run(false)' \
+  "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must settle immediate NetworkContext ACK failures"
+rg -Fq 'MissingNetworkTransportFailsPublicationImmediately' \
+  "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must fail publication when NetworkContext ACK cannot start"
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi

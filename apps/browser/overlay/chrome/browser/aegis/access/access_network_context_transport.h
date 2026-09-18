@@ -139,6 +139,10 @@ class AccessNetworkContextTransport
       const aegis_access::RegisteredProxyEndpoint& endpoint) const;
   network::mojom::CustomProxyConfigPtr BuildConfig(
       const PartitionState& state) const;
+  void UpdateClientConfigs(
+      PartitionState& state,
+      const network::mojom::CustomProxyConfigPtr& config,
+      base::OnceCallback<void(bool)> all_clients_settled);
   void Broadcast(PartitionState& state);
 
   std::string runtime_profile_token_;

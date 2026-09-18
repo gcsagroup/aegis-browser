@@ -30,6 +30,18 @@ test('strict LCOV validation still rejects line-summary mismatches', () => {
   );
 });
 
+test('LCOV parser rejects Windows-style source separators', () => {
+  const source = lcovRecord({lf: 1, lh: 1, da: [[1, 1]]})
+    .replace(
+      `SF:${sourcePath}`,
+      'SF:scripts\\\\ci\\\\validate-coverage.mjs',
+    );
+  assert.throws(
+    () => parseLcov(source, repoRoot),
+    /unsafe source path/u,
+  );
+});
+
 test('LLVM LCOV mode accepts a line-summary superset', () => {
   const source = lcovRecord({lf: 2, lh: 2, da: [[1, 1]]});
   const parsed = parseLcov(source, repoRoot, {

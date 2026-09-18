@@ -311,7 +311,8 @@ TEST_F(AccessNetworkContextTransportTest,
           [](std::optional<bool>* value, bool success) { *value = success; },
           &no_client_callback));
   EXPECT_EQ(no_client.status, AccessNetworkConfigAckStatus::kNoClients);
-  EXPECT_FALSE(no_client_callback.has_value());
+  ASSERT_TRUE(no_client_callback.has_value());
+  EXPECT_FALSE(*no_client_callback);
 }
 
 TEST_F(AccessNetworkContextTransportTest,
@@ -331,7 +332,8 @@ TEST_F(AccessNetworkContextTransportTest,
           [](std::optional<bool>* value, bool success) { *value = success; },
           &settled));
   EXPECT_EQ(forged_result.status, AccessNetworkConfigAckStatus::kInvalidOwner);
-  EXPECT_FALSE(settled.has_value());
+  ASSERT_TRUE(settled.has_value());
+  EXPECT_FALSE(*settled);
 }
 
 TEST_F(AccessNetworkContextTransportTest,

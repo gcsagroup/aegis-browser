@@ -149,13 +149,19 @@ AccessRequestDispatchState::RequestNetworkContextPublicationAck(
   AccessNetworkContextTransport* transport =
       AccessNetworkContextTransport::Get(profile_);
   if (!transport) {
+    publication_acks_.MarkFailed(identity);
     return {AccessNetworkConfigAckStatus::kMissingTransport, 0};
   }
-  return transport->RepublishCurrentConfigWithAck(
-      owner,
-      base::BindOnce(
-          &AccessRequestDispatchState::OnNetworkContextPublicationAck,
-          weak_factory_.GetWeakPtr(), identity));
+  AccessNetworkConfigAckResult result =
+      transport->RepublishCurrentConfigWithAck(
+          owner,
+          base::BindOnce(
+              &AccessRequestDispatchState::OnNetworkContextPublicationAck,
+              weak_factory_.GetWeakPtr(), identity));
+  if (result.status != AccessNetworkConfigAckStatus::kStarted) {
+    publication_acks_.MarkFailed(identity);
+  }
+  return result;
 }
 
 void AccessRequestDispatchState::OnNetworkContextPublicationAck(

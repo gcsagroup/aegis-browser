@@ -60,6 +60,89 @@ export function parseCoverageSummary(source, label = 'coverage-summary.json') {
   return total;
 }
 
+function parseLcovLineCoverage(lines, allowLineSummarySuperset) {
+  const dataLines = lines.filter((line) => line.startsWith('DA:'));
+  const lfLines = lines.filter((line) => line.startsWith('LF:'));
+  const lhLines = lines.filter((line) => line.startsWith('LH:'));
+  if (lfLines.length !== 1 || lhLines.length !== 1) {
+    fail('lcov.info contains an invalid record');
+  }
+
+  const total = Number(lfLines[0].slice(3));
+  const covered = Number(lhLines[0].slice(3));
+  if (
+    !Number.isInteger(total) || total < 0 ||
+    !Number.isInteger(covered) || covered < 0 || covered > total
+  ) {
+    fail('lcov.info contains invalid line totals');
+  }
+
+  const seenLines = new Set();
+  let reportedCovered = 0;
+  for (const line of dataLines) {
+    const match = /^DA:(\d+),(\d+)(?:,.*)?$/u.exec(line);
+    if (!match || Number(match[1]) < 1 || seenLines.has(match[1])) {
+      fail('lcov.info contains invalid or duplicate DA data');
+    }
+    seenLines.add(match[1]);
+    if (Number(match[2]) > 0) reportedCovered += 1;
+  }
+
+  const reportedUncovered = seenLines.size - reportedCovered;
+  const summaryUncovered = total - covered;
+  if (allowLineSummarySuperset) {
+    if (
+      seenLines.size > total ||
+      reportedCovered > covered ||
+      reportedUncovered !== summaryUncovered
+    ) {
+      fail('lcov.info DA data exceeds line summary totals');
+    }
+  } else if (seenLines.size !== total || reportedCovered !== covered) {
+    fail('lcov.info line totals do not match DA data');
+  }
+
+  return {total, covered};
+}
+
+function parseLcovMetricCoverage(lines, totalPrefix, coveredPrefix, metric) {
+  const totalLines = lines.filter((line) => line.startsWith(totalPrefix));
+  const coveredLines = lines.filter((line) => line.startsWith(coveredPrefix));
+  if (totalLines.length !== 1 || coveredLines.length !== 1) {
+    fail(`lcov.info contains invalid ${metric} totals`);
+  }
+  const total = Number(totalLines[0].slice(totalPrefix.length));
+  const covered = Number(coveredLines[0].slice(coveredPrefix.length));
+  if (
+    !Number.isInteger(total) || total < 0 ||
+    !Number.isInteger(covered) || covered < 0 || covered > total
+  ) {
+    fail(`lcov.info contains invalid ${metric} totals`);
+  }
+  return {total, covered};
+}
+
+function recordLcovSource(lines, sourceRoot, files) {
+  const sourceLines = lines.filter((line) => line.startsWith('SF:'));
+  if (sourceLines.length !== 1) fail('lcov.info contains an invalid record');
+  const path = sourceLines[0].slice(3);
+  if (
+    !path || isAbsolute(path) || path.includes('\\') ||
+    path.split('/').includes('..') || posix.normalize(path) !== path
+  ) {
+    fail(`lcov.info contains an unsafe source path: ${path}`);
+  }
+  const absolute = resolve(repoRoot, path);
+  if (!isInside(sourceRoot, absolute)) {
+    fail(`lcov.info source is outside the production scope: ${path}`);
+  }
+  if (!existsSync(absolute) || !statSync(absolute).isFile()) {
+    fail(`lcov.info source does not exist: ${path}`);
+  }
+  if (files.has(path)) fail(`lcov.info repeats source: ${path}`);
+  files.add(path);
+}
+
 export function parseLcov(
   source,
   sourceRoot,
@@ -76,66 +159,27 @@ export function parseLcov(
     functions: {total: 0, covered: 0},
     branches: {total: 0, covered: 0},
   };
+
   for (const record of records) {
     const lines = record.trim().split('\n');
-    const sourceLines = lines.filter((line) => line.startsWith('SF:'));
-    const dataLines = lines.filter((line) => line.startsWith('DA:'));
-    const lfLines = lines.filter((line) => line.startsWith('LF:'));
-    const lhLines = lines.filter((line) => line.startsWith('LH:'));
-    if (sourceLines.length !== 1 || lfLines.length !== 1 || lhLines.length !== 1) {
-      fail('lcov.info contains an invalid record');
-    }
-    const lf = Number(lfLines[0].slice(3));
-    const lh = Number(lhLines[0].slice(3));
-    if (!Number.isInteger(lf) || lf < 0 || !Number.isInteger(lh) || lh < 0 || lh > lf) fail('lcov.info contains invalid line totals');
-    const seenLines = new Set();
-    let coveredLines = 0;
-    for (const line of dataLines) {
-      const match = /^DA:(\d+),(\d+)(?:,.*)?$/u.exec(line);
-      if (!match || Number(match[1]) < 1 || seenLines.has(match[1])) fail('lcov.info contains invalid or duplicate DA data');
-      seenLines.add(match[1]);
-      if (Number(match[2]) > 0) coveredLines += 1;
-    }
-    if (allowLineSummarySuperset) {
-      const reportedUncovered = seenLines.size - coveredLines;
-      const summaryUncovered = lf - lh;
-      if (
-        seenLines.size > lf ||
-        coveredLines > lh ||
-        reportedUncovered !== summaryUncovered
-      ) {
-        fail('lcov.info DA data exceeds line summary totals');
-      }
-    } else if (seenLines.size !== lf || coveredLines !== lh) {
-      fail('lcov.info line totals do not match DA data');
-    }
-    totals.lines.total += lf;
-    totals.lines.covered += lh;
+    const lineCoverage =
+      parseLcovLineCoverage(lines, allowLineSummarySuperset);
+    totals.lines.total += lineCoverage.total;
+    totals.lines.covered += lineCoverage.covered;
+
     for (const [totalPrefix, coveredPrefix, metric] of [
       ['FNF:', 'FNH:', 'functions'],
       ['BRF:', 'BRH:', 'branches'],
     ]) {
-      const totalLines = lines.filter((line) => line.startsWith(totalPrefix));
-      const coveredMetricLines = lines.filter((line) => line.startsWith(coveredPrefix));
-      if (totalLines.length !== 1 || coveredMetricLines.length !== 1) fail(`lcov.info contains invalid ${metric} totals`);
-      const total = Number(totalLines[0].slice(totalPrefix.length));
-      const covered = Number(coveredMetricLines[0].slice(coveredPrefix.length));
-      if (!Number.isInteger(total) || total < 0 || !Number.isInteger(covered) || covered < 0 || covered > total) {
-        fail(`lcov.info contains invalid ${metric} totals`);
-      }
-      totals[metric].total += total;
-      totals[metric].covered += covered;
+      const coverage =
+        parseLcovMetricCoverage(lines, totalPrefix, coveredPrefix, metric);
+      totals[metric].total += coverage.total;
+      totals[metric].covered += coverage.covered;
     }
-    const path = sourceLines[0].slice(3);
-    if (!path || isAbsolute(path) || path.includes('\\') || path.split('/').includes('..') || posix.normalize(path) !== path) {
-      fail(`lcov.info contains an unsafe source path: ${path}`);
-    }
-    const absolute = resolve(repoRoot, path);
-    if (!isInside(sourceRoot, absolute)) fail(`lcov.info source is outside the production scope: ${path}`);
-    if (!existsSync(absolute) || !statSync(absolute).isFile()) fail(`lcov.info source does not exist: ${path}`);
-    if (files.has(path)) fail(`lcov.info repeats source: ${path}`);
-    files.add(path);
+
+    recordLcovSource(lines, sourceRoot, files);
   }
+
   for (const metric of Object.values(totals)) {
     metric.pct = metric.total === 0 ? 100 : Math.floor((metric.covered / metric.total) * 10000) / 100;
   }
