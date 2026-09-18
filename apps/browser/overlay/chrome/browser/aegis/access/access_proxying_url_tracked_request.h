@@ -13,6 +13,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
+#include "url/gurl.h"
 
 namespace net {
 struct MutableNetworkTrafficAnnotationTag;
@@ -45,6 +46,7 @@ class AccessProxyingURLTrackedRequest final
   ~AccessProxyingURLTrackedRequest() override;
 
   base::WeakPtr<AccessProxyingURLTrackedRequest> GetWeakPtr();
+  aegis_access::RequestOwnershipStatus MarkDispatched();
 
   void Start(
       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
@@ -77,13 +79,15 @@ class AccessProxyingURLTrackedRequest final
   void OnComplete(const network::URLLoaderCompletionStatus& status) override;
 
  private:
+  bool RebindOwnershipForRedirect(const GURL& follow_url);
   void OnBindingError();
   void FailClosed(bool complete_registry);
   void Finish(bool complete_registry);
 
   const raw_ptr<AccessProxyingURLLoaderFactory> factory_;
   const raw_ptr<AccessRequestDispatchState> dispatch_state_;
-  const aegis_access::RequestOwnershipRecord ownership_record_;
+  aegis_access::RequestOwnershipRecord ownership_record_;
+  std::optional<GURL> pending_redirect_url_;
   bool ownership_registered_ = true;
   bool finished_ = false;
 
