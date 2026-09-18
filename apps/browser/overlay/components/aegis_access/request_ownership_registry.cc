@@ -290,16 +290,31 @@ RequestOwnershipStatus RequestOwnershipRegistry::MarkStreaming(
   return RequestOwnershipStatus::kOk;
 }
 
+RequestOwnershipStatus RequestOwnershipRegistry::FindAndValidateEntry(
+    const std::string& request_id,
+    const OwnershipKey& expected_owner,
+    const GenerationTuple& expected_generations,
+    Entry** entry) {
+  auto it = entries_.find(request_id);
+  if (it == entries_.end()) {
+    return RequestOwnershipStatus::kNotFound;
+  }
+  const RequestOwnershipStatus status = ValidateExpected(
+      it->second.record, expected_owner, expected_generations);
+  if (status != RequestOwnershipStatus::kOk) {
+    return status;
+  }
+  *entry = &it->second;
+  return RequestOwnershipStatus::kOk;
+}
+
 RequestOwnershipTerminalResult RequestOwnershipRegistry::Complete(
     const std::string& request_id,
     const OwnershipKey& expected_owner,
     const GenerationTuple& expected_generations) {
-  auto it = entries_.find(request_id);
-  if (it == entries_.end()) {
-    return {};
-  }
-  const RequestOwnershipStatus status = ValidateExpected(
-      it->second.record, expected_owner, expected_generations);
+  Entry* entry = nullptr;
+  const RequestOwnershipStatus status = FindAndValidateEntry(
+      request_id, expected_owner, expected_generations, &entry);
   if (status != RequestOwnershipStatus::kOk) {
     RequestOwnershipTerminalResult result;
     result.status = status;
@@ -308,9 +323,9 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Complete(
 
   RequestOwnershipTerminalResult result;
   result.status = RequestOwnershipStatus::kOk;
-  result.record = std::move(it->second.record);
-  result.previous_lifecycle = it->second.lifecycle;
-  entries_.erase(it);
+  result.record = std::move(entry->record);
+  result.previous_lifecycle = entry->lifecycle;
+  entries_.erase(request_id);
   return result;
 }
 
@@ -318,19 +333,16 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Cancel(
     const std::string& request_id,
     const OwnershipKey& expected_owner,
     const GenerationTuple& expected_generations) {
-  auto it = entries_.find(request_id);
-  if (it == entries_.end()) {
-    return {};
-  }
-  const RequestOwnershipStatus status = ValidateExpected(
-      it->second.record, expected_owner, expected_generations);
+  Entry* entry = nullptr;
+  const RequestOwnershipStatus status = FindAndValidateEntry(
+      request_id, expected_owner, expected_generations, &entry);
   if (status != RequestOwnershipStatus::kOk) {
     RequestOwnershipTerminalResult result;
     result.status = status;
     return result;
   }
-  if (it->second.lifecycle != RequestOwnershipLifecycle::kNew &&
-      !it->second.termination_handle) {
+  if (entry->lifecycle != RequestOwnershipLifecycle::kNew &&
+      !entry->termination_handle) {
     RequestOwnershipTerminalResult result;
     result.status = RequestOwnershipStatus::kMissingTerminationHandle;
     return result;
@@ -338,15 +350,15 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Cancel(
 
   RequestOwnershipTerminalResult result;
   result.status = RequestOwnershipStatus::kOk;
-  result.record = std::move(it->second.record);
-  result.previous_lifecycle = it->second.lifecycle;
+  result.record = std::move(entry->record);
+  result.previous_lifecycle = entry->lifecycle;
   std::unique_ptr<RequestTerminationHandle> termination_handle =
-      std::move(it->second.termination_handle);
+      std::move(entry->termination_handle);
 
   // Erase before entering externally owned cancellation code. A reentrant or
   // late callback can therefore only observe kNotFound, never a half-cancelled
   // request that could be cancelled or completed twice.
-  entries_.erase(it);
+  entries_.erase(request_id);
   if (termination_handle) {
     termination_handle->Terminate();
     result.termination_invoked = true;

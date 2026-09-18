@@ -85,7 +85,11 @@ test("browser_request_metadata_seed_unittests") {
 
 test("request_ownership_registry_unittests") {
   sources = [
+    "request_cancellation_contract_test.h",
+    "request_dispatch_barrier_contract_test.h",
     "request_ownership_registry_contract_test.h",
+    "request_ownership_registry_test_support.h",
+    "request_ownership_registry_unit_test.h",
     "request_ownership_registry_unittest.cc",
   ]
   deps = [
@@ -97,9 +101,13 @@ test("request_ownership_registry_unittests") {
 
 test("request_dispatch_gate_unittests") {
   sources = [
+    "request_cancellation_contract_test.h",
+    "request_dispatch_barrier_contract_test.h",
     "request_dispatch_gate_contract_test.h",
     "request_dispatch_gate_unittest.cc",
     "request_ownership_registry_contract_test.h",
+    "request_ownership_registry_test_support.h",
+    "request_ownership_registry_unit_test.h",
   ]
   deps = [
     ":request_dispatch_gate",
