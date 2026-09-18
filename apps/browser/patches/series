@@ -143,3 +143,4 @@
 0142-feat-aegis-gate-worker-subresource-traffic.patch
 0143-feat-aegis-add-profile-only-background-ownership.patch
 0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch
+0145-feat-aegis-gate-service-worker-subresource-traffic.patch
