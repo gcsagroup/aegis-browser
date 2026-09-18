@@ -63,12 +63,8 @@ PolicyPublicationAckResult PolicyPublicationAckTracker::ResultFor(
 PolicyPublicationAckTracker::Entry*
 PolicyPublicationAckTracker::FindBySelector(
     const RequestCancellationSelector& selector) {
-  auto it = std::find_if(entries_.begin(), entries_.end(),
-                         [&](const Entry& entry) {
-                           return SameRequestCancellationSelector(
-                               entry.identity.selector, selector);
-                         });
-  return it == entries_.end() ? nullptr : &*it;
+  return const_cast<Entry*>(
+      std::as_const(*this).FindBySelector(selector));
 }
 
 const PolicyPublicationAckTracker::Entry*
@@ -157,16 +153,9 @@ PolicyPublicationAckResult PolicyPublicationAckTracker::UpdateEntry(
 std::pair<PolicyPublicationAckStatus, PolicyPublicationAckTracker::Entry*>
 PolicyPublicationAckTracker::FindAndValidate(
     const PolicyPublicationIdentity& identity) {
-  Entry* entry = FindBySelector(identity.selector);
-  if (!entry) {
-    return {PolicyPublicationAckStatus::kNotFound, nullptr};
-  }
-  const PolicyPublicationAckStatus identity_status =
-      ValidateIdentity(identity, *entry);
-  if (identity_status != PolicyPublicationAckStatus::kPending) {
-    return {identity_status, entry};
-  }
-  return {CurrentStatus(*entry), entry};
+  const auto [status, entry] =
+      std::as_const(*this).FindAndValidate(identity);
+  return {status, const_cast<Entry*>(entry)};
 }
 
 std::pair<PolicyPublicationAckStatus,

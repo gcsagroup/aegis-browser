@@ -244,26 +244,41 @@ AccessNetworkConfigAckResult
 AccessNetworkContextTransport::RepublishCurrentConfigWithAck(
     const aegis_access::OwnershipKey& owner,
     base::OnceCallback<void(bool)> all_clients_settled) {
-  if (!all_clients_settled || !OwnsConfiguredPartition(owner)) {
+  if (!all_clients_settled) {
     return {AccessNetworkConfigAckStatus::kInvalidOwner, 0};
+  }
+  auto fail = [&](AccessNetworkConfigAckStatus status) {
+    std::move(all_clients_settled).Run(false);
+    return AccessNetworkConfigAckResult{status, 0};
+  };
+  if (!OwnsConfiguredPartition(owner)) {
+    return fail(AccessNetworkConfigAckStatus::kInvalidOwner);
   }
   auto it = partitions_.find(owner.storage_partition_token);
   if (it == partitions_.end()) {
-    return {AccessNetworkConfigAckStatus::kMissingPartition, 0};
+    return fail(AccessNetworkConfigAckStatus::kMissingPartition);
   }
   PartitionState& state = it->second;
   if (state.clients.empty()) {
-    return {AccessNetworkConfigAckStatus::kNoClients, 0};
+    return fail(AccessNetworkConfigAckStatus::kNoClients);
   }
   network::mojom::CustomProxyConfigPtr config = BuildConfig(state);
   if (!config) {
-    return {AccessNetworkConfigAckStatus::kBuildFailed, 0};
+    return fail(AccessNetworkConfigAckStatus::kBuildFailed);
   }
 
   const size_t required_acks = state.clients.size();
+  UpdateClientConfigs(state, config, std::move(all_clients_settled));
+  return {AccessNetworkConfigAckStatus::kStarted, required_acks};
+}
+
+void AccessNetworkContextTransport::UpdateClientConfigs(
+    PartitionState& state,
+    const network::mojom::CustomProxyConfigPtr& config,
+    base::OnceCallback<void(bool)> all_clients_settled) {
   auto all_succeeded = std::make_shared<bool>(true);
   base::RepeatingClosure barrier = base::BarrierClosure(
-      required_acks,
+      state.clients.size(),
       base::BindOnce(
           [](std::shared_ptr<bool> succeeded,
              base::OnceCallback<void(bool)> completion) {
@@ -290,7 +305,6 @@ AccessNetworkContextTransport::RepublishCurrentConfigWithAck(
             },
             std::move(result)));
   }
-  return {AccessNetworkConfigAckStatus::kStarted, required_acks};
 }
 
 network::mojom::CustomProxyConfigPtr

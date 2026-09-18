@@ -5,7 +5,6 @@ Subject: [PATCH] feat(aegis): version policy publication acknowledgements
 
 ---
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 0e5bd99..b89e941 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -73,9 +73,11 @@ source_set("access_request_dispatch_state") {
@@ -21,7 +20,6 @@ index 0e5bd99..b89e941 100644
      "//content/public/browser",
    ]
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
-index af9ffee..7761716 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport.cc
 @@ -4,12 +4,16 @@
@@ -41,7 +39,7 @@ index af9ffee..7761716 100644
  #include "net/proxy_resolution/proxy_config.h"
  #include "net/proxy_resolution/proxy_info.h"
  #include "services/network/public/mojom/network_context.mojom.h"
-@@ -236,6 +240,59 @@ AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
+@@ -236,6 +240,73 @@ AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
    return endpoint;
  }
  
@@ -49,26 +47,41 @@ index af9ffee..7761716 100644
 +AccessNetworkContextTransport::RepublishCurrentConfigWithAck(
 +    const aegis_access::OwnershipKey& owner,
 +    base::OnceCallback<void(bool)> all_clients_settled) {
-+  if (!all_clients_settled || !OwnsConfiguredPartition(owner)) {
++  if (!all_clients_settled) {
 +    return {AccessNetworkConfigAckStatus::kInvalidOwner, 0};
++  }
++  auto fail = [&](AccessNetworkConfigAckStatus status) {
++    std::move(all_clients_settled).Run(false);
++    return AccessNetworkConfigAckResult{status, 0};
++  };
++  if (!OwnsConfiguredPartition(owner)) {
++    return fail(AccessNetworkConfigAckStatus::kInvalidOwner);
 +  }
 +  auto it = partitions_.find(owner.storage_partition_token);
 +  if (it == partitions_.end()) {
-+    return {AccessNetworkConfigAckStatus::kMissingPartition, 0};
++    return fail(AccessNetworkConfigAckStatus::kMissingPartition);
 +  }
 +  PartitionState& state = it->second;
 +  if (state.clients.empty()) {
-+    return {AccessNetworkConfigAckStatus::kNoClients, 0};
++    return fail(AccessNetworkConfigAckStatus::kNoClients);
 +  }
 +  network::mojom::CustomProxyConfigPtr config = BuildConfig(state);
 +  if (!config) {
-+    return {AccessNetworkConfigAckStatus::kBuildFailed, 0};
++    return fail(AccessNetworkConfigAckStatus::kBuildFailed);
 +  }
 +
 +  const size_t required_acks = state.clients.size();
++  UpdateClientConfigs(state, config, std::move(all_clients_settled));
++  return {AccessNetworkConfigAckStatus::kStarted, required_acks};
++}
++
++void AccessNetworkContextTransport::UpdateClientConfigs(
++    PartitionState& state,
++    const network::mojom::CustomProxyConfigPtr& config,
++    base::OnceCallback<void(bool)> all_clients_settled) {
 +  auto all_succeeded = std::make_shared<bool>(true);
 +  base::RepeatingClosure barrier = base::BarrierClosure(
-+      required_acks,
++      state.clients.size(),
 +      base::BindOnce(
 +          [](std::shared_ptr<bool> succeeded,
 +             base::OnceCallback<void(bool)> completion) {
@@ -95,17 +108,22 @@ index af9ffee..7761716 100644
 +            },
 +            std::move(result)));
 +  }
-+  return {AccessNetworkConfigAckStatus::kStarted, required_acks};
 +}
 +
  network::mojom::CustomProxyConfigPtr
  AccessNetworkContextTransport::BuildConfigForTesting(
      const base::FilePath& relative_partition_path) const {
+@@ -337,4 +408,4 @@ void AccessNetworkContextTransport::Broadcast(PartitionState& state) {
+   }
+ }
+ 
+-}  // namespace aegis::access
++}  // namespace aegis::access
+\ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
-index 12aae9f..5a719b0 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.h
 +++ b/chrome/browser/aegis/access/access_network_context_transport.h
-@@ -3,6 +3,7 @@
+@@ -3,13 +3,15 @@
  #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
  #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
  
@@ -113,7 +131,7 @@ index 12aae9f..5a719b0 100644
  #include <cstdint>
  #include <map>
  #include <optional>
-@@ -10,6 +11,7 @@
+ #include <string>
  #include <vector>
  
  #include "base/files/file_path.h"
@@ -157,8 +175,25 @@ index 12aae9f..5a719b0 100644
    network::mojom::CustomProxyConfigPtr BuildConfigForTesting(
        const base::FilePath& relative_partition_path) const;
    void FlushClientsForTesting(const base::FilePath& relative_partition_path);
+@@ -115,6 +139,10 @@ class AccessNetworkContextTransport
+       const aegis_access::RegisteredProxyEndpoint& endpoint) const;
+   network::mojom::CustomProxyConfigPtr BuildConfig(
+       const PartitionState& state) const;
++  void UpdateClientConfigs(
++      PartitionState& state,
++      const network::mojom::CustomProxyConfigPtr& config,
++      base::OnceCallback<void(bool)> all_clients_settled);
+   void Broadcast(PartitionState& state);
+ 
+   std::string runtime_profile_token_;
+@@ -124,4 +152,4 @@ class AccessNetworkContextTransport
+ 
+ }  // namespace aegis::access
+ 
+-#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+\ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
-index 75dbef9..9b65412 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 @@ -4,6 +4,7 @@
@@ -169,7 +204,7 @@ index 75dbef9..9b65412 100644
  #include <string>
  #include <utility>
  #include <vector>
-@@ -234,6 +235,105 @@ TEST_F(AccessNetworkContextTransportTest,
+@@ -234,6 +235,107 @@ TEST_F(AccessNetworkContextTransportTest,
                     .has_value());
  }
  
@@ -249,7 +284,8 @@ index 75dbef9..9b65412 100644
 +          [](std::optional<bool>* value, bool success) { *value = success; },
 +          &no_client_callback));
 +  EXPECT_EQ(no_client.status, AccessNetworkConfigAckStatus::kNoClients);
-+  EXPECT_FALSE(no_client_callback.has_value());
++  ASSERT_TRUE(no_client_callback.has_value());
++  EXPECT_FALSE(*no_client_callback);
 +}
 +
 +TEST_F(AccessNetworkContextTransportTest,
@@ -269,14 +305,21 @@ index 75dbef9..9b65412 100644
 +          [](std::optional<bool>* value, bool success) { *value = success; },
 +          &settled));
 +  EXPECT_EQ(forged_result.status, AccessNetworkConfigAckStatus::kInvalidOwner);
-+  EXPECT_FALSE(settled.has_value());
++  ASSERT_TRUE(settled.has_value());
++  EXPECT_FALSE(*settled);
 +}
 +
  TEST_F(AccessNetworkContextTransportTest,
         NonIdempotentFirstSendUsesSelectedProxy) {
    const base::FilePath partition;
+@@ -489,4 +591,4 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
+ }
+ 
+ }  // namespace
+-}  // namespace aegis::access
++}  // namespace aegis::access
+\ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chrome/browser/aegis/access/access_request_dispatch_state.cc
-index 9a81f1c..645ceab 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state.cc
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.cc
 @@ -5,6 +5,8 @@
@@ -319,10 +362,11 @@ index 9a81f1c..645ceab 100644
    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
  }
  
-@@ -79,4 +87,86 @@ AccessRequestDispatchState::InstallBlockBarrierAndCancelMatching(
+@@ -79,4 +87,92 @@ AccessRequestDispatchState::InstallBlockBarrierAndCancelMatching(
    return result;
  }
  
+-}  // namespace aegis::access
 +aegis_access::PolicyPublicationAckResult
 +AccessRequestDispatchState::BeginPolicyPublication(
 +    aegis_access::PolicyPublicationAckRequirements requirements) {
@@ -385,13 +429,19 @@ index 9a81f1c..645ceab 100644
 +  AccessNetworkContextTransport* transport =
 +      AccessNetworkContextTransport::Get(profile_);
 +  if (!transport) {
++    publication_acks_.MarkFailed(identity);
 +    return {AccessNetworkConfigAckStatus::kMissingTransport, 0};
 +  }
-+  return transport->RepublishCurrentConfigWithAck(
-+      owner,
-+      base::BindOnce(
-+          &AccessRequestDispatchState::OnNetworkContextPublicationAck,
-+          weak_factory_.GetWeakPtr(), identity));
++  AccessNetworkConfigAckResult result =
++      transport->RepublishCurrentConfigWithAck(
++          owner,
++          base::BindOnce(
++              &AccessRequestDispatchState::OnNetworkContextPublicationAck,
++              weak_factory_.GetWeakPtr(), identity));
++  if (result.status != AccessNetworkConfigAckStatus::kStarted) {
++    publication_acks_.MarkFailed(identity);
++  }
++  return result;
 +}
 +
 +void AccessRequestDispatchState::OnNetworkContextPublicationAck(
@@ -405,9 +455,9 @@ index 9a81f1c..645ceab 100644
 +  publication_acks_.MarkFailed(identity);
 +}
 +
- }  // namespace aegis::access
++}  // namespace aegis::access
+\ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
-index 879cad9..8e1a3c7 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state.h
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
 @@ -4,8 +4,12 @@
@@ -475,7 +525,6 @@ index 879cad9..8e1a3c7 100644
  
  }  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
-index 4f62915..c4e88b5 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
 @@ -55,6 +55,18 @@ aegis_access::RequestCancellationSelector SelectorFor(
@@ -497,7 +546,7 @@ index 4f62915..c4e88b5 100644
  TEST_F(AccessRequestDispatchStateTest, RejectsNullProfile) {
    EXPECT_EQ(AccessRequestDispatchState::Get(nullptr), nullptr);
    EXPECT_EQ(AccessRequestDispatchState::GetOrCreate(nullptr), nullptr);
-@@ -128,5 +140,87 @@ TEST_F(AccessRequestDispatchStateTest,
+@@ -128,5 +140,111 @@ TEST_F(AccessRequestDispatchStateTest,
    EXPECT_EQ(state->barriers().size(), 0u);
  }
  
@@ -549,6 +598,30 @@ index 4f62915..c4e88b5 100644
 +}
 +
 +TEST_F(AccessRequestDispatchStateTest,
++       MissingNetworkTransportFailsPublicationImmediately) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
++  ASSERT_NE(state, nullptr);
++
++  const auto record = TestRecord();
++  const auto publication =
++      PublicationFor(record, 15, 15, "missing-transport-0137");
++  ASSERT_EQ(state->BeginPolicyPublication(publication).status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++
++  const auto result = state->RequestNetworkContextPublicationAck(
++      publication.identity, record.owner);
++  EXPECT_EQ(result.status, AccessNetworkConfigAckStatus::kMissingTransport);
++  EXPECT_EQ(state->AcknowledgePolicyPublication(
++                publication.identity, "browser-runtime")
++                .status,
++            aegis_access::PolicyPublicationAckStatus::kFailed);
++  EXPECT_FALSE(
++      state->ReleaseBlockBarrierForReadyPublication(publication.identity)
++          .released);
++}
++
++TEST_F(AccessRequestDispatchStateTest,
 +       LateAckCannotReleaseNewerBlockBarrier) {
 +  auto profile = TestingProfile::Builder().Build();
 +  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
@@ -584,9 +657,10 @@ index 4f62915..c4e88b5 100644
 +}
 +
  }  // namespace
- }  // namespace aegis::access
+-}  // namespace aegis::access
++}  // namespace aegis::access
+\ No newline at end of file
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 074ee96..bb886be 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -80,6 +80,14 @@ source_set("request_dispatch_gate") {
@@ -624,7 +698,6 @@ index 074ee96..bb886be 100644
    sources = [
      "request_cancellation_contract_test.h",
 diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
-index 0d90ce1..a816020 100644
 --- a/components/aegis_access/access_route_planner_native_test.cc
 +++ b/components/aegis_access/access_route_planner_native_test.cc
 @@ -9,6 +9,7 @@
@@ -656,10 +729,9 @@ index 0d90ce1..a816020 100644
                << " failures, " << observer.checks() << " checks)\n";
 diff --git a/components/aegis_access/policy_publication_ack_tracker.cc b/components/aegis_access/policy_publication_ack_tracker.cc
 new file mode 100644
-index 0000000..0822dc1
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker.cc
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,280 @@
 +// Copyright 2026 GCSA
 +
 +#include "components/aegis_access/policy_publication_ack_tracker.h"
@@ -725,12 +797,8 @@ index 0000000..0822dc1
 +PolicyPublicationAckTracker::Entry*
 +PolicyPublicationAckTracker::FindBySelector(
 +    const RequestCancellationSelector& selector) {
-+  auto it = std::find_if(entries_.begin(), entries_.end(),
-+                         [&](const Entry& entry) {
-+                           return SameRequestCancellationSelector(
-+                               entry.identity.selector, selector);
-+                         });
-+  return it == entries_.end() ? nullptr : &*it;
++  return const_cast<Entry*>(
++      std::as_const(*this).FindBySelector(selector));
 +}
 +
 +const PolicyPublicationAckTracker::Entry*
@@ -819,16 +887,9 @@ index 0000000..0822dc1
 +std::pair<PolicyPublicationAckStatus, PolicyPublicationAckTracker::Entry*>
 +PolicyPublicationAckTracker::FindAndValidate(
 +    const PolicyPublicationIdentity& identity) {
-+  Entry* entry = FindBySelector(identity.selector);
-+  if (!entry) {
-+    return {PolicyPublicationAckStatus::kNotFound, nullptr};
-+  }
-+  const PolicyPublicationAckStatus identity_status =
-+      ValidateIdentity(identity, *entry);
-+  if (identity_status != PolicyPublicationAckStatus::kPending) {
-+    return {identity_status, entry};
-+  }
-+  return {CurrentStatus(*entry), entry};
++  const auto [status, entry] =
++      std::as_const(*this).FindAndValidate(identity);
++  return {status, const_cast<Entry*>(entry)};
 +}
 +
 +std::pair<PolicyPublicationAckStatus,
@@ -951,9 +1012,9 @@ index 0000000..0822dc1
 +}
 +
 +}  // namespace aegis_access
+\ No newline at end of file
 diff --git a/components/aegis_access/policy_publication_ack_tracker.h b/components/aegis_access/policy_publication_ack_tracker.h
 new file mode 100644
-index 0000000..4ab7519
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker.h
 @@ -0,0 +1,137 @@
@@ -1096,7 +1157,6 @@ index 0000000..4ab7519
 +#endif  // COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_H_
 diff --git a/components/aegis_access/policy_publication_ack_tracker_contract_test.h b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
 new file mode 100644
-index 0000000..77688cf
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
 @@ -0,0 +1,217 @@
@@ -1319,7 +1379,6 @@ index 0000000..77688cf
 +#endif  // COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_CONTRACT_TEST_H_
 diff --git a/components/aegis_access/policy_publication_ack_tracker_unittest.cc b/components/aegis_access/policy_publication_ack_tracker_unittest.cc
 new file mode 100644
-index 0000000..b547101
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker_unittest.cc
 @@ -0,0 +1,30 @@
@@ -1354,7 +1413,6 @@ index 0000000..b547101
 +}  // namespace
 +}  // namespace aegis_access::test
 diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
-index 745b347..80a2ed5 100644
 --- a/components/aegis_access/request_ownership_registry.cc
 +++ b/components/aegis_access/request_ownership_registry.cc
 @@ -110,6 +110,17 @@ RequestOwnershipStatus ValidateExpected(
@@ -1376,7 +1434,6 @@ index 745b347..80a2ed5 100644
      size_t max_barriers)
      : max_barriers_(max_barriers) {}
 diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
-index 419598a..4af2630 100644
 --- a/components/aegis_access/request_ownership_registry.h
 +++ b/components/aegis_access/request_ownership_registry.h
 @@ -92,8 +92,17 @@ struct RequestCancellationSelector {
@@ -1397,3 +1454,5 @@ index 419598a..4af2630 100644
  struct RequestOwnershipBatchCancelResult {
    RequestOwnershipStatus status = RequestOwnershipStatus::kOk;
    std::vector<RequestOwnershipTerminalResult> cancellations;
+-- 
+2.39.5
