@@ -35,6 +35,7 @@ REQUEST_TERMINATION_PATCH_FILE="$BROWSER_DIR/patches/0136-feat-aegis-terminate-i
 POLICY_PUBLICATION_ACK_PATCH_FILE="$BROWSER_DIR/patches/0137-feat-aegis-version-policy-publication-acks.patch"
 NAVIGATION_URL_LOADER_PATCH_FILE="$BROWSER_DIR/patches/0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch"
 SUBFRAME_NAVIGATION_PATCH_FILE="$BROWSER_DIR/patches/0139-feat-aegis-gate-primary-page-subframe-navigation.patch"
+REDIRECT_REEVALUATION_PATCH_FILE="$BROWSER_DIR/patches/0140-feat-aegis-reevaluate-proxied-redirects.patch"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -464,6 +465,27 @@ rg -Fq 'SubframeNavigationWithoutPolicyPreservesNativePath' \
 rg -Fq 'SubframeNavigationUsesPrimaryPageProxy' \
   "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
   fail "patch 0139 must browser-test proxied subframe navigation"
+rg -Fq 'EvaluateRedirect' "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must re-evaluate redirect targets before follow"
+rg -Fq 'RebindOwnershipForRedirect' "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must rebind request ownership for each redirect hop"
+rg -Fq 'pending_redirect_url_' "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must hold redirect follow until browser re-evaluation"
+rg -Fq 'redirected_record.request_id != stable_request_id' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must preserve one stable logical request identity"
+rg -Fq 'SameHostRedirectReevaluatesThroughProxy' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must browser-test same-host redirect re-evaluation"
+rg -Fq 'MainNavigationRedirectReevaluatesThroughProxy' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must browser-test main-navigation redirects"
+rg -Fq 'SubframeNavigationRedirectReevaluatesThroughProxy' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must preserve 0139 subframe attribution across redirects"
+rg -Fq 'RedirectToUnselectedHostFailsClosed' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must fail closed when redirect target lacks a selected proxy"
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -520,6 +542,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0138 must appear once in series"
 [[ "$(rg -F -c '0139-feat-aegis-gate-primary-page-subframe-navigation.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0139 must appear once in series"
+[[ "$(rg -F -c '0140-feat-aegis-reevaluate-proxied-redirects.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0140 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -546,10 +570,11 @@ expected_access_tail="$(cat <<'EOF'
 0137-feat-aegis-version-policy-publication-acks.patch
 0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch
 0139-feat-aegis-gate-primary-page-subframe-navigation.patch
+0140-feat-aegis-reevaluate-proxied-redirects.patch
 EOF
 )"
-[[ "$(tail -n 25 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0139"
+[[ "$(tail -n 26 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0140"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
