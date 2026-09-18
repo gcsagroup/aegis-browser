@@ -12,6 +12,7 @@
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_thread.h"
 
 namespace aegis::access {
 namespace {
@@ -30,6 +31,7 @@ AccessPolicyPublicationResult PublicationResult(
 // static
 AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::Get(
     Profile* profile) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!profile) {
     return nullptr;
   }
@@ -40,6 +42,7 @@ AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::Get(
 // static
 AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::GetOrCreate(
     Profile* profile) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!profile || !aegis::IsAegisProfileSupported(profile)) {
     return nullptr;
   }
@@ -54,13 +57,18 @@ AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::GetOrCreate(
 }
 
 AccessPublishedRequestRuntime::AccessPublishedRequestRuntime(Profile* profile)
-    : profile_(profile) {}
+    : profile_(profile) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+}
 
-AccessPublishedRequestRuntime::~AccessPublishedRequestRuntime() = default;
+AccessPublishedRequestRuntime::~AccessPublishedRequestRuntime() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+}
 
 AccessPolicyPublicationResult
 AccessPublishedRequestRuntime::PublishCommittedPolicySnapshot(
     const StoredPolicySnapshot& stored) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   StoreResult<MatcherRuleSetCandidate> candidate =
       AccessRuleStore::AdaptMatcherSnapshot(stored);
   if (candidate.status != StoreStatus::kValid || !candidate.value.has_value()) {
@@ -116,6 +124,7 @@ AccessPublishedRequestRuntime::PublishCommittedPolicySnapshot(
 const aegis_access::PublishedAccessPolicySnapshot*
 AccessPublishedRequestRuntime::GetPublishedPolicySnapshot(
     const aegis_access::OwnershipKey& owner) const {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const auto it = policy_snapshots_.find(owner.storage_partition_token);
   if (it == policy_snapshots_.end() || it->second.owner != owner) {
     return nullptr;
@@ -125,6 +134,7 @@ AccessPublishedRequestRuntime::GetPublishedPolicySnapshot(
 
 bool AccessPublishedRequestRuntime::InvalidatePublishedPolicySnapshot(
     const aegis_access::OwnershipKey& owner) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const auto it = policy_snapshots_.find(owner.storage_partition_token);
   if (it == policy_snapshots_.end() || it->second.owner != owner) {
     return false;
@@ -134,15 +144,15 @@ bool AccessPublishedRequestRuntime::InvalidatePublishedPolicySnapshot(
 }
 
 aegis_access::RequestGenerationTupleBuildResult
-AccessPublishedRequestRuntime::BuildProxyGenerationTuple(
+AccessPublishedRequestRuntime::CaptureProxyGenerationTupleOnUiThread(
     const aegis_access::OwnershipKey& owner,
     const std::string& proxy_group_id) const {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   aegis_access::RequestGenerationTupleInput input;
   input.request_owner = owner;
   input.snapshot_owner = owner;
 
   if (const auto* snapshot = GetPublishedPolicySnapshot(owner)) {
-    input.snapshot_owner = snapshot->owner;
     input.policy_generation = snapshot->policy_generation;
   }
 

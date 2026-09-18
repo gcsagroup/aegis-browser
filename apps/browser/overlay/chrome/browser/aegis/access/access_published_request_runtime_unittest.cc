@@ -96,7 +96,7 @@ TEST_F(AccessPublishedRequestRuntimeTest,
   ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(1)).status,
             AccessPolicyPublicationStatus::kPublished);
   const auto result =
-      runtime_->BuildProxyGenerationTuple(*owner_, "proxy-group-a");
+      runtime_->CaptureProxyGenerationTupleOnUiThread(*owner_, "proxy-group-a");
   EXPECT_EQ(result.status,
             aegis_access::RequestGenerationTupleBuildStatus::
                 kMissingIdentityGeneration);

@@ -94,6 +94,7 @@ source_set("access_published_request_runtime") {
     "//chrome/browser/aegis:profile_support",
     "//chrome/browser/net:impl",
     "//chrome/browser/profiles:profile",
+    "//content/public/browser",
   ]
   public_deps = [
     ":access_rule_store",
