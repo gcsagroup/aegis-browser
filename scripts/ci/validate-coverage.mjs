@@ -60,7 +60,11 @@ export function parseCoverageSummary(source, label = 'coverage-summary.json') {
   return total;
 }
 
-export function parseLcov(source, sourceRoot) {
+export function parseLcov(
+  source,
+  sourceRoot,
+  {allowLineSummarySuperset = false} = {},
+) {
   if (!source.endsWith('\n')) fail('lcov.info must end with a newline');
   const records = source.split('end_of_record\n').filter((record) => record.trim() !== '');
   const terminators = source.match(/^end_of_record$/gmu)?.length ?? 0;
@@ -92,7 +96,19 @@ export function parseLcov(source, sourceRoot) {
       seenLines.add(match[1]);
       if (Number(match[2]) > 0) coveredLines += 1;
     }
-    if (seenLines.size !== lf || coveredLines !== lh) fail('lcov.info line totals do not match DA data');
+    if (allowLineSummarySuperset) {
+      const reportedUncovered = seenLines.size - coveredLines;
+      const summaryUncovered = lf - lh;
+      if (
+        seenLines.size > lf ||
+        coveredLines > lh ||
+        reportedUncovered !== summaryUncovered
+      ) {
+        fail('lcov.info DA data exceeds line summary totals');
+      }
+    } else if (seenLines.size !== lf || coveredLines !== lh) {
+      fail('lcov.info line totals do not match DA data');
+    }
     totals.lines.total += lf;
     totals.lines.covered += lh;
     for (const [totalPrefix, coveredPrefix, metric] of [

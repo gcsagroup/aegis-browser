@@ -110,6 +110,17 @@ RequestOwnershipStatus ValidateExpected(
 
 }  // namespace
 
+bool IsValidRequestCancellationSelector(
+    const RequestCancellationSelector& selector) {
+  return IsValidSelector(selector);
+}
+
+bool SameRequestCancellationSelector(
+    const RequestCancellationSelector& left,
+    const RequestCancellationSelector& right) {
+  return SameSelector(left, right);
+}
+
 RequestDispatchBarrierRegistry::RequestDispatchBarrierRegistry(
     size_t max_barriers)
     : max_barriers_(max_barriers) {}

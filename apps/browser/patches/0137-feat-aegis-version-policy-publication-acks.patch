@@ -1,0 +1,1399 @@
+From 0137000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 20:05:00 +0800
+Subject: [PATCH] feat(aegis): version policy publication acknowledgements
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 0e5bd99..b89e941 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -73,9 +73,11 @@ source_set("access_request_dispatch_state") {
+     "access_request_dispatch_state.h",
+   ]
+   deps = [
++    ":access_network_context_transport",
+     "//base",
+     "//chrome/browser/aegis:profile_support",
+     "//chrome/browser/profiles:profile",
++    "//components/aegis_access:policy_publication_ack_tracker",
+     "//components/aegis_access:request_ownership_registry",
+     "//content/public/browser",
+   ]
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index af9ffee..7761716 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -4,12 +4,16 @@
+ 
+ #include <algorithm>
+ #include <limits>
++#include <memory>
+ #include <utility>
+ 
++#include "base/barrier_closure.h"
++#include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/uuid.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "mojo/public/cpp/bindings/callback_helpers.h"
+ #include "net/proxy_resolution/proxy_config.h"
+ #include "net/proxy_resolution/proxy_info.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+@@ -236,6 +240,59 @@ AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
+   return endpoint;
+ }
+ 
++AccessNetworkConfigAckResult
++AccessNetworkContextTransport::RepublishCurrentConfigWithAck(
++    const aegis_access::OwnershipKey& owner,
++    base::OnceCallback<void(bool)> all_clients_settled) {
++  if (!all_clients_settled || !OwnsConfiguredPartition(owner)) {
++    return {AccessNetworkConfigAckStatus::kInvalidOwner, 0};
++  }
++  auto it = partitions_.find(owner.storage_partition_token);
++  if (it == partitions_.end()) {
++    return {AccessNetworkConfigAckStatus::kMissingPartition, 0};
++  }
++  PartitionState& state = it->second;
++  if (state.clients.empty()) {
++    return {AccessNetworkConfigAckStatus::kNoClients, 0};
++  }
++  network::mojom::CustomProxyConfigPtr config = BuildConfig(state);
++  if (!config) {
++    return {AccessNetworkConfigAckStatus::kBuildFailed, 0};
++  }
++
++  const size_t required_acks = state.clients.size();
++  auto all_succeeded = std::make_shared<bool>(true);
++  base::RepeatingClosure barrier = base::BarrierClosure(
++      required_acks,
++      base::BindOnce(
++          [](std::shared_ptr<bool> succeeded,
++             base::OnceCallback<void(bool)> completion) {
++            std::move(completion).Run(*succeeded);
++          },
++          all_succeeded, std::move(all_clients_settled)));
++
++  for (auto& client : state.clients) {
++    base::OnceCallback<void(bool)> result =
++        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++            base::BindOnce(
++                [](std::shared_ptr<bool> succeeded,
++                   base::RepeatingClosure completion, bool client_acked) {
++                  *succeeded = *succeeded && client_acked;
++                  completion.Run();
++                },
++                all_succeeded, barrier),
++            false);
++    client->OnCustomProxyConfigUpdated(
++        config->Clone(),
++        base::BindOnce(
++            [](base::OnceCallback<void(bool)> result_callback) {
++              std::move(result_callback).Run(true);
++            },
++            std::move(result)));
++  }
++  return {AccessNetworkConfigAckStatus::kStarted, required_acks};
++}
++
+ network::mojom::CustomProxyConfigPtr
+ AccessNetworkContextTransport::BuildConfigForTesting(
+     const base::FilePath& relative_partition_path) const {
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 12aae9f..5a719b0 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -3,6 +3,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+ 
++#include <cstddef>
+ #include <cstdint>
+ #include <map>
+ #include <optional>
+@@ -10,6 +11,7 @@
+ #include <vector>
+ 
+ #include "base/files/file_path.h"
++#include "base/functional/callback_forward.h"
+ #include "base/supports_user_data.h"
+ #include "components/aegis_access/access_proxy_route_adapter.h"
+ #include "components/aegis_access/access_route_types.h"
+@@ -21,6 +23,20 @@ class Profile;
+ 
+ namespace aegis::access {
+ 
++enum class AccessNetworkConfigAckStatus {
++  kStarted,
++  kMissingTransport,
++  kInvalidOwner,
++  kMissingPartition,
++  kNoClients,
++  kBuildFailed,
++};
++
++struct AccessNetworkConfigAckResult {
++  AccessNetworkConfigAckStatus status = AccessNetworkConfigAckStatus::kBuildFailed;
++  size_t required_client_acks = 0;
++};
++
+ // Profile-owned transport state for the first Network Service integration
+ // slice. This is deliberately not another KeyedService: its lifetime is the
+ // exact BrowserContext/Profile and it stores independent state per
+@@ -88,6 +104,14 @@ class AccessNetworkContextTransport
+       const std::string& proxy_group_id,
+       const std::string& exact_host) const;
+ 
++  // Re-publishes the currently committed custom proxy config and completes
++  // |all_clients_settled| only after every currently attached NetworkContext
++  // has either acknowledged Chromium's real CustomProxyConfigClient Mojo call
++  // or dropped its callback. The bool is true only when every client ACKed.
++  AccessNetworkConfigAckResult RepublishCurrentConfigWithAck(
++      const aegis_access::OwnershipKey& owner,
++      base::OnceCallback<void(bool)> all_clients_settled);
++
+   network::mojom::CustomProxyConfigPtr BuildConfigForTesting(
+       const base::FilePath& relative_partition_path) const;
+   void FlushClientsForTesting(const base::FilePath& relative_partition_path);
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 75dbef9..9b65412 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <limits>
+ #include <memory>
++#include <optional>
+ #include <string>
+ #include <utility>
+ #include <vector>
+@@ -234,6 +235,105 @@ TEST_F(AccessNetworkContextTransportTest,
+                    .has_value());
+ }
+ 
++TEST_F(AccessNetworkContextTransportTest,
++       RealCustomProxyConfigCallbackAcknowledgesPublication) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  const auto endpoint = EndpointFor(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, endpoint));
++
++  std::optional<bool> acked;
++  const auto started = transport_->RepublishCurrentConfigWithAck(
++      endpoint.owner,
++      base::BindOnce(
++          [](std::optional<bool>* value, bool success) { *value = success; },
++          &acked));
++  EXPECT_EQ(started.status, AccessNetworkConfigAckStatus::kStarted);
++  EXPECT_EQ(started.required_client_acks, 1u);
++  EXPECT_FALSE(acked.has_value());
++
++  transport_->FlushClientsForTesting(partition);
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(acked.has_value());
++  EXPECT_TRUE(*acked);
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       PublicationAckWaitsForEveryAttachedNetworkContext) {
++  const base::FilePath partition;
++  auto first_delegate = CreateDelegate(partition);
++  auto second_delegate = CreateDelegate(partition);
++  const auto endpoint = EndpointFor(partition);
++
++  std::optional<bool> acked;
++  const auto started = transport_->RepublishCurrentConfigWithAck(
++      endpoint.owner,
++      base::BindOnce(
++          [](std::optional<bool>* value, bool success) { *value = success; },
++          &acked));
++  EXPECT_EQ(started.status, AccessNetworkConfigAckStatus::kStarted);
++  EXPECT_EQ(started.required_client_acks, 2u);
++  EXPECT_FALSE(acked.has_value());
++
++  transport_->FlushClientsForTesting(partition);
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(acked.has_value());
++  EXPECT_TRUE(*acked);
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       DroppedMojoCallbackSettlesAsFailureAndNeverAsAck) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  auto owner = transport_->OwnerForPartition(
++      aegis_access::ChannelNamespace::kDev, partition);
++  ASSERT_TRUE(owner.has_value());
++
++  std::optional<bool> settled;
++  const auto started = transport_->RepublishCurrentConfigWithAck(
++      *owner,
++      base::BindOnce(
++          [](std::optional<bool>* value, bool success) { *value = success; },
++          &settled));
++  ASSERT_EQ(started.status, AccessNetworkConfigAckStatus::kStarted);
++  EXPECT_FALSE(settled.has_value());
++
++  delegate.reset();
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(settled.has_value());
++  EXPECT_FALSE(*settled);
++
++  std::optional<bool> no_client_callback;
++  const auto no_client = transport_->RepublishCurrentConfigWithAck(
++      *owner,
++      base::BindOnce(
++          [](std::optional<bool>* value, bool success) { *value = success; },
++          &no_client_callback));
++  EXPECT_EQ(no_client.status, AccessNetworkConfigAckStatus::kNoClients);
++  EXPECT_FALSE(no_client_callback.has_value());
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       PublicationAckRejectsForgedOwner) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  auto owner = transport_->OwnerForPartition(
++      aegis_access::ChannelNamespace::kDev, partition);
++  ASSERT_TRUE(owner.has_value());
++
++  std::optional<bool> settled;
++  auto forged = *owner;
++  forged.profile_token = "other-profile";
++  const auto forged_result = transport_->RepublishCurrentConfigWithAck(
++      forged,
++      base::BindOnce(
++          [](std::optional<bool>* value, bool success) { *value = success; },
++          &settled));
++  EXPECT_EQ(forged_result.status, AccessNetworkConfigAckStatus::kInvalidOwner);
++  EXPECT_FALSE(settled.has_value());
++}
++
+ TEST_F(AccessNetworkContextTransportTest,
+        NonIdempotentFirstSendUsesSelectedProxy) {
+   const base::FilePath partition;
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chrome/browser/aegis/access/access_request_dispatch_state.cc
+index 9a81f1c..645ceab 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state.cc
++++ b/chrome/browser/aegis/access/access_request_dispatch_state.cc
+@@ -5,6 +5,8 @@
+ #include <memory>
+ #include <utility>
+ 
++#include "base/functional/bind.h"
++
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "content/public/browser/browser_thread.h"
+@@ -15,6 +17,8 @@ namespace {
+ const void* const kDispatchStateUserDataKey = &kDispatchStateUserDataKey;
+ constexpr size_t kMaxDispatchBarriers = 256;
+ constexpr size_t kMaxOwnedRequests = 4096;
++constexpr size_t kMaxPolicyPublications = 256;
++constexpr size_t kMaxPolicyPublicationAckTokens = 8;
+ 
+ }  // namespace
+ 
+@@ -39,14 +43,18 @@ AccessRequestDispatchState* AccessRequestDispatchState::GetOrCreate(
+     return existing;
+   }
+   auto state =
+-      std::unique_ptr<AccessRequestDispatchState>(new AccessRequestDispatchState());
++      std::unique_ptr<AccessRequestDispatchState>(new AccessRequestDispatchState(profile));
+   auto* result = state.get();
+   profile->SetUserData(kDispatchStateUserDataKey, std::move(state));
+   return result;
+ }
+ 
+-AccessRequestDispatchState::AccessRequestDispatchState()
+-    : barriers_(kMaxDispatchBarriers), ownership_(kMaxOwnedRequests) {
++AccessRequestDispatchState::AccessRequestDispatchState(Profile* profile)
++    : profile_(profile),
++      barriers_(kMaxDispatchBarriers),
++      ownership_(kMaxOwnedRequests),
++      publication_acks_(kMaxPolicyPublications,
++                        kMaxPolicyPublicationAckTokens) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+ }
+ 
+@@ -79,4 +87,86 @@ AccessRequestDispatchState::InstallBlockBarrierAndCancelMatching(
+   return result;
+ }
+ 
++aegis_access::PolicyPublicationAckResult
++AccessRequestDispatchState::BeginPolicyPublication(
++    aegis_access::PolicyPublicationAckRequirements requirements) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  return publication_acks_.Begin(std::move(requirements));
++}
++
++aegis_access::PolicyPublicationAckResult
++AccessRequestDispatchState::AcknowledgePolicyPublication(
++    const aegis_access::PolicyPublicationIdentity& identity,
++    const std::string& ack_token) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  return publication_acks_.Acknowledge(identity, ack_token);
++}
++
++aegis_access::PolicyPublicationAckResult
++AccessRequestDispatchState::MarkPolicyPublicationTerminationsComplete(
++    const aegis_access::PolicyPublicationIdentity& identity) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  return publication_acks_.MarkTerminationsComplete(identity);
++}
++
++aegis_access::PolicyPublicationAckResult
++AccessRequestDispatchState::MarkPolicyPublicationDurablyCommitted(
++    const aegis_access::PolicyPublicationIdentity& identity) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  return publication_acks_.MarkDurablyCommitted(identity);
++}
++
++AccessPolicyBarrierReleaseResult
++AccessRequestDispatchState::ReleaseBlockBarrierForReadyPublication(
++    const aegis_access::PolicyPublicationIdentity& identity) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  AccessPolicyBarrierReleaseResult result;
++  const auto publication = publication_acks_.Lookup(identity);
++  result.publication_status = publication.status;
++  if (publication.status != aegis_access::PolicyPublicationAckStatus::kReady) {
++    return result;
++  }
++
++  result.barrier_status = barriers_.ReleaseBlockBarrier(
++      identity.selector, identity.operation_id, identity.operation_sequence);
++  if (result.barrier_status !=
++      aegis_access::RequestDispatchBarrierStatus::kOk) {
++    return result;
++  }
++
++  const auto finalized = publication_acks_.Finalize(identity);
++  result.publication_status = finalized.status;
++  result.released =
++      finalized.status == aegis_access::PolicyPublicationAckStatus::kFinalized;
++  return result;
++}
++
++AccessNetworkConfigAckResult
++AccessRequestDispatchState::RequestNetworkContextPublicationAck(
++    const aegis_access::PolicyPublicationIdentity& identity,
++    const aegis_access::OwnershipKey& owner) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  AccessNetworkContextTransport* transport =
++      AccessNetworkContextTransport::Get(profile_);
++  if (!transport) {
++    return {AccessNetworkConfigAckStatus::kMissingTransport, 0};
++  }
++  return transport->RepublishCurrentConfigWithAck(
++      owner,
++      base::BindOnce(
++          &AccessRequestDispatchState::OnNetworkContextPublicationAck,
++          weak_factory_.GetWeakPtr(), identity));
++}
++
++void AccessRequestDispatchState::OnNetworkContextPublicationAck(
++    aegis_access::PolicyPublicationIdentity identity,
++    bool acknowledged) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (acknowledged) {
++    publication_acks_.Acknowledge(identity, "network-context");
++    return;
++  }
++  publication_acks_.MarkFailed(identity);
++}
++
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
+index 879cad9..8e1a3c7 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state.h
++++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
+@@ -4,8 +4,12 @@
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_REQUEST_DISPATCH_STATE_H_
+ 
+ #include <cstddef>
++#include <string>
+ 
++#include "base/memory/weak_ptr.h"
+ #include "base/supports_user_data.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "components/aegis_access/policy_publication_ack_tracker.h"
+ #include "components/aegis_access/request_ownership_registry.h"
+ 
+ class Profile;
+@@ -21,6 +25,14 @@ struct AccessBlockAndCancelResult {
+   size_t terminated_requests = 0;
+ };
+ 
++struct AccessPolicyBarrierReleaseResult {
++  aegis_access::PolicyPublicationAckStatus publication_status =
++      aegis_access::PolicyPublicationAckStatus::kNotFound;
++  aegis_access::RequestDispatchBarrierStatus barrier_status =
++      aegis_access::RequestDispatchBarrierStatus::kNotFound;
++  bool released = false;
++};
++
+ // UI-thread Profile-owned request dispatch state shared by all Aegis
+ // URLLoaderFactory wrappers for the Profile. Keeping barrier and ownership
+ // registries here gives policy mutation/cancellation code one stable owner
+@@ -48,11 +60,34 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
+   AccessBlockAndCancelResult InstallBlockBarrierAndCancelMatching(
+       aegis_access::RequestDispatchBarrier barrier);
+ 
++  aegis_access::PolicyPublicationAckResult BeginPolicyPublication(
++      aegis_access::PolicyPublicationAckRequirements requirements);
++  aegis_access::PolicyPublicationAckResult AcknowledgePolicyPublication(
++      const aegis_access::PolicyPublicationIdentity& identity,
++      const std::string& ack_token);
++  aegis_access::PolicyPublicationAckResult
++  MarkPolicyPublicationTerminationsComplete(
++      const aegis_access::PolicyPublicationIdentity& identity);
++  aegis_access::PolicyPublicationAckResult MarkPolicyPublicationDurablyCommitted(
++      const aegis_access::PolicyPublicationIdentity& identity);
++  AccessPolicyBarrierReleaseResult ReleaseBlockBarrierForReadyPublication(
++      const aegis_access::PolicyPublicationIdentity& identity);
++
++  AccessNetworkConfigAckResult RequestNetworkContextPublicationAck(
++      const aegis_access::PolicyPublicationIdentity& identity,
++      const aegis_access::OwnershipKey& owner);
++
+  private:
+-  AccessRequestDispatchState();
++  explicit AccessRequestDispatchState(Profile* profile);
++  void OnNetworkContextPublicationAck(
++      aegis_access::PolicyPublicationIdentity identity,
++      bool acknowledged);
+ 
++  Profile* const profile_;
+   aegis_access::RequestDispatchBarrierRegistry barriers_;
+   aegis_access::RequestOwnershipRegistry ownership_;
++  aegis_access::PolicyPublicationAckTracker publication_acks_;
++  base::WeakPtrFactory<AccessRequestDispatchState> weak_factory_{this};
+ };
+ 
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
+index 4f62915..c4e88b5 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
++++ b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
+@@ -55,6 +55,18 @@ aegis_access::RequestCancellationSelector SelectorFor(
+           record.port};
+ }
+ 
++aegis_access::PolicyPublicationAckRequirements PublicationFor(
++    const aegis_access::RequestOwnershipRecord& record,
++    uint64_t operation_sequence,
++    uint64_t policy_generation,
++    const std::string& operation_id) {
++  return {
++      {operation_id, operation_sequence, policy_generation, SelectorFor(record)},
++      {"browser-runtime", "network-context"},
++      true,
++  };
++}
++
+ TEST_F(AccessRequestDispatchStateTest, RejectsNullProfile) {
+   EXPECT_EQ(AccessRequestDispatchState::Get(nullptr), nullptr);
+   EXPECT_EQ(AccessRequestDispatchState::GetOrCreate(nullptr), nullptr);
+@@ -128,5 +140,87 @@ TEST_F(AccessRequestDispatchStateTest,
+   EXPECT_EQ(state->barriers().size(), 0u);
+ }
+ 
++
++TEST_F(AccessRequestDispatchStateTest,
++       BarrierReleaseWaitsForAckTerminationAndDurableCommit) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
++  ASSERT_NE(state, nullptr);
++
++  const auto record = TestRecord();
++  const auto publication = PublicationFor(record, 10, 10, "block-0137");
++  ASSERT_EQ(state->InstallBlockBarrierAndCancelMatching(
++                {"block-0137", 10, SelectorFor(record)})
++                .barrier_status,
++            aegis_access::RequestDispatchBarrierStatus::kOk);
++  ASSERT_EQ(state->BeginPolicyPublication(publication).status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++  ASSERT_EQ(state->AcknowledgePolicyPublication(
++                publication.identity, "browser-runtime")
++                .status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++  ASSERT_EQ(state->MarkPolicyPublicationTerminationsComplete(
++                publication.identity)
++                .status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++  ASSERT_EQ(state->MarkPolicyPublicationDurablyCommitted(
++                publication.identity)
++                .status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++
++  const auto early =
++      state->ReleaseBlockBarrierForReadyPublication(publication.identity);
++  EXPECT_FALSE(early.released);
++  EXPECT_EQ(state->barriers().size(), 1u);
++
++  ASSERT_EQ(state->AcknowledgePolicyPublication(
++                publication.identity, "network-context")
++                .status,
++            aegis_access::PolicyPublicationAckStatus::kReady);
++  const auto released =
++      state->ReleaseBlockBarrierForReadyPublication(publication.identity);
++  EXPECT_TRUE(released.released);
++  EXPECT_EQ(released.publication_status,
++            aegis_access::PolicyPublicationAckStatus::kFinalized);
++  EXPECT_EQ(released.barrier_status,
++            aegis_access::RequestDispatchBarrierStatus::kOk);
++  EXPECT_EQ(state->barriers().size(), 0u);
++}
++
++TEST_F(AccessRequestDispatchStateTest,
++       LateAckCannotReleaseNewerBlockBarrier) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
++  ASSERT_NE(state, nullptr);
++
++  const auto record = TestRecord();
++  const auto older = PublicationFor(record, 20, 20, "block-old");
++  const auto newer = PublicationFor(record, 21, 21, "block-new");
++  ASSERT_EQ(state->InstallBlockBarrierAndCancelMatching(
++                {"block-old", 20, SelectorFor(record)})
++                .barrier_status,
++            aegis_access::RequestDispatchBarrierStatus::kOk);
++  ASSERT_EQ(state->BeginPolicyPublication(older).status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++  ASSERT_EQ(state->InstallBlockBarrierAndCancelMatching(
++                {"block-new", 21, SelectorFor(record)})
++                .barrier_status,
++            aegis_access::RequestDispatchBarrierStatus::kOk);
++  ASSERT_EQ(state->BeginPolicyPublication(newer).status,
++            aegis_access::PolicyPublicationAckStatus::kPending);
++
++  EXPECT_EQ(state->AcknowledgePolicyPublication(
++                older.identity, "network-context")
++                .status,
++            aegis_access::PolicyPublicationAckStatus::kStaleOperation);
++  const auto old_release =
++      state->ReleaseBlockBarrierForReadyPublication(older.identity);
++  EXPECT_FALSE(old_release.released);
++  EXPECT_EQ(state->barriers().size(), 1u);
++  const auto evaluation = state->barriers().EvaluateRequest(record);
++  ASSERT_TRUE(evaluation.barrier.has_value());
++  EXPECT_EQ(evaluation.barrier->operation_id, "block-new");
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 074ee96..bb886be 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -80,6 +80,14 @@ source_set("request_dispatch_gate") {
+   public_deps = [ ":request_ownership_registry" ]
+ }
+ 
++source_set("policy_publication_ack_tracker") {
++  sources = [
++    "policy_publication_ack_tracker.cc",
++    "policy_publication_ack_tracker.h",
++  ]
++  public_deps = [ ":request_ownership_registry" ]
++}
++
+ source_set("published_request_runtime") {
+   sources = [
+     "published_request_runtime.cc",
+@@ -187,6 +195,18 @@ test("request_ownership_registry_unittests") {
+   ]
+ }
+ 
++test("policy_publication_ack_tracker_unittests") {
++  sources = [
++    "policy_publication_ack_tracker_contract_test.h",
++    "policy_publication_ack_tracker_unittest.cc",
++  ]
++  deps = [
++    ":policy_publication_ack_tracker",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("request_dispatch_gate_unittests") {
+   sources = [
+     "request_cancellation_contract_test.h",
+diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+index 0d90ce1..a816020 100644
+--- a/components/aegis_access/access_route_planner_native_test.cc
++++ b/components/aegis_access/access_route_planner_native_test.cc
+@@ -9,6 +9,7 @@
+ #include "components/aegis_access/access_route_planner_contract_test.h"
+ #include "components/aegis_access/browser_request_metadata_seed_contract_test.h"
+ #include "components/aegis_access/published_request_runtime_contract_test.h"
++#include "components/aegis_access/policy_publication_ack_tracker_contract_test.h"
+ #include "components/aegis_access/request_dispatch_gate_contract_test.h"
+ #include "components/aegis_access/request_generation_tuple_builder_contract_test.h"
+ #include "components/aegis_access/request_ownership_registry_contract_test.h"
+@@ -21,7 +22,8 @@ class NativeObserver : public aegis_access::test::ContractTestObserver,
+                        public aegis_access::test::BaseProxyConfigGenerationStateTestObserver,
+                        public aegis_access::test::IdentityGenerationStateTestObserver,
+                        public aegis_access::test::ProxySelectionGenerationStateTestObserver,
+-                       public aegis_access::test::RequestGenerationTupleBuilderTestObserver {
++                       public aegis_access::test::RequestGenerationTupleBuilderTestObserver,
++                       public aegis_access::test::PolicyPublicationAckTrackerTestObserver {
+  public:
+   void Expect(bool condition, const std::string& label) override {
+     ++checks_;
+@@ -65,6 +67,8 @@ int main() {
+   aegis_access::test::RunBaseProxyConfigGenerationStateRegressionTests(observer);
+   aegis_access::test::RunRequestGenerationTupleBuilderUnitTests(observer);
+   aegis_access::test::RunRequestGenerationTupleBuilderRegressionTests(observer);
++  aegis_access::test::RunPolicyPublicationAckTrackerUnitTests(observer);
++  aegis_access::test::RunPolicyPublicationAckTrackerRegressionTests(observer);
+   if (observer.failures() != 0) {
+     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
+               << " failures, " << observer.checks() << " checks)\n";
+diff --git a/components/aegis_access/policy_publication_ack_tracker.cc b/components/aegis_access/policy_publication_ack_tracker.cc
+new file mode 100644
+index 0000000..0822dc1
+--- /dev/null
++++ b/components/aegis_access/policy_publication_ack_tracker.cc
+@@ -0,0 +1,291 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/policy_publication_ack_tracker.h"
++
++#include <algorithm>
++#include <utility>
++
++namespace aegis_access {
++namespace {
++
++bool IsValidAckToken(const std::string& token) {
++  return !token.empty() && token.size() <= 128;
++}
++
++}  // namespace
++
++PolicyPublicationAckTracker::PolicyPublicationAckTracker(
++    size_t max_operations,
++    size_t max_ack_tokens_per_operation)
++    : max_operations_(max_operations),
++      max_ack_tokens_per_operation_(max_ack_tokens_per_operation) {}
++
++PolicyPublicationAckTracker::~PolicyPublicationAckTracker() = default;
++
++bool PolicyPublicationAckTracker::IsReady(const Entry& entry) {
++  return !entry.failed &&
++         entry.received_acks.size() == entry.required_acks.size() &&
++         (!entry.require_termination || entry.termination_complete) &&
++         entry.durable_committed;
++}
++
++PolicyPublicationAckStatus PolicyPublicationAckTracker::CurrentStatus(
++    const Entry& entry) {
++  if (entry.failed) {
++    return PolicyPublicationAckStatus::kFailed;
++  }
++  return IsReady(entry) ? PolicyPublicationAckStatus::kReady
++                        : PolicyPublicationAckStatus::kPending;
++}
++
++PolicyPublicationAckSnapshot PolicyPublicationAckTracker::SnapshotFor(
++    const Entry& entry) {
++  return {
++      entry.identity,
++      entry.required_acks.size(),
++      entry.received_acks.size(),
++      entry.termination_complete,
++      entry.durable_committed,
++      entry.failed,
++      IsReady(entry),
++  };
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::ResultFor(
++    PolicyPublicationAckStatus status,
++    const Entry* entry) {
++  if (!entry) {
++    return {status, std::nullopt};
++  }
++  return {status, SnapshotFor(*entry)};
++}
++
++PolicyPublicationAckTracker::Entry*
++PolicyPublicationAckTracker::FindBySelector(
++    const RequestCancellationSelector& selector) {
++  auto it = std::find_if(entries_.begin(), entries_.end(),
++                         [&](const Entry& entry) {
++                           return SameRequestCancellationSelector(
++                               entry.identity.selector, selector);
++                         });
++  return it == entries_.end() ? nullptr : &*it;
++}
++
++const PolicyPublicationAckTracker::Entry*
++PolicyPublicationAckTracker::FindBySelector(
++    const RequestCancellationSelector& selector) const {
++  auto it = std::find_if(entries_.begin(), entries_.end(),
++                         [&](const Entry& entry) {
++                           return SameRequestCancellationSelector(
++                               entry.identity.selector, selector);
++                         });
++  return it == entries_.end() ? nullptr : &*it;
++}
++
++PolicyPublicationAckStatus PolicyPublicationAckTracker::ValidateIdentity(
++    const PolicyPublicationIdentity& identity,
++    const Entry& entry) const {
++  if (identity.operation_sequence < entry.identity.operation_sequence) {
++    return PolicyPublicationAckStatus::kStaleOperation;
++  }
++  if (identity.operation_sequence != entry.identity.operation_sequence ||
++      identity.operation_id != entry.identity.operation_id) {
++    return PolicyPublicationAckStatus::kVersionMismatch;
++  }
++  if (identity.policy_generation < entry.identity.policy_generation) {
++    return PolicyPublicationAckStatus::kStaleGeneration;
++  }
++  if (identity.policy_generation != entry.identity.policy_generation) {
++    return PolicyPublicationAckStatus::kVersionMismatch;
++  }
++  return PolicyPublicationAckStatus::kPending;
++}
++
++PolicyPublicationAckStatus PolicyPublicationAckTracker::ValidateRequirements(
++    const PolicyPublicationAckRequirements& requirements,
++    std::set<std::string>* required_acks) const {
++  if (!required_acks || requirements.identity.operation_id.empty() ||
++      requirements.identity.operation_sequence == 0 ||
++      requirements.identity.policy_generation == 0 ||
++      !IsValidRequestCancellationSelector(requirements.identity.selector) ||
++      requirements.required_ack_tokens.empty() ||
++      requirements.required_ack_tokens.size() >
++          max_ack_tokens_per_operation_) {
++    return PolicyPublicationAckStatus::kInvalidOperation;
++  }
++
++  for (const std::string& token : requirements.required_ack_tokens) {
++    if (!IsValidAckToken(token) || !required_acks->insert(token).second) {
++      return PolicyPublicationAckStatus::kInvalidOperation;
++    }
++  }
++  return PolicyPublicationAckStatus::kPending;
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::UpdateEntry(
++    Entry* entry,
++    PolicyPublicationAckRequirements requirements,
++    std::set<std::string> required_acks) {
++  if (requirements.identity.operation_sequence <
++      entry->identity.operation_sequence) {
++    return ResultFor(PolicyPublicationAckStatus::kStaleOperation, entry);
++  }
++  if (requirements.identity.operation_sequence ==
++      entry->identity.operation_sequence) {
++    if (requirements.identity != entry->identity ||
++        required_acks != entry->required_acks ||
++        requirements.require_termination != entry->require_termination) {
++      return ResultFor(PolicyPublicationAckStatus::kVersionMismatch, entry);
++    }
++    return ResultFor(CurrentStatus(*entry), entry);
++  }
++  if (requirements.identity.policy_generation <=
++      entry->identity.policy_generation) {
++    return ResultFor(PolicyPublicationAckStatus::kStaleGeneration, entry);
++  }
++
++  entry->identity = std::move(requirements.identity);
++  entry->required_acks = std::move(required_acks);
++  entry->received_acks.clear();
++  entry->require_termination = requirements.require_termination;
++  entry->termination_complete = false;
++  entry->durable_committed = false;
++  entry->failed = false;
++  return ResultFor(PolicyPublicationAckStatus::kPending, entry);
++}
++
++std::pair<PolicyPublicationAckStatus, PolicyPublicationAckTracker::Entry*>
++PolicyPublicationAckTracker::FindAndValidate(
++    const PolicyPublicationIdentity& identity) {
++  Entry* entry = FindBySelector(identity.selector);
++  if (!entry) {
++    return {PolicyPublicationAckStatus::kNotFound, nullptr};
++  }
++  const PolicyPublicationAckStatus identity_status =
++      ValidateIdentity(identity, *entry);
++  if (identity_status != PolicyPublicationAckStatus::kPending) {
++    return {identity_status, entry};
++  }
++  return {CurrentStatus(*entry), entry};
++}
++
++std::pair<PolicyPublicationAckStatus,
++          const PolicyPublicationAckTracker::Entry*>
++PolicyPublicationAckTracker::FindAndValidate(
++    const PolicyPublicationIdentity& identity) const {
++  const Entry* entry = FindBySelector(identity.selector);
++  if (!entry) {
++    return {PolicyPublicationAckStatus::kNotFound, nullptr};
++  }
++  const PolicyPublicationAckStatus identity_status =
++      ValidateIdentity(identity, *entry);
++  if (identity_status != PolicyPublicationAckStatus::kPending) {
++    return {identity_status, entry};
++  }
++  return {CurrentStatus(*entry), entry};
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::Begin(
++    PolicyPublicationAckRequirements requirements) {
++  std::set<std::string> required_acks;
++  const PolicyPublicationAckStatus requirements_status =
++      ValidateRequirements(requirements, &required_acks);
++  if (requirements_status != PolicyPublicationAckStatus::kPending) {
++    return {requirements_status, std::nullopt};
++  }
++
++  if (Entry* current = FindBySelector(requirements.identity.selector)) {
++    return UpdateEntry(current, std::move(requirements),
++                       std::move(required_acks));
++  }
++  if (entries_.size() >= max_operations_) {
++    return {PolicyPublicationAckStatus::kCapacityExceeded, std::nullopt};
++  }
++
++  entries_.push_back({
++      std::move(requirements.identity),
++      std::move(required_acks),
++      {},
++      requirements.require_termination,
++      false,
++      false,
++      false,
++  });
++  return ResultFor(PolicyPublicationAckStatus::kPending, &entries_.back());
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::Acknowledge(
++    const PolicyPublicationIdentity& identity,
++    const std::string& ack_token) {
++  auto [status, entry] = FindAndValidate(identity);
++  if (status != PolicyPublicationAckStatus::kPending) {
++    return ResultFor(status, entry);
++  }
++  if (!entry->required_acks.contains(ack_token)) {
++    return ResultFor(PolicyPublicationAckStatus::kUnexpectedAck, entry);
++  }
++  if (!entry->received_acks.insert(ack_token).second) {
++    return ResultFor(PolicyPublicationAckStatus::kDuplicateAck, entry);
++  }
++  return ResultFor(CurrentStatus(*entry), entry);
++}
++
++PolicyPublicationAckResult
++PolicyPublicationAckTracker::MarkTerminationsComplete(
++    const PolicyPublicationIdentity& identity) {
++  auto [status, entry] = FindAndValidate(identity);
++  if (status != PolicyPublicationAckStatus::kPending) {
++    return ResultFor(status, entry);
++  }
++  entry->termination_complete = true;
++  return ResultFor(CurrentStatus(*entry), entry);
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::MarkDurablyCommitted(
++    const PolicyPublicationIdentity& identity) {
++  auto [status, entry] = FindAndValidate(identity);
++  if (status != PolicyPublicationAckStatus::kPending) {
++    return ResultFor(status, entry);
++  }
++  entry->durable_committed = true;
++  return ResultFor(CurrentStatus(*entry), entry);
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::MarkFailed(
++    const PolicyPublicationIdentity& identity) {
++  auto [status, entry] = FindAndValidate(identity);
++  if (status != PolicyPublicationAckStatus::kPending) {
++    return ResultFor(status, entry);
++  }
++  entry->failed = true;
++  return ResultFor(PolicyPublicationAckStatus::kFailed, entry);
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::Lookup(
++    const PolicyPublicationIdentity& identity) const {
++  const auto [status, entry] = FindAndValidate(identity);
++  return ResultFor(status, entry);
++}
++
++PolicyPublicationAckResult PolicyPublicationAckTracker::Finalize(
++    const PolicyPublicationIdentity& identity) {
++  auto [status, entry] = FindAndValidate(identity);
++  if (status != PolicyPublicationAckStatus::kReady) {
++    if (status == PolicyPublicationAckStatus::kPending) {
++      status = PolicyPublicationAckStatus::kNotReady;
++    }
++    return ResultFor(status, entry);
++  }
++
++  const PolicyPublicationAckSnapshot snapshot = SnapshotFor(*entry);
++  entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
++                                [&](const Entry& candidate) {
++                                  return SameRequestCancellationSelector(
++                                      candidate.identity.selector,
++                                      identity.selector);
++                                }),
++                 entries_.end());
++  return {PolicyPublicationAckStatus::kFinalized, snapshot};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/policy_publication_ack_tracker.h b/components/aegis_access/policy_publication_ack_tracker.h
+new file mode 100644
+index 0000000..4ab7519
+--- /dev/null
++++ b/components/aegis_access/policy_publication_ack_tracker.h
+@@ -0,0 +1,137 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_H_
++#define COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_H_
++
++#include <cstddef>
++#include <cstdint>
++#include <optional>
++#include <set>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "components/aegis_access/request_ownership_registry.h"
++
++namespace aegis_access {
++
++enum class PolicyPublicationAckStatus {
++  kPending,
++  kReady,
++  kFinalized,
++  kFailed,
++  kInvalidOperation,
++  kCapacityExceeded,
++  kStaleOperation,
++  kStaleGeneration,
++  kVersionMismatch,
++  kUnexpectedAck,
++  kDuplicateAck,
++  kNotFound,
++  kNotReady,
++};
++
++struct PolicyPublicationIdentity {
++  std::string operation_id;
++  uint64_t operation_sequence = 0;
++  uint64_t policy_generation = 0;
++  RequestCancellationSelector selector;
++
++  friend bool operator==(const PolicyPublicationIdentity&,
++                         const PolicyPublicationIdentity&) = default;
++};
++
++struct PolicyPublicationAckRequirements {
++  PolicyPublicationIdentity identity;
++  std::vector<std::string> required_ack_tokens;
++  bool require_termination = true;
++};
++
++struct PolicyPublicationAckSnapshot {
++  PolicyPublicationIdentity identity;
++  size_t required_acks = 0;
++  size_t received_acks = 0;
++  bool termination_complete = false;
++  bool durable_committed = false;
++  bool failed = false;
++  bool ready = false;
++};
++
++struct PolicyPublicationAckResult {
++  PolicyPublicationAckStatus status = PolicyPublicationAckStatus::kNotFound;
++  std::optional<PolicyPublicationAckSnapshot> snapshot;
++};
++
++// Bounded neutral state for one publication operation per exact request scope.
++// A newer operationSequence supersedes an older operation for the same selector.
++// Delayed ACKs from the old operation therefore cannot make the new state ready.
++class PolicyPublicationAckTracker {
++ public:
++  PolicyPublicationAckTracker(size_t max_operations,
++                              size_t max_ack_tokens_per_operation);
++  PolicyPublicationAckTracker(const PolicyPublicationAckTracker&) = delete;
++  PolicyPublicationAckTracker& operator=(const PolicyPublicationAckTracker&) =
++      delete;
++  ~PolicyPublicationAckTracker();
++
++  PolicyPublicationAckResult Begin(
++      PolicyPublicationAckRequirements requirements);
++  PolicyPublicationAckResult Acknowledge(
++      const PolicyPublicationIdentity& identity,
++      const std::string& ack_token);
++  PolicyPublicationAckResult MarkTerminationsComplete(
++      const PolicyPublicationIdentity& identity);
++  PolicyPublicationAckResult MarkDurablyCommitted(
++      const PolicyPublicationIdentity& identity);
++  PolicyPublicationAckResult MarkFailed(
++      const PolicyPublicationIdentity& identity);
++  PolicyPublicationAckResult Lookup(
++      const PolicyPublicationIdentity& identity) const;
++  PolicyPublicationAckResult Finalize(
++      const PolicyPublicationIdentity& identity);
++
++  size_t size() const { return entries_.size(); }
++
++ private:
++  struct Entry {
++    PolicyPublicationIdentity identity;
++    std::set<std::string> required_acks;
++    std::set<std::string> received_acks;
++    bool require_termination = true;
++    bool termination_complete = false;
++    bool durable_committed = false;
++    bool failed = false;
++  };
++
++  Entry* FindBySelector(const RequestCancellationSelector& selector);
++  const Entry* FindBySelector(
++      const RequestCancellationSelector& selector) const;
++  PolicyPublicationAckStatus ValidateIdentity(
++      const PolicyPublicationIdentity& identity,
++      const Entry& entry) const;
++  PolicyPublicationAckStatus ValidateRequirements(
++      const PolicyPublicationAckRequirements& requirements,
++      std::set<std::string>* required_acks) const;
++  PolicyPublicationAckResult UpdateEntry(
++      Entry* entry,
++      PolicyPublicationAckRequirements requirements,
++      std::set<std::string> required_acks);
++  std::pair<PolicyPublicationAckStatus, Entry*> FindAndValidate(
++      const PolicyPublicationIdentity& identity);
++  std::pair<PolicyPublicationAckStatus, const Entry*> FindAndValidate(
++      const PolicyPublicationIdentity& identity) const;
++  static PolicyPublicationAckStatus CurrentStatus(const Entry& entry);
++  static bool IsReady(const Entry& entry);
++  static PolicyPublicationAckSnapshot SnapshotFor(const Entry& entry);
++  static PolicyPublicationAckResult ResultFor(
++      PolicyPublicationAckStatus status,
++      const Entry* entry);
++
++  size_t max_operations_;
++  size_t max_ack_tokens_per_operation_;
++  std::vector<Entry> entries_;
++};
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_H_
+diff --git a/components/aegis_access/policy_publication_ack_tracker_contract_test.h b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
+new file mode 100644
+index 0000000..77688cf
+--- /dev/null
++++ b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
+@@ -0,0 +1,217 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_CONTRACT_TEST_H_
++
++#include <string>
++
++#include "components/aegis_access/policy_publication_ack_tracker.h"
++
++namespace aegis_access::test {
++
++class PolicyPublicationAckTrackerTestObserver {
++ public:
++  virtual ~PolicyPublicationAckTrackerTestObserver() = default;
++  virtual void Expect(bool condition, const std::string& label) = 0;
++};
++
++inline RequestCancellationSelector PublicationSelector(
++    const std::string& host = "target.example") {
++  return {
++      {ChannelNamespace::kDev, "profile-ack", "partition-ack"},
++      "document-ack",
++      "",
++      "https://top.example",
++      host,
++      RequestScheme::kHttps,
++      443,
++  };
++}
++
++inline PolicyPublicationIdentity PublicationIdentity(
++    uint64_t sequence,
++    uint64_t generation,
++    const std::string& operation_id = "operation-ack",
++    const std::string& host = "target.example") {
++  return {operation_id, sequence, generation, PublicationSelector(host)};
++}
++
++inline PolicyPublicationAckRequirements PublicationRequirements(
++    uint64_t sequence = 1,
++    uint64_t generation = 1,
++    const std::string& operation_id = "operation-ack",
++    const std::string& host = "target.example") {
++  return {PublicationIdentity(sequence, generation, operation_id, host),
++          {"browser-runtime", "network-context"},
++          true};
++}
++
++inline void ExpectPublicationWaitsForEveryCompletion(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(8, 4);
++  const auto requirements = PublicationRequirements();
++  observer.Expect(
++      tracker.Begin(requirements).status == PolicyPublicationAckStatus::kPending,
++      "publication begins pending");
++  observer.Expect(
++      tracker.Acknowledge(requirements.identity, "browser-runtime").status ==
++          PolicyPublicationAckStatus::kPending,
++      "browser ack alone stays pending");
++  observer.Expect(
++      tracker.Acknowledge(requirements.identity, "network-context").status ==
++          PolicyPublicationAckStatus::kPending,
++      "all acks still wait for termination and commit");
++  observer.Expect(
++      tracker.MarkTerminationsComplete(requirements.identity).status ==
++          PolicyPublicationAckStatus::kPending,
++      "termination still waits for durable commit");
++
++  const auto committed = tracker.MarkDurablyCommitted(requirements.identity);
++  observer.Expect(committed.status == PolicyPublicationAckStatus::kReady,
++                  "durable commit makes publication ready");
++  observer.Expect(committed.snapshot.has_value() &&
++                      committed.snapshot->required_acks == 2 &&
++                      committed.snapshot->received_acks == 2 &&
++                      committed.snapshot->termination_complete &&
++                      committed.snapshot->durable_committed &&
++                      committed.snapshot->ready,
++                  "ready snapshot records all dimensions");
++  observer.Expect(
++      tracker.Finalize(requirements.identity).status ==
++          PolicyPublicationAckStatus::kFinalized,
++      "ready publication finalizes");
++  observer.Expect(tracker.size() == 0,
++                  "finalized publication leaves no active state");
++}
++
++inline void ExpectUnknownAndDuplicateAcksCannotAdvance(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(8, 4);
++  const auto requirements = PublicationRequirements();
++  tracker.Begin(requirements);
++  observer.Expect(
++      tracker.Acknowledge(requirements.identity, "other-context").status ==
++          PolicyPublicationAckStatus::kUnexpectedAck,
++      "unexpected ack is rejected");
++  observer.Expect(
++      tracker.Acknowledge(requirements.identity, "browser-runtime").status ==
++          PolicyPublicationAckStatus::kPending,
++      "expected ack is accepted");
++  observer.Expect(
++      tracker.Acknowledge(requirements.identity, "browser-runtime").status ==
++          PolicyPublicationAckStatus::kDuplicateAck,
++      "duplicate ack is rejected");
++  const auto current = tracker.Lookup(requirements.identity);
++  observer.Expect(current.snapshot.has_value() &&
++                      current.snapshot->received_acks == 1,
++                  "duplicate ack does not advance count");
++}
++
++inline void ExpectNewerOperationInvalidatesLateAck(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(8, 4);
++  const auto older = PublicationRequirements(10, 10, "operation-old");
++  const auto newer = PublicationRequirements(11, 11, "operation-new");
++  tracker.Begin(older);
++  observer.Expect(tracker.Begin(newer).status ==
++                      PolicyPublicationAckStatus::kPending,
++                  "newer operation supersedes old operation");
++  observer.Expect(
++      tracker.Acknowledge(older.identity, "browser-runtime").status ==
++          PolicyPublicationAckStatus::kStaleOperation,
++      "late old ack is stale");
++  observer.Expect(
++      tracker.MarkDurablyCommitted(older.identity).status ==
++          PolicyPublicationAckStatus::kStaleOperation,
++      "late old commit is stale");
++  const auto current = tracker.Lookup(newer.identity);
++  observer.Expect(current.snapshot.has_value() &&
++                      current.snapshot->received_acks == 0 &&
++                      !current.snapshot->durable_committed,
++                  "late old completion cannot mutate newer operation");
++}
++
++inline void ExpectExecutionPointFailureStaysFailClosed(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(8, 4);
++  const auto failed = PublicationRequirements(30, 30, "operation-failed");
++  tracker.Begin(failed);
++  observer.Expect(
++      tracker.MarkFailed(failed.identity).status ==
++          PolicyPublicationAckStatus::kFailed,
++      "execution-point failure marks publication failed");
++  observer.Expect(
++      tracker.Acknowledge(failed.identity, "network-context").status ==
++          PolicyPublicationAckStatus::kFailed,
++      "late ack cannot revive failed publication");
++  observer.Expect(
++      tracker.Finalize(failed.identity).status ==
++          PolicyPublicationAckStatus::kFailed,
++      "failed publication cannot finalize");
++
++  const auto retry = PublicationRequirements(31, 31, "operation-retry");
++  observer.Expect(
++      tracker.Begin(retry).status == PolicyPublicationAckStatus::kPending,
++      "newer operation can supersede failed publication");
++}
++
++inline void ExpectGenerationCannotMoveBackward(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(8, 4);
++  tracker.Begin(PublicationRequirements(20, 20, "operation-a"));
++  observer.Expect(
++      tracker.Begin(PublicationRequirements(21, 20, "operation-b")).status ==
++          PolicyPublicationAckStatus::kStaleGeneration,
++      "newer operation cannot reuse old generation");
++}
++
++inline void ExpectIndependentSelectorsCanProgress(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(8, 4);
++  observer.Expect(
++      tracker.Begin(PublicationRequirements(1, 1, "op-a", "a.example")).status ==
++          PolicyPublicationAckStatus::kPending,
++      "first selector begins");
++  observer.Expect(
++      tracker.Begin(PublicationRequirements(2, 2, "op-b", "b.example")).status ==
++          PolicyPublicationAckStatus::kPending,
++      "second selector begins");
++  observer.Expect(tracker.size() == 2,
++                  "independent selectors retain independent state");
++}
++
++inline void ExpectInvalidRequirementsFailClosed(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  PolicyPublicationAckTracker tracker(1, 2);
++  auto duplicate = PublicationRequirements();
++  duplicate.required_ack_tokens = {"browser-runtime", "browser-runtime"};
++  observer.Expect(
++      tracker.Begin(duplicate).status ==
++          PolicyPublicationAckStatus::kInvalidOperation,
++      "duplicate required ack is invalid");
++  auto empty = PublicationRequirements();
++  empty.required_ack_tokens.clear();
++  observer.Expect(
++      tracker.Begin(empty).status ==
++          PolicyPublicationAckStatus::kInvalidOperation,
++      "empty required ack set is invalid");
++}
++
++inline void RunPolicyPublicationAckTrackerUnitTests(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  ExpectPublicationWaitsForEveryCompletion(observer);
++  ExpectUnknownAndDuplicateAcksCannotAdvance(observer);
++  ExpectIndependentSelectorsCanProgress(observer);
++  ExpectInvalidRequirementsFailClosed(observer);
++}
++
++inline void RunPolicyPublicationAckTrackerRegressionTests(
++    PolicyPublicationAckTrackerTestObserver& observer) {
++  ExpectNewerOperationInvalidatesLateAck(observer);
++  ExpectExecutionPointFailureStaysFailClosed(observer);
++  ExpectGenerationCannotMoveBackward(observer);
++}
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/policy_publication_ack_tracker_unittest.cc b/components/aegis_access/policy_publication_ack_tracker_unittest.cc
+new file mode 100644
+index 0000000..b547101
+--- /dev/null
++++ b/components/aegis_access/policy_publication_ack_tracker_unittest.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/policy_publication_ack_tracker_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestPolicyPublicationAckTrackerObserver
++    : public PolicyPublicationAckTrackerTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(PolicyPublicationAckTrackerTest, SharedUnitContract) {
++  GtestPolicyPublicationAckTrackerObserver observer;
++  RunPolicyPublicationAckTrackerUnitTests(observer);
++}
++
++TEST(PolicyPublicationAckTrackerRegressionTest, SharedRegressionContract) {
++  GtestPolicyPublicationAckTrackerObserver observer;
++  RunPolicyPublicationAckTrackerRegressionTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
+diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+index 745b347..80a2ed5 100644
+--- a/components/aegis_access/request_ownership_registry.cc
++++ b/components/aegis_access/request_ownership_registry.cc
+@@ -110,6 +110,17 @@ RequestOwnershipStatus ValidateExpected(
+ 
+ }  // namespace
+ 
++bool IsValidRequestCancellationSelector(
++    const RequestCancellationSelector& selector) {
++  return IsValidSelector(selector);
++}
++
++bool SameRequestCancellationSelector(
++    const RequestCancellationSelector& left,
++    const RequestCancellationSelector& right) {
++  return SameSelector(left, right);
++}
++
+ RequestDispatchBarrierRegistry::RequestDispatchBarrierRegistry(
+     size_t max_barriers)
+     : max_barriers_(max_barriers) {}
+diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
+index 419598a..4af2630 100644
+--- a/components/aegis_access/request_ownership_registry.h
++++ b/components/aegis_access/request_ownership_registry.h
+@@ -92,8 +92,17 @@ struct RequestCancellationSelector {
+   std::string exact_host;
+   RequestScheme scheme = RequestScheme::kInvalid;
+   uint16_t port = 0;
++
++  friend bool operator==(const RequestCancellationSelector&,
++                         const RequestCancellationSelector&) = default;
+ };
+ 
++bool IsValidRequestCancellationSelector(
++    const RequestCancellationSelector& selector);
++bool SameRequestCancellationSelector(
++    const RequestCancellationSelector& left,
++    const RequestCancellationSelector& right);
++
+ struct RequestOwnershipBatchCancelResult {
+   RequestOwnershipStatus status = RequestOwnershipStatus::kOk;
+   std::vector<RequestOwnershipTerminalResult> cancellations;
