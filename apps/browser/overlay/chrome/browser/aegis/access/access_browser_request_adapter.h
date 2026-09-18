@@ -23,6 +23,7 @@ enum class AccessBrowserRequestMetadataStatus {
   kUnsupportedProfile,
   kMissingTransport,
   kMissingTrustedContents,
+  kMissingTrustedProcess,
   kBrowserContextMismatch,
   kMissingTrustedFrame,
   kMissingStoragePartition,
@@ -54,6 +55,14 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
     const base::RepeatingCallback<content::WebContents*()>& wc_getter,
     content::FrameTreeNodeId frame_tree_node_id,
     std::optional<int64_t> navigation_id);
+
+// Builds Profile-only metadata for browser-owned background request factories
+// that have no unique page client. The render process supplies only trusted
+// BrowserContext/StoragePartition ownership; no WebContents, document token or
+// top-level site is borrowed. Site-scoped policy therefore remains ineligible.
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
+    Profile* profile,
+    int render_process_id);
 
 }  // namespace aegis::access
 
