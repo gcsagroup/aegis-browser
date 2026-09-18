@@ -2,10 +2,12 @@
 
 import {spawnSync} from 'node:child_process';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {pathToFileURL, URLSearchParams} from 'node:url';
 import {inferPromotionTitle} from './promotion-title.mjs';
 
 const PROMOTION_BRANCH_PREFIX = 'automation/promote-';
+const QUALITY_WORKFLOW_PATH = '.github/workflows/quality.yml';
+const REQUIRED_QUALITY_JOBS = ['quality', 'quality-gate'];
 const README_FILES = ['README.md', 'README.zh-CN.md', 'README.zh-TW.md'];
 const MARKERS = Object.freeze({
   sync: '<!-- aegis-promotion-orchestrator:main-to-develop -->',
@@ -61,14 +63,67 @@ export function classifyBranchRelationship({originMain, upstreamMain, originMain
   return 'diverged';
 }
 
-export function qualityGateState(checkRuns, sha) {
-  const candidates = (checkRuns ?? [])
-    .filter((run) => run?.name === 'quality-gate' && run?.head_sha === sha && run?.app?.slug === 'github-actions')
-    .sort((left, right) => Number(right.id ?? 0) - Number(left.id ?? 0));
-  const latest = candidates[0];
-  if (!latest) return 'missing';
-  if (latest.status !== 'completed') return 'pending';
-  return latest.conclusion === 'success' ? 'success' : 'failure';
+function qualityRunMatches(run, {repo, branch, sha}) {
+  return qualityRunSourceMatches(run) &&
+    qualityRunTargetMatches(run, {repo, branch, sha});
+}
+
+function qualityRunSourceMatches(run) {
+  return run?.event === 'push' && run?.path === QUALITY_WORKFLOW_PATH;
+}
+
+function qualityRunTargetMatches(run, {repo, branch, sha}) {
+  return run?.head_branch === branch && run?.head_sha === sha &&
+    run?.repository?.full_name === repo;
+}
+
+function qualityRunState(run, expected) {
+  if (!run) return 'missing';
+  if (!qualityRunMatches(run, expected)) return 'failure';
+  if (run.status !== 'completed') return 'pending';
+  return run.conclusion === 'success' ? 'success' : 'failure';
+}
+
+function requiredQualityJobsState(jobs, run, expected) {
+  for (const name of REQUIRED_QUALITY_JOBS) {
+    const matches = (jobs ?? []).filter((job) => job?.name === name);
+    if (matches.length !== 1) return 'failure';
+    const job = matches[0];
+    if (job.run_id !== run.id || job.head_sha !== expected.sha ||
+        job.run_attempt !== run.run_attempt) return 'failure';
+    if (job.status !== 'completed') return 'pending';
+    if (job.conclusion !== 'success') return 'failure';
+  }
+  return 'success';
+}
+
+export function qualityWorkflowRunState(run, jobs, expected) {
+  const runState = qualityRunState(run, expected);
+  return runState === 'success'
+    ? requiredQualityJobsState(jobs, run, expected)
+    : runState;
+}
+
+function latestQualityRun(workflowRuns, expected) {
+  return (workflowRuns ?? [])
+    .filter((run) => qualityRunMatches(run, expected))
+    .sort((left, right) => Number(right.id ?? 0) - Number(left.id ?? 0))[0];
+}
+
+function finalQualityAttemptState(run, finalRun, attempt, jobs, expected) {
+  if (finalRun?.id !== run.id) return 'failure';
+  if (finalRun.run_attempt !== attempt) return 'pending';
+  return qualityWorkflowRunState(finalRun, jobs, expected);
+}
+
+async function verifiedQualityRunState(repo, run, expected, token, apiFn) {
+  const state = qualityRunState(run, expected);
+  if (state !== 'success') return state;
+  const attempt = Number(run.run_attempt);
+  if (!Number.isInteger(attempt) || attempt < 1) return 'failure';
+  const result = await apiFn(repo, `/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=100`, {token});
+  const finalRun = await apiFn(repo, `/actions/runs/${run.id}`, {token});
+  return finalQualityAttemptState(run, finalRun, attempt, result?.jobs, expected);
 }
 
 export function closedPullBlocks(pr, expectedHeadSha) {
@@ -142,15 +197,29 @@ function branchRelationship() {
   };
 }
 
-async function requireGreenQuality(repo, commitSha, token) {
-  const result = await githubApi(repo, `/commits/${commitSha}/check-runs?check_name=quality-gate&filter=latest&per_page=100`, {token});
-  const state = qualityGateState(result?.check_runs, commitSha);
-  if (state === 'success') return true;
-  if (state === 'missing' || state === 'pending') {
-    console.log(`Deferred: ${repo}@${commitSha.slice(0, 12)} quality-gate is ${state}`);
+export async function requireGreenQuality(
+  repo,
+  branch,
+  commitSha,
+  token,
+  apiFn = githubApi,
+) {
+  const expected = {repo, branch, sha: commitSha};
+  const query = new URLSearchParams({branch, event: 'push', head_sha: commitSha, per_page: '100'});
+  const result = await apiFn(repo, `/actions/workflows/quality.yml/runs?${query}`, {token});
+  const selected = latestQualityRun(result?.workflow_runs, expected);
+  if (!selected) {
+    console.log(`Deferred: ${repo}:${branch}@${commitSha.slice(0, 12)} quality workflow is missing`);
     return false;
   }
-  throw new Error(`${repo}@${commitSha.slice(0, 12)} quality-gate failed`);
+  const run = await apiFn(repo, `/actions/runs/${selected.id}`, {token});
+  const state = await verifiedQualityRunState(repo, run, expected, token, apiFn);
+  if (state === 'success') return true;
+  if (state === 'missing' || state === 'pending') {
+    console.log(`Deferred: ${repo}:${branch}@${commitSha.slice(0, 12)} quality workflow is ${state}`);
+    return false;
+  }
+  throw new Error(`${repo}:${branch}@${commitSha.slice(0, 12)} quality workflow failed`);
 }
 
 async function listPulls(repo, state, token) {
@@ -428,7 +497,7 @@ function mainRelationshipIsStable(actual, expected, state) {
 }
 
 async function handleOriginBehind(config, relation, deps) {
-  if (!await deps.requireGreenQuality(config.upstreamRepo, relation.upstreamMain, config.upstreamToken)) return;
+  if (!await deps.requireGreenQuality(config.upstreamRepo, 'main', relation.upstreamMain, config.upstreamToken)) return;
   deps.refreshBranches(config);
   const refreshed = deps.branchRelationship();
   if (!mainRelationshipIsStable(refreshed, relation, 'origin-behind')) {
@@ -440,7 +509,7 @@ async function handleOriginBehind(config, relation, deps) {
 }
 
 async function handleOriginAhead(config, relation, deps) {
-  if (!await deps.requireGreenQuality(config.personalRepo, relation.originMain, config.readToken)) return;
+  if (!await deps.requireGreenQuality(config.personalRepo, 'main', relation.originMain, config.readToken)) return;
   deps.refreshBranches(config);
   const refreshed = deps.branchRelationship();
   if (!mainRelationshipIsStable(refreshed, relation, 'origin-ahead')) {
@@ -462,11 +531,12 @@ async function handleDevelopPromotion(config, relation, deps) {
     deps.log('No develop changes are waiting for promotion');
     return;
   }
-  if (!await deps.requireGreenQuality(config.personalRepo, currentDevelop, config.readToken)) return;
+  if (!await deps.requireGreenQuality(config.personalRepo, 'develop', currentDevelop, config.readToken)) return;
   deps.refreshBranches(config);
   const refreshed = deps.branchRelationship();
   const refreshedDevelop = deps.sha('origin/develop');
-  if (refreshed.state !== 'same' || refreshedDevelop !== currentDevelop) {
+  if (!mainRelationshipIsStable(refreshed, relation, 'same') ||
+      refreshedDevelop !== currentDevelop) {
     deps.log(`Deferred: branch state changed during develop quality verification (${refreshed.state})`);
     return;
   }
@@ -479,7 +549,7 @@ async function handleDevelopPromotion(config, relation, deps) {
 }
 
 async function handleSameMain(config, relation, deps) {
-  if (!await deps.requireGreenQuality(config.personalRepo, relation.originMain, config.readToken)) return;
+  if (!await deps.requireGreenQuality(config.personalRepo, 'main', relation.originMain, config.readToken)) return;
   deps.refreshBranches(config);
   const refreshed = deps.branchRelationship();
   if (refreshed.state !== 'same' || refreshed.originMain !== relation.originMain) {

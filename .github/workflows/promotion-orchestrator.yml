@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  checks: read
+  actions: read
   contents: read
 
 concurrency:

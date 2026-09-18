@@ -19,7 +19,7 @@ inline OwnershipKey MetadataSeedOwner() {
   return {ChannelNamespace::kDev, "profile-a", "partition-a"};
 }
 
-inline void RunBrowserRequestMetadataSeedUnitTests(
+inline void RunBrowserReleaseChannelUnitTests(
     BrowserRequestMetadataSeedTestObserver& observer) {
   observer.Expect(MapBrowserReleaseChannel(BrowserReleaseChannel::kStable) ==
                       ChannelNamespace::kRelease,
@@ -39,7 +39,10 @@ inline void RunBrowserRequestMetadataSeedUnitTests(
   observer.Expect(MapBrowserReleaseChannel(BrowserReleaseChannel::kInvalid) ==
                       ChannelNamespace::kInvalid,
                   "metadata seed unit invalid stays invalid");
+}
 
+inline void RunMetadataSeedAttributionUnitTests(
+    BrowserRequestMetadataSeedTestObserver& observer) {
   const auto document = PrepareBrowserRequestMetadataSeed(
       {"request-document", MetadataSeedOwner(), "document-a", "",
        "https://example.test"});
@@ -67,7 +70,10 @@ inline void RunBrowserRequestMetadataSeedUnitTests(
                       profile.seed->attribution_kind ==
                           BrowserRequestAttributionKind::kProfileOnly,
                   "metadata seed unit profile-only attribution");
+}
 
+inline void RunMetadataSeedValidationUnitTests(
+    BrowserRequestMetadataSeedTestObserver& observer) {
   OwnershipKey invalid_owner = MetadataSeedOwner();
   invalid_owner.profile_token.clear();
   observer.Expect(PrepareBrowserRequestMetadataSeed(
@@ -92,7 +98,14 @@ inline void RunBrowserRequestMetadataSeedUnitTests(
                   "metadata seed unit orphan top site rejected");
 }
 
-inline void RunBrowserRequestMetadataSeedRegressionTests(
+inline void RunBrowserRequestMetadataSeedUnitTests(
+    BrowserRequestMetadataSeedTestObserver& observer) {
+  RunBrowserReleaseChannelUnitTests(observer);
+  RunMetadataSeedAttributionUnitTests(observer);
+  RunMetadataSeedValidationUnitTests(observer);
+}
+
+inline void RunNavigationMetadataSeedRegressionTests(
     BrowserRequestMetadataSeedTestObserver& observer) {
   const auto navigation_over_old_document = PrepareBrowserRequestMetadataSeed(
       {"request-navigation-priority", MetadataSeedOwner(), "old-document",
@@ -112,7 +125,10 @@ inline void RunBrowserRequestMetadataSeedRegressionTests(
   observer.Expect(MapBrowserReleaseChannel(BrowserReleaseChannel::kUnknown) !=
                       ChannelNamespace::kRelease,
                   "metadata seed regression unknown build never claims release");
+}
 
+inline void RunOwnershipMetadataSeedRegressionTests(
+    BrowserRequestMetadataSeedTestObserver& observer) {
   OwnershipKey other_profile = MetadataSeedOwner();
   other_profile.profile_token = "profile-b";
   const auto profile_result = PrepareBrowserRequestMetadataSeed(
@@ -134,7 +150,10 @@ inline void RunBrowserRequestMetadataSeedRegressionTests(
                       partition_result.seed->owner.storage_partition_token ==
                           "partition-b",
                   "metadata seed regression partition identity is preserved");
+}
 
+inline void RunFailClosedMetadataSeedRegressionTests(
+    BrowserRequestMetadataSeedTestObserver& observer) {
   OwnershipKey invalid_channel = MetadataSeedOwner();
   invalid_channel.channel = ChannelNamespace::kInvalid;
   observer.Expect(PrepareBrowserRequestMetadataSeed(
@@ -149,6 +168,13 @@ inline void RunBrowserRequestMetadataSeedRegressionTests(
                           BrowserRequestAttributionKind::kProfileOnly &&
                       worker_like.seed->top_frame_site.empty(),
                   "metadata seed regression background request cannot borrow site");
+}
+
+inline void RunBrowserRequestMetadataSeedRegressionTests(
+    BrowserRequestMetadataSeedTestObserver& observer) {
+  RunNavigationMetadataSeedRegressionTests(observer);
+  RunOwnershipMetadataSeedRegressionTests(observer);
+  RunFailClosedMetadataSeedRegressionTests(observer);
 }
 
 }  // namespace aegis_access::test

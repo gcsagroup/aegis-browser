@@ -79,6 +79,152 @@ std::optional<aegis_access::RequestAttributionKind> ToAttributionKind(
   return std::nullopt;
 }
 
+AccessBrowserRequestMetadataStatus ResolveTrustedContents(
+    Profile* profile,
+    const base::RepeatingCallback<content::WebContents*()>& wc_getter,
+    content::FrameTreeNodeId frame_tree_node_id,
+    content::WebContents** trusted_contents) {
+  content::WebContents* callback_contents =
+      wc_getter.is_null() ? nullptr : wc_getter.Run();
+  content::WebContents* frame_contents =
+      frame_tree_node_id
+          ? content::WebContents::FromFrameTreeNodeId(frame_tree_node_id)
+          : nullptr;
+  if (callback_contents && frame_contents &&
+      callback_contents != frame_contents) {
+    return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
+  }
+  content::WebContents* contents =
+      frame_contents ? frame_contents : callback_contents;
+  if (!contents) {
+    return AccessBrowserRequestMetadataStatus::kMissingTrustedContents;
+  }
+  if (contents->GetBrowserContext() != profile) {
+    return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
+  }
+  *trusted_contents = contents;
+  return AccessBrowserRequestMetadataStatus::kOk;
+}
+
+AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
+    Profile* profile,
+    content::WebContents* contents,
+    content::FrameTreeNodeId frame_tree_node_id,
+    content::RenderFrameHost** trusted_frame) {
+  content::RenderFrameHost* request_frame =
+      frame_tree_node_id
+          ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id)
+          : contents->GetPrimaryMainFrame();
+  if (!request_frame) {
+    return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
+  }
+  if (request_frame->GetBrowserContext() != profile) {
+    return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
+  }
+  if (!request_frame->GetPage().IsPrimary()) {
+    return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
+  }
+  *trusted_frame = request_frame;
+  return AccessBrowserRequestMetadataStatus::kOk;
+}
+
+AccessBrowserRequestMetadataStatus ResolveOwner(
+    Profile* profile,
+    content::RenderFrameHost* request_frame,
+    AccessNetworkContextTransport* transport,
+    aegis_access::OwnershipKey* owner) {
+  content::StoragePartition* partition = request_frame->GetStoragePartition();
+  if (!partition) {
+    return AccessBrowserRequestMetadataStatus::kMissingStoragePartition;
+  }
+  const std::optional<base::FilePath> relative_partition_path =
+      RelativePartitionPath(profile, partition);
+  if (!relative_partition_path) {
+    return AccessBrowserRequestMetadataStatus::kInvalidPartitionPath;
+  }
+  const aegis_access::ChannelNamespace channel =
+      aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
+  const std::optional<aegis_access::OwnershipKey> resolved_owner =
+      transport->OwnerForPartition(channel, *relative_partition_path);
+  if (!resolved_owner) {
+    return AccessBrowserRequestMetadataStatus::kInvalidOwner;
+  }
+  *owner = *resolved_owner;
+  return AccessBrowserRequestMetadataStatus::kOk;
+}
+
+AccessBrowserRequestMetadataStatus BuildSeedInput(
+    Profile* profile,
+    content::WebContents* contents,
+    content::FrameTreeNodeId frame_tree_node_id,
+    std::optional<int64_t> navigation_id,
+    const aegis_access::OwnershipKey& owner,
+    aegis_access::BrowserRequestMetadataSeedInput* seed_input) {
+  seed_input->request_id =
+      base::Uuid::GenerateRandomV4().AsLowercaseString();
+  seed_input->owner = owner;
+  if (navigation_id.has_value()) {
+    if (!frame_tree_node_id) {
+      return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
+    }
+    seed_input->pending_navigation_token = base::StrCat(
+        {"nav:", base::NumberToString(frame_tree_node_id.value()), ":",
+         base::NumberToString(*navigation_id)});
+    return AccessBrowserRequestMetadataStatus::kOk;
+  }
+  seed_input->document_token =
+      AegisService::DocumentIdForWebContents(contents);
+  if (seed_input->document_token.empty()) {
+    return AccessBrowserRequestMetadataStatus::kOk;
+  }
+  content::RenderFrameHost* primary_frame = contents->GetPrimaryMainFrame();
+  if (!primary_frame || primary_frame->GetBrowserContext() != profile) {
+    return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
+  }
+  const net::SchemefulSite top_frame_site(
+      primary_frame->GetLastCommittedOrigin());
+  if (top_frame_site.opaque() ||
+      !top_frame_site.GetURL().SchemeIsHTTPOrHTTPS()) {
+    return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
+  }
+  seed_input->top_frame_site = top_frame_site.Serialize();
+  return AccessBrowserRequestMetadataStatus::kOk;
+}
+
+AccessBrowserRequestMetadataResult BuildMetadataFromSeed(
+    aegis_access::BrowserRequestMetadataSeedInput seed_input) {
+  aegis_access::BrowserRequestMetadataSeedResult seed_result =
+      aegis_access::PrepareBrowserRequestMetadataSeed(std::move(seed_input));
+  if (!seed_result.seed) {
+    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
+  }
+  const aegis_access::BrowserRequestMetadataSeed& seed = *seed_result.seed;
+  const std::optional<aegis_access::RequestAttributionKind> attribution_kind =
+      ToAttributionKind(seed.attribution_kind);
+  if (!attribution_kind) {
+    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
+  }
+  aegis_access::BrowserOwnedRequestMetadata metadata;
+  metadata.request_id = seed.request_id;
+  metadata.owner = seed.owner;
+  metadata.attribution_kind = *attribution_kind;
+  metadata.document_token = seed.document_token;
+  metadata.pending_navigation_token = seed.pending_navigation_token;
+  if (seed.attribution_kind !=
+      aegis_access::BrowserRequestAttributionKind::kDocument) {
+    return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
+  }
+  const GURL top_site_url(seed.top_frame_site);
+  if (!top_site_url.is_valid()) {
+    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
+  }
+  metadata.top_frame_site = net::SchemefulSite(top_site_url);
+  if (metadata.top_frame_site->opaque()) {
+    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
+  }
+  return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
+}
+
 }  // namespace
 
 AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
@@ -96,117 +242,29 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
     return Error(AccessBrowserRequestMetadataStatus::kMissingTransport);
   }
 
-  content::WebContents* callback_contents =
-      wc_getter.is_null() ? nullptr : wc_getter.Run();
-  content::WebContents* frame_contents =
-      frame_tree_node_id
-          ? content::WebContents::FromFrameTreeNodeId(frame_tree_node_id)
-          : nullptr;
-  if (callback_contents && frame_contents &&
-      callback_contents != frame_contents) {
-    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
+  content::WebContents* contents = nullptr;
+  AccessBrowserRequestMetadataStatus status = ResolveTrustedContents(
+      profile, wc_getter, frame_tree_node_id, &contents);
+  if (status != AccessBrowserRequestMetadataStatus::kOk) {
+    return Error(status);
   }
-  content::WebContents* contents =
-      frame_contents ? frame_contents : callback_contents;
-  if (!contents) {
-    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedContents);
+  content::RenderFrameHost* request_frame = nullptr;
+  status = ResolveTrustedFrame(profile, contents, frame_tree_node_id,
+                               &request_frame);
+  if (status != AccessBrowserRequestMetadataStatus::kOk) {
+    return Error(status);
   }
-  if (contents->GetBrowserContext() != profile) {
-    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
+  aegis_access::OwnershipKey owner;
+  status = ResolveOwner(profile, request_frame, transport, &owner);
+  if (status != AccessBrowserRequestMetadataStatus::kOk) {
+    return Error(status);
   }
-
-  content::RenderFrameHost* request_frame =
-      frame_tree_node_id
-          ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id)
-          : contents->GetPrimaryMainFrame();
-  if (!request_frame) {
-    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedFrame);
-  }
-  if (request_frame->GetBrowserContext() != profile) {
-    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
-  }
-  if (!request_frame->GetPage().IsPrimary()) {
-    return Error(AccessBrowserRequestMetadataStatus::kInvalidAttribution);
-  }
-
-  content::StoragePartition* partition = request_frame->GetStoragePartition();
-  if (!partition) {
-    return Error(AccessBrowserRequestMetadataStatus::kMissingStoragePartition);
-  }
-  const std::optional<base::FilePath> relative_partition_path =
-      RelativePartitionPath(profile, partition);
-  if (!relative_partition_path) {
-    return Error(AccessBrowserRequestMetadataStatus::kInvalidPartitionPath);
-  }
-
-  const aegis_access::ChannelNamespace channel =
-      aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
-  const std::optional<aegis_access::OwnershipKey> owner =
-      transport->OwnerForPartition(channel, *relative_partition_path);
-  if (!owner) {
-    return Error(AccessBrowserRequestMetadataStatus::kInvalidOwner);
-  }
-
   aegis_access::BrowserRequestMetadataSeedInput seed_input;
-  seed_input.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
-  seed_input.owner = *owner;
-
-  if (navigation_id.has_value()) {
-    if (!frame_tree_node_id) {
-      return Error(AccessBrowserRequestMetadataStatus::kInvalidAttribution);
-    }
-    seed_input.pending_navigation_token = base::StrCat(
-        {"nav:", base::NumberToString(frame_tree_node_id.value()), ":",
-         base::NumberToString(*navigation_id)});
-  } else {
-    seed_input.document_token =
-        AegisService::DocumentIdForWebContents(contents);
-    if (!seed_input.document_token.empty()) {
-      content::RenderFrameHost* primary_frame = contents->GetPrimaryMainFrame();
-      if (!primary_frame || primary_frame->GetBrowserContext() != profile) {
-        return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedFrame);
-      }
-      const net::SchemefulSite top_frame_site(
-          primary_frame->GetLastCommittedOrigin());
-      if (top_frame_site.opaque() ||
-          !top_frame_site.GetURL().SchemeIsHTTPOrHTTPS()) {
-        return Error(AccessBrowserRequestMetadataStatus::kInvalidAttribution);
-      }
-      seed_input.top_frame_site = top_frame_site.Serialize();
-    }
-  }
-
-  aegis_access::BrowserRequestMetadataSeedResult seed_result =
-      aegis_access::PrepareBrowserRequestMetadataSeed(std::move(seed_input));
-  if (!seed_result.seed) {
-    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-  }
-  const aegis_access::BrowserRequestMetadataSeed& seed = *seed_result.seed;
-  const std::optional<aegis_access::RequestAttributionKind> attribution_kind =
-      ToAttributionKind(seed.attribution_kind);
-  if (!attribution_kind) {
-    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-  }
-
-  aegis_access::BrowserOwnedRequestMetadata metadata;
-  metadata.request_id = seed.request_id;
-  metadata.owner = seed.owner;
-  metadata.attribution_kind = *attribution_kind;
-  metadata.document_token = seed.document_token;
-  metadata.pending_navigation_token = seed.pending_navigation_token;
-  if (seed.attribution_kind ==
-      aegis_access::BrowserRequestAttributionKind::kDocument) {
-    const GURL top_site_url(seed.top_frame_site);
-    if (!top_site_url.is_valid()) {
-      return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-    }
-    metadata.top_frame_site = net::SchemefulSite(top_site_url);
-    if (metadata.top_frame_site->opaque()) {
-      return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-    }
-  }
-
-  return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
+  status = BuildSeedInput(profile, contents, frame_tree_node_id, navigation_id,
+                          owner, &seed_input);
+  return status == AccessBrowserRequestMetadataStatus::kOk
+             ? BuildMetadataFromSeed(std::move(seed_input))
+             : Error(status);
 }
 
 }  // namespace aegis::access
