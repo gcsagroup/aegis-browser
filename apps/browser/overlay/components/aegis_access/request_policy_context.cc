@@ -127,19 +127,25 @@ RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
       break;
     case RequestAttributionKind::kPendingNavigation: {
       if (!metadata.document_token.empty() ||
-          metadata.pending_navigation_token.empty() ||
-          metadata.top_frame_site.has_value()) {
+          metadata.pending_navigation_token.empty()) {
         return Error(RequestContextError::kInvalidAttribution);
       }
       if (!request_url.SchemeIsHTTPOrHTTPS()) {
         return Error(RequestContextError::kInvalidTopLevelSite);
       }
-      const net::SchemefulSite pending_site(request_url);
-      if (!IsUsableTopLevelSite(pending_site)) {
-        return Error(RequestContextError::kInvalidTopLevelSite);
+      if (metadata.top_frame_site.has_value()) {
+        if (!IsUsableTopLevelSite(*metadata.top_frame_site)) {
+          return Error(RequestContextError::kInvalidTopLevelSite);
+        }
+        top_level_site = metadata.top_frame_site->Serialize();
+      } else {
+        const net::SchemefulSite pending_site(request_url);
+        if (!IsUsableTopLevelSite(pending_site)) {
+          return Error(RequestContextError::kInvalidTopLevelSite);
+        }
+        top_level_site = pending_site.Serialize();
       }
       site_ownership_reliable = true;
-      top_level_site = pending_site.Serialize();
       break;
     }
     case RequestAttributionKind::kProfileOnly:

@@ -34,6 +34,7 @@ REAL_URL_LOADER_PATCH_FILE="$BROWSER_DIR/patches/0135-feat-aegis-gate-real-docum
 REQUEST_TERMINATION_PATCH_FILE="$BROWSER_DIR/patches/0136-feat-aegis-terminate-in-flight-access-requests.patch"
 POLICY_PUBLICATION_ACK_PATCH_FILE="$BROWSER_DIR/patches/0137-feat-aegis-version-policy-publication-acks.patch"
 NAVIGATION_URL_LOADER_PATCH_FILE="$BROWSER_DIR/patches/0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch"
+SUBFRAME_NAVIGATION_PATCH_FILE="$BROWSER_DIR/patches/0139-feat-aegis-gate-primary-page-subframe-navigation.patch"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -427,6 +428,42 @@ rg -Fq 'MainNavigationUsesPendingNavigationProxy' \
 rg -Fq 'MainNavigationWithoutPolicyPreservesNativePath' \
   "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
   fail "patch 0138 must preserve native navigation without Access policy"
+rg -Fq 'seed_input->top_frame_site = top_frame_site.Serialize();' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must capture the browser-owned primary top site"
+rg -Fq 'nested navigation preserves trusted top site' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must preserve pending subframe top-site seed semantics"
+rg -Fq 'UsesBrowserOwnedTopSiteForNestedPendingNavigation' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must canonicalize nested navigation from the trusted top site"
+rg -Fq 'SubframePendingNavigationPreservesPrimaryTopFrameSite' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must browser-test subframe top-site ownership"
+rg -Fq 'ResolvePrimaryTopFrameSite' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must centralize trusted primary top-site resolution"
+rg -Fq 'request_frame->GetPage().IsPrimary()' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must defensively reject non-primary request frames"
+rg -Fq 'request_frame->GetMainFrame() != contents->GetPrimaryMainFrame()' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must reject frames outside the primary frame tree"
+rg -Fq 'kPrerenderNavigationId' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must regression-test pending navigation from prerender pages"
+rg -Fq 'RejectsInvalidBrowserOwnedTopSiteForNestedPendingNavigation' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must reject invalid browser-owned nested top sites"
+rg -Fq 'SubframePendingNavigationRejectsOpaquePrimaryTopFrameSite' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must reject opaque nested top-frame attribution"
+rg -Fq 'SubframeNavigationWithoutPolicyPreservesNativePath' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must preserve native subframe navigation without Access policy"
+rg -Fq 'SubframeNavigationUsesPrimaryPageProxy' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must browser-test proxied subframe navigation"
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -481,6 +518,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "0137 must appear once in series"
 [[ "$(rg -F -c '0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0138 must appear once in series"
+[[ "$(rg -F -c '0139-feat-aegis-gate-primary-page-subframe-navigation.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0139 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -506,10 +545,11 @@ expected_access_tail="$(cat <<'EOF'
 0136-feat-aegis-terminate-in-flight-access-requests.patch
 0137-feat-aegis-version-policy-publication-acks.patch
 0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch
+0139-feat-aegis-gate-primary-page-subframe-navigation.patch
 EOF
 )"
-[[ "$(tail -n 24 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0138"
+[[ "$(tail -n 25 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0139"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
