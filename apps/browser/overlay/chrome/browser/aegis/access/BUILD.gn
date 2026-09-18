@@ -105,6 +105,7 @@ source_set("access_proxying_url_loader_factory") {
     "//net",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
+    "//url",
   ]
 }
 

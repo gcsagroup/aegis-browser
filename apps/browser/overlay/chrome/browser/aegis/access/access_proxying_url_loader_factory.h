@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/functional/callback.h"
@@ -18,6 +19,7 @@
 #include "services/network/public/cpp/url_loader_factory_builder.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
+class GURL;
 class Profile;
 
 namespace content {
@@ -26,15 +28,17 @@ class RenderFrameHost;
 
 namespace aegis::access {
 
+class AccessPublishedRequestRuntime;
 class AccessProxyingURLTrackedRequest;
 
 // UI-thread browser-process URLLoaderFactory wrapper for real Access request
 // dispatch. It covers primary-page document subresources plus primary-page
-// main-frame and subframe navigation factories. Worker, ServiceWorker,
-// prefetch, WebSocket, BFCache/prerender, and redirect re-evaluation remain
-// later slices. Each request is re-evaluated from browser-owned
-// frame/navigation state and the latest published Access state before it may
-// reach the target Network Service factory.
+// main-frame and subframe navigation factories, including redirect follow
+// re-evaluation under one stable logical request identity. Worker,
+// ServiceWorker, prefetch/preconnect, WebSocket, BFCache, and prerender remain
+// later slices. Each request is re-evaluated from browser-owned frame/navigation
+// state and the latest published Access state before it may reach the target
+// Network Service factory.
 //
 // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
 // only after exact-host endpoint validation and the synchronous dispatch gate.
@@ -92,6 +96,22 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
 
   RequestDisposition EvaluateRequest(
       const network::ResourceRequest& request,
+      int* net_error,
+      aegis_access::RequestOwnershipRecord* ownership_record);
+  RequestDisposition EvaluateRedirect(
+      const GURL& redirect_url,
+      const std::string& stable_request_id,
+      int* net_error,
+      aegis_access::RequestOwnershipRecord* ownership_record);
+  RequestDisposition EvaluateUrl(
+      const GURL& request_url,
+      const std::optional<std::string>& stable_request_id,
+      int* net_error,
+      aegis_access::RequestOwnershipRecord* ownership_record);
+  RequestDisposition EvaluatePreparedMetadata(
+      const GURL& request_url,
+      AccessPublishedRequestRuntime* runtime,
+      aegis_access::BrowserOwnedRequestMetadata metadata,
       int* net_error,
       aegis_access::RequestOwnershipRecord* ownership_record);
   void ForwardNative(
