@@ -32,6 +32,24 @@
 
 所有 `feat(...)` 功能 PR 都必须在同一 PR 内同时交付两类可执行测试：**单元测试**直接验证新增逻辑、边界和错误返回；**回归测试**固定至少一个既有安全/兼容性不变量或本功能可能重新引入的历史故障。两类测试都必须在最终 HEAD 实际执行并通过，缺任一类不得合并；不能以静态字符串检查、仅编译通过、增加 mock 数量或其他模块的既有测试代替。若改动实际上只有文档，应使用 `docs(...)` 而不是用 `feat(...)` 绕过该门槛。
 
+## Codex + GitHub Copilot + Codacy 三层职责
+
+三层工具各自负责不同证据，不能互相替代：
+
+| 层 | 主要职责 | 不能替代 |
+| --- | --- | --- |
+| Codex | 设计、实现、修复、测试执行、按本指南准备 PR 与证据 | 独立 Review、托管 CI、Codacy 服务端分析、GitHub 服务端保护 |
+| GitHub Copilot code review | 在 GitHub PR 上读取项目上下文做语义 Review，重点发现行为、接口、安全/隐私、状态机、测试缺口和治理问题 | Codacy 的确定性扫描、独立 reviewer、必需检查、人类审批 |
+| Codacy Production | 静态质量与安全规则、复杂度/重复代码及已接入指标的持续分析 | 业务语义 Review、真实运行测试、Chromium/设备/签名/发布证据 |
+
+仓库级 Copilot 规则放在 `.github/copilot-instructions.md`；对 CI/治理文件的额外约束放在 `.github/instructions/ci-governance.instructions.md`。Copilot 应优先报告可复现的语义问题，不重复低价值格式噪音。服务端是否启用自动 Review、是否在每次 push 后复审、是否允许 Copilot approval 计入合并条件，都必须从 GitHub 实时回读，不能由这些 Markdown 文件推断。
+
+日常 `develop` 路径为：Codex 在隔离分支实现并跑最终 HEAD 本地门 → GitHub PR 上进行 Copilot Review 与独立 Review → `quality-gate`、Codacy 和实际保护条件分别核验 → 合并到 `develop` → 再核验 S 的真实 push CI。任一 Review 或门禁发现问题都回到原实现者修复，新的 HEAD 使旧 Review/检查证据失效时必须重新覆盖。
+
+上游公开 PR 使用同一套仓库指令，但 GitHub Copilot 自动 Review 的服务端策略独立配置在 `gcsagroup/aegis-browser`，仅针对上游 `main` 的 PR；推荐每次新 push 自动复审、Draft 不自动 Review，并保持 Copilot approval 不计入必需审批。这样 Copilot 提供第二视角，但不会获得绕过人工与确定性门禁的合并权。
+
+PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经是非 `release` 的 Conventional Commit 标题时保持人工标题；标题为 `release: ...` 或非 Conventional 格式时，从 PR 提交消息（含 squash/merge commit body）提取候选：优先最后一个 `feat(...)`，没有 feature 时使用最后一个非 `release` Conventional Commit，并移除末尾 `(#123)`。找不到明确候选时不改标题。该 workflow 使用 `pull_request_target` 只为更新 PR 元数据，固定 checkout 目标分支的 base SHA、关闭凭据持久化，禁止执行 PR head 代码或读取仓库 secret。
+
 ## 分支职责与日常路径
 
 个人 Fork 的 GitHub 默认分支为 `main`，用于仓库默认入口、对外展示和公开晋升；开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
@@ -66,7 +84,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 | --- | --- | --- |
 | TypeScript | `packages/core/src` 的 28 个生产 `.ts`；同次 Vitest 170 项单测 | LCOV、JSON summary、text；所有未执行生产文件仍进分母。Access 的 TS vectors 只校验共享结构，不等价于 C++ 行为覆盖。 |
 | JavaScript | `scripts/ci`、core 工具与 `apps/browser/scripts` 中受控的 Node `.js/.mjs/.cjs` | c8 从同次 Node 子进程的 V8 数据生成报告，并用 `--all` 纳入未执行生产脚本；renderer/WebUI JavaScript 未测。 |
-| C++ | `aegis_access` standalone 的 `access_route_planner.cc`、`site_proxy_rule_group.cc` 与 `request_ownership_registry.cc` | 同次 native binary 执行路由/协议组合同以及 RequestOwnershipRegistry 单元与回归合同，并使用匹配 clang/llvm profile 生成 LCOV；完整 Chromium、GURL/SQLite、GN/GTest 和浏览器集成证据仍单独记录。 |
+| C++ | `aegis_access` standalone 的 `access_route_planner.cc`、`site_proxy_rule_group.cc`、`request_ownership_registry.cc`、`request_dispatch_gate.cc` 与 `browser_request_metadata_seed.cc` | 同次 native binary 执行路由/协议组合同、RequestOwnershipRegistry、dispatch gate 以及 browser-owned metadata seed 的单元与回归合同，并使用匹配 clang/llvm profile 生成 LCOV；完整 Chromium、GURL/SQLite、GN/GTest 和浏览器集成证据仍单独记录。 |
 | Python | `local-pypi-proxy.py` 与两个 Access vector generators | 固定 coverage.py 隔离 venv；复用 proxy 4 项测试和 native 生成器调用，另有两个拒绝 fixture，combine 后生成 XML/JSON/LCOV/text；两个 prototype worker 未测。 |
 | Swift | `apps/ios` 的 25 个产品 Swift 文件 | 独立 `iOS Coverage` workflow 在双 Simulator 上生成 xccov JSON，状态为 `MANUAL_REPORTING_WORKFLOW`；它不属于当前 macOS 必需门，也不是实机、签名或发布证据，Codacy 转换仍待办。 |
 | Bash / PowerShell | 手动 Linux kcov 与 Windows Pester coverage jobs | 只代表列明脚本的行为/行覆盖；macOS 专属 shell 分支和真实 Windows UI 仍按报告列为未测。 |
@@ -140,6 +158,14 @@ mise exec -- node scripts/ci/run-quality.mjs \
 导出检查同时检查最终差异和每个新提交的历史，拒绝 `AGENTS.md`、`agent.md` 及大小写变体的新增、修改、删除或重命名；上游 base 中已有但完全未改的同名文件不会误报。不能用 `.gitignore` 掩盖已经跟踪的个人文件，也不能先提交个人文件再在后续提交删除。
 
 上游得到新的 B/H/M，必须重跑本地、托管 CI 和独立 review；DEV 的成功只作为来源映射，不是上游成功。
+
+### 串行晋升自动化
+
+`.github/workflows/promotion-orchestrator.yml` 把上述分支推进实现成串行状态机。它只在受信任的 `develop` / `main` push、每 15 分钟调度和人工 dispatch 上运行，并通过固定 concurrency 保证一次只推进一个状态；PR、fork PR 与 `pull_request_target` 都不会执行该控制器。控制器在每个转换前重新 fetch `origin/main`、`origin/develop` 与 `upstream/main`，并要求对应分支精确 SHA 的最新 `.github/workflows/quality.yml` push run 及其最新 attempt 中 `quality`、`quality-gate` 两个 job 全部成功；缺失或运行中只等待，失败直接停止。PR、人工 dispatch 或其他 workflow 的同名成功检查不能替代这项分支 push 证据。
+
+自动链路依次执行：上游 `main` 若只领先个人 `main`，在确认 upstream 精确 SHA 绿灯后仅允许 fast-forward 个人 `main`；个人 `main` 尚未进入 `develop` 时创建 `main -> develop` PR 并使用 merge commit auto-merge；对齐后的 `develop` 生成一次性 `automation/promote-<sha>` 分支，按 README 镜像规则恢复三份 README，再创建 `develop -> main` PR；个人 `main` 合并后等待其 push `quality-gate`，然后以个人 `main` 向 `gcsagroup/aegis-browser:main` 创建上游 PR。内部 PR 自动请求 `@copilot` 并启用 merge-commit auto-merge，让服务端 CI/Review 继续作为真正的合并门；上游 PR只请求 `@copilot`，不自动合并。上游合并并且 upstream push `quality-gate` 成功后，下一次控制器运行仅在个人 `main` 是 upstream `main` 祖先时 fast-forward 回同步；若两边分叉则 fail closed，禁止 force push 或自动改写历史。
+
+控制器的 `GITHUB_TOKEN` 固定为 `actions: read` 与 `contents: read`，只读取个人仓库精确 SHA 的 workflow run 与 job，不读取或修改 PR。启用前在个人 Fork 的 Actions secrets 配置两个独立凭据：`AEGIS_FORK_AUTOMATION_TOKEN` 读取个人 PR 状态，并负责 automation branch、PR、auto-merge 和受保护 `main` 的 fast-forward，至少需要该 Fork 的 Contents/PR 写权限并且身份必须允许这次 fast-forward；`AEGIS_UPSTREAM_TOKEN` 读取 upstream 的精确 workflow run/job 与 PR 状态，并负责创建/更新 upstream PR 和请求 reviewer，至少需要 upstream 的 Actions/Contents 读权限与 PR 写权限。缺任一 secret 时控制器直接失败，不进行降级授权。凭据值不得写入仓库、日志或 PR。两个 secret 配置完成并验证权限后，再把仓库变量 `AEGIS_PROMOTION_AUTOMATION` 设置为 `enabled`；变量未启用时整个 job 保持关闭。
 
 ## Chromium 集成边界与故障分类
 

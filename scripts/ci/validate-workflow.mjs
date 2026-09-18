@@ -13,6 +13,7 @@ const expectedActions = new Set([
   'actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f',
   'reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d',
   'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413',
+  'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd',
 ]);
 
 function fail(message) {
@@ -28,6 +29,9 @@ try {
   const iosPath = resolve(process.argv[3] ?? '.github/workflows/ios-coverage.yml');
   const otherPath = resolve(process.argv[4] ?? '.github/workflows/other-platform-coverage.yml');
   const androidPath = resolve(process.argv[5] ?? '.github/workflows/android-java-coverage.yml');
+  const prTitlePath = resolve(process.argv[6] ?? '.github/workflows/pr-title.yml');
+  const prTitleSource = readFileSync(prTitlePath, 'utf8');
+  const prTitleWorkflow = YAML.parse(prTitleSource);
   const otherSource = readFileSync(otherPath, 'utf8');
   const androidSource = readFileSync(androidPath, 'utf8');
   const otherWorkflow = YAML.parse(otherSource);
@@ -38,6 +42,7 @@ try {
   const iosWorkflow = YAML.parse(iosSource);
   if (!workflow || typeof workflow !== 'object') fail('Workflow must be a YAML object');
   if (!iosWorkflow || typeof iosWorkflow !== 'object') fail('iOS workflow must be a YAML object');
+  if (!prTitleWorkflow || typeof prTitleWorkflow !== 'object') fail('PR title workflow must be a YAML object');
   const triggers = workflow.on ?? {};
   const triggerNames = Object.keys(triggers).sort();
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
@@ -60,6 +65,58 @@ try {
       fail(`${label} workflow must define concurrency and cancellation policy`);
     }
   }
+  const prTitleTriggers = prTitleWorkflow.on ?? {};
+  if (JSON.stringify(Object.keys(prTitleTriggers)) !== JSON.stringify(['pull_request_target'])) {
+    fail('PR title workflow must use only pull_request_target');
+  }
+  const prTitleTrigger = prTitleTriggers.pull_request_target ?? {};
+  if (JSON.stringify(array(prTitleTrigger.branches).sort()) !== JSON.stringify(['develop', 'main'])) {
+    fail('PR title workflow must target exactly main and develop');
+  }
+  if (JSON.stringify(array(prTitleTrigger.types).sort()) !== JSON.stringify(['edited', 'opened', 'reopened', 'synchronize'])) {
+    fail('PR title workflow event types must be exactly opened, reopened, synchronize and edited');
+  }
+  if (
+    prTitleWorkflow.permissions?.contents !== 'read' ||
+    prTitleWorkflow.permissions?.['pull-requests'] !== 'write' ||
+    Object.keys(prTitleWorkflow.permissions ?? {}).sort().join(',') !== 'contents,pull-requests'
+  ) fail('PR title workflow permissions must be contents: read and pull-requests: write only');
+  if (
+    prTitleWorkflow.concurrency?.group !== "${{ github.workflow }}-pr-${{ github.event.pull_request.number }}" ||
+    prTitleWorkflow.concurrency?.['cancel-in-progress'] !== true
+  ) fail('PR title workflow concurrency must isolate and cancel stale runs for the same PR');
+  const prTitleJobs = prTitleWorkflow.jobs ?? {};
+  if (JSON.stringify(Object.keys(prTitleJobs)) !== JSON.stringify(['normalize-title'])) {
+    fail('PR title workflow job set must be exactly normalize-title');
+  }
+  const prTitleJob = prTitleJobs['normalize-title'];
+  if (prTitleJob?.name !== 'normalize-pr-title' || prTitleJob?.['runs-on'] !== 'ubuntu-24.04' || prTitleJob?.['timeout-minutes'] !== 5) {
+    fail('PR title job identity, runner, or timeout changed');
+  }
+  if (prTitleJob?.permissions || 'continue-on-error' in (prTitleJob ?? {}) || 'if' in (prTitleJob ?? {})) {
+    fail('PR title job may not override permissions, suppress failures, or be conditional');
+  }
+  const prTitleSteps = array(prTitleJob?.steps);
+  if (prTitleSteps.length !== 2 || prTitleSteps.some((step) => 'continue-on-error' in step || 'run' in step)) {
+    fail('PR title workflow must contain exactly two action-only steps');
+  }
+  const prTitleCheckout = prTitleSteps[0];
+  if (
+    prTitleCheckout?.uses !== 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' ||
+    prTitleCheckout.with?.ref !== '${{ github.event.pull_request.base.sha }}' ||
+    prTitleCheckout.with?.['persist-credentials'] !== false ||
+    prTitleCheckout.with?.['fetch-depth'] !== 1
+  ) fail('PR title workflow must checkout only the trusted base SHA without credentials');
+  const prTitleScript = prTitleSteps[1];
+  if (
+    prTitleScript?.uses !== 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd' ||
+    prTitleScript.with?.['github-token'] !== '${{ github.token }}' ||
+    !String(prTitleScript.with?.script ?? '').includes('scripts/ci/pr-title-hook.mjs')
+  ) fail('PR title workflow must use the pinned metadata updater with github.token');
+  if (/secrets\.|pull_request\.head|head\.sha/u.test(prTitleSource)) {
+    fail('PR title workflow may not consume secrets or PR head code');
+  }
+
   const dispatchInputs = triggers.workflow_dispatch?.inputs ?? {};
   for (const input of ['base_sha', 'target_sha']) {
     if (dispatchInputs[input]?.required !== true) fail(`workflow_dispatch input ${input} must be required`);
@@ -209,7 +266,7 @@ try {
   if (/pull_request_target|workflow_run|self-hosted/u.test(`${source}\n${iosSource}\n${otherSource}\n${androidSource}`)) {
     fail('Untrusted or self-hosted execution trigger detected');
   }
-  console.log(JSON.stringify({status: 'PASS', path, iosPath, jobs: Object.keys(jobs), iosJobs: Object.keys(iosJobs)}));
+  console.log(JSON.stringify({status: 'PASS', path, iosPath, prTitlePath, jobs: Object.keys(jobs), iosJobs: Object.keys(iosJobs), prTitleJobs: Object.keys(prTitleJobs)}));
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
