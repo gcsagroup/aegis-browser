@@ -208,6 +208,12 @@ class RequestOwnershipRegistry {
     std::unique_ptr<RequestTerminationHandle> termination_handle;
   };
 
+  RequestOwnershipStatus FindAndValidateEntry(
+      const std::string& request_id,
+      const OwnershipKey& expected_owner,
+      const GenerationTuple& expected_generations,
+      Entry** entry);
+
   size_t max_entries_;
   std::map<std::string, Entry> entries_;
 };
