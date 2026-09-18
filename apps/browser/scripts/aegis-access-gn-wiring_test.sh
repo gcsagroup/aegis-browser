@@ -590,6 +590,9 @@ rg -Fq 'render_process_id, factory_builder' \
 rg -Fq 'CaptureProfileOnlyProxyFactoryMetadata' \
   "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
   fail "patch 0144 must capture Profile-only Worker ownership"
+rg -Fq 'if (!aegis::IsAegisProfileSupported(profile))' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must reject unsupported Profiles before Profile-only capture"
 rg -Fq 'BuildBrowserOwnedProfileOnlyRequestMetadata' \
   "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
   fail "patch 0144 must re-evaluate Profile-only ownership per request"
