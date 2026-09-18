@@ -4,36 +4,37 @@
 
 用户已授权在当前访问服务文档基础上继续开发。行为权威仍是 `spec.zh-CN.md` V1.0 修订 4 与 `freeze.json`；本文件不修改冻结行为、数量或 G0–G3 门槛。
 
-## 2026-09-17 当前进度与问题
+## 2026-09-18 当前进度与问题
 
-本节是当前工程状态快照，便于从连续切片记录中快速判断“已经落地到哪里、还缺什么”。后文 0114–0128 保留各切片当时的实现与证据，不因本节更新而改写历史结论。状态类信息会随 PR、rebase 和托管 CI 变化；后续推进前仍须重新绑定最终 base/head SHA。
+本节是当前工程状态快照。后文各切片保留其当时证据；分支、PR、补丁编号与测试状态以本节和后续最终候选为准。
 
 当前快照：
 
-- 最新本地实现线为 `codex/access-network-epoch-source`，当前实现 HEAD `1c59e90bdcbb3bf12b2809ef57d014d5a2790364`。
-- 个人开发主线 `origin/develop` 已推进到 `d3388696e7c4bc07b47a7f710c74493f9fb6e767`；个人公开 `origin/main` 当前为 `ef4f58f759ba1fb0617b9bd8ab0d9743f9d67454`。
-- `0117` fail-closed `ProxyInfo` 适配、`0118` Profile/StoragePartition NetworkContext 传输、`0119` localhost HTTP/HTTPS/no-DIRECT 回归，以及后续 C++ 回归基础已进入开发主线。`0121` RequestOwnershipRegistry、`0122` 定向取消与 `0123` dispatch BLOCK barrier 也已分别通过 #44、#45、#46 进入 `develop`；其中 #46 在 `develop` 的合入提交为 `3d44ab7c40d6726f6811da65b41f57d34d5bf453`。
-- `0124`–`0128` 目前仍是本地堆叠实现：`2afce0d` dispatch gate → `505c5cb` browser-owned metadata → `bce44a2` published request runtime → `94ea205` committed policy generation → `1c59e90` NetworkContext epoch。它们尚未基于最新 `origin/develop` 重放，也未进入对应的最终 PR/CI 流。
-- `0128` 当前 standalone C++20 合同实际执行到 `PASS: aegis_access native unit (774 checks)`。五元 `GenerationTuple` 中只有 **policy generation** 与 **network epoch** 已绑定真实生产生命周期；`identity_generation`、`selection_generation`、`base_proxy_config_generation` 仍没有已验证的生产来源，因此 runtime 继续 fail closed，不能授权真实 URLLoader 派发。
+- Fork `quinn521/aegis-browser` 的默认分支已经是 `develop`。当前 `develop` 为 `488544b89b43cd22fc1476aec2f44ef50275bce4`；个人 `main` 为 `013d5ba639b177a599a3036f24c82e07026568d3`。
+- 当前 `develop` 的 Access patch 序列已经落到：`0121` RequestOwnershipRegistry、`0122` targeted cancellation、`0123` dispatch BLOCK barrier、`0124` ownership contract refactor、`0125` request dispatch gate、`0126` browser-owned request metadata adapter。旧快照中的 0124–0128 编号不再对应当前主线。
+- `PublishedRequestRuntime` 尚未进入当前 `develop`，因此下一实现号从 `0127` 开始。旧本地堆叠中的 published runtime、committed policy generation 与 NetworkContext epoch 只保留为历史实验依据，不能作为当前主线已合入能力。
+- `GenerationTuple` 五个字段已经存在于合同类型中，但当前合入主线没有完成任何一个可用于真实请求派发的 production lifecycle source。AccessRuleStore 可以持久化 `committed_policy_generation`，但该值仍由未来发布者传入；NetworkContext transport 会消费 generation tuple，但尚未拥有真实 `network_epoch` 生命周期。因此当前合入状态按 **0/5 production generation source** 计算。
+- 当前已具备路由规划、可信 policy context、原子规则存储、fail-closed ProxyInfo 适配、Profile/StoragePartition NetworkContext 传输、localhost proxy 回归基础、请求所有权/定向取消、BLOCK barrier、统一 dispatch gate 与 browser-owned metadata 边界。它们仍未组成真实 Chromium 请求派发闭环。
+- 本次状态刷新没有重新执行完整 Chromium build/runtime；历史 standalone/native、局部 Chromium 对象和 hosted CI 证据继续保持各自原边界。G0 仍未通过。
 
 当前主要问题与风险：
 
-1. **0124–0128 需要重新收敛到最新开发主线。** 这些本地提交建立在早期 0121–0123 堆叠之上，而 `develop` 已吸收 #44/#45/#46 的 review 后结果，并在后续同步与 review 流程更新后推进到 `d338869`。应从最新 `origin/develop` 逐个重放 0124–0128；rebase/cherry-pick 后旧测试证据失效，必须对新的最终干净 HEAD 重跑。
-2. **真实请求派发闭环仍未完成。** `0124` 已冻结 barrier → ownership registration → allow 的 fail-closed 顺序，`0125` 已建立 browser-owned metadata 边界，`0126` 已建立 published runtime，但这些能力尚未完整挂入 Chromium 的真实 URLLoader/Navigation/worker/prefetch/preconnect/Service Worker/BFCache 派发入口；真实 request/stream termination handle 和执行点 ACK 也未闭合。
-3. **generation 来源只完成 2/5。** 缺少 identity、selection 和 base-proxy-config 三个真实生产计数器。五项全部到位前，不允许用常量、时间戳或测试 tuple 填空，也不能把 `0126` 报告为真实派发已启用。
-4. **用户产品入口仍未落地。** 当前 `develop` 的 AccessRuleStore contract 仍明确拒绝把 `SetSiteProxy` 产品 surface 混入现阶段存储切片；“当前网站使用代理”的 WebUI/工具栏开关、状态反馈及与持久 site group 的完整协调尚未交付。因此当前成果属于浏览器原生访问/代理底座，还不能按普通用户可用代理功能验收。
-5. **真实代理 runtime 仍有较大缺口。** Xray 生命周期、HTTP/SOCKS Profile 认证、WS/WSS、节点/租约、账户与额度、用量计量、故障恢复、连接池代次和企业/原有代理组合仍需按冻结规范逐项实现和验证；Vision 计量风险及 A117/A118 仍未关闭。
-6. **完整 Chromium runtime/G0 仍未通过。** 0118–0120 的记录仍存在固定 Chromium 151 checkout/toolchain 验证阻塞，包括现有 Xcode 27 SDK 与 Chromium bundled lld/TAPI 的 host-tool 链接问题，以及曾出现的既有 `aegis_libtorrent` 生成输入缺失。当前更新没有重新执行完整 Chrome 构建，因此不得把对象编译、standalone checks 或托管仓库 CI 提升为完整浏览器 runtime PASS；G0 保持未通过。
+1. **Published request runtime 尚未进入主线。** 需要以当前 `develop` 为基线实现 `0127`，把 browser-owned metadata、policy evaluation、route plan、dispatch gate 与只读 published snapshot 组合为单一 fail-closed runtime；在 generation source 未完成前，runtime 必须拒绝真实发送授权。
+2. **Generation source 当前为 0/5。** 按 production ownership 依次补齐 committed policy generation、NetworkContext epoch、identity generation、selection generation、base proxy config generation。每项必须由实际生命周期事件推进，不能使用常量、时间戳或测试 tuple 代替。
+3. **真实 Chromium vertical slice 仍未打通。** 需要把 runtime 接入一个最小真实请求入口，证明 exact-host policy → real URLLoader → 当前 Profile/StoragePartition NetworkContext → localhost HTTP proxy fixture 的闭环，并覆盖 stale generation、关闭后恢复原生 proxy、跨 Profile/partition 隔离和 fail-closed。
+4. **请求面仍需逐步扩展。** 在最小闭环稳定后，再覆盖 Navigation、subresource、Worker/Service Worker、prefetch/preconnect、WebSocket、HTTP/2、HTTP/3、BFCache 等，并补真实 termination handle 与执行点 ACK/预算。
+5. **用户产品入口仍未落地。** `SetSiteProxy`、可信 WebUI/工具栏开关、状态反馈及持久 site group 协调仍待实现；当前成果仍属于浏览器原生访问/代理底座。
+6. **真实代理 runtime 仍有较大缺口。** Xray 生命周期、HTTP/SOCKS Profile 认证、REALITY/WS 真实链路、节点/租约、账户与额度、持续计量、故障恢复、连接池代次和企业/原有代理组合仍需按冻结规范实现和验证；Vision/splice 计量风险及 A117/A118 仍未关闭。
+7. **完整 Chromium runtime/G0 仍未通过。** 最终仍需固定源码/补丁/工具链完成 GTest、Chrome build、真实浏览器代理流量和冻结 G0 项。
 
 建议的推进顺序：
 
-1. 从最新 `origin/develop` 依次重放 `0124`–`0128`，保留 #44/#45/#46 的 review 修正，并在每个最终 head 上重新执行 unit + regression 与仓库完整门。
-2. 依次绑定 `identity_generation`、`selection_generation`、`base_proxy_config_generation` 的真实生命周期来源，完成 5/5 generation 后再接通 `PublishedRequestRuntime`。
-3. 把 browser-owned metadata、published runtime、dispatch gate、真实 termination handle 和 ACK/预算接到 Chromium 实际请求/导航入口，补真实 URLLoader/Navigation/HTTP2/HTTP3/WS 等覆盖。
-4. 在请求闭环稳定后实现 `SetSiteProxy`、可信 WebUI/工具栏入口和持久 site group 协调，再接 Xray/认证/账户/额度/计量等运行时能力。
-5. 修复或切换可兼容的 Chromium macOS toolchain，执行固定源码/补丁 SHA 的完整 GTest、Chrome build 和真实浏览器链路验收；只有这些证据满足冻结门槛后才重新评估 G0。
-
-实际实现 base 为 `b5fffc324ca9b85ec4cbc244165434f044ac57ec`，工作区 `/Volumes/ExternalSSD/repositories/aegis-browser-worktrees/access-service-p0`，分支 `codex/access-service-p0`。旧文档任务头为 `d60b5952b40e511d6f98f3f33be926dbe7ab1eb7`；其未提交文档已由主任务复制，保留用户已有差异。实现、独立审查、最终检查分别补录实际 head。
+1. 以当前 `develop@488544b89b43cd22fc1476aec2f44ef50275bce4` 实现 `0127 PublishedRequestRuntime`，保持 0/5 generation 时 fail closed。
+2. 依次实现真实 generation source：committed policy generation → NetworkContext epoch → identity generation → selection generation → base proxy config generation；完成 5/5 后才允许 runtime 授权真实代理派发。
+3. 打通最小真实 Chromium vertical slice：exact host → real URLLoader → localhost HTTP proxy fixture，并验证 REQUIRE_PROXY 无 DIRECT fallback、stale generation 拒绝、OFF 恢复原生配置以及 Profile/StoragePartition 隔离。
+4. 扩展真实请求面和 termination/ACK，再实现 `SetSiteProxy`、可信 WebUI/工具栏入口与持久 site group 协调。
+5. 接入 Xray、认证、账户/额度、持续计量、故障恢复和兼容协议，优先独立验证 Vision/splice 的在途计量合同。
+6. 修复或选择兼容的 Chromium macOS toolchain，执行固定候选的完整 GTest、Chrome build、真实浏览器链路和 G0 验收。
 
 ## 范围与事实
 
