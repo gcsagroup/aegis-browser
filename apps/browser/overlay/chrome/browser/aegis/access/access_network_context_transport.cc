@@ -3,6 +3,7 @@
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 #include "base/functional/callback_helpers.h"
@@ -21,25 +22,19 @@ const void* const kTransportUserDataKey = &kTransportUserDataKey;
 constexpr size_t kMaxExactHosts = 256;
 constexpr size_t kMaxPartitionKeyBytes = 1024;
 
-bool IsKnownChannel(aegis_access::ChannelNamespace channel) {
-  switch (channel) {
-    case aegis_access::ChannelNamespace::kDev:
-    case aegis_access::ChannelNamespace::kAlpha:
-    case aegis_access::ChannelNamespace::kBeta:
-    case aegis_access::ChannelNamespace::kRelease:
-      return true;
-    case aegis_access::ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
 bool IsCanonicalExactHost(const std::string& host) {
   if (host.empty()) {
     return false;
   }
   const GURL url("https://" + host + "/");
   return url.is_valid() && url.has_host() && url.host() == host;
+}
+
+bool AreCanonicalExactHosts(const std::vector<std::string>& exact_hosts) {
+  return !exact_hosts.empty() && exact_hosts.size() <= kMaxExactHosts &&
+         std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) ==
+             exact_hosts.end() &&
+         std::ranges::all_of(exact_hosts, IsCanonicalExactHost);
 }
 
 aegis_access::RoutePlan RoutePlanForEndpoint(
@@ -85,9 +80,35 @@ AccessNetworkContextTransport* AccessNetworkContextTransport::GetOrCreate(
 
 AccessNetworkContextTransport::AccessNetworkContextTransport()
     : runtime_profile_token_(
-          base::Uuid::GenerateRandomV4().AsLowercaseString()) {}
+          base::Uuid::GenerateRandomV4().AsLowercaseString()) {
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
+}
 
-AccessNetworkContextTransport::~AccessNetworkContextTransport() = default;
+AccessNetworkContextTransport::~AccessNetworkContextTransport() {
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
+}
+
+void AccessNetworkContextTransport::OnNetworkChanged(
+    net::NetworkChangeNotifier::ConnectionType) {
+  if (network_epoch_ == 0) {
+    return;
+  }
+  if (network_epoch_ == std::numeric_limits<uint64_t>::max()) {
+    // Zero is the incomplete GenerationTuple sentinel. Once the counter is
+    // exhausted, keep the source invalid so callers fail closed rather than
+    // wrapping to a previously valid epoch.
+    network_epoch_ = 0;
+    return;
+  }
+  ++network_epoch_;
+
+  // Keep the already-installed localhost proxy route intact here. Broadcasting
+  // an empty CustomProxyConfig would restore Chromium's native proxy result and
+  // could silently downgrade a request that still requires proxying to DIRECT.
+  // The incremented epoch invalidates stale re-publication; the request-runtime
+  // generation gate is responsible for blocking stale tuples while the local
+  // proxy runtime rebinds to the new network.
+}
 
 // static
 bool AccessNetworkContextTransport::ConfigureNetworkContext(
@@ -120,7 +141,7 @@ std::optional<aegis_access::OwnershipKey>
 AccessNetworkContextTransport::OwnerForPartition(
     aegis_access::ChannelNamespace channel,
     const base::FilePath& relative_partition_path) const {
-  if (!IsKnownChannel(channel)) {
+  if (!aegis_access::IsKnownChannel(channel)) {
     return std::nullopt;
   }
   const std::optional<std::string> partition_token =
@@ -132,24 +153,25 @@ AccessNetworkContextTransport::OwnerForPartition(
                                     *partition_token};
 }
 
+bool AccessNetworkContextTransport::OwnsConfiguredPartition(
+    const aegis_access::OwnershipKey& owner) const {
+  return aegis_access::IsCompleteOwner(owner) &&
+         owner.profile_token == runtime_profile_token_ &&
+         partitions_.contains(owner.storage_partition_token);
+}
+
 bool AccessNetworkContextTransport::PublishProxySelection(
     const base::FilePath& relative_partition_path,
     std::vector<std::string> exact_hosts,
     const aegis_access::RegisteredProxyEndpoint& endpoint) {
   const std::optional<std::string> key = PartitionKey(relative_partition_path);
-  const std::optional<aegis_access::OwnershipKey> expected_owner =
-      OwnerForPartition(endpoint.owner.channel, relative_partition_path);
-  if (!key || !expected_owner || endpoint.owner != *expected_owner ||
-      exact_hosts.empty() || exact_hosts.size() > kMaxExactHosts) {
+  if (!key ||
+      !IsEndpointCurrentForPartition(relative_partition_path, endpoint)) {
     return false;
   }
 
   std::sort(exact_hosts.begin(), exact_hosts.end());
-  if (std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) !=
-      exact_hosts.end()) {
-    return false;
-  }
-  if (!std::ranges::all_of(exact_hosts, IsCanonicalExactHost)) {
+  if (!AreCanonicalExactHosts(exact_hosts)) {
     return false;
   }
 
@@ -231,6 +253,16 @@ std::optional<std::string> AccessNetworkContextTransport::PartitionKey(
 std::optional<std::string> AccessNetworkContextTransport::PartitionToken(
     const base::FilePath& relative_partition_path) const {
   return PartitionKey(relative_partition_path);
+}
+
+bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
+    const base::FilePath& relative_partition_path,
+    const aegis_access::RegisteredProxyEndpoint& endpoint) const {
+  const std::optional<aegis_access::OwnershipKey> expected_owner =
+      OwnerForPartition(endpoint.owner.channel, relative_partition_path);
+  return network_epoch_ != 0 && expected_owner.has_value() &&
+         endpoint.owner == *expected_owner &&
+         endpoint.generations.network_epoch == network_epoch_;
 }
 
 network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(

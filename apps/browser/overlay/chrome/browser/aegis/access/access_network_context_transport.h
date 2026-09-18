@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -13,6 +14,7 @@
 #include "components/aegis_access/access_proxy_route_adapter.h"
 #include "components/aegis_access/access_route_types.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
+#include "net/base/network_change_notifier.h"
 #include "services/network/public/mojom/network_context.mojom-forward.h"
 
 class Profile;
@@ -27,7 +29,9 @@ namespace aegis::access {
 // The current slice supports one registered localhost HTTP entry per partition
 // and an exact-host allowlist. Future per-request routing can replace this
 // transport without changing the AccessRuleStore or RoutePlan contracts.
-class AccessNetworkContextTransport : public base::SupportsUserData::Data {
+class AccessNetworkContextTransport
+    : public base::SupportsUserData::Data,
+      public net::NetworkChangeNotifier::NetworkChangeObserver {
  public:
   static AccessNetworkContextTransport* Get(Profile* profile);
   static AccessNetworkContextTransport* GetOrCreate(Profile* profile);
@@ -52,6 +56,16 @@ class AccessNetworkContextTransport : public base::SupportsUserData::Data {
       aegis_access::ChannelNamespace channel,
       const base::FilePath& relative_partition_path) const;
 
+  // Browser-owned network generation for this Profile lifetime. It starts at
+  // one because zero is the GenerationTuple "not published" sentinel, and
+  // advances only from actual NetworkChangeNotifier callbacks.
+  uint64_t network_epoch() const { return network_epoch_; }
+
+  // True only when |owner| identifies a StoragePartition already configured
+  // by this exact Profile-owned transport.
+  bool OwnsConfiguredPartition(
+      const aegis_access::OwnershipKey& owner) const;
+
   // Publishes one already-registered localhost HTTP entry for a set of exact
   // canonical hosts. Endpoint ownership must match OwnerForPartition().
   // Non-selected hosts keep Chromium's native proxy result.
@@ -69,6 +83,8 @@ class AccessNetworkContextTransport : public base::SupportsUserData::Data {
   void FlushClientsForTesting(const base::FilePath& relative_partition_path);
 
  private:
+  friend class AccessNetworkContextTransportTestPeer;
+
   struct PartitionState {
     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
     std::vector<std::string> exact_hosts;
@@ -77,15 +93,22 @@ class AccessNetworkContextTransport : public base::SupportsUserData::Data {
 
   AccessNetworkContextTransport();
 
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
+
   static std::optional<std::string> PartitionKey(
       const base::FilePath& relative_partition_path);
   std::optional<std::string> PartitionToken(
       const base::FilePath& relative_partition_path) const;
+  bool IsEndpointCurrentForPartition(
+      const base::FilePath& relative_partition_path,
+      const aegis_access::RegisteredProxyEndpoint& endpoint) const;
   network::mojom::CustomProxyConfigPtr BuildConfig(
       const PartitionState& state) const;
   void Broadcast(PartitionState& state);
 
   std::string runtime_profile_token_;
+  uint64_t network_epoch_ = 1;
   std::map<std::string, PartitionState> partitions_;
 };
 
