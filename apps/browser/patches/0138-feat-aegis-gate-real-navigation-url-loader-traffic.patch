@@ -1,0 +1,299 @@
+From 0138000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 20:40:00 +0800
+Subject: [PATCH] feat(aegis): gate real main-navigation URLLoader traffic
+
+---
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -3,7 +3,9 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXYING_URL_LOADER_FACTORY_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXYING_URL_LOADER_FACTORY_H_
+ 
++#include <cstdint>
+ #include <memory>
++#include <optional>
+ #include <set>
+ 
+ #include "base/containers/unique_ptr_adapters.h"
+@@ -26,16 +28,18 @@ namespace aegis::access {
+ 
+ class AccessProxyingURLTrackedRequest;
+ 
+-// UI-thread browser-process URLLoaderFactory wrapper for the first real Access
+-// request vertical slice. It covers primary-page document subresources only.
+-// Nested-frame, navigation, worker, and WebSocket surfaces are later slices. Each
+-// request is
+-// re-evaluated from browser-owned frame state and the latest published Access
+-// state before it may reach the target Network Service factory.
++// UI-thread browser-process URLLoaderFactory wrapper for real Access request
++// dispatch. It covers primary-page document subresources plus main navigation
++// factories. Worker, ServiceWorker, prefetch, WebSocket, nested-page, and
++// redirect re-evaluation remain later slices. Each request is re-evaluated from
++// browser-owned frame/navigation state and the latest published Access state
++// before it may reach the target Network Service factory.
+ //
+ // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
+ // only after exact-host endpoint validation and the synchronous dispatch gate.
+-// Navigation, workers, WebSocket, and redirect re-evaluation are later slices.
++// Navigation uses a browser-owned pending-navigation token and derives the
++// destination top-level site from the request URL rather than borrowing the
++// previously committed document identity.
+ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+  public:
+   using DisconnectCallback =
+@@ -44,6 +48,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   AccessProxyingURLLoaderFactory(
+       Profile* profile,
+       content::FrameTreeNodeId frame_tree_node_id,
++      std::optional<int64_t> navigation_id,
+       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+       network::URLLoaderFactoryBuilder& factory_builder,
+       DisconnectCallback on_disconnect);
+@@ -57,6 +62,11 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       Profile* profile,
+       content::RenderFrameHost* frame,
+       network::URLLoaderFactoryBuilder& factory_builder);
++  static void MaybeProxyNavigation(
++      Profile* profile,
++      content::RenderFrameHost* frame,
++      int64_t navigation_id,
++      network::URLLoaderFactoryBuilder& factory_builder);
+ 
+   // network::mojom::URLLoaderFactory:
+   void CreateLoaderAndStart(
+@@ -108,6 +118,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+ 
+   const raw_ptr<Profile> profile_;
+   const content::FrameTreeNodeId frame_tree_node_id_;
++  const std::optional<int64_t> navigation_id_;
+   const aegis_access::BrowserOwnedRequestMetadata factory_metadata_;
+ 
+   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -153,6 +153,31 @@ ProxyDispatchPreparation PrepareProxyDispatch(
+   return {net::OK, input.request};
+ }
+ 
++std::optional<aegis_access::BrowserOwnedRequestMetadata>
++CaptureProxyFactoryMetadata(
++    Profile* profile,
++    content::RenderFrameHost* frame,
++    std::optional<int64_t> navigation_id) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (!aegis::IsAegisProfileSupported(profile) || !frame ||
++      frame->GetBrowserContext() != profile || !frame->GetPage().IsPrimary()) {
++    return std::nullopt;
++  }
++
++  const content::FrameTreeNodeId frame_tree_node_id =
++      frame->GetFrameTreeNodeId();
++  auto wc_getter =
++      base::BindRepeating(&content::WebContents::FromFrameTreeNodeId,
++                          frame_tree_node_id);
++  AccessBrowserRequestMetadataResult metadata = BuildBrowserOwnedRequestMetadata(
++      profile, wc_getter, frame_tree_node_id, navigation_id);
++  if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
++      !metadata.metadata.has_value()) {
++    return std::nullopt;
++  }
++  return std::move(*metadata.metadata);
++}
++
+ class CallbackTerminationHandle final
+     : public aegis_access::RequestTerminationHandle {
+  public:
+@@ -179,6 +204,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
+   static void StartProxying(
+       Profile* profile,
+       content::FrameTreeNodeId frame_tree_node_id,
++      std::optional<int64_t> navigation_id,
+       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+       network::URLLoaderFactoryBuilder& factory_builder) {
+     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+@@ -190,7 +216,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
+     }
+ 
+     auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+-        profile, frame_tree_node_id, std::move(factory_metadata),
++        profile, frame_tree_node_id, navigation_id, std::move(factory_metadata),
+         factory_builder,
+         base::BindOnce(&BrowserContextData::RemoveProxy,
+                        self->weak_factory_.GetWeakPtr()));
+@@ -218,11 +244,13 @@ class BrowserContextData : public base::SupportsUserData::Data {
+ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+     Profile* profile,
+     content::FrameTreeNodeId frame_tree_node_id,
++    std::optional<int64_t> navigation_id,
+     aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+     network::URLLoaderFactoryBuilder& factory_builder,
+     DisconnectCallback on_disconnect)
+     : profile_(profile),
+       frame_tree_node_id_(frame_tree_node_id),
++      navigation_id_(navigation_id),
+       factory_metadata_(std::move(factory_metadata)),
+       on_disconnect_(std::move(on_disconnect)) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+@@ -247,25 +275,38 @@ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+     content::RenderFrameHost* frame,
+     network::URLLoaderFactoryBuilder& factory_builder) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  if (!aegis::IsAegisProfileSupported(profile) || !frame ||
+-      frame->GetBrowserContext() != profile || !frame->GetPage().IsPrimary()) {
++  std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
++      CaptureProxyFactoryMetadata(profile, frame, std::nullopt);
++  if (!metadata.has_value()) {
+     return;
+   }
+ 
+-  const content::FrameTreeNodeId frame_tree_node_id =
+-      frame->GetFrameTreeNodeId();
+-  auto wc_getter =
+-      base::BindRepeating(&content::WebContents::FromFrameTreeNodeId,
+-                          frame_tree_node_id);
+-  AccessBrowserRequestMetadataResult metadata = BuildBrowserOwnedRequestMetadata(
+-      profile, wc_getter, frame_tree_node_id, std::nullopt);
+-  if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
+-      !metadata.metadata.has_value()) {
++  BrowserContextData::StartProxying(
++      profile, frame->GetFrameTreeNodeId(), std::nullopt, std::move(*metadata),
++      factory_builder);
++}
++
++// static
++void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
++    Profile* profile,
++    content::RenderFrameHost* frame,
++    int64_t navigation_id,
++    network::URLLoaderFactoryBuilder& factory_builder) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (!frame || !frame->IsInPrimaryMainFrame()) {
++    return;
++  }
++
++  std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
++      CaptureProxyFactoryMetadata(profile, frame, navigation_id);
++  if (!metadata.has_value() ||
++      metadata->attribution_kind !=
++          aegis_access::RequestAttributionKind::kPendingNavigation) {
+     return;
+   }
+ 
+-  BrowserContextData::StartProxying(profile, frame_tree_node_id,
+-                                    std::move(*metadata.metadata),
++  BrowserContextData::StartProxying(profile, frame->GetFrameTreeNodeId(),
++                                    navigation_id, std::move(*metadata),
+                                     factory_builder);
+ }
+ 
+@@ -289,7 +330,7 @@ AccessProxyingURLLoaderFactory::EvaluateRequest(
+       base::BindRepeating(&content::WebContents::FromFrameTreeNodeId,
+                           frame_tree_node_id_);
+   AccessBrowserRequestMetadataResult metadata = BuildBrowserOwnedRequestMetadata(
+-      profile_, wc_getter, frame_tree_node_id_, std::nullopt);
++      profile_, wc_getter, frame_tree_node_id_, navigation_id_);
+   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
+       !metadata.metadata.has_value() ||
+       !SameAttributionScope(factory_metadata_, *metadata.metadata)) {
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+--- a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+@@ -14,6 +14,7 @@
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/prerender_test_util.h"
++#include "net/base/schemeful_site.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis::access {
+@@ -67,6 +68,40 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+             aegis_access::RequestAttributionKind::kDocument);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
++                       PendingNavigationUsesDestinationSiteNotOldDocument) {
++  const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), primary_url));
++
++  content::RenderFrameHost* primary_frame =
++      web_contents()->GetPrimaryMainFrame();
++  ASSERT_NE(primary_frame, nullptr);
++  constexpr int64_t kNavigationId = 42;
++  AccessBrowserRequestMetadataResult metadata =
++      BuildBrowserOwnedRequestMetadata(
++          browser()->profile(), WebContentsGetter(),
++          primary_frame->GetFrameTreeNodeId(), kNavigationId);
++
++  ASSERT_EQ(metadata.status, AccessBrowserRequestMetadataStatus::kOk);
++  ASSERT_TRUE(metadata.metadata.has_value());
++  EXPECT_EQ(metadata.metadata->attribution_kind,
++            aegis_access::RequestAttributionKind::kPendingNavigation);
++  EXPECT_TRUE(metadata.metadata->document_token.empty());
++  EXPECT_FALSE(metadata.metadata->pending_navigation_token.empty());
++  EXPECT_FALSE(metadata.metadata->top_frame_site.has_value());
++
++  const GURL destination("https://destination.example/path");
++  aegis_access::RequestPolicyContextResult context =
++      aegis_access::CanonicalizeBrowserOwnedRequest(*metadata.metadata,
++                                                    destination);
++  ASSERT_TRUE(context.context.has_value());
++  EXPECT_TRUE(context.context->site_ownership_reliable());
++  EXPECT_EQ(context.context->top_level_site(),
++            net::SchemefulSite(destination).Serialize());
++  EXPECT_NE(context.context->top_level_site(),
++            net::SchemefulSite(primary_url).Serialize());
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                        PrerenderPageCannotInheritPrimaryPageIdentity) {
+   const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -279,6 +279,26 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       MainNavigationWithoutPolicyPreservesNativePath) {
++  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
++  EXPECT_TRUE(base::test::RunUntil([&] {
++    return origin_requests_.load(std::memory_order_relaxed) == 1u;
++  }));
++  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       MainNavigationUsesPendingNavigationProxy) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++
++  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
++  EXPECT_TRUE(base::test::RunUntil([&] {
++    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
++  }));
++  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        RuntimePolicyUpdateRoutesExistingFactoryThroughProxy) {
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6741,6 +6741,14 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+             Profile::FromBrowserContext(browser_context), frame,
+             factory_builder);
+   }
++
++  if (type == URLLoaderFactoryType::kNavigation && frame &&
++      navigation_id.has_value()) {
++    aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
++        Profile::FromBrowserContext(browser_context), frame, *navigation_id,
++        factory_builder);
++  }
+ 
+ #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
+   if (disable_secure_dns) {
