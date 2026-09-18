@@ -7,7 +7,7 @@ Subject: [PATCH] feat(aegis): gate frame-less Worker subresource traffic
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-@@ -178,6 +178,21 @@
+@@ -178,6 +178,25 @@
    return std::move(*metadata.metadata);
  }
  
@@ -15,6 +15,10 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b
 +CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
 +                                       int render_process_id) {
 +  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (!aegis::IsAegisProfileSupported(profile)) {
++    return std::nullopt;
++  }
++
 +  AccessBrowserRequestMetadataResult metadata =
 +      BuildBrowserOwnedProfileOnlyRequestMetadata(profile, render_process_id);
 +  if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||

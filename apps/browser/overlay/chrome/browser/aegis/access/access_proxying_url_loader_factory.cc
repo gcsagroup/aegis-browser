@@ -182,6 +182,10 @@ std::optional<aegis_access::BrowserOwnedRequestMetadata>
 CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
                                        int render_process_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile)) {
+    return std::nullopt;
+  }
+
   AccessBrowserRequestMetadataResult metadata =
       BuildBrowserOwnedProfileOnlyRequestMetadata(profile, render_process_id);
   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
