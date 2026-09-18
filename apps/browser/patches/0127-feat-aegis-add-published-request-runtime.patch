@@ -1,0 +1,527 @@
+From 43b0f7035921ae837cd87775b0d5c46180107005 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 15:52:00 +0800
+Subject: [PATCH] feat(aegis): add published request runtime
+
+---
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -51,6 +51,17 @@ source_set("request_dispatch_gate") {
+   public_deps = [ ":request_ownership_registry" ]
+ }
+ 
++source_set("published_request_runtime") {
++  sources = [
++    "published_request_runtime.cc",
++    "published_request_runtime.h",
++  ]
++  public_deps = [
++    ":aegis_access",
++    ":request_dispatch_gate",
++  ]
++}
++
+ source_set("aegis_access") {
+   sources = [
+     "access_proxy_route_adapter.cc",
+@@ -123,12 +134,15 @@ test("aegis_access_unittests") {
+     "access_policy_evaluator_unittest.cc",
+     "access_route_planner_contract_test.h",
+     "access_route_planner_unittest.cc",
++    "published_request_runtime_contract_test.h",
++    "published_request_runtime_unittest.cc",
+     "request_policy_context_unittest.cc",
+   ]
+   include_dirs = [ "$target_gen_dir" ]
+   deps = [
+     ":aegis_access",
+     ":generate_policy_matcher_vectors",
++    ":published_request_runtime",
+     ":generate_route_planner_vectors",
+     "//base",
+     "//base/test:run_all_unittests",
+diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+--- a/components/aegis_access/access_route_planner_native_test.cc
++++ b/components/aegis_access/access_route_planner_native_test.cc
+@@ -5,6 +5,7 @@
+ 
+ #include "components/aegis_access/access_route_planner_contract_test.h"
+ #include "components/aegis_access/browser_request_metadata_seed_contract_test.h"
++#include "components/aegis_access/published_request_runtime_contract_test.h"
+ #include "components/aegis_access/request_dispatch_gate_contract_test.h"
+ #include "components/aegis_access/request_ownership_registry_contract_test.h"
+ 
+@@ -46,6 +47,8 @@ int main() {
+   aegis_access::test::RunRequestDispatchGateRegressionTests(observer);
+   aegis_access::test::RunBrowserRequestMetadataSeedUnitTests(observer);
+   aegis_access::test::RunBrowserRequestMetadataSeedRegressionTests(observer);
++  aegis_access::test::RunPublishedRequestRuntimeUnitTests(observer);
++  aegis_access::test::RunPublishedRequestRuntimeRegressionTests(observer);
+   if (observer.failures() != 0) {
+     std::cerr << "FAIL: aegis_access native unit (" << observer.failures()
+               << " failures, " << observer.checks() << " checks)\n";
+diff --git a/components/aegis_access/published_request_runtime.cc b/components/aegis_access/published_request_runtime.cc
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/published_request_runtime.cc
+@@ -0,0 +1,111 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/published_request_runtime.h"
++
++#include <utility>
++
++#include "components/aegis_access/access_route_planner.h"
++
++namespace aegis_access {
++namespace {
++
++RouteInput BuildRouteInput(const PublishedRequestRuntimeInput& input) {
++  RouteInput route;
++  route.policy_state = input.policy_state;
++  route.effective_mode = input.effective_mode;
++  route.policy_scope = input.policy_scope;
++  route.effective_proxy_group_id = input.effective_proxy_group_id;
++  route.require_proxy_intent = input.require_proxy_intent;
++  route.site_ownership_reliable = input.request.site_ownership_reliable;
++  route.request_owner = input.request.owner;
++  route.snapshot_state = input.snapshot_state;
++  route.snapshot_owner = input.snapshot_owner;
++  route.request_generations = input.request.generations;
++  route.snapshot_generations = input.snapshot_generations;
++  route.protection_restriction = input.protection_restriction;
++  route.managed_restriction = input.managed_restriction;
++  route.runtime_state = input.runtime_state;
++  route.registered_proxy_entry = input.registered_proxy_entry;
++  return route;
++}
++
++PublishedRequestRuntimeResult NoDispatch(PublishedRequestRuntimeStatus status,
++                                         RoutePlan route_plan) {
++  PublishedRequestRuntimeResult result;
++  result.status = status;
++  result.route_plan = std::move(route_plan);
++  return result;
++}
++
++RoutePlan StalePolicyGenerationPlan(
++    const PublishedRequestRuntimeInput& input) {
++  RoutePlan plan;
++  plan.action = RouteAction::kFail;
++  plan.effective_mode = input.effective_mode;
++  plan.reason = RouteReason::kStaleGeneration;
++  plan.generations = input.request.generations;
++  return plan;
++}
++
++PublishedRequestRuntimeStatus StatusForGate(
++    const RequestDispatchGateResult& gate) {
++  if (gate.status == RequestDispatchGateStatus::kAllowRegistered &&
++      gate.decision == RequestDispatchDecision::kAllow) {
++    return PublishedRequestRuntimeStatus::kDispatchRegistered;
++  }
++  if (gate.status == RequestDispatchGateStatus::kBlockedByBarrier) {
++    return PublishedRequestRuntimeStatus::kBlockedByBarrier;
++  }
++  return PublishedRequestRuntimeStatus::kRegistrationFailed;
++}
++
++PublishedRequestRuntimeResult InvalidRouteAction(RoutePlan route_plan) {
++  route_plan.action = RouteAction::kFail;
++  route_plan.reason = RouteReason::kInvalidPolicy;
++  route_plan.registered_proxy_entry.reset();
++  return NoDispatch(PublishedRequestRuntimeStatus::kFail,
++                    std::move(route_plan));
++}
++
++}  // namespace
++
++PublishedRequestRuntimeResult EvaluatePublishedRequestForDispatch(
++    const PublishedRequestRuntimeInput& input,
++    const RequestDispatchBarrierRegistry& barriers,
++    RequestOwnershipRegistry& ownership_registry) {
++  if (input.snapshot_state == SnapshotState::kPublished &&
++      (input.matched_policy_generation == 0 ||
++       input.matched_policy_generation !=
++           input.snapshot_generations.policy_generation)) {
++    return NoDispatch(PublishedRequestRuntimeStatus::kStalePolicyGeneration,
++                      StalePolicyGenerationPlan(input));
++  }
++
++  RoutePlan route_plan = PlanAccessRoute(BuildRouteInput(input));
++  switch (route_plan.action) {
++    case RouteAction::kWait:
++      return NoDispatch(PublishedRequestRuntimeStatus::kWait,
++                        std::move(route_plan));
++    case RouteAction::kDeny:
++      return NoDispatch(PublishedRequestRuntimeStatus::kDeny,
++                        std::move(route_plan));
++    case RouteAction::kFail:
++      return NoDispatch(PublishedRequestRuntimeStatus::kFail,
++                        std::move(route_plan));
++    case RouteAction::kPreserveNative:
++    case RouteAction::kUseRegisteredProxy:
++      break;
++    default:
++      return InvalidRouteAction(std::move(route_plan));
++  }
++
++  RequestDispatchGateResult gate = EvaluateAndRegisterRequestForDispatch(
++      input.request, &barriers, &ownership_registry);
++  PublishedRequestRuntimeResult result;
++  result.status = StatusForGate(gate);
++  result.route_plan = std::move(route_plan);
++  result.dispatch_gate = gate;
++  return result;
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/published_request_runtime.h b/components/aegis_access/published_request_runtime.h
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/published_request_runtime.h
+@@ -0,0 +1,69 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_PUBLISHED_REQUEST_RUNTIME_H_
++#define COMPONENTS_AEGIS_ACCESS_PUBLISHED_REQUEST_RUNTIME_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++
++#include "components/aegis_access/access_route_types.h"
++#include "components/aegis_access/request_dispatch_gate.h"
++
++namespace aegis_access {
++
++enum class PublishedRequestRuntimeStatus {
++  kDispatchRegistered,
++  kWait,
++  kDeny,
++  kFail,
++  kBlockedByBarrier,
++  kRegistrationFailed,
++  kStalePolicyGeneration,
++};
++
++// Browser-owned request identity plus a policy decision that was evaluated from
++// one immutable published snapshot. This neutral layer deliberately receives
++// no URL, renderer identity, storage or network handles.
++struct PublishedRequestRuntimeInput {
++  RequestOwnershipRecord request;
++
++  PolicyState policy_state = PolicyState::kInvalid;
++  AccessMode effective_mode = AccessMode::kInvalid;
++  PolicyScope policy_scope = PolicyScope::kInvalid;
++  std::string effective_proxy_group_id;
++  uint64_t matched_policy_generation = 0;
++  bool require_proxy_intent = false;
++
++  SnapshotState snapshot_state = SnapshotState::kInvalid;
++  OwnershipKey snapshot_owner;
++  GenerationTuple snapshot_generations;
++
++  ProtectionRestriction protection_restriction =
++      ProtectionRestriction::kInvalid;
++  ManagedRestriction managed_restriction = ManagedRestriction::kInvalid;
++  ProxyRuntimeState runtime_state = ProxyRuntimeState::kInvalid;
++  std::optional<RegisteredProxyEntry> registered_proxy_entry;
++
++  friend bool operator==(const PublishedRequestRuntimeInput&,
++                         const PublishedRequestRuntimeInput&) = default;
++};
++
++struct PublishedRequestRuntimeResult {
++  PublishedRequestRuntimeStatus status = PublishedRequestRuntimeStatus::kFail;
++  RoutePlan route_plan;
++  RequestDispatchGateResult dispatch_gate;
++};
++
++// Resolves the final route from already trusted/published inputs. A route that
++// could send bytes is returned as dispatchable only after the synchronous BLOCK
++// barrier check and ownership registration both succeed. WAIT/DENY/FAIL never
++// mutate the ownership registry.
++PublishedRequestRuntimeResult EvaluatePublishedRequestForDispatch(
++    const PublishedRequestRuntimeInput& input,
++    const RequestDispatchBarrierRegistry& barriers,
++    RequestOwnershipRegistry& ownership_registry);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_PUBLISHED_REQUEST_RUNTIME_H_
+diff --git a/components/aegis_access/published_request_runtime_contract_test.h b/components/aegis_access/published_request_runtime_contract_test.h
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/published_request_runtime_contract_test.h
+@@ -0,0 +1,232 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_PUBLISHED_REQUEST_RUNTIME_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_PUBLISHED_REQUEST_RUNTIME_CONTRACT_TEST_H_
++
++#include <string>
++#include <utility>
++
++#include "components/aegis_access/published_request_runtime.h"
++#include "components/aegis_access/request_ownership_registry_test_support.h"
++
++namespace aegis_access::test {
++namespace published_request_runtime_test_detail {
++
++inline PublishedRequestRuntimeInput ReadyRuntimeInput(
++    std::string request_id = "runtime-ready") {
++  PublishedRequestRuntimeInput input;
++  input.request = DocumentOwnershipRecord(std::move(request_id));
++  input.policy_state = PolicyState::kValid;
++  input.effective_mode = AccessMode::kProxy;
++  input.policy_scope = PolicyScope::kSite;
++  input.effective_proxy_group_id = "runtime-proxy-group";
++  input.matched_policy_generation = input.request.generations.policy_generation;
++  input.require_proxy_intent = true;
++  input.snapshot_state = SnapshotState::kPublished;
++  input.snapshot_owner = input.request.owner;
++  input.snapshot_generations = input.request.generations;
++  input.protection_restriction = ProtectionRestriction::kNone;
++  input.managed_restriction = ManagedRestriction::kNone;
++  input.runtime_state = ProxyRuntimeState::kReady;
++  input.registered_proxy_entry =
++      RegisteredProxyEntry{"runtime-entry", input.effective_proxy_group_id,
++                           input.request.owner, input.request.generations};
++  return input;
++}
++
++inline void ExpectReadyProxyRegisters(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  const PublishedRequestRuntimeInput input = ReadyRuntimeInput();
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(
++      result.status == PublishedRequestRuntimeStatus::kDispatchRegistered &&
++          result.route_plan.action == RouteAction::kUseRegisteredProxy &&
++          result.dispatch_gate.decision == RequestDispatchDecision::kAllow &&
++          ownership.Lookup(input.request.request_id, input.request.owner,
++                           input.request.generations)
++                  .status == RequestOwnershipStatus::kOk,
++      "published runtime unit ready proxy registers before dispatch");
++}
++
++inline void ExpectDirectPreservesNativeAndRegisters(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input = ReadyRuntimeInput("runtime-direct");
++  input.effective_mode = AccessMode::kDirect;
++  input.effective_proxy_group_id.clear();
++  input.require_proxy_intent = false;
++  input.runtime_state = ProxyRuntimeState::kStopped;
++  input.registered_proxy_entry.reset();
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(
++      result.status == PublishedRequestRuntimeStatus::kDispatchRegistered &&
++          result.route_plan.action == RouteAction::kPreserveNative &&
++          ownership.size() == 1u,
++      "published runtime unit direct preserves native after registration");
++}
++
++inline void ExpectWaitDoesNotRegister(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input = ReadyRuntimeInput("runtime-wait");
++  input.snapshot_state = SnapshotState::kRestoring;
++  input.matched_policy_generation = 0;
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(result.status == PublishedRequestRuntimeStatus::kWait &&
++                      result.route_plan.action == RouteAction::kWait &&
++                      ownership.size() == 0u,
++                  "published runtime unit wait never registers");
++}
++
++inline void ExpectDenyDoesNotRegister(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input = ReadyRuntimeInput("runtime-deny");
++  input.protection_restriction = ProtectionRestriction::kDeny;
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(result.status == PublishedRequestRuntimeStatus::kDeny &&
++                      result.route_plan.action == RouteAction::kDeny &&
++                      ownership.size() == 0u,
++                  "published runtime unit deny never registers");
++}
++
++inline void ExpectStalePolicyGenerationFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input =
++      ReadyRuntimeInput("runtime-stale-policy");
++  --input.matched_policy_generation;
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(
++      result.status == PublishedRequestRuntimeStatus::kStalePolicyGeneration &&
++          result.route_plan.action == RouteAction::kFail &&
++          result.route_plan.reason == RouteReason::kStaleGeneration &&
++          ownership.size() == 0u,
++      "published runtime regression stale policy generation fails closed");
++}
++
++inline void ExpectIncompleteRequestGenerationFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input =
++      ReadyRuntimeInput("runtime-zero-generation");
++  input.request.generations.identity_generation = 0;
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(result.status == PublishedRequestRuntimeStatus::kFail &&
++                      result.route_plan.action == RouteAction::kFail &&
++                      ownership.size() == 0u,
++                  "published runtime regression incomplete tuple fails closed");
++}
++
++inline void ExpectSnapshotGenerationMismatchFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input =
++      ReadyRuntimeInput("runtime-stale-snapshot");
++  ++input.snapshot_generations.network_epoch;
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(result.status == PublishedRequestRuntimeStatus::kFail &&
++                      result.route_plan.reason ==
++                          RouteReason::kStaleGeneration &&
++                      ownership.size() == 0u,
++                  "published runtime regression stale snapshot fails closed");
++}
++
++inline void ExpectBarrierBlocksBeforeRegistration(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  observer.Expect(barriers.InstallBlockBarrier(DocumentBlockBarrier()) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "published runtime regression installs block barrier");
++  PublishedRequestRuntimeInput input =
++      ReadyRuntimeInput("runtime-barrier-blocked");
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(
++      result.status == PublishedRequestRuntimeStatus::kBlockedByBarrier &&
++          result.dispatch_gate.decision == RequestDispatchDecision::kBlock &&
++          ownership.size() == 0u,
++      "published runtime regression barrier blocks before registration");
++}
++
++inline void ExpectDuplicateRegistrationFailsClosed(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input =
++      ReadyRuntimeInput("runtime-duplicate");
++  observer.Expect(ownership.Register(input.request) ==
++                      RequestOwnershipStatus::kOk,
++                  "published runtime regression seeds duplicate");
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(
++      result.status == PublishedRequestRuntimeStatus::kRegistrationFailed &&
++          result.dispatch_gate.ownership_status ==
++              RequestOwnershipStatus::kDuplicateRequestId &&
++          ownership.size() == 1u,
++      "published runtime regression duplicate never dispatches");
++}
++
++inline void ExpectConflictFailsBeforeRegistration(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  RequestOwnershipRegistry ownership(4);
++  PublishedRequestRuntimeInput input =
++      ReadyRuntimeInput("runtime-conflict");
++  input.policy_state = PolicyState::kConflict;
++  const PublishedRequestRuntimeResult result =
++      EvaluatePublishedRequestForDispatch(input, barriers, ownership);
++  observer.Expect(result.status == PublishedRequestRuntimeStatus::kFail &&
++                      result.route_plan.reason ==
++                          RouteReason::kPolicyConflict &&
++                      ownership.size() == 0u,
++                  "published runtime regression policy conflict fails closed");
++}
++
++}  // namespace published_request_runtime_test_detail
++
++inline void RunPublishedRequestRuntimeUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  published_request_runtime_test_detail::ExpectReadyProxyRegisters(observer);
++  published_request_runtime_test_detail::ExpectDirectPreservesNativeAndRegisters(
++      observer);
++  published_request_runtime_test_detail::ExpectWaitDoesNotRegister(observer);
++  published_request_runtime_test_detail::ExpectDenyDoesNotRegister(observer);
++}
++
++inline void RunPublishedRequestRuntimeRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  published_request_runtime_test_detail::ExpectStalePolicyGenerationFailsClosed(
++      observer);
++  published_request_runtime_test_detail::
++      ExpectIncompleteRequestGenerationFailsClosed(observer);
++  published_request_runtime_test_detail::
++      ExpectSnapshotGenerationMismatchFailsClosed(observer);
++  published_request_runtime_test_detail::ExpectBarrierBlocksBeforeRegistration(
++      observer);
++  published_request_runtime_test_detail::
++      ExpectDuplicateRegistrationFailsClosed(observer);
++  published_request_runtime_test_detail::ExpectConflictFailsBeforeRegistration(
++      observer);
++}
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_PUBLISHED_REQUEST_RUNTIME_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/published_request_runtime_unittest.cc b/components/aegis_access/published_request_runtime_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/published_request_runtime_unittest.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/published_request_runtime_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestPublishedRequestRuntimeObserver
++    : public RequestOwnershipRegistryTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(PublishedRequestRuntimeTest, SharedUnitContract) {
++  GtestPublishedRequestRuntimeObserver observer;
++  RunPublishedRequestRuntimeUnitTests(observer);
++}
++
++TEST(PublishedRequestRuntimeRegressionTest, SharedRegressionContract) {
++  GtestPublishedRequestRuntimeObserver observer;
++  RunPublishedRequestRuntimeRegressionTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
+-- 
+2.39.0
