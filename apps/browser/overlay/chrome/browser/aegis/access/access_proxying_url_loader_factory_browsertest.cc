@@ -42,6 +42,7 @@ namespace aegis::access {
 namespace {
 
 constexpr char kTargetHost[] = "target.example";
+constexpr char kUnselectedRedirectHost[] = "redirect-unselected.example";
 constexpr char kProxyGroup[] = "proxy-group-browser-test";
 
 std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
@@ -65,6 +66,14 @@ std::unique_ptr<net::test_server::HttpResponse> ProxyReply(
     return std::make_unique<net::test_server::HungResponse>();
   }
   auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+  if (request.relative_url.find("/redirect-unselected") !=
+      std::string::npos) {
+    response->set_code(net::HTTP_FOUND);
+    response->AddCustomHeader(
+        "Location",
+        target_origin->GetURL(kUnselectedRedirectHost, "/resource").spec());
+    return response;
+  }
   if (request.relative_url.find("/redirect") != std::string::npos) {
     response->set_code(net::HTTP_FOUND);
     response->AddCustomHeader(
@@ -88,6 +97,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     InProcessBrowserTest::SetUpOnMainThread();
 
     host_resolver()->AddRule(kTargetHost, "127.0.0.1");
+    host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
 
     target_origin_.RegisterRequestHandler(base::BindRepeating(
         &CountAndReply, base::Unretained(&origin_requests_), "origin"));
@@ -121,6 +131,10 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   GURL redirect_url() const {
     return target_origin_.GetURL(kTargetHost, "/redirect");
+  }
+
+  GURL unselected_redirect_url() const {
+    return target_origin_.GetURL(kTargetHost, "/redirect-unselected");
   }
 
   GURL hanging_url() const {
@@ -183,6 +197,13 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   }
 
   bool FetchTarget() { return Fetch(target_url()); }
+
+  void ExpectRedirectFollowedThroughProxy() {
+    EXPECT_TRUE(base::test::RunUntil([&] {
+      return proxy_requests_.load(std::memory_order_relaxed) == 2u;
+    }));
+    EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+  }
 
   void NavigateNewIframe(const GURL& url) {
     ASSERT_TRUE(content::ExecJs(
@@ -350,13 +371,35 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
-                       RedirectFromProxiedRequestFailsClosed) {
+                       SameHostRedirectReevaluatesThroughProxy) {
   PublishProxyPolicy(/*publish_endpoint=*/true);
 
-  EXPECT_FALSE(Fetch(redirect_url()));
-  EXPECT_TRUE(base::test::RunUntil([&] {
-    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
-  }));
+  EXPECT_TRUE(Fetch(redirect_url()));
+  ExpectRedirectFollowedThroughProxy();
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       MainNavigationRedirectReevaluatesThroughProxy) {
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), redirect_url()));
+  ExpectRedirectFollowedThroughProxy();
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       SubframeNavigationRedirectReevaluatesThroughProxy) {
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  NavigateNewIframe(redirect_url());
+  ExpectRedirectFollowedThroughProxy();
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       RedirectToUnselectedHostFailsClosed) {
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  EXPECT_FALSE(Fetch(unselected_redirect_url()));
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 1u);
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
 }
 
