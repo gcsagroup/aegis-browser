@@ -38,6 +38,7 @@ SUBFRAME_NAVIGATION_PATCH_FILE="$BROWSER_DIR/patches/0139-feat-aegis-gate-primar
 REDIRECT_REEVALUATION_PATCH_FILE="$BROWSER_DIR/patches/0140-feat-aegis-reevaluate-proxied-redirects.patch"
 WORKER_MAIN_RESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0141-feat-aegis-gate-worker-main-resource-traffic.patch"
 WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0142-feat-aegis-gate-worker-subresource-traffic.patch"
+PROFILE_ONLY_BACKGROUND_PATCH_FILE="$BROWSER_DIR/patches/0143-feat-aegis-add-profile-only-background-ownership.patch"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -532,6 +533,22 @@ if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
   "$WORKER_SUBRESOURCE_PATCH_FILE"; then
   fail "patch 0142 must not claim ServiceWorker coverage"
 fi
+rg -Fq 'BuildBrowserOwnedProfileOnlyRequestMetadata' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must expose the browser-owned Profile-only metadata bridge"
+rg -Fq 'RenderProcessHost::FromID' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must bind Profile-only ownership to a browser-owned render process"
+rg -Fq 'process->GetStoragePartition()' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must resolve the render process StoragePartition"
+rg -Fq 'RequestAttributionKind::kProfileOnly' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must produce Profile-only request attribution"
+rg -Fq 'ProfileOnlyMetadataUsesRenderProcessPartitionWithoutSiteIdentity' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must browser-test process-owned Profile-only metadata"
+rg -Fq 'ProfileOnlyMetadataRejectsUnknownRenderProcess' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must fail closed for an unknown render process"
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -594,6 +611,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0141 must appear once in series"
 [[ "$(rg -F -c '0142-feat-aegis-gate-worker-subresource-traffic.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0142 must appear once in series"
+[[ "$(rg -F -c '0143-feat-aegis-add-profile-only-background-ownership.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0143 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -623,10 +642,11 @@ expected_access_tail="$(cat <<'EOF'
 0140-feat-aegis-reevaluate-proxied-redirects.patch
 0141-feat-aegis-gate-worker-main-resource-traffic.patch
 0142-feat-aegis-gate-worker-subresource-traffic.patch
+0143-feat-aegis-add-profile-only-background-ownership.patch
 EOF
 )"
-[[ "$(tail -n 28 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0142"
+[[ "$(tail -n 29 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0143"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
