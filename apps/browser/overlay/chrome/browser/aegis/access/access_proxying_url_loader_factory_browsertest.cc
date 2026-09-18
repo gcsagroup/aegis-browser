@@ -57,6 +57,26 @@ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
     response->set_content_type("text/html");
     return response;
   }
+  if (request.relative_url.find("/worker-subresource.js") !=
+      std::string::npos) {
+    response->set_content(
+        "self.postMessage('ready');"
+        "self.onmessage = async event => {"
+        "  try {"
+        "    const response = await fetch(event.data);"
+        "    self.postMessage(await response.text());"
+        "  } catch {"
+        "    self.postMessage('error');"
+        "  }"
+        "};");
+    response->set_content_type("application/javascript");
+    return response;
+  }
+  if (request.relative_url.find("/worker-data") != std::string::npos) {
+    response->set_content("origin-worker-subresource");
+    response->set_content_type("text/plain");
+    return response;
+  }
   if (request.relative_url.find("/worker.js") != std::string::npos) {
     response->set_content("self.postMessage('origin');");
     response->set_content_type("application/javascript");
@@ -80,6 +100,12 @@ std::unique_ptr<net::test_server::HttpResponse> ProxyReply(
     response->set_code(net::HTTP_OK);
     response->set_content("self.postMessage('proxy');");
     response->set_content_type("application/javascript");
+    return response;
+  }
+  if (request.relative_url.find("/worker-data") != std::string::npos) {
+    response->set_code(net::HTTP_OK);
+    response->set_content("proxy-worker-subresource");
+    response->set_content_type("text/plain");
     return response;
   }
   if (request.relative_url.find("/redirect-unselected") !=
@@ -151,6 +177,14 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   GURL worker_script_url() const {
     return target_origin_.GetURL(kTargetHost, "/worker.js");
+  }
+
+  GURL worker_subresource_script_url() const {
+    return target_origin_.GetURL(kTargetHost, "/worker-subresource.js");
+  }
+
+  GURL worker_subresource_url() const {
+    return target_origin_.GetURL(kTargetHost, "/worker-data");
   }
 
   GURL redirect_url() const {
@@ -235,6 +269,53 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
                    "  };"
                    "})",
                    script_url.spec()))
+        .ExtractString();
+  }
+
+  void StartWorkerSubresourceHarness() {
+    EXPECT_EQ(
+        content::EvalJs(
+            web_contents(),
+            content::JsReplace(
+                "new Promise(resolve => {"
+                "  window.aegisSubresourceWorker = new Worker($1);"
+                "  window.aegisSubresourceWorker.onmessage = event => {"
+                "    if (event.data === 'ready') resolve('ready');"
+                "  };"
+                "  window.aegisSubresourceWorker.onerror = event => {"
+                "    event.preventDefault();"
+                "    resolve('error');"
+                "  };"
+                "})",
+                worker_subresource_script_url().spec()))
+            .ExtractString(),
+        "ready");
+  }
+
+  void PrepareWorkerSubresourceTest(size_t* origin_before,
+                                    size_t* proxy_before) {
+    ASSERT_NE(origin_before, nullptr);
+    ASSERT_NE(proxy_before, nullptr);
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+    StartWorkerSubresourceHarness();
+    *origin_before = origin_requests_.load(std::memory_order_relaxed);
+    *proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  }
+
+  std::string FetchWorkerSubresource(const GURL& url) {
+    return content::EvalJs(
+               web_contents(),
+               content::JsReplace(
+                   "new Promise(resolve => {"
+                   "  const worker = window.aegisSubresourceWorker;"
+                   "  worker.onmessage = event => resolve(event.data);"
+                   "  worker.onerror = event => {"
+                   "    event.preventDefault();"
+                   "    resolve('error');"
+                   "  };"
+                   "  worker.postMessage($1);"
+                   "})",
+                   url.spec()))
         .ExtractString();
   }
 
@@ -427,6 +508,49 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
 
   EXPECT_EQ(RunWorkerMainScript(worker_script_url()), "error");
   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       WorkerSubresourceWithoutPolicyPreservesNativePath) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PrepareWorkerSubresourceTest(&origin_before, &proxy_before);
+
+  EXPECT_EQ(FetchWorkerSubresource(worker_subresource_url()),
+            "origin-worker-subresource");
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return origin_requests_.load(std::memory_order_relaxed) ==
+           origin_before + 1u;
+  }));
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), proxy_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       WorkerSubresourceUsesSelectedProxy) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PrepareWorkerSubresourceTest(&origin_before, &proxy_before);
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  EXPECT_EQ(FetchWorkerSubresource(worker_subresource_url()),
+            "proxy-worker-subresource");
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return proxy_requests_.load(std::memory_order_relaxed) ==
+           proxy_before + 1u;
+  }));
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       WorkerSubresourceWithoutEndpointFailsClosed) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PrepareWorkerSubresourceTest(&origin_before, &proxy_before);
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+
+  EXPECT_EQ(FetchWorkerSubresource(worker_subresource_url()), "error");
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), proxy_before);
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
 }
 
