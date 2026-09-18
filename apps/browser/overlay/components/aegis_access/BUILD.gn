@@ -80,6 +80,14 @@ source_set("request_dispatch_gate") {
   public_deps = [ ":request_ownership_registry" ]
 }
 
+source_set("policy_publication_ack_tracker") {
+  sources = [
+    "policy_publication_ack_tracker.cc",
+    "policy_publication_ack_tracker.h",
+  ]
+  public_deps = [ ":request_ownership_registry" ]
+}
+
 source_set("published_request_runtime") {
   sources = [
     "published_request_runtime.cc",
@@ -182,6 +190,18 @@ test("request_ownership_registry_unittests") {
   ]
   deps = [
     ":request_ownership_registry",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("policy_publication_ack_tracker_unittests") {
+  sources = [
+    "policy_publication_ack_tracker_contract_test.h",
+    "policy_publication_ack_tracker_unittest.cc",
+  ]
+  deps = [
+    ":policy_publication_ack_tracker",
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]

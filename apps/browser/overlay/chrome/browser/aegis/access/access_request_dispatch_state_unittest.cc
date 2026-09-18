@@ -55,6 +55,18 @@ aegis_access::RequestCancellationSelector SelectorFor(
           record.port};
 }
 
+aegis_access::PolicyPublicationAckRequirements PublicationFor(
+    const aegis_access::RequestOwnershipRecord& record,
+    uint64_t operation_sequence,
+    uint64_t policy_generation,
+    const std::string& operation_id) {
+  return {
+      {operation_id, operation_sequence, policy_generation, SelectorFor(record)},
+      {"browser-runtime", "network-context"},
+      true,
+  };
+}
+
 TEST_F(AccessRequestDispatchStateTest, RejectsNullProfile) {
   EXPECT_EQ(AccessRequestDispatchState::Get(nullptr), nullptr);
   EXPECT_EQ(AccessRequestDispatchState::GetOrCreate(nullptr), nullptr);
@@ -126,6 +138,112 @@ TEST_F(AccessRequestDispatchStateTest,
             aegis_access::RequestDispatchBarrierStatus::kInvalidBarrier);
   EXPECT_EQ(state->ownership().size(), 1u);
   EXPECT_EQ(state->barriers().size(), 0u);
+}
+
+
+TEST_F(AccessRequestDispatchStateTest,
+       BarrierReleaseWaitsForAckTerminationAndDurableCommit) {
+  auto profile = TestingProfile::Builder().Build();
+  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
+  ASSERT_NE(state, nullptr);
+
+  const auto record = TestRecord();
+  const auto publication = PublicationFor(record, 10, 10, "block-0137");
+  ASSERT_EQ(state->InstallBlockBarrierAndCancelMatching(
+                {"block-0137", 10, SelectorFor(record)})
+                .barrier_status,
+            aegis_access::RequestDispatchBarrierStatus::kOk);
+  ASSERT_EQ(state->BeginPolicyPublication(publication).status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+  ASSERT_EQ(state->AcknowledgePolicyPublication(
+                publication.identity, "browser-runtime")
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+  ASSERT_EQ(state->MarkPolicyPublicationTerminationsComplete(
+                publication.identity)
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+  ASSERT_EQ(state->MarkPolicyPublicationDurablyCommitted(
+                publication.identity)
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+
+  const auto early =
+      state->ReleaseBlockBarrierForReadyPublication(publication.identity);
+  EXPECT_FALSE(early.released);
+  EXPECT_EQ(state->barriers().size(), 1u);
+
+  ASSERT_EQ(state->AcknowledgePolicyPublication(
+                publication.identity, "network-context")
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kReady);
+  const auto released =
+      state->ReleaseBlockBarrierForReadyPublication(publication.identity);
+  EXPECT_TRUE(released.released);
+  EXPECT_EQ(released.publication_status,
+            aegis_access::PolicyPublicationAckStatus::kFinalized);
+  EXPECT_EQ(released.barrier_status,
+            aegis_access::RequestDispatchBarrierStatus::kOk);
+  EXPECT_EQ(state->barriers().size(), 0u);
+}
+
+TEST_F(AccessRequestDispatchStateTest,
+       MissingNetworkTransportFailsPublicationImmediately) {
+  auto profile = TestingProfile::Builder().Build();
+  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
+  ASSERT_NE(state, nullptr);
+
+  const auto record = TestRecord();
+  const auto publication =
+      PublicationFor(record, 15, 15, "missing-transport-0137");
+  ASSERT_EQ(state->BeginPolicyPublication(publication).status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+
+  const auto result = state->RequestNetworkContextPublicationAck(
+      publication.identity, record.owner);
+  EXPECT_EQ(result.status, AccessNetworkConfigAckStatus::kMissingTransport);
+  EXPECT_EQ(state->AcknowledgePolicyPublication(
+                publication.identity, "browser-runtime")
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kFailed);
+  EXPECT_FALSE(
+      state->ReleaseBlockBarrierForReadyPublication(publication.identity)
+          .released);
+}
+
+TEST_F(AccessRequestDispatchStateTest,
+       LateAckCannotReleaseNewerBlockBarrier) {
+  auto profile = TestingProfile::Builder().Build();
+  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
+  ASSERT_NE(state, nullptr);
+
+  const auto record = TestRecord();
+  const auto older = PublicationFor(record, 20, 20, "block-old");
+  const auto newer = PublicationFor(record, 21, 21, "block-new");
+  ASSERT_EQ(state->InstallBlockBarrierAndCancelMatching(
+                {"block-old", 20, SelectorFor(record)})
+                .barrier_status,
+            aegis_access::RequestDispatchBarrierStatus::kOk);
+  ASSERT_EQ(state->BeginPolicyPublication(older).status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+  ASSERT_EQ(state->InstallBlockBarrierAndCancelMatching(
+                {"block-new", 21, SelectorFor(record)})
+                .barrier_status,
+            aegis_access::RequestDispatchBarrierStatus::kOk);
+  ASSERT_EQ(state->BeginPolicyPublication(newer).status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+
+  EXPECT_EQ(state->AcknowledgePolicyPublication(
+                older.identity, "network-context")
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kStaleOperation);
+  const auto old_release =
+      state->ReleaseBlockBarrierForReadyPublication(older.identity);
+  EXPECT_FALSE(old_release.released);
+  EXPECT_EQ(state->barriers().size(), 1u);
+  const auto evaluation = state->barriers().EvaluateRequest(record);
+  ASSERT_TRUE(evaluation.barrier.has_value());
+  EXPECT_EQ(evaluation.barrier->operation_id, "block-new");
 }
 
 }  // namespace
