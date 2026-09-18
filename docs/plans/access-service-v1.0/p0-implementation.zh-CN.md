@@ -4,6 +4,35 @@
 
 用户已授权在当前访问服务文档基础上继续开发。行为权威仍是 `spec.zh-CN.md` V1.0 修订 4 与 `freeze.json`；本文件不修改冻结行为、数量或 G0–G3 门槛。
 
+## 2026-09-17 当前进度与问题
+
+本节是当前工程状态快照，便于从连续切片记录中快速判断“已经落地到哪里、还缺什么”。后文 0114–0128 保留各切片当时的实现与证据，不因本节更新而改写历史结论。状态类信息会随 PR、rebase 和托管 CI 变化；后续推进前仍须重新绑定最终 base/head SHA。
+
+当前快照：
+
+- 最新本地实现线为 `codex/access-network-epoch-source`，当前实现 HEAD `1c59e90bdcbb3bf12b2809ef57d014d5a2790364`。
+- 个人开发主线 `origin/develop` 已推进到 `d3388696e7c4bc07b47a7f710c74493f9fb6e767`；个人公开 `origin/main` 当前为 `ef4f58f759ba1fb0617b9bd8ab0d9743f9d67454`。
+- `0117` fail-closed `ProxyInfo` 适配、`0118` Profile/StoragePartition NetworkContext 传输、`0119` localhost HTTP/HTTPS/no-DIRECT 回归，以及后续 C++ 回归基础已进入开发主线。`0121` RequestOwnershipRegistry、`0122` 定向取消与 `0123` dispatch BLOCK barrier 也已分别通过 #44、#45、#46 进入 `develop`；其中 #46 在 `develop` 的合入提交为 `3d44ab7c40d6726f6811da65b41f57d34d5bf453`。
+- `0124`–`0128` 目前仍是本地堆叠实现：`2afce0d` dispatch gate → `505c5cb` browser-owned metadata → `bce44a2` published request runtime → `94ea205` committed policy generation → `1c59e90` NetworkContext epoch。它们尚未基于最新 `origin/develop` 重放，也未进入对应的最终 PR/CI 流。
+- `0128` 当前 standalone C++20 合同实际执行到 `PASS: aegis_access native unit (774 checks)`。五元 `GenerationTuple` 中只有 **policy generation** 与 **network epoch** 已绑定真实生产生命周期；`identity_generation`、`selection_generation`、`base_proxy_config_generation` 仍没有已验证的生产来源，因此 runtime 继续 fail closed，不能授权真实 URLLoader 派发。
+
+当前主要问题与风险：
+
+1. **0124–0128 需要重新收敛到最新开发主线。** 这些本地提交建立在早期 0121–0123 堆叠之上，而 `develop` 已吸收 #44/#45/#46 的 review 后结果，并在后续同步与 review 流程更新后推进到 `d338869`。应从最新 `origin/develop` 逐个重放 0124–0128；rebase/cherry-pick 后旧测试证据失效，必须对新的最终干净 HEAD 重跑。
+2. **真实请求派发闭环仍未完成。** `0124` 已冻结 barrier → ownership registration → allow 的 fail-closed 顺序，`0125` 已建立 browser-owned metadata 边界，`0126` 已建立 published runtime，但这些能力尚未完整挂入 Chromium 的真实 URLLoader/Navigation/worker/prefetch/preconnect/Service Worker/BFCache 派发入口；真实 request/stream termination handle 和执行点 ACK 也未闭合。
+3. **generation 来源只完成 2/5。** 缺少 identity、selection 和 base-proxy-config 三个真实生产计数器。五项全部到位前，不允许用常量、时间戳或测试 tuple 填空，也不能把 `0126` 报告为真实派发已启用。
+4. **用户产品入口仍未落地。** 当前 `develop` 的 AccessRuleStore contract 仍明确拒绝把 `SetSiteProxy` 产品 surface 混入现阶段存储切片；“当前网站使用代理”的 WebUI/工具栏开关、状态反馈及与持久 site group 的完整协调尚未交付。因此当前成果属于浏览器原生访问/代理底座，还不能按普通用户可用代理功能验收。
+5. **真实代理 runtime 仍有较大缺口。** Xray 生命周期、HTTP/SOCKS Profile 认证、WS/WSS、节点/租约、账户与额度、用量计量、故障恢复、连接池代次和企业/原有代理组合仍需按冻结规范逐项实现和验证；Vision 计量风险及 A117/A118 仍未关闭。
+6. **完整 Chromium runtime/G0 仍未通过。** 0118–0120 的记录仍存在固定 Chromium 151 checkout/toolchain 验证阻塞，包括现有 Xcode 27 SDK 与 Chromium bundled lld/TAPI 的 host-tool 链接问题，以及曾出现的既有 `aegis_libtorrent` 生成输入缺失。当前更新没有重新执行完整 Chrome 构建，因此不得把对象编译、standalone checks 或托管仓库 CI 提升为完整浏览器 runtime PASS；G0 保持未通过。
+
+建议的推进顺序：
+
+1. 从最新 `origin/develop` 依次重放 `0124`–`0128`，保留 #44/#45/#46 的 review 修正，并在每个最终 head 上重新执行 unit + regression 与仓库完整门。
+2. 依次绑定 `identity_generation`、`selection_generation`、`base_proxy_config_generation` 的真实生命周期来源，完成 5/5 generation 后再接通 `PublishedRequestRuntime`。
+3. 把 browser-owned metadata、published runtime、dispatch gate、真实 termination handle 和 ACK/预算接到 Chromium 实际请求/导航入口，补真实 URLLoader/Navigation/HTTP2/HTTP3/WS 等覆盖。
+4. 在请求闭环稳定后实现 `SetSiteProxy`、可信 WebUI/工具栏入口和持久 site group 协调，再接 Xray/认证/账户/额度/计量等运行时能力。
+5. 修复或切换可兼容的 Chromium macOS toolchain，执行固定源码/补丁 SHA 的完整 GTest、Chrome build 和真实浏览器链路验收；只有这些证据满足冻结门槛后才重新评估 G0。
+
 实际实现 base 为 `b5fffc324ca9b85ec4cbc244165434f044ac57ec`，工作区 `/Volumes/ExternalSSD/repositories/aegis-browser-worktrees/access-service-p0`，分支 `codex/access-service-p0`。旧文档任务头为 `d60b5952b40e511d6f98f3f33be926dbe7ab1eb7`；其未提交文档已由主任务复制，保留用户已有差异。实现、独立审查、最终检查分别补录实际 head。
 
 ## 范围与事实
@@ -179,7 +208,7 @@ P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真
 
 本切片固定 `new → dispatched → streaming → completed/cancelled` 的最小生命周期。登记容量显式有界；无效记录、重复 request ID、跨 Profile/StoragePartition owner、过时代次、非法状态跃迁和缺失 termination handle 均 fail closed，失败操作不替换、不消费已有可信记录。对 dispatched/streaming 请求取消时，Registry 在调用外部 `RequestTerminationHandle::Terminate()` 前先删除本地 entry，因此重入或迟到回调只能看到 `not_found`，不能二次取消/完成同一请求。普通完成只回收 entry，不误调用终止句柄；尚未派发的 new 请求可本地取消而无需伪造外部 handle。
 
-测试随 feat 同步进入源码：共享 contract 同时提供 unit 与 regression 两组，standalone C++20 runner 直接编译生产 Registry 并实际执行；初次执行在仓库固定 ripgrep 15.2.0 前置下为 `PASS: aegis_access native unit (541 checks)`，其中新增 54 条检查覆盖注册/查询/dispatch/stream/complete、Profile-only 不借页面身份，以及容量溢出、重复 ID、不可信 owner、stale generation、非法 lifecycle、缺 handle、跨 Profile/StoragePartition、reentrant cancel、重复 cancel 和 late completion 等回归。GN 另提供独立 `//components/aegis_access:request_ownership_registry_unittests`，避免 Registry 的基础运行证据只能依赖 0119 后较重的 Network Service 测试目标；顺序补丁为 `0121-feat-aegis-add-request-ownership-registry.patch`，生成时 SHA-256 为 `beca127f3e49d691f5e81c7c2fd0ff3096889be66f83e1e9422bfd9268d414f5`。
+测试随 feat 同步进入源码：共享 contract 同时提供 unit 与 regression 两组，standalone C++20 runner 直接编译生产 Registry 并实际执行；初次执行在仓库固定 ripgrep 15.2.0 前置下为 `PASS: aegis_access native unit (541 checks)`，其中新增 54 条检查覆盖注册/查询/dispatch/stream/complete、Profile-only 不借页面身份，以及容量溢出、重复 ID、不可信 owner、stale generation、非法 lifecycle、缺 handle、跨 Profile/StoragePartition、reentrant cancel、重复 cancel 和 late completion 等回归。GN 另提供独立 `//components/aegis_access:request_ownership_registry_unittests`，避免 Registry 的基础运行证据只能依赖 0119 后较重的 Network Service 测试目标；顺序补丁为 `0121-feat-aegis-add-request-ownership-registry.patch`，当前 SHA-256 为 `e86fe5b6013fc7ef580fd62aad0af2c3e8377653895b72d992c1f8ac27cdf478`。
 
 证据边界保持不变：本切片尚未把真实 Browser/Navigation/URLLoader request ID 与 document token、具体 URLLoader/stream cancellation handle 接入 Registry，也没有实现按站点扫描并终止 HTTP/2/HTTP/3 共享连接中的匹配 stream；这些属于下一浏览器适配/定向取消 feat。541-check standalone PASS 证明 Registry 状态机与回归合同实际运行，不代表 Chromium Network Service runtime、完整 Chrome 或 G0 已通过。
 
@@ -191,7 +220,7 @@ P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真
 
 批次执行先验证 selector 和所有命中 entry，再把全部命中请求一次性移出 Registry，最后才调用外部 `RequestTerminationHandle`；因此第一个终止回调发生时，同批其他命中 request ID 也已经不可见，避免重入/迟到回调观察或操作半取消批次。`kNew` 尚未派发请求只从 Registry 移除，不伪造外部终止；dispatched/streaming 请求各自调用已登记 handle 一次，重复同一 selector 返回空成功批次而不会二次终止。
 
-本 feat 同步增加独立 unit 与 regression contract，并由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 真实执行为 `PASS: aegis_access native unit (605 checks)`，较 0121 增加 64 条检查，覆盖跨 policy/identity/network generation 的命中取消、new/dispatched/streaming 结果、pending navigation、重复批次，以及其他 document/Profile/partition/background/host/scheme/port/top-level-site 隔离、无效 selector fail-closed、完整批次先删除后回调和 document/pending attribution 分离。顺序补丁为 `0122-feat-aegis-add-targeted-request-cancellation.patch`，当前 SHA-256 为 `094d29c0a26df7c05b995c1dfecc9b80515d5c6d61c9da9ecb9b3e7e0e968cf7`。
+本 feat 同步增加独立 unit 与 regression contract，并由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 真实执行为 `PASS: aegis_access native unit (605 checks)`，较 0121 增加 64 条检查，覆盖跨 policy/identity/network generation 的命中取消、new/dispatched/streaming 结果、pending navigation、重复批次，以及其他 document/Profile/partition/background/host/scheme/port/top-level-site 隔离、无效 selector fail-closed、完整批次先删除后回调和 document/pending attribution 分离。顺序补丁为 `0122-feat-aegis-add-targeted-request-cancellation.patch`，当前 SHA-256 为 `80d825016ca65f53a80edacdc867e128a7a511c6f0d12670c2517f9bd7d2ab4b`。
 
 证据边界：0122 完成 Registry 层的精确选择、批量原子移除和终止句柄调用合同，但仍未把真实 Browser/Navigation/URLLoader/下载/媒体/SSE/ws/wss/HTTP2/HTTP3 stream handle 接到 Registry，也没有安装 BLOCK 的新请求 dispatch barrier 或 2 秒协调预算。因此不能把 605-check standalone PASS 报告为真实浏览器在途取消或 G0 PASS；下一 feat 应把这些 browser-owned handle/派发入口接到 0121/0122 已冻结的 Registry API。
 
@@ -203,9 +232,59 @@ Barrier 使用 browser-owned `operation_id + operation_sequence` 管理同一 sc
 
 失败/超时保持 barrier 不需要额外“失败转移”：Registry 只有精确 `ReleaseBlockBarrier` 才能删除屏障。上层持久化失败、策略发布失败、在途取消未确认或 2 秒 ACK 超时时不调用精确 release，屏障自然保持；只有版本化撤销/解除 BLOCK 的 owning operation 才能释放。这一层不自行实现磁盘事务、计时器或 renderer 字符串归属推导。
 
-本 feat 随生产代码加入独立 unit 与 regression contract，并继续由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 首轮真实执行为 `PASS: aegis_access native unit (646 checks)`，较 0122 增加 41 条检查，覆盖安装/查询/精确释放、跨所有 generation 的同步阻断、pending navigation、nonmatch 放行、幂等重装、容量上限、非法 barrier/request fail-closed、新 operation 替换、stale install/release 不覆盖/不清除新 barrier，以及 document/Profile/partition/background/site/host/scheme/port 隔离。顺序补丁为 `0123-feat-aegis-add-request-dispatch-block-barriers.patch`，当前 SHA-256 为 `fb009f770f3c482c7119cd5c622120164f896602438af2f20fb5f843f0a32e06`。
+本 feat 随生产代码加入独立 unit 与 regression contract，并继续由 standalone runner 与 Chromium `request_ownership_registry_unittests` 共用。focused standalone C++20 首轮真实执行为 `PASS: aegis_access native unit (646 checks)`，较 0122 增加 41 条检查，覆盖安装/查询/精确释放、跨所有 generation 的同步阻断、pending navigation、nonmatch 放行、幂等重装、容量上限、非法 barrier/request fail-closed、新 operation 替换、stale install/release 不覆盖/不清除新 barrier，以及 document/Profile/partition/background/site/host/scheme/port 隔离。顺序补丁为 `0123-feat-aegis-add-request-dispatch-block-barriers.patch`，当前 SHA-256 为 `520bdc12077e1fcc7044548fa8659a7787ee814e1c30e035def29462d6514efb`。
 
 证据边界：0123 完成的是可独立执行的 BLOCK dispatch barrier 状态机，还未把 barrier 真正接入 `AegisNetThrottle::WillStartRequest`、Navigation/预取/preconnect/Service Worker/BFCache 等 Chromium 派发入口，也未实现执行点 ACK 与 2 秒/5 秒预算。现有 `AegisNetThrottle` 的 `request_initiator`/source-site 仍不能被当作 Access Service 的可信 page ownership；真实接线必须使用 browser-owned document/navigation metadata。646-check PASS 不代表真实浏览器 BLOCK 入口或 G0 PASS。
+
+2026-09-18 的 `main → develop` 同步在 0123 后保留上游 review 修复补丁 `0124-refactor-aegis-request-ownership-contracts.patch`，其 SHA-256 为 `58f8136d79e293c154587240f2a67b048e186911408ab2e4b730dff19a8b5dd0`。为保持补丁序列名称唯一且按应用顺序递增，下述两个逻辑切片的运输补丁分别重编号为 0125 和 0126；章节编号仍保留原始实现记录。0121–0126 已从 0120 后的 overlay 基线按 `series` 顺序 clean replay，最终树与合并后的 overlay 一致。
+
+## 0124：fail-closed dispatch gate 编排
+
+2026-09-16 在 0123 barrier 状态机之上新增纯 C++ `EvaluateAndRegisterRequestForDispatch`。该 gate 固定一个关键顺序：先用 `RequestDispatchBarrierRegistry` 对完整 browser-owned record 做同步 BLOCK 判定，只有明确 `kAllow` 后才允许写入 `RequestOwnershipRegistry`；命中 barrier、record 非法、依赖缺失、重复 request ID 或 Registry 容量耗尽均返回 `kBlock`，不存在“登记失败但仍继续派发”的回退路径。gate 自身不从 renderer/page 字符串构造 owner、document 或 generation，只消费 0115/0121 已冻结的规范化 record。
+
+本 feat 与生产代码同步增加独立 unit 与 regression contract，并提供 `//components/aegis_access:request_dispatch_gate_unittests`。standalone C++20 初轮真实执行为 `PASS: aegis_access native unit (670 checks)`，较 0123 增加 24 条检查；unit 覆盖正常 allow+register、exact BLOCK、malformed record、pending-navigation barrier 与缺失依赖 fail-closed，regression 固定跨 generation barrier 不可绕过、跨 Profile/StoragePartition 不误伤、重复 ID/容量失败不得放行，以及 BLOCK 判定必须先于 Registry mutation。当前顺序补丁为 `0125-feat-aegis-enforce-request-dispatch-gate.patch`，SHA-256 为 `c63e2a782f597b656d39591fe75915f44877e30319e0c0ecd17c82139d4c9738`。
+
+证据边界继续收紧：0124 已把“barrier 判定 → ownership 登记 → allow”组合成一个不可跳步的可执行核心，但尚未把它挂到 Chromium `ChromeContentBrowserClient::CreateURLLoaderThrottles` 或其他真实派发入口。固定 Chromium 151 的 browser-side API 已核对可提供 BrowserContext、WebContents、FrameTreeNodeId、navigation id，并可由 RenderFrameHost 取得不可变关联的 StoragePartition；下一 feat 才负责把这些 browser-owned 元数据转换为 `BrowserOwnedRequestMetadata` 和 generation，再调用本 gate。worker/prefetch/preconnect/Service Worker/BFCache 覆盖仍未完成，670-check PASS 不代表真实浏览器 BLOCK runtime 或 G0 PASS。
+
+## 0125：browser-owned request metadata 适配边界
+
+2026-09-16 在 0124 dispatch gate 之上新增两层适配。可独立执行的 `browser_request_metadata_seed` 负责冻结产品渠道映射以及 document / pending-navigation / profile-only 三种互斥归属选择；Chromium 层 `AccessBrowserRequestAdapter` 只从 browser process 持有的 `Profile`、`WebContents`、`RenderFrameHost`、`StoragePartition` 与 `navigation_id` 提取可信字段，再复用 0118 `AccessNetworkContextTransport::OwnerForPartition` 生成 Profile/partition owner。它不会读取 renderer `request_initiator`/source-site，不会为缺失 transport 偷建 runtime，也不会在 worker/Service Worker 缺少可信 WebContents/frame 时借用活动标签页身份。
+
+导航归属固定优先于旧 committed document：存在 browser `navigation_id` 时必须同时存在 `FrameTreeNodeId`，生成 pending-navigation token，并清空旧 document/top-site；只有非导航请求才允许使用 `AegisService::DocumentIdForWebContents` 与 primary main-frame `SchemefulSite`。StoragePartition 通过 request frame 的不可变关联取得，并按与 `ProfileNetworkContextService` 相同的 profile-path 相对路径规则映射到 0118 owner；跨 BrowserContext、partition 路径逃逸、缺 frame/partition/transport 均明确失败。Chromium UNKNOWN build 映射到 DEV，不得冒充 RELEASE。
+
+本 feat 同时增加独立 unit 与 regression contract，并提供 `//components/aegis_access:browser_request_metadata_seed_unittests`。standalone C++20 真实执行为 `PASS: aegis_access native unit (689 checks)`，较 0124 增加 19 条检查；unit 覆盖渠道映射、document/pending/profile-only、非法 owner/request、缺 top-site 与 orphan site，regression 固定“新 navigation 不继承旧 document/site”、UNKNOWN 不升级 RELEASE、跨 Profile/StoragePartition token 不被重写、非法 channel fail-closed，以及 background/worker-like 输入只能保持 profile-only。当前顺序补丁 `0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch` 已从 0124 refactor 与 0125 dispatch gate 之后的精确父状态生成并 clean-apply，SHA-256 为 `1091b3b1a141e5d99a3469e4afc730fc25383d547b7a66dc2b5ac4f3072ae4db`。
+
+证据边界：689-check PASS 是 metadata seed 的真实执行，不等价于 Chrome glue runtime。固定 Chromium 151 checkout 当前没有生成可复用的 Aegis adapter Ninja compile command，且该 checkout 保持 dirty/read-only，因此本 feat 不报告 adapter object compile PASS，也不修改该 checkout 来制造证据。0125 还没有向 metadata 注入真实发布 `GenerationTuple`，也没有调用 0124 gate 或挂入 `CreateURLLoaderThrottles`；这些必须作为后续独立 feat 完成并继续同时交付 unit + regression。PrefetchContainer、preconnect、Service Worker/BFCache 与真实 URLLoader cancellation handle 仍未覆盖，G0 状态不提升。
+
+## 0126：Profile/partition published generation 请求 runtime
+
+2026-09-16 在 0125 browser-owned metadata 边界之上新增纯 C++ `PublishedRequestRuntime`，把“可信 owner 已发布哪一个 `GenerationTuple`”与 0121–0124 的 ownership/barrier/gate 状态组合为一个有界 runtime。browser coordinator 必须显式按 `OwnershipKey` 发布完整 generation tuple；runtime 不自行递增、猜测或从 renderer 字段恢复 generation。未发布 owner、generation 任一字段为零、请求 tuple 与当前发布值不一致、publication 容量耗尽以及后续 Registry 登记失败均保持 `kBlock`。
+
+本地 BLOCK 语义继续优先：`EvaluateAndRegisterForDispatch` 先查询 0123 barrier，命中时即使该 owner 尚无 published generation 也直接 BLOCK，满足离线/缺快照时本地拒绝仍可执行的冻结合同；未命中 BLOCK 后才要求 exact published tuple，再调用 0124 gate。重新发布 generation 只影响后续新派发，不会删除旧 generation 的在途 Registry entry；这样 G→G+1 发布后，新旧在途请求仍可由 0122 page-target cancellation 跨 generation 一次性终止。`RemovePublishedGenerations` 也只阻止未来新派发，不把已登记请求静默当作完成。
+
+本 feat 与生产代码同步增加独立 unit 与 regression contract，并提供 `//components/aegis_access:published_request_runtime_unittests`。standalone C++20 首轮真实执行为 `PASS: aegis_access native unit (726 checks)`，较 0125 增加 37 条检查；unit 覆盖 publish/read/replace/remove、exact generation allow、stale generation block 及旧在途保留；regression 固定非法 owner/incomplete tuple 不改状态、publication 容量不覆盖旧 owner、跨 Profile/StoragePartition publication 不串用、本地 BLOCK 在无 generation 时仍优先、generation 更新后新旧在途并存且能一次跨代取消，以及 unpublish 不删除旧 active request。顺序补丁 `0126-feat-aegis-add-published-request-runtime.patch` 已从 0125 精确父状态生成并 clean-apply，SHA-256 为 `e4cca8c129881c1502d8dcd2c409d377e88f204b53fd3d2f6717dfe2340ee080`。
+
+证据边界：0126 冻结的是 generation publication 与 Registry/Barrier/Gate 的可执行组合，不是 generation 的真实来源。它尚未由 `AegisService`/NetworkContext 策略发布链维护，也未把 0125 `BrowserOwnedRequestMetadata` 经 `CanonicalizeBrowserOwnedRequest` 转为 record 后挂到 Chromium `CreateURLLoaderThrottles`。下一 feat 应在 browser-owned Profile runtime 中绑定真实发布源，再将 metadata + request URL + 当前 generation 送入 0126；在该来源完成前禁止使用常量 generation 或测试 tuple 冒充运行态。726-check PASS 也不代表真实 URLLoader dispatch、termination handle 或 G0 PASS。
+
+## 0127：绑定真实 committed policy generation 来源
+
+2026-09-16 在 0126 published runtime 之上新增 `RequestGenerationSources`，把五个 generation 分量拆成按同一 `OwnershipKey` 独立观察的真实来源。每个分量只能从非零值单调前进；重复值幂等、较小值 stale 拒绝、跨 Profile/StoragePartition owner 拒绝、未知 source enum 明确 `kInvalidSource` 且不能误写 policy slot。只有 policy / identity / selection / network epoch / base-proxy-config 五项都实际观察到后才生成完整 `GenerationTuple`；任一项缺失或被 invalidate 都回到 incomplete，不提供默认值、时间戳或常量补位。
+
+本 feat 首先绑定已经存在的真实来源：`AccessPolicyGenerationSource` 只读取 `AccessRuleStore::ReadCommittedSnapshot`，再通过 `AdaptMatcherSnapshot` 取得 `committed_policy_generation` 与真实 owner。缺记录返回 missing；存在 PREPARED journal 时返回 recovery-required；corrupt/incompatible/invalid snapshot 与 I/O 错误均不产生 observation。只有 committed snapshot 的非零 generation 才形成 `kPolicy` observation。新增 Chromium GTest 源码固定两条集成回归：PREPARED/recovery 阶段不得提前发布下一代 generation；supersede 后恢复到原 committed generation。固定 Chromium checkout 当前保持 dirty/read-only，因此这些新增 SQLite GTest 本轮不报告 runtime PASS。
+
+可独立执行的 production core 与同 PR unit/regression 已真实运行：standalone C++20 为 `PASS: aegis_access native unit (759 checks)`，较 0126 增加 33 条检查，覆盖五分量逐步观察、exact tuple 构造、invalidate、invalid owner、跨 owner、stale/zero、非法 source enum、四项不齐不得拼 tuple，以及只有 policy 来源时绝不能发明 identity/selection/network/base-proxy。顺序补丁 `0127-feat-aegis-bind-committed-policy-generation-source.patch` 已从 0126 精确父状态生成并 clean-apply，SHA-256 为 `a77419794a28df86f524271532f113b018b4d92a10da96cb3febfeae65662dbc`。
+
+证据边界：0127 只把 **policy generation** 绑定到真实生产状态；`identity_generation`、`selection_generation`、`network_epoch` 与 `base_proxy_config_generation` 仍无已验证生产计数器，因此完整 tuple 继续保持 incomplete，0126 runtime 不能因此开始授权真实 URLLoader 派发。后续每一个 generation 来源必须作为独立 feat 从其真实生命周期事件产生，并继续同时交付可执行 unit + regression；在五项真实来源齐全前禁止用常量、时间戳或测试 tuple 冒充运行态。759-check PASS 不代表 AccessRuleStore Chromium GTest、真实 browser dispatch 或 G0 PASS。
+
+## 0128：绑定真实 NetworkContext network epoch 来源
+
+2026-09-16 在 0127 generation-source 合同上新增纯 C++ `NetworkContextEpochState`，并把真实生产事件绑定到 0118 的 `AccessNetworkContextTransport`。Chromium 151 源码已只读核对：`StoragePartitionImpl::InitNetworkContext()` 每次创建 NetworkContext 都进入 `ProfileNetworkContextService::ConfigureNetworkContextParams`，随后调用 `AccessNetworkContextTransport::ConfigureNetworkContext`；Network Service 重建同样重新走 `InitNetworkContext()`。因此本 feat 把“同一 Profile + StoragePartition 成功配置一个新的 NetworkContext”定义为 `network_epoch` 的唯一推进事件，而不是把物理网络变化、时间戳或代理选择更新冒充 epoch。
+
+每个 partition 初始 epoch 为 0 且不得发布 observation；首次成功配置变为 1，后续 NetworkContext 重建逐次严格 +1。配置参数已被其他 custom-proxy owner 占用、partition 非法、初始配置构造失败或 epoch 已到 `uint64_t` 上限时均不提交新 epoch；上限返回 overflow，禁止回绕到 0。状态按 Profile-owned transport 与 partition key 分离，跨 Profile/StoragePartition 不共用计数。`PublishProxySelection` / `ClearProxySelection` 明确不推进 network epoch，因为节点/选择变化属于后续 `selection_generation` 的独立真实来源。对外只生成 `RequestGenerationSourceKind::kNetworkEpoch` observation，不补造 identity / selection / base-proxy-config。
+
+本 feat 同时交付独立 unit 与 regression contract，并接入 `//components/aegis_access:network_context_epoch_unittests` 和 standalone C++20 runner。实际执行为 `PASS: aegis_access native unit (774 checks)`，较 0127 增加 15 条检查，覆盖首次/重建递增、零态不发布、精确 owner/kind/value、空状态拒绝、溢出不回绕、非法 owner 拒绝、partition 独立，以及 network observation 只能填充 network slot、完整 tuple 仍保持 incomplete。Chromium `AccessNetworkContextTransportTest` 另新增源码级回归，固定成功重建递增、Profile/partition 隔离、失败 Configure 不递增，以及 proxy selection/clear 不得改变 network epoch。固定 Chromium checkout 仍保持 dirty/read-only 且完整 GTest runtime 受既有 macOS toolchain 阻塞，因此这些新增 Chromium GTest 本轮不报告 runtime PASS。顺序补丁为 `0128-feat-aegis-bind-network-context-epoch-source.patch`，最终生成 SHA-256 为 `0205b4107885059ce03c8ab497df612ae09e24da39a53367c6e40310720d9ce4`。
+
+证据边界：到 0128 为止，五元组中的 **policy generation** 与 **network epoch** 已绑定真实生产生命周期；`identity_generation`、`selection_generation`、`base_proxy_config_generation` 仍无已验证生产来源，因此完整 `GenerationTuple` 继续保持 incomplete，0126 runtime 仍不能据此授权真实 URLLoader 派发。下一 generation 来源仍必须作为独立 feat，从真实状态迁移产生并携带 unit + regression；G0 状态不提升。
 
 ## 回滚
 
