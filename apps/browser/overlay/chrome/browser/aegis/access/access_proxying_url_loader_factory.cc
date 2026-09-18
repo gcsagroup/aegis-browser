@@ -270,6 +270,25 @@ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
 }
 
 // static
+void AccessProxyingURLLoaderFactory::MaybeProxyWorkerMainResource(
+    Profile* profile,
+    content::RenderFrameHost* frame,
+    network::URLLoaderFactoryBuilder& factory_builder) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
+      CaptureProxyFactoryMetadata(profile, frame, std::nullopt);
+  if (!metadata.has_value() ||
+      metadata->attribution_kind !=
+          aegis_access::RequestAttributionKind::kDocument) {
+    return;
+  }
+
+  BrowserContextData::StartProxying(
+      profile, frame->GetFrameTreeNodeId(), std::nullopt, std::move(*metadata),
+      factory_builder);
+}
+
+// static
 void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
     Profile* profile,
     content::RenderFrameHost* frame,
