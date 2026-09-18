@@ -1,8 +1,8 @@
 **Aegis Browser 内置访问服务：当前设计总览**
 
-整理日期：2026-09-13。面向产品、研发、测试和运营评审。
+整理日期：2026-09-13；工程状态刷新：2026-09-18。面向产品、研发、测试和运营评审。
 
-2026-09-14 开发续接：用户已授权开始实现。2026-09-17 的最新工程进度、PR/分支状态、剩余问题与建议推进顺序已集中记录在 [P0 实现与证据](p0-implementation.zh-CN.md) 的“当前进度与问题”节；下文的设计状态和历史提交记录保留其原日期含义。原生单元测试、仓库 CI 或局部 Chromium 对象编译都不代替完整浏览器运行或 G0 验收。
+2026-09-14 开发续接：用户已授权开始实现。2026-09-18 的最新工程进度、PR/分支状态、剩余问题与建议推进顺序已集中记录在 [P0 实现与证据](p0-implementation.zh-CN.md) 的“当前进度与问题”节；下文的设计状态和历史提交记录保留其原日期含义。原生单元测试、仓库 CI 或局部 Chromium 对象编译都不代替完整浏览器运行或 G0 验收。
 
 本文概括 V1.0 冻结修订 4，并整理后续易用性与商用评审事项。行为、参数和验收发生歧义时，以[完整规范](spec.zh-CN.md)为准；本文不替代冻结合同，也不增加已冻结的交付要求。文中的“设计”描述待实现行为，“建议”描述待评审事项。
 
@@ -17,9 +17,9 @@
 
 **当前状态**
 
-设计已经冻结为 V1.0 修订 4，包含 118 项功能/交付验收、13 项性能指标及 G0–G3 四个阶段门槛。到 2026-09-17，P0 已从纯路由合同推进到 NetworkContext 代理传输、请求所有权/定向取消与已合入 develop 的 dispatch barrier，并继续形成尚待重放的本地 0124–0128 generation/runtime 堆叠；其中部分原生/网络子项已有实际测试证据，但完整 Chromium runtime、性能、真实 Xray/认证/计量、用户 `SetSiteProxy` 入口和部署验收仍未闭合，G0 仍未通过。具体可用证据和未完成项以 [P0 实现与证据](p0-implementation.zh-CN.md) 的当前快照为准。
+设计已经冻结为 V1.0 修订 4，包含 118 项功能/交付验收、13 项性能指标及 G0–G3 四个阶段门槛。到 2026-09-18，P0 已推进到 NetworkContext 代理传输、请求所有权/定向取消、dispatch BLOCK barrier、统一 dispatch gate 与 browser-owned request metadata；当前 `develop` patch 栈止于 `0126`。Published request runtime、五个真实 generation lifecycle source、真实 URLLoader vertical slice、Xray/认证/计量、用户 `SetSiteProxy` 入口和部署验收仍未闭合，G0 仍未通过。具体证据边界和下一顺序以 [P0 实现与证据](p0-implementation.zh-CN.md) 的当前快照为准。
 
-整理时核对：[PR #1](https://github.com/gcsagroup/aegis-browser/pull/1) 为 OPEN，文档头为 `d60b5952b40e511d6f98f3f33be926dbe7ab1eb7`；修订 4 接入核对基线及当时远端 main 均为 `ccbbaf371bad0626fb0fce3db166d5c2d0f675b0`。这些是本次记录的提交，实施和交付时需要重新绑定实际候选。当前工作的完成状态是设计交付，尚无本访问服务的可运行或可分发结论。
+2026-09-18 实施核对基线为个人 Fork `develop@488544b89b43cd22fc1476aec2f44ef50275bce4`；个人 `main` 为 `013d5ba639b177a599a3036f24c82e07026568d3`，Fork 默认分支已经是 `develop`。旧设计记录中的 PR/分支状态已不再适用于当前进度判断，仅保留为历史记录。当前仍没有本访问服务的完整浏览器 runtime、G0 或可分发结论。
 
 **1. 产品定位与范围**
 

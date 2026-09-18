@@ -1,0 +1,329 @@
+From 6c7905a5482901d1f20dc04b22bcb69d0753d4df Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 16:31:00 +0800
+Subject: [PATCH] feat(aegis): own browser network epoch
+
+---
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 42a961c..a6386c4 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -3,6 +3,7 @@
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ 
+ #include <algorithm>
++#include <limits>
+ #include <utility>
+ 
+ #include "base/functional/callback_helpers.h"
+@@ -42,6 +43,13 @@ bool IsCanonicalExactHost(const std::string& host) {
+   return url.is_valid() && url.has_host() && url.host() == host;
+ }
+ 
++bool AreCanonicalExactHosts(const std::vector<std::string>& exact_hosts) {
++  return !exact_hosts.empty() && exact_hosts.size() <= kMaxExactHosts &&
++         std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) ==
++             exact_hosts.end() &&
++         std::ranges::all_of(exact_hosts, IsCanonicalExactHost);
++}
++
+ aegis_access::RoutePlan RoutePlanForEndpoint(
+     const aegis_access::RegisteredProxyEndpoint& endpoint) {
+   aegis_access::RoutePlan plan;
+@@ -85,9 +93,35 @@ AccessNetworkContextTransport* AccessNetworkContextTransport::GetOrCreate(
+ 
+ AccessNetworkContextTransport::AccessNetworkContextTransport()
+     : runtime_profile_token_(
+-          base::Uuid::GenerateRandomV4().AsLowercaseString()) {}
++          base::Uuid::GenerateRandomV4().AsLowercaseString()) {
++  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
++}
++
++AccessNetworkContextTransport::~AccessNetworkContextTransport() {
++  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
++}
++
++void AccessNetworkContextTransport::OnNetworkChanged(
++    net::NetworkChangeNotifier::ConnectionType) {
++  if (network_epoch_ == 0) {
++    return;
++  }
++  if (network_epoch_ == std::numeric_limits<uint64_t>::max()) {
++    // Zero is the incomplete GenerationTuple sentinel. Once the counter is
++    // exhausted, keep the source invalid so callers fail closed rather than
++    // wrapping to a previously valid epoch.
++    network_epoch_ = 0;
++    return;
++  }
++  ++network_epoch_;
+ 
+-AccessNetworkContextTransport::~AccessNetworkContextTransport() = default;
++  // Keep the already-installed localhost proxy route intact here. Broadcasting
++  // an empty CustomProxyConfig would restore Chromium's native proxy result and
++  // could silently downgrade a request that still requires proxying to DIRECT.
++  // The incremented epoch invalidates stale re-publication; the request-runtime
++  // generation gate is responsible for blocking stale tuples while the local
++  // proxy runtime rebinds to the new network.
++}
+ 
+ // static
+ bool AccessNetworkContextTransport::ConfigureNetworkContext(
+@@ -137,19 +171,13 @@ bool AccessNetworkContextTransport::PublishProxySelection(
+     std::vector<std::string> exact_hosts,
+     const aegis_access::RegisteredProxyEndpoint& endpoint) {
+   const std::optional<std::string> key = PartitionKey(relative_partition_path);
+-  const std::optional<aegis_access::OwnershipKey> expected_owner =
+-      OwnerForPartition(endpoint.owner.channel, relative_partition_path);
+-  if (!key || !expected_owner || endpoint.owner != *expected_owner ||
+-      exact_hosts.empty() || exact_hosts.size() > kMaxExactHosts) {
++  if (!key ||
++      !IsEndpointCurrentForPartition(relative_partition_path, endpoint)) {
+     return false;
+   }
+ 
+   std::sort(exact_hosts.begin(), exact_hosts.end());
+-  if (std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) !=
+-      exact_hosts.end()) {
+-    return false;
+-  }
+-  if (!std::ranges::all_of(exact_hosts, IsCanonicalExactHost)) {
++  if (!AreCanonicalExactHosts(exact_hosts)) {
+     return false;
+   }
+ 
+@@ -233,6 +261,16 @@ std::optional<std::string> AccessNetworkContextTransport::PartitionToken(
+   return PartitionKey(relative_partition_path);
+ }
+ 
++bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
++    const base::FilePath& relative_partition_path,
++    const aegis_access::RegisteredProxyEndpoint& endpoint) const {
++  const std::optional<aegis_access::OwnershipKey> expected_owner =
++      OwnerForPartition(endpoint.owner.channel, relative_partition_path);
++  return network_epoch_ != 0 && expected_owner.has_value() &&
++         endpoint.owner == *expected_owner &&
++         endpoint.generations.network_epoch == network_epoch_;
++}
++
+ network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
+     const PartitionState& state) const {
+   auto config = network::mojom::CustomProxyConfig::New();
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 1d44efd..2e2d672 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -3,6 +3,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+ 
++#include <cstdint>
+ #include <map>
+ #include <optional>
+ #include <string>
+@@ -13,6 +14,7 @@
+ #include "components/aegis_access/access_proxy_route_adapter.h"
+ #include "components/aegis_access/access_route_types.h"
+ #include "mojo/public/cpp/bindings/remote_set.h"
++#include "net/base/network_change_notifier.h"
+ #include "services/network/public/mojom/network_context.mojom-forward.h"
+ 
+ class Profile;
+@@ -27,7 +29,9 @@ namespace aegis::access {
+ // The current slice supports one registered localhost HTTP entry per partition
+ // and an exact-host allowlist. Future per-request routing can replace this
+ // transport without changing the AccessRuleStore or RoutePlan contracts.
+-class AccessNetworkContextTransport : public base::SupportsUserData::Data {
++class AccessNetworkContextTransport
++    : public base::SupportsUserData::Data,
++      public net::NetworkChangeNotifier::NetworkChangeObserver {
+  public:
+   static AccessNetworkContextTransport* Get(Profile* profile);
+   static AccessNetworkContextTransport* GetOrCreate(Profile* profile);
+@@ -52,6 +56,11 @@ class AccessNetworkContextTransport : public base::SupportsUserData::Data {
+       aegis_access::ChannelNamespace channel,
+       const base::FilePath& relative_partition_path) const;
+ 
++  // Browser-owned network generation for this Profile lifetime. It starts at
++  // one because zero is the GenerationTuple "not published" sentinel, and
++  // advances only from actual NetworkChangeNotifier callbacks.
++  uint64_t network_epoch() const { return network_epoch_; }
++
+   // Publishes one already-registered localhost HTTP entry for a set of exact
+   // canonical hosts. Endpoint ownership must match OwnerForPartition().
+   // Non-selected hosts keep Chromium's native proxy result.
+@@ -69,6 +78,8 @@ class AccessNetworkContextTransport : public base::SupportsUserData::Data {
+   void FlushClientsForTesting(const base::FilePath& relative_partition_path);
+ 
+  private:
++  friend class AccessNetworkContextTransportTestPeer;
++
+   struct PartitionState {
+     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
+     std::vector<std::string> exact_hosts;
+@@ -77,15 +88,22 @@ class AccessNetworkContextTransport : public base::SupportsUserData::Data {
+ 
+   AccessNetworkContextTransport();
+ 
++  void OnNetworkChanged(
++      net::NetworkChangeNotifier::ConnectionType type) override;
++
+   static std::optional<std::string> PartitionKey(
+       const base::FilePath& relative_partition_path);
+   std::optional<std::string> PartitionToken(
+       const base::FilePath& relative_partition_path) const;
++  bool IsEndpointCurrentForPartition(
++      const base::FilePath& relative_partition_path,
++      const aegis_access::RegisteredProxyEndpoint& endpoint) const;
+   network::mojom::CustomProxyConfigPtr BuildConfig(
+       const PartitionState& state) const;
+   void Broadcast(PartitionState& state);
+ 
+   std::string runtime_profile_token_;
++  uint64_t network_epoch_ = 1;
+   std::map<std::string, PartitionState> partitions_;
+ };
+ 
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 1834ca2..6f898e3 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -2,6 +2,7 @@
+ 
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ 
++#include <limits>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -12,6 +13,7 @@
+ #include "chrome/test/base/testing_profile.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "net/base/network_anonymization_key.h"
++#include "net/base/network_change_notifier.h"
+ #include "net/base/proxy_string_util.h"
+ #include "net/proxy_resolution/proxy_info.h"
+ #include "services/network/network_service_proxy_delegate.h"
+@@ -20,6 +22,15 @@
+ #include "url/gurl.h"
+ 
+ namespace aegis::access {
++
++class AccessNetworkContextTransportTestPeer {
++ public:
++  static void SetNetworkEpoch(AccessNetworkContextTransport* transport,
++                              uint64_t epoch) {
++    transport->network_epoch_ = epoch;
++  }
++};
++
+ namespace {
+ 
+ constexpr char kTargetHost[] = "target.example";
+@@ -30,6 +41,8 @@ class AccessNetworkContextTransportTest : public testing::Test {
+   AccessNetworkContextTransportTest() = default;
+ 
+   void SetUp() override {
++    network_change_notifier_ =
++        net::NetworkChangeNotifier::CreateMockIfNeeded();
+     profile_ = TestingProfile::Builder().Build();
+     transport_ = AccessNetworkContextTransport::GetOrCreate(profile_.get());
+     ASSERT_TRUE(transport_);
+@@ -43,7 +56,7 @@ class AccessNetworkContextTransportTest : public testing::Test {
+     EXPECT_TRUE(owner.has_value());
+     return aegis_access::RegisteredProxyEndpoint{
+         "registration-local", "proxy-group-local", *owner,
+-        aegis_access::GenerationTuple{1, 2, 3, 4, 5},
++        aegis_access::GenerationTuple{1, 2, 3, transport_->network_epoch(), 5},
+         aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1",
+         kProxyPort};
+   }
+@@ -86,6 +99,7 @@ class AccessNetworkContextTransportTest : public testing::Test {
+   }
+ 
+   base::test::TaskEnvironment task_environment_;
++  std::unique_ptr<net::NetworkChangeNotifier> network_change_notifier_;
+   std::unique_ptr<TestingProfile> profile_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+ };
+@@ -192,6 +206,79 @@ TEST_F(AccessNetworkContextTransportTest, StoragePartitionsAreIsolated) {
+             "PROXY native.example:3128; DIRECT");
+ }
+ 
++TEST_F(AccessNetworkContextTransportTest,
++       NetworkChangeAdvancesEpochAndRejectsStaleEndpoint) {
++  const base::FilePath partition;
++  auto delegate = CreateDelegate(partition);
++  ASSERT_EQ(transport_->network_epoch(), 1u);
++  const aegis_access::RegisteredProxyEndpoint stale = EndpointFor(partition);
++  ASSERT_TRUE(
++      transport_->PublishProxySelection(partition, {kTargetHost}, stale));
++  transport_->FlushClientsForTesting(partition);
++  ExpectProxyResolution(delegate.get(), "https://target.example/before-change");
++
++  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
++      net::NetworkChangeNotifier::CONNECTION_NONE);
++  task_environment_.RunUntilIdle();
++
++  EXPECT_GT(transport_->network_epoch(), stale.generations.network_epoch);
++  EXPECT_FALSE(
++      transport_->PublishProxySelection(partition, {kTargetHost}, stale));
++
++  // The old localhost route remains installed while the new epoch is
++  // revalidated. Clearing it here would expose Chromium's native route and
++  // violate REQUIRE_PROXY's no-DIRECT-fallback contract.
++  ExpectProxyResolution(delegate.get(), "https://target.example/rebinding");
++
++  const aegis_access::RegisteredProxyEndpoint rebound = EndpointFor(partition);
++  EXPECT_EQ(rebound.generations.network_epoch, transport_->network_epoch());
++  EXPECT_TRUE(
++      transport_->PublishProxySelection(partition, {kTargetHost}, rebound));
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       NetworkEpochOverflowFailsClosedPermanently) {
++  const base::FilePath partition;
++  AccessNetworkContextTransportTestPeer::SetNetworkEpoch(
++      transport_, std::numeric_limits<uint64_t>::max());
++  const aegis_access::RegisteredProxyEndpoint last_valid = EndpointFor(partition);
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, last_valid));
++
++  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
++      net::NetworkChangeNotifier::CONNECTION_NONE);
++  task_environment_.RunUntilIdle();
++  EXPECT_EQ(transport_->network_epoch(), 0u);
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, last_valid));
++
++  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
++      net::NetworkChangeNotifier::CONNECTION_WIFI);
++  task_environment_.RunUntilIdle();
++  EXPECT_EQ(transport_->network_epoch(), 0u);
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {kTargetHost}, EndpointFor(partition)));
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       NetworkEpochIsProfileOwnedAndStartsPublished) {
++  EXPECT_EQ(transport_->network_epoch(), 1u);
++
++  auto second_profile = TestingProfile::Builder().Build();
++  auto* second_transport =
++      AccessNetworkContextTransport::GetOrCreate(second_profile.get());
++  ASSERT_TRUE(second_transport);
++  EXPECT_EQ(second_transport->network_epoch(), 1u);
++
++  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
++      net::NetworkChangeNotifier::CONNECTION_WIFI);
++  task_environment_.RunUntilIdle();
++
++  EXPECT_GT(transport_->network_epoch(), 1u);
++  EXPECT_GT(second_transport->network_epoch(), 1u);
++  EXPECT_EQ(transport_->network_epoch(), second_transport->network_epoch());
++}
++
+ TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership) {
+   auto other_profile = TestingProfile::Builder().Build();
+   auto* other_transport =
+-- 
+2.39.0
