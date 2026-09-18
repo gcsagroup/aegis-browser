@@ -131,3 +131,4 @@
 0130-feat-aegis-own-profile-identity-generation.patch
 0131-feat-aegis-own-proxy-selection-generation.patch
 0132-feat-aegis-own-base-proxy-config-generation.patch
+0133-feat-aegis-publish-request-generation-runtime.patch

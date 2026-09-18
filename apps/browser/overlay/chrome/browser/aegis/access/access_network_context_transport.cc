@@ -166,6 +166,13 @@ AccessNetworkContextTransport::OwnerForPartition(
                                     *partition_token};
 }
 
+bool AccessNetworkContextTransport::OwnsConfiguredPartition(
+    const aegis_access::OwnershipKey& owner) const {
+  return IsKnownChannel(owner.channel) &&
+         owner.profile_token == runtime_profile_token_ &&
+         partitions_.contains(owner.storage_partition_token);
+}
+
 bool AccessNetworkContextTransport::PublishProxySelection(
     const base::FilePath& relative_partition_path,
     std::vector<std::string> exact_hosts,
