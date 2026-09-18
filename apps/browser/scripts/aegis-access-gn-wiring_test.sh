@@ -39,6 +39,7 @@ REDIRECT_REEVALUATION_PATCH_FILE="$BROWSER_DIR/patches/0140-feat-aegis-reevaluat
 WORKER_MAIN_RESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0141-feat-aegis-gate-worker-main-resource-traffic.patch"
 WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0142-feat-aegis-gate-worker-subresource-traffic.patch"
 PROFILE_ONLY_BACKGROUND_PATCH_FILE="$BROWSER_DIR/patches/0143-feat-aegis-add-profile-only-background-ownership.patch"
+FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
@@ -580,6 +581,34 @@ if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
   "$PROFILE_ONLY_BACKGROUND_PATCH_FILE"; then
   fail "patch 0143 must not wire ServiceWorker URLLoader factories"
 fi
+rg -Fq 'if (type == URLLoaderFactoryType::kWorkerSubResource)' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must include frame-less Worker subresource factories"
+rg -Fq 'render_process_id, factory_builder' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must pass the browser-owned render process id"
+rg -Fq 'CaptureProfileOnlyProxyFactoryMetadata' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must capture Profile-only Worker ownership"
+rg -Fq 'BuildBrowserOwnedProfileOnlyRequestMetadata' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must re-evaluate Profile-only ownership per request"
+rg -Fq 'profile_only_render_process_id_' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must retain the trusted process source for re-evaluation"
+rg -Fq 'SharedWorkerSubresourceWithoutPolicyPreservesNativePath' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must preserve native SharedWorker subresources without policy"
+rg -Fq 'SharedWorkerSubresourceUsesSelectedProxy' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must browser-test proxied SharedWorker subresources"
+rg -Fq 'SharedWorkerSubresourceWithoutEndpointFailsClosed' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must fail closed when SharedWorker PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE"; then
+  fail "patch 0144 must not claim ServiceWorker coverage"
+fi
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -644,6 +673,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0142 must appear once in series"
 [[ "$(rg -F -c '0143-feat-aegis-add-profile-only-background-ownership.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0143 must appear once in series"
+[[ "$(rg -F -c '0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0144 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -674,10 +705,11 @@ expected_access_tail="$(cat <<'EOF'
 0141-feat-aegis-gate-worker-main-resource-traffic.patch
 0142-feat-aegis-gate-worker-subresource-traffic.patch
 0143-feat-aegis-add-profile-only-background-ownership.patch
+0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch
 EOF
 )"
-[[ "$(tail -n 29 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0143"
+[[ "$(tail -n 30 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0144"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
