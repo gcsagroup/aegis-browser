@@ -48,10 +48,20 @@ constexpr char kProxyGroup[] = "proxy-group-browser-test";
 std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
     std::atomic<size_t>* counter,
     const char* body,
-    const net::test_server::HttpRequest&) {
+    const net::test_server::HttpRequest& request) {
   counter->fetch_add(1, std::memory_order_relaxed);
   auto response = std::make_unique<net::test_server::BasicHttpResponse>();
   response->set_code(net::HTTP_OK);
+  if (request.relative_url.find("/worker-page") != std::string::npos) {
+    response->set_content("<!doctype html><title>worker-main</title>");
+    response->set_content_type("text/html");
+    return response;
+  }
+  if (request.relative_url.find("/worker.js") != std::string::npos) {
+    response->set_content("self.postMessage('origin');");
+    response->set_content_type("application/javascript");
+    return response;
+  }
   response->set_content(body);
   response->set_content_type("text/plain");
   return response;
@@ -66,6 +76,12 @@ std::unique_ptr<net::test_server::HttpResponse> ProxyReply(
     return std::make_unique<net::test_server::HungResponse>();
   }
   auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+  if (request.relative_url.find("/worker.js") != std::string::npos) {
+    response->set_code(net::HTTP_OK);
+    response->set_content("self.postMessage('proxy');");
+    response->set_content_type("application/javascript");
+    return response;
+  }
   if (request.relative_url.find("/redirect-unselected") !=
       std::string::npos) {
     response->set_code(net::HTTP_FOUND);
@@ -127,6 +143,14 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   GURL target_url() const {
     return target_origin_.GetURL(kTargetHost, "/resource");
+  }
+
+  GURL worker_page_url() const {
+    return target_origin_.GetURL(kTargetHost, "/worker-page");
+  }
+
+  GURL worker_script_url() const {
+    return target_origin_.GetURL(kTargetHost, "/worker.js");
   }
 
   GURL redirect_url() const {
@@ -197,6 +221,22 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   }
 
   bool FetchTarget() { return Fetch(target_url()); }
+
+  std::string RunWorkerMainScript(const GURL& script_url) {
+    return content::EvalJs(
+               web_contents(),
+               content::JsReplace(
+                   "new Promise(resolve => {"
+                   "  const worker = new Worker($1);"
+                   "  worker.onmessage = event => resolve(event.data);"
+                   "  worker.onerror = event => {"
+                   "    event.preventDefault();"
+                   "    resolve('error');"
+                   "  };"
+                   "})",
+                   script_url.spec()))
+        .ExtractString();
+  }
 
   void ExpectRedirectFollowedThroughProxy() {
     EXPECT_TRUE(base::test::RunUntil([&] {
@@ -348,6 +388,46 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
     return proxy_requests_.load(std::memory_order_relaxed) == 1u;
   }));
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       WorkerMainResourceWithoutPolicyPreservesNativePath) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  const size_t origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+
+  EXPECT_EQ(RunWorkerMainScript(worker_script_url()), "origin");
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return origin_requests_.load(std::memory_order_relaxed) ==
+           origin_before + 1u;
+  }));
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       WorkerMainResourceUsesSelectedProxy) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  const size_t origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  EXPECT_EQ(RunWorkerMainScript(worker_script_url()), "proxy");
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
+  }));
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       WorkerMainResourceWithoutEndpointFailsClosed) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  const size_t origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+
+  EXPECT_EQ(RunWorkerMainScript(worker_script_url()), "error");
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
