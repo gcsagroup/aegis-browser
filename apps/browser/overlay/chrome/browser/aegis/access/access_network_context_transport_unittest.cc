@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -232,6 +233,105 @@ TEST_F(AccessNetworkContextTransportTest,
                    ->CaptureSelectedProxyEndpoint(
                        endpoint.owner, endpoint.proxy_group_id, kTargetHost)
                    .has_value());
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       RealCustomProxyConfigCallbackAcknowledgesPublication) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  const auto endpoint = EndpointFor(partition);
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      partition, {kTargetHost}, endpoint));
+
+  std::optional<bool> acked;
+  const auto started = transport_->RepublishCurrentConfigWithAck(
+      endpoint.owner,
+      base::BindOnce(
+          [](std::optional<bool>* value, bool success) { *value = success; },
+          &acked));
+  EXPECT_EQ(started.status, AccessNetworkConfigAckStatus::kStarted);
+  EXPECT_EQ(started.required_client_acks, 1u);
+  EXPECT_FALSE(acked.has_value());
+
+  transport_->FlushClientsForTesting(partition);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(acked.has_value());
+  EXPECT_TRUE(*acked);
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       PublicationAckWaitsForEveryAttachedNetworkContext) {
+  const base::FilePath partition;
+  auto first_delegate = CreateDelegate(partition);
+  auto second_delegate = CreateDelegate(partition);
+  const auto endpoint = EndpointFor(partition);
+
+  std::optional<bool> acked;
+  const auto started = transport_->RepublishCurrentConfigWithAck(
+      endpoint.owner,
+      base::BindOnce(
+          [](std::optional<bool>* value, bool success) { *value = success; },
+          &acked));
+  EXPECT_EQ(started.status, AccessNetworkConfigAckStatus::kStarted);
+  EXPECT_EQ(started.required_client_acks, 2u);
+  EXPECT_FALSE(acked.has_value());
+
+  transport_->FlushClientsForTesting(partition);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(acked.has_value());
+  EXPECT_TRUE(*acked);
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       DroppedMojoCallbackSettlesAsFailureAndNeverAsAck) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  auto owner = transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, partition);
+  ASSERT_TRUE(owner.has_value());
+
+  std::optional<bool> settled;
+  const auto started = transport_->RepublishCurrentConfigWithAck(
+      *owner,
+      base::BindOnce(
+          [](std::optional<bool>* value, bool success) { *value = success; },
+          &settled));
+  ASSERT_EQ(started.status, AccessNetworkConfigAckStatus::kStarted);
+  EXPECT_FALSE(settled.has_value());
+
+  delegate.reset();
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled.has_value());
+  EXPECT_FALSE(*settled);
+
+  std::optional<bool> no_client_callback;
+  const auto no_client = transport_->RepublishCurrentConfigWithAck(
+      *owner,
+      base::BindOnce(
+          [](std::optional<bool>* value, bool success) { *value = success; },
+          &no_client_callback));
+  EXPECT_EQ(no_client.status, AccessNetworkConfigAckStatus::kNoClients);
+  EXPECT_FALSE(no_client_callback.has_value());
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       PublicationAckRejectsForgedOwner) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  auto owner = transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, partition);
+  ASSERT_TRUE(owner.has_value());
+
+  std::optional<bool> settled;
+  auto forged = *owner;
+  forged.profile_token = "other-profile";
+  const auto forged_result = transport_->RepublishCurrentConfigWithAck(
+      forged,
+      base::BindOnce(
+          [](std::optional<bool>* value, bool success) { *value = success; },
+          &settled));
+  EXPECT_EQ(forged_result.status, AccessNetworkConfigAckStatus::kInvalidOwner);
+  EXPECT_FALSE(settled.has_value());
 }
 
 TEST_F(AccessNetworkContextTransportTest,
