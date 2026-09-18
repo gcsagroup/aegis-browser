@@ -2,6 +2,7 @@
 
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 
+#include <limits>
 #include <optional>
 
 #include "base/functional/bind.h"
@@ -12,6 +13,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/prerender_test_util.h"
@@ -181,6 +183,56 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_EQ(metadata.status,
             AccessBrowserRequestMetadataStatus::kInvalidAttribution);
   EXPECT_FALSE(metadata.metadata.has_value());
+}
+
+IN_PROC_BROWSER_TEST_F(
+    AccessBrowserRequestAdapterBrowserTest,
+    ProfileOnlyMetadataUsesRenderProcessPartitionWithoutSiteIdentity) {
+  const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), primary_url));
+
+  content::RenderFrameHost* primary_frame =
+      web_contents()->GetPrimaryMainFrame();
+  ASSERT_NE(primary_frame, nullptr);
+  content::RenderProcessHost* process = primary_frame->GetProcess();
+  ASSERT_NE(process, nullptr);
+
+  AccessBrowserRequestMetadataResult result =
+      BuildBrowserOwnedProfileOnlyRequestMetadata(
+          browser()->profile(), process->GetDeprecatedID());
+
+  EXPECT_EQ(result.status, AccessBrowserRequestMetadataStatus::kOk);
+  ASSERT_TRUE(result.metadata.has_value());
+  EXPECT_EQ(result.metadata->attribution_kind,
+            aegis_access::RequestAttributionKind::kProfileOnly);
+  EXPECT_TRUE(result.metadata->document_token.empty());
+  EXPECT_TRUE(result.metadata->pending_navigation_token.empty());
+  EXPECT_FALSE(result.metadata->top_frame_site.has_value());
+
+  AccessNetworkContextTransport* transport =
+      AccessNetworkContextTransport::Get(browser()->profile());
+  ASSERT_NE(transport, nullptr);
+  EXPECT_TRUE(transport->OwnsConfiguredPartition(result.metadata->owner));
+
+  const GURL background_url("https://background.example/resource");
+  aegis_access::RequestPolicyContextResult context =
+      aegis_access::CanonicalizeBrowserOwnedRequest(*result.metadata,
+                                                    background_url);
+  ASSERT_TRUE(context.context.has_value());
+  EXPECT_FALSE(context.context->site_ownership_reliable());
+  EXPECT_TRUE(context.context->top_level_site().empty());
+  EXPECT_EQ(context.context->exact_host(), "background.example");
+}
+
+IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                       ProfileOnlyMetadataRejectsUnknownRenderProcess) {
+  AccessBrowserRequestMetadataResult result =
+      BuildBrowserOwnedProfileOnlyRequestMetadata(
+          browser()->profile(), std::numeric_limits<int>::max());
+
+  EXPECT_EQ(result.status,
+            AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
+  EXPECT_FALSE(result.metadata.has_value());
 }
 
 IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
