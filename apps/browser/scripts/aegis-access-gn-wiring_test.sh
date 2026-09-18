@@ -63,6 +63,18 @@ rg -Fq 'source_set("request_dispatch_gate")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the request dispatch gate"
 rg -Fq 'test("request_dispatch_gate_unittests")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the dispatch gate unit/regression test"
+dispatch_gate_test_block="$(
+  awk '/^test\("request_dispatch_gate_unittests"\) \{/,/^}$/' "$COMPONENT_BUILD"
+)"
+for ownership_header in \
+  request_cancellation_contract_test.h \
+  request_dispatch_barrier_contract_test.h \
+  request_ownership_registry_contract_test.h \
+  request_ownership_registry_test_support.h \
+  request_ownership_registry_unit_test.h; do
+  [[ "$dispatch_gate_test_block" == *"\"$ownership_header\""* ]] ||
+    fail "dispatch gate test must own transitive header $ownership_header"
+done
 rg -Fq 'source_set("browser_request_metadata_seed")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the browser metadata seed"
 rg -Fq 'test("browser_request_metadata_seed_unittests")' "$COMPONENT_BUILD" ||
@@ -157,6 +169,15 @@ rg -Fq 'RunRequestDispatchGateUnitTests' "$DISPATCH_GATE_PATCH_FILE" ||
   fail "patch 0125 does not carry dispatch gate unit coverage"
 rg -Fq 'RunRequestDispatchGateRegressionTests' "$DISPATCH_GATE_PATCH_FILE" ||
   fail "patch 0125 does not carry dispatch gate regression coverage"
+for ownership_header in \
+  request_cancellation_contract_test.h \
+  request_dispatch_barrier_contract_test.h \
+  request_ownership_registry_contract_test.h \
+  request_ownership_registry_test_support.h \
+  request_ownership_registry_unit_test.h; do
+  rg -Fq "+    \"$ownership_header\"," "$DISPATCH_GATE_PATCH_FILE" ||
+    fail "patch 0125 does not make the dispatch gate own $ownership_header"
+done
 rg -Fq 'BuildBrowserOwnedRequestMetadata' "$BROWSER_METADATA_PATCH_FILE" ||
   fail "patch 0126 does not deliver the browser-owned metadata adapter"
 rg -Fq 'request_frame->GetPage().IsPrimary()' "$BROWSER_METADATA_PATCH_FILE" ||
