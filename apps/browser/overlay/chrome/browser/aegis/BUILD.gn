@@ -230,12 +230,17 @@ if (!is_android) {
   source_set("browser_tests") {
     testonly = true
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-    sources = [ "agent/aegis_agent_browsertest.cc" ]
+    sources = [
+      "access/access_browser_request_adapter_browsertest.cc",
+      "agent/aegis_agent_browsertest.cc",
+    ]
     deps = [
       ":aegis",
       ":agent_model_transport",
       "//base",
       "//base/test:test_support",
+      "//chrome/browser/aegis/access:access_browser_request_adapter",
+      "//chrome/browser/aegis/access:access_network_context_transport",
       "//chrome/browser/bookmarks",
       "//chrome/browser/notifications:test_support",
       "//chrome/browser/prefs",
