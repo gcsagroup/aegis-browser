@@ -46,6 +46,9 @@ BrowserRequestMetadataSeedResult PrepareBrowserRequestMetadataSeed(
   if (!input.pending_navigation_token.empty()) {
     seed.attribution_kind = BrowserRequestAttributionKind::kPendingNavigation;
     seed.pending_navigation_token = std::move(input.pending_navigation_token);
+    if (input.document_token.empty() && !input.top_frame_site.empty()) {
+      seed.top_frame_site = std::move(input.top_frame_site);
+    }
     return {BrowserRequestMetadataSeedError::kNone, std::move(seed)};
   }
 

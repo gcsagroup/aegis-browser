@@ -1,0 +1,510 @@
+From 0139000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 21:30:00 +0800
+Subject: [PATCH] feat(aegis): gate primary-page subframe navigation traffic
+
+---
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.cc b/chrome/browser/aegis/access/access_browser_request_adapter.cc
+index a28ab11..814d8e4 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter.cc
+@@ -106,24 +106,40 @@ AccessBrowserRequestMetadataStatus ResolveTrustedContents(
+   return AccessBrowserRequestMetadataStatus::kOk;
+ }
+ 
+-AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
++AccessBrowserRequestMetadataStatus ValidatePrimaryFrameTreeFrame(
+     Profile* profile,
+     content::WebContents* contents,
+-    content::FrameTreeNodeId frame_tree_node_id,
+-    content::RenderFrameHost** trusted_frame) {
+-  content::RenderFrameHost* request_frame =
+-      frame_tree_node_id
+-          ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id)
+-          : contents->GetPrimaryMainFrame();
++    content::RenderFrameHost* request_frame) {
++  if (!contents) {
++    return AccessBrowserRequestMetadataStatus::kMissingTrustedContents;
++  }
+   if (!request_frame) {
+     return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
+   }
+   if (request_frame->GetBrowserContext() != profile) {
+     return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
+   }
+-  if (!request_frame->GetPage().IsPrimary()) {
++  if (!request_frame->GetPage().IsPrimary() ||
++      request_frame->GetMainFrame() != contents->GetPrimaryMainFrame()) {
+     return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
+   }
++  return AccessBrowserRequestMetadataStatus::kOk;
++}
++
++AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
++    Profile* profile,
++    content::WebContents* contents,
++    content::FrameTreeNodeId frame_tree_node_id,
++    content::RenderFrameHost** trusted_frame) {
++  content::RenderFrameHost* request_frame =
++      frame_tree_node_id
++          ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id)
++          : contents->GetPrimaryMainFrame();
++  const AccessBrowserRequestMetadataStatus status =
++      ValidatePrimaryFrameTreeFrame(profile, contents, request_frame);
++  if (status != AccessBrowserRequestMetadataStatus::kOk) {
++    return status;
++  }
+   *trusted_frame = request_frame;
+   return AccessBrowserRequestMetadataStatus::kOk;
+ }
+@@ -153,39 +169,77 @@ AccessBrowserRequestMetadataStatus ResolveOwner(
+   return AccessBrowserRequestMetadataStatus::kOk;
+ }
+ 
++AccessBrowserRequestMetadataStatus ResolvePrimaryTopFrameSite(
++    Profile* profile,
++    content::WebContents* contents,
++    net::SchemefulSite* top_frame_site) {
++  if (!profile || !contents || !top_frame_site) {
++    return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
++  }
++  content::RenderFrameHost* primary_frame = contents->GetPrimaryMainFrame();
++  const AccessBrowserRequestMetadataStatus frame_status =
++      ValidatePrimaryFrameTreeFrame(profile, contents, primary_frame);
++  if (frame_status != AccessBrowserRequestMetadataStatus::kOk) {
++    return frame_status;
++  }
++
++  const net::SchemefulSite resolved_site(
++      primary_frame->GetLastCommittedOrigin());
++  if (resolved_site.opaque() ||
++      !resolved_site.GetURL().SchemeIsHTTPOrHTTPS()) {
++    return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
++  }
++  *top_frame_site = resolved_site;
++  return AccessBrowserRequestMetadataStatus::kOk;
++}
++
+ AccessBrowserRequestMetadataStatus BuildSeedInput(
+     Profile* profile,
+     content::WebContents* contents,
+-    content::FrameTreeNodeId frame_tree_node_id,
++    content::RenderFrameHost* request_frame,
+     std::optional<int64_t> navigation_id,
+     const aegis_access::OwnershipKey& owner,
+     aegis_access::BrowserRequestMetadataSeedInput* seed_input) {
++  const AccessBrowserRequestMetadataStatus frame_status =
++      ValidatePrimaryFrameTreeFrame(profile, contents, request_frame);
++  if (frame_status != AccessBrowserRequestMetadataStatus::kOk) {
++    return frame_status;
++  }
++
+   seed_input->request_id =
+       base::Uuid::GenerateRandomV4().AsLowercaseString();
+   seed_input->owner = owner;
+   if (navigation_id.has_value()) {
++    const content::FrameTreeNodeId frame_tree_node_id =
++        request_frame->GetFrameTreeNodeId();
+     if (!frame_tree_node_id) {
+       return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
+     }
+     seed_input->pending_navigation_token = base::StrCat(
+         {"nav:", base::NumberToString(frame_tree_node_id.value()), ":",
+          base::NumberToString(*navigation_id)});
++    if (!request_frame->IsInPrimaryMainFrame()) {
++      net::SchemefulSite top_frame_site;
++      const AccessBrowserRequestMetadataStatus status =
++          ResolvePrimaryTopFrameSite(profile, contents, &top_frame_site);
++      if (status != AccessBrowserRequestMetadataStatus::kOk) {
++        return status;
++      }
++      seed_input->top_frame_site = top_frame_site.Serialize();
++    }
+     return AccessBrowserRequestMetadataStatus::kOk;
+   }
++
+   seed_input->document_token =
+       AegisService::DocumentIdForWebContents(contents);
+   if (seed_input->document_token.empty()) {
+     return AccessBrowserRequestMetadataStatus::kOk;
+   }
+-  content::RenderFrameHost* primary_frame = contents->GetPrimaryMainFrame();
+-  if (!primary_frame || primary_frame->GetBrowserContext() != profile) {
+-    return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
+-  }
+-  const net::SchemefulSite top_frame_site(
+-      primary_frame->GetLastCommittedOrigin());
+-  if (top_frame_site.opaque() ||
+-      !top_frame_site.GetURL().SchemeIsHTTPOrHTTPS()) {
+-    return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
++  net::SchemefulSite top_frame_site;
++  const AccessBrowserRequestMetadataStatus status =
++      ResolvePrimaryTopFrameSite(profile, contents, &top_frame_site);
++  if (status != AccessBrowserRequestMetadataStatus::kOk) {
++    return status;
+   }
+   seed_input->top_frame_site = top_frame_site.Serialize();
+   return AccessBrowserRequestMetadataStatus::kOk;
+@@ -210,8 +264,11 @@ AccessBrowserRequestMetadataResult BuildMetadataFromSeed(
+   metadata.attribution_kind = *attribution_kind;
+   metadata.document_token = seed.document_token;
+   metadata.pending_navigation_token = seed.pending_navigation_token;
+-  if (seed.attribution_kind !=
+-      aegis_access::BrowserRequestAttributionKind::kDocument) {
++  if (seed.attribution_kind ==
++          aegis_access::BrowserRequestAttributionKind::kProfileOnly ||
++      (seed.attribution_kind ==
++           aegis_access::BrowserRequestAttributionKind::kPendingNavigation &&
++       seed.top_frame_site.empty())) {
+     return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
+   }
+   const GURL top_site_url(seed.top_frame_site);
+@@ -260,8 +317,8 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
+     return Error(status);
+   }
+   aegis_access::BrowserRequestMetadataSeedInput seed_input;
+-  status = BuildSeedInput(profile, contents, frame_tree_node_id, navigation_id,
+-                          owner, &seed_input);
++  status = BuildSeedInput(profile, contents, request_frame, navigation_id, owner,
++                          &seed_input);
+   return status == AccessBrowserRequestMetadataStatus::kOk
+              ? BuildMetadataFromSeed(std::move(seed_input))
+              : Error(status);
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.h b/chrome/browser/aegis/access/access_browser_request_adapter.h
+index df0d467..92150b5 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter.h
++++ b/chrome/browser/aegis/access/access_browser_request_adapter.h
+@@ -43,11 +43,12 @@ struct AccessBrowserRequestMetadataResult {
+ // request_initiator/source-site strings and never creates transport state.
+ //
+ // A navigation id takes precedence over the currently committed document so a
+-// navigation cannot inherit the old page's authorization. Only frames in the
+-// primary Page are eligible; prerender/BFCache/fenced/pending Pages are rejected
+-// rather than inheriting the primary page's identity. Requests without a trusted
+-// WebContents/frame are rejected in this slice rather than borrowing an active
+-// tab identity.
++// top-level navigation cannot inherit the old page's authorization. Pending
++// subframe navigation in the primary Page additionally carries the browser-owned
++// primary main-frame SchemefulSite, keeping iframe destination hosts scoped to
++// the real top-level site. Prerender/BFCache/fenced/pending Pages are rejected.
++// Requests without a trusted WebContents/frame are rejected rather than
++// borrowing an active tab identity.
+ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
+     Profile* profile,
+     const base::RepeatingCallback<content::WebContents*()>& wc_getter,
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+index 945642a..c9bd552 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+@@ -13,6 +13,7 @@
+ #include "content/public/browser/page.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/prerender_test_util.h"
+ #include "net/base/schemeful_site.h"
+ #include "url/gurl.h"
+@@ -102,6 +103,86 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+             net::SchemefulSite(primary_url).Serialize());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(
++    AccessBrowserRequestAdapterBrowserTest,
++    SubframePendingNavigationPreservesPrimaryTopFrameSite) {
++  const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), primary_url));
++
++  content::RenderFrameHost* primary_frame =
++      web_contents()->GetPrimaryMainFrame();
++  ASSERT_NE(primary_frame, nullptr);
++  ASSERT_TRUE(content::ExecJs(
++      web_contents(),
++      "const frame = document.createElement('iframe');"
++      "frame.src = 'about:blank';"
++      "document.body.appendChild(frame);"));
++  content::RenderFrameHost* child_frame =
++      content::ChildFrameAt(primary_frame, /*index=*/0);
++  ASSERT_NE(child_frame, nullptr);
++  ASSERT_TRUE(child_frame->GetPage().IsPrimary());
++  ASSERT_FALSE(child_frame->IsInPrimaryMainFrame());
++
++  constexpr int64_t kNavigationId = 43;
++  AccessBrowserRequestMetadataResult metadata =
++      BuildBrowserOwnedRequestMetadata(
++          browser()->profile(), WebContentsGetter(),
++          child_frame->GetFrameTreeNodeId(), kNavigationId);
++
++  ASSERT_EQ(metadata.status, AccessBrowserRequestMetadataStatus::kOk);
++  ASSERT_TRUE(metadata.metadata.has_value());
++  EXPECT_EQ(metadata.metadata->attribution_kind,
++            aegis_access::RequestAttributionKind::kPendingNavigation);
++  EXPECT_TRUE(metadata.metadata->document_token.empty());
++  EXPECT_FALSE(metadata.metadata->pending_navigation_token.empty());
++  ASSERT_TRUE(metadata.metadata->top_frame_site.has_value());
++  EXPECT_EQ(metadata.metadata->top_frame_site->Serialize(),
++            net::SchemefulSite(primary_url).Serialize());
++
++  const GURL destination("https://nested.example/path");
++  aegis_access::RequestPolicyContextResult context =
++      aegis_access::CanonicalizeBrowserOwnedRequest(*metadata.metadata,
++                                                    destination);
++  ASSERT_TRUE(context.context.has_value());
++  EXPECT_TRUE(context.context->site_ownership_reliable());
++  EXPECT_EQ(context.context->top_level_site(),
++            net::SchemefulSite(primary_url).Serialize());
++  EXPECT_EQ(context.context->exact_host(), "nested.example");
++  EXPECT_NE(context.context->top_level_site(),
++            net::SchemefulSite(destination).Serialize());
++}
++
++IN_PROC_BROWSER_TEST_F(
++    AccessBrowserRequestAdapterBrowserTest,
++    SubframePendingNavigationRejectsOpaquePrimaryTopFrameSite) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++
++  content::RenderFrameHost* primary_frame =
++      web_contents()->GetPrimaryMainFrame();
++  ASSERT_NE(primary_frame, nullptr);
++  ASSERT_TRUE(net::SchemefulSite(primary_frame->GetLastCommittedOrigin())
++                  .opaque());
++  ASSERT_TRUE(content::ExecJs(
++      web_contents(),
++      "const frame = document.createElement('iframe');"
++      "frame.src = 'about:blank';"
++      "document.body.appendChild(frame);"));
++  content::RenderFrameHost* child_frame =
++      content::ChildFrameAt(primary_frame, /*index=*/0);
++  ASSERT_NE(child_frame, nullptr);
++  ASSERT_TRUE(child_frame->GetPage().IsPrimary());
++  ASSERT_FALSE(child_frame->IsInPrimaryMainFrame());
++
++  AccessBrowserRequestMetadataResult metadata =
++      BuildBrowserOwnedRequestMetadata(
++          browser()->profile(), WebContentsGetter(),
++          child_frame->GetFrameTreeNodeId(), /*navigation_id=*/44);
++
++  EXPECT_EQ(metadata.status,
++            AccessBrowserRequestMetadataStatus::kInvalidAttribution);
++  EXPECT_FALSE(metadata.metadata.has_value());
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                        PrerenderPageCannotInheritPrimaryPageIdentity) {
+   const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
+@@ -122,6 +203,15 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+   EXPECT_EQ(result.status,
+             AccessBrowserRequestMetadataStatus::kInvalidAttribution);
+   EXPECT_FALSE(result.metadata.has_value());
++
++  constexpr int64_t kPrerenderNavigationId = 44;
++  AccessBrowserRequestMetadataResult pending_navigation =
++      BuildBrowserOwnedRequestMetadata(
++          browser()->profile(), WebContentsGetter(),
++          prerender_frame->GetFrameTreeNodeId(), kPrerenderNavigationId);
++  EXPECT_EQ(pending_navigation.status,
++            AccessBrowserRequestMetadataStatus::kInvalidAttribution);
++  EXPECT_FALSE(pending_navigation.metadata.has_value());
+ }
+ 
+ }  // namespace
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 78c0f9f..393e0c2 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -293,10 +293,6 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+     int64_t navigation_id,
+     network::URLLoaderFactoryBuilder& factory_builder) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  if (!frame || !frame->IsInPrimaryMainFrame()) {
+-    return;
+-  }
+-
+   std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
+       CaptureProxyFactoryMetadata(profile, frame, navigation_id);
+   if (!metadata.has_value() ||
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index f2a1a81..c4ad473 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -29,11 +29,12 @@ namespace aegis::access {
+ class AccessProxyingURLTrackedRequest;
+ 
+ // UI-thread browser-process URLLoaderFactory wrapper for real Access request
+-// dispatch. It covers primary-page document subresources plus main navigation
+-// factories. Worker, ServiceWorker, prefetch, WebSocket, nested-page, and
+-// redirect re-evaluation remain later slices. Each request is re-evaluated from
+-// browser-owned frame/navigation state and the latest published Access state
+-// before it may reach the target Network Service factory.
++// dispatch. It covers primary-page document subresources plus primary-page
++// main-frame and subframe navigation factories. Worker, ServiceWorker,
++// prefetch, WebSocket, BFCache/prerender, and redirect re-evaluation remain
++// later slices. Each request is re-evaluated from browser-owned
++// frame/navigation state and the latest published Access state before it may
++// reach the target Network Service factory.
+ //
+ // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
+ // only after exact-host endpoint validation and the synchronous dispatch gate.
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 8f60d90..72f3000 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -184,6 +184,16 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   bool FetchTarget() { return Fetch(target_url()); }
+ 
++  void NavigateNewIframe(const GURL& url) {
++    ASSERT_TRUE(content::ExecJs(
++        web_contents(),
++        content::JsReplace(
++            "const frame = document.createElement('iframe');"
++            "frame.src = $1;"
++            "document.body.appendChild(frame);",
++            url.spec())));
++  }
++
+   void PublishProxyPolicy(bool publish_endpoint) {
+     Profile* profile = browser()->profile();
+ 
+@@ -299,6 +309,26 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       SubframeNavigationWithoutPolicyPreservesNativePath) {
++  NavigateNewIframe(target_url());
++  EXPECT_TRUE(base::test::RunUntil([&] {
++    return origin_requests_.load(std::memory_order_relaxed) == 1u;
++  }));
++  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       SubframeNavigationUsesPrimaryPageProxy) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++
++  NavigateNewIframe(target_url());
++  EXPECT_TRUE(base::test::RunUntil([&] {
++    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
++  }));
++  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        RuntimePolicyUpdateRoutesExistingFactoryThroughProxy) {
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+diff --git a/components/aegis_access/browser_request_metadata_seed.cc b/components/aegis_access/browser_request_metadata_seed.cc
+index d9dde4c..c0f2296 100644
+--- a/components/aegis_access/browser_request_metadata_seed.cc
++++ b/components/aegis_access/browser_request_metadata_seed.cc
+@@ -46,6 +46,9 @@ BrowserRequestMetadataSeedResult PrepareBrowserRequestMetadataSeed(
+   if (!input.pending_navigation_token.empty()) {
+     seed.attribution_kind = BrowserRequestAttributionKind::kPendingNavigation;
+     seed.pending_navigation_token = std::move(input.pending_navigation_token);
++    if (input.document_token.empty() && !input.top_frame_site.empty()) {
++      seed.top_frame_site = std::move(input.top_frame_site);
++    }
+     return {BrowserRequestMetadataSeedError::kNone, std::move(seed)};
+   }
+ 
+diff --git a/components/aegis_access/browser_request_metadata_seed_contract_test.h b/components/aegis_access/browser_request_metadata_seed_contract_test.h
+index 8e4236e..85e43de 100644
+--- a/components/aegis_access/browser_request_metadata_seed_contract_test.h
++++ b/components/aegis_access/browser_request_metadata_seed_contract_test.h
+@@ -63,6 +63,19 @@ inline void RunMetadataSeedAttributionUnitTests(
+                       pending.seed->pending_navigation_token == "navigation-a",
+                   "metadata seed unit pending attribution");
+ 
++  const auto nested_pending = PrepareBrowserRequestMetadataSeed(
++      {"request-nested-navigation", MetadataSeedOwner(), "", "navigation-b",
++       "https://top.example"});
++  observer.Expect(
++      nested_pending.error == BrowserRequestMetadataSeedError::kNone &&
++          nested_pending.seed.has_value() &&
++          nested_pending.seed->attribution_kind ==
++              BrowserRequestAttributionKind::kPendingNavigation &&
++          nested_pending.seed->document_token.empty() &&
++          nested_pending.seed->pending_navigation_token == "navigation-b" &&
++          nested_pending.seed->top_frame_site == "https://top.example",
++      "metadata seed unit nested navigation preserves trusted top site");
++
+   const auto profile = PrepareBrowserRequestMetadataSeed(
+       {"request-profile", MetadataSeedOwner(), "", "", ""});
+   observer.Expect(profile.error == BrowserRequestMetadataSeedError::kNone &&
+diff --git a/components/aegis_access/request_policy_context.cc b/components/aegis_access/request_policy_context.cc
+index 69284f9..0383c80 100644
+--- a/components/aegis_access/request_policy_context.cc
++++ b/components/aegis_access/request_policy_context.cc
+@@ -127,19 +127,25 @@ RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
+       break;
+     case RequestAttributionKind::kPendingNavigation: {
+       if (!metadata.document_token.empty() ||
+-          metadata.pending_navigation_token.empty() ||
+-          metadata.top_frame_site.has_value()) {
++          metadata.pending_navigation_token.empty()) {
+         return Error(RequestContextError::kInvalidAttribution);
+       }
+       if (!request_url.SchemeIsHTTPOrHTTPS()) {
+         return Error(RequestContextError::kInvalidTopLevelSite);
+       }
+-      const net::SchemefulSite pending_site(request_url);
+-      if (!IsUsableTopLevelSite(pending_site)) {
+-        return Error(RequestContextError::kInvalidTopLevelSite);
++      if (metadata.top_frame_site.has_value()) {
++        if (!IsUsableTopLevelSite(*metadata.top_frame_site)) {
++          return Error(RequestContextError::kInvalidTopLevelSite);
++        }
++        top_level_site = metadata.top_frame_site->Serialize();
++      } else {
++        const net::SchemefulSite pending_site(request_url);
++        if (!IsUsableTopLevelSite(pending_site)) {
++          return Error(RequestContextError::kInvalidTopLevelSite);
++        }
++        top_level_site = pending_site.Serialize();
+       }
+       site_ownership_reliable = true;
+-      top_level_site = pending_site.Serialize();
+       break;
+     }
+     case RequestAttributionKind::kProfileOnly:
+diff --git a/components/aegis_access/request_policy_context_unittest.cc b/components/aegis_access/request_policy_context_unittest.cc
+index 5923a5e..d3b5764 100644
+--- a/components/aegis_access/request_policy_context_unittest.cc
++++ b/components/aegis_access/request_policy_context_unittest.cc
+@@ -64,6 +64,37 @@ TEST(RequestPolicyContextTest, DerivesPendingNavigationSiteFromTarget) {
+   EXPECT_EQ(result.context->port(), 8080u);
+ }
+ 
++TEST(RequestPolicyContextTest,
++     UsesBrowserOwnedTopSiteForNestedPendingNavigation) {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-nested-navigation", TestOwner(),
++      RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
++      net::SchemefulSite(GURL("https://top.example/page"))};
++  const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
++      metadata, GURL("https://iframe.example.test/path"));
++
++  ASSERT_EQ(result.error, RequestContextError::kNone);
++  ASSERT_TRUE(result.context.has_value());
++  EXPECT_TRUE(result.context->site_ownership_reliable());
++  EXPECT_EQ(result.context->top_level_site(), "https://top.example");
++  EXPECT_EQ(result.context->exact_host(), "iframe.example.test");
++  EXPECT_NE(result.context->top_level_site(),
++            net::SchemefulSite(GURL("https://iframe.example.test/path"))
++                .Serialize());
++}
++
++TEST(RequestPolicyContextTest,
++     RejectsInvalidBrowserOwnedTopSiteForNestedPendingNavigation) {
++  const BrowserOwnedRequestMetadata metadata{
++      "request-nested-navigation-invalid-site", TestOwner(),
++      RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
++      net::SchemefulSite(GURL("data:text/plain,opaque"))};
++  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(
++                metadata, GURL("https://iframe.example.test/path"))
++                .error,
++            RequestContextError::kInvalidTopLevelSite);
++}
++
+ TEST(RequestPolicyContextTest, PreservesProfileOnlyOwnershipWithoutSite) {
+   const BrowserOwnedRequestMetadata metadata{
+       "request-profile", TestOwner(), RequestAttributionKind::kProfileOnly,
