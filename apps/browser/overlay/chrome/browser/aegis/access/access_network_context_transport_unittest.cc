@@ -104,6 +104,34 @@ class AccessNetworkContextTransportTest : public testing::Test {
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
 };
 
+TEST_F(AccessNetworkContextTransportTest,
+       OwnsOnlyPartitionsConfiguredByThisProfileTransport) {
+  network::mojom::NetworkContextParams default_params;
+  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
+      profile_.get(), base::FilePath(), &default_params));
+
+  const auto default_owner = transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, base::FilePath());
+  ASSERT_TRUE(default_owner.has_value());
+  EXPECT_TRUE(transport_->OwnsConfiguredPartition(*default_owner));
+
+  const base::FilePath other_partition =
+      base::FilePath::FromASCII("Storage/ext");
+  const auto other_owner = transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, other_partition);
+  ASSERT_TRUE(other_owner.has_value());
+  EXPECT_FALSE(transport_->OwnsConfiguredPartition(*other_owner));
+
+  network::mojom::NetworkContextParams other_params;
+  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
+      profile_.get(), other_partition, &other_params));
+  EXPECT_TRUE(transport_->OwnsConfiguredPartition(*other_owner));
+
+  auto forged = *default_owner;
+  forged.profile_token = "other-profile";
+  EXPECT_FALSE(transport_->OwnsConfiguredPartition(forged));
+}
+
 TEST_F(AccessNetworkContextTransportTest, OffPreservesNativeProxyResult) {
   auto delegate = CreateDelegate(base::FilePath());
 

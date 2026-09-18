@@ -81,6 +81,27 @@ source_set("access_rule_store") {
   ]
 }
 
+source_set("access_published_request_runtime") {
+  sources = [
+    "access_published_request_runtime.cc",
+    "access_published_request_runtime.h",
+  ]
+  deps = [
+    ":access_identity_generation_source",
+    ":access_network_context_transport",
+    ":access_proxy_selection_generation_source",
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/net:impl",
+    "//chrome/browser/profiles:profile",
+  ]
+  public_deps = [
+    ":access_rule_store",
+    "//components/aegis_access",
+    "//components/aegis_access:request_generation_tuple_builder",
+  ]
+}
+
 test("access_identity_generation_source_unittests") {
   sources = [ "access_identity_generation_source_unittest.cc" ]
   deps = [
@@ -131,5 +152,18 @@ test("access_rule_store_unittests") {
     "//sql",
     "//testing/gtest",
     "//url",
+  ]
+}
+
+test("access_published_request_runtime_unittests") {
+  sources = [ "access_published_request_runtime_unittest.cc" ]
+  deps = [
+    ":access_network_context_transport",
+    ":access_published_request_runtime",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:test_support",
+    "//services/network/public/mojom",
+    "//testing/gtest",
   ]
 }
