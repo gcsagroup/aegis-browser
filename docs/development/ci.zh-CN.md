@@ -161,11 +161,11 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 ### 串行晋升自动化
 
-`.github/workflows/promotion-orchestrator.yml` 把上述分支推进实现成串行状态机。它只在受信任的 `develop` / `main` push、每 15 分钟调度和人工 dispatch 上运行，并通过固定 concurrency 保证一次只推进一个状态；PR、fork PR 与 `pull_request_target` 都不会执行该控制器。控制器在每个转换前重新 fetch `origin/main`、`origin/develop` 与 `upstream/main`，并要求对应分支精确 SHA 的 GitHub Actions `quality-gate` 成功；缺失或运行中只等待，失败直接停止。
+`.github/workflows/promotion-orchestrator.yml` 把上述分支推进实现成串行状态机。它只在受信任的 `develop` / `main` push、每 15 分钟调度和人工 dispatch 上运行，并通过固定 concurrency 保证一次只推进一个状态；PR、fork PR 与 `pull_request_target` 都不会执行该控制器。控制器在每个转换前重新 fetch `origin/main`、`origin/develop` 与 `upstream/main`，并要求对应分支精确 SHA 的最新 `.github/workflows/quality.yml` push run 及其最新 attempt 中 `quality`、`quality-gate` 两个 job 全部成功；缺失或运行中只等待，失败直接停止。PR、人工 dispatch 或其他 workflow 的同名成功检查不能替代这项分支 push 证据。
 
 自动链路依次执行：上游 `main` 若只领先个人 `main`，在确认 upstream 精确 SHA 绿灯后仅允许 fast-forward 个人 `main`；个人 `main` 尚未进入 `develop` 时创建 `main -> develop` PR 并使用 merge commit auto-merge；对齐后的 `develop` 生成一次性 `automation/promote-<sha>` 分支，按 README 镜像规则恢复三份 README，再创建 `develop -> main` PR；个人 `main` 合并后等待其 push `quality-gate`，然后以个人 `main` 向 `gcsagroup/aegis-browser:main` 创建上游 PR。内部 PR 自动请求 `@copilot` 并启用 merge-commit auto-merge，让服务端 CI/Review 继续作为真正的合并门；上游 PR只请求 `@copilot`，不自动合并。上游合并并且 upstream push `quality-gate` 成功后，下一次控制器运行仅在个人 `main` 是 upstream `main` 祖先时 fast-forward 回同步；若两边分叉则 fail closed，禁止 force push 或自动改写历史。
 
-控制器的 `GITHUB_TOKEN` 固定为 `checks: read` 与 `contents: read`，只读取个人仓库精确 SHA 的检查结果，不读取或修改 PR。启用前在个人 Fork 的 Actions secrets 配置两个独立凭据：`AEGIS_FORK_AUTOMATION_TOKEN` 读取个人 PR 状态，并负责 automation branch、PR、auto-merge 和受保护 `main` 的 fast-forward，至少需要该 Fork 的 Contents/PR 写权限并且身份必须允许这次 fast-forward；`AEGIS_UPSTREAM_TOKEN` 读取 upstream 的精确 `quality-gate` 与 PR 状态，并负责创建/更新 upstream PR 和请求 reviewer，至少需要 upstream 的 Checks/Contents 读权限与 PR 写权限。缺任一 secret 时控制器直接失败，不进行降级授权。凭据值不得写入仓库、日志或 PR。两个 secret 配置完成并验证权限后，再把仓库变量 `AEGIS_PROMOTION_AUTOMATION` 设置为 `enabled`；变量未启用时整个 job 保持关闭。
+控制器的 `GITHUB_TOKEN` 固定为 `actions: read` 与 `contents: read`，只读取个人仓库精确 SHA 的 workflow run 与 job，不读取或修改 PR。启用前在个人 Fork 的 Actions secrets 配置两个独立凭据：`AEGIS_FORK_AUTOMATION_TOKEN` 读取个人 PR 状态，并负责 automation branch、PR、auto-merge 和受保护 `main` 的 fast-forward，至少需要该 Fork 的 Contents/PR 写权限并且身份必须允许这次 fast-forward；`AEGIS_UPSTREAM_TOKEN` 读取 upstream 的精确 workflow run/job 与 PR 状态，并负责创建/更新 upstream PR 和请求 reviewer，至少需要 upstream 的 Actions/Contents 读权限与 PR 写权限。缺任一 secret 时控制器直接失败，不进行降级授权。凭据值不得写入仓库、日志或 PR。两个 secret 配置完成并验证权限后，再把仓库变量 `AEGIS_PROMOTION_AUTOMATION` 设置为 `enabled`；变量未启用时整个 job 保持关闭。
 
 ## Chromium 集成边界与故障分类
 

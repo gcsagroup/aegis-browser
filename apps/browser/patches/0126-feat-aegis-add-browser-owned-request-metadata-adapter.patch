@@ -6,16 +6,16 @@ Subject: [PATCH] feat(aegis): add browser-owned request metadata adapter
 ---
  chrome/browser/aegis/BUILD.gn                 |   7 +-
  chrome/browser/aegis/access/BUILD.gn          |  21 ++
- .../access/access_browser_request_adapter.cc  | 212 ++++++++++++++++++
+ .../access/access_browser_request_adapter.cc  | 270 ++++++++++++++++++
  .../access/access_browser_request_adapter.h   |  59 +++++
  ...ess_browser_request_adapter_browsertest.cc |  93 ++++++++
  components/aegis_access/BUILD.gn              |  20 ++
  .../access_route_planner_native_test.cc       |   6 +-
  .../browser_request_metadata_seed.cc          |  88 ++++++++
  .../browser_request_metadata_seed.h           |  65 ++++++
- ...wser_request_metadata_seed_contract_test.h | 156 +++++++++++++
+ ...wser_request_metadata_seed_contract_test.h | 182 +++++++++++++++
  .../browser_request_metadata_seed_unittest.cc |  29 +++
- 11 files changed, 754 insertions(+), 2 deletions(-)
+ 11 files changed, 838 insertions(+), 2 deletions(-)
  create mode 100644 chrome/browser/aegis/access/access_browser_request_adapter.cc
  create mode 100644 chrome/browser/aegis/access/access_browser_request_adapter.h
  create mode 100644 chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
@@ -81,10 +81,10 @@ index 78bca45..ed4c23e 100644
      "access_network_context_transport.cc",
 diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.cc b/chrome/browser/aegis/access/access_browser_request_adapter.cc
 new file mode 100644
-index 0000000..c1cd02d
+index 0000000..a28ab11
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_browser_request_adapter.cc
-@@ -0,0 +1,212 @@
+@@ -0,0 +1,270 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_browser_request_adapter.h"
@@ -166,6 +166,152 @@ index 0000000..c1cd02d
 +  return std::nullopt;
 +}
 +
++AccessBrowserRequestMetadataStatus ResolveTrustedContents(
++    Profile* profile,
++    const base::RepeatingCallback<content::WebContents*()>& wc_getter,
++    content::FrameTreeNodeId frame_tree_node_id,
++    content::WebContents** trusted_contents) {
++  content::WebContents* callback_contents =
++      wc_getter.is_null() ? nullptr : wc_getter.Run();
++  content::WebContents* frame_contents =
++      frame_tree_node_id
++          ? content::WebContents::FromFrameTreeNodeId(frame_tree_node_id)
++          : nullptr;
++  if (callback_contents && frame_contents &&
++      callback_contents != frame_contents) {
++    return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
++  }
++  content::WebContents* contents =
++      frame_contents ? frame_contents : callback_contents;
++  if (!contents) {
++    return AccessBrowserRequestMetadataStatus::kMissingTrustedContents;
++  }
++  if (contents->GetBrowserContext() != profile) {
++    return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
++  }
++  *trusted_contents = contents;
++  return AccessBrowserRequestMetadataStatus::kOk;
++}
++
++AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
++    Profile* profile,
++    content::WebContents* contents,
++    content::FrameTreeNodeId frame_tree_node_id,
++    content::RenderFrameHost** trusted_frame) {
++  content::RenderFrameHost* request_frame =
++      frame_tree_node_id
++          ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id)
++          : contents->GetPrimaryMainFrame();
++  if (!request_frame) {
++    return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
++  }
++  if (request_frame->GetBrowserContext() != profile) {
++    return AccessBrowserRequestMetadataStatus::kBrowserContextMismatch;
++  }
++  if (!request_frame->GetPage().IsPrimary()) {
++    return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
++  }
++  *trusted_frame = request_frame;
++  return AccessBrowserRequestMetadataStatus::kOk;
++}
++
++AccessBrowserRequestMetadataStatus ResolveOwner(
++    Profile* profile,
++    content::RenderFrameHost* request_frame,
++    AccessNetworkContextTransport* transport,
++    aegis_access::OwnershipKey* owner) {
++  content::StoragePartition* partition = request_frame->GetStoragePartition();
++  if (!partition) {
++    return AccessBrowserRequestMetadataStatus::kMissingStoragePartition;
++  }
++  const std::optional<base::FilePath> relative_partition_path =
++      RelativePartitionPath(profile, partition);
++  if (!relative_partition_path) {
++    return AccessBrowserRequestMetadataStatus::kInvalidPartitionPath;
++  }
++  const aegis_access::ChannelNamespace channel =
++      aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
++  const std::optional<aegis_access::OwnershipKey> resolved_owner =
++      transport->OwnerForPartition(channel, *relative_partition_path);
++  if (!resolved_owner) {
++    return AccessBrowserRequestMetadataStatus::kInvalidOwner;
++  }
++  *owner = *resolved_owner;
++  return AccessBrowserRequestMetadataStatus::kOk;
++}
++
++AccessBrowserRequestMetadataStatus BuildSeedInput(
++    Profile* profile,
++    content::WebContents* contents,
++    content::FrameTreeNodeId frame_tree_node_id,
++    std::optional<int64_t> navigation_id,
++    const aegis_access::OwnershipKey& owner,
++    aegis_access::BrowserRequestMetadataSeedInput* seed_input) {
++  seed_input->request_id =
++      base::Uuid::GenerateRandomV4().AsLowercaseString();
++  seed_input->owner = owner;
++  if (navigation_id.has_value()) {
++    if (!frame_tree_node_id) {
++      return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
++    }
++    seed_input->pending_navigation_token = base::StrCat(
++        {"nav:", base::NumberToString(frame_tree_node_id.value()), ":",
++         base::NumberToString(*navigation_id)});
++    return AccessBrowserRequestMetadataStatus::kOk;
++  }
++  seed_input->document_token =
++      AegisService::DocumentIdForWebContents(contents);
++  if (seed_input->document_token.empty()) {
++    return AccessBrowserRequestMetadataStatus::kOk;
++  }
++  content::RenderFrameHost* primary_frame = contents->GetPrimaryMainFrame();
++  if (!primary_frame || primary_frame->GetBrowserContext() != profile) {
++    return AccessBrowserRequestMetadataStatus::kMissingTrustedFrame;
++  }
++  const net::SchemefulSite top_frame_site(
++      primary_frame->GetLastCommittedOrigin());
++  if (top_frame_site.opaque() ||
++      !top_frame_site.GetURL().SchemeIsHTTPOrHTTPS()) {
++    return AccessBrowserRequestMetadataStatus::kInvalidAttribution;
++  }
++  seed_input->top_frame_site = top_frame_site.Serialize();
++  return AccessBrowserRequestMetadataStatus::kOk;
++}
++
++AccessBrowserRequestMetadataResult BuildMetadataFromSeed(
++    aegis_access::BrowserRequestMetadataSeedInput seed_input) {
++  aegis_access::BrowserRequestMetadataSeedResult seed_result =
++      aegis_access::PrepareBrowserRequestMetadataSeed(std::move(seed_input));
++  if (!seed_result.seed) {
++    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
++  }
++  const aegis_access::BrowserRequestMetadataSeed& seed = *seed_result.seed;
++  const std::optional<aegis_access::RequestAttributionKind> attribution_kind =
++      ToAttributionKind(seed.attribution_kind);
++  if (!attribution_kind) {
++    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
++  }
++  aegis_access::BrowserOwnedRequestMetadata metadata;
++  metadata.request_id = seed.request_id;
++  metadata.owner = seed.owner;
++  metadata.attribution_kind = *attribution_kind;
++  metadata.document_token = seed.document_token;
++  metadata.pending_navigation_token = seed.pending_navigation_token;
++  if (seed.attribution_kind !=
++      aegis_access::BrowserRequestAttributionKind::kDocument) {
++    return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
++  }
++  const GURL top_site_url(seed.top_frame_site);
++  if (!top_site_url.is_valid()) {
++    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
++  }
++  metadata.top_frame_site = net::SchemefulSite(top_site_url);
++  if (metadata.top_frame_site->opaque()) {
++    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
++  }
++  return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
++}
++
 +}  // namespace
 +
 +AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
@@ -183,117 +329,29 @@ index 0000000..c1cd02d
 +    return Error(AccessBrowserRequestMetadataStatus::kMissingTransport);
 +  }
 +
-+  content::WebContents* callback_contents =
-+      wc_getter.is_null() ? nullptr : wc_getter.Run();
-+  content::WebContents* frame_contents =
-+      frame_tree_node_id
-+          ? content::WebContents::FromFrameTreeNodeId(frame_tree_node_id)
-+          : nullptr;
-+  if (callback_contents && frame_contents &&
-+      callback_contents != frame_contents) {
-+    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
++  content::WebContents* contents = nullptr;
++  AccessBrowserRequestMetadataStatus status = ResolveTrustedContents(
++      profile, wc_getter, frame_tree_node_id, &contents);
++  if (status != AccessBrowserRequestMetadataStatus::kOk) {
++    return Error(status);
 +  }
-+  content::WebContents* contents =
-+      frame_contents ? frame_contents : callback_contents;
-+  if (!contents) {
-+    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedContents);
++  content::RenderFrameHost* request_frame = nullptr;
++  status = ResolveTrustedFrame(profile, contents, frame_tree_node_id,
++                               &request_frame);
++  if (status != AccessBrowserRequestMetadataStatus::kOk) {
++    return Error(status);
 +  }
-+  if (contents->GetBrowserContext() != profile) {
-+    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
++  aegis_access::OwnershipKey owner;
++  status = ResolveOwner(profile, request_frame, transport, &owner);
++  if (status != AccessBrowserRequestMetadataStatus::kOk) {
++    return Error(status);
 +  }
-+
-+  content::RenderFrameHost* request_frame =
-+      frame_tree_node_id
-+          ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id)
-+          : contents->GetPrimaryMainFrame();
-+  if (!request_frame) {
-+    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedFrame);
-+  }
-+  if (request_frame->GetBrowserContext() != profile) {
-+    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
-+  }
-+  if (!request_frame->GetPage().IsPrimary()) {
-+    return Error(AccessBrowserRequestMetadataStatus::kInvalidAttribution);
-+  }
-+
-+  content::StoragePartition* partition = request_frame->GetStoragePartition();
-+  if (!partition) {
-+    return Error(AccessBrowserRequestMetadataStatus::kMissingStoragePartition);
-+  }
-+  const std::optional<base::FilePath> relative_partition_path =
-+      RelativePartitionPath(profile, partition);
-+  if (!relative_partition_path) {
-+    return Error(AccessBrowserRequestMetadataStatus::kInvalidPartitionPath);
-+  }
-+
-+  const aegis_access::ChannelNamespace channel =
-+      aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
-+  const std::optional<aegis_access::OwnershipKey> owner =
-+      transport->OwnerForPartition(channel, *relative_partition_path);
-+  if (!owner) {
-+    return Error(AccessBrowserRequestMetadataStatus::kInvalidOwner);
-+  }
-+
 +  aegis_access::BrowserRequestMetadataSeedInput seed_input;
-+  seed_input.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
-+  seed_input.owner = *owner;
-+
-+  if (navigation_id.has_value()) {
-+    if (!frame_tree_node_id) {
-+      return Error(AccessBrowserRequestMetadataStatus::kInvalidAttribution);
-+    }
-+    seed_input.pending_navigation_token = base::StrCat(
-+        {"nav:", base::NumberToString(frame_tree_node_id.value()), ":",
-+         base::NumberToString(*navigation_id)});
-+  } else {
-+    seed_input.document_token =
-+        AegisService::DocumentIdForWebContents(contents);
-+    if (!seed_input.document_token.empty()) {
-+      content::RenderFrameHost* primary_frame = contents->GetPrimaryMainFrame();
-+      if (!primary_frame || primary_frame->GetBrowserContext() != profile) {
-+        return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedFrame);
-+      }
-+      const net::SchemefulSite top_frame_site(
-+          primary_frame->GetLastCommittedOrigin());
-+      if (top_frame_site.opaque() ||
-+          !top_frame_site.GetURL().SchemeIsHTTPOrHTTPS()) {
-+        return Error(AccessBrowserRequestMetadataStatus::kInvalidAttribution);
-+      }
-+      seed_input.top_frame_site = top_frame_site.Serialize();
-+    }
-+  }
-+
-+  aegis_access::BrowserRequestMetadataSeedResult seed_result =
-+      aegis_access::PrepareBrowserRequestMetadataSeed(std::move(seed_input));
-+  if (!seed_result.seed) {
-+    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-+  }
-+  const aegis_access::BrowserRequestMetadataSeed& seed = *seed_result.seed;
-+  const std::optional<aegis_access::RequestAttributionKind> attribution_kind =
-+      ToAttributionKind(seed.attribution_kind);
-+  if (!attribution_kind) {
-+    return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-+  }
-+
-+  aegis_access::BrowserOwnedRequestMetadata metadata;
-+  metadata.request_id = seed.request_id;
-+  metadata.owner = seed.owner;
-+  metadata.attribution_kind = *attribution_kind;
-+  metadata.document_token = seed.document_token;
-+  metadata.pending_navigation_token = seed.pending_navigation_token;
-+  if (seed.attribution_kind ==
-+      aegis_access::BrowserRequestAttributionKind::kDocument) {
-+    const GURL top_site_url(seed.top_frame_site);
-+    if (!top_site_url.is_valid()) {
-+      return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-+    }
-+    metadata.top_frame_site = net::SchemefulSite(top_site_url);
-+    if (metadata.top_frame_site->opaque()) {
-+      return Error(AccessBrowserRequestMetadataStatus::kInvalidMetadata);
-+    }
-+  }
-+
-+  return {AccessBrowserRequestMetadataStatus::kOk, std::move(metadata)};
++  status = BuildSeedInput(profile, contents, frame_tree_node_id, navigation_id,
++                          owner, &seed_input);
++  return status == AccessBrowserRequestMetadataStatus::kOk
++             ? BuildMetadataFromSeed(std::move(seed_input))
++             : Error(status);
 +}
 +
 +}  // namespace aegis::access
@@ -696,10 +754,10 @@ index 0000000..d6cc348
 +#endif  // COMPONENTS_AEGIS_ACCESS_BROWSER_REQUEST_METADATA_SEED_H_
 diff --git a/components/aegis_access/browser_request_metadata_seed_contract_test.h b/components/aegis_access/browser_request_metadata_seed_contract_test.h
 new file mode 100644
-index 0000000..55aab83
+index 0000000..8e4236e
 --- /dev/null
 +++ b/components/aegis_access/browser_request_metadata_seed_contract_test.h
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,182 @@
 +// Copyright 2026 GCSA
 +
 +#ifndef COMPONENTS_AEGIS_ACCESS_BROWSER_REQUEST_METADATA_SEED_CONTRACT_TEST_H_
@@ -721,7 +779,7 @@ index 0000000..55aab83
 +  return {ChannelNamespace::kDev, "profile-a", "partition-a"};
 +}
 +
-+inline void RunBrowserRequestMetadataSeedUnitTests(
++inline void RunBrowserReleaseChannelUnitTests(
 +    BrowserRequestMetadataSeedTestObserver& observer) {
 +  observer.Expect(MapBrowserReleaseChannel(BrowserReleaseChannel::kStable) ==
 +                      ChannelNamespace::kRelease,
@@ -741,7 +799,10 @@ index 0000000..55aab83
 +  observer.Expect(MapBrowserReleaseChannel(BrowserReleaseChannel::kInvalid) ==
 +                      ChannelNamespace::kInvalid,
 +                  "metadata seed unit invalid stays invalid");
++}
 +
++inline void RunMetadataSeedAttributionUnitTests(
++    BrowserRequestMetadataSeedTestObserver& observer) {
 +  const auto document = PrepareBrowserRequestMetadataSeed(
 +      {"request-document", MetadataSeedOwner(), "document-a", "",
 +       "https://example.test"});
@@ -769,7 +830,10 @@ index 0000000..55aab83
 +                      profile.seed->attribution_kind ==
 +                          BrowserRequestAttributionKind::kProfileOnly,
 +                  "metadata seed unit profile-only attribution");
++}
 +
++inline void RunMetadataSeedValidationUnitTests(
++    BrowserRequestMetadataSeedTestObserver& observer) {
 +  OwnershipKey invalid_owner = MetadataSeedOwner();
 +  invalid_owner.profile_token.clear();
 +  observer.Expect(PrepareBrowserRequestMetadataSeed(
@@ -794,7 +858,14 @@ index 0000000..55aab83
 +                  "metadata seed unit orphan top site rejected");
 +}
 +
-+inline void RunBrowserRequestMetadataSeedRegressionTests(
++inline void RunBrowserRequestMetadataSeedUnitTests(
++    BrowserRequestMetadataSeedTestObserver& observer) {
++  RunBrowserReleaseChannelUnitTests(observer);
++  RunMetadataSeedAttributionUnitTests(observer);
++  RunMetadataSeedValidationUnitTests(observer);
++}
++
++inline void RunNavigationMetadataSeedRegressionTests(
 +    BrowserRequestMetadataSeedTestObserver& observer) {
 +  const auto navigation_over_old_document = PrepareBrowserRequestMetadataSeed(
 +      {"request-navigation-priority", MetadataSeedOwner(), "old-document",
@@ -814,7 +885,10 @@ index 0000000..55aab83
 +  observer.Expect(MapBrowserReleaseChannel(BrowserReleaseChannel::kUnknown) !=
 +                      ChannelNamespace::kRelease,
 +                  "metadata seed regression unknown build never claims release");
++}
 +
++inline void RunOwnershipMetadataSeedRegressionTests(
++    BrowserRequestMetadataSeedTestObserver& observer) {
 +  OwnershipKey other_profile = MetadataSeedOwner();
 +  other_profile.profile_token = "profile-b";
 +  const auto profile_result = PrepareBrowserRequestMetadataSeed(
@@ -836,7 +910,10 @@ index 0000000..55aab83
 +                      partition_result.seed->owner.storage_partition_token ==
 +                          "partition-b",
 +                  "metadata seed regression partition identity is preserved");
++}
 +
++inline void RunFailClosedMetadataSeedRegressionTests(
++    BrowserRequestMetadataSeedTestObserver& observer) {
 +  OwnershipKey invalid_channel = MetadataSeedOwner();
 +  invalid_channel.channel = ChannelNamespace::kInvalid;
 +  observer.Expect(PrepareBrowserRequestMetadataSeed(
@@ -851,6 +928,13 @@ index 0000000..55aab83
 +                          BrowserRequestAttributionKind::kProfileOnly &&
 +                      worker_like.seed->top_frame_site.empty(),
 +                  "metadata seed regression background request cannot borrow site");
++}
++
++inline void RunBrowserRequestMetadataSeedRegressionTests(
++    BrowserRequestMetadataSeedTestObserver& observer) {
++  RunNavigationMetadataSeedRegressionTests(observer);
++  RunOwnershipMetadataSeedRegressionTests(observer);
++  RunFailClosedMetadataSeedRegressionTests(observer);
 +}
 +
 +}  // namespace aegis_access::test
@@ -893,4 +977,3 @@ index 0000000..9a55fbb
 +}  // namespace aegis_access::test
 -- 
 2.54.0 (Apple Git-157)
-
