@@ -136,6 +136,7 @@ try {
     'apps/browser/overlay/components/aegis_access/browser_request_metadata_seed.cc',
     'apps/browser/overlay/components/aegis_access/published_request_runtime.cc',
     'apps/browser/overlay/components/aegis_access/request_dispatch_gate.cc',
+    'apps/browser/overlay/components/aegis_access/request_generation_tuple_builder.cc',
     'apps/browser/overlay/components/aegis_access/request_ownership_registry.cc',
     'apps/browser/overlay/components/aegis_access/site_proxy_rule_group.cc',
   ];
