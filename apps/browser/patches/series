@@ -140,3 +140,4 @@
 0139-feat-aegis-gate-primary-page-subframe-navigation.patch
 0140-feat-aegis-reevaluate-proxied-redirects.patch
 0141-feat-aegis-gate-worker-main-resource-traffic.patch
+0142-feat-aegis-gate-worker-subresource-traffic.patch
