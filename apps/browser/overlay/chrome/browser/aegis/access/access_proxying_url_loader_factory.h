@@ -3,7 +3,9 @@
 #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXYING_URL_LOADER_FACTORY_H_
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXYING_URL_LOADER_FACTORY_H_
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <set>
 
 #include "base/containers/unique_ptr_adapters.h"
@@ -26,16 +28,18 @@ namespace aegis::access {
 
 class AccessProxyingURLTrackedRequest;
 
-// UI-thread browser-process URLLoaderFactory wrapper for the first real Access
-// request vertical slice. It covers primary-page document subresources only.
-// Nested-frame, navigation, worker, and WebSocket surfaces are later slices. Each
-// request is
-// re-evaluated from browser-owned frame state and the latest published Access
-// state before it may reach the target Network Service factory.
+// UI-thread browser-process URLLoaderFactory wrapper for real Access request
+// dispatch. It covers primary-page document subresources plus main navigation
+// factories. Worker, ServiceWorker, prefetch, WebSocket, nested-page, and
+// redirect re-evaluation remain later slices. Each request is re-evaluated from
+// browser-owned frame/navigation state and the latest published Access state
+// before it may reach the target Network Service factory.
 //
 // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
 // only after exact-host endpoint validation and the synchronous dispatch gate.
-// Navigation, workers, WebSocket, and redirect re-evaluation are later slices.
+// Navigation uses a browser-owned pending-navigation token and derives the
+// destination top-level site from the request URL rather than borrowing the
+// previously committed document identity.
 class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
  public:
   using DisconnectCallback =
@@ -44,6 +48,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   AccessProxyingURLLoaderFactory(
       Profile* profile,
       content::FrameTreeNodeId frame_tree_node_id,
+      std::optional<int64_t> navigation_id,
       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
       network::URLLoaderFactoryBuilder& factory_builder,
       DisconnectCallback on_disconnect);
@@ -56,6 +61,11 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   static void MaybeProxyDocumentSubresource(
       Profile* profile,
       content::RenderFrameHost* frame,
+      network::URLLoaderFactoryBuilder& factory_builder);
+  static void MaybeProxyNavigation(
+      Profile* profile,
+      content::RenderFrameHost* frame,
+      int64_t navigation_id,
       network::URLLoaderFactoryBuilder& factory_builder);
 
   // network::mojom::URLLoaderFactory:
@@ -108,6 +118,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
 
   const raw_ptr<Profile> profile_;
   const content::FrameTreeNodeId frame_tree_node_id_;
+  const std::optional<int64_t> navigation_id_;
   const aegis_access::BrowserOwnedRequestMetadata factory_metadata_;
 
   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
