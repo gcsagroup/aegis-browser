@@ -24,6 +24,32 @@ source_set("access_browser_request_adapter") {
   ]
 }
 
+source_set("access_identity_generation_source") {
+  sources = [
+    "access_identity_generation_source.cc",
+    "access_identity_generation_source.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//components/aegis_access:access_identity_generation_state",
+  ]
+}
+
+source_set("access_proxy_selection_generation_source") {
+  sources = [
+    "access_proxy_selection_generation_source.cc",
+    "access_proxy_selection_generation_source.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//components/aegis_access:access_proxy_selection_generation_state",
+  ]
+}
+
 source_set("access_network_context_transport") {
   sources = [
     "access_network_context_transport.cc",
@@ -55,6 +81,50 @@ source_set("access_rule_store") {
   ]
 }
 
+source_set("access_published_request_runtime") {
+  sources = [
+    "access_published_request_runtime.cc",
+    "access_published_request_runtime.h",
+  ]
+  deps = [
+    ":access_identity_generation_source",
+    ":access_network_context_transport",
+    ":access_proxy_selection_generation_source",
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/net:impl",
+    "//chrome/browser/profiles:profile",
+    "//content/public/browser",
+  ]
+  public_deps = [
+    ":access_rule_store",
+    "//components/aegis_access",
+    "//components/aegis_access:request_generation_tuple_builder",
+  ]
+}
+
+test("access_identity_generation_source_unittests") {
+  sources = [ "access_identity_generation_source_unittest.cc" ]
+  deps = [
+    ":access_identity_generation_source",
+    "//base/test:run_all_unittests",
+    "//chrome/browser/profiles:test_support",
+    "//components/aegis_access:access_identity_generation_state",
+    "//testing/gtest",
+  ]
+}
+
+test("access_proxy_selection_generation_source_unittests") {
+  sources = [ "access_proxy_selection_generation_source_unittest.cc" ]
+  deps = [
+    ":access_proxy_selection_generation_source",
+    "//base/test:run_all_unittests",
+    "//chrome/browser/profiles:test_support",
+    "//components/aegis_access:access_proxy_selection_generation_state",
+    "//testing/gtest",
+  ]
+}
+
 test("access_network_context_transport_unittests") {
   sources = [ "access_network_context_transport_unittest.cc" ]
   deps = [
@@ -83,5 +153,18 @@ test("access_rule_store_unittests") {
     "//sql",
     "//testing/gtest",
     "//url",
+  ]
+}
+
+test("access_published_request_runtime_unittests") {
+  sources = [ "access_published_request_runtime_unittest.cc" ]
+  deps = [
+    ":access_network_context_transport",
+    ":access_published_request_runtime",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:test_support",
+    "//services/network/public/mojom",
+    "//testing/gtest",
   ]
 }

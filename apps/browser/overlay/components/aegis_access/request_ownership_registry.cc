@@ -7,24 +7,6 @@
 namespace aegis_access {
 namespace {
 
-bool IsKnownChannel(ChannelNamespace channel) {
-  switch (channel) {
-    case ChannelNamespace::kDev:
-    case ChannelNamespace::kAlpha:
-    case ChannelNamespace::kBeta:
-    case ChannelNamespace::kRelease:
-      return true;
-    case ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
-bool IsComplete(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
-         !owner.storage_partition_token.empty();
-}
-
 bool IsComplete(const GenerationTuple& generations) {
   return generations.policy_generation != 0 &&
          generations.identity_generation != 0 &&
@@ -57,7 +39,7 @@ bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector) 
 }
 
 bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
-  return !record.request_id.empty() && IsComplete(record.owner) &&
+  return !record.request_id.empty() && IsCompleteOwner(record.owner) &&
          IsComplete(record.generations) && !record.exact_host.empty() &&
          IsKnown(record.scheme) && record.port != 0;
 }
@@ -76,7 +58,7 @@ bool IsValidRecord(const RequestOwnershipRecord& record) {
 }
 
 bool IsValidSelector(const RequestCancellationSelector& selector) {
-  return IsComplete(selector.owner) &&
+  return IsCompleteOwner(selector.owner) &&
          HasExactlyOneAttributionToken(selector) &&
          !selector.top_level_site.empty() && !selector.exact_host.empty() &&
          IsKnown(selector.scheme) && selector.port != 0;

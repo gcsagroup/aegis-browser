@@ -27,6 +27,35 @@ source_set("access_route_types") {
   sources = [ "access_route_types.h" ]
 }
 
+source_set("access_identity_generation_state") {
+  sources = [
+    "access_identity_generation_state.cc",
+    "access_identity_generation_state.h",
+  ]
+}
+
+source_set("access_proxy_selection_generation_state") {
+  sources = [
+    "access_proxy_selection_generation_state.cc",
+    "access_proxy_selection_generation_state.h",
+  ]
+}
+
+source_set("access_base_proxy_config_generation_state") {
+  sources = [
+    "access_base_proxy_config_generation_state.cc",
+    "access_base_proxy_config_generation_state.h",
+  ]
+}
+
+source_set("request_generation_tuple_builder") {
+  sources = [
+    "request_generation_tuple_builder.cc",
+    "request_generation_tuple_builder.h",
+  ]
+  public_deps = [ ":access_route_types" ]
+}
+
 source_set("browser_request_metadata_seed") {
   sources = [
     "browser_request_metadata_seed.cc",
@@ -79,6 +108,54 @@ source_set("aegis_access") {
     ":access_route_types",
     ":request_ownership_registry",
     "//net",
+  ]
+}
+
+test("access_identity_generation_state_unittests") {
+  sources = [
+    "access_identity_generation_state_contract_test.h",
+    "access_identity_generation_state_unittest.cc",
+  ]
+  deps = [
+    ":access_identity_generation_state",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("access_proxy_selection_generation_state_unittests") {
+  sources = [
+    "access_proxy_selection_generation_state_contract_test.h",
+    "access_proxy_selection_generation_state_unittest.cc",
+  ]
+  deps = [
+    ":access_proxy_selection_generation_state",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("access_base_proxy_config_generation_state_unittests") {
+  sources = [
+    "access_base_proxy_config_generation_state_contract_test.h",
+    "access_base_proxy_config_generation_state_unittest.cc",
+  ]
+  deps = [
+    ":access_base_proxy_config_generation_state",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("request_generation_tuple_builder_unittests") {
+  sources = [
+    "request_generation_tuple_builder_contract_test.h",
+    "request_generation_tuple_builder_unittest.cc",
+  ]
+  deps = [
+    ":request_generation_tuple_builder",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
   ]
 }
 

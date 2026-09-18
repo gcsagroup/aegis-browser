@@ -22,19 +22,6 @@ const void* const kTransportUserDataKey = &kTransportUserDataKey;
 constexpr size_t kMaxExactHosts = 256;
 constexpr size_t kMaxPartitionKeyBytes = 1024;
 
-bool IsKnownChannel(aegis_access::ChannelNamespace channel) {
-  switch (channel) {
-    case aegis_access::ChannelNamespace::kDev:
-    case aegis_access::ChannelNamespace::kAlpha:
-    case aegis_access::ChannelNamespace::kBeta:
-    case aegis_access::ChannelNamespace::kRelease:
-      return true;
-    case aegis_access::ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
 bool IsCanonicalExactHost(const std::string& host) {
   if (host.empty()) {
     return false;
@@ -154,7 +141,7 @@ std::optional<aegis_access::OwnershipKey>
 AccessNetworkContextTransport::OwnerForPartition(
     aegis_access::ChannelNamespace channel,
     const base::FilePath& relative_partition_path) const {
-  if (!IsKnownChannel(channel)) {
+  if (!aegis_access::IsKnownChannel(channel)) {
     return std::nullopt;
   }
   const std::optional<std::string> partition_token =
@@ -164,6 +151,13 @@ AccessNetworkContextTransport::OwnerForPartition(
   }
   return aegis_access::OwnershipKey{channel, runtime_profile_token_,
                                     *partition_token};
+}
+
+bool AccessNetworkContextTransport::OwnsConfiguredPartition(
+    const aegis_access::OwnershipKey& owner) const {
+  return aegis_access::IsCompleteOwner(owner) &&
+         owner.profile_token == runtime_profile_token_ &&
+         partitions_.contains(owner.storage_partition_token);
 }
 
 bool AccessNetworkContextTransport::PublishProxySelection(
