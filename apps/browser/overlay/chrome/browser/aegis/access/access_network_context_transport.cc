@@ -209,6 +209,33 @@ bool AccessNetworkContextTransport::ClearProxySelection(
   return true;
 }
 
+std::optional<aegis_access::RegisteredProxyEndpoint>
+AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
+    const aegis_access::OwnershipKey& owner,
+    const std::string& proxy_group_id,
+    const std::string& exact_host) const {
+  if (!aegis_access::IsCompleteOwner(owner) || proxy_group_id.empty() ||
+      !IsCanonicalExactHost(exact_host) || !OwnsConfiguredPartition(owner) ||
+      network_epoch_ == 0) {
+    return std::nullopt;
+  }
+
+  const auto it = partitions_.find(owner.storage_partition_token);
+  // PublishProxySelection() sorts exact_hosts before committing PartitionState.
+  if (it == partitions_.end() || !it->second.endpoint.has_value() ||
+      !std::binary_search(it->second.exact_hosts.begin(),
+                          it->second.exact_hosts.end(), exact_host)) {
+    return std::nullopt;
+  }
+
+  const aegis_access::RegisteredProxyEndpoint& endpoint = *it->second.endpoint;
+  if (endpoint.owner != owner || endpoint.proxy_group_id != proxy_group_id ||
+      endpoint.generations.network_epoch != network_epoch_) {
+    return std::nullopt;
+  }
+  return endpoint;
+}
+
 network::mojom::CustomProxyConfigPtr
 AccessNetworkContextTransport::BuildConfigForTesting(
     const base::FilePath& relative_partition_path) const {
