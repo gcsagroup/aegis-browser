@@ -57,6 +57,25 @@ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
     response->set_content_type("text/html");
     return response;
   }
+  if (request.relative_url.find("/shared-worker-subresource.js") !=
+      std::string::npos) {
+    response->set_content(
+        "self.onconnect = event => {"
+        "  const port = event.ports[0];"
+        "  port.onmessage = async message => {"
+        "    try {"
+        "      const response = await fetch(message.data);"
+        "      port.postMessage(await response.text());"
+        "    } catch {"
+        "      port.postMessage('error');"
+        "    }"
+        "  };"
+        "  port.start();"
+        "  port.postMessage('ready');"
+        "};");
+    response->set_content_type("application/javascript");
+    return response;
+  }
   if (request.relative_url.find("/worker-subresource.js") !=
       std::string::npos) {
     response->set_content(
@@ -187,6 +206,10 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     return target_origin_.GetURL(kTargetHost, "/worker-data");
   }
 
+  GURL shared_worker_subresource_script_url() const {
+    return target_origin_.GetURL(kTargetHost, "/shared-worker-subresource.js");
+  }
+
   GURL redirect_url() const {
     return target_origin_.GetURL(kTargetHost, "/redirect");
   }
@@ -314,6 +337,49 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
                    "    resolve('error');"
                    "  };"
                    "  worker.postMessage($1);"
+                   "})",
+                   url.spec()))
+        .ExtractString();
+  }
+
+  void StartSharedWorkerSubresourceHarness() {
+    EXPECT_EQ(
+        content::EvalJs(
+            web_contents(),
+            content::JsReplace(
+                "new Promise(resolve => {"
+                "  const worker = new SharedWorker($1);"
+                "  const port = worker.port;"
+                "  window.aegisSharedWorker = worker;"
+                "  window.aegisSharedWorkerPort = port;"
+                "  port.onmessage = event => {"
+                "    if (event.data === 'ready') resolve('ready');"
+                "  };"
+                "  port.start();"
+                "})",
+                shared_worker_subresource_script_url().spec()))
+            .ExtractString(),
+        "ready");
+  }
+
+  void PrepareSharedWorkerSubresourceTest(size_t* origin_before,
+                                          size_t* proxy_before) {
+    ASSERT_NE(origin_before, nullptr);
+    ASSERT_NE(proxy_before, nullptr);
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+    StartSharedWorkerSubresourceHarness();
+    *origin_before = origin_requests_.load(std::memory_order_relaxed);
+    *proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  }
+
+  std::string FetchSharedWorkerSubresource(const GURL& url) {
+    return content::EvalJs(
+               web_contents(),
+               content::JsReplace(
+                   "new Promise(resolve => {"
+                   "  const port = window.aegisSharedWorkerPort;"
+                   "  port.onmessage = event => resolve(event.data);"
+                   "  port.postMessage($1);"
                    "})",
                    url.spec()))
         .ExtractString();
@@ -550,6 +616,49 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   PublishProxyPolicy(/*publish_endpoint=*/false);
 
   EXPECT_EQ(FetchWorkerSubresource(worker_subresource_url()), "error");
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), proxy_before);
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       SharedWorkerSubresourceWithoutPolicyPreservesNativePath) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PrepareSharedWorkerSubresourceTest(&origin_before, &proxy_before);
+
+  EXPECT_EQ(FetchSharedWorkerSubresource(worker_subresource_url()),
+            "origin-worker-subresource");
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return origin_requests_.load(std::memory_order_relaxed) ==
+           origin_before + 1u;
+  }));
+  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), proxy_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       SharedWorkerSubresourceUsesSelectedProxy) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PrepareSharedWorkerSubresourceTest(&origin_before, &proxy_before);
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  EXPECT_EQ(FetchSharedWorkerSubresource(worker_subresource_url()),
+            "proxy-worker-subresource");
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return proxy_requests_.load(std::memory_order_relaxed) ==
+           proxy_before + 1u;
+  }));
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       SharedWorkerSubresourceWithoutEndpointFailsClosed) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PrepareSharedWorkerSubresourceTest(&origin_before, &proxy_before);
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+
+  EXPECT_EQ(FetchSharedWorkerSubresource(worker_subresource_url()), "error");
   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), proxy_before);
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), origin_before);
 }
