@@ -410,7 +410,7 @@ test('push and dispatch identity allow main and develop while rejecting other re
 });
 
 test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
-  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml']
+  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
   const validate = (args) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args]);
@@ -447,6 +447,15 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [index, (w) => { Object.values(w.jobs)[0].steps[0].uses = 'actions/checkout@v7'; }],
     ]),
     [1, (w) => { w.jobs['ios-coverage'].steps[1].with['node-version'] = '22.23.0'; }],
+    [4, (w) => { w.on.pull_request_target.branches = ['main']; }],
+    [4, (w) => { w.on.pull_request = {}; }],
+    [4, (w) => { w.permissions.contents = 'write'; }],
+    [4, (w) => { w.permissions['pull-requests'] = 'read'; }],
+    [4, (w) => { w.jobs['normalize-title'].steps[0].with.ref = '${{ github.event.pull_request.head.sha }}'; }],
+    [4, (w) => { w.jobs['normalize-title'].steps[0].with['persist-credentials'] = true; }],
+    [4, (w) => { w.jobs['normalize-title'].steps[1].uses = 'actions/github-script@v8'; }],
+    [4, (w) => { w.jobs['normalize-title'].steps[1].with['github-token'] = '${{ secrets.GITHUB_TOKEN }}'; }],
+    [4, (w) => { w.jobs['normalize-title'].steps.push({name: 'unsafe', run: 'node candidate.mjs'}); }],
   ];
   try {
     for (const [number, [index, mutate]] of mutations.entries()) {

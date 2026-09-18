@@ -11,6 +11,12 @@
 
 工作流只读仓库，不创建 Release、不合并 PR、不正式签名公证、不替换现用 App。不会绕过源码冲突或测试失败；失败时保留补丁名、Git 现场、日志及旧产物。上游检测不具备自动进行语义适配的能力；新版本仍需生成并修正候选分支，修复提交后构建自动继续。当前未接入自动写代码的代理。
 
+## GitHub Copilot PR Review
+
+上游 `gcsagroup/aegis-browser` 的 Copilot 只承担 PR 语义 Review，不自动写入或合并代码。仓库级 Review 规则来自 PR head 中的 `.github/copilot-instructions.md` 与匹配路径的 `.github/instructions/*.instructions.md`；因此 Review 结论必须绑定当前 PR 最终 head，push 新提交后旧结论不能直接复用。
+
+服务端策略单独使用一个针对 `main` 的 GitHub branch ruleset：自动请求 Copilot code review，并在每次新 push 后重新 Review；Draft PR 不自动触发。Copilot approval 不作为必需审批，也不替代独立 reviewer、Codacy、`quality-gate`、Chromium 集成、设备、签名或发布证据。该 Ruleset 和 Copilot 可用性属于 GitHub 服务端状态，须由管理员/API 实时回读，不能由仓库文件或本地测试证明。
+
 ## 当前优先方案：GitHub 托管
 
 2026-09-16 用户选择优先使用 GitHub 提供的机器。上游监控及 23 项脚本回归使用公开仓库的标准 `ubuntu-latest`，不依赖自托管机器或 `AEGIS_BUILD_RUNNERS_READY`。审核分支推送可以验证实际云端执行；合入默认分支后才有每小时定时运行。首次云端没有 `.chromium-root` 时记录源码路径为空，不伪造本机安装证据。
