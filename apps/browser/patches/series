@@ -132,3 +132,4 @@
 0131-feat-aegis-own-proxy-selection-generation.patch
 0132-feat-aegis-own-base-proxy-config-generation.patch
 0133-feat-aegis-publish-request-generation-runtime.patch
+0134-fix-aegis-harden-published-runtime-thread-boundary.patch

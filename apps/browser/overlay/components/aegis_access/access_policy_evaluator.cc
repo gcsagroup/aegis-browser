@@ -17,24 +17,6 @@
 namespace aegis_access {
 namespace {
 
-bool IsKnownChannel(ChannelNamespace channel) {
-  switch (channel) {
-    case ChannelNamespace::kDev:
-    case ChannelNamespace::kAlpha:
-    case ChannelNamespace::kBeta:
-    case ChannelNamespace::kRelease:
-      return true;
-    case ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
-bool IsComplete(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
-         !owner.storage_partition_token.empty();
-}
-
 bool IsKnownScheme(RequestScheme scheme) {
   switch (scheme) {
     case RequestScheme::kHttp:
@@ -116,7 +98,7 @@ bool IsStrictlySorted(const std::vector<uint16_t>& ports) {
 
 bool IsValidRule(const AccessPolicyRule& rule,
                  const OwnershipKey& snapshot_owner) {
-  if (rule.rule_id.empty() || !IsComplete(rule.owner) ||
+  if (rule.rule_id.empty() || !IsCompleteOwner(rule.owner) ||
       rule.owner != snapshot_owner || rule.row_revision == 0 ||
       rule.last_operation_sequence == 0 ||
       !IsCanonicalHost(rule.destination_host, rule.include_subdomains) ||
@@ -350,7 +332,7 @@ PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
 PolicyMatchResult EvaluateAccessPolicy(
     const RequestPolicyContext& request,
     const PublishedAccessPolicySnapshot& snapshot) {
-  if (!IsComplete(snapshot.owner) || snapshot.policy_generation == 0) {
+  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
     return Error(PolicyState::kInvalid,
                  PolicyMatchReason::kInvalidSnapshot,
                  snapshot.policy_generation);
