@@ -24,6 +24,8 @@ class RenderFrameHost;
 
 namespace aegis::access {
 
+class AccessProxyingURLTrackedRequest;
+
 // UI-thread browser-process URLLoaderFactory wrapper for the first real Access
 // request vertical slice. It covers primary-page document subresources only.
 // Nested-frame, navigation, worker, and WebSocket surfaces are later slices. Each
@@ -69,7 +71,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
                  loader_receiver) override;
 
  private:
-  class TrackedRequest;
+  friend class AccessProxyingURLTrackedRequest;
 
   enum class RequestDisposition {
     kPreserveNative,
@@ -92,7 +94,14 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
       int net_error);
-  void RemoveRequest(TrackedRequest* request);
+  void StartTargetRequest(
+      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+      int32_t request_id,
+      uint32_t options,
+      const network::ResourceRequest& request,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
+  void RemoveRequest(AccessProxyingURLTrackedRequest* request);
   void OnTargetFactoryError();
   void OnProxyBindingError();
   void MaybeDestroySelf();
@@ -102,7 +111,8 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   const aegis_access::BrowserOwnedRequestMetadata factory_metadata_;
 
   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
-  std::set<std::unique_ptr<TrackedRequest>, base::UniquePtrComparator>
+  std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,
+           base::UniquePtrComparator>
       requests_;
   mojo::Remote<network::mojom::URLLoaderFactory> target_factory_;
   DisconnectCallback on_disconnect_;

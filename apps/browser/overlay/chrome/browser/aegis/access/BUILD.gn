@@ -85,6 +85,8 @@ source_set("access_proxying_url_loader_factory") {
   sources = [
     "access_proxying_url_loader_factory.cc",
     "access_proxying_url_loader_factory.h",
+    "access_proxying_url_tracked_request.cc",
+    "access_proxying_url_tracked_request.h",
   ]
   deps = [
     ":access_browser_request_adapter",
