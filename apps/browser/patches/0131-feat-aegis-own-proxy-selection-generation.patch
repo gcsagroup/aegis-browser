@@ -1,0 +1,713 @@
+From 0131000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 17:08:00 +0800
+Subject: [PATCH] feat(aegis): own proxy selection generation
+
+---
+diff --git a/components/aegis_access/access_proxy_selection_generation_state.h b/components/aegis_access/access_proxy_selection_generation_state.h
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_proxy_selection_generation_state.h
+@@ -0,0 +1,68 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_STATE_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_STATE_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++
++namespace aegis_access {
++
++struct AccessProxySelectionBinding {
++  std::string proxy_group_id;
++  std::string endpoint_id;
++  std::string lease_id;
++  std::string assignment_id;
++  uint64_t binding_revision = 0;
++
++  friend bool operator==(const AccessProxySelectionBinding&,
++                         const AccessProxySelectionBinding&) = default;
++};
++
++enum class ProxySelectionGenerationCommitStatus {
++  kCommitted,
++  kUnchanged,
++  kInvalidSelection,
++  kWrongProxyGroup,
++  kStaleBindingRevision,
++  kExhausted,
++};
++
++struct ProxySelectionGenerationCommitResult {
++  ProxySelectionGenerationCommitStatus status =
++      ProxySelectionGenerationCommitStatus::kInvalidSelection;
++  uint64_t generation = 0;
++};
++
++// Monotonic generation for one logical proxy group's committed endpoint
++// binding. Candidate probes and uncommitted switch attempts stay outside this
++// state. A binding may advance only with a strictly newer binding_revision.
++class ProxySelectionGenerationState {
++ public:
++  ProxySelectionGenerationState() = default;
++
++  ProxySelectionGenerationState(const ProxySelectionGenerationState&) = delete;
++  ProxySelectionGenerationState& operator=(
++      const ProxySelectionGenerationState&) = delete;
++
++  uint64_t generation() const { return generation_; }
++  bool exhausted() const { return exhausted_; }
++  const std::optional<AccessProxySelectionBinding>& binding() const {
++    return binding_;
++  }
++
++  ProxySelectionGenerationCommitResult Commit(
++      AccessProxySelectionBinding binding);
++
++ private:
++  friend class ProxySelectionGenerationStateTestPeer;
++
++  bool exhausted_ = false;
++  uint64_t generation_ = 0;
++  std::optional<AccessProxySelectionBinding> binding_;
++};
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_STATE_H_
+diff --git a/components/aegis_access/access_proxy_selection_generation_state.cc b/components/aegis_access/access_proxy_selection_generation_state.cc
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_proxy_selection_generation_state.cc
+@@ -0,0 +1,53 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_proxy_selection_generation_state.h"
++
++#include <limits>
++#include <utility>
++
++namespace aegis_access {
++namespace {
++
++bool IsValidSelectionBinding(const AccessProxySelectionBinding& binding) {
++  return !binding.proxy_group_id.empty() && !binding.endpoint_id.empty() &&
++         !binding.lease_id.empty() && !binding.assignment_id.empty() &&
++         binding.binding_revision != 0;
++}
++
++}  // namespace
++
++ProxySelectionGenerationCommitResult ProxySelectionGenerationState::Commit(
++    AccessProxySelectionBinding binding) {
++  if (exhausted_) {
++    return {ProxySelectionGenerationCommitStatus::kExhausted, 0};
++  }
++  if (!IsValidSelectionBinding(binding)) {
++    return {ProxySelectionGenerationCommitStatus::kInvalidSelection,
++            generation_};
++  }
++  if (binding_.has_value() && *binding_ == binding) {
++    return {ProxySelectionGenerationCommitStatus::kUnchanged, generation_};
++  }
++  if (binding_.has_value() &&
++      binding.proxy_group_id != binding_->proxy_group_id) {
++    return {ProxySelectionGenerationCommitStatus::kWrongProxyGroup,
++            generation_};
++  }
++  if (binding_.has_value() &&
++      binding.binding_revision <= binding_->binding_revision) {
++    return {ProxySelectionGenerationCommitStatus::kStaleBindingRevision,
++            generation_};
++  }
++  if (generation_ == std::numeric_limits<uint64_t>::max()) {
++    exhausted_ = true;
++    generation_ = 0;
++    binding_.reset();
++    return {ProxySelectionGenerationCommitStatus::kExhausted, 0};
++  }
++
++  ++generation_;
++  binding_ = std::move(binding);
++  return {ProxySelectionGenerationCommitStatus::kCommitted, generation_};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/access_proxy_selection_generation_state_contract_test.h b/components/aegis_access/access_proxy_selection_generation_state_contract_test.h
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_proxy_selection_generation_state_contract_test.h
+@@ -0,0 +1,221 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_STATE_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_STATE_CONTRACT_TEST_H_
++
++#include <cstdint>
++#include <limits>
++#include <string>
++
++#include "components/aegis_access/access_proxy_selection_generation_state.h"
++
++namespace aegis_access {
++
++class ProxySelectionGenerationStateTestPeer {
++ public:
++  static void SetGeneration(ProxySelectionGenerationState* state,
++                            uint64_t generation) {
++    state->generation_ = generation;
++  }
++};
++
++namespace test {
++
++class ProxySelectionGenerationStateTestObserver {
++ public:
++  virtual ~ProxySelectionGenerationStateTestObserver() = default;
++  virtual void Expect(bool condition, const std::string& label) = 0;
++};
++
++inline AccessProxySelectionBinding InitialSelection() {
++  return {"group-a", "endpoint-a", "lease-a", "assignment-a", 1};
++}
++
++inline AccessProxySelectionBinding SwitchedSelection() {
++  return {"group-a", "endpoint-b", "lease-b", "assignment-b", 2};
++}
++
++inline void ExpectSelectionStartsUnpublished(
++    ProxySelectionGenerationStateTestObserver& observer,
++    const ProxySelectionGenerationState& state) {
++  observer.Expect(state.generation() == 0,
++                  "selection generation unit starts at zero");
++  observer.Expect(!state.binding().has_value(),
++                  "selection generation unit starts without binding");
++  observer.Expect(!state.exhausted(),
++                  "selection generation unit starts available");
++}
++
++inline void ExpectInitialSelectionCommit(
++    ProxySelectionGenerationStateTestObserver& observer,
++    ProxySelectionGenerationState& state) {
++  const ProxySelectionGenerationCommitResult result =
++      state.Commit(InitialSelection());
++  observer.Expect(
++      result.status == ProxySelectionGenerationCommitStatus::kCommitted,
++      "selection generation unit initial binding commits");
++  observer.Expect(result.generation == 1,
++                  "selection generation unit first commit publishes one");
++  observer.Expect(state.binding().has_value(),
++                  "selection generation unit stores first binding");
++  observer.Expect(state.binding()->endpoint_id == "endpoint-a",
++                  "selection generation unit stores first endpoint");
++}
++
++inline void ExpectDuplicateSelectionIsIdempotent(
++    ProxySelectionGenerationStateTestObserver& observer,
++    ProxySelectionGenerationState& state) {
++  const ProxySelectionGenerationCommitResult result =
++      state.Commit(InitialSelection());
++  observer.Expect(
++      result.status == ProxySelectionGenerationCommitStatus::kUnchanged,
++      "selection generation unit duplicate binding is unchanged");
++  observer.Expect(result.generation == 1,
++                  "selection generation unit duplicate keeps generation");
++}
++
++inline void ExpectEndpointSwitchAdvances(
++    ProxySelectionGenerationStateTestObserver& observer,
++    ProxySelectionGenerationState& state) {
++  const ProxySelectionGenerationCommitResult result =
++      state.Commit(SwitchedSelection());
++  observer.Expect(
++      result.status == ProxySelectionGenerationCommitStatus::kCommitted,
++      "selection generation unit endpoint switch commits");
++  observer.Expect(result.generation == 2,
++                  "selection generation unit endpoint switch advances");
++  observer.Expect(state.binding()->endpoint_id == "endpoint-b",
++                  "selection generation unit stores switched endpoint");
++}
++
++inline void ExpectLeaseRefreshAdvances(
++    ProxySelectionGenerationStateTestObserver& observer,
++    ProxySelectionGenerationState& state) {
++  AccessProxySelectionBinding refresh = SwitchedSelection();
++  refresh.lease_id = "lease-b2";
++  refresh.assignment_id = "assignment-b2";
++  refresh.binding_revision = 3;
++  const ProxySelectionGenerationCommitResult result =
++      state.Commit(refresh);
++  observer.Expect(
++      result.status == ProxySelectionGenerationCommitStatus::kCommitted,
++      "selection generation unit lease refresh commits");
++  observer.Expect(result.generation == 3,
++                  "selection generation unit lease refresh advances");
++}
++
++inline void ExpectInvalidSelectionNeverPublishes(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ProxySelectionGenerationState state;
++  AccessProxySelectionBinding invalid = InitialSelection();
++  invalid.lease_id.clear();
++  const ProxySelectionGenerationCommitResult result = state.Commit(invalid);
++  observer.Expect(
++      result.status == ProxySelectionGenerationCommitStatus::kInvalidSelection,
++      "selection generation regression invalid binding is rejected");
++  observer.Expect(state.generation() == 0,
++                  "selection generation regression invalid binding keeps zero");
++  observer.Expect(!state.binding().has_value(),
++                  "selection generation regression invalid binding stays unpublished");
++}
++
++inline void ExpectStaleRevisionCannotOverwrite(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ProxySelectionGenerationState state;
++  state.Commit(InitialSelection());
++  state.Commit(SwitchedSelection());
++
++  AccessProxySelectionBinding stale = InitialSelection();
++  stale.endpoint_id = "endpoint-stale";
++  const ProxySelectionGenerationCommitResult result = state.Commit(stale);
++  observer.Expect(
++      result.status ==
++          ProxySelectionGenerationCommitStatus::kStaleBindingRevision,
++      "selection generation regression stale revision is rejected");
++  observer.Expect(state.generation() == 2,
++                  "selection generation regression stale revision keeps generation");
++  observer.Expect(state.binding()->endpoint_id == "endpoint-b",
++                  "selection generation regression stale revision keeps endpoint");
++}
++
++inline void ExpectProxyGroupCannotChangeOwner(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ProxySelectionGenerationState state;
++  state.Commit(InitialSelection());
++
++  AccessProxySelectionBinding other_group = SwitchedSelection();
++  other_group.proxy_group_id = "group-b";
++  other_group.binding_revision = 4;
++  const ProxySelectionGenerationCommitResult result =
++      state.Commit(other_group);
++  observer.Expect(
++      result.status == ProxySelectionGenerationCommitStatus::kWrongProxyGroup,
++      "selection generation regression group ownership is immutable");
++  observer.Expect(state.generation() == 1,
++                  "selection generation regression wrong group keeps generation");
++}
++
++inline void ExpectSelectionStatesAreIsolated(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ProxySelectionGenerationState first;
++  ProxySelectionGenerationState second;
++  first.Commit(InitialSelection());
++  observer.Expect(first.generation() == 1,
++                  "selection generation regression first owner advances");
++  observer.Expect(second.generation() == 0,
++                  "selection generation regression second owner stays zero");
++}
++
++inline void ExpectSelectionGenerationOverflowFailsClosed(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ProxySelectionGenerationState state;
++  state.Commit(InitialSelection());
++  ProxySelectionGenerationStateTestPeer::SetGeneration(
++      &state, std::numeric_limits<uint64_t>::max());
++
++  const ProxySelectionGenerationCommitResult exhausted =
++      state.Commit(SwitchedSelection());
++  observer.Expect(
++      exhausted.status == ProxySelectionGenerationCommitStatus::kExhausted,
++      "selection generation regression overflow reports exhausted");
++  observer.Expect(exhausted.generation == 0,
++                  "selection generation regression overflow returns zero");
++  observer.Expect(state.generation() == 0,
++                  "selection generation regression overflow stores zero");
++  observer.Expect(state.exhausted(),
++                  "selection generation regression overflow is permanent");
++  observer.Expect(!state.binding().has_value(),
++                  "selection generation regression overflow clears binding");
++
++  const ProxySelectionGenerationCommitResult retry =
++      state.Commit(InitialSelection());
++  observer.Expect(
++      retry.status == ProxySelectionGenerationCommitStatus::kExhausted,
++      "selection generation regression exhausted retry is rejected");
++  observer.Expect(retry.generation == 0,
++                  "selection generation regression exhausted retry stays zero");
++}
++
++inline void RunProxySelectionGenerationStateUnitTests(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ProxySelectionGenerationState state;
++  ExpectSelectionStartsUnpublished(observer, state);
++  ExpectInitialSelectionCommit(observer, state);
++  ExpectDuplicateSelectionIsIdempotent(observer, state);
++  ExpectEndpointSwitchAdvances(observer, state);
++  ExpectLeaseRefreshAdvances(observer, state);
++}
++
++inline void RunProxySelectionGenerationStateRegressionTests(
++    ProxySelectionGenerationStateTestObserver& observer) {
++  ExpectInvalidSelectionNeverPublishes(observer);
++  ExpectStaleRevisionCannotOverwrite(observer);
++  ExpectProxyGroupCannotChangeOwner(observer);
++  ExpectSelectionStatesAreIsolated(observer);
++  ExpectSelectionGenerationOverflowFailsClosed(observer);
++}
++
++}  // namespace test
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_STATE_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/access_proxy_selection_generation_state_unittest.cc b/components/aegis_access/access_proxy_selection_generation_state_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_proxy_selection_generation_state_unittest.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/access_proxy_selection_generation_state_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestProxySelectionGenerationStateObserver
++    : public ProxySelectionGenerationStateTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(ProxySelectionGenerationStateTest, SharedUnitContract) {
++  GtestProxySelectionGenerationStateObserver observer;
++  RunProxySelectionGenerationStateUnitTests(observer);
++}
++
++TEST(ProxySelectionGenerationStateRegressionTest, SharedRegressionContract) {
++  GtestProxySelectionGenerationStateObserver observer;
++  RunProxySelectionGenerationStateRegressionTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
+diff --git a/chrome/browser/aegis/access/access_proxy_selection_generation_source.h b/chrome/browser/aegis/access/access_proxy_selection_generation_source.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_proxy_selection_generation_source.h
+@@ -0,0 +1,47 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_SOURCE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_SOURCE_H_
++
++#include <cstdint>
++#include <map>
++#include <string>
++
++#include "base/supports_user_data.h"
++#include "components/aegis_access/access_proxy_selection_generation_state.h"
++
++class Profile;
++
++namespace aegis::access {
++
++// Profile-owned collection of committed proxy-group selection generations.
++// Provisioning/probing remains outside this type. Callers commit only after a
++// validated endpoint/lease/assignment binding has become authoritative.
++class AccessProxySelectionGenerationSource
++    : public base::SupportsUserData::Data {
++ public:
++  static AccessProxySelectionGenerationSource* Get(Profile* profile);
++  static AccessProxySelectionGenerationSource* GetOrCreate(Profile* profile);
++
++  AccessProxySelectionGenerationSource(
++      const AccessProxySelectionGenerationSource&) = delete;
++  AccessProxySelectionGenerationSource& operator=(
++      const AccessProxySelectionGenerationSource&) = delete;
++  ~AccessProxySelectionGenerationSource() override;
++
++  uint64_t selection_generation(const std::string& proxy_group_id) const;
++  const aegis_access::AccessProxySelectionBinding* binding_for_group(
++      const std::string& proxy_group_id) const;
++
++  aegis_access::ProxySelectionGenerationCommitResult CommitSelection(
++      aegis_access::AccessProxySelectionBinding binding);
++
++ private:
++  AccessProxySelectionGenerationSource();
++
++  std::map<std::string, aegis_access::ProxySelectionGenerationState> groups_;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXY_SELECTION_GENERATION_SOURCE_H_
+diff --git a/chrome/browser/aegis/access/access_proxy_selection_generation_source.cc b/chrome/browser/aegis/access/access_proxy_selection_generation_source.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_proxy_selection_generation_source.cc
+@@ -0,0 +1,80 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
++
++#include <memory>
++#include <utility>
++
++#include "chrome/browser/aegis/aegis_profile_support.h"
++#include "chrome/browser/profiles/profile.h"
++
++namespace aegis::access {
++namespace {
++
++const void* const kProxySelectionGenerationSourceUserDataKey =
++    &kProxySelectionGenerationSourceUserDataKey;
++
++}  // namespace
++
++// static
++AccessProxySelectionGenerationSource* AccessProxySelectionGenerationSource::Get(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  return static_cast<AccessProxySelectionGenerationSource*>(
++      profile->GetUserData(kProxySelectionGenerationSourceUserDataKey));
++}
++
++// static
++AccessProxySelectionGenerationSource*
++AccessProxySelectionGenerationSource::GetOrCreate(Profile* profile) {
++  if (!profile || !aegis::IsAegisProfileSupported(profile)) {
++    return nullptr;
++  }
++  if (auto* existing = Get(profile)) {
++    return existing;
++  }
++  auto source = std::unique_ptr<AccessProxySelectionGenerationSource>(
++      new AccessProxySelectionGenerationSource());
++  auto* result = source.get();
++  profile->SetUserData(kProxySelectionGenerationSourceUserDataKey,
++                       std::move(source));
++  return result;
++}
++
++AccessProxySelectionGenerationSource::AccessProxySelectionGenerationSource() =
++    default;
++
++AccessProxySelectionGenerationSource::~AccessProxySelectionGenerationSource() =
++    default;
++
++uint64_t AccessProxySelectionGenerationSource::selection_generation(
++    const std::string& proxy_group_id) const {
++  const auto it = groups_.find(proxy_group_id);
++  return it == groups_.end() ? 0 : it->second.generation();
++}
++
++const aegis_access::AccessProxySelectionBinding*
++AccessProxySelectionGenerationSource::binding_for_group(
++    const std::string& proxy_group_id) const {
++  const auto it = groups_.find(proxy_group_id);
++  if (it == groups_.end() || !it->second.binding().has_value()) {
++    return nullptr;
++  }
++  return &*it->second.binding();
++}
++
++aegis_access::ProxySelectionGenerationCommitResult
++AccessProxySelectionGenerationSource::CommitSelection(
++    aegis_access::AccessProxySelectionBinding binding) {
++  if (binding.proxy_group_id.empty()) {
++    return {aegis_access::ProxySelectionGenerationCommitStatus::kInvalidSelection,
++            0};
++  }
++  auto it = groups_.try_emplace(binding.proxy_group_id).first;
++  return it->second.Commit(std::move(binding));
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc b/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc
+@@ -0,0 +1,95 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
++
++#include <memory>
++
++#include "chrome/test/base/testing_profile.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++aegis_access::AccessProxySelectionBinding InitialSelection() {
++  return {"group-a", "endpoint-a", "lease-a", "assignment-a", 1};
++}
++
++aegis_access::AccessProxySelectionBinding SwitchedSelection() {
++  return {"group-a", "endpoint-b", "lease-b", "assignment-b", 2};
++}
++
++TEST(AccessProxySelectionGenerationSourceTest,
++     StartsUnpublishedUntilCommittedSelection) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* source =
++      AccessProxySelectionGenerationSource::GetOrCreate(profile.get());
++  ASSERT_TRUE(source);
++
++  EXPECT_EQ(source->selection_generation("group-a"), 0u);
++  EXPECT_EQ(source->binding_for_group("group-a"), nullptr);
++
++  const auto committed = source->CommitSelection(InitialSelection());
++  EXPECT_EQ(committed.status,
++            aegis_access::ProxySelectionGenerationCommitStatus::kCommitted);
++  EXPECT_EQ(committed.generation, 1u);
++  EXPECT_EQ(source->selection_generation("group-a"), 1u);
++}
++
++TEST(AccessProxySelectionGenerationSourceTest,
++     CommittedSelectionSwitchAdvancesGeneration) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* source =
++      AccessProxySelectionGenerationSource::GetOrCreate(profile.get());
++  ASSERT_TRUE(source);
++
++  ASSERT_EQ(source->CommitSelection(InitialSelection()).generation, 1u);
++  EXPECT_EQ(source->CommitSelection(InitialSelection()).status,
++            aegis_access::ProxySelectionGenerationCommitStatus::kUnchanged);
++  EXPECT_EQ(source->CommitSelection(SwitchedSelection()).generation, 2u);
++  ASSERT_NE(source->binding_for_group("group-a"), nullptr);
++  EXPECT_EQ(source->binding_for_group("group-a")->endpoint_id, "endpoint-b");
++}
++
++TEST(AccessProxySelectionGenerationSourceTest,
++     StaleBindingRevisionCannotOverwriteNewerSelection) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* source =
++      AccessProxySelectionGenerationSource::GetOrCreate(profile.get());
++  ASSERT_TRUE(source);
++
++  ASSERT_EQ(source->CommitSelection(InitialSelection()).generation, 1u);
++  ASSERT_EQ(source->CommitSelection(SwitchedSelection()).generation, 2u);
++
++  auto stale = InitialSelection();
++  stale.endpoint_id = "endpoint-stale";
++  EXPECT_EQ(
++      source->CommitSelection(stale).status,
++      aegis_access::ProxySelectionGenerationCommitStatus::kStaleBindingRevision);
++  EXPECT_EQ(source->selection_generation("group-a"), 2u);
++  EXPECT_EQ(source->binding_for_group("group-a")->endpoint_id, "endpoint-b");
++}
++
++TEST(AccessProxySelectionGenerationSourceTest,
++     ProxyGroupsAndProfilesAreIsolated) {
++  auto first_profile = TestingProfile::Builder().Build();
++  auto second_profile = TestingProfile::Builder().Build();
++  auto* first =
++      AccessProxySelectionGenerationSource::GetOrCreate(first_profile.get());
++  auto* second =
++      AccessProxySelectionGenerationSource::GetOrCreate(second_profile.get());
++  ASSERT_TRUE(first);
++  ASSERT_TRUE(second);
++
++  ASSERT_EQ(first->CommitSelection(InitialSelection()).generation, 1u);
++  auto group_b = InitialSelection();
++  group_b.proxy_group_id = "group-b";
++  ASSERT_EQ(first->CommitSelection(group_b).generation, 1u);
++
++  EXPECT_EQ(first->selection_generation("group-a"), 1u);
++  EXPECT_EQ(first->selection_generation("group-b"), 1u);
++  EXPECT_EQ(second->selection_generation("group-a"), 0u);
++  EXPECT_EQ(second->selection_generation("group-b"), 0u);
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -34,6 +34,13 @@ source_set("access_identity_generation_state") {
+   ]
+ }
+ 
++source_set("access_proxy_selection_generation_state") {
++  sources = [
++    "access_proxy_selection_generation_state.cc",
++    "access_proxy_selection_generation_state.h",
++  ]
++}
++
+ source_set("browser_request_metadata_seed") {
+   sources = [
+     "browser_request_metadata_seed.cc",
+@@ -101,6 +108,18 @@ test("access_identity_generation_state_unittests") {
+   ]
+ }
+ 
++test("access_proxy_selection_generation_state_unittests") {
++  sources = [
++    "access_proxy_selection_generation_state_contract_test.h",
++    "access_proxy_selection_generation_state_unittest.cc",
++  ]
++  deps = [
++    ":access_proxy_selection_generation_state",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("browser_request_metadata_seed_unittests") {
+   sources = [
+     "browser_request_metadata_seed_contract_test.h",
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -37,6 +37,19 @@ source_set("access_identity_generation_source") {
+   ]
+ }
+ 
++source_set("access_proxy_selection_generation_source") {
++  sources = [
++    "access_proxy_selection_generation_source.cc",
++    "access_proxy_selection_generation_source.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/aegis:profile_support",
++    "//chrome/browser/profiles:profile",
++    "//components/aegis_access:access_proxy_selection_generation_state",
++  ]
++}
++
+ source_set("access_network_context_transport") {
+   sources = [
+     "access_network_context_transport.cc",
+@@ -79,6 +92,17 @@ test("access_identity_generation_source_unittests") {
+   ]
+ }
+ 
++test("access_proxy_selection_generation_source_unittests") {
++  sources = [ "access_proxy_selection_generation_source_unittest.cc" ]
++  deps = [
++    ":access_proxy_selection_generation_source",
++    "//base/test:run_all_unittests",
++    "//chrome/browser/profiles:test_support",
++    "//components/aegis_access:access_proxy_selection_generation_state",
++    "//testing/gtest",
++  ]
++}
++
+ test("access_network_context_transport_unittests") {
+   sources = [ "access_network_context_transport_unittest.cc" ]
+   deps = [
+-- 
+2.39.0

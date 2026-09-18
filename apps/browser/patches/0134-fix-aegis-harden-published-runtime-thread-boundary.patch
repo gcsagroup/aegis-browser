@@ -1,0 +1,509 @@
+From 0134000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 18:30:00 +0800
+Subject: [PATCH] fix(aegis): harden published runtime thread boundary
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -94,6 +94,7 @@ source_set("access_published_request_runtime") {
+     "//chrome/browser/aegis:profile_support",
+     "//chrome/browser/net:impl",
+     "//chrome/browser/profiles:profile",
++    "//content/public/browser",
+   ]
+   public_deps = [
+     ":access_rule_store",
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -22,19 +22,6 @@ const void* const kTransportUserDataKey = &kTransportUserDataKey;
+ constexpr size_t kMaxExactHosts = 256;
+ constexpr size_t kMaxPartitionKeyBytes = 1024;
+ 
+-bool IsKnownChannel(aegis_access::ChannelNamespace channel) {
+-  switch (channel) {
+-    case aegis_access::ChannelNamespace::kDev:
+-    case aegis_access::ChannelNamespace::kAlpha:
+-    case aegis_access::ChannelNamespace::kBeta:
+-    case aegis_access::ChannelNamespace::kRelease:
+-      return true;
+-    case aegis_access::ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+ bool IsCanonicalExactHost(const std::string& host) {
+   if (host.empty()) {
+     return false;
+@@ -154,7 +141,7 @@ std::optional<aegis_access::OwnershipKey>
+ AccessNetworkContextTransport::OwnerForPartition(
+     aegis_access::ChannelNamespace channel,
+     const base::FilePath& relative_partition_path) const {
+-  if (!IsKnownChannel(channel)) {
++  if (!aegis_access::IsKnownChannel(channel)) {
+     return std::nullopt;
+   }
+   const std::optional<std::string> partition_token =
+@@ -168,7 +155,7 @@ AccessNetworkContextTransport::OwnerForPartition(
+ 
+ bool AccessNetworkContextTransport::OwnsConfiguredPartition(
+     const aegis_access::OwnershipKey& owner) const {
+-  return IsKnownChannel(owner.channel) &&
++  return aegis_access::IsCompleteOwner(owner) &&
+          owner.profile_token == runtime_profile_token_ &&
+          partitions_.contains(owner.storage_partition_token);
+ }
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime.cc b/chrome/browser/aegis/access/access_published_request_runtime.cc
+--- a/chrome/browser/aegis/access/access_published_request_runtime.cc
++++ b/chrome/browser/aegis/access/access_published_request_runtime.cc
+@@ -12,6 +12,7 @@
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/browser_thread.h"
+ 
+ namespace aegis::access {
+ namespace {
+@@ -30,6 +31,7 @@ AccessPolicyPublicationResult PublicationResult(
+ // static
+ AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::Get(
+     Profile* profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   if (!profile) {
+     return nullptr;
+   }
+@@ -40,6 +42,7 @@ AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::Get(
+ // static
+ AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::GetOrCreate(
+     Profile* profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   if (!profile || !aegis::IsAegisProfileSupported(profile)) {
+     return nullptr;
+   }
+@@ -54,13 +57,18 @@ AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::GetOrCreate(
+ }
+ 
+ AccessPublishedRequestRuntime::AccessPublishedRequestRuntime(Profile* profile)
+-    : profile_(profile) {}
++    : profile_(profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++}
+ 
+-AccessPublishedRequestRuntime::~AccessPublishedRequestRuntime() = default;
++AccessPublishedRequestRuntime::~AccessPublishedRequestRuntime() {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++}
+ 
+ AccessPolicyPublicationResult
+ AccessPublishedRequestRuntime::PublishCommittedPolicySnapshot(
+     const StoredPolicySnapshot& stored) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   StoreResult<MatcherRuleSetCandidate> candidate =
+       AccessRuleStore::AdaptMatcherSnapshot(stored);
+   if (candidate.status != StoreStatus::kValid || !candidate.value.has_value()) {
+@@ -116,6 +124,7 @@ AccessPublishedRequestRuntime::PublishCommittedPolicySnapshot(
+ const aegis_access::PublishedAccessPolicySnapshot*
+ AccessPublishedRequestRuntime::GetPublishedPolicySnapshot(
+     const aegis_access::OwnershipKey& owner) const {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   const auto it = policy_snapshots_.find(owner.storage_partition_token);
+   if (it == policy_snapshots_.end() || it->second.owner != owner) {
+     return nullptr;
+@@ -125,6 +134,7 @@ AccessPublishedRequestRuntime::GetPublishedPolicySnapshot(
+ 
+ bool AccessPublishedRequestRuntime::InvalidatePublishedPolicySnapshot(
+     const aegis_access::OwnershipKey& owner) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   const auto it = policy_snapshots_.find(owner.storage_partition_token);
+   if (it == policy_snapshots_.end() || it->second.owner != owner) {
+     return false;
+@@ -134,15 +144,15 @@ bool AccessPublishedRequestRuntime::InvalidatePublishedPolicySnapshot(
+ }
+ 
+ aegis_access::RequestGenerationTupleBuildResult
+-AccessPublishedRequestRuntime::BuildProxyGenerationTuple(
++AccessPublishedRequestRuntime::CaptureProxyGenerationTupleOnUiThread(
+     const aegis_access::OwnershipKey& owner,
+     const std::string& proxy_group_id) const {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   aegis_access::RequestGenerationTupleInput input;
+   input.request_owner = owner;
+   input.snapshot_owner = owner;
+ 
+   if (const auto* snapshot = GetPublishedPolicySnapshot(owner)) {
+-    input.snapshot_owner = snapshot->owner;
+     input.policy_generation = snapshot->policy_generation;
+   }
+ 
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime.h b/chrome/browser/aegis/access/access_published_request_runtime.h
+--- a/chrome/browser/aegis/access/access_published_request_runtime.h
++++ b/chrome/browser/aegis/access/access_published_request_runtime.h
+@@ -32,9 +32,16 @@ struct AccessPolicyPublicationResult {
+   uint64_t policy_generation = 0;
+ };
+ 
+-// Profile-owned publication boundary between durable AccessRuleStore state and
+-// request-time routing. Database reads are promoted here into immutable
+-// in-memory policy snapshots; request dispatch never reads SQLite.
++// Profile-owned UI-thread publication boundary between durable
++// AccessRuleStore state and request-time routing. Database reads are promoted
++// here into immutable in-memory policy snapshots; request dispatch never reads
++// SQLite.
++//
++// All methods on this class are UI-thread only because the generation owners
++// are Profile-bound. Request/network code must capture the returned values on
++// the UI thread and pass only those by-value snapshots across the dispatch
++// boundary; it must never dereference Profile or this runtime on IO/Network
++// threads.
+ //
+ // Generation tuples are assembled only for a concrete committed PROXY group.
+ // DIRECT/absent policy paths must preserve Chromium's native routing and do not
+@@ -58,7 +65,10 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
+   bool InvalidatePublishedPolicySnapshot(
+       const aegis_access::OwnershipKey& owner);
+ 
+-  aegis_access::RequestGenerationTupleBuildResult BuildProxyGenerationTuple(
++  // Captures a by-value generation tuple while still on the UI thread.
++  // Callers may move/copy the returned value to request/network sequences.
++  aegis_access::RequestGenerationTupleBuildResult
++  CaptureProxyGenerationTupleOnUiThread(
+       const aegis_access::OwnershipKey& owner,
+       const std::string& proxy_group_id) const;
+ 
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc b/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
+--- a/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
++++ b/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
+@@ -96,7 +96,7 @@ TEST_F(AccessPublishedRequestRuntimeTest,
+   ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(1)).status,
+             AccessPolicyPublicationStatus::kPublished);
+   const auto result =
+-      runtime_->BuildProxyGenerationTuple(*owner_, "proxy-group-a");
++      runtime_->CaptureProxyGenerationTupleOnUiThread(*owner_, "proxy-group-a");
+   EXPECT_EQ(result.status,
+             aegis_access::RequestGenerationTupleBuildStatus::
+                 kMissingIdentityGeneration);
+diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
+--- a/components/aegis_access/access_policy_evaluator.cc
++++ b/components/aegis_access/access_policy_evaluator.cc
+@@ -17,24 +17,6 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsComplete(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ bool IsKnownScheme(RequestScheme scheme) {
+   switch (scheme) {
+     case RequestScheme::kHttp:
+@@ -116,7 +98,7 @@ bool IsStrictlySorted(const std::vector<uint16_t>& ports) {
+ 
+ bool IsValidRule(const AccessPolicyRule& rule,
+                  const OwnershipKey& snapshot_owner) {
+-  if (rule.rule_id.empty() || !IsComplete(rule.owner) ||
++  if (rule.rule_id.empty() || !IsCompleteOwner(rule.owner) ||
+       rule.owner != snapshot_owner || rule.row_revision == 0 ||
+       rule.last_operation_sequence == 0 ||
+       !IsCanonicalHost(rule.destination_host, rule.include_subdomains) ||
+@@ -350,7 +332,7 @@ PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
+ PolicyMatchResult EvaluateAccessPolicy(
+     const RequestPolicyContext& request,
+     const PublishedAccessPolicySnapshot& snapshot) {
+-  if (!IsComplete(snapshot.owner) || snapshot.policy_generation == 0) {
++  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
+     return Error(PolicyState::kInvalid,
+                  PolicyMatchReason::kInvalidSnapshot,
+                  snapshot.policy_generation);
+diff --git a/components/aegis_access/access_route_planner.cc b/components/aegis_access/access_route_planner.cc
+--- a/components/aegis_access/access_route_planner.cc
++++ b/components/aegis_access/access_route_planner.cc
+@@ -5,24 +5,6 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsComplete(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ bool IsComplete(const GenerationTuple& generations) {
+   return generations.policy_generation != 0 &&
+          generations.identity_generation != 0 &&
+@@ -131,7 +113,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
+       !IsComplete(input.request_generations)) {
+     return MakePlan(input, RouteAction::kFail, RouteReason::kInvalidPolicy);
+   }
+-  if (!IsComplete(input.request_owner)) {
++  if (!IsCompleteOwner(input.request_owner)) {
+     return MakePlan(input, RouteAction::kFail,
+                     RouteReason::kOwnershipMismatch);
+   }
+@@ -161,7 +143,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
+   } else if (input.snapshot_state == SnapshotState::kCorrupt) {
+     return MakePlan(input, RouteAction::kFail, RouteReason::kInvalidPolicy);
+   } else {
+-    if (!IsComplete(input.snapshot_owner) ||
++    if (!IsCompleteOwner(input.snapshot_owner) ||
+         input.request_owner != input.snapshot_owner) {
+       return MakePlan(input, RouteAction::kFail,
+                       RouteReason::kOwnershipMismatch);
+@@ -220,7 +202,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
+     return MakePlan(input, RouteAction::kFail,
+                     RouteReason::kProxyUnavailable);
+   }
+-  if (!IsComplete(input.registered_proxy_entry->owner) ||
++  if (!IsCompleteOwner(input.registered_proxy_entry->owner) ||
+       input.registered_proxy_entry->owner != input.request_owner) {
+     return MakePlan(input, RouteAction::kFail,
+                     RouteReason::kOwnershipMismatch);
+diff --git a/components/aegis_access/access_route_types.h b/components/aegis_access/access_route_types.h
+--- a/components/aegis_access/access_route_types.h
++++ b/components/aegis_access/access_route_types.h
+@@ -25,6 +25,25 @@ struct OwnershipKey {
+   friend bool operator==(const OwnershipKey&, const OwnershipKey&) = default;
+ };
+ 
++
++inline bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++inline bool IsCompleteOwner(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
++         !owner.storage_partition_token.empty();
++}
++
+ struct GenerationTuple {
+   // Zero is reserved for "not published / not initialized". Browser-owned
+   // generation sources publish live counters starting at 1 and increment from
+diff --git a/components/aegis_access/browser_request_metadata_seed.cc b/components/aegis_access/browser_request_metadata_seed.cc
+--- a/components/aegis_access/browser_request_metadata_seed.cc
++++ b/components/aegis_access/browser_request_metadata_seed.cc
+@@ -7,24 +7,6 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsCompleteOwner(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ BrowserRequestMetadataSeedResult Error(BrowserRequestMetadataSeedError error) {
+   return {error, std::nullopt};
+ }
+diff --git a/components/aegis_access/request_generation_tuple_builder.cc b/components/aegis_access/request_generation_tuple_builder.cc
+--- a/components/aegis_access/request_generation_tuple_builder.cc
++++ b/components/aegis_access/request_generation_tuple_builder.cc
+@@ -5,24 +5,6 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsCompleteOwner(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ RequestGenerationTupleBuildResult Missing(
+     RequestGenerationTupleBuildStatus status) {
+   return {status, std::nullopt};
+diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+--- a/components/aegis_access/request_ownership_registry.cc
++++ b/components/aegis_access/request_ownership_registry.cc
+@@ -7,24 +7,6 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsComplete(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ bool IsComplete(const GenerationTuple& generations) {
+   return generations.policy_generation != 0 &&
+          generations.identity_generation != 0 &&
+@@ -57,7 +39,7 @@ bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector)
+ }
+ 
+ bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
+-  return !record.request_id.empty() && IsComplete(record.owner) &&
++  return !record.request_id.empty() && IsCompleteOwner(record.owner) &&
+          IsComplete(record.generations) && !record.exact_host.empty() &&
+          IsKnown(record.scheme) && record.port != 0;
+ }
+@@ -76,7 +58,7 @@ bool IsValidRecord(const RequestOwnershipRecord& record) {
+ }
+ 
+ bool IsValidSelector(const RequestCancellationSelector& selector) {
+-  return IsComplete(selector.owner) &&
++  return IsCompleteOwner(selector.owner) &&
+          HasExactlyOneAttributionToken(selector) &&
+          !selector.top_level_site.empty() && !selector.exact_host.empty() &&
+          IsKnown(selector.scheme) && selector.port != 0;
+diff --git a/components/aegis_access/request_policy_context.cc b/components/aegis_access/request_policy_context.cc
+--- a/components/aegis_access/request_policy_context.cc
++++ b/components/aegis_access/request_policy_context.cc
+@@ -10,24 +10,6 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsComplete(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ std::optional<RequestScheme> SchemeForUrl(const GURL& url) {
+   if (url.SchemeIs(url::kHttpScheme)) {
+     return RequestScheme::kHttp;
+@@ -107,7 +89,7 @@ RequestOwnershipRecord RequestPolicyContext::ToOwnershipRecord(
+ RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
+     const BrowserOwnedRequestMetadata& metadata,
+     const GURL& request_url) {
+-  if (!IsComplete(metadata.owner)) {
++  if (!IsCompleteOwner(metadata.owner)) {
+     return Error(RequestContextError::kInvalidOwner);
+   }
+   if (metadata.request_id.empty()) {
+diff --git a/components/aegis_access/site_proxy_rule_group.cc b/components/aegis_access/site_proxy_rule_group.cc
+--- a/components/aegis_access/site_proxy_rule_group.cc
++++ b/components/aegis_access/site_proxy_rule_group.cc
+@@ -12,24 +12,6 @@ GroupValidation Unknown(GroupValidationError error) {
+                          error};
+ }
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
+-  switch (channel) {
+-    case ChannelNamespace::kDev:
+-    case ChannelNamespace::kAlpha:
+-    case ChannelNamespace::kBeta:
+-    case ChannelNamespace::kRelease:
+-      return true;
+-    case ChannelNamespace::kInvalid:
+-      return false;
+-  }
+-  return false;
+-}
+-
+-bool IsComplete(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+-         !owner.storage_partition_token.empty();
+-}
+-
+ bool HasCompleteSchemeSet(const std::vector<RequestScheme>& schemes) {
+   if (schemes.size() != 4) {
+     return false;
+@@ -52,13 +34,13 @@ GroupValidation ValidateSiteProxyRuleGroup(
+                            GroupValidationError::kMissingGroup};
+   }
+   if (group->site_toggle_id.empty() || group->canonical_host.empty() ||
+-      !IsComplete(group->owner) || group->http_top_level_site.empty() ||
++      !IsCompleteOwner(group->owner) || group->http_top_level_site.empty() ||
+       group->https_top_level_site.empty() ||
+       group->http_top_level_site == group->https_top_level_site ||
+       group->revision == 0 || group->last_operation_sequence == 0) {
+     return Unknown(GroupValidationError::kInvalidGroup);
+   }
+-  if (!IsComplete(expected_owner) || group->owner != expected_owner) {
++  if (!IsCompleteOwner(expected_owner) || group->owner != expected_owner) {
+     return Unknown(GroupValidationError::kOwnershipMismatch);
+   }
+   if (members.size() != 2) {
+@@ -84,7 +66,7 @@ GroupValidation ValidateSiteProxyRuleGroup(
+   }
+ 
+   for (const SiteProxyRuleMember& member : members) {
+-    if (!IsComplete(member.owner) || member.owner != group->owner ||
++    if (!IsCompleteOwner(member.owner) || member.owner != group->owner ||
+         member.site_toggle_id != group->site_toggle_id) {
+       return Unknown(GroupValidationError::kOwnershipMismatch);
+     }

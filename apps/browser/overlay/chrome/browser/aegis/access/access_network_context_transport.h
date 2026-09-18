@@ -61,6 +61,11 @@ class AccessNetworkContextTransport
   // advances only from actual NetworkChangeNotifier callbacks.
   uint64_t network_epoch() const { return network_epoch_; }
 
+  // True only when |owner| identifies a StoragePartition already configured
+  // by this exact Profile-owned transport.
+  bool OwnsConfiguredPartition(
+      const aegis_access::OwnershipKey& owner) const;
+
   // Publishes one already-registered localhost HTTP entry for a set of exact
   // canonical hosts. Endpoint ownership must match OwnerForPartition().
   // Non-selected hosts keep Chromium's native proxy result.
