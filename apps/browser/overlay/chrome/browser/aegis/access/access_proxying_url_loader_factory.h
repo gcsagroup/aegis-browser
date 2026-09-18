@@ -29,11 +29,12 @@ namespace aegis::access {
 class AccessProxyingURLTrackedRequest;
 
 // UI-thread browser-process URLLoaderFactory wrapper for real Access request
-// dispatch. It covers primary-page document subresources plus main navigation
-// factories. Worker, ServiceWorker, prefetch, WebSocket, nested-page, and
-// redirect re-evaluation remain later slices. Each request is re-evaluated from
-// browser-owned frame/navigation state and the latest published Access state
-// before it may reach the target Network Service factory.
+// dispatch. It covers primary-page document subresources plus primary-page
+// main-frame and subframe navigation factories. Worker, ServiceWorker,
+// prefetch, WebSocket, BFCache/prerender, and redirect re-evaluation remain
+// later slices. Each request is re-evaluated from browser-owned
+// frame/navigation state and the latest published Access state before it may
+// reach the target Network Service factory.
 //
 // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
 // only after exact-host endpoint validation and the synchronous dispatch gate.
