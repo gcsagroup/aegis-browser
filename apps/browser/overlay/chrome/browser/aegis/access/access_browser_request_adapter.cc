@@ -16,8 +16,10 @@
 #include "chrome/common/channel_info.h"
 #include "components/aegis_access/browser_request_metadata_seed.h"
 #include "components/version_info/channel.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/schemeful_site.h"
@@ -144,12 +146,12 @@ AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
   return AccessBrowserRequestMetadataStatus::kOk;
 }
 
-AccessBrowserRequestMetadataStatus ResolveOwner(
+AccessBrowserRequestMetadataStatus ResolveOwnerForPartition(
     Profile* profile,
-    content::RenderFrameHost* request_frame,
+    content::StoragePartition* partition,
     AccessNetworkContextTransport* transport,
+    bool require_configured_partition,
     aegis_access::OwnershipKey* owner) {
-  content::StoragePartition* partition = request_frame->GetStoragePartition();
   if (!partition) {
     return AccessBrowserRequestMetadataStatus::kMissingStoragePartition;
   }
@@ -165,8 +167,22 @@ AccessBrowserRequestMetadataStatus ResolveOwner(
   if (!resolved_owner) {
     return AccessBrowserRequestMetadataStatus::kInvalidOwner;
   }
+  if (require_configured_partition &&
+      !transport->OwnsConfiguredPartition(*resolved_owner)) {
+    return AccessBrowserRequestMetadataStatus::kUnconfiguredPartition;
+  }
   *owner = *resolved_owner;
   return AccessBrowserRequestMetadataStatus::kOk;
+}
+
+AccessBrowserRequestMetadataStatus ResolveOwner(
+    Profile* profile,
+    content::RenderFrameHost* request_frame,
+    AccessNetworkContextTransport* transport,
+    aegis_access::OwnershipKey* owner) {
+  return ResolveOwnerForPartition(
+      profile, request_frame ? request_frame->GetStoragePartition() : nullptr,
+      transport, /*require_configured_partition=*/false, owner);
 }
 
 AccessBrowserRequestMetadataStatus ResolvePrimaryTopFrameSite(
@@ -322,6 +338,54 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
   return status == AccessBrowserRequestMetadataStatus::kOk
              ? BuildMetadataFromSeed(std::move(seed_input))
              : Error(status);
+}
+
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileRequestMetadata(
+    Profile* profile,
+    content::StoragePartition* partition) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile)) {
+    return Error(AccessBrowserRequestMetadataStatus::kUnsupportedProfile);
+  }
+
+  AccessNetworkContextTransport* transport =
+      AccessNetworkContextTransport::Get(profile);
+  if (!transport) {
+    return Error(AccessBrowserRequestMetadataStatus::kMissingTransport);
+  }
+
+  aegis_access::OwnershipKey owner;
+  const AccessBrowserRequestMetadataStatus status = ResolveOwnerForPartition(
+      profile, partition, transport, /*require_configured_partition=*/true,
+      &owner);
+  if (status != AccessBrowserRequestMetadataStatus::kOk) {
+    return Error(status);
+  }
+
+  aegis_access::BrowserRequestMetadataSeedInput seed_input;
+  seed_input.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  seed_input.owner = std::move(owner);
+  return BuildMetadataFromSeed(std::move(seed_input));
+}
+
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
+    Profile* profile,
+    int render_process_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile)) {
+    return Error(AccessBrowserRequestMetadataStatus::kUnsupportedProfile);
+  }
+  content::RenderProcessHost* process =
+      content::RenderProcessHost::FromID(render_process_id);
+  if (!process) {
+    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
+  }
+  if (process->GetBrowserContext() != profile) {
+    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
+  }
+
+  return BuildBrowserOwnedProfileRequestMetadata(profile,
+                                                 process->GetStoragePartition());
 }
 
 }  // namespace aegis::access
