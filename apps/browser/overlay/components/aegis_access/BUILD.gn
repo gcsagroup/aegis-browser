@@ -41,6 +41,13 @@ source_set("access_proxy_selection_generation_state") {
   ]
 }
 
+source_set("access_base_proxy_config_generation_state") {
+  sources = [
+    "access_base_proxy_config_generation_state.cc",
+    "access_base_proxy_config_generation_state.h",
+  ]
+}
+
 source_set("browser_request_metadata_seed") {
   sources = [
     "browser_request_metadata_seed.cc",
@@ -115,6 +122,18 @@ test("access_proxy_selection_generation_state_unittests") {
   ]
   deps = [
     ":access_proxy_selection_generation_state",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("access_base_proxy_config_generation_state_unittests") {
+  sources = [
+    "access_base_proxy_config_generation_state_contract_test.h",
+    "access_base_proxy_config_generation_state_unittest.cc",
+  ]
+  deps = [
+    ":access_base_proxy_config_generation_state",
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]
