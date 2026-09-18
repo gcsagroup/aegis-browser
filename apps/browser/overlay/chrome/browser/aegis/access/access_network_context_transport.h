@@ -78,6 +78,16 @@ class AccessNetworkContextTransport
   // New requests then use Chromium's native proxy result again.
   bool ClearProxySelection(const base::FilePath& relative_partition_path);
 
+  // Captures the exact registered endpoint that Network Service will use for
+  // |exact_host|. The returned endpoint is browser-owned by-value state and is
+  // available only when owner, proxy group, host selection, and network epoch
+  // still match the currently published CustomProxyConfig.
+  std::optional<aegis_access::RegisteredProxyEndpoint>
+  CaptureSelectedProxyEndpoint(
+      const aegis_access::OwnershipKey& owner,
+      const std::string& proxy_group_id,
+      const std::string& exact_host) const;
+
   network::mojom::CustomProxyConfigPtr BuildConfigForTesting(
       const base::FilePath& relative_partition_path) const;
   void FlushClientsForTesting(const base::FilePath& relative_partition_path);
