@@ -367,6 +367,14 @@ void AccessProxyingURLLoaderFactory::MaybeProxyServiceWorkerSubResource(
 }
 
 // static
+void AccessProxyingURLLoaderFactory::MaybeProxyServiceWorkerScript(
+    Profile* profile,
+    int render_process_id,
+    network::URLLoaderFactoryBuilder& factory_builder) {
+  MaybeProxyProfileOnlyFactory(profile, render_process_id, factory_builder);
+}
+
+// static
 void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
     Profile* profile,
     content::RenderFrameHost* frame,

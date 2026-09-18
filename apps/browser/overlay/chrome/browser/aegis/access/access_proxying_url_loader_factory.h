@@ -35,12 +35,13 @@ class AccessProxyingURLTrackedRequest;
 // dispatch. It covers primary-page document subresources, primary-page
 // main-frame/subframe navigation, Worker main-script factories, frame-owned
 // Worker subresource factories, frame-less Worker subresource factories, and
-// process-backed ServiceWorker subresource factories with browser-owned
-// Profile-only process/partition attribution, including redirect follow
-// re-evaluation under one stable logical request identity. ServiceWorker
-// script/update, prefetch/preconnect, WebSocket, BFCache, and prerender remain
-// later slices. Each request is re-evaluated from its browser-owned attribution
-// source and the latest published Access state
+// process-backed ServiceWorker subresource plus main/imported-script factories
+// with browser-owned Profile-only process/partition attribution, including
+// redirect follow re-evaluation under one stable logical request identity.
+// Explicit ServiceWorker update-check lifecycle validation, prefetch/preconnect,
+// WebSocket, BFCache, and prerender remain later slices.
+// Each request is re-evaluated from its browser-owned attribution source and the
+// latest published Access state
 // before it may reach the target Network Service factory.
 //
 // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
@@ -81,6 +82,10 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       int render_process_id,
       network::URLLoaderFactoryBuilder& factory_builder);
   static void MaybeProxyServiceWorkerSubResource(
+      Profile* profile,
+      int render_process_id,
+      network::URLLoaderFactoryBuilder& factory_builder);
+  static void MaybeProxyServiceWorkerScript(
       Profile* profile,
       int render_process_id,
       network::URLLoaderFactoryBuilder& factory_builder);
