@@ -183,8 +183,9 @@ struct PendingMutationRecord {
   uint64_t expected_revision = 0;
   uint64_t target_revision = 0;
   uint64_t operation_sequence = 0;
-  // Zero while PREPARED. A future publisher supplies the committed generation
-  // only at CommitPreparedMutation after its own publication protocol.
+  // Prepare reserves candidate.policy_generation from the durable operation
+  // sequence. committed_policy_generation stays zero until that exact reserved
+  // value is durably committed after publication/ACK.
   uint64_t committed_policy_generation = 0;
   int64_t created_at_micros = 0;
   int64_t completed_at_micros = 0;
@@ -235,8 +236,7 @@ class AccessRuleStore {
   StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
       const SiteGroupMutationRequest& request);
   StoreResult<PendingMutationRecord> CommitPreparedMutation(
-      const PendingMutationRecord& expected,
-      uint64_t committed_policy_generation);
+      const PendingMutationRecord& expected);
   StoreStatus SupersedePreparedMutation(const std::string& operation_id,
                                         const std::string& fingerprint);
   StoreResult<RecoveryState> LoadRecoveryState();
