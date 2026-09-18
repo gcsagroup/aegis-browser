@@ -4,8 +4,12 @@
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_REQUEST_DISPATCH_STATE_H_
 
 #include <cstddef>
+#include <string>
 
+#include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
+#include "chrome/browser/aegis/access/access_network_context_transport.h"
+#include "components/aegis_access/policy_publication_ack_tracker.h"
 #include "components/aegis_access/request_ownership_registry.h"
 
 class Profile;
@@ -19,6 +23,14 @@ struct AccessBlockAndCancelResult {
       aegis_access::RequestOwnershipStatus::kInvalidCancellationSelector;
   size_t matched_requests = 0;
   size_t terminated_requests = 0;
+};
+
+struct AccessPolicyBarrierReleaseResult {
+  aegis_access::PolicyPublicationAckStatus publication_status =
+      aegis_access::PolicyPublicationAckStatus::kNotFound;
+  aegis_access::RequestDispatchBarrierStatus barrier_status =
+      aegis_access::RequestDispatchBarrierStatus::kNotFound;
+  bool released = false;
 };
 
 // UI-thread Profile-owned request dispatch state shared by all Aegis
@@ -48,11 +60,34 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
   AccessBlockAndCancelResult InstallBlockBarrierAndCancelMatching(
       aegis_access::RequestDispatchBarrier barrier);
 
- private:
-  AccessRequestDispatchState();
+  aegis_access::PolicyPublicationAckResult BeginPolicyPublication(
+      aegis_access::PolicyPublicationAckRequirements requirements);
+  aegis_access::PolicyPublicationAckResult AcknowledgePolicyPublication(
+      const aegis_access::PolicyPublicationIdentity& identity,
+      const std::string& ack_token);
+  aegis_access::PolicyPublicationAckResult
+  MarkPolicyPublicationTerminationsComplete(
+      const aegis_access::PolicyPublicationIdentity& identity);
+  aegis_access::PolicyPublicationAckResult MarkPolicyPublicationDurablyCommitted(
+      const aegis_access::PolicyPublicationIdentity& identity);
+  AccessPolicyBarrierReleaseResult ReleaseBlockBarrierForReadyPublication(
+      const aegis_access::PolicyPublicationIdentity& identity);
 
+  AccessNetworkConfigAckResult RequestNetworkContextPublicationAck(
+      const aegis_access::PolicyPublicationIdentity& identity,
+      const aegis_access::OwnershipKey& owner);
+
+ private:
+  explicit AccessRequestDispatchState(Profile* profile);
+  void OnNetworkContextPublicationAck(
+      aegis_access::PolicyPublicationIdentity identity,
+      bool acknowledged);
+
+  Profile* const profile_;
   aegis_access::RequestDispatchBarrierRegistry barriers_;
   aegis_access::RequestOwnershipRegistry ownership_;
+  aegis_access::PolicyPublicationAckTracker publication_acks_;
+  base::WeakPtrFactory<AccessRequestDispatchState> weak_factory_{this};
 };
 
 }  // namespace aegis::access
