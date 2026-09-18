@@ -179,10 +179,9 @@ PendingMutationRecord Prepare(AccessRuleStore* store,
 }
 
 PendingMutationRecord Commit(AccessRuleStore* store,
-                             const PendingMutationRecord& pending,
-                             uint64_t generation) {
+                             const PendingMutationRecord& pending) {
   StoreResult<PendingMutationRecord> result =
-      store->CommitPreparedMutation(pending, generation);
+      store->CommitPreparedMutation(pending);
   EXPECT_EQ(result.status, StoreStatus::kValid) << result.detail;
   EXPECT_TRUE(result.value.has_value());
   return result.value.value_or(PendingMutationRecord{});
@@ -338,8 +337,7 @@ TEST(AccessRuleStoreTest, ReopenRebindsStoredRowsToCurrentRuntimeOwner) {
     Commit(&store,
            Prepare(&store,
                    Mutation("old-runtime", AccessMode::kProxy, 0,
-                            Owner(ChannelNamespace::kBeta, "runtime-old"))),
-           1);
+                            Owner(ChannelNamespace::kBeta, "runtime-old"))));
   }
 
   const AccessStoreBinding new_binding = AccessRuleStoreTestPeer::Persistent(
@@ -403,7 +401,7 @@ TEST(AccessRuleStoreTest, EphemeralProfileNeverCreatesAccessDb) {
   PendingMutationRecord pending =
       Prepare(&store, Mutation("ephemeral-enable", AccessMode::kProxy, 0,
                                Owner(ChannelNamespace::kBeta, "ephemeral-A")));
-  Commit(&store, pending, 1);
+  Commit(&store, pending);
   EXPECT_TRUE(store.binding().database_path().empty());
   EXPECT_TRUE(store.binding().profile_path().empty());
 }
@@ -420,7 +418,7 @@ TEST(AccessRuleStoreTest, PrepareIsDurableButDoesNotReplaceCommittedRows) {
     pending = Prepare(&store, Mutation("enable", AccessMode::kProxy));
     EXPECT_EQ(pending.operation_sequence, 1u);
     EXPECT_EQ(pending.committed_policy_generation, 0u);
-    EXPECT_EQ(pending.candidate.policy_generation, 0u);
+    EXPECT_EQ(pending.candidate.policy_generation, pending.operation_sequence);
     EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
               StoreStatus::kRecoveryRequired);
   }
@@ -438,6 +436,41 @@ TEST(AccessRuleStoreTest, PrepareIsDurableButDoesNotReplaceCommittedRows) {
             StoreStatus::kMissing);
 }
 
+TEST(AccessRuleStoreTest, ReservedPolicyGenerationIsRecoveredAndNeverReused) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  const AccessStoreBinding binding =
+      AccessRuleStoreTestPeer::Persistent(temp.GetPath());
+  PendingMutationRecord first;
+  {
+    AccessRuleStore store(binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    first = Prepare(&store, Mutation("reserve-first", AccessMode::kProxy));
+    EXPECT_EQ(first.candidate.policy_generation, first.operation_sequence);
+  }
+
+  AccessRuleStore reopened(binding);
+  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+  StoreResult<RecoveryState> recovery = reopened.LoadRecoveryState();
+  ASSERT_EQ(recovery.status, StoreStatus::kRecoveryRequired);
+  ASSERT_TRUE(recovery.value);
+  ASSERT_EQ(recovery.value->pending.size(), 1u);
+  EXPECT_EQ(recovery.value->pending[0].candidate.policy_generation,
+            first.candidate.policy_generation);
+  ASSERT_EQ(reopened.SupersedePreparedMutation(
+                first.operation_id, first.request_fingerprint),
+            StoreStatus::kValid);
+
+  PendingMutationRecord second =
+      Prepare(&reopened, Mutation("reserve-second", AccessMode::kProxy));
+  EXPECT_GT(second.candidate.policy_generation,
+            first.candidate.policy_generation);
+  EXPECT_EQ(second.candidate.policy_generation, second.operation_sequence);
+  PendingMutationRecord committed = Commit(&reopened, second);
+  EXPECT_EQ(committed.committed_policy_generation,
+            second.candidate.policy_generation);
+}
+
 TEST(AccessRuleStoreTest, CommitReopensAsCompleteNewVersion) {
   base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -448,9 +481,12 @@ TEST(AccessRuleStoreTest, CommitReopensAsCompleteNewVersion) {
     ASSERT_EQ(store.Open(), StoreStatus::kValid);
     PendingMutationRecord pending =
         Prepare(&store, Mutation("enable", AccessMode::kProxy));
-    PendingMutationRecord committed = Commit(&store, pending, 7);
+    PendingMutationRecord committed = Commit(&store, pending);
     EXPECT_EQ(committed.phase, MutationPhase::kCommitted);
-    EXPECT_EQ(committed.committed_policy_generation, 7u);
+    EXPECT_EQ(committed.committed_policy_generation,
+              committed.operation_sequence);
+    EXPECT_EQ(committed.candidate.policy_generation,
+              committed.operation_sequence);
   }
   AccessRuleStore reopened(binding);
   ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
@@ -459,7 +495,7 @@ TEST(AccessRuleStoreTest, CommitReopensAsCompleteNewVersion) {
   ASSERT_EQ(snapshot.status, StoreStatus::kValid) << snapshot.detail;
   ASSERT_TRUE(snapshot.value);
   ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
-  EXPECT_EQ(snapshot.value->policy_generation, 7u);
+  EXPECT_EQ(snapshot.value->policy_generation, 1u);
   EXPECT_EQ(Selection(snapshot.value->site_groups[0]),
             GroupSelection::kEnabled);
   EXPECT_EQ(reopened.LoadRecoveryState().status, StoreStatus::kValid);
@@ -518,10 +554,10 @@ TEST(AccessRuleStoreTest, EveryCommitBoundaryKeepsCompleteOldVersion) {
     {
       AccessRuleStore store(binding);
       ASSERT_EQ(store.Open(), StoreStatus::kValid);
-      Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kProxy)), 3);
+      Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kProxy)));
       closing = Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
       AccessRuleStoreTestPeer::FailAt(&store, points[i]);
-      EXPECT_EQ(store.CommitPreparedMutation(closing, 4).status,
+      EXPECT_EQ(store.CommitPreparedMutation(closing).status,
                 StoreStatus::kIoError);
     }
     AccessRuleStore reopened(binding);
@@ -541,7 +577,7 @@ TEST(AccessRuleStoreTest, EveryCommitBoundaryKeepsCompleteOldVersion) {
     ASSERT_NE(group, nullptr);
     EXPECT_EQ(group->members.size(), 2u);
     EXPECT_EQ(Selection(*group), GroupSelection::kEnabled);
-    EXPECT_EQ(group->policy_generation, 3u);
+    EXPECT_EQ(group->policy_generation, 1u);
   }
 }
 
@@ -551,14 +587,22 @@ TEST(AccessRuleStoreTest, RevisionSequenceFingerprintAndGenerationAreBound) {
   ASSERT_EQ(store.Open(), StoreStatus::kValid);
   PendingMutationRecord pending =
       Prepare(&store, Mutation("bound", AccessMode::kProxy));
+  EXPECT_EQ(pending.operation_sequence, 1u);
+  EXPECT_EQ(pending.candidate.policy_generation, pending.operation_sequence);
+  EXPECT_EQ(pending.committed_policy_generation, 0u);
 
   PendingMutationRecord altered = pending;
   altered.request_fingerprint = "other";
-  EXPECT_EQ(store.CommitPreparedMutation(altered, 1).status,
+  EXPECT_EQ(store.CommitPreparedMutation(altered).status,
             StoreStatus::kConflict);
-  EXPECT_EQ(store.CommitPreparedMutation(pending, 0).status,
-            StoreStatus::kInvalidArgument);
-  Commit(&store, pending, 5);
+  PendingMutationRecord altered_generation = pending;
+  ++altered_generation.candidate.policy_generation;
+  EXPECT_EQ(store.CommitPreparedMutation(altered_generation).status,
+            StoreStatus::kConflict);
+
+  PendingMutationRecord committed = Commit(&store, pending);
+  EXPECT_EQ(committed.committed_policy_generation, pending.operation_sequence);
+  EXPECT_EQ(committed.candidate.policy_generation, pending.operation_sequence);
 
   EXPECT_EQ(
       store.PrepareSiteGroupMutation(Mutation("stale", AccessMode::kDirect, 0))
@@ -566,9 +610,50 @@ TEST(AccessRuleStoreTest, RevisionSequenceFingerprintAndGenerationAreBound) {
       StoreStatus::kConflict);
   PendingMutationRecord next =
       Prepare(&store, Mutation("next", AccessMode::kDirect, 1));
-  EXPECT_EQ(store.CommitPreparedMutation(next, 5).status,
-            StoreStatus::kConflict);
-  Commit(&store, next, 6);
+  EXPECT_EQ(next.operation_sequence, 2u);
+  EXPECT_EQ(next.candidate.policy_generation, next.operation_sequence);
+  PendingMutationRecord next_committed = Commit(&store, next);
+  EXPECT_GT(next_committed.committed_policy_generation,
+            committed.committed_policy_generation);
+}
+
+TEST(AccessRuleStoreTest,
+     CommittedJournalGenerationMustMatchReservedSequence) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  PendingMutationRecord committed = Commit(
+      &store, Prepare(&store, Mutation("generation-integrity",
+                                      AccessMode::kProxy)));
+  ASSERT_EQ(committed.committed_policy_generation,
+            committed.operation_sequence);
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+      &store,
+      "UPDATE access_mutation_journal SET committed_policy_generation="
+      "operation_sequence+1 WHERE operation_id='generation-integrity'"));
+  StoreResult<RecoveryState> recovery = store.LoadRecoveryState();
+  EXPECT_EQ(recovery.status, StoreStatus::kCorrupt);
+  EXPECT_FALSE(recovery.value.has_value());
+}
+
+TEST(AccessRuleStoreTest,
+     CommittedGroupGenerationMustMatchOperationSequence) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  PendingMutationRecord committed = Commit(
+      &store, Prepare(&store, Mutation("group-generation-integrity",
+                                      AccessMode::kProxy)));
+  ASSERT_EQ(committed.committed_policy_generation,
+            committed.operation_sequence);
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
+      &store,
+      "UPDATE access_site_groups SET committed_policy_generation="
+      "last_operation_sequence+1 WHERE site_toggle_id='toggle-news.example'"));
+  StoreResult<StoredPolicySnapshot> snapshot =
+      store.ReadCommittedSnapshot("partition-A");
+  EXPECT_EQ(snapshot.status, StoreStatus::kCorrupt);
+  EXPECT_FALSE(snapshot.value.has_value());
 }
 
 TEST(AccessRuleStoreTest, CounterOverflowFailsWithoutJournal) {
@@ -605,8 +690,7 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
     AccessRuleStore store(missing_binding);
     ASSERT_EQ(store.Open(), StoreStatus::kValid);
     Commit(&store,
-           Prepare(&store, Mutation("missing-counter", AccessMode::kDirect)),
-           1);
+           Prepare(&store, Mutation("missing-counter", AccessMode::kDirect)));
     ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
         &store, "DELETE FROM access_store_counters WHERE singleton=1"));
   }
@@ -630,10 +714,9 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
     AccessRuleStore store(lagging_binding);
     ASSERT_EQ(store.Open(), StoreStatus::kValid);
     Commit(&store,
-           Prepare(&store, Mutation("sequence-one", AccessMode::kProxy)), 1);
+           Prepare(&store, Mutation("sequence-one", AccessMode::kProxy)));
     Commit(&store,
-           Prepare(&store, Mutation("sequence-two", AccessMode::kDirect, 1)),
-           2);
+           Prepare(&store, Mutation("sequence-two", AccessMode::kDirect, 1)));
     ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
         &store,
         "UPDATE access_store_counters SET operation_sequence=1 WHERE "
@@ -723,7 +806,7 @@ TEST(AccessRuleStoreTest, CorruptTopLevelSiteFailsClosedOnReadAndAdapter) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
   ASSERT_EQ(store.Open(), StoreStatus::kValid);
-  Commit(&store, Prepare(&store, Mutation("seed-site", AccessMode::kProxy)), 1);
+  Commit(&store, Prepare(&store, Mutation("seed-site", AccessMode::kProxy)));
   ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
       &store,
       "UPDATE access_site_groups SET "
@@ -836,7 +919,7 @@ TEST(AccessRuleStoreTest, CompletionTimeNeverPrecedesCreatedTime) {
   ASSERT_TRUE(recovery.value);
   ASSERT_EQ(recovery.value->pending.size(), 1u);
   PendingMutationRecord committed =
-      Commit(&store, recovery.value->pending[0], 1);
+      Commit(&store, recovery.value->pending[0]);
   EXPECT_EQ(committed.created_at_micros, kFutureMicros);
   EXPECT_EQ(committed.completed_at_micros, kFutureMicros);
   StoreResult<PendingMutationRecord> replay =
@@ -853,7 +936,7 @@ TEST(AccessRuleStoreTest, JournalRetentionNeverDeletesPreparedAndIsBounded) {
   ASSERT_EQ(store.Open(), StoreStatus::kValid);
   PendingMutationRecord completed = Commit(
       &store,
-      Prepare(&store, Mutation("expired-completed", AccessMode::kProxy)), 1);
+      Prepare(&store, Mutation("expired-completed", AccessMode::kProxy)));
   ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
       &store,
       "UPDATE access_mutation_journal SET completed_at_micros=1 WHERE "
@@ -934,7 +1017,7 @@ TEST(AccessRuleStoreTest, DetectsMissingOrphanMixedRevisionOwnerAndJournal) {
     AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
         ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
     ASSERT_EQ(store.Open(), StoreStatus::kValid);
-    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kProxy)), 1);
+    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kProxy)));
     if (corruption.journal) {
       Prepare(&store, Mutation("pending", AccessMode::kDirect, 1));
     }
@@ -956,7 +1039,7 @@ TEST(AccessRuleStoreTest, InvalidJournalStateNeverLooksCommittedOrMissing) {
     ASSERT_EQ(store.Open(), StoreStatus::kValid);
     if (with_committed_group) {
       Commit(&store,
-             Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)), 1);
+             Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)));
     }
     Prepare(&store, Mutation("corrupt-state", AccessMode::kProxy,
                              with_committed_group ? 1 : 0));
@@ -987,8 +1070,7 @@ TEST(AccessRuleStoreTest, CorruptJournalRevisionUpperBoundFailsClosed) {
       ASSERT_EQ(store.Open(), StoreStatus::kValid);
       if (with_committed_group) {
         Commit(&store,
-               Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)),
-               1);
+               Prepare(&store, Mutation("seed-direct", AccessMode::kDirect)));
       }
       Prepare(&store, Mutation("corrupt-revision", AccessMode::kProxy,
                                with_committed_group ? 1 : 0));
@@ -1020,7 +1102,7 @@ TEST(AccessRuleStoreTest, LastRepresentableJournalRevisionRemainsValid) {
   {
     AccessRuleStore store(binding);
     ASSERT_EQ(store.Open(), StoreStatus::kValid);
-    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kDirect)), 1);
+    Commit(&store, Prepare(&store, Mutation("seed", AccessMode::kDirect)));
     ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
         &store, "UPDATE access_site_groups SET revision=9223372036854775806"));
     ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(
@@ -1038,7 +1120,7 @@ TEST(AccessRuleStoreTest, LastRepresentableJournalRevisionRemainsValid) {
   ASSERT_TRUE(recovery.value.has_value());
   ASSERT_EQ(recovery.value->pending.size(), 1u);
   EXPECT_EQ(recovery.value->pending.front().target_revision, maximum_revision);
-  Commit(&reopened, last, 2);
+  Commit(&reopened, last);
   const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
   ASSERT_EQ(snapshot.status, StoreStatus::kValid);
   ASSERT_TRUE(snapshot.value.has_value());
@@ -1104,8 +1186,7 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
     Commit(
         &store,
         Prepare(&store, Mutation("partition-A-op", AccessMode::kProxy, 0,
-                                 Owner(channels[i], profile, "partition-A"))),
-        10 + i * 2);
+                                 Owner(channels[i], profile, "partition-A"))));
     EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
               StoreStatus::kValid);
     EXPECT_EQ(store.ReadCommittedSnapshot("partition-B").status,
@@ -1113,8 +1194,7 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
     Commit(&store,
            Prepare(&store, Mutation("partition-B-op", AccessMode::kDirect, 0,
                                     Owner(channels[i], profile, "partition-B"),
-                                    "other.example")),
-           11 + i * 2);
+                                    "other.example")));
     EXPECT_EQ(store.ReadCommittedSnapshot("partition-B").status,
               StoreStatus::kValid);
   }
@@ -1131,8 +1211,7 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
   ASSERT_EQ(second.Open(), StoreStatus::kValid);
   Commit(&first,
          Prepare(&first, Mutation("first-only", AccessMode::kProxy, 0,
-                                  Owner(ChannelNamespace::kBeta, "first"))),
-         1);
+                                  Owner(ChannelNamespace::kBeta, "first"))));
   EXPECT_EQ(second.ReadCommittedSnapshot("partition-A").status,
             StoreStatus::kMissing);
 }
@@ -1141,7 +1220,7 @@ TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
   ASSERT_EQ(store.Open(), StoreStatus::kValid);
-  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)), 1);
+  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)));
 
   StoredAccessRule reject = IndependentRule(
       "independent-reject", AccessMode::kReject, "cdn.news.example",
@@ -1159,12 +1238,13 @@ TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
   PendingMutationRecord close =
       Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
   EXPECT_EQ(close.operation_sequence, 54u);
-  Commit(&store, close, 2);
+  Commit(&store, close);
   StoreResult<StoredPolicySnapshot> snapshot =
       store.ReadCommittedSnapshot("partition-A");
   ASSERT_EQ(snapshot.status, StoreStatus::kValid) << snapshot.detail;
   ASSERT_TRUE(snapshot.value);
   ASSERT_EQ(snapshot.value->site_groups.size(), 1u);
+  EXPECT_EQ(snapshot.value->policy_generation, close.operation_sequence);
   EXPECT_EQ(Selection(snapshot.value->site_groups[0]),
             GroupSelection::kDisabled);
   ASSERT_EQ(snapshot.value->independent_rules.size(), 2u);
@@ -1190,7 +1270,7 @@ TEST(AccessRuleStoreTest, StoredSnapshotFeedsRealMatcherAndPlanner) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
   ASSERT_EQ(store.Open(), StoreStatus::kValid);
-  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)), 31);
+  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)));
   StoreResult<StoredPolicySnapshot> stored =
       store.ReadCommittedSnapshot("partition-A");
   ASSERT_EQ(stored.status, StoreStatus::kValid) << stored.detail;
@@ -1221,7 +1301,8 @@ TEST(AccessRuleStoreTest, StoredSnapshotFeedsRealMatcherAndPlanner) {
         Context(GURL(test.top), GURL(test.request)), published);
     ASSERT_EQ(match.policy_state, PolicyState::kValid);
     ASSERT_EQ(match.effective_mode, AccessMode::kProxy);
-    const GenerationTuple generations{31, 3, 5, 7, 11};
+    const GenerationTuple generations{
+        candidate.value->committed_policy_generation, 3, 5, 7, 11};
     RouteInput input{
         .policy_state = match.policy_state,
         .effective_mode = match.effective_mode,
