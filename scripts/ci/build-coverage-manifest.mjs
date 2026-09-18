@@ -130,6 +130,7 @@ try {
 
   const cppFiles = [
     'apps/browser/overlay/components/aegis_access/access_identity_generation_state.cc',
+    'apps/browser/overlay/components/aegis_access/access_proxy_selection_generation_state.cc',
     'apps/browser/overlay/components/aegis_access/access_route_planner.cc',
     'apps/browser/overlay/components/aegis_access/browser_request_metadata_seed.cc',
     'apps/browser/overlay/components/aegis_access/published_request_runtime.cc',

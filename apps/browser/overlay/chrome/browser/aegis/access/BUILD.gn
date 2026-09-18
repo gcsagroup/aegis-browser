@@ -37,6 +37,19 @@ source_set("access_identity_generation_source") {
   ]
 }
 
+source_set("access_proxy_selection_generation_source") {
+  sources = [
+    "access_proxy_selection_generation_source.cc",
+    "access_proxy_selection_generation_source.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//components/aegis_access:access_proxy_selection_generation_state",
+  ]
+}
+
 source_set("access_network_context_transport") {
   sources = [
     "access_network_context_transport.cc",
@@ -75,6 +88,17 @@ test("access_identity_generation_source_unittests") {
     "//base/test:run_all_unittests",
     "//chrome/browser/profiles:test_support",
     "//components/aegis_access:access_identity_generation_state",
+    "//testing/gtest",
+  ]
+}
+
+test("access_proxy_selection_generation_source_unittests") {
+  sources = [ "access_proxy_selection_generation_source_unittest.cc" ]
+  deps = [
+    ":access_proxy_selection_generation_source",
+    "//base/test:run_all_unittests",
+    "//chrome/browser/profiles:test_support",
+    "//components/aegis_access:access_proxy_selection_generation_state",
     "//testing/gtest",
   ]
 }
