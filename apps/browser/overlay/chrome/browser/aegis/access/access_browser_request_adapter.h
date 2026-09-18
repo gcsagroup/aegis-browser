@@ -13,6 +13,7 @@
 class Profile;
 
 namespace content {
+class StoragePartition;
 class WebContents;
 }
 
@@ -27,6 +28,7 @@ enum class AccessBrowserRequestMetadataStatus {
   kBrowserContextMismatch,
   kMissingTrustedFrame,
   kMissingStoragePartition,
+  kUnconfiguredPartition,
   kInvalidPartitionPath,
   kInvalidOwner,
   kInvalidAttribution,
@@ -56,10 +58,19 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
     content::FrameTreeNodeId frame_tree_node_id,
     std::optional<int64_t> navigation_id);
 
-// Builds Profile-only metadata for browser-owned background request factories
-// that have no unique page client. The render process supplies only trusted
-// BrowserContext/StoragePartition ownership; no WebContents, document token or
-// top-level site is borrowed. Site-scoped policy therefore remains ineligible.
+// Builds Profile-only metadata from an exact browser-owned StoragePartition.
+// Must be called on the UI thread. The partition must already be configured by
+// this Profile's Access transport; no WebContents, top-level site, or
+// renderer-provided initiator is consulted.
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileRequestMetadata(
+    Profile* profile,
+    content::StoragePartition* partition);
+
+// Builds Profile-only metadata for a browser-owned background request factory
+// whose trusted source is a render process. Must be called on the UI thread.
+// It resolves that process's BrowserContext/StoragePartition and delegates to
+// the configured-partition contract above, so site-scoped policy remains
+// ineligible.
 AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
     Profile* profile,
     int render_process_id);

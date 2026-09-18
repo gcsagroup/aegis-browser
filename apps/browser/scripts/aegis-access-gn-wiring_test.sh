@@ -39,6 +39,7 @@ REDIRECT_REEVALUATION_PATCH_FILE="$BROWSER_DIR/patches/0140-feat-aegis-reevaluat
 WORKER_MAIN_RESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0141-feat-aegis-gate-worker-main-resource-traffic.patch"
 WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0142-feat-aegis-gate-worker-subresource-traffic.patch"
 PROFILE_ONLY_BACKGROUND_PATCH_FILE="$BROWSER_DIR/patches/0143-feat-aegis-add-profile-only-background-ownership.patch"
+PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -535,11 +536,22 @@ if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
 fi
 rg -Fq 'BuildBrowserOwnedProfileOnlyRequestMetadata' \
   "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
-  fail "patch 0143 must expose the browser-owned Profile-only metadata bridge"
+  fail "patch 0143 must expose the browser-owned Profile-only process bridge"
 rg -Fq 'RenderProcessHost::FromID' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
   fail "patch 0143 must bind Profile-only ownership to a browser-owned render process"
 rg -Fq 'process->GetStoragePartition()' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
-  fail "patch 0143 must resolve the render process StoragePartition"
+  fail "patch 0143 must resolve the trusted render process StoragePartition"
+rg -Fq 'BuildBrowserOwnedProfileRequestMetadata' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must expose exact StoragePartition Profile-only ownership"
+rg -Fq 'AccessBrowserRequestMetadataStatus::kUnconfiguredPartition' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must fail closed for an unconfigured background partition"
+rg -Fq 'OwnsConfiguredPartition' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must bind Profile-only ownership to a configured Access partition"
+rg -Fq 'transport, /*require_configured_partition=*/false, owner);' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must preserve frame-owned ownership without background pre-configuration"
 rg -Fq 'RequestAttributionKind::kProfileOnly' \
   "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
   fail "patch 0143 must produce Profile-only request attribution"
@@ -549,6 +561,25 @@ rg -Fq 'ProfileOnlyMetadataUsesRenderProcessPartitionWithoutSiteIdentity' \
 rg -Fq 'ProfileOnlyMetadataRejectsUnknownRenderProcess' \
   "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
   fail "patch 0143 must fail closed for an unknown render process"
+rg -Fq 'BackgroundMetadataDoesNotCreateTransport' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must not create transport while resolving background ownership"
+rg -Fq 'BackgroundMetadataRequiresConfiguredPartition' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must reject unconfigured background partitions"
+rg -Fq 'BackgroundMetadataUsesProfileOnlyConfiguredPartitionOwnership' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must prove configured Profile-only ownership"
+rg -Fq 'BackgroundMetadataRejectsCrossProfilePartition' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must reject cross-Profile partitions"
+rg -Fq 'BackgroundMetadataRejectsMissingPartition' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must reject a missing partition"
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE"; then
+  fail "patch 0143 must not wire ServiceWorker URLLoader factories"
+fi
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
