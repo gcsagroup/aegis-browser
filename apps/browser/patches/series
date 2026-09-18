@@ -137,3 +137,4 @@
 0136-feat-aegis-terminate-in-flight-access-requests.patch
 0137-feat-aegis-version-policy-publication-acks.patch
 0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch
+0139-feat-aegis-gate-primary-page-subframe-navigation.patch

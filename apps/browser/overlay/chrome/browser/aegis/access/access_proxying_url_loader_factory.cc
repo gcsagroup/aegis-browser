@@ -293,10 +293,6 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
     int64_t navigation_id,
     network::URLLoaderFactoryBuilder& factory_builder) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!frame || !frame->IsInPrimaryMainFrame()) {
-    return;
-  }
-
   std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
       CaptureProxyFactoryMetadata(profile, frame, navigation_id);
   if (!metadata.has_value() ||
