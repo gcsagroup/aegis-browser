@@ -29,6 +29,7 @@ IDENTITY_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0130-feat-aegis-own-profile
 SELECTION_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0131-feat-aegis-own-proxy-selection-generation.patch"
 BASE_PROXY_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0132-feat-aegis-own-base-proxy-config-generation.patch"
 PUBLISHED_GENERATION_RUNTIME_PATCH_FILE="$BROWSER_DIR/patches/0133-feat-aegis-publish-request-generation-runtime.patch"
+RUNTIME_THREAD_BOUNDARY_PATCH_FILE="$BROWSER_DIR/patches/0134-fix-aegis-harden-published-runtime-thread-boundary.patch"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -321,6 +322,18 @@ rg -Fq 'BuildCompleteRequestGenerationTuple' "$PUBLISHED_GENERATION_RUNTIME_PATC
   fail "patch 0133 must fail closed through the shared tuple builder"
 rg -Fq 'kMissingSelectionGeneration' "$PUBLISHED_GENERATION_RUNTIME_PATCH_FILE" ||
   fail "patch 0133 must test missing selection generation as fail closed"
+rg -Fq 'DCHECK_CURRENTLY_ON(content::BrowserThread::UI);' \
+  "$RUNTIME_THREAD_BOUNDARY_PATCH_FILE" ||
+  fail "patch 0134 must enforce the UI-thread Profile runtime boundary"
+rg -Fq 'CaptureProxyGenerationTupleOnUiThread' \
+  "$RUNTIME_THREAD_BOUNDARY_PATCH_FILE" ||
+  fail "patch 0134 must expose an explicitly UI-thread generation capture API"
+rg -Fq 'inline bool IsKnownChannel(ChannelNamespace channel)' \
+  "$RUNTIME_THREAD_BOUNDARY_PATCH_FILE" ||
+  fail "patch 0134 must centralize channel validation"
+rg -Fq 'inline bool IsCompleteOwner(const OwnershipKey& owner)' \
+  "$RUNTIME_THREAD_BOUNDARY_PATCH_FILE" ||
+  fail "patch 0134 must centralize ownership validation"
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -365,63 +378,68 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "0132 must appear once in series"
 [[ "$(rg -F -c '0133-feat-aegis-publish-request-generation-runtime.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0133 must appear once in series"
-[[ "$(tail -n 19 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(rg -F -c '0134-fix-aegis-harden-published-runtime-thread-boundary.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0134 must appear once in series"
+[[ "$(tail -n 20 "$SERIES_FILE" | head -n 1)" == \
   "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
   fail "patch 0115 must immediately precede patch 0116"
-[[ "$(tail -n 18 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 19 "$SERIES_FILE" | head -n 1)" == \
   "0116-feat-aegis-add-access-rule-store-recovery.patch" ]] ||
   fail "patch 0116 must immediately precede patch 0117"
-[[ "$(tail -n 17 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 18 "$SERIES_FILE" | head -n 1)" == \
   "0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch" ]] ||
   fail "patch 0117 must immediately precede patch 0118"
-[[ "$(tail -n 16 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 17 "$SERIES_FILE" | head -n 1)" == \
   "0118-feat-aegis-bind-profile-network-context-proxy.patch" ]] ||
   fail "patch 0118 must immediately precede patch 0119"
-[[ "$(tail -n 15 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 16 "$SERIES_FILE" | head -n 1)" == \
   "0119-test-aegis-local-proxy-network-acceptance.patch" ]] ||
   fail "patch 0119 must immediately precede patch 0120"
-[[ "$(tail -n 14 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 15 "$SERIES_FILE" | head -n 1)" == \
   "0120-test-aegis-expand-access-cpp-regressions.patch" ]] ||
   fail "patch 0120 must immediately precede patch 0121"
-[[ "$(tail -n 13 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 14 "$SERIES_FILE" | head -n 1)" == \
   "0121-feat-aegis-add-request-ownership-registry.patch" ]] ||
   fail "patch 0121 must immediately precede patch 0122"
-[[ "$(tail -n 12 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 13 "$SERIES_FILE" | head -n 1)" == \
   "0122-feat-aegis-add-targeted-request-cancellation.patch" ]] ||
   fail "patch 0122 must immediately precede patch 0123"
-[[ "$(tail -n 11 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 12 "$SERIES_FILE" | head -n 1)" == \
   "0123-feat-aegis-add-request-dispatch-block-barriers.patch" ]] ||
   fail "patch 0123 must immediately precede patch 0124"
-[[ "$(tail -n 10 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 11 "$SERIES_FILE" | head -n 1)" == \
   "0124-refactor-aegis-request-ownership-contracts.patch" ]] ||
   fail "patch 0124 must immediately precede patch 0125"
-[[ "$(tail -n 9 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 10 "$SERIES_FILE" | head -n 1)" == \
   "0125-feat-aegis-enforce-request-dispatch-gate.patch" ]] ||
   fail "patch 0125 must immediately precede patch 0126"
-[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 9 "$SERIES_FILE" | head -n 1)" == \
   "0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch" ]] ||
   fail "patch 0126 must immediately precede patch 0127"
-[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
   "0127-feat-aegis-add-published-request-runtime.patch" ]] ||
   fail "patch 0127 must immediately precede patch 0128"
-[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
   "0128-feat-aegis-own-committed-policy-generation.patch" ]] ||
   fail "patch 0128 must immediately precede patch 0129"
-[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
   "0129-feat-aegis-own-browser-network-epoch.patch" ]] ||
   fail "patch 0129 must immediately precede patch 0130"
-[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
   "0130-feat-aegis-own-profile-identity-generation.patch" ]] ||
   fail "patch 0130 must immediately precede patch 0131"
-[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
   "0131-feat-aegis-own-proxy-selection-generation.patch" ]] ||
   fail "patch 0131 must immediately precede patch 0132"
-[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
   "0132-feat-aegis-own-base-proxy-config-generation.patch" ]] ||
   fail "patch 0132 must immediately precede patch 0133"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
+[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
   "0133-feat-aegis-publish-request-generation-runtime.patch" ]] ||
-  fail "patch 0133 must be the current series tail"
+  fail "patch 0133 must immediately precede patch 0134"
+[[ "$(tail -n 1 "$SERIES_FILE")" == \
+  "0134-fix-aegis-harden-published-runtime-thread-boundary.patch" ]] ||
+  fail "patch 0134 must be the current series tail"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

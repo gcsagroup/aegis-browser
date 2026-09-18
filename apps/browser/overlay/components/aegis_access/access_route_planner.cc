@@ -5,24 +5,6 @@
 namespace aegis_access {
 namespace {
 
-bool IsKnownChannel(ChannelNamespace channel) {
-  switch (channel) {
-    case ChannelNamespace::kDev:
-    case ChannelNamespace::kAlpha:
-    case ChannelNamespace::kBeta:
-    case ChannelNamespace::kRelease:
-      return true;
-    case ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
-bool IsComplete(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
-         !owner.storage_partition_token.empty();
-}
-
 bool IsComplete(const GenerationTuple& generations) {
   return generations.policy_generation != 0 &&
          generations.identity_generation != 0 &&
@@ -131,7 +113,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
       !IsComplete(input.request_generations)) {
     return MakePlan(input, RouteAction::kFail, RouteReason::kInvalidPolicy);
   }
-  if (!IsComplete(input.request_owner)) {
+  if (!IsCompleteOwner(input.request_owner)) {
     return MakePlan(input, RouteAction::kFail,
                     RouteReason::kOwnershipMismatch);
   }
@@ -161,7 +143,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
   } else if (input.snapshot_state == SnapshotState::kCorrupt) {
     return MakePlan(input, RouteAction::kFail, RouteReason::kInvalidPolicy);
   } else {
-    if (!IsComplete(input.snapshot_owner) ||
+    if (!IsCompleteOwner(input.snapshot_owner) ||
         input.request_owner != input.snapshot_owner) {
       return MakePlan(input, RouteAction::kFail,
                       RouteReason::kOwnershipMismatch);
@@ -220,7 +202,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
     return MakePlan(input, RouteAction::kFail,
                     RouteReason::kProxyUnavailable);
   }
-  if (!IsComplete(input.registered_proxy_entry->owner) ||
+  if (!IsCompleteOwner(input.registered_proxy_entry->owner) ||
       input.registered_proxy_entry->owner != input.request_owner) {
     return MakePlan(input, RouteAction::kFail,
                     RouteReason::kOwnershipMismatch);

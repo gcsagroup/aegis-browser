@@ -32,9 +32,16 @@ struct AccessPolicyPublicationResult {
   uint64_t policy_generation = 0;
 };
 
-// Profile-owned publication boundary between durable AccessRuleStore state and
-// request-time routing. Database reads are promoted here into immutable
-// in-memory policy snapshots; request dispatch never reads SQLite.
+// Profile-owned UI-thread publication boundary between durable
+// AccessRuleStore state and request-time routing. Database reads are promoted
+// here into immutable in-memory policy snapshots; request dispatch never reads
+// SQLite.
+//
+// All methods on this class are UI-thread only because the generation owners
+// are Profile-bound. Request/network code must capture the returned values on
+// the UI thread and pass only those by-value snapshots across the dispatch
+// boundary; it must never dereference Profile or this runtime on IO/Network
+// threads.
 //
 // Generation tuples are assembled only for a concrete committed PROXY group.
 // DIRECT/absent policy paths must preserve Chromium's native routing and do not
@@ -58,7 +65,10 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
   bool InvalidatePublishedPolicySnapshot(
       const aegis_access::OwnershipKey& owner);
 
-  aegis_access::RequestGenerationTupleBuildResult BuildProxyGenerationTuple(
+  // Captures a by-value generation tuple while still on the UI thread.
+  // Callers may move/copy the returned value to request/network sequences.
+  aegis_access::RequestGenerationTupleBuildResult
+  CaptureProxyGenerationTupleOnUiThread(
       const aegis_access::OwnershipKey& owner,
       const std::string& proxy_group_id) const;
 

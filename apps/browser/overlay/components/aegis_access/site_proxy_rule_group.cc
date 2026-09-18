@@ -12,24 +12,6 @@ GroupValidation Unknown(GroupValidationError error) {
                          error};
 }
 
-bool IsKnownChannel(ChannelNamespace channel) {
-  switch (channel) {
-    case ChannelNamespace::kDev:
-    case ChannelNamespace::kAlpha:
-    case ChannelNamespace::kBeta:
-    case ChannelNamespace::kRelease:
-      return true;
-    case ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
-bool IsComplete(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
-         !owner.storage_partition_token.empty();
-}
-
 bool HasCompleteSchemeSet(const std::vector<RequestScheme>& schemes) {
   if (schemes.size() != 4) {
     return false;
@@ -52,13 +34,13 @@ GroupValidation ValidateSiteProxyRuleGroup(
                            GroupValidationError::kMissingGroup};
   }
   if (group->site_toggle_id.empty() || group->canonical_host.empty() ||
-      !IsComplete(group->owner) || group->http_top_level_site.empty() ||
+      !IsCompleteOwner(group->owner) || group->http_top_level_site.empty() ||
       group->https_top_level_site.empty() ||
       group->http_top_level_site == group->https_top_level_site ||
       group->revision == 0 || group->last_operation_sequence == 0) {
     return Unknown(GroupValidationError::kInvalidGroup);
   }
-  if (!IsComplete(expected_owner) || group->owner != expected_owner) {
+  if (!IsCompleteOwner(expected_owner) || group->owner != expected_owner) {
     return Unknown(GroupValidationError::kOwnershipMismatch);
   }
   if (members.size() != 2) {
@@ -84,7 +66,7 @@ GroupValidation ValidateSiteProxyRuleGroup(
   }
 
   for (const SiteProxyRuleMember& member : members) {
-    if (!IsComplete(member.owner) || member.owner != group->owner ||
+    if (!IsCompleteOwner(member.owner) || member.owner != group->owner ||
         member.site_toggle_id != group->site_toggle_id) {
       return Unknown(GroupValidationError::kOwnershipMismatch);
     }

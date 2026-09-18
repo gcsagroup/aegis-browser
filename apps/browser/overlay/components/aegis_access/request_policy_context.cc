@@ -10,24 +10,6 @@
 namespace aegis_access {
 namespace {
 
-bool IsKnownChannel(ChannelNamespace channel) {
-  switch (channel) {
-    case ChannelNamespace::kDev:
-    case ChannelNamespace::kAlpha:
-    case ChannelNamespace::kBeta:
-    case ChannelNamespace::kRelease:
-      return true;
-    case ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
-bool IsComplete(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
-         !owner.storage_partition_token.empty();
-}
-
 std::optional<RequestScheme> SchemeForUrl(const GURL& url) {
   if (url.SchemeIs(url::kHttpScheme)) {
     return RequestScheme::kHttp;
@@ -107,7 +89,7 @@ RequestOwnershipRecord RequestPolicyContext::ToOwnershipRecord(
 RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
     const BrowserOwnedRequestMetadata& metadata,
     const GURL& request_url) {
-  if (!IsComplete(metadata.owner)) {
+  if (!IsCompleteOwner(metadata.owner)) {
     return Error(RequestContextError::kInvalidOwner);
   }
   if (metadata.request_id.empty()) {
