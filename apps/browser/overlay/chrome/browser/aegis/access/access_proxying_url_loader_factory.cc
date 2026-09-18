@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 
 #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
+#include "chrome/browser/aegis/access/access_proxying_url_tracked_request.h"
 
 #include <memory>
 #include <optional>
@@ -214,195 +215,6 @@ class BrowserContextData : public base::SupportsUserData::Data {
 
 }  // namespace
 
-class AccessProxyingURLLoaderFactory::TrackedRequest
-    : public network::mojom::URLLoader,
-      public network::mojom::URLLoaderClient {
- public:
-  TrackedRequest(AccessProxyingURLLoaderFactory* factory,
-                 AccessRequestDispatchState* dispatch_state,
-                 aegis_access::RequestOwnershipRecord ownership_record)
-      : factory_(factory),
-        dispatch_state_(dispatch_state),
-        ownership_record_(std::move(ownership_record)) {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  }
-
-  TrackedRequest(const TrackedRequest&) = delete;
-  TrackedRequest& operator=(const TrackedRequest&) = delete;
-  ~TrackedRequest() override = default;
-
-  base::WeakPtr<TrackedRequest> GetWeakPtr() {
-    return weak_factory_.GetWeakPtr();
-  }
-
-  void Start(
-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
-      int32_t request_id,
-      uint32_t options,
-      const network::ResourceRequest& request,
-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
-      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    loader_receiver_.Bind(std::move(loader_receiver));
-    target_client_.Bind(std::move(client));
-    mojo::PendingRemote<network::mojom::URLLoaderClient> proxy_client =
-        client_receiver_.BindNewPipeAndPassRemote();
-
-    loader_receiver_.set_disconnect_handler(base::BindOnce(
-        &TrackedRequest::OnBindingError, weak_factory_.GetWeakPtr()));
-    client_receiver_.set_disconnect_handler(base::BindOnce(
-        &TrackedRequest::OnBindingError, weak_factory_.GetWeakPtr()));
-    target_client_.set_disconnect_handler(base::BindOnce(
-        &TrackedRequest::OnBindingError, weak_factory_.GetWeakPtr()));
-
-    factory_->target_factory_->CreateLoaderAndStart(
-        target_loader_.BindNewPipeAndPassReceiver(), request_id, options,
-        request, std::move(proxy_client), traffic_annotation);
-    target_loader_.set_disconnect_handler(base::BindOnce(
-        &TrackedRequest::OnBindingError, weak_factory_.GetWeakPtr()));
-  }
-
-  void TerminateFromRegistry() {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (finished_) {
-      return;
-    }
-    ownership_registered_ = false;
-    target_loader_.reset();
-    if (target_client_.is_bound()) {
-      target_client_->OnComplete(
-          network::URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
-    }
-    Finish(/*complete_registry=*/false);
-  }
-
-  void FollowRedirect(network::HttpRequestHeadersUpdateParams,
-                      const std::optional<GURL>&) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    // Redirect policy re-evaluation is intentionally outside this first slice.
-    // Do not let a REQUIRE_PROXY request escape to a redirect destination that
-    // was never matched and selected.
-    target_loader_.reset();
-    if (target_client_.is_bound()) {
-      target_client_->OnComplete(
-          network::URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
-    }
-    Finish(/*complete_registry=*/true);
-  }
-
-  void SetPriority(net::RequestPriority priority,
-                   int32_t intra_priority_value) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (target_loader_.is_bound()) {
-      target_loader_->SetPriority(priority, intra_priority_value);
-    }
-  }
-
-  void OnReceiveEarlyHints(network::mojom::EarlyHintsPtr early_hints) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (target_client_.is_bound()) {
-      target_client_->OnReceiveEarlyHints(std::move(early_hints));
-    }
-  }
-
-  void OnReceiveResponse(
-      network::mojom::URLResponseHeadPtr head,
-      mojo::ScopedDataPipeConsumerHandle body,
-      std::optional<mojo_base::BigBuffer> cached_metadata) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (dispatch_state_->ownership().MarkStreaming(
-            ownership_record_.request_id, ownership_record_.owner,
-            ownership_record_.generations) !=
-        aegis_access::RequestOwnershipStatus::kOk) {
-      target_loader_.reset();
-      if (target_client_.is_bound()) {
-        target_client_->OnComplete(
-            network::URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
-      }
-      Finish(/*complete_registry=*/true);
-      return;
-    }
-    if (target_client_.is_bound()) {
-      target_client_->OnReceiveResponse(std::move(head), std::move(body),
-                                        std::move(cached_metadata));
-    }
-  }
-
-  void OnReceiveRedirect(const net::RedirectInfo&,
-                         network::mojom::URLResponseHeadPtr) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    // Fail closed until redirect destinations have their own policy/generation
-    // re-evaluation slice.
-    target_loader_.reset();
-    if (target_client_.is_bound()) {
-      target_client_->OnComplete(
-          network::URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
-    }
-    Finish(/*complete_registry=*/true);
-  }
-
-  void OnUploadProgress(int64_t current_position,
-                        int64_t total_size,
-                        OnUploadProgressCallback callback) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (target_client_.is_bound()) {
-      target_client_->OnUploadProgress(current_position, total_size,
-                                       std::move(callback));
-    }
-  }
-
-  void OnTransferSizeUpdated(int32_t transfer_size_diff) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (target_client_.is_bound()) {
-      target_client_->OnTransferSizeUpdated(transfer_size_diff);
-    }
-  }
-
-  void OnComplete(const network::URLLoaderCompletionStatus& status) override {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (target_client_.is_bound()) {
-      target_client_->OnComplete(status);
-    }
-    Finish(/*complete_registry=*/true);
-  }
-
- private:
-  void OnBindingError() {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (!finished_) {
-      target_loader_.reset();
-      Finish(/*complete_registry=*/true);
-    }
-  }
-
-  void Finish(bool complete_registry) {
-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    if (finished_) {
-      return;
-    }
-    finished_ = true;
-    if (complete_registry && ownership_registered_) {
-      dispatch_state_->ownership().Complete(
-          ownership_record_.request_id, ownership_record_.owner,
-          ownership_record_.generations);
-    }
-    ownership_registered_ = false;
-    factory_->RemoveRequest(this);
-  }
-
-  const raw_ptr<AccessProxyingURLLoaderFactory> factory_;
-  const raw_ptr<AccessRequestDispatchState> dispatch_state_;
-  const aegis_access::RequestOwnershipRecord ownership_record_;
-  bool ownership_registered_ = true;
-  bool finished_ = false;
-
-  mojo::Receiver<network::mojom::URLLoader> loader_receiver_{this};
-  mojo::Remote<network::mojom::URLLoader> target_loader_;
-  mojo::Receiver<network::mojom::URLLoaderClient> client_receiver_{this};
-  mojo::Remote<network::mojom::URLLoaderClient> target_client_;
-  base::WeakPtrFactory<TrackedRequest> weak_factory_{this};
-};
-
 AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
     Profile* profile,
     content::FrameTreeNodeId frame_tree_node_id,
@@ -554,13 +366,13 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
       AccessRequestDispatchState::Get(profile_);
   CHECK(dispatch_state);
 
-  auto tracked = std::make_unique<TrackedRequest>(
+  auto tracked = std::make_unique<AccessProxyingURLTrackedRequest>(
       this, dispatch_state, ownership_record);
-  TrackedRequest* tracked_ptr = tracked.get();
+  AccessProxyingURLTrackedRequest* tracked_ptr = tracked.get();
   requests_.emplace(std::move(tracked));
 
   auto termination = std::make_unique<CallbackTerminationHandle>(
-      base::BindOnce(&TrackedRequest::TerminateFromRegistry,
+      base::BindOnce(&AccessProxyingURLTrackedRequest::TerminateFromRegistry,
                      tracked_ptr->GetWeakPtr()));
   const aegis_access::RequestOwnershipStatus dispatch_status =
       dispatch_state->ownership().MarkDispatched(
@@ -586,6 +398,17 @@ void AccessProxyingURLLoaderFactory::Clone(
   proxy_receivers_.Add(this, std::move(loader_receiver));
 }
 
+void AccessProxyingURLLoaderFactory::StartTargetRequest(
+    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+    int32_t request_id,
+    uint32_t options,
+    const network::ResourceRequest& request,
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+  ForwardNative(std::move(loader_receiver), request_id, options, request,
+                std::move(client), traffic_annotation);
+}
+
 void AccessProxyingURLLoaderFactory::ForwardNative(
     mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
     int32_t request_id,
@@ -593,6 +416,8 @@ void AccessProxyingURLLoaderFactory::ForwardNative(
     const network::ResourceRequest& request,
     mojo::PendingRemote<network::mojom::URLLoaderClient> client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  DCHECK(target_factory_.is_bound());
   target_factory_->CreateLoaderAndStart(
       std::move(loader_receiver), request_id, options, request,
       std::move(client), traffic_annotation);
@@ -610,7 +435,7 @@ void AccessProxyingURLLoaderFactory::BlockRequest(
   }
 }
 
-void AccessProxyingURLLoaderFactory::RemoveRequest(TrackedRequest* request) {
+void AccessProxyingURLLoaderFactory::RemoveRequest(AccessProxyingURLTrackedRequest* request) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   auto it = requests_.find(request);
   CHECK(it != requests_.end());
