@@ -1,4 +1,4 @@
-From 28ec0380fb3168dc7709b71b434cf1611a59dcf6 Mon Sep 17 00:00:00 2001
+From 19646b41f60ee7a45fcd37483a37c075706ef5ea Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 16 Sep 2026 21:03:34 +0800
 Subject: [PATCH] feat(aegis): enforce request dispatch gate
@@ -6,9 +6,9 @@ Subject: [PATCH] feat(aegis): enforce request dispatch gate
 ---
  components/aegis_access/BUILD.gn              |  21 ++
  .../access_route_planner_native_test.cc       |   3 +
- .../aegis_access/request_dispatch_gate.cc     |  45 +++++
- .../aegis_access/request_dispatch_gate.h      |  38 ++++
- .../request_dispatch_gate_contract_test.h     | 232 +++++++++++++++++++++++
+ .../aegis_access/request_dispatch_gate.cc     |  45 ++++
+ .../aegis_access/request_dispatch_gate.h      |  38 +++
+ .../request_dispatch_gate_contract_test.h     | 232 ++++++++++++++++++
  .../request_dispatch_gate_unittest.cc         |  29 +++
  6 files changed, 368 insertions(+)
  create mode 100644 components/aegis_access/request_dispatch_gate.cc
@@ -17,7 +17,7 @@ Subject: [PATCH] feat(aegis): enforce request dispatch gate
  create mode 100644 components/aegis_access/request_dispatch_gate_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 471a998..8978882 100644
+index dca8a57..6267bad 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -35,6 +35,14 @@ source_set("request_ownership_registry") {
@@ -35,7 +35,7 @@ index 471a998..8978882 100644
  source_set("aegis_access") {
    sources = [
      "access_proxy_route_adapter.cc",
-@@ -67,6 +75,19 @@ test("request_ownership_registry_unittests") {
+@@ -71,6 +79,19 @@ test("request_ownership_registry_unittests") {
    ]
  }
  
@@ -444,3 +444,6 @@ index 0000000..385dbb5
 +
 +}  // namespace
 +}  // namespace aegis_access::test
+-- 
+2.54.0 (Apple Git-157)
+
