@@ -25,6 +25,25 @@ struct OwnershipKey {
   friend bool operator==(const OwnershipKey&, const OwnershipKey&) = default;
 };
 
+
+inline bool IsKnownChannel(ChannelNamespace channel) {
+  switch (channel) {
+    case ChannelNamespace::kDev:
+    case ChannelNamespace::kAlpha:
+    case ChannelNamespace::kBeta:
+    case ChannelNamespace::kRelease:
+      return true;
+    case ChannelNamespace::kInvalid:
+      return false;
+  }
+  return false;
+}
+
+inline bool IsCompleteOwner(const OwnershipKey& owner) {
+  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
+         !owner.storage_partition_token.empty();
+}
+
 struct GenerationTuple {
   // Zero is reserved for "not published / not initialized". Browser-owned
   // generation sources publish live counters starting at 1 and increment from
