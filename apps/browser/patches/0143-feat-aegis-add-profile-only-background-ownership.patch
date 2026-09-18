@@ -1,0 +1,199 @@
+From 0143000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Sat, 19 Sep 2026 01:33:00 +0800
+Subject: [PATCH] feat(aegis): add Profile-only background request ownership
+
+---
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.cc b/chrome/browser/aegis/access/access_browser_request_adapter.cc
+index 814d8e4..2f930c1 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter.cc
+@@ -16,8 +16,10 @@
+ #include "chrome/common/channel_info.h"
+ #include "components/aegis_access/browser_request_metadata_seed.h"
+ #include "components/version_info/channel.h"
++#include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/page.h"
+ #include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_process_host.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/web_contents.h"
+ #include "net/base/schemeful_site.h"
+@@ -144,12 +146,11 @@ AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
+   return AccessBrowserRequestMetadataStatus::kOk;
+ }
+ 
+-AccessBrowserRequestMetadataStatus ResolveOwner(
++AccessBrowserRequestMetadataStatus ResolveOwnerForPartition(
+     Profile* profile,
+-    content::RenderFrameHost* request_frame,
++    content::StoragePartition* partition,
+     AccessNetworkContextTransport* transport,
+     aegis_access::OwnershipKey* owner) {
+-  content::StoragePartition* partition = request_frame->GetStoragePartition();
+   if (!partition) {
+     return AccessBrowserRequestMetadataStatus::kMissingStoragePartition;
+   }
+@@ -169,6 +170,16 @@ AccessBrowserRequestMetadataStatus ResolveOwner(
+   return AccessBrowserRequestMetadataStatus::kOk;
+ }
+ 
++AccessBrowserRequestMetadataStatus ResolveOwner(
++    Profile* profile,
++    content::RenderFrameHost* request_frame,
++    AccessNetworkContextTransport* transport,
++    aegis_access::OwnershipKey* owner) {
++  return ResolveOwnerForPartition(
++      profile, request_frame ? request_frame->GetStoragePartition() : nullptr,
++      transport, owner);
++}
++
+ AccessBrowserRequestMetadataStatus ResolvePrimaryTopFrameSite(
+     Profile* profile,
+     content::WebContents* contents,
+@@ -324,4 +335,40 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
+              : Error(status);
+ }
+ 
++AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
++    Profile* profile,
++    int render_process_id) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (!aegis::IsAegisProfileSupported(profile)) {
++    return Error(AccessBrowserRequestMetadataStatus::kUnsupportedProfile);
++  }
++
++  AccessNetworkContextTransport* transport =
++      AccessNetworkContextTransport::Get(profile);
++  if (!transport) {
++    return Error(AccessBrowserRequestMetadataStatus::kMissingTransport);
++  }
++
++  content::RenderProcessHost* process =
++      content::RenderProcessHost::FromID(render_process_id);
++  if (!process) {
++    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
++  }
++  if (process->GetBrowserContext() != profile) {
++    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
++  }
++
++  aegis_access::OwnershipKey owner;
++  const AccessBrowserRequestMetadataStatus status = ResolveOwnerForPartition(
++      profile, process->GetStoragePartition(), transport, &owner);
++  if (status != AccessBrowserRequestMetadataStatus::kOk) {
++    return Error(status);
++  }
++
++  aegis_access::BrowserRequestMetadataSeedInput seed_input;
++  seed_input.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
++  seed_input.owner = std::move(owner);
++  return BuildMetadataFromSeed(std::move(seed_input));
++}
++
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.h b/chrome/browser/aegis/access/access_browser_request_adapter.h
+index 92150b5..658a21a 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter.h
++++ b/chrome/browser/aegis/access/access_browser_request_adapter.h
+@@ -23,6 +23,7 @@ enum class AccessBrowserRequestMetadataStatus {
+   kUnsupportedProfile,
+   kMissingTransport,
+   kMissingTrustedContents,
++  kMissingTrustedProcess,
+   kBrowserContextMismatch,
+   kMissingTrustedFrame,
+   kMissingStoragePartition,
+@@ -55,6 +56,14 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
+     content::FrameTreeNodeId frame_tree_node_id,
+     std::optional<int64_t> navigation_id);
+ 
++// Builds Profile-only metadata for browser-owned background request factories
++// that have no unique page client. The render process supplies only trusted
++// BrowserContext/StoragePartition ownership; no WebContents, document token or
++// top-level site is borrowed. Site-scoped policy therefore remains ineligible.
++AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
++    Profile* profile,
++    int render_process_id);
++
+ }  // namespace aegis::access
+ 
+ #endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_BROWSER_REQUEST_ADAPTER_H_
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+index c9bd552..719d230 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+@@ -2,6 +2,7 @@
+ 
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ 
++#include <limits>
+ #include <optional>
+ 
+ #include "base/functional/bind.h"
+@@ -12,6 +13,7 @@
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "content/public/browser/page.h"
+ #include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_process_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/prerender_test_util.h"
+@@ -183,6 +185,56 @@ IN_PROC_BROWSER_TEST_F(
+   EXPECT_FALSE(metadata.metadata.has_value());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(
++    AccessBrowserRequestAdapterBrowserTest,
++    ProfileOnlyMetadataUsesRenderProcessPartitionWithoutSiteIdentity) {
++  const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), primary_url));
++
++  content::RenderFrameHost* primary_frame =
++      web_contents()->GetPrimaryMainFrame();
++  ASSERT_NE(primary_frame, nullptr);
++  content::RenderProcessHost* process = primary_frame->GetProcess();
++  ASSERT_NE(process, nullptr);
++
++  AccessBrowserRequestMetadataResult result =
++      BuildBrowserOwnedProfileOnlyRequestMetadata(
++          browser()->profile(), process->GetDeprecatedID());
++
++  EXPECT_EQ(result.status, AccessBrowserRequestMetadataStatus::kOk);
++  ASSERT_TRUE(result.metadata.has_value());
++  EXPECT_EQ(result.metadata->attribution_kind,
++            aegis_access::RequestAttributionKind::kProfileOnly);
++  EXPECT_TRUE(result.metadata->document_token.empty());
++  EXPECT_TRUE(result.metadata->pending_navigation_token.empty());
++  EXPECT_FALSE(result.metadata->top_frame_site.has_value());
++
++  AccessNetworkContextTransport* transport =
++      AccessNetworkContextTransport::Get(browser()->profile());
++  ASSERT_NE(transport, nullptr);
++  EXPECT_TRUE(transport->OwnsConfiguredPartition(result.metadata->owner));
++
++  const GURL background_url("https://background.example/resource");
++  aegis_access::RequestPolicyContextResult context =
++      aegis_access::CanonicalizeBrowserOwnedRequest(*result.metadata,
++                                                    background_url);
++  ASSERT_TRUE(context.context.has_value());
++  EXPECT_FALSE(context.context->site_ownership_reliable());
++  EXPECT_TRUE(context.context->top_level_site().empty());
++  EXPECT_EQ(context.context->exact_host(), "background.example");
++}
++
++IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
++                       ProfileOnlyMetadataRejectsUnknownRenderProcess) {
++  AccessBrowserRequestMetadataResult result =
++      BuildBrowserOwnedProfileOnlyRequestMetadata(
++          browser()->profile(), std::numeric_limits<int>::max());
++
++  EXPECT_EQ(result.status,
++            AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
++  EXPECT_FALSE(result.metadata.has_value());
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                        PrerenderPageCannotInheritPrimaryPageIdentity) {
+   const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
+

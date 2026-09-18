@@ -16,8 +16,10 @@
 #include "chrome/common/channel_info.h"
 #include "components/aegis_access/browser_request_metadata_seed.h"
 #include "components/version_info/channel.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/schemeful_site.h"
@@ -144,12 +146,11 @@ AccessBrowserRequestMetadataStatus ResolveTrustedFrame(
   return AccessBrowserRequestMetadataStatus::kOk;
 }
 
-AccessBrowserRequestMetadataStatus ResolveOwner(
+AccessBrowserRequestMetadataStatus ResolveOwnerForPartition(
     Profile* profile,
-    content::RenderFrameHost* request_frame,
+    content::StoragePartition* partition,
     AccessNetworkContextTransport* transport,
     aegis_access::OwnershipKey* owner) {
-  content::StoragePartition* partition = request_frame->GetStoragePartition();
   if (!partition) {
     return AccessBrowserRequestMetadataStatus::kMissingStoragePartition;
   }
@@ -167,6 +168,16 @@ AccessBrowserRequestMetadataStatus ResolveOwner(
   }
   *owner = *resolved_owner;
   return AccessBrowserRequestMetadataStatus::kOk;
+}
+
+AccessBrowserRequestMetadataStatus ResolveOwner(
+    Profile* profile,
+    content::RenderFrameHost* request_frame,
+    AccessNetworkContextTransport* transport,
+    aegis_access::OwnershipKey* owner) {
+  return ResolveOwnerForPartition(
+      profile, request_frame ? request_frame->GetStoragePartition() : nullptr,
+      transport, owner);
 }
 
 AccessBrowserRequestMetadataStatus ResolvePrimaryTopFrameSite(
@@ -322,6 +333,42 @@ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
   return status == AccessBrowserRequestMetadataStatus::kOk
              ? BuildMetadataFromSeed(std::move(seed_input))
              : Error(status);
+}
+
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
+    Profile* profile,
+    int render_process_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile)) {
+    return Error(AccessBrowserRequestMetadataStatus::kUnsupportedProfile);
+  }
+
+  AccessNetworkContextTransport* transport =
+      AccessNetworkContextTransport::Get(profile);
+  if (!transport) {
+    return Error(AccessBrowserRequestMetadataStatus::kMissingTransport);
+  }
+
+  content::RenderProcessHost* process =
+      content::RenderProcessHost::FromID(render_process_id);
+  if (!process) {
+    return Error(AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
+  }
+  if (process->GetBrowserContext() != profile) {
+    return Error(AccessBrowserRequestMetadataStatus::kBrowserContextMismatch);
+  }
+
+  aegis_access::OwnershipKey owner;
+  const AccessBrowserRequestMetadataStatus status = ResolveOwnerForPartition(
+      profile, process->GetStoragePartition(), transport, &owner);
+  if (status != AccessBrowserRequestMetadataStatus::kOk) {
+    return Error(status);
+  }
+
+  aegis_access::BrowserRequestMetadataSeedInput seed_input;
+  seed_input.request_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
+  seed_input.owner = std::move(owner);
+  return BuildMetadataFromSeed(std::move(seed_input));
 }
 
 }  // namespace aegis::access
