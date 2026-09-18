@@ -36,6 +36,7 @@ POLICY_PUBLICATION_ACK_PATCH_FILE="$BROWSER_DIR/patches/0137-feat-aegis-version-
 NAVIGATION_URL_LOADER_PATCH_FILE="$BROWSER_DIR/patches/0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch"
 SUBFRAME_NAVIGATION_PATCH_FILE="$BROWSER_DIR/patches/0139-feat-aegis-gate-primary-page-subframe-navigation.patch"
 REDIRECT_REEVALUATION_PATCH_FILE="$BROWSER_DIR/patches/0140-feat-aegis-reevaluate-proxied-redirects.patch"
+WORKER_MAIN_RESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0141-feat-aegis-gate-worker-main-resource-traffic.patch"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -486,6 +487,30 @@ rg -Fq 'SubframeNavigationRedirectReevaluatesThroughProxy' \
 rg -Fq 'RedirectToUnselectedHostFailsClosed' \
   "$REDIRECT_REEVALUATION_PATCH_FILE" ||
   fail "patch 0140 must fail closed when redirect target lacks a selected proxy"
+rg -Fq 'URLLoaderFactoryType::kWorkerMainResource' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must wire the Chromium Worker main-resource factory"
+rg -Fq 'MaybeProxyWorkerMainResource' "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must install the Aegis Worker main-resource wrapper"
+rg -Fq 'RequestAttributionKind::kDocument' "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must require browser-owned document attribution for Worker main scripts"
+rg -Fq 'WorkerMainResourceWithoutPolicyPreservesNativePath' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must browser-test native Worker main-resource behavior"
+rg -Fq 'WorkerMainResourceUsesSelectedProxy' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must browser-test proxied Worker main-resource behavior"
+rg -Fq 'WorkerMainResourceWithoutEndpointFailsClosed' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must fail closed when Worker PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kWorkerSubResource' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE"; then
+  fail "patch 0141 must not claim Worker subresource coverage"
+fi
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE"; then
+  fail "patch 0141 must not claim ServiceWorker coverage"
+fi
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -544,6 +569,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0139 must appear once in series"
 [[ "$(rg -F -c '0140-feat-aegis-reevaluate-proxied-redirects.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0140 must appear once in series"
+[[ "$(rg -F -c '0141-feat-aegis-gate-worker-main-resource-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0141 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -571,10 +598,11 @@ expected_access_tail="$(cat <<'EOF'
 0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch
 0139-feat-aegis-gate-primary-page-subframe-navigation.patch
 0140-feat-aegis-reevaluate-proxied-redirects.patch
+0141-feat-aegis-gate-worker-main-resource-traffic.patch
 EOF
 )"
-[[ "$(tail -n 26 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0140"
+[[ "$(tail -n 27 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0141"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
