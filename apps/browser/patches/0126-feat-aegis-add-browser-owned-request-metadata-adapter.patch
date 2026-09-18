@@ -1,4 +1,4 @@
-From 6e42992d5a9ef801c9a2114448f9d3c347e02fb9 Mon Sep 17 00:00:00 2001
+From 24344d64156052d98a11fe5796e5e0f7c83686aa Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 17 Sep 2026 20:19:05 +0800
 Subject: [PATCH] feat(aegis): add browser-owned request metadata adapter
@@ -462,7 +462,7 @@ index 0000000..fa34447
 +}  // namespace
 +}  // namespace aegis::access
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 8978882..af4ecbc 100644
+index 721e20e..f80c3e3 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -27,6 +27,14 @@ source_set("access_route_types") {
@@ -498,7 +498,7 @@ index 8978882..af4ecbc 100644
 +
  test("request_ownership_registry_unittests") {
    sources = [
-     "request_ownership_registry_contract_test.h",
+     "request_cancellation_contract_test.h",
 diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
 index c26b3b4..ab53b33 100644
 --- a/components/aegis_access/access_route_planner_native_test.cc

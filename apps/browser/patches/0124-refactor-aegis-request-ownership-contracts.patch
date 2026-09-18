@@ -1,0 +1,2236 @@
+From a0bfa68cc8410fb8a2edcae42eeeec6753eff2d9 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Generator <noreply@example.invalid>
+Date: Thu, 17 Sep 2026 15:58:36 +0800
+Subject: [PATCH] refactor(aegis): clarify request ownership contracts
+
+---
+ components/aegis_access/BUILD.gn              |   4 +
+ components/aegis_access/access_route_types.h  |   3 +
+ .../request_cancellation_contract_test.h      | 293 ++++++
+ .../request_dispatch_barrier_contract_test.h  | 263 +++++
+ .../request_ownership_registry.cc             |  48 +-
+ .../aegis_access/request_ownership_registry.h |   6 +
+ ...request_ownership_registry_contract_test.h | 988 +-----------------
+ .../request_ownership_registry_test_support.h | 161 +++
+ .../request_ownership_registry_unit_test.h    | 329 ++++++
+ 9 files changed, 1092 insertions(+), 1003 deletions(-)
+ create mode 100644 components/aegis_access/request_cancellation_contract_test.h
+ create mode 100644 components/aegis_access/request_dispatch_barrier_contract_test.h
+ create mode 100644 components/aegis_access/request_ownership_registry_test_support.h
+ create mode 100644 components/aegis_access/request_ownership_registry_unit_test.h
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 471a998..dca8a57 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -57,7 +57,11 @@ source_set("aegis_access") {
+ 
+ test("request_ownership_registry_unittests") {
+   sources = [
++    "request_cancellation_contract_test.h",
++    "request_dispatch_barrier_contract_test.h",
+     "request_ownership_registry_contract_test.h",
++    "request_ownership_registry_test_support.h",
++    "request_ownership_registry_unit_test.h",
+     "request_ownership_registry_unittest.cc",
+   ]
+   deps = [
+diff --git a/components/aegis_access/access_route_types.h b/components/aegis_access/access_route_types.h
+index 6f92e04..2a46aad 100644
+--- a/components/aegis_access/access_route_types.h
++++ b/components/aegis_access/access_route_types.h
+@@ -26,6 +26,9 @@ struct OwnershipKey {
+ };
+ 
+ struct GenerationTuple {
++  // Zero is reserved for "not published / not initialized". Browser-owned
++  // generation sources publish live counters starting at 1 and increment from
++  // there, so consumers may treat any zero field as an incomplete tuple.
+   uint64_t policy_generation = 0;
+   uint64_t identity_generation = 0;
+   uint64_t selection_generation = 0;
+diff --git a/components/aegis_access/request_cancellation_contract_test.h b/components/aegis_access/request_cancellation_contract_test.h
+new file mode 100644
+index 0000000..dff66d7
+--- /dev/null
++++ b/components/aegis_access/request_cancellation_contract_test.h
+@@ -0,0 +1,293 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_CANCELLATION_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_CANCELLATION_CONTRACT_TEST_H_
++
++#include "components/aegis_access/request_ownership_registry_test_support.h"
++
++namespace aegis_access::test {
++
++inline void PrepareTargetedCancellationBatch(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestOwnershipRegistry& registry,
++    RequestOwnershipRecord& old_request,
++    RequestOwnershipRecord& new_request,
++    RequestOwnershipRecord& queued_request,
++    int* old_terminations,
++    int* new_terminations) {
++  ++new_request.generations.policy_generation;
++  ++new_request.generations.identity_generation;
++  ++queued_request.generations.network_epoch;
++  observer.Expect(registry.Register(old_request) == RequestOwnershipStatus::kOk,
++                  "targeted unit register old generation");
++  observer.Expect(registry.Register(new_request) == RequestOwnershipStatus::kOk,
++                  "targeted unit register new generation");
++  observer.Expect(registry.Register(queued_request) == RequestOwnershipStatus::kOk,
++                  "targeted unit register queued request");
++  observer.Expect(
++      registry.MarkDispatched(
++          old_request.request_id, old_request.owner, old_request.generations,
++          std::make_unique<RecordingTerminationHandle>(old_terminations)) ==
++          RequestOwnershipStatus::kOk,
++      "targeted unit dispatch old generation");
++  observer.Expect(registry.MarkStreaming(old_request.request_id, old_request.owner,
++                                         old_request.generations) ==
++                      RequestOwnershipStatus::kOk,
++                  "targeted unit stream old generation");
++  observer.Expect(
++      registry.MarkDispatched(
++          new_request.request_id, new_request.owner, new_request.generations,
++          std::make_unique<RecordingTerminationHandle>(new_terminations)) ==
++          RequestOwnershipStatus::kOk,
++      "targeted unit dispatch new generation");
++}
++
++inline void VerifyTargetedCancellationBatch(
++    RequestOwnershipRegistryTestObserver& observer,
++    const RequestOwnershipBatchCancelResult& cancelled,
++    const RequestOwnershipRecord& old_request,
++    const RequestOwnershipRecord& new_request,
++    const RequestOwnershipRecord& queued_request,
++    int old_terminations,
++    int new_terminations) {
++  observer.Expect(cancelled.status == RequestOwnershipStatus::kOk,
++                  "targeted unit batch status");
++  observer.Expect(cancelled.cancellations.size() == 3u,
++                  "targeted unit cancels every matching generation");
++  observer.Expect(old_terminations == 1 && new_terminations == 1,
++                  "targeted unit invokes active handles once");
++  const auto* old_cancel = FindCancellation(cancelled, old_request.request_id);
++  const auto* new_cancel = FindCancellation(cancelled, new_request.request_id);
++  const auto* queued_cancel = FindCancellation(cancelled, queued_request.request_id);
++  observer.Expect(old_cancel && old_cancel->termination_invoked &&
++                      old_cancel->previous_lifecycle ==
++                          RequestOwnershipLifecycle::kStreaming,
++                  "targeted unit reports streaming cancellation");
++  observer.Expect(new_cancel && new_cancel->termination_invoked &&
++                      new_cancel->previous_lifecycle ==
++                          RequestOwnershipLifecycle::kDispatched,
++                  "targeted unit reports dispatched cancellation");
++  observer.Expect(queued_cancel && !queued_cancel->termination_invoked &&
++                      queued_cancel->previous_lifecycle ==
++                          RequestOwnershipLifecycle::kNew,
++                  "targeted unit reports queued cancellation");
++}
++
++inline void RunTargetedAcrossGenerationsUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(8);
++  auto old_request = DocumentOwnershipRecord("target-old");
++  auto new_request = DocumentOwnershipRecord("target-new");
++  auto queued_request = DocumentOwnershipRecord("target-queued");
++  int old_terminations = 0;
++  int new_terminations = 0;
++  PrepareTargetedCancellationBatch(observer, registry, old_request, new_request,
++                                   queued_request, &old_terminations,
++                                   &new_terminations);
++  const auto cancelled =
++      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
++  observer.Expect(registry.size() == 0u,
++                  "targeted unit removes all matching requests");
++  VerifyTargetedCancellationBatch(observer, cancelled, old_request, new_request,
++                                  queued_request, old_terminations,
++                                  new_terminations);
++  const auto repeated =
++      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
++  observer.Expect(repeated.status == RequestOwnershipStatus::kOk &&
++                      repeated.cancellations.empty(),
++                  "targeted unit repeated batch is idempotently empty");
++  observer.Expect(old_terminations == 1 && new_terminations == 1,
++                  "targeted unit repeated batch never reterminates");
++}
++
++inline void RunTargetedPendingNavigationUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const auto pending = PendingOwnershipRecord();
++  observer.Expect(registry.Register(pending) == RequestOwnershipStatus::kOk,
++                  "targeted unit register pending navigation");
++  const auto cancelled =
++      registry.CancelMatchingPageTarget(PendingCancellationSelector());
++  observer.Expect(cancelled.status == RequestOwnershipStatus::kOk &&
++                      cancelled.cancellations.size() == 1u &&
++                      registry.size() == 0u,
++                  "targeted unit pending navigation exact match");
++}
++
++inline void RunTargetedRequestCancellationUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RunTargetedAcrossGenerationsUnitTests(observer);
++  RunTargetedPendingNavigationUnitTests(observer);
++}
++
++
++inline std::vector<RequestOwnershipRecord> TargetedIsolationSurvivors(
++    const RequestOwnershipRecord& matching) {
++  auto other_document = DocumentOwnershipRecord("other-document");
++  other_document.document_token = "other-document-token";
++  auto other_profile = DocumentOwnershipRecord("other-profile");
++  other_profile.owner.profile_token = "other-profile-owner";
++  auto other_partition = DocumentOwnershipRecord("other-partition");
++  other_partition.owner.storage_partition_token = "other-partition-owner";
++  auto background = ProfileOwnershipRecord("background");
++  background.exact_host = matching.exact_host;
++  auto other_host = DocumentOwnershipRecord("other-host");
++  other_host.exact_host = "other.example.test";
++  auto other_scheme = DocumentOwnershipRecord("other-scheme");
++  other_scheme.scheme = RequestScheme::kHttp;
++  auto other_port = DocumentOwnershipRecord("other-port");
++  other_port.port = 8443;
++  auto other_site = DocumentOwnershipRecord("other-site");
++  other_site.top_level_site = "https://other-top.example.test";
++  return {other_document, other_profile, other_partition, background,
++          other_host, other_scheme, other_port, other_site};
++}
++
++inline void RunTargetedIsolationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(16);
++  const auto matching = DocumentOwnershipRecord("matching");
++  observer.Expect(registry.Register(matching) == RequestOwnershipStatus::kOk,
++                  "targeted regression register matching request");
++  const auto survivors = TargetedIsolationSurvivors(matching);
++  for (const auto& survivor : survivors) {
++    observer.Expect(registry.Register(survivor) == RequestOwnershipStatus::kOk,
++                    "targeted regression register isolation survivor");
++  }
++  const auto result =
++      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
++  observer.Expect(result.status == RequestOwnershipStatus::kOk &&
++                      result.cancellations.size() == 1u &&
++                      FindCancellation(result, matching.request_id),
++                  "targeted regression cancels only exact page target");
++  observer.Expect(registry.size() == survivors.size(),
++                  "targeted regression preserves every nonmatch");
++  for (const auto& survivor : survivors) {
++    observer.Expect(registry.Lookup(survivor.request_id, survivor.owner,
++                                    survivor.generations)
++                        .status == RequestOwnershipStatus::kOk,
++                    "targeted regression nonmatch remains registered");
++  }
++}
++
++inline std::vector<RequestCancellationSelector> InvalidCancellationSelectors() {
++  std::vector<RequestCancellationSelector> selectors;
++  auto selector = DocumentCancellationSelector();
++  selector.document_token.clear();
++  selectors.push_back(selector);
++  selector = DocumentCancellationSelector();
++  selector.pending_navigation_token = "also-pending";
++  selectors.push_back(selector);
++  selector = DocumentCancellationSelector();
++  selector.owner.profile_token.clear();
++  selectors.push_back(selector);
++  selector = DocumentCancellationSelector();
++  selector.top_level_site.clear();
++  selectors.push_back(selector);
++  selector = DocumentCancellationSelector();
++  selector.exact_host.clear();
++  selectors.push_back(selector);
++  selector = DocumentCancellationSelector();
++  selector.scheme = static_cast<RequestScheme>(99);
++  selectors.push_back(selector);
++  selector = DocumentCancellationSelector();
++  selector.port = 0;
++  selectors.push_back(selector);
++  return selectors;
++}
++
++inline void RunTargetedInvalidSelectorRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(4);
++  const auto record = DocumentOwnershipRecord("invalid-scope");
++  observer.Expect(registry.Register(record) == RequestOwnershipStatus::kOk,
++                  "targeted regression invalid selector base register");
++  const size_t original_size = registry.size();
++  for (const auto& selector : InvalidCancellationSelectors()) {
++    const auto result = registry.CancelMatchingPageTarget(selector);
++    observer.Expect(
++        result.status == RequestOwnershipStatus::kInvalidCancellationSelector &&
++            result.cancellations.empty(),
++        "targeted regression invalid selector fails closed");
++    observer.Expect(registry.size() == original_size,
++                    "targeted regression invalid selector never mutates registry");
++  }
++  observer.Expect(registry.Lookup(record.request_id, record.owner,
++                                  record.generations)
++                      .status == RequestOwnershipStatus::kOk,
++                  "targeted regression invalid selectors preserve request");
++}
++
++
++inline void RunTargetedBatchVisibilityRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(4);
++  auto first = DocumentOwnershipRecord("batch-a");
++  auto second = DocumentOwnershipRecord("batch-b");
++  ++second.generations.policy_generation;
++  observer.Expect(registry.Register(first) == RequestOwnershipStatus::kOk,
++                  "targeted regression register batch first");
++  observer.Expect(registry.Register(second) == RequestOwnershipStatus::kOk,
++                  "targeted regression register batch second");
++  const std::vector<BatchVisibilityTerminationHandle::WatchedRequest> watched = {
++      {first.request_id, first.generations},
++      {second.request_id, second.generations}};
++  int termination_calls = 0;
++  bool all_erased_before_callback = true;
++  for (const auto* request : {&first, &second}) {
++    observer.Expect(
++        registry.MarkDispatched(
++            request->request_id, request->owner, request->generations,
++            std::make_unique<BatchVisibilityTerminationHandle>(
++                &termination_calls, &registry, request->owner, watched,
++                &all_erased_before_callback)) == RequestOwnershipStatus::kOk,
++        request == &first ? "targeted regression dispatch batch first"
++                          : "targeted regression dispatch batch second");
++  }
++  const auto result =
++      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
++  observer.Expect(result.status == RequestOwnershipStatus::kOk &&
++                      result.cancellations.size() == 2u,
++                  "targeted regression cancels complete batch");
++  observer.Expect(termination_calls == 2,
++                  "targeted regression terminates every active batch member");
++  observer.Expect(all_erased_before_callback,
++                  "targeted regression erases full batch before first callback");
++  observer.Expect(registry.size() == 0u,
++                  "targeted regression batch leaves no matching request");
++}
++
++inline void RunTargetedAttributionKindRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  auto document = DocumentOwnershipRecord("document-kind");
++  auto pending = PendingOwnershipRecord("pending-kind");
++  pending.top_level_site = document.top_level_site;
++  pending.exact_host = document.exact_host;
++  observer.Expect(registry.Register(document) == RequestOwnershipStatus::kOk,
++                  "targeted regression register document attribution");
++  observer.Expect(registry.Register(pending) == RequestOwnershipStatus::kOk,
++                  "targeted regression register pending attribution");
++  const auto result =
++      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
++  observer.Expect(result.cancellations.size() == 1u &&
++                      FindCancellation(result, document.request_id),
++                  "targeted regression document selector excludes pending token");
++  observer.Expect(registry.Lookup(pending.request_id, pending.owner,
++                                  pending.generations)
++                      .status == RequestOwnershipStatus::kOk,
++                  "targeted regression pending request survives document selector");
++}
++
++inline void RunTargetedRequestCancellationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RunTargetedIsolationRegressionTests(observer);
++  RunTargetedInvalidSelectorRegressionTests(observer);
++  RunTargetedBatchVisibilityRegressionTests(observer);
++  RunTargetedAttributionKindRegressionTests(observer);
++}
++
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_CANCELLATION_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/request_dispatch_barrier_contract_test.h b/components/aegis_access/request_dispatch_barrier_contract_test.h
+new file mode 100644
+index 0000000..4fab7ec
+--- /dev/null
++++ b/components/aegis_access/request_dispatch_barrier_contract_test.h
+@@ -0,0 +1,263 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_BARRIER_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_BARRIER_CONTRACT_TEST_H_
++
++#include "components/aegis_access/request_ownership_registry_test_support.h"
++
++namespace aegis_access::test {
++
++inline void RunRequestDispatchBarrierGenerationUnitTests(
++    RequestOwnershipRegistryTestObserver& observer,
++    const RequestDispatchBarrierRegistry& barriers,
++    const RequestDispatchBarrier& barrier,
++    const RequestOwnershipRecord& old_generation) {
++  RequestOwnershipRecord new_generation =
++      DocumentOwnershipRecord("barrier-new-generation");
++  ++new_generation.generations.policy_generation;
++  ++new_generation.generations.identity_generation;
++  ++new_generation.generations.selection_generation;
++  ++new_generation.generations.network_epoch;
++  ++new_generation.generations.base_proxy_config_generation;
++
++  const RequestDispatchEvaluationResult old_result =
++      barriers.EvaluateRequest(old_generation);
++  const RequestDispatchEvaluationResult new_result =
++      barriers.EvaluateRequest(new_generation);
++  observer.Expect(old_result.status == RequestDispatchBarrierStatus::kOk &&
++                      old_result.decision == RequestDispatchDecision::kBlock &&
++                      old_result.barrier.has_value(),
++                  "barrier unit blocks old generation request");
++  observer.Expect(new_result.status == RequestDispatchBarrierStatus::kOk &&
++                      new_result.decision == RequestDispatchDecision::kBlock &&
++                      new_result.barrier.has_value(),
++                  "barrier unit blocks new generation request");
++  if (old_result.barrier) {
++    observer.Expect(old_result.barrier->operation_id == barrier.operation_id &&
++                        old_result.barrier->operation_sequence ==
++                            barrier.operation_sequence,
++                    "barrier unit returns owning operation");
++  }
++}
++
++inline void RunRequestDispatchBarrierReleaseUnitTests(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestDispatchBarrierRegistry& barriers,
++    const RequestDispatchBarrier& barrier,
++    const RequestOwnershipRecord& old_generation) {
++  RequestOwnershipRecord nonmatch = old_generation;
++  nonmatch.request_id = "barrier-nonmatch";
++  nonmatch.exact_host = "other.example.test";
++  const RequestDispatchEvaluationResult nonmatch_result =
++      barriers.EvaluateRequest(nonmatch);
++  observer.Expect(nonmatch_result.status == RequestDispatchBarrierStatus::kOk &&
++                      nonmatch_result.decision == RequestDispatchDecision::kAllow &&
++                      !nonmatch_result.barrier,
++                  "barrier unit allows nonmatching request");
++
++  observer.Expect(
++      barriers.InstallBlockBarrier(barrier) == RequestDispatchBarrierStatus::kOk &&
++          barriers.size() == 1u,
++      "barrier unit exact reinstall is idempotent");
++  observer.Expect(
++      barriers.ReleaseBlockBarrier(barrier.selector, barrier.operation_id,
++                                   barrier.operation_sequence) ==
++          RequestDispatchBarrierStatus::kOk,
++      "barrier unit exact release");
++  observer.Expect(barriers.size() == 0u, "barrier unit release removes barrier");
++  observer.Expect(barriers.EvaluateRequest(old_generation).decision ==
++                      RequestDispatchDecision::kAllow,
++                  "barrier unit request allowed after release");
++}
++
++inline void RunRequestDispatchBarrierPendingNavigationUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry pending_barriers(2);
++  RequestDispatchBarrier pending_barrier{
++      "pending-block", 7, PendingCancellationSelector()};
++  observer.Expect(pending_barriers.InstallBlockBarrier(pending_barrier) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "barrier unit install pending navigation barrier");
++  observer.Expect(pending_barriers.EvaluateRequest(PendingOwnershipRecord()).decision ==
++                      RequestDispatchDecision::kBlock,
++                  "barrier unit blocks exact pending navigation");
++}
++
++inline void RunRequestDispatchBarrierUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  const RequestDispatchBarrier barrier = DocumentBlockBarrier();
++  observer.Expect(
++      barriers.InstallBlockBarrier(barrier) == RequestDispatchBarrierStatus::kOk,
++      "barrier unit install");
++  observer.Expect(barriers.size() == 1u, "barrier unit size after install");
++  const RequestOwnershipRecord old_generation =
++      DocumentOwnershipRecord("barrier-old-generation");
++  RunRequestDispatchBarrierGenerationUnitTests(observer, barriers, barrier,
++                                               old_generation);
++  RunRequestDispatchBarrierReleaseUnitTests(observer, barriers, barrier,
++                                            old_generation);
++  RunRequestDispatchBarrierPendingNavigationUnitTests(observer);
++}
++
++inline void RunRequestDispatchBarrierStaleOperationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(4);
++  const RequestDispatchBarrier original = DocumentBlockBarrier("old-op", 10);
++  RequestDispatchBarrier newer = DocumentBlockBarrier("new-op", 20);
++  observer.Expect(barriers.InstallBlockBarrier(original) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "barrier regression install original");
++  observer.Expect(barriers.InstallBlockBarrier(newer) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "barrier regression newer operation replaces scope");
++  observer.Expect(barriers.size() == 1u,
++                  "barrier regression replacement keeps one scope");
++  const RequestDispatchEvaluationResult after_replace =
++      barriers.EvaluateRequest(DocumentOwnershipRecord("after-replace"));
++  observer.Expect(after_replace.decision == RequestDispatchDecision::kBlock &&
++                      after_replace.barrier &&
++                      after_replace.barrier->operation_id == "new-op" &&
++                      after_replace.barrier->operation_sequence == 20,
++                  "barrier regression newer operation owns scope");
++  observer.Expect(
++      barriers.InstallBlockBarrier(DocumentBlockBarrier("stale-install", 15)) ==
++          RequestDispatchBarrierStatus::kStaleOperation,
++      "barrier regression stale install rejected");
++  observer.Expect(
++      barriers.ReleaseBlockBarrier(original.selector, original.operation_id,
++                                   original.operation_sequence) ==
++          RequestDispatchBarrierStatus::kStaleOperation,
++      "barrier regression stale release cannot clear newer barrier");
++  observer.Expect(barriers.EvaluateRequest(
++                      DocumentOwnershipRecord("after-stale-release"))
++                      .decision == RequestDispatchDecision::kBlock,
++                  "barrier regression stale release leaves block active");
++  observer.Expect(
++      barriers.ReleaseBlockBarrier(newer.selector, newer.operation_id,
++                                   newer.operation_sequence) ==
++          RequestDispatchBarrierStatus::kOk,
++      "barrier regression exact newer release succeeds");
++}
++
++inline void RunRequestDispatchBarrierIsolationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(2);
++  observer.Expect(barriers.InstallBlockBarrier(DocumentBlockBarrier()) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "barrier regression isolation base install");
++  const RequestOwnershipRecord matching =
++      DocumentOwnershipRecord("barrier-match");
++  RequestOwnershipRecord other_document = matching;
++  other_document.request_id = "barrier-other-document";
++  other_document.document_token = "other-document-token";
++  RequestOwnershipRecord other_profile = matching;
++  other_profile.request_id = "barrier-other-profile";
++  other_profile.owner.profile_token = "other-profile";
++  RequestOwnershipRecord other_partition = matching;
++  other_partition.request_id = "barrier-other-partition";
++  other_partition.owner.storage_partition_token = "other-partition";
++  RequestOwnershipRecord other_site = matching;
++  other_site.request_id = "barrier-other-site";
++  other_site.top_level_site = "https://other-top.example.test";
++  RequestOwnershipRecord other_host = matching;
++  other_host.request_id = "barrier-other-host";
++  other_host.exact_host = "other.example.test";
++  RequestOwnershipRecord other_scheme = matching;
++  other_scheme.request_id = "barrier-other-scheme";
++  other_scheme.scheme = RequestScheme::kHttp;
++  RequestOwnershipRecord other_port = matching;
++  other_port.request_id = "barrier-other-port";
++  other_port.port = 8443;
++  RequestOwnershipRecord background = ProfileOwnershipRecord("barrier-background");
++  background.exact_host = matching.exact_host;
++  const std::vector<RequestOwnershipRecord> allowed = {
++      other_document, other_profile, other_partition, other_site,
++      other_host,     other_scheme,  other_port,      background};
++  for (const auto& record : allowed) {
++    const RequestDispatchEvaluationResult result =
++        barriers.EvaluateRequest(record);
++    observer.Expect(result.status == RequestDispatchBarrierStatus::kOk &&
++                        result.decision == RequestDispatchDecision::kAllow,
++                    "barrier regression isolates nonmatching scope");
++  }
++}
++
++inline void RunRequestDispatchBarrierValidationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(1);
++  RequestDispatchBarrier invalid = DocumentBlockBarrier();
++  invalid.operation_id.clear();
++  observer.Expect(barriers.InstallBlockBarrier(invalid) ==
++                      RequestDispatchBarrierStatus::kInvalidBarrier,
++                  "barrier regression empty operation id rejected");
++  invalid = DocumentBlockBarrier();
++  invalid.operation_sequence = 0;
++  observer.Expect(barriers.InstallBlockBarrier(invalid) ==
++                      RequestDispatchBarrierStatus::kInvalidBarrier,
++                  "barrier regression zero operation sequence rejected");
++  invalid = DocumentBlockBarrier();
++  invalid.selector.document_token.clear();
++  observer.Expect(barriers.InstallBlockBarrier(invalid) ==
++                      RequestDispatchBarrierStatus::kInvalidBarrier,
++                  "barrier regression invalid selector rejected");
++  observer.Expect(barriers.size() == 0u,
++                  "barrier regression invalid installs never mutate state");
++  const RequestDispatchBarrier first = DocumentBlockBarrier("capacity-a", 1);
++  RequestDispatchBarrier second = first;
++  second.operation_id = "capacity-b";
++  second.operation_sequence = 2;
++  second.selector.document_token = "second-document-token";
++  observer.Expect(barriers.InstallBlockBarrier(first) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "barrier regression capacity first install");
++  observer.Expect(barriers.InstallBlockBarrier(second) ==
++                      RequestDispatchBarrierStatus::kCapacityExceeded,
++                  "barrier regression capacity overflow fails closed");
++  observer.Expect(barriers.size() == 1u,
++                  "barrier regression capacity overflow preserves state");
++}
++
++inline void RunRequestDispatchBarrierInvalidRequestRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestDispatchBarrierRegistry barriers(2);
++  const RequestDispatchBarrier barrier = DocumentBlockBarrier();
++  observer.Expect(barriers.InstallBlockBarrier(barrier) ==
++                      RequestDispatchBarrierStatus::kOk,
++                  "barrier regression invalid request base install");
++  RequestOwnershipRecord invalid_request =
++      DocumentOwnershipRecord("invalid-dispatch-request");
++  invalid_request.generations.policy_generation = 0;
++  const RequestDispatchEvaluationResult invalid_result =
++      barriers.EvaluateRequest(invalid_request);
++  observer.Expect(
++      invalid_result.status == RequestDispatchBarrierStatus::kInvalidRequest &&
++          invalid_result.decision == RequestDispatchDecision::kBlock &&
++          !invalid_result.barrier,
++      "barrier regression malformed controlled request fails closed");
++  observer.Expect(
++      barriers.ReleaseBlockBarrier(barrier.selector, "wrong-op",
++                                   barrier.operation_sequence) ==
++          RequestDispatchBarrierStatus::kStaleOperation,
++      "barrier regression wrong operation id cannot release");
++  observer.Expect(
++      barriers.ReleaseBlockBarrier(barrier.selector, barrier.operation_id,
++                                   barrier.operation_sequence + 1) ==
++          RequestDispatchBarrierStatus::kStaleOperation,
++      "barrier regression wrong operation sequence cannot release");
++  observer.Expect(barriers.size() == 1u,
++                  "barrier regression failed releases keep barrier installed");
++}
++
++inline void RunRequestDispatchBarrierRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RunRequestDispatchBarrierStaleOperationRegressionTests(observer);
++  RunRequestDispatchBarrierIsolationRegressionTests(observer);
++  RunRequestDispatchBarrierValidationRegressionTests(observer);
++  RunRequestDispatchBarrierInvalidRequestRegressionTests(observer);
++}
++
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_DISPATCH_BARRIER_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+index 4aea22b..8d38dcc 100644
+--- a/components/aegis_access/request_ownership_registry.cc
++++ b/components/aegis_access/request_ownership_registry.cc
+@@ -290,16 +290,31 @@ RequestOwnershipStatus RequestOwnershipRegistry::MarkStreaming(
+   return RequestOwnershipStatus::kOk;
+ }
+ 
+-RequestOwnershipTerminalResult RequestOwnershipRegistry::Complete(
++RequestOwnershipStatus RequestOwnershipRegistry::FindAndValidateEntry(
+     const std::string& request_id,
+     const OwnershipKey& expected_owner,
+-    const GenerationTuple& expected_generations) {
++    const GenerationTuple& expected_generations,
++    Entry** entry) {
+   auto it = entries_.find(request_id);
+   if (it == entries_.end()) {
+-    return {};
++    return RequestOwnershipStatus::kNotFound;
+   }
+   const RequestOwnershipStatus status = ValidateExpected(
+       it->second.record, expected_owner, expected_generations);
++  if (status != RequestOwnershipStatus::kOk) {
++    return status;
++  }
++  *entry = &it->second;
++  return RequestOwnershipStatus::kOk;
++}
++
++RequestOwnershipTerminalResult RequestOwnershipRegistry::Complete(
++    const std::string& request_id,
++    const OwnershipKey& expected_owner,
++    const GenerationTuple& expected_generations) {
++  Entry* entry = nullptr;
++  const RequestOwnershipStatus status = FindAndValidateEntry(
++      request_id, expected_owner, expected_generations, &entry);
+   if (status != RequestOwnershipStatus::kOk) {
+     RequestOwnershipTerminalResult result;
+     result.status = status;
+@@ -308,9 +323,9 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Complete(
+ 
+   RequestOwnershipTerminalResult result;
+   result.status = RequestOwnershipStatus::kOk;
+-  result.record = std::move(it->second.record);
+-  result.previous_lifecycle = it->second.lifecycle;
+-  entries_.erase(it);
++  result.record = std::move(entry->record);
++  result.previous_lifecycle = entry->lifecycle;
++  entries_.erase(request_id);
+   return result;
+ }
+ 
+@@ -318,19 +333,16 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Cancel(
+     const std::string& request_id,
+     const OwnershipKey& expected_owner,
+     const GenerationTuple& expected_generations) {
+-  auto it = entries_.find(request_id);
+-  if (it == entries_.end()) {
+-    return {};
+-  }
+-  const RequestOwnershipStatus status = ValidateExpected(
+-      it->second.record, expected_owner, expected_generations);
++  Entry* entry = nullptr;
++  const RequestOwnershipStatus status = FindAndValidateEntry(
++      request_id, expected_owner, expected_generations, &entry);
+   if (status != RequestOwnershipStatus::kOk) {
+     RequestOwnershipTerminalResult result;
+     result.status = status;
+     return result;
+   }
+-  if (it->second.lifecycle != RequestOwnershipLifecycle::kNew &&
+-      !it->second.termination_handle) {
++  if (entry->lifecycle != RequestOwnershipLifecycle::kNew &&
++      !entry->termination_handle) {
+     RequestOwnershipTerminalResult result;
+     result.status = RequestOwnershipStatus::kMissingTerminationHandle;
+     return result;
+@@ -338,15 +350,15 @@ RequestOwnershipTerminalResult RequestOwnershipRegistry::Cancel(
+ 
+   RequestOwnershipTerminalResult result;
+   result.status = RequestOwnershipStatus::kOk;
+-  result.record = std::move(it->second.record);
+-  result.previous_lifecycle = it->second.lifecycle;
++  result.record = std::move(entry->record);
++  result.previous_lifecycle = entry->lifecycle;
+   std::unique_ptr<RequestTerminationHandle> termination_handle =
+-      std::move(it->second.termination_handle);
++      std::move(entry->termination_handle);
+ 
+   // Erase before entering externally owned cancellation code. A reentrant or
+   // late callback can therefore only observe kNotFound, never a half-cancelled
+   // request that could be cancelled or completed twice.
+-  entries_.erase(it);
++  entries_.erase(request_id);
+   if (termination_handle) {
+     termination_handle->Terminate();
+     result.termination_invoked = true;
+diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
+index fb398f6..419598a 100644
+--- a/components/aegis_access/request_ownership_registry.h
++++ b/components/aegis_access/request_ownership_registry.h
+@@ -208,6 +208,12 @@ class RequestOwnershipRegistry {
+     std::unique_ptr<RequestTerminationHandle> termination_handle;
+   };
+ 
++  RequestOwnershipStatus FindAndValidateEntry(
++      const std::string& request_id,
++      const OwnershipKey& expected_owner,
++      const GenerationTuple& expected_generations,
++      Entry** entry);
++
+   size_t max_entries_;
+   std::map<std::string, Entry> entries_;
+ };
+diff --git a/components/aegis_access/request_ownership_registry_contract_test.h b/components/aegis_access/request_ownership_registry_contract_test.h
+index 359f401..3045498 100644
+--- a/components/aegis_access/request_ownership_registry_contract_test.h
++++ b/components/aegis_access/request_ownership_registry_contract_test.h
+@@ -3,990 +3,8 @@
+ #ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_CONTRACT_TEST_H_
+ #define COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_CONTRACT_TEST_H_
+ 
+-#include <memory>
+-#include <string>
+-#include <utility>
+-#include <vector>
+-
+-#include "components/aegis_access/request_ownership_registry.h"
+-
+-namespace aegis_access::test {
+-
+-class RequestOwnershipRegistryTestObserver {
+- public:
+-  virtual ~RequestOwnershipRegistryTestObserver() = default;
+-  virtual void Expect(bool condition, const std::string& label) = 0;
+-};
+-
+-inline OwnershipKey OwnershipOwner() {
+-  return OwnershipKey{ChannelNamespace::kBeta, "profile-owner",
+-                      "partition-owner"};
+-}
+-
+-inline GenerationTuple OwnershipGenerations() {
+-  return GenerationTuple{11, 12, 13, 14, 15};
+-}
+-
+-inline RequestOwnershipRecord DocumentOwnershipRecord(
+-    std::string request_id = "request-document") {
+-  return RequestOwnershipRecord{
+-      std::move(request_id), OwnershipOwner(), OwnershipGenerations(),
+-      "document-token", {}, true, "https://example.test", "cdn.example.test",
+-      RequestScheme::kHttps, 443};
+-}
+-
+-inline RequestOwnershipRecord ProfileOwnershipRecord(
+-    std::string request_id = "request-profile") {
+-  return RequestOwnershipRecord{
+-      std::move(request_id), OwnershipOwner(), OwnershipGenerations(), {}, {},
+-      false, {}, "background.example.test", RequestScheme::kHttps, 443};
+-}
+-
+-class RecordingTerminationHandle final : public RequestTerminationHandle {
+- public:
+-  explicit RecordingTerminationHandle(int* call_count)
+-      : call_count_(call_count) {}
+-
+-  RecordingTerminationHandle(int* call_count,
+-                             RequestOwnershipRegistry* registry,
+-                             std::string request_id,
+-                             OwnershipKey owner,
+-                             GenerationTuple generations,
+-                             bool* erased_before_callback)
+-      : call_count_(call_count),
+-        registry_(registry),
+-        request_id_(std::move(request_id)),
+-        owner_(std::move(owner)),
+-        generations_(generations),
+-        erased_before_callback_(erased_before_callback) {}
+-
+-  void Terminate() override {
+-    ++*call_count_;
+-    if (registry_ && erased_before_callback_) {
+-      *erased_before_callback_ =
+-          registry_->Lookup(request_id_, owner_, generations_).status ==
+-          RequestOwnershipStatus::kNotFound;
+-    }
+-  }
+-
+- private:
+-  int* call_count_;
+-  RequestOwnershipRegistry* registry_ = nullptr;
+-  std::string request_id_;
+-  OwnershipKey owner_;
+-  GenerationTuple generations_;
+-  bool* erased_before_callback_ = nullptr;
+-};
+-
+-inline RequestOwnershipRecord PendingOwnershipRecord(
+-    std::string request_id = "request-pending") {
+-  return RequestOwnershipRecord{
+-      std::move(request_id), OwnershipOwner(), OwnershipGenerations(), {},
+-      "pending-token", true, "https://pending.example.test",
+-      "pending.example.test", RequestScheme::kHttps, 443};
+-}
+-
+-inline RequestCancellationSelector DocumentCancellationSelector() {
+-  return RequestCancellationSelector{
+-      OwnershipOwner(), "document-token", {}, "https://example.test",
+-      "cdn.example.test", RequestScheme::kHttps, 443};
+-}
+-
+-inline RequestCancellationSelector PendingCancellationSelector() {
+-  return RequestCancellationSelector{
+-      OwnershipOwner(), {}, "pending-token", "https://pending.example.test",
+-      "pending.example.test", RequestScheme::kHttps, 443};
+-}
+-
+-inline const RequestOwnershipTerminalResult* FindCancellation(
+-    const RequestOwnershipBatchCancelResult& result,
+-    const std::string& request_id) {
+-  for (const auto& cancellation : result.cancellations) {
+-    if (cancellation.record && cancellation.record->request_id == request_id) {
+-      return &cancellation;
+-    }
+-  }
+-  return nullptr;
+-}
+-
+-inline RequestDispatchBarrier DocumentBlockBarrier(
+-    std::string operation_id = "block-op",
+-    uint64_t operation_sequence = 21) {
+-  return RequestDispatchBarrier{std::move(operation_id), operation_sequence,
+-                                DocumentCancellationSelector()};
+-}
+-
+-class BatchVisibilityTerminationHandle final : public RequestTerminationHandle {
+- public:
+-  struct WatchedRequest {
+-    std::string request_id;
+-    GenerationTuple generations;
+-  };
+-
+-  BatchVisibilityTerminationHandle(
+-      int* call_count,
+-      RequestOwnershipRegistry* registry,
+-      OwnershipKey owner,
+-      std::vector<WatchedRequest> watched,
+-      bool* all_erased_before_callback)
+-      : call_count_(call_count),
+-        registry_(registry),
+-        owner_(std::move(owner)),
+-        watched_(std::move(watched)),
+-        all_erased_before_callback_(all_erased_before_callback) {}
+-
+-  void Terminate() override {
+-    ++*call_count_;
+-    bool all_erased = true;
+-    for (const auto& watched : watched_) {
+-      if (registry_->Lookup(watched.request_id, owner_, watched.generations)
+-              .status != RequestOwnershipStatus::kNotFound) {
+-        all_erased = false;
+-      }
+-    }
+-    *all_erased_before_callback_ &= all_erased;
+-  }
+-
+- private:
+-  int* call_count_;
+-  RequestOwnershipRegistry* registry_;
+-  OwnershipKey owner_;
+-  std::vector<WatchedRequest> watched_;
+-  bool* all_erased_before_callback_;
+-};
+-
+-inline void RunRequestOwnershipRegistrationUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const RequestOwnershipRecord document = DocumentOwnershipRecord();
+-  observer.Expect(registry.Register(document) == RequestOwnershipStatus::kOk,
+-                  "unit register document");
+-  observer.Expect(registry.size() == 1u, "unit registry size after register");
+-  const RequestOwnershipLookupResult initial = registry.Lookup(
+-      document.request_id, document.owner, document.generations);
+-  observer.Expect(initial.status == RequestOwnershipStatus::kOk,
+-                  "unit lookup document");
+-  observer.Expect(initial.snapshot.has_value(), "unit lookup has snapshot");
+-  if (initial.snapshot) {
+-    observer.Expect(initial.snapshot->record == document,
+-                    "unit lookup preserves record");
+-    observer.Expect(initial.snapshot->lifecycle == RequestOwnershipLifecycle::kNew,
+-                    "unit initial lifecycle");
+-    observer.Expect(!initial.snapshot->has_termination_handle,
+-                    "unit initial handle absent");
+-  }
+-}
+-
+-inline void RunRequestOwnershipLifecycleUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const RequestOwnershipRecord document = DocumentOwnershipRecord();
+-  observer.Expect(registry.Register(document) == RequestOwnershipStatus::kOk,
+-                  "unit lifecycle register document");
+-  int termination_calls = 0;
+-  observer.Expect(
+-      registry.MarkDispatched(
+-          document.request_id, document.owner, document.generations,
+-          std::make_unique<RecordingTerminationHandle>(&termination_calls)) ==
+-          RequestOwnershipStatus::kOk,
+-      "unit mark dispatched");
+-  const RequestOwnershipLookupResult dispatched = registry.Lookup(
+-      document.request_id, document.owner, document.generations);
+-  observer.Expect(dispatched.snapshot.has_value() &&
+-                      dispatched.snapshot->lifecycle ==
+-                          RequestOwnershipLifecycle::kDispatched &&
+-                      dispatched.snapshot->has_termination_handle,
+-                  "unit dispatched snapshot");
+-  observer.Expect(registry.MarkStreaming(document.request_id, document.owner,
+-                                         document.generations) ==
+-                      RequestOwnershipStatus::kOk,
+-                  "unit mark streaming");
+-  const RequestOwnershipTerminalResult completed = registry.Complete(
+-      document.request_id, document.owner, document.generations);
+-  observer.Expect(completed.status == RequestOwnershipStatus::kOk,
+-                  "unit complete request");
+-  observer.Expect(completed.record.has_value() && completed.record == document,
+-                  "unit completion returns identity");
+-  observer.Expect(completed.previous_lifecycle ==
+-                      RequestOwnershipLifecycle::kStreaming,
+-                  "unit completion remembers lifecycle");
+-  observer.Expect(!completed.termination_invoked && termination_calls == 0,
+-                  "unit completion does not terminate");
+-  observer.Expect(registry.size() == 0u, "unit completion erases entry");
+-}
+-
+-inline void RunRequestOwnershipProfileOnlyUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const RequestOwnershipRecord profile = ProfileOwnershipRecord();
+-  observer.Expect(registry.Register(profile) == RequestOwnershipStatus::kOk,
+-                  "unit profile-only register");
+-  const RequestOwnershipLookupResult profile_lookup = registry.Lookup(
+-      profile.request_id, profile.owner, profile.generations);
+-  observer.Expect(profile_lookup.snapshot.has_value() &&
+-                      !profile_lookup.snapshot->record.site_ownership_reliable &&
+-                      profile_lookup.snapshot->record.top_level_site.empty(),
+-                  "unit profile-only has no borrowed page identity");
+-}
+-
+-inline void RunRequestOwnershipRegistryUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RunRequestOwnershipRegistrationUnitTests(observer);
+-  RunRequestOwnershipLifecycleUnitTests(observer);
+-  RunRequestOwnershipProfileOnlyUnitTests(observer);
+-}
+-
+-inline void RunRequestOwnershipDuplicateRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  RequestOwnershipRecord original = DocumentOwnershipRecord("duplicate");
+-  RequestOwnershipRecord replacement = original;
+-  replacement.exact_host = "replacement.example.test";
+-  observer.Expect(registry.Register(original) == RequestOwnershipStatus::kOk,
+-                  "regression duplicate base register");
+-  observer.Expect(registry.Register(replacement) ==
+-                      RequestOwnershipStatus::kDuplicateRequestId,
+-                  "regression duplicate rejected");
+-  const RequestOwnershipLookupResult lookup = registry.Lookup(
+-      original.request_id, original.owner, original.generations);
+-  observer.Expect(lookup.snapshot.has_value() &&
+-                      lookup.snapshot->record.exact_host == original.exact_host,
+-                  "regression duplicate never replaces original");
+-}
+-
+-inline void RunRequestOwnershipInvalidMetadataRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(8);
+-  RequestOwnershipRecord invalid = DocumentOwnershipRecord("invalid-id");
+-  invalid.request_id.clear();
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression empty request id rejected");
+-  invalid = DocumentOwnershipRecord("invalid-owner");
+-  invalid.owner.channel = static_cast<ChannelNamespace>(99);
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression unknown channel rejected");
+-  invalid = DocumentOwnershipRecord("invalid-generation");
+-  invalid.generations.network_epoch = 0;
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression incomplete generation rejected");
+-  invalid = DocumentOwnershipRecord("invalid-scheme");
+-  invalid.scheme = static_cast<RequestScheme>(99);
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression unknown scheme rejected");
+-  invalid = DocumentOwnershipRecord("invalid-port");
+-  invalid.port = 0;
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression zero port rejected");
+-}
+-
+-inline void RunRequestOwnershipInvalidAttributionRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(8);
+-  RequestOwnershipRecord invalid =
+-      DocumentOwnershipRecord("ambiguous-attribution");
+-  invalid.pending_navigation_token = "also-pending";
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression ambiguous site attribution rejected");
+-  invalid = ProfileOwnershipRecord("borrowed-site");
+-  invalid.top_level_site = "https://borrowed.example";
+-  observer.Expect(registry.Register(invalid) ==
+-                      RequestOwnershipStatus::kInvalidRecord,
+-                  "regression profile-only cannot borrow site");
+-}
+-
+-inline void RunRequestOwnershipCapacityRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(1);
+-  const RequestOwnershipRecord first = DocumentOwnershipRecord("capacity-a");
+-  const RequestOwnershipRecord second = DocumentOwnershipRecord("capacity-b");
+-  observer.Expect(registry.Register(first) == RequestOwnershipStatus::kOk,
+-                  "regression capacity first register");
+-  observer.Expect(registry.Register(second) ==
+-                      RequestOwnershipStatus::kCapacityExceeded,
+-                  "regression capacity fails closed");
+-  observer.Expect(registry.Complete(first.request_id, first.owner,
+-                                    first.generations)
+-                      .status == RequestOwnershipStatus::kOk,
+-                  "regression capacity completion frees entry");
+-  observer.Expect(registry.Register(second) == RequestOwnershipStatus::kOk,
+-                  "regression capacity reused after terminal state");
+-}
+-
+-inline RequestOwnershipRecord RegisterIdentityRegressionRecord(
+-    RequestOwnershipRegistryTestObserver& observer,
+-    RequestOwnershipRegistry& registry) {
+-  const RequestOwnershipRecord record = DocumentOwnershipRecord("identity");
+-  observer.Expect(registry.Register(record) == RequestOwnershipStatus::kOk,
+-                  "regression identity register");
+-  return record;
+-}
+-
+-inline void RunRequestOwnershipMismatchRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const RequestOwnershipRecord record =
+-      RegisterIdentityRegressionRecord(observer, registry);
+-  OwnershipKey wrong_owner = record.owner;
+-  wrong_owner.profile_token = "other-profile";
+-  observer.Expect(registry.Lookup(record.request_id, wrong_owner,
+-                                  record.generations)
+-                      .status == RequestOwnershipStatus::kOwnershipMismatch,
+-                  "regression cross-profile lookup rejected");
+-  OwnershipKey wrong_partition = record.owner;
+-  wrong_partition.storage_partition_token = "other-partition";
+-  observer.Expect(registry.Lookup(record.request_id, wrong_partition,
+-                                  record.generations)
+-                      .status == RequestOwnershipStatus::kOwnershipMismatch,
+-                  "regression cross-partition lookup rejected");
+-  int rejected_termination_calls = 0;
+-  observer.Expect(
+-      registry.MarkDispatched(
+-          record.request_id, wrong_owner, record.generations,
+-          std::make_unique<RecordingTerminationHandle>(
+-              &rejected_termination_calls)) ==
+-          RequestOwnershipStatus::kOwnershipMismatch,
+-      "regression cross-profile dispatch rejected");
+-  observer.Expect(rejected_termination_calls == 0,
+-                  "regression rejected dispatch never terminates");
+-  observer.Expect(registry.Lookup(record.request_id, record.owner,
+-                                  record.generations)
+-                      .status == RequestOwnershipStatus::kOk,
+-                  "regression rejected owner leaves entry intact");
+-}
+-
+-inline void RunRequestOwnershipStaleGenerationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const RequestOwnershipRecord record =
+-      RegisterIdentityRegressionRecord(observer, registry);
+-  GenerationTuple stale_policy = record.generations;
+-  ++stale_policy.policy_generation;
+-  observer.Expect(registry.Lookup(record.request_id, record.owner, stale_policy)
+-                      .status == RequestOwnershipStatus::kStaleGeneration,
+-                  "regression stale policy generation rejected");
+-  GenerationTuple stale = record.generations;
+-  ++stale.network_epoch;
+-  int termination_calls = 0;
+-  observer.Expect(
+-      registry.MarkDispatched(
+-          record.request_id, record.owner, record.generations,
+-          std::make_unique<RecordingTerminationHandle>(&termination_calls)) ==
+-          RequestOwnershipStatus::kOk,
+-      "regression valid dispatch after owner mismatch");
+-  observer.Expect(registry.Cancel(record.request_id, record.owner, stale).status ==
+-                      RequestOwnershipStatus::kStaleGeneration,
+-                  "regression stale cancel rejected");
+-  observer.Expect(termination_calls == 0 && registry.size() == 1u,
+-                  "regression stale cancel keeps request active");
+-}
+-
+-inline void RunRequestOwnershipLifecycleRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(3);
+-  const RequestOwnershipRecord lifecycle =
+-      DocumentOwnershipRecord("lifecycle");
+-  observer.Expect(registry.Register(lifecycle) == RequestOwnershipStatus::kOk,
+-                  "regression lifecycle register");
+-  observer.Expect(registry.MarkStreaming(lifecycle.request_id, lifecycle.owner,
+-                                         lifecycle.generations) ==
+-                      RequestOwnershipStatus::kInvalidLifecycle,
+-                  "regression streaming before dispatch rejected");
+-  observer.Expect(registry.MarkDispatched(lifecycle.request_id, lifecycle.owner,
+-                                          lifecycle.generations, nullptr) ==
+-                      RequestOwnershipStatus::kMissingTerminationHandle,
+-                  "regression dispatch requires termination handle");
+-  const RequestOwnershipTerminalResult new_cancel = registry.Cancel(
+-      lifecycle.request_id, lifecycle.owner, lifecycle.generations);
+-  observer.Expect(new_cancel.status == RequestOwnershipStatus::kOk &&
+-                      !new_cancel.termination_invoked && registry.size() == 0u,
+-                  "regression new request cancels without external handle");
+-}
+-
+-inline void RunRequestOwnershipReentrantCancellationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const RequestOwnershipRecord record = DocumentOwnershipRecord("reentrant");
+-  observer.Expect(registry.Register(record) == RequestOwnershipStatus::kOk,
+-                  "regression reentrant register");
+-  int termination_calls = 0;
+-  bool erased_before_callback = false;
+-  observer.Expect(
+-      registry.MarkDispatched(
+-          record.request_id, record.owner, record.generations,
+-          std::make_unique<RecordingTerminationHandle>(
+-              &termination_calls, &registry, record.request_id, record.owner,
+-              record.generations, &erased_before_callback)) ==
+-          RequestOwnershipStatus::kOk,
+-      "regression reentrant dispatch");
+-  observer.Expect(registry.MarkStreaming(record.request_id, record.owner,
+-                                         record.generations) ==
+-                      RequestOwnershipStatus::kOk,
+-                  "regression reentrant streaming");
+-  const RequestOwnershipTerminalResult cancelled = registry.Cancel(
+-      record.request_id, record.owner, record.generations);
+-  observer.Expect(cancelled.status == RequestOwnershipStatus::kOk &&
+-                      cancelled.termination_invoked && termination_calls == 1,
+-                  "regression cancellation invokes handle once");
+-  observer.Expect(erased_before_callback,
+-                  "regression erase precedes external termination callback");
+-  observer.Expect(registry.Cancel(record.request_id, record.owner,
+-                                  record.generations)
+-                      .status == RequestOwnershipStatus::kNotFound,
+-                  "regression repeated cancel cannot reterminate");
+-  observer.Expect(registry.Complete(record.request_id, record.owner,
+-                                    record.generations)
+-                      .status == RequestOwnershipStatus::kNotFound,
+-                  "regression late completion after cancel is ignored");
+-}
+-
+-inline void RunRequestOwnershipRegistryRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RunRequestOwnershipDuplicateRegressionTests(observer);
+-  RunRequestOwnershipInvalidMetadataRegressionTests(observer);
+-  RunRequestOwnershipInvalidAttributionRegressionTests(observer);
+-  RunRequestOwnershipCapacityRegressionTests(observer);
+-  RunRequestOwnershipMismatchRegressionTests(observer);
+-  RunRequestOwnershipStaleGenerationRegressionTests(observer);
+-  RunRequestOwnershipLifecycleRegressionTests(observer);
+-  RunRequestOwnershipReentrantCancellationRegressionTests(observer);
+-}
+-
+-inline void PrepareTargetedCancellationBatch(
+-    RequestOwnershipRegistryTestObserver& observer,
+-    RequestOwnershipRegistry& registry,
+-    RequestOwnershipRecord& old_request,
+-    RequestOwnershipRecord& new_request,
+-    RequestOwnershipRecord& queued_request,
+-    int* old_terminations,
+-    int* new_terminations) {
+-  ++new_request.generations.policy_generation;
+-  ++new_request.generations.identity_generation;
+-  ++queued_request.generations.network_epoch;
+-  observer.Expect(registry.Register(old_request) == RequestOwnershipStatus::kOk,
+-                  "targeted unit register old generation");
+-  observer.Expect(registry.Register(new_request) == RequestOwnershipStatus::kOk,
+-                  "targeted unit register new generation");
+-  observer.Expect(registry.Register(queued_request) == RequestOwnershipStatus::kOk,
+-                  "targeted unit register queued request");
+-  observer.Expect(
+-      registry.MarkDispatched(
+-          old_request.request_id, old_request.owner, old_request.generations,
+-          std::make_unique<RecordingTerminationHandle>(old_terminations)) ==
+-          RequestOwnershipStatus::kOk,
+-      "targeted unit dispatch old generation");
+-  observer.Expect(registry.MarkStreaming(old_request.request_id, old_request.owner,
+-                                         old_request.generations) ==
+-                      RequestOwnershipStatus::kOk,
+-                  "targeted unit stream old generation");
+-  observer.Expect(
+-      registry.MarkDispatched(
+-          new_request.request_id, new_request.owner, new_request.generations,
+-          std::make_unique<RecordingTerminationHandle>(new_terminations)) ==
+-          RequestOwnershipStatus::kOk,
+-      "targeted unit dispatch new generation");
+-}
+-
+-inline void VerifyTargetedCancellationBatch(
+-    RequestOwnershipRegistryTestObserver& observer,
+-    const RequestOwnershipBatchCancelResult& cancelled,
+-    const RequestOwnershipRecord& old_request,
+-    const RequestOwnershipRecord& new_request,
+-    const RequestOwnershipRecord& queued_request,
+-    int old_terminations,
+-    int new_terminations) {
+-  observer.Expect(cancelled.status == RequestOwnershipStatus::kOk,
+-                  "targeted unit batch status");
+-  observer.Expect(cancelled.cancellations.size() == 3u,
+-                  "targeted unit cancels every matching generation");
+-  observer.Expect(old_terminations == 1 && new_terminations == 1,
+-                  "targeted unit invokes active handles once");
+-  const auto* old_cancel = FindCancellation(cancelled, old_request.request_id);
+-  const auto* new_cancel = FindCancellation(cancelled, new_request.request_id);
+-  const auto* queued_cancel = FindCancellation(cancelled, queued_request.request_id);
+-  observer.Expect(old_cancel && old_cancel->termination_invoked &&
+-                      old_cancel->previous_lifecycle ==
+-                          RequestOwnershipLifecycle::kStreaming,
+-                  "targeted unit reports streaming cancellation");
+-  observer.Expect(new_cancel && new_cancel->termination_invoked &&
+-                      new_cancel->previous_lifecycle ==
+-                          RequestOwnershipLifecycle::kDispatched,
+-                  "targeted unit reports dispatched cancellation");
+-  observer.Expect(queued_cancel && !queued_cancel->termination_invoked &&
+-                      queued_cancel->previous_lifecycle ==
+-                          RequestOwnershipLifecycle::kNew,
+-                  "targeted unit reports queued cancellation");
+-}
+-
+-inline void RunTargetedAcrossGenerationsUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(8);
+-  auto old_request = DocumentOwnershipRecord("target-old");
+-  auto new_request = DocumentOwnershipRecord("target-new");
+-  auto queued_request = DocumentOwnershipRecord("target-queued");
+-  int old_terminations = 0;
+-  int new_terminations = 0;
+-  PrepareTargetedCancellationBatch(observer, registry, old_request, new_request,
+-                                   queued_request, &old_terminations,
+-                                   &new_terminations);
+-  const auto cancelled =
+-      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
+-  observer.Expect(registry.size() == 0u,
+-                  "targeted unit removes all matching requests");
+-  VerifyTargetedCancellationBatch(observer, cancelled, old_request, new_request,
+-                                  queued_request, old_terminations,
+-                                  new_terminations);
+-  const auto repeated =
+-      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
+-  observer.Expect(repeated.status == RequestOwnershipStatus::kOk &&
+-                      repeated.cancellations.empty(),
+-                  "targeted unit repeated batch is idempotently empty");
+-  observer.Expect(old_terminations == 1 && new_terminations == 1,
+-                  "targeted unit repeated batch never reterminates");
+-}
+-
+-inline void RunTargetedPendingNavigationUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  const auto pending = PendingOwnershipRecord();
+-  observer.Expect(registry.Register(pending) == RequestOwnershipStatus::kOk,
+-                  "targeted unit register pending navigation");
+-  const auto cancelled =
+-      registry.CancelMatchingPageTarget(PendingCancellationSelector());
+-  observer.Expect(cancelled.status == RequestOwnershipStatus::kOk &&
+-                      cancelled.cancellations.size() == 1u &&
+-                      registry.size() == 0u,
+-                  "targeted unit pending navigation exact match");
+-}
+-
+-inline void RunTargetedRequestCancellationUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RunTargetedAcrossGenerationsUnitTests(observer);
+-  RunTargetedPendingNavigationUnitTests(observer);
+-}
+-
+-
+-inline std::vector<RequestOwnershipRecord> TargetedIsolationSurvivors(
+-    const RequestOwnershipRecord& matching) {
+-  auto other_document = DocumentOwnershipRecord("other-document");
+-  other_document.document_token = "other-document-token";
+-  auto other_profile = DocumentOwnershipRecord("other-profile");
+-  other_profile.owner.profile_token = "other-profile-owner";
+-  auto other_partition = DocumentOwnershipRecord("other-partition");
+-  other_partition.owner.storage_partition_token = "other-partition-owner";
+-  auto background = ProfileOwnershipRecord("background");
+-  background.exact_host = matching.exact_host;
+-  auto other_host = DocumentOwnershipRecord("other-host");
+-  other_host.exact_host = "other.example.test";
+-  auto other_scheme = DocumentOwnershipRecord("other-scheme");
+-  other_scheme.scheme = RequestScheme::kHttp;
+-  auto other_port = DocumentOwnershipRecord("other-port");
+-  other_port.port = 8443;
+-  auto other_site = DocumentOwnershipRecord("other-site");
+-  other_site.top_level_site = "https://other-top.example.test";
+-  return {other_document, other_profile, other_partition, background,
+-          other_host, other_scheme, other_port, other_site};
+-}
+-
+-inline void RunTargetedIsolationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(16);
+-  const auto matching = DocumentOwnershipRecord("matching");
+-  observer.Expect(registry.Register(matching) == RequestOwnershipStatus::kOk,
+-                  "targeted regression register matching request");
+-  const auto survivors = TargetedIsolationSurvivors(matching);
+-  for (const auto& survivor : survivors) {
+-    observer.Expect(registry.Register(survivor) == RequestOwnershipStatus::kOk,
+-                    "targeted regression register isolation survivor");
+-  }
+-  const auto result =
+-      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
+-  observer.Expect(result.status == RequestOwnershipStatus::kOk &&
+-                      result.cancellations.size() == 1u &&
+-                      FindCancellation(result, matching.request_id),
+-                  "targeted regression cancels only exact page target");
+-  observer.Expect(registry.size() == survivors.size(),
+-                  "targeted regression preserves every nonmatch");
+-  for (const auto& survivor : survivors) {
+-    observer.Expect(registry.Lookup(survivor.request_id, survivor.owner,
+-                                    survivor.generations)
+-                        .status == RequestOwnershipStatus::kOk,
+-                    "targeted regression nonmatch remains registered");
+-  }
+-}
+-
+-inline std::vector<RequestCancellationSelector> InvalidCancellationSelectors() {
+-  std::vector<RequestCancellationSelector> selectors;
+-  auto selector = DocumentCancellationSelector();
+-  selector.document_token.clear();
+-  selectors.push_back(selector);
+-  selector = DocumentCancellationSelector();
+-  selector.pending_navigation_token = "also-pending";
+-  selectors.push_back(selector);
+-  selector = DocumentCancellationSelector();
+-  selector.owner.profile_token.clear();
+-  selectors.push_back(selector);
+-  selector = DocumentCancellationSelector();
+-  selector.top_level_site.clear();
+-  selectors.push_back(selector);
+-  selector = DocumentCancellationSelector();
+-  selector.exact_host.clear();
+-  selectors.push_back(selector);
+-  selector = DocumentCancellationSelector();
+-  selector.scheme = static_cast<RequestScheme>(99);
+-  selectors.push_back(selector);
+-  selector = DocumentCancellationSelector();
+-  selector.port = 0;
+-  selectors.push_back(selector);
+-  return selectors;
+-}
+-
+-inline void RunTargetedInvalidSelectorRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(4);
+-  const auto record = DocumentOwnershipRecord("invalid-scope");
+-  observer.Expect(registry.Register(record) == RequestOwnershipStatus::kOk,
+-                  "targeted regression invalid selector base register");
+-  const size_t original_size = registry.size();
+-  for (const auto& selector : InvalidCancellationSelectors()) {
+-    const auto result = registry.CancelMatchingPageTarget(selector);
+-    observer.Expect(
+-        result.status == RequestOwnershipStatus::kInvalidCancellationSelector &&
+-            result.cancellations.empty(),
+-        "targeted regression invalid selector fails closed");
+-    observer.Expect(registry.size() == original_size,
+-                    "targeted regression invalid selector never mutates registry");
+-  }
+-  observer.Expect(registry.Lookup(record.request_id, record.owner,
+-                                  record.generations)
+-                      .status == RequestOwnershipStatus::kOk,
+-                  "targeted regression invalid selectors preserve request");
+-}
+-
+-
+-inline void RunTargetedBatchVisibilityRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(4);
+-  auto first = DocumentOwnershipRecord("batch-a");
+-  auto second = DocumentOwnershipRecord("batch-b");
+-  ++second.generations.policy_generation;
+-  observer.Expect(registry.Register(first) == RequestOwnershipStatus::kOk,
+-                  "targeted regression register batch first");
+-  observer.Expect(registry.Register(second) == RequestOwnershipStatus::kOk,
+-                  "targeted regression register batch second");
+-  const std::vector<BatchVisibilityTerminationHandle::WatchedRequest> watched = {
+-      {first.request_id, first.generations},
+-      {second.request_id, second.generations}};
+-  int termination_calls = 0;
+-  bool all_erased_before_callback = true;
+-  for (const auto* request : {&first, &second}) {
+-    observer.Expect(
+-        registry.MarkDispatched(
+-            request->request_id, request->owner, request->generations,
+-            std::make_unique<BatchVisibilityTerminationHandle>(
+-                &termination_calls, &registry, request->owner, watched,
+-                &all_erased_before_callback)) == RequestOwnershipStatus::kOk,
+-        request == &first ? "targeted regression dispatch batch first"
+-                          : "targeted regression dispatch batch second");
+-  }
+-  const auto result =
+-      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
+-  observer.Expect(result.status == RequestOwnershipStatus::kOk &&
+-                      result.cancellations.size() == 2u,
+-                  "targeted regression cancels complete batch");
+-  observer.Expect(termination_calls == 2,
+-                  "targeted regression terminates every active batch member");
+-  observer.Expect(all_erased_before_callback,
+-                  "targeted regression erases full batch before first callback");
+-  observer.Expect(registry.size() == 0u,
+-                  "targeted regression batch leaves no matching request");
+-}
+-
+-inline void RunTargetedAttributionKindRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestOwnershipRegistry registry(2);
+-  auto document = DocumentOwnershipRecord("document-kind");
+-  auto pending = PendingOwnershipRecord("pending-kind");
+-  pending.top_level_site = document.top_level_site;
+-  pending.exact_host = document.exact_host;
+-  observer.Expect(registry.Register(document) == RequestOwnershipStatus::kOk,
+-                  "targeted regression register document attribution");
+-  observer.Expect(registry.Register(pending) == RequestOwnershipStatus::kOk,
+-                  "targeted regression register pending attribution");
+-  const auto result =
+-      registry.CancelMatchingPageTarget(DocumentCancellationSelector());
+-  observer.Expect(result.cancellations.size() == 1u &&
+-                      FindCancellation(result, document.request_id),
+-                  "targeted regression document selector excludes pending token");
+-  observer.Expect(registry.Lookup(pending.request_id, pending.owner,
+-                                  pending.generations)
+-                      .status == RequestOwnershipStatus::kOk,
+-                  "targeted regression pending request survives document selector");
+-}
+-
+-inline void RunTargetedRequestCancellationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RunTargetedIsolationRegressionTests(observer);
+-  RunTargetedInvalidSelectorRegressionTests(observer);
+-  RunTargetedBatchVisibilityRegressionTests(observer);
+-  RunTargetedAttributionKindRegressionTests(observer);
+-}
+-
+-inline void RunRequestDispatchBarrierGenerationUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer,
+-    const RequestDispatchBarrierRegistry& barriers,
+-    const RequestDispatchBarrier& barrier,
+-    const RequestOwnershipRecord& old_generation) {
+-  RequestOwnershipRecord new_generation =
+-      DocumentOwnershipRecord("barrier-new-generation");
+-  ++new_generation.generations.policy_generation;
+-  ++new_generation.generations.identity_generation;
+-  ++new_generation.generations.selection_generation;
+-  ++new_generation.generations.network_epoch;
+-  ++new_generation.generations.base_proxy_config_generation;
+-
+-  const RequestDispatchEvaluationResult old_result =
+-      barriers.EvaluateRequest(old_generation);
+-  const RequestDispatchEvaluationResult new_result =
+-      barriers.EvaluateRequest(new_generation);
+-  observer.Expect(old_result.status == RequestDispatchBarrierStatus::kOk &&
+-                      old_result.decision == RequestDispatchDecision::kBlock &&
+-                      old_result.barrier.has_value(),
+-                  "barrier unit blocks old generation request");
+-  observer.Expect(new_result.status == RequestDispatchBarrierStatus::kOk &&
+-                      new_result.decision == RequestDispatchDecision::kBlock &&
+-                      new_result.barrier.has_value(),
+-                  "barrier unit blocks new generation request");
+-  if (old_result.barrier) {
+-    observer.Expect(old_result.barrier->operation_id == barrier.operation_id &&
+-                        old_result.barrier->operation_sequence ==
+-                            barrier.operation_sequence,
+-                    "barrier unit returns owning operation");
+-  }
+-}
+-
+-inline void RunRequestDispatchBarrierReleaseUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer,
+-    RequestDispatchBarrierRegistry& barriers,
+-    const RequestDispatchBarrier& barrier,
+-    const RequestOwnershipRecord& old_generation) {
+-  RequestOwnershipRecord nonmatch = old_generation;
+-  nonmatch.request_id = "barrier-nonmatch";
+-  nonmatch.exact_host = "other.example.test";
+-  const RequestDispatchEvaluationResult nonmatch_result =
+-      barriers.EvaluateRequest(nonmatch);
+-  observer.Expect(nonmatch_result.status == RequestDispatchBarrierStatus::kOk &&
+-                      nonmatch_result.decision == RequestDispatchDecision::kAllow &&
+-                      !nonmatch_result.barrier,
+-                  "barrier unit allows nonmatching request");
+-
+-  observer.Expect(
+-      barriers.InstallBlockBarrier(barrier) == RequestDispatchBarrierStatus::kOk &&
+-          barriers.size() == 1u,
+-      "barrier unit exact reinstall is idempotent");
+-  observer.Expect(
+-      barriers.ReleaseBlockBarrier(barrier.selector, barrier.operation_id,
+-                                   barrier.operation_sequence) ==
+-          RequestDispatchBarrierStatus::kOk,
+-      "barrier unit exact release");
+-  observer.Expect(barriers.size() == 0u, "barrier unit release removes barrier");
+-  observer.Expect(barriers.EvaluateRequest(old_generation).decision ==
+-                      RequestDispatchDecision::kAllow,
+-                  "barrier unit request allowed after release");
+-}
+-
+-inline void RunRequestDispatchBarrierPendingNavigationUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestDispatchBarrierRegistry pending_barriers(2);
+-  RequestDispatchBarrier pending_barrier{
+-      "pending-block", 7, PendingCancellationSelector()};
+-  observer.Expect(pending_barriers.InstallBlockBarrier(pending_barrier) ==
+-                      RequestDispatchBarrierStatus::kOk,
+-                  "barrier unit install pending navigation barrier");
+-  observer.Expect(pending_barriers.EvaluateRequest(PendingOwnershipRecord()).decision ==
+-                      RequestDispatchDecision::kBlock,
+-                  "barrier unit blocks exact pending navigation");
+-}
+-
+-inline void RunRequestDispatchBarrierUnitTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestDispatchBarrierRegistry barriers(4);
+-  const RequestDispatchBarrier barrier = DocumentBlockBarrier();
+-  observer.Expect(
+-      barriers.InstallBlockBarrier(barrier) == RequestDispatchBarrierStatus::kOk,
+-      "barrier unit install");
+-  observer.Expect(barriers.size() == 1u, "barrier unit size after install");
+-  const RequestOwnershipRecord old_generation =
+-      DocumentOwnershipRecord("barrier-old-generation");
+-  RunRequestDispatchBarrierGenerationUnitTests(observer, barriers, barrier,
+-                                               old_generation);
+-  RunRequestDispatchBarrierReleaseUnitTests(observer, barriers, barrier,
+-                                            old_generation);
+-  RunRequestDispatchBarrierPendingNavigationUnitTests(observer);
+-}
+-
+-inline void RunRequestDispatchBarrierStaleOperationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestDispatchBarrierRegistry barriers(4);
+-  const RequestDispatchBarrier original = DocumentBlockBarrier("old-op", 10);
+-  RequestDispatchBarrier newer = DocumentBlockBarrier("new-op", 20);
+-  observer.Expect(barriers.InstallBlockBarrier(original) ==
+-                      RequestDispatchBarrierStatus::kOk,
+-                  "barrier regression install original");
+-  observer.Expect(barriers.InstallBlockBarrier(newer) ==
+-                      RequestDispatchBarrierStatus::kOk,
+-                  "barrier regression newer operation replaces scope");
+-  observer.Expect(barriers.size() == 1u,
+-                  "barrier regression replacement keeps one scope");
+-  const RequestDispatchEvaluationResult after_replace =
+-      barriers.EvaluateRequest(DocumentOwnershipRecord("after-replace"));
+-  observer.Expect(after_replace.decision == RequestDispatchDecision::kBlock &&
+-                      after_replace.barrier &&
+-                      after_replace.barrier->operation_id == "new-op" &&
+-                      after_replace.barrier->operation_sequence == 20,
+-                  "barrier regression newer operation owns scope");
+-  observer.Expect(
+-      barriers.InstallBlockBarrier(DocumentBlockBarrier("stale-install", 15)) ==
+-          RequestDispatchBarrierStatus::kStaleOperation,
+-      "barrier regression stale install rejected");
+-  observer.Expect(
+-      barriers.ReleaseBlockBarrier(original.selector, original.operation_id,
+-                                   original.operation_sequence) ==
+-          RequestDispatchBarrierStatus::kStaleOperation,
+-      "barrier regression stale release cannot clear newer barrier");
+-  observer.Expect(barriers.EvaluateRequest(
+-                      DocumentOwnershipRecord("after-stale-release"))
+-                      .decision == RequestDispatchDecision::kBlock,
+-                  "barrier regression stale release leaves block active");
+-  observer.Expect(
+-      barriers.ReleaseBlockBarrier(newer.selector, newer.operation_id,
+-                                   newer.operation_sequence) ==
+-          RequestDispatchBarrierStatus::kOk,
+-      "barrier regression exact newer release succeeds");
+-}
+-
+-inline void RunRequestDispatchBarrierIsolationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestDispatchBarrierRegistry barriers(2);
+-  observer.Expect(barriers.InstallBlockBarrier(DocumentBlockBarrier()) ==
+-                      RequestDispatchBarrierStatus::kOk,
+-                  "barrier regression isolation base install");
+-  const RequestOwnershipRecord matching =
+-      DocumentOwnershipRecord("barrier-match");
+-  RequestOwnershipRecord other_document = matching;
+-  other_document.request_id = "barrier-other-document";
+-  other_document.document_token = "other-document-token";
+-  RequestOwnershipRecord other_profile = matching;
+-  other_profile.request_id = "barrier-other-profile";
+-  other_profile.owner.profile_token = "other-profile";
+-  RequestOwnershipRecord other_partition = matching;
+-  other_partition.request_id = "barrier-other-partition";
+-  other_partition.owner.storage_partition_token = "other-partition";
+-  RequestOwnershipRecord other_site = matching;
+-  other_site.request_id = "barrier-other-site";
+-  other_site.top_level_site = "https://other-top.example.test";
+-  RequestOwnershipRecord other_host = matching;
+-  other_host.request_id = "barrier-other-host";
+-  other_host.exact_host = "other.example.test";
+-  RequestOwnershipRecord other_scheme = matching;
+-  other_scheme.request_id = "barrier-other-scheme";
+-  other_scheme.scheme = RequestScheme::kHttp;
+-  RequestOwnershipRecord other_port = matching;
+-  other_port.request_id = "barrier-other-port";
+-  other_port.port = 8443;
+-  RequestOwnershipRecord background = ProfileOwnershipRecord("barrier-background");
+-  background.exact_host = matching.exact_host;
+-  const std::vector<RequestOwnershipRecord> allowed = {
+-      other_document, other_profile, other_partition, other_site,
+-      other_host,     other_scheme,  other_port,      background};
+-  for (const auto& record : allowed) {
+-    const RequestDispatchEvaluationResult result =
+-        barriers.EvaluateRequest(record);
+-    observer.Expect(result.status == RequestDispatchBarrierStatus::kOk &&
+-                        result.decision == RequestDispatchDecision::kAllow,
+-                    "barrier regression isolates nonmatching scope");
+-  }
+-}
+-
+-inline void RunRequestDispatchBarrierValidationRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestDispatchBarrierRegistry barriers(1);
+-  RequestDispatchBarrier invalid = DocumentBlockBarrier();
+-  invalid.operation_id.clear();
+-  observer.Expect(barriers.InstallBlockBarrier(invalid) ==
+-                      RequestDispatchBarrierStatus::kInvalidBarrier,
+-                  "barrier regression empty operation id rejected");
+-  invalid = DocumentBlockBarrier();
+-  invalid.operation_sequence = 0;
+-  observer.Expect(barriers.InstallBlockBarrier(invalid) ==
+-                      RequestDispatchBarrierStatus::kInvalidBarrier,
+-                  "barrier regression zero operation sequence rejected");
+-  invalid = DocumentBlockBarrier();
+-  invalid.selector.document_token.clear();
+-  observer.Expect(barriers.InstallBlockBarrier(invalid) ==
+-                      RequestDispatchBarrierStatus::kInvalidBarrier,
+-                  "barrier regression invalid selector rejected");
+-  observer.Expect(barriers.size() == 0u,
+-                  "barrier regression invalid installs never mutate state");
+-  const RequestDispatchBarrier first = DocumentBlockBarrier("capacity-a", 1);
+-  RequestDispatchBarrier second = first;
+-  second.operation_id = "capacity-b";
+-  second.operation_sequence = 2;
+-  second.selector.document_token = "second-document-token";
+-  observer.Expect(barriers.InstallBlockBarrier(first) ==
+-                      RequestDispatchBarrierStatus::kOk,
+-                  "barrier regression capacity first install");
+-  observer.Expect(barriers.InstallBlockBarrier(second) ==
+-                      RequestDispatchBarrierStatus::kCapacityExceeded,
+-                  "barrier regression capacity overflow fails closed");
+-  observer.Expect(barriers.size() == 1u,
+-                  "barrier regression capacity overflow preserves state");
+-}
+-
+-inline void RunRequestDispatchBarrierInvalidRequestRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RequestDispatchBarrierRegistry barriers(2);
+-  const RequestDispatchBarrier barrier = DocumentBlockBarrier();
+-  observer.Expect(barriers.InstallBlockBarrier(barrier) ==
+-                      RequestDispatchBarrierStatus::kOk,
+-                  "barrier regression invalid request base install");
+-  RequestOwnershipRecord invalid_request =
+-      DocumentOwnershipRecord("invalid-dispatch-request");
+-  invalid_request.generations.policy_generation = 0;
+-  const RequestDispatchEvaluationResult invalid_result =
+-      barriers.EvaluateRequest(invalid_request);
+-  observer.Expect(
+-      invalid_result.status == RequestDispatchBarrierStatus::kInvalidRequest &&
+-          invalid_result.decision == RequestDispatchDecision::kBlock &&
+-          !invalid_result.barrier,
+-      "barrier regression malformed controlled request fails closed");
+-  observer.Expect(
+-      barriers.ReleaseBlockBarrier(barrier.selector, "wrong-op",
+-                                   barrier.operation_sequence) ==
+-          RequestDispatchBarrierStatus::kStaleOperation,
+-      "barrier regression wrong operation id cannot release");
+-  observer.Expect(
+-      barriers.ReleaseBlockBarrier(barrier.selector, barrier.operation_id,
+-                                   barrier.operation_sequence + 1) ==
+-          RequestDispatchBarrierStatus::kStaleOperation,
+-      "barrier regression wrong operation sequence cannot release");
+-  observer.Expect(barriers.size() == 1u,
+-                  "barrier regression failed releases keep barrier installed");
+-}
+-
+-inline void RunRequestDispatchBarrierRegressionTests(
+-    RequestOwnershipRegistryTestObserver& observer) {
+-  RunRequestDispatchBarrierStaleOperationRegressionTests(observer);
+-  RunRequestDispatchBarrierIsolationRegressionTests(observer);
+-  RunRequestDispatchBarrierValidationRegressionTests(observer);
+-  RunRequestDispatchBarrierInvalidRequestRegressionTests(observer);
+-}
+-
+-}  // namespace aegis_access::test
++#include "components/aegis_access/request_cancellation_contract_test.h"
++#include "components/aegis_access/request_dispatch_barrier_contract_test.h"
++#include "components/aegis_access/request_ownership_registry_unit_test.h"
+ 
+ #endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/request_ownership_registry_test_support.h b/components/aegis_access/request_ownership_registry_test_support.h
+new file mode 100644
+index 0000000..482d10c
+--- /dev/null
++++ b/components/aegis_access/request_ownership_registry_test_support.h
+@@ -0,0 +1,161 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_TEST_SUPPORT_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_TEST_SUPPORT_H_
++
++#include <memory>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "components/aegis_access/request_ownership_registry.h"
++
++namespace aegis_access::test {
++
++
++class RequestOwnershipRegistryTestObserver {
++ public:
++  virtual ~RequestOwnershipRegistryTestObserver() = default;
++  virtual void Expect(bool condition, const std::string& label) = 0;
++};
++
++inline OwnershipKey OwnershipOwner() {
++  return OwnershipKey{ChannelNamespace::kBeta, "profile-owner",
++                      "partition-owner"};
++}
++
++inline GenerationTuple OwnershipGenerations() {
++  return GenerationTuple{11, 12, 13, 14, 15};
++}
++
++inline RequestOwnershipRecord DocumentOwnershipRecord(
++    std::string request_id = "request-document") {
++  return RequestOwnershipRecord{
++      std::move(request_id), OwnershipOwner(), OwnershipGenerations(),
++      "document-token", {}, true, "https://example.test", "cdn.example.test",
++      RequestScheme::kHttps, 443};
++}
++
++inline RequestOwnershipRecord ProfileOwnershipRecord(
++    std::string request_id = "request-profile") {
++  return RequestOwnershipRecord{
++      std::move(request_id), OwnershipOwner(), OwnershipGenerations(), {}, {},
++      false, {}, "background.example.test", RequestScheme::kHttps, 443};
++}
++
++class RecordingTerminationHandle final : public RequestTerminationHandle {
++ public:
++  explicit RecordingTerminationHandle(int* call_count)
++      : call_count_(call_count) {}
++
++  RecordingTerminationHandle(int* call_count,
++                             RequestOwnershipRegistry* registry,
++                             std::string request_id,
++                             OwnershipKey owner,
++                             GenerationTuple generations,
++                             bool* erased_before_callback)
++      : call_count_(call_count),
++        registry_(registry),
++        request_id_(std::move(request_id)),
++        owner_(std::move(owner)),
++        generations_(generations),
++        erased_before_callback_(erased_before_callback) {}
++
++  void Terminate() override {
++    ++*call_count_;
++    if (registry_ && erased_before_callback_) {
++      *erased_before_callback_ =
++          registry_->Lookup(request_id_, owner_, generations_).status ==
++          RequestOwnershipStatus::kNotFound;
++    }
++  }
++
++ private:
++  int* call_count_;
++  RequestOwnershipRegistry* registry_ = nullptr;
++  std::string request_id_;
++  OwnershipKey owner_;
++  GenerationTuple generations_;
++  bool* erased_before_callback_ = nullptr;
++};
++
++inline RequestOwnershipRecord PendingOwnershipRecord(
++    std::string request_id = "request-pending") {
++  return RequestOwnershipRecord{
++      std::move(request_id), OwnershipOwner(), OwnershipGenerations(), {},
++      "pending-token", true, "https://pending.example.test",
++      "pending.example.test", RequestScheme::kHttps, 443};
++}
++
++inline RequestCancellationSelector DocumentCancellationSelector() {
++  return RequestCancellationSelector{
++      OwnershipOwner(), "document-token", {}, "https://example.test",
++      "cdn.example.test", RequestScheme::kHttps, 443};
++}
++
++inline RequestCancellationSelector PendingCancellationSelector() {
++  return RequestCancellationSelector{
++      OwnershipOwner(), {}, "pending-token", "https://pending.example.test",
++      "pending.example.test", RequestScheme::kHttps, 443};
++}
++
++inline const RequestOwnershipTerminalResult* FindCancellation(
++    const RequestOwnershipBatchCancelResult& result,
++    const std::string& request_id) {
++  for (const auto& cancellation : result.cancellations) {
++    if (cancellation.record && cancellation.record->request_id == request_id) {
++      return &cancellation;
++    }
++  }
++  return nullptr;
++}
++
++inline RequestDispatchBarrier DocumentBlockBarrier(
++    std::string operation_id = "block-op",
++    uint64_t operation_sequence = 21) {
++  return RequestDispatchBarrier{std::move(operation_id), operation_sequence,
++                                DocumentCancellationSelector()};
++}
++
++class BatchVisibilityTerminationHandle final : public RequestTerminationHandle {
++ public:
++  struct WatchedRequest {
++    std::string request_id;
++    GenerationTuple generations;
++  };
++
++  BatchVisibilityTerminationHandle(
++      int* call_count,
++      RequestOwnershipRegistry* registry,
++      OwnershipKey owner,
++      std::vector<WatchedRequest> watched,
++      bool* all_erased_before_callback)
++      : call_count_(call_count),
++        registry_(registry),
++        owner_(std::move(owner)),
++        watched_(std::move(watched)),
++        all_erased_before_callback_(all_erased_before_callback) {}
++
++  void Terminate() override {
++    ++*call_count_;
++    bool all_erased = true;
++    for (const auto& watched : watched_) {
++      if (registry_->Lookup(watched.request_id, owner_, watched.generations)
++              .status != RequestOwnershipStatus::kNotFound) {
++        all_erased = false;
++      }
++    }
++    *all_erased_before_callback_ &= all_erased;
++  }
++
++ private:
++  int* call_count_;
++  RequestOwnershipRegistry* registry_;
++  OwnershipKey owner_;
++  std::vector<WatchedRequest> watched_;
++  bool* all_erased_before_callback_;
++};
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_TEST_SUPPORT_H_
+diff --git a/components/aegis_access/request_ownership_registry_unit_test.h b/components/aegis_access/request_ownership_registry_unit_test.h
+new file mode 100644
+index 0000000..a599ae9
+--- /dev/null
++++ b/components/aegis_access/request_ownership_registry_unit_test.h
+@@ -0,0 +1,329 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_UNIT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_UNIT_TEST_H_
++
++#include "components/aegis_access/request_ownership_registry_test_support.h"
++
++namespace aegis_access::test {
++
++inline void RunRequestOwnershipRegistrationUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const RequestOwnershipRecord document = DocumentOwnershipRecord();
++  observer.Expect(registry.Register(document) == RequestOwnershipStatus::kOk,
++                  "unit register document");
++  observer.Expect(registry.size() == 1u, "unit registry size after register");
++  const RequestOwnershipLookupResult initial = registry.Lookup(
++      document.request_id, document.owner, document.generations);
++  observer.Expect(initial.status == RequestOwnershipStatus::kOk,
++                  "unit lookup document");
++  observer.Expect(initial.snapshot.has_value(), "unit lookup has snapshot");
++  if (initial.snapshot) {
++    observer.Expect(initial.snapshot->record == document,
++                    "unit lookup preserves record");
++    observer.Expect(initial.snapshot->lifecycle == RequestOwnershipLifecycle::kNew,
++                    "unit initial lifecycle");
++    observer.Expect(!initial.snapshot->has_termination_handle,
++                    "unit initial handle absent");
++  }
++}
++
++inline void RunRequestOwnershipLifecycleUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const RequestOwnershipRecord document = DocumentOwnershipRecord();
++  observer.Expect(registry.Register(document) == RequestOwnershipStatus::kOk,
++                  "unit lifecycle register document");
++  int termination_calls = 0;
++  observer.Expect(
++      registry.MarkDispatched(
++          document.request_id, document.owner, document.generations,
++          std::make_unique<RecordingTerminationHandle>(&termination_calls)) ==
++          RequestOwnershipStatus::kOk,
++      "unit mark dispatched");
++  const RequestOwnershipLookupResult dispatched = registry.Lookup(
++      document.request_id, document.owner, document.generations);
++  observer.Expect(dispatched.snapshot.has_value() &&
++                      dispatched.snapshot->lifecycle ==
++                          RequestOwnershipLifecycle::kDispatched &&
++                      dispatched.snapshot->has_termination_handle,
++                  "unit dispatched snapshot");
++  observer.Expect(registry.MarkStreaming(document.request_id, document.owner,
++                                         document.generations) ==
++                      RequestOwnershipStatus::kOk,
++                  "unit mark streaming");
++  const RequestOwnershipTerminalResult completed = registry.Complete(
++      document.request_id, document.owner, document.generations);
++  observer.Expect(completed.status == RequestOwnershipStatus::kOk,
++                  "unit complete request");
++  observer.Expect(completed.record.has_value() && completed.record == document,
++                  "unit completion returns identity");
++  observer.Expect(completed.previous_lifecycle ==
++                      RequestOwnershipLifecycle::kStreaming,
++                  "unit completion remembers lifecycle");
++  observer.Expect(!completed.termination_invoked && termination_calls == 0,
++                  "unit completion does not terminate");
++  observer.Expect(registry.size() == 0u, "unit completion erases entry");
++}
++
++inline void RunRequestOwnershipProfileOnlyUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const RequestOwnershipRecord profile = ProfileOwnershipRecord();
++  observer.Expect(registry.Register(profile) == RequestOwnershipStatus::kOk,
++                  "unit profile-only register");
++  const RequestOwnershipLookupResult profile_lookup = registry.Lookup(
++      profile.request_id, profile.owner, profile.generations);
++  observer.Expect(profile_lookup.snapshot.has_value() &&
++                      !profile_lookup.snapshot->record.site_ownership_reliable &&
++                      profile_lookup.snapshot->record.top_level_site.empty(),
++                  "unit profile-only has no borrowed page identity");
++}
++
++inline void RunRequestOwnershipRegistryUnitTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RunRequestOwnershipRegistrationUnitTests(observer);
++  RunRequestOwnershipLifecycleUnitTests(observer);
++  RunRequestOwnershipProfileOnlyUnitTests(observer);
++}
++
++inline void RunRequestOwnershipDuplicateRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  RequestOwnershipRecord original = DocumentOwnershipRecord("duplicate");
++  RequestOwnershipRecord replacement = original;
++  replacement.exact_host = "replacement.example.test";
++  observer.Expect(registry.Register(original) == RequestOwnershipStatus::kOk,
++                  "regression duplicate base register");
++  observer.Expect(registry.Register(replacement) ==
++                      RequestOwnershipStatus::kDuplicateRequestId,
++                  "regression duplicate rejected");
++  const RequestOwnershipLookupResult lookup = registry.Lookup(
++      original.request_id, original.owner, original.generations);
++  observer.Expect(lookup.snapshot.has_value() &&
++                      lookup.snapshot->record.exact_host == original.exact_host,
++                  "regression duplicate never replaces original");
++}
++
++inline void RunRequestOwnershipInvalidMetadataRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(8);
++  RequestOwnershipRecord invalid = DocumentOwnershipRecord("invalid-id");
++  invalid.request_id.clear();
++  observer.Expect(registry.Register(invalid) ==
++                      RequestOwnershipStatus::kInvalidRecord,
++                  "regression empty request id rejected");
++  invalid = DocumentOwnershipRecord("invalid-owner");
++  invalid.owner.channel = static_cast<ChannelNamespace>(99);
++  observer.Expect(registry.Register(invalid) ==
++                      RequestOwnershipStatus::kInvalidRecord,
++                  "regression unknown channel rejected");
++  struct GenerationFieldCase {
++    const char* request_id;
++    uint64_t GenerationTuple::*field;
++  };
++  const GenerationFieldCase generation_cases[] = {
++      {"invalid-policy-generation", &GenerationTuple::policy_generation},
++      {"invalid-identity-generation", &GenerationTuple::identity_generation},
++      {"invalid-selection-generation", &GenerationTuple::selection_generation},
++      {"invalid-network-epoch", &GenerationTuple::network_epoch},
++      {"invalid-proxy-generation",
++       &GenerationTuple::base_proxy_config_generation},
++  };
++  for (const auto& generation_case : generation_cases) {
++    invalid = DocumentOwnershipRecord(generation_case.request_id);
++    invalid.generations.*(generation_case.field) = 0;
++    observer.Expect(registry.Register(invalid) ==
++                        RequestOwnershipStatus::kInvalidRecord,
++                    "regression zero generation field rejected");
++  }
++  invalid = DocumentOwnershipRecord("invalid-scheme");
++  invalid.scheme = static_cast<RequestScheme>(99);
++  observer.Expect(registry.Register(invalid) ==
++                      RequestOwnershipStatus::kInvalidRecord,
++                  "regression unknown scheme rejected");
++  invalid = DocumentOwnershipRecord("invalid-port");
++  invalid.port = 0;
++  observer.Expect(registry.Register(invalid) ==
++                      RequestOwnershipStatus::kInvalidRecord,
++                  "regression zero port rejected");
++}
++
++inline void RunRequestOwnershipInvalidAttributionRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(8);
++  RequestOwnershipRecord invalid =
++      DocumentOwnershipRecord("ambiguous-attribution");
++  invalid.pending_navigation_token = "also-pending";
++  observer.Expect(registry.Register(invalid) ==
++                      RequestOwnershipStatus::kInvalidRecord,
++                  "regression ambiguous site attribution rejected");
++  invalid = ProfileOwnershipRecord("borrowed-site");
++  invalid.top_level_site = "https://borrowed.example";
++  observer.Expect(registry.Register(invalid) ==
++                      RequestOwnershipStatus::kInvalidRecord,
++                  "regression profile-only cannot borrow site");
++}
++
++inline void RunRequestOwnershipCapacityRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(1);
++  const RequestOwnershipRecord first = DocumentOwnershipRecord("capacity-a");
++  const RequestOwnershipRecord second = DocumentOwnershipRecord("capacity-b");
++  observer.Expect(registry.Register(first) == RequestOwnershipStatus::kOk,
++                  "regression capacity first register");
++  observer.Expect(registry.Register(second) ==
++                      RequestOwnershipStatus::kCapacityExceeded,
++                  "regression capacity fails closed");
++  observer.Expect(registry.Complete(first.request_id, first.owner,
++                                    first.generations)
++                      .status == RequestOwnershipStatus::kOk,
++                  "regression capacity completion frees entry");
++  observer.Expect(registry.Register(second) == RequestOwnershipStatus::kOk,
++                  "regression capacity reused after terminal state");
++}
++
++inline RequestOwnershipRecord RegisterIdentityRegressionRecord(
++    RequestOwnershipRegistryTestObserver& observer,
++    RequestOwnershipRegistry& registry) {
++  const RequestOwnershipRecord record = DocumentOwnershipRecord("identity");
++  observer.Expect(registry.Register(record) == RequestOwnershipStatus::kOk,
++                  "regression identity register");
++  return record;
++}
++
++inline void RunRequestOwnershipMismatchRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const RequestOwnershipRecord record =
++      RegisterIdentityRegressionRecord(observer, registry);
++  OwnershipKey wrong_owner = record.owner;
++  wrong_owner.profile_token = "other-profile";
++  observer.Expect(registry.Lookup(record.request_id, wrong_owner,
++                                  record.generations)
++                      .status == RequestOwnershipStatus::kOwnershipMismatch,
++                  "regression cross-profile lookup rejected");
++  OwnershipKey wrong_partition = record.owner;
++  wrong_partition.storage_partition_token = "other-partition";
++  observer.Expect(registry.Lookup(record.request_id, wrong_partition,
++                                  record.generations)
++                      .status == RequestOwnershipStatus::kOwnershipMismatch,
++                  "regression cross-partition lookup rejected");
++  int rejected_termination_calls = 0;
++  observer.Expect(
++      registry.MarkDispatched(
++          record.request_id, wrong_owner, record.generations,
++          std::make_unique<RecordingTerminationHandle>(
++              &rejected_termination_calls)) ==
++          RequestOwnershipStatus::kOwnershipMismatch,
++      "regression cross-profile dispatch rejected");
++  observer.Expect(rejected_termination_calls == 0,
++                  "regression rejected dispatch never terminates");
++  observer.Expect(registry.Lookup(record.request_id, record.owner,
++                                  record.generations)
++                      .status == RequestOwnershipStatus::kOk,
++                  "regression rejected owner leaves entry intact");
++}
++
++inline void RunRequestOwnershipStaleGenerationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const RequestOwnershipRecord record =
++      RegisterIdentityRegressionRecord(observer, registry);
++  GenerationTuple stale_policy = record.generations;
++  ++stale_policy.policy_generation;
++  observer.Expect(registry.Lookup(record.request_id, record.owner, stale_policy)
++                      .status == RequestOwnershipStatus::kStaleGeneration,
++                  "regression stale policy generation rejected");
++  GenerationTuple stale = record.generations;
++  ++stale.network_epoch;
++  int termination_calls = 0;
++  observer.Expect(
++      registry.MarkDispatched(
++          record.request_id, record.owner, record.generations,
++          std::make_unique<RecordingTerminationHandle>(&termination_calls)) ==
++          RequestOwnershipStatus::kOk,
++      "regression valid dispatch after owner mismatch");
++  observer.Expect(registry.Cancel(record.request_id, record.owner, stale).status ==
++                      RequestOwnershipStatus::kStaleGeneration,
++                  "regression stale cancel rejected");
++  observer.Expect(termination_calls == 0 && registry.size() == 1u,
++                  "regression stale cancel keeps request active");
++}
++
++inline void RunRequestOwnershipLifecycleRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(3);
++  const RequestOwnershipRecord lifecycle =
++      DocumentOwnershipRecord("lifecycle");
++  observer.Expect(registry.Register(lifecycle) == RequestOwnershipStatus::kOk,
++                  "regression lifecycle register");
++  observer.Expect(registry.MarkStreaming(lifecycle.request_id, lifecycle.owner,
++                                         lifecycle.generations) ==
++                      RequestOwnershipStatus::kInvalidLifecycle,
++                  "regression streaming before dispatch rejected");
++  observer.Expect(registry.MarkDispatched(lifecycle.request_id, lifecycle.owner,
++                                          lifecycle.generations, nullptr) ==
++                      RequestOwnershipStatus::kMissingTerminationHandle,
++                  "regression dispatch requires termination handle");
++  const RequestOwnershipTerminalResult new_cancel = registry.Cancel(
++      lifecycle.request_id, lifecycle.owner, lifecycle.generations);
++  observer.Expect(new_cancel.status == RequestOwnershipStatus::kOk &&
++                      !new_cancel.termination_invoked && registry.size() == 0u,
++                  "regression new request cancels without external handle");
++}
++
++inline void RunRequestOwnershipReentrantCancellationRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RequestOwnershipRegistry registry(2);
++  const RequestOwnershipRecord record = DocumentOwnershipRecord("reentrant");
++  observer.Expect(registry.Register(record) == RequestOwnershipStatus::kOk,
++                  "regression reentrant register");
++  int termination_calls = 0;
++  bool erased_before_callback = false;
++  observer.Expect(
++      registry.MarkDispatched(
++          record.request_id, record.owner, record.generations,
++          std::make_unique<RecordingTerminationHandle>(
++              &termination_calls, &registry, record.request_id, record.owner,
++              record.generations, &erased_before_callback)) ==
++          RequestOwnershipStatus::kOk,
++      "regression reentrant dispatch");
++  observer.Expect(registry.MarkStreaming(record.request_id, record.owner,
++                                         record.generations) ==
++                      RequestOwnershipStatus::kOk,
++                  "regression reentrant streaming");
++  const RequestOwnershipTerminalResult cancelled = registry.Cancel(
++      record.request_id, record.owner, record.generations);
++  observer.Expect(cancelled.status == RequestOwnershipStatus::kOk &&
++                      cancelled.termination_invoked && termination_calls == 1,
++                  "regression cancellation invokes handle once");
++  observer.Expect(erased_before_callback,
++                  "regression erase precedes external termination callback");
++  observer.Expect(registry.Cancel(record.request_id, record.owner,
++                                  record.generations)
++                      .status == RequestOwnershipStatus::kNotFound,
++                  "regression repeated cancel cannot reterminate");
++  observer.Expect(registry.Complete(record.request_id, record.owner,
++                                    record.generations)
++                      .status == RequestOwnershipStatus::kNotFound,
++                  "regression late completion after cancel is ignored");
++}
++
++inline void RunRequestOwnershipRegistryRegressionTests(
++    RequestOwnershipRegistryTestObserver& observer) {
++  RunRequestOwnershipDuplicateRegressionTests(observer);
++  RunRequestOwnershipInvalidMetadataRegressionTests(observer);
++  RunRequestOwnershipInvalidAttributionRegressionTests(observer);
++  RunRequestOwnershipCapacityRegressionTests(observer);
++  RunRequestOwnershipMismatchRegressionTests(observer);
++  RunRequestOwnershipStaleGenerationRegressionTests(observer);
++  RunRequestOwnershipLifecycleRegressionTests(observer);
++  RunRequestOwnershipReentrantCancellationRegressionTests(observer);
++}
++
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_OWNERSHIP_REGISTRY_UNIT_TEST_H_
+-- 
+2.54.0 (Apple Git-157)
+

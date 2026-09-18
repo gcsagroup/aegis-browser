@@ -19,8 +19,9 @@ CPP_REGRESSION_PATCH_FILE="$BROWSER_DIR/patches/0120-test-aegis-expand-access-cp
 OWNERSHIP_PATCH_FILE="$BROWSER_DIR/patches/0121-feat-aegis-add-request-ownership-registry.patch"
 TARGETED_CANCEL_PATCH_FILE="$BROWSER_DIR/patches/0122-feat-aegis-add-targeted-request-cancellation.patch"
 DISPATCH_BARRIER_PATCH_FILE="$BROWSER_DIR/patches/0123-feat-aegis-add-request-dispatch-block-barriers.patch"
-DISPATCH_GATE_PATCH_FILE="$BROWSER_DIR/patches/0124-feat-aegis-enforce-request-dispatch-gate.patch"
-BROWSER_METADATA_PATCH_FILE="$BROWSER_DIR/patches/0125-feat-aegis-add-browser-owned-request-metadata-adapter.patch"
+OWNERSHIP_REFACTOR_PATCH_FILE="$BROWSER_DIR/patches/0124-refactor-aegis-request-ownership-contracts.patch"
+DISPATCH_GATE_PATCH_FILE="$BROWSER_DIR/patches/0125-feat-aegis-enforce-request-dispatch-gate.patch"
+BROWSER_METADATA_PATCH_FILE="$BROWSER_DIR/patches/0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -62,6 +63,18 @@ rg -Fq 'source_set("request_dispatch_gate")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the request dispatch gate"
 rg -Fq 'test("request_dispatch_gate_unittests")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the dispatch gate unit/regression test"
+dispatch_gate_test_block="$(
+  awk '/^test\("request_dispatch_gate_unittests"\) \{/,/^}$/' "$COMPONENT_BUILD"
+)"
+for ownership_header in \
+  request_cancellation_contract_test.h \
+  request_dispatch_barrier_contract_test.h \
+  request_ownership_registry_contract_test.h \
+  request_ownership_registry_test_support.h \
+  request_ownership_registry_unit_test.h; do
+  [[ "$dispatch_gate_test_block" == *"\"$ownership_header\""* ]] ||
+    fail "dispatch gate test must own transitive header $ownership_header"
+done
 rg -Fq 'source_set("browser_request_metadata_seed")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the browser metadata seed"
 rg -Fq 'test("browser_request_metadata_seed_unittests")' "$COMPONENT_BUILD" ||
@@ -144,31 +157,46 @@ rg -Fq 'RunRequestDispatchBarrierUnitTests' "$DISPATCH_BARRIER_PATCH_FILE" ||
   fail "patch 0123 does not carry dispatch barrier unit coverage"
 rg -Fq 'RunRequestDispatchBarrierRegressionTests' "$DISPATCH_BARRIER_PATCH_FILE" ||
   fail "patch 0123 does not carry dispatch barrier regression coverage"
+rg -Fq '+    "request_cancellation_contract_test.h",' "$OWNERSHIP_REFACTOR_PATCH_FILE" ||
+  fail "patch 0124 does not split request cancellation contract coverage"
+rg -Fq 'FindAndValidateEntry' "$OWNERSHIP_REFACTOR_PATCH_FILE" ||
+  fail "patch 0124 does not centralize terminal request validation"
+rg -Fq 'not published / not initialized' "$OWNERSHIP_REFACTOR_PATCH_FILE" ||
+  fail "patch 0124 does not define zero-generation sentinel semantics"
 rg -Fq 'EvaluateAndRegisterRequestForDispatch' "$DISPATCH_GATE_PATCH_FILE" ||
-  fail "patch 0124 does not deliver the request dispatch gate"
+  fail "patch 0125 does not deliver the request dispatch gate"
 rg -Fq 'RunRequestDispatchGateUnitTests' "$DISPATCH_GATE_PATCH_FILE" ||
-  fail "patch 0124 does not carry dispatch gate unit coverage"
+  fail "patch 0125 does not carry dispatch gate unit coverage"
 rg -Fq 'RunRequestDispatchGateRegressionTests' "$DISPATCH_GATE_PATCH_FILE" ||
-  fail "patch 0124 does not carry dispatch gate regression coverage"
+  fail "patch 0125 does not carry dispatch gate regression coverage"
+for ownership_header in \
+  request_cancellation_contract_test.h \
+  request_dispatch_barrier_contract_test.h \
+  request_ownership_registry_contract_test.h \
+  request_ownership_registry_test_support.h \
+  request_ownership_registry_unit_test.h; do
+  rg -Fq "+    \"$ownership_header\"," "$DISPATCH_GATE_PATCH_FILE" ||
+    fail "patch 0125 does not make the dispatch gate own $ownership_header"
+done
 rg -Fq 'BuildBrowserOwnedRequestMetadata' "$BROWSER_METADATA_PATCH_FILE" ||
-  fail "patch 0125 does not deliver the browser-owned metadata adapter"
+  fail "patch 0126 does not deliver the browser-owned metadata adapter"
 rg -Fq 'request_frame->GetPage().IsPrimary()' "$BROWSER_METADATA_PATCH_FILE" ||
-  fail "patch 0125 does not reject non-primary Pages"
+  fail "patch 0126 does not reject non-primary Pages"
 rg -Fq '"//components/aegis_access:browser_request_metadata_seed",' \
   "$BROWSER_METADATA_PATCH_FILE" ||
-  fail "patch 0125 does not carry the direct metadata seed dependency"
+  fail "patch 0126 does not carry the direct metadata seed dependency"
 rg -Fq 'PrerenderPageCannotInheritPrimaryPageIdentity' \
   "$BROWSER_METADATA_PATCH_FILE" ||
-  fail "patch 0125 does not carry the prerender browser regression"
+  fail "patch 0126 does not carry the prerender browser regression"
 rg -Fq 'RunBrowserRequestMetadataSeedUnitTests' "$BROWSER_METADATA_PATCH_FILE" ||
-  fail "patch 0125 does not carry browser metadata unit coverage"
+  fail "patch 0126 does not carry browser metadata unit coverage"
 rg -Fq 'RunBrowserRequestMetadataSeedRegressionTests' "$BROWSER_METADATA_PATCH_FILE" ||
-  fail "patch 0125 does not carry browser metadata regression coverage"
+  fail "patch 0126 does not carry browser metadata regression coverage"
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
 if rg -Fq 'seed_input.request_initiator' "$BROWSER_METADATA_PATCH_FILE"; then
-  fail "patch 0125 must not trust renderer request_initiator"
+  fail "patch 0126 must not trust renderer request_initiator"
 fi
 [[ "$(rg -F -c '0114-feat-aegis-add-access-route-planning-contract.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0114 must appear once in series"
@@ -188,43 +216,48 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "0122 must appear once in series"
 [[ "$(rg -F -c '0123-feat-aegis-add-request-dispatch-block-barriers.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0123 must appear once in series"
-[[ "$(rg -F -c '0124-feat-aegis-enforce-request-dispatch-gate.patch' \
+[[ "$(rg -F -c '0124-refactor-aegis-request-ownership-contracts.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0124 must appear once in series"
-[[ "$(rg -F -c '0125-feat-aegis-add-browser-owned-request-metadata-adapter.patch' \
+[[ "$(rg -F -c '0125-feat-aegis-enforce-request-dispatch-gate.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0125 must appear once in series"
-[[ "$(tail -n 11 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(rg -F -c '0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0126 must appear once in series"
+[[ "$(tail -n 12 "$SERIES_FILE" | head -n 1)" == \
   "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
   fail "patch 0115 must immediately precede patch 0116"
-[[ "$(tail -n 10 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 11 "$SERIES_FILE" | head -n 1)" == \
   "0116-feat-aegis-add-access-rule-store-recovery.patch" ]] ||
   fail "patch 0116 must immediately precede patch 0117"
-[[ "$(tail -n 9 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 10 "$SERIES_FILE" | head -n 1)" == \
   "0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch" ]] ||
   fail "patch 0117 must immediately precede patch 0118"
-[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 9 "$SERIES_FILE" | head -n 1)" == \
   "0118-feat-aegis-bind-profile-network-context-proxy.patch" ]] ||
   fail "patch 0118 must immediately precede patch 0119"
-[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
   "0119-test-aegis-local-proxy-network-acceptance.patch" ]] ||
   fail "patch 0119 must immediately precede patch 0120"
-[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
   "0120-test-aegis-expand-access-cpp-regressions.patch" ]] ||
   fail "patch 0120 must immediately precede patch 0121"
-[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
   "0121-feat-aegis-add-request-ownership-registry.patch" ]] ||
   fail "patch 0121 must immediately precede patch 0122"
-[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
   "0122-feat-aegis-add-targeted-request-cancellation.patch" ]] ||
   fail "patch 0122 must immediately precede patch 0123"
-[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
+[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
   "0123-feat-aegis-add-request-dispatch-block-barriers.patch" ]] ||
   fail "patch 0123 must immediately precede patch 0124"
-[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
-  "0124-feat-aegis-enforce-request-dispatch-gate.patch" ]] ||
+[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
+  "0124-refactor-aegis-request-ownership-contracts.patch" ]] ||
   fail "patch 0124 must immediately precede patch 0125"
+[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
+  "0125-feat-aegis-enforce-request-dispatch-gate.patch" ]] ||
+  fail "patch 0125 must immediately precede patch 0126"
 [[ "$(tail -n 1 "$SERIES_FILE")" == \
-  "0125-feat-aegis-add-browser-owned-request-metadata-adapter.patch" ]] ||
-  fail "patch 0125 must be the current series tail"
+  "0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch" ]] ||
+  fail "patch 0126 must be the current series tail"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
