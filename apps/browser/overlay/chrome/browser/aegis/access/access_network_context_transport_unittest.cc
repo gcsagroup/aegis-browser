@@ -164,6 +164,77 @@ TEST_F(AccessNetworkContextTransportTest,
 }
 
 TEST_F(AccessNetworkContextTransportTest,
+       CapturesOnlyCurrentExactHostEndpoint) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  const auto endpoint = EndpointFor(partition);
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      partition, {kTargetHost}, endpoint));
+
+  const auto captured = transport_->CaptureSelectedProxyEndpoint(
+      endpoint.owner, endpoint.proxy_group_id, kTargetHost);
+  ASSERT_TRUE(captured.has_value());
+  EXPECT_EQ(*captured, endpoint);
+
+  EXPECT_FALSE(transport_
+                   ->CaptureSelectedProxyEndpoint(
+                       endpoint.owner, endpoint.proxy_group_id, "other.example")
+                   .has_value());
+  EXPECT_FALSE(transport_
+                   ->CaptureSelectedProxyEndpoint(endpoint.owner,
+                                                  "other-proxy-group",
+                                                  kTargetHost)
+                   .has_value());
+
+  auto forged_owner = endpoint.owner;
+  forged_owner.profile_token = "other-profile";
+  EXPECT_FALSE(transport_
+                   ->CaptureSelectedProxyEndpoint(
+                       forged_owner, endpoint.proxy_group_id, kTargetHost)
+                   .has_value());
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       CaptureHandlesUnsortedPublishedHosts) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  const auto endpoint = EndpointFor(partition);
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      partition, {"z.example", kTargetHost, "a.example"}, endpoint));
+
+  EXPECT_TRUE(transport_
+                  ->CaptureSelectedProxyEndpoint(
+                      endpoint.owner, endpoint.proxy_group_id, "a.example")
+                  .has_value());
+  EXPECT_TRUE(transport_
+                  ->CaptureSelectedProxyEndpoint(
+                      endpoint.owner, endpoint.proxy_group_id, kTargetHost)
+                  .has_value());
+  EXPECT_TRUE(transport_
+                  ->CaptureSelectedProxyEndpoint(
+                      endpoint.owner, endpoint.proxy_group_id, "z.example")
+                  .has_value());
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       CaptureRejectsEndpointAfterNetworkEpochChanges) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  const auto endpoint = EndpointFor(partition);
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      partition, {kTargetHost}, endpoint));
+
+  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
+      net::NetworkChangeNotifier::CONNECTION_NONE);
+  task_environment_.RunUntilIdle();
+
+  EXPECT_FALSE(transport_
+                   ->CaptureSelectedProxyEndpoint(
+                       endpoint.owner, endpoint.proxy_group_id, kTargetHost)
+                   .has_value());
+}
+
+TEST_F(AccessNetworkContextTransportTest,
        NonIdempotentFirstSendUsesSelectedProxy) {
   const base::FilePath partition;
   auto delegate = CreateDelegate(partition);
