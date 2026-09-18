@@ -1,0 +1,690 @@
+From 0130000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 16:58:00 +0800
+Subject: [PATCH] feat(aegis): own profile identity generation
+
+---
+diff --git a/components/aegis_access/access_identity_generation_state.h b/components/aegis_access/access_identity_generation_state.h
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_identity_generation_state.h
+@@ -0,0 +1,72 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_STATE_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_STATE_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++
++namespace aegis_access {
++
++enum class AccessIdentityKind {
++  kInstallationGuest,
++  kAuthenticated,
++  kSignedOut,
++  kInvalid,
++};
++
++struct AccessIdentityBinding {
++  AccessIdentityKind kind = AccessIdentityKind::kInvalid;
++  std::string principal_id;
++  std::string entitlement_account_id;
++  std::string service_environment;
++  std::string service_realm;
++
++  friend bool operator==(const AccessIdentityBinding&,
++                         const AccessIdentityBinding&) = default;
++};
++
++enum class IdentityGenerationCommitStatus {
++  kCommitted,
++  kUnchanged,
++  kInvalidIdentity,
++  kExhausted,
++};
++
++struct IdentityGenerationCommitResult {
++  IdentityGenerationCommitStatus status =
++      IdentityGenerationCommitStatus::kInvalidIdentity;
++  uint64_t generation = 0;
++};
++
++// Browser-owned monotonic generation for one committed Access service identity.
++// Zero is reserved for "identity not published". Candidate authentication or
++// bootstrap work must remain outside this state until the caller has committed
++// the identity transition.
++class IdentityGenerationState {
++ public:
++  IdentityGenerationState() = default;
++
++  IdentityGenerationState(const IdentityGenerationState&) = delete;
++  IdentityGenerationState& operator=(const IdentityGenerationState&) = delete;
++
++  uint64_t generation() const { return generation_; }
++  bool exhausted() const { return exhausted_; }
++  const std::optional<AccessIdentityBinding>& binding() const {
++    return binding_;
++  }
++
++  IdentityGenerationCommitResult Commit(AccessIdentityBinding binding);
++
++ private:
++  friend class IdentityGenerationStateTestPeer;
++
++  bool exhausted_ = false;
++  uint64_t generation_ = 0;
++  std::optional<AccessIdentityBinding> binding_;
++};
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_STATE_H_
+diff --git a/components/aegis_access/access_identity_generation_state.cc b/components/aegis_access/access_identity_generation_state.cc
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_identity_generation_state.cc
+@@ -0,0 +1,59 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_identity_generation_state.h"
++
++#include <limits>
++#include <utility>
++
++namespace aegis_access {
++namespace {
++
++bool HasServiceScope(const AccessIdentityBinding& binding) {
++  return !binding.service_environment.empty() && !binding.service_realm.empty();
++}
++
++bool IsValidIdentityBinding(const AccessIdentityBinding& binding) {
++  if (!HasServiceScope(binding)) {
++    return false;
++  }
++
++  switch (binding.kind) {
++    case AccessIdentityKind::kInstallationGuest:
++    case AccessIdentityKind::kAuthenticated:
++      return !binding.principal_id.empty() &&
++             !binding.entitlement_account_id.empty();
++    case AccessIdentityKind::kSignedOut:
++      return binding.principal_id.empty() &&
++             binding.entitlement_account_id.empty();
++    case AccessIdentityKind::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++}  // namespace
++
++IdentityGenerationCommitResult IdentityGenerationState::Commit(
++    AccessIdentityBinding binding) {
++  if (exhausted_) {
++    return {IdentityGenerationCommitStatus::kExhausted, 0};
++  }
++  if (!IsValidIdentityBinding(binding)) {
++    return {IdentityGenerationCommitStatus::kInvalidIdentity, generation_};
++  }
++  if (binding_.has_value() && *binding_ == binding) {
++    return {IdentityGenerationCommitStatus::kUnchanged, generation_};
++  }
++  if (generation_ == std::numeric_limits<uint64_t>::max()) {
++    exhausted_ = true;
++    generation_ = 0;
++    binding_.reset();
++    return {IdentityGenerationCommitStatus::kExhausted, 0};
++  }
++
++  ++generation_;
++  binding_ = std::move(binding);
++  return {IdentityGenerationCommitStatus::kCommitted, generation_};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/access_identity_generation_state_contract_test.h b/components/aegis_access/access_identity_generation_state_contract_test.h
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_identity_generation_state_contract_test.h
+@@ -0,0 +1,222 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_STATE_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_STATE_CONTRACT_TEST_H_
++
++#include <cstdint>
++#include <limits>
++#include <string>
++
++#include "components/aegis_access/access_identity_generation_state.h"
++
++namespace aegis_access {
++
++class IdentityGenerationStateTestPeer {
++ public:
++  static void SetGeneration(IdentityGenerationState* state,
++                            uint64_t generation) {
++    state->generation_ = generation;
++  }
++};
++
++namespace test {
++
++class IdentityGenerationStateTestObserver {
++ public:
++  virtual ~IdentityGenerationStateTestObserver() = default;
++  virtual void Expect(bool condition, const std::string& label) = 0;
++};
++
++inline AccessIdentityBinding InstallationGuestIdentity() {
++  return {AccessIdentityKind::kInstallationGuest, "visitor-principal",
++          "visitor-entitlement", "prod", "access"};
++}
++
++inline AccessIdentityBinding AuthenticatedIdentity() {
++  return {AccessIdentityKind::kAuthenticated, "account-principal",
++          "account-entitlement", "prod", "access"};
++}
++
++inline AccessIdentityBinding SignedOutIdentity() {
++  return {AccessIdentityKind::kSignedOut, "", "", "prod", "access"};
++}
++
++inline void ExpectInitialIdentityUnpublished(
++    IdentityGenerationStateTestObserver& observer,
++    const IdentityGenerationState& state) {
++  observer.Expect(state.generation() == 0,
++                  "identity generation unit starts at zero");
++  observer.Expect(!state.binding().has_value(),
++                  "identity generation unit starts without binding");
++  observer.Expect(!state.exhausted(),
++                  "identity generation unit starts available");
++}
++
++inline void ExpectFirstGuestCommit(
++    IdentityGenerationStateTestObserver& observer,
++    IdentityGenerationState& state) {
++  const IdentityGenerationCommitResult result =
++      state.Commit(InstallationGuestIdentity());
++  observer.Expect(result.status == IdentityGenerationCommitStatus::kCommitted,
++                  "identity generation unit commits installation guest");
++  observer.Expect(result.generation == 1,
++                  "identity generation unit first commit publishes one");
++  observer.Expect(state.generation() == 1,
++                  "identity generation unit stores first generation");
++  observer.Expect(state.binding().has_value(),
++                  "identity generation unit stores guest binding");
++  observer.Expect(
++      state.binding()->kind == AccessIdentityKind::kInstallationGuest,
++      "identity generation unit binding is installation guest");
++}
++
++inline void ExpectDuplicateGuestIsIdempotent(
++    IdentityGenerationStateTestObserver& observer,
++    IdentityGenerationState& state) {
++  const IdentityGenerationCommitResult result =
++      state.Commit(InstallationGuestIdentity());
++  observer.Expect(result.status == IdentityGenerationCommitStatus::kUnchanged,
++                  "identity generation unit duplicate commit is unchanged");
++  observer.Expect(result.generation == 1,
++                  "identity generation unit duplicate keeps generation");
++  observer.Expect(state.generation() == 1,
++                  "identity generation unit duplicate keeps stored generation");
++}
++
++inline void ExpectAuthenticatedTransition(
++    IdentityGenerationStateTestObserver& observer,
++    IdentityGenerationState& state) {
++  const IdentityGenerationCommitResult result =
++      state.Commit(AuthenticatedIdentity());
++  observer.Expect(result.status == IdentityGenerationCommitStatus::kCommitted,
++                  "identity generation unit account transition commits");
++  observer.Expect(result.generation == 2,
++                  "identity generation unit account transition advances");
++  observer.Expect(
++      state.binding()->kind == AccessIdentityKind::kAuthenticated,
++      "identity generation unit binding is authenticated");
++}
++
++inline void ExpectSignedOutTransition(
++    IdentityGenerationStateTestObserver& observer,
++    IdentityGenerationState& state) {
++  const IdentityGenerationCommitResult result =
++      state.Commit(SignedOutIdentity());
++  observer.Expect(result.status == IdentityGenerationCommitStatus::kCommitted,
++                  "identity generation unit sign out commits");
++  observer.Expect(result.generation == 3,
++                  "identity generation unit sign out advances");
++  observer.Expect(state.binding()->kind == AccessIdentityKind::kSignedOut,
++                  "identity generation unit binding is signed out");
++}
++
++inline void ExpectExplicitGuestReturn(
++    IdentityGenerationStateTestObserver& observer,
++    IdentityGenerationState& state) {
++  const IdentityGenerationCommitResult result =
++      state.Commit(InstallationGuestIdentity());
++  observer.Expect(result.status == IdentityGenerationCommitStatus::kCommitted,
++                  "identity generation unit guest return commits");
++  observer.Expect(result.generation == 4,
++                  "identity generation unit guest return advances");
++  observer.Expect(state.generation() == 4,
++                  "identity generation unit stores guest return generation");
++}
++
++inline void ExpectInvalidGuestNeverPublishes(
++    IdentityGenerationStateTestObserver& observer) {
++  IdentityGenerationState state;
++  AccessIdentityBinding binding = InstallationGuestIdentity();
++  binding.principal_id.clear();
++  const IdentityGenerationCommitResult result = state.Commit(binding);
++  observer.Expect(
++      result.status == IdentityGenerationCommitStatus::kInvalidIdentity,
++      "identity generation regression invalid guest is rejected");
++  observer.Expect(result.generation == 0,
++                  "identity generation regression invalid guest returns zero");
++  observer.Expect(state.generation() == 0,
++                  "identity generation regression invalid guest keeps zero");
++  observer.Expect(!state.binding().has_value(),
++                  "identity generation regression invalid guest stays unpublished");
++}
++
++inline void ExpectSignedOutCannotRetainPrincipal(
++    IdentityGenerationStateTestObserver& observer) {
++  IdentityGenerationState state;
++  AccessIdentityBinding binding = SignedOutIdentity();
++  binding.principal_id = "stale-principal";
++  const IdentityGenerationCommitResult result = state.Commit(binding);
++  observer.Expect(
++      result.status == IdentityGenerationCommitStatus::kInvalidIdentity,
++      "identity generation regression stale signed-out principal is rejected");
++  observer.Expect(state.generation() == 0,
++                  "identity generation regression invalid sign out keeps zero");
++}
++
++inline void ExpectIdentityOwnersAreIsolated(
++    IdentityGenerationStateTestObserver& observer) {
++  IdentityGenerationState first;
++  IdentityGenerationState second;
++  first.Commit(InstallationGuestIdentity());
++  observer.Expect(first.generation() == 1,
++                  "identity generation regression first owner advances");
++  observer.Expect(second.generation() == 0,
++                  "identity generation regression second owner stays zero");
++  observer.Expect(!second.binding().has_value(),
++                  "identity generation regression second owner stays unpublished");
++}
++
++inline void ExpectIdentityGenerationOverflowFailsClosed(
++    IdentityGenerationStateTestObserver& observer) {
++  IdentityGenerationState state;
++  state.Commit(InstallationGuestIdentity());
++  IdentityGenerationStateTestPeer::SetGeneration(
++      &state, std::numeric_limits<uint64_t>::max());
++
++  const IdentityGenerationCommitResult exhausted =
++      state.Commit(AuthenticatedIdentity());
++  observer.Expect(
++      exhausted.status == IdentityGenerationCommitStatus::kExhausted,
++      "identity generation regression overflow reports exhausted");
++  observer.Expect(exhausted.generation == 0,
++                  "identity generation regression overflow returns zero");
++  observer.Expect(state.generation() == 0,
++                  "identity generation regression overflow stores zero");
++  observer.Expect(state.exhausted(),
++                  "identity generation regression overflow is permanent");
++  observer.Expect(!state.binding().has_value(),
++                  "identity generation regression overflow clears binding");
++
++  const IdentityGenerationCommitResult retry =
++      state.Commit(InstallationGuestIdentity());
++  observer.Expect(retry.status == IdentityGenerationCommitStatus::kExhausted,
++                  "identity generation regression exhausted retry is rejected");
++  observer.Expect(retry.generation == 0,
++                  "identity generation regression exhausted retry stays zero");
++  observer.Expect(!state.binding().has_value(),
++                  "identity generation regression exhausted retry stays unpublished");
++}
++
++inline void RunIdentityGenerationStateUnitTests(
++    IdentityGenerationStateTestObserver& observer) {
++  IdentityGenerationState state;
++  ExpectInitialIdentityUnpublished(observer, state);
++  ExpectFirstGuestCommit(observer, state);
++  ExpectDuplicateGuestIsIdempotent(observer, state);
++  ExpectAuthenticatedTransition(observer, state);
++  ExpectSignedOutTransition(observer, state);
++  ExpectExplicitGuestReturn(observer, state);
++}
++
++inline void RunIdentityGenerationStateRegressionTests(
++    IdentityGenerationStateTestObserver& observer) {
++  ExpectInvalidGuestNeverPublishes(observer);
++  ExpectSignedOutCannotRetainPrincipal(observer);
++  ExpectIdentityOwnersAreIsolated(observer);
++  ExpectIdentityGenerationOverflowFailsClosed(observer);
++}
++
++}  // namespace test
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_STATE_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/access_identity_generation_state_unittest.cc b/components/aegis_access/access_identity_generation_state_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/components/aegis_access/access_identity_generation_state_unittest.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/access_identity_generation_state_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestIdentityGenerationStateObserver
++    : public IdentityGenerationStateTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(IdentityGenerationStateTest, SharedUnitContract) {
++  GtestIdentityGenerationStateObserver observer;
++  RunIdentityGenerationStateUnitTests(observer);
++}
++
++TEST(IdentityGenerationStateRegressionTest, SharedRegressionContract) {
++  GtestIdentityGenerationStateObserver observer;
++  RunIdentityGenerationStateRegressionTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
+diff --git a/chrome/browser/aegis/access/access_identity_generation_source.h b/chrome/browser/aegis/access/access_identity_generation_source.h
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_identity_generation_source.h
+@@ -0,0 +1,47 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_SOURCE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_SOURCE_H_
++
++#include <cstdint>
++
++#include "base/supports_user_data.h"
++#include "components/aegis_access/access_identity_generation_state.h"
++
++class Profile;
++
++namespace aegis::access {
++
++// Profile-owned bridge from committed Access service identity transitions to the
++// identity_generation component of GenerationTuple. This type does not perform
++// authentication or guest bootstrap. Callers may commit only after those
++// operations have succeeded and the identity change is authoritative.
++class AccessIdentityGenerationSource : public base::SupportsUserData::Data {
++ public:
++  static AccessIdentityGenerationSource* Get(Profile* profile);
++  static AccessIdentityGenerationSource* GetOrCreate(Profile* profile);
++
++  AccessIdentityGenerationSource(const AccessIdentityGenerationSource&) =
++      delete;
++  AccessIdentityGenerationSource& operator=(
++      const AccessIdentityGenerationSource&) = delete;
++  ~AccessIdentityGenerationSource() override;
++
++  uint64_t identity_generation() const { return state_.generation(); }
++  bool exhausted() const { return state_.exhausted(); }
++  const std::optional<aegis_access::AccessIdentityBinding>& binding() const {
++    return state_.binding();
++  }
++
++  aegis_access::IdentityGenerationCommitResult CommitIdentity(
++      aegis_access::AccessIdentityBinding binding);
++
++ private:
++  AccessIdentityGenerationSource();
++
++  aegis_access::IdentityGenerationState state_;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_IDENTITY_GENERATION_SOURCE_H_
+diff --git a/chrome/browser/aegis/access/access_identity_generation_source.cc b/chrome/browser/aegis/access/access_identity_generation_source.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_identity_generation_source.cc
+@@ -0,0 +1,55 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_identity_generation_source.h"
++
++#include <memory>
++#include <utility>
++
++#include "chrome/browser/aegis/aegis_profile_support.h"
++#include "chrome/browser/profiles/profile.h"
++
++namespace aegis::access {
++namespace {
++
++const void* const kIdentityGenerationSourceUserDataKey =
++    &kIdentityGenerationSourceUserDataKey;
++
++}  // namespace
++
++// static
++AccessIdentityGenerationSource* AccessIdentityGenerationSource::Get(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  return static_cast<AccessIdentityGenerationSource*>(
++      profile->GetUserData(kIdentityGenerationSourceUserDataKey));
++}
++
++// static
++AccessIdentityGenerationSource* AccessIdentityGenerationSource::GetOrCreate(
++    Profile* profile) {
++  if (!profile || !aegis::IsAegisProfileSupported(profile)) {
++    return nullptr;
++  }
++  if (auto* existing = Get(profile)) {
++    return existing;
++  }
++  auto source = std::unique_ptr<AccessIdentityGenerationSource>(
++      new AccessIdentityGenerationSource());
++  auto* result = source.get();
++  profile->SetUserData(kIdentityGenerationSourceUserDataKey, std::move(source));
++  return result;
++}
++
++AccessIdentityGenerationSource::AccessIdentityGenerationSource() = default;
++
++AccessIdentityGenerationSource::~AccessIdentityGenerationSource() = default;
++
++aegis_access::IdentityGenerationCommitResult
++AccessIdentityGenerationSource::CommitIdentity(
++    aegis_access::AccessIdentityBinding binding) {
++  return state_.Commit(std::move(binding));
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc b/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc
+new file mode 100644
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc
+@@ -0,0 +1,85 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_identity_generation_source.h"
++
++#include <memory>
++
++#include "chrome/test/base/testing_profile.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++aegis_access::AccessIdentityBinding GuestIdentity() {
++  return {aegis_access::AccessIdentityKind::kInstallationGuest,
++          "visitor-principal", "visitor-entitlement", "prod", "access"};
++}
++
++aegis_access::AccessIdentityBinding AccountIdentity() {
++  return {aegis_access::AccessIdentityKind::kAuthenticated,
++          "account-principal", "account-entitlement", "prod", "access"};
++}
++
++TEST(AccessIdentityGenerationSourceTest,
++     StartsUnpublishedUntilCommittedIdentity) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
++  ASSERT_TRUE(source);
++  EXPECT_EQ(source->identity_generation(), 0u);
++  EXPECT_FALSE(source->binding().has_value());
++
++  const auto committed = source->CommitIdentity(GuestIdentity());
++  EXPECT_EQ(committed.status,
++            aegis_access::IdentityGenerationCommitStatus::kCommitted);
++  EXPECT_EQ(committed.generation, 1u);
++  EXPECT_EQ(source->identity_generation(), 1u);
++}
++
++TEST(AccessIdentityGenerationSourceTest,
++     CommittedIdentityTransitionsAdvanceGeneration) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
++  ASSERT_TRUE(source);
++
++  ASSERT_EQ(source->CommitIdentity(GuestIdentity()).generation, 1u);
++  EXPECT_EQ(source->CommitIdentity(GuestIdentity()).status,
++            aegis_access::IdentityGenerationCommitStatus::kUnchanged);
++  EXPECT_EQ(source->CommitIdentity(AccountIdentity()).generation, 2u);
++
++  const aegis_access::AccessIdentityBinding signed_out{
++      aegis_access::AccessIdentityKind::kSignedOut, "", "", "prod", "access"};
++  EXPECT_EQ(source->CommitIdentity(signed_out).generation, 3u);
++  EXPECT_EQ(source->CommitIdentity(GuestIdentity()).generation, 4u);
++}
++
++TEST(AccessIdentityGenerationSourceTest, ProfileOwnedSourcesAreIsolated) {
++  auto first_profile = TestingProfile::Builder().Build();
++  auto second_profile = TestingProfile::Builder().Build();
++  auto* first =
++      AccessIdentityGenerationSource::GetOrCreate(first_profile.get());
++  auto* second =
++      AccessIdentityGenerationSource::GetOrCreate(second_profile.get());
++  ASSERT_TRUE(first);
++  ASSERT_TRUE(second);
++
++  ASSERT_EQ(first->CommitIdentity(GuestIdentity()).generation, 1u);
++  EXPECT_EQ(first->identity_generation(), 1u);
++  EXPECT_EQ(second->identity_generation(), 0u);
++  EXPECT_FALSE(second->binding().has_value());
++}
++
++TEST(AccessIdentityGenerationSourceTest, InvalidIdentityNeverPublishes) {
++  auto profile = TestingProfile::Builder().Build();
++  auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
++  ASSERT_TRUE(source);
++
++  aegis_access::AccessIdentityBinding invalid = GuestIdentity();
++  invalid.entitlement_account_id.clear();
++  EXPECT_EQ(source->CommitIdentity(invalid).status,
++            aegis_access::IdentityGenerationCommitStatus::kInvalidIdentity);
++  EXPECT_EQ(source->identity_generation(), 0u);
++  EXPECT_FALSE(source->binding().has_value());
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -27,6 +27,13 @@ source_set("access_route_types") {
+   sources = [ "access_route_types.h" ]
+ }
+ 
++source_set("access_identity_generation_state") {
++  sources = [
++    "access_identity_generation_state.cc",
++    "access_identity_generation_state.h",
++  ]
++}
++
+ source_set("browser_request_metadata_seed") {
+   sources = [
+     "browser_request_metadata_seed.cc",
+@@ -82,6 +89,18 @@ source_set("aegis_access") {
+   ]
+ }
+ 
++test("access_identity_generation_state_unittests") {
++  sources = [
++    "access_identity_generation_state_contract_test.h",
++    "access_identity_generation_state_unittest.cc",
++  ]
++  deps = [
++    ":access_identity_generation_state",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("browser_request_metadata_seed_unittests") {
+   sources = [
+     "browser_request_metadata_seed_contract_test.h",
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -24,6 +24,19 @@ source_set("access_browser_request_adapter") {
+   ]
+ }
+ 
++source_set("access_identity_generation_source") {
++  sources = [
++    "access_identity_generation_source.cc",
++    "access_identity_generation_source.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/aegis:profile_support",
++    "//chrome/browser/profiles:profile",
++    "//components/aegis_access:access_identity_generation_state",
++  ]
++}
++
+ source_set("access_network_context_transport") {
+   sources = [
+     "access_network_context_transport.cc",
+@@ -55,6 +68,17 @@ source_set("access_rule_store") {
+   ]
+ }
+ 
++test("access_identity_generation_source_unittests") {
++  sources = [ "access_identity_generation_source_unittest.cc" ]
++  deps = [
++    ":access_identity_generation_source",
++    "//base/test:run_all_unittests",
++    "//chrome/browser/profiles:test_support",
++    "//components/aegis_access:access_identity_generation_state",
++    "//testing/gtest",
++  ]
++}
++
+ test("access_network_context_transport_unittests") {
+   sources = [ "access_network_context_transport_unittest.cc" ]
+   deps = [
+-- 
+2.39.0
