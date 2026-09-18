@@ -275,6 +275,10 @@ void AccessProxyingURLLoaderFactory::MaybeProxyWorkerMainResource(
     content::RenderFrameHost* frame,
     network::URLLoaderFactoryBuilder& factory_builder) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!frame) {
+    return;
+  }
+
   std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
       CaptureProxyFactoryMetadata(profile, frame, std::nullopt);
   if (!metadata.has_value() ||
