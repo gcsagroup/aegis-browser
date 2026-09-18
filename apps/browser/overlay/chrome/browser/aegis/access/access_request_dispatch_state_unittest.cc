@@ -188,6 +188,30 @@ TEST_F(AccessRequestDispatchStateTest,
 }
 
 TEST_F(AccessRequestDispatchStateTest,
+       MissingNetworkTransportFailsPublicationImmediately) {
+  auto profile = TestingProfile::Builder().Build();
+  auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
+  ASSERT_NE(state, nullptr);
+
+  const auto record = TestRecord();
+  const auto publication =
+      PublicationFor(record, 15, 15, "missing-transport-0137");
+  ASSERT_EQ(state->BeginPolicyPublication(publication).status,
+            aegis_access::PolicyPublicationAckStatus::kPending);
+
+  const auto result = state->RequestNetworkContextPublicationAck(
+      publication.identity, record.owner);
+  EXPECT_EQ(result.status, AccessNetworkConfigAckStatus::kMissingTransport);
+  EXPECT_EQ(state->AcknowledgePolicyPublication(
+                publication.identity, "browser-runtime")
+                .status,
+            aegis_access::PolicyPublicationAckStatus::kFailed);
+  EXPECT_FALSE(
+      state->ReleaseBlockBarrierForReadyPublication(publication.identity)
+          .released);
+}
+
+TEST_F(AccessRequestDispatchStateTest,
        LateAckCannotReleaseNewerBlockBarrier) {
   auto profile = TestingProfile::Builder().Build();
   auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
