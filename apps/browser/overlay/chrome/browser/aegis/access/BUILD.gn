@@ -3,6 +3,27 @@
 
 import("//testing/test.gni")
 
+source_set("access_browser_request_adapter") {
+  sources = [
+    "access_browser_request_adapter.cc",
+    "access_browser_request_adapter.h",
+  ]
+  deps = [
+    ":access_network_context_transport",
+    "//base",
+    "//chrome/browser/aegis",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:channel_info",
+    "//components/aegis_access",
+    "//components/aegis_access:browser_request_metadata_seed",
+    "//components/version_info:channel",
+    "//content/public/browser",
+    "//net",
+    "//url",
+  ]
+}
+
 source_set("access_network_context_transport") {
   sources = [
     "access_network_context_transport.cc",

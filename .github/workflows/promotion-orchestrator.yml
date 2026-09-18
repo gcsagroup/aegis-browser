@@ -1,0 +1,42 @@
+name: Promotion Orchestrator
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: aegis-promotion-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promotion-orchestrator
+    if: ${{ vars.AEGIS_PROMOTION_AUTOMATION == 'enabled' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted repository state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Advance one promotion state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AEGIS_FORK_AUTOMATION_TOKEN: ${{ secrets.AEGIS_FORK_AUTOMATION_TOKEN }}
+          AEGIS_UPSTREAM_TOKEN: ${{ secrets.AEGIS_UPSTREAM_TOKEN }}
+          AEGIS_UPSTREAM_REPOSITORY: gcsagroup/aegis-browser
+        run: node scripts/ci/promotion-orchestrator.mjs

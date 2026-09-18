@@ -9,7 +9,7 @@
     "build": "pnpm --filter @gcsa-aegis/core build",
     "ci:quality": "node ./scripts/ci/run-quality.mjs",
     "ci:test": "node --test ./scripts/ci/tests/*.test.mjs",
-    "ci:validate-workflow": "node ./scripts/ci/validate-workflow.mjs .github/workflows/quality.yml",
+    "ci:validate-workflow": "node ./scripts/ci/validate-workflow.mjs .github/workflows/quality.yml && node ./scripts/ci/validate-promotion-workflow.mjs",
     "ci:check-public-diff": "node ./scripts/ci/check-public-diff.mjs",
     "quality:fast": "corepack pnpm run lint && corepack pnpm --filter @gcsa-aegis/core typecheck && corepack pnpm --filter @gcsa-aegis/core test && corepack pnpm --filter @gcsa-aegis/browser test:scripts && corepack pnpm --filter @gcsa-aegis/browser test:agent-ui && corepack pnpm --filter @gcsa-aegis/browser test:local-model && node ./scripts/check-repo-contracts.mjs && corepack pnpm --filter @gcsa-aegis/core build",
     "contracts:check": "node ./scripts/check-repo-contracts.mjs",

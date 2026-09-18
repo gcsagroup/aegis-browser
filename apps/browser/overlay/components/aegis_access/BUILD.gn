@@ -27,12 +27,28 @@ source_set("access_route_types") {
   sources = [ "access_route_types.h" ]
 }
 
+source_set("browser_request_metadata_seed") {
+  sources = [
+    "browser_request_metadata_seed.cc",
+    "browser_request_metadata_seed.h",
+  ]
+  public_deps = [ ":access_route_types" ]
+}
+
 source_set("request_ownership_registry") {
   sources = [
     "request_ownership_registry.cc",
     "request_ownership_registry.h",
   ]
   public_deps = [ ":access_route_types" ]
+}
+
+source_set("request_dispatch_gate") {
+  sources = [
+    "request_dispatch_gate.cc",
+    "request_dispatch_gate.h",
+  ]
+  public_deps = [ ":request_ownership_registry" ]
 }
 
 source_set("aegis_access") {
@@ -55,6 +71,18 @@ source_set("aegis_access") {
   ]
 }
 
+test("browser_request_metadata_seed_unittests") {
+  sources = [
+    "browser_request_metadata_seed_contract_test.h",
+    "browser_request_metadata_seed_unittest.cc",
+  ]
+  deps = [
+    ":browser_request_metadata_seed",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
 test("request_ownership_registry_unittests") {
   sources = [
     "request_cancellation_contract_test.h",
@@ -66,6 +94,23 @@ test("request_ownership_registry_unittests") {
   ]
   deps = [
     ":request_ownership_registry",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+test("request_dispatch_gate_unittests") {
+  sources = [
+    "request_cancellation_contract_test.h",
+    "request_dispatch_barrier_contract_test.h",
+    "request_dispatch_gate_contract_test.h",
+    "request_dispatch_gate_unittest.cc",
+    "request_ownership_registry_contract_test.h",
+    "request_ownership_registry_test_support.h",
+    "request_ownership_registry_unit_test.h",
+  ]
+  deps = [
+    ":request_dispatch_gate",
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]

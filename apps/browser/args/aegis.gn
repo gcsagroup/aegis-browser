@@ -16,6 +16,8 @@ v8_symbol_level = 0
 root_extra_deps = [
   "//chrome/browser/aegis/access:access_rule_store_unittests",
   "//components/aegis_access:aegis_access_unittests",
+  "//components/aegis_access:browser_request_metadata_seed_unittests",
+  "//components/aegis_access:request_dispatch_gate_unittests",
   "//components/aegis_access:request_ownership_registry_unittests",
 ]
 

@@ -123,3 +123,5 @@
 0122-feat-aegis-add-targeted-request-cancellation.patch
 0123-feat-aegis-add-request-dispatch-block-barriers.patch
 0124-refactor-aegis-request-ownership-contracts.patch
+0125-feat-aegis-enforce-request-dispatch-gate.patch
+0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch
