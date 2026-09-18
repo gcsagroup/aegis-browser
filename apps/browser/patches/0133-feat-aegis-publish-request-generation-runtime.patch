@@ -1,0 +1,835 @@
+From 0133000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Fri, 18 Sep 2026 17:49:00 +0800
+Subject: [PATCH] feat(aegis): publish request generation runtime
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 3630aef..a2ad06a 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -81,6 +81,27 @@ source_set("access_rule_store") {
+   ]
+ }
+ 
++source_set("access_published_request_runtime") {
++  sources = [
++    "access_published_request_runtime.cc",
++    "access_published_request_runtime.h",
++  ]
++  deps = [
++    ":access_identity_generation_source",
++    ":access_network_context_transport",
++    ":access_proxy_selection_generation_source",
++    "//base",
++    "//chrome/browser/aegis:profile_support",
++    "//chrome/browser/net:impl",
++    "//chrome/browser/profiles:profile",
++  ]
++  public_deps = [
++    ":access_rule_store",
++    "//components/aegis_access",
++    "//components/aegis_access:request_generation_tuple_builder",
++  ]
++}
++
+ test("access_identity_generation_source_unittests") {
+   sources = [ "access_identity_generation_source_unittest.cc" ]
+   deps = [
+@@ -133,3 +154,16 @@ test("access_rule_store_unittests") {
+     "//url",
+   ]
+ }
++
++test("access_published_request_runtime_unittests") {
++  sources = [ "access_published_request_runtime_unittest.cc" ]
++  deps = [
++    ":access_network_context_transport",
++    ":access_published_request_runtime",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//chrome/browser/profiles:test_support",
++    "//services/network/public/mojom",
++    "//testing/gtest",
++  ]
++}
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index a6386c4..1eb7504 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -166,6 +166,13 @@ AccessNetworkContextTransport::OwnerForPartition(
+                                     *partition_token};
+ }
+ 
++bool AccessNetworkContextTransport::OwnsConfiguredPartition(
++    const aegis_access::OwnershipKey& owner) const {
++  return IsKnownChannel(owner.channel) &&
++         owner.profile_token == runtime_profile_token_ &&
++         partitions_.contains(owner.storage_partition_token);
++}
++
+ bool AccessNetworkContextTransport::PublishProxySelection(
+     const base::FilePath& relative_partition_path,
+     std::vector<std::string> exact_hosts,
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 2e2d672..5755377 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -61,6 +61,11 @@ class AccessNetworkContextTransport
+   // advances only from actual NetworkChangeNotifier callbacks.
+   uint64_t network_epoch() const { return network_epoch_; }
+ 
++  // True only when |owner| identifies a StoragePartition already configured
++  // by this exact Profile-owned transport.
++  bool OwnsConfiguredPartition(
++      const aegis_access::OwnershipKey& owner) const;
++
+   // Publishes one already-registered localhost HTTP entry for a set of exact
+   // canonical hosts. Endpoint ownership must match OwnerForPartition().
+   // Non-selected hosts keep Chromium's native proxy result.
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 6f898e3..7e0d1c7 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -104,6 +104,34 @@ class AccessNetworkContextTransportTest : public testing::Test {
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+ };
+ 
++TEST_F(AccessNetworkContextTransportTest,
++       OwnsOnlyPartitionsConfiguredByThisProfileTransport) {
++  network::mojom::NetworkContextParams default_params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++      profile_.get(), base::FilePath(), &default_params));
++
++  const auto default_owner = transport_->OwnerForPartition(
++      aegis_access::ChannelNamespace::kDev, base::FilePath());
++  ASSERT_TRUE(default_owner.has_value());
++  EXPECT_TRUE(transport_->OwnsConfiguredPartition(*default_owner));
++
++  const base::FilePath other_partition =
++      base::FilePath::FromASCII("Storage/ext");
++  const auto other_owner = transport_->OwnerForPartition(
++      aegis_access::ChannelNamespace::kDev, other_partition);
++  ASSERT_TRUE(other_owner.has_value());
++  EXPECT_FALSE(transport_->OwnsConfiguredPartition(*other_owner));
++
++  network::mojom::NetworkContextParams other_params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++      profile_.get(), other_partition, &other_params));
++  EXPECT_TRUE(transport_->OwnsConfiguredPartition(*other_owner));
++
++  auto forged = *default_owner;
++  forged.profile_token = "other-profile";
++  EXPECT_FALSE(transport_->OwnsConfiguredPartition(forged));
++}
++
+ TEST_F(AccessNetworkContextTransportTest, OffPreservesNativeProxyResult) {
+   auto delegate = CreateDelegate(base::FilePath());
+ 
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime.cc b/chrome/browser/aegis/access/access_published_request_runtime.cc
+new file mode 100644
+index 0000000..bbcad54
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_published_request_runtime.cc
+@@ -0,0 +1,176 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_published_request_runtime.h"
++
++#include <memory>
++#include <utility>
++
++#include "chrome/browser/aegis/access/access_identity_generation_source.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
++#include "chrome/browser/aegis/aegis_profile_support.h"
++#include "chrome/browser/net/profile_network_context_service.h"
++#include "chrome/browser/net/profile_network_context_service_factory.h"
++#include "chrome/browser/profiles/profile.h"
++
++namespace aegis::access {
++namespace {
++
++const void* const kPublishedRequestRuntimeUserDataKey =
++    &kPublishedRequestRuntimeUserDataKey;
++
++AccessPolicyPublicationResult PublicationResult(
++    AccessPolicyPublicationStatus status,
++    uint64_t generation = 0) {
++  return {status, generation};
++}
++
++}  // namespace
++
++// static
++AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::Get(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  return static_cast<AccessPublishedRequestRuntime*>(
++      profile->GetUserData(kPublishedRequestRuntimeUserDataKey));
++}
++
++// static
++AccessPublishedRequestRuntime* AccessPublishedRequestRuntime::GetOrCreate(
++    Profile* profile) {
++  if (!profile || !aegis::IsAegisProfileSupported(profile)) {
++    return nullptr;
++  }
++  if (auto* existing = Get(profile)) {
++    return existing;
++  }
++  auto runtime = std::unique_ptr<AccessPublishedRequestRuntime>(
++      new AccessPublishedRequestRuntime(profile));
++  auto* result = runtime.get();
++  profile->SetUserData(kPublishedRequestRuntimeUserDataKey, std::move(runtime));
++  return result;
++}
++
++AccessPublishedRequestRuntime::AccessPublishedRequestRuntime(Profile* profile)
++    : profile_(profile) {}
++
++AccessPublishedRequestRuntime::~AccessPublishedRequestRuntime() = default;
++
++AccessPolicyPublicationResult
++AccessPublishedRequestRuntime::PublishCommittedPolicySnapshot(
++    const StoredPolicySnapshot& stored) {
++  StoreResult<MatcherRuleSetCandidate> candidate =
++      AccessRuleStore::AdaptMatcherSnapshot(stored);
++  if (candidate.status != StoreStatus::kValid || !candidate.value.has_value()) {
++    return PublicationResult(AccessPolicyPublicationStatus::kInvalidSnapshot);
++  }
++
++  AccessNetworkContextTransport* transport =
++      AccessNetworkContextTransport::Get(profile_);
++  if (!transport) {
++    return PublicationResult(AccessPolicyPublicationStatus::kMissingTransport);
++  }
++  if (!transport->OwnsConfiguredPartition(candidate.value->owner)) {
++    return PublicationResult(
++        AccessPolicyPublicationStatus::kOwnershipMismatch);
++  }
++
++  aegis_access::PublishedAccessPolicySnapshot snapshot{
++      candidate.value->owner,
++      candidate.value->committed_policy_generation,
++      candidate.value->rules,
++  };
++  auto it = policy_snapshots_.find(snapshot.owner.storage_partition_token);
++  if (it == policy_snapshots_.end()) {
++    policy_snapshots_.emplace(snapshot.owner.storage_partition_token,
++                              std::move(snapshot));
++    return PublicationResult(AccessPolicyPublicationStatus::kPublished,
++                             candidate.value->committed_policy_generation);
++  }
++
++  if (it->second.owner != snapshot.owner) {
++    return PublicationResult(
++        AccessPolicyPublicationStatus::kOwnershipMismatch);
++  }
++  if (snapshot.policy_generation < it->second.policy_generation) {
++    return PublicationResult(AccessPolicyPublicationStatus::kStaleGeneration,
++                             it->second.policy_generation);
++  }
++  if (snapshot.policy_generation == it->second.policy_generation) {
++    if (snapshot == it->second) {
++      return PublicationResult(AccessPolicyPublicationStatus::kUnchanged,
++                               snapshot.policy_generation);
++    }
++    return PublicationResult(
++        AccessPolicyPublicationStatus::kConflictingGeneration,
++        snapshot.policy_generation);
++  }
++
++  it->second = std::move(snapshot);
++  return PublicationResult(AccessPolicyPublicationStatus::kPublished,
++                           it->second.policy_generation);
++}
++
++const aegis_access::PublishedAccessPolicySnapshot*
++AccessPublishedRequestRuntime::GetPublishedPolicySnapshot(
++    const aegis_access::OwnershipKey& owner) const {
++  const auto it = policy_snapshots_.find(owner.storage_partition_token);
++  if (it == policy_snapshots_.end() || it->second.owner != owner) {
++    return nullptr;
++  }
++  return &it->second;
++}
++
++bool AccessPublishedRequestRuntime::InvalidatePublishedPolicySnapshot(
++    const aegis_access::OwnershipKey& owner) {
++  const auto it = policy_snapshots_.find(owner.storage_partition_token);
++  if (it == policy_snapshots_.end() || it->second.owner != owner) {
++    return false;
++  }
++  policy_snapshots_.erase(it);
++  return true;
++}
++
++aegis_access::RequestGenerationTupleBuildResult
++AccessPublishedRequestRuntime::BuildProxyGenerationTuple(
++    const aegis_access::OwnershipKey& owner,
++    const std::string& proxy_group_id) const {
++  aegis_access::RequestGenerationTupleInput input;
++  input.request_owner = owner;
++  input.snapshot_owner = owner;
++
++  if (const auto* snapshot = GetPublishedPolicySnapshot(owner)) {
++    input.snapshot_owner = snapshot->owner;
++    input.policy_generation = snapshot->policy_generation;
++  }
++
++  if (AccessIdentityGenerationSource* identity =
++          AccessIdentityGenerationSource::Get(profile_)) {
++    input.identity_generation = identity->identity_generation();
++  }
++
++  if (!proxy_group_id.empty()) {
++    if (AccessProxySelectionGenerationSource* selection =
++            AccessProxySelectionGenerationSource::Get(profile_)) {
++      input.selection_generation =
++          selection->selection_generation(proxy_group_id);
++    }
++  }
++
++  if (AccessNetworkContextTransport* transport =
++          AccessNetworkContextTransport::Get(profile_)) {
++    input.network_epoch = transport->network_epoch();
++  }
++
++  if (ProfileNetworkContextService* network_service =
++          ProfileNetworkContextServiceFactory::GetForContext(profile_)) {
++    input.base_proxy_config_generation =
++        network_service->GetAegisBaseProxyConfigGeneration();
++  }
++
++  return aegis_access::BuildCompleteRequestGenerationTuple(input);
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime.h b/chrome/browser/aegis/access/access_published_request_runtime.h
+new file mode 100644
+index 0000000..f8c91f3
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_published_request_runtime.h
+@@ -0,0 +1,75 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PUBLISHED_REQUEST_RUNTIME_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PUBLISHED_REQUEST_RUNTIME_H_
++
++#include <cstdint>
++#include <map>
++#include <string>
++
++#include "base/supports_user_data.h"
++#include "chrome/browser/aegis/access/access_rule_store.h"
++#include "components/aegis_access/access_policy_evaluator.h"
++#include "components/aegis_access/request_generation_tuple_builder.h"
++
++class Profile;
++
++namespace aegis::access {
++
++enum class AccessPolicyPublicationStatus {
++  kPublished,
++  kUnchanged,
++  kStaleGeneration,
++  kConflictingGeneration,
++  kInvalidSnapshot,
++  kMissingTransport,
++  kOwnershipMismatch,
++};
++
++struct AccessPolicyPublicationResult {
++  AccessPolicyPublicationStatus status =
++      AccessPolicyPublicationStatus::kInvalidSnapshot;
++  uint64_t policy_generation = 0;
++};
++
++// Profile-owned publication boundary between durable AccessRuleStore state and
++// request-time routing. Database reads are promoted here into immutable
++// in-memory policy snapshots; request dispatch never reads SQLite.
++//
++// Generation tuples are assembled only for a concrete committed PROXY group.
++// DIRECT/absent policy paths must preserve Chromium's native routing and do not
++// receive a fabricated selection generation.
++class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
++ public:
++  static AccessPublishedRequestRuntime* Get(Profile* profile);
++  static AccessPublishedRequestRuntime* GetOrCreate(Profile* profile);
++
++  AccessPublishedRequestRuntime(const AccessPublishedRequestRuntime&) = delete;
++  AccessPublishedRequestRuntime& operator=(
++      const AccessPublishedRequestRuntime&) = delete;
++  ~AccessPublishedRequestRuntime() override;
++
++  AccessPolicyPublicationResult PublishCommittedPolicySnapshot(
++      const StoredPolicySnapshot& stored);
++
++  const aegis_access::PublishedAccessPolicySnapshot*
++  GetPublishedPolicySnapshot(const aegis_access::OwnershipKey& owner) const;
++
++  bool InvalidatePublishedPolicySnapshot(
++      const aegis_access::OwnershipKey& owner);
++
++  aegis_access::RequestGenerationTupleBuildResult BuildProxyGenerationTuple(
++      const aegis_access::OwnershipKey& owner,
++      const std::string& proxy_group_id) const;
++
++ private:
++  explicit AccessPublishedRequestRuntime(Profile* profile);
++
++  Profile* const profile_;
++  std::map<std::string, aegis_access::PublishedAccessPolicySnapshot>
++      policy_snapshots_;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PUBLISHED_REQUEST_RUNTIME_H_
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc b/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
+new file mode 100644
+index 0000000..b9d7594
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
+@@ -0,0 +1,107 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_published_request_runtime.h"
++
++#include "base/files/file_path.h"
++#include "base/memory/raw_ptr.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/test/base/testing_profile.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++class AccessPublishedRequestRuntimeTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    profile_ = std::make_unique<TestingProfile>();
++    network::mojom::NetworkContextParams params;
++    ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), base::FilePath(), &params));
++    transport_ = AccessNetworkContextTransport::Get(profile_.get());
++    ASSERT_NE(transport_, nullptr);
++    owner_ = transport_->OwnerForPartition(
++        aegis_access::ChannelNamespace::kDev, base::FilePath());
++    ASSERT_TRUE(owner_.has_value());
++    runtime_ = AccessPublishedRequestRuntime::GetOrCreate(profile_.get());
++    ASSERT_NE(runtime_, nullptr);
++  }
++
++  StoredPolicySnapshot Snapshot(uint64_t generation) const {
++    StoredPolicySnapshot snapshot;
++    snapshot.owner = *owner_;
++    snapshot.policy_generation = generation;
++    return snapshot;
++  }
++
++  std::unique_ptr<TestingProfile> profile_;
++  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
++  raw_ptr<AccessPublishedRequestRuntime> runtime_ = nullptr;
++  std::optional<aegis_access::OwnershipKey> owner_;
++};
++
++TEST_F(AccessPublishedRequestRuntimeTest, PublishesCommittedSnapshotInMemory) {
++  const auto published = runtime_->PublishCommittedPolicySnapshot(Snapshot(1));
++  EXPECT_EQ(published.status, AccessPolicyPublicationStatus::kPublished);
++  EXPECT_EQ(published.policy_generation, 1u);
++
++  const auto* snapshot = runtime_->GetPublishedPolicySnapshot(*owner_);
++  ASSERT_NE(snapshot, nullptr);
++  EXPECT_EQ(snapshot->owner, *owner_);
++  EXPECT_EQ(snapshot->policy_generation, 1u);
++  EXPECT_TRUE(snapshot->rules.empty());
++}
++
++TEST_F(AccessPublishedRequestRuntimeTest, DuplicatePublicationIsIdempotent) {
++  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(1)).status,
++            AccessPolicyPublicationStatus::kPublished);
++  const auto duplicate = runtime_->PublishCommittedPolicySnapshot(Snapshot(1));
++  EXPECT_EQ(duplicate.status, AccessPolicyPublicationStatus::kUnchanged);
++  EXPECT_EQ(duplicate.policy_generation, 1u);
++}
++
++TEST_F(AccessPublishedRequestRuntimeTest, StaleGenerationCannotReplaceNewer) {
++  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(1)).status,
++            AccessPolicyPublicationStatus::kPublished);
++  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(2)).status,
++            AccessPolicyPublicationStatus::kPublished);
++
++  const auto stale = runtime_->PublishCommittedPolicySnapshot(Snapshot(1));
++  EXPECT_EQ(stale.status, AccessPolicyPublicationStatus::kStaleGeneration);
++  EXPECT_EQ(stale.policy_generation, 2u);
++  ASSERT_NE(runtime_->GetPublishedPolicySnapshot(*owner_), nullptr);
++  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_)->policy_generation,
++            2u);
++}
++
++TEST_F(AccessPublishedRequestRuntimeTest, CrossProfileOwnerIsRejected) {
++  StoredPolicySnapshot snapshot = Snapshot(1);
++  snapshot.owner.profile_token = "other-profile";
++  const auto result = runtime_->PublishCommittedPolicySnapshot(snapshot);
++  EXPECT_EQ(result.status, AccessPolicyPublicationStatus::kOwnershipMismatch);
++  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(snapshot.owner), nullptr);
++}
++
++TEST_F(AccessPublishedRequestRuntimeTest, InvalidationFailsClosed) {
++  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(1)).status,
++            AccessPolicyPublicationStatus::kPublished);
++  EXPECT_TRUE(runtime_->InvalidatePublishedPolicySnapshot(*owner_));
++  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_), nullptr);
++  EXPECT_FALSE(runtime_->InvalidatePublishedPolicySnapshot(*owner_));
++}
++
++TEST_F(AccessPublishedRequestRuntimeTest,
++       MissingLiveSourcesDoNotProduceProxyTuple) {
++  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(1)).status,
++            AccessPolicyPublicationStatus::kPublished);
++  const auto result =
++      runtime_->BuildProxyGenerationTuple(*owner_, "proxy-group-a");
++  EXPECT_EQ(result.status,
++            aegis_access::RequestGenerationTupleBuildStatus::
++                kMissingIdentityGeneration);
++  EXPECT_FALSE(result.generations.has_value());
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 87f5188..074ee96 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -48,6 +48,14 @@ source_set("access_base_proxy_config_generation_state") {
+   ]
+ }
+ 
++source_set("request_generation_tuple_builder") {
++  sources = [
++    "request_generation_tuple_builder.cc",
++    "request_generation_tuple_builder.h",
++  ]
++  public_deps = [ ":access_route_types" ]
++}
++
+ source_set("browser_request_metadata_seed") {
+   sources = [
+     "browser_request_metadata_seed.cc",
+@@ -139,6 +147,18 @@ test("access_base_proxy_config_generation_state_unittests") {
+   ]
+ }
+ 
++test("request_generation_tuple_builder_unittests") {
++  sources = [
++    "request_generation_tuple_builder_contract_test.h",
++    "request_generation_tuple_builder_unittest.cc",
++  ]
++  deps = [
++    ":request_generation_tuple_builder",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("browser_request_metadata_seed_unittests") {
+   sources = [
+     "browser_request_metadata_seed_contract_test.h",
+diff --git a/components/aegis_access/request_generation_tuple_builder.cc b/components/aegis_access/request_generation_tuple_builder.cc
+new file mode 100644
+index 0000000..5f2d141
+--- /dev/null
++++ b/components/aegis_access/request_generation_tuple_builder.cc
+@@ -0,0 +1,73 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/request_generation_tuple_builder.h"
++
++namespace aegis_access {
++namespace {
++
++bool IsKnownChannel(ChannelNamespace channel) {
++  switch (channel) {
++    case ChannelNamespace::kDev:
++    case ChannelNamespace::kAlpha:
++    case ChannelNamespace::kBeta:
++    case ChannelNamespace::kRelease:
++      return true;
++    case ChannelNamespace::kInvalid:
++      return false;
++  }
++  return false;
++}
++
++bool IsCompleteOwner(const OwnershipKey& owner) {
++  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
++         !owner.storage_partition_token.empty();
++}
++
++RequestGenerationTupleBuildResult Missing(
++    RequestGenerationTupleBuildStatus status) {
++  return {status, std::nullopt};
++}
++
++}  // namespace
++
++RequestGenerationTupleBuildResult BuildCompleteRequestGenerationTuple(
++    const RequestGenerationTupleInput& input) {
++  if (!IsCompleteOwner(input.request_owner) ||
++      !IsCompleteOwner(input.snapshot_owner)) {
++    return Missing(RequestGenerationTupleBuildStatus::kInvalidOwner);
++  }
++  if (input.request_owner != input.snapshot_owner) {
++    return Missing(RequestGenerationTupleBuildStatus::kOwnershipMismatch);
++  }
++  if (input.policy_generation == 0) {
++    return Missing(
++        RequestGenerationTupleBuildStatus::kMissingPolicyGeneration);
++  }
++  if (input.identity_generation == 0) {
++    return Missing(
++        RequestGenerationTupleBuildStatus::kMissingIdentityGeneration);
++  }
++  if (input.selection_generation == 0) {
++    return Missing(
++        RequestGenerationTupleBuildStatus::kMissingSelectionGeneration);
++  }
++  if (input.network_epoch == 0) {
++    return Missing(RequestGenerationTupleBuildStatus::kMissingNetworkEpoch);
++  }
++  if (input.base_proxy_config_generation == 0) {
++    return Missing(
++        RequestGenerationTupleBuildStatus::kMissingBaseProxyConfigGeneration);
++  }
++
++  return {
++      RequestGenerationTupleBuildStatus::kComplete,
++      GenerationTuple{
++          input.policy_generation,
++          input.identity_generation,
++          input.selection_generation,
++          input.network_epoch,
++          input.base_proxy_config_generation,
++      }};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/request_generation_tuple_builder.h b/components/aegis_access/request_generation_tuple_builder.h
+new file mode 100644
+index 0000000..c0b94ee
+--- /dev/null
++++ b/components/aegis_access/request_generation_tuple_builder.h
+@@ -0,0 +1,45 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_GENERATION_TUPLE_BUILDER_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_GENERATION_TUPLE_BUILDER_H_
++
++#include <cstdint>
++#include <optional>
++
++#include "components/aegis_access/access_route_types.h"
++
++namespace aegis_access {
++
++enum class RequestGenerationTupleBuildStatus {
++  kComplete,
++  kInvalidOwner,
++  kOwnershipMismatch,
++  kMissingPolicyGeneration,
++  kMissingIdentityGeneration,
++  kMissingSelectionGeneration,
++  kMissingNetworkEpoch,
++  kMissingBaseProxyConfigGeneration,
++};
++
++struct RequestGenerationTupleInput {
++  OwnershipKey request_owner;
++  OwnershipKey snapshot_owner;
++  uint64_t policy_generation = 0;
++  uint64_t identity_generation = 0;
++  uint64_t selection_generation = 0;
++  uint64_t network_epoch = 0;
++  uint64_t base_proxy_config_generation = 0;
++};
++
++struct RequestGenerationTupleBuildResult {
++  RequestGenerationTupleBuildStatus status =
++      RequestGenerationTupleBuildStatus::kInvalidOwner;
++  std::optional<GenerationTuple> generations;
++};
++
++RequestGenerationTupleBuildResult BuildCompleteRequestGenerationTuple(
++    const RequestGenerationTupleInput& input);
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_GENERATION_TUPLE_BUILDER_H_
+diff --git a/components/aegis_access/request_generation_tuple_builder_contract_test.h b/components/aegis_access/request_generation_tuple_builder_contract_test.h
+new file mode 100644
+index 0000000..17e9b81
+--- /dev/null
++++ b/components/aegis_access/request_generation_tuple_builder_contract_test.h
+@@ -0,0 +1,118 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_REQUEST_GENERATION_TUPLE_BUILDER_CONTRACT_TEST_H_
++#define COMPONENTS_AEGIS_ACCESS_REQUEST_GENERATION_TUPLE_BUILDER_CONTRACT_TEST_H_
++
++#include <string>
++
++#include "components/aegis_access/request_generation_tuple_builder.h"
++
++namespace aegis_access::test {
++
++class RequestGenerationTupleBuilderTestObserver {
++ public:
++  virtual ~RequestGenerationTupleBuilderTestObserver() = default;
++  virtual void Expect(bool condition, const std::string& label) = 0;
++};
++
++inline RequestGenerationTupleInput CompleteGenerationTupleInput() {
++  RequestGenerationTupleInput input;
++  input.request_owner = {ChannelNamespace::kDev, "profile-a", "<default>"};
++  input.snapshot_owner = input.request_owner;
++  input.policy_generation = 11;
++  input.identity_generation = 12;
++  input.selection_generation = 13;
++  input.network_epoch = 14;
++  input.base_proxy_config_generation = 15;
++  return input;
++}
++
++inline void ExpectCompleteGenerationTuple(
++    RequestGenerationTupleBuilderTestObserver& observer) {
++  const auto result =
++      BuildCompleteRequestGenerationTuple(CompleteGenerationTupleInput());
++  observer.Expect(result.status == RequestGenerationTupleBuildStatus::kComplete,
++                  "complete production generations are accepted");
++  observer.Expect(result.generations.has_value(),
++                  "complete production generations publish a tuple");
++  observer.Expect(
++      result.generations ==
++          GenerationTuple{11, 12, 13, 14, 15},
++      "tuple preserves all five source generations");
++}
++
++inline void ExpectGenerationTupleOwnerMismatchFailsClosed(
++    RequestGenerationTupleBuilderTestObserver& observer) {
++  auto input = CompleteGenerationTupleInput();
++  input.snapshot_owner.storage_partition_token = "partition:other";
++  const auto result = BuildCompleteRequestGenerationTuple(input);
++  observer.Expect(
++      result.status == RequestGenerationTupleBuildStatus::kOwnershipMismatch,
++      "cross-partition snapshot is rejected");
++  observer.Expect(!result.generations.has_value(),
++                  "owner mismatch never publishes a tuple");
++}
++
++inline void ExpectInvalidGenerationTupleOwnerFailsClosed(
++    RequestGenerationTupleBuilderTestObserver& observer) {
++  auto input = CompleteGenerationTupleInput();
++  input.request_owner.channel = ChannelNamespace::kInvalid;
++  const auto result = BuildCompleteRequestGenerationTuple(input);
++  observer.Expect(result.status ==
++                      RequestGenerationTupleBuildStatus::kInvalidOwner,
++                  "invalid channel is rejected");
++  observer.Expect(!result.generations.has_value(),
++                  "invalid owner never publishes a tuple");
++}
++
++inline void ExpectEachMissingGenerationFailsClosed(
++    RequestGenerationTupleBuilderTestObserver& observer) {
++  struct MissingCase {
++    RequestGenerationTupleBuildStatus status;
++    void (*clear)(RequestGenerationTupleInput&);
++  };
++  const MissingCase cases[] = {
++      {RequestGenerationTupleBuildStatus::kMissingPolicyGeneration,
++       [](RequestGenerationTupleInput& input) { input.policy_generation = 0; }},
++      {RequestGenerationTupleBuildStatus::kMissingIdentityGeneration,
++       [](RequestGenerationTupleInput& input) {
++         input.identity_generation = 0;
++       }},
++      {RequestGenerationTupleBuildStatus::kMissingSelectionGeneration,
++       [](RequestGenerationTupleInput& input) {
++         input.selection_generation = 0;
++       }},
++      {RequestGenerationTupleBuildStatus::kMissingNetworkEpoch,
++       [](RequestGenerationTupleInput& input) { input.network_epoch = 0; }},
++      {RequestGenerationTupleBuildStatus::kMissingBaseProxyConfigGeneration,
++       [](RequestGenerationTupleInput& input) {
++         input.base_proxy_config_generation = 0;
++       }},
++  };
++
++  for (const auto& missing : cases) {
++    auto input = CompleteGenerationTupleInput();
++    missing.clear(input);
++    const auto result = BuildCompleteRequestGenerationTuple(input);
++    observer.Expect(result.status == missing.status,
++                    "missing generation reports its exact source");
++    observer.Expect(!result.generations.has_value(),
++                    "missing generation never publishes a tuple");
++  }
++}
++
++inline void RunRequestGenerationTupleBuilderUnitTests(
++    RequestGenerationTupleBuilderTestObserver& observer) {
++  ExpectCompleteGenerationTuple(observer);
++  ExpectGenerationTupleOwnerMismatchFailsClosed(observer);
++  ExpectInvalidGenerationTupleOwnerFailsClosed(observer);
++}
++
++inline void RunRequestGenerationTupleBuilderRegressionTests(
++    RequestGenerationTupleBuilderTestObserver& observer) {
++  ExpectEachMissingGenerationFailsClosed(observer);
++}
++
++}  // namespace aegis_access::test
++
++#endif  // COMPONENTS_AEGIS_ACCESS_REQUEST_GENERATION_TUPLE_BUILDER_CONTRACT_TEST_H_
+diff --git a/components/aegis_access/request_generation_tuple_builder_unittest.cc b/components/aegis_access/request_generation_tuple_builder_unittest.cc
+new file mode 100644
+index 0000000..b9bb1d5
+--- /dev/null
++++ b/components/aegis_access/request_generation_tuple_builder_unittest.cc
+@@ -0,0 +1,30 @@
++// Copyright 2026 GCSA
++
++#include <string>
++
++#include "components/aegis_access/request_generation_tuple_builder_contract_test.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access::test {
++namespace {
++
++class GtestRequestGenerationTupleBuilderObserver
++    : public RequestGenerationTupleBuilderTestObserver {
++ public:
++  void Expect(bool condition, const std::string& label) override {
++    EXPECT_TRUE(condition) << label;
++  }
++};
++
++TEST(RequestGenerationTupleBuilderTest, SharedUnitContract) {
++  GtestRequestGenerationTupleBuilderObserver observer;
++  RunRequestGenerationTupleBuilderUnitTests(observer);
++}
++
++TEST(RequestGenerationTupleBuilderRegressionTest, SharedRegressionContract) {
++  GtestRequestGenerationTupleBuilderObserver observer;
++  RunRequestGenerationTupleBuilderRegressionTests(observer);
++}
++
++}  // namespace
++}  // namespace aegis_access::test
+
+-- 
+2.39.0

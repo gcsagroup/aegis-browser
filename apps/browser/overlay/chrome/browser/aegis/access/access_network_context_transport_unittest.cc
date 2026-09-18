@@ -2,6 +2,7 @@
 
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/network_anonymization_key.h"
+#include "net/base/network_change_notifier.h"
 #include "net/base/proxy_string_util.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "services/network/network_service_proxy_delegate.h"
@@ -20,6 +22,15 @@
 #include "url/gurl.h"
 
 namespace aegis::access {
+
+class AccessNetworkContextTransportTestPeer {
+ public:
+  static void SetNetworkEpoch(AccessNetworkContextTransport* transport,
+                              uint64_t epoch) {
+    transport->network_epoch_ = epoch;
+  }
+};
+
 namespace {
 
 constexpr char kTargetHost[] = "target.example";
@@ -30,6 +41,8 @@ class AccessNetworkContextTransportTest : public testing::Test {
   AccessNetworkContextTransportTest() = default;
 
   void SetUp() override {
+    network_change_notifier_ =
+        net::NetworkChangeNotifier::CreateMockIfNeeded();
     profile_ = TestingProfile::Builder().Build();
     transport_ = AccessNetworkContextTransport::GetOrCreate(profile_.get());
     ASSERT_TRUE(transport_);
@@ -43,7 +56,7 @@ class AccessNetworkContextTransportTest : public testing::Test {
     EXPECT_TRUE(owner.has_value());
     return aegis_access::RegisteredProxyEndpoint{
         "registration-local", "proxy-group-local", *owner,
-        aegis_access::GenerationTuple{1, 2, 3, 4, 5},
+        aegis_access::GenerationTuple{1, 2, 3, transport_->network_epoch(), 5},
         aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1",
         kProxyPort};
   }
@@ -86,9 +99,38 @@ class AccessNetworkContextTransportTest : public testing::Test {
   }
 
   base::test::TaskEnvironment task_environment_;
+  std::unique_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   std::unique_ptr<TestingProfile> profile_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
 };
+
+TEST_F(AccessNetworkContextTransportTest,
+       OwnsOnlyPartitionsConfiguredByThisProfileTransport) {
+  network::mojom::NetworkContextParams default_params;
+  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
+      profile_.get(), base::FilePath(), &default_params));
+
+  const auto default_owner = transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, base::FilePath());
+  ASSERT_TRUE(default_owner.has_value());
+  EXPECT_TRUE(transport_->OwnsConfiguredPartition(*default_owner));
+
+  const base::FilePath other_partition =
+      base::FilePath::FromASCII("Storage/ext");
+  const auto other_owner = transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, other_partition);
+  ASSERT_TRUE(other_owner.has_value());
+  EXPECT_FALSE(transport_->OwnsConfiguredPartition(*other_owner));
+
+  network::mojom::NetworkContextParams other_params;
+  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
+      profile_.get(), other_partition, &other_params));
+  EXPECT_TRUE(transport_->OwnsConfiguredPartition(*other_owner));
+
+  auto forged = *default_owner;
+  forged.profile_token = "other-profile";
+  EXPECT_FALSE(transport_->OwnsConfiguredPartition(forged));
+}
 
 TEST_F(AccessNetworkContextTransportTest, OffPreservesNativeProxyResult) {
   auto delegate = CreateDelegate(base::FilePath());
@@ -190,6 +232,79 @@ TEST_F(AccessNetworkContextTransportTest, StoragePartitionsAreIsolated) {
                 .proxy_list()
                 .ToPacString(),
             "PROXY native.example:3128; DIRECT");
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       NetworkChangeAdvancesEpochAndRejectsStaleEndpoint) {
+  const base::FilePath partition;
+  auto delegate = CreateDelegate(partition);
+  ASSERT_EQ(transport_->network_epoch(), 1u);
+  const aegis_access::RegisteredProxyEndpoint stale = EndpointFor(partition);
+  ASSERT_TRUE(
+      transport_->PublishProxySelection(partition, {kTargetHost}, stale));
+  transport_->FlushClientsForTesting(partition);
+  ExpectProxyResolution(delegate.get(), "https://target.example/before-change");
+
+  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
+      net::NetworkChangeNotifier::CONNECTION_NONE);
+  task_environment_.RunUntilIdle();
+
+  EXPECT_GT(transport_->network_epoch(), stale.generations.network_epoch);
+  EXPECT_FALSE(
+      transport_->PublishProxySelection(partition, {kTargetHost}, stale));
+
+  // The old localhost route remains installed while the new epoch is
+  // revalidated. Clearing it here would expose Chromium's native route and
+  // violate REQUIRE_PROXY's no-DIRECT-fallback contract.
+  ExpectProxyResolution(delegate.get(), "https://target.example/rebinding");
+
+  const aegis_access::RegisteredProxyEndpoint rebound = EndpointFor(partition);
+  EXPECT_EQ(rebound.generations.network_epoch, transport_->network_epoch());
+  EXPECT_TRUE(
+      transport_->PublishProxySelection(partition, {kTargetHost}, rebound));
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       NetworkEpochOverflowFailsClosedPermanently) {
+  const base::FilePath partition;
+  AccessNetworkContextTransportTestPeer::SetNetworkEpoch(
+      transport_, std::numeric_limits<uint64_t>::max());
+  const aegis_access::RegisteredProxyEndpoint last_valid = EndpointFor(partition);
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      partition, {kTargetHost}, last_valid));
+
+  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
+      net::NetworkChangeNotifier::CONNECTION_NONE);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(transport_->network_epoch(), 0u);
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, {kTargetHost}, last_valid));
+
+  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
+      net::NetworkChangeNotifier::CONNECTION_WIFI);
+  task_environment_.RunUntilIdle();
+  EXPECT_EQ(transport_->network_epoch(), 0u);
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, {kTargetHost}, EndpointFor(partition)));
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       NetworkEpochIsProfileOwnedAndStartsPublished) {
+  EXPECT_EQ(transport_->network_epoch(), 1u);
+
+  auto second_profile = TestingProfile::Builder().Build();
+  auto* second_transport =
+      AccessNetworkContextTransport::GetOrCreate(second_profile.get());
+  ASSERT_TRUE(second_transport);
+  EXPECT_EQ(second_transport->network_epoch(), 1u);
+
+  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
+      net::NetworkChangeNotifier::CONNECTION_WIFI);
+  task_environment_.RunUntilIdle();
+
+  EXPECT_GT(transport_->network_epoch(), 1u);
+  EXPECT_GT(second_transport->network_epoch(), 1u);
+  EXPECT_EQ(transport_->network_epoch(), second_transport->network_epoch());
 }
 
 TEST_F(AccessNetworkContextTransportTest, RejectsCrossProfileEndpointOwnership) {

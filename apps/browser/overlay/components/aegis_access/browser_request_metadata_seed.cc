@@ -7,24 +7,6 @@
 namespace aegis_access {
 namespace {
 
-bool IsKnownChannel(ChannelNamespace channel) {
-  switch (channel) {
-    case ChannelNamespace::kDev:
-    case ChannelNamespace::kAlpha:
-    case ChannelNamespace::kBeta:
-    case ChannelNamespace::kRelease:
-      return true;
-    case ChannelNamespace::kInvalid:
-      return false;
-  }
-  return false;
-}
-
-bool IsCompleteOwner(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && !owner.profile_token.empty() &&
-         !owner.storage_partition_token.empty();
-}
-
 BrowserRequestMetadataSeedResult Error(BrowserRequestMetadataSeedError error) {
   return {error, std::nullopt};
 }

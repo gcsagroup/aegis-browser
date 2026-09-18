@@ -70,6 +70,11 @@ fi
   "$COMPONENT_DIR/request_ownership_registry.cc" \
   "$COMPONENT_DIR/request_dispatch_gate.cc" \
   "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
+  "$COMPONENT_DIR/published_request_runtime.cc" \
+  "$COMPONENT_DIR/access_identity_generation_state.cc" \
+  "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
+  "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
+  "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
   "$COMPONENT_DIR/access_route_planner_native_test.cc" \
   -o "$TEST_ROOT/aegis_access_native_test"
 
@@ -110,7 +115,12 @@ if [[ -n "$COVERAGE_DIR" ]]; then
       ownership = project_root "apps/browser/overlay/components/aegis_access/request_ownership_registry.cc"
       dispatch_gate = project_root "apps/browser/overlay/components/aegis_access/request_dispatch_gate.cc"
       metadata_seed = project_root "apps/browser/overlay/components/aegis_access/browser_request_metadata_seed.cc"
-      keep = (source == route || source == group || source == ownership || source == dispatch_gate || source == metadata_seed)
+      published_runtime = project_root "apps/browser/overlay/components/aegis_access/published_request_runtime.cc"
+      identity_generation = project_root "apps/browser/overlay/components/aegis_access/access_identity_generation_state.cc"
+      selection_generation = project_root "apps/browser/overlay/components/aegis_access/access_proxy_selection_generation_state.cc"
+      base_proxy_generation = project_root "apps/browser/overlay/components/aegis_access/access_base_proxy_config_generation_state.cc"
+      tuple_builder = project_root "apps/browser/overlay/components/aegis_access/request_generation_tuple_builder.cc"
+      keep = (source == route || source == group || source == ownership || source == dispatch_gate || source == metadata_seed || source == published_runtime || source == identity_generation || source == selection_generation || source == base_proxy_generation || source == tuple_builder)
       if (keep) {
         print "SF:" substr(source, length(project_root) + 1)
       }
@@ -119,8 +129,8 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     keep { print }
     /^end_of_record$/ { keep = 0 }
   ' "$COVERAGE_DIR/lcov.unfiltered.info" > "$COVERAGE_DIR/lcov.info"
-  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 5 ]]; then
-    printf 'FAIL: native LCOV must contain exactly the five standalone production units\n' >&2
+  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 10 ]]; then
+    printf 'FAIL: native LCOV must contain exactly the ten standalone production units\n' >&2
     exit 1
   fi
   rm "$COVERAGE_DIR/lcov.unfiltered.info"
@@ -133,6 +143,11 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     "$COMPONENT_DIR/request_ownership_registry.cc" \
     "$COMPONENT_DIR/request_dispatch_gate.cc" \
     "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
+    "$COMPONENT_DIR/published_request_runtime.cc" \
+    "$COMPONENT_DIR/access_identity_generation_state.cc" \
+    "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
+    "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
+    "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
     > "$COVERAGE_DIR/coverage-summary.json"
   "$LLVM_COV" report "$TEST_ROOT/aegis_access_native_test" \
     -instr-profile="$COVERAGE_DIR/aegis-access.profdata" \
@@ -142,6 +157,11 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     "$COMPONENT_DIR/request_ownership_registry.cc" \
     "$COMPONENT_DIR/request_dispatch_gate.cc" \
     "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
+    "$COMPONENT_DIR/published_request_runtime.cc" \
+    "$COMPONENT_DIR/access_identity_generation_state.cc" \
+    "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
+    "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
+    "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
     > "$COVERAGE_DIR/coverage.txt"
 else
   "$TEST_ROOT/aegis_access_native_test"

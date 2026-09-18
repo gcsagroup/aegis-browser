@@ -745,6 +745,7 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
     const int64_t sequence = groups.ColumnInt64(9);
     const int64_t generation = groups.ColumnInt64(10);
     if (revision <= 0 || sequence <= 0 || generation <= 0 ||
+        generation != sequence ||
         !group_ids.insert(stored.group.site_toggle_id).second) {
       return SnapshotError(StoreStatus::kCorrupt, "invalid_group_row");
     }
@@ -1063,7 +1064,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
   record.candidate.group = request.candidate_group;
   record.candidate.group.revision = record.target_revision;
   record.candidate.group.last_operation_sequence = record.operation_sequence;
-  record.candidate.policy_generation = 0;
+  record.candidate.policy_generation = record.operation_sequence;
   const AccessMode mode = request.candidate_members[0].mode;
   std::vector<SiteProxyRuleMember> normalized_members =
       request.candidate_members;
@@ -1234,7 +1235,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
       created_at_micros <= 0 ||
       (state == kPrepared &&
        (committed_generation != 0 || completed_at_micros != 0)) ||
-      (state == kCommitted && committed_generation == 0) ||
+      (state == kCommitted &&
+       (committed_generation == 0 || committed_generation != sequence)) ||
       (state == kSuperseded && committed_generation != 0) ||
       (state != kPrepared && completed_at_micros < created_at_micros) ||
       (mode != AccessMode::kDirect && mode != AccessMode::kProxy)) {
@@ -1266,7 +1268,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
       .revision = record.target_revision,
       .last_operation_sequence = record.operation_sequence,
   };
-  record.candidate.policy_generation = record.committed_policy_generation;
+  record.candidate.policy_generation = record.operation_sequence;
   const std::string proxy_group_id = row.ColumnString(14);
   const std::vector<RequestScheme> schemes = {
       RequestScheme::kHttp, RequestScheme::kHttps, RequestScheme::kWs,
@@ -1357,16 +1359,10 @@ StoreStatus AccessRuleStore::SupersedePreparedMutation(
 }
 
 StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
-    const PendingMutationRecord& expected,
-    uint64_t committed_policy_generation) {
+    const PendingMutationRecord& expected) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!is_open_) {
     return MutationError(terminal_status_, "store_not_open");
-  }
-  if (committed_policy_generation == 0 ||
-      !FitsSqlInt64(committed_policy_generation)) {
-    return MutationError(StoreStatus::kInvalidArgument,
-                         "invalid_committed_generation");
   }
   sql::Transaction transaction(&database_);
   if (!transaction.Begin()) {
@@ -1378,6 +1374,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
     return loaded;
   }
   const PendingMutationRecord& record = *loaded.value;
+  const uint64_t committed_policy_generation = record.operation_sequence;
   if (expected.phase != MutationPhase::kPrepared ||
       expected.request_fingerprint != record.request_fingerprint ||
       expected.owner != record.owner ||
