@@ -58,6 +58,15 @@ test('unknown or ambiguous text fails closed without mutation', () => {
   );
 });
 
+test('title normalization preserves parser boundaries', () => {
+  assert.equal(parseConventionalTitle(null), null);
+  assert.equal(parseConventionalTitle(`fix: ${'x'.repeat(252)}`), null);
+  assert.equal(
+    parseConventionalTitle('* fix(ci): keep title policy (#51) (#52)')?.title,
+    'fix(ci): keep title policy',
+  );
+});
+
 test('runner reads PR commits and updates title through the GitHub API', async () => {
   const updates = [];
   const github = {

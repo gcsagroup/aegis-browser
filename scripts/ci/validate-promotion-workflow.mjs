@@ -27,8 +27,8 @@ try {
   if (Object.keys(triggers.workflow_dispatch ?? {}).length !== 0) fail('Promotion workflow dispatch may not accept mutable inputs');
 
   const permissions = workflow.permissions ?? {};
-  if (JSON.stringify(permissions) !== JSON.stringify({checks: 'read', contents: 'read'})) {
-    fail('Promotion workflow GITHUB_TOKEN must be read-only checks + contents');
+  if (JSON.stringify(permissions) !== JSON.stringify({actions: 'read', contents: 'read'})) {
+    fail('Promotion workflow GITHUB_TOKEN must be read-only actions + contents');
   }
   if (workflow.concurrency?.group !== 'aegis-promotion-orchestrator' || workflow.concurrency?.['cancel-in-progress'] !== false) {
     fail('Promotion workflow must serialize every run without cancellation');

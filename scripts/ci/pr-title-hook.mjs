@@ -29,11 +29,10 @@ function stripPrNumberSuffixes(value) {
 }
 
 export function parseConventionalTitle(value) {
-  if (typeof value !== 'string') return null;
-  const normalized = stripPrNumberSuffixes(value.trim().replace(MARKDOWN_BULLET, '').trim());
-  if (!normalized || normalized.length > MAX_TITLE_LENGTH) return null;
+  const normalized = normalizeTitle(value);
+  if (!normalized) return null;
   const match = CONVENTIONAL_TITLE.exec(normalized);
-  if (!match?.groups || !CONVENTIONAL_TYPES.has(match.groups.type)) return null;
+  if (!isSupportedConventionalMatch(match)) return null;
   return {
     title: normalized,
     type: match.groups.type,
@@ -41,26 +40,44 @@ export function parseConventionalTitle(value) {
   };
 }
 
+function normalizeTitle(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = stripPrNumberSuffixes(value.trim().replace(MARKDOWN_BULLET, '').trim());
+  return normalized && normalized.length <= MAX_TITLE_LENGTH ? normalized : null;
+}
+
+function isSupportedConventionalMatch(match) {
+  return Boolean(match?.groups) && CONVENTIONAL_TYPES.has(match.groups.type);
+}
+
+function conventionalCandidates(commitMessages) {
+  return (commitMessages ?? [])
+    .flatMap((message) => String(message ?? '').split(/\r?\n/u))
+    .map(parseConventionalTitle)
+    .filter((candidate) => candidate && candidate.type !== 'release');
+}
+
 export function inferPrTitle(commitMessages) {
-  const candidates = [];
-  for (const message of commitMessages ?? []) {
-    for (const line of String(message ?? '').split(/\r?\n/u)) {
-      const candidate = parseConventionalTitle(line);
-      if (candidate && candidate.type !== 'release') candidates.push(candidate);
-    }
-  }
+  const candidates = conventionalCandidates(commitMessages);
   const feature = candidates.findLast((candidate) => candidate.type === 'feat');
   return feature?.title ?? candidates.at(-1)?.title ?? null;
 }
 
 export function decidePrTitle({currentTitle, commitMessages}) {
   const current = parseConventionalTitle(currentTitle);
-  if (current && current.type !== 'release') {
-    return {action: 'keep', title: currentTitle, reason: 'current-title-is-conventional'};
-  }
+  return current?.type !== 'release' && current
+    ? keepTitle(currentTitle, 'current-title-is-conventional')
+    : inferTitleDecision(current, currentTitle, commitMessages);
+}
+
+function keepTitle(title, reason) {
+  return {action: 'keep', title, reason};
+}
+
+function inferTitleDecision(current, currentTitle, commitMessages) {
   const inferred = inferPrTitle(commitMessages);
-  if (!inferred) return {action: 'keep', title: currentTitle, reason: 'no-unambiguous-candidate'};
-  if (inferred === currentTitle) return {action: 'keep', title: currentTitle, reason: 'already-matches'};
+  if (!inferred) return keepTitle(currentTitle, 'no-unambiguous-candidate');
+  if (inferred === currentTitle) return keepTitle(currentTitle, 'already-matches');
   return {action: 'update', title: inferred, reason: current ? 'generic-release-title' : 'non-conventional-title'};
 }
 
