@@ -384,6 +384,53 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   bool FetchTarget() { return Fetch(target_url()); }
 
+  std::string RunPrefetch(const GURL& url) {
+    return content::EvalJs(
+               web_contents(),
+               content::JsReplace(
+                   "new Promise(resolve => {"
+                   "  const link = document.createElement('link');"
+                   "  link.rel = 'prefetch';"
+                   "  link.as = 'document';"
+                   "  link.href = $1;"
+                   "  link.onload = () => resolve('loaded');"
+                   "  link.onerror = () => resolve('error');"
+                   "  document.head.appendChild(link);"
+                   "})",
+                   url.spec()))
+        .ExtractString();
+  }
+
+  void PreparePrefetchTest(size_t* origin_before, size_t* proxy_before) {
+    ASSERT_NE(origin_before, nullptr);
+    ASSERT_NE(proxy_before, nullptr);
+    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+    *origin_before = origin_requests_.load(std::memory_order_relaxed);
+    *proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  }
+
+  void ExpectRoutingDelta(size_t origin_before,
+                          size_t proxy_before,
+                          size_t origin_delta,
+                          size_t proxy_delta) {
+    if (origin_delta > 0u) {
+      EXPECT_TRUE(base::test::RunUntil([&] {
+        return origin_requests_.load(std::memory_order_relaxed) ==
+               origin_before + origin_delta;
+      }));
+    }
+    if (proxy_delta > 0u) {
+      EXPECT_TRUE(base::test::RunUntil([&] {
+        return proxy_requests_.load(std::memory_order_relaxed) ==
+               proxy_before + proxy_delta;
+      }));
+    }
+    EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed),
+              origin_before + origin_delta);
+    EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed),
+              proxy_before + proxy_delta);
+  }
+
   std::string RunWorkerMainScript(const GURL& script_url) {
     return content::EvalJs(
                web_contents(),
@@ -728,6 +775,41 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
     return proxy_requests_.load(std::memory_order_relaxed) == 1u;
   }));
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       PrefetchWithoutPolicyPreservesNativePath) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PreparePrefetchTest(&origin_before, &proxy_before);
+
+  ASSERT_EQ(RunPrefetch(target_url()), "loaded");
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
+                     /*proxy_delta=*/0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       PrefetchUsesSelectedProxy) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PreparePrefetchTest(&origin_before, &proxy_before);
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  ASSERT_EQ(RunPrefetch(target_url()), "loaded");
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/1u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       PrefetchWithoutEndpointFailsClosed) {
+  size_t origin_before = 0;
+  size_t proxy_before = 0;
+  PreparePrefetchTest(&origin_before, &proxy_before);
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+
+  ASSERT_EQ(RunPrefetch(target_url()), "error");
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/0u);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,

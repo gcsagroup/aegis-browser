@@ -243,7 +243,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
   base::WeakPtrFactory<BrowserContextData> weak_factory_{this};
 };
 
-void MaybeProxyWorkerFactory(
+void MaybeProxyFrameOwnedFactory(
     Profile* profile,
     content::RenderFrameHost* frame,
     network::URLLoaderFactoryBuilder& factory_builder) {
@@ -323,16 +323,7 @@ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
     Profile* profile,
     content::RenderFrameHost* frame,
     network::URLLoaderFactoryBuilder& factory_builder) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
-      CaptureProxyFactoryMetadata(profile, frame, std::nullopt);
-  if (!metadata.has_value()) {
-    return;
-  }
-
-  BrowserContextData::StartProxying(
-      profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
-      std::move(*metadata), factory_builder);
+  MaybeProxyFrameOwnedFactory(profile, frame, factory_builder);
 }
 
 // static
@@ -340,7 +331,7 @@ void AccessProxyingURLLoaderFactory::MaybeProxyWorkerMainResource(
     Profile* profile,
     content::RenderFrameHost* frame,
     network::URLLoaderFactoryBuilder& factory_builder) {
-  MaybeProxyWorkerFactory(profile, frame, factory_builder);
+  MaybeProxyFrameOwnedFactory(profile, frame, factory_builder);
 }
 
 // static
@@ -351,7 +342,7 @@ void AccessProxyingURLLoaderFactory::MaybeProxyWorkerSubResource(
     network::URLLoaderFactoryBuilder& factory_builder) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (frame) {
-    MaybeProxyWorkerFactory(profile, frame, factory_builder);
+    MaybeProxyFrameOwnedFactory(profile, frame, factory_builder);
     return;
   }
 
@@ -372,6 +363,14 @@ void AccessProxyingURLLoaderFactory::MaybeProxyServiceWorkerScript(
     int render_process_id,
     network::URLLoaderFactoryBuilder& factory_builder) {
   MaybeProxyProfileOnlyFactory(profile, render_process_id, factory_builder);
+}
+
+// static
+void AccessProxyingURLLoaderFactory::MaybeProxyPrefetch(
+    Profile* profile,
+    content::RenderFrameHost* frame,
+    network::URLLoaderFactoryBuilder& factory_builder) {
+  MaybeProxyFrameOwnedFactory(profile, frame, factory_builder);
 }
 
 // static
