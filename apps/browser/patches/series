@@ -145,3 +145,4 @@
 0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch
 0145-feat-aegis-gate-service-worker-subresource-traffic.patch
 0146-feat-aegis-gate-process-service-worker-script-traffic.patch
+0147-feat-aegis-gate-frame-prefetch-traffic.patch
