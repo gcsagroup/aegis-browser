@@ -513,7 +513,8 @@ diff --git a/chrome/browser/predictors/prefetch_manager.cc b/chrome/browser/pred
                          base::TimeTicks::Now() - job->creation_time);
  
 +    if (job->url.is_valid() && factory && !info->was_canceled) {
-+      PrefetchUrl(std::move(job), storage_partition, factory);
++      PrefetchUrl(std::move(job), profile_->GetDefaultStoragePartition(),
++                  factory);
 +    }
 -    if (job->url.is_valid() && factory && !info->was_canceled)
 -      PrefetchUrl(std::move(job), factory);
