@@ -269,6 +269,7 @@ if (!is_android) {
       "//components/search_engines",
       "//content/test:test_support",
       "//net:test_support",
+      "//services/network/public/cpp",
       "//testing/gtest",
       "//ui/message_center/public/cpp",
       "//url",
