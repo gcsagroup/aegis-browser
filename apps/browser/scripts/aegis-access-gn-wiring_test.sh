@@ -42,6 +42,7 @@ PROFILE_ONLY_BACKGROUND_PATCH_FILE="$BROWSER_DIR/patches/0143-feat-aegis-add-pro
 FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch"
 SERVICE_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0145-feat-aegis-gate-service-worker-subresource-traffic.patch"
 SERVICE_WORKER_SCRIPT_PATCH_FILE="$BROWSER_DIR/patches/0146-feat-aegis-gate-process-service-worker-script-traffic.patch"
+PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0147-feat-aegis-gate-frame-prefetch-traffic.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
@@ -657,6 +658,27 @@ rg -Fq 'ServiceWorkerProcessScriptUsesSelectedProxy' \
 rg -Fq 'ServiceWorkerBrowserProcessScriptStaysNativeBeforeProcessScriptFailsClosed' \
   "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
   fail "patch 0146 must keep browser-process ServiceWorker scripts native before process-backed fail-closed"
+rg -Fq 'URLLoaderFactoryType::kPrefetch && frame' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must wire only frame-backed renderer prefetch factories"
+rg -Fq 'MaybeProxyPrefetch' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must install the prefetch Access wrapper"
+rg -Fq 'MaybeProxyFrameOwnedFactory' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must reuse trusted frame-owned attribution"
+rg -Fq 'PrefetchWithoutPolicyPreservesNativePath' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must preserve native frame-backed prefetch without policy"
+rg -Fq 'PrefetchUsesSelectedProxy' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must browser-test selected frame-backed prefetch routing"
+rg -Fq 'PrefetchWithoutEndpointFailsClosed' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must fail closed when prefetch PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kPrefetch && !frame' "$PREFETCH_PATCH_FILE"; then
+  fail "patch 0147 must not claim browser-initiated frame-less prefetch"
+fi
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -727,6 +749,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0145 must appear once in series"
 [[ "$(rg -F -c '0146-feat-aegis-gate-process-service-worker-script-traffic.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0146 must appear once in series"
+[[ "$(rg -F -c '0147-feat-aegis-gate-frame-prefetch-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0147 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -760,10 +784,11 @@ expected_access_tail="$(cat <<'EOF'
 0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch
 0145-feat-aegis-gate-service-worker-subresource-traffic.patch
 0146-feat-aegis-gate-process-service-worker-script-traffic.patch
+0147-feat-aegis-gate-frame-prefetch-traffic.patch
 EOF
 )"
-[[ "$(tail -n 32 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0146"
+[[ "$(tail -n 33 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0147"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
