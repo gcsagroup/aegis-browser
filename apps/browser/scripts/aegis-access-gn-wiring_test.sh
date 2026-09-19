@@ -683,7 +683,7 @@ fi
 rg -Fq 'chrome/browser/predictors/prefetch_manager.cc' \
   "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
   fail "patch 0148 must wire the LoadingPredictor PrefetchManager call site"
-rg -Fq 'PrefetchUrl(std::move(job), storage_partition, factory);' \
+rg -Fq 'PrefetchUrl(std::move(job), profile_->GetDefaultStoragePartition(),' \
   "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
   fail "patch 0148 must pass the exact PrefetchManager partition into PrefetchUrl"
 rg -Fq 'MaybeProxyBrowserProcessPrefetch(profile_, storage_partition' \
