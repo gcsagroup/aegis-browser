@@ -64,6 +64,37 @@ TEST(RequestPolicyContextTest, DerivesPendingNavigationSiteFromTarget) {
   EXPECT_EQ(result.context->port(), 8080u);
 }
 
+TEST(RequestPolicyContextTest,
+     UsesBrowserOwnedTopSiteForNestedPendingNavigation) {
+  const BrowserOwnedRequestMetadata metadata{
+      "request-nested-navigation", TestOwner(),
+      RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
+      net::SchemefulSite(GURL("https://top.example/page"))};
+  const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
+      metadata, GURL("https://iframe.example.test/path"));
+
+  ASSERT_EQ(result.error, RequestContextError::kNone);
+  ASSERT_TRUE(result.context.has_value());
+  EXPECT_TRUE(result.context->site_ownership_reliable());
+  EXPECT_EQ(result.context->top_level_site(), "https://top.example");
+  EXPECT_EQ(result.context->exact_host(), "iframe.example.test");
+  EXPECT_NE(result.context->top_level_site(),
+            net::SchemefulSite(GURL("https://iframe.example.test/path"))
+                .Serialize());
+}
+
+TEST(RequestPolicyContextTest,
+     RejectsInvalidBrowserOwnedTopSiteForNestedPendingNavigation) {
+  const BrowserOwnedRequestMetadata metadata{
+      "request-nested-navigation-invalid-site", TestOwner(),
+      RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
+      net::SchemefulSite(GURL("data:text/plain,opaque"))};
+  EXPECT_EQ(CanonicalizeBrowserOwnedRequest(
+                metadata, GURL("https://iframe.example.test/path"))
+                .error,
+            RequestContextError::kInvalidTopLevelSite);
+}
+
 TEST(RequestPolicyContextTest, PreservesProfileOnlyOwnershipWithoutSite) {
   const BrowserOwnedRequestMetadata metadata{
       "request-profile", TestOwner(), RequestAttributionKind::kProfileOnly,

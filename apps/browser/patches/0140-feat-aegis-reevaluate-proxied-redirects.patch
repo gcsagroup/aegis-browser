@@ -1,0 +1,509 @@
+From 0140000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Sat, 19 Sep 2026 00:30:00 +0800
+Subject: [PATCH] feat(aegis): re-evaluate proxied redirects before follow
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -105,6 +105,7 @@ source_set("access_proxying_url_loader_factory") {
+     "//net",
+     "//services/network/public/cpp",
+     "//services/network/public/mojom",
++    "//url",
+   ]
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -178,23 +178,6 @@ CaptureProxyFactoryMetadata(
+   return std::move(*metadata.metadata);
+ }
+ 
+-class CallbackTerminationHandle final
+-    : public aegis_access::RequestTerminationHandle {
+- public:
+-  explicit CallbackTerminationHandle(base::OnceClosure terminate)
+-      : terminate_(std::move(terminate)) {}
+-  ~CallbackTerminationHandle() override = default;
+-
+-  void Terminate() override {
+-    if (terminate_) {
+-      std::move(terminate_).Run();
+-    }
+-  }
+-
+- private:
+-  base::OnceClosure terminate_;
+-};
+-
+ class BrowserContextData : public base::SupportsUserData::Data {
+  public:
+   BrowserContextData(const BrowserContextData&) = delete;
+@@ -311,6 +294,30 @@ AccessProxyingURLLoaderFactory::EvaluateRequest(
+     const network::ResourceRequest& request,
+     int* net_error,
+     aegis_access::RequestOwnershipRecord* ownership_record) {
++  return EvaluateUrl(request.url, std::nullopt, net_error, ownership_record);
++}
++
++AccessProxyingURLLoaderFactory::RequestDisposition
++AccessProxyingURLLoaderFactory::EvaluateRedirect(
++    const GURL& redirect_url,
++    const std::string& stable_request_id,
++    int* net_error,
++    aegis_access::RequestOwnershipRecord* ownership_record) {
++  if (stable_request_id.empty()) {
++    CHECK(net_error);
++    *net_error = net::ERR_BLOCKED_BY_CLIENT;
++    return RequestDisposition::kBlock;
++  }
++  return EvaluateUrl(redirect_url, stable_request_id, net_error,
++                     ownership_record);
++}
++
++AccessProxyingURLLoaderFactory::RequestDisposition
++AccessProxyingURLLoaderFactory::EvaluateUrl(
++    const GURL& request_url,
++    const std::optional<std::string>& stable_request_id,
++    int* net_error,
++    aegis_access::RequestOwnershipRecord* ownership_record) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   CHECK(net_error);
+   CHECK(ownership_record);
+@@ -328,22 +335,41 @@ AccessProxyingURLLoaderFactory::EvaluateRequest(
+   AccessBrowserRequestMetadataResult metadata = BuildBrowserOwnedRequestMetadata(
+       profile_, wc_getter, frame_tree_node_id_, navigation_id_);
+   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
+-      !metadata.metadata.has_value() ||
+-      !SameAttributionScope(factory_metadata_, *metadata.metadata)) {
++      !metadata.metadata.has_value()) {
++    return factory_snapshot ? RequestDisposition::kBlock
++                            : RequestDisposition::kPreserveNative;
++  }
++
++  aegis_access::BrowserOwnedRequestMetadata evaluated_metadata =
++      std::move(*metadata.metadata);
++  if (!SameAttributionScope(factory_metadata_, evaluated_metadata)) {
+     return factory_snapshot ? RequestDisposition::kBlock
+                             : RequestDisposition::kPreserveNative;
+   }
++  if (stable_request_id.has_value()) {
++    evaluated_metadata.request_id = *stable_request_id;
++  }
++
++  return EvaluatePreparedMetadata(request_url, runtime,
++                                  std::move(evaluated_metadata), net_error,
++                                  ownership_record);
++}
+ 
++AccessProxyingURLLoaderFactory::RequestDisposition
++AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
++    const GURL& request_url,
++    AccessPublishedRequestRuntime* runtime,
++    aegis_access::BrowserOwnedRequestMetadata metadata,
++    int* net_error,
++    aegis_access::RequestOwnershipRecord* ownership_record) {
+   const aegis_access::PublishedAccessPolicySnapshot* snapshot =
+-      runtime ? runtime->GetPublishedPolicySnapshot(metadata.metadata->owner)
+-              : nullptr;
++      runtime ? runtime->GetPublishedPolicySnapshot(metadata.owner) : nullptr;
+   if (!snapshot) {
+     return RequestDisposition::kPreserveNative;
+   }
+ 
+   aegis_access::RequestPolicyContextResult context_result =
+-      aegis_access::CanonicalizeBrowserOwnedRequest(*metadata.metadata,
+-                                                    request.url);
++      aegis_access::CanonicalizeBrowserOwnedRequest(metadata, request_url);
+   if (!context_result.context.has_value()) {
+     return RequestDisposition::kBlock;
+   }
+@@ -360,8 +386,7 @@ AccessProxyingURLLoaderFactory::EvaluateRequest(
+   }
+ 
+   ProxyDispatchPreparation preparation = PrepareProxyDispatch(
+-      profile_, runtime, *metadata.metadata, *snapshot, *context_result.context,
+-      match);
++      profile_, runtime, metadata, *snapshot, *context_result.context, match);
+   if (!preparation.ownership_record.has_value()) {
+     *net_error = preparation.net_error;
+     return RequestDisposition::kBlock;
+@@ -408,13 +433,8 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+   AccessProxyingURLTrackedRequest* tracked_ptr = tracked.get();
+   requests_.emplace(std::move(tracked));
+ 
+-  auto termination = std::make_unique<CallbackTerminationHandle>(
+-      base::BindOnce(&AccessProxyingURLTrackedRequest::TerminateFromRegistry,
+-                     tracked_ptr->GetWeakPtr()));
+   const aegis_access::RequestOwnershipStatus dispatch_status =
+-      dispatch_state->ownership().MarkDispatched(
+-          ownership_record.request_id, ownership_record.owner,
+-          ownership_record.generations, std::move(termination));
++      tracked_ptr->MarkDispatched();
+   if (dispatch_status != aegis_access::RequestOwnershipStatus::kOk) {
+     dispatch_state->ownership().Complete(
+         ownership_record.request_id, ownership_record.owner,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -7,6 +7,7 @@
+ #include <memory>
+ #include <optional>
+ #include <set>
++#include <string>
+ 
+ #include "base/containers/unique_ptr_adapters.h"
+ #include "base/functional/callback.h"
+@@ -18,6 +19,7 @@
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
+ #include "services/network/public/mojom/url_loader_factory.mojom.h"
+ 
++class GURL;
+ class Profile;
+ 
+ namespace content {
+@@ -26,15 +28,17 @@ class RenderFrameHost;
+ 
+ namespace aegis::access {
+ 
++class AccessPublishedRequestRuntime;
+ class AccessProxyingURLTrackedRequest;
+ 
+ // UI-thread browser-process URLLoaderFactory wrapper for real Access request
+ // dispatch. It covers primary-page document subresources plus primary-page
+-// main-frame and subframe navigation factories. Worker, ServiceWorker,
+-// prefetch, WebSocket, BFCache/prerender, and redirect re-evaluation remain
+-// later slices. Each request is re-evaluated from browser-owned
+-// frame/navigation state and the latest published Access state before it may
+-// reach the target Network Service factory.
++// main-frame and subframe navigation factories, including redirect follow
++// re-evaluation under one stable logical request identity. Worker,
++// ServiceWorker, prefetch/preconnect, WebSocket, BFCache, and prerender remain
++// later slices. Each request is re-evaluated from browser-owned frame/navigation
++// state and the latest published Access state before it may reach the target
++// Network Service factory.
+ //
+ // DIRECT/absent policy is forwarded unchanged. A PROXY decision is forwarded
+ // only after exact-host endpoint validation and the synchronous dispatch gate.
+@@ -94,6 +98,22 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       const network::ResourceRequest& request,
+       int* net_error,
+       aegis_access::RequestOwnershipRecord* ownership_record);
++  RequestDisposition EvaluateRedirect(
++      const GURL& redirect_url,
++      const std::string& stable_request_id,
++      int* net_error,
++      aegis_access::RequestOwnershipRecord* ownership_record);
++  RequestDisposition EvaluateUrl(
++      const GURL& request_url,
++      const std::optional<std::string>& stable_request_id,
++      int* net_error,
++      aegis_access::RequestOwnershipRecord* ownership_record);
++  RequestDisposition EvaluatePreparedMetadata(
++      const GURL& request_url,
++      AccessPublishedRequestRuntime* runtime,
++      aegis_access::BrowserOwnedRequestMetadata metadata,
++      int* net_error,
++      aegis_access::RequestOwnershipRecord* ownership_record);
+   void ForwardNative(
+       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+       int32_t request_id,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -42,6 +42,7 @@ namespace aegis::access {
+ namespace {
+ 
+ constexpr char kTargetHost[] = "target.example";
++constexpr char kUnselectedRedirectHost[] = "redirect-unselected.example";
+ constexpr char kProxyGroup[] = "proxy-group-browser-test";
+ 
+ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
+@@ -65,6 +66,14 @@ std::unique_ptr<net::test_server::HttpResponse> ProxyReply(
+     return std::make_unique<net::test_server::HungResponse>();
+   }
+   auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++  if (request.relative_url.find("/redirect-unselected") !=
++      std::string::npos) {
++    response->set_code(net::HTTP_FOUND);
++    response->AddCustomHeader(
++        "Location",
++        target_origin->GetURL(kUnselectedRedirectHost, "/resource").spec());
++    return response;
++  }
+   if (request.relative_url.find("/redirect") != std::string::npos) {
+     response->set_code(net::HTTP_FOUND);
+     response->AddCustomHeader(
+@@ -88,6 +97,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     InProcessBrowserTest::SetUpOnMainThread();
+ 
+     host_resolver()->AddRule(kTargetHost, "127.0.0.1");
++    host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
+ 
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &CountAndReply, base::Unretained(&origin_requests_), "origin"));
+@@ -123,6 +133,10 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     return target_origin_.GetURL(kTargetHost, "/redirect");
+   }
+ 
++  GURL unselected_redirect_url() const {
++    return target_origin_.GetURL(kTargetHost, "/redirect-unselected");
++  }
++
+   GURL hanging_url() const {
+     return target_origin_.GetURL(kTargetHost, "/hang");
+   }
+@@ -184,6 +198,13 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   bool FetchTarget() { return Fetch(target_url()); }
+ 
++  void ExpectRedirectFollowedThroughProxy() {
++    EXPECT_TRUE(base::test::RunUntil([&] {
++      return proxy_requests_.load(std::memory_order_relaxed) == 2u;
++    }));
++    EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
++  }
++
+   void NavigateNewIframe(const GURL& url) {
+     ASSERT_TRUE(content::ExecJs(
+         web_contents(),
+@@ -350,13 +371,35 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+-                       RedirectFromProxiedRequestFailsClosed) {
++                       SameHostRedirectReevaluatesThroughProxy) {
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+ 
+-  EXPECT_FALSE(Fetch(redirect_url()));
+-  EXPECT_TRUE(base::test::RunUntil([&] {
+-    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
+-  }));
++  EXPECT_TRUE(Fetch(redirect_url()));
++  ExpectRedirectFollowedThroughProxy();
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       MainNavigationRedirectReevaluatesThroughProxy) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++
++  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), redirect_url()));
++  ExpectRedirectFollowedThroughProxy();
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       SubframeNavigationRedirectReevaluatesThroughProxy) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++
++  NavigateNewIframe(redirect_url());
++  ExpectRedirectFollowedThroughProxy();
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       RedirectToUnselectedHostFailsClosed) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++
++  EXPECT_FALSE(Fetch(unselected_redirect_url()));
++  EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 1u);
+   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+@@ -2,8 +2,11 @@
+ 
+ #include "chrome/browser/aegis/access/access_proxying_url_tracked_request.h"
+ 
++#include <memory>
++#include <string>
+ #include <utility>
+ 
++#include "base/functional/bind.h"
+ #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+ #include "content/public/browser/browser_thread.h"
+@@ -12,6 +15,26 @@
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+ 
+ namespace aegis::access {
++namespace {
++
++class TrackedRequestTerminationHandle final
++    : public aegis_access::RequestTerminationHandle {
++ public:
++  explicit TrackedRequestTerminationHandle(base::OnceClosure terminate)
++      : terminate_(std::move(terminate)) {}
++  ~TrackedRequestTerminationHandle() override = default;
++
++  void Terminate() override {
++    if (terminate_) {
++      std::move(terminate_).Run();
++    }
++  }
++
++ private:
++  base::OnceClosure terminate_;
++};
++
++}  // namespace
+ 
+ AccessProxyingURLTrackedRequest::AccessProxyingURLTrackedRequest(
+     AccessProxyingURLLoaderFactory* factory,
+@@ -30,6 +53,17 @@ AccessProxyingURLTrackedRequest::GetWeakPtr() {
+   return weak_factory_.GetWeakPtr();
+ }
+ 
++aegis_access::RequestOwnershipStatus
++AccessProxyingURLTrackedRequest::MarkDispatched() {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  auto termination = std::make_unique<TrackedRequestTerminationHandle>(
++      base::BindOnce(&AccessProxyingURLTrackedRequest::TerminateFromRegistry,
++                     GetWeakPtr()));
++  return dispatch_state_->ownership().MarkDispatched(
++      ownership_record_.request_id, ownership_record_.owner,
++      ownership_record_.generations, std::move(termination));
++}
++
+ void AccessProxyingURLTrackedRequest::Start(
+     mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+     int32_t request_id,
+@@ -71,10 +105,23 @@ void AccessProxyingURLTrackedRequest::TerminateFromRegistry() {
+ }
+ 
+ void AccessProxyingURLTrackedRequest::FollowRedirect(
+-    network::HttpRequestHeadersUpdateParams,
+-    const std::optional<GURL>&) {
++    network::HttpRequestHeadersUpdateParams headers,
++    const std::optional<GURL>& new_url) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  FailClosed(/*complete_registry=*/true);
++  if (finished_ || !pending_redirect_url_.has_value() ||
++      !target_loader_.is_bound()) {
++    FailClosed(/*complete_registry=*/true);
++    return;
++  }
++
++  const GURL follow_url = new_url.value_or(*pending_redirect_url_);
++  if (!RebindOwnershipForRedirect(follow_url)) {
++    FailClosed(/*complete_registry=*/ownership_registered_);
++    return;
++  }
++
++  pending_redirect_url_.reset();
++  target_loader_->FollowRedirect(std::move(headers), new_url);
+ }
+ 
+ void AccessProxyingURLTrackedRequest::SetPriority(net::RequestPriority priority,
+@@ -112,10 +159,17 @@ void AccessProxyingURLTrackedRequest::OnReceiveResponse(
+ }
+ 
+ void AccessProxyingURLTrackedRequest::OnReceiveRedirect(
+-    const net::RedirectInfo&,
+-    network::mojom::URLResponseHeadPtr) {
++    const net::RedirectInfo& redirect_info,
++    network::mojom::URLResponseHeadPtr head) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  FailClosed(/*complete_registry=*/true);
++  if (finished_ || pending_redirect_url_.has_value() ||
++      !redirect_info.new_url.is_valid() || !target_client_.is_bound()) {
++    FailClosed(/*complete_registry=*/true);
++    return;
++  }
++
++  pending_redirect_url_ = redirect_info.new_url;
++  target_client_->OnReceiveRedirect(redirect_info, std::move(head));
+ }
+ 
+ void AccessProxyingURLTrackedRequest::OnUploadProgress(
+@@ -146,6 +200,51 @@ void AccessProxyingURLTrackedRequest::OnComplete(
+   Finish(/*complete_registry=*/true);
+ }
+ 
++bool AccessProxyingURLTrackedRequest::RebindOwnershipForRedirect(
++    const GURL& follow_url) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (!ownership_registered_) {
++    return false;
++  }
++
++  const std::string stable_request_id = ownership_record_.request_id;
++  const aegis_access::RequestOwnershipTerminalResult completed =
++      dispatch_state_->ownership().Complete(
++          ownership_record_.request_id, ownership_record_.owner,
++          ownership_record_.generations);
++  if (completed.status != aegis_access::RequestOwnershipStatus::kOk) {
++    return false;
++  }
++  ownership_registered_ = false;
++
++  int net_error = net::ERR_BLOCKED_BY_CLIENT;
++  aegis_access::RequestOwnershipRecord redirected_record;
++  const auto disposition = factory_->EvaluateRedirect(
++      follow_url, stable_request_id, &net_error, &redirected_record);
++  if (disposition !=
++      AccessProxyingURLLoaderFactory::RequestDisposition::kDispatchProxy) {
++    return false;
++  }
++  if (redirected_record.request_id != stable_request_id) {
++    dispatch_state_->ownership().Complete(
++        redirected_record.request_id, redirected_record.owner,
++        redirected_record.generations);
++    return false;
++  }
++
++  ownership_record_ = std::move(redirected_record);
++  ownership_registered_ = true;
++  if (MarkDispatched() == aegis_access::RequestOwnershipStatus::kOk) {
++    return true;
++  }
++
++  dispatch_state_->ownership().Complete(
++      ownership_record_.request_id, ownership_record_.owner,
++      ownership_record_.generations);
++  ownership_registered_ = false;
++  return false;
++}
++
+ void AccessProxyingURLTrackedRequest::OnBindingError() {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   if (!finished_) {
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+@@ -13,6 +13,7 @@
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/public/mojom/url_loader.mojom.h"
++#include "url/gurl.h"
+ 
+ namespace net {
+ struct MutableNetworkTrafficAnnotationTag;
+@@ -45,6 +46,7 @@ class AccessProxyingURLTrackedRequest final
+   ~AccessProxyingURLTrackedRequest() override;
+ 
+   base::WeakPtr<AccessProxyingURLTrackedRequest> GetWeakPtr();
++  aegis_access::RequestOwnershipStatus MarkDispatched();
+ 
+   void Start(
+       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+@@ -77,13 +79,15 @@ class AccessProxyingURLTrackedRequest final
+   void OnComplete(const network::URLLoaderCompletionStatus& status) override;
+ 
+  private:
++  bool RebindOwnershipForRedirect(const GURL& follow_url);
+   void OnBindingError();
+   void FailClosed(bool complete_registry);
+   void Finish(bool complete_registry);
+ 
+   const raw_ptr<AccessProxyingURLLoaderFactory> factory_;
+   const raw_ptr<AccessRequestDispatchState> dispatch_state_;
+-  const aegis_access::RequestOwnershipRecord ownership_record_;
++  aegis_access::RequestOwnershipRecord ownership_record_;
++  std::optional<GURL> pending_redirect_url_;
+   bool ownership_registered_ = true;
+   bool finished_ = false;
+ 

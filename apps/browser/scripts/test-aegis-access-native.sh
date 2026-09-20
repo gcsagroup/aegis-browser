@@ -75,6 +75,7 @@ fi
   "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
   "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
   "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
+  "$COMPONENT_DIR/policy_publication_ack_tracker.cc" \
   "$COMPONENT_DIR/access_route_planner_native_test.cc" \
   -o "$TEST_ROOT/aegis_access_native_test"
 
@@ -120,7 +121,8 @@ if [[ -n "$COVERAGE_DIR" ]]; then
       selection_generation = project_root "apps/browser/overlay/components/aegis_access/access_proxy_selection_generation_state.cc"
       base_proxy_generation = project_root "apps/browser/overlay/components/aegis_access/access_base_proxy_config_generation_state.cc"
       tuple_builder = project_root "apps/browser/overlay/components/aegis_access/request_generation_tuple_builder.cc"
-      keep = (source == route || source == group || source == ownership || source == dispatch_gate || source == metadata_seed || source == published_runtime || source == identity_generation || source == selection_generation || source == base_proxy_generation || source == tuple_builder)
+      publication_acks = project_root "apps/browser/overlay/components/aegis_access/policy_publication_ack_tracker.cc"
+      keep = (source == route || source == group || source == ownership || source == dispatch_gate || source == metadata_seed || source == published_runtime || source == identity_generation || source == selection_generation || source == base_proxy_generation || source == tuple_builder || source == publication_acks)
       if (keep) {
         print "SF:" substr(source, length(project_root) + 1)
       }
@@ -129,8 +131,8 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     keep { print }
     /^end_of_record$/ { keep = 0 }
   ' "$COVERAGE_DIR/lcov.unfiltered.info" > "$COVERAGE_DIR/lcov.info"
-  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 10 ]]; then
-    printf 'FAIL: native LCOV must contain exactly the ten standalone production units\n' >&2
+  if [[ "$(grep -c '^SF:' "$COVERAGE_DIR/lcov.info")" != 11 ]]; then
+    printf 'FAIL: native LCOV must contain exactly the eleven standalone production units\n' >&2
     exit 1
   fi
   rm "$COVERAGE_DIR/lcov.unfiltered.info"
@@ -148,6 +150,7 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
     "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
     "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
+    "$COMPONENT_DIR/policy_publication_ack_tracker.cc" \
     > "$COVERAGE_DIR/coverage-summary.json"
   "$LLVM_COV" report "$TEST_ROOT/aegis_access_native_test" \
     -instr-profile="$COVERAGE_DIR/aegis-access.profdata" \
@@ -162,6 +165,7 @@ if [[ -n "$COVERAGE_DIR" ]]; then
     "$COMPONENT_DIR/access_proxy_selection_generation_state.cc" \
     "$COMPONENT_DIR/access_base_proxy_config_generation_state.cc" \
     "$COMPONENT_DIR/request_generation_tuple_builder.cc" \
+    "$COMPONENT_DIR/policy_publication_ack_tracker.cc" \
     > "$COVERAGE_DIR/coverage.txt"
 else
   "$TEST_ROOT/aegis_access_native_test"

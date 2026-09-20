@@ -7,6 +7,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
+import {parseLcov} from '../validate-coverage.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const scripts = join(root, 'scripts/ci');
@@ -560,6 +561,36 @@ test('coverage validator accepts current complete production LCOV', () => {
     const report = JSON.parse(result.stdout);
     assert.equal(report.productionFiles, 2);
     assert.equal(report.reportedFiles, 2);
+  } finally {
+    rmSync(fixture.directory, {recursive: true, force: true});
+  }
+});
+
+test('LLVM LCOV summary superset is opt-in and cannot hide uncovered lines', () => {
+  const fixture = createCoverageFixture();
+  try {
+    const llvmLcov = coverageRecord(fixture.sourcePaths[0])
+      .replace('LF:1\nLH:1', 'LF:2\nLH:2');
+    assert.throws(
+      () => parseLcov(llvmLcov, fixture.sourceDirectory),
+      /line totals do not match DA data/u,
+    );
+    const parsed = parseLcov(
+      llvmLcov,
+      fixture.sourceDirectory,
+      {allowLineSummarySuperset: true},
+    );
+    assert.deepEqual(parsed.totals.lines, {total: 2, covered: 2, pct: 100});
+
+    const hiddenUncovered = llvmLcov.replace('LH:2', 'LH:1');
+    assert.throws(
+      () => parseLcov(
+        hiddenUncovered,
+        fixture.sourceDirectory,
+        {allowLineSummarySuperset: true},
+      ),
+      /DA data exceeds line summary totals/u,
+    );
   } finally {
     rmSync(fixture.directory, {recursive: true, force: true});
   }

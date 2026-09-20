@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/functional/callback_forward.h"
 #include "base/supports_user_data.h"
 #include "components/aegis_access/access_proxy_route_adapter.h"
 #include "components/aegis_access/access_route_types.h"
@@ -20,6 +22,20 @@
 class Profile;
 
 namespace aegis::access {
+
+enum class AccessNetworkConfigAckStatus {
+  kStarted,
+  kMissingTransport,
+  kInvalidOwner,
+  kMissingPartition,
+  kNoClients,
+  kBuildFailed,
+};
+
+struct AccessNetworkConfigAckResult {
+  AccessNetworkConfigAckStatus status = AccessNetworkConfigAckStatus::kBuildFailed;
+  size_t required_client_acks = 0;
+};
 
 // Profile-owned transport state for the first Network Service integration
 // slice. This is deliberately not another KeyedService: its lifetime is the
@@ -78,6 +94,24 @@ class AccessNetworkContextTransport
   // New requests then use Chromium's native proxy result again.
   bool ClearProxySelection(const base::FilePath& relative_partition_path);
 
+  // Captures the exact registered endpoint that Network Service will use for
+  // |exact_host|. The returned endpoint is browser-owned by-value state and is
+  // available only when owner, proxy group, host selection, and network epoch
+  // still match the currently published CustomProxyConfig.
+  std::optional<aegis_access::RegisteredProxyEndpoint>
+  CaptureSelectedProxyEndpoint(
+      const aegis_access::OwnershipKey& owner,
+      const std::string& proxy_group_id,
+      const std::string& exact_host) const;
+
+  // Re-publishes the currently committed custom proxy config and completes
+  // |all_clients_settled| only after every currently attached NetworkContext
+  // has either acknowledged Chromium's real CustomProxyConfigClient Mojo call
+  // or dropped its callback. The bool is true only when every client ACKed.
+  AccessNetworkConfigAckResult RepublishCurrentConfigWithAck(
+      const aegis_access::OwnershipKey& owner,
+      base::OnceCallback<void(bool)> all_clients_settled);
+
   network::mojom::CustomProxyConfigPtr BuildConfigForTesting(
       const base::FilePath& relative_partition_path) const;
   void FlushClientsForTesting(const base::FilePath& relative_partition_path);
@@ -105,6 +139,10 @@ class AccessNetworkContextTransport
       const aegis_access::RegisteredProxyEndpoint& endpoint) const;
   network::mojom::CustomProxyConfigPtr BuildConfig(
       const PartitionState& state) const;
+  void UpdateClientConfigs(
+      PartitionState& state,
+      const network::mojom::CustomProxyConfigPtr& config,
+      base::OnceCallback<void(bool)> all_clients_settled);
   void Broadcast(PartitionState& state);
 
   std::string runtime_profile_token_;

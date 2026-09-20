@@ -63,6 +63,19 @@ inline void RunMetadataSeedAttributionUnitTests(
                       pending.seed->pending_navigation_token == "navigation-a",
                   "metadata seed unit pending attribution");
 
+  const auto nested_pending = PrepareBrowserRequestMetadataSeed(
+      {"request-nested-navigation", MetadataSeedOwner(), "", "navigation-b",
+       "https://top.example"});
+  observer.Expect(
+      nested_pending.error == BrowserRequestMetadataSeedError::kNone &&
+          nested_pending.seed.has_value() &&
+          nested_pending.seed->attribution_kind ==
+              BrowserRequestAttributionKind::kPendingNavigation &&
+          nested_pending.seed->document_token.empty() &&
+          nested_pending.seed->pending_navigation_token == "navigation-b" &&
+          nested_pending.seed->top_frame_site == "https://top.example",
+      "metadata seed unit nested navigation preserves trusted top site");
+
   const auto profile = PrepareBrowserRequestMetadataSeed(
       {"request-profile", MetadataSeedOwner(), "", "", ""});
   observer.Expect(profile.error == BrowserRequestMetadataSeedError::kNone &&

@@ -67,6 +67,48 @@ source_set("access_network_context_transport") {
   ]
 }
 
+source_set("access_request_dispatch_state") {
+  sources = [
+    "access_request_dispatch_state.cc",
+    "access_request_dispatch_state.h",
+  ]
+  deps = [
+    ":access_network_context_transport",
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//components/aegis_access:policy_publication_ack_tracker",
+    "//components/aegis_access:request_ownership_registry",
+    "//content/public/browser",
+  ]
+}
+
+source_set("access_proxying_url_loader_factory") {
+  sources = [
+    "access_proxying_url_loader_factory.cc",
+    "access_proxying_url_loader_factory.h",
+    "access_proxying_url_tracked_request.cc",
+    "access_proxying_url_tracked_request.h",
+  ]
+  deps = [
+    ":access_browser_request_adapter",
+    ":access_network_context_transport",
+    ":access_published_request_runtime",
+    ":access_request_dispatch_state",
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//components/aegis_access",
+    "//components/aegis_access:published_request_runtime",
+    "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//url",
+  ]
+}
+
 source_set("access_rule_store") {
   sources = [
     "access_rule_store.cc",
@@ -100,6 +142,36 @@ source_set("access_published_request_runtime") {
     ":access_rule_store",
     "//components/aegis_access",
     "//components/aegis_access:request_generation_tuple_builder",
+  ]
+}
+
+test("access_browser_request_adapter_unittests") {
+  sources = [ "access_browser_request_adapter_unittest.cc" ]
+  deps = [
+    ":access_browser_request_adapter",
+    ":access_network_context_transport",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//chrome/browser/profiles:test_support",
+    "//components/aegis_access",
+    "//content/public/browser",
+    "//content/public/test",
+    "//net",
+    "//services/network/public/mojom",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_request_dispatch_state_unittests") {
+  sources = [ "access_request_dispatch_state_unittest.cc" ]
+  deps = [
+    ":access_request_dispatch_state",
+    "//base/test:run_all_unittests",
+    "//chrome/browser/profiles:test_support",
+    "//content/public/test",
+    "//testing/gtest",
   ]
 }
 
