@@ -1,10 +1,32 @@
-From 0137000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From a1fedb67823c3e915ce2daed6749cfaee36863cd Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Fri, 18 Sep 2026 20:05:00 +0800
 Subject: [PATCH] feat(aegis): version policy publication acknowledgements
 
 ---
+ chrome/browser/aegis/access/BUILD.gn          |   2 +
+ .../access_network_context_transport.cc       |  73 ++++-
+ .../access/access_network_context_transport.h |  30 +-
+ ...cess_network_context_transport_unittest.cc | 104 ++++++-
+ .../access/access_request_dispatch_state.cc   | 104 ++++++-
+ .../access/access_request_dispatch_state.h    |  37 ++-
+ .../access_request_dispatch_state_unittest.cc | 120 +++++++-
+ components/aegis_access/BUILD.gn              |  20 ++
+ .../access_route_planner_native_test.cc       |  22 +-
+ .../policy_publication_ack_tracker.cc         | 280 ++++++++++++++++++
+ .../policy_publication_ack_tracker.h          | 137 +++++++++
+ ...cy_publication_ack_tracker_contract_test.h | 217 ++++++++++++++
+ ...policy_publication_ack_tracker_unittest.cc |  30 ++
+ .../request_ownership_registry.cc             |  11 +
+ .../aegis_access/request_ownership_registry.h |   9 +
+ 15 files changed, 1186 insertions(+), 10 deletions(-)
+ create mode 100644 components/aegis_access/policy_publication_ack_tracker.cc
+ create mode 100644 components/aegis_access/policy_publication_ack_tracker.h
+ create mode 100644 components/aegis_access/policy_publication_ack_tracker_contract_test.h
+ create mode 100644 components/aegis_access/policy_publication_ack_tracker_unittest.cc
+
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 0e5bd994e0..b89e94158f 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -73,9 +73,11 @@ source_set("access_request_dispatch_state") {
@@ -20,6 +42,7 @@ diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/
      "//content/public/browser",
    ]
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index af9ffee149..2423eb61f4 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport.cc
 @@ -4,12 +4,16 @@
@@ -121,9 +144,10 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/c
 +}  // namespace aegis::access
 \ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 12aae9fdba..496c444970 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.h
 +++ b/chrome/browser/aegis/access/access_network_context_transport.h
-@@ -3,13 +3,15 @@
+@@ -3,6 +3,7 @@
  #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
  #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
  
@@ -131,7 +155,7 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/ch
  #include <cstdint>
  #include <map>
  #include <optional>
- #include <string>
+@@ -10,6 +11,7 @@
  #include <vector>
  
  #include "base/files/file_path.h"
@@ -194,6 +218,7 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/ch
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
 \ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 75dbef9e02..e9576c74ef 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 @@ -4,6 +4,7 @@
@@ -320,6 +345,7 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport_unitte
 +}  // namespace aegis::access
 \ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chrome/browser/aegis/access/access_request_dispatch_state.cc
+index 9a81f1cd99..4dcdfc5a1f 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state.cc
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.cc
 @@ -5,6 +5,8 @@
@@ -458,6 +484,7 @@ diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chro
 +}  // namespace aegis::access
 \ No newline at end of file
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
+index 879cad9a55..8e1a3c7d69 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state.h
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
 @@ -4,8 +4,12 @@
@@ -525,6 +552,7 @@ diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrom
  
  }  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
+index 4f62915d92..da5f012ce2 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
 @@ -55,6 +55,18 @@ aegis_access::RequestCancellationSelector SelectorFor(
@@ -661,6 +689,7 @@ diff --git a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.
 +}  // namespace aegis::access
 \ No newline at end of file
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 074ee968f5..bb886be102 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -80,6 +80,14 @@ source_set("request_dispatch_gate") {
@@ -698,30 +727,50 @@ diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
    sources = [
      "request_cancellation_contract_test.h",
 diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+index 6ae74ede00..a816020091 100644
 --- a/components/aegis_access/access_route_planner_native_test.cc
 +++ b/components/aegis_access/access_route_planner_native_test.cc
-@@ -9,6 +9,7 @@
+@@ -3,17 +3,27 @@
+ #include <iostream>
+ #include <string>
+ 
++#include "components/aegis_access/access_base_proxy_config_generation_state_contract_test.h"
++#include "components/aegis_access/access_identity_generation_state_contract_test.h"
++#include "components/aegis_access/access_proxy_selection_generation_state_contract_test.h"
  #include "components/aegis_access/access_route_planner_contract_test.h"
  #include "components/aegis_access/browser_request_metadata_seed_contract_test.h"
  #include "components/aegis_access/published_request_runtime_contract_test.h"
 +#include "components/aegis_access/policy_publication_ack_tracker_contract_test.h"
  #include "components/aegis_access/request_dispatch_gate_contract_test.h"
- #include "components/aegis_access/request_generation_tuple_builder_contract_test.h"
++#include "components/aegis_access/request_generation_tuple_builder_contract_test.h"
  #include "components/aegis_access/request_ownership_registry_contract_test.h"
-@@ -21,7 +22,8 @@ class NativeObserver : public aegis_access::test::ContractTestObserver,
-                        public aegis_access::test::BaseProxyConfigGenerationStateTestObserver,
-                        public aegis_access::test::IdentityGenerationStateTestObserver,
-                        public aegis_access::test::ProxySelectionGenerationStateTestObserver,
--                       public aegis_access::test::RequestGenerationTupleBuilderTestObserver {
+ 
+ namespace {
+ 
+ class NativeObserver : public aegis_access::test::ContractTestObserver,
+                        public aegis_access::test::RequestOwnershipRegistryTestObserver,
+-                       public aegis_access::test::BrowserRequestMetadataSeedTestObserver {
++                       public aegis_access::test::BrowserRequestMetadataSeedTestObserver,
++                       public aegis_access::test::BaseProxyConfigGenerationStateTestObserver,
++                       public aegis_access::test::IdentityGenerationStateTestObserver,
++                       public aegis_access::test::ProxySelectionGenerationStateTestObserver,
 +                       public aegis_access::test::RequestGenerationTupleBuilderTestObserver,
 +                       public aegis_access::test::PolicyPublicationAckTrackerTestObserver {
   public:
    void Expect(bool condition, const std::string& label) override {
      ++checks_;
-@@ -65,6 +67,8 @@ int main() {
-   aegis_access::test::RunBaseProxyConfigGenerationStateRegressionTests(observer);
-   aegis_access::test::RunRequestGenerationTupleBuilderUnitTests(observer);
-   aegis_access::test::RunRequestGenerationTupleBuilderRegressionTests(observer);
+@@ -49,6 +59,16 @@ int main() {
+   aegis_access::test::RunBrowserRequestMetadataSeedRegressionTests(observer);
+   aegis_access::test::RunPublishedRequestRuntimeUnitTests(observer);
+   aegis_access::test::RunPublishedRequestRuntimeRegressionTests(observer);
++  aegis_access::test::RunIdentityGenerationStateUnitTests(observer);
++  aegis_access::test::RunIdentityGenerationStateRegressionTests(observer);
++  aegis_access::test::RunProxySelectionGenerationStateUnitTests(observer);
++  aegis_access::test::RunProxySelectionGenerationStateRegressionTests(observer);
++  aegis_access::test::RunBaseProxyConfigGenerationStateUnitTests(observer);
++  aegis_access::test::RunBaseProxyConfigGenerationStateRegressionTests(observer);
++  aegis_access::test::RunRequestGenerationTupleBuilderUnitTests(observer);
++  aegis_access::test::RunRequestGenerationTupleBuilderRegressionTests(observer);
 +  aegis_access::test::RunPolicyPublicationAckTrackerUnitTests(observer);
 +  aegis_access::test::RunPolicyPublicationAckTrackerRegressionTests(observer);
    if (observer.failures() != 0) {
@@ -729,6 +778,7 @@ diff --git a/components/aegis_access/access_route_planner_native_test.cc b/compo
                << " failures, " << observer.checks() << " checks)\n";
 diff --git a/components/aegis_access/policy_publication_ack_tracker.cc b/components/aegis_access/policy_publication_ack_tracker.cc
 new file mode 100644
+index 0000000000..1bf2ae963a
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker.cc
 @@ -0,0 +1,280 @@
@@ -1015,6 +1065,7 @@ new file mode 100644
 \ No newline at end of file
 diff --git a/components/aegis_access/policy_publication_ack_tracker.h b/components/aegis_access/policy_publication_ack_tracker.h
 new file mode 100644
+index 0000000000..4ab751937f
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker.h
 @@ -0,0 +1,137 @@
@@ -1157,6 +1208,7 @@ new file mode 100644
 +#endif  // COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_H_
 diff --git a/components/aegis_access/policy_publication_ack_tracker_contract_test.h b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
 new file mode 100644
+index 0000000000..77688cfa7a
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
 @@ -0,0 +1,217 @@
@@ -1379,6 +1431,7 @@ new file mode 100644
 +#endif  // COMPONENTS_AEGIS_ACCESS_POLICY_PUBLICATION_ACK_TRACKER_CONTRACT_TEST_H_
 diff --git a/components/aegis_access/policy_publication_ack_tracker_unittest.cc b/components/aegis_access/policy_publication_ack_tracker_unittest.cc
 new file mode 100644
+index 0000000000..b547101ca9
 --- /dev/null
 +++ b/components/aegis_access/policy_publication_ack_tracker_unittest.cc
 @@ -0,0 +1,30 @@
@@ -1413,6 +1466,7 @@ new file mode 100644
 +}  // namespace
 +}  // namespace aegis_access::test
 diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+index 745b3470d6..80a2ed567e 100644
 --- a/components/aegis_access/request_ownership_registry.cc
 +++ b/components/aegis_access/request_ownership_registry.cc
 @@ -110,6 +110,17 @@ RequestOwnershipStatus ValidateExpected(
@@ -1434,6 +1488,7 @@ diff --git a/components/aegis_access/request_ownership_registry.cc b/components/
      size_t max_barriers)
      : max_barriers_(max_barriers) {}
 diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
+index 419598a543..4af26307bd 100644
 --- a/components/aegis_access/request_ownership_registry.h
 +++ b/components/aegis_access/request_ownership_registry.h
 @@ -92,8 +92,17 @@ struct RequestCancellationSelector {
@@ -1454,5 +1509,3 @@ diff --git a/components/aegis_access/request_ownership_registry.h b/components/a
  struct RequestOwnershipBatchCancelResult {
    RequestOwnershipStatus status = RequestOwnershipStatus::kOk;
    std::vector<RequestOwnershipTerminalResult> cancellations;
--- 
-2.39.5
