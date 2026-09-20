@@ -1,10 +1,17 @@
-From 0147000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 194636db90893a2f98cbe8a72e75b22949e68d50 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Sat, 19 Sep 2026 03:20:00 +0800
 Subject: [PATCH] feat(aegis): gate frame-backed renderer prefetch traffic
 
 ---
+ .../access_proxying_url_loader_factory.cc     | 25 +++---
+ .../access_proxying_url_loader_factory.h      | 15 ++--
+ ...proxying_url_loader_factory_browsertest.cc | 82 +++++++++++++++++++
+ .../browser/chrome_content_browser_client.cc  |  5 ++
+ 4 files changed, 109 insertions(+), 18 deletions(-)
+
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 34c1b625dc..e896ee77dc 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -243,7 +243,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
@@ -16,7 +23,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b
      Profile* profile,
      content::RenderFrameHost* frame,
      network::URLLoaderFactoryBuilder& factory_builder) {
-@@ -323,24 +323,15 @@ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+@@ -323,16 +323,7 @@ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
      Profile* profile,
      content::RenderFrameHost* frame,
      network::URLLoaderFactoryBuilder& factory_builder) {
@@ -34,7 +41,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b
  }
  
  // static
- void AccessProxyingURLLoaderFactory::MaybeProxyWorkerMainResource(
+@@ -340,7 +331,7 @@ void AccessProxyingURLLoaderFactory::MaybeProxyWorkerMainResource(
      Profile* profile,
      content::RenderFrameHost* frame,
      network::URLLoaderFactoryBuilder& factory_builder) {
@@ -68,6 +75,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b
  void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
      Profile* profile,
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 64bc74ec78..74a637dd1c 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -34,11 +34,12 @@ class AccessProxyingURLTrackedRequest;
@@ -100,6 +108,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/
        Profile* profile,
        content::RenderFrameHost* frame,
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 8791c077f3..82b8a2f500 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 @@ -384,6 +384,53 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
@@ -199,14 +208,10 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_brow
                         WorkerMainResourceWithoutPolicyPreservesNativePath) {
    ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 5a75c4f12a..1b92dc1f2b 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6765,9 +6765,15 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
-   if (type == URLLoaderFactoryType::kServiceWorkerScript && !frame &&
-       render_process_id != content::ChildProcessHost::kInvalidUniqueID) {
-     aegis::access::AccessProxyingURLLoaderFactory::
-         MaybeProxyServiceWorkerScript(
-             Profile::FromBrowserContext(browser_context), render_process_id,
+@@ -6858,6 +6858,11 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
              factory_builder);
    }
  
@@ -216,3 +221,5 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 +  }
 +
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
+   if (disable_secure_dns) {
+     WebContents* web_contents = WebContents::FromRenderFrameHost(frame);
