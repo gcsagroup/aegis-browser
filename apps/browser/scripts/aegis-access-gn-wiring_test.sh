@@ -30,6 +30,23 @@ SELECTION_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0131-feat-aegis-own-proxy-
 BASE_PROXY_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0132-feat-aegis-own-base-proxy-config-generation.patch"
 PUBLISHED_GENERATION_RUNTIME_PATCH_FILE="$BROWSER_DIR/patches/0133-feat-aegis-publish-request-generation-runtime.patch"
 RUNTIME_THREAD_BOUNDARY_PATCH_FILE="$BROWSER_DIR/patches/0134-fix-aegis-harden-published-runtime-thread-boundary.patch"
+REAL_URL_LOADER_PATCH_FILE="$BROWSER_DIR/patches/0135-feat-aegis-gate-real-document-url-loader-traffic.patch"
+REQUEST_TERMINATION_PATCH_FILE="$BROWSER_DIR/patches/0136-feat-aegis-terminate-in-flight-access-requests.patch"
+POLICY_PUBLICATION_ACK_PATCH_FILE="$BROWSER_DIR/patches/0137-feat-aegis-version-policy-publication-acks.patch"
+NAVIGATION_URL_LOADER_PATCH_FILE="$BROWSER_DIR/patches/0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch"
+SUBFRAME_NAVIGATION_PATCH_FILE="$BROWSER_DIR/patches/0139-feat-aegis-gate-primary-page-subframe-navigation.patch"
+REDIRECT_REEVALUATION_PATCH_FILE="$BROWSER_DIR/patches/0140-feat-aegis-reevaluate-proxied-redirects.patch"
+WORKER_MAIN_RESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0141-feat-aegis-gate-worker-main-resource-traffic.patch"
+WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0142-feat-aegis-gate-worker-subresource-traffic.patch"
+PROFILE_ONLY_BACKGROUND_PATCH_FILE="$BROWSER_DIR/patches/0143-feat-aegis-add-profile-only-background-ownership.patch"
+FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch"
+SERVICE_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0145-feat-aegis-gate-service-worker-subresource-traffic.patch"
+SERVICE_WORKER_SCRIPT_PATCH_FILE="$BROWSER_DIR/patches/0146-feat-aegis-gate-process-service-worker-script-traffic.patch"
+PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0147-feat-aegis-gate-frame-prefetch-traffic.patch"
+BROWSER_PROCESS_PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0148-feat-aegis-gate-loading-predictor-prefetch.patch"
+BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-direct-gn-deps.patch"
+PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
+BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -102,6 +119,30 @@ rg -Fq 'PrerenderPageCannotInheritPrimaryPageIdentity' "$BROWSER_METADATA_BROWSE
 rg -Fq 'AccessBrowserRequestMetadataStatus::kInvalidAttribution' \
   "$BROWSER_METADATA_BROWSER_TEST" ||
   fail "prerender regression must assert fail-closed attribution"
+rg -Fq 'source_set("access_request_dispatch_state")' "$ACCESS_BUILD" ||
+  fail "overlay must define the Profile-owned Access request dispatch state"
+rg -Fq 'source_set("access_proxying_url_loader_factory")' "$ACCESS_BUILD" ||
+  fail "overlay must define the real Access URLLoader proxy factory"
+rg -Fq 'test("access_request_dispatch_state_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must compile the Profile dispatch-state regression"
+rg -Fq '"access/access_proxying_url_loader_factory_browsertest.cc",' "$AEGIS_BUILD" ||
+  fail "Aegis browser_tests must compile the real URLLoader proxy smoke"
+browser_tests_block="$(
+  awk '/^  source_set\("browser_tests"\) \{/,/^  \}$/' "$AEGIS_BUILD"
+)"
+for direct_dep in \
+  '//chrome/browser/aegis/access:access_request_dispatch_state' \
+  '//components/aegis_access:access_identity_generation_state' \
+  '//components/aegis_access:access_proxy_selection_generation_state'; do
+  header="${direct_dep#*:}.h"
+  header="${direct_dep%%:*}/${header}"
+  [[ "$(rg -F -c "#include \"${header#//}\"" "$BROWSER_PROXY_TEST")" == 1 ]] ||
+    fail "browser proxy smoke must directly include $header"
+  [[ "$browser_tests_block" == *"\"$direct_dep\","* ]] ||
+    fail "browser_tests must directly depend on $direct_dep"
+  rg -Fq "+      \"$direct_dep\"," "$BROWSER_TEST_DEPS_PATCH_FILE" ||
+    fail "patch 0149 must deliver the direct $direct_dep dependency"
+done
 rg -Fq '"//chrome/browser/aegis:browser_tests",' "$BROWSER_TEST_WIRING_PATCH_FILE" ||
   fail "chrome browser_tests must include the existing Aegis browser_tests target"
 rg -Fq '+test("aegis_access_unittests")' "$PATCH_FILE" ||
@@ -334,6 +375,382 @@ rg -Fq 'inline bool IsKnownChannel(ChannelNamespace channel)' \
 rg -Fq 'inline bool IsCompleteOwner(const OwnershipKey& owner)' \
   "$RUNTIME_THREAD_BOUNDARY_PATCH_FILE" ||
   fail "patch 0134 must centralize ownership validation"
+rg -Fq 'URLLoaderFactoryType::kDocumentSubResource' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must install only the first document-subresource slice"
+rg -Fq 'MaybeProxyDocumentSubresource' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must wire the Aegis URLLoader proxy factory"
+rg -Fq 'CaptureProxyGenerationTupleOnUiThread' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must consume the UI-captured five-source generation tuple"
+rg -Fq 'CaptureSelectedProxyEndpoint' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must bind requests to the exact selected localhost endpoint"
+rg -Fq 'EvaluatePublishedRequestForDispatch' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must run the published request dispatch gate before send"
+rg -Fq 'MarkDispatched' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must attach a termination-capable dispatch lifecycle before send"
+rg -Fq 'ERR_PROXY_CONNECTION_FAILED' "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must fail closed when required proxy state is unavailable"
+rg -Fq '//chrome/browser/aegis/access:access_proxying_url_loader_factory' \
+  "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must link the URLLoader proxy factory into chrome_browser_main"
+rg -Fq 'RuntimePolicyUpdateRoutesExistingFactoryThroughProxy' \
+  "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must carry the runtime policy-to-localhost-proxy browser smoke"
+rg -Fq 'ProxyPolicyWithoutSelectedEndpointFailsClosed' \
+  "$REAL_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0135 must cover missing-endpoint no-DIRECT-fallback behavior"
+rg -Fq 'InstallBlockBarrierAndCancelMatching' "$REQUEST_TERMINATION_PATCH_FILE" ||
+  fail "patch 0136 must install the BLOCK barrier before cancellation"
+rg -Fq 'CancelMatchingPageTarget' "$REQUEST_TERMINATION_PATCH_FILE" ||
+  fail "patch 0136 must cancel matching in-flight ownership entries"
+rg -Fq 'TerminateFromRegistry' "$REQUEST_TERMINATION_PATCH_FILE" ||
+  fail "patch 0136 must invoke the real URLLoader termination handle"
+rg -Fq 'access_proxying_url_tracked_request.cc' "$REQUEST_TERMINATION_PATCH_FILE" ||
+  fail "patch 0136 must isolate the tracked URLLoader lifecycle"
+rg -Fq 'BlockBarrierTerminatesMatchingDispatchedRequest' \
+  "$REQUEST_TERMINATION_PATCH_FILE" ||
+  fail "patch 0136 must unit-test barrier-first cancellation"
+rg -Fq 'BlockBarrierTerminatesInFlightProxyRequest' \
+  "$REQUEST_TERMINATION_PATCH_FILE" ||
+  fail "patch 0136 must browser-test real in-flight request termination"
+rg -Fq 'source_set("policy_publication_ack_tracker")' "$COMPONENT_BUILD" ||
+  fail "overlay must define the versioned policy publication ack tracker"
+rg -Fq 'PolicyPublicationAckTracker::Begin' "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must version policy publication acknowledgements"
+rg -Fq 'LateAckCannotReleaseNewerBlockBarrier' "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must reject late ACK release of a newer BLOCK barrier"
+rg -Fq 'OnCustomProxyConfigUpdated' "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must use Chromium CustomProxyConfigClient acknowledgements"
+rg -Fq 'BarrierClosure' "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must wait for all attached NetworkContext clients"
+rg -Fq 'RequestNetworkContextPublicationAck' "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must bridge real NetworkContext ACKs into dispatch state"
+rg -Fq 'ReleaseBlockBarrierForReadyPublication' "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must gate BLOCK barrier release on publication readiness"
+rg -Fq 'RealCustomProxyConfigCallbackAcknowledgesPublication' \
+  "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must test the real NetworkContext ACK callback"
+rg -Fq 'std::move(all_clients_settled).Run(false)' \
+  "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must settle immediate NetworkContext ACK failures"
+rg -Fq 'MissingNetworkTransportFailsPublicationImmediately' \
+  "$POLICY_PUBLICATION_ACK_PATCH_FILE" ||
+  fail "patch 0137 must fail publication when NetworkContext ACK cannot start"
+rg -Fq 'URLLoaderFactoryType::kNavigation' \
+  "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must install the navigation URLLoader slice"
+rg -Fq 'navigation_id.has_value()' "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must require Chromium browser-owned navigation identity"
+rg -Fq 'MaybeProxyNavigation' "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must wire the navigation proxy factory"
+rg -Fq 'IsInPrimaryMainFrame()' "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must remain scoped to primary main-frame navigation"
+rg -Fq 'RequestAttributionKind::kPendingNavigation' \
+  "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must preserve pending-navigation attribution"
+rg -Fq 'PendingNavigationUsesDestinationSiteNotOldDocument' \
+  "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must prove navigation does not borrow old document identity"
+rg -Fq 'MainNavigationUsesPendingNavigationProxy' \
+  "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must browser-test real navigation through localhost proxy"
+rg -Fq 'MainNavigationWithoutPolicyPreservesNativePath' \
+  "$NAVIGATION_URL_LOADER_PATCH_FILE" ||
+  fail "patch 0138 must preserve native navigation without Access policy"
+rg -Fq 'seed_input->top_frame_site = top_frame_site.Serialize();' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must capture the browser-owned primary top site"
+rg -Fq 'nested navigation preserves trusted top site' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must preserve pending subframe top-site seed semantics"
+rg -Fq 'UsesBrowserOwnedTopSiteForNestedPendingNavigation' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must canonicalize nested navigation from the trusted top site"
+rg -Fq 'SubframePendingNavigationPreservesPrimaryTopFrameSite' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must browser-test subframe top-site ownership"
+rg -Fq 'ResolvePrimaryTopFrameSite' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must centralize trusted primary top-site resolution"
+rg -Fq 'request_frame->GetPage().IsPrimary()' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must defensively reject non-primary request frames"
+rg -Fq 'request_frame->GetMainFrame() != contents->GetPrimaryMainFrame()' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must reject frames outside the primary frame tree"
+rg -Fq 'kPrerenderNavigationId' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must regression-test pending navigation from prerender pages"
+rg -Fq 'RejectsInvalidBrowserOwnedTopSiteForNestedPendingNavigation' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must reject invalid browser-owned nested top sites"
+rg -Fq 'SubframePendingNavigationRejectsOpaquePrimaryTopFrameSite' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must reject opaque nested top-frame attribution"
+rg -Fq 'SubframeNavigationWithoutPolicyPreservesNativePath' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must preserve native subframe navigation without Access policy"
+rg -Fq 'SubframeNavigationUsesPrimaryPageProxy' \
+  "$SUBFRAME_NAVIGATION_PATCH_FILE" ||
+  fail "patch 0139 must browser-test proxied subframe navigation"
+rg -Fq 'EvaluateRedirect' "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must re-evaluate redirect targets before follow"
+rg -Fq 'RebindOwnershipForRedirect' "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must rebind request ownership for each redirect hop"
+rg -Fq 'pending_redirect_url_' "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must hold redirect follow until browser re-evaluation"
+rg -Fq 'redirected_record.request_id != stable_request_id' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must preserve one stable logical request identity"
+rg -Fq 'SameHostRedirectReevaluatesThroughProxy' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must browser-test same-host redirect re-evaluation"
+rg -Fq 'MainNavigationRedirectReevaluatesThroughProxy' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must browser-test main-navigation redirects"
+rg -Fq 'SubframeNavigationRedirectReevaluatesThroughProxy' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must preserve 0139 subframe attribution across redirects"
+rg -Fq 'RedirectToUnselectedHostFailsClosed' \
+  "$REDIRECT_REEVALUATION_PATCH_FILE" ||
+  fail "patch 0140 must fail closed when redirect target lacks a selected proxy"
+rg -Fq 'URLLoaderFactoryType::kWorkerMainResource' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must wire the Chromium Worker main-resource factory"
+rg -Fq 'MaybeProxyWorkerMainResource' "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must install the Aegis Worker main-resource wrapper"
+rg -Fq 'RequestAttributionKind::kDocument' "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must require browser-owned document attribution for Worker main scripts"
+rg -Fq 'WorkerMainResourceWithoutPolicyPreservesNativePath' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must browser-test native Worker main-resource behavior"
+rg -Fq 'WorkerMainResourceUsesSelectedProxy' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must browser-test proxied Worker main-resource behavior"
+rg -Fq 'WorkerMainResourceWithoutEndpointFailsClosed' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE" ||
+  fail "patch 0141 must fail closed when Worker PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kWorkerSubResource' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE"; then
+  fail "patch 0141 must not claim Worker subresource coverage"
+fi
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$WORKER_MAIN_RESOURCE_PATCH_FILE"; then
+  fail "patch 0141 must not claim ServiceWorker coverage"
+fi
+rg -Fq 'URLLoaderFactoryType::kWorkerSubResource && frame' \
+  "$WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0142 must gate Worker subresources on a browser-owned frame"
+rg -Fq 'MaybeProxyWorkerSubResource' "$WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0142 must install the Worker subresource wrapper"
+rg -Fq 'Frame-less SharedWorker subresources' "$WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0142 must document the frame-less SharedWorker exclusion"
+rg -Fq 'WorkerSubresourceWithoutPolicyPreservesNativePath' \
+  "$WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0142 must preserve native Worker subresources without policy"
+rg -Fq 'WorkerSubresourceUsesSelectedProxy' \
+  "$WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0142 must browser-test selected proxy Worker subresources"
+rg -Fq 'WorkerSubresourceWithoutEndpointFailsClosed' \
+  "$WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0142 must fail closed when Worker subresource PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$WORKER_SUBRESOURCE_PATCH_FILE"; then
+  fail "patch 0142 must not claim ServiceWorker coverage"
+fi
+rg -Fq 'BuildBrowserOwnedProfileOnlyRequestMetadata' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must expose the browser-owned Profile-only process bridge"
+rg -Fq 'RenderProcessHost::FromID' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must bind Profile-only ownership to a browser-owned render process"
+rg -Fq 'process->GetStoragePartition()' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must resolve the trusted render process StoragePartition"
+rg -Fq 'BuildBrowserOwnedProfileRequestMetadata' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must expose exact StoragePartition Profile-only ownership"
+rg -Fq 'AccessBrowserRequestMetadataStatus::kUnconfiguredPartition' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must fail closed for an unconfigured background partition"
+rg -Fq 'OwnsConfiguredPartition' "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must bind Profile-only ownership to a configured Access partition"
+rg -Fq 'transport, /*require_configured_partition=*/false, owner);' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must preserve frame-owned ownership without background pre-configuration"
+rg -Fq 'RequestAttributionKind::kProfileOnly' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must produce Profile-only request attribution"
+rg -Fq 'ProfileOnlyMetadataUsesRenderProcessPartitionWithoutSiteIdentity' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must browser-test process-owned Profile-only metadata"
+rg -Fq 'ProfileOnlyMetadataRejectsUnknownRenderProcess' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE" ||
+  fail "patch 0143 must fail closed for an unknown render process"
+rg -Fq 'BackgroundMetadataDoesNotCreateTransport' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must not create transport while resolving background ownership"
+rg -Fq 'BackgroundMetadataRequiresConfiguredPartition' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must reject unconfigured background partitions"
+rg -Fq 'BackgroundMetadataUsesProfileOnlyConfiguredPartitionOwnership' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must prove configured Profile-only ownership"
+rg -Fq 'BackgroundMetadataRejectsCrossProfilePartition' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must reject cross-Profile partitions"
+rg -Fq 'BackgroundMetadataRejectsMissingPartition' \
+  "$PROFILE_ONLY_BACKGROUND_TEST" ||
+  fail "0143 contract must reject a missing partition"
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$PROFILE_ONLY_BACKGROUND_PATCH_FILE"; then
+  fail "patch 0143 must not wire ServiceWorker URLLoader factories"
+fi
+rg -Fq 'if (type == URLLoaderFactoryType::kWorkerSubResource)' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must include frame-less Worker subresource factories"
+rg -Fq 'render_process_id, factory_builder' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must pass the browser-owned render process id"
+rg -Fq 'CaptureProfileOnlyProxyFactoryMetadata' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must capture Profile-only Worker ownership"
+rg -Fq 'if (!aegis::IsAegisProfileSupported(profile))' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must reject unsupported Profiles before Profile-only capture"
+rg -Fq 'BuildBrowserOwnedProfileOnlyRequestMetadata' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must re-evaluate Profile-only ownership per request"
+rg -Fq 'profile_only_render_process_id_' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must retain the trusted process source for re-evaluation"
+rg -Fq 'SharedWorkerSubresourceWithoutPolicyPreservesNativePath' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must preserve native SharedWorker subresources without policy"
+rg -Fq 'SharedWorkerSubresourceUsesSelectedProxy' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must browser-test proxied SharedWorker subresources"
+rg -Fq 'SharedWorkerSubresourceWithoutEndpointFailsClosed' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0144 must fail closed when SharedWorker PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kServiceWorker' \
+  "$FRAMELESS_WORKER_SUBRESOURCE_PATCH_FILE"; then
+  fail "patch 0144 must not claim ServiceWorker coverage"
+fi
+rg -Fq 'URLLoaderFactoryType::kServiceWorkerSubResource && !frame' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0145 must wire only frame-less ServiceWorker subresource factories"
+rg -Fq 'MaybeProxyServiceWorkerSubResource' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0145 must install the ServiceWorker subresource Access wrapper"
+rg -Fq 'CaptureProfileOnlyProxyFactoryMetadata(profile, render_process_id)' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0145 must reuse trusted Profile-only process ownership"
+rg -Fq 'ServiceWorkerSubresourceWithoutPolicyPreservesNativePath' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0145 must preserve native ServiceWorker subresources without policy"
+rg -Fq 'ServiceWorkerSubresourceUsesSelectedProxy' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0145 must browser-test selected ServiceWorker proxy routing"
+rg -Fq 'ServiceWorkerSubresourceWithoutEndpointFailsClosed' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE" ||
+  fail "patch 0145 must fail closed when ServiceWorker PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kServiceWorkerScript' \
+  "$SERVICE_WORKER_SUBRESOURCE_PATCH_FILE"; then
+  fail "patch 0145 must not claim ServiceWorker script/update coverage"
+fi
+rg -Fq 'URLLoaderFactoryType::kServiceWorkerScript && !frame' \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must wire process-backed ServiceWorker script factories"
+rg -Fq 'render_process_id != content::ChildProcessHost::kInvalidUniqueID' \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must exclude browser-process ServiceWorker install/update"
+rg -Fq 'MaybeProxyServiceWorkerScript' \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must install the ServiceWorker script Access wrapper"
+rg -Fq "importScripts('/aegis-service-worker-imported.js')" \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must exercise a process-backed imported ServiceWorker script"
+rg -Fq 'ServiceWorkerProcessScriptWithoutPolicyPreservesNativePath' \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must preserve native process-backed ServiceWorker scripts without policy"
+rg -Fq 'ServiceWorkerProcessScriptUsesSelectedProxy' \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must browser-test selected process-backed ServiceWorker script routing"
+rg -Fq 'ServiceWorkerBrowserProcessScriptStaysNativeBeforeProcessScriptFailsClosed' \
+  "$SERVICE_WORKER_SCRIPT_PATCH_FILE" ||
+  fail "patch 0146 must keep browser-process ServiceWorker scripts native before process-backed fail-closed"
+rg -Fq 'URLLoaderFactoryType::kPrefetch && frame' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must wire only frame-backed renderer prefetch factories"
+rg -Fq 'MaybeProxyPrefetch' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must install the prefetch Access wrapper"
+rg -Fq 'MaybeProxyFrameOwnedFactory' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must reuse trusted frame-owned attribution"
+rg -Fq 'PrefetchWithoutPolicyPreservesNativePath' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must preserve native frame-backed prefetch without policy"
+rg -Fq 'PrefetchUsesSelectedProxy' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must browser-test selected frame-backed prefetch routing"
+rg -Fq 'PrefetchWithoutEndpointFailsClosed' \
+  "$PREFETCH_PATCH_FILE" ||
+  fail "patch 0147 must fail closed when prefetch PROXY lacks an endpoint"
+if rg -Fq 'URLLoaderFactoryType::kPrefetch && !frame' "$PREFETCH_PATCH_FILE"; then
+  fail "patch 0147 must not claim browser-initiated frame-less prefetch"
+fi
+rg -Fq 'chrome/browser/predictors/prefetch_manager.cc' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must wire the LoadingPredictor PrefetchManager call site"
+rg -Fq 'PrefetchUrl(std::move(job), profile_->GetDefaultStoragePartition(),' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must pass the exact PrefetchManager partition into PrefetchUrl"
+rg -Fq 'MaybeProxyBrowserProcessPrefetch(profile_, storage_partition' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must pass the same PrefetchManager partition into Access"
+rg -Fq 'AegisProfileUsesGatedFactoryWhenNetworkContextPrefetchEnabled' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must test the enabled NetworkContext prefetch fallback for Aegis profiles"
+rg -Fq 'profile_only_storage_partition_' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must retain the exact Profile-only StoragePartition source"
+rg -Fq 'MaybeProxyBrowserProcessPrefetch' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must install the browser-process prefetch Access wrapper"
+rg -Fq 'BuildBrowserOwnedProfileRequestMetadata(profile, partition)' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must derive Profile-only metadata from a browser-owned partition"
+rg -Fq 'partition != profile->GetDefaultStoragePartition()' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must reject non-default partitions at the LoadingPredictor entry"
+rg -Fq '//chrome/browser/aegis/access:access_proxying_url_loader_factory' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must wire predictors:impl to the Aegis proxy factory"
+rg -Fq 'BrowserProcessPrefetchWithoutPolicyPreservesNativePath' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must preserve native browser-process prefetch without policy"
+rg -Fq 'BrowserProcessPrefetchUsesSelectedProxy' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must browser-test selected browser-process prefetch routing"
+rg -Fq 'BrowserProcessPrefetchWithoutEndpointFailsClosed' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must fail closed when browser-process prefetch PROXY lacks an endpoint"
+rg -Fq 'BrowserProcessPrefetchRedirectToUnselectedHostFailsClosed' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must re-evaluate browser-process prefetch redirect targets"
+rg -Fq 'BrowserProcessPrefetchNonDefaultPartitionStaysNative' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must preserve native routing for non-default partitions"
+rg -Fq 'StoragePartitionConfig::Create' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must exercise an actual non-default StoragePartition"
+if rg -Fq 'streaming_search_prefetch_url_loader' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE"; then
+  fail "patch 0148 must not claim SearchPrefetch browser-process coverage"
+fi
+if rg -Fq 'content/browser/preloading/prefetch' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE"; then
+  fail "patch 0148 must not claim generic Content PrefetchService frame-less coverage"
+fi
 if rg -Fq 'request_initiator' "$BROWSER_METADATA_ADAPTER"; then
   fail "browser-owned Access metadata adapter must not consume renderer request_initiator"
 fi
@@ -380,66 +797,76 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "0133 must appear once in series"
 [[ "$(rg -F -c '0134-fix-aegis-harden-published-runtime-thread-boundary.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "0134 must appear once in series"
-[[ "$(tail -n 20 "$SERIES_FILE" | head -n 1)" == \
-  "0115-feat-aegis-add-trusted-policy-context-matching.patch" ]] ||
-  fail "patch 0115 must immediately precede patch 0116"
-[[ "$(tail -n 19 "$SERIES_FILE" | head -n 1)" == \
-  "0116-feat-aegis-add-access-rule-store-recovery.patch" ]] ||
-  fail "patch 0116 must immediately precede patch 0117"
-[[ "$(tail -n 18 "$SERIES_FILE" | head -n 1)" == \
-  "0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch" ]] ||
-  fail "patch 0117 must immediately precede patch 0118"
-[[ "$(tail -n 17 "$SERIES_FILE" | head -n 1)" == \
-  "0118-feat-aegis-bind-profile-network-context-proxy.patch" ]] ||
-  fail "patch 0118 must immediately precede patch 0119"
-[[ "$(tail -n 16 "$SERIES_FILE" | head -n 1)" == \
-  "0119-test-aegis-local-proxy-network-acceptance.patch" ]] ||
-  fail "patch 0119 must immediately precede patch 0120"
-[[ "$(tail -n 15 "$SERIES_FILE" | head -n 1)" == \
-  "0120-test-aegis-expand-access-cpp-regressions.patch" ]] ||
-  fail "patch 0120 must immediately precede patch 0121"
-[[ "$(tail -n 14 "$SERIES_FILE" | head -n 1)" == \
-  "0121-feat-aegis-add-request-ownership-registry.patch" ]] ||
-  fail "patch 0121 must immediately precede patch 0122"
-[[ "$(tail -n 13 "$SERIES_FILE" | head -n 1)" == \
-  "0122-feat-aegis-add-targeted-request-cancellation.patch" ]] ||
-  fail "patch 0122 must immediately precede patch 0123"
-[[ "$(tail -n 12 "$SERIES_FILE" | head -n 1)" == \
-  "0123-feat-aegis-add-request-dispatch-block-barriers.patch" ]] ||
-  fail "patch 0123 must immediately precede patch 0124"
-[[ "$(tail -n 11 "$SERIES_FILE" | head -n 1)" == \
-  "0124-refactor-aegis-request-ownership-contracts.patch" ]] ||
-  fail "patch 0124 must immediately precede patch 0125"
-[[ "$(tail -n 10 "$SERIES_FILE" | head -n 1)" == \
-  "0125-feat-aegis-enforce-request-dispatch-gate.patch" ]] ||
-  fail "patch 0125 must immediately precede patch 0126"
-[[ "$(tail -n 9 "$SERIES_FILE" | head -n 1)" == \
-  "0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch" ]] ||
-  fail "patch 0126 must immediately precede patch 0127"
-[[ "$(tail -n 8 "$SERIES_FILE" | head -n 1)" == \
-  "0127-feat-aegis-add-published-request-runtime.patch" ]] ||
-  fail "patch 0127 must immediately precede patch 0128"
-[[ "$(tail -n 7 "$SERIES_FILE" | head -n 1)" == \
-  "0128-feat-aegis-own-committed-policy-generation.patch" ]] ||
-  fail "patch 0128 must immediately precede patch 0129"
-[[ "$(tail -n 6 "$SERIES_FILE" | head -n 1)" == \
-  "0129-feat-aegis-own-browser-network-epoch.patch" ]] ||
-  fail "patch 0129 must immediately precede patch 0130"
-[[ "$(tail -n 5 "$SERIES_FILE" | head -n 1)" == \
-  "0130-feat-aegis-own-profile-identity-generation.patch" ]] ||
-  fail "patch 0130 must immediately precede patch 0131"
-[[ "$(tail -n 4 "$SERIES_FILE" | head -n 1)" == \
-  "0131-feat-aegis-own-proxy-selection-generation.patch" ]] ||
-  fail "patch 0131 must immediately precede patch 0132"
-[[ "$(tail -n 3 "$SERIES_FILE" | head -n 1)" == \
-  "0132-feat-aegis-own-base-proxy-config-generation.patch" ]] ||
-  fail "patch 0132 must immediately precede patch 0133"
-[[ "$(tail -n 2 "$SERIES_FILE" | head -n 1)" == \
-  "0133-feat-aegis-publish-request-generation-runtime.patch" ]] ||
-  fail "patch 0133 must immediately precede patch 0134"
-[[ "$(tail -n 1 "$SERIES_FILE")" == \
-  "0134-fix-aegis-harden-published-runtime-thread-boundary.patch" ]] ||
-  fail "patch 0134 must be the current series tail"
+[[ "$(rg -F -c '0135-feat-aegis-gate-real-document-url-loader-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0135 must appear once in series"
+[[ "$(rg -F -c '0136-feat-aegis-terminate-in-flight-access-requests.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0136 must appear once in series"
+[[ "$(rg -F -c '0137-feat-aegis-version-policy-publication-acks.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "0137 must appear once in series"
+[[ "$(rg -F -c '0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0138 must appear once in series"
+[[ "$(rg -F -c '0139-feat-aegis-gate-primary-page-subframe-navigation.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0139 must appear once in series"
+[[ "$(rg -F -c '0140-feat-aegis-reevaluate-proxied-redirects.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0140 must appear once in series"
+[[ "$(rg -F -c '0141-feat-aegis-gate-worker-main-resource-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0141 must appear once in series"
+[[ "$(rg -F -c '0142-feat-aegis-gate-worker-subresource-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0142 must appear once in series"
+[[ "$(rg -F -c '0143-feat-aegis-add-profile-only-background-ownership.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0143 must appear once in series"
+[[ "$(rg -F -c '0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0144 must appear once in series"
+[[ "$(rg -F -c '0145-feat-aegis-gate-service-worker-subresource-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0145 must appear once in series"
+[[ "$(rg -F -c '0146-feat-aegis-gate-process-service-worker-script-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0146 must appear once in series"
+[[ "$(rg -F -c '0147-feat-aegis-gate-frame-prefetch-traffic.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0147 must appear once in series"
+[[ "$(rg -F -c '0148-feat-aegis-gate-loading-predictor-prefetch.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0148 must appear once in series"
+[[ "$(rg -F -c '0149-fix-aegis-browser-test-direct-gn-deps.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0149 must appear once in series"
+expected_access_tail="$(cat <<'EOF'
+0115-feat-aegis-add-trusted-policy-context-matching.patch
+0116-feat-aegis-add-access-rule-store-recovery.patch
+0117-feat-aegis-add-fail-closed-proxy-route-adapter.patch
+0118-feat-aegis-bind-profile-network-context-proxy.patch
+0119-test-aegis-local-proxy-network-acceptance.patch
+0120-test-aegis-expand-access-cpp-regressions.patch
+0121-feat-aegis-add-request-ownership-registry.patch
+0122-feat-aegis-add-targeted-request-cancellation.patch
+0123-feat-aegis-add-request-dispatch-block-barriers.patch
+0124-refactor-aegis-request-ownership-contracts.patch
+0125-feat-aegis-enforce-request-dispatch-gate.patch
+0126-feat-aegis-add-browser-owned-request-metadata-adapter.patch
+0127-feat-aegis-add-published-request-runtime.patch
+0128-feat-aegis-own-committed-policy-generation.patch
+0129-feat-aegis-own-browser-network-epoch.patch
+0130-feat-aegis-own-profile-identity-generation.patch
+0131-feat-aegis-own-proxy-selection-generation.patch
+0132-feat-aegis-own-base-proxy-config-generation.patch
+0133-feat-aegis-publish-request-generation-runtime.patch
+0134-fix-aegis-harden-published-runtime-thread-boundary.patch
+0135-feat-aegis-gate-real-document-url-loader-traffic.patch
+0136-feat-aegis-terminate-in-flight-access-requests.patch
+0137-feat-aegis-version-policy-publication-acks.patch
+0138-feat-aegis-gate-real-navigation-url-loader-traffic.patch
+0139-feat-aegis-gate-primary-page-subframe-navigation.patch
+0140-feat-aegis-reevaluate-proxied-redirects.patch
+0141-feat-aegis-gate-worker-main-resource-traffic.patch
+0142-feat-aegis-gate-worker-subresource-traffic.patch
+0143-feat-aegis-add-profile-only-background-ownership.patch
+0144-feat-aegis-gate-frameless-worker-subresource-traffic.patch
+0145-feat-aegis-gate-service-worker-subresource-traffic.patch
+0146-feat-aegis-gate-process-service-worker-script-traffic.patch
+0147-feat-aegis-gate-frame-prefetch-traffic.patch
+0148-feat-aegis-gate-loading-predictor-prefetch.patch
+0149-fix-aegis-browser-test-direct-gn-deps.patch
+EOF
+)"
+[[ "$(tail -n 35 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0149"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

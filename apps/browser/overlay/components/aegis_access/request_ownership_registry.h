@@ -92,7 +92,16 @@ struct RequestCancellationSelector {
   std::string exact_host;
   RequestScheme scheme = RequestScheme::kInvalid;
   uint16_t port = 0;
+
+  friend bool operator==(const RequestCancellationSelector&,
+                         const RequestCancellationSelector&) = default;
 };
+
+bool IsValidRequestCancellationSelector(
+    const RequestCancellationSelector& selector);
+bool SameRequestCancellationSelector(
+    const RequestCancellationSelector& left,
+    const RequestCancellationSelector& right);
 
 struct RequestOwnershipBatchCancelResult {
   RequestOwnershipStatus status = RequestOwnershipStatus::kOk;

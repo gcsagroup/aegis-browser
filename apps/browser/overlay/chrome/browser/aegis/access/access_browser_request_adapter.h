@@ -13,6 +13,7 @@
 class Profile;
 
 namespace content {
+class StoragePartition;
 class WebContents;
 }
 
@@ -23,9 +24,11 @@ enum class AccessBrowserRequestMetadataStatus {
   kUnsupportedProfile,
   kMissingTransport,
   kMissingTrustedContents,
+  kMissingTrustedProcess,
   kBrowserContextMismatch,
   kMissingTrustedFrame,
   kMissingStoragePartition,
+  kUnconfiguredPartition,
   kInvalidPartitionPath,
   kInvalidOwner,
   kInvalidAttribution,
@@ -43,16 +46,34 @@ struct AccessBrowserRequestMetadataResult {
 // request_initiator/source-site strings and never creates transport state.
 //
 // A navigation id takes precedence over the currently committed document so a
-// navigation cannot inherit the old page's authorization. Only frames in the
-// primary Page are eligible; prerender/BFCache/fenced/pending Pages are rejected
-// rather than inheriting the primary page's identity. Requests without a trusted
-// WebContents/frame are rejected in this slice rather than borrowing an active
-// tab identity.
+// top-level navigation cannot inherit the old page's authorization. Pending
+// subframe navigation in the primary Page additionally carries the browser-owned
+// primary main-frame SchemefulSite, keeping iframe destination hosts scoped to
+// the real top-level site. Prerender/BFCache/fenced/pending Pages are rejected.
+// Requests without a trusted WebContents/frame are rejected rather than
+// borrowing an active tab identity.
 AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
     Profile* profile,
     const base::RepeatingCallback<content::WebContents*()>& wc_getter,
     content::FrameTreeNodeId frame_tree_node_id,
     std::optional<int64_t> navigation_id);
+
+// Builds Profile-only metadata from an exact browser-owned StoragePartition.
+// Must be called on the UI thread. The partition must already be configured by
+// this Profile's Access transport; no WebContents, top-level site, or
+// renderer-provided initiator is consulted.
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileRequestMetadata(
+    Profile* profile,
+    content::StoragePartition* partition);
+
+// Builds Profile-only metadata for a browser-owned background request factory
+// whose trusted source is a render process. Must be called on the UI thread.
+// It resolves that process's BrowserContext/StoragePartition and delegates to
+// the configured-partition contract above, so site-scoped policy remains
+// ineligible.
+AccessBrowserRequestMetadataResult BuildBrowserOwnedProfileOnlyRequestMetadata(
+    Profile* profile,
+    int render_process_id);
 
 }  // namespace aegis::access
 

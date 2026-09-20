@@ -4,12 +4,16 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <utility>
 
+#include "base/barrier_closure.h"
+#include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/uuid.h"
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "net/proxy_resolution/proxy_config.h"
 #include "net/proxy_resolution/proxy_info.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -207,6 +211,100 @@ bool AccessNetworkContextTransport::ClearProxySelection(
   it->second.exact_hosts.clear();
   Broadcast(it->second);
   return true;
+}
+
+std::optional<aegis_access::RegisteredProxyEndpoint>
+AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
+    const aegis_access::OwnershipKey& owner,
+    const std::string& proxy_group_id,
+    const std::string& exact_host) const {
+  if (!aegis_access::IsCompleteOwner(owner) || proxy_group_id.empty() ||
+      !IsCanonicalExactHost(exact_host) || !OwnsConfiguredPartition(owner) ||
+      network_epoch_ == 0) {
+    return std::nullopt;
+  }
+
+  const auto it = partitions_.find(owner.storage_partition_token);
+  // PublishProxySelection() sorts exact_hosts before committing PartitionState.
+  if (it == partitions_.end() || !it->second.endpoint.has_value() ||
+      !std::binary_search(it->second.exact_hosts.begin(),
+                          it->second.exact_hosts.end(), exact_host)) {
+    return std::nullopt;
+  }
+
+  const aegis_access::RegisteredProxyEndpoint& endpoint = *it->second.endpoint;
+  if (endpoint.owner != owner || endpoint.proxy_group_id != proxy_group_id ||
+      endpoint.generations.network_epoch != network_epoch_) {
+    return std::nullopt;
+  }
+  return endpoint;
+}
+
+AccessNetworkConfigAckResult
+AccessNetworkContextTransport::RepublishCurrentConfigWithAck(
+    const aegis_access::OwnershipKey& owner,
+    base::OnceCallback<void(bool)> all_clients_settled) {
+  if (!all_clients_settled) {
+    return {AccessNetworkConfigAckStatus::kInvalidOwner, 0};
+  }
+  auto fail = [&](AccessNetworkConfigAckStatus status) {
+    std::move(all_clients_settled).Run(false);
+    return AccessNetworkConfigAckResult{status, 0};
+  };
+  if (!OwnsConfiguredPartition(owner)) {
+    return fail(AccessNetworkConfigAckStatus::kInvalidOwner);
+  }
+  auto it = partitions_.find(owner.storage_partition_token);
+  if (it == partitions_.end()) {
+    return fail(AccessNetworkConfigAckStatus::kMissingPartition);
+  }
+  PartitionState& state = it->second;
+  if (state.clients.empty()) {
+    return fail(AccessNetworkConfigAckStatus::kNoClients);
+  }
+  network::mojom::CustomProxyConfigPtr config = BuildConfig(state);
+  if (!config) {
+    return fail(AccessNetworkConfigAckStatus::kBuildFailed);
+  }
+
+  const size_t required_acks = state.clients.size();
+  UpdateClientConfigs(state, config, std::move(all_clients_settled));
+  return {AccessNetworkConfigAckStatus::kStarted, required_acks};
+}
+
+void AccessNetworkContextTransport::UpdateClientConfigs(
+    PartitionState& state,
+    const network::mojom::CustomProxyConfigPtr& config,
+    base::OnceCallback<void(bool)> all_clients_settled) {
+  auto all_succeeded = std::make_shared<bool>(true);
+  base::RepeatingClosure barrier = base::BarrierClosure(
+      state.clients.size(),
+      base::BindOnce(
+          [](std::shared_ptr<bool> succeeded,
+             base::OnceCallback<void(bool)> completion) {
+            std::move(completion).Run(*succeeded);
+          },
+          all_succeeded, std::move(all_clients_settled)));
+
+  for (auto& client : state.clients) {
+    base::OnceCallback<void(bool)> result =
+        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+            base::BindOnce(
+                [](std::shared_ptr<bool> succeeded,
+                   base::RepeatingClosure completion, bool client_acked) {
+                  *succeeded = *succeeded && client_acked;
+                  completion.Run();
+                },
+                all_succeeded, barrier),
+            false);
+    client->OnCustomProxyConfigUpdated(
+        config->Clone(),
+        base::BindOnce(
+            [](base::OnceCallback<void(bool)> result_callback) {
+              std::move(result_callback).Run(true);
+            },
+            std::move(result)));
+  }
 }
 
 network::mojom::CustomProxyConfigPtr
