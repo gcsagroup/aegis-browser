@@ -156,7 +156,7 @@ test("access_browser_request_adapter_unittests") {
     "//chrome/browser/profiles:test_support",
     "//components/aegis_access",
     "//content/public/browser",
-    "//content/public/test",
+    "//content/test:test_support",
     "//net",
     "//services/network/public/mojom",
     "//testing/gtest",
@@ -170,7 +170,7 @@ test("access_request_dispatch_state_unittests") {
     ":access_request_dispatch_state",
     "//base/test:run_all_unittests",
     "//chrome/browser/profiles:test_support",
-    "//content/public/test",
+    "//content/test:test_support",
     "//testing/gtest",
   ]
 }

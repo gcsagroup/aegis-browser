@@ -1,10 +1,18 @@
-From 0145000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From c4870b05e3dc24ec2a5625875215508876970ca0 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Sat, 19 Sep 2026 02:40:00 +0800
-Subject: [PATCH] feat(aegis): gate process-backed ServiceWorker subresource traffic
+Subject: [PATCH] feat(aegis): gate process-backed ServiceWorker subresource
+ traffic
 
 ---
+ .../access_proxying_url_loader_factory.cc     |  32 ++-
+ .../access_proxying_url_loader_factory.h      |  13 +-
+ ...proxying_url_loader_factory_browsertest.cc | 253 +++++++++++++++---
+ .../browser/chrome_content_browser_client.cc  |   7 +
+ 4 files changed, 262 insertions(+), 43 deletions(-)
+
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 57098f94ab..df5704c1de 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -265,6 +265,22 @@ void MaybeProxyWorkerFactory(
@@ -55,6 +63,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b
  
  // static
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 125a41fbe8..82f51c55d4 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -34,10 +34,11 @@ class AccessProxyingURLTrackedRequest;
@@ -85,6 +94,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/
        Profile* profile,
        content::RenderFrameHost* frame,
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 2917e49bed..d81849e66b 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 @@ -45,6 +45,58 @@ constexpr char kTargetHost[] = "target.example";
@@ -419,9 +429,10 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_brow
                         RuntimePolicyUpdateRoutesExistingFactoryThroughProxy) {
    PublishProxyPolicy(/*publish_endpoint=*/true);
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 8e9c4de071..93378f1054 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6755,6 +6755,14 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6843,6 +6843,13 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
              render_process_id, factory_builder);
    }
  
@@ -433,3 +444,5 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
 +  }
 +
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
+   if (disable_secure_dns) {
+     WebContents* web_contents = WebContents::FromRenderFrameHost(frame);
