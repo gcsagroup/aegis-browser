@@ -146,3 +146,5 @@
 0145-feat-aegis-gate-service-worker-subresource-traffic.patch
 0146-feat-aegis-gate-process-service-worker-script-traffic.patch
 0147-feat-aegis-gate-frame-prefetch-traffic.patch
+0148-feat-aegis-gate-loading-predictor-prefetch.patch
+0149-fix-aegis-browser-test-direct-gn-deps.patch

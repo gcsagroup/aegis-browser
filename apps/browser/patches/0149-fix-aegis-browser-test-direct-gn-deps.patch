@@ -1,0 +1,27 @@
+From 0149000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Sun, 20 Sep 2026 11:20:00 +0800
+Subject: [PATCH] fix(aegis): declare browser test direct GN dependencies
+
+---
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -246,6 +246,7 @@ if (!is_android) {
+       "//chrome/browser/aegis/access:access_proxy_selection_generation_source",
+       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+       "//chrome/browser/aegis/access:access_published_request_runtime",
++      "//chrome/browser/aegis/access:access_request_dispatch_state",
+       "//chrome/browser/net:impl",
+       "//chrome/browser/bookmarks",
+       "//chrome/browser/notifications:test_support",
+@@ -264,6 +265,8 @@ if (!is_android) {
+       "//chrome/common/aegis",
+       "//chrome/test:test_support",
+       "//chrome/test:test_support_ui",
+       "//components/aegis_access",
++      "//components/aegis_access:access_identity_generation_state",
++      "//components/aegis_access:access_proxy_selection_generation_state",
+       "//components/bookmarks/browser",
+       "//components/bookmarks/test",
+       "//components/prefs",
