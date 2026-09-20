@@ -13,15 +13,19 @@
 #include "base/memory/raw_ptr.h"
 #include "base/test/run_until.h"
 #include "base/test/test_future.h"
+#include "build/chromeos_buildflags.h"
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 #include "chrome/browser/aegis/access/access_identity_generation_source.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
 #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -802,6 +806,33 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   }));
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
 }
+
+#if !BUILDFLAG(IS_CHROMEOS)
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       MainNavigationRoutingIsolatedAcrossProfiles) {
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+
+  size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+  size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/1u);
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ASSERT_NE(profile_manager, nullptr);
+  Profile* second_profile = &profiles::testing::CreateProfileSync(
+      profile_manager, profile_manager->GenerateNextProfileDirectoryPath());
+  ASSERT_NE(second_profile, nullptr);
+  Browser* second_browser = CreateBrowser(second_profile);
+  ASSERT_NE(second_browser, nullptr);
+
+  origin_before = origin_requests_.load(std::memory_order_relaxed);
+  proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(second_browser, target_url()));
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
+                     /*proxy_delta=*/0u);
+}
+#endif
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        SubframeNavigationWithoutPolicyPreservesNativePath) {
