@@ -1,6 +1,6 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
-状态日期：2026-09-20（Asia/Shanghai）。本页是从当前 `develop` 继续实施的入口；[交接与精确证据](handoff-20260920.zh-CN.md)记录本次基线和待验证事项，[P0 历史实现记录](p0-implementation.zh-CN.md)保留切片过程。行为、验收项和 G0–G3 门槛以[冻结规范修订 4](spec.zh-CN.md)及[冻结清单](freeze.json)为准；本文不修改合同。分支、PR、Review 与最终 HEAD 门禁按[DEV CI 与上游推进指南](../../development/ci.zh-CN.md)执行。
+状态日期：2026-09-20（Asia/Shanghai）。本页是从当前 `develop` 继续实施的入口；[交接与精确证据](handoff-20260920.zh-CN.md)记录本次基线和待验证事项，[A01–A118 / PF01–PF13 验收追踪表](acceptance-tracker.zh-CN.md)是逐行覆盖与证据的唯一台账，[P0 历史实现记录](p0-implementation.zh-CN.md)保留切片过程。行为、验收项和 G0–G3 门槛以[冻结规范修订 4](spec.zh-CN.md)及[冻结清单](freeze.json)为准；本文不修改合同。分支、PR、Review 与最终 HEAD 门禁按[DEV CI 与上游推进指南](../../development/ci.zh-CN.md)执行。
 
 ## 当前判断与交付边界
 
@@ -10,11 +10,17 @@
 
 G0 保持 **UNVERIFIED**，G1–G3 **未达到**。2026-09-20 固定 Chromium 151 验证已有全补丁重放、overlay 对齐和 GN 目标生成记录，但 `unit_tests` / `browser_tests` 构建尚无完成结果，更没有本候选的 GTest、浏览器代理流量或完整 Chrome 运行结论。35 个 browser-test 定义是源码数量，不是 35 个通过的测试。[交接页](handoff-20260920.zh-CN.md)逐项区分仓库质量门、Chromium 构建和运行证据。
 
+## 先关闭现有 Chromium 验证欠账
+
+**暂停扩展新的请求入口功能**，直到当前固定 Chromium 候选的编译退出码和真实入口回归已记录并处理失败。先由现有构建所有者回收 `unit_tests` / `browser_tests` 结果；已计划的窄范围 prefetch 过滤器只能证明其列明子集，不能代替导航、重定向、Worker、BLOCK、在途取消、缺失代理 endpoint、Profile 隔离和真实派发入口用例。对每项列出确切测试名/过滤器、执行退出码、请求与 origin/proxy 观测、未覆盖场景；仅测试 helper 或在测试中直接调用 factory 的用例，应注明没有证明真实入口接线。失败时先确定第一处源码/构建/环境问题，修复并重跑相关回归；缺运行证据维持 `NOT_RUN`，不以源码存在或 GN 生成作为继续扩展入口的通行证。
+
+推进到下一请求入口实现的条件是：当前候选 `unit_tests` / `browser_tests` 目标完成构建，现有入口相关测试在同一最终源码/补丁树实际运行且失败已修复或明确阻断，剩余空白登记到[验收追踪表](acceptance-tracker.zh-CN.md)。这只解除开发顺序的停线，不宣告 G0 或产品链路通过。独立的测试夹具、受控服务端准备、接口设计和证据盘点可并行，不得改动正在构建的工作区。
+
 ## 依赖顺序与可评审单元
 
 | 顺序 | 对应单元 | 下一交付和前置条件 | 完成证据 |
 | --- | --- | --- | --- |
-| 1 | P0 验证底座 | 保留当前隔离 Chromium 构建的所有权；取到固定源码/149 个 Chromium 补丁、工具链和 GN 参数下的完成结果，再运行相关 GTest 与真实 HTTP 代理/拒绝路径。发现失败先修复对应最小源码或环境问题。 | 记录源码树、补丁、GN args、目标、退出码、测试名及原始日志；按规范第 12 节逐项判 G0，不能只凭 GN 成功判 PASS。 |
+| 1 | P0 验证底座 | 保留当前隔离 Chromium 构建的所有权；先关闭上节列出的现有编译和真实入口回归欠账，再评估固定源码/149 个 Chromium 补丁、工具链和 GN 参数下的 HTTP 代理/拒绝路径。发现失败先修复对应最小源码或环境问题。 | 记录源码树、补丁、GN args、目标、退出码、测试名、过滤器和原始日志；按规范第 12 节逐项判 G0，不能只凭 GN 成功或窄范围 prefetch PASS 判通过。 |
 | 2 | P1–P2 与 P4–P5 的最小协调闭环 | 在现有 Profile/StoragePartition 所有权基础上，定义并接入生产 coordinator：可信当前 host → 普通 `SetSiteProxy` 的网站协议组选择（DEV/Alpha 的三策略、ALLOW/BLOCK 为独立调试规则，按冻结合同协调）→ identity、selection、base-proxy 等真实代次 → 原子持久化与恢复 → committed snapshot 发布到所属 NetworkContext → 请求派发/取消的执行点 ACK → UI 状态。先以受控本地 HTTP fixture 验证，Xray 依赖留在后续单元。 | 两个普通 Profile/多个 partition 无串用；超时和取消不接受迟到结果；重启只恢复已提交状态；退出账户不直连回退；BLOCK 先装本地屏障，按流终止且失败保留；保存失败不显示“已保存”；关闭恢复原有代理设置。记录 G/S/E/identity/base-proxy 精确版本和 ACK。 |
 | 3 | P3 + P3a | 在协调闭环上接固定 Xray 资产与 Profile 级 HTTP 入口，打通受控服务端的 VLESS + RAW(TCP) + REALITY + XTLS Vision；接入自动登记、签名配置、准入、租约、健康探测、稳定分配和确认故障后的切换。 | 实际 HTTP→REALITY 往返、凭据隔离、超时/撤销/入口故障不直连、节点保持与切换记录；服务和部署参数版本绑定。SOCKS5 与兼容出站在 P7 完整验收。 |
 | 4 | P3c–P3d | 主链路稳定后实现服务端实际双向字节计量、幂等账本与额度预算；执行物理 VPS/账户限速、公平分配与并发准入。跨节点账本和租约先用多节点 fixture 验证，部署第二个执行节点前完成真实联调。 | 对账、重试/乱序/断线/周期重置、额度耗尽在途截断、Vision/splice 快路径计量与预算实测，记录误差和容量上限；UI 秒级变化不能代替服务端对账。 |
@@ -22,7 +28,11 @@ G0 保持 **UNVERIFIED**，G1–G3 **未达到**。2026-09-20 固定 Chromium 15
 | 6 | P7 | 补全 SOCKS5 Profile 认证、WS+TLS 兼容出站、OTR/Guest、WebSocket、preconnect、BFCache、prerender、通用 prefetch、Service Worker update checks 等剩余适用请求矩阵。 | 两入站×两出站、临时 Profile 和复杂入口按冻结适用项逐项运行，未知/无可信归属保持受限；不能用已覆盖的 frame prefetch 代替通用 prefetch。 |
 | 7 | P8 | 在最终候选头重放全部补丁，完成四渠道构建、性能/故障回归、全新安装/升级/回滚和交付档案。 | 按规范第 12、14 节将 A/PF 用例与源码、配置、部署、规模、日志绑定后分别判 G0–G3；发布动作另循项目授权。 |
 
-第 2 步是可评审的最小协调里程碑，不宣称独立达到 G0 或“按钮可用即 Alpha”。可以先并行准备受控服务端环境和测试资源，但依赖它们的端到端结论必须等实际链路运行后记录。每个代码单元须带 overlay/顺序补丁/BUILD 接线及有意义的 unit、regression 和适用的 Chromium 测试；合并前重新绑定最终 HEAD 证据。
+第 2 步是可评审的最小协调里程碑，不宣称独立达到 G0 或“按钮可用即 Alpha”。可以先并行准备受控服务端环境和测试资源，但依赖它们的端到端结论必须等实际链路运行后记录。
+
+实施与测试两条工作线共享同一固定候选合同：产品 head/tree、Chromium 基线及 patched tree、patch series、GN args、渠道/配置、用例和观察点。只有一名明确的隔离构建工作区所有者能修改补丁树或启动/重启构建；测试线准备受控代理与 origin fixture，分别记录两端日志、同一请求的关联 ID、直连/代理路径和故障注入结果。合成代理 fixture 自行响应时 `origin_count=0` 可以成立；真实转发代理则会合法触达 origin，必须以受控代理出口/连接与关联日志证明走代理，并证明没有 DIRECT origin 路径，不能只信转发请求头或笼统要求 origin 零请求。缺 endpoint/拒绝时须在有界观察窗口内同时观察代理和 origin 的零派发；每个零计数断言都需同配置的健康控制请求证明日志确实能记录流量，超时/无响应本身不算 PASS。同时验证额度耗尽、离线、重启和迟到回调时没有 DIRECT fallback。测试证据只记录脱敏 ID、字节/状态与必要时序，不泄露凭据或请求秘密。真实受控服务尚未运行的场景不得记服务端 PASS。
+
+此后每项新**产品功能**须在同一 PR 交付可运行 unit 与真实入口 regression，并在该 PR 最终 HEAD 对匹配固定候选实际执行两者；overlay/顺序补丁/BUILD 接线一并审查。未执行即登记 `NOT_RUN`，不算验收。只改文档的 PR 不需要补造产品测试；过去对 [Fork PR #129](https://github.com/quinn521/aegis-browser/pull/129)/[上游 PR #18](https://github.com/gcsagroup/aegis-browser/pull/18) 的一次性源码晋升例外不适用于新功能。各行实现、映射、执行、结果与覆盖分别更新[验收追踪表](acceptance-tracker.zh-CN.md)，不能因一个子场景通过把主行升为 PASS。
 
 ## 关键验收与故障处理
 
