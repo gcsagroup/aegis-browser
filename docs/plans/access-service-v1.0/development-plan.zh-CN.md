@@ -34,6 +34,27 @@ G0 保持 **UNVERIFIED**，G1–G3 **未达到**。2026-09-20 固定 Chromium 15
 
 此后每项新**产品功能**须在同一 PR 交付可运行 unit 与真实入口 regression，并在该 PR 最终 HEAD 对匹配固定候选实际执行两者；overlay/顺序补丁/BUILD 接线一并审查。未执行即登记 `NOT_RUN`，不算验收。只改文档的 PR 不需要补造产品测试；过去对 [Fork PR #129](https://github.com/quinn521/aegis-browser/pull/129)/[上游 PR #18](https://github.com/gcsagroup/aegis-browser/pull/18) 的一次性源码晋升例外不适用于新功能。各行实现、映射、执行、结果与覆盖分别更新[验收追踪表](acceptance-tracker.zh-CN.md)，不能因一个子场景通过把主行升为 PASS。
 
+## macOS / 浏览器 CI 分层建设（待实施）
+
+以下是**建设目标，不是现有 CI 已提供的能力或新的合并豁免**。2026-09-20 源码核对：`.github/workflows/quality.yml` 的 `quality-gate` 仅 `needs: quality`；`run-quality.mjs` 的 `nativeIntegration=REQUIRED` 是变更分类，不会自动执行固定 Chromium；`.github/workflows/cpp-unit-tests.yml` 与 full 质量门有 standalone C++/GN wiring 重复；`chromium-candidate.yml` 仍是手动三平台流程，`candidate.py` 的 macOS 默认目标为 `chrome`、`aegis_agent_core_unittests`、`aegis_github_update_unittests`，未把 Access `unit_tests`/`browser_tests` 的执行纳入必需门。因此现有 hosted `quality-gate` 成功不能推论 L2/L3 或 G0。建设只面向 **macOS ARM64**；最低支持版本与当前系统的验收矩阵待产品支持合同确认，其他平台后置，不借三平台旧流程冒充已完成 Mac 门。
+
+| 层 | 拟建执行与产物 | 目标门槛和边界 |
+| --- | --- | --- |
+| L0 快速静态门 | 拟建整合现有 lint/类型检查、补丁格式与顺序/overlay/GN 接线、冻结清单与 license 元数据检查，并补齐尚未接入的 secret 检查；输出明确检查项、版本与首个失败。 | 每个相关 PR 快速反馈；secret 扫描须避免把密钥写进报告。路径/依赖/构建脚本变更不能泛化为纯文档或免测。 |
+| L1 单元合同门 | 同一次测试执行生成 unit/合同结果及按 TypeScript、C++、Python 等实际 scope 分开的覆盖率报告，记录未测文件与阈值；不为 coverage 再跑同套测试。 | 每个相关 PR 必需；源码存在、覆盖率数值或独立 standalone PASS 不替代 L2/L3。 |
+| L2 固定 Chromium 集成门 | 在可信隔离 Mac ARM64 候选上核对 Chromium/V8 基线、全部补丁、overlay tree、GN args，实际编译 Access 相关 `unit_tests`、`browser_tests` 和所需目标，运行精确 GTest filter；保存 patched tree、二进制 digest、目标/退出码/日志。 | 相关产品 PR 必需；GN 生成、对象编译或 `nativeIntegration=REQUIRED` 标签都不算 L2 PASS；零测试匹配必须失败。 |
+| L3 真实浏览器门 | 用 L2 的同一精确产物执行导航、重定向、Worker、Profile 隔离、BLOCK/在途终止、缺 endpoint、真实派发入口与无 DIRECT fallback；按受控 proxy/origin 日志和关联 ID 记录正反路径及 helper-only 限制。 | 每项相关新产品功能 PR 必需，unit 与真实入口 regression 同 PR、最终 HEAD 均实际运行；当前停线条件仍先满足上节全部必需回归 PASS。零匹配、只启动不请求或只有合成 helper 不算 L3。 |
+| L4 夜间扩展门 | 在锁定候选上扩展[131 行 A/PF 台账](acceptance-tracker.zh-CN.md)映射、性能、并发、长跑与故障注入；按 PF 样本/规模/分布和未覆盖行输出机器可读结果（映射结构尚待实现）。 | 夜间或专门容量窗口运行；与当前候选相关的失败阻止晋升/分发，修复并重验。L4 不能取代 PR 的 L0–L3 必需用例，也不将部分子项提升主行 PASS。 |
+| L5 Mac 候选分发门 | 对固定候选 App 进行启动/退出、下载、权限、睡眠/唤醒、网络切换、进程恢复、四渠道隔离；再分别验证 Developer ID、Hardened Runtime、公证票据与 Gatekeeper、Helper/Xray 资产完整性、全新安装、升级和回滚。 | 分发前验收，不是日常 PR 绿灯；绑定确切 App/配置/系统矩阵。ad-hoc 签名只用于开发测试，不算分发通过。没有候选包与真实运行就保持 `NOT_RUN`，不能从 L0–L4 推断可发布。 |
+
+实施顺序先建立**可信 L2/L3 产物与校验其结果的汇总门**，并用当前固定候选关闭入口回归欠账；再在证据等价的前提下去重 standalone/wiring、改进缓存和分片；之后建设 L4，再建设 L5。先评估 GitHub 托管 Mac ARM64 的容量和隔离能力；不足时才设计可销毁、专用且隔离信任域的 runner，不把日常电脑接成公开 PR runner。外部 PR 不能直接在长期自托管主机上执行候选代码，也不得接触签名身份或生产凭据；候选自身生成的 receipt 不作为可信门禁判据。
+
+拟建汇总门由可信端按变更路径、依赖和实际产物决定所需层；未知分类升级人工/更严格验证，不能自动判 N/A。纯文档变更未来可以轻量化，但**当前 `full` 规则和[DEV CI 指南](../../development/ci.zh-CN.md)继续有效**，须通过另行 CI 变更和审查才调整。门应对必需层 `failure`、`missing`、`cancelled`、`unknown`、stale SHA、零测试匹配一律失败；N/A 需可信分类及理由。建立这些故障 fixture 后才切换保护条件；优化失败通过可审查 revert 恢复原 full 门，不删除历史证据。
+
+为降低重复构建，一次编译的精确产物可供 L2/L3 多个测试分片使用；各分片独立 Profile、端口、受控代理与日志，并校验同一 artifact digest，不能在分片间串用状态。缓存键至少包括产品源码/补丁树、Chromium/V8 版本、工具链、SDK、架构与 GN args；缓存仅复用构建输入，不复用 PASS。普通功能 CI 锁定版本；监控上游最新 Chromium 的兼容性另设独立非必需任务，不让上游漂移改变 PR 判定。
+
+每层证据沿用[DEV CI 指南](../../development/ci.zh-CN.md)的 B/H/M/S 身份：记录受测 SHA、artifact digest、run/attempt、测试过滤器及匹配数、真实退出码、原始日志和首个失败归属。PR 更新、base 前移或重跑 attempt 后旧证据不能转用；flake 记录触发条件并修复，隔离有独立登记且不得将必需安全测试移出门禁后宣称绿灯，不靠反复重跑掩盖第一次失败。机器可读 A/PF 映射和层级汇总是待建能力；当前逐行事实仍只写入[验收追踪表](acceptance-tracker.zh-CN.md)。
+
 ## 关键验收与故障处理
 
 - G0 需要固定基线的实际构建和运行、两普通 Profile 的关键路由/隔离、原有代理组合、BLOCK 在途/缓存、认证/渠道身份、资源与 Vision 计量风险的 P0 证据；任何关键阻断未解决即保持 UNVERIFIED/BLOCKED。局部单测、源码扫描、GN 目标生成或文档预览不能替代它。
