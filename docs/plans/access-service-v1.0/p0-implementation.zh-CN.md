@@ -4,11 +4,13 @@
 
 用户已授权在当前访问服务文档基础上继续开发。行为权威仍是 `spec.zh-CN.md` V1.0 修订 4 与 `freeze.json`；本文件不修改冻结行为、数量或 G0–G3 门槛。
 
-## 2026-09-18 当前进度与问题
+**当前入口（2026-09-20）：**从最新主线继续实施请读[当前开发计划](development-plan.zh-CN.md)；精确 SHA、PR、CI 与固定 Chromium 构建状态见[开发交接](handoff-20260920.zh-CN.md)。以下 2026-09-18 快照和后续切片章节是按各自记录日期保存的历史证据，不能作为今日 `develop` 的补丁编号、generation 数量、下一任务或门槛结论。今日 G0 仍为 UNVERIFIED。
 
-本节是当前工程状态快照。后文各切片保留其当时证据；分支、PR、补丁编号与测试状态以本节和后续最终候选为准。
+## 2026-09-18 历史进度快照（已过期）
 
-当前快照：
+本节记录当日工程状态。后文各切片也保留其当时证据；分支、PR、补丁编号与测试状态不能用于当前进度判断。
+
+当日快照：
 
 - Fork `quinn521/aegis-browser` 的默认分支已经是 `develop`。当前 `develop` 为 `488544b89b43cd22fc1476aec2f44ef50275bce4`；个人 `main` 为 `013d5ba639b177a599a3036f24c82e07026568d3`。
 - 当前 `develop` 的 Access patch 序列已经落到：`0121` RequestOwnershipRegistry、`0122` targeted cancellation、`0123` dispatch BLOCK barrier、`0124` ownership contract refactor、`0125` request dispatch gate、`0126` browser-owned request metadata adapter。旧快照中的 0124–0128 编号不再对应当前主线。
@@ -17,7 +19,7 @@
 - 当前已具备路由规划、可信 policy context、原子规则存储、fail-closed ProxyInfo 适配、Profile/StoragePartition NetworkContext 传输、localhost proxy 回归基础、请求所有权/定向取消、BLOCK barrier、统一 dispatch gate 与 browser-owned metadata 边界。它们仍未组成真实 Chromium 请求派发闭环。
 - 本次状态刷新没有重新执行完整 Chromium build/runtime；历史 standalone/native、局部 Chromium 对象和 hosted CI 证据继续保持各自原边界。G0 仍未通过。
 
-当前主要问题与风险：
+当日主要问题与风险（其解决状态已变化）：
 
 1. **Published request runtime 尚未进入主线。** 需要以当前 `develop` 为基线实现 `0127`，把 browser-owned metadata、policy evaluation、route plan、dispatch gate 与只读 published snapshot 组合为单一 fail-closed runtime；在 generation source 未完成前，runtime 必须拒绝真实发送授权。
 2. **Generation source 当前为 0/5。** 按 production ownership 依次补齐 committed policy generation、NetworkContext epoch、identity generation、selection generation、base proxy config generation。每项必须由实际生命周期事件推进，不能使用常量、时间戳或测试 tuple 代替。
@@ -27,7 +29,7 @@
 6. **真实代理 runtime 仍有较大缺口。** Xray 生命周期、HTTP/SOCKS Profile 认证、REALITY/WS 真实链路、节点/租约、账户与额度、持续计量、故障恢复、连接池代次和企业/原有代理组合仍需按冻结规范实现和验证；Vision/splice 计量风险及 A117/A118 仍未关闭。
 7. **完整 Chromium runtime/G0 仍未通过。** 最终仍需固定源码/补丁/工具链完成 GTest、Chrome build、真实浏览器代理流量和冻结 G0 项。
 
-建议的推进顺序：
+当日建议顺序（仅供追溯，现行顺序见[开发计划](development-plan.zh-CN.md)）：
 
 1. 以当前 `develop@488544b89b43cd22fc1476aec2f44ef50275bce4` 实现 `0127 PublishedRequestRuntime`，保持 0/5 generation 时 fail closed。
 2. 依次实现真实 generation source：committed policy generation → NetworkContext epoch → identity generation → selection generation → base proxy config generation；完成 5/5 后才允许 runtime 授权真实代理派发。
