@@ -179,15 +179,8 @@ CaptureProxyFactoryMetadata(
 }
 
 std::optional<aegis_access::BrowserOwnedRequestMetadata>
-CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
-                                       int render_process_id) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!aegis::IsAegisProfileSupported(profile)) {
-    return std::nullopt;
-  }
-
-  AccessBrowserRequestMetadataResult metadata =
-      BuildBrowserOwnedProfileOnlyRequestMetadata(profile, render_process_id);
+ValidateAndExtractProfileOnlyMetadata(
+    AccessBrowserRequestMetadataResult metadata) {
   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
       !metadata.metadata.has_value() ||
       metadata.metadata->attribution_kind !=
@@ -195,6 +188,28 @@ CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
     return std::nullopt;
   }
   return std::move(*metadata.metadata);
+}
+
+std::optional<aegis_access::BrowserOwnedRequestMetadata>
+CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
+                                       int render_process_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile)) {
+    return std::nullopt;
+  }
+  return ValidateAndExtractProfileOnlyMetadata(
+      BuildBrowserOwnedProfileOnlyRequestMetadata(profile, render_process_id));
+}
+
+std::optional<aegis_access::BrowserOwnedRequestMetadata>
+CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
+                                       content::StoragePartition* partition) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile) || !partition) {
+    return std::nullopt;
+  }
+  return ValidateAndExtractProfileOnlyMetadata(
+      BuildBrowserOwnedProfileRequestMetadata(profile, partition));
 }
 
 class BrowserContextData : public base::SupportsUserData::Data {
@@ -208,6 +223,7 @@ class BrowserContextData : public base::SupportsUserData::Data {
       content::FrameTreeNodeId frame_tree_node_id,
       std::optional<int64_t> navigation_id,
       std::optional<int> profile_only_render_process_id,
+      content::StoragePartition* profile_only_storage_partition,
       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
       network::URLLoaderFactoryBuilder& factory_builder) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -220,8 +236,8 @@ class BrowserContextData : public base::SupportsUserData::Data {
 
     auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
         profile, frame_tree_node_id, navigation_id,
-        profile_only_render_process_id, std::move(factory_metadata),
-        factory_builder,
+        profile_only_render_process_id, profile_only_storage_partition,
+        std::move(factory_metadata), factory_builder,
         base::BindOnce(&BrowserContextData::RemoveProxy,
                        self->weak_factory_.GetWeakPtr()));
     self->proxies_.emplace(std::move(proxy));
@@ -262,7 +278,8 @@ void MaybeProxyFrameOwnedFactory(
 
   BrowserContextData::StartProxying(
       profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
-      std::move(*metadata), factory_builder);
+      /*profile_only_storage_partition=*/nullptr, std::move(*metadata),
+      factory_builder);
 }
 
 void MaybeProxyProfileOnlyFactory(
@@ -278,7 +295,8 @@ void MaybeProxyProfileOnlyFactory(
 
   BrowserContextData::StartProxying(
       profile, content::FrameTreeNodeId(), std::nullopt, render_process_id,
-      std::move(*metadata), factory_builder);
+      /*profile_only_storage_partition=*/nullptr, std::move(*metadata),
+      factory_builder);
 }
 
 }  // namespace
@@ -288,6 +306,7 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
     content::FrameTreeNodeId frame_tree_node_id,
     std::optional<int64_t> navigation_id,
     std::optional<int> profile_only_render_process_id,
+    content::StoragePartition* profile_only_storage_partition,
     aegis_access::BrowserOwnedRequestMetadata factory_metadata,
     network::URLLoaderFactoryBuilder& factory_builder,
     DisconnectCallback on_disconnect)
@@ -295,14 +314,26 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
       frame_tree_node_id_(frame_tree_node_id),
       navigation_id_(navigation_id),
       profile_only_render_process_id_(profile_only_render_process_id),
+      profile_only_storage_partition_(profile_only_storage_partition),
       factory_metadata_(std::move(factory_metadata)),
       on_disconnect_(std::move(on_disconnect)) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  CHECK_EQ(profile_only_render_process_id_.has_value(),
-           factory_metadata_.attribution_kind ==
-               aegis_access::RequestAttributionKind::kProfileOnly);
-  CHECK(profile_only_render_process_id_.has_value() || frame_tree_node_id_);
-  CHECK(!profile_only_render_process_id_.has_value() || !frame_tree_node_id_);
+  const bool is_profile_only =
+      factory_metadata_.attribution_kind ==
+      aegis_access::RequestAttributionKind::kProfileOnly;
+  const bool has_profile_only_process =
+      profile_only_render_process_id_.has_value();
+  const bool has_profile_only_partition =
+      profile_only_storage_partition_ != nullptr;
+  CHECK(!(has_profile_only_process && has_profile_only_partition));
+  CHECK_EQ(is_profile_only,
+           has_profile_only_process || has_profile_only_partition);
+  if (is_profile_only) {
+    CHECK(!frame_tree_node_id_);
+    CHECK(!navigation_id_.has_value());
+  } else {
+    CHECK(frame_tree_node_id_);
+  }
   auto [loader_receiver, target_factory] = factory_builder.Append();
   target_factory_.Bind(std::move(target_factory));
   target_factory_.set_disconnect_handler(base::BindOnce(
@@ -374,6 +405,28 @@ void AccessProxyingURLLoaderFactory::MaybeProxyPrefetch(
 }
 
 // static
+void AccessProxyingURLLoaderFactory::MaybeProxyBrowserProcessPrefetch(
+    Profile* profile,
+    content::StoragePartition* partition,
+    network::URLLoaderFactoryBuilder& factory_builder) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!profile || !partition ||
+      partition != profile->GetDefaultStoragePartition()) {
+    return;
+  }
+
+  std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
+      CaptureProfileOnlyProxyFactoryMetadata(profile, partition);
+  if (!metadata.has_value()) {
+    return;
+  }
+
+  BrowserContextData::StartProxying(
+      profile, content::FrameTreeNodeId(), std::nullopt, std::nullopt,
+      partition, std::move(*metadata), factory_builder);
+}
+
+// static
 void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
     Profile* profile,
     content::RenderFrameHost* frame,
@@ -390,7 +443,8 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
 
   BrowserContextData::StartProxying(
       profile, frame->GetFrameTreeNodeId(), navigation_id, std::nullopt,
-      std::move(*metadata), factory_builder);
+      /*profile_only_storage_partition=*/nullptr, std::move(*metadata),
+      factory_builder);
 }
 
 AccessProxyingURLLoaderFactory::RequestDisposition
@@ -419,9 +473,15 @@ AccessProxyingURLLoaderFactory::EvaluateRedirect(
 AccessBrowserRequestMetadataResult
 AccessProxyingURLLoaderFactory::CaptureCurrentMetadata() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (profile_only_render_process_id_.has_value()) {
-    return BuildBrowserOwnedProfileOnlyRequestMetadata(
-        profile_, *profile_only_render_process_id_);
+  if (factory_metadata_.attribution_kind ==
+      aegis_access::RequestAttributionKind::kProfileOnly) {
+    if (profile_only_render_process_id_.has_value()) {
+      return BuildBrowserOwnedProfileOnlyRequestMetadata(
+          profile_, *profile_only_render_process_id_);
+    }
+    CHECK(profile_only_storage_partition_);
+    return BuildBrowserOwnedProfileRequestMetadata(
+        profile_, profile_only_storage_partition_);
   }
 
   auto wc_getter =
