@@ -17,7 +17,7 @@
 | S01 | A01 | `AccessProxyingURLLoaderFactoryBrowserTest.NoPublishedPolicyPreservesNativePath` | `SRC-287`，Chromium `NOT_RUN`；无已发布策略时原生路径源码用例 | 原有代理组合、真实网络与两种子场景尚未验收 |
 | S02 | A10 | `AccessPublishedRequestRuntimeTest.CrossProfileOwnerIsRejected`；`AccessRequestDispatchStateTest.ProfilesAreIsolated` | `SRC-287`，Chromium `NOT_RUN`；所有权/dispatch 局部隔离 | 两个 Profile 同站真实流量、凭据和事件隔离未证实 |
 | S03 | A14、A77 | `AccessProxyingURLLoaderFactoryBrowserTest.ProxyPolicyWithoutSelectedEndpointFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；缺 endpoint 子场景 | 内核运行中退出、完整路由等待与性能仍未验收 |
-| S04 | A17 | `AccessProxyingURLLoaderFactoryBrowserTest.BrowserProcessPrefetchWithoutEndpointFailsClosed`；`BrowserProcessPrefetchRedirectToUnselectedHostFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；直接调用 `MaybeProxyBrowserProcessPrefetch` helper | 真实 prefetch 入口 feature on/off、DNS/preconnect/IPv4/IPv6 均未验收 |
+| S04 | A17 | `AccessProxyingURLLoaderFactoryBrowserTest.BrowserProcessPrefetchWithoutEndpointFailsClosed`；`BrowserProcessPrefetchRedirectToUnselectedHostFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；直接调用 `MaybeProxyBrowserProcessPrefetch` helper；源码断言分别为 `origin_delta=0, proxy_delta=0` 与 `origin_delta=0, proxy_delta=1`（合法初始代理请求） | 真实 prefetch 入口 feature on/off、DNS/preconnect/IPv4/IPv6 均未验收 |
 | S05 | A18 | `AccessProxyingURLLoaderFactoryBrowserTest.WorkerMainResourceUsesSelectedProxy`；`WorkerMainResourceWithoutEndpointFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；Worker 主资源局部 | HTTPS/ws/wss 和页面归属完整矩阵未验收 |
 | S06 | A53 | `AccessNetworkContextTransportTest.NetworkChangeAdvancesEpochAndRejectsStaleEndpoint`；`CaptureRejectsEndpointAfterNetworkEpochChanges` | `SRC-287`，Chromium `NOT_RUN`；旧 network epoch/endpoint 局部 | 旧 ACK/探测、多标签页重试及并发预算未验收 |
 | S07 | A76 | `AccessProxyingURLLoaderFactoryBrowserTest.MainNavigationUsesPendingNavigationProxy`；`MainNavigationRedirectReevaluatesThroughProxy` | `SRC-287`，Chromium `NOT_RUN`；源码调用 `ui_test_utils::NavigateToURL`，导航与重定向子场景 | POST/PATCH 首次发送、唯一服务端标记、企业/系统/扩展代理矩阵未验收 |
@@ -27,7 +27,7 @@
 | S11 | A113 | `RunSiteProxyRuleGroupContractTests`，`access_route_planner_contract_test.h`；standalone runner | `L-F699`，**仅纯 C++ 网站协议组完整性合同局部 PASS**，包含成员缺失；无 Chromium runtime | 崩溃恢复、乱序 ACK、真实导航、调试覆盖和 UI unknown 未验收 |
 | S12 | A114 | `verify-preview.cjs` + `preview-checks.json`，13 项离线 DOM 检查 | `L-F699`，**仅文档交互预览局部 PASS**；不是产品浏览器运行 | 独立打开与真实渲染/渠道原生接口隔离未验收 |
 
-对 S03/S04 等拒绝路径，后续受控测试需在有界窗口内分别观察代理和 origin 的零派发，并由健康控制证明两端日志可观测；真实转发代理会合法到达 origin，必须用关联 ID、代理出口与连接日志证明没有 DIRECT 旁路。超时或页面无响应不能单独判 PASS；日志不得包含凭据。源码用例和历史局部 PASS 不转成下面主行 PASS。
+对 S03 与 S04 的缺 endpoint 请求，在有界窗口内按目标断言代理和 origin 均无派发；S04 的不受选重定向用例允许初始合法代理请求一次，拒绝的是后续目标，不得把 `proxy_delta=1` 当成失败或抹成零。BLOCK 前在途请求同样保留已发生的代理计数，只观察屏障生效后的新命中派发与终止时序。零增量断言须由同配置健康控制证明两端日志可观测；真实转发代理会合法到达 origin，必须用关联 ID、代理出口与连接日志证明没有 DIRECT 旁路。超时或页面无响应不能单独判 PASS；日志不得包含凭据。源码用例和历史局部 PASS 不转成下面主行 PASS。
 
 ## 131 个冻结主行
 
