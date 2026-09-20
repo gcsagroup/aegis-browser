@@ -44,7 +44,9 @@ SERVICE_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0145-feat-aegis-gate
 SERVICE_WORKER_SCRIPT_PATCH_FILE="$BROWSER_DIR/patches/0146-feat-aegis-gate-process-service-worker-script-traffic.patch"
 PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0147-feat-aegis-gate-frame-prefetch-traffic.patch"
 BROWSER_PROCESS_PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0148-feat-aegis-gate-loading-predictor-prefetch.patch"
+BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-direct-gn-deps.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
+BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
@@ -125,6 +127,22 @@ rg -Fq 'test("access_request_dispatch_state_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must compile the Profile dispatch-state regression"
 rg -Fq '"access/access_proxying_url_loader_factory_browsertest.cc",' "$AEGIS_BUILD" ||
   fail "Aegis browser_tests must compile the real URLLoader proxy smoke"
+browser_tests_block="$(
+  awk '/^  source_set\("browser_tests"\) \{/,/^  \}$/' "$AEGIS_BUILD"
+)"
+for direct_dep in \
+  '//chrome/browser/aegis/access:access_request_dispatch_state' \
+  '//components/aegis_access:access_identity_generation_state' \
+  '//components/aegis_access:access_proxy_selection_generation_state'; do
+  header="${direct_dep#*:}.h"
+  header="${direct_dep%%:*}/${header}"
+  [[ "$(rg -F -c "#include \"${header#//}\"" "$BROWSER_PROXY_TEST")" == 1 ]] ||
+    fail "browser proxy smoke must directly include $header"
+  [[ "$browser_tests_block" == *"\"$direct_dep\","* ]] ||
+    fail "browser_tests must directly depend on $direct_dep"
+  rg -Fq "+      \"$direct_dep\"," "$BROWSER_TEST_DEPS_PATCH_FILE" ||
+    fail "patch 0149 must deliver the direct $direct_dep dependency"
+done
 rg -Fq '"//chrome/browser/aegis:browser_tests",' "$BROWSER_TEST_WIRING_PATCH_FILE" ||
   fail "chrome browser_tests must include the existing Aegis browser_tests target"
 rg -Fq '+test("aegis_access_unittests")' "$PATCH_FILE" ||
@@ -807,6 +825,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0147 must appear once in series"
 [[ "$(rg -F -c '0148-feat-aegis-gate-loading-predictor-prefetch.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0148 must appear once in series"
+[[ "$(rg -F -c '0149-fix-aegis-browser-test-direct-gn-deps.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0149 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -842,10 +862,11 @@ expected_access_tail="$(cat <<'EOF'
 0146-feat-aegis-gate-process-service-worker-script-traffic.patch
 0147-feat-aegis-gate-frame-prefetch-traffic.patch
 0148-feat-aegis-gate-loading-predictor-prefetch.patch
+0149-fix-aegis-browser-test-direct-gn-deps.patch
 EOF
 )"
-[[ "$(tail -n 34 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0148"
+[[ "$(tail -n 35 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0149"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
