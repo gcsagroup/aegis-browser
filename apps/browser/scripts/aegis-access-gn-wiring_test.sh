@@ -689,6 +689,9 @@ rg -Fq 'PrefetchUrl(std::move(job), profile_->GetDefaultStoragePartition(),' \
 rg -Fq 'MaybeProxyBrowserProcessPrefetch(profile_, storage_partition' \
   "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
   fail "patch 0148 must pass the same PrefetchManager partition into Access"
+rg -Fq 'AegisProfileUsesGatedFactoryWhenNetworkContextPrefetchEnabled' \
+  "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
+  fail "patch 0148 must test the enabled NetworkContext prefetch fallback for Aegis profiles"
 rg -Fq 'profile_only_storage_partition_' \
   "$BROWSER_PROCESS_PREFETCH_PATCH_FILE" ||
   fail "patch 0148 must retain the exact Profile-only StoragePartition source"
