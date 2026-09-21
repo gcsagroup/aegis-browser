@@ -52,7 +52,7 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 ## 分支职责与日常路径
 
-个人 Fork 的 GitHub 默认分支为 `main`，用于仓库默认入口、对外展示和公开晋升；开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
+个人 Fork 的 GitHub 默认分支为 `develop`（2026-09-20 回读）；个人 `main` 用于对外展示和公开晋升，开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
 
 当前 README 采用临时镜像规则：个人 `main` 的 `README.md`、`README.zh-CN.md`、`README.zh-TW.md` 必须与当次 `upstream/main` 对应文件逐字一致；`develop` 上的 README 修改继续保留用于开发，但在公开晋升时暂不带入 `main`。promotion 分支应从最终 `develop` 创建，再从已刷新后的 `upstream/main` 恢复这三份 README，确认三者 blob/hash 一致后才向个人 `main` 提 PR。该规则只忽略这三份 README，不允许借此丢弃其他 develop 改动。
 
