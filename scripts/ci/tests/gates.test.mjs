@@ -485,7 +485,8 @@ test('Mac quality chain retains shared tests and isolates platform-specific exec
   assert.match(browserScripts['test:local-model'], /verify-agent-local-model_test/u);
   assert.equal(browserScripts['test:scripts'], 'bash ./scripts/run-script-quality-checks.sh');
   assert.doesNotMatch(browserScriptQualityChecks, /package-android|winrm-model-relay/u);
-  for (const name of ['test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScriptQualityChecks.includes(name));
+  for (const name of ['patch-series-format-regression_test.sh', 'test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScriptQualityChecks.includes(name));
+  assert.match(browserScriptQualityChecks, /run_check 'patch series regression fixtures'/u);
   for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android', 'test:winrm-model-relay']) assert.ok(rootScripts['quality:other-platforms'].includes(name));
 });
 

@@ -68,6 +68,54 @@ AccessPublishedRequestRuntime::~AccessPublishedRequestRuntime() {
 AccessPolicyPublicationResult
 AccessPublishedRequestRuntime::PublishCommittedPolicySnapshot(
     const StoredPolicySnapshot& stored) {
+  return PublishPolicySnapshot(stored);
+}
+
+AccessPolicyPublicationResult
+AccessPublishedRequestRuntime::PublishPreparedPolicyCandidate(
+    const StoredPolicySnapshot& candidate) {
+  return PublishPolicySnapshot(candidate);
+}
+
+bool AccessPublishedRequestRuntime::RollbackPreparedPolicyCandidate(
+    const StoredPolicySnapshot& candidate,
+    const std::optional<StoredPolicySnapshot>& previous) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  StoreResult<MatcherRuleSetCandidate> prepared =
+      AccessRuleStore::AdaptMatcherSnapshot(candidate);
+  if (prepared.status != StoreStatus::kValid || !prepared.value.has_value()) {
+    return false;
+  }
+  aegis_access::PublishedAccessPolicySnapshot expected{
+      prepared.value->owner,
+      prepared.value->committed_policy_generation,
+      prepared.value->rules,
+  };
+  auto it = policy_snapshots_.find(expected.owner.storage_partition_token);
+  if (it == policy_snapshots_.end() || it->second != expected) {
+    return false;
+  }
+  if (!previous.has_value()) {
+    policy_snapshots_.erase(it);
+    return true;
+  }
+  StoreResult<MatcherRuleSetCandidate> prior =
+      AccessRuleStore::AdaptMatcherSnapshot(*previous);
+  if (prior.status != StoreStatus::kValid || !prior.value.has_value() ||
+      prior.value->owner != expected.owner) {
+    return false;
+  }
+  it->second = aegis_access::PublishedAccessPolicySnapshot{
+      prior.value->owner,
+      prior.value->committed_policy_generation,
+      prior.value->rules,
+  };
+  return true;
+}
+
+AccessPolicyPublicationResult
+AccessPublishedRequestRuntime::PublishPolicySnapshot(
+    const StoredPolicySnapshot& stored) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   StoreResult<MatcherRuleSetCandidate> candidate =
       AccessRuleStore::AdaptMatcherSnapshot(stored);

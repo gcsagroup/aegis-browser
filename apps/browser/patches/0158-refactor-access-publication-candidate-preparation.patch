@@ -1,0 +1,52 @@
+From d28515cd1695405f6c34ca587e99ed8e1edaf562 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 21 Sep 2026 20:57:21 +0800
+Subject: [PATCH] refactor(access): isolate publication candidate preparation
+
+---
+ .../browser/aegis/access/access_service_coordinator.cc   | 9 ++++++++-
+ chrome/browser/aegis/access/access_service_coordinator.h | 1 +
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index cc1658f..cc0f805 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -285,6 +285,14 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
+     return Result(AccessMutationTransactionStatus::kPublicationTrackerRejected);
+   }
+   transaction.tracker_started = true;
++  PrepareTransportCandidate(transaction);
++  return std::nullopt;
++}
++
++void AccessServiceCoordinator::PrepareTransportCandidate(
++    MutationTransaction& transaction) {
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto& pending = transaction.pending;
+   transaction.previous_selection = *transport->CurrentSelection(pending.owner);
+   transaction.candidate_selection = transaction.previous_selection;
+   if (transaction.candidate_selection.endpoint) {
+@@ -304,7 +312,6 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
+           insertion, transaction.identity.selector.exact_host);
+     }
+   }
+-  return std::nullopt;
+ }
+ 
+ std::optional<AccessMutationTransactionResult>
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index 00de830..d2ab100 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -87,6 +87,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+       const MutationTransaction& transaction) const;
+   std::optional<AccessMutationTransactionResult> BeginPublication(
+       MutationTransaction& transaction);
++  void PrepareTransportCandidate(MutationTransaction& transaction);
+   std::optional<AccessMutationTransactionResult> PublishCandidate(
+       MutationTransaction& transaction);
+   void RequestPublicationAck(std::unique_ptr<MutationTransaction> transaction);
+-- 
+2.54.0 (Apple Git-157)
+
