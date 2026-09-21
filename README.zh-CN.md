@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![当前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy main](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard?branch=main) [![Codacy develop](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=develop)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard?branch=develop) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![当前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
 **一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。先做好 macOS，再推进 iPhone 与 iPad。**
 
@@ -33,6 +33,7 @@ Aegis 把隐私控制、安全检查、原生浏览器能力和 AI Agent 直接�
 顶部徽章代表不同范围：
 
 - **CI**：公共 `main` 的仓库级质量门。
+- **Codacy main / develop**：分别显示个人 Fork（`quinn521/aegis-browser`）对应分支的静态分析，不代表覆盖率或运行验收。向上游晋升时保留上游自己的 README 徽章。
 - **C++ 单元测试**：执行 standalone C++20 Access 测试，以及 Chromium GoogleTest wiring / patch contract；它**不代表**完整 Chromium GoogleTest 可执行文件或全部真实浏览器运行场景已经通过。
 - **License / 平台徽章**：描述仓库许可证与当前产品优先级，不代表发行资格。
 

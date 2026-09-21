@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 單元測試](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![目前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 單元測試](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy main](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard?branch=main) [![Codacy develop](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=develop)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard?branch=develop) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![目前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
 **一個本機優先的隱私與安全瀏覽器，內建可控的 AI Agent。先做好 macOS，再推進 iPhone 與 iPad。**
 
@@ -33,6 +33,7 @@ Aegis 把隱私控制、安全檢查、原生瀏覽器能力和 AI Agent 直接�
 頂部徽章代表不同範圍：
 
 - **CI**：公共 `main` 的儲存庫級品質門檻。
+- **Codacy main / develop**：分別顯示個人 Fork（`quinn521/aegis-browser`）對應分支的靜態分析，不代表覆蓋率或執行驗收。向上游晉升時保留上游自己的 README 徽章。
 - **C++ 單元測試**：執行 standalone C++20 Access 測試，以及 Chromium GoogleTest wiring / patch contract；它**不代表**完整 Chromium GoogleTest 可執行檔或全部真實瀏覽器執行情境已經通過。
 - **License / 平台徽章**：描述儲存庫授權與目前產品優先級，不代表發布資格。
 
