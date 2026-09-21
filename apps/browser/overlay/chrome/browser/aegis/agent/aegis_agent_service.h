@@ -44,6 +44,7 @@ class Encryptor;
 namespace aegis::agent {
 
 class AgentModelClient;
+class TypeSafeGoalRouterClient;
 
 // System notification centers outlive Incognito windows, so only regular
 // Profiles may export Agent monitor events to that surface.
@@ -98,6 +99,9 @@ class AegisAgentService : public KeyedService {
                  GoalRouteCallback callback);
   void SetGoalRouteForTesting(std::optional<AgentGoalRoute> route);
   void SetGoalRouterClientForTesting(std::unique_ptr<AgentModelClient> client);
+  void SetTypeSafeGoalRouterClientForTesting(
+      std::unique_ptr<TypeSafeGoalRouterClient> client);
+  void CancelPendingGoalRouting();
   void SetTaskModelClientForTesting(const std::string& task_id,
                                     std::unique_ptr<AgentModelClient> client);
   bool AcceptModelPlan(const std::string& task_id,
@@ -298,6 +302,18 @@ class AegisAgentService : public KeyedService {
                               bool ok,
                               std::string error,
                               AgentModelParseResult result);
+  void OnTypeSafeGoalRouteResult(
+      uint64_t generation,
+      uint64_t settings_generation,
+      std::string goal,
+      AgentWorkflowKind requested_workflow,
+      bool ok,
+      std::string error,
+      std::optional<AgentGoalRoute> route);
+  void CompleteGoalRouting(uint64_t generation,
+                           bool ok,
+                           std::string error,
+                           std::optional<AgentGoalRoute> route);
   void RequestNextModelTurn(const std::string& task_id);
   void EnsureFreshObservationThenContinue(const std::string& task_id,
                                           bool force_refresh);
@@ -365,6 +381,10 @@ class AegisAgentService : public KeyedService {
   std::map<std::string, std::string> model_request_ids_;
   std::unique_ptr<AgentModelClient> goal_router_client_;
   std::string goal_router_request_id_;
+  std::unique_ptr<TypeSafeGoalRouterClient> typesafe_goal_router_client_;
+  std::string typesafe_goal_router_request_id_;
+  uint64_t goal_route_generation_ = 0;
+  GoalRouteCallback pending_goal_route_callback_;
   std::optional<AgentGoalRoute> goal_route_for_testing_;
   std::map<std::string, std::unique_ptr<ExecutionRuntime>> executions_;
   std::map<std::string, AgentModelCapabilityTracker> model_capabilities_;
