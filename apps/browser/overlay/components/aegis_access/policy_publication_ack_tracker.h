@@ -35,6 +35,11 @@ struct PolicyPublicationIdentity {
   std::string operation_id;
   uint64_t operation_sequence = 0;
   uint64_t policy_generation = 0;
+  // Exact request-runtime versions published with this candidate. A DIRECT
+  // candidate has no proxy selection and therefore keeps selection_generation
+  // at zero; network_epoch must always identify the owning NetworkContext era.
+  uint64_t selection_generation = 0;
+  uint64_t network_epoch = 0;
   RequestCancellationSelector selector;
 
   friend bool operator==(const PolicyPublicationIdentity&,
@@ -81,9 +86,12 @@ class PolicyPublicationAckTracker {
       const std::string& ack_token);
   PolicyPublicationAckResult MarkTerminationsComplete(
       const PolicyPublicationIdentity& identity);
+  bool CanCommit(const PolicyPublicationIdentity& identity) const;
   PolicyPublicationAckResult MarkDurablyCommitted(
       const PolicyPublicationIdentity& identity);
   PolicyPublicationAckResult MarkFailed(
+      const PolicyPublicationIdentity& identity);
+  PolicyPublicationAckResult Abort(
       const PolicyPublicationIdentity& identity);
   PolicyPublicationAckResult Lookup(
       const PolicyPublicationIdentity& identity) const;
