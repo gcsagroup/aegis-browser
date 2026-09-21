@@ -338,6 +338,18 @@ summary {
   gap: 6px;
 }
 
+.toggle-row {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  gap: 8px;
+}
+
+.toggle-row input[type='checkbox'] {
+  min-height: 18px;
+  width: 18px;
+}
+
 .count-badge {
   background: color-mix(in srgb, var(--primary) 12%, transparent);
   border-radius: 999px;
@@ -353,7 +365,8 @@ summary {
   justify-content: space-between;
 }
 
-#model-state {
+#model-state,
+#typesafe-state {
   color: var(--primary);
   font-size: 11px;
   max-width: 65%;

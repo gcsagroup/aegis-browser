@@ -24,6 +24,8 @@
 #include "chrome/browser/aegis/aegis_bounce_observer.h"
 #include "chrome/browser/aegis/aegis_cookie_janitor.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
+#include "chrome/browser/aegis/agent/aegis_agent_service.h"
+#include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
 #if BUILDFLAG(IS_MAC)
 #include "chrome/browser/aegis/aegis_torrent_client.h"
 #endif
@@ -329,6 +331,7 @@ AegisService::AegisService(Profile* profile)
   }
   model_client_ = std::make_unique<ModelProviderClient>();
   LoadModelCredentials();
+  LoadTypeSafeCredential();
   InstallReporterCallbacks();
 #if !BUILDFLAG(IS_ANDROID)
   if (!profile->IsOffTheRecord()) {
@@ -516,6 +519,12 @@ void AegisService::ShutdownForProfile() {
   model_credentials_loading_ = false;
   model_credentials_loaded_ = false;
   model_credentials_available_ = true;
+  typesafe_api_key_.clear();
+  typesafe_credential_loading_ = false;
+  typesafe_credential_loaded_ = false;
+  typesafe_credential_available_ = true;
+  typesafe_settings_update_pending_ = false;
+  ++typesafe_settings_generation_;
   if (cookie_janitor_) {
     cookie_janitor_->Stop();
   }
@@ -1507,6 +1516,198 @@ std::string AegisService::ModelCredentialState(
     return "loading";
   }
   return model_credentials_available_ ? "ready" : "unavailable";
+}
+
+bool AegisService::IsTypeSafeGoalRoutingEnabled() const {
+  return prefs_ && profile_ && !profile_->IsOffTheRecord() &&
+         !typesafe_settings_update_pending_ &&
+         prefs_->GetBoolean(prefs::kTypeSafeGoalRoutingEnabled) &&
+         HasTypeSafeApiKey();
+}
+
+bool AegisService::HasTypeSafeApiKey() const {
+  return profile_ && !profile_->IsOffTheRecord() &&
+         typesafe_credential_loaded_ && !typesafe_credential_loading_ &&
+         !typesafe_api_key_.empty();
+}
+
+std::optional<std::string> AegisService::TypeSafeApiKeyForBrowserAgent(
+    const Profile* requesting_profile) const {
+  if (!IsInitializedForProfile(requesting_profile) ||
+      !IsTypeSafeGoalRoutingEnabled()) {
+    return std::nullopt;
+  }
+  return typesafe_api_key_;
+}
+
+void AegisService::SetTypeSafeGoalRoutingSettings(
+    bool enabled,
+    const std::string& api_key,
+    bool clear_api_key,
+    base::OnceCallback<void(bool, std::string)> done) {
+  std::optional<std::string> validation_error =
+      ValidateTypeSafeSettingsMutation(api_key, clear_api_key);
+  if (validation_error) {
+    std::move(done).Run(false, std::move(*validation_error));
+    return;
+  }
+  if (auto* agent_service =
+          agent::AegisAgentServiceFactory::GetForProfileIfExists(profile_)) {
+    agent_service->CancelPendingGoalRouting();
+  }
+  const uint64_t generation = ++typesafe_settings_generation_;
+  if (clear_api_key) {
+    ClearTypeSafeGoalRoutingSettings(std::move(done));
+    return;
+  }
+  if (api_key.empty()) {
+    SetTypeSafeGoalRoutingEnabledOnly(enabled, std::move(done));
+    return;
+  }
+  BeginSaveTypeSafeApiKey(generation, enabled, api_key, std::move(done));
+}
+
+std::optional<std::string> AegisService::ValidateTypeSafeSettingsMutation(
+    const std::string& api_key,
+    bool clear_api_key) const {
+  if (!prefs_ || !profile_) {
+    return "TypeSafe goal routing is unavailable in this profile";
+  }
+  if (profile_->IsOffTheRecord()) {
+    return "TypeSafe goal routing is unavailable in this profile";
+  }
+  if (clear_api_key && !api_key.empty()) {
+    return "cannot set and clear a TypeSafe API key together";
+  }
+  if (!api_key.empty() && !IsValidModelApiKey(api_key)) {
+    return "invalid TypeSafe API key";
+  }
+  if (typesafe_credential_loading_) {
+    return "TypeSafe credentials are still loading";
+  }
+  return std::nullopt;
+}
+
+void AegisService::ClearTypeSafeGoalRoutingSettings(
+    base::OnceCallback<void(bool, std::string)> done) {
+  typesafe_settings_update_pending_ = false;
+  typesafe_api_key_.clear();
+  prefs_->SetString(prefs::kTypeSafeApiKeyCiphertext, std::string());
+  prefs_->SetBoolean(prefs::kTypeSafeGoalRoutingEnabled, false);
+  NotifyObservers();
+  std::move(done).Run(true, std::string());
+}
+
+void AegisService::SetTypeSafeGoalRoutingEnabledOnly(
+    bool enabled,
+    base::OnceCallback<void(bool, std::string)> done) {
+  typesafe_settings_update_pending_ = false;
+  if (enabled && !HasTypeSafeApiKey()) {
+    std::move(done).Run(false, "TypeSafe API key is not configured");
+    return;
+  }
+  prefs_->SetBoolean(prefs::kTypeSafeGoalRoutingEnabled, enabled);
+  NotifyObservers();
+  std::move(done).Run(true, std::string());
+}
+
+void AegisService::BeginSaveTypeSafeApiKey(
+    uint64_t generation,
+    bool enabled,
+    std::string api_key,
+    base::OnceCallback<void(bool, std::string)> done) {
+  if (!g_browser_process || !g_browser_process->os_crypt_async()) {
+    typesafe_settings_update_pending_ = false;
+    std::move(done).Run(false, "secure credential storage unavailable");
+    return;
+  }
+  // Do not let a route started during OSCrypt work observe the new settings
+  // generation while still using the old in-memory credential.
+  typesafe_settings_update_pending_ = true;
+  g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
+      &AegisService::SaveTypeSafeApiKey, weak_ptr_factory_.GetWeakPtr(),
+      generation, enabled, api_key, std::move(done)));
+}
+
+void AegisService::SaveTypeSafeApiKey(
+    uint64_t generation,
+    bool enabled,
+    std::string api_key,
+    base::OnceCallback<void(bool, std::string)> done,
+    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+  if (generation != typesafe_settings_generation_) {
+    std::move(done).Run(false, "TypeSafe settings changed while saving");
+    return;
+  }
+  if (!prefs_ || !profile_ || profile_->IsOffTheRecord() || !encryptor ||
+      !encryptor->IsEncryptionAvailable()) {
+    typesafe_settings_update_pending_ = false;
+    std::move(done).Run(false, "secure credential storage unavailable");
+    return;
+  }
+  std::optional<std::vector<uint8_t>> ciphertext =
+      encryptor->EncryptString(api_key);
+  if (!ciphertext) {
+    typesafe_settings_update_pending_ = false;
+    std::move(done).Run(false, "failed to encrypt TypeSafe API key");
+    return;
+  }
+  prefs_->SetString(prefs::kTypeSafeApiKeyCiphertext,
+                    base::Base64Encode(*ciphertext));
+  prefs_->SetBoolean(prefs::kTypeSafeGoalRoutingEnabled, enabled);
+  typesafe_api_key_ = std::move(api_key);
+  typesafe_credential_loaded_ = true;
+  typesafe_credential_available_ = true;
+  typesafe_settings_update_pending_ = false;
+  NotifyObservers();
+  std::move(done).Run(true, std::string());
+}
+
+void AegisService::LoadTypeSafeCredential() {
+  typesafe_api_key_.clear();
+  typesafe_credential_loading_ = false;
+  typesafe_credential_loaded_ = false;
+  typesafe_credential_available_ = true;
+  if (!prefs_ || !profile_ || profile_->IsOffTheRecord()) {
+    typesafe_credential_loaded_ = true;
+    return;
+  }
+  const std::string ciphertext =
+      prefs_->GetString(prefs::kTypeSafeApiKeyCiphertext);
+  if (ciphertext.empty()) {
+    typesafe_credential_loaded_ = true;
+    return;
+  }
+  if (!g_browser_process || !g_browser_process->os_crypt_async()) {
+    typesafe_credential_loaded_ = true;
+    typesafe_credential_available_ = false;
+    return;
+  }
+  typesafe_credential_loading_ = true;
+  g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
+      &AegisService::OnTypeSafeCredentialLoaded,
+      weak_ptr_factory_.GetWeakPtr()));
+}
+
+void AegisService::OnTypeSafeCredentialLoaded(
+    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+  typesafe_credential_loading_ = false;
+  typesafe_credential_loaded_ = true;
+  typesafe_credential_available_ =
+      encryptor && encryptor->IsEncryptionAvailable();
+  if (!prefs_ || !typesafe_credential_available_) {
+    NotifyObservers();
+    return;
+  }
+  std::optional<std::vector<uint8_t>> ciphertext =
+      base::Base64Decode(prefs_->GetString(prefs::kTypeSafeApiKeyCiphertext));
+  if (ciphertext) {
+    std::optional<std::string> api_key = encryptor->DecryptData(*ciphertext);
+    if (api_key && IsValidModelApiKey(*api_key)) {
+      typesafe_api_key_ = std::move(*api_key);
+    }
+  }
+  NotifyObservers();
 }
 
 void AegisService::PersistModelConfiguration(const std::string& provider,
