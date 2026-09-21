@@ -1,0 +1,170 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 21 Sep 2026 19:00:00 +0800
+Subject: [PATCH] fix(access): keep proxy candidate hosts canonical
+
+---
+ .../chrome/browser/aegis/access/BUILD.gn            |  1 +
+ .../access/access_network_context_transport.cc     |  3 +-
+ .../access_network_context_transport_unittest.cc   | 18 +++++++++-
+ .../aegis/access/access_service_coordinator.cc     | 16 +++++++--
+ .../access_service_coordinator_unittest.cc         | 37 ++++++++++++++++++++++
+ 5 files changed, 70 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index b445f9d..737185f 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -172,6 +172,7 @@ test("access_service_coordinator_unittests") {
+   deps = [
+     ":access_network_context_transport",
+     ":access_published_request_runtime",
++    ":access_proxy_selection_generation_source",
+     "//mojo/public/cpp/bindings",
+     "//services/network/public/mojom",
+     ":access_service_coordinator",
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 9779d9a..a38334a 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -36,6 +36,7 @@ bool IsCanonicalExactHost(const std::string& host) {
+ 
+ bool AreCanonicalExactHosts(const std::vector<std::string>& exact_hosts) {
+   return !exact_hosts.empty() && exact_hosts.size() <= kMaxExactHosts &&
++         std::ranges::is_sorted(exact_hosts) &&
+          std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) ==
+              exact_hosts.end() &&
+          std::ranges::all_of(exact_hosts, IsCanonicalExactHost);
+@@ -572,4 +573,4 @@ void AccessNetworkContextTransport::Broadcast(PartitionState& state) {
+   }
+ }
+ 
+-}  // namespace aegis::access
+\ No newline at end of file
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index cc2da3e..55de4e4 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -374,6 +374,22 @@ TEST_F(AccessNetworkContextTransportTest, DirectCandidateRestoresNativeForOnlyTa
+   ExpectProxyResolution(delegate.get(), "https://target.example/");
+ }
+ 
++TEST_F(AccessNetworkContextTransportTest,
++       ReplaceSelectionRejectsUnsortedExactHosts) {
++  auto delegate = CreateDelegate({});
++  ASSERT_TRUE(delegate);
++  const auto endpoint = EndpointFor({});
++  ASSERT_TRUE(transport_->PublishProxySelection(
++      {}, {"a.example", "z.example"}, endpoint));
++  const auto previous = *transport_->CurrentSelection(endpoint.owner);
++  auto candidate = previous;
++  candidate.exact_hosts = {"z.example", "a.example"};
++
++  EXPECT_FALSE(
++      transport_->ReplaceSelection(endpoint.owner, previous, candidate));
++  EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
++}
++
+ TEST_F(AccessNetworkContextTransportTest, ExactCandidateRequiresEveryContext) {
+   auto first = CreateDelegate({});
+   auto second = CreateDelegate({});
+@@ -715,4 +731,4 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
+ }
+ 
+ }  // namespace
+-}  // namespace aegis::access
+\ No newline at end of file
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 9cbb28c..8757c56 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -238,10 +238,11 @@ std::optional<uint64_t> AccessServiceCoordinator::SelectionGeneration(
+   }
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+   const auto& group = pending.candidate.members.front().policy.proxy_group_id;
+-  const auto endpoint = transport->CaptureSelectedProxyEndpoint(
+-      pending.owner, group, transaction.identity.selector.exact_host);
++  const auto endpoint = transport->CurrentEndpoint(pending.owner);
+   auto* source = AccessProxySelectionGenerationSource::Get(profile_);
+-  if (!endpoint || !source || endpoint->generations.selection_generation == 0 ||
++  if (!endpoint || endpoint->owner != pending.owner ||
++      endpoint->proxy_group_id != group || !source ||
++      endpoint->generations.selection_generation == 0 ||
+       endpoint->generations.network_epoch != transport->network_epoch() ||
+       source->selection_generation(group) !=
+           endpoint->generations.selection_generation) {
+@@ -289,6 +290,15 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
+   if (pending.candidate.members.front().policy.mode == AccessMode::kDirect) {
+     std::erase(transaction.candidate_selection.exact_hosts,
+                transaction.identity.selector.exact_host);
++  } else {
++    auto insertion = std::ranges::lower_bound(
++        transaction.candidate_selection.exact_hosts,
++        transaction.identity.selector.exact_host);
++    if (insertion == transaction.candidate_selection.exact_hosts.end() ||
++        *insertion != transaction.identity.selector.exact_host) {
++      transaction.candidate_selection.exact_hosts.insert(
++          insertion, transaction.identity.selector.exact_host);
++    }
+   }
+   return std::nullopt;
+ }
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index 14ebeed..55d03ef 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -9,6 +9,7 @@
+ #include "base/test/test_future.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
++#include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ 
+@@ -288,6 +289,42 @@ TEST_F(AccessMutationTransactionTest, EndpointPolicyGenerationRollsBackOnFailure
+             (std::vector<std::string>{"news.example", "other.example"}));
+ }
+ 
++TEST_F(AccessMutationTransactionTest,
++       ProxyCandidateAddsTargetToSortedAllowlistBeforeAck) {
++  auto* source =
++      AccessProxySelectionGenerationSource::GetOrCreate(profile_.get());
++  ASSERT_TRUE(source);
++  const auto selection = source->CommitSelection(
++      {"proxy-group", "endpoint", "lease", "assignment", 1});
++  ASSERT_EQ(selection.status,
++            aegis_access::ProxySelectionGenerationCommitStatus::kCommitted);
++  const aegis_access::RegisteredProxyEndpoint endpoint{
++      "registration", "proxy-group", owner_,
++      {7, 2, selection.generation, transport_->network_epoch(), 5},
++      aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", 18080};
++  ASSERT_TRUE(
++      transport_->PublishProxySelection({}, {"other.example"}, endpoint));
++
++  auto mutation = Mutation();
++  for (auto& member : mutation.candidate_members) {
++    member.mode = AccessMode::kProxy;
++    member.proxy_group_id = "proxy-group";
++  }
++  base::test::TestFuture<AccessMutationTransactionResult> result;
++  coordinator_->CommitSiteGroupMutation(OpenStore(), mutation, Selector(),
++                                        result.GetCallback());
++  task_environment_.RunUntilIdle();
++
++  ASSERT_TRUE(client_->reply);
++  EXPECT_EQ(transport_->CurrentSelection(owner_)->exact_hosts,
++            (std::vector<std::string>{"news.example", "other.example"}));
++  std::move(client_->reply).Run(true);
++  ASSERT_TRUE(result.Wait());
++  EXPECT_EQ(result.Get().status, AccessMutationTransactionStatus::kCommitted);
++  EXPECT_EQ(transport_->CurrentSelection(owner_)->exact_hosts,
++            (std::vector<std::string>{"news.example", "other.example"}));
++}
++
+ TEST_F(AccessMutationTransactionTest, EphemeralStoreSurvivesConsecutiveMutations) {
+   auto store = std::make_unique<AccessRuleStore>(
+       AccessRuleStoreTestPeer::Binding({}, owner_));
+-- 
+2.54.0
