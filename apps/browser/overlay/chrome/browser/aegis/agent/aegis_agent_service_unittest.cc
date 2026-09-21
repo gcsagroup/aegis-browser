@@ -235,6 +235,25 @@ class AegisAgentServiceTest : public testing::Test {
   void TearDown() override { profile_ = nullptr; }
 
  protected:
+  AegisService* ConfigureTypeSafeGoalRouting() {
+    profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+    profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
+                                    "http://127.0.0.1:8765/v1");
+    profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+    AegisService* settings = AegisServiceFactory::GetForProfile(profile_);
+    if (!settings) {
+      return nullptr;
+    }
+    base::test::TestFuture<bool, std::string> configured;
+    settings->SetTypeSafeGoalRoutingSettings(
+        true, "ts-fixture-secret", false, configured.GetCallback());
+    if (!configured.Get<0>()) {
+      ADD_FAILURE() << configured.Get<1>();
+      return nullptr;
+    }
+    return settings;
+  }
+
   void FlushTaskStore(AegisAgentService* service) {
     base::test::TestFuture<bool> flushed;
     service->FlushTaskStoreForTesting(flushed.GetCallback());
@@ -451,16 +470,7 @@ TEST_F(AegisAgentServiceTest,
 }
 
 TEST_F(AegisAgentServiceTest, TypeSafeRoutesHighConfidenceGoalBeforeLocalModel) {
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
-                                  "http://127.0.0.1:8765/v1");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
-  AegisService* settings = AegisServiceFactory::GetForProfile(profile_);
-  ASSERT_TRUE(settings);
-  base::test::TestFuture<bool, std::string> configured;
-  settings->SetTypeSafeGoalRoutingSettings(
-      true, "ts-fixture-secret", false, configured.GetCallback());
-  ASSERT_TRUE(configured.Get<0>()) << configured.Get<1>();
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
 
   network::TestURLLoaderFactory factory;
   AegisAgentService* service =
@@ -485,16 +495,7 @@ TEST_F(AegisAgentServiceTest, TypeSafeRoutesHighConfidenceGoalBeforeLocalModel) 
 TEST_F(AegisAgentServiceTest,
        TypeSafeLowConfidenceFallsBackOnceToExistingGoalRouter) {
   const GURL local_endpoint("http://127.0.0.1:8765/v1/responses");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
-                                  "http://127.0.0.1:8765/v1");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
-  AegisService* settings = AegisServiceFactory::GetForProfile(profile_);
-  ASSERT_TRUE(settings);
-  base::test::TestFuture<bool, std::string> configured;
-  settings->SetTypeSafeGoalRoutingSettings(
-      true, "ts-fixture-secret", false, configured.GetCallback());
-  ASSERT_TRUE(configured.Get<0>()) << configured.Get<1>();
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
 
   network::TestURLLoaderFactory factory;
   AegisAgentService* service =
@@ -523,16 +524,7 @@ TEST_F(AegisAgentServiceTest,
 TEST_F(AegisAgentServiceTest,
        TypeSafeIncompatibleRouteFallsBackOnceToExistingGoalRouter) {
   const GURL local_endpoint("http://127.0.0.1:8765/v1/responses");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
-                                  "http://127.0.0.1:8765/v1");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
-  AegisService* settings = AegisServiceFactory::GetForProfile(profile_);
-  ASSERT_TRUE(settings);
-  base::test::TestFuture<bool, std::string> configured;
-  settings->SetTypeSafeGoalRoutingSettings(
-      true, "ts-fixture-secret", false, configured.GetCallback());
-  ASSERT_TRUE(configured.Get<0>()) << configured.Get<1>();
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
 
   network::TestURLLoaderFactory factory;
   AegisAgentService* service =
@@ -561,16 +553,8 @@ TEST_F(AegisAgentServiceTest,
 }
 
 TEST_F(AegisAgentServiceTest, ReplacingTypeSafeSettingsCancelsPendingRoute) {
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
-                                  "http://127.0.0.1:8765/v1");
-  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
-  AegisService* settings = AegisServiceFactory::GetForProfile(profile_);
+  AegisService* settings = ConfigureTypeSafeGoalRouting();
   ASSERT_TRUE(settings);
-  base::test::TestFuture<bool, std::string> configured;
-  settings->SetTypeSafeGoalRoutingSettings(
-      true, "ts-fixture-secret", false, configured.GetCallback());
-  ASSERT_TRUE(configured.Get<0>()) << configured.Get<1>();
 
   network::TestURLLoaderFactory factory;
   AegisAgentService* service =
