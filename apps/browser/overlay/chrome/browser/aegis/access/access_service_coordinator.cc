@@ -269,12 +269,16 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
   if (!selection_generation) {
     return Result(AccessMutationTransactionStatus::kProxySelectionUnavailable);
   }
-  transaction.identity = {pending.operation_id,
-                          pending.operation_sequence,
-                          pending.candidate.policy_generation,
-                          *selection_generation,
-                          transport->network_epoch(),
-                          transaction.identity.selector};
+  transaction.identity.operation_id = pending.operation_id;
+  transaction.identity.operation_sequence = pending.operation_sequence;
+  transaction.identity.policy_generation =
+      pending.candidate.policy_generation;
+  transaction.identity.proxy_group_id =
+      pending.candidate.members.front().policy.mode == AccessMode::kProxy
+          ? pending.candidate.members.front().policy.proxy_group_id
+          : std::string();
+  transaction.identity.selection_generation = *selection_generation;
+  transaction.identity.network_epoch = transport->network_epoch();
   const auto begin = dispatch->BeginPolicyPublication(
       {transaction.identity, {"network-context"}, false});
   if (begin.status != aegis_access::PolicyPublicationAckStatus::kPending) {

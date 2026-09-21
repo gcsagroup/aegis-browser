@@ -477,6 +477,41 @@ TEST_F(AccessNetworkContextTransportTest, CandidateRejectsForgedVersionsAndOwner
 }
 
 TEST_F(AccessNetworkContextTransportTest,
+       ProxyCandidateIdentityMustMatchSelectedGroup) {
+  auto first = CreateDelegate({});
+  const auto endpoint = EndpointFor({});
+  ASSERT_TRUE(
+      transport_->PublishProxySelection({}, {kTargetHost}, endpoint));
+  auto identity = CandidateIdentity(endpoint.owner, transport_->network_epoch());
+  identity.proxy_group_id = endpoint.proxy_group_id;
+  identity.selection_generation = endpoint.generations.selection_generation;
+
+  std::optional<bool> settled;
+  const auto accepted = transport_->PublishPolicyCandidateWithAck(
+      identity, endpoint.owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  EXPECT_EQ(accepted.status, AccessNetworkConfigAckStatus::kStarted);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled);
+  EXPECT_TRUE(*settled);
+
+  identity.operation_id = "candidate-11";
+  identity.operation_sequence = 11;
+  identity.policy_generation = 11;
+  identity.proxy_group_id = "other-group";
+  settled.reset();
+  const auto rejected = transport_->PublishPolicyCandidateWithAck(
+      identity, endpoint.owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  EXPECT_EQ(rejected.status,
+            AccessNetworkConfigAckStatus::kInvalidPublication);
+  ASSERT_TRUE(settled);
+  EXPECT_FALSE(*settled);
+}
+
+TEST_F(AccessNetworkContextTransportTest,
        NonIdempotentFirstSendUsesSelectedProxy) {
   const base::FilePath partition;
   auto delegate = CreateDelegate(partition);

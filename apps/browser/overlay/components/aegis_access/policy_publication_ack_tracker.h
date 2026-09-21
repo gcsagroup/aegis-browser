@@ -35,10 +35,12 @@ struct PolicyPublicationIdentity {
   std::string operation_id;
   uint64_t operation_sequence = 0;
   uint64_t policy_generation = 0;
-  // Exact request-runtime versions published with this candidate. A DIRECT
-  // candidate has no proxy selection and therefore keeps selection_generation
-  // at zero; network_epoch must always identify the owning NetworkContext era.
+  // Logical proxy group that owns selection_generation. A DIRECT candidate
+  // keeps this empty and selection_generation at zero. A PROXY candidate must
+  // bind both fields so independent group counters cannot be compared.
+  std::string proxy_group_id;
   uint64_t selection_generation = 0;
+  // Exact browser-owned NetworkContext era published with this candidate.
   uint64_t network_epoch = 0;
   RequestCancellationSelector selector;
 

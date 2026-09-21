@@ -33,7 +33,7 @@ inline PolicyPublicationIdentity PublicationIdentity(
     uint64_t generation,
     const std::string& operation_id = "operation-ack",
     const std::string& host = "target.example") {
-  return {operation_id, sequence, generation, 7, 9,
+  return {operation_id, sequence, generation, "proxy-group", 7, 9,
           PublicationSelector(host)};
 }
 
@@ -200,6 +200,20 @@ inline void ExpectInvalidRequirementsFailClosed(
       tracker.Begin(empty).status ==
           PolicyPublicationAckStatus::kInvalidOperation,
       "empty required ack set is invalid");
+
+  auto proxy_without_group = PublicationRequirements();
+  proxy_without_group.identity.proxy_group_id.clear();
+  observer.Expect(
+      tracker.Begin(proxy_without_group).status ==
+          PolicyPublicationAckStatus::kInvalidOperation,
+      "proxy selection generation requires a group identity");
+
+  auto direct_with_group = PublicationRequirements();
+  direct_with_group.identity.selection_generation = 0;
+  observer.Expect(
+      tracker.Begin(direct_with_group).status ==
+          PolicyPublicationAckStatus::kInvalidOperation,
+      "direct publication cannot retain a proxy group identity");
 }
 
 inline void ExpectRuntimeVersionMismatchCannotAcknowledge(
@@ -221,6 +235,13 @@ inline void ExpectRuntimeVersionMismatchCannotAcknowledge(
       tracker.Acknowledge(wrong_epoch, "network-context").status ==
           PolicyPublicationAckStatus::kVersionMismatch,
       "different network epoch cannot acknowledge current publication");
+
+  auto wrong_group = current.identity;
+  wrong_group.proxy_group_id = "other-proxy-group";
+  observer.Expect(
+      tracker.Acknowledge(wrong_group, "network-context").status ==
+          PolicyPublicationAckStatus::kVersionMismatch,
+      "wrong proxy group cannot acknowledge current publication");
 }
 
 inline void ExpectAbortedPublicationReleasesCapacity(

@@ -180,6 +180,8 @@ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck) 
   EXPECT_EQ(client_->metadata->operation_id, "ordinary-operation");
   EXPECT_EQ(client_->metadata->policy_generation,
             client_->metadata->operation_sequence);
+  EXPECT_TRUE(client_->metadata->proxy_group_id.empty());
+  EXPECT_EQ(client_->metadata->selection_generation, 0u);
   EXPECT_EQ(pending_store->ReadCommittedSnapshot(owner_.storage_partition_token)
                 .status, StoreStatus::kRecoveryRequired);
   const auto* runtime = AccessPublishedRequestRuntime::Get(profile_.get());
@@ -316,6 +318,9 @@ TEST_F(AccessMutationTransactionTest,
   task_environment_.RunUntilIdle();
 
   ASSERT_TRUE(client_->reply);
+  ASSERT_TRUE(client_->metadata);
+  EXPECT_EQ(client_->metadata->proxy_group_id, "proxy-group");
+  EXPECT_EQ(client_->metadata->selection_generation, selection.generation);
   EXPECT_EQ(transport_->CurrentSelection(owner_)->exact_hosts,
             (std::vector<std::string>{"news.example", "other.example"}));
   std::move(client_->reply).Run(true);

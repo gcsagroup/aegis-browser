@@ -155,3 +155,4 @@
 0154-fix-access-selection-lifecycle-style.patch
 0155-refactor-access-snapshot-transaction-stages.patch
 0156-fix-access-canonical-proxy-candidate-hosts.patch
+0157-fix-access-scope-selection-generation-by-proxy-group.patch
