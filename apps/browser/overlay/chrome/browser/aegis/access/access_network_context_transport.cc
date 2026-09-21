@@ -63,6 +63,7 @@ bool IsCandidateIdentityValid(
       identity.operation_id.empty() || identity.operation_sequence == 0 ||
       identity.policy_generation == 0 ||
       identity.policy_generation != identity.operation_sequence ||
+      (identity.selection_generation == 0) != identity.proxy_group_id.empty() ||
       identity.network_epoch == 0 || identity.network_epoch != network_epoch);
 }
 
@@ -368,6 +369,7 @@ bool AccessNetworkContextTransport::SelectionMatchesIdentity(
     return true;
   }
   return state.endpoint && state.endpoint->owner == identity.selector.owner &&
+         state.endpoint->proxy_group_id == identity.proxy_group_id &&
          state.endpoint->generations.selection_generation ==
              identity.selection_generation &&
          state.endpoint->generations.network_epoch == identity.network_epoch &&
@@ -399,6 +401,7 @@ void AccessNetworkContextTransport::PublishPolicyCandidateToClients(
   metadata->operation_id = identity.operation_id;
   metadata->operation_sequence = identity.operation_sequence;
   metadata->policy_generation = identity.policy_generation;
+  metadata->proxy_group_id = identity.proxy_group_id;
   metadata->selection_generation = identity.selection_generation;
   metadata->network_epoch = identity.network_epoch;
   metadata->channel = static_cast<uint32_t>(owner.channel);
