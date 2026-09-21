@@ -52,11 +52,50 @@
 #include "url/gurl.h"
 
 namespace aegis::access {
+
+class AccessRuleStoreTestPeer {
+ public:
+  static AccessStoreBinding Ephemeral(const OwnershipKey& owner) {
+    return AccessStoreBinding(AccessStoreKind::kEphemeralProfile, owner.channel,
+                              "prepared-browser-test", owner.profile_token, {}, {});
+  }
+};
+
 namespace {
 
 constexpr char kTargetHost[] = "target.example";
 constexpr char kUnselectedRedirectHost[] = "redirect-unselected.example";
 constexpr char kProxyGroup[] = "proxy-group-browser-test";
+
+SiteGroupMutationRequest PreparedNavigationRequest(const OwnershipKey& owner) {
+  SiteGroupMutationRequest request;
+  request.operation_id = "prepared-navigation";
+  request.request_fingerprint = "prepared-navigation-fingerprint";
+  request.candidate_group = {
+      .site_toggle_id = "navigation-toggle",
+      .canonical_host = kTargetHost,
+      .owner = owner,
+      .http_top_level_site = "http://target.example",
+      .https_top_level_site = "https://target.example",
+      .member_rule_ids = {"navigation:http", "navigation:https"},
+  };
+  for (const auto& scheme : {std::string("http"), std::string("https")}) {
+    request.candidate_members.push_back({
+        .rule_id = "navigation:" + scheme,
+        .owner = owner,
+        .site_toggle_id = "navigation-toggle",
+        .top_level_site = scheme + "://target.example",
+        .exact_host = kTargetHost,
+        .schemes = {RequestScheme::kHttp, RequestScheme::kHttps,
+                    RequestScheme::kWs, RequestScheme::kWss},
+        .ports = PortScope::kAllBrowserPermitted,
+        .mode = AccessMode::kProxy,
+        .proxy_group_id = kProxyGroup,
+        .protection_override = ProtectionOverride::kNone,
+    });
+  }
+  return request;
+}
 
 enum class ServiceWorkerRequestKind {
   kOther,
@@ -805,6 +844,35 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
     return proxy_requests_.load(std::memory_order_relaxed) == 1u;
   }));
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       MainNavigationConsumesPreparedSnapshotBeforeCommit) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(*owner_));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  const auto request = PreparedNavigationRequest(*owner_);
+  const auto prepared = store.PrepareSiteGroupMutation(request);
+  ASSERT_TRUE(prepared.value) << prepared.detail;
+  EXPECT_EQ(prepared.value->committed_policy_generation, 0u);
+  const auto candidate = store.BuildPreparedCandidateSnapshot(*prepared.value);
+  ASSERT_TRUE(candidate.value) << candidate.detail;
+  const aegis_access::GenerationTuple generations{
+      prepared.value->operation_sequence,
+      CommitIdentityGenerationForProxyPolicy(),
+      CommitSelectionGenerationForProxyPolicy(),
+      transport_->network_epoch(), CurrentBaseProxyGeneration()};
+  PublishSelectedProxyEndpoint(kTargetHost, generations);
+  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(browser()->profile());
+  ASSERT_EQ(runtime->PublishPreparedPolicyCandidate(*candidate.value).status,
+            AccessPolicyPublicationStatus::kPublished);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+  EXPECT_TRUE(base::test::RunUntil([&] {
+    return proxy_requests_.load(std::memory_order_relaxed) == 1u;
+  }));
+  EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+  EXPECT_EQ(store.ReadCommittedSnapshot(owner_->storage_partition_token).status,
+            StoreStatus::kRecoveryRequired);
+  EXPECT_EQ(prepared.value->committed_policy_generation, 0u);
 }
 
 #if !BUILDFLAG(IS_CHROMEOS)

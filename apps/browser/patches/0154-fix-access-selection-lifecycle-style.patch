@@ -1,0 +1,42 @@
+From 1719b9fd559e023db5d233a43a9ff354b76d20ec Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 21 Sep 2026 16:25:45 +0800
+Subject: [PATCH] fix(access): move proxy selection lifecycle out of line
+
+---
+ .../aegis_access/access_proxy_selection_generation_state.cc   | 4 ++++
+ .../aegis_access/access_proxy_selection_generation_state.h    | 3 ++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/components/aegis_access/access_proxy_selection_generation_state.cc b/components/aegis_access/access_proxy_selection_generation_state.cc
+index a52cb52412..30747e86d8 100644
+--- a/components/aegis_access/access_proxy_selection_generation_state.cc
++++ b/components/aegis_access/access_proxy_selection_generation_state.cc
+@@ -16,6 +16,10 @@ bool IsValidSelectionBinding(const AccessProxySelectionBinding& binding) {
+ 
+ }  // namespace
+ 
++ProxySelectionGenerationState::ProxySelectionGenerationState() = default;
++
++ProxySelectionGenerationState::~ProxySelectionGenerationState() = default;
++
+ ProxySelectionGenerationCommitResult ProxySelectionGenerationState::Commit(
+     AccessProxySelectionBinding binding) {
+   if (exhausted_) {
+diff --git a/components/aegis_access/access_proxy_selection_generation_state.h b/components/aegis_access/access_proxy_selection_generation_state.h
+index 7d135195bb..260237bb7d 100644
+--- a/components/aegis_access/access_proxy_selection_generation_state.h
++++ b/components/aegis_access/access_proxy_selection_generation_state.h
+@@ -40,7 +40,8 @@ struct ProxySelectionGenerationCommitResult {
+ // state. A binding may advance only with a strictly newer binding_revision.
+ class ProxySelectionGenerationState {
+  public:
+-  ProxySelectionGenerationState() = default;
++  ProxySelectionGenerationState();
++  ~ProxySelectionGenerationState();
+ 
+   ProxySelectionGenerationState(const ProxySelectionGenerationState&) = delete;
+   ProxySelectionGenerationState& operator=(
+-- 
+2.54.0 (Apple Git-157)
+

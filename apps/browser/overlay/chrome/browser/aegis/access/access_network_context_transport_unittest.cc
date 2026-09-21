@@ -12,6 +12,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/browser_task_environment.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/network_change_notifier.h"
@@ -99,7 +100,7 @@ class AccessNetworkContextTransportTest : public testing::Test {
     EXPECT_EQ(result.proxy_chain().First().GetPort(), kProxyPort);
   }
 
-  base::test::TaskEnvironment task_environment_;
+  content::BrowserTaskEnvironment task_environment_;
   std::unique_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   std::unique_ptr<TestingProfile> profile_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
@@ -333,6 +334,180 @@ TEST_F(AccessNetworkContextTransportTest,
           &settled));
   EXPECT_EQ(forged_result.status, AccessNetworkConfigAckStatus::kInvalidOwner);
   ASSERT_TRUE(settled.has_value());
+  EXPECT_FALSE(*settled);
+}
+
+aegis_access::PolicyPublicationIdentity CandidateIdentity(
+    const aegis_access::OwnershipKey& owner, uint64_t epoch) {
+  aegis_access::PolicyPublicationIdentity identity;
+  identity.operation_id = "candidate-10";
+  identity.operation_sequence = 10;
+  identity.policy_generation = 10;
+  identity.network_epoch = epoch;
+  identity.selector.owner = owner;
+  identity.selector.document_token = "document";
+  identity.selector.top_level_site = "https://target.example";
+  identity.selector.exact_host = kTargetHost;
+  identity.selector.scheme = aegis_access::RequestScheme::kHttps;
+  identity.selector.port = 443;
+  return identity;
+}
+
+TEST_F(AccessNetworkContextTransportTest, DirectCandidateRestoresNativeForOnlyTarget) {
+  auto delegate = CreateDelegate({});
+  const auto endpoint = EndpointFor({});
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      {}, {"other.example", kTargetHost}, endpoint));
+  transport_->FlushClientsForTesting({});
+  const auto previous = *transport_->CurrentSelection(endpoint.owner);
+  auto candidate = previous;
+  candidate.exact_hosts = {"other.example"};
+  candidate.endpoint->generations.policy_generation = 10;
+  ASSERT_TRUE(transport_->ReplaceSelection(endpoint.owner, previous, candidate));
+  transport_->FlushClientsForTesting({});
+  EXPECT_EQ(Resolve(delegate.get(), "https://target.example/")
+                .proxy_list().ToPacString(),
+            "PROXY native.example:3128; DIRECT");
+  ExpectProxyResolution(delegate.get(), "https://other.example/");
+  ASSERT_TRUE(transport_->ReplaceSelection(endpoint.owner, candidate, previous));
+  transport_->FlushClientsForTesting({});
+  ExpectProxyResolution(delegate.get(), "https://target.example/");
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       ReplaceSelectionRejectsUnsortedExactHosts) {
+  auto delegate = CreateDelegate({});
+  ASSERT_TRUE(delegate);
+  const auto endpoint = EndpointFor({});
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      {}, {"a.example", "z.example"}, endpoint));
+  const auto previous = *transport_->CurrentSelection(endpoint.owner);
+  auto candidate = previous;
+  candidate.exact_hosts = {"z.example", "a.example"};
+
+  EXPECT_FALSE(
+      transport_->ReplaceSelection(endpoint.owner, previous, candidate));
+  EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
+}
+
+TEST_F(AccessNetworkContextTransportTest, ExactCandidateRequiresEveryContext) {
+  auto first = CreateDelegate({});
+  auto second = CreateDelegate({});
+  const auto owner = *transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, {});
+  const auto identity = CandidateIdentity(owner, transport_->network_epoch());
+  std::optional<bool> settled;
+  const auto result = transport_->PublishPolicyCandidateWithAck(
+      identity, owner, base::BindOnce(
+          [](std::optional<bool>* out, bool value) { *out = value; }, &settled));
+  EXPECT_EQ(result.status, AccessNetworkConfigAckStatus::kStarted);
+  EXPECT_EQ(result.required_client_acks, 2u);
+  EXPECT_FALSE(settled);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled);
+  EXPECT_TRUE(*settled);
+}
+
+TEST_F(AccessNetworkContextTransportTest, CandidateRejectsChangedClientSet) {
+  auto first = CreateDelegate({});
+  const auto owner = *transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, {});
+  std::optional<bool> settled;
+  transport_->PublishPolicyCandidateWithAck(
+      CandidateIdentity(owner, transport_->network_epoch()), owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  auto late = CreateDelegate({});
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled);
+  EXPECT_FALSE(*settled);
+}
+
+TEST_F(AccessNetworkContextTransportTest, CandidateRejectsEpochChangedDuringAck) {
+  auto first = CreateDelegate({});
+  const auto owner = *transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, {});
+  std::optional<bool> settled;
+  transport_->PublishPolicyCandidateWithAck(
+      CandidateIdentity(owner, transport_->network_epoch()), owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  AccessNetworkContextTransportTestPeer::SetNetworkEpoch(
+      transport_, transport_->network_epoch() + 1);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled);
+  EXPECT_FALSE(*settled);
+}
+
+TEST_F(AccessNetworkContextTransportTest, CandidateRejectsDroppedReply) {
+  auto first = CreateDelegate({});
+  const auto owner = *transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, {});
+  std::optional<bool> settled;
+  transport_->PublishPolicyCandidateWithAck(
+      CandidateIdentity(owner, transport_->network_epoch()), owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  first.reset();
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled);
+  EXPECT_FALSE(*settled);
+}
+
+TEST_F(AccessNetworkContextTransportTest, CandidateRejectsForgedVersionsAndOwner) {
+  auto first = CreateDelegate({});
+  const auto owner = *transport_->OwnerForPartition(
+      aegis_access::ChannelNamespace::kDev, {});
+  const auto valid = CandidateIdentity(owner, transport_->network_epoch());
+  for (int fault = 0; fault != 4; ++fault) {
+    auto identity = valid;
+    if (fault == 0) ++identity.policy_generation;
+    if (fault == 1) ++identity.network_epoch;
+    if (fault == 2) identity.selection_generation = 99;
+    if (fault == 3) identity.selector.owner.profile_token = "forged";
+    std::optional<bool> settled;
+    const auto result = transport_->PublishPolicyCandidateWithAck(
+        identity, owner,
+        base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                       &settled));
+    EXPECT_NE(result.status, AccessNetworkConfigAckStatus::kStarted);
+    ASSERT_TRUE(settled);
+    EXPECT_FALSE(*settled);
+  }
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       ProxyCandidateIdentityMustMatchSelectedGroup) {
+  auto first = CreateDelegate({});
+  const auto endpoint = EndpointFor({});
+  ASSERT_TRUE(
+      transport_->PublishProxySelection({}, {kTargetHost}, endpoint));
+  auto identity = CandidateIdentity(endpoint.owner, transport_->network_epoch());
+  identity.proxy_group_id = endpoint.proxy_group_id;
+  identity.selection_generation = endpoint.generations.selection_generation;
+
+  std::optional<bool> settled;
+  const auto accepted = transport_->PublishPolicyCandidateWithAck(
+      identity, endpoint.owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  EXPECT_EQ(accepted.status, AccessNetworkConfigAckStatus::kStarted);
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(settled);
+  EXPECT_TRUE(*settled);
+
+  identity.operation_id = "candidate-11";
+  identity.operation_sequence = 11;
+  identity.policy_generation = 11;
+  identity.proxy_group_id = "other-group";
+  settled.reset();
+  const auto rejected = transport_->PublishPolicyCandidateWithAck(
+      identity, endpoint.owner,
+      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
+                     &settled));
+  EXPECT_EQ(rejected.status,
+            AccessNetworkConfigAckStatus::kInvalidPublication);
+  ASSERT_TRUE(settled);
   EXPECT_FALSE(*settled);
 }
 
