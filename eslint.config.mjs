@@ -1,13 +1,58 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-const nodeGlobals = {
+const ciNodeGlobals = {
   Buffer: 'readonly',
   URL: 'readonly',
   console: 'readonly',
   process: 'readonly',
   structuredClone: 'readonly',
 };
+
+const nodeGlobals = {
+  ...ciNodeGlobals,
+  AbortController: 'readonly',
+  AbortSignal: 'readonly',
+  Blob: 'readonly',
+  FormData: 'readonly',
+  Headers: 'readonly',
+  Request: 'readonly',
+  Response: 'readonly',
+  TextDecoder: 'readonly',
+  TextEncoder: 'readonly',
+  URLSearchParams: 'readonly',
+  WebSocket: 'readonly',
+  atob: 'readonly',
+  btoa: 'readonly',
+  clearInterval: 'readonly',
+  clearTimeout: 'readonly',
+  crypto: 'readonly',
+  fetch: 'readonly',
+  navigator: 'readonly',
+  performance: 'readonly',
+  setImmediate: 'readonly',
+  setInterval: 'readonly',
+  setTimeout: 'readonly',
+};
+
+const browserExtensionGlobals = {
+  browser: 'readonly',
+  crypto: 'readonly',
+  document: 'readonly',
+  location: 'readonly',
+  URL: 'readonly',
+  window: 'readonly',
+};
+
+const localNodeScriptFiles = [
+  'scripts/dev/**/*.mjs',
+  'scripts/check-repo-contracts.mjs',
+  'apps/browser/scripts/**/*.mjs',
+  'apps/ios/scripts/**/*.mjs',
+  'apps/ios/Tests/**/*.mjs',
+  'packages/core/scripts/**/*.mjs',
+  'packages/core/src/script-risk/evaluation/*.mjs',
+];
 
 export default tseslint.config(
   {
@@ -19,7 +64,33 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
+      globals: ciNodeGlobals,
+    },
+  },
+  {
+    files: localNodeScriptFiles,
+    ...eslint.configs.recommended,
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
       globals: nodeGlobals,
+    },
+    rules: {
+      ...eslint.configs.recommended.rules,
+      'no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+      }],
+    },
+  },
+  {
+    files: ['apps/ios/SharedWebExtension/*.js'],
+    ...eslint.configs.recommended,
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: browserExtensionGlobals,
     },
   },
   {

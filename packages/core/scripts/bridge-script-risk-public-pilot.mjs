@@ -32,7 +32,6 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = resolve(scriptDirectory, "../../..");
 const DEFAULT_DEFINITION_PATH =
   "packages/core/src/script-risk/evaluation/protocols/miner-capability-public-v1.json";
-const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
 function fail(message) {
   throw new Error(message);
