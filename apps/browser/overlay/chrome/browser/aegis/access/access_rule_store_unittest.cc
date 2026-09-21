@@ -1216,6 +1216,68 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
             StoreStatus::kMissing);
 }
 
+TEST(AccessRuleStoreTest, PreparedSnapshotPreservesDurableBaseUntilCommit) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  Commit(&store, Prepare(&store, Mutation("enable", AccessMode::kProxy)));
+  Commit(&store, Prepare(&store, Mutation("other", AccessMode::kDirect, 0,
+                                         Owner(), "other.example")));
+  const auto independent = IndependentRule(
+      "independent-reject", AccessMode::kReject, "cdn.news.example",
+      "https://news.example", {RequestScheme::kHttps},
+      {PortScope::kExplicitSubset, {443}}, 51);
+  ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, independent),
+            StoreStatus::kValid);
+  const auto before = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(before.value);
+  const auto pending = Prepare(&store, Mutation("close", AccessMode::kDirect, 1));
+  const auto candidate = store.BuildPreparedCandidateSnapshot(pending);
+  ASSERT_EQ(candidate.status, StoreStatus::kValid) << candidate.detail;
+  ASSERT_TRUE(candidate.value);
+  EXPECT_EQ(pending.committed_policy_generation, 0u);
+  EXPECT_EQ(candidate.value->policy_generation, pending.operation_sequence);
+  ASSERT_EQ(candidate.value->site_groups.size(), 2u);
+  const auto* changed = FindGroup(*candidate.value, "news.example");
+  ASSERT_TRUE(changed);
+  EXPECT_EQ(changed->policy_generation, pending.operation_sequence);
+  EXPECT_EQ(Selection(*changed), GroupSelection::kDisabled);
+  const auto* other = FindGroup(*candidate.value, "other.example");
+  const auto* old_other = FindGroup(*before.value, "other.example");
+  ASSERT_TRUE(other);
+  ASSERT_TRUE(old_other);
+  EXPECT_EQ(*other, *old_other);
+  EXPECT_EQ(candidate.value->independent_rules, before.value->independent_rules);
+  EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
+            StoreStatus::kRecoveryRequired);
+  ASSERT_EQ(store.SupersedePreparedMutation(pending.operation_id,
+                                           pending.request_fingerprint),
+            StoreStatus::kValid);
+  const auto after = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(after.value);
+  EXPECT_EQ(*after.value, *before.value);
+}
+
+TEST(AccessRuleStoreTest, PreparedSnapshotRejectsForgedOrSupersededRecord) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  const auto pending = Prepare(&store, Mutation("enable", AccessMode::kProxy));
+  auto forged = pending;
+  forged.request_fingerprint += "-forged";
+  EXPECT_EQ(store.BuildPreparedCandidateSnapshot(forged).status,
+            StoreStatus::kConflict);
+  forged = pending;
+  forged.committed_policy_generation = pending.operation_sequence;
+  EXPECT_EQ(store.BuildPreparedCandidateSnapshot(forged).status,
+            StoreStatus::kInvalidArgument);
+  ASSERT_EQ(store.SupersedePreparedMutation(pending.operation_id,
+                                           pending.request_fingerprint),
+            StoreStatus::kValid);
+  EXPECT_EQ(store.BuildPreparedCandidateSnapshot(pending).status,
+            StoreStatus::kConflict);
+}
+
 TEST(AccessRuleStoreTest, ClosingReplacesOnlyGroupOwnedRows) {
   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
       ChannelNamespace::kBeta, "durable-profile-A", "profile-A"));

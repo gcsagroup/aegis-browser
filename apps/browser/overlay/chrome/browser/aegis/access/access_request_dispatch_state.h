@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <string>
 
+#include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
@@ -68,19 +69,27 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
   aegis_access::PolicyPublicationAckResult
   MarkPolicyPublicationTerminationsComplete(
       const aegis_access::PolicyPublicationIdentity& identity);
+  bool CanCommitPolicyPublication(
+      const aegis_access::PolicyPublicationIdentity& identity) const;
   aegis_access::PolicyPublicationAckResult MarkPolicyPublicationDurablyCommitted(
+      const aegis_access::PolicyPublicationIdentity& identity);
+  aegis_access::PolicyPublicationAckResult FailPolicyPublication(
+      const aegis_access::PolicyPublicationIdentity& identity);
+  aegis_access::PolicyPublicationAckResult FinalizePolicyPublication(
       const aegis_access::PolicyPublicationIdentity& identity);
   AccessPolicyBarrierReleaseResult ReleaseBlockBarrierForReadyPublication(
       const aegis_access::PolicyPublicationIdentity& identity);
 
   AccessNetworkConfigAckResult RequestNetworkContextPublicationAck(
       const aegis_access::PolicyPublicationIdentity& identity,
-      const aegis_access::OwnershipKey& owner);
+      const aegis_access::OwnershipKey& owner,
+      base::OnceCallback<void(bool)> completion = {});
 
  private:
   explicit AccessRequestDispatchState(Profile* profile);
   void OnNetworkContextPublicationAck(
       aegis_access::PolicyPublicationIdentity identity,
+      base::OnceCallback<void(bool)> completion,
       bool acknowledged);
 
   Profile* const profile_;

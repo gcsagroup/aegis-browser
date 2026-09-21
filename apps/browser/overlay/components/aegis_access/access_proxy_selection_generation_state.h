@@ -40,7 +40,8 @@ struct ProxySelectionGenerationCommitResult {
 // state. A binding may advance only with a strictly newer binding_revision.
 class ProxySelectionGenerationState {
  public:
-  ProxySelectionGenerationState() = default;
+  ProxySelectionGenerationState();
+  ~ProxySelectionGenerationState();
 
   ProxySelectionGenerationState(const ProxySelectionGenerationState&) = delete;
   ProxySelectionGenerationState& operator=(

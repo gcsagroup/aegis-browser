@@ -1,5 +1,34 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
+## 2026-09-21：commit/publish snapshot 阶段（待验证）
+
+本阶段基于 `develop@3154d39871ddd592a1be609abf9c90c78d7e29c6`，范围为普通 DIRECT/PROXY 网站协议组事务。此前上游 PR #19 已合并；当前交付复用 [Fork PR #139](https://github.com/quinn521/aegis-browser/pull/139)。2026-09-21 用户要求 review 进度、更新 plan/Handoff，并在本 PR 门禁通过且实际合并后进行一次上游晋升。以下历史核验记录不作为本阶段证据。
+
+冻结事务顺序为：验证可信 selector 与 store → PREPARED journal 预留 operationSequence → 从旧 durable base 构造完整候选 → 发布到浏览器 request runtime → 向所属 NetworkContext 发布精确 operation/G/S/E 与 owner/partition → 全部候选 ACK → 再原子 durable commit → finalize。PREPARED 的 `committed_policy_generation` 始终为 0，候选及成功提交的 policy generation 都等于预留的 operationSequence。请求路由只读取内存快照，不读取 SQLite。`RepublishCurrentConfigWithAck` 不能作为候选发布证据。
+
+Profile 持有首个可信 store（含 ephemeral 会话库），后续 mutation 传空指针复用，禁止替换库。候选保留无关网站组和独立规则。当前 transport 只有 partition/host 粒度：同 host 的其他规则需要相反 DIRECT/PROXY 策略时，发布前返回 `kUnsupportedTransportScope`，保留原状态；不宣称已实现按 top-level-site 区分的 transport。浏览器同步重绑定保留端点的 policy generation，并在 DIRECT 时从 CustomProxyConfig 的 exact-host 列表移除目标网站、保留其他网站；候选 config 与 metadata 使用同一 Mojo channel 顺序发送。失败仅在候选仍精确匹配时恢复旧快照/端点，并 supersede journal；清理写入失败透传 store 错误并保留待恢复边界。提交前重新核对 runtime、权威 selection source 的 S/E、完整端点及所有 NetworkContext 的集合；新 context、版本变化、错误或丢失 ACK、30 秒超时均阻止提交。迟到 ACK 不能复活已取消的事务；失败的 exact identity 释放 tracker 容量。Network Service 在受信任的 context channel 上保存 owner 绑定、单调的候选回执；它不从数据库重建策略。BLOCK/ALLOW 的屏障及取消流程、可信 UI 入口、真实身份/节点提交与 Xray 集成不属于此阶段。
+
+| 证据 | 当前边界 |
+| --- | --- |
+| 实现及测试源码 | 已增加 candidate builder、coordinator transaction、runtime rollback、transport/version ACK，以及 unit/真实主导航回归源码；顺序补丁 0152/0153/0154/0155 必须与 overlay 对齐；0154 修复 ProxySelectionGenerationState 的 out-of-line 构造/析构。 |
+| 本地 standalone C++ | 本轮执行通过 845 checks，包含 tracker version/abort 回归；不是 SQLite/GN/GTest/browser 执行证据。最终 HEAD 的完整质量报告另存 artifact 并在 PR 绑定。 |
+| Chromium/GTest/真实入口 | **NOT_RUN / BLOCKED**：已核实旧 PR135 retry3 权威退出文件为 1，首个失败是 `ProxySelectionGenerationState` 的 inline constructor / missing out-of-line destructor style 检查。本 PR 以 0154 修复；正从已释放的旧候选创建独立 APFS 验证副本，复用依赖及缓存后重绑本 PR 补丁树。缓存和旧二进制均不是当前 PASS；旧工作区不改动。 |
+| 独立审查 | GPT-6 独立源码审查与指定 PRO 的冻结源码包审查在 `0e4bb97` 未发现剩余源码阻塞；PRO 包审查不等于直接读取 checkout。二者均未清除 native 欠账。本轮 style/文档新提交仍需最终 HEAD 复审。 |
+| 本地 full quality | `0e4bb97eb738f9d270d8fbedc2909df380851343` 的 `local-0e4bb97/report.json` 为 PASS，sourceStable=true，输入/最终摘要同为 `1842ba2323647ace020943db5711b2a9c8d7cca44ce44e4affb606ce3faf5acc`（1168 files），nativeIntegration=REQUIRED。该记录不能转用于本轮新 HEAD。 |
+| Hosted CI / 合并 | `0e4bb97`：CI run `35577430465` attempt 1 的 quality/quality-gate SUCCESS；C++ run `35577430464` SUCCESS；Codacy ACTION_REQUIRED：10 项函数复杂度/长度、2 项 Markdown 空行。本轮按准备、发布、ACK 与回滚边界拆分函数并移除多余空行，不降低检查阈值，待新 HEAD 重跑。PR #139 仍 OPEN/Draft；新 HEAD 必须重新核验。 |
+| G0 | **UNVERIFIED**。基础质量或测试源码不能升级为 native/runtime 验收。 |
+
+合并前必须在同一固定候选实际执行 coordinator、store、runtime、transport、dispatch/tracker 单元与回归，并执行 `MainNavigationConsumesPreparedSnapshotBeforeCommit`、`MainNavigationRoutingIsolatedAcrossProfiles` 及既有导航/redirect/Worker/SharedWorker/Service Worker/missing endpoint/BLOCK/LoadingPredictor/frame prefetch 矩阵。零匹配、非零退出、不同候选均失败。之后冻结最终 HEAD，重跑 full quality（sourceStable 与源码摘要一致）、hosted 必需 CI 和独立 PRO 复审。**存在上述欠账时 PR 保持 Draft，不开启可导致提前合并的 auto-merge。**
+
+本轮后续顺序：
+
+1. 在独立候选中完成编译与上述全部必需回归，绑定 Chromium/V8 patched tree、GN args、二进制摘要和真实退出码；失败先修复，G0 不提前升级。
+2. 更新本 PR 文档并冻结最终 HEAD，取得 local full quality、hosted 必需 CI 与独立 PRO review-clear 后 squash merge #139；回读实际 MERGED 和合并提交 S 的 develop push CI。
+3. 仅在 S 的 develop CI 通过后做一次上游晋升：刷新 upstream/main，按分支指南安全同步 main/develop；从最终 develop 建晋升分支，三个 README 与 upstream/main 保持一致。个人 main 晋升 PR 使用 merge commit；核验 main push CI 后再提 upstream/main PR，分别审查 public diff、最终 HEAD quality/CI 和实际合并状态。
+4. 本轮完成上述晋升前，不开始下一依赖功能阶段。后续仍从最新 develop 新建 `codex/*` 隔离 worktree，一阶段一 PR，并在同 PR 更新 plan/Handoff。
+
+## 历史核验记录（2026-09-20，非当前门禁结论）
+
 状态日期：2026-09-21（Asia/Shanghai）。本页是从当前 `develop` 继续实施的入口；[交接与精确证据](handoff-20260920.zh-CN.md)记录本次基线和待验证事项，[A01–A118 / PF01–PF13 验收追踪表](acceptance-tracker.zh-CN.md)是逐行覆盖与证据的唯一台账，[P0 历史实现记录](p0-implementation.zh-CN.md)保留切片过程。行为、验收项和 G0–G3 门槛以[冻结规范修订 4](spec.zh-CN.md)及[冻结清单](freeze.json)为准；本文不修改合同。分支、PR、Review 与最终 HEAD 门禁按[DEV CI 与上游推进指南](../../development/ci.zh-CN.md)执行。
 
 ## 当前判断与交付边界
@@ -23,7 +52,7 @@ G0 保持 **UNVERIFIED**，G1–G3 **未达到**。早于补丁 `0150` 的固定
 | 顺序 | 对应单元 | 下一交付和前置条件 | 完成证据 |
 | --- | --- | --- | --- |
 | 1 | P0 验证底座 | 旧 149-patch Chromium 候选已因 `IdentityGenerationState` style 编译错误退出；在同一固定 Chromium 基线重放 PR #135 最终的 151-patch 序列（含 `0150`、`0151`），再关闭编译和真实入口回归欠账，评估固定源码、工具链和 GN 参数下的 HTTP 代理/拒绝路径。发现失败先修复对应最小源码或环境问题。 | 记录源码树、补丁、GN args、目标、退出码、测试名、过滤器和原始日志；按规范第 12 节逐项判 G0，不能只凭 GN 成功或窄范围 prefetch PASS 判通过。 |
-| 2 | P1–P2 与 P4–P5 的最小协调闭环 | 在现有 Profile/StoragePartition 所有权基础上，定义并接入生产 coordinator：可信当前 host → 普通 `SetSiteProxy` 的网站协议组选择（DEV/Alpha 的三策略、ALLOW/BLOCK 为独立调试规则，按冻结合同协调）→ identity、selection、base-proxy 等真实代次 → 原子持久化与恢复 → committed snapshot 发布到所属 NetworkContext → 请求派发/取消的执行点 ACK → UI 状态。先以受控本地 HTTP fixture 验证，Xray 依赖留在后续单元。 | 两个普通 Profile/多个 partition 无串用；超时和取消不接受迟到结果；重启只恢复已提交状态；退出账户不直连回退；BLOCK 先装本地屏障，按流终止且失败保留；保存失败不显示“已保存”；关闭恢复原有代理设置。记录 G/S/E/identity/base-proxy 精确版本和 ACK。 |
+| 2 | P1–P2 与 P4–P5 的最小协调闭环 | 在现有 Profile/StoragePartition 所有权基础上，定义并接入生产 coordinator：可信当前 host → 普通 `SetSiteProxy` 的网站协议组选择（DEV/Alpha 的三策略、ALLOW/BLOCK 为独立调试规则，按冻结合同协调）→ identity、selection、base-proxy 等真实代次 → PREPARED journal → candidate snapshot 发布到内存与所属 NetworkContext → 请求派发/取消的执行点 ACK → 原子 durable commit 与恢复 → UI 状态。先以受控本地 HTTP fixture 验证，Xray 依赖留在后续单元。 | 两个普通 Profile/多个 partition 无串用；超时和取消不接受迟到结果；重启只恢复已提交状态；退出账户不直连回退；BLOCK 先装本地屏障，按流终止且失败保留；保存失败不显示“已保存”；关闭恢复原有代理设置。记录 G/S/E/identity/base-proxy 精确版本和 ACK。 |
 | 3 | P3 + P3a | 在协调闭环上接固定 Xray 资产与 Profile 级 HTTP 入口，打通受控服务端的 VLESS + RAW(TCP) + REALITY + XTLS Vision；接入自动登记、签名配置、准入、租约、健康探测、稳定分配和确认故障后的切换。 | 实际 HTTP→REALITY 往返、凭据隔离、超时/撤销/入口故障不直连、节点保持与切换记录；服务和部署参数版本绑定。SOCKS5 与兼容出站在 P7 完整验收。 |
 | 4 | P3c–P3d | 主链路稳定后实现服务端实际双向字节计量、幂等账本与额度预算；执行物理 VPS/账户限速、公平分配与并发准入。跨节点账本和租约先用多节点 fixture 验证，部署第二个执行节点前完成真实联调。 | 对账、重试/乱序/断线/周期重置、额度耗尽在途截断、Vision/splice 快路径计量与预算实测，记录误差和容量上限；UI 秒级变化不能代替服务端对账。 |
 | 5 | P3b + P4–P6 完整面 | 补精确正常/失败目标采集与全部可信请求归属、真实终止句柄；三策略联合发布和版本化撤销；提供 `SetSiteProxy`、工具栏/管理页、状态/用量与 DEV/Alpha 调试视图，并验证四渠道原生接口隔离。 | 导航、子资源、下载/流、frame/Worker 等逐入口覆盖报告；BLOCK/ALLOW 的旧代次和旧 ACK 竞争；离线关闭/阻断仍可操作；开关与连接状态分离；Beta/Release 无调试管理接口。 |
