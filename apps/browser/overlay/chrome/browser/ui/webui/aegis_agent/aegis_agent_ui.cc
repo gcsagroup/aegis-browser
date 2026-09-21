@@ -153,6 +153,41 @@ void AddStrings(content::WebUIDataSource* source) {
       "kept for retry. Re-enter the key if one is needed.",
       "暂时无法确认保存结果，已保留非敏感输入供重试。如需密钥，请重新输入。",
       "暫時無法確認儲存結果，已保留非敏感輸入供重試。如需金鑰，請重新輸入。");
+  add("typesafeSettings", "Goal decision · TypeSafe Jev",
+      "目标判断 · TypeSafe Jev", "目標判斷 · TypeSafe Jev");
+  add("typesafeDisclosure",
+      "Optional. When enabled, Aegis sends only the goal you type to TypeSafe "
+      "to choose a fixed workflow and whether web search is needed. It does "
+      "this even when your main AI model runs locally. Aegis does not "
+      "automatically attach page content, history, cookies, or model credentials.",
+      "可选。启用后，即使主要 AI 模型在本机运行，Aegis 也会把你输入的目标发送给 TypeSafe，用于选择固定工作流并判断是否需要网页搜索。Aegis 不会自动附加页面内容、历史记录、Cookie 或模型凭据。",
+      "選填。啟用後，即使主要 AI 模型在本機執行，Aegis 也會把你輸入的目標傳送給 TypeSafe，用於選擇固定工作流程並判斷是否需要網頁搜尋。Aegis 不會自動附加頁面內容、歷史記錄、Cookie 或模型憑證。");
+  add("typesafeEnable", "Use TypeSafe Jev for goal decisions",
+      "使用 TypeSafe Jev 判断目标", "使用 TypeSafe Jev 判斷目標");
+  add("typesafeApiKeyLabel", "TypeSafe API key", "TypeSafe API 密钥",
+      "TypeSafe API 金鑰");
+  add("typesafeDisabled", "Off", "已关闭", "已關閉");
+  add("typesafeConfigured", "Key saved · off", "密钥已保存 · 已关闭",
+      "金鑰已儲存 · 已關閉");
+  add("typesafeEnabled", "On · goal is sent to TypeSafe",
+      "已开启 · 目标会发送给 TypeSafe", "已開啟 · 目標會傳送給 TypeSafe");
+  add("typesafeSave", "Save TypeSafe settings", "保存 TypeSafe 设置",
+      "儲存 TypeSafe 設定");
+  add("typesafeClearKey", "Clear key and turn off", "清除密钥并关闭",
+      "清除金鑰並關閉");
+  add("typesafeSaved", "TypeSafe settings saved", "TypeSafe 设置已保存",
+      "TypeSafe 設定已儲存");
+  add("typesafeCleared", "TypeSafe key cleared", "TypeSafe 密钥已清除",
+      "TypeSafe 金鑰已清除");
+  add("typesafeStorageError",
+      "The browser could not securely save the TypeSafe key. The key was not "
+      "saved; please try again.",
+      "浏览器无法安全保存 TypeSafe 密钥。密钥未保存，请重试。",
+      "瀏覽器無法安全儲存 TypeSafe 金鑰。金鑰未儲存，請重試。");
+  add("typesafeSaveError",
+      "TypeSafe settings were not saved. Check the key and try again.",
+      "TypeSafe 设置未保存，请检查密钥后重试。",
+      "TypeSafe 設定未儲存，請檢查金鑰後重試。");
   add("modelConnectionError",
       "Aegis could not reach the model service. Make sure it is running, then "
       "try Detect models again.",

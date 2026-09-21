@@ -18,8 +18,10 @@ let snapshot: TaskSnapshot|null = null;
 let selectedWorkflow: Workflow|null = null;
 let busy = false;
 let modelBusy = false;
+let typesafeBusy = false;
 let goalUserEdited = false;
 let modelFormInitialized = false;
+let typesafeEnabledDirty = false;
 let autoRunTaskId = '';
 let autoRunInFlight = false;
 let activeView: 'task'|'automation' = 'task';
@@ -487,6 +489,23 @@ function renderModel(next: TaskSnapshot) {
   element<HTMLButtonElement>('save-model-button').disabled = modelBusy;
 }
 
+function renderTypeSafe(next: TaskSnapshot) {
+  const enabled = element<HTMLInputElement>('typesafe-enabled');
+  if (!typesafeEnabledDirty) {
+    enabled.checked = next.typesafeEnabled;
+  }
+  element('typesafe-state').textContent = next.typesafeEnabled ?
+      loadTimeData.getString('typesafeEnabled') :
+      next.typesafeKeyConfigured ?
+      loadTimeData.getString('typesafeConfigured') :
+      loadTimeData.getString('typesafeDisabled');
+  enabled.disabled = typesafeBusy;
+  element<HTMLInputElement>('typesafe-api-key').disabled = typesafeBusy;
+  element<HTMLButtonElement>('save-typesafe-button').disabled = typesafeBusy;
+  element<HTMLButtonElement>('clear-typesafe-key-button').disabled =
+      typesafeBusy || !next.typesafeKeyConfigured;
+}
+
 function friendlyError(error: string, hasPlan: boolean): string {
   if (!error) {
     return '';
@@ -631,6 +650,7 @@ function render(next: TaskSnapshot) {
       busy || !next.modelConfigured || !automationGoal.value.trim();
   renderView();
   renderModel(next);
+  renderTypeSafe(next);
   renderPlan(next.plan || null, Boolean(next.taskId), next.state);
   renderResult(next);
   renderTimeline(next);
@@ -751,6 +771,12 @@ function initializeLabels() {
   text('api-key-label', 'apiKeyLabel');
   text('detect-models-button', 'detectModels');
   text('save-model-button', 'saveModel');
+  text('typesafe-settings-label', 'typesafeSettings');
+  text('typesafe-disclosure', 'typesafeDisclosure');
+  text('typesafe-enabled-label', 'typesafeEnable');
+  text('typesafe-api-key-label', 'typesafeApiKeyLabel');
+  text('clear-typesafe-key-button', 'typesafeClearKey');
+  text('save-typesafe-button', 'typesafeSave');
   text('approval-title', 'waitingApproval');
   text('approval-arguments-label', 'exactArguments');
   text('approval-fingerprint-label', 'actionFingerprint');
@@ -969,6 +995,53 @@ async function saveModel() {
   }
 }
 
+async function saveTypeSafe(clearApiKey = false) {
+  if (typesafeBusy) {
+    return;
+  }
+  const requestedEnabled = clearApiKey ? false :
+      element<HTMLInputElement>('typesafe-enabled').checked;
+  typesafeBusy = true;
+  element('typesafe-feedback').textContent = '';
+  if (snapshot) {
+    render(snapshot);
+  }
+  try {
+    const response = await proxy.handler.configureTypeSafe(
+        requestedEnabled,
+        clearApiKey ? '' :
+            element<HTMLInputElement>('typesafe-api-key').value.trim(),
+        clearApiKey);
+    const saved = !response.snapshot.lastError &&
+        response.snapshot.typesafeEnabled === requestedEnabled &&
+        (!clearApiKey || !response.snapshot.typesafeKeyConfigured);
+    if (saved) {
+      typesafeEnabledDirty = false;
+    }
+    render(response.snapshot);
+    if (saved) {
+      element('typesafe-feedback').textContent = loadTimeData.getString(
+          clearApiKey ? 'typesafeCleared' : 'typesafeSaved');
+    } else {
+      const storageFailure = response.snapshot.lastError.includes('credential') ||
+          response.snapshot.lastError.includes('encrypt');
+      element('typesafe-feedback').textContent = loadTimeData.getString(
+          storageFailure ? 'typesafeStorageError' : 'typesafeSaveError');
+      element<HTMLDetailsElement>('typesafe-details').open = true;
+    }
+  } catch {
+    element('typesafe-feedback').textContent =
+        loadTimeData.getString('typesafeSaveError');
+    element<HTMLDetailsElement>('typesafe-details').open = true;
+  } finally {
+    element<HTMLInputElement>('typesafe-api-key').value = '';
+    typesafeBusy = false;
+    if (snapshot) {
+      render(snapshot);
+    }
+  }
+}
+
 function bindActions() {
   element('plan-button').addEventListener('click', () => withBusy(async () => {
     const goal = element<HTMLTextAreaElement>('goal').value.trim();
@@ -1003,6 +1076,13 @@ function bindActions() {
   element('model-base-url').addEventListener('input', resetDetectedModels);
   element('model-api-key').addEventListener('input', resetDetectedModels);
   element('save-model-button').addEventListener('click', saveModel);
+  element('save-typesafe-button').addEventListener(
+      'click', () => saveTypeSafe(false));
+  element('clear-typesafe-key-button').addEventListener(
+      'click', () => saveTypeSafe(true));
+  element('typesafe-enabled').addEventListener('change', () => {
+    typesafeEnabledDirty = true;
+  });
   element('pause-button').addEventListener('click', () => withBusy(() =>
     proxy.handler.pause(snapshot?.taskId || '')));
   element('resume-button').addEventListener('click', () => withBusy(() =>
