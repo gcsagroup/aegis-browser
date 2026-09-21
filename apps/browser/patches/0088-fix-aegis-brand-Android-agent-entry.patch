@@ -1,7 +1,7 @@
-From 430f296e93fd3a60863b4621af955aeb63607224 Mon Sep 17 00:00:00 2001
+From a255d515a019c679b13981bba7581e304a639ea7 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:21:32 +0800
-Subject: [PATCH 88/90] fix(aegis): brand Android agent entry
+Subject: [PATCH] fix(aegis): brand Android agent entry
 
 ---
  chrome/android/java/res/layout/aegis_agent_ntp_card.xml | 4 +---

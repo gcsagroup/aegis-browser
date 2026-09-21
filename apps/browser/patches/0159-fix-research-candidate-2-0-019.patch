@@ -1,0 +1,1737 @@
+From 2ec1d5ffa1ef4d6ef8defe3ea4d62bdacf702a62 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 15:25:45 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E5=80=99=E9=80=89=E6=A3=80=E6=9F=A5=EF=BC=8C?=
+ =?UTF-8?q?=E6=9E=84=E5=BB=BA019?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ .../aegis/agent/aegis_agent_service.cc        | 282 ++++++++++++++++++
+ .../browser/aegis/agent/aegis_agent_service.h |  26 ++
+ .../agent/aegis_agent_service_unittest.cc     | 122 ++++++++
+ chrome/browser/aegis/agent/agent_research.cc  | 188 ++++++++++++
+ chrome/browser/aegis/agent/agent_research.h   |  26 ++
+ .../aegis/agent/agent_research_unittest.cc    | 111 +++++++
+ .../browser/aegis/agent/agent_task_store.cc   |  83 +++++-
+ chrome/browser/aegis/agent/agent_task_store.h |  15 +-
+ .../aegis/agent/agent_task_store_unittest.cc  |  66 +++-
+ .../browser/resources/aegis_agent/agent.css   |  23 ++
+ .../browser/resources/aegis_agent/agent.html  |   7 +
+ chrome/browser/resources/aegis_agent/agent.ts | 163 ++++++++++
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |  25 ++
+ .../aegis_agent/aegis_agent_page_handler.cc   | 114 +++++++
+ .../aegis_agent/aegis_agent_page_handler.h    |  11 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  72 +++++
+ .../ui/webui/help/aegis_github_update.h       |   6 +-
+ 18 files changed, 1327 insertions(+), 16 deletions(-)
+ create mode 100644 chrome/browser/aegis/agent/agent_research.cc
+ create mode 100644 chrome/browser/aegis/agent/agent_research.h
+ create mode 100644 chrome/browser/aegis/agent/agent_research_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index d53733123f..97472fb47e 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -30,6 +30,8 @@ source_set("agent_core") {
+     "agent/agent_planner.h",
+     "agent/agent_policy_broker.cc",
+     "agent/agent_policy_broker.h",
++    "agent/agent_research.cc",
++    "agent/agent_research.h",
+     "agent/agent_result_verifier.cc",
+     "agent/agent_result_verifier.h",
+     "agent/agent_service_observer.h",
+@@ -309,6 +311,7 @@ test("aegis_agent_core_unittests") {
+   sources = [
+     "agent/agent_core_unittest.cc",
+     "agent/agent_execution_unittest.cc",
++    "agent/agent_research_unittest.cc",
+     "agent/agent_model_protocol_unittest.cc",
+     "agent/agent_monitor_summary_unittest.cc",
+     "agent/agent_planner_unittest.cc",
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 4332d78a9d..0b71cac159 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -31,6 +31,7 @@
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/agent/agent_model_client.h"
+ #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
++#include "chrome/browser/aegis/agent/agent_research.h"
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
+ #include "chrome/browser/aegis/model_provider_policy.h"
+ #include "chrome/browser/browser_process.h"
+@@ -2638,6 +2639,26 @@ void AegisAgentService::FinishRuntime(
+                                           it->second->evidence_history,
+                                           it->second->translation_review_passed);
+   }
++  const auto* finished_task = GetTask(task_id);
++  const auto selected = research_selections_.find(task_id);
++  if (ok && completion && finished_task &&
++      selected != research_selections_.end()) {
++    auto record = BuildAgentResearchRecord(*finished_task, *completion,
++                                           it->second->evidence_history,
++                                           selected->second);
++    if (record) {
++      if (research_results_.size() >= 20u &&
++          !research_results_.contains(task_id)) {
++        auto oldest = std::ranges::min_element(
++            research_results_, {}, [](const auto& entry) {
++              return *entry.second.FindString("created_ms");
++            });
++        research_results_.erase(oldest);
++      }
++      research_results_.insert_or_assign(task_id, std::move(*record));
++    }
++  }
++  research_selections_.erase(task_id);
+   RunCallback callback = std::move(it->second->callback);
+   executions_.erase(it);
+   // 回调先失效，再释放Actor；StopTask可能同步通知观察者。
+@@ -2672,6 +2693,267 @@ void AegisAgentService::FinishRuntime(
+   }
+ }
+ 
++const base::DictValue* AegisAgentService::GetResearchRecord(
++    const std::string& id) const {
++  if (auto it = research_results_.find(id); it != research_results_.end()) {
++    return &it->second;
++  }
++  if (auto it = saved_research_.find(id); it != saved_research_.end()) {
++    return &it->second;
++  }
++  return nullptr;
++}
++
++void AegisAgentService::ReviewResearchSource(const std::string& id,
++                                             size_t source_index,
++                                             int32_t tab_id,
++                                             ResearchWriteCallback callback) {
++  const auto* record = GetResearchRecord(id);
++  const auto* sources = record ? record->FindList("sources") : nullptr;
++  auto* tab = tabs::TabHandle(tab_id).Get();
++  if (!IsEnabled() || !sources || source_index >= sources->size() || !tab ||
++      tab->GetProfile() != profile_) {
++    std::move(callback).Run("unavailable");
++    return;
++  }
++  const auto& source = (*sources)[source_index].GetDict();
++  GURL expected(*source.FindString("url"));
++  GURL::Replacements without_fragment;
++  without_fragment.ClearRef();
++  if (tab->GetURL().ReplaceComponents(without_fragment) !=
++      expected.ReplaceComponents(without_fragment)) {
++    std::move(callback).Run("unavailable");
++    return;
++  }
++  const std::string hash = *source.FindString("content_hash");
++  if (source.FindBool("available") != true || hash.empty()) {
++    std::move(callback).Run("unavailable");
++    return;
++  }
++  const bool has_position = !source.FindString("excerpt")->empty();
++  AgentTaskScope scope;
++  scope.allowed_origins = {url::Origin::Create(tab->GetURL())};
++  scope.allowed_tab_ids = {tab_id};
++  scope.allowed_tools = {"page.observe"};
++  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
++  scope.budgets.max_tabs = 1;
++  scope.budgets.max_tool_calls = 1;
++  scope.budgets.max_model_calls = 1;
++  scope.budgets.max_network_requests = 1;
++  scope.budgets.max_duration = base::Seconds(30);
++  scope.restrict_to_current_page = true;
++  // 这条回查只使用浏览器观察和本地指纹比较，不向模型发送摘录。
++  scope.model_destination.provider = "aegis-browser";
++  scope.model_destination.model = "source-verifier";
++  auto* task =
++      CreateTask("核对研究来源是否变化", AgentMode::kAct, std::move(scope));
++  if (!task || !BeginPlanning(task->id())) {
++    std::move(callback).Run("unavailable");
++    return;
++  }
++  const std::string task_id = task->id();
++  AgentModelEvent plan;
++  plan.type = AgentModelEventType::kToolCall;
++  plan.tool_name = "agent.submit_plan";
++  plan.arguments.Set("schema_version", kAgentSchemaVersion);
++  plan.arguments.Set("summary", task->goal());
++  base::ListValue steps;
++  base::DictValue step;
++  step.Set("id", "verify-source");
++  step.Set("title", "重新读取来源并核对正文");
++  step.Set("tool", "page.observe");
++  steps.Append(std::move(step));
++  plan.arguments.Set("steps", std::move(steps));
++  std::string error;
++  if (!AcceptModelPlan(task_id, plan, &error) || !GrantTaskConsent(task_id)) {
++    Transition(task_id, AgentTaskState::kFailed, "来源回查未取得授权");
++    std::move(callback).Run("unavailable");
++    return;
++  }
++  AgentToolCall call;
++  call.action_id = AgentTask::GenerateTaskId();
++  call.tool_name = "page.observe";
++  call.arguments.Set("tab_id", tab_id);
++  call.committed_url = tab->GetURL();
++  ExecuteTool(
++      task_id, call,
++      base::BindOnce(
++          [](base::WeakPtr<AegisAgentService> service, std::string task_id,
++             std::string expected_hash, bool has_position,
++             ResearchWriteCallback done, AgentToolResult result) {
++            auto* task = service ? service->GetTask(task_id) : nullptr;
++            if (!task || task->state() != AgentTaskState::kRunning) {
++              std::move(done).Run("unavailable");
++              return;
++            }
++            const auto actual = AgentResearchContentHash(result);
++            if (!actual) {
++              service->Transition(task_id, AgentTaskState::kFailed,
++                                  "未取得可比较的完整正文");
++              service->actor_bridge_.StopTask(task_id, false);
++              std::move(done).Run("unavailable");
++              return;
++            }
++            const bool matches =
++                !expected_hash.empty() && *actual == expected_hash;
++            service->Transition(task_id, AgentTaskState::kVerifying,
++                                "已在浏览器内比较来源正文");
++            if (!service->CompleteTask(task_id)) {
++              std::move(done).Run("unavailable");
++              return;
++            }
++            std::move(done).Run(
++                matches ? (has_position ? "matched" : "position_unavailable")
++                        : "changed");
++          },
++          weak_ptr_factory_.GetWeakPtr(), task_id, hash, has_position,
++          std::move(callback)));
++}
++
++void AegisAgentService::SaveResearch(const std::string& task_id,
++                                     ResearchWriteCallback callback) {
++  const auto it = research_results_.find(task_id);
++  if (!IsEnabled() || it == research_results_.end() ||
++      !IsValidAgentResearchRecord(it->second)) {
++    std::move(callback).Run("research_unavailable");
++    return;
++  }
++  if (profile_->IsOffTheRecord()) {
++    if (saved_research_.size() >= 20u && !saved_research_.contains(task_id)) {
++      std::move(callback).Run("capacity_reached");
++      return;
++    }
++    saved_research_.insert_or_assign(task_id, it->second.Clone());
++    std::move(callback).Run(std::string());
++    return;
++  }
++  const auto json = base::WriteJson(it->second);
++  if (!json || !g_browser_process || !g_browser_process->os_crypt_async()) {
++    std::move(callback).Run("secure_storage_unavailable");
++    return;
++  }
++  g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
++      &AegisAgentService::OnResearchSaveEncryptorReady,
++      weak_ptr_factory_.GetWeakPtr(), task_id, *json, std::move(callback)));
++}
++
++void AegisAgentService::OnResearchSaveEncryptorReady(
++    std::string id,
++    std::string plaintext,
++    ResearchWriteCallback callback,
++    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
++  std::string ciphertext;
++  if (!IsEnabled() || !encryptor || !encryptor->IsEncryptionAvailable() ||
++      !encryptor->EncryptString(plaintext, &ciphertext)) {
++    std::move(callback).Run("secure_storage_unavailable");
++    return;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::SaveResearch)
++      .WithArgs(StoredAgentResearch{.id = std::move(id),
++                                    .ciphertext = std::move(ciphertext),
++                                    .saved_at = base::Time::Now()})
++      .Then(base::BindOnce(
++          [](ResearchWriteCallback done, bool ok) {
++            std::move(done).Run(ok ? std::string()
++                                   : "storage_write_failed_or_full");
++          },
++          std::move(callback)));
++}
++
++void AegisAgentService::LoadSavedResearch(ResearchListCallback callback) {
++  if (!IsEnabled()) {
++    std::move(callback).Run(base::ListValue(), "research_unavailable");
++    return;
++  }
++  if (profile_->IsOffTheRecord()) {
++    base::ListValue values;
++    for (const auto& [id, record] : saved_research_) {
++      values.Append(record.Clone());
++    }
++    std::move(callback).Run(std::move(values), std::string());
++    return;
++  }
++  if (!g_browser_process || !g_browser_process->os_crypt_async()) {
++    std::move(callback).Run(base::ListValue(), "secure_storage_unavailable");
++    return;
++  }
++  g_browser_process->os_crypt_async()->GetInstance(
++      base::BindOnce(&AegisAgentService::OnResearchLoadEncryptorReady,
++                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
++}
++
++void AegisAgentService::OnResearchLoadEncryptorReady(
++    ResearchListCallback callback,
++    scoped_refptr<os_crypt_async::Encryptor> encryptor) {
++  if (!IsEnabled() || !encryptor || !encryptor->IsDecryptionAvailable()) {
++    std::move(callback).Run(base::ListValue(), "secure_storage_unavailable");
++    return;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::LoadResearch)
++      .Then(base::BindOnce(&AegisAgentService::OnResearchLoaded,
++                           weak_ptr_factory_.GetWeakPtr(), std::move(encryptor),
++                           std::move(callback)));
++}
++
++void AegisAgentService::OnResearchLoaded(
++    scoped_refptr<os_crypt_async::Encryptor> encryptor,
++    ResearchListCallback callback,
++    std::optional<std::vector<StoredAgentResearch>> records) {
++  base::ListValue values;
++  saved_research_.clear();
++  if (!IsEnabled()) {
++    std::move(callback).Run(std::move(values), "research_unavailable");
++    return;
++  }
++  if (!records) {
++    std::move(callback).Run(std::move(values), "stored_research_unreadable");
++    return;
++  }
++  for (const auto& stored : *records) {
++    std::string plaintext;
++    if (!encryptor->DecryptString(stored.ciphertext, &plaintext) ||
++        plaintext.size() > 65536u) {
++      saved_research_.clear();
++      std::move(callback).Run(base::ListValue(), "stored_research_unreadable");
++      return;
++    }
++    auto record = base::JSONReader::ReadDict(plaintext, base::JSON_PARSE_RFC);
++    if (!record || !IsValidAgentResearchRecord(*record) ||
++        *record->FindString("id") != stored.id) {
++      saved_research_.clear();
++      std::move(callback).Run(base::ListValue(), "stored_research_unreadable");
++      return;
++    }
++    values.Append(record->Clone());
++    saved_research_.insert_or_assign(stored.id, std::move(*record));
++  }
++  std::move(callback).Run(std::move(values), std::string());
++}
++
++void AegisAgentService::DeleteSavedResearch(const std::string& id,
++                                            ResearchWriteCallback callback) {
++  if (!IsEnabled() || !saved_research_.contains(id)) {
++    std::move(callback).Run("research_unavailable");
++    return;
++  }
++  if (profile_->IsOffTheRecord()) {
++    saved_research_.erase(id);
++    std::move(callback).Run(std::string());
++    return;
++  }
++  task_store_.AsyncCall(&AgentTaskStore::DeleteResearch)
++      .WithArgs(id)
++      .Then(base::BindOnce(
++          [](base::WeakPtr<AegisAgentService> service, std::string id,
++             ResearchWriteCallback done, bool ok) {
++            if (service && ok) {
++              service->saved_research_.erase(id);
++            }
++            std::move(done).Run(ok ? std::string() : "storage_write_failed");
++          },
++          weak_ptr_factory_.GetWeakPtr(), id, std::move(callback)));
++}
++
+ const AgentCompletionSummary* AegisAgentService::GetCompletionSummary(
+     const std::string& task_id) const {
+   const auto it = completion_summaries_.find(task_id);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 208a4b32a9..b711432da9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -108,6 +108,18 @@ class AegisAgentService : public KeyedService {
+   void RequestPlan(const std::string& task_id, PlanReadyCallback callback);
+   bool SetPlanReady(const std::string& task_id);
+   const AgentTaskPlan* GetPlan(const std::string& task_id) const;
++  using ResearchWriteCallback = base::OnceCallback<void(std::string)>;
++  using ResearchListCallback =
++      base::OnceCallback<void(base::ListValue, std::string)>;
++  void SaveResearch(const std::string& task_id, ResearchWriteCallback callback);
++  void LoadSavedResearch(ResearchListCallback callback);
++  void ReviewResearchSource(const std::string& id,
++                            size_t source_index,
++                            int32_t tab_id,
++                            ResearchWriteCallback callback);
++  void DeleteSavedResearch(const std::string& id,
++                           ResearchWriteCallback callback);
++  const base::DictValue* GetResearchRecord(const std::string& id) const;
+   const AgentCompletionSummary* GetCompletionSummary(
+       const std::string& task_id) const;
+   bool GrantTaskConsent(const std::string& task_id);
+@@ -231,6 +243,18 @@ class AegisAgentService : public KeyedService {
+   void ExecuteMonitorTool(AgentTask* task,
+                           const AgentToolCall& call,
+                           ToolResultCallback callback);
++  void OnResearchSaveEncryptorReady(
++      std::string id,
++      std::string plaintext,
++      ResearchWriteCallback callback,
++      scoped_refptr<os_crypt_async::Encryptor> encryptor);
++  void OnResearchLoadEncryptorReady(
++      ResearchListCallback callback,
++      scoped_refptr<os_crypt_async::Encryptor> encryptor);
++  void OnResearchLoaded(
++      scoped_refptr<os_crypt_async::Encryptor> encryptor,
++      ResearchListCallback callback,
++      std::optional<std::vector<StoredAgentResearch>> records);
+   void OnMonitorCreateEncryptorReady(
+       std::string task_id,
+       AgentToolCall call,
+@@ -370,6 +394,8 @@ class AegisAgentService : public KeyedService {
+   std::map<std::string, std::unique_ptr<AgentTask>> tasks_;
+   std::map<std::string, AgentTaskPlan> plans_;
+   std::map<std::string, AgentCompletionSummary> completion_summaries_;
++  std::map<std::string, base::DictValue> research_results_;
++  std::map<std::string, base::DictValue> saved_research_;
+   // 浏览器持有逐标签的完整地址，不能用另一个已选地址替换原来源。
+   std::map<std::string, std::map<int32_t, GURL>> research_selections_;
+   std::map<std::string, std::pair<size_t, int>> plan_progress_;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 7cba1b2fd8..8cc09e23ed 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -49,6 +49,36 @@ namespace aegis::agent {
+ 
+ class AegisAgentServiceTestPeer {
+  public:
++  static void SeedResearch(AegisAgentService* service, const std::string& id) {
++    base::DictValue record;
++    record.Set("version", 1);
++    record.Set("id", id);
++    record.Set("goal", "保存合成研究");
++    record.Set("summary", "research-private-canary-never-plaintext");
++    record.Set("outcome", "completed");
++    record.Set("created_ms", "1789530000000");
++    record.Set("unfinished", base::ListValue());
++    base::ListValue sources;
++    for (int i = 0; i < 3; ++i) {
++      sources.Append(
++          base::DictValue()
++              .Set("url", "https://fixture.example/" + base::NumberToString(i))
++              .Set("title", "来源")
++              .Set("excerpt", "合成文章正文")
++              .Set("content_hash", std::string(64, 'a'))
++              .Set("captured_ms", "1789530000000")
++              .Set("available", true));
++    }
++    record.Set("sources", std::move(sources));
++    service->research_results_.insert_or_assign(id, std::move(record));
++  }
++  static void WriteResearchCiphertext(AegisAgentService* service,
++                                      StoredAgentResearch record,
++                                      base::OnceCallback<void(bool)> callback) {
++    service->task_store_.AsyncCall(&AgentTaskStore::SaveResearch)
++        .WithArgs(std::move(record))
++        .Then(std::move(callback));
++  }
+   static void SeedClickObservation(AegisActorBridge* bridge,
+                                    const AgentDocumentRef& document) {
+     bridge->last_documents_["click-fixture"][7] = document;
+@@ -362,6 +392,98 @@ class AegisAgentServiceTest : public testing::Test {
+   TestingProfileManager profile_manager_;
+ };
+ 
++TEST_F(AegisAgentServiceTest, EncryptsResearchAndRestoresAfterRestart) {
++  {
++    AegisAgentService service(profile_);
++    FlushTaskStore(&service);
++    AegisAgentServiceTestPeer::SeedResearch(&service, "saved-fixture");
++    base::test::TestFuture<std::string> saved;
++    service.SaveResearch("saved-fixture", saved.GetCallback());
++    ASSERT_EQ(saved.Get(), "");
++    service.Shutdown();
++    FlushTaskStore(&service);
++  }
++  DrainTaskRunners();
++  std::string bytes;
++  ASSERT_TRUE(base::ReadFileToString(
++      profile_->GetPath().AppendASCII("AegisAgentTasks.sqlite"), &bytes));
++  EXPECT_EQ(bytes.find("research-private-canary-never-plaintext"),
++            std::string::npos);
++  {
++    AegisAgentService recovered(profile_);
++    FlushTaskStore(&recovered);
++    base::test::TestFuture<base::ListValue, std::string> loaded;
++    recovered.LoadSavedResearch(loaded.GetCallback());
++    ASSERT_EQ(loaded.Get<1>(), "");
++    ASSERT_EQ(loaded.Get<0>().size(), 1u);
++    EXPECT_EQ(*loaded.Get<0>().front().GetDict().FindString("summary"),
++              "research-private-canary-never-plaintext");
++    EXPECT_TRUE(recovered.GetResearchRecord("saved-fixture"));
++    base::test::TestFuture<std::string> removed;
++    recovered.DeleteSavedResearch("saved-fixture", removed.GetCallback());
++    EXPECT_EQ(removed.Get(), "");
++    EXPECT_FALSE(recovered.GetResearchRecord("saved-fixture"));
++    base::test::TestFuture<base::ListValue, std::string> empty;
++    recovered.LoadSavedResearch(empty.GetCallback());
++    EXPECT_EQ(empty.Get<1>(), "");
++    EXPECT_TRUE(empty.Get<0>().empty());
++    recovered.Shutdown();
++  }
++}
++
++TEST_F(AegisAgentServiceTest,
++       CorruptResearchFailsClosedAndDisabledServiceRejectsSave) {
++  AegisAgentService service(profile_);
++  FlushTaskStore(&service);
++  base::test::TestFuture<bool> written;
++  AegisAgentServiceTestPeer::WriteResearchCiphertext(
++      &service,
++      {.id = "corrupt",
++       .ciphertext = "not-encrypted",
++       .saved_at = base::Time::Now()},
++      written.GetCallback());
++  ASSERT_TRUE(written.Get());
++  base::test::TestFuture<base::ListValue, std::string> loaded;
++  service.LoadSavedResearch(loaded.GetCallback());
++  EXPECT_EQ(loaded.Get<1>(), "stored_research_unreadable");
++  EXPECT_TRUE(loaded.Get<0>().empty());
++  EXPECT_FALSE(service.GetResearchRecord("corrupt"));
++  AegisAgentServiceTestPeer::SeedResearch(&service, "disabled");
++  profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, false);
++  base::test::TestFuture<std::string> saved;
++  service.SaveResearch("disabled", saved.GetCallback());
++  EXPECT_EQ(saved.Get(), "research_unavailable");
++  service.Shutdown();
++}
++
++TEST_F(AegisAgentServiceTest, PrivateResearchIsSessionOnlyAndIsolated) {
++  Profile* otr = profile_->GetPrimaryOTRProfile(true);
++  ASSERT_TRUE(otr);
++  {
++    AegisAgentService service(otr);
++    FlushTaskStore(&service);
++    AegisAgentServiceTestPeer::SeedResearch(&service, "private");
++    base::test::TestFuture<std::string> saved;
++    service.SaveResearch("private", saved.GetCallback());
++    EXPECT_EQ(saved.Get(), "");
++    base::test::TestFuture<base::ListValue, std::string> loaded;
++    service.LoadSavedResearch(loaded.GetCallback());
++    EXPECT_EQ(loaded.Get<1>(), "");
++    EXPECT_EQ(loaded.Get<0>().size(), 1u);
++    EXPECT_FALSE(base::PathExists(
++        profile_->GetPath().AppendASCII("AegisAgentTasks.sqlite")));
++    service.Shutdown();
++  }
++  DrainTaskRunners();
++  AegisAgentService next(otr);
++  FlushTaskStore(&next);
++  base::test::TestFuture<base::ListValue, std::string> empty;
++  next.LoadSavedResearch(empty.GetCallback());
++  EXPECT_EQ(empty.Get<1>(), "");
++  EXPECT_TRUE(empty.Get<0>().empty());
++  next.Shutdown();
++}
++
+ TEST_F(AegisAgentServiceTest, ClickTargetUsesObservedAncestryAndDocument) {
+   auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+   auto& bridge = service->actor_bridge_for_testing();
+diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
+new file mode 100644
+index 0000000000..810944d23a
+--- /dev/null
++++ b/chrome/browser/aegis/agent/agent_research.cc
+@@ -0,0 +1,188 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/agent/agent_research.h"
++
++#include <algorithm>
++
++#include "base/containers/flat_set.h"
++#include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
++#include "base/time/time.h"
++#include "crypto/sha2.h"
++
++namespace aegis::agent {
++namespace {
++bool Text(const base::DictValue& value,
++          std::string_view key,
++          size_t limit,
++          bool allow_empty = false) {
++  const auto* text = value.FindString(key);
++  return text && (allow_empty || !text->empty()) && text->size() <= limit &&
++         base::IsStringUTF8(*text);
++}
++std::string Clip(std::string_view value, size_t limit) {
++  return std::string(base::TruncateUTF8ToByteSize(value, limit));
++}
++}  // namespace
++
++std::optional<std::string> AgentResearchContentHash(
++    const AgentToolResult& result) {
++  const auto* nodes = result.value.FindList("nodes");
++  if (!result.ok || result.value.FindBool("untrusted") != true || !nodes ||
++      result.value.FindBool("truncated") == true || nodes->size() > 512u) {
++    return std::nullopt;
++  }
++  std::string content;
++  for (const auto& node : *nodes) {
++    const auto* value = node.GetIfDict();
++    const auto* text = value ? value->FindString("text") : nullptr;
++    if (!text) {
++      continue;
++    }
++    const auto normalized = base::CollapseWhitespaceASCII(*text, true);
++    if (!normalized.empty()) {
++      content += normalized;
++      content += '\n';
++    }
++    if (content.size() > 128u * 1024u) {
++      return std::nullopt;
++    }
++  }
++  if (content.empty() || !base::IsStringUTF8(content)) {
++    return std::nullopt;
++  }
++  return base::HexEncode(crypto::SHA256HashString(content));
++}
++
++bool IsValidAgentResearchRecord(const base::DictValue& record) {
++  if (record.size() != 8u || record.FindInt("version") != 1 ||
++      !Text(record, "id", 64) || !Text(record, "goal", 4096) ||
++      !Text(record, "summary", 32768) || !Text(record, "created_ms", 24) ||
++      !Text(record, "outcome", 16)) {
++    return false;
++  }
++  const auto& outcome = *record.FindString("outcome");
++  if (outcome != "completed" && outcome != "partial") {
++    return false;
++  }
++  int64_t captured = 0;
++  if (!base::StringToInt64(*record.FindString("created_ms"), &captured) ||
++      captured <= 0) {
++    return false;
++  }
++  const auto* sources = record.FindList("sources");
++  const auto* unfinished = record.FindList("unfinished");
++  if (!sources || sources->size() < 3u || sources->size() > 10u ||
++      !unfinished || unfinished->size() > 20u ||
++      (outcome == "completed" && !unfinished->empty())) {
++    return false;
++  }
++  for (const auto& item : *unfinished) {
++    if (!item.is_string() || item.GetString().size() > 4096u ||
++        !base::IsStringUTF8(item.GetString())) {
++      return false;
++    }
++  }
++  base::flat_set<std::string> urls;
++  for (const auto& item : *sources) {
++    const auto* source = item.GetIfDict();
++    if (!source || source->size() != 6u || !Text(*source, "url", 8192) ||
++        !Text(*source, "title", 512, true) ||
++        !Text(*source, "excerpt", 512, true) ||
++        !Text(*source, "content_hash", 64, true) ||
++        !Text(*source, "captured_ms", 24, true) ||
++        !source->FindBool("available").has_value()) {
++      return false;
++    }
++    const GURL url(*source->FindString("url"));
++    if (!url.SchemeIsHTTPOrHTTPS() || url.has_username() ||
++        url.has_password() || !urls.insert(url.spec()).second) {
++      return false;
++    }
++    const auto& hash = *source->FindString("content_hash");
++    if (source->FindBool("available") == true) {
++      if (hash.size() != 64u ||
++          !std::ranges::all_of(hash,
++                               [](char c) { return base::IsHexDigit(c); }) ||
++          !base::StringToInt64(*source->FindString("captured_ms"), &captured) ||
++          captured <= 0) {
++        return false;
++      }
++    } else if (!hash.empty()) {
++      return false;
++    }
++  }
++  const auto json = base::WriteJson(record);
++  return json && json->size() <= 65536u;
++}
++
++std::optional<base::DictValue> BuildAgentResearchRecord(
++    const AgentTask& task,
++    const AgentCompletionSummary& completion,
++    base::span<const AgentExecutionEvidence> evidence,
++    const std::map<int32_t, GURL>& selected_urls) {
++  if (!task.scope().selected_pages_research ||
++      selected_urls.size() != task.scope().allowed_tab_ids.size()) {
++    return std::nullopt;
++  }
++  base::DictValue record;
++  record.Set("version", 1);
++  record.Set("id", task.id());
++  record.Set("goal", task.goal());
++  record.Set("summary", completion.summary);
++  record.Set("outcome", completion.outcome);
++  record.Set(
++      "created_ms",
++      base::NumberToString(base::Time::Now().InMillisecondsSinceUnixEpoch()));
++  base::ListValue unfinished;
++  for (const auto& item : completion.unfinished_items) {
++    unfinished.Append(item);
++  }
++  record.Set("unfinished", std::move(unfinished));
++  base::ListValue sources;
++  for (const auto& [id, url] : selected_urls) {
++    if (!task.scope().AllowsTab(id) || !task.scope().AllowsOrigin(url)) {
++      return std::nullopt;
++    }
++    base::DictValue source;
++    source.Set("url", url.spec());
++    source.Set("title", "");
++    source.Set("excerpt", "");
++    source.Set("content_hash", "");
++    source.Set("captured_ms", "");
++    source.Set("available", false);
++    for (const auto& item : evidence) {
++      if (item.tool_name != "page.observe" ||
++          item.result.value.FindInt("tab_id") != id) {
++        continue;
++      }
++      auto hash = AgentResearchContentHash(item.result);
++      const auto* captured = item.result.value.FindString("captured_at_ms");
++      if (!hash || !captured) {
++        continue;
++      }
++      source.Set("available", true);
++      source.Set("content_hash", *hash);
++      source.Set("captured_ms", *captured);
++      if (const auto* title = item.result.value.FindString("title")) {
++        source.Set("title", Clip(*title, 512));
++      }
++      for (const auto& node : *item.result.value.FindList("nodes")) {
++        const auto* value = node.GetIfDict();
++        const auto* text = value ? value->FindString("text") : nullptr;
++        if (text && text->size() >= 12u &&
++            value->FindBool("text_is_heading") != true) {
++          source.Set("excerpt", Clip(*text, 512));
++          break;
++        }
++      }
++    }
++    sources.Append(std::move(source));
++  }
++  record.Set("sources", std::move(sources));
++  if (!IsValidAgentResearchRecord(record)) {
++    return std::nullopt;
++  }
++  return record;
++}
++}  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_research.h b/chrome/browser/aegis/agent/agent_research.h
+new file mode 100644
+index 0000000000..d67abd10ad
+--- /dev/null
++++ b/chrome/browser/aegis/agent/agent_research.h
+@@ -0,0 +1,26 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_AGENT_AGENT_RESEARCH_H_
++#define CHROME_BROWSER_AEGIS_AGENT_AGENT_RESEARCH_H_
++
++#include <map>
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "base/containers/span.h"
++#include "base/values.h"
++#include "chrome/browser/aegis/agent/agent_execution.h"
++#include "chrome/browser/aegis/agent/agent_task.h"
++
++namespace aegis::agent {
++// 只比较规范化正文，不使用会在重载时变化的节点编号和文档令牌。
++std::optional<std::string> AgentResearchContentHash(
++    const AgentToolResult& result);
++std::optional<base::DictValue> BuildAgentResearchRecord(
++    const AgentTask& task,
++    const AgentCompletionSummary& completion,
++    base::span<const AgentExecutionEvidence> evidence,
++    const std::map<int32_t, GURL>& selected_urls);
++bool IsValidAgentResearchRecord(const base::DictValue& record);
++}  // namespace aegis::agent
++#endif
+diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
+new file mode 100644
+index 0000000000..729c62990e
+--- /dev/null
++++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
+@@ -0,0 +1,111 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/agent/agent_research.h"
++
++#include "base/strings/string_number_conversions.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/origin.h"
++
++namespace aegis::agent {
++namespace {
++AgentToolResult Observation(int id,
++                            std::string text = "测试文章的可核对完整正文") {
++  AgentToolResult result;
++  result.ok = true;
++  result.value.Set("tab_id", id);
++  result.value.Set("untrusted", true);
++  result.value.Set("captured_at_ms", "1789530000000");
++  result.value.Set("title", "测试文章");
++  result.value.Set(
++      "nodes",
++      base::ListValue().Append(
++          base::DictValue().Set("node_id", 1).Set("text", std::move(text))));
++  return result;
++}
++std::optional<base::DictValue> Record(bool partial = false) {
++  AgentTaskScope scope;
++  scope.selected_pages_research = true;
++  scope.allowed_tab_ids = {1, 2, 3};
++  scope.allowed_origins = {
++      url::Origin::Create(GURL("https://fixture.example/"))};
++  scope.allowed_tools = {"page.observe"};
++  std::map<int32_t, GURL> urls;
++  std::vector<AgentExecutionEvidence> evidence;
++  for (int id : scope.allowed_tab_ids) {
++    urls.emplace(id,
++                 GURL("https://fixture.example/" + base::NumberToString(id)));
++    if (partial && id == 3) {
++      continue;
++    }
++    evidence.push_back(
++        {.tool_name = "page.observe", .result = Observation(id)});
++  }
++  AgentTask task("research-fixture", "比较三篇文章", AgentMode::kAct, scope);
++  AgentCompletionSummary completion;
++  completion.outcome = partial ? "partial" : "completed";
++  completion.summary = "保留来源分歧";
++  if (partial) {
++    completion.unfinished_items = {"第三来源不可读"};
++  }
++  return BuildAgentResearchRecord(task, completion, evidence, urls);
++}
++TEST(AegisAgentResearchTest, HashIgnoresReloadIdsButDetectsChangedText) {
++  auto before = Observation(1, "正文  一\n第二行");
++  auto after = Observation(42, "正文 一 第二行");
++  after.value.Set("document_id", "new-document");
++  EXPECT_EQ(AgentResearchContentHash(before), AgentResearchContentHash(after));
++  EXPECT_NE(AgentResearchContentHash(before),
++            AgentResearchContentHash(Observation(1, "正文有变化")));
++}
++TEST(AegisAgentResearchTest, RejectsEmptyIncompleteAndUntrustedFlagMissing) {
++  auto result = Observation(1, " ");
++  EXPECT_FALSE(AgentResearchContentHash(result));
++  result = Observation(1);
++  result.value.Set("truncated", true);
++  EXPECT_FALSE(AgentResearchContentHash(result));
++  result.value.Remove("truncated");
++  result.value.Remove("untrusted");
++  EXPECT_FALSE(AgentResearchContentHash(result));
++  result.value.Set("untrusted", true);
++  result.ok = false;
++  EXPECT_FALSE(AgentResearchContentHash(result));
++}
++TEST(AegisAgentResearchTest,
++     StoresBoundSourcesAndPreservesUnavailablePartialSource) {
++  auto complete = Record();
++  ASSERT_TRUE(complete);
++  ASSERT_EQ(complete->FindList("sources")->size(), 3u);
++  EXPECT_EQ(
++      complete->FindList("sources")->front().GetDict().FindBool("available"),
++      true);
++  auto partial = Record(true);
++  ASSERT_TRUE(partial);
++  EXPECT_EQ(
++      partial->FindList("sources")->back().GetDict().FindBool("available"),
++      false);
++  EXPECT_EQ(partial->FindList("unfinished")->size(), 1u);
++}
++TEST(AegisAgentResearchTest, RejectsExpandedSchemaDuplicatesAndInvalidHash) {
++  auto original = Record();
++  ASSERT_TRUE(original);
++  auto record = original->Clone();
++  record.Set("unexpected", "field");
++  EXPECT_FALSE(IsValidAgentResearchRecord(record));
++  record = original->Clone();
++  auto* sources = record.FindList("sources");
++  (*sources)[1].GetDict().Set("url", "https://fixture.example/1");
++  EXPECT_FALSE(IsValidAgentResearchRecord(record));
++  record = original->Clone();
++  record.FindList("sources")->front().GetDict().Set("content_hash",
++                                                    "not-a-hash");
++  EXPECT_FALSE(IsValidAgentResearchRecord(record));
++  record = original->Clone();
++  record.FindList("sources")->front().GetDict().Set(
++      "url", "https://user:secret@fixture.example/");
++  EXPECT_FALSE(IsValidAgentResearchRecord(record));
++  record = original->Clone();
++  record.FindList("unfinished")->Append("还未完成");
++  EXPECT_FALSE(IsValidAgentResearchRecord(record));
++}
++}  // namespace
++}  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
+index 5aceda6451..13c289ca4a 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.cc
++++ b/chrome/browser/aegis/agent/agent_task_store.cc
+@@ -19,11 +19,18 @@ namespace aegis::agent {
+ 
+ namespace {
+ 
+-// v8 增加持久化的摘要失败状态；旧程序不认识该状态，不能继续读取/覆写。
+-constexpr int kCurrentVersion = 8;
+-constexpr int kCompatibleVersion = 8;
++// v9 增加用户明确保存的加密研究记录，旧版本不能覆写该资料。
++constexpr int kCurrentVersion = 9;
++constexpr int kCompatibleVersion = 9;
+ constexpr size_t kMaxSummaryBytes = 4096;
+ 
++constexpr char kCreateResearchSql[] = R"(
++  CREATE TABLE IF NOT EXISTS agent_saved_research(
++    id TEXT PRIMARY KEY NOT NULL,
++    ciphertext BLOB NOT NULL,
++    saved_us INTEGER NOT NULL
++  ))";
++
+ constexpr char kCreateTasksSql[] = R"(
+   CREATE TABLE IF NOT EXISTS agent_tasks(
+     task_id TEXT PRIMARY KEY NOT NULL,
+@@ -145,7 +152,8 @@ bool AgentTaskStore::Initialize() {
+       !database_.Execute(kCreateTasksSql) ||
+       !database_.Execute(kCreateActionsSql) ||
+       !database_.Execute(kCreateMonitorsSql) ||
+-      !database_.Execute(kCreatePlansSql)) {
++      !database_.Execute(kCreatePlansSql) ||
++      !database_.Execute(kCreateResearchSql)) {
+     database_.Close();
+     return false;
+   }
+@@ -201,7 +209,8 @@ bool AgentTaskStore::Initialize() {
+     database_.Close();
+     return false;
+   }
+-  if (meta_table_.GetVersionNumber() == 7 &&
++  if ((meta_table_.GetVersionNumber() == 7 ||
++       meta_table_.GetVersionNumber() == 8) &&
+       (!meta_table_.SetVersionNumber(kCurrentVersion) ||
+        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion))) {
+     database_.Close();
+@@ -577,6 +586,70 @@ bool AgentTaskStore::DeleteMonitor(const std::string& monitor_id) {
+   return statement.Run() && database_.GetLastChangeCount() == 1;
+ }
+ 
++bool AgentTaskStore::SaveResearch(StoredAgentResearch research) {
++  if (!initialized_ || research.id.empty() || research.id.size() > 64u ||
++      research.ciphertext.empty() || research.ciphertext.size() > 69632u ||
++      research.saved_at.is_null()) {
++    return false;
++  }
++  sql::Transaction transaction(&database_);
++  if (!transaction.Begin()) {
++    return false;
++  }
++  sql::Statement count(database_.GetCachedStatement(
++      SQL_FROM_HERE, "SELECT count(*) FROM agent_saved_research WHERE id<>?"));
++  count.BindString(0, research.id);
++  // 达到容量后要求用户删除旧项目，不静默覆盖其他已保存结果。
++  if (!count.Step() || count.ColumnInt(0) >= 20) {
++    return false;
++  }
++  count.Reset(true);
++  sql::Statement write(database_.GetCachedStatement(
++      SQL_FROM_HERE,
++      "INSERT OR REPLACE INTO agent_saved_research(id,ciphertext,saved_us) "
++      "VALUES(?,?,?)"));
++  write.BindString(0, research.id);
++  write.BindBlob(1, research.ciphertext);
++  write.BindInt64(2, SerializeTime(research.saved_at));
++  return write.Run() && transaction.Commit();
++}
++
++std::optional<std::vector<StoredAgentResearch>> AgentTaskStore::LoadResearch() {
++  std::vector<StoredAgentResearch> result;
++  if (!initialized_) {
++    return std::nullopt;
++  }
++  sql::Statement read(database_.GetCachedStatement(
++      SQL_FROM_HERE,
++      "SELECT id,ciphertext,saved_us FROM agent_saved_research ORDER BY "
++      "saved_us DESC LIMIT 20"));
++  while (read.Step()) {
++    auto id = read.ColumnString(0);
++    auto ciphertext = read.ColumnBlobAsString(1);
++    if (id.empty() || id.size() > 64u || ciphertext.empty() ||
++        ciphertext.size() > 69632u) {
++      return std::nullopt;
++    }
++    result.push_back({.id = std::move(id),
++                      .ciphertext = std::move(ciphertext),
++                      .saved_at = DeserializeTime(read.ColumnInt64(2))});
++  }
++  if (!read.Succeeded()) {
++    return std::nullopt;
++  }
++  return result;
++}
++
++bool AgentTaskStore::DeleteResearch(const std::string& id) {
++  if (!initialized_ || id.empty() || id.size() > 64u) {
++    return false;
++  }
++  sql::Statement statement(database_.GetCachedStatement(
++      SQL_FROM_HERE, "DELETE FROM agent_saved_research WHERE id=?"));
++  statement.BindString(0, id);
++  return statement.Run() && database_.GetLastChangeCount() == 1;
++}
++
+ // static
+ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
+     std::string_view scope_json) {
+diff --git a/chrome/browser/aegis/agent/agent_task_store.h b/chrome/browser/aegis/agent/agent_task_store.h
+index 750dea9505..8b43108baa 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.h
++++ b/chrome/browser/aegis/agent/agent_task_store.h
+@@ -19,6 +19,13 @@
+ 
+ namespace aegis::agent {
+ 
++// 正文只以系统加密后的密文写入，明文元数据仅保留记录编号与时间。
++struct StoredAgentResearch {
++  std::string id;
++  std::string ciphertext;
++  base::Time saved_at;
++};
++
+ struct StoredAgentTask {
+   enum class RecoveryDisposition {
+     kResumeReadOnly = 0,
+@@ -73,9 +80,8 @@ struct StoredAgentState {
+   std::vector<AgentMonitorDefinition> monitors;
+ };
+ 
+-// Profile-local storage for resumable metadata and redacted action summaries.
+-// Page bodies, screenshots, secrets, form values, cookies and full local paths
+-// have no column in this schema.
++// 按 Profile 保存恢复元数据和脱敏操作摘要。
++// 用户主动保存的研究结果只接收系统加密后的密文，不保存正文或摘录明文。
+ class AgentTaskStore {
+  public:
+   explicit AgentTaskStore(base::FilePath database_path, bool in_memory = false);
+@@ -110,6 +116,9 @@ class AgentTaskStore {
+   bool SaveMonitor(const AgentMonitorDefinition& monitor);
+   std::vector<AgentMonitorDefinition> LoadMonitors();
+   bool DeleteMonitor(const std::string& monitor_id);
++  bool SaveResearch(StoredAgentResearch research);
++  std::optional<std::vector<StoredAgentResearch>> LoadResearch();
++  bool DeleteResearch(const std::string& id);
+   bool DeleteTask(const std::string& task_id);
+   bool Prune(base::Time unfinished_before, base::Time completed_before);
+ 
+diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+index d4debae825..c5d6522e46 100644
+--- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+@@ -8,6 +8,7 @@
+ 
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
+ #include "sql/database.h"
+ #include "sql/meta_table.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -29,6 +30,61 @@ AgentTaskScope StoreTestScope() {
+   return scope;
+ }
+ 
++TEST(AegisAgentTaskStoreTest, SavedResearchSurvivesRestartAndExplicitDeletion) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("research.sqlite");
++  {
++    AgentTaskStore store(path);
++    EXPECT_FALSE(store.LoadResearch());
++    ASSERT_TRUE(store.Initialize());
++    EXPECT_FALSE(store.SaveResearch(
++        {.id = "empty", .ciphertext = "", .saved_at = base::Time::Now()}));
++    for (int i = 0; i < 20; ++i) {
++      ASSERT_TRUE(store.SaveResearch(
++          {.id = base::NumberToString(i),
++           .ciphertext = "合成密文" + base::NumberToString(i),
++           .saved_at = base::Time::Now() + base::Seconds(i)}));
++    }
++    EXPECT_FALSE(store.SaveResearch({.id = "overflow",
++                                     .ciphertext = "ciphertext",
++                                     .saved_at = base::Time::Now()}));
++    EXPECT_TRUE(
++        store.SaveResearch({.id = "0",
++                            .ciphertext = "replacement",
++                            .saved_at = base::Time::Now() + base::Hours(1)}));
++  }
++  AgentTaskStore store(path);
++  ASSERT_TRUE(store.Initialize());
++  auto records = store.LoadResearch();
++  ASSERT_TRUE(records);
++  ASSERT_EQ(records->size(), 20u);
++  EXPECT_EQ(records->front().id, "0");
++  EXPECT_EQ(records->front().ciphertext, "replacement");
++  EXPECT_TRUE(store.DeleteResearch("0"));
++  EXPECT_FALSE(store.DeleteResearch("0"));
++  EXPECT_EQ(store.LoadResearch()->size(), 19u);
++}
++
++TEST(AegisAgentTaskStoreTest, ResearchInMemoryDoesNotCreateDiskState) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("private.sqlite");
++  {
++    AgentTaskStore store(path, true);
++    ASSERT_TRUE(store.Initialize());
++    ASSERT_TRUE(store.SaveResearch({.id = "private",
++                                    .ciphertext = "session-only",
++                                    .saved_at = base::Time::Now()}));
++    ASSERT_EQ(store.LoadResearch()->size(), 1u);
++    EXPECT_FALSE(base::PathExists(path));
++  }
++  AgentTaskStore next(path, true);
++  ASSERT_TRUE(next.Initialize());
++  EXPECT_TRUE(next.LoadResearch()->empty());
++  EXPECT_FALSE(base::PathExists(path));
++}
++
+ TEST(AegisAgentTaskStoreTest, SavesOnlyRedactedMetadataAndRecoversSafely) {
+   base::ScopedTempDir temp_dir;
+   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+@@ -446,9 +502,9 @@ TEST(AegisAgentTaskStoreTest, MigratesVersionSevenWithoutLosingMonitorState) {
+   sql::Database inspected("AegisAgent");
+   ASSERT_TRUE(inspected.Open(path));
+   sql::MetaTable meta;
+-  ASSERT_TRUE(meta.Init(&inspected, 8, 8));
+-  EXPECT_EQ(meta.GetVersionNumber(), 8);
+-  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 8);
++  ASSERT_TRUE(meta.Init(&inspected, 9, 9));
++  EXPECT_EQ(meta.GetVersionNumber(), 9);
++  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 9);
+ }
+ 
+ TEST(AegisAgentTaskStoreTest,
+@@ -499,8 +555,8 @@ TEST(AegisAgentTaskStoreTest, RejectsFutureVersionWithoutRewritingDatabase) {
+     ASSERT_TRUE(future.Open(path));
+     sql::MetaTable meta;
+     ASSERT_TRUE(meta.Init(&future, 9, 9));
+-    ASSERT_TRUE(meta.SetVersionNumber(9));
+-    ASSERT_TRUE(meta.SetCompatibleVersionNumber(9));
++    ASSERT_TRUE(meta.SetVersionNumber(10));
++    ASSERT_TRUE(meta.SetCompatibleVersionNumber(10));
+   }
+   std::string before;
+   ASSERT_TRUE(base::ReadFileToString(path, &before));
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 392dc6e6b7..76889b5aa6 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -653,3 +653,26 @@ summary {
+   overflow-wrap: anywhere;
+   width: 100%;
+ }
++
++.saved-research {
++  border-top: 1px solid var(--border-color, #ddd);
++  margin-top: 12px;
++  padding-top: 12px;
++  overflow-wrap: anywhere;
++}
++
++.saved-research-summary {
++  white-space: pre-wrap;
++}
++
++.saved-research-source {
++  display: grid;
++  gap: 8px;
++  margin-block: 16px;
++}
++
++.saved-research-source blockquote {
++  margin: 0;
++  padding-inline-start: 12px;
++  border-inline-start: 2px solid var(--border-color, #ddd);
++}
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index 597f11e679..29ef02470c 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -39,6 +39,11 @@
+         <textarea id="research-goal" rows="4" maxlength="4096"></textarea>
+         <button id="research-start" class="primary" type="button" disabled></button>
+         <p id="research-error" class="notice" role="status" hidden></p>
++        <h3 id="saved-research-title"></h3>
++        <p id="saved-research-help" class="help"></p>
++        <button id="saved-research-refresh" type="button"></button>
++        <p id="saved-research-status" role="status"></p>
++        <div id="saved-research-list"></div>
+       </section>
+ 
+       <section id="task-view">
+@@ -139,6 +144,8 @@
+         <h2 id="result-title"></h2>
+         <p id="result-partial-note" class="help" hidden></p>
+         <p id="result-summary"></p>
++        <button id="save-research" type="button" hidden></button>
++        <p id="save-research-status" role="status"></p>
+         <div id="result-sources-group" hidden>
+           <strong id="result-sources-label"></strong>
+           <ul id="result-sources"></ul>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 69bb8f77ef..dabafae081 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -9,6 +9,7 @@ import type {
+   MonitorSummary,
+   PlanSummary,
+   ResearchTab,
++  SavedResearch,
+   TaskSnapshot,
+ } from './aegis_agent.mojom-webui.js';
+ import {AgentMode, Workflow} from './aegis_agent.mojom-webui.js';
+@@ -172,6 +173,136 @@ function renderView() {
+   element('target-card').hidden = !taskSelected;
+ }
+ 
++function researchMessage(error: string): string {
++  return loadTimeData.getString(error === 'capacity_reached' ||
++      error === 'storage_write_failed_or_full' ? 'researchStorageFull' : 'researchStorageFailed');
++}
++
++function renderSavedResearch(records: SavedResearch[]) {
++  const list = element('saved-research-list');
++  list.replaceChildren();
++  for (const record of records) {
++    const details = document.createElement('details');
++    details.className = 'saved-research';
++    const title = document.createElement('summary');
++    title.textContent = record.goal;
++    const body = document.createElement('p');
++    body.className = 'saved-research-summary';
++    body.textContent = record.summary;
++    const date = document.createElement('small');
++    date.textContent = new Date(Number(record.createdMs)).toLocaleString();
++    const notice = document.createElement('p');
++    notice.textContent = record.outcome === 'partial' ?
++        loadTimeData.getString('resultPartialHelp') : '';
++    const unfinished = document.createElement('ul');
++    for (const item of record.unfinished) {
++      const row = document.createElement('li');
++      row.textContent = item;
++      unfinished.append(row);
++    }
++    details.append(title, date, body, notice, unfinished);
++    for (const [index, source] of record.sources.entries()) {
++      const section = document.createElement('div');
++      section.className = 'saved-research-source';
++      const heading = document.createElement('strong');
++      heading.textContent = source.title || source.url;
++      const url = document.createElement('small');
++      url.textContent = source.url;
++      const excerpt = document.createElement('blockquote');
++      excerpt.textContent = source.excerpt;
++      const status = document.createElement('p');
++      status.setAttribute('role', 'status');
++      if (!source.available) {
++        status.textContent = loadTimeData.getString('researchSourceUnavailable');
++      }
++      const open = document.createElement('button');
++      open.textContent = loadTimeData.getString('researchOpenSource');
++      open.addEventListener('click', async () => {
++        try {
++          const result = await proxy.handler.openResearchSource(record.id, index);
++          status.textContent = loadTimeData.getString(result.ok ?
++              'researchSourceOpened' : 'researchSourceUnavailable');
++        } catch {
++          status.textContent = loadTimeData.getString('researchSourceUnavailable');
++        }
++      });
++      const check = document.createElement('button');
++      check.textContent = loadTimeData.getString('researchCheckSource');
++      check.disabled = !source.available;
++      check.addEventListener('click', async () => {
++        check.disabled = true;
++        status.textContent = loadTimeData.getString('researchChecking');
++        try {
++          const result = await proxy.handler.reviewResearchSource(record.id, index);
++          const key = result.status === 'matched' ? 'researchSourceMatched' :
++              result.status === 'changed' ? 'researchSourceChanged' :
++              result.status === 'position_unavailable' ? 'researchPositionUnavailable' :
++              'researchSourceUnavailable';
++          status.textContent = loadTimeData.getString(key);
++        } catch {
++          status.textContent = loadTimeData.getString('researchSourceUnavailable');
++        } finally {
++          check.disabled = !source.available;
++        }
++      });
++      const monitor = document.createElement('button');
++      monitor.textContent = loadTimeData.getString('researchMonitorSource');
++      monitor.addEventListener('click', () => {
++        element<HTMLTextAreaElement>('automation-goal').value =
++            loadTimeData.getString('researchMonitorGoal').replace('$1', source.url);
++        activeView = 'automation';
++        renderView();
++        element('automation-goal').focus();
++      });
++      section.append(heading, url, excerpt, open, check, monitor, status);
++      details.append(section);
++    }
++    const remove = document.createElement('button');
++    remove.textContent = loadTimeData.getString('researchDelete');
++    remove.addEventListener('click', async () => {
++      remove.disabled = true;
++      try {
++        const result = await proxy.handler.deleteSavedResearch(record.id);
++        if (result.error) {
++          element('saved-research-status').textContent = researchMessage(result.error);
++        } else {
++          await refreshSavedResearch();
++        }
++      } catch {
++        element('saved-research-status').textContent = researchMessage('failed');
++      } finally {
++        remove.disabled = false;
++      }
++    });
++    details.append(remove);
++    list.append(details);
++  }
++}
++
++async function refreshSavedResearch() {
++  const refresh = element<HTMLButtonElement>('saved-research-refresh');
++  if (refresh.disabled) {
++    return;
++  }
++  refresh.disabled = true;
++  element('saved-research-list').replaceChildren();
++  const status = element('saved-research-status');
++  status.textContent = loadTimeData.getString('researchLoading');
++  try {
++    const result = await proxy.handler.listSavedResearch();
++    status.textContent = result.error ? researchMessage(result.error) :
++        loadTimeData.getString(result.sessionOnly ? 'researchSessionOnly' : 'researchEncrypted') +
++        ` · ${result.records.length} / 20`;
++    if (!result.error) {
++      renderSavedResearch(result.records);
++    }
++  } catch {
++    status.textContent = researchMessage('failed');
++  } finally {
++    refresh.disabled = false;
++  }
++}
++
+ function updateResearchSelection() {
+   element('research-selection').textContent =
+       `${selectedResearchTabs.size} / 10 · ` + loadTimeData.getString('researchSelectRange');
+@@ -352,6 +483,11 @@ function renderResult(next: TaskSnapshot) {
+   note.hidden = !partial;
+   note.textContent = partial ? loadTimeData.getString('resultPartialHelp') : '';
+   element('result-summary').textContent = summary;
++  const save = element<HTMLButtonElement>('save-research');
++  save.hidden = !next.researchSaveAvailable;
++  save.disabled = busy;
++  save.textContent = loadTimeData.getString(
++      next.researchSessionOnly ? 'researchSaveSession' : 'researchSave');
+   const renderItems = (groupId: string, listId: string, items: string[]) => {
+     const group = element(groupId);
+     const list = element(listId);
+@@ -677,6 +813,7 @@ function render(next: TaskSnapshot) {
+   if (creatingTask) {
+     // 新请求有自己的等待态；旧任务事件不能带回旧结果或时间线。
+     next = {...next, taskId: '', state: '', plan: null, resultSummary: '',
++      researchSaveAvailable: false,
+       resultOutcome: '', resultSources: [], unfinishedItems: [], timeline: [],
+       pendingApproval: null, undoAvailable: false, lastError: ''};
+   } else if (selectedTaskId !== null && next.taskId !== selectedTaskId) {
+@@ -687,6 +824,9 @@ function render(next: TaskSnapshot) {
+       taskCreationError = '';
+     }
+   }
++  if (snapshot?.taskId !== next.taskId) {
++    element('save-research-status').textContent = '';
++  }
+   snapshot = next;
+   element('status').dataset['tone'] = taskCreationError && !next.taskId ?
+       'danger' : statusTone(next);
+@@ -864,6 +1004,29 @@ function initializeLabels() {
+   text('research-refresh', 'researchRefresh');
+   text('research-goal-label', 'researchGoal');
+   text('research-start', 'researchStart');
++  text('saved-research-title', 'researchSavedTitle');
++  text('saved-research-help', 'researchSavedHelp');
++  text('saved-research-refresh', 'researchLoadSaved');
++  element('saved-research-refresh').addEventListener('click', () => {
++    void refreshSavedResearch();
++  });
++  element('save-research').addEventListener('click', async () => {
++    if (!snapshot?.researchSaveAvailable) {
++      return;
++    }
++    const taskId = snapshot.taskId;
++    const save = element<HTMLButtonElement>('save-research');
++    save.disabled = true;
++    try {
++      const result = await proxy.handler.saveResearch(taskId);
++      element('save-research-status').textContent = result.error ?
++          researchMessage(result.error) : loadTimeData.getString('researchSaved');
++    } catch {
++      element('save-research-status').textContent = researchMessage('failed');
++    } finally {
++      save.disabled = false;
++    }
++  });
+   element<HTMLTextAreaElement>('research-goal').value =
+       loadTimeData.getString('researchDefaultGoal');
+   element('research-goal').addEventListener('input', updateResearchSelection);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 6651a945c8..8dab239450 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -100,6 +100,24 @@ struct ResearchTab {
+   string url;
+ };
+ 
++struct ResearchSource {
++  string url;
++  string title;
++  string excerpt;
++  string captured_ms;
++  bool available;
++};
++
++struct SavedResearch {
++  string id;
++  string goal;
++  string summary;
++  string outcome;
++  string created_ms;
++  array<ResearchSource> sources;
++  array<string> unfinished;
++};
++
+ struct TaskSnapshot {
+   bool feature_enabled;
+   bool agent_enabled;
+@@ -118,6 +136,8 @@ struct TaskSnapshot {
+   PlanSummary? plan;
+   string result_summary;
+   string result_outcome;
++  bool research_save_available;
++  bool research_session_only;
+   array<string> result_sources;
+   array<string> unfinished_items;
+   PendingApproval? pending_approval;
+@@ -138,6 +158,11 @@ interface PageHandler {
+   ListResearchTabs() => (array<ResearchTab> tabs, string error);
+   CreateResearchTask(string goal, array<int32> tab_ids) => (TaskSnapshot snapshot);
+   ShowProtection();
++  OpenResearchSource(string id, uint32 source_index) => (bool ok);
++  ReviewResearchSource(string id, uint32 source_index) => (string status);
++  SaveResearch(string task_id) => (string error);
++  ListSavedResearch() => (array<SavedResearch> records, bool session_only, string error);
++  DeleteSavedResearch(string id) => (string error);
+   OpenVerifiedSource(string task_id, uint32 source_index) => (bool opened);
+ 
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 6396de24ea..e91d3df046 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -10,6 +10,7 @@
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
++#include "base/strings/escape.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+@@ -521,6 +522,116 @@ void AegisAgentPageHandler::ShowProtection() {
+   }
+ }
+ 
++void AegisAgentPageHandler::OpenResearchSource(
++    const std::string& id,
++    uint32_t source_index,
++    OpenResearchSourceCallback callback) {
++  const auto* record = service_ && service_->IsEnabled()
++                           ? service_->GetResearchRecord(id)
++                           : nullptr;
++  const auto* sources = record ? record->FindList("sources") : nullptr;
++  if (!sources || source_index >= sources->size() || !browser_ ||
++      browser_->GetProfile() != profile_) {
++    std::move(callback).Run(false);
++    return;
++  }
++  const auto& source = (*sources)[source_index].GetDict();
++  GURL url(*source.FindString("url"));
++  const auto& excerpt = *source.FindString("excerpt");
++  if (!excerpt.empty()) {
++    // 文本片段保留在浏览器内，不把摘录加入发往站点的查询参数。
++    const std::string fragment =
++        ":~:text=" + base::EscapeQueryParamValue(excerpt, false);
++    GURL::Replacements replacement;
++    replacement.SetRefStr(fragment);
++    url = url.ReplaceComponents(replacement);
++  }
++  const bool allowed =
++      url.SchemeIsHTTPOrHTTPS() && !url.has_username() && !url.has_password();
++  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
++}
++
++void AegisAgentPageHandler::ReviewResearchSource(
++    const std::string& id,
++    uint32_t source_index,
++    ReviewResearchSourceCallback callback) {
++  auto* tab = ContentTab(browser_);
++  if (!service_ || !tab || tab->GetProfile() != profile_ ||
++      !tab->GetContents() || tab->GetContents()->IsLoading()) {
++    std::move(callback).Run("unavailable");
++    return;
++  }
++  service_->ReviewResearchSource(
++      id, source_index, tab->GetHandle().raw_value(),
++      base::BindOnce([](ReviewResearchSourceCallback done,
++                        std::string status) { std::move(done).Run(status); },
++                     std::move(callback)));
++}
++
++void AegisAgentPageHandler::SaveResearch(const std::string& task_id,
++                                         SaveResearchCallback callback) {
++  if (!service_) {
++    std::move(callback).Run("research_unavailable");
++    return;
++  }
++  service_->SaveResearch(
++      task_id,
++      base::BindOnce([](SaveResearchCallback done,
++                        std::string error) { std::move(done).Run(error); },
++                     std::move(callback)));
++}
++
++void AegisAgentPageHandler::ListSavedResearch(
++    ListSavedResearchCallback callback) {
++  if (!service_ || !profile_) {
++    std::move(callback).Run({}, false, "research_unavailable");
++    return;
++  }
++  service_->LoadSavedResearch(base::BindOnce(
++      [](bool session_only, ListSavedResearchCallback done,
++         base::ListValue values, std::string error) {
++        std::vector<aegis_agent::mojom::SavedResearchPtr> records;
++        for (const auto& value : values) {
++          const auto& record = value.GetDict();
++          auto item = aegis_agent::mojom::SavedResearch::New();
++          item->id = *record.FindString("id");
++          item->goal = *record.FindString("goal");
++          item->summary = *record.FindString("summary");
++          item->outcome = *record.FindString("outcome");
++          item->created_ms = *record.FindString("created_ms");
++          for (const auto& entry : *record.FindList("sources")) {
++            const auto& source = entry.GetDict();
++            auto converted = aegis_agent::mojom::ResearchSource::New();
++            converted->url = *source.FindString("url");
++            converted->title = *source.FindString("title");
++            converted->excerpt = *source.FindString("excerpt");
++            converted->captured_ms = *source.FindString("captured_ms");
++            converted->available = *source.FindBool("available");
++            item->sources.push_back(std::move(converted));
++          }
++          for (const auto& unfinished : *record.FindList("unfinished")) {
++            item->unfinished.push_back(unfinished.GetString());
++          }
++          records.push_back(std::move(item));
++        }
++        std::move(done).Run(std::move(records), session_only, std::move(error));
++      },
++      profile_->IsOffTheRecord(), std::move(callback)));
++}
++
++void AegisAgentPageHandler::DeleteSavedResearch(
++    const std::string& id,
++    DeleteSavedResearchCallback callback) {
++  if (!service_) {
++    std::move(callback).Run("research_unavailable");
++    return;
++  }
++  service_->DeleteSavedResearch(
++      id, base::BindOnce([](DeleteSavedResearchCallback done,
++                            std::string error) { std::move(done).Run(error); },
++                         std::move(callback)));
++}
++
+ void AegisAgentPageHandler::OpenVerifiedSource(
+     const std::string& task_id,
+     uint32_t source_index,
+@@ -1009,6 +1120,7 @@ void AegisAgentPageHandler::PushSnapshot() {
+ 
+ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+   auto snapshot = aegis_agent::mojom::TaskSnapshot::New();
++  snapshot->research_session_only = profile_ && profile_->IsOffTheRecord();
+   snapshot->feature_enabled =
+       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
+   snapshot->agent_enabled =
+@@ -1081,6 +1193,8 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+     task = service_->MostRecentTask();
+     ObserveTask(task);
+   }
++  snapshot->research_save_available =
++      task && service_->GetResearchRecord(task->id());
+   if (!task) {
+     return snapshot;
+   }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index c5b908603f..e6e94ff85a 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -52,6 +52,17 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+                           const std::vector<int32_t>& tab_ids,
+                           CreateResearchTaskCallback callback) override;
+   void ShowProtection() override;
++  void OpenResearchSource(const std::string& id,
++                          uint32_t source_index,
++                          OpenResearchSourceCallback callback) override;
++  void ReviewResearchSource(const std::string& id,
++                            uint32_t source_index,
++                            ReviewResearchSourceCallback callback) override;
++  void SaveResearch(const std::string& task_id,
++                    SaveResearchCallback callback) override;
++  void ListSavedResearch(ListSavedResearchCallback callback) override;
++  void DeleteSavedResearch(const std::string& id,
++                           DeleteSavedResearchCallback callback) override;
+   void OpenVerifiedSource(const std::string& task_id,
+                           uint32_t source_index,
+                           OpenVerifiedSourceCallback callback) override;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 17e80d8cbe..9f4495dfe1 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -97,6 +97,78 @@ void AddStrings(content::WebUIDataSource* source) {
+       "不要猜測。");
+   add("researchRefreshFailed", "Sources could not be refreshed. Try again.",
+       "无法刷新来源，请重试。", "無法重新整理來源，請重試。");
++  add("researchSavedTitle", "Saved research", "已保存的研究", "已儲存的研究");
++  add("researchSavedHelp",
++      "Save results explicitly. Up to 20 items. Open a source, wait for "
++      "loading, then check it. A text highlight may be unavailable.",
++      "只有点击保存才会保留结果，最多20项。打开原文并等待加载完成后，可核对正文"
++      "；原文不一定支持摘录高亮。",
++      "只有點擊儲存才會保留結果，最多20項。開啟原文並等待載入完成後，可核對正文"
++      "；原文不一定支援摘錄醒目提示。");
++  add("researchLoadSaved", "Load saved research", "读取已保存研究",
++      "讀取已儲存研究");
++  add("researchSave", "Save encrypted research", "加密保存研究",
++      "加密儲存研究");
++  add("researchSaveSession", "Keep for this private session",
++      "仅在本次无痕会话保留", "僅在本次無痕工作階段保留");
++  add("researchSaved", "Saved. Find it in Research → Load saved research.",
++      "已保存，可在研究工作台点击“读取已保存研究”查看。",
++      "已儲存，可在研究工作台點擊「讀取已儲存研究」查看。");
++  add("researchEncrypted", "Encrypted on this device", "已在本机加密保存",
++      "已在本機加密儲存");
++  add("researchSessionOnly",
++      "Private session only; cleared when the session ends",
++      "仅本次无痕会话保留，结束后清除", "僅本次無痕工作階段保留，結束後清除");
++  add("researchStorageFailed",
++      "Could not read or save research. Check device storage and secure "
++      "storage access.",
++      "研究读取或保存失败，请检查磁盘及系统加密存储是否可用。",
++      "研究讀取或儲存失敗，請檢查磁碟及系統加密儲存是否可用。");
++  add("researchStorageFull",
++      "Save failed or the 20-item limit was reached. Delete an old item and "
++      "retry.",
++      "保存失败或已达到20项上限，请删除旧项目后重试。",
++      "儲存失敗或已達到20項上限，請刪除舊項目後重試。");
++  add("researchOpenSource", "Open source excerpt", "打开原文摘录",
++      "開啟原文摘錄");
++  add("researchSourceOpened",
++      "Source opened. After loading, check the current source below.",
++      "已打开原文。加载完成后，点击“核对当前原文”。",
++      "已開啟原文。載入完成後，點擊「核對目前原文」。");
++  add("researchCheckSource", "Check current source", "核对当前原文",
++      "核對目前原文");
++  add("researchChecking", "Checking page text locally…", "正在本机核对正文…",
++      "正在本機核對正文…");
++  add("researchSourceMatched",
++      "The observed text matches the saved source. Check the excerpt highlight "
++      "on the page.",
++      "当前观察到的正文与保存时一致，请在原文中核对摘录高亮。",
++      "目前觀察到的正文與儲存時一致，請在原文中核對摘錄醒目提示。");
++  add("researchSourceChanged",
++      "The source changed. The old citation position is no longer verified.",
++      "原文已变化，旧引用位置已失效，需要重新研究。",
++      "原文已變更，舊引用位置已失效，需要重新研究。");
++  add("researchPositionUnavailable",
++      "Text matches, but no reliable excerpt position is available.",
++      "正文一致，但无法提供可靠的摘录位置。",
++      "正文一致，但無法提供可靠的摘錄位置。");
++  add("researchSourceUnavailable",
++      "Could not verify. Open the exact source, wait for loading, and retry. "
++      "Blocked or incomplete pages cannot be verified.",
++      "无法核对。请打开对应原文，加载完成后重试；拦截页或不完整正文不能通过核对"
++      "。",
++      "無法核對。請開啟對應原文，載入完成後重試；攔截頁或不完整正文不能通過核對"
++      "。");
++  add("researchMonitorSource", "Monitor this source…", "监控此来源…",
++      "監控此來源…");
++  add("researchMonitorGoal",
++      "Monitor content changes on $1 and summarize actual changes.",
++      "监控 $1 的网页正文变化，并总结实际变化。",
++      "監控 $1 的網頁正文變更，並總結實際變更。");
++  add("researchDelete", "Delete saved research", "删除已保存研究",
++      "刪除已儲存研究");
++  add("researchLoading", "Loading saved research…", "正在读取已保存研究…",
++      "正在讀取已儲存研究…");
+   add("taskWorkspace", "Common tasks", "常用任务", "常用任務");
+   add("automationWorkspace", "Automations", "自动化", "自動化");
+   add("target", "Where Aegis will work", "Aegis 将在哪里操作",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ca80474470..2a5a890cfe 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.18。
+-inline constexpr char kProductVersion[] = "2.0.0.18";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (018)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.19。
++inline constexpr char kProductVersion[] = "2.0.0.19";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (019)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -230,28 +230,30 @@ function usage() {
 export async function modelCall(options, name, description, schema, instructions,
                          input) {
   const started = performance.now();
+  const serializedInput = JSON.stringify(input);
+  const requestBody = JSON.stringify({
+    model: options.model,
+    instructions,
+    input: serializedInput,
+    max_output_tokens: 1024,
+    parallel_tool_calls: false,
+    store: false,
+    stream: false,
+    tool_choice: {type: 'function', name},
+    reasoning: {effort: 'none'},
+    chat_template_kwargs: {enable_thinking: false},
+    tools: [{
+      type: 'function',
+      name,
+      description,
+      parameters: schema,
+      strict: true,
+    }],
+  });
   const response = await fetch(`${options.baseUrl}/responses`, {
     method: 'POST',
     headers: {'content-type': 'application/json'},
-    body: JSON.stringify({
-      model: options.model,
-      instructions,
-      input: JSON.stringify(input),
-      max_output_tokens: 1024,
-      parallel_tool_calls: false,
-      store: false,
-      stream: false,
-      tool_choice: {type: 'function', name},
-      reasoning: {effort: 'none'},
-      chat_template_kwargs: {enable_thinking: false},
-      tools: [{
-        type: 'function',
-        name,
-        description,
-        parameters: schema,
-        strict: true,
-      }],
-    }),
+    body: requestBody,
     signal: AbortSignal.timeout(30000 + options.transportGraceMs),
   });
   assert(response.ok, `${name} 请求失败：HTTP ${response.status}`);
@@ -272,6 +274,12 @@ export async function modelCall(options, name, description, schema, instructions
   return {
     name,
     duration_ms: Math.round(performance.now() - started),
+    input_bytes: Buffer.byteLength(serializedInput),
+    request_bytes: Buffer.byteLength(requestBody),
+    // 保留服务报告的用量，缺失或非法值不当作零，也不据此推算账单。
+    reported_usage: Object.fromEntries(['input_tokens', 'output_tokens', 'total_tokens']
+        .map(key => [key, Number.isSafeInteger(value.usage?.[key]) &&
+          value.usage[key] >= 0 ? value.usage[key] : null])),
     arguments: args,
   };
 }
@@ -576,6 +584,12 @@ async function run(options) {
       let tools = Array.isArray(call.arguments.steps) ?
           call.arguments.steps.map((step) => step?.tool) : [];
       const modelAttempts = [tools];
+      const callMetrics = [];
+      const recordMetrics = value => {
+        const {duration_ms, input_bytes, request_bytes, reported_usage} = value;
+        callMetrics.push({duration_ms, input_bytes, request_bytes, reported_usage});
+      };
+      recordMetrics(call);
       let resolution = 'model_first_attempt';
       let duration = call.duration_ms;
       let repairError;
@@ -592,6 +606,7 @@ async function run(options) {
         tools = Array.isArray(call.arguments.steps) ?
             call.arguments.steps.map((step) => step?.tool) : [];
         modelAttempts.push(tools);
+        recordMetrics(call);
         duration += call.duration_ms;
         resolution = 'model_bounded_repair';
       }
@@ -610,6 +625,12 @@ async function run(options) {
         id: test.id,
         name: call.name,
         duration_ms: duration,
+        input_bytes: callMetrics.reduce((total, item) => total + item.input_bytes, 0),
+        request_bytes: callMetrics.reduce((total, item) => total + item.request_bytes, 0),
+        reported_usage: Object.fromEntries(['input_tokens', 'output_tokens', 'total_tokens']
+            .map(key => [key, callMetrics.every(item => item.reported_usage[key] !== null) ?
+              callMetrics.reduce((total, item) => total + item.reported_usage[key], 0) : null])),
+        call_metrics: callMetrics,
         tools,
         model_attempts: modelAttempts,
         resolution,
@@ -642,6 +663,7 @@ async function run(options) {
     transport_grace_ms: options.transportGraceMs,
     summary: {
       total_checks: checks.length,
+      total_model_calls: checks.reduce((total, item) => total + (item.call_metrics?.length ?? 1), 0),
       plans_first_attempt: planChecks.filter((check) =>
         check.resolution === 'model_first_attempt').length,
       plans_bounded_repair: planChecks.filter((check) =>

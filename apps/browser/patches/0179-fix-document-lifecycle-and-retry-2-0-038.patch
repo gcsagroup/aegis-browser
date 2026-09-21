@@ -1,0 +1,727 @@
+From 6380bacf95fe80fc4549c27f8b45e82f7f302889 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Thu, 17 Sep 2026 02:49:31 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=96=87=E6=A1=A3=E5=A4=B1?=
+ =?UTF-8?q?=E6=95=88=E3=80=81=E9=87=8D=E8=AF=95=E5=AE=A1=E6=89=B9=E5=92=8C?=
+ =?UTF-8?q?=E5=8F=97=E8=A7=82=E5=AF=9F=E7=BA=A6=E6=9D=9F=E7=9A=84=E6=8F=90?=
+ =?UTF-8?q?=E5=8F=96=202.0.038?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 29 ++++++
+ .../browser/aegis/agent/aegis_actor_bridge.h  | 11 ++-
+ .../aegis/agent/aegis_agent_browsertest.cc    | 76 ++++++++++++++++
+ .../aegis/agent/aegis_agent_service.cc        | 89 ++++++++++++++++++-
+ .../browser/aegis/agent/aegis_agent_service.h |  3 +-
+ .../agent/aegis_agent_service_unittest.cc     | 75 ++++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 78 ++++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.h  |  9 ++
+ .../aegis/agent/agent_execution_unittest.cc   | 61 +++++++++++++
+ chrome/browser/resources/aegis_agent/agent.ts |  5 ++
+ .../ui/webui/help/aegis_github_update.h       |  6 +-
+ 11 files changed, 433 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 2e78cf14ab..6ab90c82c2 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -734,6 +734,7 @@ bool AegisActorBridge::PauseTask(const std::string& agent_task_id,
+   }
+   task->Pause(/*from_actor=*/!by_user);
+   last_documents_.erase(agent_task_id);
++  observed_documents_.erase(agent_task_id);
+   last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+@@ -746,6 +747,7 @@ bool AegisActorBridge::ResumeTask(const std::string& agent_task_id) {
+     return false;
+   }
+   last_documents_.erase(agent_task_id);
++  observed_documents_.erase(agent_task_id);
+   last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+@@ -771,6 +773,7 @@ bool AegisActorBridge::StopTask(const std::string& agent_task_id,
+   actor_tasks_.erase(agent_task_id);
+   task_scopes_.erase(agent_task_id);
+   last_documents_.erase(agent_task_id);
++  observed_documents_.erase(agent_task_id);
+   last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+@@ -1057,6 +1060,7 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
+   }
+   if (call.tool_name == "page.navigate" || call.tool_name == "page.history") {
+     last_documents_[agent_task_id].erase(*tab_id);
++    observed_documents_[agent_task_id].erase(*tab_id);
+     last_fingerprints_[agent_task_id].erase(*tab_id);
+     observed_node_text_[agent_task_id].erase(*tab_id);
+     webmcp_documents_[agent_task_id].erase(*tab_id);
+@@ -1083,6 +1087,27 @@ std::optional<AgentDocumentRef> AegisActorBridge::LastDocument(
+              : std::make_optional(document_it->second);
+ }
+ 
++bool AegisActorBridge::IsObservedDocumentCurrent(
++    const std::string& agent_task_id,
++    int32_t tab_id,
++    const std::string& document_token) const {
++  const auto document = LastDocument(agent_task_id, tab_id);
++  const auto observed = observed_documents_.find(agent_task_id);
++  auto* tab = tabs::TabHandle(tab_id).Get();
++  if (!document || document->document_token != document_token || !tab ||
++      tab->GetProfile() != profile_ || !tab->GetContents() ||
++      observed == observed_documents_.end()) {
++    return false;
++  }
++  const auto pointer = observed->second.find(tab_id);
++  return pointer != observed->second.end() &&
++         pointer->second.AsRenderFrameHostIfValid() &&
++         pointer->second.AsRenderFrameHostIfValid() ==
++             tab->GetContents()->GetPrimaryMainFrame() &&
++         document->committed_url == tab->GetURL() &&
++         !IsErrorPage(tab->GetContents());
++}
++
+ std::string AegisActorBridge::DescribeObservedClickTarget(
+     const std::string& agent_task_id,
+     const AgentToolCall& call) const {
+@@ -1278,6 +1303,7 @@ void AegisActorBridge::OnObservation(
+                             .document_token = document_token,
+                             .committed_url = observed_url};
+   last_documents_[agent_task_id][tab_id] = document;
++  observed_documents_[agent_task_id][tab_id] = expected_document;
+ 
+   // 以已批准工具范围决定是否保留交互控件；研究与监控只读取正文。
+   const bool interactive = std::ranges::any_of(
+@@ -1483,6 +1509,7 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
+   const std::string& agent_task_id = task.source_info().id.value();
+   if (task.GetState() == actor::ActorTask::State::kPausedByUser) {
+     last_documents_.erase(agent_task_id);
++    observed_documents_.erase(agent_task_id);
+     last_fingerprints_.erase(agent_task_id);
+     observed_node_text_.erase(agent_task_id);
+     webmcp_documents_.erase(agent_task_id);
+@@ -1491,6 +1518,7 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
+     }
+   } else if (task.GetState() == actor::ActorTask::State::kWaitingOnUser) {
+     last_documents_.erase(agent_task_id);
++    observed_documents_.erase(agent_task_id);
+     last_fingerprints_.erase(agent_task_id);
+     observed_node_text_.erase(agent_task_id);
+     webmcp_documents_.erase(agent_task_id);
+@@ -1504,6 +1532,7 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
+   actor_tasks_.erase(agent_task_id);
+   task_scopes_.erase(agent_task_id);
+   last_documents_.erase(agent_task_id);
++  observed_documents_.erase(agent_task_id);
+   last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+index 2776e5e2cb..3c467150c4 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+@@ -15,13 +15,10 @@
+ #include "chrome/browser/actor/tab_observation_strategy.h"
+ #include "chrome/browser/aegis/agent/agent_types.h"
+ #include "components/actor/core/task_id.h"
++#include "content/public/browser/weak_document_ptr.h"
+ 
+ class Profile;
+ 
+-namespace content {
+-class WeakDocumentPtr;
+-}
+-
+ namespace actor {
+ class ActorTask;
+ }  // namespace actor
+@@ -64,6 +61,10 @@ class AegisActorBridge {
+                        ToolResultCallback callback);
+   std::optional<AgentDocumentRef> LastDocument(const std::string& agent_task_id,
+                                                int32_t tab_id) const;
++  // 同一地址刷新也会使旧文档失效，不能仅比较 URL 或缓存中的 token。
++  bool IsObservedDocumentCurrent(const std::string& agent_task_id,
++                                 int32_t tab_id,
++                                 const std::string& document_token) const;
+   size_t active_task_count_for_testing() const { return actor_tasks_.size(); }
+ 
+   std::string DescribeObservedClickTarget(const std::string& agent_task_id,
+@@ -128,6 +129,8 @@ class AegisActorBridge {
+   std::map<std::string, actor::TaskId> actor_tasks_;
+   std::map<std::string, AgentTaskScope> task_scopes_;
+   std::map<std::string, std::map<int32_t, AgentDocumentRef>> last_documents_;
++  std::map<std::string, std::map<int32_t, content::WeakDocumentPtr>>
++      observed_documents_;
+   std::map<std::string, std::map<int32_t, std::string>> last_fingerprints_;
+   std::map<std::string, std::map<int32_t, std::map<int, ObservedNodeMetadata>>>
+       observed_node_text_;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 68b78c69aa..fac3039a56 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -2314,6 +2314,82 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   }
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       ObservedDocumentExpiresOnReloadNavigationAndCancel) {
++  embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
++      [](const net::test_server::HttpRequest& request)
++          -> std::unique_ptr<net::test_server::HttpResponse> {
++        if (request.relative_url != "/section-body") {
++          return nullptr;
++        }
++        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++        response->set_content_type("text/html; charset=utf-8");
++        response->set_content(
++            "<!doctype html><meta charset=utf-8><title>章节验收资料</title>"
++            "<main><h1>章节验收资料</h1><h2>事实一</h2>"
++            "<p>本轮包含 38 个受控源文件。</p><h2>事实二</h2>"
++            "<p>原生浏览器回归共有 53 项，全部通过。</p>"
++            "<h2>只有标题</h2><h2>其他章节</h2><p>独立正文。</p>"
++            "<iframe srcdoc='<p>跨框架内容不得读取</p>'></iframe>"
++            "</main>");
++        return response;
++      }));
++  ASSERT_TRUE(embedded_test_server()->Start());
++  const GURL target = embedded_test_server()->GetURL("/section-body");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
++  AegisAgentService* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
++  ASSERT_TRUE(service);
++  const int32_t tab_id =
++      browser()->GetActiveTabInterface()->GetHandle().raw_value();
++  AgentTaskScope scope;
++  scope.allowed_origins = {url::Origin::Create(target)};
++  scope.allowed_tab_ids = {tab_id};
++  scope.allowed_tools = {"page.observe", "page.extract"};
++  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
++  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++  scope.model_destination.provider = "openai";
++  scope.model_destination.endpoint = "http://127.0.0.1:8000/v1";
++  scope.model_destination.model = "fixture-model";
++  AgentTask* task = service->CreateTask("验证观察文档的生命周期",
++                                        AgentMode::kAsk, std::move(scope));
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kPlanning, "测试计划"));
++  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kAwaitingTaskConsent,
++                                 "只读计划已准备"));
++  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
++  AgentToolCall call;
++  call.action_id = "observe-sections";
++  call.tool_name = "page.observe";
++  call.arguments.Set("tab_id", tab_id);
++  call.committed_url = target;
++  base::test::TestFuture<AgentToolResult> observed;
++  auto& bridge = service->actor_bridge_for_testing();
++  bridge.ExecutePageTool(task->id(), call, observed.GetCallback());
++  ASSERT_TRUE(observed.Get().ok) << observed.Get().message;
++  call.document = bridge.LastDocument(task->id(), tab_id);
++  ASSERT_TRUE(call.document);
++  const std::string original_token = call.document->document_token;
++  EXPECT_TRUE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, original_token));
++  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, "错误 token"));
++  // 同网址的新文档也必须让旧观察失效。
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
++  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, original_token));
++  call.action_id = "observe-reloaded-document";
++  call.document.reset();
++  base::test::TestFuture<AgentToolResult> refreshed;
++  bridge.ExecutePageTool(task->id(), call, refreshed.GetCallback());
++  ASSERT_TRUE(refreshed.Get().ok) << refreshed.Get().message;
++  const auto latest = bridge.LastDocument(task->id(), tab_id);
++  ASSERT_TRUE(latest);
++  EXPECT_NE(latest->document_token, original_token);
++  EXPECT_TRUE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, latest->document_token));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, latest->document_token));
++  EXPECT_TRUE(service->CancelTask(task->id()));
++  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, latest->document_token));
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        PageExtractionReturnsSectionBodyNotHeadingLabels) {
+   embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 066ee9835f..db638c4bdb 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -558,6 +558,7 @@ struct AegisAgentService::ExecutionRuntime {
+   int attempt = 0;
+   int model_failures = 0;
+   int refresh_count = 0;
++  int document_refresh_attempts = 0;
+   int entry_navigation_wait_attempts = 0;
+   int translation_rejections = 0;
+   bool translation_review_passed = false;
+@@ -1619,6 +1620,9 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+   if (runtime.pending_action || runtime.final_user_takeover) {
+     return;
+   }
++  if (!EnsureRuntimePageEvidenceCurrent(task_id)) {
++    return;
++  }
+   // 用户已经明确选择网页；浏览器逐页只读取证，不让模型选择额外标签。
+   if (task->scope().selected_pages_research &&
+       runtime.next_step < plan->steps.size()) {
+@@ -1766,6 +1770,15 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+     tool = tool_registry_.ModelToolForName(expected_tool);
+     if (tool) {
+       ConstrainDownloadExtractionTool(&*tool, task->scope(), task->goal());
++      ConstrainDownloadIntegrityTool(&*tool, task->goal());
++      for (auto it = runtime.evidence_history.rbegin();
++           it != runtime.evidence_history.rend(); ++it) {
++        if (it->tool_name == "page.observe" && it->result.ok &&
++            it->result.value.FindInt("tab_id") == runtime.last_tab_id) {
++          ConstrainObservedExtractionTool(&*tool, &it->result);
++          break;
++        }
++      }
+     }
+   }
+   std::string config_error;
+@@ -1856,6 +1869,64 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+   }
+ }
+ 
++bool AegisAgentService::EnsureRuntimePageEvidenceCurrent(
++    const std::string& task_id) {
++  auto runtime_it = executions_.find(task_id);
++  AgentTask* task = GetTask(task_id);
++  const AgentTaskPlan* plan = GetPlan(task_id);
++  if (!task || !plan || runtime_it == executions_.end()) {
++    return false;
++  }
++  ExecutionRuntime& runtime = *runtime_it->second;
++  std::map<int32_t, std::string> documents;
++  for (const auto& evidence : runtime.evidence_history) {
++    if (!evidence.result.ok ||
++        !base::StartsWith(evidence.tool_name, "page.")) {
++      continue;
++    }
++    const auto tab_id = evidence.result.value.FindInt("tab_id");
++    const auto* token = evidence.result.value.FindString("document_token");
++    if (tab_id && token) {
++      documents.insert_or_assign(*tab_id, *token);
++    }
++  }
++  if (std::ranges::all_of(documents, [&](const auto& entry) {
++        return actor_bridge_.IsObservedDocumentCurrent(task_id, entry.first,
++                                                       entry.second);
++      })) {
++    return true;
++  }
++  policy_broker_.RevokeTaskApprovals(task_id);
++  const bool read_only = std::ranges::all_of(plan->steps, [](const auto& step) {
++    return step.tool_name == "page.observe" ||
++           step.tool_name == "page.extract" || step.tool_name == "page.wait";
++  });
++  if (!read_only || task->scope().selected_pages_research ||
++      !CurrentPageMatchesSelection(*task) ||
++      runtime.document_refresh_attempts >= 2) {
++    Transition(task_id, AgentTaskState::kFailed,
++               "页面文档已改变，旧结果不能作为当前完成证据");
++    FinishRuntime(task_id, false,
++                  "页面已改变，请核对目标后重新开始；未重放任何写入操作。",
++                  std::nullopt);
++    return false;
++  }
++  ++runtime.document_refresh_attempts;
++  // 丢弃旧事实和待交付文本，仍扣原任务预算，不重放已执行动作。
++  runtime.evidence_history.clear();
++  runtime.previous_result.reset();
++  runtime.translation_selection.reset();
++  runtime.pending_translation_completion.reset();
++  runtime.translation_review_passed = false;
++  runtime.model_failures = 0;
++  runtime.last_model_error = "页面文档已更新，只使用重新观察后的事实。";
++  if (task->state() == AgentTaskState::kReflecting) {
++    Transition(task_id, AgentTaskState::kRunning, "重新观察已改变的只读文档");
++  }
++  EnsureFreshObservationThenContinue(task_id, /*force_refresh=*/true);
++  return false;
++}
++
+ void AegisAgentService::EnsureFreshObservationThenContinue(
+     const std::string& task_id,
+     bool force_refresh) {
+@@ -2023,6 +2094,9 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+        task->state() != AgentTaskState::kReflecting)) {
+     return;
+   }
++  if (!EnsureRuntimePageEvidenceCurrent(task_id)) {
++    return;
++  }
+   ExecutionRuntime& runtime = *runtime_it->second;
+   if (!ok) {
+     ++runtime.model_failures;
+@@ -2507,6 +2581,12 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
+     return std::nullopt;
+   }
+   if (call.tool_name == "download.start") {
++    if (AgentGoalRequestsDownloadIntegrity(task.goal()) &&
++        !call.arguments.FindString("expected_sha256")) {
++      *error = "用户要求核对完整性：请将页面中对应文件的 SHA-256 作为"
++               "expected_sha256 传入；缺少预期摘要时不能开始下载或声称核验完成。";
++      return std::nullopt;
++    }
+     const auto target =
+         actor_bridge_.ResolveObservedDownloadUrl(task.id(), call);
+     if (!target || !task.scope().AllowsOrigin(*target)) {
+@@ -2680,6 +2760,9 @@ void AegisAgentService::FinishValidatedRuntimeCompletion(
+   if (!task || !executions_.contains(task_id)) {
+     return;
+   }
++  if (!EnsureRuntimePageEvidenceCurrent(task_id)) {
++    return;
++  }
+   const auto monitors = GetMonitors(task_id);
+   const bool monitoring = task->mode() == AgentMode::kAutomate &&
+       std::ranges::any_of(monitors, [](const auto& monitor) {
+@@ -2722,6 +2805,9 @@ bool AegisAgentService::FinishWithBrowserVerifiedFallback(
+     return false;
+   }
+ 
++  if (!EnsureRuntimePageEvidenceCurrent(task_id)) {
++    return true;
++  }
+   const bool model_budget_exhausted =
+       task->model_calls_used() >= task->scope().budgets.max_model_calls ||
+       task->network_requests_used() >= task->scope().budgets.max_network_requests;
+@@ -3359,7 +3445,8 @@ void AegisAgentService::ExecuteTool(
+   if (decision.disposition != AgentPolicyDisposition::kAllow) {
+     if (decision.disposition ==
+         AgentPolicyDisposition::kRequireActionApproval) {
+-      if (task && task->state() == AgentTaskState::kRunning) {
++      if (task && (task->state() == AgentTaskState::kRunning ||
++                   task->state() == AgentTaskState::kReflecting)) {
+         // 等待审批即记录实际风险；不消费预算，也不授予执行权限。
+         action_risks_[task_id][call.action_id] = decision.risk;
+         Transition(task_id, AgentTaskState::kAwaitingActionApproval,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 6e752a8226..b5ae89314a 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -339,7 +339,8 @@ class AegisAgentService : public KeyedService {
+                               AgentModelParseResult result);
+   void RequestNextModelTurn(const std::string& task_id);
+   void EnsureFreshObservationThenContinue(const std::string& task_id,
+-                                          bool force_refresh);
++                                         bool force_refresh);
++  bool EnsureRuntimePageEvidenceCurrent(const std::string& task_id);
+   void OnRuntimeFreshObservation(const std::string& task_id,
+                                  AgentToolResult result);
+   void VerifyCheckoutBeforeTakeover(const std::string& task_id,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index d37440a0c6..fb189eb969 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -1488,6 +1488,30 @@ TEST_F(AegisAgentServiceTest, IntermediateTakeoverRevokesPendingAction) {
+   EXPECT_TRUE(service->CancelTask(task->id()));
+ }
+ 
++TEST_F(AegisAgentServiceTest, StalePageEvidenceCannotReachCompletion) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>> done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback());
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  AegisAgentServiceTestPeer::DeliverRuntimeResult(service, task->id(),
++                                                 "tab.list", true);
++  const int calls = task->model_calls_used();
++  base::DictValue value;
++  value.Set("tab_id", 7);
++  value.Set("document_token", "expired-document");
++  value.Set("url", "https://fixture.example/old");
++  value.Set("visible_text_untrusted", "旧文档的事实");
++  AegisAgentServiceTestPeer::DeliverRuntimeResult(
++      service, task->id(), "page.observe", true, std::move(value));
++  EXPECT_EQ(task->state(), AgentTaskState::kFailed);
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_FALSE(done.Get<2>().has_value());
++  EXPECT_EQ(task->model_calls_used(), calls);
++  EXPECT_FALSE(AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
++}
++
+ TEST_F(AegisAgentServiceTest, CancelRejectsSynchronousActorStopResult) {
+   network::TestURLLoaderFactory factory;
+   base::test::TestFuture<bool, std::string,
+@@ -1715,6 +1739,57 @@ TEST_F(AegisAgentServiceTest,
+             AgentPolicyDisposition::kDeny);
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       RetryApprovalBlocksDispatchWithoutSpendingBudget) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  auto scope = ServiceTestScope();
++  scope.allowed_tools.insert("tab.create");
++  scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
++  auto* task = service->CreateTask("检查新地址审批", AgentMode::kAct, scope);
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(service->BeginPlanning(task->id()));
++  auto event = ServicePlanEvent();
++  event.arguments.Set("steps",
++                      base::ListValue().Append(base::DictValue()
++                                                   .Set("id", "open")
++                                                   .Set("title", "打开新地址")
++                                                   .Set("tool", "tab.create")));
++  std::string error;
++  ASSERT_TRUE(service->AcceptModelPlan(task->id(), event, &error)) << error;
++  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
++  ASSERT_TRUE(service->Transition(task->id(), AgentTaskState::kReflecting,
++                                  "绑定失败后的重试"));
++  AgentToolCall call;
++  call.action_id = "url-call";
++  call.tool_name = "tab.create";
++  call.committed_url = GURL("https://fixture.example/current");
++  call.arguments.Set("url", "https://fixture.example/new?synthetic=private");
++  const int before = task->tool_calls_used();
++  base::test::TestFuture<AgentToolResult> blocked;
++  service->ExecuteTool(task->id(), call, blocked.GetCallback());
++  EXPECT_EQ(blocked.Get().error, AgentErrorCode::kApprovalRequired)
++      << blocked.Get().message;
++  EXPECT_EQ(task->state(), AgentTaskState::kAwaitingActionApproval);
++  EXPECT_EQ(task->tool_calls_used(), before);
++  EXPECT_TRUE(task->owned_tab_ids().empty());
++  EXPECT_EQ(service->ToolCallRisk(task->id(), call),
++            AgentRiskLevel::kR2ExternalSideEffect);
++  EXPECT_EQ(service->TaskMaxRisk(task->id()),
++            AgentRiskLevel::kR2ExternalSideEffect);
++  const auto receipt = service->ApproveToolCall(task->id(), call);
++  ASSERT_TRUE(receipt);
++  EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
++                .disposition,
++            AgentPolicyDisposition::kAllow);
++  EXPECT_EQ(task->tool_calls_used(), before + 1);
++  EXPECT_EQ(service->TaskMaxRisk(task->id()),
++            AgentRiskLevel::kR2ExternalSideEffect);
++  ASSERT_TRUE(service->CancelTask(task->id()));
++  EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
++                .disposition,
++            AgentPolicyDisposition::kDeny);
++}
++
+ TEST_F(AegisAgentServiceTest, DataSourcesIncludeRetainedFailedReadResults) {
+   auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+   auto scope = ServiceTestScope();
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index c259eee9c0..d64dc09bbb 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -889,6 +889,84 @@ void ConstrainDownloadExtractionTool(AgentModelToolDefinition* tool,
+   items->Set("enum", std::move(fields));
+ }
+ 
++bool AgentGoalRequestsDownloadIntegrity(std::string_view goal) {
++  const std::string lower = base::ToLowerASCII(goal);
++  return lower.contains("完整性") || lower.contains("校验") ||
++         lower.contains("校驗") || lower.contains("integrity") ||
++         lower.contains("checksum") || lower.contains("sha-256") ||
++         lower.contains("sha256");
++}
++
++void ConstrainDownloadIntegrityTool(AgentModelToolDefinition* tool,
++                                    std::string_view user_goal) {
++  if (tool->name != "download.start" ||
++      !AgentGoalRequestsDownloadIntegrity(user_goal)) {
++    return;
++  }
++  auto* required = tool->input_schema.FindList("required");
++  if (required && !std::ranges::any_of(*required, [](const auto& item) {
++        return item.is_string() && item.GetString() == "expected_sha256";
++      })) {
++    required->Append("expected_sha256");
++  }
++}
++
++void ConstrainObservedExtractionTool(AgentModelToolDefinition* tool,
++                                    const AgentToolResult* observation) {
++  if (tool->name != "page.extract" || !observation || !observation->ok) {
++    return;
++  }
++  const auto* nodes = observation->value.FindList("nodes");
++  auto* items = tool->input_schema.FindDictByDottedPath("properties.fields.items");
++  auto* required = tool->input_schema.FindList("required");
++  if (!nodes || !items || !required) {
++    return;
++  }
++  const bool canonical_only = items->FindList("enum") != nullptr;
++  base::flat_set<std::string> available;
++  if (const auto* title = observation->value.FindString("title");
++      title && !title->empty()) {
++    available.insert("title");
++  }
++  std::vector<std::string> pending_headings;
++  for (const auto& value : *nodes) {
++    const auto* node = value.GetIfDict();
++    if (!node) {
++      continue;
++    }
++    const auto* text = node->FindString("text");
++    if (!text || base::TrimWhitespaceASCII(*text, base::TRIM_ALL).empty()) {
++      continue;
++    }
++    if (node->FindBool("text_is_heading") == false) {
++      available.insert("content");
++      available.insert("summary");
++      for (const auto& heading : pending_headings) {
++        available.insert(heading);
++      }
++      pending_headings.clear();
++    } else if (!canonical_only && node->FindBool("text_is_heading") == true &&
++               text->size() <= 64u && available.size() < 100u) {
++      // 连续标题没有正文时，仅最后一个标题能绑定随后出现的段落。
++      pending_headings.assign(1u, *text);
++    }
++  }
++  // 没有可提取字段时保留原合同，由原生失败回执说明原因。
++  if (available.empty()) {
++    return;
++  }
++  base::ListValue fields;
++  for (const auto& field : available) {
++    fields.Append(field);
++  }
++  items->Set("enum", std::move(fields));
++  if (!std::ranges::any_of(*required, [](const auto& item) {
++        return item.is_string() && item.GetString() == "fields";
++      })) {
++    required->Append("fields");
++  }
++}
++
+ std::string BuildAgentExecutionPrompt(
+     const AgentTask& task,
+     const AgentTaskPlan& plan,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index 8c633f5cb7..732c68a584 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -62,6 +62,15 @@ void ConstrainDownloadExtractionTool(AgentModelToolDefinition* tool,
+                                      const AgentTaskScope& scope,
+                                      std::string_view user_goal = {});
+ 
++// 用户要求完整性核对时，开始下载前必须提供预期摘要，不能事后猜测。
++bool AgentGoalRequestsDownloadIntegrity(std::string_view goal);
++void ConstrainDownloadIntegrityTool(AgentModelToolDefinition* tool,
++                                    std::string_view user_goal);
++
++// 只提供最近原生观察实际支持的字段；空正文不会被要求重复提取。
++void ConstrainObservedExtractionTool(AgentModelToolDefinition* tool,
++                                    const AgentToolResult* observation);
++
+ AgentModelToolDefinition BuildSelectTranslationToolDefinition();
+ std::string BuildAgentTranslationSelectionSystemContract();
+ std::optional<std::string> BuildAgentTranslationSelectionPrompt(
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 0cbf559640..d0d3804f7f 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -53,6 +53,67 @@ TEST(AegisAgentExecutionTest, DownloadExtractionUsesRealBoundedFields) {
+   EXPECT_EQ(download->input_schema, download_schema);
+ }
+ 
++TEST(AegisAgentExecutionTest, ObservedFieldsExcludeInventedAndEmptySections) {
++  AgentToolRegistry registry;
++  auto tool = registry.ModelToolForName("page.extract");
++  ASSERT_TRUE(tool);
++  AgentToolResult observation;
++  observation.ok = true;
++  observation.value.Set("title", "真实页面");
++  observation.value.Set("nodes", base::ListValue()
++      .Append(base::DictValue().Set("text", "空章节").Set("text_is_heading", true))
++      .Append(base::DictValue().Set("text", "实际章节").Set("text_is_heading", true))
++      .Append(base::DictValue().Set("text", "指标为 42。").Set("text_is_heading", false)));
++  ConstrainObservedExtractionTool(&*tool, &observation);
++  const auto* fields = tool->input_schema.FindListByDottedPath("properties.fields.items.enum");
++  ASSERT_TRUE(fields);
++  EXPECT_EQ(fields->size(), 4u);
++  EXPECT_TRUE(fields->contains("title"));
++  EXPECT_TRUE(fields->contains("content"));
++  EXPECT_TRUE(fields->contains("summary"));
++  EXPECT_TRUE(fields->contains("实际章节"));
++  EXPECT_FALSE(fields->contains("空章节"));
++  EXPECT_FALSE(fields->contains("stable_metric"));
++  EXPECT_TRUE(tool->input_schema.FindList("required")->contains("fields"));
++}
++
++TEST(AegisAgentExecutionTest, TitleOnlyPageDoesNotRequestMissingBody) {
++  AgentToolRegistry registry;
++  auto tool = registry.ModelToolForName("page.extract");
++  ASSERT_TRUE(tool);
++  AgentToolResult observation;
++  observation.ok = true;
++  observation.value.Set("title", "只有标题");
++  observation.value.Set("nodes", base::ListValue().Append(
++      base::DictValue().Set("text", "只有标题").Set("text_is_heading", true)));
++  ConstrainObservedExtractionTool(&*tool, &observation);
++  const auto* fields = tool->input_schema.FindListByDottedPath("properties.fields.items.enum");
++  ASSERT_TRUE(fields);
++  ASSERT_EQ(fields->size(), 1u);
++  EXPECT_EQ((*fields)[0].GetString(), "title");
++  auto unrelated = registry.ModelToolForName("page.observe");
++  const auto before = unrelated->input_schema.Clone();
++  ConstrainObservedExtractionTool(&*unrelated, &observation);
++  EXPECT_EQ(before, unrelated->input_schema);
++}
++
++TEST(AegisAgentExecutionTest, RequestedDownloadIntegrityRequiresExpectedHash) {
++  AgentToolRegistry registry;
++  auto tool = registry.ModelToolForName("download.start");
++  ASSERT_TRUE(tool);
++  const auto original = tool->input_schema.Clone();
++  ConstrainDownloadIntegrityTool(&*tool, "下载这个文件");
++  EXPECT_EQ(tool->input_schema, original);
++  ConstrainDownloadIntegrityTool(&*tool, "下载文件并核对完整性");
++  ASSERT_TRUE(tool->input_schema.FindList("required"));
++  EXPECT_TRUE(tool->input_schema.FindList("required")->contains("expected_sha256"));
++  const auto constrained = tool->input_schema.Clone();
++  ConstrainDownloadIntegrityTool(&*tool, "verify SHA-256");
++  EXPECT_EQ(tool->input_schema, constrained);
++  EXPECT_TRUE(AgentGoalRequestsDownloadIntegrity("校驗下載檔案"));
++  EXPECT_FALSE(AgentGoalRequestsDownloadIntegrity("取消下载"));
++}
++
+ AgentModelEvent ToolEvent(std::string name) {
+   AgentModelEvent event;
+   event.type = AgentModelEventType::kToolCall;
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index ae07c080ba..7e1b1aba27 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -871,6 +871,11 @@ function render(next: TaskSnapshot) {
+       resultOutcome: '', resultSources: [], unfinishedItems: [], timeline: [],
+       pendingApproval: null, undoAvailable: false, lastError: ''};
+   } else if (selectedTaskId !== null && next.taskId !== selectedTaskId) {
++    // 监控列表属于整个工作区；旧任务结果仍隔离，但删除旧监控也必须更新列表。
++    renderMonitors(next.monitors);
++    if (snapshot) {
++      snapshot = {...snapshot, monitors: next.monitors};
++    }
+     return;
+   } else {
+     selectedTaskId = next.taskId;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7ba6dd9196..d3f6278bcd 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.37。
+-inline constexpr char kProductVersion[] = "2.0.0.37";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (037)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.38。
++inline constexpr char kProductVersion[] = "2.0.0.38";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (038)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

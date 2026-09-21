@@ -19,6 +19,13 @@
 
 namespace aegis::agent {
 
+// 正文只以系统加密后的密文写入，明文元数据仅保留记录编号与时间。
+struct StoredAgentResearch {
+  std::string id;
+  std::string ciphertext;
+  base::Time saved_at;
+};
+
 struct StoredAgentTask {
   enum class RecoveryDisposition {
     kResumeReadOnly = 0,
@@ -73,9 +80,8 @@ struct StoredAgentState {
   std::vector<AgentMonitorDefinition> monitors;
 };
 
-// Profile-local storage for resumable metadata and redacted action summaries.
-// Page bodies, screenshots, secrets, form values, cookies and full local paths
-// have no column in this schema.
+// 按 Profile 保存恢复元数据和脱敏操作摘要。
+// 用户主动保存的研究结果只接收系统加密后的密文，不保存正文或摘录明文。
 class AgentTaskStore {
  public:
   explicit AgentTaskStore(base::FilePath database_path, bool in_memory = false);
@@ -110,6 +116,9 @@ class AgentTaskStore {
   bool SaveMonitor(const AgentMonitorDefinition& monitor);
   std::vector<AgentMonitorDefinition> LoadMonitors();
   bool DeleteMonitor(const std::string& monitor_id);
+  bool SaveResearch(StoredAgentResearch research);
+  std::optional<std::vector<StoredAgentResearch>> LoadResearch();
+  bool DeleteResearch(const std::string& id);
   bool DeleteTask(const std::string& task_id);
   bool Prune(base::Time unfinished_before, base::Time completed_before);
 

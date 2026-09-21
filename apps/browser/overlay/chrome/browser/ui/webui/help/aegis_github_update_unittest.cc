@@ -11,6 +11,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
+#include "base/version.h"
 #include "crypto/hash.h"
 #include "mojo/core/embedder/embedder.h"
 #include "net/http/http_status_code.h"
@@ -23,7 +24,14 @@ namespace {
 constexpr char kPlatform[] = "mac-arm64.dmg";
 constexpr char kPayload[] = "representative update package";
 
-base::DictValue Release(std::string version = "1.1.0.999") {
+// 下载回归始终构造当前产品的下一主版本，避免换代后意外只覆盖防降级分支。
+std::string FutureVersion() {
+  return base::NumberToString(base::Version(kProductVersion).components()[0] +
+                              1) +
+         ".0.0.1";
+}
+
+base::DictValue Release(std::string version = FutureVersion()) {
   base::DictValue asset;
   const std::string name = "GCSA-aegis-" + version + "-" + kPlatform;
   asset.Set("name", name);
@@ -52,7 +60,11 @@ ReleaseResult Parse(const base::DictValue& value) {
 
 TEST(GitHubReleaseTest, NumericVersionsAndNoDowngrade) {
   EXPECT_EQ(Parse(Release()).state, ReleaseState::kAvailable);
-  EXPECT_EQ(Parse(Release("1.1.0.9999")).state, ReleaseState::kAvailable);
+  for (const char* newer : {"1.1.0.999", "1.1.0.9999", "2.0.0.1"}) {
+    EXPECT_EQ(
+        ParseGitHubRelease(JSON(Release(newer)), "1.1.0.100", kPlatform).state,
+        ReleaseState::kAvailable);
+  }
   EXPECT_EQ(Parse(Release("1.1.0.1")).state, ReleaseState::kLocalNewer);
   EXPECT_EQ(Parse(Release("1.0.0.999")).state, ReleaseState::kLocalNewer);
   EXPECT_EQ(Parse(Release("151.0.7922")).state, ReleaseState::kInvalid);

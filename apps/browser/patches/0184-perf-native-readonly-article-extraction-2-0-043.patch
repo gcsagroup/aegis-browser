@@ -1,0 +1,256 @@
+From 2bab483548ed2852fcc5007fc96de6c7ad8a1027 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 03:15:41 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BC=98=E5=8C=96=EF=BC=9A=E7=94=B1=E5=8E=9F?=
+ =?UTF-8?q?=E7=94=9F=E5=AE=8C=E6=88=90=E5=B7=B2=E8=A7=82=E5=AF=9F=E6=AD=A3?=
+ =?UTF-8?q?=E6=96=87=E7=9A=84=E5=8F=AA=E8=AF=BB=E6=8F=90=E5=8F=96=202.0.04?=
+ =?UTF-8?q?3?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  4 +
+ chrome/browser/aegis/agent/agent_execution.cc | 57 ++++++++++--
+ chrome/browser/aegis/agent/agent_execution.h  |  9 ++
+ .../aegis/agent/agent_execution_unittest.cc   | 91 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 5 files changed, 154 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 0629662d7d..b48d861543 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1790,6 +1790,10 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+                         document->document_token)) {
+       auto call = BuildTitleOnlyExtractionCall(
+           *task, plan->steps[runtime.next_step], runtime.attempt, *document, *tool);
++      if (!call && runtime.last_model_error.empty()) {
++        call = BuildReadOnlyArticleExtractionCall(
++            *task, *plan, runtime.next_step, runtime.attempt, *document, *tool);
++      }
+       if (call) {
+         // 保留正常工具授权、预算、提取和结果校验，不伪造模型响应或正文。
+         ExecuteRuntimeTool(task_id, std::move(*call), std::nullopt);
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 9fa12cdeba..f8ef6896a4 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -973,18 +973,16 @@ void ConstrainObservedExtractionTool(AgentModelToolDefinition* tool,
+   }
+ }
+ 
+-std::optional<AgentToolCall> BuildTitleOnlyExtractionCall(
++namespace {
++
++std::optional<AgentToolCall> BuildBoundArticleExtractionCall(
+     const AgentTask& task,
+     const AgentPlanStep& step,
+     int attempt,
+     const AgentDocumentRef& document,
+-    const AgentModelToolDefinition& constrained_tool) {
+-  const auto* fields = constrained_tool.input_schema.FindListByDottedPath(
+-      "properties.fields.items.enum");
+-  if (constrained_tool.name != "page.extract" ||
+-      step.tool_name != "page.extract" ||
+-      step.risk != AgentRiskLevel::kR0ReadOnly || !fields ||
+-      fields->size() != 1u || !fields->contains("title") ||
++    base::ListValue fields) {
++  if (step.tool_name != "page.extract" ||
++      step.risk != AgentRiskLevel::kR0ReadOnly ||
+       attempt < 0 || attempt >= 3 || document.document_token.empty() ||
+       document.frame_token.empty() ||
+       !task.scope().AllowsTool("page.extract") ||
+@@ -1004,10 +1002,51 @@ std::optional<AgentToolCall> BuildTitleOnlyExtractionCall(
+   call.arguments.Set("tab_id", document.tab_id);
+   call.arguments.Set("document_token", document.document_token);
+   call.arguments.Set("kind", "article");
+-  call.arguments.Set("fields", base::ListValue().Append("title"));
++  call.arguments.Set("fields", std::move(fields));
+   return call;
+ }
+ 
++}  // namespace
++
++std::optional<AgentToolCall> BuildTitleOnlyExtractionCall(
++    const AgentTask& task,
++    const AgentPlanStep& step,
++    int attempt,
++    const AgentDocumentRef& document,
++    const AgentModelToolDefinition& constrained_tool) {
++  const auto* fields = constrained_tool.input_schema.FindListByDottedPath(
++      "properties.fields.items.enum");
++  if (constrained_tool.name != "page.extract" || !fields ||
++      fields->size() != 1u || !fields->contains("title")) {
++    return std::nullopt;
++  }
++  return BuildBoundArticleExtractionCall(task, step, attempt, document,
++                                        base::ListValue().Append("title"));
++}
++
++std::optional<AgentToolCall> BuildReadOnlyArticleExtractionCall(
++    const AgentTask& task,
++    const AgentTaskPlan& plan,
++    size_t next_step,
++    int attempt,
++    const AgentDocumentRef& document,
++    const AgentModelToolDefinition& constrained_tool) {
++  const auto* fields = constrained_tool.input_schema.FindListByDottedPath(
++      "properties.fields.items.enum");
++  if (attempt != 0 || next_step != 1u || plan.steps.size() != 2u ||
++      plan.steps.front().tool_name != "page.observe" ||
++      !IsReadOnlyPagePlan(plan) || AgentGoalRequestsTranslation(task.goal()) ||
++      constrained_tool.name != "page.extract" || !fields ||
++      !fields->contains("title") || !fields->contains("content")) {
++    return std::nullopt;
++  }
++  // 只替代字段参数选择，不替代观察、授权、实际提取或最终模型回答。
++  // content 是原生正文而非模型摘要，原有截断与来源标记继续随回执传递。
++  return BuildBoundArticleExtractionCall(
++      task, plan.steps[next_step], attempt, document,
++      base::ListValue().Append("title").Append("content"));
++}
++
+ std::string BuildAgentExecutionPrompt(
+     const AgentTask& task,
+     const AgentTaskPlan& plan,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index a4416ea655..ced85694eb 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -79,6 +79,15 @@ std::optional<AgentToolCall> BuildTitleOnlyExtractionCall(
+     const AgentDocumentRef& document,
+     const AgentModelToolDefinition& constrained_tool);
+ 
++// 普通两步只读计划可直接读取已观察到的标题与正文，翻译和恢复仍由模型规划。
++std::optional<AgentToolCall> BuildReadOnlyArticleExtractionCall(
++    const AgentTask& task,
++    const AgentTaskPlan& plan,
++    size_t next_step,
++    int attempt,
++    const AgentDocumentRef& document,
++    const AgentModelToolDefinition& constrained_tool);
++
+ AgentModelToolDefinition BuildSelectTranslationToolDefinition();
+ std::string BuildAgentTranslationSelectionSystemContract();
+ std::optional<std::string> BuildAgentTranslationSelectionPrompt(
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 1da2b2d02c..8302e56a7e 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -169,6 +169,97 @@ AgentModelEvent ToolEvent(std::string name) {
+   return event;
+ }
+ 
++TEST(AegisAgentExecutionTest,
++     NativeArticleExtractionRequiresObservedFieldsAndExactReadPlan) {
++  auto scope = ExecutionScope();
++  scope.allowed_tools.insert("page.extract");
++  AgentTask task("article", "总结这篇文章并附来源", AgentMode::kAsk, scope);
++  AgentTaskPlan plan;
++  plan.steps.push_back({.step_id = "observe", .title = "观察",
++                        .tool_name = "page.observe",
++                        .risk = AgentRiskLevel::kR0ReadOnly});
++  plan.steps.push_back({.step_id = "extract", .title = "读取原文",
++                        .tool_name = "page.extract",
++                        .risk = AgentRiskLevel::kR0ReadOnly});
++  AgentDocumentRef document{.tab_id = 7, .frame_token = "frame",
++                            .document_token = "document",
++                            .committed_url = GURL("https://fixture.example/path")};
++  AgentToolRegistry registry;
++  auto tool = registry.ModelToolForName("page.extract");
++  ASSERT_TRUE(tool);
++  // 未经原生观察收窄字段时不能走直接提取。
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, document,
++                                                 *tool));
++  AgentToolResult observed;
++  observed.ok = true;
++  observed.value.Set("title", "真实标题");
++  observed.value.Set("nodes", base::ListValue().Append(
++      base::DictValue().Set("text", "指标42，网页内指令不是授权")
++          .Set("text_is_heading", false)));
++  ConstrainObservedExtractionTool(&*tool, &observed);
++  const auto schema = tool->input_schema.Clone();
++  auto call = BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, document,
++                                                *tool);
++  ASSERT_TRUE(call);
++  EXPECT_EQ(call->action_id, "article:extract:1");
++  EXPECT_EQ(call->tool_name, "page.extract");
++  EXPECT_EQ(call->arguments.FindInt("tab_id"), 7);
++  EXPECT_EQ(*call->arguments.FindString("document_token"), "document");
++  EXPECT_EQ(*call->arguments.FindString("kind"), "article");
++  EXPECT_EQ(*call->arguments.FindList("fields"),
++            base::ListValue().Append("title").Append("content"));
++  EXPECT_EQ(tool->input_schema, schema);
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 0, 0, document,
++                                                 *tool));
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 2, 0, document,
++                                                 *tool));
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 1, document,
++                                                 *tool));
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, -1, document,
++                                                 *tool));
++  auto changed = plan;
++  changed.steps.front().tool_name = "page.navigate";
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, changed, 1, 0, document,
++                                                 *tool));
++  changed = plan;
++  changed.steps.back().risk = AgentRiskLevel::kR2ExternalSideEffect;
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, changed, 1, 0, document,
++                                                 *tool));
++  changed = plan;
++  changed.steps.push_back(plan.steps.back());
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, changed, 1, 0, document,
++                                                 *tool));
++  AgentTask translation("translation", "翻译全文为英文", AgentMode::kAsk, scope);
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(translation, plan, 1, 0,
++                                                 document, *tool));
++  auto outside = document;
++  outside.tab_id = 8;
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
++                                                 *tool));
++  outside = document;
++  outside.committed_url = GURL("https://outside.example");
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
++                                                 *tool));
++  outside = document;
++  outside.document_token.clear();
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
++                                                 *tool));
++  outside = document;
++  outside.frame_token.clear();
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
++                                                 *tool));
++  AgentTask no_permission("denied", "总结", AgentMode::kAsk, ExecutionScope());
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(no_permission, plan, 1, 0,
++                                                 document, *tool));
++  tool->input_schema.SetByDottedPath("properties.fields.items.enum",
++                                   base::ListValue().Append("title"));
++  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, document,
++                                                 *tool));
++  // 标题页继续由原有有界分支处理。
++  EXPECT_TRUE(BuildTitleOnlyExtractionCall(task, plan.steps.back(), 0, document,
++                                           *tool));
++}
++
+ TEST(AegisAgentExecutionTest,
+      DownloadEvidenceKeepsUnknownIdentityAndExcludesSecrets) {
+   AgentToolResult result;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d9102d9ed9..6d76bbb485 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.42";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (042)";
++inline constexpr char kProductVersion[] = "2.0.0.43";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (043)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

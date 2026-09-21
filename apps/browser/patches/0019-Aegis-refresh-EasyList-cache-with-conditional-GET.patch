@@ -1,4 +1,4 @@
-From 84e48a98a5cb548388d685bb2c96248af8afb71e Mon Sep 17 00:00:00 2001
+From 5a62bb15c6994dd1ecfde33489a55e4b3727c506 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:37:31 +0800
 Subject: [PATCH] Aegis: refresh EasyList cache with conditional GET
@@ -598,3 +598,4 @@ index 78be0b3a4d..94972c1f14 100644
  inline constexpr char kCnameUncloakEnabled[] = "aegis.cname_uncloak_enabled";
 -- 
 2.52.0
+

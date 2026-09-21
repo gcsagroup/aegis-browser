@@ -1,4 +1,4 @@
-From 9d6b670867ab1dd5afae2999b5ec7ff438ebe30e Mon Sep 17 00:00:00 2001
+From f9aeb2e28129cc97933ea7cd42f9396543ca92ef Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:01:50 +0800
 Subject: [PATCH] Aegis: strip tracking query params and reject tracker cookies
@@ -516,7 +516,7 @@ index ca83ce1882..bcc72edff8 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index 3dbd0f1c60..63a540d4fc 100644
+index bc16e524a1..d114a21947 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 @@ -21,6 +21,7 @@
@@ -527,7 +527,7 @@ index 3dbd0f1c60..63a540d4fc 100644
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -401,6 +402,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -409,6 +410,7 @@ void CreateAndAddChromeThrottlesForNavigation(
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
    aegis::AegisPhishNavigationThrottle::MaybeCreateAndAdd(registry);
@@ -989,5 +989,5 @@ index ae66c7f38c..cd27c9ac0d 100644
  
  #endif  // CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
 -- 
-2.50.1 (Apple Git-155)
+2.52.0
 

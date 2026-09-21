@@ -1,0 +1,821 @@
+From b72b945720f2c96321520d3911f6b923a7d4b7d3 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 21:40:19 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E8=A1=94=E6=8E=A5?=
+ =?UTF-8?q?=E7=9B=91=E6=8E=A7=E4=B8=8B=E8=BD=BD=E4=B8=8E=E7=A0=94=E7=A9=B6?=
+ =?UTF-8?q?=E4=BD=93=E9=AA=8C=202.0.052?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    |   6 +
+ .../aegis/agent/aegis_agent_service.cc        |  14 ++
+ .../browser/aegis/agent/aegis_agent_service.h |   2 +
+ .../agent/aegis_agent_service_unittest.cc     |  37 +++++
+ .../aegis/agent/aegis_browser_tools.cc        | 128 +++++++++++++++++-
+ .../browser/aegis/agent/aegis_browser_tools.h |   7 +
+ chrome/browser/aegis/agent/agent_execution.cc |  15 +-
+ .../aegis/agent/agent_execution_unittest.cc   |  42 ++++++
+ .../browser/resources/aegis_agent/agent.html  |   4 +
+ chrome/browser/resources/aegis_agent/agent.ts | 106 +++++++++++++--
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |   2 +
+ .../aegis_agent/aegis_agent_page_handler.cc   |  36 +++++
+ .../aegis_agent/aegis_agent_page_handler.h    |   2 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  40 ++++++
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 15 files changed, 428 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index fac3039a56..42fd4ebbcb 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -3259,6 +3259,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_TRUE(grouped.Get().ok) << grouped.Get().message;
+   ASSERT_TRUE(grouped.Get().value.FindList("tab_ids"));
+   EXPECT_EQ(grouped.Get().value.FindList("tab_ids")->size(), 3u);
++  const auto* title = grouped.Get().value.FindString("title");
++  ASSERT_TRUE(title);
++  EXPECT_FALSE(title->empty());
+   const auto* group_id = grouped.Get().value.FindString("group_id");
+   ASSERT_TRUE(group_id);
+   auto* tabs = TabListInterface::From(browser());
+@@ -3267,6 +3270,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     if (task->AllowsTab(tab->GetHandle().raw_value())) {
+       ASSERT_TRUE(group);
+       EXPECT_EQ(group->ToString(), *group_id);
++      const auto visual = tabs->GetTabGroupVisualData(*group);
++      ASSERT_TRUE(visual);
++      EXPECT_EQ(base::UTF16ToUTF8(visual->title()), *title);
+     } else {
+       EXPECT_FALSE(group);
+     }
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index ea8897f673..ed9bbfecfd 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -3016,6 +3016,20 @@ base::DictValue AegisAgentService::GetDownloadEvidence(
+   return base::DictValue();
+ }
+ 
++void AegisAgentService::ReviewDownload(
++    const std::string& task_id,
++    base::OnceCallback<void(base::DictValue)> callback) {
++  const auto* task = GetTask(task_id);
++  const auto receipt = download_evidence_.find(task_id);
++  if (!IsEnabled() || !task || task->state() != AgentTaskState::kCompleted ||
++      receipt == download_evidence_.end()) {
++    std::move(callback).Run(base::DictValue().Set("status", "unavailable"));
++    return;
++  }
++  browser_tools_.ReviewDownload(task->scope(), receipt->second,
++                                std::move(callback));
++}
++
+ const base::DictValue* AegisAgentService::GetResearchRecord(
+     const std::string& id) const {
+   if (auto it = research_results_.find(id); it != research_results_.end()) {
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index b5ae89314a..9659e75c9e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -122,6 +122,8 @@ class AegisAgentService : public KeyedService {
+   void DeleteSavedResearch(const std::string& id,
+                            ResearchWriteCallback callback);
+   base::DictValue GetDownloadEvidence(const std::string& task_id) const;
++  void ReviewDownload(const std::string& task_id,
++                      base::OnceCallback<void(base::DictValue)> callback);
+   const base::DictValue* GetResearchRecord(const std::string& id) const;
+   const AgentCompletionSummary* GetCompletionSummary(
+       const std::string& task_id) const;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 9257cc0fa3..7dbd9caf07 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -7,7 +7,9 @@
+ #include <string_view>
+ #include <utility>
+ 
++#include "base/files/file.h"
+ #include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+ #include "base/scoped_observation.h"
+@@ -1366,6 +1368,41 @@ TEST_F(AegisAgentServiceTest, LaterBookmarkEditInvalidatesUndoReceipt) {
+   EXPECT_FALSE(AegisBrowserToolsTestPeer::IsObserving(tools, &undo_manager));
+ }
+ 
++TEST_F(AegisAgentServiceTest, DownloadReviewReadsCurrentFileAndRejectsChanges) {
++  base::ScopedAllowBlockingForTesting allow_blocking;
++  base::ScopedTempDir temporary;
++  ASSERT_TRUE(temporary.CreateUniqueTempDir());
++  const auto file = temporary.GetPath().AppendASCII("download.bin");
++  const std::string sha =
++      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
++  ASSERT_TRUE(base::WriteFile(file, "abc"));
++  auto result = ReviewAegisDownloadedFile(file, sha);
++  EXPECT_EQ(*result.FindString("status"), "match");
++  EXPECT_EQ(*result.FindString("sha256"), sha);
++  ASSERT_TRUE(base::WriteFile(file, "changed"));
++  EXPECT_EQ(*ReviewAegisDownloadedFile(file, sha).FindString("status"),
++            "changed");
++  const auto missing = temporary.GetPath().AppendASCII("missing.bin");
++  EXPECT_EQ(*ReviewAegisDownloadedFile(missing, sha).FindString("status"),
++            "missing");
++  EXPECT_FALSE(ReviewAegisDownloadedFile(file, "invalid").contains("sha256"));
++  base::File oversized(temporary.GetPath().AppendASCII("large.bin"),
++                       base::File::FLAG_CREATE | base::File::FLAG_WRITE);
++  ASSERT_TRUE(oversized.SetLength(1024LL * 1024 * 1024 + 1));
++  oversized.Close();
++  EXPECT_EQ(*ReviewAegisDownloadedFile(
++                 temporary.GetPath().AppendASCII("large.bin"), sha)
++                 .FindString("status"),
++            "too_large");
++}
++
++TEST_F(AegisAgentServiceTest, DownloadReviewRejectsTaskWithoutNativeReceipt) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  base::test::TestFuture<base::DictValue> result;
++  service->ReviewDownload("unknown-task", result.GetCallback());
++  EXPECT_EQ(*result.Get().FindString("status"), "unavailable");
++}
++
+ TEST_F(AegisAgentServiceTest, TaskStopCancelsOnlyActiveOwnedDownloads) {
+   download::MockDownloadItem active;
+   EXPECT_CALL(active, GetState())
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 68543249b5..d4cbc2555e 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -14,6 +14,8 @@
+ #include "base/check.h"
+ #include "base/command_line.h"
+ #include "base/containers/flat_set.h"
++#include "base/files/file.h"
++#include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
+ #include "base/location.h"
+@@ -21,6 +23,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/sequenced_task_runner.h"
++#include "base/task/thread_pool.h"
+ #include "base/time/time.h"
+ #include "base/timer/timer.h"
+ #include "base/uuid.h"
+@@ -66,6 +69,7 @@
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/web_contents.h"
++#include "crypto/secure_hash.h"
+ #include "crypto/sha2.h"
+ #include "net/base/ip_address.h"
+ #include "net/base/load_flags.h"
+@@ -861,6 +865,109 @@ void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item) {
+   }
+ }
+ 
++base::DictValue ReviewAegisDownloadedFile(const base::FilePath& path,
++                                          std::string_view download_sha256) {
++  auto result = base::DictValue().Set("status", "missing");
++  if (download_sha256.size() != 64u ||
++      !std::ranges::all_of(
++          download_sha256,
++          [](char value) { return base::IsHexDigit(value); }) ||
++      base::IsLink(path)) {
++    return result;
++  }
++  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
++                            base::File::FLAG_NO_FOLLOW);
++  base::File::Info before;
++  if (!file.IsValid() || !file.GetInfo(&before) || before.is_directory ||
++      before.size < 0) {
++    return result;
++  }
++  constexpr int64_t kMaxReviewBytes = 1024LL * 1024 * 1024;
++  if (before.size > kMaxReviewBytes) {
++    result.Set("status", "too_large");
++    return result;
++  }
++  auto hash = crypto::SecureHash::Create(crypto::SecureHash::SHA256);
++  std::array<uint8_t, 65536> buffer;
++  int64_t read_bytes = 0;
++  const auto deadline = base::TimeTicks::Now() + base::Seconds(30);
++  while (true) {
++    const auto count = file.ReadAtCurrentPos(buffer);
++    if (!count || base::TimeTicks::Now() > deadline) {
++      return result;
++    }
++    if (*count == 0u) {
++      break;
++    }
++    read_bytes += *count;
++    if (read_bytes > kMaxReviewBytes) {
++      result.Set("status", "too_large");
++      return result;
++    }
++    hash->Update(base::span(buffer).first(*count));
++  }
++  base::File::Info after;
++  if (!file.GetInfo(&after) || before.size != after.size ||
++      before.last_modified != after.last_modified ||
++      read_bytes != before.size) {
++    result.Set("status", "changed");
++    return result;
++  }
++  std::array<uint8_t, 32> digest;
++  hash->Finish(digest);
++  const auto actual = base::ToLowerASCII(base::HexEncode(digest));
++  result.Set("sha256", actual);
++  result.Set("status", base::EqualsCaseInsensitiveASCII(actual, download_sha256)
++                           ? "match"
++                           : "changed");
++  return result;
++}
++
++void AegisBrowserTools::ReviewDownload(
++    const AgentTaskScope& scope,
++    const base::DictValue& evidence,
++    base::OnceCallback<void(base::DictValue)> callback) {
++  const auto* guid = evidence.FindString("download_id");
++  const auto* hash = evidence.FindString("sha256");
++  auto* manager = profile_->GetDownloadManager();
++  auto* item = manager && guid ? manager->GetDownloadByGuid(*guid) : nullptr;
++  if (download_review_running_ || !item || !hash ||
++      !scope.AllowsOrigin(item->GetURL()) || item->IsDangerous() ||
++      item->GetState() != download::DownloadItem::COMPLETE) {
++    std::move(callback).Run(base::DictValue().Set("status", "unavailable"));
++    return;
++  }
++  const auto path = item->GetTargetFilePath();
++  download_review_running_ = true;
++  // 仅核对浏览器保留回执所指的文件，不接收界面提供的路径或摘要。
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(&ReviewAegisDownloadedFile, path, *hash),
++      base::BindOnce(
++          [](base::WeakPtr<AegisBrowserTools> self, std::string guid,
++             base::FilePath path, AgentTaskScope scope,
++             base::OnceCallback<void(base::DictValue)> done,
++             base::DictValue result) {
++            if (!self) {
++              std::move(done).Run(
++                  base::DictValue().Set("status", "unavailable"));
++              return;
++            }
++            self->download_review_running_ = false;
++            auto* manager = self->profile_->GetDownloadManager();
++            auto* item = manager ? manager->GetDownloadByGuid(guid) : nullptr;
++            if (!item || item->GetTargetFilePath() != path ||
++                item->IsDangerous() ||
++                item->GetState() != download::DownloadItem::COMPLETE ||
++                !scope.AllowsOrigin(item->GetURL())) {
++              result = base::DictValue().Set("status", "unavailable");
++            }
++            std::move(done).Run(std::move(result));
++          },
++          weak_ptr_factory_.GetWeakPtr(), *guid, path, scope,
++          std::move(callback)));
++}
++
+ struct AegisBrowserTools::UrlCheckBatch {
+   struct Entry {
+     std::string node_id;
+@@ -1190,11 +1297,29 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+       return;
+     }
+     const std::string* title = call.arguments.FindString("title");
++    std::string group_title =
++        title ? std::string(base::TrimWhitespaceASCII(*title, base::TRIM_ALL))
++              : std::string();
++    if (group_title.empty()) {
++      group_title = base::CollapseWhitespaceASCII(
++          base::UTF16ToUTF8(
++              located_tabs.front().tab->GetContents()->GetTitle()),
++          false);
++    }
++    group_title = std::string(base::TruncateUTF8ToByteSize(
++        group_title.empty() ? "Aegis" : group_title, 128));
+     tab_list->SetTabGroupVisualData(
+         *group_id,
+         tab_groups::TabGroupVisualData(
+-            title ? base::UTF8ToUTF16(*title) : std::u16string(),
++            base::UTF8ToUTF16(group_title),
+             ParseGroupColor(call.arguments.FindString("color")), false));
++    const auto visual = tab_list->GetTabGroupVisualData(*group_id);
++    if (!visual || visual->title() != base::UTF8ToUTF16(group_title)) {
++      std::move(callback).Run(
++          ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
++                      "标签组名称回读不一致，请检查实际标签组"));
++      return;
++    }
+     AgentToolResult result = SuccessResult(call.action_id, "tabs grouped");
+     base::ListValue grouped_ids;
+     for (const LocatedTab& located : located_tabs) {
+@@ -1208,6 +1333,7 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+     }
+     result.value.Set("tab_ids", std::move(grouped_ids));
+     result.value.Set("group_id", group_id->ToString());
++    result.value.Set("title", group_title);
+     result.value.Set("revision", TabRevision(profile_, *task));
+     std::move(callback).Run(std::move(result));
+     return;
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
+index 7a32ad18c3..a3f3519dc0 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.h
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
+@@ -11,6 +11,7 @@
+ #include <vector>
+ 
+ #include "base/containers/flat_set.h"
++#include "base/files/file_path.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -51,6 +52,8 @@ bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
+                                           const GURL& target,
+                                           bool allow_local_fixture = false);
+ void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item);
++base::DictValue ReviewAegisDownloadedFile(const base::FilePath& path,
++                                          std::string_view download_sha256);
+ 
+ // Executes browser-owned tools that must not be implemented through renderer
+ // script. Every mutating method revalidates an opaque browser snapshot before
+@@ -71,6 +74,9 @@ class AegisBrowserTools : public UndoManagerObserver {
+   void ForgetTask(const std::string& task_id,
+                   bool preserve_bookmark_undo = false,
+                   bool cancel_active_downloads = false);
++  void ReviewDownload(const AgentTaskScope& scope,
++                      const base::DictValue& evidence,
++                      base::OnceCallback<void(base::DictValue)> callback);
+ 
+  private:
+   friend class AegisBrowserToolsTestPeer;
+@@ -164,6 +170,7 @@ class AegisBrowserTools : public UndoManagerObserver {
+   void OnUndoManagerShutdown() override;
+ 
+   raw_ptr<Profile> profile_;
++  bool download_review_running_ = false;
+   std::map<std::string, BookmarkPlan> bookmark_plans_;
+   std::map<std::string, BookmarkCheckSelection> bookmark_check_selections_;
+   std::map<std::string, BookmarkUndoReceipt> bookmark_undo_receipts_;
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 4f4f450870..72601cd62c 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -608,6 +608,9 @@ AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation,
+       "否则跟随用户请求的语言，不跟随plan_summary或网页的语言。"
+       "用户要求列出重点时，用换行分隔的编号或项目符号逐条写出具体重点；"
+       "明确指定数量或其他格式时遵守原要求。未要求列表时不强加列表。"
++      "提交前校对重复字和错别字，但不擅自改写直接引用的原文。"
++      "不要用网页按钮、表单或上传控件的名称充当来源名；"
++      "引用来源通过source_urls交由浏览器展示。"
+       "翻译任务仍须忠实交付所选原文的完整译文。");
+   properties.Set("summary", std::move(summary));
+   properties.Set("source_urls", StringArraySchema(4096, 32));
+@@ -1559,6 +1562,7 @@ base::DictValue BuildAgentDownloadEvidence(
+         fields.clear();
+       }
+       download_id = *id;
++      fields.Set("download_id", download_id);
+     }
+     for (const auto* key : {"source_url", "candidate_url", "final_url"}) {
+       const auto* text = value.FindString(key);
+@@ -1991,8 +1995,15 @@ void NormalizeAgentBookmarkCheckCompletion(
+       completion->outcome = "partial";
+       completion->unfinished_items.push_back(
+           base::NumberToString(selected - definite) +
+-          " 条链接仍不能确定是否失效，可在网络或访问条件恢复后重"
+-          "试。");
++          " 条链接仍不能确定是否失效，不能据此删除收藏。");
++    }
++    if (counts->FindInt("scope_blocked").value_or(0) > 0) {
++      completion->summary +=
++          "\n访问范围限制会拒绝本机、私有网络或未获准的目标；这些链接"
++          "没有被判为失效。";
++      completion->unfinished_items.push_back(
++          "请在收藏管理中按需手动打开受限链接，或选择允许访问的公网链接"
++          "重新检查；仅重试不会解除本机或私有地址限制。");
+     }
+   }
+   if (preview_result) {
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index d63d135ac3..3a5c137209 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -435,6 +435,48 @@ TEST(AegisAgentExecutionTest,
+   EXPECT_EQ(*fields.FindString("integrity"), "not_matched");
+ }
+ 
++TEST(AegisAgentExecutionTest, DownloadReviewReferenceFollowsLatestNativeFile) {
++  AgentToolResult first;
++  first.ok = true;
++  first.value.Set("download_id", "first");
++  first.value.Set("sha256", std::string(64, 'a'));
++  std::vector<AgentExecutionEvidence> history;
++  history.push_back(
++      {.tool_name = "download.start", .result = std::move(first)});
++  auto fields = BuildAgentDownloadEvidence(history);
++  EXPECT_EQ(*fields.FindString("download_id"), "first");
++  AgentToolResult second;
++  second.ok = true;
++  second.value.Set("download_id", "second");
++  history.push_back(
++      {.tool_name = "download.start", .result = std::move(second)});
++  fields = BuildAgentDownloadEvidence(history);
++  EXPECT_EQ(*fields.FindString("download_id"), "second");
++  EXPECT_FALSE(fields.contains("sha256"));
++}
++
++TEST(AegisAgentExecutionTest, BlockedBookmarkChecksGiveActionableLimit) {
++  AgentToolResult checked;
++  checked.ok = true;
++  checked.value.Set("selected_count", 500);
++  checked.value.Set("attempted_count", 0);
++  checked.value.Set("list_truncated", false);
++  checked.value.Set("classification_counts",
++                    base::DictValue().Set("scope_blocked", 500));
++  std::vector<AgentExecutionEvidence> history;
++  history.push_back(
++      {.tool_name = "bookmark.check_urls", .result = std::move(checked)});
++  AgentCompletionSummary completion{.outcome = "completed",
++                                    .summary = "全部失效"};
++  NormalizeAgentBookmarkCheckCompletion(&completion, history);
++  EXPECT_EQ(completion.outcome, "partial");
++  EXPECT_NE(completion.summary.find("实际发起检查 0 条"), std::string::npos);
++  EXPECT_NE(completion.summary.find("没有被判为失效"), std::string::npos);
++  EXPECT_TRUE(std::ranges::any_of(
++      completion.unfinished_items,
++      [](const std::string& item) { return item.contains("仅重试不会解除"); }));
++}
++
+ TEST(AegisAgentExecutionTest, DownloadSummaryCannotInferStartFromPageText) {
+   auto scope = ExecutionScope();
+   AgentCompletionSummary completion{.outcome = "completed",
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index 34a08d87a4..a8ae01a760 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -71,6 +71,7 @@
+             <select id="automation-schedule"></select>
+           </div>
+           <p id="schedule-help" class="help"></p>
++          <p id="automation-target" class="help"></p>
+           <button id="create-automation-button" class="primary primary-large" type="button"></button>
+         </section>
+ 
+@@ -126,6 +127,8 @@
+         <summary id="download-evidence-title"></summary>
+         <p id="download-evidence-help" class="help"></p>
+         <dl id="download-evidence" class="scope-grid"></dl>
++        <button id="review-download" type="button" hidden></button>
++        <p id="download-review-status" class="help" role="status"></p>
+       </details>
+ 
+       <section id="plan-card" class="card" hidden>
+@@ -150,6 +153,7 @@
+         <h2 id="result-title"></h2>
+         <p id="result-partial-note" class="help" hidden></p>
+         <p id="result-summary"></p>
++        <p id="result-source-help" class="help" hidden></p>
+         <button id="save-research" type="button" hidden></button>
+         <p id="save-research-status" role="status"></p>
+         <div id="result-sources-group" hidden>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 258d59b70c..85193e3b8e 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -84,6 +84,25 @@ function refersToCurrentPage(goal: string): boolean {
+       .test(goal);
+ }
+ 
++function inferAutomationSchedule(goal: string): string|null {
++  // 这里只引导用户确认，不据此创建监控或授予新的访问范围。
++  if (/(?:不要|无需|無需|不必|别|別|停止|取消).{0,8}(?:监控|監控|定时|定時|检查|檢查)|(?:do not|don't|stop|cancel).{0,18}(?:monitor|check|watch|track)|仅一次|僅一次|只检查一次|只檢查一次|only once|one[- ]off/iu.test(goal) ||
++      !/检查|檢查|监控|監控|跟踪|追蹤|通知|monitor|check|watch|track/iu.test(goal)) {
++    return null;
++  }
++  if (!/每|定期|定时|定時|持续|持續|hourly|daily|weekly|every\s|periodically|regularly|continuously/iu.test(goal)) {
++    return null;
++  }
++  const schedules: Array<[RegExp, string]> = [
++    [/每(?:隔)?\s*15\s*分钟|每(?:隔)?\s*15\s*分鐘|every\s+15\s+minutes?/iu, '15'],
++    [/每(?:隔)?\s*(?:1\s*|一)?小时|每(?:隔)?\s*(?:1\s*|一)?小時|hourly|every\s+(?:1\s+|one\s+)?hour\b/iu, '60'],
++    [/每(?:隔)?\s*6\s*小时|每(?:隔)?\s*6\s*小時|every\s+6\s+hours?/iu, '360'],
++    [/每天|每日|daily|every\s+day/iu, '1440'],
++    [/每周|每週|weekly|every\s+week/iu, '10080'],
++  ];
++  return schedules.find(([pattern]) => pattern.test(goal))?.[1] ?? '';
++}
++
+ function scheduledTaskStatus(next: TaskSnapshot): string {
+   if (next.mode !== 'automate' ||
+       !(next.state === 'completed' ||
+@@ -503,7 +522,8 @@ function renderResult(next: TaskSnapshot) {
+       if (listId === 'result-sources') {
+         const button = document.createElement('button');
+         button.className = 'source-link';
+-        button.textContent = item;
++        const title = next.resultSourceTitles?.[index];
++        button.textContent = title ? `${title} · ${item}` : item;
+         button.addEventListener('click', () => {
+           void proxy.handler.openVerifiedSource(next.taskId, index);
+         });
+@@ -517,6 +537,7 @@ function renderResult(next: TaskSnapshot) {
+   renderItems(
+       'result-sources-group', 'result-sources', next.resultSources);
+   renderItems('unfinished-group', 'unfinished-items', next.unfinishedItems);
++  element('result-source-help').hidden = next.resultSources.length === 0;
+ }
+ 
+ function renderDownloadEvidence(next: TaskSnapshot) {
+@@ -556,6 +577,9 @@ function renderDownloadEvidence(next: TaskSnapshot) {
+     list.append(label, value);
+   }
+   element('download-evidence-card').hidden = list.childElementCount === 0;
++  const review = element<HTMLButtonElement>('review-download');
++  review.hidden = !fields.some(field => field.name === 'download_id');
++  review.disabled = busy || next.state !== 'completed';
+ }
+ 
+ function renderTimeline(next: TaskSnapshot) {
+@@ -885,6 +909,7 @@ function render(next: TaskSnapshot) {
+   }
+   if (snapshot?.taskId !== next.taskId) {
+     element('save-research-status').textContent = '';
++    element('download-review-status').textContent = '';
+   }
+   snapshot = next;
+   element('status').dataset['tone'] = taskCreationError && !next.taskId ?
+@@ -916,7 +941,11 @@ function render(next: TaskSnapshot) {
+   element<HTMLButtonElement>('plan-button').disabled =
+       busy || !next.modelConfigured || !goal.value.trim();
+   element<HTMLButtonElement>('create-automation-button').disabled =
+-      busy || !next.modelConfigured || !automationGoal.value.trim();
++      busy || !next.modelConfigured || !automationGoal.value.trim() ||
++      !element<HTMLSelectElement>('automation-schedule').value;
++  element('automation-target').textContent = loadTimeData.getString(
++      'automationTargetReview').replace('$1', next.activeOrigin ||
++          loadTimeData.getString('noTarget'));
+   renderView();
+   renderModel(next);
+   renderPlan(next.plan || null, Boolean(next.taskId), next.state);
+@@ -1120,6 +1149,8 @@ function initializeLabels() {
+   text('result-sources-label', 'resultSources');
+   text('download-evidence-title', 'downloadEvidenceTitle');
+   text('download-evidence-help', 'downloadEvidenceHelp');
++  text('review-download', 'reviewDownload');
++  text('result-source-help', 'resultSourceHelp');
+   text('unfinished-label', 'unfinishedItems');
+   text('start-button', 'start');
+   text('model-settings-label', 'modelSettings');
+@@ -1213,12 +1244,18 @@ function initializeLabels() {
+ 
+   const schedule = element<HTMLSelectElement>('automation-schedule');
+   schedule.append(
++      option('', loadTimeData.getString('scheduleChoose')),
+       option('15', loadTimeData.getString('schedule15Minutes')),
+       option('60', loadTimeData.getString('scheduleHourly')),
+       option('360', loadTimeData.getString('schedule6Hours')),
+       option('1440', loadTimeData.getString('scheduleDaily')),
+       option('10080', loadTimeData.getString('scheduleWeekly')));
+   schedule.value = '60';
++  schedule.addEventListener('change', () => {
++    if (snapshot) {
++      render(snapshot);
++    }
++  });
+ 
+   element('task-view-button').addEventListener('click', () => {
+     activeView = 'task';
+@@ -1379,18 +1416,63 @@ function bindActions() {
+     autoRunTaskId = created.snapshot.taskId;
+     return created;
+   }, true));
+-  element('plan-button').addEventListener('click', () => withBusy(async () => {
++  element('plan-button').addEventListener('click', () => {
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+-    const workflow = selectedWorkflow ?? inferWorkflow(goal);
+-    const created = await proxy.handler.createTask(
+-        goal, AgentMode.kAct, workflow, [], 0);
+-    showCreatedTask(created.snapshot);
+-    if (!created.snapshot.taskId) {
+-      return created;
++    const schedule = inferAutomationSchedule(goal);
++    if (schedule !== null) {
++      element<HTMLTextAreaElement>('automation-goal').value = goal;
++      element<HTMLSelectElement>('automation-schedule').value = schedule;
++      activeView = 'automation';
++      if (snapshot) {
++        render(snapshot);
++      }
++      element<HTMLSelectElement>('automation-schedule').focus();
++      return;
+     }
+-    autoRunTaskId = created.snapshot.taskId;
+-    return proxy.handler.requestPlan(created.snapshot.taskId);
+-  }, true));
++    return withBusy(async () => {
++      const workflow = selectedWorkflow ?? inferWorkflow(goal);
++      const created = await proxy.handler.createTask(
++          goal, AgentMode.kAct, workflow, [], 0);
++      showCreatedTask(created.snapshot);
++      if (!created.snapshot.taskId) {
++        return created;
++      }
++      autoRunTaskId = created.snapshot.taskId;
++      return proxy.handler.requestPlan(created.snapshot.taskId);
++    }, true);
++  });
++  element('review-download').addEventListener('click', async () => {
++    if (!snapshot?.taskId || snapshot.state !== 'completed') {
++      return;
++    }
++    const taskId = snapshot.taskId;
++    const button = element<HTMLButtonElement>('review-download');
++    button.disabled = true;
++    element('download-review-status').textContent =
++        loadTimeData.getString('downloadReviewPending');
++    try {
++      const result = await proxy.handler.reviewDownload(taskId);
++      if (snapshot?.taskId !== taskId) {
++        return;
++      }
++      const keys: {[key: string]: string} = {
++        match: 'downloadReviewMatch', changed: 'downloadReviewChanged',
++        missing: 'downloadReviewMissing', too_large: 'downloadReviewTooLarge',
++      };
++      element('download-review-status').textContent =
++          loadTimeData.getString(keys[result.status] || 'downloadReviewUnavailable') +
++          (result.sha256 ? `\nSHA-256: ${result.sha256}` : '');
++    } catch {
++      if (snapshot?.taskId === taskId) {
++        element('download-review-status').textContent =
++            loadTimeData.getString('downloadReviewUnavailable');
++      }
++    } finally {
++      if (snapshot?.taskId === taskId) {
++        button.disabled = busy || snapshot.state !== 'completed';
++      }
++    }
++  });
+   element('create-automation-button').addEventListener(
+       'click', () => withBusy(async () => {
+         const goal =
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 428f509e9c..dadb3448a1 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -145,6 +145,7 @@ struct TaskSnapshot {
+   bool research_save_available;
+   bool research_session_only;
+   array<string> result_sources;
++  array<string> result_source_titles;
+   array<string> unfinished_items;
+   PendingApproval? pending_approval;
+   bool undo_available;
+@@ -171,6 +172,7 @@ interface PageHandler {
+   ListSavedResearch() => (array<SavedResearch> records, bool session_only, string error);
+   DeleteSavedResearch(string id) => (string error);
+   OpenVerifiedSource(string task_id, uint32 source_index) => (bool opened);
++  ReviewDownload(string task_id) => (string status, string sha256);
+ 
+ 
+   ConfigureModel(string provider,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index c56972fdc0..39e5c1fc98 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -654,6 +654,24 @@ void AegisAgentPageHandler::OpenVerifiedSource(
+   std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
+ }
+ 
++void AegisAgentPageHandler::ReviewDownload(const std::string& task_id,
++                                           ReviewDownloadCallback callback) {
++  if (!service_ || task_id != active_task_id_ || !browser_ ||
++      browser_->GetProfile() != profile_) {
++    std::move(callback).Run("unavailable", std::string());
++    return;
++  }
++  service_->ReviewDownload(
++      task_id, base::BindOnce(
++                   [](ReviewDownloadCallback done, base::DictValue result) {
++                     const auto* status = result.FindString("status");
++                     const auto* hash = result.FindString("sha256");
++                     std::move(done).Run(status ? *status : "unavailable",
++                                         hash ? *hash : std::string());
++                   },
++                   std::move(callback)));
++}
++
+ void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
+   std::move(callback).Run(BuildSnapshot());
+ }
+@@ -1278,6 +1296,24 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+     snapshot->result_summary = completion->summary;
+     snapshot->result_outcome = completion->outcome;
+     snapshot->result_sources = completion->source_urls;
++    auto* list = browser_ && browser_->GetProfile() == profile_
++                     ? TabListInterface::From(browser_)
++                     : nullptr;
++    for (const auto& source : completion->source_urls) {
++      std::string title;
++      if (list) {
++        for (auto* source_tab : list->GetAllTabs()) {
++          if (source_tab->GetProfile() == profile_ &&
++              task->AllowsTab(source_tab->GetHandle().raw_value()) &&
++              source_tab->GetURL() == GURL(source)) {
++            title = aegis::agent::BoundedAgentObservationText(
++                base::UTF16ToUTF8(source_tab->GetContents()->GetTitle()), 256);
++            break;
++          }
++        }
++      }
++      snapshot->result_source_titles.push_back(std::move(title));
++    }
+     snapshot->unfinished_items = completion->unfinished_items;
+   }
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index 92caf90557..e0dc165859 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -69,6 +69,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+   void OpenVerifiedSource(const std::string& task_id,
+                           uint32_t source_index,
+                           OpenVerifiedSourceCallback callback) override;
++  void ReviewDownload(const std::string& task_id,
++                      ReviewDownloadCallback callback) override;
+   void ConfigureModel(const std::string& provider,
+                       const std::string& base_url,
+                       const std::string& model,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 7c09844670..70e3993c06 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -175,6 +175,46 @@ void AddStrings(content::WebUIDataSource* source) {
+       "正在讀取已儲存研究…");
+   add("downloadEvidenceTitle", "Download evidence", "下载来源与实际结果",
+       "下載來源與實際結果");
++  add("reviewDownload", "Recheck this downloaded file", "继续核对这次下载",
++      "繼續核對這次下載");
++  add("downloadReviewPending", "Reading this file locally…",
++      "正在本机重新读取这次下载的文件…", "正在本機重新讀取這次下載的檔案…");
++  add("downloadReviewMatch",
++      "The file matches its download-time hash. Publisher, signature and "
++      "installation are not verified.",
++      "文件与下载时摘要一致。发布者、签名和安装状态仍未核验。",
++      "檔案與下載時摘要一致。發佈者、簽章和安裝狀態仍未核驗。");
++  add("downloadReviewChanged",
++      "The file has changed since download. Do not treat it as the verified "
++      "download.",
++      "文件已不同于下载时的内容，不能沿用原下载核验结果。",
++      "檔案已不同於下載時的內容，不能沿用原下載核驗結果。");
++  add("downloadReviewMissing",
++      "The downloaded file is missing or cannot be read.",
++      "下载文件已不存在或无法读取。", "下載檔案已不存在或無法讀取。");
++  add("downloadReviewTooLarge",
++      "This recheck supports files up to 1 GiB. Verify larger files manually.",
++      "本次核对支持不超过1 GiB的文件；更大的文件请手动核验。",
++      "本次核對支援不超過1 GiB的檔案；更大的檔案請手動核驗。");
++  add("downloadReviewUnavailable",
++      "This download cannot be rechecked now. Check its current state in "
++      "Downloads.",
++      "这次下载当前无法核对，请在下载管理中查看其状态。",
++      "這次下載目前無法核對，請在下載管理中查看其狀態。");
++  add("resultSourceHelp",
++      "Summaries may contain model-generated text. Citation titles come from "
++      "browser page metadata; open the source to verify.",
++      "摘要可能包含模型生成文字。下方引用名称取自浏览器页面标题，可打开原文核对"
++      "。",
++      "摘要可能包含模型生成文字。下方引用名稱取自瀏覽器頁面標題，可開啟原文核對"
++      "。");
++  add("scheduleChoose", "Choose a supported interval", "请选择支持的频率",
++      "請選擇支援的頻率");
++  add("automationTargetReview",
++      "Current page: $1. Confirm the source in your goal and the interval "
++      "before creating a monitor.",
++      "当前页面：$1。请确认目标中的来源和频率，再创建监控。",
++      "目前頁面：$1。請確認目標中的來源和頻率，再建立監控。");
+   add("downloadEvidenceHelp",
+       "Evidence comes from browser download records. Same-site links do not "
+       "establish official identity; a downloaded file is not an installed app.",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1d7b37b59a..784c40a60f 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.51";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (051)";
++inline constexpr char kProductVersion[] = "2.0.0.52";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (052)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0

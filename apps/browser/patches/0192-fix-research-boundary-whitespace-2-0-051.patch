@@ -1,0 +1,207 @@
+From c37546758d88769d744bedaee4a4925676db9310 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 17:20:38 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=AE=B9=E5=BF=8D?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E6=AF=94=E8=BE=83=E5=AD=97=E6=AE=B5=E8=BE=B9?=
+ =?UTF-8?q?=E7=95=8C=E7=A9=BA=E7=99=BD=202.0.051?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_research.cc  | 51 ++++++-----
+ .../aegis/agent/agent_research_unittest.cc    | 87 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 3 files changed, 119 insertions(+), 23 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
+index af217c87b1..ba7cc9cc02 100644
+--- a/chrome/browser/aegis/agent/agent_research.cc
++++ b/chrome/browser/aegis/agent/agent_research.cc
+@@ -119,9 +119,11 @@ void NormalizeAgentResearchComparison(
+   base::flat_set<std::string> labels;
+   for (const auto& dimension : completion->research_comparisons) {
+     const auto label = normalize_anchor(dimension.label);
+-    const auto prefix = normalize_anchor(dimension.prefix);
+-    const auto suffix = normalize_anchor(dimension.suffix);
+-    bool valid = !label.empty() && prefix.contains(label) &&
++    const std::string prefix(base::TrimWhitespaceASCII(
++        normalize_anchor(dimension.prefix), base::TRIM_TRAILING));
++    const std::string suffix(base::TrimWhitespaceASCII(
++        normalize_anchor(dimension.suffix), base::TRIM_LEADING));
++    bool valid = !label.empty() && !prefix.empty() && prefix.contains(label) &&
+                  labels.insert(label).second &&
+                  dimension.values.size() == selected_urls.size();
+     if (!valid) {
+@@ -138,30 +140,37 @@ void NormalizeAgentResearchComparison(
+         break;
+       }
+       const int number = source_numbers.at(cell.source_url);
+-      const auto value = normalize_anchor(cell.value);
+-      if (base::TrimWhitespaceASCII(value, base::TRIM_ALL).empty() ||
+-          source->second.empty()) {
++      const std::string value(base::TrimWhitespaceASCII(
++          normalize_anchor(cell.value), base::TRIM_ALL));
++      if (value.empty() || source->second.empty()) {
+         missing.push_back(number);
+         continue;
+       }
+-      const std::string quote = prefix + value + suffix;
+-      const auto position = source->second.find(quote);
+-      // 不允许把142截成42、把18.5截成18，或把一个单词截成另一个值。
+-      const size_t end = position == std::string::npos
+-                             ? 0
+-                             : position + prefix.size() + value.size();
+-      const auto rest = std::string_view(source->second).substr(end);
+-      if (position == std::string::npos || token_joined(prefix, value) ||
+-          token_joined(value, rest) ||
+-          (base::IsAsciiDigit(value.back()) && rest.size() > 1u &&
+-           rest.front() == '.' && base::IsAsciiDigit(rest[1]))) {
++      // 同一字段在一页出现多次时，只有全部锚点都对应同一值才可比较。
++      const std::string_view text(source->second);
++      size_t at = text.find(prefix);
++      if (at == std::string::npos) {
+         valid = false;
+         break;
+       }
+-      // 同一字段在一页出现多次时，只有全部锚点都对应同一值才可比较。
+-      for (size_t at = source->second.find(prefix); at != std::string::npos;
+-           at = source->second.find(prefix, at + prefix.size())) {
+-        if (source->second.compare(at, quote.size(), quote) != 0) {
++      for (; at != std::string::npos;
++           at = text.find(prefix, at + prefix.size())) {
++        // 只跳过字段边界空白，值和上下文内部仍须完整匹配。
++        const size_t begin = text.find_first_not_of(' ', at + prefix.size());
++        if (begin == std::string::npos ||
++            text.substr(begin, value.size()) != value) {
++          valid = false;
++          break;
++        }
++        const size_t end = begin + value.size();
++        const auto rest = text.substr(end);
++        // 按原文位置检查词边界，防止把142截成42或把18.5截成18。
++        if (token_joined(text.substr(0, begin), value) ||
++            token_joined(value, rest) ||
++            (base::IsAsciiDigit(value.back()) && rest.size() > 1u &&
++             rest.front() == '.' && base::IsAsciiDigit(rest[1])) ||
++            !base::TrimWhitespaceASCII(rest, base::TRIM_LEADING)
++                 .starts_with(suffix)) {
+           valid = false;
+           break;
+         }
+diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
+index 2e4ed37c20..99785a8fd9 100644
+--- a/chrome/browser/aegis/agent/agent_research_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
+@@ -303,6 +303,93 @@ TEST(AegisAgentResearchTest, NativeGroupsReplaceIncorrectTenSourceProse) {
+   EXPECT_NE(text.find("“17 ms”：1 个来源 [8]（与多数来源不同）"),
+             std::string::npos);
+ }
++TEST(AegisAgentResearchTest, PreviouslyRejectedStableMetricBoundaries) {
++  // 050 实机两次响应都漏掉了“为”后的空格，值及完整上下文没有错误。
++  for (const auto& values : {std::vector<std::string>{"42", "42", "42"},
++                             std::vector<std::string>{"42", "43", "41"}}) {
++    ComparisonFixture fixture(values);
++    auto& dimension = fixture.completion.research_comparisons[0];
++    dimension.label = "稳定指标";
++    dimension.prefix = "经该来源测得，稳定指标为";
++    for (size_t i = 0; i < values.size(); ++i) {
++      fixture.evidence[i].result.value.FindList("nodes")->front().GetDict().Set(
++          "text", "经该来源测得，稳定指标为 " + values[i] + "。");
++    }
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome, "completed");
++    EXPECT_NE(fixture.completion.summary.find(values[0] == values[1]
++                                                  ? "3 个来源 [1]、[2]、[3]"
++                                                  : "不指定多数值或例外组"),
++              std::string::npos);
++  }
++}
++TEST(AegisAgentResearchTest, BoundaryWhitespaceDoesNotSplitEqualGroups) {
++  for (const std::string whitespace : {"", " ", "\t\n  "}) {
++    SCOPED_TRACE(whitespace);
++    ComparisonFixture fixture({"18 ms", "18 ms", "18 ms"});
++    auto& dimension = fixture.completion.research_comparisons[0];
++    dimension.prefix += whitespace;
++    dimension.suffix = whitespace + dimension.suffix;
++    dimension.values[0].value = whitespace + "18 ms";
++    dimension.values[1].value = "18 ms" + whitespace;
++    for (size_t i = 0; i < fixture.evidence.size(); ++i) {
++      const std::string gap = i == 0 ? "" : i == 1 ? " " : "\t\n";
++      fixture.evidence[i].result.value.FindList("nodes")->front().GetDict().Set(
++          "text", "延迟：" + gap + "18 ms" + gap + "。");
++    }
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome, "completed");
++    EXPECT_NE(fixture.completion.summary.find("“18 ms”：3 个来源"),
++              std::string::npos);
++  }
++}
++TEST(AegisAgentResearchTest, BoundaryWhitespaceUsesActualWordPositions) {
++  for (bool joined : {false, true}) {
++    ComparisonFixture fixture({"18 ms", "18 ms", "18 ms"});
++    auto& dimension = fixture.completion.research_comparisons[0];
++    dimension.label = "latency";
++    dimension.prefix = "latency ";
++    for (auto& item : fixture.evidence) {
++      item.result.value.FindList("nodes")->front().GetDict().Set(
++          "text", joined ? "latency18 ms。" : "latency 18 ms。");
++    }
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome, joined ? "partial" : "completed");
++  }
++}
++TEST(AegisAgentResearchTest, BoundaryWhitespaceCannotAlterValueOrContext) {
++  const std::vector<std::pair<std::string, std::string>> cases = {
++      {"142", "42"}, {"18.5", "18"}, {"18 ms", "18"},    {"18 ms", "18 s"},
++      {"1 2", "12"}, {"12", "1 2"},  {"不支持", "支持"}, {"18ms", "18 ms"}};
++  for (const auto& [observed, claimed] : cases) {
++    SCOPED_TRACE(observed + " / " + claimed);
++    ComparisonFixture fixture({observed, observed, observed});
++    auto& dimension = fixture.completion.research_comparisons[0];
++    dimension.prefix += " ";
++    for (auto& cell : dimension.values)
++      cell.value = claimed;
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome, "partial");
++    EXPECT_EQ(fixture.completion.summary.find("3 个来源"), std::string::npos);
++  }
++  ComparisonFixture context({"42", "42", "42"});
++  context.completion.research_comparisons[0].prefix = "延 迟： ";
++  context.Run();
++  EXPECT_EQ(context.completion.outcome, "partial");
++}
++TEST(AegisAgentResearchTest, RepeatedFieldsShareBoundaryWhitespaceRules) {
++  for (const std::string repeated : {"18 ms", "21 ms"}) {
++    ComparisonFixture fixture({"18 ms", "18 ms", "18 ms"});
++    fixture.completion.research_comparisons[0].prefix += " ";
++    fixture.evidence[0].result.value.FindList("nodes")->Append(
++        base::DictValue()
++            .Set("node_id", 2)
++            .Set("text", "更新后延迟：\t" + repeated + " 。"));
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome,
++              repeated == "18 ms" ? "completed" : "partial");
++  }
++}
+ TEST(AegisAgentResearchTest,
+      RejectsInventedSwappedDuplicatedAndPartialTokenValues) {
+   for (int scenario = 0; scenario < 8; ++scenario) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 576d6dd3b7..1d7b37b59a 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.50";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (050)";
++inline constexpr char kProductVersion[] = "2.0.0.51";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (051)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

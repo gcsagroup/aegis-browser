@@ -15,6 +15,7 @@
 #include "chrome/browser/actor/tab_observation_strategy.h"
 #include "chrome/browser/aegis/agent/agent_types.h"
 #include "components/actor/core/task_id.h"
+#include "content/public/browser/weak_document_ptr.h"
 
 class Profile;
 
@@ -60,9 +61,25 @@ class AegisActorBridge {
                        ToolResultCallback callback);
   std::optional<AgentDocumentRef> LastDocument(const std::string& agent_task_id,
                                                int32_t tab_id) const;
+  // 同一地址刷新也会使旧文档失效，不能仅比较 URL 或缓存中的 token。
+  bool IsObservedDocumentCurrent(const std::string& agent_task_id,
+                                 int32_t tab_id,
+                                 const std::string& document_token) const;
   size_t active_task_count_for_testing() const { return actor_tasks_.size(); }
 
+  std::string DescribeObservedClickTarget(const std::string& agent_task_id,
+                                          const AgentToolCall& call) const;
+  std::optional<int> ResolveObservedClickTarget(
+      const std::string& agent_task_id,
+      const AgentToolCall& call) const;
+
+  // 只绑定本任务当前文档中唯一匹配的可见链接，完整参数留在浏览器审批。
+  std::optional<GURL> ResolveObservedDownloadUrl(
+      const std::string& agent_task_id,
+      const AgentToolCall& call) const;
+
  private:
+  friend class AegisAgentServiceTestPeer;
   struct WebMcpToolMetadata {
     std::string revision;
     base::DictValue input_schema;
@@ -76,6 +93,8 @@ class AegisActorBridge {
 
   struct ObservedNodeMetadata {
     std::string text;
+    GURL download_url;
+    int click_target_node_id = 0;
     bool is_submit_control = false;
     bool is_sensitive_control = false;
   };
@@ -90,6 +109,7 @@ class AegisActorBridge {
       const std::string& agent_task_id,
       std::string action_id,
       int32_t tab_id,
+      content::WeakDocumentPtr expected_document,
       std::optional<GURL> expected_url,
       bool post_action,
       ToolResultCallback callback,
@@ -109,6 +129,9 @@ class AegisActorBridge {
   std::map<std::string, actor::TaskId> actor_tasks_;
   std::map<std::string, AgentTaskScope> task_scopes_;
   std::map<std::string, std::map<int32_t, AgentDocumentRef>> last_documents_;
+  std::map<std::string, std::map<int32_t, content::WeakDocumentPtr>>
+      observed_documents_;
+  std::map<std::string, std::map<int32_t, std::string>> last_fingerprints_;
   std::map<std::string, std::map<int32_t, std::map<int, ObservedNodeMetadata>>>
       observed_node_text_;
   std::map<std::string, std::map<int32_t, WebMcpDocument>> webmcp_documents_;

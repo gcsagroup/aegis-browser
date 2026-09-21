@@ -14,6 +14,8 @@
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/containers/flat_set.h"
+#include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -21,6 +23,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/uuid.h"
@@ -66,6 +69,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
+#include "crypto/secure_hash.h"
 #include "crypto/sha2.h"
 #include "net/base/ip_address.h"
 #include "net/base/load_flags.h"
@@ -861,6 +865,109 @@ void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item) {
   }
 }
 
+base::DictValue ReviewAegisDownloadedFile(const base::FilePath& path,
+                                          std::string_view download_sha256) {
+  auto result = base::DictValue().Set("status", "missing");
+  if (download_sha256.size() != 64u ||
+      !std::ranges::all_of(
+          download_sha256,
+          [](char value) { return base::IsHexDigit(value); }) ||
+      base::IsLink(path)) {
+    return result;
+  }
+  base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ |
+                            base::File::FLAG_NO_FOLLOW);
+  base::File::Info before;
+  if (!file.IsValid() || !file.GetInfo(&before) || before.is_directory ||
+      before.size < 0) {
+    return result;
+  }
+  constexpr int64_t kMaxReviewBytes = 1024LL * 1024 * 1024;
+  if (before.size > kMaxReviewBytes) {
+    result.Set("status", "too_large");
+    return result;
+  }
+  auto hash = crypto::SecureHash::Create(crypto::SecureHash::SHA256);
+  std::array<uint8_t, 65536> buffer;
+  int64_t read_bytes = 0;
+  const auto deadline = base::TimeTicks::Now() + base::Seconds(30);
+  while (true) {
+    const auto count = file.ReadAtCurrentPos(buffer);
+    if (!count || base::TimeTicks::Now() > deadline) {
+      return result;
+    }
+    if (*count == 0u) {
+      break;
+    }
+    read_bytes += *count;
+    if (read_bytes > kMaxReviewBytes) {
+      result.Set("status", "too_large");
+      return result;
+    }
+    hash->Update(base::span(buffer).first(*count));
+  }
+  base::File::Info after;
+  if (!file.GetInfo(&after) || before.size != after.size ||
+      before.last_modified != after.last_modified ||
+      read_bytes != before.size) {
+    result.Set("status", "changed");
+    return result;
+  }
+  std::array<uint8_t, 32> digest;
+  hash->Finish(digest);
+  const auto actual = base::ToLowerASCII(base::HexEncode(digest));
+  result.Set("sha256", actual);
+  result.Set("status", base::EqualsCaseInsensitiveASCII(actual, download_sha256)
+                           ? "match"
+                           : "changed");
+  return result;
+}
+
+void AegisBrowserTools::ReviewDownload(
+    const AgentTaskScope& scope,
+    const base::DictValue& evidence,
+    base::OnceCallback<void(base::DictValue)> callback) {
+  const auto* guid = evidence.FindString("download_id");
+  const auto* hash = evidence.FindString("sha256");
+  auto* manager = profile_->GetDownloadManager();
+  auto* item = manager && guid ? manager->GetDownloadByGuid(*guid) : nullptr;
+  if (download_review_running_ || !item || !hash ||
+      !scope.AllowsOrigin(item->GetURL()) || item->IsDangerous() ||
+      item->GetState() != download::DownloadItem::COMPLETE) {
+    std::move(callback).Run(base::DictValue().Set("status", "unavailable"));
+    return;
+  }
+  const auto path = item->GetTargetFilePath();
+  download_review_running_ = true;
+  // 仅核对浏览器保留回执所指的文件，不接收界面提供的路径或摘要。
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+      base::BindOnce(&ReviewAegisDownloadedFile, path, *hash),
+      base::BindOnce(
+          [](base::WeakPtr<AegisBrowserTools> self, std::string guid,
+             base::FilePath path, AgentTaskScope scope,
+             base::OnceCallback<void(base::DictValue)> done,
+             base::DictValue result) {
+            if (!self) {
+              std::move(done).Run(
+                  base::DictValue().Set("status", "unavailable"));
+              return;
+            }
+            self->download_review_running_ = false;
+            auto* manager = self->profile_->GetDownloadManager();
+            auto* item = manager ? manager->GetDownloadByGuid(guid) : nullptr;
+            if (!item || item->GetTargetFilePath() != path ||
+                item->IsDangerous() ||
+                item->GetState() != download::DownloadItem::COMPLETE ||
+                !scope.AllowsOrigin(item->GetURL())) {
+              result = base::DictValue().Set("status", "unavailable");
+            }
+            std::move(done).Run(std::move(result));
+          },
+          weak_ptr_factory_.GetWeakPtr(), *guid, path, scope,
+          std::move(callback)));
+}
+
 struct AegisBrowserTools::UrlCheckBatch {
   struct Entry {
     std::string node_id;
@@ -1190,13 +1297,43 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
       return;
     }
     const std::string* title = call.arguments.FindString("title");
+    std::string group_title =
+        title ? std::string(base::TrimWhitespaceASCII(*title, base::TRIM_ALL))
+              : std::string();
+    if (group_title.empty()) {
+      group_title = base::CollapseWhitespaceASCII(
+          base::UTF16ToUTF8(
+              located_tabs.front().tab->GetContents()->GetTitle()),
+          false);
+    }
+    group_title = std::string(base::TruncateUTF8ToByteSize(
+        group_title.empty() ? "Aegis" : group_title, 128));
     tab_list->SetTabGroupVisualData(
         *group_id,
         tab_groups::TabGroupVisualData(
-            title ? base::UTF8ToUTF16(*title) : std::u16string(),
+            base::UTF8ToUTF16(group_title),
             ParseGroupColor(call.arguments.FindString("color")), false));
+    const auto visual = tab_list->GetTabGroupVisualData(*group_id);
+    if (!visual || visual->title() != base::UTF8ToUTF16(group_title)) {
+      std::move(callback).Run(
+          ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+                      "标签组名称回读不一致，请检查实际标签组"));
+      return;
+    }
     AgentToolResult result = SuccessResult(call.action_id, "tabs grouped");
+    base::ListValue grouped_ids;
+    for (const LocatedTab& located : located_tabs) {
+      if (located.tab->GetGroup() != group_id) {
+        std::move(callback).Run(
+            ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+                        "标签分组后回读不一致，请检查实际标签组"));
+        return;
+      }
+      grouped_ids.Append(located.tab->GetHandle().raw_value());
+    }
+    result.value.Set("tab_ids", std::move(grouped_ids));
     result.value.Set("group_id", group_id->ToString());
+    result.value.Set("title", group_title);
     result.value.Set("revision", TabRevision(profile_, *task));
     std::move(callback).Run(std::move(result));
     return;
@@ -1986,8 +2123,10 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
     const std::string* candidate_value =
         call.arguments.FindString("candidate_url");
     const GURL candidate(candidate_value ? *candidate_value : std::string());
-    if (!product || !platform || !architecture || !candidate_value ||
-        !candidate.is_valid() || !candidate.SchemeIsHTTPOrHTTPS() ||
+    if (!call.document || call.document->committed_url != call.committed_url ||
+        !task->AllowsTab(call.document->tab_id) || !product || !platform ||
+        !architecture || !candidate_value || !candidate.is_valid() ||
+        !candidate.SchemeIsHTTPOrHTTPS() ||
         !task->scope().AllowsOrigin(candidate) ||
         !task->scope().AllowsOrigin(call.committed_url)) {
       std::move(callback).Run(

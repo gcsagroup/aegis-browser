@@ -1,7 +1,7 @@
-From 8a005494dca121e205e48350407e2b27b9b09122 Mon Sep 17 00:00:00 2001
+From c2024e9f14bc472a6b845c3804b43979ec53e609 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 20:06:50 +0800
-Subject: [PATCH 32/38] checkpoint: preserve remote CDP security integration
+Subject: [PATCH] checkpoint: preserve remote CDP security integration
 
 ---
  .../browser/aegis/aegis_phish_tab_helper.cc   |  65 ++++-
@@ -10,17 +10,17 @@ Subject: [PATCH 32/38] checkpoint: preserve remote CDP security integration
  chrome/browser/android/BUILD.gn               |   1 +
  .../devtools_manager_delegate_android.cc      |  64 +++++
  .../devtools_manager_delegate_android.h       |   4 +
- chrome/browser/devtools/BUILD.gn              |   5 +-
+ chrome/browser/devtools/BUILD.gn              |   1 +
  .../chrome_devtools_manager_delegate.cc       |  59 +++-
  .../chrome_devtools_manager_delegate.h        |  10 +-
  .../devtools/chrome_devtools_session.cc       |   3 +-
- .../chrome_devtools_session_android.cc        |   3 +-
+ .../chrome_devtools_session_android.cc        |   4 +-
  .../browser/devtools/devtools_browsertest.cc  |  22 ++
  .../protocol/devtools_protocol_browsertest.cc | 190 +++++++++++++
  .../devtools/protocol/target_handler.cc       |  38 ++-
  .../devtools/protocol/target_handler.h        |  11 +-
- .../protocol/target_handler_android.cc        |  47 +++-
- .../protocol/target_handler_android.h         |  15 +-
+ .../protocol/target_handler_android.cc        |  35 +++
+ .../protocol/target_handler_android.h         |  11 +-
  chrome/common/aegis/cdp_target_filter.cc      |  10 +
  chrome/common/aegis/cdp_target_filter.h       |   7 +-
  .../aegis/cdp_target_filter_unittest.cc       |   8 +
@@ -42,11 +42,11 @@ Subject: [PATCH 32/38] checkpoint: preserve remote CDP security integration
  .../browser/devtools_agent_host_client.cc     |  20 ++
  .../browser/devtools_agent_host_client.h      |  14 +
  .../browser/devtools_external_agent_proxy.h   |  10 +
- .../browser/devtools_manager_delegate.cc      |   8 +
- .../browser/devtools_manager_delegate.h       |  28 +-
+ .../browser/devtools_manager_delegate.cc      |   7 +
+ .../browser/devtools_manager_delegate.h       |  25 ++
  .../test/test_devtools_protocol_client.cc     |   4 +
  .../test/test_devtools_protocol_client.h      |   5 +
- 42 files changed, 1543 insertions(+), 80 deletions(-)
+ 42 files changed, 1527 insertions(+), 73 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
 index 74cf1900c6..01671ebd20 100644
@@ -327,38 +327,38 @@ index 6c7eab0bc1..cf5d0b3ffc 100644
  }  // namespace
  }  // namespace aegis
 diff --git a/chrome/browser/android/BUILD.gn b/chrome/browser/android/BUILD.gn
-index a837a27dd5..6c8cb7cb07 100644
+index 23273f92ec..f82d86d757 100644
 --- a/chrome/browser/android/BUILD.gn
 +++ b/chrome/browser/android/BUILD.gn
-@@ -602,6 +602,7 @@ if (is_android) {
+@@ -613,6 +613,7 @@ if (is_android) {
        "//chrome/browser/webauthn:webauthn_request_delegate_android",
        "//chrome/browser/webauthn:webauthn_request_delegate_android_impl",
        "//chrome/common:non_code_constants",
 +      "//chrome/common/aegis",
-       "//chrome/services/media_gallery_util/public/cpp",
        "//components/android_autofill/browser:android",
        "//components/android_autofill/browser:features",
+       "//components/autofill/android:keyboard_suppressor",
 diff --git a/chrome/browser/android/devtools_manager_delegate_android.cc b/chrome/browser/android/devtools_manager_delegate_android.cc
-index 63c0dc06d3..e7ef7598ef 100644
+index d66829f6f1..d3b63f446d 100644
 --- a/chrome/browser/android/devtools_manager_delegate_android.cc
 +++ b/chrome/browser/android/devtools_manager_delegate_android.cc
-@@ -9,6 +9,7 @@
- 
+@@ -10,6 +10,7 @@
+ #include "base/containers/span.h"
  #include "base/functional/bind.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/notreached.h"
  #include "base/strings/string_number_conversions.h"
  #include "base/strings/utf_string_conversions.h"
  #include "build/build_config.h"
-@@ -18,6 +19,7 @@
- #include "chrome/browser/profiles/profile_manager.h"
+@@ -19,6 +20,7 @@
+ #include "chrome/browser/devtools/devtools_browser_context_manager.h"
  #include "chrome/browser/ui/android/tab_model/tab_model.h"
  #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 +#include "chrome/common/aegis/cdp_target_filter.h"
  #include "chrome/grit/browser_resources.h"
  #include "content/public/browser/devtools_agent_host.h"
  #include "content/public/browser/devtools_agent_host_client.h"
-@@ -50,6 +52,30 @@ class ClientProxy : public content::DevToolsAgentHostClient {
+@@ -57,6 +59,30 @@ class ClientProxy : public content::DevToolsAgentHostClient {
      proxy_->ConnectionClosed();
    }
  
@@ -389,7 +389,7 @@ index 63c0dc06d3..e7ef7598ef 100644
   private:
    raw_ptr<content::DevToolsExternalAgentProxy> proxy_;
  };
-@@ -207,6 +233,36 @@ scoped_refptr<DevToolsAgentHost> DevToolsAgentHostForTab(TabAndroid* tab,
+@@ -214,6 +240,36 @@ scoped_refptr<DevToolsAgentHost> DevToolsAgentHostForTab(TabAndroid* tab,
  
  static const void* const kCreatedByDevTools = &kCreatedByDevTools;
  
@@ -426,7 +426,7 @@ index 63c0dc06d3..e7ef7598ef 100644
  } //  namespace
  
  DevToolsManagerDelegateAndroid::DevToolsManagerDelegateAndroid() = default;
-@@ -293,6 +349,14 @@ bool DevToolsManagerDelegateAndroid::AllowInspectingTarget(
+@@ -338,6 +394,14 @@ bool DevToolsManagerDelegateAndroid::AllowInspectingTarget(
    return IsInspectionAllowed(profile, agent_host);
  }
  
@@ -442,10 +442,10 @@ index 63c0dc06d3..e7ef7598ef 100644
      content::DevToolsAgentHostClientChannel* channel,
      base::span<const uint8_t> message,
 diff --git a/chrome/browser/android/devtools_manager_delegate_android.h b/chrome/browser/android/devtools_manager_delegate_android.h
-index 674b4f3e0e..ca01d1502f 100644
+index bef6b1517b..61969c51d5 100644
 --- a/chrome/browser/android/devtools_manager_delegate_android.h
 +++ b/chrome/browser/android/devtools_manager_delegate_android.h
-@@ -35,6 +35,10 @@ class DevToolsManagerDelegateAndroid : public content::DevToolsManagerDelegate {
+@@ -44,6 +44,10 @@ class DevToolsManagerDelegateAndroid : public content::DevToolsManagerDelegate {
        TargetType target_type) override;
    bool IsBrowserTargetDiscoverable() override;
    bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;
@@ -457,23 +457,19 @@ index 674b4f3e0e..ca01d1502f 100644
    void HandleCommand(content::DevToolsAgentHostClientChannel* channel,
                       base::span<const uint8_t> message,
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index d75f6a0401..e994c32fa3 100644
+index 77937b8a1e..19fdfb7d49 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -252,7 +252,10 @@ static_library("devtools") {
-       "protocol/target_handler_android.h",
-     ]
- 
--    deps += [ "//chrome/android:chrome_jni_headers" ]
-+    deps += [
-+      "//chrome/android:chrome_jni_headers",
+@@ -264,6 +264,7 @@ static_library("devtools") {
+       "//chrome/browser/ui/android/tab_model",
+       "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/browser_window:create_browser_window",
 +      "//chrome/common/aegis",
-+    ]
+       "//ui/base",
+     ]
    } else {
-     public_deps += [
-       "//chrome/browser/ui:browser_tab_strip",
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-index 3994a5ac2b..cfc5b9ac36 100644
+index 8b50dc530f..0f1b9f86d9 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 @@ -10,6 +10,7 @@
@@ -557,7 +553,7 @@ index 3994a5ac2b..cfc5b9ac36 100644
  
  void ChromeDevToolsManagerDelegate::ClientAttached(
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
-index c4559270a9..b557d5b5d5 100644
+index 61de40316c..ddbf51d9ea 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
 @@ -41,6 +41,10 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
@@ -571,7 +567,7 @@ index c4559270a9..b557d5b5d5 100644
    void UpdateDeviceDiscovery();
  
    // Resets |device_manager_|.
-@@ -87,8 +91,10 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
+@@ -90,8 +94,10 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
  
    bool AllowInspectingRenderFrameHost(content::RenderFrameHost* rfh) override;
    bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;
@@ -585,13 +581,13 @@ index c4559270a9..b557d5b5d5 100644
        content::DevToolsAgentHostClientChannel* channel) override;
    void ClientDetached(
 diff --git a/chrome/browser/devtools/chrome_devtools_session.cc b/chrome/browser/devtools/chrome_devtools_session.cc
-index d79c1e2c50..d11ebf70ca 100644
+index 745ace6841..dadf4e0caf 100644
 --- a/chrome/browser/devtools/chrome_devtools_session.cc
 +++ b/chrome/browser/devtools/chrome_devtools_session.cc
-@@ -118,7 +118,8 @@ ChromeDevToolsSession::ChromeDevToolsSession(
+@@ -114,7 +114,8 @@ ChromeDevToolsSession::ChromeDevToolsSession(
        channel->GetClient()->IsTrusted()) {
      target_handler_ = std::make_unique<TargetHandler>(
-         &dispatcher_, channel->GetClient()->IsTrusted(),
+         dispatcher(), channel->GetClient()->IsTrusted(),
 -        channel->GetClient()->MayReadLocalFiles());
 +        channel->GetClient()->MayReadLocalFiles(),
 +        channel->GetClient()->IsRemoteDebuggingClient(), channel->GetClient());
@@ -599,24 +595,25 @@ index d79c1e2c50..d11ebf70ca 100644
    if (IsDomainAvailableToUntrustedClient<BrowserHandler>() ||
        channel->GetClient()->IsTrusted()) {
 diff --git a/chrome/browser/devtools/chrome_devtools_session_android.cc b/chrome/browser/devtools/chrome_devtools_session_android.cc
-index 51060313be..b2d48690ad 100644
+index 8c0fb40e81..5d32a1e153 100644
 --- a/chrome/browser/devtools/chrome_devtools_session_android.cc
 +++ b/chrome/browser/devtools/chrome_devtools_session_android.cc
-@@ -32,7 +32,8 @@ ChromeDevToolsSessionAndroid::ChromeDevToolsSessionAndroid(
+@@ -44,7 +44,9 @@ ChromeDevToolsSessionAndroid::ChromeDevToolsSessionAndroid(
        channel->GetClient()->IsTrusted()) {
      target_handler_ = std::make_unique<TargetHandlerAndroid>(
-         &dispatcher_, channel->GetClient()->IsTrusted(),
--        channel->GetClient()->MayReadLocalFiles());
+         dispatcher(), channel->GetClient()->IsTrusted(),
+-        channel->GetClient()->MayReadLocalFiles(), browser_handler_.get());
 +        channel->GetClient()->MayReadLocalFiles(),
-+        channel->GetClient()->IsRemoteDebuggingClient(), channel->GetClient());
++        channel->GetClient()->IsRemoteDebuggingClient(), channel->GetClient(),
++        browser_handler_.get());
    }
  }
  
 diff --git a/chrome/browser/devtools/devtools_browsertest.cc b/chrome/browser/devtools/devtools_browsertest.cc
-index 84491db96f..216bf70214 100644
+index 6e97329d55..da07abb1df 100644
 --- a/chrome/browser/devtools/devtools_browsertest.cc
 +++ b/chrome/browser/devtools/devtools_browsertest.cc
-@@ -3451,6 +3451,28 @@ IN_PROC_BROWSER_TEST_F(DevToolsTest, ExistsForWebContentsAfterClosing) {
+@@ -3630,6 +3630,28 @@ IN_PROC_BROWSER_TEST_F(DevToolsTest, ExistsForWebContentsAfterClosing) {
    ASSERT_TRUE(content::DevToolsAgentHost::HasFor(GetInspectedTab()));
  }
  
@@ -646,7 +643,7 @@ index 84491db96f..216bf70214 100644
  
  IN_PROC_BROWSER_TEST_F(InProcessBrowserTest, BrowserCloseWithBeforeUnload) {
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index c7a4d458d2..01ebaf70ef 100644
+index a56774a3de..fc182a636e 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -2,6 +2,7 @@
@@ -657,7 +654,7 @@ index c7a4d458d2..01ebaf70ef 100644
  #include <string>
  #include <string_view>
  
-@@ -263,6 +264,195 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateInDefaultContextById) {
+@@ -279,6 +280,195 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateInDefaultContextById) {
    ASSERT_TRUE(result);
  }
  
@@ -854,7 +851,7 @@ index c7a4d458d2..01ebaf70ef 100644
                         InputDispatchEventsToCorrectTarget) {
    Attach();
 diff --git a/chrome/browser/devtools/protocol/target_handler.cc b/chrome/browser/devtools/protocol/target_handler.cc
-index e6f2e022ba..e3d53532fd 100644
+index ac78b87b97..d3ca61caf1 100644
 --- a/chrome/browser/devtools/protocol/target_handler.cc
 +++ b/chrome/browser/devtools/protocol/target_handler.cc
 @@ -7,6 +7,8 @@
@@ -874,7 +871,7 @@ index e6f2e022ba..e3d53532fd 100644
  #include "content/public/browser/web_contents.h"
  #include "content/public/common/url_constants.h"
  #include "content/public/common/url_utils.h"
-@@ -58,8 +61,13 @@ NavigateParams CreateNavigateParams(Profile* profile,
+@@ -54,8 +57,13 @@ NavigateParams CreateNavigateParams(Profile* profile,
  
  TargetHandler::TargetHandler(protocol::UberDispatcher* dispatcher,
                               bool is_trusted,
@@ -890,7 +887,7 @@ index e6f2e022ba..e3d53532fd 100644
    protocol::Target::Dispatcher::wire(dispatcher, this);
  }
  
-@@ -73,6 +81,9 @@ TargetHandler::~TargetHandler() {
+@@ -69,6 +77,9 @@ TargetHandler::~TargetHandler() {
  protocol::Response TargetHandler::SetRemoteLocations(
      std::unique_ptr<protocol::Array<protocol::Target::RemoteLocation>>
          locations) {
@@ -900,7 +897,7 @@ index e6f2e022ba..e3d53532fd 100644
    remote_locations_.clear();
    if (!locations)
      return protocol::Response::Success();
-@@ -179,6 +190,17 @@ protocol::Response TargetHandler::CreateTarget(
+@@ -175,6 +186,17 @@ protocol::Response TargetHandler::CreateTarget(
          "Creating a target with a local URL is not allowed");
    }
  
@@ -918,7 +915,7 @@ index e6f2e022ba..e3d53532fd 100644
    create_new_window = !target_browser_interface;
  
    const bool set_window_position = left || top || width || height;
-@@ -208,6 +230,15 @@ protocol::Response TargetHandler::CreateTarget(
+@@ -204,6 +226,15 @@ protocol::Response TargetHandler::CreateTarget(
      }
    }
  
@@ -934,7 +931,7 @@ index e6f2e022ba..e3d53532fd 100644
    NavigateParams params = CreateNavigateParams(
        profile, gurl, ui::PAGE_TRANSITION_AUTO_TOPLEVEL, create_new_window,
        create_in_background, target_browser_interface);
-@@ -263,5 +294,8 @@ protocol::Response TargetHandler::CreateTarget(
+@@ -259,5 +290,8 @@ protocol::Response TargetHandler::CreateTarget(
                           params.navigated_or_inserted_contents)
                           ->GetId();
    }
@@ -982,48 +979,47 @@ index afdcf3d545..7521e9e839 100644
  
  #endif  // CHROME_BROWSER_DEVTOOLS_PROTOCOL_TARGET_HANDLER_H_
 diff --git a/chrome/browser/devtools/protocol/target_handler_android.cc b/chrome/browser/devtools/protocol/target_handler_android.cc
-index 0eabca2325..73fdaa33f1 100644
+index e9a55b116b..3af432a87f 100644
 --- a/chrome/browser/devtools/protocol/target_handler_android.cc
 +++ b/chrome/browser/devtools/protocol/target_handler_android.cc
-@@ -4,9 +4,16 @@
- 
+@@ -5,8 +5,11 @@
  #include "chrome/browser/devtools/protocol/target_handler_android.h"
  
+ #include <memory>
 +#include <string_view>
-+
+ #include <utility>
+ 
 +#include "base/functional/bind.h"
 +#include "base/functional/callback_helpers.h"
  #include "chrome/browser/android/devtools_manager_delegate_android.h"
- #include "chrome/browser/ui/android/tab_model/tab_model.h"
+ #include "chrome/browser/android/tab_android.h"
+ #include "chrome/browser/devtools/devtools_browser_context_manager.h"
+@@ -16,8 +19,10 @@
  #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 +#include "chrome/common/aegis/cdp_target_filter.h"
-+#include "content/public/browser/devtools_agent_host.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/devtools_agent_host.h"
 +#include "content/public/browser/devtools_agent_host_client.h"
+ #include "content/public/browser/navigation_controller.h"
  #include "content/public/browser/web_contents.h"
  #include "content/public/common/url_constants.h"
- #include "content/public/common/url_utils.h"
-@@ -14,10 +21,16 @@
- 
- using content::WebContents;
- 
--TargetHandlerAndroid::TargetHandlerAndroid(protocol::UberDispatcher* dispatcher,
--                                           bool is_trusted,
--                                           bool may_read_local_files)
--    : is_trusted_(is_trusted), may_read_local_files_(may_read_local_files) {
-+TargetHandlerAndroid::TargetHandlerAndroid(
-+    protocol::UberDispatcher* dispatcher,
-+    bool is_trusted,
-+    bool may_read_local_files,
+@@ -32,9 +37,13 @@ TargetHandlerAndroid::TargetHandlerAndroid(
+     protocol::UberDispatcher* dispatcher,
+     bool is_trusted,
+     bool may_read_local_files,
 +    bool is_remote_debugging_client,
-+    content::DevToolsAgentHostClient* client)
-+    : is_trusted_(is_trusted),
-+      may_read_local_files_(may_read_local_files),
++    content::DevToolsAgentHostClient* client,
+     BrowserHandlerAndroid* browser_handler)
+     : is_trusted_(is_trusted),
+       may_read_local_files_(may_read_local_files),
 +      is_remote_debugging_client_(is_remote_debugging_client),
-+      client_(client) {
++      client_(client),
+       browser_handler_(browser_handler) {
    protocol::Target::Dispatcher::wire(dispatcher, this);
  }
- 
-@@ -26,6 +39,12 @@ TargetHandlerAndroid::~TargetHandlerAndroid() = default;
+@@ -44,6 +53,12 @@ TargetHandlerAndroid::~TargetHandlerAndroid() = default;
  protocol::Response TargetHandlerAndroid::SetRemoteLocations(
      std::unique_ptr<protocol::Array<protocol::Target::RemoteLocation>>
          locations) {
@@ -1036,7 +1032,7 @@ index 0eabca2325..73fdaa33f1 100644
    remote_locations_.clear();
    if (!locations) {
      return protocol::Response::Success();
-@@ -87,6 +106,23 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
+@@ -105,6 +120,23 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
          "Creating a target with a local URL is not allowed");
    }
  
@@ -1057,10 +1053,10 @@ index 0eabca2325..73fdaa33f1 100644
 +        base::Unretained(client_.get())));
 +  }
 +
-   WebContents* web_contents =
-       tab_model->CreateNewTabForDevTools(gurl, new_window.value_or(false));
-   if (!web_contents) {
-@@ -102,6 +138,9 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
+   Profile* const default_profile = tab_model->GetProfile();
+   CHECK(default_profile);
+ 
+@@ -187,6 +219,9 @@ protocol::Response TargetHandlerAndroid::CreateTarget(
      *out_target_id =
          content::DevToolsAgentHost::GetOrCreateFor(web_contents)->GetId();
    }
@@ -1071,35 +1067,28 @@ index 0eabca2325..73fdaa33f1 100644
    return protocol::Response::Success();
  }
 diff --git a/chrome/browser/devtools/protocol/target_handler_android.h b/chrome/browser/devtools/protocol/target_handler_android.h
-index c092c1df2f..c66b443cff 100644
+index 34993aa734..27b65c711c 100644
 --- a/chrome/browser/devtools/protocol/target_handler_android.h
 +++ b/chrome/browser/devtools/protocol/target_handler_android.h
-@@ -7,16 +7,23 @@
- 
- #include <set>
- 
-+#include "base/memory/raw_ptr.h"
- #include "chrome/browser/devtools/protocol/target.h"
- #include "net/base/host_port_pair.h"
- 
+@@ -14,12 +14,17 @@
  using RemoteLocations = std::set<net::HostPortPair>;
  
+ class BrowserHandlerAndroid;
 +namespace content {
 +class DevToolsAgentHostClient;
 +}
-+
+ 
  class TargetHandlerAndroid : public protocol::Target::Backend {
   public:
    TargetHandlerAndroid(protocol::UberDispatcher* dispatcher,
                         bool is_trusted,
--                       bool may_read_local_files);
-+                       bool may_read_local_files,
+                        bool may_read_local_files,
 +                       bool is_remote_debugging_client,
-+                       content::DevToolsAgentHostClient* client);
++                       content::DevToolsAgentHostClient* client,
+                        BrowserHandlerAndroid* browser_handler);
  
    TargetHandlerAndroid(const TargetHandlerAndroid&) = delete;
-   TargetHandlerAndroid& operator=(const TargetHandlerAndroid&) = delete;
-@@ -46,8 +53,10 @@ class TargetHandlerAndroid : public protocol::Target::Backend {
+@@ -50,8 +55,10 @@ class TargetHandlerAndroid : public protocol::Target::Backend {
        std::string* out_target_id) override;
  
   private:
@@ -1109,9 +1098,9 @@ index c092c1df2f..c66b443cff 100644
 +  const bool may_read_local_files_;
 +  const bool is_remote_debugging_client_;
 +  const raw_ptr<content::DevToolsAgentHostClient> client_;
+   raw_ptr<BrowserHandlerAndroid> browser_handler_;
    RemoteLocations remote_locations_;
  };
- 
 diff --git a/chrome/common/aegis/cdp_target_filter.cc b/chrome/common/aegis/cdp_target_filter.cc
 index 7d092a7630..16a7d39b40 100644
 --- a/chrome/common/aegis/cdp_target_filter.cc
@@ -1181,10 +1170,10 @@ index 2d5e228a29..9f4f65032d 100644
    for (RemoteCdpTargetOperation operation : kAllTargetOperations) {
      const bool privileged_bridge =
 diff --git a/content/browser/devtools/devtools_agent_host_impl.cc b/content/browser/devtools/devtools_agent_host_impl.cc
-index ad27a987a2..af96588d6d 100644
+index 44ffa91fca..2b42eeb94b 100644
 --- a/content/browser/devtools/devtools_agent_host_impl.cc
 +++ b/content/browser/devtools/devtools_agent_host_impl.cc
-@@ -42,6 +42,7 @@
+@@ -38,6 +38,7 @@
  #include "content/public/common/content_switches.h"
  #include "net/base/ip_endpoint.h"
  #include "services/network/public/mojom/network_context.mojom.h"
@@ -1192,7 +1181,7 @@ index ad27a987a2..af96588d6d 100644
  
  #if BUILDFLAG(IS_WIN)
  #include <windows.h>
-@@ -337,9 +338,30 @@ bool DevToolsAgentHostImpl::AttachInternal(
+@@ -315,9 +316,30 @@ bool DevToolsAgentHostImpl::AttachInternal(
    scoped_refptr<DevToolsAgentHostImpl> protect(this);
    DevToolsSession* session = session_owned.get();
    DevToolsManager* manager = DevToolsManager::GetInstance();
@@ -1485,7 +1474,7 @@ index 107e08a782..deb1ac3df8 100644
    std::set<std::string> remote_allow_origins_;
    // The thread used by the devtools handler to run server socket.
 diff --git a/content/browser/devtools/devtools_http_handler_unittest.cc b/content/browser/devtools/devtools_http_handler_unittest.cc
-index 05f023725c..e6c03555b9 100644
+index 70454ecd7f..bb1126b3e1 100644
 --- a/content/browser/devtools/devtools_http_handler_unittest.cc
 +++ b/content/browser/devtools/devtools_http_handler_unittest.cc
 @@ -23,12 +23,14 @@
@@ -1503,7 +1492,7 @@ index 05f023725c..e6c03555b9 100644
  #include "content/public/browser/devtools_manager_delegate.h"
  #include "content/public/browser/devtools_socket_factory.h"
  #include "content/public/common/content_client.h"
-@@ -155,6 +157,9 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
+@@ -156,6 +158,9 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
      last_instance = this;
      EXPECT_CALL(*this, SetActiveWebSocketConnections(testing::_))
          .Times(testing::AtLeast(0));
@@ -1513,7 +1502,7 @@ index 05f023725c..e6c03555b9 100644
    }
    MOCK_METHOD(scoped_refptr<DevToolsAgentHost>,
                CreateNewTarget,
-@@ -168,9 +173,12 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
+@@ -169,9 +174,12 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
                AcceptDebugging,
                (base::OnceCallback<void(AcceptConnectionResult)> callback),
                (override));
@@ -1529,7 +1518,7 @@ index 05f023725c..e6c03555b9 100644
                (override));
  };
  
-@@ -179,15 +187,61 @@ MockDevToolsManagerDelegate* MockDevToolsManagerDelegate::last_instance =
+@@ -180,15 +188,61 @@ MockDevToolsManagerDelegate* MockDevToolsManagerDelegate::last_instance =
  
  class MockDevToolsAgentHostWithType : public MockDevToolsAgentHost {
   public:
@@ -1593,7 +1582,7 @@ index 05f023725c..e6c03555b9 100644
  };
  
  class BrowserClient : public ContentBrowserClient {
-@@ -200,7 +254,7 @@ class BrowserClient : public ContentBrowserClient {
+@@ -201,7 +255,7 @@ class BrowserClient : public ContentBrowserClient {
    }
  };
  
@@ -1602,7 +1591,7 @@ index 05f023725c..e6c03555b9 100644
  
  class DevToolsHttpHandlerTest : public testing::Test {
   public:
-@@ -478,7 +532,8 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
+@@ -488,7 +542,8 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
  
    std::unique_ptr<net::URLRequest> RunRequestUntilCompletion(
        std::string url,
@@ -1612,7 +1601,7 @@ index 05f023725c..e6c03555b9 100644
      net::TestDelegate delegate;
      auto request = request_context_->CreateRequest(
          GURL(url), net::DEFAULT_PRIORITY, &delegate,
-@@ -490,6 +545,9 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
+@@ -500,6 +555,9 @@ class DevToolsHttpHandlerWithServerTest : public DevToolsHttpHandlerTest {
      request->Start();
      delegate.RunUntilComplete();
      EXPECT_GE(delegate.request_status(), 0);
@@ -1622,7 +1611,7 @@ index 05f023725c..e6c03555b9 100644
      return request;
    }
  
-@@ -522,6 +580,160 @@ class DevToolsWebSocketHandlerTest : public DevToolsHttpHandlerWithServerTest {
+@@ -533,6 +591,160 @@ class DevToolsWebSocketHandlerTest : public DevToolsHttpHandlerWithServerTest {
    }
  };
  
@@ -1859,7 +1848,7 @@ index 6263c0a817..64398c5e30 100644
  };
  
 diff --git a/content/browser/devtools/devtools_session.cc b/content/browser/devtools/devtools_session.cc
-index 2ebf82b54b..856d4f6a40 100644
+index 6c555ad934..7263c3f008 100644
 --- a/content/browser/devtools/devtools_session.cc
 +++ b/content/browser/devtools/devtools_session.cc
 @@ -185,6 +185,33 @@ DevToolsSession* DevToolsSession::GetRootSession() {
@@ -1897,10 +1886,10 @@ index 2ebf82b54b..856d4f6a40 100644
      std::unique_ptr<protocol::DevToolsDomainHandler> handler) {
    DCHECK(agent_host_);
 diff --git a/content/browser/devtools/devtools_session.h b/content/browser/devtools/devtools_session.h
-index d9f1fc60e5..0de7860670 100644
+index 0e95a1d115..43b52eacc9 100644
 --- a/content/browser/devtools/devtools_session.h
 +++ b/content/browser/devtools/devtools_session.h
-@@ -218,6 +218,12 @@ class DevToolsSession : public protocol::FrontendChannel,
+@@ -220,6 +220,12 @@ class DevToolsSession : public protocol::FrontendChannel,
    // DevToolsExternalAgentProxy implementation.
    void DispatchOnClientHost(base::span<const uint8_t> message) override;
    void ConnectionClosed() override;
@@ -1914,7 +1903,7 @@ index d9f1fc60e5..0de7860670 100644
    void FallThrough(int call_id,
                     crdtp::span<uint8_t> method,
 diff --git a/content/browser/devtools/devtools_session_unittest.cc b/content/browser/devtools/devtools_session_unittest.cc
-index 59c64656a1..1eeb5be73b 100644
+index bb27382a5a..0422052b95 100644
 --- a/content/browser/devtools/devtools_session_unittest.cc
 +++ b/content/browser/devtools/devtools_session_unittest.cc
 @@ -8,6 +8,8 @@
@@ -1958,12 +1947,12 @@ index 59c64656a1..1eeb5be73b 100644
 +
  TEST(DevToolsSessionValidateMessageTest, MalformedJson) {
    std::vector<uint8_t> message = ToVector("{invalid cbor/json");
-   EXPECT_FALSE(DevToolsSession::ValidateMessage("", false, message));
+   EXPECT_FALSE(DevToolsSession::ValidateMessage("", false, message,
 diff --git a/content/browser/devtools/protocol/devtools_protocol_browsertest.cc b/content/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 7a7dcb052e..4edb4a5d18 100644
+index b5ef9d63ce..dec6015d7c 100644
 --- a/content/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/content/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -1605,6 +1605,40 @@ class FlattenedDevToolsProtocolTest
+@@ -1636,6 +1636,40 @@ class FlattenedDevToolsProtocolTest
    }
  };
  
@@ -2005,7 +1994,7 @@ index 7a7dcb052e..4edb4a5d18 100644
                         SessionIdValidationSucceeds) {
    ASSERT_TRUE(embedded_test_server()->Start());
 diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
-index f051aaf1c5..c8f90ee921 100644
+index ed29362ef9..dabc4f0256 100644
 --- a/content/browser/devtools/protocol/target_handler.cc
 +++ b/content/browser/devtools/protocol/target_handler.cc
 @@ -93,8 +93,63 @@ static const char kInitializerScript[] = R"(
@@ -2131,7 +2120,7 @@ index f051aaf1c5..c8f90ee921 100644
    bool MayReadLocalFiles() override {
      return GetRootClient()->MayReadLocalFiles();
    }
-@@ -947,6 +1029,12 @@ bool TargetHandler::AutoAttach(TargetAutoAttacher* source,
+@@ -951,6 +1033,12 @@ bool TargetHandler::AutoAttach(TargetAutoAttacher* source,
        host->GetType() == DevToolsAgentHost::kTypeServiceWorker) {
      return false;
    }
@@ -2144,7 +2133,7 @@ index f051aaf1c5..c8f90ee921 100644
    std::optional<std::string> session_id =
        Session::Attach(this, host, waiting_for_debugger, flatten_auto_attach_);
    if (!session_id) {
-@@ -990,12 +1078,47 @@ void TargetHandler::SetAttachedTargetsOfType(
+@@ -1006,12 +1094,47 @@ void TargetHandler::SetAttachedTargetsOfType(
  }
  
  void TargetHandler::TargetInfoChanged(DevToolsAgentHost* host) {
@@ -2193,7 +2182,7 @@ index f051aaf1c5..c8f90ee921 100644
  }
  
  void TargetHandler::AutoAttacherDestroyed(TargetAutoAttacher* auto_attacher) {
-@@ -1145,6 +1268,13 @@ void TargetHandler::AutoAttachRelated(
+@@ -1161,6 +1284,13 @@ void TargetHandler::AutoAttachRelated(
      callback->sendFailure(Response::InvalidParams(kTargetNotFound));
      return;
    }
@@ -2207,7 +2196,7 @@ index f051aaf1c5..c8f90ee921 100644
    TargetAutoAttacher* auto_attacher = host->auto_attacher();
    if (!auto_attacher) {
      callback->sendFailure(
-@@ -1191,6 +1321,12 @@ Response TargetHandler::AttachToTarget(const std::string& target_id,
+@@ -1207,6 +1337,12 @@ Response TargetHandler::AttachToTarget(const std::string& target_id,
    if (!agent_host) {
      return Response::InvalidParams(kTargetNotFound);
    }
@@ -2220,7 +2209,7 @@ index f051aaf1c5..c8f90ee921 100644
    std::optional<std::string> session_id =
        Session::Attach(this, agent_host.get(), false, flatten.value_or(false));
    if (!session_id) {
-@@ -1207,6 +1343,12 @@ Response TargetHandler::AttachToBrowserTarget(std::string* out_session_id) {
+@@ -1223,6 +1359,12 @@ Response TargetHandler::AttachToBrowserTarget(std::string* out_session_id) {
    scoped_refptr<DevToolsAgentHost> agent_host =
        DevToolsAgentHost::CreateForBrowser(
            nullptr, DevToolsAgentHost::CreateServerSocketCallback());
@@ -2233,7 +2222,7 @@ index f051aaf1c5..c8f90ee921 100644
    std::optional<std::string> session_id =
        Session::Attach(this, agent_host.get(), false, true);
    if (!session_id) {
-@@ -1261,7 +1403,13 @@ Response TargetHandler::GetTargetInfo(
+@@ -1277,7 +1419,13 @@ Response TargetHandler::GetTargetInfo(
    if (!agent_host) {
      return Response::InvalidParams(kTargetNotFound);
    }
@@ -2248,7 +2237,7 @@ index f051aaf1c5..c8f90ee921 100644
    return Response::Success();
  }
  
-@@ -1275,6 +1423,12 @@ Response TargetHandler::ActivateTarget(const std::string& target_id) {
+@@ -1291,6 +1439,12 @@ Response TargetHandler::ActivateTarget(const std::string& target_id) {
    if (!agent_host) {
      return Response::InvalidParams(kTargetNotFound);
    }
@@ -2261,7 +2250,7 @@ index f051aaf1c5..c8f90ee921 100644
    agent_host->Activate();
    return Response::Success();
  }
-@@ -1286,6 +1440,12 @@ Response TargetHandler::CloseTarget(const std::string& target_id,
+@@ -1302,6 +1456,12 @@ Response TargetHandler::CloseTarget(const std::string& target_id,
    if (!agent_host) {
      return Response::InvalidParams(kTargetNotFound);
    }
@@ -2274,7 +2263,7 @@ index f051aaf1c5..c8f90ee921 100644
    if (access_mode_ == AccessMode::kAutoAttachOnly) {
      // Only allow to close the targets that we are attached to.
      if (target_id != owner_target_id_ &&
-@@ -1315,6 +1475,14 @@ void TargetHandler::ExposeDevToolsProtocol(
+@@ -1331,6 +1491,14 @@ void TargetHandler::ExposeDevToolsProtocol(
      callback->sendFailure(Response::InvalidParams(kTargetNotFound));
      return;
    }
@@ -2289,7 +2278,7 @@ index f051aaf1c5..c8f90ee921 100644
  
    if (BrowserToPageConnector::GetInstanceMap()[agent_host.get()]) {
      callback->sendFailure(Response::ServerError(base::StringPrintf(
-@@ -1407,8 +1575,27 @@ Response TargetHandler::CreateTarget(
+@@ -1423,8 +1591,27 @@ Response TargetHandler::CreateTarget(
        return response;
      }
  
@@ -2317,7 +2306,7 @@ index f051aaf1c5..c8f90ee921 100644
      return Response::Success();
    }
  
-@@ -1422,12 +1609,33 @@ Response TargetHandler::CreateTarget(
+@@ -1438,12 +1625,33 @@ Response TargetHandler::CreateTarget(
                         DevToolsSession::Mode::kSupportsTabTarget)
            ? DevToolsManagerDelegate::kTab
            : DevToolsManagerDelegate::kFrame;
@@ -2351,7 +2340,7 @@ index f051aaf1c5..c8f90ee921 100644
    return Response::Success();
  }
  
-@@ -1446,7 +1654,11 @@ Response TargetHandler::GetTargets(
+@@ -1462,7 +1670,11 @@ Response TargetHandler::GetTargets(
    DCHECK(effective_filter);
    *target_infos = std::make_unique<protocol::Array<Target::TargetInfo>>();
    for (const auto& host : DevToolsAgentHost::GetOrCreateAll()) {
@@ -2364,7 +2353,7 @@ index f051aaf1c5..c8f90ee921 100644
  #if !BUILDFLAG(IS_ANDROID)
        // Do not return initial WebUI as the DevTools targets.
        // TODO(crbug.com/444358999): consider adding this into the `filter` when
-@@ -1455,7 +1667,7 @@ Response TargetHandler::GetTargets(
+@@ -1471,7 +1683,7 @@ Response TargetHandler::GetTargets(
          continue;
        }
  #endif  //  !BUILDFLAG(IS_ANDROID)
@@ -2373,7 +2362,7 @@ index f051aaf1c5..c8f90ee921 100644
      }
    }
    return Response::Success();
-@@ -1470,13 +1682,17 @@ bool TargetHandler::ShouldForceDevToolsAgentHostCreation() {
+@@ -1486,13 +1698,17 @@ bool TargetHandler::ShouldForceDevToolsAgentHostCreation() {
  void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
    DCHECK(discover());
    DCHECK(host);
@@ -2393,7 +2382,7 @@ index f051aaf1c5..c8f90ee921 100644
      reported_hosts_.insert(host);
    }
  }
-@@ -1715,6 +1931,13 @@ Response TargetHandler::GetDevToolsTarget(
+@@ -1738,6 +1954,13 @@ Response TargetHandler::GetDevToolsTarget(
    if (!agent_host) {
      return protocol::Response::InvalidParams(kTargetNotFound);
    }
@@ -2407,7 +2396,7 @@ index f051aaf1c5..c8f90ee921 100644
  
    if (scoped_refptr<DevToolsAgentHost> devtools_agent_host =
            agent_host->GetDevToolsAgentHost()) {
-@@ -1736,6 +1959,13 @@ Response TargetHandler::OpenDevTools(const std::string& target_id,
+@@ -1759,6 +1982,13 @@ Response TargetHandler::OpenDevTools(const std::string& target_id,
    if (!agent_host) {
      return protocol::Response::InvalidParams(kTargetNotFound);
    }
@@ -2435,10 +2424,10 @@ index b0ab17ba10..6c64cfa899 100644
    base::flat_map<std::string, net::ProxyConfig> contexts_with_overridden_proxy_;
    base::flat_set<raw_ptr<Throttle, CtnExperimental>> throttles_;
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 91305ce2fd..27564af166 100644
+index bcc09ea7da..5278b04ce7 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -78,6 +78,7 @@
+@@ -82,6 +82,7 @@
  #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom.h"
@@ -2446,7 +2435,7 @@ index 91305ce2fd..27564af166 100644
  
  #if BUILDFLAG(IS_ANDROID)
  #include "content/browser/renderer_host/compositor_impl_android.h"
-@@ -744,8 +745,9 @@ void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
+@@ -788,8 +789,9 @@ void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
    std::vector<DevToolsSession*> restricted_sessions;
    bool is_webui = frame_host_ && frame_host_->web_ui();
    for (DevToolsSession* session : sessions()) {
@@ -2457,7 +2446,7 @@ index 91305ce2fd..27564af166 100644
    }
    if (!restricted_sessions.empty())
      ForceDetachRestrictedSessions(restricted_sessions);
-@@ -1078,7 +1080,50 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1136,7 +1138,50 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
        !manager->delegate()->AllowInspectingRenderFrameHost(frame_host)) {
      return false;
    }
@@ -2510,7 +2499,7 @@ index 91305ce2fd..27564af166 100644
  
  void RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories() {
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.h b/content/browser/devtools/render_frame_devtools_agent_host.h
-index 8750034ee7..e08e0fc106 100644
+index b97114dc95..6677e90cdb 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.h
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.h
 @@ -87,6 +87,9 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
@@ -2643,18 +2632,10 @@ index 558a7316e9..5823aaa2e1 100644
  };
  
 diff --git a/content/public/browser/devtools_manager_delegate.cc b/content/public/browser/devtools_manager_delegate.cc
-index 8257dd01a7..ce930829bb 100644
+index db9be7653a..5047566720 100644
 --- a/content/public/browser/devtools_manager_delegate.cc
 +++ b/content/public/browser/devtools_manager_delegate.cc
-@@ -3,6 +3,7 @@
- // found in the LICENSE file.
- 
- #include "content/public/browser/devtools_manager_delegate.h"
-+
- #include "base/values.h"
- #include "content/public/browser/devtools_agent_host.h"
- 
-@@ -67,6 +68,13 @@ DevToolsAgentHost::List DevToolsManagerDelegate::RemoteDebuggingTargets(
+@@ -69,6 +69,13 @@ DevToolsAgentHost::List DevToolsManagerDelegate::RemoteDebuggingTargets(
    return DevToolsAgentHost::GetOrCreateAll();
  }
  
@@ -2669,7 +2650,7 @@ index 8257dd01a7..ce930829bb 100644
      const GURL& url,
      DevToolsManagerDelegate::TargetType target_type,
 diff --git a/content/public/browser/devtools_manager_delegate.h b/content/public/browser/devtools_manager_delegate.h
-index f08399ea04..bf07a527cc 100644
+index 069a7b48a7..859b5f5563 100644
 --- a/content/public/browser/devtools_manager_delegate.h
 +++ b/content/public/browser/devtools_manager_delegate.h
 @@ -8,6 +8,7 @@
@@ -2680,7 +2661,7 @@ index f08399ea04..bf07a527cc 100644
  
  #include "base/containers/span.h"
  #include "base/memory/scoped_refptr.h"
-@@ -111,8 +112,33 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
+@@ -112,10 +113,34 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
    // https://docs.google.com/document/d/14aeiC_zga2SS0OXJd6eIFj8N0o5LGwUpuqa4L8NKoR4/
    enum TargetType { kFrame, kTab };
  
@@ -2701,10 +2682,9 @@ index f08399ea04..bf07a527cc 100644
 +  };
 +
    // Returns all targets embedder would like to report as debuggable remotely.
--  virtual DevToolsAgentHost::List RemoteDebuggingTargets(TargetType target_type);
-+  virtual DevToolsAgentHost::List RemoteDebuggingTargets(
-+      TargetType target_type);
-+
+   virtual DevToolsAgentHost::List RemoteDebuggingTargets(
+       TargetType target_type);
+ 
 +  // Returns whether a remote debugging client may perform `operation` on a
 +  // target of `target_type` at `url`. Local DevTools clients do not call this
 +  // hook. The default preserves the embedder's existing behavior.
@@ -2712,9 +2692,10 @@ index f08399ea04..bf07a527cc 100644
 +      RemoteDebuggingTargetOperation operation,
 +      std::string_view target_type,
 +      const GURL& url);
- 
++
    // Creates new inspectable target given the |url|.
    // |new_window| is currently only used on Android - Desktop platforms handle
+   // window creation elsewhere. Note that there is also a limit to the number of
 diff --git a/content/public/test/test_devtools_protocol_client.cc b/content/public/test/test_devtools_protocol_client.cc
 index 6a9f1d47de..5df2714a24 100644
 --- a/content/public/test/test_devtools_protocol_client.cc

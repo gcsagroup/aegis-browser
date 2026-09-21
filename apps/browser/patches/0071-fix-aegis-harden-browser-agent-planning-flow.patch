@@ -1,4 +1,4 @@
-From ea89dd0fb19630eb649c180d6c5aadf70087eca9 Mon Sep 17 00:00:00 2001
+From e35f414946677a7ff47793b0c7da689e0c6de795 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 00:34:20 +0800
 Subject: [PATCH] fix(aegis): harden browser agent planning flow

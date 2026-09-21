@@ -54,7 +54,7 @@ aegis::AegisService* ServiceForBrowser(Browser* browser) {
   if (!browser) {
     return nullptr;
   }
-  return aegis::AegisServiceFactory::GetForProfile(browser->profile());
+  return aegis::AegisServiceFactory::GetForProfile(browser->GetProfile());
 }
 
 aegis::AegisService* ServiceForWebContents(Browser* browser,
@@ -65,7 +65,7 @@ aegis::AegisService* ServiceForWebContents(Browser* browser,
   }
   Profile* source_profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  return source_profile == browser->profile() &&
+  return source_profile == browser->GetProfile() &&
                  service->IsInitializedForProfile(source_profile)
              ? service
              : nullptr;
@@ -101,7 +101,8 @@ std::u16string EventKind(const std::string& kind) {
     return Copy(u"跳转清理", u"Cleared bounce tracking", u"跳轉清理");
   }
   if (kind == "phish") {
-    return Copy(u"钓鱼拦截", u"Blocked phishing", u"釣魚攔截");
+    return Copy(u"疑似钓鱼（已拦截）", u"Suspected phishing (blocked)",
+                u"疑似釣魚（已攔截）");
   }
   if (kind == "miner") {
     return Copy(u"挖矿风险（仅观察）", u"Mining risk (observe-only)",
@@ -232,6 +233,31 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                   u"挖礦風險提醒（僅觀察）：") +
                  base::NumberToString16(summary_.miner_alerts));
 
+    AddLabel(protection_panel_,
+             summary_.fingerprint_configured
+                 ? Copy(u"指纹防护配置：已开启",
+                        u"Fingerprint protection configured: on",
+                        u"指紋防護設定：已開啟")
+                 : Copy(u"指纹防护配置：未开启",
+                        u"Fingerprint protection configured: off",
+                        u"指紋防護設定：未開啟"));
+    if (!summary_.site_history.empty()) {
+      AddLabel(protection_panel_,
+               Copy(u"本站历史（未归属到当前页面）",
+                    u"Site history (not attributed to this page)",
+                    u"本站歷史（未歸屬到目前頁面）"),
+               views::style::CONTEXT_DIALOG_TITLE);
+      for (size_t index = 0;
+           index < std::min<size_t>(3, summary_.site_history.size()); ++index) {
+        const auto& event = summary_.site_history[index];
+        AddLabel(
+            protection_panel_,
+            u"• " + EventKind(event.kind) + u" · " +
+                base::UTF8ToUTF16(event.display_domain) +
+                (event.count > 1 ? u" ×" + base::NumberToString16(event.count)
+                                 : std::u16string()));
+      }
+    }
     if (!summary_.events.empty()) {
       AddLabel(protection_panel_,
                Copy(u"最近发生了什么", u"Recent actions", u"最近發生了什麼"),
@@ -601,7 +627,7 @@ void AegisToolbarButton::OnAegisStateChanged() {
 }
 
 void AegisToolbarButton::OnPressed() {
-  if (!aegis::IsAegisProfileSupported(browser_->profile())) {
+  if (!aegis::IsAegisProfileSupported(browser_->GetProfile())) {
     return;
   }
   if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
@@ -627,7 +653,7 @@ void AegisToolbarButton::OnPressed() {
 
 void AegisToolbarButton::Refresh() {
   const bool profile_supported =
-      aegis::IsAegisProfileSupported(browser_->profile());
+      aegis::IsAegisProfileSupported(browser_->GetProfile());
   SetVisible(profile_supported);
   SetEnabled(profile_supported);
   if (!profile_supported) {
@@ -672,11 +698,14 @@ void AegisToolbarButton::Refresh() {
           ? Copy(u"Aegis：本页有挖矿风险历史提醒（仅观察，未阻断）",
                  u"Aegis: prior mining-risk alert (observe-only)",
                  u"Aegis：本頁有挖礦風險歷史提醒（僅觀察，未阻斷）")
-      : summary.total > 0
-          ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ",
-                 u"Aegis：本頁已處理 ") +
-                base::NumberToString16(summary.total) +
-                Copy(u" 项", u" items on this page", u" 項")
+      : summary.total > 0 ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ",
+                                 u"Aegis：本頁已處理 ") +
+                                base::NumberToString16(summary.total) +
+                                Copy(u" 项", u" items on this page", u" 項")
+      : !summary.site_history.empty()
+          ? Copy(u"Aegis：本站有保护历史，未计入本页",
+                 u"Aegis: site history is separate from this page",
+                 u"Aegis：本站有防護歷史，未計入本頁")
           : Copy(u"Aegis：防护正常", u"Aegis: protection active",
                  u"Aegis：防護正常");
   SetTooltipText(status);

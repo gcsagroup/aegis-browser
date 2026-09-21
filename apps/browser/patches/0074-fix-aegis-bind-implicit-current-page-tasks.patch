@@ -1,4 +1,4 @@
-From 854079c51590cf720888c60421fee152142f1dd2 Mon Sep 17 00:00:00 2001
+From 11f28fd2ebf72da4545d0d118d69f22e0171198a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 17:04:01 +0800
 Subject: [PATCH] fix(aegis): bind implicit current-page tasks

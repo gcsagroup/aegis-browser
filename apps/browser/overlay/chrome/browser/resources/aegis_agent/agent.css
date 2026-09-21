@@ -278,7 +278,7 @@ button:disabled {
   border-radius: 12px;
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 4px;
 }
 
@@ -603,4 +603,76 @@ summary {
   .card {
     transition: border-color 120ms ease, background 120ms ease;
   }
+}
+
+/* 来源名称与地址来自浏览器，窄侧栏中允许完整换行。 */
+.research-sources {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  margin-block: 12px;
+}
+
+.research-source {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.research-source input {
+  width: auto;
+  flex: none;
+  margin-top: 3px;
+}
+
+.research-source span {
+  min-width: 0;
+}
+
+.research-source strong,
+.research-source small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.research-source small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.workspace-tools {
+  margin-block: 8px;
+}
+
+.source-link {
+  text-align: start;
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+
+.saved-research {
+  border-top: 1px solid var(--border-color, #ddd);
+  margin-top: 12px;
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
+
+.saved-research-summary {
+  white-space: pre-wrap;
+}
+
+.saved-research-source {
+  display: grid;
+  gap: 8px;
+  margin-block: 16px;
+}
+
+.saved-research-source blockquote {
+  margin: 0;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--border-color, #ddd);
 }

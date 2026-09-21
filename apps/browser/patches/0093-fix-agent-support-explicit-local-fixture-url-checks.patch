@@ -1,4 +1,4 @@
-From 0d679680d8bc9b5e18c434f7cd4ffd12a1b3c17a Mon Sep 17 00:00:00 2001
+From cb8f985f0fdf5b2e829db185b52e89c4f6952b55 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 17:41:40 +0800
 Subject: [PATCH] fix(agent): support explicit local fixture URL checks

@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
 
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -46,6 +47,30 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
 
   void ShowUI() override;
   void GetSnapshot(GetSnapshotCallback callback) override;
+  void ListResearchTabs(ListResearchTabsCallback callback) override;
+  void CreateResearchTask(const std::string& goal,
+                          const std::vector<int32_t>& tab_ids,
+                          CreateResearchTaskCallback callback) override;
+  void ShowProtection() override;
+  void CreateTabGroupTask(const std::string& goal,
+                          const std::vector<int32_t>& tab_ids,
+                          CreateTabGroupTaskCallback callback) override;
+  void OpenResearchSource(const std::string& id,
+                          uint32_t source_index,
+                          OpenResearchSourceCallback callback) override;
+  void ReviewResearchSource(const std::string& id,
+                            uint32_t source_index,
+                            ReviewResearchSourceCallback callback) override;
+  void SaveResearch(const std::string& task_id,
+                    SaveResearchCallback callback) override;
+  void ListSavedResearch(ListSavedResearchCallback callback) override;
+  void DeleteSavedResearch(const std::string& id,
+                           DeleteSavedResearchCallback callback) override;
+  void OpenVerifiedSource(const std::string& task_id,
+                          uint32_t source_index,
+                          OpenVerifiedSourceCallback callback) override;
+  void ReviewDownload(const std::string& task_id,
+                      ReviewDownloadCallback callback) override;
   void ConfigureModel(const std::string& provider,
                       const std::string& base_url,
                       const std::string& model,
@@ -81,6 +106,9 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
                         const std::string& monitor_id,
                         bool paused,
                         SetMonitorPausedCallback callback) override;
+  void CheckMonitorNow(const std::string& task_id,
+                       const std::string& monitor_id,
+                       CheckMonitorNowCallback callback) override;
   void DeleteMonitor(const std::string& task_id,
                      const std::string& monitor_id,
                      DeleteMonitorCallback callback) override;
@@ -91,6 +119,10 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   void OnAgentServiceSnapshotChanged() override;
 
  private:
+  void CreateSelectedTask(const std::string& goal,
+                          const std::vector<int32_t>& tab_ids,
+                          bool group_tabs,
+                          CreateResearchTaskCallback callback);
   aegis_agent::mojom::TaskSnapshotPtr BuildSnapshot();
   void ObserveTask(aegis::agent::AgentTask* task);
   void ObserveService(aegis::agent::AegisAgentService* service);
@@ -134,6 +166,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   raw_ptr<BrowserWindowInterface> browser_ = nullptr;
   raw_ptr<AegisAgentUI> ui_ = nullptr;
   raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
+  std::map<int32_t, GURL> research_selection_urls_;
   std::string active_task_id_;
   std::string last_error_;
   mojo::Remote<aegis_agent::mojom::Page> page_;

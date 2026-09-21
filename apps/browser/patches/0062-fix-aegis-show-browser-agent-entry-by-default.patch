@@ -1,4 +1,4 @@
-From 9a9baa49307e6c8ebde137ab8ed274ec63535174 Mon Sep 17 00:00:00 2001
+From 35381759d90a120568b7d36bf39eb1f05b14a4d4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 01:24:21 +0800
 Subject: [PATCH] fix(aegis): show browser agent entry by default

@@ -1,0 +1,734 @@
+From 8e39f6202e5a818484722a39070d8a2331fad7f0 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 02:55:04 +0800
+Subject: [PATCH] =?UTF-8?q?feat:=20=E5=AF=B9=E6=A8=A1=E5=9E=8B=E7=94=9F?=
+ =?UTF-8?q?=E6=88=90=E7=9A=84=E6=96=B0=E5=9C=B0=E5=9D=80=E6=89=A7=E8=A1=8C?=
+ =?UTF-8?q?=E5=AE=8C=E6=95=B4=E5=8F=82=E6=95=B0=E5=AE=A1=E6=89=B9=20Ver=20?=
+ =?UTF-8?q?2.0=20(004)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  56 ++++++++-
+ .../browser/aegis/agent/aegis_agent_service.h |   5 +
+ .../agent/aegis_agent_service_unittest.cc     |  90 ++++++++++++-
+ .../aegis/agent/agent_core_unittest.cc        | 118 ++++++++++++++++++
+ .../aegis/agent/agent_policy_broker.cc        |  69 ++++++++--
+ .../browser/aegis/agent/agent_policy_broker.h |   9 ++
+ .../browser/resources/aegis_agent/agent.html  |   2 +
+ chrome/browser/resources/aegis_agent/agent.ts |   9 ++
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |   3 +
+ .../aegis_agent/aegis_agent_page_handler.cc   |  16 ++-
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   5 +
+ .../ui/webui/help/aegis_github_update.h       |   6 +-
+ 12 files changed, 360 insertions(+), 28 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 0c8da8e5e6..63c6b1f989 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -17,8 +17,8 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+-#include "base/task/task_traits.h"
+ #include "base/task/sequenced_task_runner.h"
++#include "base/task/task_traits.h"
+ #include "base/task/thread_pool.h"
+ #include "base/uuid.h"
+ #include "build/build_config.h"
+@@ -48,9 +48,9 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_handle_factory.h"
+ #include "components/tabs/public/tab_interface.h"
+-#include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_observer.h"
+ #include "crypto/sha2.h"
+@@ -663,6 +663,17 @@ AgentTask* AegisAgentService::CreateTask(std::string goal,
+     tasks_.erase(task_id);
+     return nullptr;
+   }
++  std::vector<GURL> selected_urls;
++  for (int tab_id : result->scope().allowed_tab_ids) {
++    tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
++    if (tab && tab->GetProfile() == profile_ &&
++        result->scope().AllowsOrigin(tab->GetURL()) &&
++        !tab->GetURL().has_username() && !tab->GetURL().has_password()) {
++      selected_urls.push_back(tab->GetURL());
++    }
++  }
++  // 地址由用户选中的真实标签页提供，不从目标文本、规划或网页链接推断授权。
++  policy_broker_.BindSelectedReadUrls(*result, selected_urls);
+   NotifyServiceSnapshotChanged();
+   return result;
+ }
+@@ -1189,6 +1200,7 @@ bool AegisAgentService::FinishUserTakeover(const std::string& task_id) {
+   bookmark_undo_tokens_.erase(task_id);
+   action_results_.erase(task_id);
+   action_tools_.erase(task_id);
++  action_risks_.erase(task_id);
+   action_hashes_.erase(task_id);
+   recovery_dispositions_[task_id] =
+       task_has_external_side_effect_[task_id]
+@@ -1218,6 +1230,7 @@ bool AegisAgentService::GrantRecoveryConsent(const std::string& task_id) {
+   policy_broker_.RevokeTaskApprovals(task_id);
+   action_results_.erase(task_id);
+   action_tools_.erase(task_id);
++  action_risks_.erase(task_id);
+   action_hashes_.erase(task_id);
+   browser_tools_.ForgetTask(task_id);
+   bookmark_undo_tokens_.erase(task_id);
+@@ -2550,6 +2563,7 @@ AgentPolicyDecision AegisAgentService::EvaluateToolCall(
+   }
+   if (decision.disposition == AgentPolicyDisposition::kAllow) {
+     action_tools_[task_id][call.action_id] = call.tool_name;
++    action_risks_[task_id][call.action_id] = decision.risk;
+     action_hashes_[task_id][call.action_id] = action_hash;
+     const AgentToolDescriptor* descriptor = tool_registry_.Find(call.tool_name);
+     if (descriptor && (descriptor->has_external_side_effect ||
+@@ -2558,6 +2572,7 @@ AgentPolicyDecision AegisAgentService::EvaluateToolCall(
+     }
+     if (!PersistTask(*task)) {
+       action_tools_[task_id].erase(call.action_id);
++      action_risks_[task_id].erase(call.action_id);
+       action_hashes_[task_id].erase(call.action_id);
+       return {.disposition = AgentPolicyDisposition::kDeny,
+               .risk = AgentRiskLevel::kBlocked,
+@@ -2577,6 +2592,32 @@ std::optional<AgentApprovalReceipt> AegisAgentService::ApproveToolCall(
+              : std::nullopt;
+ }
+ 
++AgentRiskLevel AegisAgentService::ToolCallRisk(
++    const std::string& task_id,
++    const AgentToolCall& call) const {
++  const AgentTask* task = GetTask(task_id);
++  return task ? policy_broker_.EffectiveRisk(*task, call)
++              : AgentRiskLevel::kBlocked;
++}
++
++std::vector<std::string> AegisAgentService::ObservedSourceOrigins(
++    const std::string& task_id) const {
++  base::flat_set<std::string> origins;
++  auto results = action_results_.find(task_id);
++  if (results != action_results_.end()) {
++    for (const auto& [action_id, result] : results->second) {
++      // 失败结果也可能保留已读取正文；不能仅统计ok的调用。
++      if (const auto* source = result.value.FindString("url")) {
++        const GURL url(*source);
++        if (url.is_valid() && url.SchemeIsHTTPOrHTTPS()) {
++          origins.insert(url::Origin::Create(url).Serialize());
++        }
++      }
++    }
++  }
++  return {origins.begin(), origins.end()};
++}
++
+ void AegisAgentService::ExecuteTool(
+     const std::string& task_id,
+     const AgentToolCall& call,
+@@ -2718,11 +2759,13 @@ bool AegisAgentService::RecordToolResult(const std::string& task_id,
+   if (task_tools != action_tools_.end()) {
+     auto tool = task_tools->second.find(action_id);
+     if (tool != task_tools->second.end()) {
+-      const AgentToolDescriptor* descriptor = tool_registry_.Find(tool->second);
++      const auto risks = action_risks_.find(task_id);
++      const AgentRiskLevel risk =
++          risks != action_risks_.end() && risks->second.contains(action_id)
++              ? risks->second.at(action_id)
++              : AgentRiskLevel::kBlocked;
+       AppendPersistedActionSummary(
+-          task_id, action_id, tool->second,
+-          descriptor ? descriptor->risk : AgentRiskLevel::kBlocked,
+-          inserted.first->second.ok,
++          task_id, action_id, tool->second, risk, inserted.first->second.ok,
+           inserted.first->second.ok ? "browser verification passed"
+                                     : "browser verification failed");
+     }
+@@ -4051,6 +4094,7 @@ void AegisAgentService::Shutdown() {
+   model_capabilities_.clear();
+   action_results_.clear();
+   action_tools_.clear();
++  action_risks_.clear();
+   action_hashes_.clear();
+   task_has_external_side_effect_.clear();
+   bookmark_undo_tokens_.clear();
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 8b433c9926..d84a20918e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -136,6 +136,10 @@ class AegisAgentService : public KeyedService {
+   std::optional<AgentApprovalReceipt> ApproveToolCall(
+       const std::string& task_id,
+       const AgentToolCall& call);
++  AgentRiskLevel ToolCallRisk(const std::string& task_id,
++                              const AgentToolCall& call) const;
++  std::vector<std::string> ObservedSourceOrigins(
++      const std::string& task_id) const;
+   void ExecuteTool(
+       const std::string& task_id,
+       const AgentToolCall& call,
+@@ -370,6 +374,7 @@ class AegisAgentService : public KeyedService {
+   std::map<std::string, AgentModelCapabilityTracker> model_capabilities_;
+   std::map<std::string, ActionResults> action_results_;
+   std::map<std::string, std::map<std::string, std::string>> action_tools_;
++  std::map<std::string, std::map<std::string, AgentRiskLevel>> action_risks_;
+   std::map<std::string, std::map<std::string, std::string>> action_hashes_;
+   std::map<std::string, bool> task_has_external_side_effect_;
+   std::map<std::string, std::string> bookmark_undo_tokens_;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 4e887c61b2..5b28efbed1 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -294,8 +294,9 @@ class AegisAgentServiceTest : public testing::Test {
+     auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+     auto* task =
+         service->CreateTask("执行测试步骤", AgentMode::kAct, std::move(scope));
+-    if (!task || !service->BeginPlanning(task->id()))
++    if (!task || !service->BeginPlanning(task->id())) {
+       return nullptr;
++    }
+     auto plan = ServicePlanEvent();
+     plan.arguments.Set("steps", base::ListValue()
+                                     .Append(base::DictValue()
+@@ -1154,8 +1155,9 @@ TEST_F(AegisAgentServiceTest, CancelRejectsSynchronousActorStopResult) {
+   auto subscription =
+       actor::ActorKeyedService::Get(profile_)->AddTaskStateChangedCallback(
+           base::BindLambdaForTesting([&](actor::ActorTask& actor_task) {
+-            if (!actor_task.IsCompleted())
++            if (!actor_task.IsCompleted()) {
+               return;
++            }
+             synchronous_result_delivered = true;
+             EXPECT_TRUE(
+                 AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
+@@ -1183,8 +1185,9 @@ TEST_F(AegisAgentServiceTest, FailedRuntimeDetachesBeforeActorStops) {
+   auto subscription =
+       actor::ActorKeyedService::Get(profile_)->AddTaskStateChangedCallback(
+           base::BindLambdaForTesting([&](actor::ActorTask& actor_task) {
+-            if (!actor_task.IsCompleted())
++            if (!actor_task.IsCompleted()) {
+               return;
++            }
+             stopped = true;
+             EXPECT_FALSE(
+                 AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
+@@ -1210,8 +1213,9 @@ TEST_F(AegisAgentServiceTest, ReadOnlyFailureHasAtMostTwoRecoveries) {
+     EXPECT_EQ(AegisAgentServiceTestPeer::Progress(service, task->id()).second,
+               attempt);
+     EXPECT_EQ(task->model_calls_used(), initial_calls + std::min(attempt, 2));
+-    if (attempt < 3)
++    if (attempt < 3) {
+       EXPECT_FALSE(done.IsReady());
++    }
+   }
+   EXPECT_FALSE(done.Get<0>());
+   EXPECT_EQ(task->state(), AgentTaskState::kFailed);
+@@ -1276,6 +1280,76 @@ TEST_F(AegisAgentServiceTest, UncertainR1AndR2ResultsAreNotReplayed) {
+   }
+ }
+ 
++TEST_F(AegisAgentServiceTest,
++       NewUrlApprovalBlocksDispatchWithoutSpendingBudget) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  auto scope = ServiceTestScope();
++  scope.allowed_tools.insert("tab.create");
++  scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
++  auto* task = service->CreateTask("检查新地址审批", AgentMode::kAct, scope);
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(service->BeginPlanning(task->id()));
++  auto event = ServicePlanEvent();
++  event.arguments.Set("steps",
++                      base::ListValue().Append(base::DictValue()
++                                                   .Set("id", "open")
++                                                   .Set("title", "打开新地址")
++                                                   .Set("tool", "tab.create")));
++  std::string error;
++  ASSERT_TRUE(service->AcceptModelPlan(task->id(), event, &error)) << error;
++  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
++  AgentToolCall call;
++  call.action_id = "url-call";
++  call.tool_name = "tab.create";
++  call.arguments.Set("url", "https://fixture.example/new?synthetic=private");
++  const int before = task->tool_calls_used();
++  base::test::TestFuture<AgentToolResult> blocked;
++  service->ExecuteTool(task->id(), call, blocked.GetCallback());
++  EXPECT_EQ(blocked.Get().error, AgentErrorCode::kApprovalRequired);
++  EXPECT_EQ(task->state(), AgentTaskState::kAwaitingActionApproval);
++  EXPECT_EQ(task->tool_calls_used(), before);
++  EXPECT_TRUE(task->owned_tab_ids().empty());
++  EXPECT_EQ(service->ToolCallRisk(task->id(), call),
++            AgentRiskLevel::kR2ExternalSideEffect);
++  const auto receipt = service->ApproveToolCall(task->id(), call);
++  ASSERT_TRUE(receipt);
++  EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
++                .disposition,
++            AgentPolicyDisposition::kAllow);
++  EXPECT_EQ(task->tool_calls_used(), before + 1);
++  ASSERT_TRUE(service->CancelTask(task->id()));
++  EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
++                .disposition,
++            AgentPolicyDisposition::kDeny);
++}
++
++TEST_F(AegisAgentServiceTest, DataSourcesIncludeRetainedFailedReadResults) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  auto scope = ServiceTestScope();
++  scope.allowed_tab_ids.insert(7);
++  auto* task = service->CreateTask("记录已读取来源", AgentMode::kAct, scope);
++  ASSERT_TRUE(task);
++  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kPlanning, "测试"));
++  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kAwaitingTaskConsent, "测试"));
++  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRunning, "测试"));
++  AgentToolCall call;
++  call.action_id = "failed-read";
++  call.tool_name = "page.observe";
++  call.committed_url = GURL("https://fixture.example/source?private=synthetic");
++  call.arguments.Set("tab_id", 7);
++  ASSERT_EQ(service->EvaluateToolCall(task->id(), call).disposition,
++            AgentPolicyDisposition::kAllow);
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.error = AgentErrorCode::kVerificationFailed;
++  result.message = "字段不全但已保留部分正文";
++  result.value.Set("url", "https://fixture.example/source?private=synthetic");
++  ASSERT_TRUE(service->RecordToolResult(task->id(), std::move(result)));
++  EXPECT_EQ(service->ObservedSourceOrigins(task->id()),
++            std::vector<std::string>({"https://fixture.example"}));
++  EXPECT_TRUE(service->ObservedSourceOrigins("other-task").empty());
++}
++
+ TEST_F(AegisAgentServiceTest, AskModeUsesReadOnlyActorObservationTask) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+@@ -1578,8 +1652,12 @@ TEST_F(AegisAgentServiceTest,
+       envelope.Set("observation", observation);
+       ASSERT_TRUE(encryptor->EncryptString(
+           *base::WriteJson(envelope), &monitor.last_observation_ciphertext));
+-      if (variant == 4) monitor.last_value_hash = hash("other-result");
+-      if (variant == 5) monitor.last_observation_ciphertext = "invalid-ciphertext";
++      if (variant == 4) {
++        monitor.last_value_hash = hash("other-result");
++      }
++      if (variant == 5) {
++        monitor.last_observation_ciphertext = "invalid-ciphertext";
++      }
+       if (variant == 6) {
+         ASSERT_TRUE(encryptor->EncryptString("not-json", &monitor.last_observation_ciphertext));
+       }
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 7255b73325..9fec58b44c 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -764,6 +764,124 @@ TEST(AegisAgentPolicyTest, FinalCheckoutAlwaysRequiresUserTakeover) {
+             AgentPolicyDisposition::kRequireUserTakeover);
+ }
+ 
++TEST(AegisAgentPolicyTest, SelectedReadUrlsDoNotAuthorizeDerivedUrls) {
++  AgentToolRegistry registry;
++  AgentPolicyBroker broker(&registry);
++  auto scope = TestScope();
++  scope.allowed_origins.push_back(
++      url::Origin::Create(GURL("https://other.example/")));
++  scope.allowed_tools.insert("tab.create");
++  scope.allowed_tools.insert("window.create");
++  scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
++  AgentTask task("url-selection", "读取两个选中页面", AgentMode::kAct, scope);
++  const GURL selected("https://other.example/research?edition=1#section");
++  ASSERT_TRUE(broker.BindSelectedReadUrls(task, {selected}));
++  EXPECT_FALSE(
++      broker.BindSelectedReadUrls(task, {GURL("https://other.example/new")}));
++  ConsentTask(&task);
++  for (const char* name : {"page.navigate", "tab.create", "window.create"}) {
++    SCOPED_TRACE(name);
++    AgentToolCall call;
++    call.action_id = "navigate";
++    call.tool_name = name;
++    call.committed_url = GURL("https://shop.example/current");
++    if (call.tool_name == "page.navigate") {
++      call.arguments.Set("tab_id", 7);
++    }
++    call.arguments.Set("url", selected.spec());
++    EXPECT_EQ(broker.Evaluate(task, call).disposition,
++              AgentPolicyDisposition::kAllow);
++    for (const char* changed :
++         {"https://other.example/research/SYNTHETIC-CONTENT",
++          "https://other.example/research?edition=SYNTHETIC-CONTENT",
++          "https://other.example/research?edition=1#SYNTHETIC-CONTENT",
++          "https://shop.example/send/SYNTHETIC-CONTENT"}) {
++      call.arguments.Set("url", changed);
++      const auto decision = broker.Evaluate(task, call);
++      EXPECT_EQ(decision.disposition,
++                AgentPolicyDisposition::kRequireActionApproval);
++      EXPECT_EQ(decision.risk, AgentRiskLevel::kR2ExternalSideEffect);
++    }
++  }
++}
++
++TEST(AegisAgentPolicyTest, UrlApprovalIsExactSingleUseAndRevocable) {
++  AgentToolRegistry registry;
++  AgentPolicyBroker broker(&registry);
++  AgentTask task("url-receipt", "受控导航", AgentMode::kAct, TestScope());
++  ConsentTask(&task);
++  AgentToolCall call;
++  call.action_id = "navigate";
++  call.tool_name = "page.navigate";
++  call.committed_url = GURL("https://shop.example/current");
++  call.arguments.Set("tab_id", 7);
++  call.arguments.Set("url", "https://shop.example/new");
++  const auto receipt = broker.IssueApproval(task, call);
++  ASSERT_TRUE(receipt);
++  call.arguments.Set("url", "https://shop.example/new?changed=1");
++  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
++            AgentPolicyDisposition::kRequireActionApproval);
++  call.arguments.Set("url", "https://shop.example/new");
++  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
++            AgentPolicyDisposition::kAllow);
++  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
++            AgentPolicyDisposition::kRequireActionApproval);
++  const auto revoked = broker.IssueApproval(task, call);
++  ASSERT_TRUE(revoked);
++  broker.RevokeTaskApprovals(task.id());
++  EXPECT_EQ(broker.Evaluate(task, call, revoked->approval_id).disposition,
++            AgentPolicyDisposition::kRequireActionApproval);
++  AgentPolicyBroker recovered(&registry);
++  EXPECT_EQ(recovered.Evaluate(task, call, receipt->approval_id).disposition,
++            AgentPolicyDisposition::kRequireActionApproval);
++  EXPECT_FALSE(
++      recovered.BindSelectedReadUrls(task, {GURL("https://shop.example/new")}));
++}
++
++TEST(AegisAgentPolicyTest, UrlApprovalCannotOverrideScopeOrCredentials) {
++  AgentToolRegistry registry;
++  AgentPolicyBroker broker(&registry);
++  AgentTask task("url-deny", "拒绝越界", AgentMode::kAct, TestScope());
++  EXPECT_FALSE(
++      broker.BindSelectedReadUrls(task, {GURL("https://outside.example/")}));
++  ConsentTask(&task);
++  AgentToolCall call;
++  call.action_id = "navigate";
++  call.tool_name = "page.navigate";
++  call.committed_url = GURL("https://shop.example/current");
++  call.arguments.Set("tab_id", 7);
++  for (const char* target :
++       {"https://outside.example/", "https://user:pass@shop.example/",
++        "file:///tmp/fixture"}) {
++    call.arguments.Set("url", target);
++    EXPECT_EQ(broker.Evaluate(task, call).disposition,
++              AgentPolicyDisposition::kDeny);
++    EXPECT_FALSE(broker.IssueApproval(task, call));
++  }
++}
++
++TEST(AegisAgentPolicyTest, OfflineDownloadAssessmentNeedsNoTransferApproval) {
++  AgentToolRegistry registry;
++  AgentPolicyBroker broker(&registry);
++  auto scope = TestScope();
++  scope.allowed_tools.insert("download.find_official");
++  scope.allowed_data_classes.insert(AgentDataClass::kDownloads);
++  AgentTask task("offline-assessment", "只在本机比较来源", AgentMode::kAct,
++                 scope);
++  ConsentTask(&task);
++  AgentToolCall call;
++  call.action_id = "assess";
++  call.tool_name = "download.find_official";
++  call.committed_url = GURL("https://shop.example/source");
++  call.arguments.Set("product", "fixture");
++  call.arguments.Set("platform", "mac");
++  call.arguments.Set("architecture", "arm64");
++  call.arguments.Set("candidate_url",
++                     "https://shop.example/fixture-mac-arm64.zip");
++  EXPECT_EQ(broker.Evaluate(task, call).disposition,
++            AgentPolicyDisposition::kAllow);
++}
++
+ TEST(AegisAgentPolicyTest, RejectsArgumentScopeAndStateMismatch) {
+   AgentToolRegistry registry;
+   AgentPolicyBroker broker(&registry);
+diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
+index befa203f42..c000baa9f2 100644
+--- a/chrome/browser/aegis/agent/agent_policy_broker.cc
++++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
+@@ -158,7 +158,8 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
+   }
+   if (const std::string* url_argument = call.arguments.FindString("url")) {
+     const GURL target(*url_argument);
+-    if (!task.scope().AllowsOrigin(target)) {
++    if (!task.scope().AllowsOrigin(target) || target.has_username() ||
++        target.has_password()) {
+       return Deny(AgentErrorCode::kScopeViolation,
+                   "target URL origin is outside task scope");
+     }
+@@ -166,14 +167,16 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
+   if (const std::string* candidate_url =
+           call.arguments.FindString("candidate_url")) {
+     const GURL target(*candidate_url);
+-    if (!task.scope().AllowsOrigin(target)) {
++    if (!task.scope().AllowsOrigin(target) || target.has_username() ||
++        target.has_password()) {
+       return Deny(AgentErrorCode::kScopeViolation,
+                   "candidate URL origin is outside task scope");
+     }
+   }
++  const AgentRiskLevel effective_risk = EffectiveRisk(task, call);
+   if (!HasTaskConsent(task) && !completed_bookmark_undo) {
+     return {.disposition = AgentPolicyDisposition::kRequireTaskConsent,
+-            .risk = descriptor->risk,
++            .risk = effective_risk,
+             .error = AgentErrorCode::kApprovalRequired,
+             .reason = "task consent is required"};
+   }
+@@ -185,25 +188,29 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
+                 "task is not in an executable state");
+   }
+ 
+-  switch (descriptor->risk) {
++  switch (effective_risk) {
+     case AgentRiskLevel::kR0ReadOnly:
+     case AgentRiskLevel::kR1Reversible:
+       return {.disposition = AgentPolicyDisposition::kAllow,
+-              .risk = descriptor->risk,
++              .risk = effective_risk,
+               .error = AgentErrorCode::kNone,
+               .reason = "allowed by task scope"};
+     case AgentRiskLevel::kR2ExternalSideEffect:
+       if (approval_id &&
+           ConsumeApproval(task, call, approval_id.value(), now)) {
+         return {.disposition = AgentPolicyDisposition::kAllow,
+-                .risk = descriptor->risk,
++                .risk = effective_risk,
+                 .error = AgentErrorCode::kNone,
+                 .reason = "allowed by exact action approval"};
+       }
+-      return {.disposition = AgentPolicyDisposition::kRequireActionApproval,
+-              .risk = descriptor->risk,
+-              .error = AgentErrorCode::kApprovalRequired,
+-              .reason = "exact action approval is required"};
++      return {
++          .disposition = AgentPolicyDisposition::kRequireActionApproval,
++          .risk = effective_risk,
++          .error = AgentErrorCode::kApprovalRequired,
++          .reason = descriptor->risk == effective_risk
++                        ? "exact action approval is required"
++                        : "新地址可能携带任务内容；必须核对完整路径、查询参数"
++                          "和接收方后批准"};
+     case AgentRiskLevel::kR3UserTakeover:
+       return {.disposition = AgentPolicyDisposition::kRequireUserTakeover,
+               .risk = descriptor->risk,
+@@ -226,7 +233,7 @@ std::optional<AgentApprovalReceipt> AgentPolicyBroker::IssueApproval(
+   }
+   const AgentToolDescriptor* descriptor = registry_->Find(call.tool_name);
+   if (!descriptor ||
+-      descriptor->risk != AgentRiskLevel::kR2ExternalSideEffect) {
++      EffectiveRisk(task, call) != AgentRiskLevel::kR2ExternalSideEffect) {
+     return std::nullopt;
+   }
+ 
+@@ -253,6 +260,46 @@ void AgentPolicyBroker::RevokeTaskApprovals(const std::string& task_id) {
+   });
+ }
+ 
++bool AgentPolicyBroker::BindSelectedReadUrls(const AgentTask& task,
++                                             const std::vector<GURL>& urls) {
++  if (task.state() != AgentTaskState::kDraft ||
++      selected_read_urls_.contains(task.id()) || urls.size() > 64u ||
++      std::ranges::any_of(urls, [&](const GURL& url) {
++        return !task.scope().AllowsOrigin(url) || url.has_username() ||
++               url.has_password();
++      })) {
++    return false;
++  }
++  selected_read_urls_.emplace(task.id(),
++                              base::flat_set<GURL>(urls.begin(), urls.end()));
++  return true;
++}
++
++AgentRiskLevel AgentPolicyBroker::EffectiveRisk(
++    const AgentTask& task,
++    const AgentToolCall& call) const {
++  const AgentToolDescriptor* descriptor = registry_->Find(call.tool_name);
++  if (!descriptor) {
++    return AgentRiskLevel::kBlocked;
++  }
++  if (descriptor->risk >= AgentRiskLevel::kR2ExternalSideEffect) {
++    return descriptor->risk;
++  }
++  // 同源URL的路径、查询串和片段同样能够携带数据，不能只比较origin。
++  // candidate_url只用于本机下载来源比对，不发起网络请求。
++  for (const char* key : {"url"}) {
++    if (const auto* value = call.arguments.FindString(key)) {
++      const GURL target(*value);
++      auto selected = selected_read_urls_.find(task.id());
++      if (selected == selected_read_urls_.end() ||
++          !selected->second.contains(target)) {
++        return AgentRiskLevel::kR2ExternalSideEffect;
++      }
++    }
++  }
++  return descriptor->risk;
++}
++
+ // static
+ std::string AgentPolicyBroker::ActionHash(const AgentToolCall& call) {
+   std::string arguments;
+diff --git a/chrome/browser/aegis/agent/agent_policy_broker.h b/chrome/browser/aegis/agent/agent_policy_broker.h
+index 8a90b3fa26..bab0b4d94f 100644
+--- a/chrome/browser/aegis/agent/agent_policy_broker.h
++++ b/chrome/browser/aegis/agent/agent_policy_broker.h
+@@ -6,10 +6,13 @@
+ #include <map>
+ #include <optional>
+ #include <string>
++#include <vector>
+ 
++#include "base/containers/flat_set.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/aegis/agent/agent_task.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
++#include "url/gurl.h"
+ 
+ namespace aegis::agent {
+ 
+@@ -57,6 +60,11 @@ class AgentPolicyBroker {
+       base::Time now = base::Time::Now());
+ 
+   void RevokeTaskApprovals(const std::string& task_id);
++  // 仅由浏览器绑定用户创建任务时选中的完整地址；模型和读取结果不能追加。
++  bool BindSelectedReadUrls(const AgentTask& task,
++                            const std::vector<GURL>& urls);
++  AgentRiskLevel EffectiveRisk(const AgentTask& task,
++                               const AgentToolCall& call) const;
+   // Stable fingerprint shown to the user and consumed by the one-use approval
+   // receipt. It covers the exact action, arguments, origin, and document.
+   static std::string ActionHash(const AgentToolCall& call);
+@@ -71,6 +79,7 @@ class AgentPolicyBroker {
+ 
+   const raw_ptr<const AgentToolRegistry> registry_;
+   std::map<std::string, AgentApprovalReceipt> approvals_;
++  std::map<std::string, base::flat_set<GURL>> selected_read_urls_;
+ };
+ 
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index 112c334c83..bdb2430e9e 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -136,6 +136,8 @@
+       <section id="approval-card" class="card approval" hidden>
+         <h2 id="approval-title"></h2>
+         <p id="approval-detail"></p>
++        <p id="approval-data-flow" hidden></p>
++        <pre id="approval-target-url" hidden></pre>
+         <dl id="checkout-summary" class="scope-grid checkout-summary" hidden></dl>
+         <details class="exact-action">
+           <summary id="approval-arguments-label"></summary>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index fd0f74590e..177d820c29 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -675,6 +675,15 @@ function render(next: TaskSnapshot) {
+     element('approval-detail').textContent =
+         `${next.pendingApproval.toolName} · ${next.pendingApproval.origin} · ` +
+         next.pendingApproval.risk;
++    const transfer = Boolean(next.pendingApproval.isDataTransfer);
++    element('approval-data-flow').hidden = !transfer;
++    element('approval-data-flow').textContent = transfer ?
++        loadTimeData.getString('dataTransferApproval') + ' ' +
++        (next.pendingApproval.dataSourceOrigins || []).join(', ') : '';
++    element('approval-target-url').hidden =
++        !transfer || !next.pendingApproval.targetUrl;
++    element('approval-target-url').textContent =
++        transfer ? next.pendingApproval.targetUrl || '' : '';
+     element('approval-id').textContent = next.pendingApproval.actionId;
+     element('approval-arguments').textContent =
+         next.pendingApproval.argumentSummary;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 845e09d644..f40df2c653 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -62,6 +62,9 @@ struct PendingApproval {
+   string risk;
+   string argument_summary;
+   string action_fingerprint;
++  array<string> data_source_origins;
++  string target_url;
++  bool is_data_transfer;
+   bool requires_user_takeover;
+   CheckoutSummary? checkout;
+ };
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index caba66fc96..0e1ffefb27 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -18,8 +18,8 @@
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+-#include "chrome/browser/aegis/agent/agent_policy_broker.h"
+ #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
++#include "chrome/browser/aegis/agent/agent_policy_broker.h"
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
+ #include "chrome/browser/aegis/model_provider_policy.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -1052,7 +1052,19 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+             : std::string();
+     const aegis::agent::AgentToolDescriptor* descriptor =
+         service_->tool_registry().Find(pending->tool_name);
+-    approval->risk = descriptor ? RiskName(descriptor->risk) : "blocked";
++    const auto risk = service_->ToolCallRisk(task->id(), *pending);
++    approval->risk = RiskName(risk);
++    approval->data_source_origins = service_->ObservedSourceOrigins(task->id());
++    if (const auto* target = pending->arguments.FindString("url")) {
++      approval->target_url = *target;
++      approval->origin = url::Origin::Create(GURL(*target)).Serialize();
++    }
++    approval->is_data_transfer =
++        risk == aegis::agent::AgentRiskLevel::kR2ExternalSideEffect &&
++        (!approval->target_url.empty() || pending->tool_name == "page.type" ||
++         pending->tool_name == "page.select" ||
++         pending->tool_name == "page.webmcp.invoke" ||
++         pending->tool_name == "form.fill");
+     if (!base::JSONWriter::Write(pending->arguments,
+                                  &approval->argument_summary)) {
+       approval->argument_summary = "{}";
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index dabeefae93..a44acbe537 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -532,6 +532,11 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("exactArguments", "Exact action parameters", "本次操作的精确参数",
+       "本次操作的精確參數");
+   add("actionFingerprint", "Action fingerprint", "操作指纹", "操作指紋");
++  add("dataTransferApproval",
++      "This action may send task content. Review the recipient and complete "
++      "address or text below. Previously read sources:",
++      "此操作可能发送任务内容。请核对接收方及下方完整地址或文字。已读取来源：",
++      "此操作可能傳送任務內容。請核對接收方及下方完整地址或文字。已讀取來源：");
+   add("takeoverReady", "Final step is yours", "最终步骤由你完成",
+       "最終步驟由你完成");
+   add("takeoverNotice",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 809a70295b..e695b067a1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.3。
+-inline constexpr char kProductVersion[] = "2.0.0.3";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (003)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.4。
++inline constexpr char kProductVersion[] = "2.0.0.4";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (004)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

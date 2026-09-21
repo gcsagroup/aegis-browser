@@ -1,4 +1,4 @@
-From fe10a690f52d7dfdd28fd8def3304e0899865b64 Mon Sep 17 00:00:00 2001
+From ee850f80ffe7078dce96ef3577c46893ad0c25c7 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:59:10 +0800
 Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
@@ -134,10 +134,10 @@ index 8a64464ded..03b752f493 100644
    void InstallReporterCallbacks();
    void OnHeuristicSummary(PageSnapshot snapshot,
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index f2a7f5db9e..d75f6a0401 100644
+index 92b4d3289f..77937b8a1e 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -275,6 +275,7 @@ static_library("devtools") {
+@@ -290,6 +290,7 @@ static_library("devtools") {
        "//chrome/browser/user_education",
        "//chrome/browser/web_applications",
        "//chrome/common",
@@ -146,7 +146,7 @@ index f2a7f5db9e..d75f6a0401 100644
        "//components/input",
        "//components/keep_alive_registry",
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-index c9f49cd198..3994a5ac2b 100644
+index d1b45e8064..8b50dc530f 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 @@ -43,6 +43,8 @@
@@ -181,7 +181,7 @@ index c9f49cd198..3994a5ac2b 100644
  void ChromeDevToolsManagerDelegate::ClientAttached(
      content::DevToolsAgentHostClientChannel* channel) {
    DCHECK(sessions_.find(channel) == sessions_.end());
-@@ -540,6 +558,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
+@@ -544,6 +562,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
  
  void ChromeDevToolsManagerDelegate::SetActiveWebSocketConnections(
      size_t count) {
@@ -190,10 +190,10 @@ index c9f49cd198..3994a5ac2b 100644
      // We need to reset the pointer to the infobar before closing it because
      // closing the infobar deletes it.
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
-index a48b3a9ebd..c4559270a9 100644
+index 5a1fb503d2..61de40316c 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
-@@ -87,6 +87,8 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
+@@ -90,6 +90,8 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
  
    bool AllowInspectingRenderFrameHost(content::RenderFrameHost* rfh) override;
    bool AllowInspectingTarget(content::DevToolsAgentHost* agent_host) override;

@@ -36,7 +36,7 @@ node apps/browser/scripts/android-agent-ui.mjs snapshot \
   --serial 48311FDKD002P8 \
   --driver-build /绝对路径/工具构建目录 \
   --profile /data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1 \
-  --source-root /Users/lazy/Projects/GCSA-aegis-chromium-linux-amd64/src \
+  --source-root /Users/lazy/Projects/GCSA-aegis-build/android/src \
   --manifest /绝对路径/候选清单.json \
   --build-dir /绝对路径/候选构建记录目录 \
   --output /绝对路径/新的界面快照.json

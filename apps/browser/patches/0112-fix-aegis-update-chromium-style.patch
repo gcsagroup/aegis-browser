@@ -1,4 +1,4 @@
-From f5346cf407d13d315ff6fe87ccde2b8c31ea3426 Mon Sep 17 00:00:00 2001
+From 16d4ae73d4335d9f367f857cfcecb09c8a78d3b1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 13 Sep 2026 05:01:21 +0800
 Subject: [PATCH] Fix GitHub updater Chromium style and bump Ver 1.1 (003)
@@ -152,10 +152,10 @@ index 43b2888344..f4878215ca 100644
    // Sub-classes must implement this method to create the respective
    // specialization. |web_contents| may be null, in which case any required UX
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 815b4f1241..062f0beb97 100644
+index b21fd3bd6a..a9c42556ed 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -357,7 +357,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
    browser_version = VersionUI::GetAnnotatedVersionStringForUi();
  #else
    browser_version = base::StrCat(

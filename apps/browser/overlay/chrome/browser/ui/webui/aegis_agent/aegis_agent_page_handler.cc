@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -18,8 +19,9 @@
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
-#include "chrome/browser/aegis/agent/agent_policy_broker.h"
 #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
+#include "chrome/browser/aegis/agent/agent_observation.h"
+#include "chrome/browser/aegis/agent/agent_policy_broker.h"
 #include "chrome/browser/aegis/agent/agent_workflow.h"
 #include "chrome/browser/aegis/model_provider_policy.h"
 #include "chrome/browser/profiles/profile.h"
@@ -32,6 +34,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -157,41 +160,11 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
   return workflow != AgentWorkflowKind::kBrowserSteward;
 }
 
-// Resolving a deictic page reference belongs to the browser, not the model.
-// This keeps common commands reliable and prevents an intent router from
-// turning "this page" into a browser-metadata or web-search task.
-bool GoalRefersToCurrentPage(std::string_view goal) {
-  const std::string lower_goal = base::ToLowerASCII(goal);
-  constexpr std::string_view kCurrentPageReferences[] = {
-      "当前页",          "当前页面",  "当前网页",     "这个页面",
-      "这个网页",        "本页面",    "本网页",       "页面内容",
-      "网页内容",        "this page", "current page", "page content",
-      "the page content"};
-  return std::ranges::any_of(
-      kCurrentPageReferences, [&lower_goal](std::string_view reference) {
-        return lower_goal.find(reference) != std::string::npos;
-      });
-}
-
 bool IsValidSchedule(AgentMode mode, int schedule_interval_minutes) {
   if (mode != AgentMode::kAutomate) {
     return schedule_interval_minutes == 0;
   }
   return schedule_interval_minutes >= 15 && schedule_interval_minutes <= 10080;
-}
-
-bool GoalRequestsWindowTabMetadata(std::string_view goal) {
-  const std::string lower = base::ToLowerASCII(goal);
-  if (lower.find("标签") == std::string::npos &&
-      lower.find("tab") == std::string::npos) {
-    return false;
-  }
-  constexpr std::string_view references[] = {
-      "当前窗口",       "这个窗口",    "本窗口",  "标签页",    "浏览器标签",
-      "current window", "this window", "my tabs", "open tabs", "browser tabs"};
-  return std::ranges::any_of(references, [&lower](std::string_view reference) {
-    return lower.find(reference) != std::string::npos;
-  });
 }
 
 std::string BindScheduleToGoal(std::string goal,
@@ -444,6 +417,244 @@ void AegisAgentPageHandler::OnActiveTabDidChange(
   }
 }
 
+void AegisAgentPageHandler::ListResearchTabs(
+    ListResearchTabsCallback callback) {
+  std::vector<aegis_agent::mojom::ResearchTabPtr> result;
+  research_selection_urls_.clear();
+  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+  if (!list || browser_->GetProfile() != profile_) {
+    std::move(callback).Run(std::move(result), "当前窗口不可用");
+    return;
+  }
+  for (auto* tab : list->GetAllTabs()) {
+    if (result.size() >= 100u) {
+      break;
+    }
+    const GURL& url = tab->GetURL();
+    if (tab->GetProfile() != profile_ || !url.SchemeIsHTTPOrHTTPS() ||
+        url.has_username() || url.has_password()) {
+      continue;
+    }
+    auto item = aegis_agent::mojom::ResearchTab::New();
+    item->tab_id = tab->GetHandle().raw_value();
+    item->url = url.spec();
+    item->title = aegis::agent::BoundedAgentObservationText(
+        base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 256);
+    research_selection_urls_[item->tab_id] = url;
+    result.push_back(std::move(item));
+  }
+  std::move(callback).Run(std::move(result), std::string());
+}
+
+void AegisAgentPageHandler::CreateResearchTask(
+    const std::string& goal,
+    const std::vector<int32_t>& tab_ids,
+    CreateResearchTaskCallback callback) {
+  CreateSelectedTask(goal, tab_ids, false, std::move(callback));
+}
+
+void AegisAgentPageHandler::CreateTabGroupTask(
+    const std::string& goal,
+    const std::vector<int32_t>& tab_ids,
+    CreateTabGroupTaskCallback callback) {
+  CreateSelectedTask(goal, tab_ids, true, std::move(callback));
+}
+
+void AegisAgentPageHandler::CreateSelectedTask(
+    const std::string& goal,
+    const std::vector<int32_t>& tab_ids,
+    bool group_tabs,
+    CreateResearchTaskCallback callback) {
+  last_error_.clear();
+  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+  if (!list || browser_->GetProfile() != profile_ ||
+      tab_ids.size() < (group_tabs ? 1u : 3u) || tab_ids.size() > 10u) {
+    last_error_ = group_tabs ? "请选择当前窗口的1–10个标签"
+                             : "请选择当前窗口的3–10个网页";
+  } else {
+    for (int32_t id : tab_ids) {
+      auto* tab = tabs::TabHandle(id).Get();
+      auto selected = research_selection_urls_.find(id);
+      if (!tab || selected == research_selection_urls_.end() ||
+          list->GetIndexOfTab(tab->GetHandle()) < 0 ||
+          tab->GetProfile() != profile_ || tab->GetURL() != selected->second) {
+        last_error_ = "所选网页已改变，请刷新来源列表后重新选择";
+        break;
+      }
+    }
+    if (last_error_.empty()) {
+      profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, true);
+      service_ =
+          aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_);
+      ObserveService(service_);
+      auto* task = !service_ ? nullptr
+                   : group_tabs
+                       ? service_->CreateSelectedTabGroupTask(goal, tab_ids)
+                       : service_->CreateSelectedResearchTask(goal, tab_ids);
+      if (!task) {
+        last_error_ = "无法创建所选标签任务，请核对网页、目标及模型配置";
+      } else {
+        active_task_id_ = task->id();
+        ObserveTask(task);
+      }
+    }
+  }
+  std::move(callback).Run(BuildSnapshot());
+}
+
+void AegisAgentPageHandler::ShowProtection() {
+  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+  if (list && browser_->GetProfile() == profile_) {
+    list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
+  }
+}
+
+void AegisAgentPageHandler::OpenResearchSource(
+    const std::string& id,
+    uint32_t source_index,
+    OpenResearchSourceCallback callback) {
+  const auto* record = service_ && service_->IsEnabled()
+                           ? service_->GetResearchRecord(id)
+                           : nullptr;
+  const auto* sources = record ? record->FindList("sources") : nullptr;
+  if (!sources || source_index >= sources->size() || !browser_ ||
+      browser_->GetProfile() != profile_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  const auto& source = (*sources)[source_index].GetDict();
+  GURL url(*source.FindString("url"));
+  const auto& excerpt = *source.FindString("excerpt");
+  if (!excerpt.empty()) {
+    // 文本片段保留在浏览器内，不把摘录加入发往站点的查询参数。
+    const std::string fragment =
+        ":~:text=" + base::EscapeQueryParamValue(excerpt, false);
+    GURL::Replacements replacement;
+    replacement.SetRefStr(fragment);
+    url = url.ReplaceComponents(replacement);
+  }
+  const bool allowed =
+      url.SchemeIsHTTPOrHTTPS() && !url.has_username() && !url.has_password();
+  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
+}
+
+void AegisAgentPageHandler::ReviewResearchSource(
+    const std::string& id,
+    uint32_t source_index,
+    ReviewResearchSourceCallback callback) {
+  auto* tab = ContentTab(browser_);
+  if (!service_ || !tab || tab->GetProfile() != profile_ ||
+      !tab->GetContents() || tab->GetContents()->IsLoading()) {
+    std::move(callback).Run("unavailable");
+    return;
+  }
+  service_->ReviewResearchSource(
+      id, source_index, tab->GetHandle().raw_value(),
+      base::BindOnce([](ReviewResearchSourceCallback done,
+                        std::string status) { std::move(done).Run(status); },
+                     std::move(callback)));
+}
+
+void AegisAgentPageHandler::SaveResearch(const std::string& task_id,
+                                         SaveResearchCallback callback) {
+  if (!service_) {
+    std::move(callback).Run("research_unavailable");
+    return;
+  }
+  service_->SaveResearch(
+      task_id,
+      base::BindOnce([](SaveResearchCallback done,
+                        std::string error) { std::move(done).Run(error); },
+                     std::move(callback)));
+}
+
+void AegisAgentPageHandler::ListSavedResearch(
+    ListSavedResearchCallback callback) {
+  if (!service_ || !profile_) {
+    std::move(callback).Run({}, false, "research_unavailable");
+    return;
+  }
+  service_->LoadSavedResearch(base::BindOnce(
+      [](bool session_only, ListSavedResearchCallback done,
+         base::ListValue values, std::string error) {
+        std::vector<aegis_agent::mojom::SavedResearchPtr> records;
+        for (const auto& value : values) {
+          const auto& record = value.GetDict();
+          auto item = aegis_agent::mojom::SavedResearch::New();
+          item->id = *record.FindString("id");
+          item->goal = *record.FindString("goal");
+          item->summary = *record.FindString("summary");
+          item->outcome = *record.FindString("outcome");
+          item->created_ms = *record.FindString("created_ms");
+          for (const auto& entry : *record.FindList("sources")) {
+            const auto& source = entry.GetDict();
+            auto converted = aegis_agent::mojom::ResearchSource::New();
+            converted->url = *source.FindString("url");
+            converted->title = *source.FindString("title");
+            converted->excerpt = *source.FindString("excerpt");
+            converted->captured_ms = *source.FindString("captured_ms");
+            converted->available = *source.FindBool("available");
+            item->sources.push_back(std::move(converted));
+          }
+          for (const auto& unfinished : *record.FindList("unfinished")) {
+            item->unfinished.push_back(unfinished.GetString());
+          }
+          records.push_back(std::move(item));
+        }
+        std::move(done).Run(std::move(records), session_only, std::move(error));
+      },
+      profile_->IsOffTheRecord(), std::move(callback)));
+}
+
+void AegisAgentPageHandler::DeleteSavedResearch(
+    const std::string& id,
+    DeleteSavedResearchCallback callback) {
+  if (!service_) {
+    std::move(callback).Run("research_unavailable");
+    return;
+  }
+  service_->DeleteSavedResearch(
+      id, base::BindOnce([](DeleteSavedResearchCallback done,
+                            std::string error) { std::move(done).Run(error); },
+                         std::move(callback)));
+}
+
+void AegisAgentPageHandler::OpenVerifiedSource(
+    const std::string& task_id,
+    uint32_t source_index,
+    OpenVerifiedSourceCallback callback) {
+  const auto* result =
+      service_ ? service_->GetCompletionSummary(task_id) : nullptr;
+  const auto* task = service_ ? service_->GetTask(task_id) : nullptr;
+  if (!result || !task || source_index >= result->source_urls.size() ||
+      !browser_ || browser_->GetProfile() != profile_) {
+    std::move(callback).Run(false);
+    return;
+  }
+  const GURL url(result->source_urls[source_index]);
+  const bool allowed = url.SchemeIsHTTPOrHTTPS() && !url.has_username() &&
+                       !url.has_password() && task->scope().AllowsOrigin(url);
+  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
+}
+
+void AegisAgentPageHandler::ReviewDownload(const std::string& task_id,
+                                           ReviewDownloadCallback callback) {
+  if (!service_ || task_id != active_task_id_ || !browser_ ||
+      browser_->GetProfile() != profile_) {
+    std::move(callback).Run("unavailable", std::string());
+    return;
+  }
+  service_->ReviewDownload(
+      task_id, base::BindOnce(
+                   [](ReviewDownloadCallback done, base::DictValue result) {
+                     const auto* status = result.FindString("status");
+                     const auto* hash = result.FindString("sha256");
+                     std::move(done).Run(status ? *status : "unavailable",
+                                         hash ? *hash : std::string());
+                   },
+                   std::move(callback)));
+}
+
 void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
   std::move(callback).Run(BuildSnapshot());
 }
@@ -529,8 +740,10 @@ void AegisAgentPageHandler::CreateTask(
         aegis::agent::ConstrainWorkflowToUserIntent(resolved_goal,
                                                     *converted_workflow);
     const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(resolved_goal);
-    const bool use_current_page = !requested_origins && !explicit_url &&
-                                  GoalRefersToCurrentPage(resolved_goal);
+    const bool use_current_page =
+        !requested_origins && !explicit_url &&
+        (aegis::agent::AgentGoalRefersToCurrentPage(resolved_goal) ||
+         resolved_workflow == AgentWorkflowKind::kPageInteraction);
     const bool browser_only = !requested_origins && !explicit_url &&
                               !use_current_page &&
                               !WorkflowNeedsWebTarget(resolved_workflow);
@@ -654,9 +867,15 @@ void AegisAgentPageHandler::CreateResolvedTask(
           : aegis::agent::BuildAgentWorkflowScope(
                 workflow, std::move(*origins), {tab->GetHandle().raw_value()},
                 *model_destination);
-  if (scope && browser_only && GoalRequestsWindowTabMetadata(goal) &&
-      browser_ && browser_->GetProfile() == profile_ &&
-      !profile_->IsOffTheRecord() &&
+  if (scope && workflow == AgentWorkflowKind::kSafeDownload &&
+      !aegis::agent::AgentGoalRequestsDownloadTransfer(goal)) {
+    // 找链接与核对来源不授权下载、打开文件或点击网页。
+    scope->allowed_tools = {"page.observe", "page.extract", "page.wait",
+                            "download.find_official", "download.list"};
+  }
+  if (scope && browser_only &&
+      aegis::agent::AgentGoalRequestsWindowTabMetadata(goal) && browser_ &&
+      browser_->GetProfile() == profile_ && !profile_->IsOffTheRecord() &&
       browser_->GetType() == BrowserWindowInterface::TYPE_NORMAL &&
       !browser_->IsDeleteScheduled()) {
     scope->tab_metadata_window_id = browser_->GetSessionID().id();
@@ -805,6 +1024,19 @@ void AegisAgentPageHandler::SetMonitorPaused(
   std::move(callback).Run(BuildSnapshot());
 }
 
+void AegisAgentPageHandler::CheckMonitorNow(const std::string& task_id,
+                                            const std::string& monitor_id,
+                                            CheckMonitorNowCallback callback) {
+  AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
+  const bool ok = task && service_->CheckMonitorNow(task_id, monitor_id);
+  last_error_ = ok ? std::string() : "monitor immediate check unavailable";
+  if (ok) {
+    active_task_id_ = task_id;
+    ObserveTask(task);
+  }
+  std::move(callback).Run(BuildSnapshot());
+}
+
 void AegisAgentPageHandler::DeleteMonitor(const std::string& task_id,
                                           const std::string& monitor_id,
                                           DeleteMonitorCallback callback) {
@@ -912,6 +1144,7 @@ void AegisAgentPageHandler::PushSnapshot() {
 
 aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
   auto snapshot = aegis_agent::mojom::TaskSnapshot::New();
+  snapshot->research_session_only = profile_ && profile_->IsOffTheRecord();
   snapshot->feature_enabled =
       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
   snapshot->agent_enabled =
@@ -984,6 +1217,8 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
     task = service_->MostRecentTask();
     ObserveTask(task);
   }
+  snapshot->research_save_available =
+      task && service_->GetResearchRecord(task->id());
   if (!task) {
     return snapshot;
   }
@@ -991,12 +1226,18 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
   snapshot->state = aegis::agent::AgentTaskStateToString(task->state());
   snapshot->mode = ModeName(task->mode());
   snapshot->goal = task->goal();
+  for (const auto [name, value] : service_->GetDownloadEvidence(task->id())) {
+    auto field = aegis_agent::mojom::DownloadEvidenceField::New();
+    field->name = name;
+    field->value = value.GetString();
+    snapshot->download_evidence.push_back(std::move(field));
+  }
   snapshot->undo_available = service_->CanUndoLastBookmarkAction(task->id());
 
   if (const aegis::agent::AgentTaskPlan* plan = service_->GetPlan(task->id())) {
     auto plan_value = aegis_agent::mojom::PlanSummary::New();
     plan_value->summary = plan->summary;
-    AgentRiskLevel max_risk = AgentRiskLevel::kR0ReadOnly;
+    AgentRiskLevel max_risk = service_->TaskMaxRisk(task->id());
     for (const url::Origin& origin : plan->scope.allowed_origins) {
       plan_value->origins.push_back(origin.Serialize());
     }
@@ -1038,6 +1279,24 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
     snapshot->result_summary = completion->summary;
     snapshot->result_outcome = completion->outcome;
     snapshot->result_sources = completion->source_urls;
+    auto* list = browser_ && browser_->GetProfile() == profile_
+                     ? TabListInterface::From(browser_)
+                     : nullptr;
+    for (const auto& source : completion->source_urls) {
+      std::string title;
+      if (list) {
+        for (auto* source_tab : list->GetAllTabs()) {
+          if (source_tab->GetProfile() == profile_ &&
+              task->AllowsTab(source_tab->GetHandle().raw_value()) &&
+              source_tab->GetURL() == GURL(source)) {
+            title = aegis::agent::BoundedAgentObservationText(
+                base::UTF16ToUTF8(source_tab->GetContents()->GetTitle()), 256);
+            break;
+          }
+        }
+      }
+      snapshot->result_source_titles.push_back(std::move(title));
+    }
     snapshot->unfinished_items = completion->unfinished_items;
   }
 
@@ -1052,7 +1311,22 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
             : std::string();
     const aegis::agent::AgentToolDescriptor* descriptor =
         service_->tool_registry().Find(pending->tool_name);
-    approval->risk = descriptor ? RiskName(descriptor->risk) : "blocked";
+    const auto risk = service_->ToolCallRisk(task->id(), *pending);
+    approval->risk = RiskName(risk);
+    approval->data_source_origins = service_->ObservedSourceOrigins(task->id());
+    if (const auto* target = pending->arguments.FindString("url")) {
+      approval->target_url = GURL(*target).spec();
+      approval->origin = url::Origin::Create(GURL(*target)).Serialize();
+    }
+    approval->target_description =
+        service_->DescribeClickTarget(task->id(), *pending);
+    approval->is_data_transfer =
+        risk == aegis::agent::AgentRiskLevel::kR2ExternalSideEffect &&
+        (!approval->target_url.empty() || pending->tool_name == "page.click" ||
+         pending->tool_name == "page.type" ||
+         pending->tool_name == "page.select" ||
+         pending->tool_name == "page.webmcp.invoke" ||
+         pending->tool_name == "form.fill");
     if (!base::JSONWriter::Write(pending->arguments,
                                  &approval->argument_summary)) {
       approval->argument_summary = "{}";

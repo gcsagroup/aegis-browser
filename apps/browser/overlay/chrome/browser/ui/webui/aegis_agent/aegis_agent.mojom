@@ -62,6 +62,10 @@ struct PendingApproval {
   string risk;
   string argument_summary;
   string action_fingerprint;
+  array<string> data_source_origins;
+  string target_url;
+  string target_description;
+  bool is_data_transfer;
   bool requires_user_takeover;
   CheckoutSummary? checkout;
 };
@@ -90,6 +94,35 @@ struct MonitorSummary {
   bool change_summary_partial;
 };
 
+struct ResearchTab {
+  int32 tab_id;
+  string title;
+  string url;
+};
+
+struct ResearchSource {
+  string url;
+  string title;
+  string excerpt;
+  string captured_ms;
+  bool available;
+};
+
+struct SavedResearch {
+  string id;
+  string goal;
+  string summary;
+  string outcome;
+  string created_ms;
+  array<ResearchSource> sources;
+  array<string> unfinished;
+};
+
+struct DownloadEvidenceField {
+  string name;
+  string value;
+};
+
 struct TaskSnapshot {
   bool feature_enabled;
   bool agent_enabled;
@@ -106,9 +139,13 @@ struct TaskSnapshot {
   string mode;
   string goal;
   PlanSummary? plan;
+  array<DownloadEvidenceField> download_evidence;
   string result_summary;
   string result_outcome;
+  bool research_save_available;
+  bool research_session_only;
   array<string> result_sources;
+  array<string> result_source_titles;
   array<string> unfinished_items;
   PendingApproval? pending_approval;
   bool undo_available;
@@ -125,6 +162,18 @@ interface PageHandler {
   ShowUI();
 
   GetSnapshot() => (TaskSnapshot snapshot);
+  ListResearchTabs() => (array<ResearchTab> tabs, string error);
+  CreateResearchTask(string goal, array<int32> tab_ids) => (TaskSnapshot snapshot);
+  CreateTabGroupTask(string goal, array<int32> tab_ids) => (TaskSnapshot snapshot);
+  ShowProtection();
+  OpenResearchSource(string id, uint32 source_index) => (bool ok);
+  ReviewResearchSource(string id, uint32 source_index) => (string status);
+  SaveResearch(string task_id) => (string error);
+  ListSavedResearch() => (array<SavedResearch> records, bool session_only, string error);
+  DeleteSavedResearch(string id) => (string error);
+  OpenVerifiedSource(string task_id, uint32 source_index) => (bool opened);
+  ReviewDownload(string task_id) => (string status, string sha256);
+
 
   ConfigureModel(string provider,
                  string base_url,
@@ -161,6 +210,8 @@ interface PageHandler {
 
   SetMonitorPaused(string task_id, string monitor_id, bool paused)
       => (TaskSnapshot snapshot);
+
+  CheckMonitorNow(string task_id, string monitor_id) => (TaskSnapshot snapshot);
 
   DeleteMonitor(string task_id, string monitor_id) => (TaskSnapshot snapshot);
 };

@@ -8,6 +8,7 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/strings/string_number_conversions.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -27,6 +28,61 @@ AgentTaskScope StoreTestScope() {
   scope.model_destination.provider = "aegis-local";
   scope.model_destination.model = "fixture";
   return scope;
+}
+
+TEST(AegisAgentTaskStoreTest, SavedResearchSurvivesRestartAndExplicitDeletion) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("research.sqlite");
+  {
+    AgentTaskStore store(path);
+    EXPECT_FALSE(store.LoadResearch());
+    ASSERT_TRUE(store.Initialize());
+    EXPECT_FALSE(store.SaveResearch(
+        {.id = "empty", .ciphertext = "", .saved_at = base::Time::Now()}));
+    for (int i = 0; i < 20; ++i) {
+      ASSERT_TRUE(store.SaveResearch(
+          {.id = base::NumberToString(i),
+           .ciphertext = "合成密文" + base::NumberToString(i),
+           .saved_at = base::Time::Now() + base::Seconds(i)}));
+    }
+    EXPECT_FALSE(store.SaveResearch({.id = "overflow",
+                                     .ciphertext = "ciphertext",
+                                     .saved_at = base::Time::Now()}));
+    EXPECT_TRUE(
+        store.SaveResearch({.id = "0",
+                            .ciphertext = "replacement",
+                            .saved_at = base::Time::Now() + base::Hours(1)}));
+  }
+  AgentTaskStore store(path);
+  ASSERT_TRUE(store.Initialize());
+  auto records = store.LoadResearch();
+  ASSERT_TRUE(records);
+  ASSERT_EQ(records->size(), 20u);
+  EXPECT_EQ(records->front().id, "0");
+  EXPECT_EQ(records->front().ciphertext, "replacement");
+  EXPECT_TRUE(store.DeleteResearch("0"));
+  EXPECT_FALSE(store.DeleteResearch("0"));
+  EXPECT_EQ(store.LoadResearch()->size(), 19u);
+}
+
+TEST(AegisAgentTaskStoreTest, ResearchInMemoryDoesNotCreateDiskState) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("private.sqlite");
+  {
+    AgentTaskStore store(path, true);
+    ASSERT_TRUE(store.Initialize());
+    ASSERT_TRUE(store.SaveResearch({.id = "private",
+                                    .ciphertext = "session-only",
+                                    .saved_at = base::Time::Now()}));
+    ASSERT_EQ(store.LoadResearch()->size(), 1u);
+    EXPECT_FALSE(base::PathExists(path));
+  }
+  AgentTaskStore next(path, true);
+  ASSERT_TRUE(next.Initialize());
+  EXPECT_TRUE(next.LoadResearch()->empty());
+  EXPECT_FALSE(base::PathExists(path));
 }
 
 TEST(AegisAgentTaskStoreTest, SavesOnlyRedactedMetadataAndRecoversSafely) {
@@ -125,6 +181,100 @@ TEST(AegisAgentTaskStoreTest, RoundTripsBrowserBoundWindowMetadataScope) {
   EXPECT_TRUE(restored->IsNoBroaderThan(scope));
   EXPECT_TRUE(scope.IsNoBroaderThan(*restored));
   EXPECT_FALSE(restored->AllowsTab(41));
+}
+
+TEST(AegisAgentTaskStoreTest, RoundTripsCurrentPageScopeAndRejectsInvalidFlag) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  AgentTaskStore store(temp_dir.GetPath().AppendASCII("current-page.sqlite"));
+  ASSERT_TRUE(store.Initialize());
+  auto scope = StoreTestScope();
+  scope.allowed_tab_ids = {7};
+  scope.allowed_tools = {"page.observe", "page.click"};
+  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
+  scope.budgets.max_tabs = 1;
+  scope.restrict_to_current_page = true;
+  AgentTask task("current-page", "当前页面操作", AgentMode::kAct, scope);
+  ASSERT_TRUE(store.SaveTask(task, "当前页面操作", true));
+  const auto tasks = store.LoadUnfinishedTasks();
+  ASSERT_EQ(tasks.size(), 1u);
+  auto restored = AgentTaskStore::DeserializeScope(tasks[0].scope_json);
+  ASSERT_TRUE(restored);
+  EXPECT_TRUE(restored->restrict_to_current_page);
+  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
+  AgentTaskPlan plan;
+  plan.summary = "当前页面操作";
+  plan.scope = scope;
+  plan.steps.push_back({.step_id = "click-1",
+                        .title = "点击按钮",
+                        .tool_name = "page.click",
+                        .risk = AgentRiskLevel::kR2ExternalSideEffect});
+  ASSERT_TRUE(store.SavePlan(task.id(), plan, 0, 1));
+  AgentToolRegistry registry;
+  const auto recovered_plan = store.LoadPlan(task.id(), *restored, registry);
+  ASSERT_TRUE(recovered_plan);
+  ASSERT_EQ(recovered_plan->plan.steps.size(), 1u);
+  EXPECT_EQ(recovered_plan->plan.steps[0].risk,
+            AgentRiskLevel::kR2ExternalSideEffect);
+  std::string malformed = tasks[0].scope_json;
+  const auto flag = malformed.find("\"restrict_to_current_page\":true");
+  ASSERT_NE(flag, std::string::npos);
+  malformed.replace(flag,
+                    std::string("\"restrict_to_current_page\":true").size(),
+                    "\"restrict_to_current_page\":\"true\"");
+  EXPECT_FALSE(AgentTaskStore::DeserializeScope(malformed));
+}
+
+TEST(AegisAgentTaskStoreTest, RoundTripsSelectedResearchAndRejectsFlagType) {
+  AgentTaskStore store(base::FilePath(), true);
+  ASSERT_TRUE(store.Initialize());
+  auto scope = StoreTestScope();
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.allowed_tools = {"page.observe"};
+  scope.budgets.max_tabs = 3;
+  scope.selected_pages_research = true;
+  AgentTask task("research", "比较所选文章", AgentMode::kAct, scope);
+  ASSERT_TRUE(store.SaveTask(task, "比较所选文章", false));
+  const auto tasks = store.LoadUnfinishedTasks();
+  ASSERT_EQ(tasks.size(), 1u);
+  auto restored = AgentTaskStore::DeserializeScope(tasks[0].scope_json);
+  ASSERT_TRUE(restored);
+  EXPECT_TRUE(restored->selected_pages_research);
+  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
+  std::string malformed = tasks[0].scope_json;
+  const std::string flag = "\"selected_pages_research\":true";
+  const auto offset = malformed.find(flag);
+  ASSERT_NE(offset, std::string::npos);
+  malformed.replace(offset, flag.size(), "\"selected_pages_research\":1");
+  EXPECT_FALSE(AgentTaskStore::DeserializeScope(malformed));
+}
+
+TEST(AegisAgentTaskStoreTest, RoundTripsSelectedTabGroupAndRejectsFlagType) {
+  auto scope = StoreTestScope();
+  scope.allowed_origins.clear();
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.allowed_tools = {"tab.list", "tab.group"};
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  scope.budgets.max_tabs = 3;
+  scope.selected_tab_group = true;
+  ASSERT_TRUE(scope.IsValid());
+  AgentTaskStore store(base::FilePath(), true);
+  ASSERT_TRUE(store.Initialize());
+  AgentTask task("group", "将所选标签分组", AgentMode::kAct, scope);
+  ASSERT_TRUE(store.SaveTask(task, "将所选标签分组", false));
+  const auto tasks = store.LoadUnfinishedTasks();
+  ASSERT_EQ(tasks.size(), 1u);
+  const auto& encoded = tasks[0].scope_json;
+  auto restored = AgentTaskStore::DeserializeScope(encoded);
+  ASSERT_TRUE(restored);
+  EXPECT_TRUE(restored->selected_tab_group);
+  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
+  std::string malformed = encoded;
+  const std::string flag = "\"selected_tab_group\":true";
+  const auto offset = malformed.find(flag);
+  ASSERT_NE(offset, std::string::npos);
+  malformed.replace(offset, flag.size(), "\"selected_tab_group\":1");
+  EXPECT_FALSE(AgentTaskStore::DeserializeScope(malformed));
 }
 
 TEST(AegisAgentTaskStoreTest, RejectsBroadenedOrMalformedStoredScope) {
@@ -327,6 +477,39 @@ TEST(AegisAgentTaskStoreTest, MigratesVersionSixWithoutInventingBaseline) {
   EXPECT_TRUE(monitors[0].last_observation_ciphertext.empty());
 }
 
+TEST(AegisAgentTaskStoreTest, MigratesVersionEightAndCreatesResearchTable) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("version-eight.sqlite");
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    AgentTask task("retained-task", "保留旧任务", AgentMode::kAsk,
+                   StoreTestScope());
+    ASSERT_TRUE(store.SaveTask(task, task.goal(), false));
+  }
+  {
+    sql::Database legacy("AegisAgent");
+    ASSERT_TRUE(legacy.Open(path));
+    ASSERT_TRUE(legacy.Execute("DROP TABLE agent_saved_research"));
+    sql::MetaTable meta;
+    ASSERT_TRUE(meta.Init(&legacy, 8, 8));
+    ASSERT_TRUE(meta.SetVersionNumber(8));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(8));
+  }
+  for (int reopen = 0; reopen < 2; ++reopen) {
+    AgentTaskStore migrated(path);
+    ASSERT_TRUE(migrated.Initialize());
+    ASSERT_EQ(migrated.LoadUnfinishedTasks().size(), 1u);
+    EXPECT_EQ(migrated.LoadUnfinishedTasks()[0].task_id, "retained-task");
+    ASSERT_TRUE(migrated.SaveResearch({.id = "research",
+                                       .ciphertext = "合成密文",
+                                       .saved_at = base::Time::Now()}));
+    ASSERT_TRUE(migrated.LoadResearch());
+    EXPECT_EQ(migrated.LoadResearch()->size(), 1u);
+  }
+}
+
 TEST(AegisAgentTaskStoreTest, MigratesVersionSevenWithoutLosingMonitorState) {
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -380,9 +563,9 @@ TEST(AegisAgentTaskStoreTest, MigratesVersionSevenWithoutLosingMonitorState) {
   sql::Database inspected("AegisAgent");
   ASSERT_TRUE(inspected.Open(path));
   sql::MetaTable meta;
-  ASSERT_TRUE(meta.Init(&inspected, 8, 8));
-  EXPECT_EQ(meta.GetVersionNumber(), 8);
-  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 8);
+  ASSERT_TRUE(meta.Init(&inspected, 9, 9));
+  EXPECT_EQ(meta.GetVersionNumber(), 9);
+  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 9);
 }
 
 TEST(AegisAgentTaskStoreTest,
@@ -433,8 +616,8 @@ TEST(AegisAgentTaskStoreTest, RejectsFutureVersionWithoutRewritingDatabase) {
     ASSERT_TRUE(future.Open(path));
     sql::MetaTable meta;
     ASSERT_TRUE(meta.Init(&future, 9, 9));
-    ASSERT_TRUE(meta.SetVersionNumber(9));
-    ASSERT_TRUE(meta.SetCompatibleVersionNumber(9));
+    ASSERT_TRUE(meta.SetVersionNumber(10));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(10));
   }
   std::string before;
   ASSERT_TRUE(base::ReadFileToString(path, &before));

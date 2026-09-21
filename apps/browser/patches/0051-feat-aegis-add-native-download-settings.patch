@@ -1,22 +1,23 @@
-From 3fd71b41b53e1117573d45131b82022335e2e4f5 Mon Sep 17 00:00:00 2001
+From 05f632693c5587e71331b9b75ed97205cf9fdcb4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 21:39:06 +0800
-Subject: [PATCH 51/52] feat(aegis): add native download settings
+Subject: [PATCH] feat(aegis): add native download settings
 
 ---
  chrome/browser/aegis/BUILD.gn                 |   3 +
  chrome/browser/aegis/aegis_download_prefs.cc  |  83 ++++++++
  chrome/browser/aegis/aegis_download_prefs.h   |  52 +++++
- .../aegis/aegis_download_prefs_unittest.cc    |  85 ++++++++
+ .../aegis/aegis_download_prefs_unittest.cc    |  85 +++++++++
  .../chrome_download_manager_delegate.cc       |   4 +
  chrome/browser/prefs/browser_prefs.cc         |   2 +
  .../downloads/aegis_download_panel.html.ts    |  10 +-
  .../downloads/aegis_download_panel.ts         |  13 ++
  .../downloads_page/downloads_browser_proxy.ts |  26 ++-
- .../downloads_page/downloads_page.html        |  99 +++++++++
- .../settings/downloads_page/downloads_page.ts | 190 +++++++++++++++++-
+ .../downloads_page/downloads_page.css         |  29 +++
+ .../downloads_page/downloads_page.html.ts     |  71 +++++++
+ .../settings/downloads_page/downloads_page.ts | 180 +++++++++++++++++-
  .../ui/webui/downloads/downloads_ui.cc        |  13 ++
- .../ui/webui/settings/downloads_handler.cc    |  98 +++++++++
+ .../ui/webui/settings/downloads_handler.cc    |  98 ++++++++++
  .../ui/webui/settings/downloads_handler.h     |   4 +
  .../settings/downloads_handler_unittest.cc    |  52 +++++
  .../webui/settings/downloads_page_test.ts     |  45 +++++
@@ -24,7 +25,7 @@ Subject: [PATCH 51/52] feat(aegis): add native download settings
  .../parallel_download_utils_unittest.cc       |  16 ++
  .../public/common/download_features.cc        |  36 ++++
  .../public/common/download_features.h         |  10 +
- 20 files changed, 847 insertions(+), 10 deletions(-)
+ 21 files changed, 838 insertions(+), 10 deletions(-)
  create mode 100644 chrome/browser/aegis/aegis_download_prefs.cc
  create mode 100644 chrome/browser/aegis/aegis_download_prefs.h
  create mode 100644 chrome/browser/aegis/aegis_download_prefs_unittest.cc
@@ -289,10 +290,10 @@ index 0000000000..c33796d00d
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
-index f02af613fc..721a07e920 100644
+index 66c1e4a132..df3ab01c87 100644
 --- a/chrome/browser/download/chrome_download_manager_delegate.cc
 +++ b/chrome/browser/download/chrome_download_manager_delegate.cc
-@@ -30,6 +30,7 @@
+@@ -31,6 +31,7 @@
  #include "base/task/thread_pool.h"
  #include "base/time/time.h"
  #include "build/build_config.h"
@@ -300,7 +301,7 @@ index f02af613fc..721a07e920 100644
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/download/download_core_service.h"
  #include "chrome/browser/download/download_core_service_factory.h"
-@@ -637,6 +638,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
+@@ -667,6 +668,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
        download_message_bridge_(std::make_unique<DownloadMessageBridge>()),
  #endif
        download_prefs_(std::make_unique<DownloadPrefs>(profile)) {
@@ -311,7 +312,7 @@ index f02af613fc..721a07e920 100644
  
  ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index 7f7b08d894..1ca1da1af5 100644
+index 295ce51e4d..1e9a3aab66 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -19,6 +19,7 @@
@@ -322,7 +323,7 @@ index 7f7b08d894..1ca1da1af5 100644
  #include "chrome/browser/aegis/aegis_prefs.h"
  #include "chrome/browser/accessibility/accessibility_labels_service.h"
  #include "chrome/browser/accessibility/invert_bubble_prefs.h"
-@@ -1394,6 +1395,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -1434,6 +1435,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
    accessibility::AccessibilityPrefsController::RegisterLocalStatePrefs(
        registry);
  #endif
@@ -450,271 +451,264 @@ index 0e4a09e1cb..6edea56748 100644
    // <if expr="is_chromeos">
    getDownloadLocationText(path: string) {
      return sendWithPromise<string>('getDownloadLocationText', path);
-diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html b/chrome/browser/resources/settings/downloads_page/downloads_page.html
-index a8092a52f5..ef5b392db9 100644
---- a/chrome/browser/resources/settings/downloads_page/downloads_page.html
-+++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html
-@@ -2,6 +2,34 @@
-     #defaultDownloadPath {
-       word-break: break-word;
-     }
-+    .aegis-description {
-+      color: var(--cr-secondary-text-color);
-+      font-size: 12px;
-+      line-height: 18px;
-+      margin-top: 4px;
-+    }
-+    .aegis-heading {
-+      font-weight: 500;
-+    }
-+    .aegis-select {
-+      background: var(--cr-card-background-color);
-+      border: 1px solid var(--cr-separator-color);
-+      border-radius: 8px;
-+      color: var(--cr-primary-text-color);
-+      min-height: 36px;
-+      padding: 0 12px;
-+    }
-+    .aegis-rate-row {
-+      align-items: end;
-+      display: grid;
-+      gap: 16px;
-+      grid-template-columns: 1fr 1fr;
-+      padding: 12px 20px;
-+    }
-+    .aegis-fixed {
-+      color: var(--cr-secondary-text-color);
-+      padding: 12px 20px;
-+    }
-   </style>
-   <settings-section page-title="$i18n{downloadsPageTitle}"
-       class="cr-centered-card-container">
-@@ -51,3 +79,74 @@
-       </settings-toggle-button>
-     </template>
-   </settings-section>
-+  <settings-section page-title="[[aegisStrings_.title]]"
-+      class="cr-centered-card-container" hidden="[[!aegisSettingsReady_]]">
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.css b/chrome/browser/resources/settings/downloads_page/downloads_page.css
+index 8ff42c099b..e43d63ce4f 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.css
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.css
+@@ -12,3 +12,32 @@
+ #defaultDownloadPath {
+   word-break: break-word;
+ }
++
++.aegis-description {
++  color: var(--cr-secondary-text-color);
++  font-size: 12px;
++  line-height: 18px;
++  margin-top: 4px;
++}
++.aegis-heading {
++  font-weight: 500;
++}
++.aegis-select {
++  background: var(--cr-card-background-color);
++  border: 1px solid var(--cr-separator-color);
++  border-radius: 8px;
++  color: var(--cr-primary-text-color);
++  min-height: 36px;
++  padding: 0 12px;
++}
++.aegis-rate-row {
++  align-items: end;
++  display: grid;
++  gap: 16px;
++  grid-template-columns: 1fr 1fr;
++  padding: 12px 20px;
++}
++.aegis-fixed {
++  color: var(--cr-secondary-text-color);
++  padding: 12px 20px;
++}
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+index ffe4c26ddc..54e9c619ef 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+@@ -56,5 +56,76 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+     </settings-toggle-button>
+   ` : ''}
+ </settings-section>
++  <settings-section page-title="${this.aegisStrings_.title}"
++      class="cr-centered-card-container" ?hidden="${!this.aegisSettingsReady_}">
 +    <div class="cr-row first">
 +      <div class="flex cr-padded-text">
-+        <div class="aegis-heading">[[aegisStrings_.httpTitle]]</div>
-+        <div class="aegis-description">[[aegisStrings_.httpDescription]]</div>
++        <div class="aegis-heading">${this.aegisStrings_.httpTitle}</div>
++        <div class="aegis-description">${this.aegisStrings_.httpDescription}</div>
 +      </div>
 +    </div>
 +    <div class="cr-row">
-+      <div class="flex cr-padded-text">[[aegisStrings_.mode]]</div>
-+      <select class="aegis-select" value="[[aegisParallelMode_]]"
-+          on-change="onAegisParallelModeChanged_">
-+        <option value="0">[[aegisStrings_.smart]]</option>
-+        <option value="1">[[aegisStrings_.single]]</option>
-+        <option value="3">[[aegisStrings_.three]]</option>
-+        <option value="6">[[aegisStrings_.six]]</option>
++      <div class="flex cr-padded-text">${this.aegisStrings_.mode}</div>
++      <select class="aegis-select" .value="${String(this.aegisParallelMode_)}"
++          @change="${this.onAegisParallelModeChanged_}">
++        <option value="0">${this.aegisStrings_.smart}</option>
++        <option value="1">${this.aegisStrings_.single}</option>
++        <option value="3">${this.aegisStrings_.three}</option>
++        <option value="6">${this.aegisStrings_.six}</option>
 +      </select>
 +    </div>
 +    <div class="cr-row">
-+      <div class="flex cr-padded-text">[[aegisStrings_.metered]]</div>
++      <div class="flex cr-padded-text">${this.aegisStrings_.metered}</div>
 +      <cr-toggle id="aegisReduceOnMetered"
-+          checked="{{aegisReduceOnMetered_}}"
-+          on-change="onAegisToggleChanged_">
++          .checked="${this.aegisReduceOnMetered_}"
++          @change="${this.onAegisToggleChanged_}">
 +      </cr-toggle>
 +    </div>
 +    <div class="cr-row">
-+      <div class="flex cr-padded-text">[[aegisStrings_.battery]]</div>
++      <div class="flex cr-padded-text">${this.aegisStrings_.battery}</div>
 +      <cr-toggle id="aegisReduceOnBattery"
-+          checked="{{aegisReduceOnBattery_}}"
-+          on-change="onAegisToggleChanged_">
++          .checked="${this.aegisReduceOnBattery_}"
++          @change="${this.onAegisToggleChanged_}">
 +      </cr-toggle>
 +    </div>
-+    <div class="aegis-fixed">[[aegisStrings_.thermal]]</div>
++    <div class="aegis-fixed">${this.aegisStrings_.thermal}</div>
 +
 +    <div class="cr-row">
 +      <div class="flex cr-padded-text">
-+        <div class="aegis-heading">[[aegisStrings_.btTitle]]</div>
-+        <div class="aegis-description">[[aegisStrings_.btDescription]]</div>
++        <div class="aegis-heading">${this.aegisStrings_.btTitle}</div>
++        <div class="aegis-description">${this.aegisStrings_.btDescription}</div>
 +      </div>
 +    </div>
 +    <div class="cr-row">
-+      <div class="flex cr-padded-text">[[aegisStrings_.dht]]</div>
++      <div class="flex cr-padded-text">${this.aegisStrings_.dht}</div>
 +      <cr-toggle id="aegisTorrentDhtEnabled"
-+          checked="{{aegisTorrentDhtEnabled_}}"
-+          on-change="onAegisToggleChanged_">
++          .checked="${this.aegisTorrentDhtEnabled_}"
++          @change="${this.onAegisToggleChanged_}">
 +      </cr-toggle>
 +    </div>
 +    <div class="cr-row">
-+      <div class="flex cr-padded-text">[[aegisStrings_.pex]]</div>
++      <div class="flex cr-padded-text">${this.aegisStrings_.pex}</div>
 +      <cr-toggle id="aegisTorrentPexEnabled"
-+          checked="{{aegisTorrentPexEnabled_}}"
-+          on-change="onAegisToggleChanged_">
++          .checked="${this.aegisTorrentPexEnabled_}"
++          @change="${this.onAegisToggleChanged_}">
 +      </cr-toggle>
 +    </div>
 +    <div class="aegis-rate-row">
 +      <cr-input id="aegisTorrentDownloadLimit" type="number" min="0"
-+          max="1000000" value="[[aegisTorrentDownloadLimitKib_]]"
-+          label="[[aegisStrings_.downloadLimit]]"
-+          on-change="onAegisLimitChanged_">
++          max="1000000" .value="${String(this.aegisTorrentDownloadLimitKib_)}"
++          label="${this.aegisStrings_.downloadLimit}"
++          @change="${this.onAegisLimitChanged_}">
 +      </cr-input>
 +      <cr-input id="aegisTorrentUploadLimit" type="number" min="0"
-+          max="1000000" value="[[aegisTorrentUploadLimitKib_]]"
-+          label="[[aegisStrings_.uploadLimit]]"
-+          on-change="onAegisLimitChanged_">
++          max="1000000" .value="${String(this.aegisTorrentUploadLimitKib_)}"
++          label="${this.aegisStrings_.uploadLimit}"
++          @change="${this.onAegisLimitChanged_}">
 +      </cr-input>
 +    </div>
 +    <div class="aegis-fixed">
-+      <div>[[aegisStrings_.stopSeeding]]</div>
-+      <div class="aegis-description">[[aegisStrings_.saved]]</div>
++      <div>${this.aegisStrings_.stopSeeding}</div>
++      <div class="aegis-description">${this.aegisStrings_.saved}</div>
 +    </div>
 +  </settings-section>
+ <!--_html_template_end_-->`;
+ }
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
-index d22e7d008d..e3995696c6 100644
+index 827395e3c3..609b5efbca 100644
 --- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
 +++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
-@@ -8,6 +8,8 @@
+@@ -8,10 +8,14 @@
   * settings.
   */
  import 'chrome://resources/cr_elements/cr_button/cr_button.js';
 +import 'chrome://resources/cr_elements/cr_input/cr_input.js';
 +import 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
- import 'chrome://resources/cr_elements/cr_shared_style.css.js';
  import '../controls/controlled_button.js';
  import '../controls/settings_toggle_button.js';
-@@ -15,6 +17,8 @@ import '../settings_page/settings_section.js';
- import '../settings_shared.css.js';
+ import '../settings_page/settings_section.js';
  
- import {PrefsMixin} from '/shared/settings/prefs/prefs_mixin.js';
 +import type {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
 +import type {CrToggleElement} from 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
- import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
- import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+ import {WebUiListenerMixinLit} from 'chrome://resources/cr_elements/web_ui_listener_mixin_lit.js';
+ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
  
-@@ -22,7 +26,7 @@ import {loadTimeData} from '../i18n_setup.js';
- import {getSearchManager} from '../search_settings.js';
+@@ -20,7 +24,7 @@ import {getSearchManager} from '../search_settings.js';
+ import {PrefServiceObserverMixinLit} from '../settings.js';
  import type {SettingsPlugin} from '../settings_main/settings_plugin.js';
  
 -import type {DownloadsBrowserProxy} from './downloads_browser_proxy.js';
 +import type {AegisDownloadSettings, DownloadsBrowserProxy} from './downloads_browser_proxy.js';
  import {DownloadsBrowserProxyImpl} from './downloads_browser_proxy.js';
- import {getTemplate} from './downloads_page.html.js';
+ import {getCss} from './downloads_page.css.js';
+ import {getHtml} from './downloads_page.html.js';
+@@ -48,6 +52,40 @@ export class SettingsDownloadsPageElement extends
  
-@@ -46,6 +50,94 @@ export class SettingsDownloadsPageElement extends
-         value: false,
-       },
+       downloadDefaultDirectoryPref_: {type: Object},
  
 +      aegisSettingsReady_: {
 +        type: Boolean,
-+        value: false,
 +      },
 +
 +      aegisParallelMode_: {
 +        type: Number,
-+        value: 0,
 +      },
 +
 +      aegisReduceOnMetered_: {
 +        type: Boolean,
-+        value: true,
 +      },
 +
 +      aegisReduceOnBattery_: {
 +        type: Boolean,
-+        value: true,
 +      },
 +
 +      aegisTorrentDhtEnabled_: {
 +        type: Boolean,
-+        value: true,
 +      },
 +
 +      aegisTorrentPexEnabled_: {
 +        type: Boolean,
-+        value: true,
 +      },
 +
 +      aegisTorrentDownloadLimitKib_: {
 +        type: Number,
-+        value: 0,
 +      },
 +
 +      aegisTorrentUploadLimitKib_: {
 +        type: Number,
-+        value: 256,
 +      },
 +
-+      aegisStrings_: {
-+        type: Object,
-+        value: () => {
-+          const zh = document.documentElement.lang.startsWith('zh');
-+          return zh ? {
-+            title: 'Aegis 下载加速',
-+            httpTitle: 'HTTP(S) 并行下载',
-+            httpDescription: '服务器支持 Range 时使用多连接；不支持时自动回落。',
-+            mode: '连接策略',
-+            smart: '智能（推荐）',
-+            single: '单连接',
-+            three: '最多 3 个连接',
-+            six: '最多 6 个连接',
-+            metered: '计量网络自动降为单连接',
-+            battery: '使用电池时自动降低并行数',
-+            thermal: '系统温度过高时始终自动降级，不能关闭。',
-+            btTitle: 'BT / Magnet 默认设置',
-+            btDescription: '用于新任务；下载中心仍可在开始前临时修改。',
-+            dht: '默认启用 DHT',
-+            pex: '默认启用 PEX 节点交换',
-+            downloadLimit: '默认下载上限（KiB/s，0 不限）',
-+            uploadLimit: '默认上传上限（KiB/s，0 不限）',
-+            stopSeeding: '下载完成后停止上传（固定开启）',
-+            saved: '设置会立即保存并应用于新下载。',
-+          } : {
-+            title: 'Aegis download acceleration',
-+            httpTitle: 'Parallel HTTP(S) downloads',
-+            httpDescription: 'Uses multiple connections when the server supports Range, otherwise falls back automatically.',
-+            mode: 'Connection policy',
-+            smart: 'Smart (recommended)',
-+            single: 'Single connection',
-+            three: 'Up to 3 connections',
-+            six: 'Up to 6 connections',
-+            metered: 'Use one connection on metered networks',
-+            battery: 'Reduce parallelism while on battery',
-+            thermal: 'High system temperature always reduces parallelism and cannot be disabled.',
-+            btTitle: 'BT / Magnet defaults',
-+            btDescription: 'Used for new tasks; the Downloads page can override them before starting.',
-+            dht: 'Enable DHT by default',
-+            pex: 'Enable PEX by default',
-+            downloadLimit: 'Default download limit (KiB/s, 0 unlimited)',
-+            uploadLimit: 'Default upload limit (KiB/s, 0 unlimited)',
-+            stopSeeding: 'Stop uploading after completion (always on)',
-+            saved: 'Settings are saved immediately and apply to new downloads.',
-+          };
-+        },
-+      },
++      aegisStrings_: {type: Object},
 +
        // <if expr="is_chromeos">
        /**
         * The download location string that is suitable to display in the UI.
-@@ -77,6 +169,15 @@ export class SettingsDownloadsPageElement extends
- 
- 
-   declare private autoOpenDownloads_: boolean;
-+  declare private aegisSettingsReady_: boolean;
-+  declare private aegisParallelMode_: number;
-+  declare private aegisReduceOnMetered_: boolean;
-+  declare private aegisReduceOnBattery_: boolean;
-+  declare private aegisTorrentDhtEnabled_: boolean;
-+  declare private aegisTorrentPexEnabled_: boolean;
-+  declare private aegisTorrentDownloadLimitKib_: number;
-+  declare private aegisTorrentUploadLimitKib_: number;
-+  declare private aegisStrings_: Record<string, string>;
+@@ -66,6 +104,14 @@ export class SettingsDownloadsPageElement extends
+   protected accessor autoOpenDownloads_: boolean = false;
+   protected accessor downloadDefaultDirectoryPref_:
+       chrome.settingsPrivate.PrefObject<string>|undefined = undefined;
++  protected accessor aegisSettingsReady_: boolean = false;
++  protected accessor aegisParallelMode_: number = 0;
++  protected accessor aegisReduceOnMetered_: boolean = true;
++  protected accessor aegisReduceOnBattery_: boolean = true;
++  protected accessor aegisTorrentDhtEnabled_: boolean = true;
++  protected accessor aegisTorrentPexEnabled_: boolean = true;
++  protected accessor aegisTorrentDownloadLimitKib_: number = 0;
++  protected accessor aegisTorrentUploadLimitKib_: number = 256;
  
    // <if expr="is_chromeos">
-   declare private downloadLocation_: string;
-@@ -86,6 +187,7 @@ export class SettingsDownloadsPageElement extends
+   protected accessor downloadLocation_: string = '';
+@@ -74,8 +120,54 @@ export class SettingsDownloadsPageElement extends
+   protected accessor downloadBubblePartialViewControlledByPref_: boolean =
+       loadTimeData.getBoolean('downloadBubblePartialViewControlledByPref');
  
++  protected accessor aegisStrings_: Record<string, string> = (() => {
++    const zh = document.documentElement.lang.startsWith('zh');
++    return zh ? {
++      title: 'Aegis 下载加速',
++      httpTitle: 'HTTP(S) 并行下载',
++      httpDescription: '服务器支持 Range 时使用多连接；不支持时自动回落。',
++      mode: '连接策略',
++      smart: '智能（推荐）',
++      single: '单连接',
++      three: '最多 3 个连接',
++      six: '最多 6 个连接',
++      metered: '计量网络自动降为单连接',
++      battery: '使用电池时自动降低并行数',
++      thermal: '系统温度过高时始终自动降级，不能关闭。',
++      btTitle: 'BT / Magnet 默认设置',
++      btDescription: '用于新任务；下载中心仍可在开始前临时修改。',
++      dht: '默认启用 DHT',
++      pex: '默认启用 PEX 节点交换',
++      downloadLimit: '默认下载上限（KiB/s，0 不限）',
++      uploadLimit: '默认上传上限（KiB/s，0 不限）',
++      stopSeeding: '下载完成后停止上传（固定开启）',
++      saved: '设置会立即保存并应用于新下载。',
++    } : {
++      title: 'Aegis download acceleration',
++      httpTitle: 'Parallel HTTP(S) downloads',
++      httpDescription: 'Uses multiple connections when the server supports Range, otherwise falls back automatically.',
++      mode: 'Connection policy',
++      smart: 'Smart (recommended)',
++      single: 'Single connection',
++      three: 'Up to 3 connections',
++      six: 'Up to 6 connections',
++      metered: 'Use one connection on metered networks',
++      battery: 'Reduce parallelism while on battery',
++      thermal: 'High system temperature always reduces parallelism and cannot be disabled.',
++      btTitle: 'BT / Magnet defaults',
++      btDescription: 'Used for new tasks; the Downloads page can override them before starting.',
++      dht: 'Enable DHT by default',
++      pex: 'Enable PEX by default',
++      downloadLimit: 'Default download limit (KiB/s, 0 unlimited)',
++      uploadLimit: 'Default upload limit (KiB/s, 0 unlimited)',
++      stopSeeding: 'Stop uploading after completion (always on)',
++      saved: 'Settings are saved immediately and apply to new downloads.',
++    };
++  })();
++
    private browserProxy_: DownloadsBrowserProxy =
        DownloadsBrowserProxyImpl.getInstance();
 +  private aegisSaveChain_: Promise<void> = Promise.resolve();
  
-   override ready() {
-     super.ready();
-@@ -96,6 +198,92 @@ export class SettingsDownloadsPageElement extends
+   override connectedCallback() {
+     super.connectedCallback();
+@@ -99,6 +191,92 @@ export class SettingsDownloadsPageElement extends
          });
  
      this.browserProxy_.initializeDownloads();
@@ -768,12 +762,12 @@ index d22e7d008d..e3995696c6 100644
 +                                .catch(() => this.loadAegisDownloadSettings_());
 +  }
 +
-+  private onAegisParallelModeChanged_(event: Event) {
++  protected onAegisParallelModeChanged_(event: Event) {
 +    this.aegisParallelMode_ = Number((event.target as HTMLSelectElement).value);
 +    this.saveAegisDownloadSettings_();
 +  }
 +
-+  private onAegisToggleChanged_(event: Event) {
++  protected onAegisToggleChanged_(event: Event) {
 +    const toggle = event.currentTarget as CrToggleElement;
 +    switch (toggle.id) {
 +      case 'aegisReduceOnMetered':
@@ -794,7 +788,7 @@ index d22e7d008d..e3995696c6 100644
 +    this.saveAegisDownloadSettings_();
 +  }
 +
-+  private onAegisLimitChanged_(event: Event) {
++  protected onAegisLimitChanged_(event: Event) {
 +    const input = event.currentTarget as CrInputElement;
 +    const value = Math.min(1000000, Math.max(0, Number(input.value) || 0));
 +    if (input.id === 'aegisTorrentDownloadLimit') {
@@ -806,12 +800,12 @@ index d22e7d008d..e3995696c6 100644
 +    this.saveAegisDownloadSettings_();
    }
  
-   private selectDownloadLocation_() {
+   protected onChangeDownloadsPathClick_() {
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index 9e41c572ca..e3598d2ef9 100644
+index afffe38723..24c94d17c0 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-@@ -14,6 +14,7 @@
+@@ -13,6 +13,7 @@
  #include "base/threading/thread.h"
  #include "base/values.h"
  #include "build/branding_buildflags.h"
@@ -819,7 +813,7 @@ index 9e41c572ca..e3598d2ef9 100644
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/defaults.h"
  #include "chrome/browser/download/download_core_service.h"
-@@ -77,6 +78,18 @@ content::WebUIDataSource* CreateAndAddDownloadsUIHTMLSource(Profile* profile) {
+@@ -74,6 +75,18 @@ content::WebUIDataSource* CreateAndAddDownloadsUIHTMLSource(Profile* profile) {
            ->IsUnderAdvancedProtection();
    source->AddBoolean("requestsApVerdicts", requests_ap_verdicts);
  
@@ -1069,10 +1063,10 @@ index c33eed4d9f..b09bb44ce4 100644
 +
  }  // namespace settings
 diff --git a/chrome/test/data/webui/settings/downloads_page_test.ts b/chrome/test/data/webui/settings/downloads_page_test.ts
-index d3723a3f0d..213ac1ecf0 100644
+index 03d90117c8..5c6a39bab7 100644
 --- a/chrome/test/data/webui/settings/downloads_page_test.ts
 +++ b/chrome/test/data/webui/settings/downloads_page_test.ts
-@@ -29,6 +29,8 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
+@@ -27,6 +27,8 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
        'selectDownloadLocation',
        'resetAutoOpenFileTypes',
        'getDownloadLocationText',
@@ -1081,7 +1075,7 @@ index d3723a3f0d..213ac1ecf0 100644
      ]);
    }
  
-@@ -48,6 +50,32 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
+@@ -46,6 +48,32 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
      this.methodCalled('resetAutoOpenFileTypes');
    }
  
@@ -1114,13 +1108,13 @@ index d3723a3f0d..213ac1ecf0 100644
    // <if expr="is_chromeos">
    getDownloadLocationText(path: string) {
      this.methodCalled('getDownloadLocationText', path);
-@@ -88,6 +116,23 @@ suite('DownloadsHandler', function() {
-     return downloadsBrowserProxy.whenCalled('selectDownloadLocation');
+@@ -135,6 +163,23 @@ suite('DownloadsHandler', function() {
+     assertTrue(!!button.shadowRoot!.querySelector('cr-policy-pref-indicator'));
    });
  
 +  test('aegis download settings are shown and saved', async function() {
 +    await downloadsBrowserProxy.whenCalled('getAegisDownloadSettings');
-+    await flushTasks();
++    await microtasksFinished();
 +    const select = downloadsPage.shadowRoot!.querySelector<HTMLSelectElement>(
 +        '.aegis-select');
 +    assertTrue(!!select);
@@ -1136,7 +1130,7 @@ index d3723a3f0d..213ac1ecf0 100644
 +  });
 +
    test('openAdvancedDownloadsettings', async function() {
-     let button = downloadsPage.shadowRoot!.querySelector<HTMLElement>(
+     let button = downloadsPage.shadowRoot.querySelector<HTMLElement>(
          '#resetAutoOpenFileTypes');
 diff --git a/components/download/internal/common/parallel_download_utils.cc b/components/download/internal/common/parallel_download_utils.cc
 index 91bfc91ae9..234e52bb6f 100644
@@ -1210,7 +1204,7 @@ index 94128626ef..852a869588 100644
  // feature.
  TEST_F(ParallelDownloadUtilsTest, FinchConfigDisabled) {
 diff --git a/components/download/public/common/download_features.cc b/components/download/public/common/download_features.cc
-index cd5850b9d2..f769c2dc01 100644
+index fc444a4e3b..93ffcfc3c2 100644
 --- a/components/download/public/common/download_features.cc
 +++ b/components/download/public/common/download_features.cc
 @@ -4,14 +4,50 @@
@@ -1265,7 +1259,7 @@ index cd5850b9d2..f769c2dc01 100644
  BASE_FEATURE(kBackoffInDownloading, base::FEATURE_DISABLED_BY_DEFAULT);
  #endif
 diff --git a/components/download/public/common/download_features.h b/components/download/public/common/download_features.h
-index 3df7f8e64d..2afbc6ea40 100644
+index ea4223087f..6c8a135050 100644
 --- a/components/download/public/common/download_features.h
 +++ b/components/download/public/common/download_features.h
 @@ -14,6 +14,16 @@ namespace features {

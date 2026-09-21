@@ -1,0 +1,399 @@
+From 4a70b4325335c3847fe0d67df9a503b4f33b146f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 20:02:01 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E5=80=99=E9=80=89=E6=A3=80=E6=9F=A5=EF=BC=8C?=
+ =?UTF-8?q?=E6=9E=84=E5=BB=BA028?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 46 ++++++++++++++++++-
+ .../browser/aegis/agent/aegis_actor_bridge.h  |  6 +++
+ .../aegis/agent/aegis_agent_service.cc        | 10 ++++
+ .../agent/aegis_agent_service_unittest.cc     | 39 ++++++++++++++++
+ .../browser/aegis/agent/agent_observation.cc  | 22 +++++++--
+ .../browser/aegis/agent/agent_observation.h   |  8 +++-
+ .../aegis/agent/agent_observation_unittest.cc | 40 ++++++++++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 10 +++-
+ .../aegis/agent/agent_planner_unittest.cc     | 10 +++-
+ .../ui/webui/help/aegis_github_update.h       |  6 +--
+ 10 files changed, 185 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 06e95a511d..2e78cf14ab 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -1130,6 +1130,44 @@ std::optional<int> AegisActorBridge::ResolveObservedClickTarget(
+   return target->first;
+ }
+ 
++std::optional<GURL> AegisActorBridge::ResolveObservedDownloadUrl(
++    const std::string& agent_task_id,
++    const AgentToolCall& call) const {
++  const auto tab_id = call.arguments.FindInt("tab_id");
++  const auto* requested = call.arguments.FindString("url");
++  if (call.tool_name != "download.start" || !call.document || !tab_id ||
++      !requested) {
++    return std::nullopt;
++  }
++  const GURL candidate(*requested);
++  const auto document = LastDocument(agent_task_id, *tab_id);
++  const auto task = observed_node_text_.find(agent_task_id);
++  if (!document || !SameDocument(*document, *call.document) ||
++      task == observed_node_text_.end() || !candidate.SchemeIsHTTPOrHTTPS() ||
++      candidate.has_username() || candidate.has_password()) {
++    return std::nullopt;
++  }
++  const auto tab = task->second.find(*tab_id);
++  if (tab == task->second.end()) {
++    return std::nullopt;
++  }
++  std::optional<GURL> matched;
++  for (const auto& [id, node] : tab->second) {
++    const GURL& url = node.download_url;
++    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || url.has_username() ||
++        url.has_password() || node.is_sensitive_control ||
++        (candidate != url &&
++         candidate.spec() != SafeObservationUrl(url.spec()))) {
++      continue;
++    }
++    if (matched && *matched != url) {
++      return std::nullopt;
++    }
++    matched = url;
++  }
++  return matched;
++}
++
+ void AegisActorBridge::ObservePage(const std::string& agent_task_id,
+                                    std::string action_id,
+                                    int32_t tab_id,
+@@ -1249,7 +1287,9 @@ void AegisActorBridge::OnObservation(
+                tool == "form.fill" || base::StartsWith(tool, "auth.") ||
+                tool == "page.webmcp.invoke";
+       });
+-  auto bounded = BuildAgentObservationNodes(page.root_node(), interactive);
++  auto bounded =
++      BuildAgentObservationNodes(page.root_node(), interactive,
++                                 scope_it->second.AllowsTool("download.start"));
+   base::ListValue nodes = std::move(bounded.nodes);
+   const bool truncated = bounded.truncated;
+   std::string serialized_nodes;
+@@ -1273,6 +1313,10 @@ void AegisActorBridge::OnObservation(
+       continue;
+     }
+     ObservedNodeMetadata& metadata = observed_nodes[*node_id];
++    if (auto link = bounded.download_links.find(*node_id);
++        link != bounded.download_links.end()) {
++      metadata.download_url = link->second;
++    }
+     metadata.click_target_node_id =
+         node.FindInt("click_target_node_id").value_or(0);
+     if (const std::string* text = node.FindString("text")) {
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+index 56fb073065..2776e5e2cb 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+@@ -72,6 +72,11 @@ class AegisActorBridge {
+       const std::string& agent_task_id,
+       const AgentToolCall& call) const;
+ 
++  // 只绑定本任务当前文档中唯一匹配的可见链接，完整参数留在浏览器审批。
++  std::optional<GURL> ResolveObservedDownloadUrl(
++      const std::string& agent_task_id,
++      const AgentToolCall& call) const;
++
+  private:
+   friend class AegisAgentServiceTestPeer;
+   struct WebMcpToolMetadata {
+@@ -87,6 +92,7 @@ class AegisActorBridge {
+ 
+   struct ObservedNodeMetadata {
+     std::string text;
++    GURL download_url;
+     int click_target_node_id = 0;
+     bool is_submit_control = false;
+     bool is_sensitive_control = false;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index ee9fbef767..c0d2bd61c9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2427,6 +2427,16 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
+     *error = "tool call has no live approved origin";
+     return std::nullopt;
+   }
++  if (call.tool_name == "download.start") {
++    const auto target =
++        actor_bridge_.ResolveObservedDownloadUrl(task.id(), call);
++    if (!target || !task.scope().AllowsOrigin(*target)) {
++      *error = "下载地址未唯一绑定当前观察中的链接，请重新观察后选择";
++      return std::nullopt;
++    }
++    // 必须在计算审批指纹前绑定完整链接；批准后不得改写或补回查询参数。
++    call.arguments.Set("url", target->spec());
++  }
+   if (task.scope().restrict_to_current_page && call.tool_name == "page.click") {
+     const auto target =
+         actor_bridge_.ResolveObservedClickTarget(task.id(), call);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 9f67ca57a3..98cd21c12f 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -90,6 +90,11 @@ class AegisAgentServiceTestPeer {
+                 .click_target_node_id = 15,
+                 .is_sensitive_control = true};
+   }
++  static void SeedDownloadLink(AegisActorBridge* bridge,
++                               int node_id,
++                               const GURL& url) {
++    bridge->observed_node_text_["click-fixture"][7][node_id].download_url = url;
++  }
+   static bool HasRuntime(AegisAgentService* service, const std::string& id) {
+     return service->executions_.contains(id);
+   }
+@@ -533,6 +538,40 @@ TEST_F(AegisAgentServiceTest, ClickTargetUsesObservedAncestryAndDocument) {
+   EXPECT_FALSE(bridge.ResolveObservedClickTarget("click-fixture", call));
+ }
+ 
++TEST_F(AegisAgentServiceTest, DownloadUrlBindsUniqueCurrentObservedLink) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  auto& bridge = service->actor_bridge_for_testing();
++  AgentDocumentRef document{.tab_id = 7,
++                            .frame_token = "frame",
++                            .document_token = "doc",
++                            .committed_url = GURL("https://fixture.example/")};
++  AegisAgentServiceTestPeer::SeedClickObservation(&bridge, document);
++  AegisAgentServiceTestPeer::SeedDownloadLink(
++      &bridge, 17, GURL("https://fixture.example/file?chunk_delay_ms=1000"));
++  AgentToolCall call;
++  call.tool_name = "download.start";
++  call.document = document;
++  call.arguments.Set("tab_id", 7);
++  call.arguments.Set("url", "https://fixture.example/file");
++  auto bound = bridge.ResolveObservedDownloadUrl("click-fixture", call);
++  ASSERT_TRUE(bound);
++  EXPECT_EQ(bound->spec(), "https://fixture.example/file?chunk_delay_ms=1000");
++  EXPECT_FALSE(bridge.ResolveObservedDownloadUrl("other-task", call));
++  call.document->document_token = "stale";
++  EXPECT_FALSE(bridge.ResolveObservedDownloadUrl("click-fixture", call));
++  call.document = document;
++  call.arguments.Set("url", "https://fixture.example/unobserved");
++  EXPECT_FALSE(bridge.ResolveObservedDownloadUrl("click-fixture", call));
++  call.arguments.Set("url", "https://fixture.example/file");
++  AegisAgentServiceTestPeer::SeedDownloadLink(
++      &bridge, 18, GURL("https://fixture.example/file?chunk_delay_ms=1"));
++  EXPECT_FALSE(bridge.ResolveObservedDownloadUrl("click-fixture", call));
++  call.arguments.Set("url", "https://fixture.example/file?chunk_delay_ms=1000");
++  EXPECT_TRUE(bridge.ResolveObservedDownloadUrl("click-fixture", call));
++  AegisAgentServiceTestPeer::SeedDownloadLink(&bridge, 17, GURL());
++  EXPECT_FALSE(bridge.ResolveObservedDownloadUrl("click-fixture", call));
++}
++
+ TEST_F(AegisAgentServiceTest, CurrentPageConsentRejectsMissingOriginalBinding) {
+   auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+   auto scope = ServiceTestScope();
+diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
+index 648dc365f6..142e518fdc 100644
+--- a/chrome/browser/aegis/agent/agent_observation.cc
++++ b/chrome/browser/aegis/agent/agent_observation.cc
+@@ -30,6 +30,7 @@ void AppendMainFrameNodes(
+     base::ListValue* nodes,
+     size_t* used_bytes,
+     bool* truncated,
++    std::map<int, GURL>* download_links,
+     int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT,
+     int click_target_node_id = 0,
+     bool in_article = false) {
+@@ -132,6 +133,16 @@ void AppendMainFrameNodes(
+       text = BoundedAgentObservationText(attributes.text_data().text_content(),
+                                          remaining);
+     } else if (attributes.has_anchor_data()) {
++      const GURL raw(attributes.anchor_data().url());
++      const int id = attributes.common_ancestor_dom_node_id();
++      if (download_links && id > 0 && raw.SchemeIsHTTPOrHTTPS() &&
++          !raw.has_username() && !raw.has_password() &&
++          raw.spec().size() <= 4096u) {
++        auto [it, inserted] = download_links->emplace(id, raw);
++        if (!inserted && it->second != raw) {
++          it->second = GURL();
++        }
++      }
+       text = BoundedAgentObservationText(
+           SafeObservationUrl(attributes.anchor_data().url()), remaining);
+     } else if (attributes.has_form_control_data()) {
+@@ -194,7 +205,8 @@ void AppendMainFrameNodes(
+ 
+   for (const auto& child : node.children_nodes()) {
+     AppendMainFrameNodes(child, interactive, nodes, used_bytes, truncated,
+-                         text_block_kind, click_target_node_id, in_article);
++                         download_links, text_block_kind, click_target_node_id,
++                         in_article);
+     if (*truncated) {
+       return;
+     }
+@@ -211,11 +223,13 @@ std::string BoundedAgentObservationText(std::string_view text,
+ }
+ AgentObservationNodes BuildAgentObservationNodes(
+     const optimization_guide::proto::ContentNode& root,
+-    bool interactive) {
++    bool interactive,
++    bool capture_download_links) {
+   AgentObservationNodes result;
+   size_t used_bytes = 0;
+-  AppendMainFrameNodes(root, interactive, &result.nodes, &used_bytes,
+-                       &result.truncated);
++  AppendMainFrameNodes(
++      root, interactive, &result.nodes, &used_bytes, &result.truncated,
++      capture_download_links ? &result.download_links : nullptr);
+   return result;
+ }
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_observation.h b/chrome/browser/aegis/agent/agent_observation.h
+index a745068cd8..40b2b113b7 100644
+--- a/chrome/browser/aegis/agent/agent_observation.h
++++ b/chrome/browser/aegis/agent/agent_observation.h
+@@ -3,9 +3,12 @@
+ #define CHROME_BROWSER_AEGIS_AGENT_AGENT_OBSERVATION_H_
+ 
+ #include <cstddef>
++#include <map>
+ #include <string>
+ #include <string_view>
++
+ #include "base/values.h"
++#include "url/gurl.h"
+ namespace optimization_guide::proto {
+ class ContentNode;
+ }
+@@ -13,11 +16,14 @@ namespace aegis::agent {
+ struct AgentObservationNodes {
+   base::ListValue nodes;
+   bool truncated = false;
++  // 仅供浏览器绑定动作；完整链接不放入发往模型的nodes。
++  std::map<int, GURL> download_links;
+ };
+ // 原生授权范围决定是否需要交互控件；只读任务保留正文、表格与来源节点。
+ AgentObservationNodes BuildAgentObservationNodes(
+     const optimization_guide::proto::ContentNode& root,
+-    bool interactive);
++    bool interactive,
++    bool capture_download_links = false);
+ // 对有界副本复用摘要脱敏，最终结果仍受UTF-8字节上限约束。
+ std::string BoundedAgentObservationText(std::string_view text,
+                                         size_t remaining);
+diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+index 5cb6baaa48..f3b79d437e 100644
+--- a/chrome/browser/aegis/agent/agent_observation_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+@@ -27,6 +27,46 @@ std::string Serialize(const AgentObservationNodes& observation) {
+   return base::WriteJson(observation.nodes).value();
+ }
+ 
++TEST(AgentObservationTest, CompleteDownloadLinksStayOutsideModelObservation) {
++  proto::ContentNode root;
++  auto* node = root.add_children_nodes();
++  auto* attributes = node->mutable_content_attributes();
++  attributes->set_common_ancestor_dom_node_id(17);
++  attributes->set_attribute_type(proto::CONTENT_ATTRIBUTE_ANCHOR);
++  attributes->mutable_anchor_data()->set_url(
++      "https://fixture.example/file?token=synthetic#fragment");
++  const auto ordinary = BuildAgentObservationNodes(root, true);
++  EXPECT_TRUE(ordinary.download_links.empty());
++  const auto download = BuildAgentObservationNodes(root, true, true);
++  ASSERT_EQ(download.download_links.size(), 1u);
++  EXPECT_EQ(download.download_links.at(17).spec(),
++            "https://fixture.example/file?token=synthetic#fragment");
++  EXPECT_EQ(Serialize(download).find("synthetic"), std::string::npos);
++  EXPECT_EQ(Serialize(download).find("fragment"), std::string::npos);
++  EXPECT_NE(Serialize(download).find("https://fixture.example/file"),
++            std::string::npos);
++}
++
++TEST(AgentObservationTest,
++     HiddenAndCredentialLinksCannotBecomeDownloadCapabilities) {
++  proto::ContentNode root;
++  for (int id : {17, 18, 19}) {
++    auto* node = root.add_children_nodes();
++    auto* a = node->mutable_content_attributes();
++    a->set_common_ancestor_dom_node_id(id);
++    a->set_attribute_type(proto::CONTENT_ATTRIBUTE_ANCHOR);
++    a->mutable_anchor_data()->set_url(
++        id == 17   ? "https://fixture.example/file?hidden=1"
++        : id == 18 ? "https://user:secret@fixture.example/file"
++                   : "file:///private/file");
++    if (id == 17) {
++      a->add_annotated_roles(proto::ANNOTATED_ROLE_CONTENT_HIDDEN);
++    }
++  }
++  EXPECT_TRUE(
++      BuildAgentObservationNodes(root, true, true).download_links.empty());
++}
++
+ TEST(AgentObservationTest, ReadOnlyKeepsBodyAndTableWithoutNavigationOrForms) {
+   proto::ContentNode root;
+   root.mutable_content_attributes()->set_attribute_type(
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 8a6004ead5..4b454ce4b1 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -1096,9 +1096,15 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+           "follow-up navigation";
+       return std::nullopt;
+     }
++    if (missing_download_source || missing_download_start) {
++      *error = step.tool_name + " requires an earlier " +
++               (missing_download_source ? "download.find_official"
++                                        : "download.start") +
++               " step. page.click cannot replace either native download step.";
++      return std::nullopt;
++    }
+     if (missing_bookmark_list || missing_bookmark_plan ||
+-        missing_bookmark_apply || missing_download_source ||
+-        missing_download_start) {
++        missing_bookmark_apply) {
+       *error =
+           "task plan uses a browser result before the step that creates "
+           "it";
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 58f49440a2..486f738fb8 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -810,7 +810,15 @@ TEST(AegisAgentPlannerTest, BrowserResultDependenciesAreOrdered) {
+   EXPECT_FALSE(
+       ParseAndValidateTaskPlan(premature_verify, downloads, registry, &error));
+   EXPECT_EQ(error,
+-            "task plan uses a browser result before the step that creates it");
++            "download.verify requires an earlier download.start step. "
++            "page.click cannot replace either native download step.");
++  premature_verify.arguments.FindList("steps")->back().GetDict().Set(
++      "tool", "download.start");
++  EXPECT_FALSE(
++      ParseAndValidateTaskPlan(premature_verify, downloads, registry, &error));
++  EXPECT_EQ(error,
++            "download.start requires an earlier download.find_official step. "
++            "page.click cannot replace either native download step.");
+ }
+ 
+ TEST(AegisAgentPlannerTest, ShoppingPlanMustEndInOneUserTakeover) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 0ae82679f9..b347f7c7e5 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.27。
+-inline constexpr char kProductVersion[] = "2.0.0.27";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (027)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.28。
++inline constexpr char kProductVersion[] = "2.0.0.28";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (028)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

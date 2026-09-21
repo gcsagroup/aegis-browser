@@ -80,6 +80,10 @@ class AegisAgentService : public KeyedService {
   std::optional<AgentModelDestination> ConfiguredModelDestination() const;
 
   AgentTask* CreateTask(std::string goal, AgentMode mode, AgentTaskScope scope);
+  AgentTask* CreateSelectedResearchTask(std::string goal,
+                                        const std::vector<int32_t>& tab_ids);
+  AgentTask* CreateSelectedTabGroupTask(std::string goal,
+                                        const std::vector<int32_t>& tab_ids);
   AgentTask* GetTask(const std::string& task_id);
   const AgentTask* GetTask(const std::string& task_id) const;
   AgentTask* MostRecentTask();
@@ -106,6 +110,21 @@ class AegisAgentService : public KeyedService {
   void RequestPlan(const std::string& task_id, PlanReadyCallback callback);
   bool SetPlanReady(const std::string& task_id);
   const AgentTaskPlan* GetPlan(const std::string& task_id) const;
+  using ResearchWriteCallback = base::OnceCallback<void(std::string)>;
+  using ResearchListCallback =
+      base::OnceCallback<void(base::ListValue, std::string)>;
+  void SaveResearch(const std::string& task_id, ResearchWriteCallback callback);
+  void LoadSavedResearch(ResearchListCallback callback);
+  void ReviewResearchSource(const std::string& id,
+                            size_t source_index,
+                            int32_t tab_id,
+                            ResearchWriteCallback callback);
+  void DeleteSavedResearch(const std::string& id,
+                           ResearchWriteCallback callback);
+  base::DictValue GetDownloadEvidence(const std::string& task_id) const;
+  void ReviewDownload(const std::string& task_id,
+                      base::OnceCallback<void(base::DictValue)> callback);
+  const base::DictValue* GetResearchRecord(const std::string& id) const;
   const AgentCompletionSummary* GetCompletionSummary(
       const std::string& task_id) const;
   bool GrantTaskConsent(const std::string& task_id);
@@ -136,6 +155,13 @@ class AegisAgentService : public KeyedService {
   std::optional<AgentApprovalReceipt> ApproveToolCall(
       const std::string& task_id,
       const AgentToolCall& call);
+  AgentRiskLevel ToolCallRisk(const std::string& task_id,
+                              const AgentToolCall& call) const;
+  AgentRiskLevel TaskMaxRisk(const std::string& task_id) const;
+  std::string DescribeClickTarget(const std::string& task_id,
+                                  const AgentToolCall& call) const;
+  std::vector<std::string> ObservedSourceOrigins(
+      const std::string& task_id) const;
   void ExecuteTool(
       const std::string& task_id,
       const AgentToolCall& call,
@@ -152,6 +178,8 @@ class AegisAgentService : public KeyedService {
   bool SetMonitorPaused(const std::string& task_id,
                         const std::string& monitor_id,
                         bool paused);
+  bool CheckMonitorNow(const std::string& task_id,
+                       const std::string& monitor_id);
   bool RemoveMonitor(const std::string& task_id, const std::string& monitor_id);
   std::vector<AgentMonitorDefinition> ClaimDueMonitors(base::Time now);
   bool MarkMonitorFinished(
@@ -178,8 +206,10 @@ class AegisAgentService : public KeyedService {
 
  private:
   friend class AegisAgentServiceTestPeer;
+  bool CurrentPageMatchesSelection(const AgentTask& task) const;
 
   struct ExecutionRuntime;
+  struct PendingActionPageObserver;
   struct MonitorUrlCheck;
   struct MonitorPageCheck;
   using ActionResults = std::map<std::string, AgentToolResult>;
@@ -187,6 +217,7 @@ class AegisAgentService : public KeyedService {
   bool Transition(const std::string& task_id,
                   AgentTaskState state,
                   std::string reason);
+  void InvalidatePendingActionForPageChange(const std::string& task_id);
   void FailPlanning(const std::string& task_id,
                     PlanReadyCallback callback,
                     std::string error);
@@ -221,6 +252,18 @@ class AegisAgentService : public KeyedService {
   void ExecuteMonitorTool(AgentTask* task,
                           const AgentToolCall& call,
                           ToolResultCallback callback);
+  void OnResearchSaveEncryptorReady(
+      std::string id,
+      std::string plaintext,
+      ResearchWriteCallback callback,
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  void OnResearchLoadEncryptorReady(
+      ResearchListCallback callback,
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  void OnResearchLoaded(
+      scoped_refptr<os_crypt_async::Encryptor> encryptor,
+      ResearchListCallback callback,
+      std::optional<std::vector<StoredAgentResearch>> records);
   void OnMonitorCreateEncryptorReady(
       std::string task_id,
       AgentToolCall call,
@@ -300,7 +343,8 @@ class AegisAgentService : public KeyedService {
                               AgentModelParseResult result);
   void RequestNextModelTurn(const std::string& task_id);
   void EnsureFreshObservationThenContinue(const std::string& task_id,
-                                          bool force_refresh);
+                                         bool force_refresh);
+  bool EnsureRuntimePageEvidenceCurrent(const std::string& task_id);
   void OnRuntimeFreshObservation(const std::string& task_id,
                                  AgentToolResult result);
   void VerifyCheckoutBeforeTakeover(const std::string& task_id,
@@ -332,6 +376,8 @@ class AegisAgentService : public KeyedService {
                            AgentToolCall attempted_call,
                            AgentToolResult result);
   bool FinishWithBrowserVerifiedFallback(const std::string& task_id);
+  void FinishSummaryTextReview(const std::string &task_id,
+                               const AgentModelEvent *event);
   void FinishValidatedRuntimeCompletion(const std::string& task_id,
                                         AgentCompletionSummary completion);
   void FinishRuntime(const std::string& task_id,
@@ -339,7 +385,7 @@ class AegisAgentService : public KeyedService {
                      std::string error,
                      std::optional<AgentCompletionSummary> completion);
   void OnToolExecuted(const std::string& task_id,
-                      std::string tool_name,
+                      AgentToolCall call_identity,
                       ToolResultCallback callback,
                       AgentToolResult result);
   void OnActorStateEvent(const std::string& task_id,
@@ -360,6 +406,11 @@ class AegisAgentService : public KeyedService {
   std::map<std::string, std::unique_ptr<AgentTask>> tasks_;
   std::map<std::string, AgentTaskPlan> plans_;
   std::map<std::string, AgentCompletionSummary> completion_summaries_;
+  std::map<std::string, base::DictValue> download_evidence_;
+  std::map<std::string, base::DictValue> research_results_;
+  std::map<std::string, base::DictValue> saved_research_;
+  // 浏览器持有逐标签的完整地址，不能用另一个已选地址替换原来源。
+  std::map<std::string, std::map<int32_t, GURL>> research_selections_;
   std::map<std::string, std::pair<size_t, int>> plan_progress_;
   std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
   std::map<std::string, std::string> model_request_ids_;
@@ -370,6 +421,7 @@ class AegisAgentService : public KeyedService {
   std::map<std::string, AgentModelCapabilityTracker> model_capabilities_;
   std::map<std::string, ActionResults> action_results_;
   std::map<std::string, std::map<std::string, std::string>> action_tools_;
+  std::map<std::string, std::map<std::string, AgentRiskLevel>> action_risks_;
   std::map<std::string, std::map<std::string, std::string>> action_hashes_;
   std::map<std::string, bool> task_has_external_side_effect_;
   std::map<std::string, std::string> bookmark_undo_tokens_;

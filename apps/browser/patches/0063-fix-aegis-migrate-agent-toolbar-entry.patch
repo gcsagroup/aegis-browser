@@ -1,4 +1,4 @@
-From 70945fda21074e176dfcc2794ed7169c6fb05ac3 Mon Sep 17 00:00:00 2001
+From 91d8f337c5d482deeff475c1874186eb4366985d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 01:38:01 +0800
 Subject: [PATCH] fix(aegis): migrate agent toolbar entry

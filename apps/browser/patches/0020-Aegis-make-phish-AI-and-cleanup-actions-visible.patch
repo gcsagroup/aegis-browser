@@ -1,4 +1,4 @@
-From 726273c00ed7592876d7f965c4a52952be245420 Mon Sep 17 00:00:00 2001
+From 4ea54673022afbcf5e99546f9800f632ce25211a Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:56:23 +0800
 Subject: [PATCH] Aegis: make phish, AI, and cleanup actions visible

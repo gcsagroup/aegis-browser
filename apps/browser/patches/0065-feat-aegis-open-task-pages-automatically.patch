@@ -1,4 +1,4 @@
-From f810a39ebc9efa9c7e94ab003439e05460a9ca8e Mon Sep 17 00:00:00 2001
+From ce494dd9fc57835654dc930a107316581a69f52e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 16:34:59 +0800
 Subject: [PATCH] feat(aegis): open task pages automatically

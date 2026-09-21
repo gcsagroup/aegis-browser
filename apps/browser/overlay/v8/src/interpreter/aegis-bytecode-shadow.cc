@@ -98,7 +98,8 @@ void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes) {
 
   const unsigned int configured_max_bytes =
       v8_flags.aegis_bytecode_shadow_max_bytes;
-  const AegisBytecodeShadowSummary summary = SummarizeAegisBytecode(
+  // 独立V8关闭跟踪时，宏不会引用摘要；保留两种构建配置的严格检查。
+  [[maybe_unused]] const AegisBytecodeShadowSummary summary = SummarizeAegisBytecode(
       bytecodes, std::min(configured_max_bytes, kHardMaxBytes));
   TRACE_EVENT_INSTANT(
       TRACE_DISABLED_BY_DEFAULT("v8.aegis.bytecode_shadow"),

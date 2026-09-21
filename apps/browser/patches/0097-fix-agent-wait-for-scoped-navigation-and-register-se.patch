@@ -1,8 +1,8 @@
-From a3040bb0dea05e87c2a141b9a29a237a96953620 Mon Sep 17 00:00:00 2001
+From 7126a2b2c6a1dec70e39f5109d896f355fc7faaa Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 14:58:47 +0800
-Subject: [PATCH 97/97] fix(agent): wait for scoped navigation and register
- services early
+Subject: [PATCH] fix(agent): wait for scoped navigation and register services
+ early
 
 ---
  .../aegis/agent/aegis_agent_service.cc        | 42 ++++++++++++++++++-
@@ -95,11 +95,11 @@ index 48e6bd1629..f00307ab85 100644
    if (!tab) {
      Transition(task_id, AgentTaskState::kFailed,
 diff --git a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-index faa78dde10..7db4a33b78 100644
+index de5cbeb641..95dcd11ec6 100644
 --- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 +++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-@@ -17,6 +17,8 @@
- #include "chrome/browser/accessibility_annotator/at_memory_query_service_factory.h"
+@@ -16,6 +16,8 @@
+ #include "chrome/browser/accessibility_annotator/accessibility_annotator_backend_factory.h"
  #include "chrome/browser/account_settings/account_setting_service_factory.h"
  #include "chrome/browser/actor/actor_keyed_service_factory.h"
 +#include "chrome/browser/aegis/aegis_service_factory.h"
@@ -107,7 +107,7 @@ index faa78dde10..7db4a33b78 100644
  #include "chrome/browser/affiliations/affiliation_service_factory.h"
  #include "chrome/browser/ai/ai_data_keyed_service_factory.h"
  #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
-@@ -744,6 +746,8 @@ void ChromeBrowserMainExtraPartsProfiles::
+@@ -753,6 +755,8 @@ void ChromeBrowserMainExtraPartsProfiles::
    search_integrity::SearchIntegrityFactory::GetInstance();
  #endif
    actor::ActorKeyedServiceFactory::GetInstance();

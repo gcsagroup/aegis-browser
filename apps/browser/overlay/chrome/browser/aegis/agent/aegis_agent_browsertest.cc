@@ -113,7 +113,7 @@
 namespace aegis::agent {
 namespace {
 
-SidePanelEntry* AgentEntry(Browser* browser) {
+SidePanelEntry* AgentEntry(BrowserWindowInterface* browser) {
   SidePanelRegistry* registry = SidePanelRegistry::From(browser);
   return registry ? registry->GetEntryForKey(
                         SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent))
@@ -172,7 +172,7 @@ class ProfileDestructionProbe : public ProfileObserver {
 std::unique_ptr<TestRenderViewContextMenu> CreateAegisContextMenu(
     Browser* browser) {
   content::WebContents* contents =
-      browser->tab_strip_model()->GetActiveWebContents();
+      browser->GetTabStripModel()->GetActiveWebContents();
   content::ContextMenuParams params;
   params.page_url = contents->GetLastCommittedURL();
   params.frame_url = params.page_url;
@@ -202,7 +202,7 @@ class AegisAgentDefaultEntryBrowserTest : public InProcessBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
                        EntryIsVisibleBeforeProfileOptIn) {
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   ASSERT_TRUE(profile->IsRegularProfile());
   EXPECT_TRUE(base::FeatureList::IsEnabled(features::kAegisAgent));
   EXPECT_TRUE(base::FeatureList::IsEnabled(features::kAegisAgentPageActions));
@@ -215,7 +215,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
 
   actions::ActionItem* action = actions::ActionManager::Get().FindAction(
       kActionSidePanelShowAegisAgent,
-      browser()->GetActions()->root_action_item());
+      BrowserActions::From(browser())->root_action_item());
   ASSERT_TRUE(action);
   EXPECT_TRUE(action->GetVisible());
   PinnedToolbarActionsModel* pinned = PinnedToolbarActionsModel::Get(profile);
@@ -227,7 +227,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
                        ExistingProfilePinsEntryOnlyOnce) {
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   PinnedToolbarActionsModel* pinned = PinnedToolbarActionsModel::Get(profile);
   ASSERT_TRUE(pinned);
 
@@ -248,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
                        PinnedToolbarActionOpensPanel) {
   actions::ActionItem* action = actions::ActionManager::Get().FindAction(
       kActionSidePanelShowAegisAgent,
-      browser()->GetActions()->root_action_item());
+      BrowserActions::From(browser())->root_action_item());
   ASSERT_TRUE(action);
   SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
   ASSERT_TRUE(side_panel);
@@ -270,7 +270,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
                        FirstTaskConfiguresAndEnablesAgentInPanel) {
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   ASSERT_FALSE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
@@ -413,9 +413,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
       return 'ok';
     })()
   )JS"));
-  EXPECT_EQ(browser()->profile()->GetPrefs()->GetString(prefs::kModelName),
+  EXPECT_EQ(browser()->GetProfile()->GetPrefs()->GetString(prefs::kModelName),
             "requested-model");
-  EXPECT_FALSE(browser()->profile()->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
+  EXPECT_FALSE(
+      browser()->GetProfile()->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
 }
 
 // 独立夹具：启动期间不启用 Agent、不访问 Agent 面板、不主动创建服务。
@@ -531,7 +532,7 @@ class AegisAgentColdStartMonitorBrowserTest : public InProcessBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
                        PRE_RestoresUrlStatusWithoutOpeningPanel) {
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   ASSERT_TRUE(profile->IsRegularProfile());
   ASSERT_FALSE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
   ASSERT_EQ(AegisAgentServiceFactory::GetForProfileIfExists(profile), nullptr);
@@ -624,10 +625,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
                        RestoresUrlStatusWithoutOpeningPanel) {
   // 旧产品预期首先在此失败；禁止用 GetForProfile 补建 service。
   auto* service =
-      AegisAgentServiceFactory::GetForProfileIfExists(browser()->profile());
+      AegisAgentServiceFactory::GetForProfileIfExists(browser()->GetProfile());
   ASSERT_NE(service, nullptr) << "启用资料冷启动未主动恢复 Agent 服务";
-  ASSERT_TRUE(browser()->profile()->IsRegularProfile());
-  ASSERT_TRUE(browser()->profile()->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
+  ASSERT_TRUE(browser()->GetProfile()->IsRegularProfile());
+  ASSERT_TRUE(
+      browser()->GetProfile()->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
   ASSERT_FALSE(browser()->GetFeatures().side_panel_ui()->IsSidePanelEntryShowing(
       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
 
@@ -688,7 +690,7 @@ class AegisAgentBrowserTest : public InProcessBrowserTest {
 
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
-    browser()->profile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
+    browser()->GetProfile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
   }
 
  private:
@@ -725,7 +727,7 @@ class AegisAgentUrlMonitorBrowserTest : public AegisAgentBrowserTest {
  protected:
   void ConfigureMonitorSummaryModel() {
     summary_endpoint_ = embedded_test_server()->GetURL("/v1").spec();
-    auto* pref_service = browser()->profile()->GetPrefs();
+    auto* pref_service = browser()->GetProfile()->GetPrefs();
     pref_service->SetString(prefs::kModelProvider, "openai");
     pref_service->SetString(prefs::kModelBaseUrl, summary_endpoint_);
     pref_service->SetString(prefs::kModelName, "fixture-model");
@@ -736,7 +738,7 @@ class AegisAgentUrlMonitorBrowserTest : public AegisAgentBrowserTest {
                       AgentTask** owner,
                       AgentMonitorKind kind = AgentMonitorKind::kUrlStatus,
                       bool session_only = true) {
-    service_ = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+    service_ = AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
     ASSERT_TRUE(service_);
     base::test::TestFuture<bool> loaded;
     service_->FlushTaskStoreForTesting(loaded.GetCallback());
@@ -919,7 +921,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        FreshChecksDoNotNeedTabsOrWidenCompletedTaskScope) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL target = embedded_test_server()->GetURL("/monitor-status");
-  ASSERT_TRUE(content::SetCookie(browser()->profile(), target,
+  ASSERT_TRUE(content::SetCookie(browser()->GetProfile(), target,
                                  "monitor_session=private-fixture"));
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
@@ -954,7 +956,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   EXPECT_TRUE(task->owned_tab_ids().empty());
   EXPECT_FALSE(task->scope().AllowsTool("page.navigate"));
   EXPECT_FALSE(task->scope().AllowsTool("tab.create"));
-  EXPECT_EQ(browser()->tab_strip_model()->count(), 1);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), 1);
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
 }
 
@@ -1103,7 +1105,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        RecoveryNotifiesOnceAndDoesNotExposeTheTargetPath) {
   int notifications_added = 0;
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   notifications.SetNotificationAddedClosure(base::BindRepeating(
       [](int* count) { ++*count; }, &notifications_added));
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -1153,11 +1155,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        PageMonitorsFetchFreshContentWithoutOwningUserTabs) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   content::WebContents* original =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   const GURL original_url = original->GetLastCommittedURL();
   for (AgentMonitorKind kind :
        {AgentMonitorKind::kPrice, AgentMonitorKind::kInventory,
@@ -1186,7 +1188,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                     .empty());
     EXPECT_EQ(requests_, 1);
     EXPECT_EQ(summary_requests_, 0);
-    EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
+    EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
 
     page_revision_ = 2;
     monitor = first;
@@ -1229,8 +1231,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
         kind == AgentMonitorKind::kPrice ? 1u : 0u);
     EXPECT_EQ(service_->actor_bridge_for_testing().HasTask(task->id()),
               kind == AgentMonitorKind::kPrice);
-    EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
-    EXPECT_EQ(browser()->tab_strip_model()->GetActiveWebContents(), original);
+    EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
+    EXPECT_EQ(browser()->GetTabStripModel()->GetActiveWebContents(), original);
     EXPECT_EQ(original->GetLastCommittedURL(), original_url);
     if (kind == AgentMonitorKind::kPrice) {
       // 第一轮 199，第二轮涨到 299 不通知，第三轮实际降到 199 才通知。
@@ -1254,7 +1256,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                     .size(),
                 1u);
       EXPECT_EQ(requests_, 3);
-      EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
+      EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
     }
     EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
     EXPECT_EQ(
@@ -1267,7 +1269,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        RepeatedPageChangesKeepStorageAndMonitorUsable) {
   int notifications_added = 0;
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   notifications.SetNotificationAddedClosure(base::BindRepeating(
       [](int* count) { ++*count; }, &notifications_added));
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -1312,7 +1314,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        PageSummaryIgnoresNoiseAndSkipsUnchangedModelCalls) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
   ConfigureMonitorSummaryModel();
   AgentMonitorDefinition monitor;
@@ -1345,7 +1347,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   monitor.next_run = base::Time::Now();
   ASSERT_TRUE(service_->UpsertMonitor(monitor));
   ASSERT_TRUE(base::test::RunUntil([&] {
-    return requests_ >= 3 && browser()->tab_strip_model()->count() == 1;
+    return requests_ >= 3 && browser()->GetTabStripModel()->count() == 1;
   }));
   const auto third = service_->GetMonitors(task->id())[0];
   EXPECT_EQ(third.last_check_status, AgentMonitorCheckStatus::kSucceeded);
@@ -1361,7 +1363,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        PageSummaryFailureIsBoundedAndPreservesBaseline) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
   ConfigureMonitorSummaryModel();
   AgentMonitorDefinition monitor;
@@ -1388,7 +1390,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   EXPECT_EQ(summary_requests_, 2);
   EXPECT_EQ(task->model_calls_used(), 2);
   EXPECT_TRUE(summary_requests_valid_);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), 1);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), 1);
   EXPECT_TRUE(notifications
                   .GetDisplayedNotificationsForType(
                       NotificationHandler::Type::TRANSIENT)
@@ -1401,7 +1403,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   hold_summary_response_ = true;
   net::test_server::ControllableHttpResponse pending(embedded_test_server(),
                                                      "/v1/responses");
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
   ConfigureMonitorSummaryModel();
   AgentMonitorDefinition monitor;
@@ -1420,7 +1422,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   pending.WaitForRequest();
   EXPECT_EQ(task->model_calls_used(), 1);
   ASSERT_TRUE(service_->SetMonitorPaused(task->id(), monitor.monitor_id, true));
-  EXPECT_EQ(browser()->tab_strip_model()->count(), 1);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), 1);
   pending.Send(net::HTTP_OK, "application/json",
                R"({"status":"completed","output":[]})");
   pending.Done();
@@ -1451,9 +1453,9 @@ class AegisAgentMonitorWithoutGlicBrowserTest
 
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        PersistsMeasuredBaselineWithSystemEncryption) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
   ASSERT_NO_FATAL_FAILURE(PrepareMonitor(
@@ -1489,13 +1491,14 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   {
     base::ScopedAllowBlockingForTesting allow_blocking;
     std::string bytes;
-    ASSERT_TRUE(base::ReadFileToString(
-        browser()->profile()->GetPath().AppendASCII("AegisAgentTasks.sqlite"),
-        &bytes));
+    ASSERT_TRUE(
+        base::ReadFileToString(browser()->GetProfile()->GetPath().AppendASCII(
+                                   "AegisAgentTasks.sqlite"),
+                               &bytes));
     EXPECT_EQ(bytes.find(result[0].last_observation), std::string::npos);
     EXPECT_EQ(bytes.find(plaintext), std::string::npos);
   }
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
   EXPECT_TRUE(notifications.GetDisplayedNotificationsForType(
       NotificationHandler::Type::TRANSIENT).empty());
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
@@ -1504,9 +1507,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentMonitorWithoutGlicBrowserTest,
                        PageMonitorBlocksForeignRedirectBeforeRequest) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
   ASSERT_NO_FATAL_FAILURE(PrepareMonitor(
@@ -1520,7 +1523,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentMonitorWithoutGlicBrowserTest,
   EXPECT_EQ(requests_, 1);
   // 另一个来源虽在原任务范围内，也不能自动成为这个监控的目标。
   EXPECT_EQ(foreign_requests_, 0);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
   EXPECT_TRUE(task->owned_tab_ids().empty());
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
   ASSERT_TRUE(service_->CancelTask(task->id()));
@@ -1531,16 +1534,16 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/pending-page");
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   content::WebContents* original =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
   ASSERT_NO_FATAL_FAILURE(PrepareMonitor(
       embedded_test_server()->GetURL("/pending-page"), &monitor, &task,
       AgentMonitorKind::kPageChange));
   response.WaitForRequest();
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs + 1);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
   ASSERT_TRUE(service_->SetMonitorPaused(task->id(), monitor.monitor_id, true));
   response.Send(net::HTTP_OK, "text/html", "<p>不应提交的迟到结果</p>");
   response.Done();
@@ -1549,8 +1552,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   EXPECT_FALSE(result.enabled);
   EXPECT_TRUE(result.last_value_hash.empty());
   EXPECT_EQ(result.last_check_status, AgentMonitorCheckStatus::kNotChecked);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
-  EXPECT_EQ(browser()->tab_strip_model()->GetActiveWebContents(), original);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
+  EXPECT_EQ(browser()->GetTabStripModel()->GetActiveWebContents(), original);
   EXPECT_TRUE(task->owned_tab_ids().empty());
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
   ASSERT_TRUE(service_->CancelTask(task->id()));
@@ -1560,9 +1563,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        PageMonitorTimesOutAndCleansItsTab) {
   // 产品等待仍为 30 秒；测试应给正常超时回调留下完成清理的时间。
   base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(45));
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   const base::TimeTicks started = base::TimeTicks::Now();
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
@@ -1577,7 +1580,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   EXPECT_EQ(result.consecutive_failures, 1);
   EXPECT_TRUE(result.last_value_hash.empty());
   EXPECT_EQ(requests_, 1);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
   EXPECT_TRUE(task->owned_tab_ids().empty());
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
   ASSERT_TRUE(service_->CancelTask(task->id()));
@@ -1585,9 +1588,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        PageWithoutPriceDoesNotProducePriceEvidence) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
   ASSERT_NO_FATAL_FAILURE(PrepareMonitor(
@@ -1598,7 +1601,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   ASSERT_EQ(result.size(), 1u);
   EXPECT_EQ(result[0].last_check_status, AgentMonitorCheckStatus::kContentUnavailable);
   EXPECT_TRUE(result[0].last_value_hash.empty());
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs);
   EXPECT_TRUE(task->scope().allowed_tab_ids.empty());
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
   ASSERT_TRUE(service_->CancelTask(task->id()));
@@ -1606,29 +1609,30 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
                        UserTakeoverKeepsMonitorTabAndDiscardsLateResponse) {
-  NotificationDisplayServiceTester notifications(browser()->profile());
+  NotificationDisplayServiceTester notifications(browser()->GetProfile());
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/takeover-page");
   ASSERT_TRUE(embedded_test_server()->Start());
-  const int initial_tabs = browser()->tab_strip_model()->count();
+  const int initial_tabs = browser()->GetTabStripModel()->count();
   content::WebContents* original =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   AgentMonitorDefinition monitor;
   AgentTask* task = nullptr;
   ASSERT_NO_FATAL_FAILURE(PrepareMonitor(
       embedded_test_server()->GetURL("/takeover-page"), &monitor, &task,
       AgentMonitorKind::kPageChange));
   response.WaitForRequest();
-  ASSERT_EQ(browser()->tab_strip_model()->count(), initial_tabs + 1);
-  auto* tab = browser()->tab_strip_model()->GetTabAtIndex(initial_tabs);
+  ASSERT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
+  auto* tab = browser()->GetTabStripModel()->GetTabAtIndex(initial_tabs);
   ASSERT_TRUE(tab);
   actor::ActorTask* monitor_actor =
-      actor::ActorKeyedService::Get(browser()->profile())->GetTaskFromTab(*tab);
+      actor::ActorKeyedService::Get(browser()->GetProfile())
+          ->GetTaskFromTab(*tab);
   ASSERT_TRUE(monitor_actor);
   // 通过真实 Actor 用户暂停入口接管，不能用删除监控冒充用户接管。
   monitor_actor->Pause(/*from_actor=*/false, /*cancel_existing_action=*/true);
   ASSERT_NO_FATAL_FAILURE(WaitForCheck(task->id()));
-  ASSERT_EQ(browser()->tab_strip_model()->count(), initial_tabs + 1);
+  ASSERT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
   response.Send(net::HTTP_OK, "text/html", "<p>接管后的迟到正文</p>");
   response.Done();
   ASSERT_TRUE(content::WaitForLoadStop(tab->GetContents()));
@@ -1637,12 +1641,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
   EXPECT_EQ(result[0].last_check_status,
             AgentMonitorCheckStatus::kPageUnavailable);
   EXPECT_TRUE(result[0].last_value_hash.empty());
-  EXPECT_EQ(browser()->tab_strip_model()->GetActiveWebContents(), original);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs + 1);
+  EXPECT_EQ(browser()->GetTabStripModel()->GetActiveWebContents(), original);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
   EXPECT_TRUE(task->scope().allowed_tab_ids.empty());
   ASSERT_TRUE(service_->RemoveMonitor(task->id(), monitor.monitor_id));
   ASSERT_TRUE(service_->CancelTask(task->id()));
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tabs + 1);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
 }
 
 class AegisAgentUrlCheckBrowserTest : public AegisAgentBrowserTest {
@@ -1705,7 +1709,7 @@ IN_PROC_BROWSER_TEST_F(
     RuntimeChecks500WithDefaultBudgetAndKeepsNarrowedBudgetPartial) {
   base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(60));
   ASSERT_TRUE(embedded_test_server()->Start());
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   ConfigureAgentModel(profile);
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   auto* model = BookmarkModelFactory::GetForBrowserContext(profile);
@@ -1754,7 +1758,7 @@ IN_PROC_BROWSER_TEST_F(
   base::test::TestFuture<bool> storage;
   service->FlushTaskStoreForTesting(storage.GetCallback());
   ASSERT_TRUE(storage.Get());
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   const GURL endpoint("https://api.openai.com/v1/responses");
 
   // 单场景的断言失败不能跳过其余场景；旧实现也应终止并明确报红。
@@ -1925,7 +1929,7 @@ IN_PROC_BROWSER_TEST_F(
       EXPECT_EQ(selection_head_count(), heads_before);
       EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task_id));
       EXPECT_EQ(snapshot_bookmarks(), original_bookmarks);
-      EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+      EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
       ASSERT_TRUE(base::test::RunUntil([&]() {
         return content::EvalJs(panel, content::JsReplace(R"JS(
           (async () => {
@@ -2015,7 +2019,7 @@ IN_PROC_BROWSER_TEST_F(
               budget);
     EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task_id));
     EXPECT_EQ(snapshot_bookmarks(), original_bookmarks);
-    EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+    EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
     const auto* completion = service->GetCompletionSummary(task_id);
     ASSERT_TRUE(completion)
         << "检查步骤完成后必须保留浏览器检查证据及真实完成程度";
@@ -2061,7 +2065,7 @@ IN_PROC_BROWSER_TEST_F(
     SelectionChecks500AndRejectsForeignStaleAndForgottenRefs) {
   ASSERT_TRUE(embedded_test_server()->Start());
   auto* model =
-      BookmarkModelFactory::GetForBrowserContext(browser()->profile());
+      BookmarkModelFactory::GetForBrowserContext(browser()->GetProfile());
   ASSERT_TRUE(model);
   bookmarks::test::WaitForBookmarkModelToLoad(model);
   for (int index = 0; index < 500; ++index) {
@@ -2074,7 +2078,7 @@ IN_PROC_BROWSER_TEST_F(
                  BookmarkCheckTestScope());
   AgentTask foreign("another-task", "另一任务", AgentMode::kAsk,
                     BookmarkCheckTestScope());
-  AegisBrowserTools tools(browser()->profile());
+  AegisBrowserTools tools(browser()->GetProfile());
   auto execute = [&](AgentTask* owner, const AgentToolCall& call) {
     base::test::TestFuture<AgentToolResult> future;
     tools.Execute(owner, call, future.GetCallback());
@@ -2130,7 +2134,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlCheckBrowserTest,
                        SelectionPreservesResultsWhenBudgetOrScopeBlocksRest) {
   ASSERT_TRUE(embedded_test_server()->Start());
   auto* model =
-      BookmarkModelFactory::GetForBrowserContext(browser()->profile());
+      BookmarkModelFactory::GetForBrowserContext(browser()->GetProfile());
   ASSERT_TRUE(model);
   bookmarks::test::WaitForBookmarkModelToLoad(model);
   model->AddURL(model->bookmark_bar_node(), 0, u"可检查一",
@@ -2141,7 +2145,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlCheckBrowserTest,
                 GURL("http://10.0.0.1/private"));
   AgentTask task("selection-budget", "检查全部收藏", AgentMode::kAsk,
                  BookmarkCheckTestScope(1));
-  AegisBrowserTools tools(browser()->profile());
+  AegisBrowserTools tools(browser()->GetProfile());
   AgentToolCall list;
   list.action_id = "list-selection";
   list.tool_name = "bookmark.list";
@@ -2176,7 +2180,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlCheckBrowserTest,
                        RateLimitCompletesAllPendingSameOriginBookmarks) {
   ASSERT_TRUE(embedded_test_server()->Start());
   bookmarks::BookmarkModel* model =
-      BookmarkModelFactory::GetForBrowserContext(browser()->profile());
+      BookmarkModelFactory::GetForBrowserContext(browser()->GetProfile());
   ASSERT_TRUE(model);
   bookmarks::test::WaitForBookmarkModelToLoad(model);
 
@@ -2200,7 +2204,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlCheckBrowserTest,
   ASSERT_TRUE(scope.IsValid());
   AgentTask task("rate-limit-task", "check fixture bookmarks", AgentMode::kAsk,
                  std::move(scope));
-  AegisBrowserTools tools(browser()->profile());
+  AegisBrowserTools tools(browser()->GetProfile());
   AgentToolCall call;
   call.action_id = "check-rate-limited-bookmarks";
   call.tool_name = "bookmark.check_urls";
@@ -2231,23 +2235,23 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
   chrome::AddTabAt(browser(), target, -1, true);
   ASSERT_TRUE(content::WaitForLoadStop(
-      browser()->tab_strip_model()->GetActiveWebContents()));
-  ASSERT_EQ(browser()->tab_strip_model()->count(), 2);
+      browser()->GetTabStripModel()->GetActiveWebContents()));
+  ASSERT_EQ(browser()->GetTabStripModel()->count(), 2);
 
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   // 等待异步恢复结束，避免恢复空存储时覆盖刚创建的测试监控。
   base::test::TestFuture<bool> storage_loaded;
   service->FlushTaskStoreForTesting(storage_loaded.GetCallback());
   ASSERT_TRUE(storage_loaded.Get());
   const int32_t first_tab_id =
-      browser()->tab_strip_model()->GetTabAtIndex(0)->GetHandle().raw_value();
+      browser()->GetTabStripModel()->GetTabAtIndex(0)->GetHandle().raw_value();
   for (bool needs_temporary_tab : {false, true}) {
     SCOPED_TRACE(needs_temporary_tab);
     const int32_t original_tab_id =
         browser()
-            ->tab_strip_model()
+            ->GetTabStripModel()
             ->GetTabAtIndex(needs_temporary_tab ? 1 : 0)
             ->GetHandle()
             .raw_value();
@@ -2311,6 +2315,82 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       ObservedDocumentExpiresOnReloadNavigationAndCancel) {
+  embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+      [](const net::test_server::HttpRequest& request)
+          -> std::unique_ptr<net::test_server::HttpResponse> {
+        if (request.relative_url != "/section-body") {
+          return nullptr;
+        }
+        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+        response->set_content_type("text/html; charset=utf-8");
+        response->set_content(
+            "<!doctype html><meta charset=utf-8><title>章节验收资料</title>"
+            "<main><h1>章节验收资料</h1><h2>事实一</h2>"
+            "<p>本轮包含 38 个受控源文件。</p><h2>事实二</h2>"
+            "<p>原生浏览器回归共有 53 项，全部通过。</p>"
+            "<h2>只有标题</h2><h2>其他章节</h2><p>独立正文。</p>"
+            "<iframe srcdoc='<p>跨框架内容不得读取</p>'></iframe>"
+            "</main>");
+        return response;
+      }));
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL target = embedded_test_server()->GetURL("/section-body");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+  ASSERT_TRUE(service);
+  const int32_t tab_id =
+      browser()->GetActiveTabInterface()->GetHandle().raw_value();
+  AgentTaskScope scope;
+  scope.allowed_origins = {url::Origin::Create(target)};
+  scope.allowed_tab_ids = {tab_id};
+  scope.allowed_tools = {"page.observe", "page.extract"};
+  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
+  scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+  scope.model_destination.provider = "openai";
+  scope.model_destination.endpoint = "http://127.0.0.1:8000/v1";
+  scope.model_destination.model = "fixture-model";
+  AgentTask* task = service->CreateTask("验证观察文档的生命周期",
+                                        AgentMode::kAsk, std::move(scope));
+  ASSERT_TRUE(task);
+  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kPlanning, "测试计划"));
+  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kAwaitingTaskConsent,
+                                 "只读计划已准备"));
+  ASSERT_TRUE(service->GrantTaskConsent(task->id()));
+  AgentToolCall call;
+  call.action_id = "observe-sections";
+  call.tool_name = "page.observe";
+  call.arguments.Set("tab_id", tab_id);
+  call.committed_url = target;
+  base::test::TestFuture<AgentToolResult> observed;
+  auto& bridge = service->actor_bridge_for_testing();
+  bridge.ExecutePageTool(task->id(), call, observed.GetCallback());
+  ASSERT_TRUE(observed.Get().ok) << observed.Get().message;
+  call.document = bridge.LastDocument(task->id(), tab_id);
+  ASSERT_TRUE(call.document);
+  const std::string original_token = call.document->document_token;
+  EXPECT_TRUE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, original_token));
+  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, "错误 token"));
+  // 同网址的新文档也必须让旧观察失效。
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
+  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, original_token));
+  call.action_id = "observe-reloaded-document";
+  call.document.reset();
+  base::test::TestFuture<AgentToolResult> refreshed;
+  bridge.ExecutePageTool(task->id(), call, refreshed.GetCallback());
+  ASSERT_TRUE(refreshed.Get().ok) << refreshed.Get().message;
+  const auto latest = bridge.LastDocument(task->id(), tab_id);
+  ASSERT_TRUE(latest);
+  EXPECT_NE(latest->document_token, original_token);
+  EXPECT_TRUE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, latest->document_token));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, latest->document_token));
+  EXPECT_TRUE(service->CancelTask(task->id()));
+  EXPECT_FALSE(bridge.IsObservedDocumentCurrent(task->id(), tab_id, latest->document_token));
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        PageExtractionReturnsSectionBodyNotHeadingLabels) {
   embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
       [](const net::test_server::HttpRequest& request)
@@ -2334,7 +2414,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   const GURL target = embedded_test_server()->GetURL("/section-body");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   const int32_t tab_id =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
@@ -2426,28 +2506,26 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ProfileIsolationAndRestrictedProfiles) {
-  Profile* regular = browser()->profile();
+  Profile* regular = browser()->GetProfile();
   ASSERT_TRUE(regular->IsRegularProfile());
   AegisAgentService* service = AegisAgentServiceFactory::GetForProfile(regular);
   ASSERT_TRUE(service);
   EXPECT_TRUE(service->IsEnabled());
   EXPECT_TRUE(IsAegisAgentSidePanelSupported(regular));
   EXPECT_TRUE(AgentEntry(browser()));
-  EXPECT_TRUE(
-      browser()->command_controller()->IsCommandEnabled(IDC_SHOW_AEGIS));
+  EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_SHOW_AEGIS));
 
   Browser* otr_browser = CreateIncognitoBrowser(regular);
   ASSERT_TRUE(otr_browser);
-  EXPECT_TRUE(otr_browser->profile()->IsOffTheRecord());
-  EXPECT_TRUE(IsAegisAgentSidePanelSupported(otr_browser->profile()));
+  EXPECT_TRUE(otr_browser->GetProfile()->IsOffTheRecord());
+  EXPECT_TRUE(IsAegisAgentSidePanelSupported(otr_browser->GetProfile()));
   EXPECT_TRUE(AgentEntry(otr_browser));
-  EXPECT_TRUE(
-      otr_browser->command_controller()->IsCommandEnabled(IDC_SHOW_AEGIS));
+  EXPECT_TRUE(chrome::IsCommandEnabled(otr_browser, IDC_SHOW_AEGIS));
   AegisAgentService* otr_service =
-      AegisAgentServiceFactory::GetForProfile(otr_browser->profile());
+      AegisAgentServiceFactory::GetForProfile(otr_browser->GetProfile());
   ASSERT_TRUE(otr_service);
   EXPECT_NE(service, otr_service);
-  EXPECT_EQ(otr_browser->profile(), otr_service->profile());
+  EXPECT_EQ(otr_browser->GetProfile(), otr_service->profile());
   EXPECT_TRUE(otr_service->IsEnabled());
   EXPECT_TRUE(otr_service->actor_bridge_for_testing().IsAvailable());
   EXPECT_EQ(0u, otr_service->task_count_for_testing());
@@ -2466,8 +2544,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   EXPECT_NE(second_service, service);
   EXPECT_EQ(second_service->task_count_for_testing(), 0u);
   EXPECT_TRUE(AgentEntry(second_browser));
-  EXPECT_TRUE(
-      second_browser->command_controller()->IsCommandEnabled(IDC_SHOW_AEGIS));
+  EXPECT_TRUE(chrome::IsCommandEnabled(second_browser, IDC_SHOW_AEGIS));
 
   const base::FilePath system_path = ProfileManager::GetSystemProfilePath();
   Profile* system = profile_manager->GetProfileByPath(system_path);
@@ -2480,23 +2557,23 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   EXPECT_FALSE(IsAegisAgentSidePanelSupported(system));
   EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(system), nullptr);
 
-  base::test::TestFuture<Browser*> guest_future;
+  base::test::TestFuture<BrowserWindowInterface*> guest_future;
   profiles::SwitchToGuestProfile(guest_future.GetCallback());
-  Browser* guest_browser = guest_future.Get();
+  BrowserWindowInterface* guest_browser = guest_future.Get();
   ASSERT_TRUE(guest_browser);
-  ASSERT_TRUE(guest_browser->profile()->IsGuestSession());
-  EXPECT_FALSE(IsAegisAgentSidePanelSupported(guest_browser->profile()));
+  ASSERT_TRUE(guest_browser->GetProfile()->IsGuestSession());
+  EXPECT_FALSE(IsAegisAgentSidePanelSupported(guest_browser->GetProfile()));
   EXPECT_FALSE(AgentEntry(guest_browser));
-  EXPECT_FALSE(
-      guest_browser->command_controller()->IsCommandEnabled(IDC_SHOW_AEGIS));
-  EXPECT_EQ(AegisAgentServiceFactory::GetForProfile(guest_browser->profile()),
-            nullptr);
+  EXPECT_FALSE(chrome::IsCommandEnabled(guest_browser, IDC_SHOW_AEGIS));
+  EXPECT_EQ(
+      AegisAgentServiceFactory::GetForProfile(guest_browser->GetProfile()),
+      nullptr);
 #endif
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        IncognitoPanelCreatesMemoryOnlyIsolatedTask) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   AegisAgentService* regular_service =
       AegisAgentServiceFactory::GetForProfile(regular_profile);
   ASSERT_TRUE(regular_service);
@@ -2505,7 +2582,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 
   Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
-  Profile* incognito_profile = incognito_browser->profile();
+  Profile* incognito_profile = incognito_browser->GetProfile();
   ASSERT_TRUE(incognito_profile->IsIncognitoProfile());
   ASSERT_TRUE(incognito_profile->IsPrimaryOTRProfile());
   ConfigureAgentModel(incognito_profile);
@@ -2553,7 +2630,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL regular_url = embedded_test_server()->GetURL("/title1.html");
   const GURL private_url = embedded_test_server()->GetURL("/title2.html");
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   regular_profile->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), regular_url));
 
@@ -2566,7 +2643,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 
   Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
-  Profile* incognito_profile = incognito_browser->profile();
+  Profile* incognito_profile = incognito_browser->GetProfile();
   incognito_profile->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
   ASSERT_TRUE(ui_test_utils::NavigateToURL(incognito_browser, private_url));
   AegisAgentService* incognito_service =
@@ -2595,7 +2672,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        LoadsSimplePanelAndRejectsOriginExpansion) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
 
@@ -2631,7 +2708,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                   .ExtractBool());
 
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   tabs::TabInterface* active_tab = browser()->GetActiveTabInterface();
   ASSERT_TRUE(active_tab);
@@ -2677,9 +2754,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ModelRoutedGoalOpensItsChosenSearchTaskTab) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   TemplateURLService* search =
-      TemplateURLServiceFactory::GetForProfile(browser()->profile());
+      TemplateURLServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(search);
   search->Load();
   ASSERT_TRUE(base::test::RunUntil([&]() { return search->loaded(); }));
@@ -2710,9 +2787,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
     })()
   )JS")
                    .ExtractBool());
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentGoalRoute route;
   route.workflow = AgentWorkflowKind::kResearch;
@@ -2735,7 +2812,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
 
   ASSERT_TRUE(base::test::RunUntil([&]() {
-    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
+    return browser()->GetTabStripModel()->count() == initial_tab_count + 1 &&
            browser()->GetActiveTabInterface()->GetURL() == expected;
   }));
   EXPECT_EQ(service->task_count_for_testing(), 1u);
@@ -2744,13 +2821,13 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        NamedSiteDiscoveryStaysOnNamedSiteAndReadOnlyWorkflow) {
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
 
   AgentGoalRoute overly_broad_route;
@@ -2770,7 +2847,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
-  ASSERT_EQ(browser()->tab_strip_model()->count(), initial_tab_count + 1);
+  ASSERT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count + 1);
   ASSERT_TRUE(base::test::RunUntil([&]() {
     return browser()->GetActiveTabInterface()->GetURL().host() ==
            "search.jd.com";
@@ -2787,13 +2864,13 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ImplicitCurrentPageGoalBindsActiveTabWithoutNewTab) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   const int32_t active_tab_id =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
 
@@ -2817,11 +2894,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
   EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), page_url);
 
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task);
@@ -2834,14 +2911,85 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       ModifiedCurrentReleasePageRejectsUnrelatedModelEntry) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  ConfigureAgentModel(browser()->GetProfile());
+  const GURL page_url = embedded_test_server()->GetURL("/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+  ASSERT_TRUE(service);
+  AgentGoalRoute route;
+  route.workflow = AgentWorkflowKind::kSafeDownload;
+  route.entry_kind = AgentGoalEntryKind::kOpenUrl;
+  route.target = "https://www.electronjs.org/latest";
+  service->SetGoalRouteForTesting(route);
+  content::WebContents* panel = ShowAgentPanel(browser());
+  ASSERT_TRUE(panel);
+  const int count = browser()->GetTabStripModel()->count();
+  const int32_t tab_id =
+      browser()->GetActiveTabInterface()->GetHandle().raw_value();
+  const std::string id = content::EvalJs(panel, R"JS(
+    (async () => {
+      const {BrowserProxy} = await import('./browser_proxy.js');
+      const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
+          '从当前官方合成发布页下载适合本机 macOS arm64 的测试安装包，核验页面公布的 SHA-256。只下载，不打开、不执行、不安装。',
+          1, 0, [], 0);
+      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
+    })()
+  )JS").ExtractString();
+  const auto* task = service->GetTask(id);
+  ASSERT_TRUE(task) << id;
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), count);
+  EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), page_url);
+  EXPECT_EQ(task->scope().allowed_tab_ids.size(), 1u);
+  EXPECT_TRUE(task->scope().AllowsTab(tab_id));
+  EXPECT_TRUE(task->scope().AllowsOrigin(page_url));
+  EXPECT_FALSE(task->scope().AllowsOrigin(GURL(route.target)));
+  EXPECT_TRUE(task->scope().AllowsTool("download.start"));
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       CurrentPageDownloadReviewCannotTransferOrReadBookmarks) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  ConfigureAgentModel(browser()->GetProfile());
+  const GURL page_url = embedded_test_server()->GetURL("/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+  content::WebContents* panel = ShowAgentPanel(browser());
+  ASSERT_TRUE(panel);
+  const std::string id = content::EvalJs(panel, R"JS(
+    (async () => {
+      const {BrowserProxy} = await import('./browser_proxy.js');
+      const result = await BrowserProxy.getInstance().handler.createTask(
+          '在当前页面找到 macOS ARM64 的官方下载，先不要下载。', 1, 0, [], 0);
+      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+    })()
+  )JS")
+                             .ExtractString();
+  ASSERT_FALSE(id.starts_with("ERROR:")) << id;
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+  const auto* task = service->GetTask(id);
+  ASSERT_TRUE(task);
+  EXPECT_TRUE(task->scope().AllowsOrigin(page_url));
+  EXPECT_TRUE(task->scope().AllowsTool("download.find_official"));
+  EXPECT_TRUE(task->scope().AllowsTool("page.observe"));
+  for (const auto* tool : {"download.start", "download.open", "page.click",
+                           "bookmark.list", "bookmark.apply"}) {
+    EXPECT_FALSE(task->scope().AllowsTool(tool)) << tool;
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        CurrentPageRejectsInternalTargetsAndStaleInvocation) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL background_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), background_url));
   const int32_t background_id =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   const size_t task_count = service->task_count_for_testing();
 
@@ -2851,7 +2999,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
     // AddTabAt 只发起导航；必须先进入目标页，再检验内部页面拒绝，
     // 不能把尚未提交的空网址当作 chrome://bookmarks 的测试前提。
     ASSERT_TRUE(content::WaitForLoadStop(
-        browser()->tab_strip_model()->GetActiveWebContents()));
+        browser()->GetTabStripModel()->GetActiveWebContents()));
     ASSERT_EQ(browser()->GetActiveTabInterface()->GetURL(), GURL(target));
     content::WebContents* panel = ShowAgentPanel(browser());
     ASSERT_TRUE(panel);
@@ -2880,7 +3028,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        CurrentPageUsesActivePublicTabOverStaleInvocation) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL old_url = embedded_test_server()->GetURL("a.test", "/title1.html");
   const GURL active_url = embedded_test_server()->GetURL("b.test", "/title2.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), old_url));
@@ -2891,7 +3039,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentInvocationContext invocation;
   invocation.tab_id = old_id;
@@ -2918,7 +3067,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        FullPageAgentUsesDirectOpenerNotLastPublicTab) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL source_url = embedded_test_server()->GetURL("a.test", "/title1.html");
   const GURL other_url = embedded_test_server()->GetURL("b.test", "/title2.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), source_url));
@@ -2941,7 +3090,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       return snapshot.taskId || `ERROR:${snapshot.lastError}`;
     })()
   )JS").ExtractString();
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task) << task_id;
@@ -2954,7 +3104,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        FullPageAgentRejectsMissingOrNonPublicOpener) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL("/title1.html")));
   auto* tab_list = TabListInterface::From(browser());
@@ -2972,7 +3122,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
     if (use_blank) {
       tab_list->SetOpenerForTab(agent->GetHandle(), blank_handle);
     } else {
-      browser()->tab_strip_model()->ForgetAllOpeners();
+      browser()->GetTabStripModel()->ForgetAllOpeners();
     }
     EXPECT_TRUE(content::EvalJs(agent->GetContents(), R"JS(
       (async () => {
@@ -2985,7 +3135,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       })()
     )JS").ExtractBool());
   }
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   EXPECT_EQ(service->task_count_for_testing(), 0u);
 }
@@ -2993,7 +3144,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        PartialCompletionReachesVisibleResultAndTimeline) {
   constexpr char kEndpoint[] = "http://127.0.0.1:8765/v1/responses";
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   ConfigureAgentModel(profile);
   profile->GetPrefs()->SetString(prefs::kModelBaseUrl,
                                  "http://127.0.0.1:8765/v1");
@@ -3088,19 +3239,193 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       SelectedTabGroupBindsOnlyExplicitCurrentWindowTabs) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  ConfigureAgentModel(browser()->GetProfile());
+  const GURL page = embedded_test_server()->GetURL("/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page));
+  for (int index = 0; index < 3; ++index) {
+    chrome::AddTabAt(browser(), page, -1, false);
+    ASSERT_TRUE(content::WaitForLoadStop(
+        browser()->GetTabStripModel()->GetWebContentsAt(index + 1)));
+  }
+  content::WebContents* panel = ShowAgentPanel(browser());
+  ASSERT_TRUE(panel);
+  const std::string id = content::EvalJs(panel, R"JS(
+    (async () => {
+      const {BrowserProxy} = await import('./browser_proxy.js');
+      const handler = BrowserProxy.getInstance().handler;
+      const {tabs} = await handler.listResearchTabs();
+      const ids = tabs.slice(0, 3).map(tab => tab.tabId);
+      const bad = await handler.createTabGroupTask('分组', [ids[0], ids[0], ids[1]]);
+      if (!bad.snapshot.lastError) return 'ERROR:duplicate accepted';
+      const result = await handler.createTabGroupTask(
+          '把本任务的三个研究标签放入一个组。', ids);
+      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+    })()
+  )JS")
+                             .ExtractString();
+  ASSERT_FALSE(id.starts_with("ERROR:")) << id;
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+  AgentTask* task = service->GetTask(id);
+  ASSERT_TRUE(task);
+  EXPECT_EQ(task->scope().allowed_tab_ids.size(), 3u);
+  EXPECT_TRUE(task->scope().selected_tab_group);
+  EXPECT_EQ(task->scope().tab_metadata_window_id, 0);
+  EXPECT_TRUE(task->scope().allowed_origins.empty());
+  EXPECT_FALSE(task->scope().AllowsTool("page.observe"));
+  EXPECT_FALSE(task->scope().AllowsTool("tab.close"));
+  EXPECT_FALSE(task->scope().AllowsTool("bookmark.apply"));
+  AegisBrowserTools tools(browser()->GetProfile());
+  AgentToolCall call;
+  call.action_id = "selected-list";
+  call.tool_name = "tab.list";
+  base::test::TestFuture<AgentToolResult> listed;
+  tools.Execute(task, call, listed.GetCallback());
+  ASSERT_TRUE(listed.Get().ok);
+  EXPECT_EQ(listed.Get().value.FindInt("tab_count"), 3);
+  call.action_id = "selected-group";
+  call.tool_name = "tab.group";
+  base::ListValue ids;
+  for (int32_t tab_id : task->scope().allowed_tab_ids) {
+    ids.Append(tab_id);
+  }
+  call.arguments.Set("tab_ids", std::move(ids));
+  call.arguments.Set("revision", *listed.Get().value.FindString("revision"));
+  base::test::TestFuture<AgentToolResult> grouped;
+  tools.Execute(task, call, grouped.GetCallback());
+  ASSERT_TRUE(grouped.Get().ok) << grouped.Get().message;
+  ASSERT_TRUE(grouped.Get().value.FindList("tab_ids"));
+  EXPECT_EQ(grouped.Get().value.FindList("tab_ids")->size(), 3u);
+  const auto* title = grouped.Get().value.FindString("title");
+  ASSERT_TRUE(title);
+  EXPECT_FALSE(title->empty());
+  const auto* group_id = grouped.Get().value.FindString("group_id");
+  ASSERT_TRUE(group_id);
+  auto* tabs = TabListInterface::From(browser());
+  for (auto* tab : tabs->GetAllTabs()) {
+    const auto group = tab->GetGroup();
+    if (task->AllowsTab(tab->GetHandle().raw_value())) {
+      ASSERT_TRUE(group);
+      EXPECT_EQ(group->ToString(), *group_id);
+      const auto visual = tabs->GetTabGroupVisualData(*group);
+      ASSERT_TRUE(visual);
+      EXPECT_EQ(base::UTF16ToUTF8(visual->title()), *title);
+    } else {
+      EXPECT_FALSE(group);
+    }
+  }
+  AgentToolCall verification_call =
+      AgentResultVerifier::RetainVerificationContext(call);
+  AgentResultVerifier verifier;
+  AgentToolRegistry registry;
+  EXPECT_TRUE(verifier
+                  .Verify(*task, verification_call, *registry.Find("tab.group"),
+                          grouped.Get())
+                  .accepted);
+  AgentToolResult incomplete;
+  incomplete.action_id = grouped.Get().action_id;
+  incomplete.ok = true;
+  incomplete.value = grouped.Get().value.Clone();
+  incomplete.value.Remove("tab_ids");
+  EXPECT_FALSE(verifier
+                   .Verify(*task, verification_call,
+                           *registry.Find("tab.group"), incomplete)
+                   .accepted);
+  incomplete.value = grouped.Get().value.Clone();
+  incomplete.value.Set("tab_ids", base::ListValue().Append(
+                                      *task->scope().allowed_tab_ids.begin()));
+  EXPECT_FALSE(verifier
+                   .Verify(*task, verification_call,
+                           *registry.Find("tab.group"), incomplete)
+                   .accepted);
+  // 列表展示后导航，旧选择不能授权新的网页或其他窗口。
+  const size_t before = service->task_count_for_testing();
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("/title2.html")));
+  EXPECT_TRUE(
+      content::EvalJs(panel, content::JsReplace(
+                                 R"JS(
+    (async () => {
+      const {BrowserProxy} = await import('./browser_proxy.js');
+      const handler = BrowserProxy.getInstance().handler;
+      const result = await handler.createTabGroupTask('分组', $1);
+      return Boolean(result.snapshot.lastError);
+    })()
+  )JS",
+                                 call.arguments.FindList("tab_ids")->Clone()))
+          .ExtractBool());
+  EXPECT_EQ(service->task_count_for_testing(), before);
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       TaskTabGoalDoesNotGrantWindowMetadata) {
+  ConfigureAgentModel(browser()->GetProfile());
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  const int32_t active_id =
+      browser()->GetActiveTabInterface()->GetHandle().raw_value();
+  chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
+  content::WebContents* panel = ShowAgentPanel(browser());
+  ASSERT_TRUE(panel);
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+  ASSERT_TRUE(service);
+  AegisBrowserTools tools(browser()->GetProfile());
+  for (const char* goal :
+       {"列出这个任务打开的标签页。", "列出本任務開啟的標籤頁。",
+        "List open tabs for this task.", "列出当前窗口中本任务的标签页。"}) {
+    SCOPED_TRACE(goal);
+    AgentGoalRoute route;
+    route.workflow = AgentWorkflowKind::kBrowserSteward;
+    route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
+    route.summary = "列出任务标签";
+    service->SetGoalRouteForTesting(route);
+    const std::string id = content::EvalJs(panel, content::JsReplace(R"JS(
+      (async () => {
+        const {BrowserProxy} = await import('./browser_proxy.js');
+        const result = await BrowserProxy.getInstance().handler
+            .createTask($1, 0, 0, [], 0);
+        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      })()
+    )JS",
+                                                                     goal))
+                               .ExtractString();
+    ASSERT_FALSE(id.starts_with("ERROR:")) << id;
+    AgentTask* task = service->GetTask(id);
+    ASSERT_TRUE(task);
+    EXPECT_EQ(task->scope().tab_metadata_window_id, 0);
+    AgentToolCall call;
+    call.action_id = "list-task-tabs";
+    call.tool_name = "tab.list";
+    base::test::TestFuture<AgentToolResult> future;
+    tools.Execute(task, call, future.GetCallback());
+    const AgentToolResult& result = future.Get();
+    ASSERT_TRUE(result.ok) << result.message;
+    EXPECT_EQ(result.value.FindInt("tab_count"), 1);
+    EXPECT_EQ(*result.value.FindString("count_scope"), "task_tabs");
+    const base::ListValue* listed = result.value.FindList("tabs");
+    ASSERT_TRUE(listed);
+    ASSERT_EQ(listed->size(), 1u);
+    EXPECT_EQ((*listed)[0].GetDict().FindInt("tab_id"), active_id);
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        CurrentWindowMetadataCountsAllTabsWithoutActionAccess) {
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   for (int index = 1; index < 6; ++index) {
     chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
   }
-  Browser* other_window = CreateBrowser(browser()->profile());
-  Browser* otr_window = CreateIncognitoBrowser(browser()->profile());
+  Browser* other_window = CreateBrowser(browser()->GetProfile());
+  Browser* otr_window = CreateIncognitoBrowser(browser()->GetProfile());
   ASSERT_TRUE(other_window);
   ASSERT_TRUE(otr_window);
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentGoalRoute route;
   route.workflow = AgentWorkflowKind::kBrowserSteward;
@@ -3123,7 +3448,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
             browser()->GetSessionID().id());
   EXPECT_EQ(task->scope().allowed_tab_ids.size(), 1u);
   EXPECT_TRUE(task->scope().allowed_origins.empty());
-  AegisBrowserTools tools(browser()->profile());
+  AegisBrowserTools tools(browser()->GetProfile());
   AgentToolCall list_call;
   list_call.action_id = "count-window-tabs";
   list_call.tool_name = "tab.list";
@@ -3161,7 +3486,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   tools.Execute(task, close_call, close_future.GetCallback());
   EXPECT_FALSE(close_future.Get().ok);
   EXPECT_EQ(close_future.Get().error, AgentErrorCode::kScopeViolation);
-  EXPECT_EQ(browser()->tab_strip_model()->count(), 6);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), 6);
   for (int index = 6; index < 26; ++index) {
     chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
   }
@@ -3194,17 +3519,17 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ModelBrowserOnlyResearchRouteBindsCurrentPage) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   const int32_t active_tab_id =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
 
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentGoalRoute route;
   route.workflow = AgentWorkflowKind::kResearch;
@@ -3222,7 +3547,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
   EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), page_url);
 
   AgentTask* task = service->GetTask(task_id);
@@ -3235,12 +3560,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        AutomationScheduleIsBrowserOwnedAndBoundToTask) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
 
   const std::string task_id = content::EvalJs(panel, R"JS(
     (async () => {
@@ -3252,10 +3577,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
 
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task);
@@ -3281,12 +3606,13 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        AutomationRouteCannotGrantOneShotActionPermissions) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  AegisAgentService* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   for (int workflow : {2, 3}) {
     const std::string task_id = content::EvalJs(panel, content::JsReplace(R"JS(
@@ -3325,17 +3651,18 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
   chrome::AddTabAt(browser(), other_url, -1, true);
   ASSERT_TRUE(content::WaitForLoadStop(
-      browser()->tab_strip_model()->GetActiveWebContents()));
+      browser()->GetTabStripModel()->GetActiveWebContents()));
   const int32_t active_tab =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
   ASSERT_NE(source_tab, active_tab);
   constexpr char kModelBase[] = "http://127.0.0.1:8765/v1";
   const GURL endpoint("http://127.0.0.1:8765/v1/responses");
-  PrefService* prefs = browser()->profile()->GetPrefs();
+  PrefService* prefs = browser()->GetProfile()->GetPrefs();
   prefs->SetString(aegis::prefs::kModelProvider, "openai");
   prefs->SetString(aegis::prefs::kModelBaseUrl, kModelBase);
   prefs->SetString(aegis::prefs::kModelName, "fixture-model");
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   base::test::TestFuture<bool> storage_loaded;
   service->FlushTaskStoreForTesting(storage_loaded.GetCallback());
@@ -3458,11 +3785,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   constexpr char kModelBase[] = "http://127.0.0.1:8765/v1";
   const GURL endpoint("http://127.0.0.1:8765/v1/responses");
-  PrefService* prefs = browser()->profile()->GetPrefs();
+  PrefService* prefs = browser()->GetProfile()->GetPrefs();
   prefs->SetString(aegis::prefs::kModelProvider, "openai");
   prefs->SetString(aegis::prefs::kModelBaseUrl, kModelBase);
   prefs->SetString(aegis::prefs::kModelName, "fixture-model");
-  AegisAgentService* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   base::test::TestFuture<bool> storage_loaded;
   service->FlushTaskStoreForTesting(storage_loaded.GetCallback());
@@ -3568,11 +3896,12 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ExplicitPageGoalRejectsDeniedWorkflowHints) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   const GURL target = embedded_test_server()->GetURL("/title1.html");
   for (int workflow_hint : {1, 2, 3}) {
@@ -3604,7 +3933,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   net::test_server::ControllableHttpResponse pending(embedded_test_server(),
                                                     "/slow-page-evidence");
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
@@ -3620,7 +3949,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS", target.spec())).ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
   pending.WaitForRequest();
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task);
@@ -3714,12 +4044,13 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        PageSummaryFallbackPreservesEvidenceAsPartial) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   const GURL endpoint("https://api.openai.com/v1/responses");
   // 分别覆盖完成参数错误、必需工具错误以及无法解析的模型响应。
@@ -3843,12 +4174,13 @@ IN_PROC_BROWSER_TEST_F(
         return response;
       }));
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL page_url = embedded_test_server()->GetURL("/translation-review");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   base::test::TestFuture<bool> storage;
   service->FlushTaskStoreForTesting(storage.GetCallback());
@@ -4361,12 +4693,13 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
         return response;
       }));
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL target = embedded_test_server()->GetURL("/empty-translation");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
+  auto* service =
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   base::test::TestFuture<bool> storage;
   service->FlushTaskStoreForTesting(storage.GetCallback());
@@ -4449,7 +4782,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 IN_PROC_BROWSER_TEST_F(
     AegisAgentBrowserTest,
     Bookmark500CompletionAndFallbackUseVerifiedClassificationInVisibleResult) {
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   ConfigureAgentModel(profile);
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   auto* model = BookmarkModelFactory::GetForBrowserContext(profile);
@@ -4511,7 +4844,7 @@ IN_PROC_BROWSER_TEST_F(
   base::test::TestFuture<bool> storage;
   service->FlushTaskStoreForTesting(storage.GetCallback());
   ASSERT_TRUE(storage.Get());
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   const GURL endpoint("https://api.openai.com/v1/responses");
   for (bool malformed_final : {false, true}) {
     SCOPED_TRACE(malformed_final ? "两次坏格式回退" : "模型伪造分类摘要");
@@ -4701,7 +5034,7 @@ IN_PROC_BROWSER_TEST_F(
       return visible.is_ok() && visible.ExtractBool();
     }));
     EXPECT_EQ(snapshot_bookmarks(), original_bookmarks);
-    EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+    EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
     EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), GURL("about:blank"));
   }
 }
@@ -4709,13 +5042,13 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ChinesePunctuationTerminatesExplicitUrl) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   const GURL current_url = embedded_test_server()->GetURL("/title2.html");
   const GURL target_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), current_url));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
 
   const std::string task_id =
       content::EvalJs(panel, content::JsReplace(R"JS(
@@ -4732,18 +5065,18 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
           .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
   ASSERT_TRUE(base::test::RunUntil([&]() {
-    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
+    return browser()->GetTabStripModel()->count() == initial_tab_count + 1 &&
            browser()->GetActiveTabInterface()->GetURL() == target_url;
   }));
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        BareWwwDomainOpensHttpsTargetWithoutSearching) {
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
 
   const std::string task_id = content::EvalJs(panel, R"JS(
     (async () => {
@@ -4755,9 +5088,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
-  ASSERT_EQ(browser()->tab_strip_model()->count(), initial_tab_count + 1);
+  ASSERT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count + 1);
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task);
@@ -4770,11 +5103,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        BrowserStewardStartsWithoutOpeningWebPage) {
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
 
   const std::string task_id = content::EvalJs(panel, R"JS(
     (async () => {
@@ -4788,24 +5121,24 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
 
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return service->task_count_for_testing() == 1u; }));
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
   EXPECT_TRUE(service->MostRecentTask()->scope().allowed_origins.empty());
 }
 
 IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
                        ModelCanCorrectGenericGoalToBrowserOnlyWorkflow) {
-  ConfigureAgentModel(browser()->profile());
+  ConfigureAgentModel(browser()->GetProfile());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
   chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
   content::WebContents* panel = ShowAgentPanel(browser());
   ASSERT_TRUE(panel);
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   AgentGoalRoute route;
   route.workflow = AgentWorkflowKind::kBrowserSteward;
@@ -4823,7 +5156,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
-  EXPECT_EQ(browser()->tab_strip_model()->count(), initial_tab_count);
+  EXPECT_EQ(browser()->GetTabStripModel()->count(), initial_tab_count);
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task);
   EXPECT_TRUE(task->scope().allowed_origins.empty());
@@ -4844,13 +5177,13 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       embedded_test_server()->GetURL("/title1.html"));
   ASSERT_TRUE(entry_url.is_valid());
 
-  const int initial_tab_count = browser()->tab_strip_model()->count();
+  const int initial_tab_count = browser()->GetTabStripModel()->count();
   chrome::AddTabAt(browser(), entry_url, -1, true);
   ASSERT_TRUE(base::test::RunUntil([&]() {
-    return browser()->tab_strip_model()->count() == initial_tab_count + 1 &&
+    return browser()->GetTabStripModel()->count() == initial_tab_count + 1 &&
            browser()->GetActiveTabInterface()->GetURL() == entry_url;
   }));
-  TabStripModel* tabs = browser()->tab_strip_model();
+  TabStripModel* tabs = browser()->GetTabStripModel();
   const int task_index = tabs->active_index();
   const tab_groups::TabGroupId task_group = tabs->AddToNewGroup({task_index});
   EXPECT_EQ(tabs->GetTabGroupForTab(task_index), task_group);
@@ -4912,9 +5245,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   const int32_t regular_tab_id =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
 
-  Browser* otr_browser = CreateIncognitoBrowser(browser()->profile());
+  Browser* otr_browser = CreateIncognitoBrowser(browser()->GetProfile());
   ASSERT_TRUE(otr_browser);
-  ASSERT_TRUE(otr_browser->profile()->IsOffTheRecord());
+  ASSERT_TRUE(otr_browser->GetProfile()->IsOffTheRecord());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(otr_browser, otr_first_url));
   ASSERT_TRUE(ui_test_utils::NavigateToURL(otr_browser, otr_second_url));
   const int32_t otr_tab_id =
@@ -4932,7 +5265,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   scope.model_destination.model = "fixture";
   AgentTask task("incognito-history-task", "inspect incognito session",
                  AgentMode::kAsk, std::move(scope));
-  AegisBrowserTools tools(otr_browser->profile());
+  AegisBrowserTools tools(otr_browser->GetProfile());
 
   AgentToolCall tab_call;
   tab_call.action_id = "list-incognito-tabs";
@@ -5006,7 +5339,7 @@ class AegisPrivacyProtectionBrowserTest : public InProcessBrowserTest {
     host_resolver()->AddRule("example.test", "127.0.0.1");
     InProcessBrowserTest::SetUpOnMainThread();
     AegisService* service =
-        AegisServiceFactory::GetForProfile(browser()->profile());
+        AegisServiceFactory::GetForProfile(browser()->GetProfile());
     ASSERT_TRUE(service);
     service->SetLinkSanitizeEnabled(true);
     service->SetPhishInterstitialEnabled(true);
@@ -5052,7 +5385,7 @@ class AegisIncognitoFailedRestartBrowserTest : public InProcessBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(AegisIncognitoGuardDisabledFeatureBrowserTest,
                        IncognitoStillStopsProcessWideRemoteControl) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   ASSERT_TRUE(regular_profile->IsRegularProfile());
   EXPECT_FALSE(base::FeatureList::IsEnabled(features::kAegisEnabled));
   EXPECT_EQ(AegisServiceFactory::GetForProfile(regular_profile), nullptr);
@@ -5075,7 +5408,7 @@ IN_PROC_BROWSER_TEST_F(AegisIncognitoGuardDisabledFeatureBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisIncognitoFailedRestartBrowserTest,
                        FailedExplicitRestartPreservesIncognitoLatch) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   AegisService* regular_service =
       AegisServiceFactory::GetForProfile(regular_profile);
   ASSERT_TRUE(regular_service);
@@ -5107,7 +5440,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), decorated_url));
   content::WebContents* contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   ASSERT_TRUE(contents);
   EXPECT_EQ(contents->GetLastCommittedURL(), clean_url);
   EXPECT_FALSE(contents->GetLastCommittedURL().query().contains("utm_source"));
@@ -5115,7 +5448,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 
   bool found_event = false;
   AegisService* service =
-      AegisServiceFactory::GetForProfile(browser()->profile());
+      AegisServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   for (const PrivacyEvent& event : service->RecentPrivacyEvents()) {
     if (event.kind != "param") {
@@ -5134,12 +5467,12 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        IncognitoNavigationEventsStayInIncognitoService) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  Browser* incognito_browser = CreateIncognitoBrowser(browser()->profile());
+  Browser* incognito_browser = CreateIncognitoBrowser(browser()->GetProfile());
   ASSERT_TRUE(incognito_browser);
-  Profile* incognito_profile = incognito_browser->profile();
+  Profile* incognito_profile = incognito_browser->GetProfile();
   ASSERT_TRUE(incognito_profile->IsIncognitoProfile());
   AegisService* regular_service =
-      AegisServiceFactory::GetForProfile(browser()->profile());
+      AegisServiceFactory::GetForProfile(browser()->GetProfile());
   AegisService* incognito_service =
       AegisServiceFactory::GetForProfile(incognito_profile);
   ASSERT_TRUE(regular_service);
@@ -5167,7 +5500,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        IncognitoStopsAndBlocksProcessWideAiControl) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   AegisService* regular_service =
       AegisServiceFactory::GetForProfile(regular_profile);
   ASSERT_TRUE(regular_service);
@@ -5185,7 +5518,8 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
   EXPECT_FALSE(
       regular_profile->GetPrefs()->GetBoolean(prefs::kAiControlEnabled));
 
-  ASSERT_TRUE(AegisServiceFactory::GetForProfile(incognito_browser->profile()));
+  ASSERT_TRUE(
+      AegisServiceFactory::GetForProfile(incognito_browser->GetProfile()));
   CloseBrowserSynchronously(incognito_browser);
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return !regular_profile->HasPrimaryOTRProfile(); }));
@@ -5206,11 +5540,11 @@ IN_PROC_BROWSER_TEST_F(
     AegisPrivacyProtectionBrowserTest,
     RegularAegisUiRefreshesAfterDelayedIncognitoDestruction) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   ASSERT_TRUE(
       ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
   content::WebContents* regular_contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   ASSERT_TRUE(regular_contents);
   ASSERT_TRUE(base::test::RunUntil([&]() {
     return content::EvalJs(regular_contents, R"JS(
@@ -5231,7 +5565,7 @@ IN_PROC_BROWSER_TEST_F(
 
   Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
-  Profile* incognito_profile = incognito_browser->profile();
+  Profile* incognito_profile = incognito_browser->GetProfile();
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       incognito_browser, embedded_test_server()->GetURL("/title1.html")));
   std::unique_ptr<content::WebContents> delayed_otr_contents =
@@ -5280,7 +5614,7 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     AegisPrivacyProtectionBrowserTest,
     SecondProfileIncognitoStopsAiControlBeforeBrowserOrRendererExists) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   AegisService* regular_service =
       AegisServiceFactory::GetForProfile(regular_profile);
   ASSERT_TRUE(regular_service);
@@ -5311,21 +5645,20 @@ IN_PROC_BROWSER_TEST_F(
 
 IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        ForcedIncognitoKeepsAegisSettingsCommandEnabled) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   IncognitoModePrefs::SetAvailability(
       regular_profile->GetPrefs(), policy::IncognitoModeAvailability::kForced);
 
   Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
-  ASSERT_TRUE(incognito_browser->profile()->IsPrimaryOTRProfile());
-  EXPECT_TRUE(incognito_browser->command_controller()->IsCommandEnabled(
-      IDC_SHOW_AEGIS));
+  ASSERT_TRUE(incognito_browser->GetProfile()->IsPrimaryOTRProfile());
+  EXPECT_TRUE(chrome::IsCommandEnabled(incognito_browser, IDC_SHOW_AEGIS));
 }
 
 IN_PROC_BROWSER_TEST_F(
     AegisPrivacyProtectionBrowserTest,
     IncognitoStopsRemoteDebuggingNotOwnedByTheProfileService) {
-  Profile* regular_profile = browser()->profile();
+  Profile* regular_profile = browser()->GetProfile();
   AegisService* regular_service =
       AegisServiceFactory::GetForProfile(regular_profile);
   ASSERT_TRUE(regular_service);
@@ -5353,7 +5686,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
       embedded_test_server()->GetURL("paypal-secure-login.com", "/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), phishing_url));
   content::WebContents* contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   ASSERT_TRUE(contents);
   auto* helper =
       security_interstitials::SecurityInterstitialTabHelper::FromWebContents(
@@ -5376,7 +5709,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 
   bool found_event = false;
   AegisService* service =
-      AegisServiceFactory::GetForProfile(browser()->profile());
+      AegisServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
   for (const PrivacyEvent& event : service->RecentPrivacyEvents()) {
     found_event |= event.kind == "phish" &&
@@ -5390,7 +5723,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
   for (bool refresh_before_destroy : {false, true}) {
     auto button = std::make_unique<AegisToolbarButton>(browser());
     auto page = content::WebContents::Create(
-        content::WebContents::CreateParams(browser()->profile()));
+        content::WebContents::CreateParams(browser()->GetProfile()));
     auto page_lifetime = page->GetWeakPtr();
     button->Update(page.get());
     page.reset();
@@ -5408,11 +5741,11 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        ToolbarSurvivesRepeatedBrowserWindowClose) {
   ASSERT_TRUE(embedded_test_server()->Start());
   for (int iteration = 0; iteration < 3; ++iteration) {
-    Browser* extra = CreateBrowser(browser()->profile());
+    Browser* extra = CreateBrowser(browser()->GetProfile());
     ASSERT_TRUE(ui_test_utils::NavigateToURL(
         extra, embedded_test_server()->GetURL("/title1.html")));
     auto page_lifetime =
-        extra->tab_strip_model()->GetActiveWebContents()->GetWeakPtr();
+        extra->GetTabStripModel()->GetActiveWebContents()->GetWeakPtr();
     ASSERT_TRUE(page_lifetime);
     CloseBrowserSynchronously(extra);
     EXPECT_FALSE(page_lifetime);
@@ -5442,7 +5775,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
       browser(),
       embedded_test_server()->GetURL("example.test", "/unicode-salting")));
   content::WebContents* contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
+      browser()->GetTabStripModel()->GetActiveWebContents();
   auto* helper =
       security_interstitials::SecurityInterstitialTabHelper::FromWebContents(
           contents);

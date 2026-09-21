@@ -45,7 +45,7 @@ function resolveDefaultChromiumRoot() {
   } catch {
     // The marker is optional; match scripts/common.sh when it is absent.
   }
-  return join(homedir(), 'Projects', 'GCSA-aegis-chromium');
+  return join(homedir(), 'Projects', 'GCSA-aegis-build', 'macos');
 }
 
 const DEFAULT_DEV_OUT = process.env.OUT_DIR?.trim()

@@ -69,6 +69,20 @@ bool AgentTaskScope::IsValid() const {
                           [](int32_t tab_id) { return tab_id <= 0; }) ||
       allowed_tab_ids.size() > static_cast<size_t>(budgets.max_tabs) ||
       tab_metadata_window_id < 0 ||
+      (selected_tab_group &&
+       (selected_pages_research || restrict_to_current_page ||
+        tab_metadata_window_id != 0 || !allowed_origins.empty() ||
+        allowed_tab_ids.empty() || allowed_tab_ids.size() > 10u ||
+        allowed_tools != base::flat_set<std::string>{"tab.list", "tab.group"} ||
+        allowed_data_classes !=
+            base::flat_set<AgentDataClass>{
+                AgentDataClass::kBrowserMetadata})) ||
+      (selected_pages_research &&
+       (restrict_to_current_page || allowed_tab_ids.size() < 3u ||
+        allowed_tab_ids.size() > 10u ||
+        allowed_tools != base::flat_set<std::string>{"page.observe"})) ||
+      (restrict_to_current_page &&
+       (allowed_tab_ids.size() != 1u || budgets.max_tabs != 1)) ||
       (tab_metadata_window_id > 0 &&
        (!AllowsTool("tab.list") ||
         !AllowsDataClass(AgentDataClass::kBrowserMetadata)))) {
@@ -94,6 +108,14 @@ bool AgentTaskScope::AllowsOrigin(const GURL& url) const {
   return std::ranges::find(allowed_origins, requested) != allowed_origins.end();
 }
 
+bool AgentTaskScope::AllowsPageDestination(
+    const GURL& url,
+    const std::optional<GURL>& selected_url) const {
+  return AllowsOrigin(url) &&
+         (!(restrict_to_current_page || selected_pages_research) ||
+          (selected_url && selected_url->is_valid() && url == *selected_url));
+}
+
 bool AgentTaskScope::AllowsTool(const std::string& tool_name) const {
   return allowed_tools.contains(tool_name);
 }
@@ -106,6 +128,9 @@ bool AgentTaskScope::AllowsDataClass(AgentDataClass data_class) const {
 bool AgentTaskScope::IsNoBroaderThan(const AgentTaskScope& other) const {
   if (!budgets.IsNoBroaderThan(other.budgets) ||
       model_destination != other.model_destination ||
+      (other.restrict_to_current_page && !restrict_to_current_page) ||
+      (other.selected_pages_research && !selected_pages_research) ||
+      (selected_tab_group != other.selected_tab_group) ||
       !IsSubset(allowed_tab_ids, other.allowed_tab_ids) ||
       (tab_metadata_window_id != 0 &&
        tab_metadata_window_id != other.tab_metadata_window_id) ||

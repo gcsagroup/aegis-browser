@@ -1,0 +1,294 @@
+From 119925ad319cd1e54ab23e94b0a84b928c060f3d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 21 Sep 2026 18:27:51 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=91=E5=AE=9A?=
+ =?UTF-8?q?=E5=BD=93=E5=89=8D=E9=A1=B5=E5=85=A5=E5=8F=A3=E5=B9=B6=E7=BA=A6?=
+ =?UTF-8?q?=E6=9D=9F=E6=A8=A1=E5=9E=8B=E6=8D=A2=E7=AB=99=202.0.054?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 39 +++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 79 ++++++++++++++++++-
+ chrome/browser/aegis/agent/agent_planner.h    |  3 +
+ .../aegis/agent/agent_planner_unittest.cc     | 48 +++++++++++
+ .../aegis_agent/aegis_agent_page_handler.cc   | 19 +----
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 6 files changed, 171 insertions(+), 21 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 42fd4ebbcb..2b92e7dc9a 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -2910,6 +2910,45 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_EQ(task->scope().tab_metadata_window_id, 0);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       ModifiedCurrentReleasePageRejectsUnrelatedModelEntry) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->GetProfile());
++  const GURL page_url = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
++  auto* service =
++      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
++  ASSERT_TRUE(service);
++  AgentGoalRoute route;
++  route.workflow = AgentWorkflowKind::kSafeDownload;
++  route.entry_kind = AgentGoalEntryKind::kOpenUrl;
++  route.target = "https://www.electronjs.org/latest";
++  service->SetGoalRouteForTesting(route);
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const int count = browser()->GetTabStripModel()->count();
++  const int32_t tab_id =
++      browser()->GetActiveTabInterface()->GetHandle().raw_value();
++  const std::string id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
++          '从当前官方合成发布页下载适合本机 macOS arm64 的测试安装包，核验页面公布的 SHA-256。只下载，不打开、不执行、不安装。',
++          1, 0, [], 0);
++      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
++    })()
++  )JS").ExtractString();
++  const auto* task = service->GetTask(id);
++  ASSERT_TRUE(task) << id;
++  EXPECT_EQ(browser()->GetTabStripModel()->count(), count);
++  EXPECT_EQ(browser()->GetActiveTabInterface()->GetURL(), page_url);
++  EXPECT_EQ(task->scope().allowed_tab_ids.size(), 1u);
++  EXPECT_TRUE(task->scope().AllowsTab(tab_id));
++  EXPECT_TRUE(task->scope().AllowsOrigin(page_url));
++  EXPECT_FALSE(task->scope().AllowsOrigin(GURL(route.target)));
++  EXPECT_TRUE(task->scope().AllowsTool("download.start"));
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        CurrentPageDownloadReviewCannotTransferOrReadBookmarks) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 3f1c1d7274..731c4eaa70 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -787,6 +787,77 @@ bool GoalRequestsCurrentPageClick(std::string_view user_goal) {
+ 
+ }  // namespace
+ 
++bool AgentGoalRefersToCurrentPage(std::string_view goal) {
++  const std::string requested = RequestedGoalText(goal);
++  // 显式网址沿用原有优先级；窗口列表仍走原生元数据入口。
++  if (GoalContainsAny(requested, {"https://", "http://", "www."}) ||
++      AgentGoalRequestsWindowTabMetadata(goal)) {
++    return false;
++  }
++  // 指代只在同一名词短语内成立，不跨标点、动作或过去/未来页面限定。
++  // 允许描述词，不枚举“官方合成发布”等具体页面名称。
++  constexpr std::string_view markers[] = {
++      "当前", "當前", "目前", "这个", "這個", "this ", "current ",
++      "currently open ", "active "};
++  for (std::string_view marker : markers) {
++    for (size_t start = requested.find(marker); start != std::string::npos;
++         start = requested.find(marker, start + marker.size())) {
++      if (base::IsAsciiAlpha(marker.front()) && start > 0 &&
++          base::IsAsciiAlphaNumeric(requested[start - 1])) {
++        continue;
++      }
++      const std::string_view prefix = std::string_view(requested).substr(0, start);
++      // 明确要求先去别站或上网搜索时，后文的“当前页”不取消该请求。
++      if (GoalContainsAny(prefix,
++                          {"去", "前往", "访问", "訪問", "打开", "打開",
++                           "跳转", "跳轉", "上网搜索", "上網搜尋", "全网搜索",
++                           "全網搜尋", "open ", "visit ", "go to ",
++                           "search the web", "search for "}) ||
++          (NamedSiteForGoal(prefix) && GoalRequestsNamedSiteSearch(prefix))) {
++        continue;
++      }
++      const size_t begin = start + marker.size();
++      const std::string_view phrase = std::string_view(requested).substr(begin);
++      for (std::string_view noun : {"页", "頁", "网站", "網站", "page", "tab",
++                                   "website"}) {
++        const size_t end = phrase.find(noun);
++        if (end == std::string_view::npos || end > 72u) {
++          continue;
++        }
++        if (base::IsAsciiAlpha(noun.front()) &&
++            ((end > 0 && base::IsAsciiAlphaNumeric(phrase[end - 1])) ||
++             (end + noun.size() < phrase.size() &&
++              base::IsAsciiAlphaNumeric(phrase[end + noun.size()])))) {
++          continue;
++        }
++        const std::string_view modifiers = phrase.substr(0, end);
++        if (!GoalContainsAny(
++                modifiers,
++                {"。", "，", "；", "！", "？", ".", ",", ";", "!", "?", "\n",
++                 "\r", "：", ":", "去", "访问", "訪問", "搜索", "搜尋", "查找",
++                 "总结", "總結", "翻译", "翻譯", "并", "並",
++                 "然后", "然後", "之前", "以前", "过去", "過去", "上次", "下次",
++                 "版本", "时间", "時間", " and ", " then ", "previous", "last ",
++                 "next ", "version", "visit ", "search "})) {
++          return true;
++        }
++      }
++    }
++  }
++  // 保留没有修饰词的旧入口；先排除明确外站请求，避免泛指正文反向抢占。
++  if (GoalContainsAny(requested,
++                      {"去", "前往", "访问", "訪問", "打开", "打開", "上网搜索",
++                       "上網搜尋", "open ", "visit ", "go to ", "search for "}) ||
++      (NamedSiteForGoal(requested) && GoalRequestsNamedSiteSearch(requested))) {
++    return false;
++  }
++  return GoalContainsAny(requested,
++                          {"本页", "本頁", "本网页", "本網頁", "本页面", "本頁面",
++                           "页面内容", "网页内容", "頁面內容", "網頁內容",
++                           "page content", "核对订单", "核對訂單",
++                           "review the order", "review this order"});
++}
++
+ bool AgentGoalRequestsDownloadTransfer(std::string_view goal) {
+   return GoalStartsDownloadCommand(goal);
+ }
+@@ -844,7 +915,13 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
+                                               AgentGoalRoute route) {
+   const std::string requested = RequestedGoalText(user_goal);
+   route.workflow = ConstrainWorkflowToUserIntent(user_goal, route.workflow);
+-  if (route.workflow == AgentWorkflowKind::kPageInteraction) {
++  if (AgentGoalRefersToCurrentPage(user_goal) ||
++      route.workflow == AgentWorkflowKind::kPageInteraction) {
++    // 浏览器拥有当前页的绑定权；模型不能把该入口替换成网址或搜索。
++    if (route.workflow == AgentWorkflowKind::kBrowserSteward &&
++        !GoalRequestsBrowserData(requested)) {
++      route.workflow = AgentWorkflowKind::kResearch;
++    }
+     route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
+     route.target.clear();
+     return route;
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index 58e9b6f15b..179c443869 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -64,6 +64,9 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
+ // 是否明确要求开始文件传输，不含仅寻找来源或讨论下载的目标。
+ bool AgentGoalRequestsDownloadTransfer(std::string_view goal);
+ 
++// 当前页指代统一用于入口选择及模型返回校验，显式网址优先。
++bool AgentGoalRefersToCurrentPage(std::string_view goal);
++
+ // 本任务限定优先于窗口元数据入口，冲突目标取较小范围。
+ bool AgentGoalRequestsWindowTabMetadata(std::string_view goal);
+ 
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index eb95f4a4af..987fd74907 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -507,6 +507,54 @@ TEST(AegisAgentPlannerTest, WindowMetadataBindingComesOnlyFromBrowserScope) {
+   EXPECT_EQ(plan->scope.tab_metadata_window_id, 0);
+ }
+ 
++TEST(AegisAgentPlannerTest, CurrentPageModifiersCannotRouteToAnotherSite) {
++  for (const auto* goal : {
++           "从当前官方合成发布页下载适合本机 macOS arm64 的测试安装包，核验页面公布的 SHA-256。只下载，不打开、不执行、不安装。",
++           "从当前官方发布页下载测试安装包", "从当前官方下载页下载",
++           "总结当前产品详情页面", "Download from the current official download page",
++           "从这个软件的官方发布页下载", "总结目前正在浏览的网页",
++           "從當前官方合成發佈頁下載測試檔案", "總結這個產品詳情頁",
++           "总结本页", "Download from the current official release page",
++           "Summarize this official product page", "Read the currently open tab",
++           "Summarize the active product page", "帮我总结下页面内容"}) {
++    SCOPED_TRACE(goal);
++    EXPECT_TRUE(AgentGoalRefersToCurrentPage(goal));
++    for (const auto entry : {AgentGoalEntryKind::kOpenUrl,
++                             AgentGoalEntryKind::kWebSearch}) {
++      AgentGoalRoute route;
++      route.workflow = AgentWorkflowKind::kResearch;
++      route.entry_kind = entry;
++      route.target = "https://www.electronjs.org/latest";
++      const auto constrained = ConstrainGoalRouteToUserIntent(goal, route);
++      EXPECT_EQ(constrained.entry_kind, AgentGoalEntryKind::kBrowserOnly);
++      EXPECT_TRUE(constrained.target.empty());
++    }
++  }
++}
++
++TEST(AegisAgentPlannerTest, CurrentPageBindingPreservesExplicitOtherTargets) {
++  for (const auto* goal : {
++           "打开 https://example.com/releases 并总结当前页面",
++           "从 www.example.com 下载并核对当前页面", "去 GitHub 搜索当前官方发布页",
++           "在京东搜索当前产品页面", "上网搜索当前官方发布页",
++           "不要读取当前官方发布页；请搜索浏览器论文",
++           "当前版本的官方发布页是什么", "当前时间是多少，搜索官方发布页",
++           "总结当前之前打开的页面", "总结过去打开的发布页",
++           "Search for the current official release page",
++           "Visit GitHub and summarize this page", "Read the current previous page",
++           "Find the current version on the release page",
++           "Summarize this wallpaper", "列出当前窗口的标签页标题"}) {
++    SCOPED_TRACE(goal);
++    EXPECT_FALSE(AgentGoalRefersToCurrentPage(goal));
++  }
++  AgentGoalRoute route;
++  route.entry_kind = AgentGoalEntryKind::kOpenUrl;
++  route.target = "https://example.com/releases";
++  EXPECT_EQ(ConstrainGoalRouteToUserIntent(
++                "打开 https://example.com/releases 并总结当前页面", route).target,
++            route.target);
++}
++
+ TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {
+   std::string error;
+   std::optional<AgentGoalRoute> native = ParseAndValidateGoalRoute(
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 39e5c1fc98..0aba3d4a4f 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -160,23 +160,6 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
+   return workflow != AgentWorkflowKind::kBrowserSteward;
+ }
+ 
+-// Resolving a deictic page reference belongs to the browser, not the model.
+-// This keeps common commands reliable and prevents an intent router from
+-// turning "this page" into a browser-metadata or web-search task.
+-bool GoalRefersToCurrentPage(std::string_view goal) {
+-  const std::string lower_goal = base::ToLowerASCII(goal);
+-  constexpr std::string_view kCurrentPageReferences[] = {
+-      "当前页",           "当前页面",  "当前网页",     "这个页面",
+-      "这个网页",         "本页面",    "本网页",       "页面内容",
+-      "网页内容",         "this page", "current page", "page content",
+-      "the page content", "核对订单",  "核對訂單",     "review the order",
+-      "review this order"};
+-  return std::ranges::any_of(
+-      kCurrentPageReferences, [&lower_goal](std::string_view reference) {
+-        return lower_goal.find(reference) != std::string::npos;
+-      });
+-}
+-
+ bool IsValidSchedule(AgentMode mode, int schedule_interval_minutes) {
+   if (mode != AgentMode::kAutomate) {
+     return schedule_interval_minutes == 0;
+@@ -759,7 +742,7 @@ void AegisAgentPageHandler::CreateTask(
+     const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(resolved_goal);
+     const bool use_current_page =
+         !requested_origins && !explicit_url &&
+-        (GoalRefersToCurrentPage(resolved_goal) ||
++        (aegis::agent::AgentGoalRefersToCurrentPage(resolved_goal) ||
+          resolved_workflow == AgentWorkflowKind::kPageInteraction);
+     const bool browser_only = !requested_origins && !explicit_url &&
+                               !use_current_page &&
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index f954688672..aa9c7b2be1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.53";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (053)";
++inline constexpr char kProductVersion[] = "2.0.0.54";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (054)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

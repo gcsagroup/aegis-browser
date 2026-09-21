@@ -1,0 +1,1269 @@
+From 0b3c1b66e883b750273b5ddbb00780f0491efedf Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 01:30:49 +0800
+Subject: [PATCH] =?UTF-8?q?feat:=20=E5=8F=AF=E4=BF=A1=E4=BB=BB=E5=8A=A1?=
+ =?UTF-8?q?=E7=94=9F=E5=91=BD=E5=91=A8=E6=9C=9F=E4=B8=8E=E7=BB=93=E6=9E=9C?=
+ =?UTF-8?q?=E6=A0=B8=E9=AA=8C=E9=A6=96=E6=89=B9=E6=95=B4=E5=90=88=20Ver=20?=
+ =?UTF-8?q?2.0=20(001)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   2 +
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 138 +++++++----
+ .../browser/aegis/agent/aegis_actor_bridge.h  |   5 +
+ .../aegis/agent/aegis_agent_service.cc        | 111 ++++++---
+ .../browser/aegis/agent/aegis_agent_service.h |   2 +-
+ .../agent/aegis_agent_service_unittest.cc     | 221 +++++++++++++++++-
+ .../aegis/agent/agent_core_unittest.cc        | 158 +++++++++++++
+ .../aegis/agent/agent_result_verifier.cc      | 107 ++++++++-
+ chrome/browser/resources/aegis_agent/agent.ts |  51 +++-
+ .../ui/webui/help/aegis_github_update.h       |   6 +-
+ 10 files changed, 717 insertions(+), 84 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index f870d8c223..c4475d01cf 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -317,6 +317,7 @@ test("aegis_agent_core_unittests") {
+     ":agent_core",
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
++    "//crypto",
+     "//sql",
+     "//testing/gtest",
+     "//url",
+@@ -374,6 +375,7 @@ test("aegis_browser_unittests") {
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
++    "//crypto",
+     "//net",
+     "//services/data_decoder/public/cpp:test_support",
+     "//services/network:test_support",
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 45938ca0eb..7a49030cc9 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -11,6 +11,7 @@
+ #include <vector>
+ 
+ #include "base/check_deref.h"
++#include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+@@ -44,12 +45,16 @@
+ #include "chrome/common/actor.mojom.h"
+ #include "chrome/common/actor/action_result.h"
+ #include "chrome/common/actor/actor_constants.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/security_text.h"
+ #include "components/actor/core/task_source_info.h"
+ #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
+ #include "components/tabs/public/tab_handle_factory.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "content/public/browser/web_contents.h"
+ #include "crypto/sha2.h"
+ #include "url/gurl.h"
+@@ -383,6 +388,16 @@ bool SameDocument(const AgentDocumentRef& left, const AgentDocumentRef& right) {
+          left.committed_url == right.committed_url;
+ }
+ 
++bool IsErrorPage(content::WebContents* contents) {
++  if (!contents || !contents->GetPrimaryMainFrame() ||
++      contents->GetPrimaryMainFrame()->IsErrorDocument()) {
++    return true;
++  }
++  const auto* entry = contents->GetController().GetLastCommittedEntry();
++  // 0也可能来自会话恢复；保留未知状态，不把它伪造成200或一律判失败。
++  return entry && entry->GetHttpStatusCode() >= 400;
++}
++
+ std::string BoundedText(std::string_view value, size_t remaining) {
+   // 先保持原有读取上限，再清理副本，不能为去混淆扫描整个超长 DOM 节点。
+   return NormalizeSecurityText(
+@@ -905,9 +920,17 @@ void AegisActorBridge::AttachBlankMonitorTab(
+ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
+                                        const AgentToolCall& call,
+                                        ToolResultCallback callback) {
++  if (base::StartsWith(call.tool_name, "page.webmcp.") &&
++      !base::FeatureList::IsEnabled(aegis::features::kAegisAgentWebMcp)) {
++    std::move(callback).Run(ErrorResult(call.action_id,
++                                        AgentErrorCode::kToolUnavailable,
++                                        "WebMCP is disabled"));
++    return;
++  }
+   actor::ActorTask* actor_task = GetActorTask(agent_task_id);
+   auto scope_it = task_scopes_.find(agent_task_id);
+-  if (!actor_task || scope_it == task_scopes_.end()) {
++  if (!actor_task || scope_it == task_scopes_.end() ||
++      !scope_it->second.AllowsTool(call.tool_name)) {
+     std::move(callback).Run(ErrorResult(call.action_id,
+                                         AgentErrorCode::kToolUnavailable,
+                                         "actor task is unavailable"));
+@@ -1135,18 +1158,26 @@ void AegisActorBridge::ObservePage(const std::string& agent_task_id,
+                                         "tab disappeared before observation"));
+     return;
+   }
++  if (IsErrorPage(tab->GetContents())) {
++    std::move(callback).Run(
++        ErrorResult(std::move(action_id), AgentErrorCode::kVerificationFailed,
++                    "page source is an error document or HTTP error"));
++    return;
++  }
+   actor_service_->RequestTabObservation(
+       *tab, actor_task->id(), std::nullopt,
+-      base::BindOnce(&AegisActorBridge::OnObservation,
+-                     weak_ptr_factory_.GetWeakPtr(), agent_task_id,
+-                     std::move(action_id), tab_id, std::move(expected_url),
+-                     post_action, std::move(callback)));
++      base::BindOnce(
++          &AegisActorBridge::OnObservation, weak_ptr_factory_.GetWeakPtr(),
++          agent_task_id, std::move(action_id), tab_id,
++          tab->GetContents()->GetPrimaryMainFrame()->GetWeakDocumentPtr(),
++          std::move(expected_url), post_action, std::move(callback)));
+ }
+ 
+ void AegisActorBridge::OnObservation(
+     const std::string& agent_task_id,
+     std::string action_id,
+     int32_t tab_id,
++    content::WeakDocumentPtr expected_document,
+     std::optional<GURL> expected_url,
+     bool post_action,
+     ToolResultCallback callback,
+@@ -1155,6 +1186,9 @@ void AegisActorBridge::OnObservation(
+   auto scope_it = task_scopes_.find(agent_task_id);
+   if (!GetActorTask(agent_task_id) || !tab || tab->GetProfile() != profile_ ||
+       scope_it == task_scopes_.end() ||
++      !expected_document.AsRenderFrameHostIfValid() ||
++      expected_document.AsRenderFrameHostIfValid() !=
++          tab->GetContents()->GetPrimaryMainFrame() ||
+       !scope_it->second.AllowsOrigin(tab->GetURL()) ||
+       (expected_url && tab->GetURL() != *expected_url)) {
+     std::move(callback).Run(ErrorResult(std::move(action_id),
+@@ -1162,6 +1196,12 @@ void AegisActorBridge::OnObservation(
+                                         "page changed during observation"));
+     return;
+   }
++  if (IsErrorPage(tab->GetContents())) {
++    std::move(callback).Run(
++        ErrorResult(std::move(action_id), AgentErrorCode::kVerificationFailed,
++                    "observed source is an error document or HTTP error"));
++    return;
++  }
+   // 专用后台监控只使用语义节点，不消费截图。截图失败不能抹掉已经成功
+   // 提取的正文；仍要求真实 APC、后续文档身份和范围校验全部通过。
+   const bool semantic_monitor =
+@@ -1268,6 +1308,10 @@ void AegisActorBridge::OnObservation(
+   result.message = post_action ? "action verified by a fresh page observation"
+                                : "page observation completed";
+   result.value.Set("tab_id", tab_id);
++  result.value.Set("is_error_document", false);
++  const auto* entry =
++      tab->GetContents()->GetController().GetLastCommittedEntry();
++  result.value.Set("http_status", entry ? entry->GetHttpStatusCode() : 0);
+   const std::string safe_observed_url = SafeObservationUrl(observed_url.spec());
+   result.value.Set("url", safe_observed_url);
+   result.value.Set("title", BoundedText(base::UTF16ToUTF8(tab->GetTitle()),
+@@ -1285,51 +1329,59 @@ void AegisActorBridge::OnObservation(
+   WebMcpDocument webmcp_document;
+   webmcp_document.document_token = document.document_token;
+   base::ListValue webmcp_tools;
+-  for (const optimization_guide::proto::ScriptTool& tool :
+-       page.main_frame_data().script_tools()) {
+-    std::optional<base::DictValue> schema =
+-        ParseSafeWebMcpSchema(tool.input_schema());
+-    if (!schema || !IsSafeToolName(tool.name()) ||
+-        !base::IsStringUTF8(tool.description()) ||
+-        tool.description().size() > 2048u) {
+-      continue;
++  const bool expose_webmcp =
++      base::FeatureList::IsEnabled(aegis::features::kAegisAgentWebMcp) &&
++      scope_it->second.AllowsTool("page.webmcp.list");
++  if (expose_webmcp) {
++    for (const optimization_guide::proto::ScriptTool& tool :
++         page.main_frame_data().script_tools()) {
++      std::optional<base::DictValue> schema =
++          ParseSafeWebMcpSchema(tool.input_schema());
++      if (!schema || !IsSafeToolName(tool.name()) ||
++          !base::IsStringUTF8(tool.description()) ||
++          tool.description().size() > 2048u) {
++        continue;
++      }
++      const std::string revision =
++          WebMcpRevision(document.document_token, tool);
++      const bool read_only =
++          tool.has_annotations() && tool.annotations().read_only();
++      base::DictValue exposed;
++      exposed.Set("name", tool.name());
++      exposed.Set("description", tool.description());
++      exposed.Set("input_schema", schema->Clone());
++      exposed.Set("tool_revision", revision);
++      exposed.Set("read_only", read_only);
++      exposed.Set("untrusted", true);
++      webmcp_tools.Append(std::move(exposed));
++      webmcp_document.tools.emplace(
++          tool.name(), WebMcpToolMetadata{.revision = revision,
++                                          .input_schema = std::move(*schema),
++                                          .read_only = read_only});
+     }
+-    const std::string revision = WebMcpRevision(document.document_token, tool);
+-    const bool read_only =
+-        tool.has_annotations() && tool.annotations().read_only();
+-    base::DictValue exposed;
+-    exposed.Set("name", tool.name());
+-    exposed.Set("description", tool.description());
+-    exposed.Set("input_schema", schema->Clone());
+-    exposed.Set("tool_revision", revision);
+-    exposed.Set("read_only", read_only);
+-    exposed.Set("untrusted", true);
+-    webmcp_tools.Append(std::move(exposed));
+-    webmcp_document.tools.emplace(
+-        tool.name(), WebMcpToolMetadata{.revision = revision,
+-                                        .input_schema = std::move(*schema),
+-                                        .read_only = read_only});
+   }
+   webmcp_documents_[agent_task_id][tab_id] = std::move(webmcp_document);
+   result.value.Set("webmcp_tools", std::move(webmcp_tools));
+ 
+   base::ListValue webmcp_results;
+-  for (const optimization_guide::proto::ScriptToolResult& tool_result :
+-       page.main_frame_data().script_tool_results()) {
+-    if (!IsSafeToolName(tool_result.tool_name())) {
+-      continue;
+-    }
+-    base::DictValue exposed;
+-    exposed.Set("name", tool_result.tool_name());
+-    exposed.Set("untrusted", true);
+-    if (std::optional<std::string> safe_result =
+-            SafeWebMcpResult(tool_result.result())) {
+-      exposed.Set("result", std::move(*safe_result));
+-      exposed.Set("result_omitted", false);
+-    } else {
+-      exposed.Set("result_omitted", true);
++  if (expose_webmcp && scope_it->second.AllowsTool("page.webmcp.invoke")) {
++    for (const optimization_guide::proto::ScriptToolResult& tool_result :
++         page.main_frame_data().script_tool_results()) {
++      if (!IsSafeToolName(tool_result.tool_name())) {
++        continue;
++      }
++      base::DictValue exposed;
++      exposed.Set("name", tool_result.tool_name());
++      exposed.Set("untrusted", true);
++      if (std::optional<std::string> safe_result =
++              SafeWebMcpResult(tool_result.result())) {
++        exposed.Set("result", std::move(*safe_result));
++        exposed.Set("result_omitted", false);
++      } else {
++        exposed.Set("result_omitted", true);
++      }
++      webmcp_results.Append(std::move(exposed));
+     }
+-    webmcp_results.Append(std::move(exposed));
+   }
+   result.value.Set("webmcp_results", std::move(webmcp_results));
+   base::DictValue evidence;
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+index 901d31c242..8e0e2f612f 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+@@ -18,6 +18,10 @@
+ 
+ class Profile;
+ 
++namespace content {
++class WeakDocumentPtr;
++}
++
+ namespace actor {
+ class ActorTask;
+ }  // namespace actor
+@@ -90,6 +94,7 @@ class AegisActorBridge {
+       const std::string& agent_task_id,
+       std::string action_id,
+       int32_t tab_id,
++      content::WeakDocumentPtr expected_document,
+       std::optional<GURL> expected_url,
+       bool post_action,
+       ToolResultCallback callback,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 40472f083f..265bd4abe8 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1122,8 +1122,9 @@ bool AegisAgentService::PauseTask(const std::string& task_id) {
+   auto request = model_request_ids_.find(task_id);
+   auto client = model_clients_.find(task_id);
+   if (request != model_request_ids_.end() && client != model_clients_.end()) {
+-    client->second->Cancel(request->second);
++    const auto request_id = request->second;
+     model_request_ids_.erase(request);
++    client->second->Cancel(request_id);
+   }
+   if (auto runtime = executions_.find(task_id); runtime != executions_.end()) {
+     runtime->second->needs_fresh_observation = TaskUsesActor(*task);
+@@ -1162,8 +1163,9 @@ bool AegisAgentService::BeginUserTakeover(const std::string& task_id) {
+   auto request = model_request_ids_.find(task_id);
+   auto client = model_clients_.find(task_id);
+   if (request != model_request_ids_.end() && client != model_clients_.end()) {
+-    client->second->Cancel(request->second);
++    const auto request_id = request->second;
+     model_request_ids_.erase(request);
++    client->second->Cancel(request_id);
+   }
+   policy_broker_.RevokeTaskApprovals(task_id);
+   return Transition(task_id, AgentTaskState::kUserTakeover,
+@@ -1234,11 +1236,16 @@ bool AegisAgentService::CancelTask(const std::string& task_id) {
+   if (!task || IsTerminalState(task->state())) {
+     return false;
+   }
++  // 先进入终态，再停止可能同步回调的模型与Actor，防止取消期间继续推进。
++  if (!Transition(task_id, AgentTaskState::kCancelled, "cancelled by user")) {
++    return false;
++  }
+   auto request = model_request_ids_.find(task_id);
+   auto client = model_clients_.find(task_id);
+   if (request != model_request_ids_.end() && client != model_clients_.end()) {
+-    client->second->Cancel(request->second);
++    const auto request_id = request->second;
+     model_request_ids_.erase(request);
++    client->second->Cancel(request_id);
+   }
+   if (TaskUsesActor(*task)) {
+     actor_bridge_.StopTask(task_id, /*completed=*/false);
+@@ -1254,12 +1261,10 @@ bool AegisAgentService::CancelTask(const std::string& task_id) {
+     monitor_scheduler_.Remove(monitor.monitor_id);
+   }
+   ScheduleMonitorTimer();
+-  const bool cancelled =
+-      Transition(task_id, AgentTaskState::kCancelled, "cancelled by user");
+-  if (cancelled && executions_.contains(task_id)) {
++  if (executions_.contains(task_id)) {
+     FinishRuntime(task_id, false, "task cancelled by user", std::nullopt);
+   }
+-  return cancelled;
++  return true;
+ }
+ 
+ void AegisAgentService::CancelAllForDisable() {
+@@ -1291,13 +1296,16 @@ bool AegisAgentService::CompleteTask(const std::string& task_id) {
+   if (!task || task->state() != AgentTaskState::kVerifying) {
+     return false;
+   }
++  if (!Transition(task_id, AgentTaskState::kCompleted,
++                  "browser verification passed")) {
++    return false;
++  }
+   if (TaskUsesActor(*task)) {
+     actor_bridge_.StopTask(task_id, /*completed=*/true);
+   }
+   policy_broker_.RevokeTaskApprovals(task_id);
+   browser_tools_.ForgetTask(task_id, /*preserve_bookmark_undo=*/true);
+-  return Transition(task_id, AgentTaskState::kCompleted,
+-                    "browser verification passed");
++  return true;
+ }
+ 
+ void AegisAgentService::RunTask(const std::string& task_id,
+@@ -1364,15 +1372,15 @@ bool AegisAgentService::CompleteFinalUserTakeover(
+     }
+     return cancelled;
+   }
++  if (!Transition(task_id, AgentTaskState::kCompleted,
++                  "final action completed under user control")) {
++    return false;
++  }
+   if (TaskUsesActor(*task)) {
+     actor_bridge_.StopTask(task_id, /*completed=*/true);
+   }
+   policy_broker_.RevokeTaskApprovals(task_id);
+   browser_tools_.ForgetTask(task_id, /*preserve_bookmark_undo=*/true);
+-  if (!Transition(task_id, AgentTaskState::kCompleted,
+-                  "final action completed under user control")) {
+-    return false;
+-  }
+   AgentCompletionSummary completion{
+       .outcome = "completed",
+       .summary = "自动化步骤已完成；最终操作由用户接管并确认。"};
+@@ -2232,6 +2240,12 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+   if (!task || !plan || runtime_it == executions_.end()) {
+     return;
+   }
++  if (task->state() != AgentTaskState::kRunning &&
++      task->state() != AgentTaskState::kReflecting &&
++      !(task->state() == AgentTaskState::kAwaitingActionApproval &&
++        !result.ok && result.error == AgentErrorCode::kApprovalRequired)) {
++    return;
++  }
+   ExecutionRuntime& runtime = *runtime_it->second;
+   if (const std::optional<int> tab_id =
+           attempted_call.arguments.FindInt("tab_id")) {
+@@ -2293,7 +2307,8 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+                   std::nullopt);
+     return;
+   }
+-  if (runtime.attempt < 3) {
++  if (descriptor && descriptor->risk == AgentRiskLevel::kR0ReadOnly &&
++      runtime.attempt < 3) {
+     if (task->state() == AgentTaskState::kRunning) {
+       Transition(task_id, AgentTaskState::kReflecting,
+                  "browser rejected the action; bounded retry requested");
+@@ -2302,7 +2317,9 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+     return;
+   }
+   Transition(task_id, AgentTaskState::kFailed,
+-             "browser action failed after bounded retries");
++             descriptor && descriptor->risk == AgentRiskLevel::kR0ReadOnly
++                 ? "browser action failed after bounded retries"
++                 : "action result is uncertain; automatic replay refused");
+   FinishRuntime(task_id, false, result.message, std::nullopt);
+ }
+ 
+@@ -2427,7 +2444,6 @@ void AegisAgentService::FinishRuntime(
+     bool ok,
+     std::string error,
+     std::optional<AgentCompletionSummary> completion) {
+-  model_request_ids_.erase(task_id);
+   auto it = executions_.find(task_id);
+   if (it == executions_.end()) {
+     return;
+@@ -2439,6 +2455,28 @@ void AegisAgentService::FinishRuntime(
+   }
+   RunCallback callback = std::move(it->second->callback);
+   executions_.erase(it);
++  // 回调先失效，再释放Actor；StopTask可能同步通知观察者。
++  if (auto request = model_request_ids_.find(task_id);
++      request != model_request_ids_.end()) {
++    const auto request_id = request->second;
++    model_request_ids_.erase(request);
++    if (auto client = model_clients_.find(task_id);
++        client != model_clients_.end()) {
++      client->second->Cancel(request_id);
++    }
++  }
++  if (const AgentTask* task = GetTask(task_id); task && TaskUsesActor(*task)) {
++    actor_bridge_.StopTask(task_id, /*completed=*/ok);
++  }
++  policy_broker_.RevokeTaskApprovals(task_id);
++  browser_tools_.ForgetTask(task_id, /*preserve_bookmark_undo=*/ok,
++                            /*cancel_active_downloads=*/!ok);
++  if (!ok) {
++    bookmark_undo_tokens_.erase(task_id);
++    for (const auto& monitor : GetMonitors(task_id)) {
++      SetMonitorPaused(task_id, monitor.monitor_id, true);
++    }
++  }
+   if (ok && completion) {
+     completion_summaries_[task_id] = *completion;
+   } else {
+@@ -2620,9 +2658,21 @@ void AegisAgentService::ExecuteTool(
+                "exact action approval consumed");
+   }
+ 
+-  auto result_callback = base::BindOnce(&AegisAgentService::OnToolExecuted,
+-                                        weak_ptr_factory_.GetWeakPtr(), task_id,
+-                                        call.tool_name, std::move(callback));
++  // 只保留核验需要的身份及提取字段，不保留输入/表单正文。
++  AgentToolCall call_identity;
++  call_identity.action_id = call.action_id;
++  call_identity.tool_name = call.tool_name;
++  if (call.tool_name == "page.extract") {
++    call_identity.document = call.document;
++    for (const auto* name : {"kind", "fields"}) {
++      if (const base::Value* value = call.arguments.Find(name)) {
++        call_identity.arguments.Set(name, value->Clone());
++      }
++    }
++  }
++  auto result_callback = base::BindOnce(
++      &AegisAgentService::OnToolExecuted, weak_ptr_factory_.GetWeakPtr(),
++      task_id, std::move(call_identity), std::move(callback));
+   if (base::StartsWith(call.tool_name, "page.") ||
+       base::StartsWith(call.tool_name, "auth.") ||
+       call.tool_name == "form.fill") {
+@@ -4010,10 +4060,22 @@ void AegisAgentService::Shutdown() {
+ }
+ 
+ void AegisAgentService::OnToolExecuted(const std::string& task_id,
+-                                       std::string tool_name,
++                                       AgentToolCall call_identity,
+                                        ToolResultCallback callback,
+                                        AgentToolResult result) {
+   AgentTask* task = GetTask(task_id);
++  const std::string& tool_name = call_identity.tool_name;
++  if (!task || (IsTerminalState(task->state()) &&
++                !(task->state() == AgentTaskState::kCompleted &&
++                  tool_name == "bookmark.undo"))) {
++    result.ok = false;
++    result.error = AgentErrorCode::kStaleDocument;
++    result.message = "task ended before tool result arrived";
++    result.value.clear();
++    result.evidence.clear();
++    std::move(callback).Run(std::move(result));
++    return;
++  }
+   if (result.ok &&
+       (tool_name == "tab.create" || tool_name == "window.create" ||
+        tool_name == "workspace.restore") &&
+@@ -4057,12 +4119,6 @@ void AegisAgentService::OnToolExecuted(const std::string& task_id,
+   }
+ 
+   const AgentToolDescriptor* descriptor = tool_registry_.Find(tool_name);
+-  // The caller-provided tool call is not retained because it can contain form
+-  // text. Reconstruct only the identity needed by the verifier and validate
+-  // tool-specific browser evidence below.
+-  AgentToolCall call_identity;
+-  call_identity.action_id = result.action_id;
+-  call_identity.tool_name = tool_name;
+   if (!task || !descriptor) {
+     result.ok = false;
+     result.error = AgentErrorCode::kInternal;
+@@ -4132,8 +4188,9 @@ void AegisAgentService::OnActorStateEvent(const std::string& task_id,
+   auto request = model_request_ids_.find(task_id);
+   auto client = model_clients_.find(task_id);
+   if (request != model_request_ids_.end() && client != model_clients_.end()) {
+-    client->second->Cancel(request->second);
++    const auto request_id = request->second;
+     model_request_ids_.erase(request);
++    client->second->Cancel(request_id);
+   }
+   if (event == AegisActorBridge::StateEvent::kPausedByUser &&
+       (task->state() == AgentTaskState::kRunning ||
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 1c1c3324b0..8b433c9926 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -339,7 +339,7 @@ class AegisAgentService : public KeyedService {
+                      std::string error,
+                      std::optional<AgentCompletionSummary> completion);
+   void OnToolExecuted(const std::string& task_id,
+-                      std::string tool_name,
++                      AgentToolCall call_identity,
+                       ToolResultCallback callback,
+                       AgentToolResult result);
+   void OnActorStateEvent(const std::string& task_id,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 4c2d81fbf4..4e887c61b2 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -13,12 +13,14 @@
+ #include "base/scoped_observation.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/task/sequenced_task_runner.h"
++#include "base/test/bind.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+-#include "base/task/sequenced_task_runner.h"
+ #include "base/threading/thread_restrictions.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
++#include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/actor/ui/event_dispatcher.h"
+ #include "chrome/browser/actor/ui/test_support/mock_actor_ui_state_manager.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+@@ -47,6 +49,39 @@ namespace aegis::agent {
+ 
+ class AegisAgentServiceTestPeer {
+  public:
++  static bool HasRuntime(AegisAgentService* service, const std::string& id) {
++    return service->executions_.contains(id);
++  }
++  static std::pair<size_t, int> Progress(AegisAgentService* service,
++                                         const std::string& id) {
++    return service->plan_progress_.at(id);
++  }
++  static void DeliverRuntimeResult(AegisAgentService* service,
++                                   const std::string& id,
++                                   std::string tool,
++                                   bool ok) {
++    // 模拟模型响应已结束、原生工具回调到达；不创建额外生产测试接口。
++    if (auto request = service->model_request_ids_.find(id);
++        request != service->model_request_ids_.end()) {
++      auto request_id = request->second;
++      service->model_request_ids_.erase(request);
++      service->model_clients_.at(id)->Cancel(request_id);
++    }
++    AgentToolCall call;
++    call.action_id = "callback-fixture";
++    call.tool_name = std::move(tool);
++    AgentToolResult result;
++    result.action_id = call.action_id;
++    result.ok = ok;
++    result.error =
++        ok ? AgentErrorCode::kNone : AgentErrorCode::kVerificationFailed;
++    result.message = "原生测试回调";
++    service->OnRuntimeToolResult(id, std::move(call), std::move(result));
++  }
++  static void FailRuntime(AegisAgentService* service, const std::string& id) {
++    service->Transition(id, AgentTaskState::kFailed, "测试不可恢复失败");
++    service->FinishRuntime(id, false, "测试不可恢复失败", std::nullopt);
++  }
+   static void FinishMonitorDecryption(
+       AegisAgentService* service,
+       const std::string& monitor_id,
+@@ -241,6 +276,53 @@ class AegisAgentServiceTest : public testing::Test {
+   TestingProfileManager& profile_manager() { return profile_manager_; }
+   // SequenceBound 的析构异步关闭数据库；重启对照必须等待旧进程资源全部释放。
+   void DrainTaskRunners() { task_environment_.RunUntilIdle(); }
++  AgentTask* StartHeldRuntime(network::TestURLLoaderFactory* factory,
++                              AegisAgentService::RunCallback callback,
++                              const std::string& second_tool = "page.observe") {
++    constexpr char kBaseUrl[] = "http://127.0.0.1:8765/v1";
++    profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
++    profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
++    profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
++    auto scope = ServiceTestScope();
++    scope.allowed_tools.insert("tab.list");
++    scope.allowed_tools.insert(second_tool);
++    scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
++    scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
++    scope.model_destination.provider = "openai";
++    scope.model_destination.endpoint = kBaseUrl;
++    scope.model_destination.model = "fixture-model";
++    auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++    auto* task =
++        service->CreateTask("执行测试步骤", AgentMode::kAct, std::move(scope));
++    if (!task || !service->BeginPlanning(task->id()))
++      return nullptr;
++    auto plan = ServicePlanEvent();
++    plan.arguments.Set("steps", base::ListValue()
++                                    .Append(base::DictValue()
++                                                .Set("id", "tabs")
++                                                .Set("title", "读取标签")
++                                                .Set("tool", "tab.list"))
++                                    .Append(base::DictValue()
++                                                .Set("id", "page")
++                                                .Set("title", "页面操作")
++                                                .Set("tool", second_tool)));
++    std::string error;
++    if (!service->AcceptModelPlan(task->id(), plan, &error) ||
++        !service->GrantTaskConsent(task->id())) {
++      ADD_FAILURE() << error;
++      return nullptr;
++    }
++    service->SetTaskModelClientForTesting(
++        task->id(),
++        std::make_unique<AgentModelClient>(factory->GetSafeWeakWrapper()));
++    service->RunTask(task->id(), std::move(callback));
++    if (!AegisAgentServiceTestPeer::HasRuntime(service, task->id())) {
++      ADD_FAILURE() << "运行未启动，不能等待不存在的模型请求";
++      return nullptr;
++    }
++    factory->WaitForRequest(GURL("http://127.0.0.1:8765/v1/responses"));
++    return task;
++  }
+   raw_ptr<TestingProfile> profile_ = nullptr;
+ 
+  private:
+@@ -1057,6 +1139,143 @@ TEST_F(AegisAgentServiceTest, CreatesPausesResumesAndStopsOwnedActorTask) {
+   EXPECT_EQ(task->state(), AgentTaskState::kCancelled);
+ }
+ 
++TEST_F(AegisAgentServiceTest, CancelRejectsSynchronousActorStopResult) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback());
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service->actor_bridge_for_testing().HasTask(task->id()));
++  const auto before = AegisAgentServiceTestPeer::Progress(service, task->id());
++  const auto calls = task->model_calls_used();
++  bool synchronous_result_delivered = false;
++  auto subscription =
++      actor::ActorKeyedService::Get(profile_)->AddTaskStateChangedCallback(
++          base::BindLambdaForTesting([&](actor::ActorTask& actor_task) {
++            if (!actor_task.IsCompleted())
++              return;
++            synchronous_result_delivered = true;
++            EXPECT_TRUE(
++                AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
++            AegisAgentServiceTestPeer::DeliverRuntimeResult(service, task->id(),
++                                                            "tab.list", true);
++          }));
++  EXPECT_TRUE(service->CancelTask(task->id()));
++  EXPECT_TRUE(synchronous_result_delivered);
++  EXPECT_EQ(AegisAgentServiceTestPeer::Progress(service, task->id()), before);
++  EXPECT_EQ(task->model_calls_used(), calls);
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task->id()));
++  EXPECT_FALSE(AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
++}
++
++TEST_F(AegisAgentServiceTest, FailedRuntimeDetachesBeforeActorStops) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback());
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  bool stopped = false;
++  auto subscription =
++      actor::ActorKeyedService::Get(profile_)->AddTaskStateChangedCallback(
++          base::BindLambdaForTesting([&](actor::ActorTask& actor_task) {
++            if (!actor_task.IsCompleted())
++              return;
++            stopped = true;
++            EXPECT_FALSE(
++                AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
++          }));
++  AegisAgentServiceTestPeer::FailRuntime(service, task->id());
++  EXPECT_TRUE(stopped);
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task->id()));
++}
++
++TEST_F(AegisAgentServiceTest, ReadOnlyFailureHasAtMostTwoRecoveries) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback());
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  const auto initial_calls = task->model_calls_used();
++  for (int attempt = 1; attempt <= 3; ++attempt) {
++    AegisAgentServiceTestPeer::DeliverRuntimeResult(service, task->id(),
++                                                    "tab.list", false);
++    EXPECT_EQ(AegisAgentServiceTestPeer::Progress(service, task->id()).second,
++              attempt);
++    EXPECT_EQ(task->model_calls_used(), initial_calls + std::min(attempt, 2));
++    if (attempt < 3)
++      EXPECT_FALSE(done.IsReady());
++  }
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_EQ(task->state(), AgentTaskState::kFailed);
++  EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task->id()));
++}
++
++TEST_F(AegisAgentServiceTest, ChangedModelDestinationStopsRecovery) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback());
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  const auto calls = task->model_calls_used();
++  profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "changed-model");
++  AegisAgentServiceTestPeer::DeliverRuntimeResult(service, task->id(),
++                                                  "tab.list", false);
++  EXPECT_EQ(task->model_calls_used(), calls);
++  EXPECT_EQ(task->state(), AgentTaskState::kFailed);
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task->id()));
++}
++
++TEST_F(AegisAgentServiceTest, DisabledWebMcpRejectsDirectBridgeCalls) {
++  base::test::ScopedFeatureList disabled;
++  disabled.InitAndDisableFeature(aegis::features::kAegisAgentWebMcp);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  for (const char* tool : {"page.webmcp.list", "page.webmcp.invoke"}) {
++    AgentToolCall call;
++    call.action_id = "disabled-webmcp";
++    call.tool_name = tool;
++    base::test::TestFuture<AgentToolResult> result;
++    service->actor_bridge_for_testing().ExecutePageTool("missing-task", call,
++                                                        result.GetCallback());
++    EXPECT_FALSE(result.Get().ok);
++    EXPECT_EQ(result.Get().error, AgentErrorCode::kToolUnavailable);
++    EXPECT_EQ(result.Get().message, "WebMCP is disabled");
++  }
++}
++
++TEST_F(AegisAgentServiceTest, UncertainR1AndR2ResultsAreNotReplayed) {
++  for (const auto* tool : {"page.navigate", "page.click"}) {
++    SCOPED_TRACE(tool);
++    network::TestURLLoaderFactory factory;
++    base::test::TestFuture<bool, std::string,
++                           std::optional<AgentCompletionSummary>>
++        done;
++    auto* task = StartHeldRuntime(&factory, done.GetCallback(), tool);
++    ASSERT_TRUE(task);
++    auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++    AegisAgentServiceTestPeer::DeliverRuntimeResult(service, task->id(),
++                                                    "tab.list", true);
++    const auto calls = task->model_calls_used();
++    ASSERT_TRUE(AegisAgentServiceTestPeer::HasRuntime(service, task->id()));
++    AegisAgentServiceTestPeer::DeliverRuntimeResult(service, task->id(), tool,
++                                                    false);
++    EXPECT_EQ(task->model_calls_used(), calls);
++    EXPECT_EQ(task->state(), AgentTaskState::kFailed);
++    EXPECT_FALSE(done.Get<0>());
++    EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task->id()));
++  }
++}
++
+ TEST_F(AegisAgentServiceTest, AskModeUsesReadOnlyActorObservationTask) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 8ea1bbbce3..7255b73325 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -5,11 +5,13 @@
+ #include <string>
+ #include <vector>
+ 
++#include "base/strings/string_number_conversions.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/aegis/agent/agent_monitor_scheduler.h"
+ #include "chrome/browser/aegis/agent/agent_policy_broker.h"
+ #include "chrome/browser/aegis/agent/agent_result_verifier.h"
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
++#include "crypto/sha2.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+@@ -1193,5 +1195,161 @@ TEST(AegisAgentResultVerifierTest, VerifiesScopedMetadataAndDownloadState) {
+                    .accepted);
+ }
+ 
++TEST(AegisAgentResultVerifierTest, RejectsContradictoryCompletedDownload) {
++  AgentToolRegistry registry;
++  AgentResultVerifier verifier;
++  AgentTask task("download", "核对测试下载", AgentMode::kAct, TestScope());
++  AgentToolCall call;
++  call.action_id = "verify";
++  call.tool_name = "download.verify";
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.ok = true;
++  result.message = "浏览器返回下载状态";
++  result.value.Set("download_id", "fixture-download");
++  result.value.Set("state", "complete");
++  result.value.Set("verified", true);
++  result.value.Set("safe_and_complete", true);
++  result.value.Set("integrity", "match");
++  result.value.Set("sha256", std::string(64, 'A'));
++  const auto verify = [&] {
++    return verifier.Verify(task, call, *registry.Find(call.tool_name), result);
++  };
++  ASSERT_TRUE(verify().postcondition_met);
++  for (const auto* state : {"in_progress", "interrupted", "cancelled"}) {
++    result.value.Set("state", state);
++    EXPECT_FALSE(verify().accepted) << state;
++  }
++  result.value.Set("state", "complete");
++  result.value.Set("safe_and_complete", false);
++  EXPECT_FALSE(verify().accepted);
++  result.value.Set("safe_and_complete", true);
++  for (const auto* key : {"dangerous", "wait_timed_out"}) {
++    result.value.Set(key, true);
++    EXPECT_FALSE(verify().accepted) << key;
++    result.value.Set(key, false);
++  }
++  for (const auto& hash :
++       {std::string(63, 'a'), std::string(64, 'g'), std::string()}) {
++    result.value.Set("sha256", hash);
++    EXPECT_FALSE(verify().accepted);
++  }
++  result.value.Set("sha256", std::string(64, 'a'));
++  EXPECT_TRUE(verify().postcondition_met);
++}
++
++TEST(AegisAgentResultVerifierTest,
++     ExtractionRequiresRequestedFieldsAndSources) {
++  AgentToolRegistry registry;
++  AgentResultVerifier verifier;
++  AgentTask task("extract", "提取正文", AgentMode::kAct, TestScope());
++  AgentToolCall call = PageClickCall();
++  call.tool_name = "page.extract";
++  call.arguments.Set("kind", "article");
++  call.arguments.Set("fields", base::ListValue().Append("content"));
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.ok = true;
++  result.message = "浏览器提取结果";
++  result.value.Set("tab_id", 7);
++  result.value.Set("url", "https://shop.example/product");
++  result.value.Set("frame_token", "frame-1");
++  result.value.Set("document_token", "document-1");
++  result.value.Set("observation_fingerprint", "fresh-fingerprint");
++  result.value.Set("untrusted", true);
++  result.value.Set(
++      "nodes",
++      base::ListValue().Append(
++          base::DictValue().Set("node_id", 42).Set("text", "稳定指标42")));
++  result.evidence.Append(base::DictValue().Set("kind", "browser_observation"));
++  base::DictValue field;
++  field.Set("field", "content");
++  field.Set("resolved", true);
++  field.Set("value", "稳定指标42");
++  field.Set("source_node_ids", base::ListValue().Append(42));
++  field.Set("source_hash",
++            base::HexEncode(crypto::SHA256HashString("content\n稳定指标42")));
++  const auto set_field = [&](base::DictValue item) {
++    result.value.Set(
++        "extraction",
++        base::DictValue()
++            .Set("kind", "article")
++            .Set("untrusted", true)
++            .Set("fields", base::ListValue().Append(std::move(item))));
++  };
++  const auto verify = [&] {
++    return verifier.Verify(task, call, *registry.Find(call.tool_name), result);
++  };
++  set_field(field.Clone());
++  ASSERT_TRUE(verify().postcondition_met);
++  auto missing = field.Clone();
++  missing.Set("resolved", false);
++  set_field(std::move(missing));
++  EXPECT_TRUE(verify().accepted);
++  EXPECT_FALSE(verify().postcondition_met);
++  auto empty = field.Clone();
++  empty.Set("value", "   ");
++  set_field(std::move(empty));
++  EXPECT_FALSE(verify().accepted);
++  auto foreign = field.Clone();
++  foreign.Set("source_node_ids", base::ListValue().Append(99));
++  set_field(std::move(foreign));
++  EXPECT_FALSE(verify().accepted);
++  auto changed = field.Clone();
++  changed.Set("value", "指标99");
++  set_field(std::move(changed));
++  EXPECT_FALSE(verify().accepted);
++  auto wrong_name = field.Clone();
++  wrong_name.Set("field", "summary");
++  set_field(std::move(wrong_name));
++  EXPECT_FALSE(verify().accepted);
++  set_field(field.Clone());
++  result.value.Set("document_token", "new-document");
++  EXPECT_FALSE(verify().accepted);
++  result.value.Set("document_token", "document-1");
++  for (int status : {404, 410, 500}) {
++    result.value.Set("http_status", status);
++    EXPECT_FALSE(verify().accepted);
++  }
++  result.value.Set("http_status", 0);
++  EXPECT_TRUE(verify().postcondition_met);
++  result.value.Set("is_error_document", true);
++  EXPECT_FALSE(verify().accepted);
++  result.value.Set("is_error_document", false);
++  EXPECT_TRUE(verify().postcondition_met);
++
++  call.arguments.Set("fields",
++                     base::ListValue().Append("content").Append("content"));
++  EXPECT_FALSE(verify().accepted);
++  call.arguments.Remove("fields");
++  EXPECT_FALSE(verify().accepted);  // 默认请求标题和摘要，单个正文不能代替。
++  auto summary = field.Clone();
++  summary.Set("field", "summary");
++  summary.Set("source_hash",
++              base::HexEncode(crypto::SHA256HashString("summary\n稳定指标42")));
++  auto title = field.Clone();
++  title.Set("field", "title");
++  title.Set("value", "测试文章");
++  title.Set("source_node_ids", base::ListValue());
++  title.Set("source_hash",
++            base::HexEncode(crypto::SHA256HashString("title\n测试文章")));
++  result.value.Set("title", "测试文章");
++  result.value.FindDict("extraction")
++      ->Set("fields",
++            base::ListValue().Append(title.Clone()).Append(summary.Clone()));
++  EXPECT_TRUE(verify().postcondition_met);
++  result.value.Set("title", "另一文档标题");
++  EXPECT_FALSE(verify().accepted);
++  result.value.Set("title", "测试文章");
++  result.value.FindDict("extraction")
++      ->Set("fields",
++            base::ListValue().Append(title.Clone()).Append(title.Clone()));
++  EXPECT_FALSE(verify().accepted);
++  result.value.FindDict("extraction")
++      ->Set("fields",
++            base::ListValue().Append(title.Clone()).Append(summary.Clone()));
++  EXPECT_TRUE(verify().postcondition_met);
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index cfe30b2ad2..d094beefc2 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -10,8 +10,10 @@
+ #include "base/containers/flat_set.h"
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/uuid.h"
++#include "crypto/sha2.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis::agent {
+@@ -82,6 +84,91 @@ bool HasList(const base::DictValue& value, std::string_view key) {
+   return value.FindList(key) != nullptr;
+ }
+ 
++AgentVerificationDecision VerifyExtraction(const AgentToolCall& call,
++                                           const base::DictValue& value) {
++  const base::DictValue* extraction = value.FindDict("extraction");
++  const base::ListValue* fields =
++      extraction ? extraction->FindList("fields") : nullptr;
++  const base::ListValue* nodes = value.FindList("nodes");
++  if (!fields || !nodes || extraction->FindBool("untrusted") != true) {
++    return Reject("page extraction lacks source-bound fields");
++  }
++  const std::string* kind = call.arguments.FindString("kind");
++  if (!extraction->FindString("kind") ||
++      *extraction->FindString("kind") != (kind ? *kind : "article") ||
++      (call.document &&
++       (value.FindString("document_token") == nullptr ||
++        *value.FindString("document_token") != call.document->document_token ||
++        value.FindString("frame_token") == nullptr ||
++        *value.FindString("frame_token") != call.document->frame_token))) {
++    return Reject("extraction is not bound to the requested document or kind");
++  }
++  base::flat_set<std::string> requested;
++  if (const auto* input = call.arguments.FindList("fields")) {
++    for (const auto& field : *input) {
++      if (!field.is_string() || field.GetString().empty() ||
++          !requested.insert(field.GetString()).second) {
++        return Reject("requested extraction fields are invalid");
++      }
++    }
++  }
++  if (requested.empty()) {
++    requested = {"title", "summary"};
++  }
++  if (fields->size() != requested.size()) {
++    return Reject("extraction does not cover all requested fields");
++  }
++  base::flat_set<int> source_nodes;
++  for (const auto& node : *nodes) {
++    if (!node.is_dict()) {
++      return Reject("extraction source node is invalid");
++    }
++    if (auto id = node.GetDict().FindInt("node_id")) {
++      source_nodes.insert(*id);
++    }
++  }
++  bool all_resolved = true;
++  for (const auto& item : *fields) {
++    if (!item.is_dict()) {
++      return Reject("extraction field is invalid");
++    }
++    const auto& field = item.GetDict();
++    const std::string* name = field.FindString("field");
++    if (!name || requested.erase(*name) != 1u ||
++        !field.FindBool("resolved").has_value()) {
++      return Reject("extraction field does not match the request");
++    }
++    if (field.FindBool("resolved") != true) {
++      all_resolved = false;
++      continue;
++    }
++    const std::string* text = field.FindString("value");
++    const std::string* hash = field.FindString("source_hash");
++    const auto* ids = field.FindList("source_node_ids");
++    if (!text || base::ContainsOnlyChars(*text, " \t\r\n") || !hash || !ids ||
++        !base::EqualsCaseInsensitiveASCII(
++            *hash,
++            base::HexEncode(crypto::SHA256HashString(*name + "\n" + *text)))) {
++      return Reject("resolved extraction field lacks content or integrity");
++    }
++    if (base::EqualsCaseInsensitiveASCII(*name, "title")) {
++      if (!value.FindString("title") || *text != *value.FindString("title")) {
++        return Reject("extracted title does not match the observed document");
++      }
++    } else if (ids->empty()) {
++      return Reject("extracted content lacks source nodes");
++    }
++    for (const auto& id : *ids) {
++      if (!id.is_int() || !source_nodes.contains(id.GetInt())) {
++        return Reject("extracted content references an unobserved node");
++      }
++    }
++  }
++  return Accept(all_resolved, all_resolved
++                                  ? "requested fields have browser evidence"
++                                  : "requested fields remain unresolved");
++}
++
+ bool IsKnownUrlClassification(std::string_view value) {
+   constexpr std::array<std::string_view, 9> kClassifications = {
+       "live",         "redirect",  "auth_required", "rate_limited",
+@@ -143,8 +230,12 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+         !HasList(value, "nodes") || result.evidence.empty()) {
+       return Reject("page result lacks a fresh scoped browser observation");
+     }
+-    if (call.tool_name == "page.extract" && !value.FindDict("extraction")) {
+-      return Reject("page extraction lacks source-bound fields");
++    if (value.FindBool("is_error_document") == true ||
++        value.FindInt("http_status").value_or(0) >= 400) {
++      return Reject("error page cannot verify the requested page result");
++    }
++    if (call.tool_name == "page.extract") {
++      return VerifyExtraction(call, value);
+     }
+     if (call.tool_name == "page.webmcp.list" &&
+         !HasList(value, "webmcp_tools")) {
+@@ -390,8 +481,16 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+     }
+     const bool verified = value.FindBool("verified").value_or(false);
+     const std::string* integrity = value.FindString("integrity");
+-    if (verified && (*integrity != "match" || !HasString(value, "sha256"))) {
+-      return Reject("verified download lacks matching SHA-256 evidence");
++    const std::string* hash = value.FindString("sha256");
++    if (verified && (*integrity != "match" || !hash || hash->size() != 64u ||
++                     !std::ranges::all_of(
++                         *hash, [](char c) { return base::IsHexDigit(c); }) ||
++                     *value.FindString("state") != "complete" ||
++                     value.FindBool("safe_and_complete") != true ||
++                     value.FindBool("dangerous") == true ||
++                     value.FindBool("wait_timed_out") == true)) {
++      return Reject(
++          "verified download conflicts with native completion or integrity");
+     }
+     return Accept(verified, "download state was read from DownloadItem");
+   }
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 327e05f428..62f96823a4 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -17,6 +17,9 @@ let proxy: BrowserProxy;
+ let snapshot: TaskSnapshot|null = null;
+ let selectedWorkflow: Workflow|null = null;
+ let busy = false;
++let creatingTask = false;
++let selectedTaskId: string|null = null;
++let taskCreationError = '';
+ let modelBusy = false;
+ let goalUserEdited = false;
+ let modelFormInitialized = false;
+@@ -600,9 +603,23 @@ function maybeAutoRun(next: TaskSnapshot) {
+ }
+ 
+ function render(next: TaskSnapshot) {
++  if (creatingTask) {
++    // 新请求有自己的等待态；旧任务事件不能带回旧结果或时间线。
++    next = {...next, taskId: '', state: '', plan: null, resultSummary: '',
++      resultOutcome: '', resultSources: [], unfinishedItems: [], timeline: [],
++      pendingApproval: null, undoAvailable: false, lastError: ''};
++  } else if (selectedTaskId !== null && next.taskId !== selectedTaskId) {
++    return;
++  } else {
++    selectedTaskId = next.taskId;
++    if (next.taskId && next.state !== 'planning') {
++      taskCreationError = '';
++    }
++  }
+   snapshot = next;
+   element('status').dataset['tone'] = statusTone(next);
+-  element('status').textContent = busy && !next.taskId ?
++  element('status').textContent = taskCreationError && !next.taskId ?
++      loadTimeData.getString('statusFailed') : busy && !next.taskId ?
+       loadTimeData.getString('statusUnderstanding') :
+       humanStatus(next);
+   const goal = element<HTMLTextAreaElement>('goal');
+@@ -636,7 +653,8 @@ function render(next: TaskSnapshot) {
+   renderTimeline(next);
+   renderMonitors(next.monitors);
+   const error = element('error');
+-  error.textContent = friendlyError(next.lastError, Boolean(next.plan));
++  error.textContent = taskCreationError ||
++      friendlyError(next.lastError, Boolean(next.plan));
+   error.hidden = !error.textContent;
+   const technicalErrorGroup = element('technical-error-group');
+   element('technical-error-label').textContent =
+@@ -701,18 +719,39 @@ function render(next: TaskSnapshot) {
+   maybeAutoRun(next);
+ }
+ 
+-async function withBusy(action: () => Promise<{snapshot: TaskSnapshot}>) {
++function showCreatedTask(next: TaskSnapshot) {
++  creatingTask = false;
++  selectedTaskId = next.taskId;
++  render(next);
++}
++
++async function withBusy(
++    action: () => Promise<{snapshot: TaskSnapshot}>, createsTask = false) {
+   if (busy) {
+     return;
+   }
+   busy = true;
++  if (createsTask) {
++    creatingTask = true;
++    selectedTaskId = '';
++    autoRunTaskId = '';
++    taskCreationError = '';
++  }
+   if (snapshot) {
+     render(snapshot);
+   }
+   try {
+     const response = await action();
+     render(response.snapshot);
++  } catch (error) {
++    if (!createsTask) {
++      throw error;
++    }
++    taskCreationError = loadTimeData.getString('planningGenericError');
+   } finally {
++    if (createsTask) {
++      creatingTask = false;
++    }
+     busy = false;
+     if (snapshot) {
+       render(snapshot);
+@@ -975,12 +1014,13 @@ function bindActions() {
+     const workflow = selectedWorkflow ?? inferWorkflow(goal);
+     const created = await proxy.handler.createTask(
+         goal, AgentMode.kAct, workflow, [], 0);
++    showCreatedTask(created.snapshot);
+     if (!created.snapshot.taskId) {
+       return created;
+     }
+     autoRunTaskId = created.snapshot.taskId;
+     return proxy.handler.requestPlan(created.snapshot.taskId);
+-  }));
++  }, true));
+   element('create-automation-button').addEventListener(
+       'click', () => withBusy(async () => {
+         const goal =
+@@ -991,12 +1031,13 @@ function bindActions() {
+         // 缺少明确来源时仍由模型理解目标，最终权限由原生自动化范围约束。
+         const created = await proxy.handler.createTask(
+             goal, AgentMode.kAutomate, Workflow.kResearch, [], interval);
++        showCreatedTask(created.snapshot);
+         if (!created.snapshot.taskId) {
+           return created;
+         }
+         autoRunTaskId = created.snapshot.taskId;
+         return proxy.handler.requestPlan(created.snapshot.taskId);
+-      }));
++      }, true));
+   element('detect-models-button').addEventListener('click', detectModels);
+   element('model-options').addEventListener('change', selectDetectedModel);
+   element('model-name').addEventListener('input', syncDetectedModel);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 3a6e25102e..1fda803b65 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.44。
+-inline constexpr char kProductVersion[] = "1.1.0.44";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (044)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.1。
++inline constexpr char kProductVersion[] = "2.0.0.1";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (001)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

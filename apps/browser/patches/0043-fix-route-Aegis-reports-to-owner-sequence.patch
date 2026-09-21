@@ -1,7 +1,7 @@
-From 969aa19d45f21e5f242bfa7787b67968bab732e0 Mon Sep 17 00:00:00 2001
+From b375192cd42736bac7e98a7d20cf44cb53dde0d8 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 04:59:19 +0800
-Subject: [PATCH 43/43] fix: route Aegis reports to owner sequence
+Subject: [PATCH] fix: route Aegis reports to owner sequence
 
 ---
  chrome/browser/aegis/aegis_service.cc         |  43 +++--

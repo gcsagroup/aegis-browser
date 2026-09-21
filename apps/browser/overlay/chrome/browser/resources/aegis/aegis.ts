@@ -1196,8 +1196,8 @@ async function probeFingerprint() {
     if (on) {
       lines.push(
           zh ?
-              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Fingerprint Guard 開著：讀數按站點穩定化。關開後請重新整理本頁再測。' : 'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。') :
-              'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
+              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '指紋防護設定已開啟。以下是目前頁面的 API 讀數，不能單獨證明跨站隔離。' : '指纹防护配置已开启。以下是当前页面的 API 读数，不能单独证明跨站隔离。') :
+              'Fingerprint protection is configured on. These page API readings alone do not prove cross-site isolation.');
     } else {
       lines.push(
           zh ?
@@ -1216,8 +1216,8 @@ async function probeFingerprint() {
         note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（同一緩衝讀兩次不一致）' : '（同一缓冲读两次不一致）') :
                     ' (same buffer changed on second read)';
       } else if (lastAudioHash && lastAudioHash === audio.hash) {
-        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與上次相同，已按站點穩定）' : '（与上次相同，已按站点稳定）') :
-                    ' (same as last probe; stable per site)';
+        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與本頁上次測量相同）' : '（与本页上次测量相同）') :
+                    ' (same as the previous probe on this page)';
       }
       lastAudioHash = audio.hash;
       lines.push(
@@ -1226,15 +1226,12 @@ async function probeFingerprint() {
     if (webgpu.line) {
       lines.push(webgpu.line);
     }
-    if (on && (webgl.marked || webgpu.marked)) {
-      lines.push(
-          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'WebGL / WebGPU 已換成帶 Aegis 的穩定化字串。' : 'WebGL / WebGPU 已换成带 Aegis 的稳定化字符串。') :
-               'WebGL / WebGPU strings are replaced with Aegis-stable values.');
-    } else if (on && (webgl.line || webgpu.line)) {
-      lines.push(
-          zh ?
-              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未看到 Aegis 標記。關掉再開啟防護後，請重新整理本頁再測。' : '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。') :
-              'No Aegis marker yet. Toggle the guard, reload, then probe again.');
+    if (on && (webgl.line || webgpu.line)) {
+      lines.push(zh ?
+          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ?
+              '硬體識別欄位可能為空；是否含有品牌字串不能用來判斷防護效果。' :
+              '硬件识别字段可能为空；是否包含品牌字符串不能用来判断防护效果。') :
+          'Hardware identity fields may be empty. Brand strings do not establish protection effectiveness.');
     }
     result.textContent = lines.filter(Boolean).join('\n');
   } catch (err) {

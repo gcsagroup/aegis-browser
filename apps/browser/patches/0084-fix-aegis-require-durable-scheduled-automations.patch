@@ -1,7 +1,7 @@
-From 443f405fef96f37d8b28c2c5bbbdf4203c995c4c Mon Sep 17 00:00:00 2001
+From 1c3887d7b689b285f23cec5aa9952f0b5098f90e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:41:37 +0800
-Subject: [PATCH 84/90] fix(aegis): require durable scheduled automations
+Subject: [PATCH] fix(aegis): require durable scheduled automations
 
 ---
  .../aegis/agent/aegis_agent_service.cc        |  3 ++

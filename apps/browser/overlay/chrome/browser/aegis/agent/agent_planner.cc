@@ -12,6 +12,7 @@
 #include "base/json/json_writer.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/aegis/agent/agent_tool_registry.h"
 #include "net/base/url_util.h"
@@ -216,6 +217,8 @@ std::string_view WorkflowName(AgentWorkflowKind workflow) {
       return "safe_download";
     case AgentWorkflowKind::kShopping:
       return "shopping";
+    case AgentWorkflowKind::kPageInteraction:
+      return "page_interaction";
   }
 }
 
@@ -228,6 +231,9 @@ std::optional<AgentWorkflowKind> ParseWorkflow(std::string_view value) {
   }
   if (value == "safe_download") {
     return AgentWorkflowKind::kSafeDownload;
+  }
+  if (value == "page_interaction") {
+    return AgentWorkflowKind::kPageInteraction;
   }
   if (value == "shopping") {
     return AgentWorkflowKind::kShopping;
@@ -280,17 +286,136 @@ bool GoalRequestsShoppingAuthority(std::string_view goal) {
          ContainsAsciiWord(lower, "purchase");
 }
 
+bool GoalStartsDownloadCommand(std::string_view goal) {
+  std::string requested = RequestedGoalText(goal);
+  // 只扩大明确的传输请求；说明下载、引用命令和仅查链接仍不授予下载能力。
+  if (GoalContainsAny(goal,
+                      {"不要下载", "不要下載", "不下载", "不下載", "请勿下载",
+                       "請勿下載", "do not download", "don't download",
+                       "don’t download", "without downloading", "只找", "仅找",
+                       "僅找", "只查找", "只给", "只給"})) {
+    return false;
+  }
+  std::string_view instruction =
+      base::TrimWhitespaceASCII(requested, base::TRIM_ALL);
+  for (std::string_view prefix : {"please ", "请", "請"}) {
+    if (instruction.starts_with(prefix)) {
+      instruction.remove_prefix(prefix.size());
+      break;
+    }
+  }
+  if (std::ranges::any_of(
+          std::initializer_list<std::string_view>{
+              "解释",     "解釋",      "介绍",    "介紹",       "说明",
+              "說明",     "如何",      "怎么",    "怎麼",       "总结",
+              "總結",     "翻译",      "翻譯",    "告诉我如何", "告訴我如何",
+              "explain ", "describe ", "how to ", "summarize ", "translate "},
+          [instruction](auto prefix) {
+            return instruction.starts_with(prefix);
+          })) {
+    return false;
+  }
+  for (std::string_view separator :
+       {"。", "；", "，", ";", ",", "并且", "並且", "并", "並", "然后", "然後",
+        " and then ", " and "}) {
+    base::ReplaceSubstringsAfterOffset(&requested, 0, separator, "\n");
+  }
+  for (auto command : base::SplitStringPiece(
+           requested, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+    // 每层只剥离固定请求前缀，不搜索任意正文中的“下载”二字。
+    bool stripped = true;
+    while (stripped) {
+      stripped = false;
+      for (std::string_view prefix : {"please help me ",
+                                      "please ",
+                                      "help me ",
+                                      "actually ",
+                                      "now ",
+                                      "请帮我",
+                                      "請幫我",
+                                      "帮我",
+                                      "幫我",
+                                      "请",
+                                      "請",
+                                      "实际",
+                                      "實際",
+                                      "立即",
+                                      "直接",
+                                      "现在",
+                                      "現在",
+                                      "马上",
+                                      "馬上",
+                                      "再",
+                                      "继续",
+                                      "繼續"}) {
+        if (command.starts_with(prefix)) {
+          command.remove_prefix(prefix.size());
+          command = base::TrimWhitespaceASCII(command, base::TRIM_LEADING);
+          stripped = true;
+          break;
+        }
+      }
+    }
+    if (command.starts_with("从") || command.starts_with("從")) {
+      auto pos = command.find("下载");
+      if (pos == std::string_view::npos) {
+        pos = command.find("下載");
+      }
+      if (pos == std::string_view::npos ||
+          !GoalContainsAny(command.substr(0, pos),
+                           {"页面", "頁面", "网页", "網頁", "官网", "官網",
+                            "发布页", "發佈頁", "所选", "所選", "链接",
+                            "連結"})) {
+        continue;
+      }
+      command.remove_prefix(pos);
+    }
+    for (std::string_view prefix : {"开始下载", "開始下載", "下载", "下載"}) {
+      if (!command.starts_with(prefix)) {
+        continue;
+      }
+      const auto object = command.substr(prefix.size());
+      if (!object.empty() &&
+          !std::ranges::any_of(
+              std::initializer_list<std::string_view>{
+                  "量", "速度", "原理", "教程", "方法", "地址", "链接", "連結",
+                  "记录", "記錄", "历史", "歷史", "功能", "是什么", "是什麼",
+                  "的文件", "的檔案"},
+              [object](auto noun) { return object.starts_with(noun); })) {
+        return true;
+      }
+    }
+    if (GoalContainsAny(command, {"下载", "下載"}) &&
+        (command.starts_with("开始页面中的") ||
+         command.starts_with("開始頁面中的"))) {
+      return true;
+    }
+    if (std::ranges::any_of(
+            std::initializer_list<std::string_view>{
+                "start downloading ", "start the download", "download this ",
+                "download the ", "download selected ", "download a file"},
+            [command](auto prefix) { return command.starts_with(prefix); })) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool GoalRequestsSafeDownload(std::string_view goal) {
   const std::string lower = base::ToLowerASCII(goal);
   constexpr std::string_view kSafeDownloadPhrases[] = {
       "官方下载",          "官方安装",           "下载地址",      "安装包",
       "官方下載",          "官方安裝",           "下載地址",      "安裝包",
-      "official download", "official installer", "download link",
+      "official download", "official installer", "download link", "下载的文件",
+      "下載的檔案",        "downloaded file",
   };
-  return std::ranges::any_of(kSafeDownloadPhrases,
-                             [&lower](std::string_view phrase) {
-                               return lower.find(phrase) != std::string::npos;
-                             });
+  if (std::ranges::any_of(kSafeDownloadPhrases,
+                          [&lower](std::string_view phrase) {
+                            return lower.find(phrase) != std::string::npos;
+                          })) {
+    return true;
+  }
+  return GoalStartsDownloadCommand(goal);
 }
 
 bool GoalRequestsBrowserData(std::string_view goal) {
@@ -419,8 +544,9 @@ AgentModelToolDefinition BuildRouteGoalToolDefinition() {
   base::DictValue properties;
   properties.Set("schema_version",
                  IntegerSchema(kAgentSchemaVersion, kAgentSchemaVersion));
-  properties.Set("workflow", EnumSchema({"research", "browser_steward",
-                                         "safe_download", "shopping"}));
+  properties.Set("workflow",
+                 EnumSchema({"research", "browser_steward", "safe_download",
+                             "shopping", "page_interaction"}));
   properties.Set("entry_kind",
                  EnumSchema({"browser_only", "open_url", "web_search"}));
   properties.Set("target", StringSchema(4096, 0));
@@ -439,7 +565,7 @@ Choose open_url only when the user supplied an explicit URL or the exact public 
 Choose web_search only when the task genuinely requires discovery, comparison, multiple sources, or current information and no exact website is sufficient. Do not choose web_search merely because the user omitted a URL.
 When the user explicitly names a public website, merchant, service, or common alias (for example JD/京东, Amazon, GitHub, or YouTube), that website is unambiguous: choose open_url, never web_search. Prefer a direct HTTPS search or results URL on the named website when the goal includes a query; otherwise use its official homepage. Do not route a named-site task to a general search engine.
 The target must be empty for browser_only, an absolute HTTP(S) URL for open_url, or a concise search query for web_search.
-Classify the workflow as research, browser_steward, safe_download, or shopping. The requested workflow is only a UI hint and may be corrected.
+Classify the workflow as research, browser_steward, safe_download, shopping, or page_interaction. Use page_interaction only for an explicit request to click a control on the current page; choose browser_only with an empty target. It does not grant navigation, form filling, purchase, or payment authority. The requested workflow is only a UI hint and may be corrected.
 Use research for finding, comparing, or recommending products when the user did not ask to purchase, add to cart, fill shopping forms, or prepare checkout. Use shopping only when the user explicitly requests one of those purchase actions.
 Write the summary in the same primary language as the user's goal. Never request or include secrets, credentials, OTP values, cookies, payment data, file contents, or hidden browser data.
 The browser independently validates the route, creates tabs, grants scope, and enforces approvals.)";
@@ -536,11 +662,40 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
   return route;
 }
 
+bool AgentGoalRequestsWindowTabMetadata(std::string_view goal) {
+  const std::string lower = base::ToLowerASCII(goal);
+  // 用户限定“本任务”时，保留已有任务标签范围；不能因“标签页”三个字
+  // 自动授予整个窗口的元数据读取能力。冲突或含糊目标取较小范围。
+  constexpr std::string_view task_references[] = {
+      "本任务",       "这个任务", "当前任务",   "该任务",      "本任務",
+      "這個任務",     "目前任務", "當前任務",   "該任務",      "this task",
+      "current task", "the task", "task-owned", "task scoped", "task-scoped"};
+  if (std::ranges::any_of(task_references,
+                          [&lower](std::string_view reference) {
+                            return lower.find(reference) != std::string::npos;
+                          })) {
+    return false;
+  }
+  if (lower.find("标签") == std::string::npos &&
+      lower.find("標籤") == std::string::npos &&
+      lower.find("tab") == std::string::npos) {
+    return false;
+  }
+  constexpr std::string_view references[] = {
+      "当前窗口",    "这个窗口", "本窗口",    "标签页",      "浏览器标签",
+      "目前視窗",    "這個視窗", "標籤頁",    "瀏覽器標籤",  "current window",
+      "this window", "my tabs",  "open tabs", "browser tabs"};
+  return std::ranges::any_of(references, [&lower](std::string_view reference) {
+    return lower.find(reference) != std::string::npos;
+  });
+}
+
 bool AgentGoalRequiresPageEvidence(std::string_view user_goal) {
   const std::string requested = RequestedGoalText(user_goal);
   if (GoalContainsAny(requested,
-                      {"页面内容", "网页内容", "頁面內容", "網頁內容",
-                       "正文", "page content"})) {
+                      {"页面内容", "网页内容", "頁面內容", "網頁內容", "正文",
+                       "page content", "核对订单", "核對訂單",
+                       "review the order", "review this order"})) {
     return true;
   }
 
@@ -615,10 +770,140 @@ bool AgentTaskRequiresPageEvidence(std::string_view user_goal,
          HasBoundEntryPage(scope);
 }
 
+namespace {
+
+bool GoalRequestsCurrentPageClick(std::string_view user_goal) {
+  const std::string requested = RequestedGoalText(user_goal);
+  return !GoalContainsAny(requested,
+                          {"如何点击", "如何點擊", "how to click"}) &&
+         GoalContainsAny(requested, {"点击", "點擊", "click "}) &&
+         GoalContainsAny(requested, {"按钮", "按鈕", "button"}) &&
+         GoalContainsAny(requested,
+                         {"当前页", "當前頁", "页面上", "頁面上", "这个页面",
+                          "這個頁面", "current page", "this page"}) &&
+         !GoalRequestsShoppingAuthority(requested) &&
+         !GoalRequestsSafeDownload(requested);
+}
+
+}  // namespace
+
+bool AgentGoalRefersToCurrentPage(std::string_view goal) {
+  const std::string requested = RequestedGoalText(goal);
+  // 显式网址沿用原有优先级；窗口列表仍走原生元数据入口。
+  if (GoalContainsAny(requested, {"https://", "http://", "www."}) ||
+      AgentGoalRequestsWindowTabMetadata(goal)) {
+    return false;
+  }
+  const auto requests_other_entry = [](std::string_view prefix) {
+    if (GoalContainsAny(prefix,
+                        {"上网搜索", "上網搜尋", "全网搜索", "全網搜尋",
+                         "search the web", "search for "}) ||
+        (NamedSiteForGoal(prefix) && GoalRequestsNamedSiteSearch(prefix))) {
+      return true;
+    }
+    for (std::string_view verb : {"去", "前往", "访问", "訪問", "打开", "打開",
+                                 "跳转", "跳轉", "open ", "visit ", "go to "}) {
+      const size_t position = prefix.rfind(verb);
+      if (position == std::string_view::npos) {
+        continue;
+      }
+      const auto object = base::TrimWhitespaceASCII(
+          prefix.substr(position + verb.size()), base::TRIM_ALL);
+      // “打开当前页中的链接”没有另一个目标，不能误当作换站请求。
+      if (!object.empty() && object != "the") {
+        return true;
+      }
+    }
+    return false;
+  };
+  // 指代只在同一名词短语内成立，不跨标点、动作或过去/未来页面限定。
+  // 允许描述词，不枚举“官方合成发布”等具体页面名称。
+  constexpr std::string_view markers[] = {
+      "当前", "當前", "目前", "这个", "這個", "this ", "current ",
+      "currently open ", "active "};
+  for (std::string_view marker : markers) {
+    for (size_t start = requested.find(marker); start != std::string::npos;
+         start = requested.find(marker, start + marker.size())) {
+      if (base::IsAsciiAlpha(marker.front()) && start > 0 &&
+          base::IsAsciiAlphaNumeric(requested[start - 1])) {
+        continue;
+      }
+      const std::string_view prefix = std::string_view(requested).substr(0, start);
+      // 明确要求先去别站或上网搜索时，后文的“当前页”不取消该请求。
+      if (requests_other_entry(prefix)) {
+        continue;
+      }
+      const size_t begin = start + marker.size();
+      const std::string_view phrase = std::string_view(requested).substr(begin);
+      for (std::string_view noun : {"页", "頁", "网站", "網站", "page", "tab",
+                                   "website"}) {
+        const size_t end = phrase.find(noun);
+        if (end == std::string_view::npos || end > 72u) {
+          continue;
+        }
+        if (base::IsAsciiAlpha(noun.front()) &&
+            ((end > 0 && base::IsAsciiAlphaNumeric(phrase[end - 1])) ||
+             (end + noun.size() < phrase.size() &&
+              base::IsAsciiAlphaNumeric(phrase[end + noun.size()])))) {
+          continue;
+        }
+        const std::string_view modifiers = phrase.substr(0, end);
+        if (!GoalContainsAny(
+                modifiers,
+                {"。", "，", "；", "！", "？", ".", ",", ";", "!", "?", "\n",
+                 "\r", "：", ":", "去", "访问", "訪問", "搜索", "搜尋", "查找",
+                 "总结", "總結", "翻译", "翻譯", "并", "並",
+                 "然后", "然後", "之前", "以前", "过去", "過去", "上次", "下次",
+                 "版本", "时间", "時間", " and ", " then ", "previous", "last ",
+                 "next ", "version", "visit ", "search "})) {
+          return true;
+        }
+      }
+    }
+  }
+  // 保留没有修饰词的旧入口；先排除明确外站请求，避免泛指正文反向抢占。
+  if (requests_other_entry(requested)) {
+    return false;
+  }
+  return GoalContainsAny(requested,
+                          {"本页", "本頁", "本网页", "本網頁", "本页面", "本頁面",
+                           "页面内容", "网页内容", "頁面內容", "網頁內容",
+                           "page content", "核对订单", "核對訂單",
+                           "review the order", "review this order"});
+}
+
+bool AgentGoalRequestsDownloadTransfer(std::string_view goal) {
+  return GoalStartsDownloadCommand(goal);
+}
+
 AgentWorkflowKind ConstrainWorkflowToUserIntent(
     std::string_view user_goal,
     AgentWorkflowKind workflow) {
   const std::string requested = RequestedGoalText(user_goal);
+  // 当前页入口不会再调用路由模型，也必须保留明确要求的下载来源核验。
+  if (GoalRequestsSafeDownload(requested) && !IsBookmarkGoal(requested) &&
+      !GoalRequestsShoppingAuthority(requested)) {
+    return AgentWorkflowKind::kSafeDownload;
+  }
+  // “准备核对”只要求读取订单；提及最终购买不等于授权填写或准备结账。
+  if (GoalContainsAny(requested, {"核对订单", "核對訂單", "review the order",
+                                  "review this order"}) &&
+      !GoalContainsAny(
+          requested,
+          {"填写", "填寫", "填入", "加入购物车", "加入購物車", "准备结账",
+           "準備結帳", "prepare checkout", "add to cart", "fill "})) {
+    return AgentWorkflowKind::kResearch;
+  }
+  // 只分类用户明确提出的当前页点击；实际动作仍需逐次审批。
+  if (workflow == AgentWorkflowKind::kPageInteraction) {
+    return GoalRequestsCurrentPageClick(user_goal)
+               ? workflow
+               : AgentWorkflowKind::kResearch;
+  }
+  if (workflow == AgentWorkflowKind::kResearch &&
+      GoalRequestsCurrentPageClick(user_goal)) {
+    return AgentWorkflowKind::kPageInteraction;
+  }
   // 被否定的浏览器数据词不能支持前端管家提示。保留原始禁止范围，
   // 让模型读取原文规划；当前页入口仍由浏览器绑定并验证实际观察。
   if (workflow == AgentWorkflowKind::kBrowserSteward &&
@@ -644,9 +929,19 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
                                               AgentGoalRoute route) {
   const std::string requested = RequestedGoalText(user_goal);
   route.workflow = ConstrainWorkflowToUserIntent(user_goal, route.workflow);
+  if (AgentGoalRefersToCurrentPage(user_goal) ||
+      route.workflow == AgentWorkflowKind::kPageInteraction) {
+    // 浏览器拥有当前页的绑定权；模型不能把该入口替换成网址或搜索。
+    if (route.workflow == AgentWorkflowKind::kBrowserSteward &&
+        !GoalRequestsBrowserData(requested)) {
+      route.workflow = AgentWorkflowKind::kResearch;
+    }
+    route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
+    route.target.clear();
+    return route;
+  }
   const bool shopping_authority = GoalRequestsShoppingAuthority(requested);
-  if (GoalRequestsSafeDownload(requested) && !shopping_authority &&
-      route.entry_kind != AgentGoalEntryKind::kBrowserOnly) {
+  if (GoalRequestsSafeDownload(requested) && !shopping_authority) {
     route.workflow = AgentWorkflowKind::kSafeDownload;
   } else if (route.workflow == AgentWorkflowKind::kShopping &&
              !shopping_authority) {
@@ -765,7 +1060,11 @@ std::optional<std::string> BuildAgentPlanningPrompt(
     base::DictValue item;
     item.Set("name", tool);
     item.Set("purpose", definition->description);
-    item.Set("risk", static_cast<int>(descriptor->risk));
+    item.Set("risk",
+             static_cast<int>(maximum_scope.restrict_to_current_page &&
+                                      tool == "page.click"
+                                  ? AgentRiskLevel::kR2ExternalSideEffect
+                                  : descriptor->risk));
     item.Set("requires_authorized_origin", descriptor->requires_origin);
     item.Set("has_external_side_effect", descriptor->has_external_side_effect);
     tool_catalog.Append(std::move(item));
@@ -825,6 +1124,52 @@ std::optional<std::string> BuildAgentPlanningPrompt(
     return std::nullopt;
   }
   return json;
+}
+
+std::optional<AgentModelEvent> BuildBrowserDownloadCancellationPlan(
+    std::string_view user_goal,
+    const AgentTaskScope& maximum_scope,
+    const AgentToolRegistry& registry) {
+  const std::string requested =
+      base::ToLowerASCII(RequestedGoalText(user_goal));
+  const bool cancel_after = std::ranges::any_of(
+      std::initializer_list<std::string_view>{
+          "下载后取消。", "下载后取消", "下載後取消。", "下載後取消",
+          "then cancel it.", "then cancel it", "then cancel."},
+      [&requested](std::string_view suffix) {
+        return requested.ends_with(suffix);
+      });
+  if (!AgentGoalRequestsDownloadTransfer(user_goal) || !cancel_after ||
+      !HasBoundEntryPage(maximum_scope) || !maximum_scope.IsValid() ||
+      maximum_scope.budgets.max_tool_calls < 4 ||
+      maximum_scope.AllowsTool("shopping.prepare_checkout")) {
+    return std::nullopt;
+  }
+  AgentModelEvent event;
+  event.type = AgentModelEventType::kToolCall;
+  event.tool_call_id = "browser-download-cancellation";
+  event.tool_name = "agent.submit_plan";
+  event.arguments.Set("schema_version", kAgentSchemaVersion);
+  event.arguments.Set("summary", std::string(user_goal));
+  base::ListValue steps;
+  for (const auto& [tool, title] :
+       {std::pair{"page.observe", "读取当前下载页面"},
+        std::pair{"download.find_official", "核对下载来源"},
+        std::pair{"download.start", "逐次批准后开始下载"},
+        std::pair{"download.cancel", "取消本任务刚开始的下载"}}) {
+    base::DictValue step;
+    step.Set("id",
+             "browser-download-" + base::NumberToString(steps.size() + 1));
+    step.Set("title", title);
+    step.Set("tool", tool);
+    steps.Append(std::move(step));
+  }
+  event.arguments.Set("steps", std::move(steps));
+  std::string error;
+  if (!ParseAndValidateTaskPlan(event, maximum_scope, registry, &error)) {
+    return std::nullopt;
+  }
+  return event;
 }
 
 std::optional<AgentModelEvent> BuildBrowserReadOnlyRecoveryPlan(
@@ -944,6 +1289,9 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
   plan.scope.allowed_tab_ids = maximum_scope.allowed_tab_ids;
   plan.scope.budgets = maximum_scope.budgets;
   plan.scope.model_destination = maximum_scope.model_destination;
+  plan.scope.restrict_to_current_page = maximum_scope.restrict_to_current_page;
+  plan.scope.selected_pages_research = maximum_scope.selected_pages_research;
+  plan.scope.selected_tab_group = maximum_scope.selected_tab_group;
 
   base::flat_set<std::string> step_ids;
   for (const base::Value& value : *steps) {
@@ -964,10 +1312,14 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
     }
     plan.scope.allowed_tools.insert(*tool_name);
     plan.scope.allowed_data_classes.insert(descriptor->data_class);
-    plan.steps.push_back(AgentPlanStep{.step_id = *id,
-                                       .title = *title,
-                                       .tool_name = *tool_name,
-                                       .risk = descriptor->risk});
+    plan.steps.push_back(AgentPlanStep{
+        .step_id = *id,
+        .title = *title,
+        .tool_name = *tool_name,
+        .risk =
+            maximum_scope.restrict_to_current_page && *tool_name == "page.click"
+                ? AgentRiskLevel::kR2ExternalSideEffect
+                : descriptor->risk});
   }
   const bool entry_page_already_open = HasBoundEntryPage(maximum_scope);
   if (entry_page_already_open &&
@@ -1008,9 +1360,15 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
           "follow-up navigation";
       return std::nullopt;
     }
+    if (missing_download_source || missing_download_start) {
+      *error = step.tool_name + " requires an earlier " +
+               (missing_download_source ? "download.find_official"
+                                        : "download.start") +
+               " step. page.click cannot replace either native download step.";
+      return std::nullopt;
+    }
     if (missing_bookmark_list || missing_bookmark_plan ||
-        missing_bookmark_apply || missing_download_source ||
-        missing_download_start) {
+        missing_bookmark_apply) {
       *error =
           "task plan uses a browser result before the step that creates "
           "it";
@@ -1078,6 +1436,26 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
   return true;
 }
 
+bool AgentGoalRequiresBookmarkApply(std::string_view user_goal) {
+  const auto requested = RequestedGoalText(user_goal);
+  if (!IsBookmarkGoal(user_goal) || BookmarkGoalIsReadOnly(user_goal) ||
+      GoalContainsAny(requested, {"撤销", "撤銷", "undo"})) {
+    return false;
+  }
+  // “按刚才预览整理”仍是应用目标；不能因含有“预览”二字就视作只读。
+  const auto trimmed = base::TrimWhitespaceASCII(requested, base::TRIM_ALL);
+  for (std::string_view prefix :
+       {"预览", "預覽", "先预览", "先預覽", "请预览", "請預覽", "请先预览",
+        "請先預覽", "preview ", "please preview "}) {
+    if (trimmed.starts_with(prefix) &&
+        !GoalContainsAny(requested, {"应用", "套用", "apply"})) {
+      return false;
+    }
+  }
+  return BookmarkGoalOrganizes(user_goal) ||
+         GoalContainsAny(requested, {"应用", "套用", "apply"});
+}
+
 bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
                              std::string_view user_goal,
                              std::string* error) {
@@ -1090,6 +1468,16 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
       return step.tool_name == tool_name;
     });
   };
+  const std::string requested = RequestedGoalText(user_goal);
+  if (GoalRequestsSafeDownload(requested) && !IsBookmarkGoal(requested) &&
+      !AgentGoalRequestsTranslation(user_goal) &&
+      (!GoalContainsAny(requested, {"安装", "安裝", "install"}) ||
+       GoalContainsAny(requested, {"安装包", "安裝包", "installer"})) &&
+      !has_step("download.find_official")) {
+    *error =
+        "download-source goal omitted required download.find_official step";
+    return false;
+  }
   // 否定子句不能制造必做步骤，也不能使原有的禁止修改约束失效。
   if (BookmarkGoalIsReadOnly(user_goal) && has_step("bookmark.apply")) {
     *error = "read-only bookmark goal must not include bookmark.apply";
@@ -1099,6 +1487,26 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
       !has_step("page.observe")) {
     *error = "page-reading goal omitted required page.observe step";
     return false;
+  }
+  if (plan.scope.restrict_to_current_page &&
+      GoalRequestsCurrentPageClick(user_goal)) {
+    bool clicked = false;
+    bool read_after_click = false;
+    for (const auto& step : plan.steps) {
+      if (step.tool_name == "page.click") {
+        clicked = true;
+        read_after_click = false;
+      } else if (clicked && (step.tool_name == "page.observe" ||
+                             step.tool_name == "page.extract")) {
+        read_after_click = true;
+      }
+    }
+    if (!clicked || !read_after_click) {
+      *error =
+          "current-page click goal requires page.click followed by "
+          "page.observe or page.extract";
+      return false;
+    }
   }
   if (!IsBookmarkGoal(user_goal)) {
     return true;

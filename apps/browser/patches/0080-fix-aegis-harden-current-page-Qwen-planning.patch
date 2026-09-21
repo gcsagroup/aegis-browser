@@ -1,7 +1,7 @@
-From fdaf07739e7b1af3dcdf28c08afc6a40ecc9a719 Mon Sep 17 00:00:00 2001
+From a7139478083597fb2d25e331b12c50dfc24a1e4a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 16:56:03 +0800
-Subject: [PATCH 80/90] fix(aegis): harden current-page Qwen planning
+Subject: [PATCH] fix(aegis): harden current-page Qwen planning
 
 ---
  .../aegis/agent/aegis_agent_browsertest.cc    | 41 +++++++++++++++++++

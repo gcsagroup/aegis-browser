@@ -1,0 +1,49 @@
+From 6173aa73f14d5adfb97c97382c23f6eabc62b953 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 04:55:13 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=9D=9E=E8=B0=B7=E6=AD=8C?=
+ =?UTF-8?q?=E5=93=81=E7=89=8C=E8=AE=BE=E7=BD=AE=E9=A1=B5=E7=9A=84=20Glic?=
+ =?UTF-8?q?=20=E5=8F=AF=E8=A7=81=E6=80=A7=E5=BC=95=E7=94=A8=EF=BC=8C?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E8=87=B3=20030?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ chrome/browser/ui/webui/settings/settings_ui.cc    | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 89f68e35de..a537285c47 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.29。
+-inline constexpr char kProductVersion[] = "1.1.0.29";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (029)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.30。
++inline constexpr char kProductVersion[] = "1.1.0.30";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (030)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
+index 90776defcb..54c7309d19 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -619,7 +619,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+        base::FeatureList::IsEnabled(contextual_cueing::kContextualCueingV2)},
+       {"showInlineCueMenuControl",
+        base::FeatureList::IsEnabled(features::kGlicSelectionPrompt) &&
+-           glic_enablement.ShouldShowSettingsPage()},
++           show_glic_section},
+       {"showSkillsSettingPage",
+        base::FeatureList::IsEnabled(features::kSkillsEnabled)},
+       {"showIndigoControl", base::FeatureList::IsEnabled(features::kIndigo)},
+-- 
+2.52.0
+

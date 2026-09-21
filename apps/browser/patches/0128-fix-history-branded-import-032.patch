@@ -1,0 +1,49 @@
+From 0c64c3ec1ffc36317afd87acfc2a76de59cf90f5 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 05:10:11 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=AF=B9=E9=BD=90=E5=8E=86=E5=8F=B2=E9=A1=B5?=
+ =?UTF-8?q?=E9=94=AE=E7=9B=98=E6=B5=8B=E8=AF=95=E5=AF=BC=E5=85=A5=E6=9D=A1?=
+ =?UTF-8?q?=E4=BB=B6=E5=B9=B6=E9=80=92=E5=A2=9E=E7=89=88=E6=9C=AC032?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h     | 6 +++---
+ chrome/test/data/webui/history/history_routing_test.ts | 2 ++
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 5041b16867..60c9496986 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.31。
+-inline constexpr char kProductVersion[] = "1.1.0.31";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (031)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.32。
++inline constexpr char kProductVersion[] = "1.1.0.32";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (032)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
+index dab64f8d85..f6b9649fe8 100644
+--- a/chrome/test/data/webui/history/history_routing_test.ts
++++ b/chrome/test/data/webui/history/history_routing_test.ts
+@@ -8,7 +8,9 @@ import type {HistoryAppElement, HistorySideBarElement} from 'chrome://history/hi
+ import {BrowserProxyImpl, CrRouter, historyClustersBrowserProxyFactory, historyEmbeddingsBrowserProxyFactory, HistoryEmbeddingsPageHandlerRemote, MetricsProxyImpl, PageHandlerRemote as HistoryClustersPageHandlerRemote} from 'chrome://history/history.js';
+ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
++// <if expr="_google_chrome or _is_chrome_for_testing">
+ import {keyDownOn} from 'chrome://webui-test/keyboard_mock_interactions.js';
++// </if>
+ import {TestMock} from 'chrome://webui-test/test_mock.js';
+ import {eventToPromise, isVisible, microtasksFinished} from 'chrome://webui-test/test_util.js';
+ 
+-- 
+2.52.0
+

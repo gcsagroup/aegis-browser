@@ -30,6 +30,8 @@ source_set("agent_core") {
     "agent/agent_planner.h",
     "agent/agent_policy_broker.cc",
     "agent/agent_policy_broker.h",
+    "agent/agent_research.cc",
+    "agent/agent_research.h",
     "agent/agent_result_verifier.cc",
     "agent/agent_result_verifier.h",
     "agent/agent_service_observer.h",
@@ -85,6 +87,20 @@ source_set("profile_support") {
   }
 }
 
+# 下载模块只依赖首选项定义，避免引入整个浏览器代理实现。
+source_set("download_prefs") {
+  sources = [
+    "aegis_download_prefs.cc",
+    "aegis_download_prefs.h",
+  ]
+  deps = [
+    "//base",
+    "//components/download/public/common:public",
+    "//components/pref_registry",
+    "//components/prefs",
+  ]
+}
+
 source_set("aegis") {
   sources = [
     "aegis_ai_control.cc",
@@ -93,8 +109,6 @@ source_set("aegis") {
     "aegis_bounce_observer.h",
     "aegis_cookie_janitor.cc",
     "aegis_cookie_janitor.h",
-    "aegis_download_prefs.cc",
-    "aegis_download_prefs.h",
     "aegis_link_sanitize_navigation_throttle.cc",
     "aegis_link_sanitize_navigation_throttle.h",
     "aegis_phish_blocking_page.cc",
@@ -126,7 +140,10 @@ source_set("aegis") {
     "threat_feed_updater.cc",
     "threat_feed_updater.h",
   ]
-  public_deps = [ ":profile_support" ]
+  public_deps = [
+    ":download_prefs",
+    ":profile_support",
+  ]
   deps = [
     ":model_provider_policy",
     "//base",
@@ -169,6 +186,8 @@ source_set("aegis") {
     "agent/aegis_agent_service_factory.h",
     "agent/aegis_browser_tools.cc",
     "agent/aegis_browser_tools.h",
+    "agent/agent_observation.cc",
+    "agent/agent_observation.h",
   ]
   deps += [
     ":agent_core",
@@ -292,6 +311,7 @@ test("aegis_agent_core_unittests") {
   sources = [
     "agent/agent_core_unittest.cc",
     "agent/agent_execution_unittest.cc",
+    "agent/agent_research_unittest.cc",
     "agent/agent_model_protocol_unittest.cc",
     "agent/agent_monitor_summary_unittest.cc",
     "agent/agent_planner_unittest.cc",
@@ -302,6 +322,8 @@ test("aegis_agent_core_unittests") {
     ":agent_core",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
+    "//crypto",
+    "//sql",
     "//testing/gtest",
     "//url",
   ]
@@ -358,6 +380,7 @@ test("aegis_browser_unittests") {
     "//chrome/test:test_support",
     "//chrome/test:test_support_unit",
     "//content/test:test_support",
+    "//crypto",
     "//net",
     "//services/data_decoder/public/cpp:test_support",
     "//services/network:test_support",
@@ -370,6 +393,7 @@ test("aegis_browser_unittests") {
       "aegis_ui_handler_unittest.cc",
       "agent/aegis_agent_service_unittest.cc",
       "agent/agent_core_unittest.cc",
+      "agent/agent_observation_unittest.cc",
       "agent/agent_task_store_unittest.cc",
       "summary_session_unittest.cc",
     ]

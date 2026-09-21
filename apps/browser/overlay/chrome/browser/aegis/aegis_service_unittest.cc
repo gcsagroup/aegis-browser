@@ -96,6 +96,31 @@ class CountingAegisServiceObserver : public AegisServiceObserver {
 };
 
 TEST_F(AegisServiceModelSettingsTest,
+       PageSummaryDoesNotCountOtherPageSiteHistory) {
+  NavigateAndCommit(GURL("https://same.test/current"));
+  auto* current = service();
+  const auto document = AegisService::DocumentIdForWebContents(web_contents());
+  current->RecordBlockedRequest(GURL("https://tracker.test/pixel"), "easylist",
+                                "", document, "same.test");
+  current->RecordPhishBlock("same.test", "url_risk", "");
+  current->RecordBlockedRequest(GURL("https://tracker.test/other"), "easylist",
+                                "", "another-document", "same.test");
+  auto summary = current->GetPageSummary(web_contents());
+  EXPECT_EQ(summary.total, 1);
+  EXPECT_EQ(summary.blocked, 1);
+  EXPECT_EQ(summary.phishing, 0);
+  ASSERT_EQ(summary.events.size(), 1u);
+  EXPECT_EQ(summary.events[0].document_id, document);
+  ASSERT_EQ(summary.site_history.size(), 1u);
+  EXPECT_EQ(summary.site_history[0].kind, "phish");
+  NavigateAndCommit(GURL("https://same.test/next"));
+  summary = current->GetPageSummary(web_contents());
+  EXPECT_EQ(summary.total, 0);
+  EXPECT_TRUE(summary.events.empty());
+  EXPECT_EQ(summary.site_history.size(), 1u);
+}
+
+TEST_F(AegisServiceModelSettingsTest,
        NewProfileDefaultsToOpenAIWithoutMigration) {
   AegisService* service = this->service();
   EXPECT_EQ("openai", service->ConfiguredModelProvider());

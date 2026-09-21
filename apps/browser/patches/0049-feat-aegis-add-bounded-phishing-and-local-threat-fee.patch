@@ -1,4 +1,4 @@
-From cf0f5f3bfbb289520dcc6e9a39f648d5da115f46 Mon Sep 17 00:00:00 2001
+From 32a7de8090c3a95d2f1c3bc08abaccb080e262be Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 23:28:28 +0800
 Subject: [PATCH] feat(aegis): add bounded phishing and local threat feeds
@@ -38,7 +38,7 @@ Subject: [PATCH] feat(aegis): add bounded phishing and local threat feeds
  create mode 100644 chrome/common/aegis/threat_feed_index_unittest.cc
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 8f0960753f..2e0e9bb7e0 100644
+index 86425cf43f..0a54b7ad2b 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -159,9 +159,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
@@ -1742,10 +1742,10 @@ index efaa533860..a5139225cf 100644
    // Tells the render frame to load any blocked plugins matching the given
    // identifier (empty string matches all).
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index 9cbb78c72a..4c4bdc9d79 100644
+index ede7068f7b..76964595a5 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
-@@ -65,6 +65,7 @@
+@@ -70,6 +70,7 @@
  #include "third_party/blink/public/web/web_document_loader.h"
  #include "third_party/blink/public/web/web_element.h"
  #include "third_party/blink/public/web/web_element_collection.h"
@@ -1753,7 +1753,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  #include "third_party/blink/public/web/web_frame_content_dumper.h"
  #include "third_party/blink/public/web/web_input_element.h"
  #include "third_party/blink/public/web/web_local_frame.h"
-@@ -110,7 +111,6 @@ using content::RenderFrame;
+@@ -115,7 +116,6 @@ using content::RenderFrame;
  // Any text beyond this point will be clipped.
  static const size_t kMaxIndexChars = 65535;
  
@@ -1761,7 +1761,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  // For a page that auto-refreshes, we still show the bubble, if
  // the refresh delay is less than this value (in seconds).
  static constexpr base::TimeDelta kLocationChangeInterval = base::Seconds(10);
-@@ -203,8 +203,9 @@ ChromeRenderFrameObserver::ChromeRenderFrameObserver(
+@@ -219,8 +219,9 @@ ChromeRenderFrameObserver::ChromeRenderFrameObserver(
            base::Unretained(this)));
  
    // Don't do anything else for subframes.
@@ -1772,7 +1772,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  
  #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
    SetClientSidePhishingDetection();
-@@ -249,8 +250,9 @@ void ChromeRenderFrameObserver::ReadyToCommitNavigation(
+@@ -265,8 +266,9 @@ void ChromeRenderFrameObserver::ReadyToCommitNavigation(
      WebDocumentLoader* document_loader) {
    // Execute cache clear operations that were postponed until a navigation
    // event (including tab reload).
@@ -1781,9 +1781,9 @@ index 9cbb78c72a..4c4bdc9d79 100644
      web_cache_impl_->ExecutePendingClearCache();
 +  }
  
-   // Let translate_agent do any preparatory work before the new document loads.
-   if (translate_agent_) {
-@@ -279,8 +281,9 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
+   // Dynamically instantiate TranslateAgent on-the-fly if this WebUI
+   // exceptionally requires it.
+@@ -305,8 +307,9 @@ void ChromeRenderFrameObserver::DidSetPageLifecycleState(
  void ChromeRenderFrameObserver::DidFinishLoad() {
    WebLocalFrame* frame = render_frame()->GetWebFrame();
    // Don't do anything for subframes.
@@ -1794,7 +1794,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  
    GURL osdd_url = frame->GetDocument().OpenSearchDescriptionURL();
    if (!osdd_url.is_empty()) {
-@@ -296,16 +299,18 @@ void ChromeRenderFrameObserver::DidFinishLoad() {
+@@ -322,16 +325,18 @@ void ChromeRenderFrameObserver::DidFinishLoad() {
  void ChromeRenderFrameObserver::DidCreateNewDocument() {
  #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
    DCHECK(render_frame());
@@ -1815,7 +1815,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  
    // Connect to Mojo service on browser to notify it of the page's archive
    // properties.
-@@ -329,8 +334,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
+@@ -355,8 +360,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
    WebLocalFrame* frame = render_frame()->GetWebFrame();
  
    // Don't do anything for subframes.
@@ -1826,7 +1826,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  
    static crash_reporter::CrashKeyString<8> view_count_key("view-count");
    view_count_key.Set(base::NumberToString(blink::WebView::GetWebViewCount()));
-@@ -338,8 +344,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
+@@ -364,8 +370,9 @@ void ChromeRenderFrameObserver::DidCommitProvisionalLoad(
  #if !BUILDFLAG(IS_ANDROID)
    if (render_frame()->GetEnabledBindings().HasAny(
            content::kWebUIBindingsPolicySet)) {
@@ -1837,7 +1837,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
      webui_javascript_.clear();
    }
  #endif
-@@ -616,27 +623,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+@@ -649,27 +656,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
  }
  
  void ChromeRenderFrameObserver::CollectAegisPageSignals(
@@ -1886,7 +1886,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
          const blink::WebInputElement input =
              el.DynamicTo<blink::WebInputElement>();
          if (input.IsNull()) {
-@@ -648,8 +671,15 @@ void ChromeRenderFrameObserver::CollectAegisPageSignals(
+@@ -681,8 +704,15 @@ void ChromeRenderFrameObserver::CollectAegisPageSignals(
          }
        }
      }
@@ -1903,7 +1903,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
  }
  
  void ChromeRenderFrameObserver::LoadBlockedPlugins(
-@@ -879,11 +909,13 @@ bool ChromeRenderFrameObserver::NeedsDownscale(
+@@ -922,11 +952,13 @@ bool ChromeRenderFrameObserver::NeedsDownscale(
      const gfx::Size& original_image_size,
      int32_t requested_image_min_area_pixels,
      const gfx::Size& requested_image_max_size) {
@@ -1919,7 +1919,7 @@ index 9cbb78c72a..4c4bdc9d79 100644
    return true;
  }
  
-@@ -892,14 +924,16 @@ SkBitmap ChromeRenderFrameObserver::Downscale(
+@@ -935,14 +967,16 @@ SkBitmap ChromeRenderFrameObserver::Downscale(
      const SkBitmap& image,
      int requested_image_min_area_pixels,
      const gfx::Size& requested_image_max_size) {
@@ -1939,10 +1939,10 @@ index 9cbb78c72a..4c4bdc9d79 100644
    gfx::SizeF scaled_size = gfx::SizeF(image_size);
  
 diff --git a/chrome/renderer/chrome_render_frame_observer.h b/chrome/renderer/chrome_render_frame_observer.h
-index a56470f053..fae7302131 100644
+index a829805460..e443af3bb4 100644
 --- a/chrome/renderer/chrome_render_frame_observer.h
 +++ b/chrome/renderer/chrome_render_frame_observer.h
-@@ -127,8 +127,9 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
+@@ -131,8 +131,9 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
    void SetCCTClientHeader(const std::string& header) override;
  #endif
    void GetMediaFeedURL(GetMediaFeedURLCallback callback) override;

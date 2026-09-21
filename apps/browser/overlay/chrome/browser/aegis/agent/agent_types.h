@@ -105,6 +105,12 @@ struct AgentTaskScope {
   base::flat_set<int32_t> allowed_tab_ids;
   // 浏览器绑定的当前窗口，只允许 tab.list 读取元数据，不授予标签操作权限。
   int32_t tab_metadata_window_id = 0;
+  // 浏览器指定的当前页操作：不允许移除该限制或自动跳转到其他地址。
+  bool restrict_to_current_page = false;
+  // 浏览器所有的多页只读范围；地址只能来自用户选择的标签。
+  bool selected_pages_research = false;
+  // 用户勾选的分组目标，只允许读取这些标签的元数据并将它们分组。
+  bool selected_tab_group = false;
   base::flat_set<std::string> allowed_tools;
   base::flat_set<AgentDataClass> allowed_data_classes;
   AgentBudgets budgets;
@@ -112,6 +118,8 @@ struct AgentTaskScope {
 
   bool IsValid() const;
   bool AllowsOrigin(const GURL& url) const;
+  bool AllowsPageDestination(const GURL& url,
+                             const std::optional<GURL>& selected_url) const;
   bool AllowsTab(int32_t tab_id) const;
   bool AllowsTool(const std::string& tool_name) const;
   bool AllowsDataClass(AgentDataClass data_class) const;

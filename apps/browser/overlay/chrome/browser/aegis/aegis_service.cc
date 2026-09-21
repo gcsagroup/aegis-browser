@@ -882,7 +882,10 @@ PagePrivacySummary AegisService::GetPageSummary(
       SiteKeyForHost(std::string(web_contents->GetLastCommittedURL().host()));
   summary.paused = IsSitePaused(summary.site_key);
   summary.events = privacy_events_.ForDocumentAndSite(
-      DocumentIdForWebContents(web_contents), summary.site_key);
+      DocumentIdForWebContents(web_contents), std::string());
+  summary.site_history =
+      privacy_events_.ForDocumentAndSite(std::string(), summary.site_key);
+  summary.fingerprint_configured = IsFingerprintGuardEnabled();
   for (const PrivacyEvent& event : summary.events) {
     if (event.kind == "miner") {
       summary.miner_alerts += event.count;

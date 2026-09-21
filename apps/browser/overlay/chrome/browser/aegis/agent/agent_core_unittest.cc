@@ -5,11 +5,13 @@
 #include <string>
 #include <vector>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/aegis/agent/agent_monitor_scheduler.h"
 #include "chrome/browser/aegis/agent/agent_policy_broker.h"
 #include "chrome/browser/aegis/agent/agent_result_verifier.h"
 #include "chrome/browser/aegis/agent/agent_workflow.h"
+#include "crypto/sha2.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -103,6 +105,121 @@ void ConsentTask(AgentTask* task) {
   ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRunning, "test"));
 }
 
+TEST(AegisAgentTypesTest, CurrentPageScopePinsUrlAndCannotBeBroadened) {
+  const auto base = TestScope();
+  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kPageInteraction,
+                                       base.allowed_origins, {7},
+                                       base.model_destination);
+  ASSERT_TRUE(scope);
+  EXPECT_TRUE(scope->restrict_to_current_page);
+  EXPECT_TRUE(scope->AllowsTool("page.click"));
+  for (const auto* tool : {"page.navigate", "page.type", "form.fill",
+                           "tab.create", "monitor.create"}) {
+    EXPECT_FALSE(scope->AllowsTool(tool)) << tool;
+  }
+  const GURL selected("https://shop.example/current?edition=1");
+  EXPECT_TRUE(scope->AllowsPageDestination(selected, selected));
+  EXPECT_FALSE(scope->AllowsPageDestination(selected, std::nullopt));
+  for (const auto* target : {"https://shop.example/redirect",
+                             "https://shop.example/current?edition=2",
+                             "https://shop.example/current?edition=1#new",
+                             "https://other.example/current"}) {
+    EXPECT_FALSE(scope->AllowsPageDestination(GURL(target), selected))
+        << target;
+  }
+  auto broader = *scope;
+  broader.restrict_to_current_page = false;
+  EXPECT_FALSE(broader.IsNoBroaderThan(*scope));
+  EXPECT_TRUE(scope->IsNoBroaderThan(broader));
+  broader = *scope;
+  broader.allowed_tab_ids.insert(8);
+  EXPECT_FALSE(broader.IsValid());
+  EXPECT_FALSE(BuildAgentAutomationScope(AgentWorkflowKind::kPageInteraction,
+                                         base.allowed_origins, {7},
+                                         base.model_destination));
+}
+
+TEST(AegisAgentTypesTest, SelectedResearchIsBoundedAndCannotGainActions) {
+  auto scope = TestScope();
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.allowed_tools = {"page.observe"};
+  scope.budgets.max_tabs = 10;
+  scope.selected_pages_research = true;
+  ASSERT_TRUE(scope.IsValid());
+  const GURL selected("https://shop.example/read?edition=1");
+  EXPECT_TRUE(scope.AllowsPageDestination(selected, selected));
+  EXPECT_FALSE(scope.AllowsPageDestination(selected, std::nullopt));
+  EXPECT_FALSE(scope.AllowsPageDestination(
+      GURL("https://shop.example/read?edition=2"), selected));
+  auto changed = scope;
+  changed.selected_pages_research = false;
+  EXPECT_FALSE(changed.IsNoBroaderThan(scope));
+  changed = scope;
+  changed.allowed_tools.insert("page.click");
+  EXPECT_FALSE(changed.IsValid());
+  changed = scope;
+  changed.allowed_tab_ids.erase(9);
+  EXPECT_FALSE(changed.IsValid());
+  changed = scope;
+  changed.allowed_tab_ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+  changed.budgets.max_tabs = 20;
+  EXPECT_FALSE(changed.IsValid());
+}
+
+TEST(AegisAgentTypesTest, SelectedTabGroupCannotGainContentOrWindowAccess) {
+  auto scope = TestScope();
+  scope.allowed_origins.clear();
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.allowed_tools = {"tab.list", "tab.group"};
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  scope.budgets.max_tabs = 10;
+  scope.selected_tab_group = true;
+  ASSERT_TRUE(scope.IsValid());
+  auto changed = scope;
+  changed.selected_tab_group = false;
+  EXPECT_FALSE(changed.IsNoBroaderThan(scope));
+  EXPECT_FALSE(scope.IsNoBroaderThan(changed));
+  changed = scope;
+  changed.tab_metadata_window_id = 41;
+  EXPECT_FALSE(changed.IsValid());
+  changed = scope;
+  changed.allowed_tools.insert("page.observe");
+  EXPECT_FALSE(changed.IsValid());
+  changed = scope;
+  changed.allowed_origins.push_back(
+      url::Origin::Create(GURL("https://outside.example")));
+  EXPECT_FALSE(changed.IsValid());
+  changed = scope;
+  changed.allowed_tab_ids.clear();
+  EXPECT_FALSE(changed.IsValid());
+  changed.allowed_tab_ids = {7};
+  EXPECT_TRUE(changed.IsValid());
+}
+
+TEST(AegisAgentPolicyTest, CurrentPageClickRequiresSingleActionApproval) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  const auto base = TestScope();
+  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kPageInteraction,
+                                       base.allowed_origins, {7},
+                                       base.model_destination);
+  ASSERT_TRUE(scope);
+  AgentTask task("current-page-click", "点击当前页面的按钮", AgentMode::kAct,
+                 *scope);
+  ConsentTask(&task);
+  const auto call = PageClickCall();
+  auto decision = broker.Evaluate(task, call);
+  EXPECT_EQ(decision.risk, AgentRiskLevel::kR2ExternalSideEffect);
+  EXPECT_EQ(decision.disposition,
+            AgentPolicyDisposition::kRequireActionApproval);
+  auto receipt = broker.IssueApproval(task, call);
+  ASSERT_TRUE(receipt);
+  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
+            AgentPolicyDisposition::kAllow);
+  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
+            AgentPolicyDisposition::kRequireActionApproval);
+}
+
 TEST(AegisAgentTypesTest, ScopeRejectsExpansionAndSecrets) {
   AgentTaskScope parent = TestScope();
   ASSERT_TRUE(parent.IsValid());
@@ -175,6 +292,15 @@ TEST(AegisAgentTaskTest, EnforcesTransitionsTerminalStateAndBudgets) {
   EXPECT_TRUE(task.TransitionTo(AgentTaskState::kCompleted, "done"));
   EXPECT_FALSE(task.TransitionTo(AgentTaskState::kRunning, "reopen"));
   EXPECT_EQ(task.events().size(), 5u);
+  AgentTask invalidated("invalidated-before-consent", "当前页面操作",
+                        AgentMode::kAct, TestScope());
+  ASSERT_TRUE(invalidated.TransitionTo(AgentTaskState::kPlanning, "制定计划"));
+  ASSERT_TRUE(invalidated.TransitionTo(AgentTaskState::kAwaitingTaskConsent,
+                                       "等待授权"));
+  EXPECT_TRUE(invalidated.TransitionTo(AgentTaskState::kFailed,
+                                       "原页面绑定已失效"));
+  EXPECT_FALSE(invalidated.TransitionTo(AgentTaskState::kRunning,
+                                        "不得重开失败任务"));
 }
 
 TEST(AegisAgentTaskTest, RecordsTimelineFactWithoutChangingState) {
@@ -762,6 +888,141 @@ TEST(AegisAgentPolicyTest, FinalCheckoutAlwaysRequiresUserTakeover) {
             AgentPolicyDisposition::kRequireUserTakeover);
 }
 
+TEST(AegisAgentPolicyTest, SelectedReadUrlsDoNotAuthorizeDerivedUrls) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  auto scope = TestScope();
+  scope.allowed_origins.push_back(
+      url::Origin::Create(GURL("https://other.example/")));
+  scope.allowed_tools.insert("tab.create");
+  scope.allowed_tools.insert("window.create");
+  scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
+  AgentTask task("url-selection", "读取两个选中页面", AgentMode::kAct, scope);
+  const GURL selected("https://other.example/research?edition=1#section");
+  ASSERT_TRUE(broker.BindSelectedReadUrls(task, {selected}));
+  EXPECT_TRUE(broker.IsSelectedReadUrl(task, selected));
+  AgentPolicyBroker recovered(&registry);
+  EXPECT_FALSE(recovered.IsSelectedReadUrl(task, selected));
+  EXPECT_FALSE(
+      broker.BindSelectedReadUrls(task, {GURL("https://other.example/new")}));
+  ConsentTask(&task);
+  for (const char* name : {"page.navigate", "tab.create", "window.create"}) {
+    SCOPED_TRACE(name);
+    AgentToolCall call;
+    call.action_id = "navigate";
+    call.tool_name = name;
+    call.committed_url = GURL("https://shop.example/current");
+    if (call.tool_name == "page.navigate") {
+      call.arguments.Set("tab_id", 7);
+    }
+    call.arguments.Set("url", selected.spec());
+    EXPECT_EQ(broker.Evaluate(task, call).disposition,
+              AgentPolicyDisposition::kAllow);
+    for (const char* changed :
+         {"https://other.example/research/SYNTHETIC-CONTENT",
+          "https://other.example/research?edition=SYNTHETIC-CONTENT",
+          "https://other.example/research?edition=1#SYNTHETIC-CONTENT",
+          "https://shop.example/send/SYNTHETIC-CONTENT"}) {
+      call.arguments.Set("url", changed);
+      EXPECT_FALSE(broker.IsSelectedReadUrl(task, GURL(changed)));
+      const auto decision = broker.Evaluate(task, call);
+      EXPECT_EQ(decision.disposition,
+                AgentPolicyDisposition::kRequireActionApproval);
+      EXPECT_EQ(decision.risk, AgentRiskLevel::kR2ExternalSideEffect);
+    }
+  }
+}
+
+TEST(AegisAgentPolicyTest, UrlApprovalIsExactSingleUseAndRevocable) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  AgentTask task("url-receipt", "受控导航", AgentMode::kAct, TestScope());
+  ConsentTask(&task);
+  AgentToolCall call;
+  call.action_id = "navigate";
+  call.tool_name = "page.navigate";
+  call.committed_url = GURL("https://shop.example/current");
+  call.arguments.Set("tab_id", 7);
+  call.arguments.Set("url", "https://shop.example/new");
+  const auto receipt = broker.IssueApproval(task, call);
+  ASSERT_TRUE(receipt);
+  call.arguments.Set("url", "https://shop.example/new?changed=1");
+  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
+            AgentPolicyDisposition::kRequireActionApproval);
+  call.arguments.Set("url", "https://shop.example/new");
+  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
+            AgentPolicyDisposition::kAllow);
+  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
+            AgentPolicyDisposition::kRequireActionApproval);
+  const auto revoked = broker.IssueApproval(task, call);
+  ASSERT_TRUE(revoked);
+  broker.RevokeTaskApprovals(task.id());
+  EXPECT_EQ(broker.Evaluate(task, call, revoked->approval_id).disposition,
+            AgentPolicyDisposition::kRequireActionApproval);
+  AgentPolicyBroker recovered(&registry);
+  EXPECT_EQ(recovered.Evaluate(task, call, receipt->approval_id).disposition,
+            AgentPolicyDisposition::kRequireActionApproval);
+  EXPECT_FALSE(
+      recovered.BindSelectedReadUrls(task, {GURL("https://shop.example/new")}));
+}
+
+TEST(AegisAgentPolicyTest, UrlApprovalCannotOverrideScopeOrCredentials) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  AgentTask task("url-deny", "拒绝越界", AgentMode::kAct, TestScope());
+  EXPECT_FALSE(
+      broker.BindSelectedReadUrls(task, {GURL("https://outside.example/")}));
+  ConsentTask(&task);
+  AgentToolCall call;
+  call.action_id = "navigate";
+  call.tool_name = "page.navigate";
+  call.committed_url = GURL("https://shop.example/current");
+  call.arguments.Set("tab_id", 7);
+  for (const char* target :
+       {"https://outside.example/", "https://user:pass@shop.example/",
+        "file:///tmp/fixture"}) {
+    call.arguments.Set("url", target);
+    EXPECT_EQ(broker.Evaluate(task, call).disposition,
+              AgentPolicyDisposition::kDeny);
+    EXPECT_FALSE(broker.IssueApproval(task, call));
+  }
+}
+
+TEST(AegisAgentPolicyTest, OfflineDownloadAssessmentNeedsNoTransferApproval) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  auto scope = TestScope();
+  scope.allowed_tools.insert("download.find_official");
+  scope.allowed_data_classes.insert(AgentDataClass::kDownloads);
+  AgentTask task("offline-assessment", "只在本机比较来源", AgentMode::kAct,
+                 scope);
+  ConsentTask(&task);
+  AgentToolCall call;
+  call.action_id = "assess";
+  call.tool_name = "download.find_official";
+  call.committed_url = GURL("https://shop.example/source");
+  call.document = AgentDocumentRef{.tab_id = 7,
+                                   .frame_token = "source-frame",
+                                   .document_token = "source-document",
+                                   .committed_url = call.committed_url};
+  call.arguments.Set("tab_id", 7);
+  call.arguments.Set("document_token", "source-document");
+  call.arguments.Set("product", "fixture");
+  call.arguments.Set("platform", "mac");
+  call.arguments.Set("architecture", "arm64");
+  call.arguments.Set("candidate_url",
+                     "https://shop.example/fixture-mac-arm64.zip");
+  EXPECT_EQ(broker.Evaluate(task, call).disposition,
+            AgentPolicyDisposition::kAllow);
+  call.arguments.Set("document_token", "other-document");
+  EXPECT_EQ(broker.Evaluate(task, call).disposition,
+            AgentPolicyDisposition::kDeny);
+  call.arguments.Set("document_token", "source-document");
+  call.document.reset();
+  EXPECT_EQ(broker.Evaluate(task, call).disposition,
+            AgentPolicyDisposition::kDeny);
+}
+
 TEST(AegisAgentPolicyTest, RejectsArgumentScopeAndStateMismatch) {
   AgentToolRegistry registry;
   AgentPolicyBroker broker(&registry);
@@ -998,6 +1259,7 @@ TEST(AegisAgentResultVerifierTest, RejectsModelClaimWithoutBrowserEvidence) {
   observed.value.Set("frame_token", "frame-2");
   observed.value.Set("document_token", "document-2");
   observed.value.Set("observation_fingerprint", "fingerprint-2");
+  observed.value.Set("pre_action_fingerprint", "fingerprint-1");
   observed.value.Set("untrusted", true);
   observed.value.Set("nodes", base::ListValue());
   base::DictValue evidence;
@@ -1016,6 +1278,40 @@ TEST(AegisAgentResultVerifierTest, RejectsModelClaimWithoutBrowserEvidence) {
   webmcp_results.Append(std::move(webmcp_result));
   observed.value.Set("webmcp_results", std::move(webmcp_results));
   EXPECT_FALSE(verifier.Verify(task, call, *descriptor, observed).accepted);
+}
+
+TEST(AegisAgentResultVerifierTest, EmptyClickCannotReportCompletion) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("task-empty-click", "点击并核对结果", AgentMode::kAct,
+                 TestScope());
+  auto call = PageClickCall();
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "Actor 返回成功";
+  result.value.Set("tab_id", 7);
+  result.value.Set("url", "https://shop.example/after");
+  result.value.Set("frame_token", "frame-1");
+  result.value.Set("document_token", "document-1");
+  result.value.Set("observation_fingerprint", "same-observation");
+  result.value.Set("untrusted", true);
+  result.value.Set("nodes", base::ListValue());
+  result.evidence.Append(base::DictValue().Set("kind", "browser_observation"));
+  const auto* descriptor = registry.Find(call.tool_name);
+  ASSERT_TRUE(descriptor);
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("pre_action_fingerprint", "same-observation");
+  auto decision = verifier.Verify(task, call, *descriptor, result);
+  EXPECT_TRUE(decision.accepted);
+  EXPECT_FALSE(decision.postcondition_met);
+  EXPECT_NE(decision.reason.find("不要重复点击"), std::string::npos);
+  result.value.Set("observation_fingerprint", "changed-observation");
+  EXPECT_TRUE(
+      verifier.Verify(task, call, *descriptor, result).postcondition_met);
+  // 页面错误不能因指纹变化而被当作成功。
+  result.value.Set("is_error_document", true);
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
 }
 
 TEST(AegisAgentResultVerifierTest, AcceptsStructuredBrowserFailure) {
@@ -1118,6 +1414,85 @@ TEST(AegisAgentResultVerifierTest, VerifiesDynamicTabAndWorkspaceOwnership) {
           .accepted);
 }
 
+TEST(AegisAgentResultVerifierTest, GroupVerificationSurvivesAsyncMinimization) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("selected-group", "分组三个标签", AgentMode::kAct,
+                 TestScope());
+  ASSERT_TRUE(task.AdoptOwnedTab(8));
+  ASSERT_TRUE(task.AdoptOwnedTab(9));
+  AgentToolCall call;
+  call.action_id = "group-three";
+  call.tool_name = "tab.group";
+  call.arguments.Set("tab_ids",
+                     base::ListValue().Append(7).Append(8).Append(9));
+  call.arguments.Set("title", "不需保留的标题");
+  call.arguments.Set("value", "不需保留的正文");
+  AgentToolCall context = AgentResultVerifier::RetainVerificationContext(call);
+  ASSERT_EQ(context.arguments.size(), 1u);
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "三个指定标签已分组并回读";
+  result.value.Set("tab_ids", base::ListValue().Append(9).Append(7).Append(8));
+  result.value.Set("group_id", "native-group");
+  result.value.Set("revision", "native-revision");
+  EXPECT_TRUE(
+      verifier.Verify(task, context, *registry.Find("tab.group"), result)
+          .accepted);
+  result.value.Set("tab_ids", base::ListValue().Append(7).Append(8));
+  EXPECT_FALSE(
+      verifier.Verify(task, context, *registry.Find("tab.group"), result)
+          .accepted);
+  result.value.Set("tab_ids", base::ListValue().Append(7).Append(8).Append(8));
+  EXPECT_FALSE(
+      verifier.Verify(task, context, *registry.Find("tab.group"), result)
+          .accepted);
+  result.value.Set("tab_ids", base::ListValue().Append(7).Append(8).Append(10));
+  EXPECT_FALSE(
+      verifier.Verify(task, context, *registry.Find("tab.group"), result)
+          .accepted);
+  call.tool_name = "form.fill";
+  EXPECT_TRUE(
+      AgentResultVerifier::RetainVerificationContext(call).arguments.empty());
+}
+
+TEST(AegisAgentResultVerifierTest, DownloadSourceIsBoundToObservedDocument) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("source-review", "核对官方下载", AgentMode::kAsk, TestScope());
+  AgentToolCall call;
+  call.action_id = "source-check";
+  call.tool_name = "download.find_official";
+  call.committed_url = GURL("https://shop.example/releases?session=private");
+  call.document = AgentDocumentRef{.tab_id = 7,
+                                   .frame_token = "frame",
+                                   .document_token = "document",
+                                   .committed_url = call.committed_url};
+  call.arguments.Set("candidate_url",
+                     "https://shop.example/file.bin?token=private");
+  const auto context = AgentResultVerifier::RetainVerificationContext(call);
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "已回读来源与候选链接";
+  result.value.Set("source_url", "https://shop.example/releases");
+  result.value.Set("candidate_url", "https://shop.example/file.bin");
+  result.value.Set("requires_user_review", true);
+  result.value.Set("publisher_identity_verified", false);
+  const auto* descriptor = registry.Find(call.tool_name);
+  auto verified = verifier.Verify(task, context, *descriptor, result);
+  EXPECT_TRUE(verified.accepted) << verified.reason;
+  result.value.Set("source_url", "https://shop.example/file.bin");
+  EXPECT_FALSE(verifier.Verify(task, context, *descriptor, result).accepted);
+  result.value.Set("source_url", "https://shop.example/releases");
+  result.value.Set("candidate_url", "https://shop.example/other.bin");
+  EXPECT_FALSE(verifier.Verify(task, context, *descriptor, result).accepted);
+  result.value.Set("candidate_url", "https://shop.example/file.bin");
+  call.document.reset();
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+}
+
 TEST(AegisAgentResultVerifierTest, VerifiesScopedMetadataAndDownloadState) {
   AgentToolRegistry registry;
   AgentResultVerifier verifier;
@@ -1191,6 +1566,162 @@ TEST(AegisAgentResultVerifierTest, VerifiesScopedMetadataAndDownloadState) {
                    .Verify(task, verify_call,
                            *registry.Find(verify_call.tool_name), verifying)
                    .accepted);
+}
+
+TEST(AegisAgentResultVerifierTest, RejectsContradictoryCompletedDownload) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("download", "核对测试下载", AgentMode::kAct, TestScope());
+  AgentToolCall call;
+  call.action_id = "verify";
+  call.tool_name = "download.verify";
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "浏览器返回下载状态";
+  result.value.Set("download_id", "fixture-download");
+  result.value.Set("state", "complete");
+  result.value.Set("verified", true);
+  result.value.Set("safe_and_complete", true);
+  result.value.Set("integrity", "match");
+  result.value.Set("sha256", std::string(64, 'A'));
+  const auto verify = [&] {
+    return verifier.Verify(task, call, *registry.Find(call.tool_name), result);
+  };
+  ASSERT_TRUE(verify().postcondition_met);
+  for (const auto* state : {"in_progress", "interrupted", "cancelled"}) {
+    result.value.Set("state", state);
+    EXPECT_FALSE(verify().accepted) << state;
+  }
+  result.value.Set("state", "complete");
+  result.value.Set("safe_and_complete", false);
+  EXPECT_FALSE(verify().accepted);
+  result.value.Set("safe_and_complete", true);
+  for (const auto* key : {"dangerous", "wait_timed_out"}) {
+    result.value.Set(key, true);
+    EXPECT_FALSE(verify().accepted) << key;
+    result.value.Set(key, false);
+  }
+  for (const auto& hash :
+       {std::string(63, 'a'), std::string(64, 'g'), std::string()}) {
+    result.value.Set("sha256", hash);
+    EXPECT_FALSE(verify().accepted);
+  }
+  result.value.Set("sha256", std::string(64, 'a'));
+  EXPECT_TRUE(verify().postcondition_met);
+}
+
+TEST(AegisAgentResultVerifierTest,
+     ExtractionRequiresRequestedFieldsAndSources) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("extract", "提取正文", AgentMode::kAct, TestScope());
+  AgentToolCall call = PageClickCall();
+  call.tool_name = "page.extract";
+  call.arguments.Set("kind", "article");
+  call.arguments.Set("fields", base::ListValue().Append("content"));
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "浏览器提取结果";
+  result.value.Set("tab_id", 7);
+  result.value.Set("url", "https://shop.example/product");
+  result.value.Set("frame_token", "frame-1");
+  result.value.Set("document_token", "document-1");
+  result.value.Set("observation_fingerprint", "fresh-fingerprint");
+  result.value.Set("untrusted", true);
+  result.value.Set(
+      "nodes",
+      base::ListValue().Append(
+          base::DictValue().Set("node_id", 42).Set("text", "稳定指标42")));
+  result.evidence.Append(base::DictValue().Set("kind", "browser_observation"));
+  base::DictValue field;
+  field.Set("field", "content");
+  field.Set("resolved", true);
+  field.Set("value", "稳定指标42");
+  field.Set("source_node_ids", base::ListValue().Append(42));
+  field.Set("source_hash",
+            base::HexEncode(crypto::SHA256HashString("content\n稳定指标42")));
+  const auto set_field = [&](base::DictValue item) {
+    result.value.Set(
+        "extraction",
+        base::DictValue()
+            .Set("kind", "article")
+            .Set("untrusted", true)
+            .Set("fields", base::ListValue().Append(std::move(item))));
+  };
+  const auto verify = [&] {
+    return verifier.Verify(task, call, *registry.Find(call.tool_name), result);
+  };
+  set_field(field.Clone());
+  ASSERT_TRUE(verify().postcondition_met);
+  auto missing = field.Clone();
+  missing.Set("resolved", false);
+  set_field(std::move(missing));
+  EXPECT_TRUE(verify().accepted);
+  EXPECT_FALSE(verify().postcondition_met);
+  auto empty = field.Clone();
+  empty.Set("value", "   ");
+  set_field(std::move(empty));
+  EXPECT_FALSE(verify().accepted);
+  auto foreign = field.Clone();
+  foreign.Set("source_node_ids", base::ListValue().Append(99));
+  set_field(std::move(foreign));
+  EXPECT_FALSE(verify().accepted);
+  auto changed = field.Clone();
+  changed.Set("value", "指标99");
+  set_field(std::move(changed));
+  EXPECT_FALSE(verify().accepted);
+  auto wrong_name = field.Clone();
+  wrong_name.Set("field", "summary");
+  set_field(std::move(wrong_name));
+  EXPECT_FALSE(verify().accepted);
+  set_field(field.Clone());
+  result.value.Set("document_token", "new-document");
+  EXPECT_FALSE(verify().accepted);
+  result.value.Set("document_token", "document-1");
+  for (int status : {404, 410, 500}) {
+    result.value.Set("http_status", status);
+    EXPECT_FALSE(verify().accepted);
+  }
+  result.value.Set("http_status", 0);
+  EXPECT_TRUE(verify().postcondition_met);
+  result.value.Set("is_error_document", true);
+  EXPECT_FALSE(verify().accepted);
+  result.value.Set("is_error_document", false);
+  EXPECT_TRUE(verify().postcondition_met);
+
+  call.arguments.Set("fields",
+                     base::ListValue().Append("content").Append("content"));
+  EXPECT_FALSE(verify().accepted);
+  call.arguments.Remove("fields");
+  EXPECT_FALSE(verify().accepted);  // 默认请求标题和摘要，单个正文不能代替。
+  auto summary = field.Clone();
+  summary.Set("field", "summary");
+  summary.Set("source_hash",
+              base::HexEncode(crypto::SHA256HashString("summary\n稳定指标42")));
+  auto title = field.Clone();
+  title.Set("field", "title");
+  title.Set("value", "测试文章");
+  title.Set("source_node_ids", base::ListValue());
+  title.Set("source_hash",
+            base::HexEncode(crypto::SHA256HashString("title\n测试文章")));
+  result.value.Set("title", "测试文章");
+  result.value.FindDict("extraction")
+      ->Set("fields",
+            base::ListValue().Append(title.Clone()).Append(summary.Clone()));
+  EXPECT_TRUE(verify().postcondition_met);
+  result.value.Set("title", "另一文档标题");
+  EXPECT_FALSE(verify().accepted);
+  result.value.Set("title", "测试文章");
+  result.value.FindDict("extraction")
+      ->Set("fields",
+            base::ListValue().Append(title.Clone()).Append(title.Clone()));
+  EXPECT_FALSE(verify().accepted);
+  result.value.FindDict("extraction")
+      ->Set("fields",
+            base::ListValue().Append(title.Clone()).Append(summary.Clone()));
+  EXPECT_TRUE(verify().postcondition_met);
 }
 
 }  // namespace

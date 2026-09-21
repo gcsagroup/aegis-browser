@@ -1,0 +1,209 @@
+From b29397bc749e96246bc753e60ac32b11ed291b4d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 05:30:45 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=8E=A5=E7=AE=A1=E5=90=8E=E6=92=A4?=
+ =?UTF-8?q?=E9=94=80=E5=A4=B1=E6=95=88=E6=89=B9=E5=87=86=E5=85=A5=E5=8F=A3?=
+ =?UTF-8?q?=E5=B9=B6=E6=9B=B4=E6=96=B0013?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 20 ++++++--
+ .../agent/aegis_agent_service_unittest.cc     | 46 +++++++++++++++++++
+ chrome/browser/resources/aegis_agent/agent.ts | 35 ++++++++------
+ .../ui/webui/help/aegis_github_update.h       |  6 +--
+ 4 files changed, 85 insertions(+), 22 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 43ae7696a5..df3a1af1d2 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1198,6 +1198,11 @@ bool AegisAgentService::BeginUserTakeover(const std::string& task_id) {
+     client->second->Cancel(request_id);
+   }
+   policy_broker_.RevokeTaskApprovals(task_id);
++  if (auto runtime = executions_.find(task_id); runtime != executions_.end()) {
++    // 中途接管撤销尚未执行的操作；后续必须重新观察和授权。
++    runtime->second->pending_action.reset();
++    runtime->second->needs_fresh_observation = TaskUsesActor(*task);
++  }
+   return Transition(task_id, AgentTaskState::kUserTakeover,
+                     "user takeover required");
+ }
+@@ -1370,15 +1375,22 @@ void AegisAgentService::RunTask(const std::string& task_id,
+ 
+ const AgentToolCall* AegisAgentService::PendingAction(
+     const std::string& task_id) const {
++  const AgentTask* task = GetTask(task_id);
+   auto it = executions_.find(task_id);
+-  return it == executions_.end() || !it->second->pending_action
+-             ? nullptr
+-             : &*it->second->pending_action;
++  if (!task || it == executions_.end() || !it->second->pending_action ||
++      (task->state() != AgentTaskState::kAwaitingActionApproval &&
++       !(task->state() == AgentTaskState::kUserTakeover &&
++         it->second->final_user_takeover))) {
++    return nullptr;
++  }
++  return &*it->second->pending_action;
+ }
+ 
+ bool AegisAgentService::ApprovePendingAction(const std::string& task_id) {
+   auto runtime_it = executions_.find(task_id);
+-  if (runtime_it == executions_.end() || !runtime_it->second->pending_action ||
++  const AgentTask* task = GetTask(task_id);
++  if (!task || task->state() != AgentTaskState::kAwaitingActionApproval ||
++      runtime_it == executions_.end() || !runtime_it->second->pending_action ||
+       runtime_it->second->final_user_takeover) {
+     return false;
+   }
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index ed00df842f..7cba1b2fd8 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -89,6 +89,25 @@ class AegisAgentServiceTestPeer {
+     result.message = "原生测试回调";
+     service->OnRuntimeToolResult(id, std::move(call), std::move(result));
+   }
++  static void DeliverPendingApproval(AegisAgentService* service,
++                                     const std::string& id) {
++    if (auto request = service->model_request_ids_.find(id);
++        request != service->model_request_ids_.end()) {
++      const auto request_id = request->second;
++      service->model_request_ids_.erase(request);
++      service->model_clients_.at(id)->Cancel(request_id);
++    }
++    ASSERT_TRUE(service->Transition(id, AgentTaskState::kAwaitingActionApproval,
++                                    "等待合成点击批准"));
++    AgentToolCall call;
++    call.action_id = "pending-click";
++    call.tool_name = "page.click";
++    AgentToolResult result;
++    result.action_id = call.action_id;
++    result.ok = false;
++    result.error = AgentErrorCode::kApprovalRequired;
++    service->OnRuntimeToolResult(id, std::move(call), std::move(result));
++  }
+   static void FailRuntime(AegisAgentService* service, const std::string& id) {
+     service->Transition(id, AgentTaskState::kFailed, "测试不可恢复失败");
+     service->FinishRuntime(id, false, "测试不可恢复失败", std::nullopt);
+@@ -1207,6 +1226,33 @@ TEST_F(AegisAgentServiceTest, CreatesPausesResumesAndStopsOwnedActorTask) {
+   EXPECT_EQ(task->state(), AgentTaskState::kCancelled);
+ }
+ 
++TEST_F(AegisAgentServiceTest, IntermediateTakeoverRevokesPendingAction) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string,
++                         std::optional<AgentCompletionSummary>>
++      done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback(), "page.click");
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  AegisAgentServiceTestPeer::DeliverPendingApproval(service, task->id());
++  ASSERT_TRUE(service->PendingAction(task->id()));
++  const auto calls = task->model_calls_used();
++  ASSERT_TRUE(service->BeginUserTakeover(task->id()));
++  EXPECT_EQ(task->state(), AgentTaskState::kUserTakeover);
++  EXPECT_FALSE(service->PendingAction(task->id()));
++  EXPECT_FALSE(service->ApprovePendingAction(task->id()));
++  EXPECT_EQ(task->model_calls_used(), calls);
++  EXPECT_FALSE(done.IsReady());
++  ASSERT_TRUE(service->FinishUserTakeover(task->id()));
++  EXPECT_EQ(task->state(), AgentTaskState::kRecovering);
++  EXPECT_FALSE(service->PendingAction(task->id()));
++  EXPECT_FALSE(service->ApprovePendingAction(task->id()));
++  EXPECT_FALSE(service->actor_bridge_for_testing().HasTask(task->id()));
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_EQ(task->model_calls_used(), calls);
++  EXPECT_TRUE(service->CancelTask(task->id()));
++}
++
+ TEST_F(AegisAgentServiceTest, CancelRejectsSynchronousActorStopResult) {
+   network::TestURLLoaderFactory factory;
+   base::test::TestFuture<bool, std::string,
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 706a407156..69847c4012 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -665,31 +665,36 @@ function render(next: TaskSnapshot) {
+   technicalErrorGroup.hidden = !next.lastError || !next.plan;
+ 
+   const approval = element('approval-card');
+-  approval.hidden = !next.pendingApproval;
++  const pendingApproval =
++      next.state === 'awaiting_action_approval' ||
++          (next.state === 'user_takeover' &&
++           next.pendingApproval?.requiresUserTakeover) ?
++      next.pendingApproval : null;
++  approval.hidden = !pendingApproval;
+   const approveButton = element<HTMLButtonElement>('approve-button');
+   const takeoverNotice = element('takeover-notice');
+-  if (next.pendingApproval) {
+-    const takeover = next.pendingApproval.requiresUserTakeover;
++  if (pendingApproval) {
++    const takeover = pendingApproval.requiresUserTakeover;
+     element('approval-title').textContent = loadTimeData.getString(
+         takeover ? 'takeoverReady' : 'waitingApproval');
+     element('approval-detail').textContent =
+-        `${next.pendingApproval.toolName} · ${next.pendingApproval.origin} · ` +
+-        next.pendingApproval.risk;
+-    const transfer = next.pendingApproval.isDataTransfer;
++        `${pendingApproval.toolName} · ${pendingApproval.origin} · ` +
++        pendingApproval.risk;
++    const transfer = pendingApproval.isDataTransfer;
+     element('approval-data-flow').hidden = !transfer;
+     element('approval-data-flow').textContent = transfer ?
+         loadTimeData.getString('dataTransferApproval') + ' ' +
+-        (next.pendingApproval.dataSourceOrigins || []).join(', ') : '';
+-    const target = next.pendingApproval.targetDescription ||
+-        next.pendingApproval.targetUrl || '';
++        (pendingApproval.dataSourceOrigins || []).join(', ') : '';
++    const target = pendingApproval.targetDescription ||
++        pendingApproval.targetUrl || '';
+     element('approval-target-url').hidden = !transfer || !target;
+     element('approval-target-url').textContent = transfer ? target : '';
+-    element('approval-id').textContent = next.pendingApproval.actionId;
++    element('approval-id').textContent = pendingApproval.actionId;
+     element('approval-arguments').textContent =
+-        next.pendingApproval.argumentSummary;
++        pendingApproval.argumentSummary;
+     element('approval-fingerprint').textContent =
+-        next.pendingApproval.actionFingerprint;
+-    renderCheckoutSummary(next.pendingApproval.checkout || null);
++        pendingApproval.actionFingerprint;
++    renderCheckoutSummary(pendingApproval.checkout || null);
+     takeoverNotice.hidden = !takeover;
+     takeoverNotice.textContent = takeover ?
+         loadTimeData.getString('takeoverNotice') :
+@@ -717,8 +722,8 @@ function render(next: TaskSnapshot) {
+   element<HTMLButtonElement>('finish-takeover-button').disabled =
+       busy || state !== 'user_takeover';
+   approveButton.disabled =
+-      busy || !next.pendingApproval ||
+-      next.pendingApproval.requiresUserTakeover;
++      busy || !pendingApproval ||
++      pendingApproval.requiresUserTakeover;
+   element<HTMLButtonElement>('undo-button').disabled =
+       busy || !next.undoAvailable;
+   element<HTMLButtonElement>('stop-button').disabled =
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 2d84b010fb..c581aee523 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.8。
+-inline constexpr char kProductVersion[] = "2.0.0.12";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (012)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.13。
++inline constexpr char kProductVersion[] = "2.0.0.13";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (013)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -61,6 +61,15 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
                                               AgentGoalRoute route);
 
 // 前端分类只是提示；显式网址和当前页入口也必须保留原始目标的否定约束。
+// 是否明确要求开始文件传输，不含仅寻找来源或讨论下载的目标。
+bool AgentGoalRequestsDownloadTransfer(std::string_view goal);
+
+// 当前页指代统一用于入口选择及模型返回校验，显式网址优先。
+bool AgentGoalRefersToCurrentPage(std::string_view goal);
+
+// 本任务限定优先于窗口元数据入口，冲突目标取较小范围。
+bool AgentGoalRequestsWindowTabMetadata(std::string_view goal);
+
 AgentWorkflowKind ConstrainWorkflowToUserIntent(
     std::string_view user_goal,
     AgentWorkflowKind workflow);
@@ -82,6 +91,13 @@ AgentModelToolDefinition BuildSubmitPlanToolDefinition();
 // remain quoted untrusted inputs and cannot amend this contract.
 std::string BuildAgentPlannerSystemContract();
 std::optional<std::string> BuildAgentPlanningPrompt(
+    std::string_view user_goal,
+    const AgentTaskScope& maximum_scope,
+    const AgentToolRegistry& registry);
+
+// 明确要求“开始下载后取消”时使用固定依赖顺序；仅限已打开页面和现有授权。
+// 仍通过普通计划校验，download.start仍须逐次批准。
+std::optional<AgentModelEvent> BuildBrowserDownloadCancellationPlan(
     std::string_view user_goal,
     const AgentTaskScope& maximum_scope,
     const AgentToolRegistry& registry);
@@ -113,6 +129,9 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
 bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
                              std::string_view user_goal,
                              std::string* error);
+
+// 复用规划阶段的否定与收藏意图判断；预览不是写入完成的依据。
+bool AgentGoalRequiresBookmarkApply(std::string_view user_goal);
 
 }  // namespace aegis::agent
 

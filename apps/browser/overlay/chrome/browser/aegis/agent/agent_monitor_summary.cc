@@ -100,6 +100,35 @@ std::optional<base::DictValue> ValidSummary(std::string_view observation) {
   return summary->Clone();
 }
 
+std::optional<std::string> StoreSummary(
+    std::string_view current,
+    const AgentMonitorSummaryInput& input,
+    bool meaningful,
+    std::string_view text,
+    base::ListValue quotes,
+    base::Time now) {
+  auto value = PageObservation(current);
+  if (!value || ContentHash(*value) != input.current_content_hash ||
+      now.is_null() || now <= base::Time::UnixEpoch()) {
+    return std::nullopt;
+  }
+  base::DictValue summary;
+  summary.Set("version", 1);
+  summary.Set("content_hash", input.current_content_hash);
+  summary.Set("meaningful", meaningful);
+  summary.Set("text", text);
+  summary.Set("quotes", std::move(quotes));
+  summary.Set("truncated", input.truncated);
+  summary.Set("timestamp",
+              base::NumberToString(now.InMillisecondsSinceUnixEpoch()));
+  value->Set("change_summary", std::move(summary));
+  auto json = base::WriteJson(*value);
+  if (!json || json->size() > kMaxObservationBytes || !ValidSummary(*json)) {
+    return std::nullopt;
+  }
+  return json;
+}
+
 }  // namespace
 
 std::optional<AgentMonitorSummaryInput> BuildAgentMonitorSummaryInput(
@@ -198,6 +227,52 @@ std::string BuildAgentMonitorSummaryPrompt(
   return base::WriteJson(data).value_or(std::string());
 }
 
+std::optional<std::string> BuildAgentMonitorNumericSummary(
+    std::string_view current,
+    const AgentMonitorSummaryInput& input,
+    std::string_view locale,
+    base::Time now) {
+  if (input.truncated || input.changes.size() != 2u) {
+    return std::nullopt;
+  }
+  const std::string* removed = nullptr;
+  const std::string* added = nullptr;
+  for (const auto& change : input.changes) {
+    if (!change.is_dict()) {
+      return std::nullopt;
+    }
+    const auto* text = change.GetDict().FindString("text");
+    const auto* kind = change.GetDict().FindString("kind");
+    if (!text || text->empty() || text->size() > 32u ||
+        !base::ContainsOnlyChars(*text, "0123456789") || !kind) {
+      return std::nullopt;
+    }
+    if (*kind == "removed" && !removed) {
+      removed = text;
+    } else if (*kind == "added" && !added) {
+      added = text;
+    } else {
+      return std::nullopt;
+    }
+  }
+  if (!removed || !added || *removed == *added) {
+    return std::nullopt;
+  }
+  // 不把两个片段强行解释为同一字段，更不推断价格、页码或指标名称。
+  std::string text;
+  if (locale == "zh-TW" || locale == "zh-HK" || locale == "zh-Hant") {
+    text = "數字片段變化：移除「" + *removed + "」，新增「" + *added +
+           "」；具體含義尚未判定。";
+  } else if (base::StartsWith(locale, "zh")) {
+    text = "数字片段变化：移除“" + *removed + "”，新增“" + *added +
+           "”；具体含义尚未判定。";
+  } else {
+    text = "Numeric text changed: removed \"" + *removed + "\", added \"" +
+           *added + "\". Its meaning has not been determined.";
+  }
+  return StoreSummary(current, input, true, text, input.changes.Clone(), now);
+}
+
 std::optional<std::string> AttachAgentMonitorSummary(
     std::string_view current,
     const AgentMonitorSummaryInput& input,
@@ -261,21 +336,7 @@ std::optional<std::string> AttachAgentMonitorSummary(
     }
     quotes.Append(evidence->Clone());
   }
-  base::DictValue summary;
-  summary.Set("version", 1);
-  summary.Set("content_hash", input.current_content_hash);
-  summary.Set("meaningful", meaningful);
-  summary.Set("text", text);
-  summary.Set("quotes", std::move(quotes));
-  summary.Set("truncated", input.truncated);
-  summary.Set("timestamp",
-              base::NumberToString(now.InMillisecondsSinceUnixEpoch()));
-  value->Set("change_summary", std::move(summary));
-  auto json = base::WriteJson(*value);
-  if (!json || json->size() > kMaxObservationBytes || !ValidSummary(*json)) {
-    return std::nullopt;
-  }
-  return json;
+  return StoreSummary(current, input, meaningful, text, std::move(quotes), now);
 }
 
 std::string ReadAgentMonitorSummary(std::string_view observation) {

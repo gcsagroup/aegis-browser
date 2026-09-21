@@ -1,4 +1,4 @@
-From ac223073ebd6b148512c358a431e97e898c513ce Mon Sep 17 00:00:00 2001
+From 8c288f43ea63c15e485075f60cdf11175b4a09d8 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 01:27:39 +0800
 Subject: [PATCH] Aegis: tighten cookie lookup and block first-party collect

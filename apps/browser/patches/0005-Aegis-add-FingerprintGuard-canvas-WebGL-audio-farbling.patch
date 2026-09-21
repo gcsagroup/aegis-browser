@@ -1,4 +1,4 @@
-From 4ed9b9dac6fdc93af634d2d09c5e3c2d3276d68b Mon Sep 17 00:00:00 2001
+From 35732bc770be02b4fb1c4733522b2d24f97ec7f3 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:56:06 +0800
 Subject: [PATCH] Aegis: add FingerprintGuard canvas/WebGL/audio farbling
@@ -62,10 +62,10 @@ index dbb575ae3e..aaad1710ca 100644
    return prefs_->GetBoolean(prefs::kFingerprintGuardEnabled);
  }
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index ae768f38a3..1085e9aee9 100644
+index db7d4a48d8..dc877373dc 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6046,7 +6046,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -5965,7 +5965,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
                policy::policy_prefs::kForceYouTubeRestrict),
            profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
            profile->GetPrefs()->GetBoolean(
@@ -167,10 +167,10 @@ index d2653b3bb2..a07c9a9956 100644
  }
  
 diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
-index c34a848099..3276459e88 100644
+index 37ca8d47e3..4ba4bc69ca 100644
 --- a/third_party/blink/common/BUILD.gn
 +++ b/third_party/blink/common/BUILD.gn
-@@ -127,6 +127,7 @@ source_set("common") {
+@@ -134,6 +134,7 @@ source_set("common") {
    sources = [
      # NOTE: Please do not add public headers that need to be referenced from
      # outside WebKit, add them in public/common instead.
@@ -234,7 +234,7 @@ index 0000000000..f35769ddd3
 +
 +}  // namespace blink::aegis
 diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
-index 06c6d2dad6..9f06c6d4e8 100644
+index d2881c7a29..4fa68a4935 100644
 --- a/third_party/blink/public/common/BUILD.gn
 +++ b/third_party/blink/public/common/BUILD.gn
 @@ -149,6 +149,7 @@ source_set("headers") {
@@ -276,7 +276,7 @@ index 0000000000..5fb108a04a
 +
 +#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index a4a53a9003..6c8724eba2 100644
+index 8969a71c82..e98058b02b 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -24,6 +24,7 @@ import("//third_party/blink/renderer/core/animation/build.gni")
@@ -514,7 +514,7 @@ index 0000000000..b50851081f
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 4c784e3285..fd2e825430 100644
+index 40df4b3770..cca39dcc60 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -26,6 +26,7 @@
@@ -525,8 +525,8 @@ index 4c784e3285..fd2e825430 100644
  
  #include <math.h>
  
-@@ -1291,6 +1292,8 @@ String HTMLCanvasElement::ToDataURLInternal(
-           mime_type, ImageEncoderUtils::kEncodeReasonToDataURL);
+@@ -1298,6 +1299,8 @@ String HTMLCanvasElement::ToDataURLInternal(
+       ImageEncoderUtils::ToEncodingMimeType(mime_type);
  
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
 +  image_bitmap = aegis::MaybeFarbleStaticBitmapImage(GetExecutionContext(),
@@ -534,7 +534,7 @@ index 4c784e3285..fd2e825430 100644
    if (image_bitmap) {
      std::unique_ptr<ImageDataBuffer> data_buffer =
          ImageDataBuffer::Create(image_bitmap);
-@@ -1396,6 +1399,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+@@ -1402,6 +1405,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
  
    CanvasAsyncBlobCreator* async_creator = nullptr;
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
@@ -544,7 +544,7 @@ index 4c784e3285..fd2e825430 100644
      auto* options = ImageEncodeOptions::Create();
      options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index fd13b97510..fdd3af88f3 100644
+index 38528f7b8d..fe0e24bbc4 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -3,6 +3,7 @@
@@ -555,7 +555,7 @@ index fd13b97510..fdd3af88f3 100644
  
  #include <cmath>
  #include <cstdint>
-@@ -513,6 +514,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -516,6 +517,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
      }
    }
  
@@ -591,7 +591,7 @@ index bc4c0c6ca0..3a683be0da 100644
  
  void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 319e17ecde..e0d3aeec63 100644
+index 403e1b307f..adf908f6b6 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -24,6 +24,8 @@
@@ -603,7 +603,7 @@ index 319e17ecde..e0d3aeec63 100644
  
  #include <inttypes.h>
  
-@@ -4191,6 +4193,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4200,6 +4202,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -614,7 +614,7 @@ index 319e17ecde..e0d3aeec63 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4200,6 +4206,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4209,6 +4215,10 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {

@@ -1,0 +1,31 @@
+From 60d94f348a6c7f1fc7a69fa05800e74a3a96ca7b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 00:50:59 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D153.0.8010.53=E5=AE=89?=
+ =?UTF-8?q?=E5=85=A8=E5=80=99=E9=80=89=EF=BC=9A0003-fix-shadow-disabled-tr?=
+ =?UTF-8?q?acing-build.patch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/interpreter/aegis-bytecode-shadow.cc | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/interpreter/aegis-bytecode-shadow.cc b/src/interpreter/aegis-bytecode-shadow.cc
+index 5968a0e31be..2bbb9e2ad5d 100644
+--- a/src/interpreter/aegis-bytecode-shadow.cc
++++ b/src/interpreter/aegis-bytecode-shadow.cc
+@@ -98,7 +98,8 @@ void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes) {
+ 
+   const unsigned int configured_max_bytes =
+       v8_flags.aegis_bytecode_shadow_max_bytes;
+-  const AegisBytecodeShadowSummary summary = SummarizeAegisBytecode(
++  // 独立V8关闭跟踪时，宏不会引用摘要；保留两种构建配置的严格检查。
++  [[maybe_unused]] const AegisBytecodeShadowSummary summary = SummarizeAegisBytecode(
+       bytecodes, std::min(configured_max_bytes, kHardMaxBytes));
+   TRACE_EVENT_INSTANT(
+       TRACE_DISABLED_BY_DEFAULT("v8.aegis.bytecode_shadow"),
+-- 
+2.52.0
+

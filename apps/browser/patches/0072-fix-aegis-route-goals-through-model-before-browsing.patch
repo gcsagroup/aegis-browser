@@ -1,4 +1,4 @@
-From 0a3280af5e188288094b9ae8f557d6268026ff6c Mon Sep 17 00:00:00 2001
+From 11fce2118c8dd0b52e1bae9c39d4c65880800d7e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 01:30:31 +0800
 Subject: [PATCH] fix(aegis): route goals through model before browsing
@@ -7,7 +7,7 @@ Subject: [PATCH] fix(aegis): route goals through model before browsing
  .../actor/ui/actor_ui_tab_controller.cc       |  23 +++
  .../actor/ui/actor_ui_tab_controller.h        |   1 +
  .../ui/actor_ui_tab_controller_interface.h    |   4 +
- .../actor/ui/handoff_button_controller.cc     |  10 +-
+ .../actor/ui/handoff_button_controller.cc     |  12 +-
  .../ui/handoff_button_controller_unittest.cc  |   1 +
  .../mock_actor_ui_tab_controller.h            |   1 +
  .../aegis/agent/aegis_agent_browsertest.cc    |  53 ++++-
@@ -25,13 +25,13 @@ Subject: [PATCH] fix(aegis): route goals through model before browsing
  .../aegis_agent/aegis_agent_page_handler.cc   | 169 ++++++++++------
  .../aegis_agent/aegis_agent_page_handler.h    |  20 ++
  .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  43 ++--
- 21 files changed, 718 insertions(+), 98 deletions(-)
+ 21 files changed, 718 insertions(+), 100 deletions(-)
 
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.cc b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-index 7514111284..3f7907fb7a 100644
+index af72dd4200..c91f34e01b 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-@@ -14,6 +14,8 @@
+@@ -15,6 +15,8 @@
  #include "chrome/browser/actor/ui/actor_ui_tab_controller_interface.h"
  #include "chrome/browser/actor/ui/actor_ui_window_controller.h"
  #include "chrome/browser/actor/ui/handoff_button_controller.h"
@@ -40,7 +40,7 @@ index 7514111284..3f7907fb7a 100644
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-@@ -21,6 +23,7 @@
+@@ -22,6 +24,7 @@
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #include "chrome/common/chrome_features.h"
  #include "components/tabs/public/tab_interface.h"
@@ -48,7 +48,7 @@ index 7514111284..3f7907fb7a 100644
  #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
  
  DEFINE_USER_DATA(actor::ui::ActorUiTabController);
-@@ -246,6 +249,26 @@ void ActorUiTabController::SetActorTaskResume() {
+@@ -251,6 +254,26 @@ void ActorUiTabController::SetActorTaskResume() {
    }
  }
  
@@ -76,7 +76,7 @@ index 7514111284..3f7907fb7a 100644
  // and onto contents container, investigate removing debouncing on the tab
  // controller side and handle it on the ui component side.
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.h b/chrome/browser/actor/ui/actor_ui_tab_controller.h
-index 7b49bd683c..989a1974c6 100644
+index a848b2a62c..3834b4f368 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.h
 @@ -34,6 +34,7 @@ class ActorUiTabController : public ActorUiTabControllerInterface {
@@ -88,11 +88,11 @@ index 7b49bd683c..989a1974c6 100644
    void OnViewBoundsChanged() override;
    void OnOverlayHoverStatusChanged(bool is_hovering) override;
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-index 51bf2ad440..9ef26730bb 100644
+index 7ca7ad87ac..a6cab85cc0 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-@@ -73,6 +73,10 @@ class ActorUiTabControllerInterface {
-   static ActorUiTabControllerInterface* From(tabs::TabInterface* tab);
+@@ -80,6 +80,10 @@ class ActorUiTabControllerInterface {
+       ActorTabIndicatorStateChangedCallback callback);
  
  #if !BUILDFLAG(IS_ANDROID)
 +  // Opens the UI owned by the active task source. Aegis tasks must never be
@@ -103,7 +103,7 @@ index 51bf2ad440..9ef26730bb 100644
    virtual void OnWebContentsAttached() = 0;
  
 diff --git a/chrome/browser/actor/ui/handoff_button_controller.cc b/chrome/browser/actor/ui/handoff_button_controller.cc
-index 83772dd2ea..e1fd593c4c 100644
+index f7f9ab96eb..e5c0742d1e 100644
 --- a/chrome/browser/actor/ui/handoff_button_controller.cc
 +++ b/chrome/browser/actor/ui/handoff_button_controller.cc
 @@ -12,8 +12,6 @@
@@ -115,26 +115,28 @@ index 83772dd2ea..e1fd593c4c 100644
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
  #include "chrome/browser/ui/color/chrome_color_id.h"
  #include "chrome/common/chrome_features.h"
-@@ -422,13 +420,7 @@ void HandoffButtonController::OnButtonPressed() {
+@@ -421,15 +419,7 @@ void HandoffButtonController::OnButtonPressed() {
    if (auto* tab_controller = GetTabController()) {
      if (ownership_ == kActor) {
        tab_controller->SetActorTaskPaused();
 -      BrowserWindowInterface* bwi = tab_interface_->GetBrowserWindowInterface();
--      auto* glic_service =
--          glic::GlicKeyedServiceFactory::GetGlicKeyedService(bwi->GetProfile());
--      if (glic_service) {
--        glic_service->ToggleUI(bwi, /*prevent_close=*/true,
+-      if (bwi) {
+-        auto* glic_service = glic::GlicKeyedServiceFactory::GetGlicKeyedService(
+-            bwi->GetProfile());
+-        if (glic_service) {
+-          glic_service->ShowUI(bwi,
 -                               glic::mojom::InvocationSource::kHandoffButton);
+-        }
 -      }
 +      tab_controller->OpenTaskUi();
      } else {
        tab_controller->SetActorTaskResume();
      }
 diff --git a/chrome/browser/actor/ui/handoff_button_controller_unittest.cc b/chrome/browser/actor/ui/handoff_button_controller_unittest.cc
-index c145cb9c86..62ac89f4c3 100644
+index 9cc786427f..d510854f19 100644
 --- a/chrome/browser/actor/ui/handoff_button_controller_unittest.cc
 +++ b/chrome/browser/actor/ui/handoff_button_controller_unittest.cc
-@@ -221,6 +221,7 @@ TEST_F(HandoffButtonControllerTest,
+@@ -223,6 +223,7 @@ TEST_F(HandoffButtonControllerTest,
    EXPECT_TRUE(future1.Wait());
  
    EXPECT_CALL(*mock_actor_ui_tab_controller(), SetActorTaskPaused());
@@ -143,7 +145,7 @@ index c145cb9c86..62ac89f4c3 100644
    controller_->PressButton();
  
 diff --git a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
-index 32fdf901f5..4c79e86ecc 100644
+index 8951b21d11..a711539299 100644
 --- a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
 @@ -43,6 +43,7 @@ class MockActorUiTabController : public ActorUiTabControllerInterface {

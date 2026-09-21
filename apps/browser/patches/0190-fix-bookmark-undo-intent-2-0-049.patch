@@ -1,0 +1,83 @@
+From e3ea14cfe3815677e3669b857c9e6e4b18671d91 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 15:47:05 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
+ =?UTF-8?q?=E6=92=A4=E9=94=80=E5=92=8C=E9=A2=84=E8=A7=88=E5=90=8E=E5=BA=94?=
+ =?UTF-8?q?=E7=94=A8=E7=9B=AE=E6=A0=87=E8=BE=B9=E7=95=8C=202.0.049?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_execution_unittest.cc | 7 +++++--
+ chrome/browser/aegis/agent/agent_planner.cc            | 6 ++++--
+ chrome/browser/ui/webui/help/aegis_github_update.h     | 4 ++--
+ 3 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index a52155dfbf..37163fba43 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -2594,7 +2594,9 @@ TEST(AegisAgentExecutionTest, BookmarkPreviewAndNegativeGoalsRemainReadOnly) {
+         "Preview bookmark organization", "請預覽整理書籤", "只預覽收藏分類",
+         "不要整理收藏，只总结当前页面",
+         "Do not organize bookmarks; summarize this page.",
+-        "Organize bookmarks without changing anything"}) {
++        "Organize bookmarks without changing anything",
++           "撤销刚才的测试收藏整理", "撤銷剛才的收藏整理",
++           "Undo the bookmark organization"}) {
+     SCOPED_TRACE(goal);
+     EXPECT_FALSE(AgentGoalRequiresBookmarkApply(goal));
+     AgentTask task("preview", std::string(goal), AgentMode::kAct,
+@@ -2607,7 +2609,8 @@ TEST(AegisAgentExecutionTest, BookmarkPreviewAndNegativeGoalsRemainReadOnly) {
+   for (std::string_view goal :
+        {"按刚才预览整理测试收藏夹。", "按預覽整理收藏夾",
+         "Apply the bookmark preview", "Organize my bookmarks",
+-        "不要忘记整理收藏夹"}) {
++        "不要忘记整理收藏夹", "先预览然后应用收藏整理",
++                               "Preview then apply bookmark organization"}) {
+     EXPECT_TRUE(AgentGoalRequiresBookmarkApply(goal)) << goal;
+   }
+ }
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index d9db1df7df..03d944ec4b 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -1265,7 +1265,8 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
+ 
+ bool AgentGoalRequiresBookmarkApply(std::string_view user_goal) {
+   const auto requested = RequestedGoalText(user_goal);
+-  if (!IsBookmarkGoal(user_goal) || BookmarkGoalIsReadOnly(user_goal)) {
++  if (!IsBookmarkGoal(user_goal) || BookmarkGoalIsReadOnly(user_goal) ||
++      GoalContainsAny(requested, {"撤销", "撤銷", "undo"})) {
+     return false;
+   }
+   // “按刚才预览整理”仍是应用目标；不能因含有“预览”二字就视作只读。
+@@ -1273,7 +1274,8 @@ bool AgentGoalRequiresBookmarkApply(std::string_view user_goal) {
+   for (std::string_view prefix :
+        {"预览", "預覽", "先预览", "先預覽", "请预览", "請預覽", "请先预览",
+         "請先預覽", "preview ", "please preview "}) {
+-    if (trimmed.starts_with(prefix)) {
++    if (trimmed.starts_with(prefix) &&
++        !GoalContainsAny(requested, {"应用", "套用", "apply"})) {
+       return false;
+     }
+   }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index dce2f5e834..6585196776 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.48";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (048)";
++inline constexpr char kProductVersion[] = "2.0.0.49";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (049)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

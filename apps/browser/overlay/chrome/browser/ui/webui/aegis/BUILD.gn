@@ -15,6 +15,7 @@ source_set("aegis") {
     "//chrome/browser/download",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources/aegis:resources",
+    "//chrome/browser/ui/side_panel",
     "//chrome/common",
     "//chrome/common/aegis",
     "//chrome/services/aegis_torrent/public/mojom",

@@ -1,0 +1,481 @@
+From 31c84b62c1bfb343dd1536b3022bf3c051b4d93d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 04:48:49 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E7=BB=91=E5=AE=9A=E5=AE=9E=E9=99=85?=
+ =?UTF-8?q?=E7=82=B9=E5=87=BB=E6=8E=A7=E4=BB=B6=E4=B8=8E=E5=88=9B=E5=BB=BA?=
+ =?UTF-8?q?=E6=97=B6=E9=A1=B5=E9=9D=A2=20Ver=202.0=20(010)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 37 ++++++++++-
+ .../browser/aegis/agent/aegis_actor_bridge.h  |  5 ++
+ .../aegis/agent/aegis_agent_service.cc        | 40 ++++++++++-
+ .../browser/aegis/agent/aegis_agent_service.h |  1 +
+ .../agent/aegis_agent_service_unittest.cc     | 66 +++++++++++++++++++
+ .../aegis/agent/agent_core_unittest.cc        |  4 ++
+ .../browser/aegis/agent/agent_observation.cc  | 23 ++++++-
+ .../aegis/agent/agent_observation_unittest.cc | 38 +++++++++++
+ .../aegis/agent/agent_policy_broker.cc        |  8 +++
+ .../browser/aegis/agent/agent_policy_broker.h |  1 +
+ .../aegis/agent/agent_tool_registry.cc        |  3 +-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 12 files changed, 221 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 6dccd20f88..244dc9b7f4 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -1079,6 +1079,21 @@ std::optional<AgentDocumentRef> AegisActorBridge::LastDocument(
+ std::string AegisActorBridge::DescribeObservedClickTarget(
+     const std::string& agent_task_id,
+     const AgentToolCall& call) const {
++  const auto target = ResolveObservedClickTarget(agent_task_id, call);
++  if (!target) {
++    return {};
++  }
++  const auto& metadata = observed_node_text_.at(agent_task_id)
++                             .at(*call.arguments.FindInt("tab_id"))
++                             .at(*target);
++  return BoundedText(
++      std::string(base::TrimWhitespaceASCII(metadata.text, base::TRIM_ALL)),
++      512u);
++}
++
++std::optional<int> AegisActorBridge::ResolveObservedClickTarget(
++    const std::string& agent_task_id,
++    const AgentToolCall& call) const {
+   const auto tab_id = call.arguments.FindInt("tab_id");
+   const auto node_id = call.arguments.FindInt("node_id");
+   if (call.tool_name != "page.click" || !call.document || !tab_id || !node_id) {
+@@ -1100,9 +1115,12 @@ std::string AegisActorBridge::DescribeObservedClickTarget(
+   if (node == tab->second.end() || node->second.is_sensitive_control) {
+     return {};
+   }
+-  return BoundedText(
+-      std::string(base::TrimWhitespaceASCII(node->second.text, base::TRIM_ALL)),
+-      512u);
++  const auto target = tab->second.find(node->second.click_target_node_id);
++  if (target == tab->second.end() || target->second.is_sensitive_control ||
++      target->second.click_target_node_id != target->first) {
++    return {};
++  }
++  return target->first;
+ }
+ 
+ void AegisActorBridge::ObservePage(const std::string& agent_task_id,
+@@ -1248,6 +1266,8 @@ void AegisActorBridge::OnObservation(
+       continue;
+     }
+     ObservedNodeMetadata& metadata = observed_nodes[*node_id];
++    metadata.click_target_node_id =
++        node.FindInt("click_target_node_id").value_or(0);
+     if (const std::string* text = node.FindString("text")) {
+       metadata.text += " " + *text;
+     }
+@@ -1271,6 +1291,17 @@ void AegisActorBridge::OnObservation(
+         node.FindBool("is_sensitive_control").value_or(false);
+   }
+ 
++  // 只聚合已裁剪和脱敏的真实子节点文字；不根据相同文本猜测其他控件。
++  for (const auto& [node_id, metadata] : observed_nodes) {
++    const auto target = observed_nodes.find(metadata.click_target_node_id);
++    if (target != observed_nodes.end() && target->first != node_id &&
++        !metadata.is_sensitive_control &&
++        !target->second.is_sensitive_control) {
++      target->second.text =
++          BoundedText(target->second.text + " " + metadata.text, 2048u);
++    }
++  }
++
+   AgentToolResult result;
+   result.action_id = std::move(action_id);
+   result.ok = true;
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+index 5e04827de8..56fb073065 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+@@ -68,8 +68,12 @@ class AegisActorBridge {
+ 
+   std::string DescribeObservedClickTarget(const std::string& agent_task_id,
+                                           const AgentToolCall& call) const;
++  std::optional<int> ResolveObservedClickTarget(
++      const std::string& agent_task_id,
++      const AgentToolCall& call) const;
+ 
+  private:
++  friend class AegisAgentServiceTestPeer;
+   struct WebMcpToolMetadata {
+     std::string revision;
+     base::DictValue input_schema;
+@@ -83,6 +87,7 @@ class AegisActorBridge {
+ 
+   struct ObservedNodeMetadata {
+     std::string text;
++    int click_target_node_id = 0;
+     bool is_submit_control = false;
+     bool is_sensitive_control = false;
+   };
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index bac2973c94..43ae7696a5 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1107,11 +1107,30 @@ const AgentTaskPlan* AegisAgentService::GetPlan(
+   return it == plans_.end() ? nullptr : &it->second;
+ }
+ 
++bool AegisAgentService::CurrentPageMatchesSelection(
++    const AgentTask& task) const {
++  if (!task.scope().restrict_to_current_page) {
++    return true;
++  }
++  if (task.scope().allowed_tab_ids.size() != 1u) {
++    return false;
++  }
++  tabs::TabInterface* tab =
++      tabs::TabHandle(*task.scope().allowed_tab_ids.begin()).Get();
++  return tab && tab->GetProfile() == profile_ &&
++         policy_broker_.IsSelectedReadUrl(task, tab->GetURL());
++}
++
+ bool AegisAgentService::GrantTaskConsent(const std::string& task_id) {
+   AgentTask* task = GetTask(task_id);
+   if (!task || task->state() != AgentTaskState::kAwaitingTaskConsent) {
+     return false;
+   }
++  if (!CurrentPageMatchesSelection(*task)) {
++    Transition(task_id, AgentTaskState::kFailed,
++               "当前页面已改变，请从目标页面重新开始任务");
++    return false;
++  }
+   if (TaskUsesActor(*task) &&
+       !actor_bridge_.StartTask(task_id, task->scope())) {
+     Transition(task_id, AgentTaskState::kFailed,
+@@ -1227,6 +1246,13 @@ bool AegisAgentService::GrantRecoveryConsent(const std::string& task_id) {
+     return Transition(task_id, AgentTaskState::kExpired,
+                       "recovered task expired before consent");
+   }
++  // 冷启后没有创建时的内存URL凭据，不能把当前标签地址当成旧任务授权。
++  if (!CurrentPageMatchesSelection(*task)) {
++    recovery_dispositions_.erase(task_id);
++    Transition(task_id, AgentTaskState::kFailed,
++               "当前页面绑定已失效，请重新开始任务");
++    return false;
++  }
+   policy_broker_.RevokeTaskApprovals(task_id);
+   action_results_.erase(task_id);
+   action_tools_.erase(task_id);
+@@ -2230,6 +2256,16 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
+     *error = "tool call has no live approved origin";
+     return std::nullopt;
+   }
++  if (task.scope().restrict_to_current_page && call.tool_name == "page.click") {
++    const auto target =
++        actor_bridge_.ResolveObservedClickTarget(task.id(), call);
++    if (!target) {
++      *error = "当前观察未绑定可点击按钮，请重新观察并选择按钮本身";
++      return std::nullopt;
++    }
++    // 在生成审批参数和指纹前绑定实际控件，批准后不得再次替换目标。
++    call.arguments.Set("node_id", *target);
++  }
+   return call;
+ }
+ 
+@@ -2695,7 +2731,9 @@ void AegisAgentService::ExecuteTool(
+ 
+   if (task && task->scope().restrict_to_current_page &&
+       call.tool_name == "page.click" &&
+-      DescribeClickTarget(task_id, call).empty()) {
++      (actor_bridge_.ResolveObservedClickTarget(task_id, call) !=
++           call.arguments.FindInt("node_id") ||
++       DescribeClickTarget(task_id, call).empty())) {
+     std::move(callback).Run(AgentToolResult{
+         .action_id = call.action_id,
+         .ok = false,
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 4702df99b8..e30a4011e9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -185,6 +185,7 @@ class AegisAgentService : public KeyedService {
+ 
+  private:
+   friend class AegisAgentServiceTestPeer;
++  bool CurrentPageMatchesSelection(const AgentTask& task) const;
+ 
+   struct ExecutionRuntime;
+   struct MonitorUrlCheck;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 934bc9d65e..236c3245f6 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -49,6 +49,17 @@ namespace aegis::agent {
+ 
+ class AegisAgentServiceTestPeer {
+  public:
++  static void SeedClickObservation(AegisActorBridge* bridge,
++                                   const AgentDocumentRef& document) {
++    bridge->last_documents_["click-fixture"][7] = document;
++    auto& nodes = bridge->observed_node_text_["click-fixture"][7];
++    nodes[15] = {.text = "执行操作", .click_target_node_id = 15};
++    nodes[3] = {.text = "执行操作", .click_target_node_id = 15};
++    nodes[4] = {.text = "执行操作"};
++    nodes[9] = {.text = "秘密",
++                .click_target_node_id = 15,
++                .is_sensitive_control = true};
++  }
+   static bool HasRuntime(AegisAgentService* service, const std::string& id) {
+     return service->executions_.contains(id);
+   }
+@@ -332,6 +343,61 @@ class AegisAgentServiceTest : public testing::Test {
+   TestingProfileManager profile_manager_;
+ };
+ 
++TEST_F(AegisAgentServiceTest, ClickTargetUsesObservedAncestryAndDocument) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  auto& bridge = service->actor_bridge_for_testing();
++  AgentDocumentRef document{.tab_id = 7,
++                            .frame_token = "frame-fixture",
++                            .document_token = "document-fixture",
++                            .committed_url = GURL("https://fixture.example/")};
++  AegisAgentServiceTestPeer::SeedClickObservation(&bridge, document);
++  AgentToolCall call;
++  call.tool_name = "page.click";
++  call.arguments.Set("tab_id", 7).Set("node_id", 3);
++  call.document = document;
++  EXPECT_EQ(bridge.ResolveObservedClickTarget("click-fixture", call), 15);
++  EXPECT_EQ(bridge.DescribeObservedClickTarget("click-fixture", call),
++            "执行操作");
++  call.arguments.Set("node_id", 15);
++  EXPECT_EQ(bridge.ResolveObservedClickTarget("click-fixture", call), 15);
++  for (int node : {4, 9, 99}) {
++    call.arguments.Set("node_id", node);
++    EXPECT_FALSE(bridge.ResolveObservedClickTarget("click-fixture", call));
++  }
++  call.arguments.Set("node_id", 3);
++  call.document->document_token = "changed-document";
++  EXPECT_FALSE(bridge.ResolveObservedClickTarget("click-fixture", call));
++  call.document = document;
++  call.arguments.Set("tab_id", 8);
++  EXPECT_FALSE(bridge.ResolveObservedClickTarget("click-fixture", call));
++}
++
++TEST_F(AegisAgentServiceTest, CurrentPageConsentRejectsMissingOriginalBinding) {
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  auto scope = ServiceTestScope();
++  scope.allowed_tab_ids = {7};
++  scope.budgets.max_tabs = 1;
++  scope.restrict_to_current_page = true;
++  for (bool recovering : {false, true}) {
++    auto* task = service->CreateTask("当前页面操作", AgentMode::kAct, scope);
++    ASSERT_TRUE(task);
++    ASSERT_TRUE(task->TransitionTo(AgentTaskState::kPlanning, "fixture"));
++    ASSERT_TRUE(
++        task->TransitionTo(AgentTaskState::kAwaitingTaskConsent, "fixture"));
++    if (recovering) {
++      ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRunning, "fixture"));
++      ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRecovering, "fixture"));
++      EXPECT_FALSE(service->GrantRecoveryConsent(task->id()));
++    } else {
++      EXPECT_FALSE(service->GrantTaskConsent(task->id()));
++    }
++    EXPECT_EQ(task->state(), AgentTaskState::kFailed);
++    EXPECT_EQ(
++        service->actor_bridge_for_testing().active_task_count_for_testing(),
++        0u);
++  }
++}
++
+ TEST_F(AegisAgentServiceTest, KeepsPrimaryIncognitoTasksAndPrefsIsolated) {
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(profile_);
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 07cf1da8d4..bc680858fb 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -834,6 +834,9 @@ TEST(AegisAgentPolicyTest, SelectedReadUrlsDoNotAuthorizeDerivedUrls) {
+   AgentTask task("url-selection", "读取两个选中页面", AgentMode::kAct, scope);
+   const GURL selected("https://other.example/research?edition=1#section");
+   ASSERT_TRUE(broker.BindSelectedReadUrls(task, {selected}));
++  EXPECT_TRUE(broker.IsSelectedReadUrl(task, selected));
++  AgentPolicyBroker recovered(&registry);
++  EXPECT_FALSE(recovered.IsSelectedReadUrl(task, selected));
+   EXPECT_FALSE(
+       broker.BindSelectedReadUrls(task, {GURL("https://other.example/new")}));
+   ConsentTask(&task);
+@@ -855,6 +858,7 @@ TEST(AegisAgentPolicyTest, SelectedReadUrlsDoNotAuthorizeDerivedUrls) {
+           "https://other.example/research?edition=1#SYNTHETIC-CONTENT",
+           "https://shop.example/send/SYNTHETIC-CONTENT"}) {
+       call.arguments.Set("url", changed);
++      EXPECT_FALSE(broker.IsSelectedReadUrl(task, GURL(changed)));
+       const auto decision = broker.Evaluate(task, call);
+       EXPECT_EQ(decision.disposition,
+                 AgentPolicyDisposition::kRequireActionApproval);
+diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
+index d7242b3ef7..afa708a929 100644
+--- a/chrome/browser/aegis/agent/agent_observation.cc
++++ b/chrome/browser/aegis/agent/agent_observation.cc
+@@ -30,7 +30,8 @@ void AppendMainFrameNodes(
+     base::ListValue* nodes,
+     size_t* used_bytes,
+     bool* truncated,
+-    int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT) {
++    int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT,
++    int click_target_node_id = 0) {
+   if (*used_bytes >= kMaxObservationBytes ||
+       nodes->size() >= kMaxObservationNodes) {
+     *truncated = true;
+@@ -86,6 +87,21 @@ void AppendMainFrameNodes(
+       nodes->Append(std::move(item));
+       return;
+     }
++    // 保留按钮与内部文字的真实DOM关系，避免把文字节点当成点击对象。
++    switch (control.form_control_type()) {
++      case optimization_guide::proto::FORM_CONTROL_TYPE_BUTTON_BUTTON:
++      case optimization_guide::proto::FORM_CONTROL_TYPE_BUTTON_SUBMIT:
++      case optimization_guide::proto::FORM_CONTROL_TYPE_BUTTON_RESET:
++      case optimization_guide::proto::FORM_CONTROL_TYPE_BUTTON_POPOVER:
++      case optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_BUTTON:
++      case optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_SUBMIT:
++      case optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_IMAGE:
++        click_target_node_id = attributes.common_ancestor_dom_node_id();
++        break;
++      default:
++        click_target_node_id = 0;
++        break;
++    }
+   }
+   if (attributes.attribute_type() ==
+           optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING ||
+@@ -98,6 +114,9 @@ void AppendMainFrameNodes(
+     base::DictValue item;
+     if (attributes.common_ancestor_dom_node_id() > 0) {
+       item.Set("node_id", attributes.common_ancestor_dom_node_id());
++      if (interactive && click_target_node_id > 0) {
++        item.Set("click_target_node_id", click_target_node_id);
++      }
+     }
+     item.Set("kind", static_cast<int>(attributes.attribute_type()));
+ 
+@@ -169,7 +188,7 @@ void AppendMainFrameNodes(
+ 
+   for (const auto& child : node.children_nodes()) {
+     AppendMainFrameNodes(child, interactive, nodes, used_bytes, truncated,
+-                         text_block_kind);
++                         text_block_kind, click_target_node_id);
+     if (*truncated) {
+       return;
+     }
+diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+index f990d00ffe..039fb048c3 100644
+--- a/chrome/browser/aegis/agent/agent_observation_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+@@ -62,6 +62,44 @@ TEST(AgentObservationTest, ReadOnlyKeepsBodyAndTableWithoutNavigationOrForms) {
+   EXPECT_LT(text.size() * 10, Serialize(interactive).size() * 7);
+ }
+ 
++TEST(AgentObservationTest, ButtonTextRetainsItsActualControlTarget) {
++  proto::ContentNode root;
++  for (int id : {15, 25}) {
++    auto* button = root.add_children_nodes();
++    auto* attributes = button->mutable_content_attributes();
++    attributes->set_common_ancestor_dom_node_id(id);
++    attributes->set_attribute_type(proto::CONTENT_ATTRIBUTE_FORM_CONTROL);
++    attributes->mutable_form_control_data()->set_form_control_type(
++        proto::FORM_CONTROL_TYPE_BUTTON_BUTTON);
++    auto* nested = button->add_children_nodes();
++    AddText(nested, id + 1, "执行操作");
++    auto* hidden = AddText(button, id + 2, "秘密不能成为按钮标签");
++    hidden->mutable_content_attributes()->add_annotated_roles(
++        proto::ANNOTATED_ROLE_CONTENT_HIDDEN);
++  }
++  AddText(&root, 99, "执行操作");
++  const auto result = BuildAgentObservationNodes(root, true);
++  int verified = 0;
++  for (const auto& item : result.nodes) {
++    const auto& node = item.GetDict();
++    const auto id = node.FindInt("node_id");
++    if (!id) {
++      continue;
++    }
++    if (*id == 99) {
++      EXPECT_FALSE(node.Find("click_target_node_id"));
++    } else {
++      EXPECT_EQ(node.FindInt("click_target_node_id"), *id < 20 ? 15 : 25);
++      ++verified;
++    }
++  }
++  EXPECT_EQ(verified, 4);
++  EXPECT_EQ(Serialize(result).find("秘密"), std::string::npos);
++  const auto read_only = BuildAgentObservationNodes(root, false);
++  ASSERT_EQ(read_only.nodes.size(), 1u);
++  EXPECT_EQ(read_only.nodes[0].GetDict().FindInt("node_id"), 99);
++}
++
+ TEST(AgentObservationTest, KeepsTextWhenThePageHasNoMainRole) {
+   proto::ContentNode root;
+   AddText(&root, 1, "没有main角色的普通正文");
+diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
+index 31694b6ac1..b02a30d2e3 100644
+--- a/chrome/browser/aegis/agent/agent_policy_broker.cc
++++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
+@@ -275,6 +275,14 @@ bool AgentPolicyBroker::BindSelectedReadUrls(const AgentTask& task,
+   return true;
+ }
+ 
++bool AgentPolicyBroker::IsSelectedReadUrl(const AgentTask& task,
++                                          const GURL& url) const {
++  const auto selected = selected_read_urls_.find(task.id());
++  return task.scope().AllowsOrigin(url) &&
++         selected != selected_read_urls_.end() &&
++         selected->second.contains(url);
++}
++
+ AgentRiskLevel AgentPolicyBroker::EffectiveRisk(
+     const AgentTask& task,
+     const AgentToolCall& call) const {
+diff --git a/chrome/browser/aegis/agent/agent_policy_broker.h b/chrome/browser/aegis/agent/agent_policy_broker.h
+index bab0b4d94f..dcf1ab103b 100644
+--- a/chrome/browser/aegis/agent/agent_policy_broker.h
++++ b/chrome/browser/aegis/agent/agent_policy_broker.h
+@@ -63,6 +63,7 @@ class AgentPolicyBroker {
+   // 仅由浏览器绑定用户创建任务时选中的完整地址；模型和读取结果不能追加。
+   bool BindSelectedReadUrls(const AgentTask& task,
+                             const std::vector<GURL>& urls);
++  bool IsSelectedReadUrl(const AgentTask& task, const GURL& url) const;
+   AgentRiskLevel EffectiveRisk(const AgentTask& task,
+                                const AgentToolCall& call) const;
+   // Stable fingerprint shown to the user and consumed by the one-use approval
+diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
+index 5f1639a1cb..b81e460614 100644
+--- a/chrome/browser/aegis/agent/agent_tool_registry.cc
++++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
+@@ -499,7 +499,8 @@ std::string_view ToolDescription(std::string_view name) {
+     return "Navigate an approved tab to an approved URL.";
+   }
+   if (name == "page.click") {
+-    return "Click a document-bound semantic node.";
++    return "点击当前文档的控件。观察中的click_target_node_id表示文字所属的"
++           "真实按钮；优先使用该编号，不根据相同文字猜测其他控件。";
+   }
+   if (name == "page.type") {
+     return "Type non-secret text into an approved field.";
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 27d131ffca..54987f0eb2 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.8。
+-inline constexpr char kProductVersion[] = "2.0.0.9";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (009)";
++inline constexpr char kProductVersion[] = "2.0.0.10";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (010)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

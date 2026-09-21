@@ -1,0 +1,54 @@
+From be94db4a4bff5fcd135fbd67df5172024823dac4 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 03:13:17 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E4=B8=BA=E6=96=B0=E5=9C=B0=E5=9D=80?=
+ =?UTF-8?q?=E5=AE=A1=E6=89=B9=E5=A4=B9=E5=85=B7=E7=BB=91=E5=AE=9A=E5=BD=93?=
+ =?UTF-8?q?=E5=89=8D=E6=9D=A5=E6=BA=90=20Ver=202.0=20(006)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_service_unittest.cc | 4 +++-
+ chrome/browser/ui/webui/help/aegis_github_update.h         | 6 +++---
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 5b28efbed1..5a7f91665c 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -1301,11 +1301,13 @@ TEST_F(AegisAgentServiceTest,
+   AgentToolCall call;
+   call.action_id = "url-call";
+   call.tool_name = "tab.create";
++  call.committed_url = GURL("https://fixture.example/current");
+   call.arguments.Set("url", "https://fixture.example/new?synthetic=private");
+   const int before = task->tool_calls_used();
+   base::test::TestFuture<AgentToolResult> blocked;
+   service->ExecuteTool(task->id(), call, blocked.GetCallback());
+-  EXPECT_EQ(blocked.Get().error, AgentErrorCode::kApprovalRequired);
++  EXPECT_EQ(blocked.Get().error, AgentErrorCode::kApprovalRequired)
++      << blocked.Get().message;
+   EXPECT_EQ(task->state(), AgentTaskState::kAwaitingActionApproval);
+   EXPECT_EQ(task->tool_calls_used(), before);
+   EXPECT_TRUE(task->owned_tab_ids().empty());
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 4e06df2b84..5befd2391e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.5。
+-inline constexpr char kProductVersion[] = "2.0.0.5";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (005)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.6。
++inline constexpr char kProductVersion[] = "2.0.0.6";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (006)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From 7f02ebc07921b2399122ed5a6fb2f54647490b6f Mon Sep 17 00:00:00 2001
+From 59098ca5bf24f71a1abec76eef3f4030ceb1c767 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:56:53 +0800
 Subject: [PATCH] Aegis: allow chrome://aegis on Android and reserve Play
@@ -41,18 +41,18 @@ index cc1f2a30cb..d5270195b1 100644
 +    <string name="quick_action_search_widget_title" translatable="false">GCSA-aegis quick action search</string>
  </resources>
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index 518a4100dd..dfcbf3d751 100644
+index 2c50f4f82a..358f4de064 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
-@@ -340,6 +340,7 @@ group("dev_ui_resources") {
-     "predictors:resources",
+@@ -426,6 +426,7 @@ group("dev_ui_resources") {
      "subresource_filter:resources",
+     "suggest_internals:resources",
      "usb_internals:resources",
 +    "aegis:resources",
      "//components/actor/core/internals/resources",
+     "//components/autofill/core/browser/autofill_and_password_manager_internals:resources",
      "//components/commerce/core/internals/resources",
-     "//components/data_sharing/data_sharing_internals/resources",
-@@ -383,7 +384,6 @@ group("dev_ui_resources") {
+@@ -478,7 +479,6 @@ group("dev_ui_resources") {
        "user_education_internals:resources",
        "webnn_internals:resources",
        "webui_js_error:resources",
@@ -60,16 +60,16 @@ index 518a4100dd..dfcbf3d751 100644
      ]
    }
  
-@@ -422,6 +422,7 @@ repack("dev_ui_paks") {
-     "$root_gen_dir/chrome/predictors_resources.pak",
+@@ -518,6 +518,7 @@ repack("dev_ui_paks") {
      "$root_gen_dir/chrome/subresource_filter_internals_resources.pak",
+     "$root_gen_dir/chrome/suggest_internals_resources.pak",
      "$root_gen_dir/chrome/usb_internals_resources.pak",
 +    "$root_gen_dir/chrome/aegis_resources.pak",
      "$root_gen_dir/components/actor_internals_resources.pak",
+     "$root_gen_dir/components/autofill_and_password_manager_internals_resources.pak",
      "$root_gen_dir/components/commerce_internals_resources.pak",
-     "$root_gen_dir/components/data_sharing_internals_resources.pak",
-@@ -464,7 +465,6 @@ repack("dev_ui_paks") {
-       "$root_gen_dir/chrome/personal_context_notice_resources.pak",
+@@ -569,7 +570,6 @@ repack("dev_ui_paks") {
+       "$root_gen_dir/chrome/on_device_internals_resources.pak",
        "$root_gen_dir/chrome/user_education_internals_resources.pak",
        "$root_gen_dir/chrome/webui_js_error_resources.pak",
 -      "$root_gen_dir/chrome/aegis_resources.pak",

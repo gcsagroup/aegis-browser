@@ -1,7 +1,7 @@
-From 5748bcb81beb9ca539b260c578919f97dbfc6b40 Mon Sep 17 00:00:00 2001
+From 3ff66b63eea6dbccbf12f57a625611093e6f06d9 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 23:35:13 +0800
-Subject: [PATCH 37/38] fix: stabilize Aegis browser unit gates
+Subject: [PATCH] fix: stabilize Aegis browser unit gates
 
 ---
  chrome/browser/aegis/BUILD.gn                              | 2 +-

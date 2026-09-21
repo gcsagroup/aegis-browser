@@ -109,7 +109,33 @@ async function syntheticCall(t, args) {
 }
 
 test('协议预检接受符合请求 schema 的工具参数', async t => {
-  assert.deepEqual((await syntheticCall(t, validArgs())).arguments, validArgs());
+  const result = await syntheticCall(t, validArgs());
+  assert.deepEqual(result.arguments, validArgs());
+  assert.equal(result.input_bytes, 2);
+  assert.ok(result.request_bytes > result.input_bytes);
+  assert.deepEqual(result.reported_usage,
+      {input_tokens: null, output_tokens: null, total_tokens: null});
+});
+
+test('用量记录保留 UTF-8 字节数，非法服务用量不伪装成零', async t => {
+  const input = {text: '中文指标 42'};
+  let transmittedBody;
+  t.mock.method(globalThis, 'fetch', async (_url, request) => {
+    transmittedBody = request.body;
+    return {ok: true, json: async () => ({
+      output: [{type: 'function_call', name: 'page.observe',
+        arguments: JSON.stringify(validArgs())}],
+      usage: {input_tokens: 123, output_tokens: -1, total_tokens: '124'},
+    })};
+  });
+  const result = await modelCall({baseUrl: 'http://127.0.0.1:1/v1', model: 'synthetic',
+    transportGraceMs: 0}, 'page.observe', '协议检查', sampleSchema, '合成约束', input);
+  assert.equal(result.input_bytes, Buffer.byteLength(JSON.stringify(input)));
+  assert.ok(result.input_bytes > JSON.stringify(input).length);
+  assert.equal(result.request_bytes, Buffer.byteLength(transmittedBody));
+  assert.deepEqual(result.reported_usage,
+      {input_tokens: 123, output_tokens: null, total_tokens: null});
+  assert.ok(!JSON.stringify(result).includes(input.text));
 });
 
 for (const [name, change] of [
@@ -192,6 +218,15 @@ test('整段 CLI 不把脚本恢复当成模型或浏览器成功，也不覆盖
     assert.equal(report.runtime_tested, false);
     assert.equal(report.release_eligible, false);
     assert.equal(report.summary.total_checks, 13);
+    assert.equal(report.summary.total_model_calls, 14);
+    const repaired = report.checks.find(item => item.resolution === 'preflight_read_only_recovery');
+    assert.equal(repaired.call_metrics.length, 2);
+    assert.equal(repaired.request_bytes, repaired.call_metrics.reduce(
+        (total, item) => total + item.request_bytes, 0));
+    assert.equal(repaired.input_bytes, repaired.call_metrics.reduce(
+        (total, item) => total + item.input_bytes, 0));
+    assert.deepEqual(repaired.reported_usage,
+        {input_tokens: null, output_tokens: null, total_tokens: null});
     assert.equal(report.summary.plans_preflight_read_only_recovery, 1);
     assert.equal(report.summary.plans_browser_read_only_recovery, undefined);
     assert.equal(counts.get('agent.submit_plan'), 5);

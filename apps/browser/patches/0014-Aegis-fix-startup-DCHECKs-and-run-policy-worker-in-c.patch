@@ -1,4 +1,4 @@
-From cab8d61a1456054282bf5469c452e2be8a7ee739 Mon Sep 17 00:00:00 2001
+From 99f8d3fd5d9e870c9de8760a158d4250c06112a4 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 17:03:00 +0800
 Subject: [PATCH] Aegis: fix startup DCHECKs and run policy worker in

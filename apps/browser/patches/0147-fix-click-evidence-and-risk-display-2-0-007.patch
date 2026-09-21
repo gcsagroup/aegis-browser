@@ -1,0 +1,314 @@
+From e6a1039cfe5f4e8ef55d60a402caac1b4ff51693 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 03:36:04 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=A0=B8=E9=AA=8C=E7=82=B9=E5=87=BB?=
+ =?UTF-8?q?=E5=8F=98=E5=8C=96=E5=B9=B6=E4=BF=9D=E7=95=99=E5=AE=9E=E9=99=85?=
+ =?UTF-8?q?=E5=AE=A1=E6=89=B9=E9=A3=8E=E9=99=A9=202.0.007?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 29 +++++++++++++++
+ .../browser/aegis/agent/aegis_actor_bridge.h  |  1 +
+ .../aegis/agent/aegis_agent_service.cc        | 21 +++++++++++
+ .../browser/aegis/agent/aegis_agent_service.h |  1 +
+ .../agent/aegis_agent_service_unittest.cc     |  4 +++
+ .../aegis/agent/agent_core_unittest.cc        | 35 +++++++++++++++++++
+ .../aegis/agent/agent_result_verifier.cc      | 13 +++++++
+ .../aegis_agent/aegis_agent_page_handler.cc   |  4 +--
+ .../ui/webui/help/aegis_github_update.h       |  6 ++--
+ 9 files changed, 109 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 5f39475ce3..2203c3f880 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -711,6 +711,7 @@ bool AegisActorBridge::PauseTask(const std::string& agent_task_id,
+   }
+   task->Pause(/*from_actor=*/!by_user);
+   last_documents_.erase(agent_task_id);
++  last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+   return true;
+@@ -722,6 +723,7 @@ bool AegisActorBridge::ResumeTask(const std::string& agent_task_id) {
+     return false;
+   }
+   last_documents_.erase(agent_task_id);
++  last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+   task->Resume();
+@@ -746,6 +748,7 @@ bool AegisActorBridge::StopTask(const std::string& agent_task_id,
+   actor_tasks_.erase(agent_task_id);
+   task_scopes_.erase(agent_task_id);
+   last_documents_.erase(agent_task_id);
++  last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+   return true;
+@@ -1001,6 +1004,27 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
+     }
+   }
+ 
++  if (call.tool_name == "page.click") {
++    const auto task_fingerprints = last_fingerprints_.find(agent_task_id);
++    if (task_fingerprints == last_fingerprints_.end() ||
++        !task_fingerprints->second.contains(*tab_id)) {
++      std::move(callback).Run(
++          ErrorResult(call.action_id, AgentErrorCode::kStaleDocument,
++                      "点击前缺少页面观察，请先重新读取页面"));
++      return;
++    }
++    // 保存浏览器产生的点击前指纹，模型参数不能伪造这份证据。
++    callback = base::BindOnce(
++        [](std::string before, ToolResultCallback done,
++           AgentToolResult result) {
++          if (result.ok) {
++            result.value.Set("pre_action_fingerprint", std::move(before));
++          }
++          std::move(done).Run(std::move(result));
++        },
++        task_fingerprints->second.at(*tab_id), std::move(callback));
++  }
++
+   std::unique_ptr<actor::ToolRequest> request = BuildActorRequest(*tab, call);
+   if (!request) {
+     std::move(callback).Run(ErrorResult(call.action_id,
+@@ -1010,6 +1034,7 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
+   }
+   if (call.tool_name == "page.navigate" || call.tool_name == "page.history") {
+     last_documents_[agent_task_id].erase(*tab_id);
++    last_fingerprints_[agent_task_id].erase(*tab_id);
+     observed_node_text_[agent_task_id].erase(*tab_id);
+     webmcp_documents_[agent_task_id].erase(*tab_id);
+   }
+@@ -1167,6 +1192,7 @@ void AegisActorBridge::OnObservation(
+   const std::string observation_fingerprint = base::HexEncode(
+       crypto::SHA256HashString(observed_url.spec() + "\n" + document_token +
+                                "\n" + serialized_nodes));
++  last_fingerprints_[agent_task_id][tab_id] = observation_fingerprint;
+   std::map<int, ObservedNodeMetadata>& observed_nodes =
+       observed_node_text_[agent_task_id][tab_id];
+   observed_nodes.clear();
+@@ -1330,6 +1356,7 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
+   const std::string& agent_task_id = task.source_info().id.value();
+   if (task.GetState() == actor::ActorTask::State::kPausedByUser) {
+     last_documents_.erase(agent_task_id);
++    last_fingerprints_.erase(agent_task_id);
+     observed_node_text_.erase(agent_task_id);
+     webmcp_documents_.erase(agent_task_id);
+     if (state_event_callback_) {
+@@ -1337,6 +1364,7 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
+     }
+   } else if (task.GetState() == actor::ActorTask::State::kWaitingOnUser) {
+     last_documents_.erase(agent_task_id);
++    last_fingerprints_.erase(agent_task_id);
+     observed_node_text_.erase(agent_task_id);
+     webmcp_documents_.erase(agent_task_id);
+     if (state_event_callback_) {
+@@ -1349,6 +1377,7 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
+   actor_tasks_.erase(agent_task_id);
+   task_scopes_.erase(agent_task_id);
+   last_documents_.erase(agent_task_id);
++  last_fingerprints_.erase(agent_task_id);
+   observed_node_text_.erase(agent_task_id);
+   webmcp_documents_.erase(agent_task_id);
+ }
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+index 8e0e2f612f..b1c1b79041 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+@@ -114,6 +114,7 @@ class AegisActorBridge {
+   std::map<std::string, actor::TaskId> actor_tasks_;
+   std::map<std::string, AgentTaskScope> task_scopes_;
+   std::map<std::string, std::map<int32_t, AgentDocumentRef>> last_documents_;
++  std::map<std::string, std::map<int32_t, std::string>> last_fingerprints_;
+   std::map<std::string, std::map<int32_t, std::map<int, ObservedNodeMetadata>>>
+       observed_node_text_;
+   std::map<std::string, std::map<int32_t, WebMcpDocument>> webmcp_documents_;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 63c6b1f989..9551f82cb7 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2600,6 +2600,27 @@ AgentRiskLevel AegisAgentService::ToolCallRisk(
+               : AgentRiskLevel::kBlocked;
+ }
+ 
++AgentRiskLevel AegisAgentService::TaskMaxRisk(
++    const std::string& task_id) const {
++  AgentRiskLevel risk = AgentRiskLevel::kR0ReadOnly;
++  if (const auto* plan = GetPlan(task_id)) {
++    for (const auto& step : plan->steps) {
++      risk = std::max(risk, step.risk);
++    }
++  }
++  if (const auto* pending = PendingAction(task_id)) {
++    risk = std::max(risk, ToolCallRisk(task_id, *pending));
++  }
++  // 审批消费后仍保留已执行动作的风险，不能退回静态计划等级。
++  if (const auto actions = action_risks_.find(task_id);
++      actions != action_risks_.end()) {
++    for (const auto& [action_id, action_risk] : actions->second) {
++      risk = std::max(risk, action_risk);
++    }
++  }
++  return risk;
++}
++
+ std::vector<std::string> AegisAgentService::ObservedSourceOrigins(
+     const std::string& task_id) const {
+   base::flat_set<std::string> origins;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index d84a20918e..79c52d967f 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -138,6 +138,7 @@ class AegisAgentService : public KeyedService {
+       const AgentToolCall& call);
+   AgentRiskLevel ToolCallRisk(const std::string& task_id,
+                               const AgentToolCall& call) const;
++  AgentRiskLevel TaskMaxRisk(const std::string& task_id) const;
+   std::vector<std::string> ObservedSourceOrigins(
+       const std::string& task_id) const;
+   void ExecuteTool(
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 5a7f91665c..934bc9d65e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -1313,12 +1313,16 @@ TEST_F(AegisAgentServiceTest,
+   EXPECT_TRUE(task->owned_tab_ids().empty());
+   EXPECT_EQ(service->ToolCallRisk(task->id(), call),
+             AgentRiskLevel::kR2ExternalSideEffect);
++  EXPECT_EQ(service->TaskMaxRisk(task->id()),
++            AgentRiskLevel::kR2ExternalSideEffect);
+   const auto receipt = service->ApproveToolCall(task->id(), call);
+   ASSERT_TRUE(receipt);
+   EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
+                 .disposition,
+             AgentPolicyDisposition::kAllow);
+   EXPECT_EQ(task->tool_calls_used(), before + 1);
++  EXPECT_EQ(service->TaskMaxRisk(task->id()),
++            AgentRiskLevel::kR2ExternalSideEffect);
+   ASSERT_TRUE(service->CancelTask(task->id()));
+   EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
+                 .disposition,
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 9fec58b44c..0a8c30aba9 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -1118,6 +1118,7 @@ TEST(AegisAgentResultVerifierTest, RejectsModelClaimWithoutBrowserEvidence) {
+   observed.value.Set("frame_token", "frame-2");
+   observed.value.Set("document_token", "document-2");
+   observed.value.Set("observation_fingerprint", "fingerprint-2");
++  observed.value.Set("pre_action_fingerprint", "fingerprint-1");
+   observed.value.Set("untrusted", true);
+   observed.value.Set("nodes", base::ListValue());
+   base::DictValue evidence;
+@@ -1138,6 +1139,40 @@ TEST(AegisAgentResultVerifierTest, RejectsModelClaimWithoutBrowserEvidence) {
+   EXPECT_FALSE(verifier.Verify(task, call, *descriptor, observed).accepted);
+ }
+ 
++TEST(AegisAgentResultVerifierTest, EmptyClickCannotReportCompletion) {
++  AgentToolRegistry registry;
++  AgentResultVerifier verifier;
++  AgentTask task("task-empty-click", "点击并核对结果", AgentMode::kAct,
++                 TestScope());
++  auto call = PageClickCall();
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.ok = true;
++  result.message = "Actor 返回成功";
++  result.value.Set("tab_id", 7);
++  result.value.Set("url", "https://shop.example/after");
++  result.value.Set("frame_token", "frame-1");
++  result.value.Set("document_token", "document-1");
++  result.value.Set("observation_fingerprint", "same-observation");
++  result.value.Set("untrusted", true);
++  result.value.Set("nodes", base::ListValue());
++  result.evidence.Append(base::DictValue().Set("kind", "browser_observation"));
++  const auto* descriptor = registry.Find(call.tool_name);
++  ASSERT_TRUE(descriptor);
++  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
++  result.value.Set("pre_action_fingerprint", "same-observation");
++  auto decision = verifier.Verify(task, call, *descriptor, result);
++  EXPECT_TRUE(decision.accepted);
++  EXPECT_FALSE(decision.postcondition_met);
++  EXPECT_NE(decision.reason.find("不要重复点击"), std::string::npos);
++  result.value.Set("observation_fingerprint", "changed-observation");
++  EXPECT_TRUE(
++      verifier.Verify(task, call, *descriptor, result).postcondition_met);
++  // 页面错误不能因指纹变化而被当作成功。
++  result.value.Set("is_error_document", true);
++  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
++}
++
+ TEST(AegisAgentResultVerifierTest, AcceptsStructuredBrowserFailure) {
+   AgentToolRegistry registry;
+   AgentResultVerifier verifier;
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index b409160b12..1a7e99ba3f 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -236,6 +236,19 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+         value.FindInt("http_status").value_or(0) >= 400) {
+       return Reject("error page cannot verify the requested page result");
+     }
++    if (call.tool_name == "page.click") {
++      const auto* before = value.FindString("pre_action_fingerprint");
++      const auto* after = value.FindString("observation_fingerprint");
++      if (!before || before->empty() || !after || after->empty()) {
++        return Reject("点击结果缺少操作前后的浏览器观察");
++      }
++      // 页面变化只证明观察发生变化；业务目标仍需后续字段或结果核验。
++      return Accept(
++          *before != *after,
++          *before != *after
++              ? "点击后的页面观察发生变化，仍需核对任务目标"
++              : "点击后未观察到变化，无法确认生效；请回读结果，不要重复点击");
++    }
+     if (call.tool_name == "page.extract") {
+       return VerifyExtraction(call, value);
+     }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 0e1ffefb27..5a2adfaf9e 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -996,7 +996,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+   if (const aegis::agent::AgentTaskPlan* plan = service_->GetPlan(task->id())) {
+     auto plan_value = aegis_agent::mojom::PlanSummary::New();
+     plan_value->summary = plan->summary;
+-    AgentRiskLevel max_risk = AgentRiskLevel::kR0ReadOnly;
++    AgentRiskLevel max_risk = service_->TaskMaxRisk(task->id());
+     for (const url::Origin& origin : plan->scope.allowed_origins) {
+       plan_value->origins.push_back(origin.Serialize());
+     }
+@@ -1056,7 +1056,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+     approval->risk = RiskName(risk);
+     approval->data_source_origins = service_->ObservedSourceOrigins(task->id());
+     if (const auto* target = pending->arguments.FindString("url")) {
+-      approval->target_url = *target;
++      approval->target_url = GURL(*target).spec();
+       approval->origin = url::Origin::Create(GURL(*target)).Serialize();
+     }
+     approval->is_data_transfer =
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 5befd2391e..578b15309e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.6。
+-inline constexpr char kProductVersion[] = "2.0.0.6";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (006)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.7。
++inline constexpr char kProductVersion[] = "2.0.0.7";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (007)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

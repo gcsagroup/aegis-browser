@@ -1,4 +1,4 @@
-From 1e1341b51e3254d4638bc1917b140f30d4c1e9d7 Mon Sep 17 00:00:00 2001
+From 1aa2280b91b5eae6cfebf5709f037cba72807610 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 15:06:02 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BF=AE=E5=A4=8D=20Android=20?=
@@ -450,10 +450,10 @@ index 0c2abce187..bc21a7ad18 100644
    if (call.tool_name == "monitor.list") {
      return HasList(value, "monitors") && HasString(value, "revision")
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index 1783d12811..d81fc05b08 100644
+index 8bc1daffbf..03f88a13bd 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
-@@ -405,6 +405,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
+@@ -425,6 +425,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
      content::WebUIBrowserInterfaceBrokerRegistry& registry) {
    PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(registry);
  
@@ -478,10 +478,10 @@ index 6c398bd593..092d2ff57d 100644
  // These assumes "Desktop" is non-Android.
  void PopulateChromeWebUIFrameBindersPartsDesktop(
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
-index 1c12d8308f..ada1c0c7a2 100644
+index 8f002e4879..49042ebc8a 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
-@@ -4,11 +4,14 @@
+@@ -4,6 +4,8 @@
  
  #include "chrome/browser/chrome_browser_interface_binders_webui_parts.h"
  
@@ -490,14 +490,16 @@ index 1c12d8308f..ada1c0c7a2 100644
  #include "chrome/browser/ui/webui/feed_internals/feed_internals.mojom.h"
  #include "chrome/browser/ui/webui/feed_internals/feed_internals_ui.h"
  #include "chrome/browser/ui/webui/notifications_internals/notifications_internals.mojom.h"
- #include "chrome/browser/ui/webui/notifications_internals/notifications_internals_ui.h"
+@@ -11,6 +13,7 @@
  #include "components/commerce/core/commerce_feature_list.h"
+ #include "components/notebooks/internals/webui/notebooks_internals.mojom.h"
+ #include "components/notebooks/internals/webui/notebooks_internals_ui.h"
 +#include "content/public/browser/web_ui_browser_interface_broker_registry.h"
  #include "content/public/browser/web_ui_controller_interface_binder.h"
  #include "mojo/public/cpp/bindings/binder_map.h"
  
-@@ -26,4 +29,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
-       map);
+@@ -31,4 +34,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
+       notebooks::NotebooksInternalsUI>(map);
  }
  
 +void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsAndroid(

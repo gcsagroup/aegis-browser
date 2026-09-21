@@ -1,4 +1,4 @@
-From 7260ec4f44c6777fa596870efbce2006570c860f Mon Sep 17 00:00:00 2001
+From 20342c39e39e41a96c615f1f637fccd5df9c396a Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:06:52 +0800
 Subject: [PATCH] =?UTF-8?q?build(aegis):=20=E4=BF=9D=E7=95=99=E6=9C=AC?=
@@ -15,10 +15,10 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 17 insertions(+)
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index 973a46b..0dda8c1 100644
+index c84f6d4898..c5d7469ead 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -1186,6 +1186,14 @@ if (is_win) {
+@@ -1372,6 +1372,14 @@ if (is_win) {
      }
    }
  
@@ -33,7 +33,7 @@ index 973a46b..0dda8c1 100644
    mac_framework_bundle("chrome_framework") {
      output_name = chrome_framework_name
  
-@@ -1199,6 +1207,7 @@ if (is_win) {
+@@ -1385,6 +1393,7 @@ if (is_win) {
      configs += [ "//build/config/compiler:wexit_time_destructors" ]
      configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
      configs += [ "//build/config/compiler:thinlto_optimize_max" ]
@@ -42,7 +42,7 @@ index 973a46b..0dda8c1 100644
      info_plist_target = ":chrome_framework_plist"
      extra_substitutions = [
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 5543d5a..0a6c891 100644
+index 5543d5affb..0a6c89102a 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -332,6 +332,10 @@ fuzzer_test("aegis_agent_scope_fuzzer") {
@@ -57,10 +57,10 @@ index 5543d5a..0a6c891 100644
      "aegis_ai_control_unittest.cc",
      "aegis_download_prefs_unittest.cc",
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
-index f309ed1..acda71e 100644
+index 743b77b7fe..fcfd0c3f98 100644
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
-@@ -2215,6 +2215,10 @@ if (!is_android) {
+@@ -1881,6 +1881,10 @@ if (!is_android) {
    test("browser_tests") {
      use_xvfb = use_xvfb_in_this_config
  

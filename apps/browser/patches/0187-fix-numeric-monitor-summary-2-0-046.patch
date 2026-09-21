@@ -1,0 +1,274 @@
+From fa9dfac6f9967a0725cd579082fd957df75e1468 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 04:12:26 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=95=B0=E5=AD=97?=
+ =?UTF-8?q?=E5=8F=98=E5=8C=96=E7=94=B1=E5=8E=9F=E7=94=9F=E9=99=88=E8=BF=B0?=
+ =?UTF-8?q?=E4=BA=8B=E5=AE=9E=EF=BC=8C=E9=81=BF=E5=85=8D=E6=A8=A1=E5=9E=8B?=
+ =?UTF-8?q?=E7=8C=9C=E6=B5=8B=E5=90=AB=E4=B9=89=202.0.046?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  9 ++
+ .../aegis/agent/agent_monitor_summary.cc      | 91 ++++++++++++++++---
+ .../aegis/agent/agent_monitor_summary.h       |  7 ++
+ .../agent/agent_monitor_summary_unittest.cc   | 57 ++++++++++++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  3 +-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 6 files changed, 152 insertions(+), 19 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index a885cd3370..0037507b5e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -4609,6 +4609,15 @@ void AegisAgentService::OnMonitorPageObserved(
+     auto input = BuildAgentMonitorSummaryInput(
+         it->second->monitor.last_observation, *observation);
+     if (input && !input->changes.empty()) {
++      auto numeric = BuildAgentMonitorNumericSummary(
++          *observation, *input,
++          g_browser_process ? g_browser_process->GetApplicationLocale() : "en",
++          base::Time::Now());
++      if (numeric) {
++        it->second->notify_page_change = true;
++        PersistMonitorObservation(monitor_id, request_id, std::move(*numeric));
++        return;
++      }
+       it->second->summary_input = std::move(input);
+       it->second->pending_observation = std::move(*observation);
+       RequestMonitorSummary(monitor_id, request_id);
+diff --git a/chrome/browser/aegis/agent/agent_monitor_summary.cc b/chrome/browser/aegis/agent/agent_monitor_summary.cc
+index 5db80ee749..cca1883ccb 100644
+--- a/chrome/browser/aegis/agent/agent_monitor_summary.cc
++++ b/chrome/browser/aegis/agent/agent_monitor_summary.cc
+@@ -100,6 +100,35 @@ std::optional<base::DictValue> ValidSummary(std::string_view observation) {
+   return summary->Clone();
+ }
+ 
++std::optional<std::string> StoreSummary(
++    std::string_view current,
++    const AgentMonitorSummaryInput& input,
++    bool meaningful,
++    std::string_view text,
++    base::ListValue quotes,
++    base::Time now) {
++  auto value = PageObservation(current);
++  if (!value || ContentHash(*value) != input.current_content_hash ||
++      now.is_null() || now <= base::Time::UnixEpoch()) {
++    return std::nullopt;
++  }
++  base::DictValue summary;
++  summary.Set("version", 1);
++  summary.Set("content_hash", input.current_content_hash);
++  summary.Set("meaningful", meaningful);
++  summary.Set("text", text);
++  summary.Set("quotes", std::move(quotes));
++  summary.Set("truncated", input.truncated);
++  summary.Set("timestamp",
++              base::NumberToString(now.InMillisecondsSinceUnixEpoch()));
++  value->Set("change_summary", std::move(summary));
++  auto json = base::WriteJson(*value);
++  if (!json || json->size() > kMaxObservationBytes || !ValidSummary(*json)) {
++    return std::nullopt;
++  }
++  return json;
++}
++
+ }  // namespace
+ 
+ std::optional<AgentMonitorSummaryInput> BuildAgentMonitorSummaryInput(
+@@ -198,6 +227,52 @@ std::string BuildAgentMonitorSummaryPrompt(
+   return base::WriteJson(data).value_or(std::string());
+ }
+ 
++std::optional<std::string> BuildAgentMonitorNumericSummary(
++    std::string_view current,
++    const AgentMonitorSummaryInput& input,
++    std::string_view locale,
++    base::Time now) {
++  if (input.truncated || input.changes.size() != 2u) {
++    return std::nullopt;
++  }
++  const std::string* removed = nullptr;
++  const std::string* added = nullptr;
++  for (const auto& change : input.changes) {
++    if (!change.is_dict()) {
++      return std::nullopt;
++    }
++    const auto* text = change.GetDict().FindString("text");
++    const auto* kind = change.GetDict().FindString("kind");
++    if (!text || text->empty() || text->size() > 32u ||
++        !base::ContainsOnlyChars(*text, "0123456789") || !kind) {
++      return std::nullopt;
++    }
++    if (*kind == "removed" && !removed) {
++      removed = text;
++    } else if (*kind == "added" && !added) {
++      added = text;
++    } else {
++      return std::nullopt;
++    }
++  }
++  if (!removed || !added || *removed == *added) {
++    return std::nullopt;
++  }
++  // 不把两个片段强行解释为同一字段，更不推断价格、页码或指标名称。
++  std::string text;
++  if (locale == "zh-TW" || locale == "zh-HK" || locale == "zh-Hant") {
++    text = "數字片段變化：移除「" + *removed + "」，新增「" + *added +
++           "」；具體含義尚未判定。";
++  } else if (base::StartsWith(locale, "zh")) {
++    text = "数字片段变化：移除“" + *removed + "”，新增“" + *added +
++           "”；具体含义尚未判定。";
++  } else {
++    text = "Numeric text changed: removed \"" + *removed + "\", added \"" +
++           *added + "\". Its meaning has not been determined.";
++  }
++  return StoreSummary(current, input, true, text, input.changes.Clone(), now);
++}
++
+ std::optional<std::string> AttachAgentMonitorSummary(
+     std::string_view current,
+     const AgentMonitorSummaryInput& input,
+@@ -261,21 +336,7 @@ std::optional<std::string> AttachAgentMonitorSummary(
+     }
+     quotes.Append(evidence->Clone());
+   }
+-  base::DictValue summary;
+-  summary.Set("version", 1);
+-  summary.Set("content_hash", input.current_content_hash);
+-  summary.Set("meaningful", meaningful);
+-  summary.Set("text", text);
+-  summary.Set("quotes", std::move(quotes));
+-  summary.Set("truncated", input.truncated);
+-  summary.Set("timestamp",
+-              base::NumberToString(now.InMillisecondsSinceUnixEpoch()));
+-  value->Set("change_summary", std::move(summary));
+-  auto json = base::WriteJson(*value);
+-  if (!json || json->size() > kMaxObservationBytes || !ValidSummary(*json)) {
+-    return std::nullopt;
+-  }
+-  return json;
++  return StoreSummary(current, input, meaningful, text, std::move(quotes), now);
+ }
+ 
+ std::string ReadAgentMonitorSummary(std::string_view observation) {
+diff --git a/chrome/browser/aegis/agent/agent_monitor_summary.h b/chrome/browser/aegis/agent/agent_monitor_summary.h
+index 12efc72c0c..e17c1ff2a0 100644
+--- a/chrome/browser/aegis/agent/agent_monitor_summary.h
++++ b/chrome/browser/aegis/agent/agent_monitor_summary.h
+@@ -30,6 +30,13 @@ std::string BuildAgentMonitorSummaryPrompt(
+     const AgentMonitorSummaryInput& input,
+     std::string_view locale);
+ 
++// 仅一对完整纯数字片段时直接陈述增删，不让模型猜测字段含义。
++std::optional<std::string> BuildAgentMonitorNumericSummary(
++    std::string_view current,
++    const AgentMonitorSummaryInput& input,
++    std::string_view locale,
++    base::Time now);
++
+ // 只接受唯一的原生摘要工具调用及有效证据引用。结果仍需走既有系统加密持久化。
+ std::optional<std::string> AttachAgentMonitorSummary(
+     std::string_view current,
+diff --git a/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc b/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
+index 3b34f0d4b9..8450312aee 100644
+--- a/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
+@@ -117,6 +117,63 @@ TEST(AegisAgentMonitorSummaryTest, AttachesCitedSummaryAndRejectsStalePage) {
+   EXPECT_TRUE(ReadAgentMonitorSummary(*base::WriteJson(*saved)).empty());
+ }
+ 
++TEST(AegisAgentMonitorSummaryTest, NumericFragmentsKeepOnlyObservedMeaning) {
++  const std::string current = Observation({"稳定指标", "47"});
++  auto input = BuildAgentMonitorSummaryInput(
++      Observation({"稳定指标", "42"}), current);
++  ASSERT_TRUE(input);
++  const auto now = base::Time::Now();
++  for (const auto locale : {"zh-CN", "zh-TW", "en"}) {
++    auto summary = BuildAgentMonitorNumericSummary(current, *input, locale, now);
++    ASSERT_TRUE(summary) << locale;
++    EXPECT_TRUE(HasMeaningfulAgentMonitorSummary(*summary));
++    EXPECT_FALSE(IsPartialAgentMonitorSummary(*summary));
++    const auto text = ReadAgentMonitorSummary(*summary);
++    EXPECT_NE(text.find("42"), std::string::npos);
++    EXPECT_NE(text.find("47"), std::string::npos);
++    EXPECT_EQ(text.find("页码"), std::string::npos);
++    EXPECT_EQ(text.find("稳定指标"), std::string::npos);
++    EXPECT_NE(text.find(locale == std::string_view("en") ? "not been determined"
++                                                        : "尚未判定"),
++              std::string::npos);
++    auto stored = base::JSONReader::ReadDict(*summary, base::JSON_PARSE_RFC);
++    ASSERT_TRUE(stored);
++    EXPECT_EQ(*stored->FindDict("change_summary")->FindList("quotes"),
++              input->changes);
++    EXPECT_EQ(ReadAgentMonitorSummary(
++                  PreserveUnchangedAgentMonitorSummary(*summary, current)),
++              text);
++  }
++  EXPECT_FALSE(BuildAgentMonitorNumericSummary(
++      Observation({"稳定指标", "48"}), *input, "zh-CN", now));
++  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en",
++                                               base::Time()));
++  input->truncated = true;
++  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
++}
++
++TEST(AegisAgentMonitorSummaryTest, NumericSummaryDoesNotGuessMixedChanges) {
++  const auto now = base::Time::Now();
++  for (const auto text : {"价格47", "47.5", "-47", "47°C", "47x"}) {
++    const std::string current = Observation({text});
++    auto input = BuildAgentMonitorSummaryInput(Observation({"42"}), current);
++    ASSERT_TRUE(input);
++    EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
++  }
++  const std::string current = Observation({"47", "新增说明"});
++  auto input = BuildAgentMonitorSummaryInput(Observation({"42"}), current);
++  ASSERT_TRUE(input);
++  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
++  input = BuildAgentMonitorSummaryInput(current, current);
++  ASSERT_TRUE(input);
++  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
++  input = BuildAgentMonitorSummaryInput(Observation({"42"}), Observation({"47"}));
++  ASSERT_TRUE(input);
++  input->changes[1].GetDict().Set("kind", "removed");
++  EXPECT_FALSE(BuildAgentMonitorNumericSummary(Observation({"47"}), *input,
++                                               "en", now));
++}
++
+ TEST(AegisAgentMonitorSummaryTest, RejectsMissingInventedAndDuplicateEvidence) {
+   const std::string current = Observation({"续航24小时"});
+   auto input =
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 6727608317..7c09844670 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -466,8 +466,7 @@ void AddStrings(content::WebUIDataSource* source) {
+       "previous record is retained for retry.",
+       "已读取页面，但 AI 变化摘要未生成；已保留上次记录，稍后重试。",
+       "已讀取頁面，但 AI 變化摘要未產生；已保留上次記錄，稍後重試。");
+-  add("automationChangeSummary", "AI change summary", "AI 变化摘要",
+-      "AI 變化摘要");
++  add("automationChangeSummary", "Change summary", "变化摘要", "變化摘要");
+   add("automationChangeSummaryPartial",
+       "Only the observed excerpts are summarized; more changes may exist.",
+       "仅总结已读取的变化片段，可能还有其他更新。",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 8862b13869..75a9700439 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.45";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (045)";
++inline constexpr char kProductVersion[] = "2.0.0.46";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (046)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

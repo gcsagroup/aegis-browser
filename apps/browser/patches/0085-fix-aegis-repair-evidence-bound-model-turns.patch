@@ -1,7 +1,7 @@
-From a25b28a7ca6d9c0fda1822e53a8adc7f752a190e Mon Sep 17 00:00:00 2001
+From eb4a925feb27229ee4999ff77649f3e6d534ea93 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:55:49 +0800
-Subject: [PATCH 85/90] fix(aegis): repair evidence-bound model turns
+Subject: [PATCH] fix(aegis): repair evidence-bound model turns
 
 ---
  .../aegis/agent/aegis_agent_service.cc        | 40 +++++++++----

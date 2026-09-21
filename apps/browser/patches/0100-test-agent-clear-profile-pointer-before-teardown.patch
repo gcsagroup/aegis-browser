@@ -1,4 +1,4 @@
-From 44b79c59cf594b83af5c181842a57c2604d209ed Mon Sep 17 00:00:00 2001
+From ea4dab980b58021ecdbf173b206ee54e641ce273 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 19:18:26 +0800
 Subject: [PATCH] test(agent): clear profile pointer before teardown
@@ -20,3 +20,6 @@ index 62f3143673..54b0a614d7 100644
   protected:
    void FlushTaskStore(AegisAgentService* service) {
      base::test::TestFuture<bool> flushed;
+-- 
+2.52.0
+

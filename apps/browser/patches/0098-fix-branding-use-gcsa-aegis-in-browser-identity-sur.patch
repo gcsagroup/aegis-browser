@@ -1,15 +1,14 @@
-From 911f5c45acf3de10741008cf8f40948d57d31b7a Mon Sep 17 00:00:00 2001
+From ae24f792d787a75fccaba6c2accb90a535e7f0eb Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 15:36:40 +0800
-Subject: [PATCH 98/98] fix(branding): use GCSA Aegis in browser identity
- surfaces
+Subject: [PATCH] fix(branding): use GCSA Aegis in browser identity surfaces
 
 ---
  chrome/app/chromium_strings.grd | 52 ++++++++++++++++-----------------
  1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index 12a62d6803..2f46c5b4cc 100644
+index a741f89bf5..f6de7193ea 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
@@ -25,7 +24,7 @@ index 12a62d6803..2f46c5b4cc 100644
            </message>
          </else>
        </if>
-@@ -309,15 +309,15 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+@@ -312,15 +312,15 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
          <message name="IDS_SHORTCUT_NAME_DEV" desc="Unused in Chromium builds" translateable="false">
          </message>
          <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
@@ -44,16 +43,16 @@ index 12a62d6803..2f46c5b4cc 100644
          </message>
        </if>
        <if expr="is_linux">
-@@ -346,7 +346,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+@@ -349,7 +349,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
          </message>
        </if>
        <message name="IDS_PRODUCT_LOGO_ENTERPRISE_ALT_TEXT" desc="Alt text for the Chromium Enterprise logo image." formatter_data="android_java">
 -        Chromium Enterprise logo
 +        GCSA Aegis logo
        </message>
-       <if expr="is_macosx or is_chromeos">
-         <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
-@@ -355,7 +355,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
+       <message name="IDS_ACCESSIBILITY_TOOLBAR_BTN_IDENTITY_DISC_WITH_NAME_AND_EMAIL_AI_TIER" desc="The content description for a toolbar button displaying user profile picture when the user has an AI subscription. Tapping on this button navigates to Settings page" formatter_data="android_java">
+         Signed in as <ph name="USER_NAME">%1$s<ex>Peter Parker</ex></ph>, <ph name="USER_EMAIL">%2$s<ex>peter.parker@gmail.com</ex></ph>, membership. Open the account menu
+@@ -364,7 +364,7 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
        </if>
        <if expr="not is_macosx and not is_chromeos">
          <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
@@ -62,7 +61,7 @@ index 12a62d6803..2f46c5b4cc 100644
          </message>
        </if>
        <message name="IDS_TASK_MANAGER_SEARCH_PLACEHOLDER" desc="The placeholder text for the Search bar in the Task Manager window">
-@@ -443,7 +443,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -452,7 +452,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
            </then>
            <else>
              <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
@@ -71,7 +70,7 @@ index 12a62d6803..2f46c5b4cc 100644
              </message>
            </else>
          </if>
-@@ -457,7 +457,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -466,7 +466,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
        <if expr="not is_chromeos and not is_macosx">
          <!-- Captive Portal Browser Window Title Format -->
          <message name="IDS_CAPTIVE_PORTAL_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in captive portal popup windows">
@@ -80,7 +79,7 @@ index 12a62d6803..2f46c5b4cc 100644
          </message>
        </if>
        <if expr="is_chromeos">
-@@ -482,7 +482,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -491,7 +491,7 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
          </then>
          <else>
            <message name="IDS_ACCESSIBLE_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for the accessible name of a tabbed browser window">
@@ -89,7 +88,7 @@ index 12a62d6803..2f46c5b4cc 100644
            </message>
          </else>
        </if>
-@@ -567,18 +567,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
+@@ -576,18 +576,18 @@ New bookmarks can’t be saved in your account until you delete some. If you sig
          </message>
        </if>
        <message name="IDS_ACCNAME_APP" desc="The accessible name for the app menu." translateable="false">
@@ -111,7 +110,7 @@ index 12a62d6803..2f46c5b4cc 100644
          </message>
        </if>
        <!-- Sharing messages -->
-@@ -681,10 +681,10 @@ Chromium is unable to recover your settings.
+@@ -684,10 +684,10 @@ Chromium is unable to recover your settings.
  
        <!-- Password manager onboarding strings -->
        <message name="IDS_PASSWORD_MANAGER_ONBOARDING_DETAILS_C" desc="The explanation text that is shown below the title in the password manager onboarding dialog.">
@@ -124,7 +123,7 @@ index 12a62d6803..2f46c5b4cc 100644
        </message>
        <message name="IDS_PASSWORD_MANAGER_BRAND_NAME" desc="This string is used both as a standalone label and injected into sentences. Please translate this as a standalone noun in the Nominative case to ensure it looks correct in titles. Sentence structures surrounding it may read slightly awkwardly.">
          Password Manager
-@@ -1062,19 +1062,19 @@ Chromium is unable to recover your settings.
+@@ -1123,19 +1123,19 @@ Chromium is unable to recover your settings.
  
        <!-- Main Chrome menu -->
        <message name="IDS_APPMENU_TOOLTIP" desc="The tooltip to show for the browser menu">
@@ -148,7 +147,7 @@ index 12a62d6803..2f46c5b4cc 100644
        </message>
  
        <if expr="use_titlecase and not is_chromeos">
-@@ -1086,12 +1086,12 @@ Chromium is unable to recover your settings.
+@@ -1147,12 +1147,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
@@ -163,7 +162,7 @@ index 12a62d6803..2f46c5b4cc 100644
          </message>
        </if>
        <if expr="not use_titlecase and not is_chromeos">
-@@ -1103,12 +1103,12 @@ Chromium is unable to recover your settings.
+@@ -1164,12 +1164,12 @@ Chromium is unable to recover your settings.
            </then>
            <else>
              <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
@@ -178,7 +177,7 @@ index 12a62d6803..2f46c5b4cc 100644
          </message>
        </if>
        <if expr="is_chromeos">
-@@ -1122,13 +1122,13 @@ Chromium is unable to recover your settings.
+@@ -1183,13 +1183,13 @@ Chromium is unable to recover your settings.
  
        <if expr="is_macosx">
          <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome." translateable="false">

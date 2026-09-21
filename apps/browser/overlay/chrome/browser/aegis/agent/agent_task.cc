@@ -205,7 +205,7 @@ bool AgentTask::IsAllowedTransition(AgentTaskState from, AgentTaskState to) {
              to == State::kCancelled;
     case State::kAwaitingTaskConsent:
       return to == State::kRunning || to == State::kCancelled ||
-             to == State::kExpired;
+             to == State::kExpired || to == State::kFailed;
     case State::kRunning:
     case State::kReflecting:
       return to == State::kRunning || to == State::kReflecting ||
