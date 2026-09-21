@@ -5,7 +5,7 @@ browser_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 for patch_dir in "$browser_dir/patches" "$browser_dir/patches/v8"; do
   series_file="$patch_dir/series"
-  while IFS= read -r patch_name; do
+  while IFS= read -r patch_name || [[ -n "$patch_name" ]]; do
     [[ -z "$patch_name" || "$patch_name" =~ ^[[:space:]]*# ]] && continue
     if [[ "$patch_name" == */* || "$patch_name" == *..* ||
           ! -f "$patch_dir/$patch_name" ]]; then
