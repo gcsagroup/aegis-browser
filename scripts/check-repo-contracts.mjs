@@ -51,7 +51,7 @@ function topLevelKeysInYamlSection(source, sectionName) {
     if (/^\S/u.test(line)) {
       break;
     }
-    const match = /^  ([A-Za-z0-9-]+):\s*$/u.exec(line);
+    const match = /^ {2}([A-Za-z0-9-]+):\s*$/u.exec(line);
     if (match) {
       keys.push(match[1]);
     }
