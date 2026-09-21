@@ -6,11 +6,11 @@
 
 个人仓已通过 PR #153 将上游 merge ancestry 回灌到 `main@86609c69ed4c82061807e3e3b9a4a4ad089aecfb`，其 push CI run `35620964157` 成功；PR #154 再把该 ancestry 合入包含 PR #141 静态质量门的 `develop@f0d01d63d0e7bf6dea2390041f51026073272d1b`，push CI run `35622236927` 成功。两次同步均为 tree-preserving merge，个人 README 与 Codacy 徽章保持个人项目配置。
 
-当前修复单元从该精确 develop 建立，只处理已提交 operation 的幂等响应：可信 selector、普通 DIRECT/PROXY 请求和 store 校验保持原顺序；发现相同指纹的 `COMMITTED` 记录时，立即返回 `kCommitted`、`StoreStatus::kValid` 与原 `committed_policy_generation`，不再次发布 runtime/transport，不请求 NetworkContext ACK，不清理 journal，也不增加 coordinator `state_generation`。`SUPERSEDED` 或其他非 `PREPARED` 阶段继续 fail closed。新增 coordinator 单元回归实际构造首次 PREPARED→ACK→COMMITTED，再用相同请求重试并断言立即返回原 generation、无第二次 Mojo publication、durable snapshot 不变。
+当前修复单元只处理已提交 operation 的幂等响应：可信 selector、普通 DIRECT/PROXY 请求和 store 校验保持原顺序；发现相同指纹的 `COMMITTED` 记录时，立即返回 `kCommitted`、`StoreStatus::kValid` 与原 `committed_policy_generation`，不再次发布 runtime/transport，不请求 NetworkContext ACK，不清理 journal，也不增加 coordinator `state_generation`。`SUPERSEDED` 或其他非 `PREPARED` 阶段继续 fail closed。PR #155 的实现与 coordinator 回归已以 `develop@798e7ec991d1384b0034500373bb94ab5d367f12` 合入，精确 push CI run `35625233377` 与 C++ run `35625233397` 成功；但其初始 HEAD `ef23e0d69061f03c42c90ed19f68c4e9369c1552` 的 Astra High 复审为 `BLOCKED`，因为测试在检查无重复 Mojo publication 前没有排空异步消息，可能漏检迟到发布。准备后续修复期间，PR #145 已合入为 `develop@3afab7b7a9b98504c39a85ecdd69b89429b9a194`，精确 push CI run `35626285577` 成功；当前分支已重放到该最新 develop，保留同步返回断言，并在无发布断言前执行 `RunUntilIdle()`。旧 HEAD 与旧基线的本地/托管/审查证据不能转用。
 
 交付包含 overlay、顺序补丁 `0159`、单元回归和本文档/Handoff。合并前必须绑定最终 HEAD 完成 patch format、GN wiring、本地 full quality、托管 quality/quality-gate 与 C++、Codacy Medium+ 门槛、全部 conversation resolved 和独立 Astra High 复审。仓库基础门与测试源码不等于固定 Chromium/GTest 已执行；在同一固定候选实际运行新增 coordinator 用例及既有真实入口矩阵前，native 证据继续 `NOT_RUN`，G0 继续 **UNVERIFIED**。
 
-后续严格按顺序执行：本修复 PR 实际合并并确认精确 develop push CI 成功后，才重新执行个人 main 晋升和上游导出；上游导出继续恢复上游 README/Codacy 徽章，回灌继续保留个人 README。任何 HEAD 变化都使旧的质量、CI 与审查证据失效。
+后续严格按顺序执行：当前测试修复 PR 实际合并并确认精确 develop push CI 成功后，才重新执行个人 main 晋升和上游导出；上游导出继续恢复上游 README/Codacy 徽章，回灌继续保留个人 README。任何 HEAD 变化都使旧的质量、CI 与审查证据失效。
 
 ## 2026-09-21：个人 Codacy 与上游 README 隔离维护
 
