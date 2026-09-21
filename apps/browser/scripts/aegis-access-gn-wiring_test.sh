@@ -45,12 +45,15 @@ SERVICE_WORKER_SCRIPT_PATCH_FILE="$BROWSER_DIR/patches/0146-feat-aegis-gate-proc
 PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0147-feat-aegis-gate-frame-prefetch-traffic.patch"
 BROWSER_PROCESS_PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0148-feat-aegis-gate-loading-predictor-prefetch.patch"
 BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-direct-gn-deps.patch"
+ACCESS_COORDINATOR_PATCH_FILE="$BROWSER_DIR/patches/0150-feat-aegis-add-access-service-coordinator-lifecycle.patch"
+IDENTITY_GENERATION_STYLE_PATCH_FILE="$BROWSER_DIR/patches/0151-fix-aegis-identity-generation-state-style.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
 SERIES_FILE="$BROWSER_DIR/patches/series"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
+COORDINATOR_TARGET="//chrome/browser/aegis/access:access_service_coordinator_unittests"
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
@@ -65,6 +68,10 @@ fail() {
 args_block="$(awk '/^root_extra_deps = \[$/,/^\]$/' "$ARGS_FILE")"
 [[ "$args_block" == *"$TARGET"* ]] ||
   fail "the access test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$COORDINATOR_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the coordinator lifecycle test exactly once"
+[[ "$args_block" == *"$COORDINATOR_TARGET"* ]] ||
+  fail "the coordinator lifecycle test must be reachable through root_extra_deps"
 [[ "$(rg -F -c "$OWNERSHIP_TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "aegis.gn must add the ownership registry test exactly once"
 [[ "$args_block" == *"$OWNERSHIP_TARGET"* ]] ||
@@ -145,6 +152,29 @@ for direct_dep in \
 done
 rg -Fq '"//chrome/browser/aegis:browser_tests",' "$BROWSER_TEST_WIRING_PATCH_FILE" ||
   fail "chrome browser_tests must include the existing Aegis browser_tests target"
+rg -Fq 'source_set("access_service_coordinator")' "$ACCESS_BUILD" ||
+  fail "overlay must define the Profile-owned Access service coordinator"
+rg -Fq 'test("access_service_coordinator_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the Access service coordinator lifecycle regression"
+rg -Fq 'MainNavigationRoutingIsolatedAcrossProfiles' "$BROWSER_PROXY_TEST" ||
+  fail "browser proxy regression must cover real two-Profile navigation isolation"
+rg -Fq '+source_set("access_service_coordinator")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
+  fail "patch 0150 must deliver the Access service coordinator"
+rg -Fq '+test("access_service_coordinator_unittests")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
+  fail "patch 0150 must deliver the coordinator lifecycle regression"
+rg -Fq '+                       MainNavigationRoutingIsolatedAcrossProfiles) {' \
+  "$ACCESS_COORDINATOR_PATCH_FILE" ||
+  fail "patch 0150 must deliver the real two-Profile navigation regression"
+rg -Fq '+  IdentityGenerationState();' "$IDENTITY_GENERATION_STYLE_PATCH_FILE" ||
+  fail "patch 0151 must move the identity state constructor out of line"
+rg -Fq '+  ~IdentityGenerationState();' "$IDENTITY_GENERATION_STYLE_PATCH_FILE" ||
+  fail "patch 0151 must declare an explicit identity state destructor"
+rg -Fq '+IdentityGenerationState::IdentityGenerationState() = default;' \
+  "$IDENTITY_GENERATION_STYLE_PATCH_FILE" ||
+  fail "patch 0151 must define the identity state constructor out of line"
+rg -Fq '+IdentityGenerationState::~IdentityGenerationState() = default;' \
+  "$IDENTITY_GENERATION_STYLE_PATCH_FILE" ||
+  fail "patch 0151 must define the identity state destructor out of line"
 rg -Fq '+test("aegis_access_unittests")' "$PATCH_FILE" ||
   fail "patch 0114 does not deliver the independent access test"
 rg -Fq '+    "access_policy_evaluator.cc",' "$MATCHER_PATCH_FILE" ||
@@ -827,6 +857,10 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0148 must appear once in series"
 [[ "$(rg -F -c '0149-fix-aegis-browser-test-direct-gn-deps.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0149 must appear once in series"
+[[ "$(rg -F -c '0150-feat-aegis-add-access-service-coordinator-lifecycle.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0150 must appear once in series"
+[[ "$(rg -F -c '0151-fix-aegis-identity-generation-state-style.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0151 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -863,10 +897,12 @@ expected_access_tail="$(cat <<'EOF'
 0147-feat-aegis-gate-frame-prefetch-traffic.patch
 0148-feat-aegis-gate-loading-predictor-prefetch.patch
 0149-fix-aegis-browser-test-direct-gn-deps.patch
+0150-feat-aegis-add-access-service-coordinator-lifecycle.patch
+0151-fix-aegis-identity-generation-state-style.patch
 EOF
 )"
-[[ "$(tail -n 35 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0149"
+[[ "$(tail -n 37 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0151"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

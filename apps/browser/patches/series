@@ -148,3 +148,5 @@
 0147-feat-aegis-gate-frame-prefetch-traffic.patch
 0148-feat-aegis-gate-loading-predictor-prefetch.patch
 0149-fix-aegis-browser-test-direct-gn-deps.patch
+0150-feat-aegis-add-access-service-coordinator-lifecycle.patch
+0151-fix-aegis-identity-generation-state-style.patch
