@@ -94,6 +94,9 @@ PolicyPublicationAckStatus PolicyPublicationAckTracker::ValidateIdentity(
   if (identity.policy_generation != entry.identity.policy_generation) {
     return PolicyPublicationAckStatus::kVersionMismatch;
   }
+  if (identity.proxy_group_id != entry.identity.proxy_group_id) {
+    return PolicyPublicationAckStatus::kVersionMismatch;
+  }
   if (identity.selection_generation < entry.identity.selection_generation ||
       identity.network_epoch < entry.identity.network_epoch) {
     return PolicyPublicationAckStatus::kStaleGeneration;
@@ -112,6 +115,8 @@ PolicyPublicationAckStatus PolicyPublicationAckTracker::ValidateRequirements(
       requirements.identity.operation_sequence == 0 ||
       requirements.identity.policy_generation == 0 ||
       requirements.identity.network_epoch == 0 ||
+      (requirements.identity.selection_generation == 0) !=
+          requirements.identity.proxy_group_id.empty() ||
       !IsValidRequestCancellationSelector(requirements.identity.selector) ||
       requirements.required_ack_tokens.empty() ||
       requirements.required_ack_tokens.size() >

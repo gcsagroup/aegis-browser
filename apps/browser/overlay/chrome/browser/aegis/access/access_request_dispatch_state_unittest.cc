@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/browser_task_environment.h"
@@ -60,13 +61,16 @@ aegis_access::PolicyPublicationAckRequirements PublicationFor(
     uint64_t operation_sequence,
     uint64_t policy_generation,
     const std::string& operation_id) {
+  aegis_access::PolicyPublicationIdentity identity;
+  identity.operation_id = operation_id;
+  identity.operation_sequence = operation_sequence;
+  identity.policy_generation = policy_generation;
+  identity.proxy_group_id.clear();
+  identity.selection_generation = 0;
+  identity.network_epoch = record.generations.network_epoch;
+  identity.selector = SelectorFor(record);
   return {
-      {operation_id,
-       operation_sequence,
-       policy_generation,
-       0,
-       record.generations.network_epoch,
-       SelectorFor(record)},
+      std::move(identity),
       {"browser-runtime", "network-context"},
       true,
   };

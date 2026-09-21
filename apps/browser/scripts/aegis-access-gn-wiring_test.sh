@@ -48,6 +48,7 @@ BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-d
 ACCESS_COORDINATOR_PATCH_FILE="$BROWSER_DIR/patches/0150-feat-aegis-add-access-service-coordinator-lifecycle.patch"
 IDENTITY_GENERATION_STYLE_PATCH_FILE="$BROWSER_DIR/patches/0151-fix-aegis-identity-generation-state-style.patch"
 CANONICAL_PROXY_PATCH_FILE="$BROWSER_DIR/patches/0156-fix-access-canonical-proxy-candidate-hosts.patch"
+SCOPED_SELECTION_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0157-fix-access-scope-selection-generation-by-proxy-group.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
@@ -169,6 +170,21 @@ rg -Fq '+test("access_service_coordinator_unittests")' "$ACCESS_COORDINATOR_PATC
 rg -Fq '+    ":access_proxy_selection_generation_source",' \
   "$CANONICAL_PROXY_PATCH_FILE" ||
   fail "patch 0156 must deliver the coordinator test direct GN dependency"
+rg -Fq '+  string proxy_group_id;' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must bind policy publication metadata to a proxy group"
+rg -Fq '+      aegis_selection_generation_by_proxy_group_;' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must retain selection high-water marks per proxy group"
+rg -Fq '+       AegisSelectionGenerationIsMonotonicWithinEachProxyGroup) {' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must cover cross-group and same-group generation ordering"
+rg -Fq 'identity.proxy_group_id.clear();' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc" ||
+  fail "dispatch-state DIRECT fixture must bind an explicit empty proxy group"
+rg -Fq '+  identity.proxy_group_id.clear();' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must update the dispatch-state publication fixture"
 rg -Fq '+                       MainNavigationRoutingIsolatedAcrossProfiles) {' \
   "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the real two-Profile navigation regression"
@@ -911,10 +927,11 @@ expected_access_tail="$(cat <<'EOF'
 0154-fix-access-selection-lifecycle-style.patch
 0155-refactor-access-snapshot-transaction-stages.patch
 0156-fix-access-canonical-proxy-candidate-hosts.patch
+0157-fix-access-scope-selection-generation-by-proxy-group.patch
 EOF
 )"
-[[ "$(tail -n 42 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0156"
+[[ "$(tail -n 43 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0157"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
