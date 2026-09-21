@@ -1,0 +1,817 @@
+From 7b6ca2bee3453985435ae5b2113014cdc3e50154 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 15:42:07 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
+ =?UTF-8?q?=E5=BA=94=E7=94=A8=E5=9B=9E=E6=89=A7=E4=B8=8E=E7=A0=94=E7=A9=B6?=
+ =?UTF-8?q?=E6=AF=94=E8=BE=83=E5=8E=9F=E6=96=87=E5=88=86=E7=BB=84=E6=A0=B8?=
+ =?UTF-8?q?=E9=AA=8C=202.0.048?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  14 +-
+ chrome/browser/aegis/agent/agent_execution.cc | 115 +++++++++++-
+ chrome/browser/aegis/agent/agent_execution.h  |  23 ++-
+ .../aegis/agent/agent_execution_unittest.cc   |  81 ++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   |  18 ++
+ chrome/browser/aegis/agent/agent_planner.h    |   3 +
+ chrome/browser/aegis/agent/agent_research.cc  | 176 ++++++++++++++++++
+ chrome/browser/aegis/agent/agent_research.h   |   6 +
+ .../aegis/agent/agent_research_unittest.cc    | 154 +++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 10 files changed, 579 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 2734a44062..ea8897f673 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1765,7 +1765,8 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+     tool = BuildVerifyTranslationToolDefinition();
+   } else if (expected_tool == "agent.complete") {
+     tool = BuildCompleteTaskToolDefinition(
+-        AgentGoalRequestsTranslation(task->goal()));
++        AgentGoalRequestsTranslation(task->goal()),
++        task->scope().selected_pages_research);
+   } else if (IsToolAvailable(expected_tool)) {
+     tool = tool_registry_.ModelToolForName(expected_tool);
+     if (tool) {
+@@ -2232,7 +2233,8 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+   }
+   if (expected_tool == "agent.complete") {
+     std::optional<AgentCompletionSummary> completion = ParseCompletionSummary(
+-        *event, &validation_error, AgentGoalRequestsTranslation(task->goal()));
++        *event, &validation_error, AgentGoalRequestsTranslation(task->goal()),
++        task->scope().selected_pages_research);
+     if (completion && task->scope().selected_pages_research &&
+         AgentResearchCompletionClaimsSave(*completion)) {
+       validation_error =
+@@ -2918,6 +2920,14 @@ void AegisAgentService::FinishRuntime(
+                                           it->second->translation_review_passed);
+     if (const auto* task = GetTask(task_id)) {
+       NormalizeAgentResearchSaveContent(&*completion, *task);
++      if (const auto selected = research_selections_.find(task_id);
++          selected != research_selections_.end()) {
++        NormalizeAgentResearchComparison(&*completion, *task,
++                                         it->second->evidence_history,
++                                         selected->second);
++      }
++      NormalizeAgentBookmarkApplyCompletion(&*completion, *task,
++                                            it->second->evidence_history);
+       NormalizeAgentTabGroupCompletion(&*completion, *task,
+                                        it->second->evidence_history);
+       NormalizeAgentDownloadCompletion(&*completion, task->goal(),
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 3e26fba923..4f4f450870 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -587,7 +587,8 @@ std::optional<AgentTranslationSelection> ParseAgentTranslationSelection(
+   return selection;
+ }
+ 
+-AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation) {
++AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation,
++                                                         bool research) {
+   AgentModelToolDefinition tool;
+   tool.name = "agent.complete";
+   tool.description =
+@@ -601,12 +602,13 @@ AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation) {
+   outcome.Set("enum", std::move(choices));
+   properties.Set("outcome", std::move(outcome));
+   auto summary = StringSchema(4096);
+-  summary.Set("description",
+-              "用户可见的完整结果。语言以user_goal明确指定的输出或翻译语言为先，"
+-              "否则跟随用户请求的语言，不跟随plan_summary或网页的语言。"
+-              "用户要求列出重点时，用换行分隔的编号或项目符号逐条写出具体重点；"
+-              "明确指定数量或其他格式时遵守原要求。未要求列表时不强加列表。"
+-              "翻译任务仍须忠实交付所选原文的完整译文。");
++  summary.Set(
++      "description",
++      "用户可见的完整结果。语言以user_goal明确指定的输出或翻译语言为先，"
++      "否则跟随用户请求的语言，不跟随plan_summary或网页的语言。"
++      "用户要求列出重点时，用换行分隔的编号或项目符号逐条写出具体重点；"
++      "明确指定数量或其他格式时遵守原要求。未要求列表时不强加列表。"
++      "翻译任务仍须忠实交付所选原文的完整译文。");
+   properties.Set("summary", std::move(summary));
+   properties.Set("source_urls", StringArraySchema(4096, 32));
+   properties.Set("unfinished_items", StringArraySchema(1024, 100));
+@@ -635,6 +637,35 @@ AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation) {
+                                 "unfinished_items", "translation_segments"});
+     return tool;
+   }
++  if (research) {
++    base::DictValue cell;
++    cell.Set("source_url", StringSchema(4096));
++    auto value = StringSchema(256);
++    value.Set("minLength", 0);
++    cell.Set("value", std::move(value));
++    base::DictValue values;
++    values.Set("type", "array");
++    values.Set("maxItems", 10);
++    values.Set("items", StrictObject(std::move(cell), {"source_url", "value"}));
++    base::DictValue dimension;
++    dimension.Set("label", StringSchema(128));
++    dimension.Set("prefix", StringSchema(512));
++    auto suffix = StringSchema(256);
++    suffix.Set("minLength", 0);
++    dimension.Set("suffix", std::move(suffix));
++    dimension.Set("values", std::move(values));
++    base::DictValue comparisons;
++    comparisons.Set("type", "array");
++    comparisons.Set("maxItems", 6);
++    comparisons.Set("items",
++                    StrictObject(std::move(dimension),
++                                 {"label", "prefix", "suffix", "values"}));
++    properties.Set("research_comparisons", std::move(comparisons));
++    tool.input_schema = StrictObject(
++        std::move(properties), {"outcome", "summary", "source_urls",
++                                "unfinished_items", "research_comparisons"});
++    return tool;
++  }
+   tool.input_schema =
+       StrictObject(std::move(properties),
+                    {"outcome", "summary", "source_urls", "unfinished_items"});
+@@ -1134,6 +1165,20 @@ std::string BuildAgentExecutionPrompt(
+     }
+   } else {
+     envelope.Set("required_step", "agent.complete");
++    if (task.scope().selected_pages_research) {
++      envelope.Set(
++          "research_comparison_contract",
++          "research_comparisons按用户目标选择最多6个可逐字核对的比较维度。"
++          "每维label必须是原文字段名，prefix必须含label；所有来源共用相同"
++          "prefix和suffix，中间的value是各来源原文值（保留单位）。"
++          "prefix+value+suffix必须逐字出现在该来源已读正文中，行内节点可拼接；"
++          "每个已读来源恰好一项source_url和value，未找到该字段填空字符串。"
++          "例如原文'延迟：18 ms。'用label='延迟',prefix='延迟：',"
++          "value='18 ms',suffix='。'。不能取数字的一部分，不能换算或改写。"
++          "浏览器依据原文值自动生成事实表、分组、数量及相对多数值的差异，"
++          "不使用summary中的自由分类结论。无法按共同原文上下文核对时返回"
++          "partial并明确未完成项；不能只比较无关字段来宣称用户目标完成。");
++    }
+     // 交付要求来自原始目标，不从模型生成的计划或不可信网页推断。
+     // 只在完成阶段发送，不增加工具参数阶段开销或额外模型调用。
+     base::ListValue output_requirements;
+@@ -1394,13 +1439,14 @@ std::optional<AgentModelEvent> SelectExecutionToolCall(
+ std::optional<AgentCompletionSummary> ParseCompletionSummary(
+     const AgentModelEvent& event,
+     std::string* error,
+-    bool translation) {
++    bool translation,
++    bool research) {
+   if (!error) {
+     return std::nullopt;
+   }
+   error->clear();
+   const AgentModelToolDefinition tool =
+-      BuildCompleteTaskToolDefinition(translation);
++      BuildCompleteTaskToolDefinition(translation, research);
+   if (event.type != AgentModelEventType::kToolCall ||
+       event.tool_name != tool.name ||
+       !ValidateAgentToolArguments(tool, event.arguments, error)) {
+@@ -1441,6 +1487,20 @@ std::optional<AgentCompletionSummary> ParseCompletionSummary(
+            .omission_reason = *segment.FindString("omission_reason")});
+     }
+   }
++  if (research && !translation) {
++    for (const auto& item : *event.arguments.FindList("research_comparisons")) {
++      const auto& row = item.GetDict();
++      AgentResearchComparison comparison{.label = *row.FindString("label"),
++                                         .prefix = *row.FindString("prefix"),
++                                         .suffix = *row.FindString("suffix")};
++      for (const auto& cell : *row.FindList("values")) {
++        comparison.values.push_back(
++            {.source_url = *cell.GetDict().FindString("source_url"),
++             .value = *cell.GetDict().FindString("value")});
++      }
++      completion.research_comparisons.push_back(std::move(comparison));
++    }
++  }
+   if (completion.outcome == "completed" &&
+       !completion.unfinished_items.empty()) {
+     *error = "completed outcome cannot contain unfinished items";
+@@ -1819,6 +1879,43 @@ void NormalizeAgentTabGroupCompletion(
+   }
+ }
+ 
++void NormalizeAgentBookmarkApplyCompletion(
++    AgentCompletionSummary* completion,
++    const AgentTask& task,
++    base::span<const AgentExecutionEvidence> history) {
++  if (!completion || !AgentGoalRequiresBookmarkApply(task.goal())) {
++    return;
++  }
++  const AgentToolResult* applied = nullptr;
++  for (const auto& item : history) {
++    if (item.tool_name == "bookmark.apply") {
++      applied = &item.result;
++    } else if (item.tool_name == "bookmark.undo") {
++      applied = nullptr;
++    }
++  }
++  const auto* hash =
++      applied ? applied->value.FindString("snapshot_hash") : nullptr;
++  const auto* undo =
++      applied ? applied->value.FindString("undo_token") : nullptr;
++  const auto moved = applied ? applied->value.FindInt("moved") : std::nullopt;
++  if (applied && applied->ok &&
++      applied->action_id.starts_with(task.id() + ":") && hash &&
++      !hash->empty() && moved && *moved >= 0 &&
++      (*moved == 0 || (undo && !undo->empty()))) {
++    completion->summary = "收藏整理已应用；浏览器已回读核对，实际移动 " +
++                          base::NumberToString(*moved) + " 条收藏。";
++    return;
++  }
++  completion->outcome = "partial";
++  completion->summary = "收藏整理尚未应用，缺少本次操作成功的浏览器写入回执。";
++  const std::string pending =
++      "请确认整理预览并批准应用；写入和回读成功后才能完成整理。";
++  if (!std::ranges::contains(completion->unfinished_items, pending)) {
++    completion->unfinished_items.push_back(pending);
++  }
++}
++
+ void NormalizeAgentBookmarkCheckCompletion(
+     AgentCompletionSummary* completion,
+     base::span<const AgentExecutionEvidence> evidence_history,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index e3e984757f..24b7c4a1e2 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -21,12 +21,25 @@ struct AgentTranslationSegment {
+   std::string omission_reason;
+ };
+ 
++// 同一维度使用相同原文前后缀；浏览器据此核对值，再自行分组。
++struct AgentResearchComparisonValue {
++  std::string source_url;
++  std::string value;
++};
++struct AgentResearchComparison {
++  std::string label;
++  std::string prefix;
++  std::string suffix;
++  std::vector<AgentResearchComparisonValue> values;
++};
++
+ struct AgentCompletionSummary {
+   std::string outcome;
+   std::string summary;
+   std::vector<std::string> source_urls;
+   std::vector<std::string> unfinished_items;
+   std::vector<AgentTranslationSegment> translation_segments;
++  std::vector<AgentResearchComparison> research_comparisons;
+ };
+ 
+ struct AgentExecutionEvidence {
+@@ -60,6 +73,12 @@ void NormalizeAgentTabGroupCompletion(
+     const AgentTask& task,
+     base::span<const AgentExecutionEvidence> history);
+ 
++// history 仅接收本任务通过权限、批准与写入后回读核验的工具回执。
++void NormalizeAgentBookmarkApplyCompletion(
++    AgentCompletionSummary* completion,
++    const AgentTask& task,
++    base::span<const AgentExecutionEvidence> history);
++
+ // 原文范围在生成译文前独立确定，并绑定完整的目标、文档身份和原文。
+ struct AgentTranslationSelection {
+   std::string source_prompt;
+@@ -111,7 +130,7 @@ std::optional<AgentTranslationSelection> ParseAgentTranslationSelection(
+     bool evidence_history_complete = true);
+ 
+ AgentModelToolDefinition BuildCompleteTaskToolDefinition(
+-    bool translation = false);
++    bool translation = false, bool research = false);
+ // 译文按浏览器原文编号重组；明确排除的片段仍需保留编号及理由，交独立复核判断。
+ bool NormalizeAgentTranslationCompletion(
+     const AgentTask& task,
+@@ -169,7 +188,7 @@ std::optional<AgentModelEvent> SelectExecutionToolCall(
+ std::optional<AgentCompletionSummary> ParseCompletionSummary(
+     const AgentModelEvent& event,
+     std::string* error,
+-    bool translation = false);
++    bool translation = false, bool research = false);
+ bool AgentCompletionSourcesMatchEvidence(
+     const AgentCompletionSummary& completion,
+     base::span<const AgentExecutionEvidence> evidence_history);
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index f39c1bce68..a52155dfbf 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -2559,5 +2559,86 @@ TEST(AegisAgentExecutionTest, BlocksSubmitAndFinalTransactionControls) {
+       "加入购物车", /*is_submit_control=*/false));
+ }
+ 
++TEST(AegisAgentExecutionTest, BookmarkApplyGoalNeedsCurrentVerifiedWrite) {
++  AgentTask task("apply-fixture", "按刚才预览整理测试收藏夹。", AgentMode::kAct,
++                 AgentTaskScope());
++  for (int scenario = 0; scenario < 8; ++scenario) {
++    SCOPED_TRACE(scenario);
++    std::vector<AgentExecutionEvidence> history;
++    AgentToolResult result;
++    result.ok = scenario != 1;
++    result.action_id = scenario == 2 ? "old-task:apply" : "apply-fixture:apply";
++    result.value.Set("snapshot_hash", "回读后的收藏树");
++    result.value.Set("moved", scenario == 5 ? 0 : scenario == 6 ? -1 : 500);
++    if (scenario != 3 && scenario != 5)
++      result.value.Set("undo_token", "本次撤销令牌");
++    if (scenario != 0)
++      history.push_back(
++          {.tool_name = "bookmark.apply", .result = std::move(result)});
++    if (scenario == 7)
++      history.push_back(
++          {.tool_name = "bookmark.undo", .result = AgentToolResult()});
++    AgentCompletionSummary completion{.outcome = "completed",
++                                      .summary = "已按预览整理500条收藏"};
++    NormalizeAgentBookmarkApplyCompletion(&completion, task, history);
++    EXPECT_EQ(completion.outcome,
++              (scenario == 4 || scenario == 5) ? "completed" : "partial");
++    EXPECT_EQ(completion.unfinished_items.empty(),
++              scenario == 4 || scenario == 5);
++    EXPECT_EQ(completion.summary.find("已按预览整理"), std::string::npos);
++  }
++}
++TEST(AegisAgentExecutionTest, BookmarkPreviewAndNegativeGoalsRemainReadOnly) {
++  for (std::string_view goal :
++       {"预览按用途整理测试收藏夹的方案，先不要修改。", "预览整理收藏夹",
++        "Preview bookmark organization", "請預覽整理書籤", "只預覽收藏分類",
++        "不要整理收藏，只总结当前页面",
++        "Do not organize bookmarks; summarize this page.",
++        "Organize bookmarks without changing anything"}) {
++    SCOPED_TRACE(goal);
++    EXPECT_FALSE(AgentGoalRequiresBookmarkApply(goal));
++    AgentTask task("preview", std::string(goal), AgentMode::kAct,
++                   AgentTaskScope());
++    AgentCompletionSummary completion{.outcome = "completed",
++                                      .summary = "预览已生成"};
++    NormalizeAgentBookmarkApplyCompletion(&completion, task, {});
++    EXPECT_EQ(completion.outcome, "completed");
++  }
++  for (std::string_view goal :
++       {"按刚才预览整理测试收藏夹。", "按預覽整理收藏夾",
++        "Apply the bookmark preview", "Organize my bookmarks",
++        "不要忘记整理收藏夹"}) {
++    EXPECT_TRUE(AgentGoalRequiresBookmarkApply(goal)) << goal;
++  }
++}
++TEST(AegisAgentExecutionTest, ResearchCompletionRequiresStructuredComparisons) {
++  AgentModelEvent event;
++  event.type = AgentModelEventType::kToolCall;
++  event.tool_name = "agent.complete";
++  event.arguments.Set("outcome", "completed");
++  event.arguments.Set("summary", "七个来源一致，第十来源为例外");
++  event.arguments.Set("source_urls", base::ListValue());
++  event.arguments.Set("unfinished_items", base::ListValue());
++  std::string error;
++  EXPECT_FALSE(ParseCompletionSummary(event, &error, false, true));
++  event.arguments.Set(
++      "research_comparisons",
++      base::ListValue().Append(
++          base::DictValue()
++              .Set("label", "延迟")
++              .Set("prefix", "延迟：")
++              .Set("suffix", "。")
++              .Set("values",
++                   base::ListValue().Append(
++                       base::DictValue()
++                           .Set("source_url", "https://example.test/1")
++                           .Set("value", "18 ms")))));
++  auto parsed = ParseCompletionSummary(event, &error, false, true);
++  ASSERT_TRUE(parsed) << error;
++  ASSERT_EQ(parsed->research_comparisons.size(), 1u);
++  EXPECT_EQ(parsed->research_comparisons[0].values[0].value, "18 ms");
++  EXPECT_FALSE(ParseCompletionSummary(event, &error));
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index c7d1b1eaeb..d9db1df7df 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -1263,6 +1263,24 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
+   return true;
+ }
+ 
++bool AgentGoalRequiresBookmarkApply(std::string_view user_goal) {
++  const auto requested = RequestedGoalText(user_goal);
++  if (!IsBookmarkGoal(user_goal) || BookmarkGoalIsReadOnly(user_goal)) {
++    return false;
++  }
++  // “按刚才预览整理”仍是应用目标；不能因含有“预览”二字就视作只读。
++  const auto trimmed = base::TrimWhitespaceASCII(requested, base::TRIM_ALL);
++  for (std::string_view prefix :
++       {"预览", "預覽", "先预览", "先預覽", "请预览", "請預覽", "请先预览",
++        "請先預覽", "preview ", "please preview "}) {
++    if (trimmed.starts_with(prefix)) {
++      return false;
++    }
++  }
++  return BookmarkGoalOrganizes(user_goal) ||
++         GoalContainsAny(requested, {"应用", "套用", "apply"});
++}
++
+ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+                              std::string_view user_goal,
+                              std::string* error) {
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index 57ad692975..58e9b6f15b 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -127,6 +127,9 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+                              std::string_view user_goal,
+                              std::string* error);
+ 
++// 复用规划阶段的否定与收藏意图判断；预览不是写入完成的依据。
++bool AgentGoalRequiresBookmarkApply(std::string_view user_goal);
++
+ }  // namespace aegis::agent
+ 
+ #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
+diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
+index 5a0b7712dd..af217c87b1 100644
+--- a/chrome/browser/aegis/agent/agent_research.cc
++++ b/chrome/browser/aegis/agent/agent_research.cc
+@@ -54,6 +54,182 @@ std::optional<std::string> AgentResearchContentHash(
+   return base::HexEncode(crypto::SHA256HashString(content));
+ }
+ 
++void NormalizeAgentResearchComparison(
++    AgentCompletionSummary* completion,
++    const AgentTask& task,
++    base::span<const AgentExecutionEvidence> evidence,
++    const std::map<int32_t, GURL>& selected_urls) {
++  if (!completion || !task.scope().selected_pages_research) {
++    return;
++  }
++  // 对照只认当前所选页面的最后一次完整观察，失败或换页不能沿用旧值。
++  std::map<std::string, std::string> texts;
++  std::map<std::string, int> source_numbers;
++  std::string sources;
++  for (const auto& [tab, url] : selected_urls) {
++    const int number = static_cast<int>(source_numbers.size()) + 1;
++    source_numbers.emplace(url.spec(), number);
++    const AgentToolResult* observed = nullptr;
++    for (const auto& item : evidence) {
++      if (item.tool_name == "page.observe" &&
++          item.result.value.FindInt("tab_id") == tab) {
++        observed = &item.result;
++      }
++    }
++    std::string text;
++    std::string title;
++    const auto* observed_url =
++        observed ? observed->value.FindString("url") : nullptr;
++    if (task.scope().AllowsTab(tab) && task.scope().AllowsOrigin(url) &&
++        observed && observed_url && GURL(*observed_url) == url &&
++        AgentResearchContentHash(*observed)) {
++      if (const auto* value = observed->value.FindString("title")) {
++        title = Clip(*value, 128);
++      }
++      for (const auto& node : *observed->value.FindList("nodes")) {
++        if (const auto* value = node.GetIfDict()) {
++          if (const auto* content = value->FindString("text")) {
++            text += *content;
++          }
++        }
++      }
++    }
++    texts.emplace(url.spec(), base::CollapseWhitespaceASCII(text, false));
++    sources +=
++        "\n[" + base::NumberToString(number) + "] " + title + " " + url.spec();
++  }
++  auto normalize_anchor = [](std::string_view value) {
++    // 保留锚点边缘的空格，避免将“为 42”变成“为42”。
++    auto normalized =
++        base::CollapseWhitespaceASCII("X" + std::string(value) + "X", false);
++    return normalized.substr(1, normalized.size() - 2);
++  };
++  auto token_joined = [](std::string_view left, std::string_view right) {
++    return !left.empty() && !right.empty() &&
++           base::IsAsciiAlphaNumeric(left.back()) &&
++           base::IsAsciiAlphaNumeric(right.front());
++  };
++  std::string rendered =
++      "按所列原文字段比较；相同值由浏览器合并计数，差异仅相"
++      "对于多数来源的原文值，"
++      "不代表多数值更真实，也不代表不同表述在语义上相同。";
++  size_t verified_dimensions = 0;
++  bool complete = selected_urls.size() >= 3u && selected_urls.size() <= 10u &&
++                  selected_urls.size() == task.scope().allowed_tab_ids.size();
++  base::flat_set<std::string> labels;
++  for (const auto& dimension : completion->research_comparisons) {
++    const auto label = normalize_anchor(dimension.label);
++    const auto prefix = normalize_anchor(dimension.prefix);
++    const auto suffix = normalize_anchor(dimension.suffix);
++    bool valid = !label.empty() && prefix.contains(label) &&
++                 labels.insert(label).second &&
++                 dimension.values.size() == selected_urls.size();
++    if (!valid) {
++      complete = false;
++      continue;
++    }
++    std::map<std::string, std::vector<int>> groups;
++    base::flat_set<std::string> seen;
++    std::vector<int> missing;
++    for (const auto& cell : dimension.values) {
++      const auto source = texts.find(cell.source_url);
++      if (source == texts.end() || !seen.insert(cell.source_url).second) {
++        valid = false;
++        break;
++      }
++      const int number = source_numbers.at(cell.source_url);
++      const auto value = normalize_anchor(cell.value);
++      if (base::TrimWhitespaceASCII(value, base::TRIM_ALL).empty() ||
++          source->second.empty()) {
++        missing.push_back(number);
++        continue;
++      }
++      const std::string quote = prefix + value + suffix;
++      const auto position = source->second.find(quote);
++      // 不允许把142截成42、把18.5截成18，或把一个单词截成另一个值。
++      const size_t end = position == std::string::npos
++                             ? 0
++                             : position + prefix.size() + value.size();
++      const auto rest = std::string_view(source->second).substr(end);
++      if (position == std::string::npos || token_joined(prefix, value) ||
++          token_joined(value, rest) ||
++          (base::IsAsciiDigit(value.back()) && rest.size() > 1u &&
++           rest.front() == '.' && base::IsAsciiDigit(rest[1]))) {
++        valid = false;
++        break;
++      }
++      // 同一字段在一页出现多次时，只有全部锚点都对应同一值才可比较。
++      for (size_t at = source->second.find(prefix); at != std::string::npos;
++           at = source->second.find(prefix, at + prefix.size())) {
++        if (source->second.compare(at, quote.size(), quote) != 0) {
++          valid = false;
++          break;
++        }
++      }
++      groups[value].push_back(number);
++    }
++    if (!valid || groups.empty()) {
++      complete = false;
++      continue;
++    }
++    ++verified_dimensions;
++    rendered +=
++        "\n\n" + label + "（原文上下文：" + prefix + "〔值〕" + suffix + "）";
++    auto numbers = [](const std::vector<int>& ids) {
++      std::string result;
++      for (int id : ids) {
++        if (!result.empty())
++          result += "、";
++        result += "[" + base::NumberToString(id) + "]";
++      }
++      return result;
++    };
++    const auto largest = std::ranges::max_element(
++        groups, {}, [](const auto& group) { return group.second.size(); });
++    const bool majority = largest->second.size() * 2u > selected_urls.size();
++    for (const auto& [value, ids] : groups) {
++      rendered += "\n- “" + value + "”：" + base::NumberToString(ids.size()) +
++                  " 个来源 " + numbers(ids);
++      if (majority && groups.size() > 1u && value != largest->first) {
++        rendered += "（与多数来源不同）";
++      }
++    }
++    if (!majority && groups.size() > 1u) {
++      rendered += "\n没有超过半数的相同值，不指定多数值或例外组。";
++    }
++    if (!missing.empty()) {
++      complete = false;
++      rendered += "\n待核实：" + numbers(missing) +
++                  " 未取得该字段的可比值；不计为例外。";
++    }
++  }
++  if (verified_dimensions == 0u) {
++    complete = false;
++    rendered =
++        "尚未得到可按原文核对的比较字段。以下仅保留已读取的原文摘录，分"
++        "类和数量尚未核实。";
++    for (const auto& [url, text] : texts) {
++      rendered += "\n[" + base::NumberToString(source_numbers.at(url)) + "] " +
++                  (text.empty() ? "来源未完整读取" : Clip(text, 256));
++    }
++  }
++  rendered += "\n\n来源：" + sources;
++  if (rendered.size() > 30000u) {
++    rendered = Clip(rendered, 30000);
++    complete = false;
++  }
++  completion->summary = std::move(rendered);
++  if (!complete || !completion->unfinished_items.empty()) {
++    completion->outcome = "partial";
++    const std::string pending =
++        "部分比较字段或来源无法按共同原文上下文核对，需补齐后再完成比较。";
++    if (!complete &&
++        !std::ranges::contains(completion->unfinished_items, pending)) {
++      completion->unfinished_items.push_back(pending);
++    }
++  }
++}
++
+ bool CanSkipUnreadableResearchSource(const AgentTask& task,
+                                      const AgentToolCall& call,
+                                      const AgentToolResult& result,
+diff --git a/chrome/browser/aegis/agent/agent_research.h b/chrome/browser/aegis/agent/agent_research.h
+index 4d5d32e1c3..b710eaa22e 100644
+--- a/chrome/browser/aegis/agent/agent_research.h
++++ b/chrome/browser/aegis/agent/agent_research.h
+@@ -16,6 +16,12 @@ namespace aegis::agent {
+ // 只比较规范化正文，不使用会在重载时变化的节点编号和文档令牌。
+ std::optional<std::string> AgentResearchContentHash(
+     const AgentToolResult& result);
++// 原文锚点通过后，仅由浏览器生成分组和计数；自由摘要不能冒充已核验比较。
++void NormalizeAgentResearchComparison(
++    AgentCompletionSummary* completion,
++    const AgentTask& task,
++    base::span<const AgentExecutionEvidence> evidence,
++    const std::map<int32_t, GURL>& selected_urls);
+ std::optional<base::DictValue> BuildAgentResearchRecord(
+     const AgentTask& task,
+     const AgentCompletionSummary& completion,
+diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
+index 36b1627a1c..44fe86b6d4 100644
+--- a/chrome/browser/aegis/agent/agent_research_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
+@@ -253,5 +253,159 @@ TEST(AegisAgentResearchTest, RejectsExpandedSchemaDuplicatesAndInvalidHash) {
+   record.FindList("unfinished")->Append("还未完成");
+   EXPECT_FALSE(IsValidAgentResearchRecord(record));
+ }
++struct ComparisonFixture {
++  AgentTaskScope scope;
++  std::map<int32_t, GURL> urls;
++  std::vector<AgentExecutionEvidence> evidence;
++  AgentCompletionSummary completion{
++      .outcome = "completed",
++      .summary = "错误结论：七个一致，第十来源为例外"};
++  explicit ComparisonFixture(std::vector<std::string> values)
++      : scope(ResearchScope()) {
++    scope.allowed_tab_ids.clear();
++    AgentResearchComparison dimension{
++        .label = "延迟", .prefix = "延迟：", .suffix = "。"};
++    int id = 0;
++    for (const auto& value : values) {
++      ++id;
++      scope.allowed_tab_ids.insert(id);
++      const GURL url("https://fixture.example/" + base::NumberToString(id));
++      urls.emplace(id, url);
++      auto observed =
++          Observation(id, "延迟：" + value + "。使用相同测量方法。");
++      observed.value.Set("url", url.spec());
++      evidence.push_back(
++          {.tool_name = "page.observe", .result = std::move(observed)});
++      dimension.values.push_back({.source_url = url.spec(), .value = value});
++      completion.source_urls.push_back(url.spec());
++    }
++    completion.research_comparisons.push_back(std::move(dimension));
++  }
++  void Run() {
++    AgentTask task("comparison", "比较所选来源的延迟及例外", AgentMode::kAct,
++                   scope);
++    NormalizeAgentResearchComparison(&completion, task, evidence, urls);
++  }
++};
++TEST(AegisAgentResearchTest, NativeGroupsReplaceIncorrectTenSourceProse) {
++  ComparisonFixture fixture({"18 ms", "18 ms", "18 ms", "18 ms", "21 ms",
++                             "18 ms", "18 ms", "17 ms", "18 ms", "18 ms"});
++  fixture.Run();
++  EXPECT_EQ(fixture.completion.outcome, "completed");
++  const auto& text = fixture.completion.summary;
++  EXPECT_EQ(text.find("错误结论"), std::string::npos);
++  EXPECT_NE(
++      text.find("“18 ms”：8 个来源 [1]、[2]、[3]、[4]、[6]、[7]、[9]、[10]"),
++      std::string::npos);
++  EXPECT_NE(text.find("“21 ms”：1 个来源 [5]（与多数来源不同）"),
++            std::string::npos);
++  EXPECT_NE(text.find("“17 ms”：1 个来源 [8]（与多数来源不同）"),
++            std::string::npos);
++}
++TEST(AegisAgentResearchTest,
++     RejectsInventedSwappedDuplicatedAndPartialTokenValues) {
++  for (int scenario = 0; scenario < 8; ++scenario) {
++    SCOPED_TRACE(scenario);
++    ComparisonFixture fixture({"142", "42", "42"});
++    auto& dimension = fixture.completion.research_comparisons[0];
++    if (scenario == 0)
++      dimension.values[0].value = "42";
++    if (scenario == 1)
++      std::swap(dimension.values[0].value, dimension.values[1].value);
++    if (scenario == 2)
++      dimension.values[0].source_url = dimension.values[1].source_url;
++    if (scenario == 3)
++      dimension.values.pop_back();
++    if (scenario == 4)
++      dimension.label = "无关的吞吐率";
++    if (scenario == 5) {
++      dimension.prefix = "延迟：1";
++      dimension.values[0].value = "42";
++    }
++    if (scenario == 6)
++      dimension.prefix = "";
++    if (scenario == 7)
++      fixture.completion.research_comparisons.clear();
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome, "partial");
++    EXPECT_EQ(fixture.completion.summary.find("错误结论"), std::string::npos);
++    EXPECT_EQ(fixture.completion.summary.find("（与多数来源不同）"),
++              std::string::npos);
++    EXPECT_FALSE(fixture.completion.unfinished_items.empty());
++  }
++}
++TEST(AegisAgentResearchTest, MissingOrStaleSourcesAreNotExceptions) {
++  for (int scenario = 0; scenario < 5; ++scenario) {
++    SCOPED_TRACE(scenario);
++    ComparisonFixture fixture({"18 ms", "18 ms", "18 ms"});
++    auto& result = fixture.evidence.back().result;
++    if (scenario == 0)
++      result.ok = false;
++    if (scenario == 1)
++      result.value.Set("truncated", true);
++    if (scenario == 2)
++      result.value.Set("url", "https://fixture.example/changed");
++    if (scenario == 3)
++      fixture.completion.research_comparisons[0].values.back().value.clear();
++    if (scenario == 4) {
++      auto stale = Observation(3, "旧网页");
++      stale.value.Set("url", "https://fixture.example/3");
++      stale.ok = false;
++      fixture.evidence.push_back(
++          {.tool_name = "page.observe", .result = std::move(stale)});
++    }
++    fixture.Run();
++    EXPECT_EQ(fixture.completion.outcome, "partial");
++    EXPECT_NE(fixture.completion.summary.find("待核实：[3]"),
++              std::string::npos);
++    EXPECT_EQ(fixture.completion.summary.find("（与多数来源不同）"),
++              std::string::npos);
++  }
++}
++TEST(AegisAgentResearchTest, TiesAndAllEqualGroupsDoNotInventExceptions) {
++  ComparisonFixture tie({"18 ms", "20 ms", "22 ms"});
++  tie.Run();
++  EXPECT_EQ(tie.completion.outcome, "completed");
++  EXPECT_NE(tie.completion.summary.find("不指定多数值或例外组"),
++            std::string::npos);
++  ComparisonFixture equal({"18 ms", "18 ms", "18 ms"});
++  equal.Run();
++  EXPECT_EQ(equal.completion.outcome, "completed");
++  EXPECT_NE(equal.completion.summary.find("3 个来源 [1]、[2]、[3]"),
++            std::string::npos);
++  EXPECT_EQ(equal.completion.summary.find("（与多数来源不同）"),
++            std::string::npos);
++}
++TEST(AegisAgentResearchTest, RepeatedConflictingFieldIsNotCherryPicked) {
++  ComparisonFixture fixture({"18 ms", "18 ms", "18 ms"});
++  fixture.evidence[0].result.value.FindList("nodes")->Append(
++      base::DictValue().Set("node_id", 2).Set("text", "更新后延迟：21 ms。"));
++  fixture.Run();
++  EXPECT_EQ(fixture.completion.outcome, "partial");
++  EXPECT_EQ(fixture.completion.summary.find("3 个来源"), std::string::npos);
++}
++TEST(AegisAgentResearchTest,
++     InlineNodesAndSavedContentUseSameVerifiedComparison) {
++  ComparisonFixture fixture({"18 ms", "18 ms", "21 ms"});
++  fixture.evidence[0].result.value.Set(
++      "nodes",
++      base::ListValue()
++          .Append(base::DictValue().Set("node_id", 1).Set("text", "延迟："))
++          .Append(base::DictValue().Set("node_id", 2).Set("text", "18 ms"))
++          .Append(base::DictValue().Set("node_id", 3).Set("text", "。")));
++  fixture.Run();
++  ASSERT_EQ(fixture.completion.outcome, "completed");
++  AgentTask task("saved", "比较延迟并保存", AgentMode::kAct, fixture.scope);
++  auto record = BuildAgentResearchRecord(task, fixture.completion,
++                                         fixture.evidence, fixture.urls);
++  ASSERT_TRUE(record);
++  EXPECT_EQ(*record->FindString("summary"), fixture.completion.summary);
++  UpdateAgentResearchSaveCompletion(&fixture.completion, task, false);
++  EXPECT_EQ(fixture.completion.outcome, "partial");
++  UpdateAgentResearchSaveCompletion(&fixture.completion, task, true);
++  EXPECT_EQ(fixture.completion.outcome, "completed");
++  EXPECT_EQ(*record->FindString("summary"), fixture.completion.summary);
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 04d285a853..dce2f5e834 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.47";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (047)";
++inline constexpr char kProductVersion[] = "2.0.0.48";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (048)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

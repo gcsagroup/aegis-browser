@@ -115,7 +115,7 @@ function resolveDefaultChromiumRoot() {
   } catch {
     // 标记文件可选；默认路径与其他浏览器运行时验证器一致。
   }
-  return join(homedir(), 'Projects', 'GCSA-aegis-chromium');
+  return join(homedir(), 'Projects', 'GCSA-aegis-build', 'macos');
 }
 
 function defaultChromiumPath() {

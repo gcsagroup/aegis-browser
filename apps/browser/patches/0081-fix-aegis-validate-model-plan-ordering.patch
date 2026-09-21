@@ -1,7 +1,7 @@
-From 9d02f052720924c279af5e1511c374d6a685ef7e Mon Sep 17 00:00:00 2001
+From ef4cebfc476695f47e5346def0fe1f12193010cc Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 17:24:21 +0800
-Subject: [PATCH 81/90] fix(aegis): validate model plan ordering
+Subject: [PATCH] fix(aegis): validate model plan ordering
 
 ---
  chrome/browser/aegis/agent/agent_planner.cc   | 62 +++++++++++++++++++

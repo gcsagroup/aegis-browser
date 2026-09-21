@@ -10,8 +10,10 @@
 #include "base/containers/flat_set.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/uuid.h"
+#include "crypto/sha2.h"
 #include "url/gurl.h"
 
 namespace aegis::agent {
@@ -82,6 +84,93 @@ bool HasList(const base::DictValue& value, std::string_view key) {
   return value.FindList(key) != nullptr;
 }
 
+AgentVerificationDecision VerifyExtraction(const AgentToolCall& call,
+                                           const base::DictValue& value) {
+  const base::DictValue* extraction = value.FindDict("extraction");
+  const base::ListValue* fields =
+      extraction ? extraction->FindList("fields") : nullptr;
+  const base::ListValue* nodes = value.FindList("nodes");
+  if (!fields || !nodes || extraction->FindBool("untrusted") != true) {
+    return Reject("page extraction lacks source-bound fields");
+  }
+  const std::string* kind = call.arguments.FindString("kind");
+  if (!extraction->FindString("kind") ||
+      *extraction->FindString("kind") != (kind ? *kind : "article") ||
+      (call.document &&
+       (value.FindString("document_token") == nullptr ||
+        *value.FindString("document_token") != call.document->document_token ||
+        value.FindString("frame_token") == nullptr ||
+        *value.FindString("frame_token") != call.document->frame_token))) {
+    return Reject("extraction is not bound to the requested document or kind");
+  }
+  base::flat_set<std::string> requested;
+  if (const auto* input = call.arguments.FindList("fields")) {
+    for (const auto& field : *input) {
+      if (!field.is_string() || field.GetString().empty() ||
+          !requested.insert(field.GetString()).second) {
+        return Reject("requested extraction fields are invalid");
+      }
+    }
+  }
+  if (requested.empty()) {
+    requested = {"title", "summary"};
+  }
+  if (fields->size() != requested.size()) {
+    return Reject("extraction does not cover all requested fields");
+  }
+  base::flat_set<int> source_nodes;
+  for (const auto& node : *nodes) {
+    if (!node.is_dict()) {
+      return Reject("extraction source node is invalid");
+    }
+    if (auto id = node.GetDict().FindInt("node_id")) {
+      source_nodes.insert(*id);
+    }
+  }
+  bool all_resolved = true;
+  for (const auto& item : *fields) {
+    if (!item.is_dict()) {
+      return Reject("extraction field is invalid");
+    }
+    const auto& field = item.GetDict();
+    const std::string* name = field.FindString("field");
+    if (!name || requested.erase(*name) != 1u ||
+        !field.FindBool("resolved").has_value()) {
+      return Reject("extraction field does not match the request");
+    }
+    if (field.FindBool("resolved") != true) {
+      all_resolved = false;
+      continue;
+    }
+    const std::string* text = field.FindString("value");
+    const std::string* hash = field.FindString("source_hash");
+    const auto* ids = field.FindList("source_node_ids");
+    if (!text || base::ContainsOnlyChars(*text, " \t\r\n") || !hash || !ids ||
+        !base::EqualsCaseInsensitiveASCII(
+            *hash,
+            base::HexEncode(crypto::SHA256HashString(*name + "\n" + *text)))) {
+      return Reject("resolved extraction field lacks content or integrity");
+    }
+    if (base::EqualsCaseInsensitiveASCII(*name, "title")) {
+      if (!value.FindString("title") || *text != *value.FindString("title")) {
+        return Reject("extracted title does not match the observed document");
+      }
+    } else if (ids->empty()) {
+      return Reject("extracted content lacks source nodes");
+    }
+    for (const auto& id : *ids) {
+      if (!id.is_int() || !source_nodes.contains(id.GetInt())) {
+        return Reject("extracted content references an unobserved node");
+      }
+    }
+  }
+  return Accept(all_resolved,
+                all_resolved ? "requested fields have browser evidence"
+                             : "部分提取字段没有对应原文；请检查resolved标记。"
+                               "总结任务可读取title及content或summary，"
+                               "不得将自造的事实键名当作页面字段。");
+}
+
 bool IsKnownUrlClassification(std::string_view value) {
   constexpr std::array<std::string_view, 9> kClassifications = {
       "live",         "redirect",  "auth_required", "rate_limited",
@@ -96,6 +185,32 @@ bool IsKnownUrlClassification(std::string_view value) {
 
 AgentResultVerifier::AgentResultVerifier() = default;
 AgentResultVerifier::~AgentResultVerifier() = default;
+
+AgentToolCall AgentResultVerifier::RetainVerificationContext(
+    const AgentToolCall& call) {
+  AgentToolCall context;
+  context.action_id = call.action_id;
+  context.tool_name = call.tool_name;
+  if (call.tool_name == "page.extract") {
+    context.document = call.document;
+    for (const auto* name : {"kind", "fields"}) {
+      if (const base::Value* value = call.arguments.Find(name)) {
+        context.arguments.Set(name, value->Clone());
+      }
+    }
+  } else if (call.tool_name == "tab.group") {
+    if (const auto* ids = call.arguments.FindList("tab_ids")) {
+      context.arguments.Set("tab_ids", ids->Clone());
+    }
+  } else if (call.tool_name == "download.find_official") {
+    context.document = call.document;
+    context.committed_url = call.committed_url;
+    if (const auto* candidate = call.arguments.FindString("candidate_url")) {
+      context.arguments.Set("candidate_url", *candidate);
+    }
+  }
+  return context;
+}
 
 AgentVerificationDecision AgentResultVerifier::Verify(
     const AgentTask& task,
@@ -143,8 +258,25 @@ AgentVerificationDecision AgentResultVerifier::Verify(
         !HasList(value, "nodes") || result.evidence.empty()) {
       return Reject("page result lacks a fresh scoped browser observation");
     }
-    if (call.tool_name == "page.extract" && !value.FindDict("extraction")) {
-      return Reject("page extraction lacks source-bound fields");
+    if (value.FindBool("is_error_document") == true ||
+        value.FindInt("http_status").value_or(0) >= 400) {
+      return Reject("error page cannot verify the requested page result");
+    }
+    if (call.tool_name == "page.click") {
+      const auto* before = value.FindString("pre_action_fingerprint");
+      const auto* after = value.FindString("observation_fingerprint");
+      if (!before || before->empty() || !after || after->empty()) {
+        return Reject("点击结果缺少操作前后的浏览器观察");
+      }
+      // 页面变化只证明观察发生变化；业务目标仍需后续字段或结果核验。
+      return Accept(
+          *before != *after,
+          *before != *after
+              ? "点击后的页面观察发生变化，仍需核对任务目标"
+              : "点击后未观察到变化，无法确认生效；请回读结果，不要重复点击");
+    }
+    if (call.tool_name == "page.extract") {
+      return VerifyExtraction(call, value);
     }
     if (call.tool_name == "page.webmcp.list" &&
         !HasList(value, "webmcp_tools")) {
@@ -188,7 +320,25 @@ AgentVerificationDecision AgentResultVerifier::Verify(
                ? Accept(true, "activated tab remains in task scope")
                : Reject("activated tab is outside task scope");
   }
-  if (call.tool_name == "tab.close" || call.tool_name == "tab.group") {
+  if (call.tool_name == "tab.group") {
+    const auto* requested = call.arguments.FindList("tab_ids");
+    const auto* grouped = value.FindList("tab_ids");
+    if (!requested || requested->empty() || !grouped ||
+        requested->size() != grouped->size() || !HasString(value, "group_id") ||
+        !HasString(value, "revision")) {
+      return Reject("标签分组缺少完整回读");
+    }
+    base::flat_set<int> seen;
+    for (const auto& id : *grouped) {
+      if (!id.is_int() || !task.AllowsTab(id.GetInt()) ||
+          !seen.insert(id.GetInt()).second ||
+          !std::ranges::contains(*requested, id)) {
+        return Reject("标签分组回读与请求不一致");
+      }
+    }
+    return Accept(true, "标签组与请求的标签集合一致");
+  }
+  if (call.tool_name == "tab.close") {
     return HasString(value, "revision")
                ? Accept(true, "post-action tab revision is present")
                : Reject("tab mutation lacks a post-action revision");
@@ -351,6 +501,22 @@ AgentVerificationDecision AgentResultVerifier::Verify(
                : Reject("monitor deletion lacks browser acknowledgement");
   }
   if (call.tool_name == "download.find_official") {
+    const auto* source = value.FindString("source_url");
+    const auto* candidate = value.FindString("candidate_url");
+    const auto* requested = call.arguments.FindString("candidate_url");
+    GURL::Replacements redact;
+    redact.ClearUsername();
+    redact.ClearPassword();
+    redact.ClearQuery();
+    redact.ClearRef();
+    if (!call.document || !task.AllowsTab(call.document->tab_id) ||
+        call.document->committed_url != call.committed_url ||
+        !task.scope().AllowsOrigin(call.committed_url) || !source ||
+        *source != call.committed_url.ReplaceComponents(redact).spec() ||
+        !candidate || !requested ||
+        *candidate != GURL(*requested).ReplaceComponents(redact).spec()) {
+      return Reject("下载来源回读没有绑定实际页面及候选链接");
+    }
     return HasString(value, "candidate_url") &&
                    value.FindBool("requires_user_review") == true &&
                    value.FindBool("publisher_identity_verified") == false
@@ -390,8 +556,16 @@ AgentVerificationDecision AgentResultVerifier::Verify(
     }
     const bool verified = value.FindBool("verified").value_or(false);
     const std::string* integrity = value.FindString("integrity");
-    if (verified && (*integrity != "match" || !HasString(value, "sha256"))) {
-      return Reject("verified download lacks matching SHA-256 evidence");
+    const std::string* hash = value.FindString("sha256");
+    if (verified && (*integrity != "match" || !hash || hash->size() != 64u ||
+                     !std::ranges::all_of(
+                         *hash, [](char c) { return base::IsHexDigit(c); }) ||
+                     *value.FindString("state") != "complete" ||
+                     value.FindBool("safe_and_complete") != true ||
+                     value.FindBool("dangerous") == true ||
+                     value.FindBool("wait_timed_out") == true)) {
+      return Reject(
+          "verified download conflicts with native completion or integrity");
     }
     return Accept(verified, "download state was read from DownloadItem");
   }

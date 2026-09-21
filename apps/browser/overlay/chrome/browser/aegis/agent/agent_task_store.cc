@@ -19,10 +19,17 @@ namespace aegis::agent {
 
 namespace {
 
-// v8 增加持久化的摘要失败状态；旧程序不认识该状态，不能继续读取/覆写。
-constexpr int kCurrentVersion = 8;
-constexpr int kCompatibleVersion = 8;
+// v9 增加用户明确保存的加密研究记录，旧版本不能覆写该资料。
+constexpr int kCurrentVersion = 9;
+constexpr int kCompatibleVersion = 9;
 constexpr size_t kMaxSummaryBytes = 4096;
+
+constexpr char kCreateResearchSql[] = R"(
+  CREATE TABLE IF NOT EXISTS agent_saved_research(
+    id TEXT PRIMARY KEY NOT NULL,
+    ciphertext BLOB NOT NULL,
+    saved_us INTEGER NOT NULL
+  ))";
 
 constexpr char kCreateTasksSql[] = R"(
   CREATE TABLE IF NOT EXISTS agent_tasks(
@@ -145,7 +152,8 @@ bool AgentTaskStore::Initialize() {
       !database_.Execute(kCreateTasksSql) ||
       !database_.Execute(kCreateActionsSql) ||
       !database_.Execute(kCreateMonitorsSql) ||
-      !database_.Execute(kCreatePlansSql)) {
+      !database_.Execute(kCreatePlansSql) ||
+      !database_.Execute(kCreateResearchSql)) {
     database_.Close();
     return false;
   }
@@ -201,7 +209,8 @@ bool AgentTaskStore::Initialize() {
     database_.Close();
     return false;
   }
-  if (meta_table_.GetVersionNumber() == 7 &&
+  if ((meta_table_.GetVersionNumber() == 7 ||
+       meta_table_.GetVersionNumber() == 8) &&
       (!meta_table_.SetVersionNumber(kCurrentVersion) ||
        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion))) {
     database_.Close();
@@ -475,11 +484,13 @@ std::optional<StoredAgentPlan> AgentTaskStore::LoadPlan(
         !scope.AllowsDataClass(descriptor->data_class)) {
       return std::nullopt;
     }
-    stored.plan.steps.push_back(
-        AgentPlanStep{.step_id = *id,
-                      .title = "Recovered validated step",
-                      .tool_name = *tool_name,
-                      .risk = descriptor->risk});
+    stored.plan.steps.push_back(AgentPlanStep{
+        .step_id = *id,
+        .title = "Recovered validated step",
+        .tool_name = *tool_name,
+        .risk = scope.restrict_to_current_page && *tool_name == "page.click"
+                    ? AgentRiskLevel::kR2ExternalSideEffect
+                    : descriptor->risk});
   }
   stored.next_step = static_cast<size_t>(next_step);
   stored.attempt = attempt;
@@ -575,6 +586,70 @@ bool AgentTaskStore::DeleteMonitor(const std::string& monitor_id) {
   return statement.Run() && database_.GetLastChangeCount() == 1;
 }
 
+bool AgentTaskStore::SaveResearch(StoredAgentResearch research) {
+  if (!initialized_ || research.id.empty() || research.id.size() > 64u ||
+      research.ciphertext.empty() || research.ciphertext.size() > 69632u ||
+      research.saved_at.is_null()) {
+    return false;
+  }
+  sql::Transaction transaction(&database_);
+  if (!transaction.Begin()) {
+    return false;
+  }
+  sql::Statement count(database_.GetCachedStatement(
+      SQL_FROM_HERE, "SELECT count(*) FROM agent_saved_research WHERE id<>?"));
+  count.BindString(0, research.id);
+  // 达到容量后要求用户删除旧项目，不静默覆盖其他已保存结果。
+  if (!count.Step() || count.ColumnInt(0) >= 20) {
+    return false;
+  }
+  count.Reset(true);
+  sql::Statement write(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "INSERT OR REPLACE INTO agent_saved_research(id,ciphertext,saved_us) "
+      "VALUES(?,?,?)"));
+  write.BindString(0, research.id);
+  write.BindBlob(1, research.ciphertext);
+  write.BindInt64(2, SerializeTime(research.saved_at));
+  return write.Run() && transaction.Commit();
+}
+
+std::optional<std::vector<StoredAgentResearch>> AgentTaskStore::LoadResearch() {
+  std::vector<StoredAgentResearch> result;
+  if (!initialized_) {
+    return std::nullopt;
+  }
+  sql::Statement read(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT id,ciphertext,saved_us FROM agent_saved_research ORDER BY "
+      "saved_us DESC LIMIT 20"));
+  while (read.Step()) {
+    auto id = read.ColumnString(0);
+    auto ciphertext = read.ColumnBlobAsString(1);
+    if (id.empty() || id.size() > 64u || ciphertext.empty() ||
+        ciphertext.size() > 69632u) {
+      return std::nullopt;
+    }
+    result.push_back({.id = std::move(id),
+                      .ciphertext = std::move(ciphertext),
+                      .saved_at = DeserializeTime(read.ColumnInt64(2))});
+  }
+  if (!read.Succeeded()) {
+    return std::nullopt;
+  }
+  return result;
+}
+
+bool AgentTaskStore::DeleteResearch(const std::string& id) {
+  if (!initialized_ || id.empty() || id.size() > 64u) {
+    return false;
+  }
+  sql::Statement statement(database_.GetCachedStatement(
+      SQL_FROM_HERE, "DELETE FROM agent_saved_research WHERE id=?"));
+  statement.BindString(0, id);
+  return statement.Run() && database_.GetLastChangeCount() == 1;
+}
+
 // static
 std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
     std::string_view scope_json) {
@@ -591,7 +666,15 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
   const base::DictValue* budgets = value.FindDict("budgets");
   const base::DictValue* destination = value.FindDict("model_destination");
   const base::Value* metadata_window = value.Find("tab_metadata_window_id");
-  if (value.size() != (metadata_window ? 7u : 6u) ||
+  const base::Value* current_page = value.Find("restrict_to_current_page");
+  const base::Value* selected_pages = value.Find("selected_pages_research");
+  const base::Value* selected_group = value.Find("selected_tab_group");
+  if (value.size() !=
+          6u + (metadata_window ? 1u : 0u) + (current_page ? 1u : 0u) +
+              (selected_pages ? 1u : 0u) + (selected_group ? 1u : 0u) ||
+      (current_page && !current_page->is_bool()) ||
+      (selected_pages && !selected_pages->is_bool()) ||
+      (selected_group && !selected_group->is_bool()) ||
       (metadata_window && !metadata_window->is_int()) || !origins || !tab_ids ||
       !tools || !data_classes || !budgets || !destination ||
       budgets->size() != 5u || destination->size() != 4u ||
@@ -603,6 +686,9 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
   AgentTaskScope scope;
   scope.tab_metadata_window_id =
       metadata_window ? metadata_window->GetInt() : 0;
+  scope.restrict_to_current_page = current_page && current_page->GetBool();
+  scope.selected_pages_research = selected_pages && selected_pages->GetBool();
+  scope.selected_tab_group = selected_group && selected_group->GetBool();
   for (const base::Value& item : *origins) {
     if (!item.is_string()) {
       return std::nullopt;
@@ -795,6 +881,15 @@ std::string AgentTaskStore::SerializeScope(const AgentTaskScope& scope) {
     tab_ids.Append(tab_id);
   }
   value.Set("allowed_tab_ids", std::move(tab_ids));
+  if (scope.selected_pages_research) {
+    value.Set("selected_pages_research", true);
+  }
+  if (scope.selected_tab_group) {
+    value.Set("selected_tab_group", true);
+  }
+  if (scope.restrict_to_current_page) {
+    value.Set("restrict_to_current_page", true);
+  }
   if (scope.tab_metadata_window_id != 0) {
     value.Set("tab_metadata_window_id", scope.tab_metadata_window_id);
   }

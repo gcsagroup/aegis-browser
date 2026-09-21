@@ -21,9 +21,31 @@
       <section id="disabled-banner" class="notice" hidden></section>
 
       <nav class="workspace-tabs" aria-label="$i18n{workspaceLabel}">
+        <button id="protection-view-button" type="button"></button>
+        <button id="research-view-button" type="button" aria-selected="false"></button>
         <button id="task-view-button" type="button" aria-selected="true"></button>
-        <button id="automation-view-button" type="button" aria-selected="false"></button>
       </nav>
+      <div class="workspace-tools">
+        <button id="automation-view-button" type="button" aria-selected="false"></button>
+      </div>
+
+      <section id="research-view" class="card" hidden aria-labelledby="research-title">
+        <h2 id="research-title"></h2>
+        <p id="research-help" class="help"></p>
+        <button id="research-refresh" type="button"></button>
+        <div id="research-sources" class="research-sources"></div>
+        <p id="research-selection" role="status"></p>
+        <label id="research-goal-label" for="research-goal"></label>
+        <textarea id="research-goal" rows="4" maxlength="4096"></textarea>
+        <button id="research-start" class="primary" type="button" disabled></button>
+        <button id="research-group" type="button" disabled></button>
+        <p id="research-error" class="notice" role="status" hidden></p>
+        <h3 id="saved-research-title"></h3>
+        <p id="saved-research-help" class="help"></p>
+        <button id="saved-research-refresh" type="button"></button>
+        <p id="saved-research-status" role="status"></p>
+        <div id="saved-research-list"></div>
+      </section>
 
       <section id="task-view">
         <section class="composer" aria-labelledby="goal-label">
@@ -49,6 +71,7 @@
             <select id="automation-schedule"></select>
           </div>
           <p id="schedule-help" class="help"></p>
+          <p id="automation-target" class="help"></p>
           <button id="create-automation-button" class="primary primary-large" type="button"></button>
         </section>
 
@@ -100,6 +123,13 @@
       </section>
 
       <p id="error" class="error" role="alert" hidden></p>
+      <details id="download-evidence-card" class="card" hidden>
+        <summary id="download-evidence-title"></summary>
+        <p id="download-evidence-help" class="help"></p>
+        <dl id="download-evidence" class="scope-grid"></dl>
+        <button id="review-download" type="button" hidden></button>
+        <p id="download-review-status" class="help" role="status"></p>
+      </details>
 
       <section id="plan-card" class="card" hidden>
         <div class="section-heading">
@@ -123,6 +153,9 @@
         <h2 id="result-title"></h2>
         <p id="result-partial-note" class="help" hidden></p>
         <p id="result-summary"></p>
+        <p id="result-source-help" class="help" hidden></p>
+        <button id="save-research" type="button" hidden></button>
+        <p id="save-research-status" role="status"></p>
         <div id="result-sources-group" hidden>
           <strong id="result-sources-label"></strong>
           <ul id="result-sources"></ul>
@@ -136,6 +169,8 @@
       <section id="approval-card" class="card approval" hidden>
         <h2 id="approval-title"></h2>
         <p id="approval-detail"></p>
+        <p id="approval-data-flow" hidden></p>
+        <pre id="approval-target-url" hidden></pre>
         <dl id="checkout-summary" class="scope-grid checkout-summary" hidden></dl>
         <details class="exact-action">
           <summary id="approval-arguments-label"></summary>

@@ -83,7 +83,7 @@ constexpr std::array<AgentToolDescriptor, 49> kTools = {{
     {"history.search", AgentRiskLevel::kR0ReadOnly, AgentDataClass::kHistory,
      false, false, false, false},
     {"download.find_official", AgentRiskLevel::kR0ReadOnly,
-     AgentDataClass::kPublicPage, true, false, false, false},
+     AgentDataClass::kPublicPage, true, true, false, false},
     {"download.start", AgentRiskLevel::kR2ExternalSideEffect,
      AgentDataClass::kDownloads, true, true, true, false},
     {"download.pause", AgentRiskLevel::kR1Reversible,
@@ -197,7 +197,13 @@ base::DictValue ToolSchema(std::string_view name) {
     properties.Set("tab_id", IntegerSchema(1, 1000000));
     properties.Set("document_token", StringSchema(256));
     properties.Set("kind", EnumSchema({"article", "list", "table", "product"}));
-    properties.Set("fields", StringArraySchema(128, 64));
+    auto fields = StringArraySchema(128, 64);
+    fields.Set(
+        "description",
+        "省略时读取title和summary。title是文档标题，summary/content是正文原文。"
+        "其他字段必须是已观察到的真实章节标题；不得自造事实键名。"
+        "稳定指标、方法、要点等由agent.complete根据原文整理。");
+    properties.Set("fields", std::move(fields));
     return StrictObject(std::move(properties),
                         {"tab_id", "document_token", "kind"});
   }
@@ -395,13 +401,15 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"query", "days", "max_results"});
   }
   if (name == "download.find_official") {
+    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("document_token", StringSchema(256));
     properties.Set("product", StringSchema(512));
     properties.Set("platform", StringSchema(64));
     properties.Set("architecture", StringSchema(64));
     properties.Set("candidate_url", StringSchema(4096));
-    return StrictObject(
-        std::move(properties),
-        {"product", "platform", "architecture", "candidate_url"});
+    return StrictObject(std::move(properties),
+                        {"tab_id", "document_token", "product", "platform",
+                         "architecture", "candidate_url"});
   }
   if (name == "download.start") {
     properties.Set("url", StringSchema(4096));
@@ -478,7 +486,10 @@ std::string_view ToolDescription(std::string_view name) {
     return "Read a bounded view of an approved page.";
   }
   if (name == "page.extract") {
-    return "Extract bounded fields with source nodes from an observed page.";
+    return "提取带来源节点的原文。总结任务使用title及content或summary，"
+           "不要把stable_metric、measurement_method、key_"
+           "points等推导概念当作字段。"
+           "其他字段须匹配页面已有章节；未解析不代表目标完成。";
   }
   if (name == "page.webmcp.list") {
     return "List strict same-document WebMCP tools as untrusted page data.";
@@ -490,7 +501,8 @@ std::string_view ToolDescription(std::string_view name) {
     return "Navigate an approved tab to an approved URL.";
   }
   if (name == "page.click") {
-    return "Click a document-bound semantic node.";
+    return "点击当前文档的控件。观察中的click_target_node_id表示文字所属的"
+           "真实按钮；优先使用该编号，不根据相同文字猜测其他控件。";
   }
   if (name == "page.type") {
     return "Type non-secret text into an approved field.";

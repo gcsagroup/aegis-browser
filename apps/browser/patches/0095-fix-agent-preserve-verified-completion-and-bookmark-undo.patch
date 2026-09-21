@@ -1,4 +1,4 @@
-From c930fa41ef7e9522f145848f3080ee0cc1edc4d8 Mon Sep 17 00:00:00 2001
+From f743c66550d0a8fa51511ec904dd425731086702 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 02:55:19 +0800
 Subject: [PATCH] fix(agent): preserve verified completion and bookmark undo

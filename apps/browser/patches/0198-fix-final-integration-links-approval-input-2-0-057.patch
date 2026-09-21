@@ -1,0 +1,508 @@
+From 774924b07a2c5655b31448bd63fc4c7c2a8be395 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 22 Sep 2026 01:21:25 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=9F=E4=B8=80?=
+ =?UTF-8?q?=E9=93=BE=E6=8E=A5=E6=9F=A5=E6=89=BE=E3=80=81=E6=89=B9=E5=87=86?=
+ =?UTF-8?q?=E5=A4=B1=E6=95=88=E4=B8=8E=E9=87=8D=E5=A4=8D=E8=BE=93=E5=85=A5?=
+ =?UTF-8?q?=E6=94=B6=E5=B0=BE=202.0.057?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 57 ++++++++++++-
+ .../browser/aegis/agent/aegis_agent_service.h |  2 +
+ .../agent/aegis_agent_service_unittest.cc     | 23 ++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 82 ++++++++++++++++++-
+ chrome/browser/aegis/agent/agent_execution.h  |  3 +-
+ .../aegis/agent/agent_execution_unittest.cc   | 66 +++++++++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   |  3 +-
+ .../aegis/agent/agent_planner_unittest.cc     | 18 ++++
+ chrome/browser/resources/aegis_agent/agent.ts |  6 ++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  4 +
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 11 files changed, 259 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 155b25a57f..8397898dda 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -553,6 +553,30 @@ struct AegisAgentService::MonitorPageCheck : content::WebContentsObserver {
+   base::RepeatingCallback<void(AgentMonitorCheckStatus)> fail;
+ };
+ 
++// 只在等待具体操作批准时观察目标页，导航提交或关闭即撤销原操作。
++struct AegisAgentService::PendingActionPageObserver
++    : content::WebContentsObserver {
++  PendingActionPageObserver(content::WebContents* contents,
++                            base::OnceClosure invalidate)
++      : content::WebContentsObserver(contents),
++        invalidate_(std::move(invalidate)) {}
++
++  void DidFinishNavigation(content::NavigationHandle* navigation) override {
++    if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted() &&
++        !navigation->IsSameDocument()) {
++      Invalidate();
++    }
++  }
++  void WebContentsDestroyed() override { Invalidate(); }
++
++  void Invalidate() {
++    Observe(nullptr);
++    // 回调会销毁所属运行时；之后不再访问自身。
++    std::move(invalidate_).Run();
++  }
++  base::OnceClosure invalidate_;
++};
++
+ struct AegisAgentService::ExecutionRuntime {
+   size_t next_step = 0;
+   int attempt = 0;
+@@ -576,6 +600,7 @@ struct AegisAgentService::ExecutionRuntime {
+   std::string last_model_error;
+   std::vector<AgentExecutionEvidence> evidence_history;
+   std::optional<AgentToolCall> pending_action;
++  std::unique_ptr<PendingActionPageObserver> pending_page_observer;
+   RunCallback callback;
+ };
+ 
+@@ -1565,10 +1590,26 @@ bool AegisAgentService::ApprovePendingAction(const std::string& task_id) {
+     runtime_it->second->pending_action = std::move(call);
+     return false;
+   }
++  runtime_it->second->pending_page_observer.reset();
+   ExecuteRuntimeTool(task_id, std::move(call), approval->approval_id);
+   return true;
+ }
+ 
++void AegisAgentService::InvalidatePendingActionForPageChange(
++    const std::string& task_id) {
++  auto it = executions_.find(task_id);
++  const auto* task = GetTask(task_id);
++  if (!task || it == executions_.end() || !it->second->pending_action) {
++    return;
++  }
++  it->second->pending_action.reset();
++  policy_broker_.RevokeTaskApprovals(task_id);
++  const std::string reason =
++      "页面已变化或关闭，原操作已失效。请在目标页面重新发起任务并核对操作。";
++  Transition(task_id, AgentTaskState::kExpired, reason);
++  FinishRuntime(task_id, false, reason, std::nullopt);
++}
++
+ bool AegisAgentService::CompleteFinalUserTakeover(
+     const std::string& task_id,
+     bool user_confirmed_completion) {
+@@ -2725,6 +2766,18 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+   if (!result.ok && result.error == AgentErrorCode::kApprovalRequired &&
+       descriptor) {
+     runtime.pending_action = std::move(attempted_call);
++    if (runtime.pending_action->document) {
++      const auto tab_id = runtime.pending_action->document->tab_id;
++      if (tabs::TabInterface* tab = tabs::TabHandle(tab_id).Get();
++          tab && tab->GetProfile() == profile_) {
++        runtime.pending_page_observer =
++            std::make_unique<PendingActionPageObserver>(
++                tab->GetContents(),
++                base::BindOnce(
++                    &AegisAgentService::InvalidatePendingActionForPageChange,
++                    weak_ptr_factory_.GetWeakPtr(), task_id));
++      }
++    }
+     runtime.final_user_takeover =
+         descriptor->risk == AgentRiskLevel::kR3UserTakeover &&
+         runtime.next_step + 1 == plan->steps.size();
+@@ -2733,6 +2786,7 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+   }
+ 
+   runtime.pending_action.reset();
++  runtime.pending_page_observer.reset();
+   runtime.previous_result = CloneToolResult(result);
+   if (attempted_call.tool_name == "download.find_official" ||
+       attempted_call.tool_name == "download.start" ||
+@@ -2995,7 +3049,8 @@ void AegisAgentService::FinishRuntime(
+                                        it->second->evidence_history);
+       NormalizeAgentDownloadCompletion(&*completion, task->goal(),
+                                        task->scope(),
+-                                       it->second->download_history);
++                                       it->second->download_history,
++                                       it->second->evidence_history);
+     }
+   }
+   auto download_evidence =
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index ed47138ac2..5001a7e4b6 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -209,6 +209,7 @@ class AegisAgentService : public KeyedService {
+   bool CurrentPageMatchesSelection(const AgentTask& task) const;
+ 
+   struct ExecutionRuntime;
++  struct PendingActionPageObserver;
+   struct MonitorUrlCheck;
+   struct MonitorPageCheck;
+   using ActionResults = std::map<std::string, AgentToolResult>;
+@@ -216,6 +217,7 @@ class AegisAgentService : public KeyedService {
+   bool Transition(const std::string& task_id,
+                   AgentTaskState state,
+                   std::string reason);
++  void InvalidatePendingActionForPageChange(const std::string& task_id);
+   void FailPlanning(const std::string& task_id,
+                     PlanReadyCallback callback,
+                     std::string error);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 7dbd9caf07..bb70afb199 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -172,6 +172,9 @@ class AegisAgentServiceTestPeer {
+     result.error = AgentErrorCode::kApprovalRequired;
+     service->OnRuntimeToolResult(id, std::move(call), std::move(result));
+   }
++  static void InvalidatePendingPage(AegisAgentService* service, const std::string& id) {
++    service->InvalidatePendingActionForPageChange(id);
++  }
+   static void FailRuntime(AegisAgentService* service, const std::string& id) {
+     service->Transition(id, AgentTaskState::kFailed, "测试不可恢复失败");
+     service->FinishRuntime(id, false, "测试不可恢复失败", std::nullopt);
+@@ -1569,6 +1572,26 @@ TEST_F(AegisAgentServiceTest, IntermediateTakeoverRevokesPendingAction) {
+   EXPECT_TRUE(service->CancelTask(task->id()));
+ }
+ 
++TEST_F(AegisAgentServiceTest, PageChangeRevokesPendingApprovalImmediately) {
++  network::TestURLLoaderFactory factory;
++  base::test::TestFuture<bool, std::string, std::optional<AgentCompletionSummary>> done;
++  auto* task = StartHeldRuntime(&factory, done.GetCallback(), "page.click");
++  ASSERT_TRUE(task);
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  AegisAgentServiceTestPeer::DeliverPendingApproval(service, task->id());
++  ASSERT_TRUE(service->PendingAction(task->id()));
++  const auto calls = task->model_calls_used();
++  AegisAgentServiceTestPeer::InvalidatePendingPage(service, task->id());
++  EXPECT_EQ(task->state(), AgentTaskState::kExpired);
++  EXPECT_FALSE(service->PendingAction(task->id()));
++  EXPECT_FALSE(service->ApprovePendingAction(task->id()));
++  EXPECT_EQ(task->model_calls_used(), calls);
++  ASSERT_TRUE(done.IsReady());
++  EXPECT_FALSE(done.Get<0>());
++  EXPECT_TRUE(done.Get<1>().contains("原操作已失效"));
++  AegisAgentServiceTestPeer::InvalidatePendingPage(service, task->id());
++}
++
+ TEST_F(AegisAgentServiceTest, StalePageEvidenceCannotReachCompletion) {
+   network::TestURLLoaderFactory factory;
+   base::test::TestFuture<bool, std::string,
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 144043d1d6..73dcf8af4f 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1339,6 +1339,39 @@ std::string BuildAgentExecutionPrompt(
+        ++it) {
+     cumulative_evidence.Append(std::move(*it));
+   }
++  if (final_page_result && cumulative_evidence.size() > 1u &&
++      !AgentGoalRequestsTranslation(task.goal())) {
++    const auto& latest = evidence_history.back().result;
++    const auto* latest_nodes = latest.value.FindList("nodes");
++    // 仅去除与完整最新回执逐节点相等的旧正文；来源身份、提取结果和
++    // 截断标记照常保留。不同文档、失败或缺失字段不能合并。
++    for (auto& entry : cumulative_evidence) {
++      auto& item = entry.GetDict();
++      const auto* id = item.FindString("action_id");
++      if (!id || *id == latest.action_id || !latest_nodes ||
++          item.FindBool("content_truncated") != false) {
++        continue;
++      }
++      const auto prior = std::ranges::find_if(evidence_history, [&](const auto& e) {
++        return e.result.action_id == *id;
++      });
++      if (prior == evidence_history.end() || !prior->result.ok ||
++          (prior->tool_name != "page.observe" &&
++           prior->tool_name != "page.extract")) {
++        continue;
++      }
++      bool same = true;
++      for (std::string_view key : {"url", "tab_id", "document_token",
++                                   "observation_fingerprint", "nodes"}) {
++        const auto* left = prior->result.value.Find(key);
++        const auto* right = latest.value.Find(key);
++        same &= left && right && *left == *right;
++      }
++      if (same && item.Remove("visible_text_untrusted")) {
++        item.Set("body_in_latest_verified_action", latest.action_id);
++      }
++    }
++  }
+   if (!cumulative_evidence.empty()) {
+     envelope.Set("prior_verified_evidence_untrusted",
+                  std::move(cumulative_evidence));
+@@ -1828,11 +1861,51 @@ void NormalizeAgentDownloadCompletion(
+     AgentCompletionSummary* completion,
+     std::string_view user_goal,
+     const AgentTaskScope& scope,
+-    base::span<const AgentExecutionEvidence> history) {
++    base::span<const AgentExecutionEvidence> history,
++    base::span<const AgentExecutionEvidence> page_history) {
+   if (!completion || !RequiresDownloadEvidence(user_goal, scope)) {
+     return;
+   }
+   const auto fields = BuildAgentDownloadEvidence(history);
++  const bool requests_transfer = AgentGoalRequestsDownloadTransfer(user_goal);
++  if (!requests_transfer && !fields.contains("candidate_url")) {
++    // 只读降级保留原生观察中的链接；候选文件不冒充已读取的来源页面。
++    base::flat_set<std::string> links;
++    for (const auto& evidence : page_history) {
++      const auto& value = evidence.result.value;
++      const auto* source = value.FindString("url");
++      const auto* nodes = value.FindList("nodes");
++      if (!evidence.result.ok ||
++          (evidence.tool_name != "page.observe" &&
++           evidence.tool_name != "page.extract") ||
++          !source || !scope.AllowsOrigin(GURL(*source)) || !nodes ||
++          !value.FindString("document_token") ||
++          !value.FindString("observation_fingerprint")) {
++        continue;
++      }
++      for (const auto& node : *nodes) {
++        const auto* item = node.GetIfDict();
++        const auto* text = item ? item->FindString("text") : nullptr;
++        const GURL url(text ? *text : std::string());
++        if (text && text->size() <= 2048u && url.SchemeIsHTTPOrHTTPS() &&
++            !url.has_username() && !url.has_password() &&
++            !url.has_query() && !url.has_ref() && links.size() < 12u) {
++          links.insert(url.spec());
++        }
++      }
++    }
++    completion->outcome = "partial";
++    completion->summary = links.empty()
++        ? "已读取页面，但尚未找到可保留的候选链接。未发起下载。"
++        : "已保留页面中实际读取到的候选链接，尚未完成目标文件的筛选；未发起下载。";
++    for (const auto& link : links) {
++      completion->summary += "\n" + link;
++    }
++    completion->summary += "\n发布者、版本和签名未独立核验；页面自称官方不足以证明官方身份。";
++    completion->unfinished_items.push_back(
++        "尚需核对候选链接是否符合所需产品、平台和架构；无需下载文件。");
++    return;
++  }
+   const auto* state = fields.FindString("state");
+   const auto* verified = fields.FindString("verified");
+   const auto* safe = fields.FindString("safe_and_complete");
+@@ -1862,7 +1935,9 @@ void NormalizeAgentDownloadCompletion(
+     completion->summary =
+         "浏览器下载记录未通过完整性核验，不能认定下载任务完成。";
+   } else {
+-    completion->summary = "已读取页面；尚无原生回执证明下载已经开始。";
++    completion->summary = requests_transfer
++        ? "已读取页面；尚无原生回执证明下载已经开始。"
++        : "已找到待核对的候选链接，未发起下载。";
+     if (const auto* candidate = fields.FindString("candidate_url")) {
+       completion->summary += "\n待核对的候选链接：" + *candidate;
+     }
+@@ -1870,8 +1945,7 @@ void NormalizeAgentDownloadCompletion(
+       completion->summary += "\n来源页面：" + *source;
+     }
+     completion->summary += "\n页面声明或相同域名不足以证明官方身份。";
+-    achieved = fields.contains("candidate_url") &&
+-               !AgentGoalRequestsDownloadTransfer(user_goal);
++    achieved = fields.contains("candidate_url") && !requests_transfer;
+   }
+   completion->summary +=
+       "\n发布者、仓库、版本和签名未独立核验；没有安装或运行文件的证据。";
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index fae96a3273..daa0e7488a 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -71,7 +71,8 @@ void NormalizeAgentDownloadCompletion(
+     AgentCompletionSummary* completion,
+     std::string_view user_goal,
+     const AgentTaskScope& scope,
+-    base::span<const AgentExecutionEvidence> history);
++    base::span<const AgentExecutionEvidence> history,
++    base::span<const AgentExecutionEvidence> page_history = {});
+ 
+ // 分组的数量来自原生回读；模型声称“三个”不能替代实际只分组一个的结果。
+ void NormalizeAgentTabGroupCompletion(
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 71f051d776..75ab28ebab 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -546,6 +546,36 @@ TEST(AegisAgentExecutionTest, DownloadCompletionSurvivesReadOnlyFallback) {
+   }
+ }
+ 
++TEST(AegisAgentExecutionTest, LinkOnlyFallbackRetainsObservedLinksWithoutTransferAdvice) {
++  auto scope = ExecutionScope();
++  AgentToolResult page;
++  page.ok = true;
++  page.value.Set("url", "https://fixture.example/releases");
++  page.value.Set("document_token", "document-7");
++  page.value.Set("observation_fingerprint", "fingerprint");
++  page.value.Set("nodes", base::ListValue()
++      .Append(base::DictValue().Set("text", "https://fixture.example/macos-arm64.bin"))
++      .Append(base::DictValue().Set("text", "https://user:secret@fixture.example/file"))
++      .Append(base::DictValue().Set("text", "https://fixture.example/file?token=secret")));
++  std::vector<AgentExecutionEvidence> history;
++  history.push_back({.tool_name = "page.observe", .result = std::move(page)});
++  for (bool failed : {false, true}) {
++    history.back().result.ok = !failed;
++    AgentCompletionSummary completion{.outcome = "partial", .summary = "格式错误"};
++    NormalizeAgentDownloadCompletion(
++        &completion, "从当前官方发布页找适合 macOS arm64 的安装包来源，只给链接，不要下载。",
++        scope, {}, history);
++    EXPECT_EQ(completion.outcome, "partial");
++    EXPECT_EQ(completion.summary.contains("macos-arm64.bin"), !failed);
++    EXPECT_FALSE(completion.summary.contains("secret"));
++    EXPECT_TRUE(completion.summary.contains("未发起下载"));
++    for (const auto& item : completion.unfinished_items) {
++      EXPECT_FALSE(item.contains("重试实际下载"));
++      EXPECT_FALSE(item.contains("批准具体文件"));
++    }
++  }
++}
++
+ TEST(AegisAgentExecutionTest, SummaryReviewOnlyDetectsUnquotedHanRepetition) {
+   EXPECT_TRUE(AgentSummaryNeedsTextReview("一一致样本，数值42。"));
+   EXPECT_TRUE(AgentSummaryNeedsTextReview("看看网页，一一对应。"));
+@@ -1815,6 +1845,42 @@ TEST(AegisAgentExecutionTest, FinalPageIdentityCompactionKeepsExecutionBoundarie
+   }
+ }
+ 
++TEST(AegisAgentExecutionTest, RepeatedObservationBodyKeepsDocumentBoundaries) {
++  for (int variant = 0; variant < 5; ++variant) {
++    SCOPED_TRACE(variant);
++    AgentTask task("repeat-body", "总结当前页面", AgentMode::kAsk, ExecutionScope());
++    AgentTaskPlan plan;
++    plan.steps.push_back({.step_id = "read", .title = "读取",
++                          .tool_name = "page.observe",
++                          .risk = AgentRiskLevel::kR0ReadOnly});
++    auto prior = CheckoutObservation("fingerprint", std::string(2000, 'x'));
++    prior.action_id = "old-read";
++    prior.value.Set("url", "https://fixture.example/path");
++    prior.value.Set("truncated", false);
++    auto latest = CheckoutObservation("fingerprint", std::string(2000, 'x'));
++    latest.value = prior.value.Clone();
++    if (variant == 1) prior.value.Set("document_token", "different");
++    if (variant == 2) prior.ok = false;
++    if (variant == 3) prior.value.Set("truncated", true);
++    if (variant == 4) prior.value.Remove("observation_fingerprint");
++    std::vector<AgentExecutionEvidence> history;
++    history.push_back({.tool_name = "page.observe", .result = std::move(prior)});
++    auto duplicate = CheckoutObservation("fingerprint", "unused");
++    duplicate.value = latest.value.Clone();
++    history.push_back({.tool_name = "page.extract", .result = std::move(duplicate)});
++    auto parsed = base::JSONReader::Read(
++        BuildAgentExecutionPrompt(task, plan, 1, 0, &latest, history), base::JSON_PARSE_RFC);
++    ASSERT_TRUE(parsed && parsed->is_dict());
++    const auto* evidence = parsed->GetDict().FindList("prior_verified_evidence_untrusted");
++    ASSERT_TRUE(evidence && evidence->size() == 2u);
++    const auto& old = evidence->front().GetDict();
++    EXPECT_EQ(old.contains("body_in_latest_verified_action"), variant == 0);
++    EXPECT_EQ(old.contains("visible_text_untrusted"), variant != 0);
++    EXPECT_TRUE(parsed->GetDict().FindString("previous_browser_result_untrusted_json")
++                    ->contains(std::string(2000, 'x')));
++  }
++}
++
+ TEST(AegisAgentExecutionTest, PromptDoesNotDeduplicateDifferentOrTruncatedPage) {
+   AgentTask task("prompt-boundary", "总结页面", AgentMode::kAsk,
+                  ExecutionScope());
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index e73dcaae0c..9bdd9f0065 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -1471,7 +1471,8 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+   const std::string requested = RequestedGoalText(user_goal);
+   if (GoalRequestsSafeDownload(requested) && !IsBookmarkGoal(requested) &&
+       !AgentGoalRequestsTranslation(user_goal) &&
+-      !GoalContainsAny(requested, {"安装", "安裝", "install"}) &&
++      (!GoalContainsAny(requested, {"安装", "安裝", "install"}) ||
++       GoalContainsAny(requested, {"安装包", "安裝包", "installer"})) &&
+       !has_step("download.find_official")) {
+     *error =
+         "download-source goal omitted required download.find_official step";
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index e62ce41f93..a625175c29 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -1438,5 +1438,23 @@ TEST(AegisAgentPlannerTest, CurrentPagePlanRetainsScopeAndApprovalRisk) {
+   EXPECT_FALSE(escaped.IsNoBroaderThan(*scope));
+ }
+ 
++TEST(AegisAgentPlannerTest, InstallerSourceGoalRequiresNativeCandidateCheck) {
++  for (const char* goal : {
++           "从当前官方发布页找适合 macOS arm64 的安装包来源，只给链接，不要下载。",
++           "從目前官方發佈頁找 macOS arm64 安裝包來源，只給連結，不要下載。",
++           "Find the official installer source on this page; do not download."}) {
++    SCOPED_TRACE(goal);
++    AgentTaskPlan plan;
++    plan.steps.push_back({.step_id = "observe", .title = "读取",
++                          .tool_name = "page.observe"});
++    std::string error;
++    EXPECT_FALSE(ValidateTaskPlanForGoal(plan, goal, &error));
++    EXPECT_TRUE(error.contains("download.find_official"));
++    plan.steps.push_back({.step_id = "source", .title = "核对候选",
++                          .tool_name = "download.find_official"});
++    EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
++  }
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 85193e3b8e..aaaec57206 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -595,6 +595,9 @@ function renderTimeline(next: TaskSnapshot) {
+   const list = element('timeline');
+   list.replaceChildren();
+   const friendlyTimelineText = (value: string): string => {
++    if (value.includes('原操作已失效')) {
++      return loadTimeData.getString('pendingActionPageChanged');
++    }
+     if (value.startsWith(
+             'execution model did not produce required tool ')) {
+       const match = value.match(/required tool ([a-z0-9._-]+)/i);
+@@ -773,6 +776,9 @@ function renderModel(next: TaskSnapshot) {
+ }
+ 
+ function friendlyError(error: string, hasPlan: boolean): string {
++  if (error.includes('原操作已失效')) {
++    return loadTimeData.getString('pendingActionPageChanged');
++  }
+   if (error.includes('monitor immediate check unavailable')) {
+     return loadTimeData.getString('checkMonitorNowUnavailable');
+   }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 70e3993c06..9f98b407dd 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -548,6 +548,10 @@ void AddStrings(content::WebUIDataSource* source) {
+       "Execution ended; no complete result is available yet",
+       "执行已结束，尚无完整结果", "執行已結束，尚無完整結果");
+   add("statusFailed", "Needs attention", "遇到问题", "遇到問題");
++  add("pendingActionPageChanged",
++      "The page changed or closed, so the pending action expired. Start a new task on the target page and review the action.",
++      "页面已变化或关闭，原操作已失效。请在目标页面重新发起任务并核对操作。",
++      "頁面已變更或關閉，原操作已失效。請在目標頁面重新發起任務並核對操作。");
+   add("pageContextUnavailableError",
+       "The task page was still loading, was closed, or left the approved "
+       "site. Aegis stopped without reading other pages. Wait for the page "
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index cb80abba54..7d742f517c 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.56";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (056)";
++inline constexpr char kProductVersion[] = "2.0.0.57";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (057)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -7,17 +7,19 @@ import vm from 'node:vm';
 const ts = createRequire(new URL('../../../packages/core/package.json', import.meta.url))('typescript');
 const source = readFileSync(new URL('../overlay/chrome/browser/resources/settings/downloads_page/downloads_page.ts', import.meta.url), 'utf8');
 const tree = ts.createSourceFile('downloads_page.ts', source, ts.ScriptTarget.Latest, true);
-let initializer;
+const initializers = [];
 function visit(node) {
-  if (ts.isPropertyAssignment(node) && node.name.getText(tree) === 'aegisStrings_') {
-    initializer = node.initializer.properties.find(n => n.name?.getText(tree) === 'value').initializer.getText(tree);
+  // Chromium153已迁移到Lit accessor，文案初始化位于真实实例字段。
+  if (ts.isPropertyDeclaration(node) && node.name.getText(tree) === 'aegisStrings_') {
+    assert(node.initializer, '下载文案必须具有实际初始化表达式');
+    initializers.push(node.initializer.getText(tree));
   }
   ts.forEachChild(node, visit);
 }
 visit(tree);
-assert(initializer);
+assert.equal(initializers.length, 1, '必须且只能找到一个下载文案初始化表达式');
 function copy(lang) {
-  return JSON.stringify(vm.runInNewContext(`(${initializer})()`, {document:{documentElement:{lang}}}));
+  return JSON.stringify(vm.runInNewContext(`(${initializers[0]})`, {document:{documentElement:{lang}}}));
 }
 assert.equal(copy('zh-Hant'), copy('zh-TW'));
 assert.equal(copy('zh-HK'), copy('zh-TW'));

@@ -6,6 +6,8 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
+#include "chrome/browser/aegis/agent/agent_tool_registry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -25,6 +27,139 @@ AgentTaskScope ExecutionScope() {
   return scope;
 }
 
+TEST(AegisAgentExecutionTest, DownloadExtractionUsesRealBoundedFields) {
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("page.extract");
+  ASSERT_TRUE(tool);
+  const auto original = tool->input_schema.Clone();
+  auto scope = ExecutionScope();
+  ConstrainDownloadExtractionTool(&*tool, scope);
+  EXPECT_EQ(tool->input_schema, original);
+  scope.allowed_tools.insert("download.find_official");
+  ConstrainDownloadExtractionTool(&*tool, scope);
+  const auto* fields =
+      tool->input_schema.FindListByDottedPath("properties.fields.items.enum");
+  ASSERT_TRUE(fields);
+  ASSERT_EQ(fields->size(), 3u);
+  EXPECT_EQ((*fields)[0].GetString(), "title");
+  EXPECT_EQ((*fields)[1].GetString(), "content");
+  EXPECT_EQ((*fields)[2].GetString(), "summary");
+  EXPECT_EQ(*tool->input_schema.FindList("required"),
+            *original.FindList("required"));
+  auto download = registry.ModelToolForName("download.find_official");
+  ASSERT_TRUE(download);
+  const auto download_schema = download->input_schema.Clone();
+  ConstrainDownloadExtractionTool(&*download, scope);
+  EXPECT_EQ(download->input_schema, download_schema);
+}
+
+TEST(AegisAgentExecutionTest, ObservedFieldsExcludeInventedAndEmptySections) {
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("page.extract");
+  ASSERT_TRUE(tool);
+  AgentToolResult observation;
+  observation.ok = true;
+  observation.value.Set("title", "真实页面");
+  observation.value.Set("nodes", base::ListValue()
+      .Append(base::DictValue().Set("text", "空章节").Set("text_is_heading", true))
+      .Append(base::DictValue().Set("text", "实际章节").Set("text_is_heading", true))
+      .Append(base::DictValue().Set("text", "指标为 42。").Set("text_is_heading", false)));
+  ConstrainObservedExtractionTool(&*tool, &observation);
+  const auto* fields = tool->input_schema.FindListByDottedPath("properties.fields.items.enum");
+  ASSERT_TRUE(fields);
+  EXPECT_EQ(fields->size(), 4u);
+  EXPECT_TRUE(fields->contains("title"));
+  EXPECT_TRUE(fields->contains("content"));
+  EXPECT_TRUE(fields->contains("summary"));
+  EXPECT_TRUE(fields->contains("实际章节"));
+  EXPECT_FALSE(fields->contains("空章节"));
+  EXPECT_FALSE(fields->contains("stable_metric"));
+  EXPECT_TRUE(tool->input_schema.FindList("required")->contains("fields"));
+}
+
+TEST(AegisAgentExecutionTest, TitleOnlyPageDoesNotRequestMissingBody) {
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("page.extract");
+  ASSERT_TRUE(tool);
+  AgentToolResult observation;
+  observation.ok = true;
+  observation.value.Set("title", "只有标题");
+  observation.value.Set("nodes", base::ListValue().Append(
+      base::DictValue().Set("text", "只有标题").Set("text_is_heading", true)));
+  ConstrainObservedExtractionTool(&*tool, &observation);
+  const auto* fields = tool->input_schema.FindListByDottedPath("properties.fields.items.enum");
+  ASSERT_TRUE(fields);
+  ASSERT_EQ(fields->size(), 1u);
+  EXPECT_EQ((*fields)[0].GetString(), "title");
+  auto unrelated = registry.ModelToolForName("page.observe");
+  const auto before = unrelated->input_schema.Clone();
+  ConstrainObservedExtractionTool(&*unrelated, &observation);
+  EXPECT_EQ(before, unrelated->input_schema);
+}
+
+TEST(AegisAgentExecutionTest, RequestedDownloadIntegrityRequiresExpectedHash) {
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("download.start");
+  ASSERT_TRUE(tool);
+  const auto original = tool->input_schema.Clone();
+  ConstrainDownloadIntegrityTool(&*tool, "下载这个文件");
+  EXPECT_EQ(tool->input_schema, original);
+  ConstrainDownloadIntegrityTool(&*tool, "下载文件并核对完整性");
+  ASSERT_TRUE(tool->input_schema.FindList("required"));
+  EXPECT_TRUE(tool->input_schema.FindList("required")->contains("expected_sha256"));
+  const auto constrained = tool->input_schema.Clone();
+  ConstrainDownloadIntegrityTool(&*tool, "verify SHA-256");
+  EXPECT_EQ(tool->input_schema, constrained);
+  EXPECT_TRUE(AgentGoalRequestsDownloadIntegrity("校驗下載檔案"));
+  EXPECT_FALSE(AgentGoalRequestsDownloadIntegrity("取消下载"));
+}
+
+TEST(AegisAgentExecutionTest, NativeTitleExtractionStaysWithinReadScope) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools.insert("page.extract");
+  AgentTask task("title-only", "核对页面来源", AgentMode::kAsk, scope);
+  AgentPlanStep step{.step_id = "extract",
+                     .title = "提取原文",
+                     .tool_name = "page.extract",
+                     .risk = AgentRiskLevel::kR0ReadOnly};
+  AgentDocumentRef document{.tab_id = 7,
+                            .frame_token = "frame",
+                            .document_token = "current-document",
+                            .committed_url = GURL("https://fixture.example/path")};
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("page.extract");
+  ASSERT_TRUE(tool);
+  AgentToolResult observed;
+  observed.ok = true;
+  observed.value.Set("title", "只有标题");
+  observed.value.Set("nodes", base::ListValue().Append(
+      base::DictValue().Set("text", "标题").Set("text_is_heading", true)));
+  ConstrainObservedExtractionTool(&*tool, &observed);
+  auto call = BuildTitleOnlyExtractionCall(task, step, 0, document, *tool);
+  ASSERT_TRUE(call);
+  EXPECT_EQ(call->tool_name, "page.extract");
+  EXPECT_EQ(call->arguments.FindInt("tab_id"), 7);
+  ASSERT_TRUE(call->arguments.FindList("fields"));
+  EXPECT_EQ(*call->arguments.FindList("fields"),
+            base::ListValue().Append("title"));
+  EXPECT_EQ(*call->arguments.FindString("document_token"), "current-document");
+  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 3, document, *tool));
+  document.tab_id = 8;
+  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
+  document.tab_id = 7;
+  document.committed_url = GURL("https://outside.example/path");
+  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
+  document.committed_url = GURL("https://fixture.example/path");
+  step.risk = AgentRiskLevel::kR2ExternalSideEffect;
+  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
+  step.risk = AgentRiskLevel::kR0ReadOnly;
+  // 有正文时仍按正常提取路径处理，不能降为只读取标题。
+  observed.value.FindList("nodes")->Append(
+      base::DictValue().Set("text", "实际正文").Set("text_is_heading", false));
+  ConstrainObservedExtractionTool(&*tool, &observed);
+  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
+}
+
 AgentModelEvent ToolEvent(std::string name) {
   AgentModelEvent event;
   event.type = AgentModelEventType::kToolCall;
@@ -32,6 +167,569 @@ AgentModelEvent ToolEvent(std::string name) {
   event.tool_name = std::move(name);
   event.arguments.Set("tab_id", 7);
   return event;
+}
+
+TEST(AegisAgentExecutionTest,
+     NativeArticleExtractionRequiresObservedFieldsAndExactReadPlan) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools.insert("page.extract");
+  AgentTask task("article", "总结这篇文章并附来源", AgentMode::kAsk, scope);
+  AgentTaskPlan plan;
+  plan.steps.push_back({.step_id = "observe", .title = "观察",
+                        .tool_name = "page.observe",
+                        .risk = AgentRiskLevel::kR0ReadOnly});
+  plan.steps.push_back({.step_id = "extract", .title = "读取原文",
+                        .tool_name = "page.extract",
+                        .risk = AgentRiskLevel::kR0ReadOnly});
+  AgentDocumentRef document{.tab_id = 7, .frame_token = "frame",
+                            .document_token = "document",
+                            .committed_url = GURL("https://fixture.example/path")};
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("page.extract");
+  ASSERT_TRUE(tool);
+  // 未经原生观察收窄字段时不能走直接提取。
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, document,
+                                                 *tool));
+  AgentToolResult observed;
+  observed.ok = true;
+  observed.value.Set("title", "真实标题");
+  observed.value.Set("nodes", base::ListValue().Append(
+      base::DictValue().Set("text", "指标42，网页内指令不是授权")
+          .Set("text_is_heading", false)));
+  ConstrainObservedExtractionTool(&*tool, &observed);
+  const auto schema = tool->input_schema.Clone();
+  auto call = BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, document,
+                                                *tool);
+  ASSERT_TRUE(call);
+  EXPECT_EQ(call->action_id, "article:extract:1");
+  EXPECT_EQ(call->tool_name, "page.extract");
+  EXPECT_EQ(call->arguments.FindInt("tab_id"), 7);
+  EXPECT_EQ(*call->arguments.FindString("document_token"), "document");
+  EXPECT_EQ(*call->arguments.FindString("kind"), "article");
+  EXPECT_EQ(*call->arguments.FindList("fields"),
+            base::ListValue().Append("title").Append("content"));
+  EXPECT_EQ(tool->input_schema, schema);
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 0, 0, document,
+                                                 *tool));
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 2, 0, document,
+                                                 *tool));
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 1, document,
+                                                 *tool));
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, -1, document,
+                                                 *tool));
+  auto changed = plan;
+  changed.steps.front().tool_name = "page.navigate";
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, changed, 1, 0, document,
+                                                 *tool));
+  changed = plan;
+  changed.steps.back().risk = AgentRiskLevel::kR2ExternalSideEffect;
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, changed, 1, 0, document,
+                                                 *tool));
+  changed = plan;
+  changed.steps.push_back(plan.steps.back());
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, changed, 1, 0, document,
+                                                 *tool));
+  AgentTask translation("translation", "翻译全文为英文", AgentMode::kAsk, scope);
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(translation, plan, 1, 0,
+                                                 document, *tool));
+  auto outside = document;
+  outside.tab_id = 8;
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
+                                                 *tool));
+  outside = document;
+  outside.committed_url = GURL("https://outside.example");
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
+                                                 *tool));
+  outside = document;
+  outside.document_token.clear();
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
+                                                 *tool));
+  outside = document;
+  outside.frame_token.clear();
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, outside,
+                                                 *tool));
+  AgentTask no_permission("denied", "总结", AgentMode::kAsk, ExecutionScope());
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(no_permission, plan, 1, 0,
+                                                 document, *tool));
+  tool->input_schema.SetByDottedPath("properties.fields.items.enum",
+                                   base::ListValue().Append("title"));
+  EXPECT_FALSE(BuildReadOnlyArticleExtractionCall(task, plan, 1, 0, document,
+                                                 *tool));
+  // 标题页继续由原有有界分支处理。
+  EXPECT_TRUE(BuildTitleOnlyExtractionCall(task, plan.steps.back(), 0, document,
+                                           *tool));
+}
+
+TEST(AegisAgentExecutionTest, ResearchSaveRequiresNativeReceipt) {
+  auto scope = ExecutionScope();
+  scope.selected_pages_research = true;
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.budgets.max_tabs = 3;
+  ASSERT_TRUE(scope.IsValid());
+  AgentTask task("research", "比较来源并保存研究", AgentMode::kAct, scope);
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "来源指标分别为42、43、41。"};
+  EXPECT_FALSE(AgentResearchCompletionClaimsSave(completion));
+  for (const auto* text : {"研究项目已保存来源1、5、8的比较结果。",
+                           "結果已儲存。", "I have saved the comparison.",
+                           "The research has been saved to the project."}) {
+    auto claim = completion;
+    claim.summary = text;
+    EXPECT_TRUE(AgentResearchCompletionClaimsSave(claim));
+  }
+  UpdateAgentResearchSaveCompletion(&completion, task, false);
+  EXPECT_EQ(completion.outcome, "partial");
+  ASSERT_EQ(completion.unfinished_items.size(), 1u);
+  UpdateAgentResearchSaveCompletion(&completion, task, false);
+  EXPECT_EQ(completion.unfinished_items.size(), 1u);
+  UpdateAgentResearchSaveCompletion(&completion, task, true);
+  EXPECT_EQ(completion.outcome, "completed");
+  EXPECT_TRUE(completion.unfinished_items.empty());
+
+  completion.outcome = "partial";
+  completion.unfinished_items = {"第三个来源不可读。"};
+  UpdateAgentResearchSaveCompletion(&completion, task, false);
+  UpdateAgentResearchSaveCompletion(&completion, task, true);
+  EXPECT_EQ(completion.outcome, "partial");
+  EXPECT_EQ(completion.unfinished_items.size(), 1u);
+  completion.outcome = "completed";
+  completion.unfinished_items.clear();
+  AgentTask compare("compare", "比较来源并保留分歧", AgentMode::kAct, scope);
+  UpdateAgentResearchSaveCompletion(&completion, compare, false);
+  EXPECT_EQ(completion.outcome, "completed");
+  AgentTask no_save("no-save", "比较来源，不要保存", AgentMode::kAct, scope);
+  UpdateAgentResearchSaveCompletion(&completion, no_save, false);
+  EXPECT_EQ(completion.outcome, "completed");
+  scope.selected_pages_research = false;
+  AgentTask unrelated("other", "保存收藏", AgentMode::kAct, scope);
+  UpdateAgentResearchSaveCompletion(&completion, unrelated, false);
+  EXPECT_EQ(completion.outcome, "completed");
+}
+
+TEST(AegisAgentExecutionTest,
+     ResearchStorageTodoWaitsForReceiptWithoutStaleSummary) {
+  auto scope = ExecutionScope();
+  scope.selected_pages_research = true;
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.budgets.max_tabs = 3;
+  ASSERT_TRUE(scope.IsValid());
+  AgentTask task("research", "比较来源并保存研究", AgentMode::kAct, scope);
+  for (const auto* item : {"把结果和引用保存到研究项目", "保存结果到研究项目。",
+                           "將結果和引用儲存到研究專案",
+                           "Save the research results."}) {
+    AgentCompletionSummary result{
+        .outcome = "partial",
+        .summary = "来源指标分别为42、43、41。\n保存状态：未保存。",
+        .unfinished_items = {item}};
+    NormalizeAgentResearchSaveContent(&result, task);
+    EXPECT_EQ(result.summary, "来源指标分别为42、43、41。");
+    UpdateAgentResearchSaveCompletion(&result, task, false);
+    EXPECT_EQ(result.outcome, "partial");
+    ASSERT_EQ(result.unfinished_items.size(), 1u);
+    EXPECT_NE(result.unfinished_items[0].find("等待浏览器确认"), std::string::npos);
+    // 保存失败不调用成功分支；重复呈现也不能提前完成。
+    NormalizeAgentResearchSaveContent(&result, task);
+    UpdateAgentResearchSaveCompletion(&result, task, false);
+    EXPECT_EQ(result.outcome, "partial");
+    UpdateAgentResearchSaveCompletion(&result, task, true);
+    EXPECT_EQ(result.outcome, "completed");
+    EXPECT_TRUE(result.unfinished_items.empty());
+  }
+  AgentCompletionSummary incomplete{
+      .outcome = "partial",
+      .summary = "来源指标为42。\n保存状态：未保存。",
+      .unfinished_items = {"把结果和引用保存到研究项目", "第三个来源不可读。"}};
+  NormalizeAgentResearchSaveContent(&incomplete, task);
+  UpdateAgentResearchSaveCompletion(&incomplete, task, false);
+  UpdateAgentResearchSaveCompletion(&incomplete, task, true);
+  EXPECT_EQ(incomplete.outcome, "partial");
+  ASSERT_EQ(incomplete.unfinished_items.size(), 1u);
+  EXPECT_EQ(incomplete.unfinished_items[0], "第三个来源不可读。");
+
+  incomplete.summary = "保存状态：未保存。";
+  incomplete.unfinished_items = {"把结果和引用保存到研究项目"};
+  NormalizeAgentResearchSaveContent(&incomplete, task);
+  EXPECT_EQ(incomplete.summary, "保存状态：未保存。");
+  EXPECT_EQ(incomplete.unfinished_items.size(), 1u);
+  EXPECT_EQ(incomplete.outcome, "partial");
+
+  incomplete.summary = "资料讨论保存状态：未保存。";
+  incomplete.unfinished_items = {"保存结果到研究项目，但缺少第三个来源"};
+  NormalizeAgentResearchSaveContent(&incomplete, task);
+  EXPECT_EQ(incomplete.summary, "资料讨论保存状态：未保存。");
+  EXPECT_EQ(incomplete.unfinished_items.size(), 1u);
+  EXPECT_EQ(incomplete.outcome, "partial");
+  AgentTask no_save("no-save", "比较来源，不要保存", AgentMode::kAct, scope);
+  incomplete.summary = "内容\n保存状态：未保存。";
+  incomplete.unfinished_items = {"把结果和引用保存到研究项目"};
+  NormalizeAgentResearchSaveContent(&incomplete, no_save);
+  EXPECT_EQ(incomplete.summary, "内容\n保存状态：未保存。");
+  EXPECT_EQ(incomplete.unfinished_items.size(), 1u);
+}
+
+TEST(AegisAgentExecutionTest,
+     DownloadEvidenceKeepsUnknownIdentityAndExcludesSecrets) {
+  AgentToolResult result;
+  result.ok = true;
+  result.value.Set("source_url", "https://fixture.example/download");
+  result.value.Set("candidate_url", "https://fixture.example/test.bin");
+  result.value.Set("same_registrable_domain", true);
+  result.value.Set("official_likelihood", "high");
+  result.value.Set("publisher_identity_verified", true);
+  result.value.Set("local_path", "/private/secret");
+  result.value.Set("authorization", "secret-token");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "download.find_official", .result = std::move(result)});
+  auto fields = BuildAgentDownloadEvidence(history);
+  EXPECT_EQ(*fields.FindString("same_registrable_domain"), "yes");
+  EXPECT_EQ(*fields.FindString("publisher"), "not_verified");
+  EXPECT_EQ(*fields.FindString("signature"), "not_verified");
+  EXPECT_FALSE(fields.contains("official_likelihood"));
+  EXPECT_FALSE(fields.contains("authorization"));
+  EXPECT_FALSE(fields.contains("local_path"));
+  history[0].result.value.Set("source_url",
+                              "https://user:secret@fixture.example/");
+  history[0].result.value.Set("sha256", "not-a-hash");
+  history[0].result.value.Set("received_bytes", "-1");
+  fields = BuildAgentDownloadEvidence(history);
+  EXPECT_FALSE(fields.contains("source_url"));
+  EXPECT_FALSE(fields.contains("sha256"));
+  EXPECT_FALSE(fields.contains("received_bytes"));
+  history[0].tool_name = "page.observe";
+  EXPECT_TRUE(BuildAgentDownloadEvidence(history).empty());
+}
+
+TEST(AegisAgentExecutionTest,
+     DownloadEvidenceDoesNotMixFilesOrReuseMissingHash) {
+  AgentToolResult first;
+  first.ok = true;
+  first.value.Set("download_id", "first");
+  first.value.Set("sha256", std::string(64, 'a'));
+  first.value.Set("verified", true);
+  first.value.Set("file_name", "first.bin");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "download.verify", .result = std::move(first)});
+  AgentToolResult second;
+  second.ok = true;
+  second.value.Set("download_id", "second");
+  second.value.Set("file_name", "second.bin");
+  history.push_back(
+      {.tool_name = "download.start", .result = std::move(second)});
+  auto fields = BuildAgentDownloadEvidence(history);
+  EXPECT_EQ(*fields.FindString("file_name"), "second.bin");
+  EXPECT_FALSE(fields.contains("verified"));
+  EXPECT_FALSE(fields.contains("sha256"));
+  history.pop_back();
+  AgentToolResult missing_hash;
+  missing_hash.ok = true;
+  missing_hash.value.Set("download_id", "first");
+  missing_hash.value.Set("verified", false);
+  missing_hash.value.Set("integrity", "not_matched");
+  history.push_back(
+      {.tool_name = "download.verify", .result = std::move(missing_hash)});
+  fields = BuildAgentDownloadEvidence(history);
+  EXPECT_FALSE(fields.contains("sha256"));
+  EXPECT_EQ(*fields.FindString("verified"), "no");
+  EXPECT_EQ(*fields.FindString("integrity"), "not_matched");
+}
+
+TEST(AegisAgentExecutionTest, DownloadReviewReferenceFollowsLatestNativeFile) {
+  AgentToolResult first;
+  first.ok = true;
+  first.value.Set("download_id", "first");
+  first.value.Set("sha256", std::string(64, 'a'));
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "download.start", .result = std::move(first)});
+  auto fields = BuildAgentDownloadEvidence(history);
+  EXPECT_EQ(*fields.FindString("download_id"), "first");
+  AgentToolResult second;
+  second.ok = true;
+  second.value.Set("download_id", "second");
+  history.push_back(
+      {.tool_name = "download.start", .result = std::move(second)});
+  fields = BuildAgentDownloadEvidence(history);
+  EXPECT_EQ(*fields.FindString("download_id"), "second");
+  EXPECT_FALSE(fields.contains("sha256"));
+}
+
+TEST(AegisAgentExecutionTest, BlockedBookmarkChecksGiveActionableLimit) {
+  AgentToolResult checked;
+  checked.ok = true;
+  checked.value.Set("selected_count", 500);
+  checked.value.Set("attempted_count", 0);
+  checked.value.Set("list_truncated", false);
+  checked.value.Set("classification_counts",
+                    base::DictValue().Set("scope_blocked", 500));
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "bookmark.check_urls", .result = std::move(checked)});
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "全部失效"};
+  NormalizeAgentBookmarkCheckCompletion(&completion, history);
+  EXPECT_EQ(completion.outcome, "partial");
+  EXPECT_NE(completion.summary.find("实际发起检查 0 条"), std::string::npos);
+  EXPECT_NE(completion.summary.find("没有被判为失效"), std::string::npos);
+  EXPECT_TRUE(std::ranges::any_of(
+      completion.unfinished_items,
+      [](const std::string& item) { return item.contains("仅重试不会解除"); }));
+}
+
+TEST(AegisAgentExecutionTest, DownloadSummaryCannotInferStartFromPageText) {
+  auto scope = ExecutionScope();
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "下载已成功开始并取消"};
+  NormalizeAgentDownloadCompletion(&completion, "总结页面", scope, {});
+  EXPECT_EQ(completion.summary, "下载已成功开始并取消");
+  scope.allowed_tools.insert("download.find_official");
+  NormalizeAgentDownloadCompletion(
+      &completion, "开始页面中的慢速测试下载后取消。", scope, {});
+  EXPECT_EQ(completion.outcome, "partial");
+  EXPECT_NE(completion.summary.find("尚无原生回执"), std::string::npos);
+  EXPECT_EQ(completion.summary.find("已成功开始"), std::string::npos);
+  EXPECT_FALSE(completion.unfinished_items.empty());
+}
+
+TEST(AegisAgentExecutionTest, DownloadSummaryPreservesSourceOnlyTask) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools.insert("download.find_official");
+  AgentToolResult source;
+  source.ok = true;
+  source.value.Set("candidate_url", "https://fixture.example/test.bin");
+  source.value.Set("source_url", "https://fixture.example/releases");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "download.find_official", .result = std::move(source)});
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "这是官方文件"};
+  NormalizeAgentDownloadCompletion(&completion, "找到官方下载，先不要下载。",
+                                   scope, history);
+  EXPECT_EQ(completion.outcome, "completed");
+  EXPECT_NE(completion.summary.find("未独立核验"), std::string::npos);
+  EXPECT_NE(completion.summary.find("https://fixture.example/test.bin"),
+            std::string::npos);
+  EXPECT_NE(completion.summary.find("https://fixture.example/releases"),
+            std::string::npos);
+  EXPECT_NE(completion.summary.find("不足以证明官方身份"), std::string::npos);
+  NormalizeAgentDownloadCompletion(&completion, "下载当前页面文件", scope,
+                                   history);
+  EXPECT_EQ(completion.outcome, "partial");
+}
+
+TEST(AegisAgentExecutionTest, DownloadCompletionSurvivesReadOnlyFallback) {
+  auto scope = ExecutionScope();
+  AgentToolResult source;
+  source.ok = true;
+  source.value.Set("candidate_url", "https://fixture.example/test.bin");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "download.find_official", .result = std::move(source)});
+  for (const char *goal : {"从当前官方合成发布页下载适合本机的安装包。",
+                           "找官方下载并实际下载当前网页的文件。",
+                           "实际下载当前页面的测试包并核验。"}) {
+    for (bool has_candidate : {false, true}) {
+      AgentCompletionSummary completion{.outcome = "completed",
+                                        .summary = "已下载并通过SHA-256核验"};
+      NormalizeAgentDownloadCompletion(
+          &completion, goal, scope,
+          has_candidate ? base::span<const AgentExecutionEvidence>(history)
+                        : base::span<const AgentExecutionEvidence>());
+      EXPECT_EQ(completion.outcome, "partial") << goal;
+      EXPECT_NE(completion.summary.find("尚无原生回执"), std::string::npos);
+      EXPECT_EQ(completion.summary.find("已下载并通过"), std::string::npos);
+      ASSERT_FALSE(completion.unfinished_items.empty());
+      EXPECT_NE(completion.unfinished_items.back().find("批准具体文件"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST(AegisAgentExecutionTest, LinkOnlyFallbackRetainsObservedLinksWithoutTransferAdvice) {
+  auto scope = ExecutionScope();
+  AgentToolResult page;
+  page.ok = true;
+  page.value.Set("url", "https://fixture.example/releases");
+  page.value.Set("document_token", "document-7");
+  page.value.Set("observation_fingerprint", "fingerprint");
+  page.value.Set("nodes", base::ListValue()
+      .Append(base::DictValue().Set("text", "https://fixture.example/macos-arm64.bin"))
+      .Append(base::DictValue().Set("text", "https://user:secret@fixture.example/file"))
+      .Append(base::DictValue().Set("text", "https://fixture.example/file?token=secret")));
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back({.tool_name = "page.observe", .result = std::move(page)});
+  for (bool failed : {false, true}) {
+    history.back().result.ok = !failed;
+    AgentCompletionSummary completion{.outcome = "partial", .summary = "格式错误"};
+    NormalizeAgentDownloadCompletion(
+        &completion, "从当前官方发布页找适合 macOS arm64 的安装包来源，只给链接，不要下载。",
+        scope, {}, history);
+    EXPECT_EQ(completion.outcome, "partial");
+    EXPECT_EQ(completion.summary.contains("macos-arm64.bin"), !failed);
+    EXPECT_FALSE(completion.summary.contains("secret"));
+    EXPECT_TRUE(completion.summary.contains("未发起下载"));
+    for (const auto& item : completion.unfinished_items) {
+      EXPECT_FALSE(item.contains("重试实际下载"));
+      EXPECT_FALSE(item.contains("批准具体文件"));
+    }
+  }
+}
+
+TEST(AegisAgentExecutionTest, SummaryReviewOnlyDetectsUnquotedHanRepetition) {
+  EXPECT_TRUE(AgentSummaryNeedsTextReview("一一致样本，数值42。"));
+  EXPECT_TRUE(AgentSummaryNeedsTextReview("看看网页，一一对应。"));
+  for (const char *text :
+       {"一致样本，数值42。", "引用：“一一致样本”。", "原文「一一致样本」",
+        "`一一致样本`", "https://example.test/一一致",
+        "1223 AAA www.example.test"}) {
+    EXPECT_FALSE(AgentSummaryNeedsTextReview(text)) << text;
+  }
+}
+
+TEST(AegisAgentExecutionTest,
+     SummaryReviewPreservesFactsQuotesAndLegitimateWords) {
+  const std::string draft =
+      "一一致样本42，看看网页。原文：“一一致”。https://example.test/一一致";
+  AgentModelEvent review;
+  review.type = AgentModelEventType::kToolCall;
+  review.tool_name = "agent.review_summary";
+  review.arguments.Set("approved", true);
+  review.arguments.Set(
+      "summary",
+      "一致样本42，看看网页。原文：“一一致”。https://example.test/一一致");
+  AgentCompletionSummary completion{
+      .outcome = "completed",
+      .summary = draft,
+      .source_urls = {"https://example.test/source"}};
+  EXPECT_TRUE(ApplyAgentSummaryTextReview(&completion, &review));
+  EXPECT_EQ(completion.summary, *review.arguments.FindString("summary"));
+  EXPECT_EQ(completion.source_urls,
+            std::vector<std::string>({"https://example.test/source"}));
+  for (const char *candidate :
+       {"一致样本43，看看网页。原文：“一一致”。https://example.test/一一致",
+        "一致样本42，看看网页。原文：“一致”。https://example.test/一一致",
+        "一致样本42，看看网页。原文：“一一致”。https://example.test/一致",
+        "已经完成所有操作", ""}) {
+    completion = {.outcome = "completed", .summary = draft};
+    review.arguments.Set("summary", candidate);
+    EXPECT_FALSE(ApplyAgentSummaryTextReview(&completion, &review))
+        << candidate;
+    EXPECT_EQ(completion.summary, draft);
+    EXPECT_EQ(completion.outcome, "partial");
+    EXPECT_FALSE(completion.unfinished_items.empty());
+  }
+  completion = {.outcome = "completed", .summary = "人人一一对应，看看网页。"};
+  review.arguments.Set("summary", completion.summary);
+  EXPECT_TRUE(ApplyAgentSummaryTextReview(&completion, &review));
+  EXPECT_EQ(completion.summary, "人人一一对应，看看网页。");
+  review.arguments.Set("approved", false);
+  EXPECT_FALSE(ApplyAgentSummaryTextReview(&completion, &review));
+  EXPECT_FALSE(ApplyAgentSummaryTextReview(&completion, nullptr));
+}
+
+TEST(AegisAgentExecutionTest, DownloadIntentSurvivesReducedPlanScope) {
+  auto scope = ExecutionScope();
+  const char* goal = "在当前页面找到 macOS ARM64 的官方下载，先不要下载。";
+  AgentToolRegistry registry;
+  auto tool = registry.ModelToolForName("page.extract");
+  ASSERT_TRUE(tool);
+  ConstrainDownloadExtractionTool(&*tool, scope, goal);
+  ASSERT_TRUE(
+      tool->input_schema.FindListByDottedPath("properties.fields.items.enum"));
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "这是官方文件"};
+  NormalizeAgentDownloadCompletion(&completion, goal, scope, {});
+  EXPECT_EQ(completion.outcome, "partial");
+  EXPECT_NE(completion.summary.find("未独立核验"), std::string::npos);
+  EXPECT_EQ(completion.summary.find("这是官方文件"), std::string::npos);
+  completion.summary = "用户要求的译文";
+  NormalizeAgentDownloadCompletion(&completion, "把下载页翻译成英文。", scope,
+                                   {});
+  EXPECT_EQ(completion.summary, "用户要求的译文");
+}
+
+TEST(AegisAgentExecutionTest,
+     DownloadSummaryFollowsNativeCompletionAndCancellation) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools.insert("download.find_official");
+  AgentToolResult verified;
+  verified.ok = true;
+  verified.value.Set("download_id", "first");
+  verified.value.Set("state", "complete");
+  verified.value.Set("verified", true);
+  verified.value.Set("safe_and_complete", true);
+  verified.value.Set("integrity", "match");
+  verified.value.Set("sha256", std::string(64, 'a'));
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "download.verify", .result = std::move(verified)});
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "已经安装"};
+  NormalizeAgentDownloadCompletion(&completion, "下载当前页面文件", scope,
+                                   history);
+  EXPECT_EQ(completion.outcome, "completed");
+  EXPECT_NE(completion.summary.find("SHA-256 与提供的预期摘要一致"),
+            std::string::npos);
+  EXPECT_EQ(completion.summary.find("已经安装"), std::string::npos);
+  AgentToolResult cancelled;
+  cancelled.ok = true;
+  cancelled.value.Set("download_id", "first");
+  cancelled.value.Set("state", "cancelled");
+  history.push_back(
+      {.tool_name = "download.cancel", .result = std::move(cancelled)});
+  NormalizeAgentDownloadCompletion(&completion, "开始下载后取消", scope,
+                                   history);
+  EXPECT_NE(completion.summary.find("下载已取消"), std::string::npos);
+  const auto fields = BuildAgentDownloadEvidence(history);
+  EXPECT_EQ(*fields.FindString("state"), "cancelled");
+  EXPECT_EQ(*fields.FindString("verified"), "no");
+  EXPECT_FALSE(fields.contains("sha256"));
+  EXPECT_FALSE(fields.contains("integrity"));
+}
+
+TEST(AegisAgentExecutionTest, FocusesOnlyValidatedReadOnlyPagePlans) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools.insert("page.extract");
+  AgentTask task("read", "总结当前页面并列出重点", AgentMode::kAct, scope);
+  AgentTaskPlan plan;
+  plan.steps = {{.step_id = "read",
+                 .title = "读取",
+                 .tool_name = "page.observe",
+                 .risk = AgentRiskLevel::kR0ReadOnly},
+                {.step_id = "extract",
+                 .title = "提取",
+                 .tool_name = "page.extract",
+                 .risk = AgentRiskLevel::kR0ReadOnly}};
+  const std::string general = BuildAgentExecutionSystemContract();
+  const auto focused =
+      BuildAgentExecutionSystemContractForTask(task, plan, "agent.complete");
+  EXPECT_LT(focused.size(), general.size());
+  EXPECT_NE(focused.find("唯一原生工具agent.complete"), std::string::npos);
+  const auto extracting =
+      BuildAgentExecutionSystemContractForTask(task, plan, "page.extract");
+  EXPECT_NE(extracting.find("唯一原生工具page.extract"), std::string::npos);
+  AgentTask translation("translation", "将当前页面完整翻译成英文",
+                        AgentMode::kAct, scope);
+  EXPECT_EQ(BuildAgentExecutionSystemContractForTask(translation, plan,
+                                                     "agent.complete"),
+            general);
+  EXPECT_EQ(
+      BuildAgentExecutionSystemContractForTask(task, plan, "bookmark.apply"),
+      general);
+  plan.steps.back().risk = AgentRiskLevel::kR2ExternalSideEffect;
+  EXPECT_EQ(
+      BuildAgentExecutionSystemContractForTask(task, plan, "agent.complete"),
+      general);
+  plan.steps.back().risk = AgentRiskLevel::kR0ReadOnly;
+  plan.steps.back().tool_name = "monitor.create";
+  EXPECT_EQ(
+      BuildAgentExecutionSystemContractForTask(task, plan, "agent.complete"),
+      general);
+  plan.steps.clear();
+  EXPECT_EQ(
+      BuildAgentExecutionSystemContractForTask(task, plan, "agent.complete"),
+      general);
 }
 
 AgentToolResult BookmarkPreview(int size = 500) {
@@ -1010,7 +1708,34 @@ TEST(AegisAgentExecutionTest, PromptDeduplicatesOnlyCompleteLatestPageBody) {
           base::JSONReader::Read(*previous_json, base::JSON_PARSE_RFC);
       ASSERT_TRUE(complete && complete->is_dict());
       ASSERT_TRUE(complete->GetDict().FindDict("value"));
+      if (next_step == 1u) {
+        EXPECT_EQ(envelope.FindBool(
+                      "previous_browser_result_identity_in_verified_evidence"),
+                  true);
+        const auto& identity =
+            envelope.FindList("prior_verified_evidence_untrusted")
+                ->back()
+                .GetDict();
+        for (std::string_view key :
+             {"url", "title", "frame_token", "document_token",
+              "observation_fingerprint", "tab_id"}) {
+          if (const auto* original = prior.value.Find(key)) {
+            ASSERT_TRUE(identity.Find(key));
+            EXPECT_EQ(*identity.Find(key), *original);
+            EXPECT_FALSE(complete->GetDict().FindDict("value")->contains(key));
+            complete->GetDict().FindDict("value")->Set(key, original->Clone());
+          }
+        }
+        for (std::string_view key : {"action_id", "ok", "message"}) {
+          EXPECT_FALSE(complete->GetDict().contains(key));
+          ASSERT_TRUE(identity.Find(key));
+          complete->GetDict().Set(key, identity.Find(key)->Clone());
+        }
+      }
       EXPECT_EQ(*complete->GetDict().FindDict("value"), prior.value);
+      EXPECT_EQ(*complete->GetDict().FindString("action_id"), prior.action_id);
+      EXPECT_EQ(complete->GetDict().FindBool("ok"), prior.ok);
+      EXPECT_EQ(*complete->GetDict().FindString("message"), prior.message);
       ASSERT_TRUE(complete->GetDict().FindList("evidence"));
       EXPECT_EQ(*complete->GetDict().FindList("evidence"), prior.evidence);
       EXPECT_EQ(complete->GetDict().FindBool("untrusted"), true);
@@ -1037,6 +1762,122 @@ TEST(AegisAgentExecutionTest, PromptDeduplicatesOnlyCompleteLatestPageBody) {
       RecordProperty(tool + "_" + std::to_string(next_step) + "_after_bytes",
                      static_cast<int>(prompt.size()));
     }
+  }
+}
+
+TEST(AegisAgentExecutionTest, FinalPageIdentityCompactionKeepsExecutionBoundaries) {
+  for (int variant = 0; variant < 8; ++variant) {
+    SCOPED_TRACE(variant);
+    AgentTask task("final-identity",
+                   variant == 2 ? "将页面完整翻译成英文" : "总结页面",
+                   AgentMode::kAsk, ExecutionScope());
+    AgentTaskPlan plan;
+    plan.steps.push_back({.step_id = "read",
+                          .title = "读取页面",
+                          .tool_name = "page.observe",
+                          .risk = AgentRiskLevel::kR0ReadOnly});
+    if (variant == 3) {
+      plan.steps.back().tool_name = "page.click";
+      plan.steps.back().risk = AgentRiskLevel::kR1Reversible;
+    }
+    if (variant == 4) {
+      plan.steps.clear();
+    }
+    auto prior = CheckoutObservation("fingerprint", "113.00");
+    prior.value.Set("url", "https://fixture.example/path");
+    prior.value.Set("frame_token", "frame-7");
+    prior.value.Set("title", "保留标题");
+    prior.value.Set("truncated", false);
+    prior.evidence.Append("原生核验条目不可丢失");
+    if (variant == 5) {
+      prior.ok = false;
+      prior.error = AgentErrorCode::kInvalidRequest;
+    }
+    if (variant == 6) {
+      prior.value.Set("padding", std::string(16000, 'x'));
+    }
+    auto duplicate = CheckoutObservation("fingerprint", "unused");
+    duplicate.ok = prior.ok;
+    duplicate.error = prior.error;
+    duplicate.value = prior.value.Clone();
+    duplicate.evidence = prior.evidence.Clone();
+    if (variant == 7) {
+      duplicate.value.Set("document_token", "different-document");
+    }
+    std::vector<AgentExecutionEvidence> history;
+    history.push_back({.tool_name = "page.observe",
+                       .result = std::move(duplicate)});
+    auto parsed = base::JSONReader::Read(
+        BuildAgentExecutionPrompt(task, plan, variant == 1 ? 0 : plan.steps.size(),
+                                  0, &prior, history),
+        base::JSON_PARSE_RFC);
+    ASSERT_TRUE(parsed && parsed->is_dict());
+    const auto& envelope = parsed->GetDict();
+    EXPECT_EQ(envelope.FindBool(
+                  "previous_browser_result_identity_in_verified_evidence")
+                  .value_or(false),
+              variant == 0);
+    if (variant == 6) {
+      EXPECT_EQ(envelope.FindBool("previous_browser_result_truncated"), true);
+      continue;
+    }
+    const auto* raw =
+        envelope.FindString("previous_browser_result_untrusted_json");
+    ASSERT_TRUE(raw);
+    auto result = base::JSONReader::Read(*raw, base::JSON_PARSE_RFC);
+    ASSERT_TRUE(result && result->is_dict());
+    const auto* value = result->GetDict().FindDict("value");
+    ASSERT_TRUE(value);
+    EXPECT_EQ(*value->FindList("nodes"), *prior.value.FindList("nodes"));
+    EXPECT_EQ(*result->GetDict().FindList("evidence"), prior.evidence);
+    if (variant != 0) {
+      EXPECT_EQ(*value, prior.value);
+    } else {
+      EXPECT_FALSE(value->contains("document_token"));
+      const auto& identity =
+          envelope.FindList("prior_verified_evidence_untrusted")
+              ->back()
+              .GetDict();
+      EXPECT_EQ(*identity.FindString("document_token"), "document-7");
+      EXPECT_EQ(*identity.FindString("url"), "https://fixture.example/path");
+      EXPECT_EQ(identity.FindBool("body_in_previous_browser_result"), true);
+    }
+  }
+}
+
+TEST(AegisAgentExecutionTest, RepeatedObservationBodyKeepsDocumentBoundaries) {
+  for (int variant = 0; variant < 5; ++variant) {
+    SCOPED_TRACE(variant);
+    AgentTask task("repeat-body", "总结当前页面", AgentMode::kAsk, ExecutionScope());
+    AgentTaskPlan plan;
+    plan.steps.push_back({.step_id = "read", .title = "读取",
+                          .tool_name = "page.observe",
+                          .risk = AgentRiskLevel::kR0ReadOnly});
+    auto prior = CheckoutObservation("fingerprint", std::string(2000, 'x'));
+    prior.action_id = "old-read";
+    prior.value.Set("url", "https://fixture.example/path");
+    prior.value.Set("truncated", false);
+    auto latest = CheckoutObservation("fingerprint", std::string(2000, 'x'));
+    latest.value = prior.value.Clone();
+    if (variant == 1) prior.value.Set("document_token", "different");
+    if (variant == 2) prior.ok = false;
+    if (variant == 3) prior.value.Set("truncated", true);
+    if (variant == 4) prior.value.Remove("observation_fingerprint");
+    std::vector<AgentExecutionEvidence> history;
+    history.push_back({.tool_name = "page.observe", .result = std::move(prior)});
+    auto duplicate = CheckoutObservation("fingerprint", "unused");
+    duplicate.value = latest.value.Clone();
+    history.push_back({.tool_name = "page.extract", .result = std::move(duplicate)});
+    auto parsed = base::JSONReader::Read(
+        BuildAgentExecutionPrompt(task, plan, 1, 0, &latest, history), base::JSON_PARSE_RFC);
+    ASSERT_TRUE(parsed && parsed->is_dict());
+    const auto* evidence = parsed->GetDict().FindList("prior_verified_evidence_untrusted");
+    ASSERT_TRUE(evidence && evidence->size() == 2u);
+    const auto& old = evidence->front().GetDict();
+    EXPECT_EQ(old.contains("body_in_latest_verified_action"), variant == 0);
+    EXPECT_EQ(old.contains("visible_text_untrusted"), variant != 0);
+    EXPECT_TRUE(parsed->GetDict().FindString("previous_browser_result_untrusted_json")
+                    ->contains(std::string(2000, 'x')));
   }
 }
 
@@ -1433,6 +2274,145 @@ TEST(AegisAgentExecutionTest, PageCompletionRequiresActualReadEvidence) {
       ambiguous_goal, scope, evidence));
 }
 
+TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {
+  AgentTaskScope scope;
+  scope.selected_pages_research = true;
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.allowed_origins = {
+      url::Origin::Create(GURL("https://fixture.example/"))};
+  std::vector<AgentExecutionEvidence> evidence;
+  for (int id : {7, 8, 8}) {
+    AgentToolResult result;
+    result.ok = true;
+    result.value.Set("tab_id", id);
+    result.value.Set("url",
+                     "https://fixture.example/" + base::NumberToString(id));
+    result.value.Set("document_token", "browser-document");
+    result.value.Set("observation_fingerprint", "browser-fingerprint");
+    result.value.Set("untrusted", true);
+    base::ListValue nodes;
+    nodes.Append(base::DictValue().Set("text", "实际文章内容"));
+    result.value.Set("nodes", std::move(nodes));
+    evidence.push_back(
+        {.tool_name = "page.observe", .result = std::move(result)});
+  }
+  EXPECT_FALSE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.value.Set("tab_id", 9);
+  EXPECT_TRUE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.value.Set("truncated", true);
+  EXPECT_FALSE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.value.Set("truncated", false);
+  EXPECT_TRUE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.value.Set("url", "https://outside.example/");
+  EXPECT_FALSE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.value.Set("url", "https://fixture.example/9");
+  evidence.back().result.ok = false;
+  EXPECT_FALSE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.ok = true;
+  evidence.back().result.value.Set(
+      "nodes", base::ListValue().Append(
+                   base::DictValue().Set("node_id", 7).Set("text", " ")));
+  EXPECT_FALSE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+  evidence.back().result.value.Set("nodes", base::ListValue());
+  EXPECT_FALSE(
+      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+}
+
+TEST(AegisAgentExecutionTest,
+     TabGroupSummaryUsesNativeMembershipAndRetainsIncompleteGoal) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools = {"tab.list", "tab.group"};
+  scope.allowed_tab_ids = {1, 2, 3};
+  scope.selected_tab_group = true;
+  scope.allowed_origins.clear();
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  ASSERT_TRUE(scope.IsValid());
+  for (const char* goal :
+       {"把本任务的三个研究标签放入一个组。",
+        "將本任務的3個研究標籤放入一個群組。", "Group three research tabs."}) {
+    SCOPED_TRACE(goal);
+    AgentTask task("group", goal, AgentMode::kAct, scope);
+    for (int count : {0, 1, 3}) {
+      SCOPED_TRACE(count);
+      base::ListValue ids;
+      for (int id = 1; id <= count; ++id) {
+        ids.Append(id);
+      }
+      AgentToolResult result;
+      result.ok = true;
+      result.value.Set("tab_ids", std::move(ids));
+      std::vector<AgentExecutionEvidence> history;
+      history.push_back(
+          {.tool_name = "tab.group", .result = std::move(result)});
+      AgentCompletionSummary completion{.outcome = "completed",
+                                        .summary = "三个标签全部完成"};
+      NormalizeAgentTabGroupCompletion(&completion, task, history);
+      EXPECT_EQ(completion.outcome, count == 3 ? "completed" : "partial");
+      EXPECT_EQ(completion.summary.find("三个标签全部完成"), std::string::npos);
+      EXPECT_EQ(completion.unfinished_items.empty(), count == 3);
+      if (count != 0) {
+        EXPECT_NE(completion.summary.find(base::NumberToString(count) + " 个"),
+                  std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(AegisAgentExecutionTest,
+     TabGroupSummaryRejectsMissingDuplicateAndForeignMembership) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools = {"tab.list", "tab.group"};
+  scope.allowed_tab_ids = {1, 2, 3};
+  scope.selected_tab_group = true;
+  scope.allowed_origins.clear();
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  ASSERT_TRUE(scope.IsValid());
+  AgentTask task("group", "把三个标签放入一个组", AgentMode::kAct, scope);
+  for (int scenario : {0, 1, 2, 3}) {
+    AgentToolResult result;
+    result.ok = scenario != 3;
+    if (scenario != 0) {
+      result.value.Set("tab_ids", base::ListValue().Append(1).Append(2).Append(
+                                      scenario == 1   ? 2
+                                      : scenario == 2 ? 99
+                                                      : 3));
+    }
+    std::vector<AgentExecutionEvidence> history;
+    history.push_back({.tool_name = "tab.group", .result = std::move(result)});
+    AgentCompletionSummary completion{.outcome = "completed",
+                                      .summary = "成功"};
+    NormalizeAgentTabGroupCompletion(&completion, task, history);
+    EXPECT_EQ(completion.outcome, "partial");
+    EXPECT_NE(completion.summary.find("尚未取得"), std::string::npos);
+  }
+}
+
+TEST(AegisAgentExecutionTest, UnselectedTabGroupNeverClaimsWholeGoalComplete) {
+  auto scope = ExecutionScope();
+  scope.allowed_tab_ids = {1};
+  scope.allowed_tools = {"tab.list", "tab.group"};
+  AgentTask task("unselected", "把两三个相关标签放入一个组", AgentMode::kAct,
+                 scope);
+  AgentToolResult result;
+  result.ok = true;
+  result.value.Set("tab_ids", base::ListValue().Append(1));
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back({.tool_name = "tab.group", .result = std::move(result)});
+  AgentCompletionSummary completion{.outcome = "completed",
+                                    .summary = "全部完成"};
+  NormalizeAgentTabGroupCompletion(&completion, task, history);
+  EXPECT_EQ(completion.outcome, "partial");
+  EXPECT_NE(completion.summary.find("1 个"), std::string::npos);
+  EXPECT_FALSE(completion.unfinished_items.empty());
+}
+
 TEST(AegisAgentExecutionTest,
      BookmarkCheckUsesVerifiedCountsAndPartialOutcome) {
   for (int scenario = 0; scenario < 3; ++scenario) {
@@ -1765,6 +2745,90 @@ TEST(AegisAgentExecutionTest, BlocksSubmitAndFinalTransactionControls) {
       "Search", /*is_submit_control=*/true));
   EXPECT_FALSE(ShouldAegisRequireUserTakeoverForClick(
       "加入购物车", /*is_submit_control=*/false));
+}
+
+TEST(AegisAgentExecutionTest, BookmarkApplyGoalNeedsCurrentVerifiedWrite) {
+  AgentTask task("apply-fixture", "按刚才预览整理测试收藏夹。", AgentMode::kAct,
+                 ExecutionScope());
+  for (int scenario = 0; scenario < 8; ++scenario) {
+    SCOPED_TRACE(scenario);
+    std::vector<AgentExecutionEvidence> history;
+    AgentToolResult result;
+    result.ok = scenario != 1;
+    result.action_id = scenario == 2 ? "old-task:apply" : "apply-fixture:apply";
+    result.value.Set("snapshot_hash", "回读后的收藏树");
+    result.value.Set("moved", scenario == 5 ? 0 : scenario == 6 ? -1 : 500);
+    if (scenario != 3 && scenario != 5)
+      result.value.Set("undo_token", "本次撤销令牌");
+    if (scenario != 0)
+      history.push_back(
+          {.tool_name = "bookmark.apply", .result = std::move(result)});
+    if (scenario == 7)
+      history.push_back(
+          {.tool_name = "bookmark.undo", .result = AgentToolResult()});
+    AgentCompletionSummary completion{.outcome = "completed",
+                                      .summary = "已按预览整理500条收藏"};
+    NormalizeAgentBookmarkApplyCompletion(&completion, task, history);
+    EXPECT_EQ(completion.outcome,
+              (scenario == 4 || scenario == 5) ? "completed" : "partial");
+    EXPECT_EQ(completion.unfinished_items.empty(),
+              scenario == 4 || scenario == 5);
+    EXPECT_EQ(completion.summary.find("已按预览整理"), std::string::npos);
+  }
+}
+TEST(AegisAgentExecutionTest, BookmarkPreviewAndNegativeGoalsRemainReadOnly) {
+  for (std::string_view goal :
+       {"预览按用途整理测试收藏夹的方案，先不要修改。", "预览整理收藏夹",
+        "Preview bookmark organization", "請預覽整理書籤", "只預覽收藏分類",
+        "不要整理收藏，只总结当前页面",
+        "Do not organize bookmarks; summarize this page.",
+        "Organize bookmarks without changing anything",
+           "撤销刚才的测试收藏整理", "撤銷剛才的收藏整理",
+           "Undo the bookmark organization"}) {
+    SCOPED_TRACE(goal);
+    EXPECT_FALSE(AgentGoalRequiresBookmarkApply(goal));
+    AgentTask task("preview", std::string(goal), AgentMode::kAct,
+                   ExecutionScope());
+    AgentCompletionSummary completion{.outcome = "completed",
+                                      .summary = "预览已生成"};
+    NormalizeAgentBookmarkApplyCompletion(&completion, task, {});
+    EXPECT_EQ(completion.outcome, "completed");
+  }
+  for (std::string_view goal :
+       {"按刚才预览整理测试收藏夹。", "按預覽整理收藏夾",
+        "Apply the bookmark preview", "Organize my bookmarks",
+        "不要忘记整理收藏夹", "先预览然后应用收藏整理",
+                               "Preview then apply bookmark organization"}) {
+    EXPECT_TRUE(AgentGoalRequiresBookmarkApply(goal)) << goal;
+  }
+}
+TEST(AegisAgentExecutionTest, ResearchCompletionRequiresStructuredComparisons) {
+  AgentModelEvent event;
+  event.type = AgentModelEventType::kToolCall;
+  event.tool_name = "agent.complete";
+  event.arguments.Set("outcome", "completed");
+  event.arguments.Set("summary", "七个来源一致，第十来源为例外");
+  event.arguments.Set("source_urls", base::ListValue());
+  event.arguments.Set("unfinished_items", base::ListValue());
+  std::string error;
+  EXPECT_FALSE(ParseCompletionSummary(event, &error, false, true));
+  event.arguments.Set(
+      "research_comparisons",
+      base::ListValue().Append(
+          base::DictValue()
+              .Set("label", "延迟")
+              .Set("prefix", "延迟：")
+              .Set("suffix", "。")
+              .Set("values",
+                   base::ListValue().Append(
+                       base::DictValue()
+                           .Set("source_url", "https://example.test/1")
+                           .Set("value", "18 ms")))));
+  auto parsed = ParseCompletionSummary(event, &error, false, true);
+  ASSERT_TRUE(parsed) << error;
+  ASSERT_EQ(parsed->research_comparisons.size(), 1u);
+  EXPECT_EQ(parsed->research_comparisons[0].values[0].value, "18 ms");
+  EXPECT_FALSE(ParseCompletionSummary(event, &error));
 }
 
 }  // namespace

@@ -86,6 +86,9 @@ struct PagePrivacySummary {
   int miner_alerts = 0;
   bool paused = false;
   std::vector<PrivacyEvent> events;
+  // 没有文档身份的站点记录单列，不纳入当前页面的计数。
+  std::vector<PrivacyEvent> site_history;
+  bool fingerprint_configured = false;
 };
 
 class AegisServiceObserver : public base::CheckedObserver {

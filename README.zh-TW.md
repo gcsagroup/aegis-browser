@@ -4,7 +4,9 @@
 
 GCSA-aegis 是一個本機優先的隱私與安全瀏覽器專案，現有兩條產品線：[`apps/browser`](apps/browser/README.zh-TW.md) 下的 Chromium 分支，以及 [`apps/ios`](apps/ios/README.zh-TW.md) 下的原生 iOS 瀏覽器。核心能力整合在各自的瀏覽器產品內；專案不會復活已退役的獨立擴充功能產品。
 
-> **2026-09-14 原始碼更新：介面整改與瀏覽器更新：** 目前原始碼包含 113 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁。本機 macOS 驗收為 Ver 1.1 (018)：32 項整改完成，18 項原生測試、116 項介面回歸通過，170 條改動文案及翻譯佔位符檢查通過。Windows/Android 實機及真實 Release 安裝尚未驗收；本次僅提交原始碼，不發布二進位檔或 tag。 [018 验收记录](docs/ui-copy-acceptance.zh-CN.md)
+> **2026-09-22 目前本機候選：** macOS Ver 2.0 (057)，Chromium 153.0.8010.53，198+3 補丁；535 項原生回歸通過，統一任務驗收 75/90，整體門檻尚未通過。遠端獨有網路開發線、正式發行及跨平台驗收另行處理。[最終收尾報告](docs/audit/integration-final-batch-2026-09-22.zh-CN.md)
+
+> **歷史記錄：2026-09-14 原始碼更新：介面整改與瀏覽器更新：** 目前原始碼包含 113 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁。本機 macOS 驗收為 Ver 1.1 (018)：32 項整改完成，18 項原生測試、116 項介面回歸通過，170 條改動文案及翻譯佔位符檢查通過。Windows/Android 實機及真實 Release 安裝尚未驗收；本次僅提交原始碼，不發布二進位檔或 tag。 [018 验收记录](docs/ui-copy-acceptance.zh-CN.md)
 
 > **歷史狀態 — 2026-09-10：** Browser Agent v2 候選原始碼包含 108 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 Chromium 提交 原始碼樹 `319366182c31108e29e62d2f2199aff29a0b86e8`。57、65、67、95 和 97 補丁記錄只保留為歷史證據。原生 iOS 產品仍只在已記錄的 Simulator 範圍內為 **SIMULATOR_QUALIFIED**。專案整體仍是 **發行 No-Go**，尚需受信任證明、正式簽署、公證、已安裝分發套件驗收，以及本輪明確後置的 iOS 門禁。
 

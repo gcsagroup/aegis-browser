@@ -158,7 +158,8 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
   }
   if (const std::string* url_argument = call.arguments.FindString("url")) {
     const GURL target(*url_argument);
-    if (!task.scope().AllowsOrigin(target)) {
+    if (!task.scope().AllowsOrigin(target) || target.has_username() ||
+        target.has_password()) {
       return Deny(AgentErrorCode::kScopeViolation,
                   "target URL origin is outside task scope");
     }
@@ -166,14 +167,16 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
   if (const std::string* candidate_url =
           call.arguments.FindString("candidate_url")) {
     const GURL target(*candidate_url);
-    if (!task.scope().AllowsOrigin(target)) {
+    if (!task.scope().AllowsOrigin(target) || target.has_username() ||
+        target.has_password()) {
       return Deny(AgentErrorCode::kScopeViolation,
                   "candidate URL origin is outside task scope");
     }
   }
+  const AgentRiskLevel effective_risk = EffectiveRisk(task, call);
   if (!HasTaskConsent(task) && !completed_bookmark_undo) {
     return {.disposition = AgentPolicyDisposition::kRequireTaskConsent,
-            .risk = descriptor->risk,
+            .risk = effective_risk,
             .error = AgentErrorCode::kApprovalRequired,
             .reason = "task consent is required"};
   }
@@ -185,25 +188,29 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
                 "task is not in an executable state");
   }
 
-  switch (descriptor->risk) {
+  switch (effective_risk) {
     case AgentRiskLevel::kR0ReadOnly:
     case AgentRiskLevel::kR1Reversible:
       return {.disposition = AgentPolicyDisposition::kAllow,
-              .risk = descriptor->risk,
+              .risk = effective_risk,
               .error = AgentErrorCode::kNone,
               .reason = "allowed by task scope"};
     case AgentRiskLevel::kR2ExternalSideEffect:
       if (approval_id &&
           ConsumeApproval(task, call, approval_id.value(), now)) {
         return {.disposition = AgentPolicyDisposition::kAllow,
-                .risk = descriptor->risk,
+                .risk = effective_risk,
                 .error = AgentErrorCode::kNone,
                 .reason = "allowed by exact action approval"};
       }
-      return {.disposition = AgentPolicyDisposition::kRequireActionApproval,
-              .risk = descriptor->risk,
-              .error = AgentErrorCode::kApprovalRequired,
-              .reason = "exact action approval is required"};
+      return {
+          .disposition = AgentPolicyDisposition::kRequireActionApproval,
+          .risk = effective_risk,
+          .error = AgentErrorCode::kApprovalRequired,
+          .reason = descriptor->risk == effective_risk
+                        ? "exact action approval is required"
+                        : "新地址可能携带任务内容；必须核对完整路径、查询参数"
+                          "和接收方后批准"};
     case AgentRiskLevel::kR3UserTakeover:
       return {.disposition = AgentPolicyDisposition::kRequireUserTakeover,
               .risk = descriptor->risk,
@@ -226,7 +233,7 @@ std::optional<AgentApprovalReceipt> AgentPolicyBroker::IssueApproval(
   }
   const AgentToolDescriptor* descriptor = registry_->Find(call.tool_name);
   if (!descriptor ||
-      descriptor->risk != AgentRiskLevel::kR2ExternalSideEffect) {
+      EffectiveRisk(task, call) != AgentRiskLevel::kR2ExternalSideEffect) {
     return std::nullopt;
   }
 
@@ -251,6 +258,57 @@ void AgentPolicyBroker::RevokeTaskApprovals(const std::string& task_id) {
   std::erase_if(approvals_, [&task_id](const auto& entry) {
     return entry.second.task_id == task_id;
   });
+}
+
+bool AgentPolicyBroker::BindSelectedReadUrls(const AgentTask& task,
+                                             const std::vector<GURL>& urls) {
+  if (task.state() != AgentTaskState::kDraft ||
+      selected_read_urls_.contains(task.id()) || urls.size() > 64u ||
+      std::ranges::any_of(urls, [&](const GURL& url) {
+        return !task.scope().AllowsOrigin(url) || url.has_username() ||
+               url.has_password();
+      })) {
+    return false;
+  }
+  selected_read_urls_.emplace(task.id(),
+                              base::flat_set<GURL>(urls.begin(), urls.end()));
+  return true;
+}
+
+bool AgentPolicyBroker::IsSelectedReadUrl(const AgentTask& task,
+                                          const GURL& url) const {
+  const auto selected = selected_read_urls_.find(task.id());
+  return task.scope().AllowsOrigin(url) &&
+         selected != selected_read_urls_.end() &&
+         selected->second.contains(url);
+}
+
+AgentRiskLevel AgentPolicyBroker::EffectiveRisk(
+    const AgentTask& task,
+    const AgentToolCall& call) const {
+  const AgentToolDescriptor* descriptor = registry_->Find(call.tool_name);
+  if (!descriptor) {
+    return AgentRiskLevel::kBlocked;
+  }
+  if (descriptor->risk >= AgentRiskLevel::kR2ExternalSideEffect) {
+    return descriptor->risk;
+  }
+  if (task.scope().restrict_to_current_page && call.tool_name == "page.click") {
+    return AgentRiskLevel::kR2ExternalSideEffect;
+  }
+  // 同源URL的路径、查询串和片段同样能够携带数据，不能只比较origin。
+  // candidate_url只用于本机下载来源比对，不发起网络请求。
+  for (const char* key : {"url"}) {
+    if (const auto* value = call.arguments.FindString(key)) {
+      const GURL target(*value);
+      auto selected = selected_read_urls_.find(task.id());
+      if (selected == selected_read_urls_.end() ||
+          !selected->second.contains(target)) {
+        return AgentRiskLevel::kR2ExternalSideEffect;
+      }
+    }
+  }
+  return descriptor->risk;
 }
 
 // static

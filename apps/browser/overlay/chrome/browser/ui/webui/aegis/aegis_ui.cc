@@ -137,8 +137,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .fingerprint_label = "指紋防護",
         .fingerprint_hint = "減少網站透過裝置特徵跨站識別您的機會。",
         .fingerprint_details =
-            "對 Canvas、WebGL、Audio、WebGPU 做穩定化。檢測兩次時，同頁 Audio "
-            "讀數應相同；WebGPU 的 maxBufferSize 會隨開關變化。",
+            "讀取目前頁面的 Canvas、WebGL、Audio 和 "
+            "WebGPU。重複讀數可檢查穩定性；"
+            "單一頁面不能證明跨站隔離，數值不同也不等同於已阻止追蹤。",
         .technical_details = "技術詳情",
         .fingerprint_probe = "檢測本頁指紋",
         .miner_guard_label = "挖礦腳本偵測（僅觀察）",
@@ -270,8 +271,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .fingerprint_label = "指纹防护",
         .fingerprint_hint = "减少网站通过设备特征跨站识别您的机会。",
         .fingerprint_details =
-            "对 Canvas、WebGL、Audio、WebGPU 做稳定化。检测两次时，同页 Audio "
-            "读数应相同；WebGPU 的 maxBufferSize 会随开关变化。",
+            "读取当前页面的 Canvas、WebGL、Audio 和 "
+            "WebGPU。重复读数可检查稳定性；"
+            "单个页面不能证明跨站隔离，数值不同也不等同于已阻止跟踪。",
         .technical_details = "技术详情",
         .fingerprint_probe = "检测本页指纹",
         .miner_guard_label = "挖矿脚本检测（仅观察）",
@@ -405,8 +407,10 @@ AegisStrings StringsForLocale(const std::string& locale) {
       .fingerprint_hint =
           "Reduce cross-site identification through device characteristics.",
       .fingerprint_details =
-          "Canvas, WebGL, Audio and WebGPU stabilization. Audio should remain "
-          "stable on repeated probes; maxBufferSize changes with protection.",
+          "Read this page’s Canvas, WebGL, Audio and WebGPU APIs. Repeated "
+          "readings "
+          "can check stability; one page cannot establish cross-site isolation "
+          "or prove that tracking was blocked.",
       .technical_details = "Technical details",
       .fingerprint_probe = "Probe this page fingerprints",
       .miner_guard_label = "Mining script detection (observe-only)",

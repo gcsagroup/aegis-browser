@@ -11,7 +11,7 @@ const sourcePath = process.argv[2] || fileURLToPath(new URL(
     '../overlay/chrome/browser/resources/aegis_agent/agent.ts', import.meta.url));
 const source = readFileSync(sourcePath, 'utf8');
 const tree = ts.createSourceFile(sourcePath, source, ts.ScriptTarget.Latest, true);
-const names = ['scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError'];
+const names = ['scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError', 'inferAutomationSchedule'];
 const functions = tree.statements.filter(node =>
   ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
 assert.equal(functions.length, names.length, '必须测试真实产品函数，不能跳过缺失函数');
@@ -20,6 +20,26 @@ const compiled = ts.transpileModule(functions.map(node => node.getText(tree)).jo
 }).outputText;
 const context = vm.createContext({loadTimeData: {getString: key => key}});
 vm.runInContext(compiled, context);
+const scheduleCases = [
+  ['每小时检查当前网页变化', '60'],
+  ['每15分钟检查价格', '15'],
+  ['每6小时检查库存', '360'],
+  ['每天检查变化', '1440'],
+  ['每週檢查目前網頁', '10080'],
+  ['Check this page hourly', '60'],
+  ['Watch this page every 6 hours', '360'],
+  ['每2小时检查变化', ''],
+  ['持续监控网页', ''],
+  ['检查当前网页', null],
+  ['只检查一次，不要每小时检查', null],
+  ['不要监控，每天的记录仅总结一次', null],
+  ['Do not monitor this page hourly', null],
+  ['总结这篇关于每小时产量的文章', null],
+];
+for (const [goal, interval] of scheduleCases) {
+  assert.equal(context.inferAutomationSchedule(goal), interval, goal);
+}
+console.log(`PASS: 周期意图及否定请求 ${scheduleCases.length}/${scheduleCases.length}`);
 const task = overrides => ({
   taskId: 'test-task', mode: 'act', state: 'running', resultSummary: '',
   resultOutcome: '', unfinishedItems: [], monitors: [], ...overrides,
@@ -122,6 +142,23 @@ for (const [label, overrides, expectedStatus, hidden] of [
   if (overrides.changeSummaryPartial) assert(summary.textContent.includes('automationChangeSummaryPartial'), label);
 }
 console.log('PASS: 监控变化摘要渲染 6/6（DOM 单元测试，非实机验收）');
+for (const paused of [false, true]) {
+  for (const busy of [false, true]) {
+    rendererContext.busy = busy;
+    rendererContext.renderMonitors([{...monitorInput, paused}]);
+    const row = element('monitors').children[0];
+    const actions = row.children.find(child => child.className === 'monitor-actions');
+    const check = actions.children.find(child => child.dataset.monitorAction === 'check');
+    assert(check, '每条监控都能看到立即检查入口');
+    assert.equal(check.disabled, paused || busy, '暂停或请求处理中不得再次检查');
+    assert.equal(check.textContent, 'checkMonitorNow');
+  }
+}
+rendererContext.busy = false;
+assert.equal(context.friendlyError('monitor immediate check unavailable', true),
+    'checkMonitorNowUnavailable');
+console.log('PASS: 立即检查入口及暂停/忙碌/失败状态 5/5');
+
 
 // 模型配置使用真实产品函数和有界异步响应；不把 DOM 测试等同于键盘或实机操作。
 const modelFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
@@ -258,29 +295,30 @@ console.log(`PASS: 模型表单状态 ${modelCases.length}/${modelCases.length}�
 
 // 执行真实按钮绑定，禁止语句不应替自动化选择一次性的高风险工作流。
 const actionFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
-  ['inferWorkflow', 'bindActions'].includes(node.name?.text));
-assert.equal(actionFunctions.length, 2);
+  ['inferWorkflow', 'inferAutomationSchedule', 'bindActions', 'showCreatedTask'].includes(node.name?.text));
+assert.equal(actionFunctions.length, 4);
 const actionCode = ts.transpileModule(actionFunctions.map(node => node.getText(tree)).join('\n'), {
   compilerOptions: {target: ts.ScriptTarget.ES2022},
 }).outputText;
 const actionFields = new Map();
 const actionField = id => {
   if (!actionFields.has(id)) actionFields.set(id, {
-    value: '', listeners: new Map(),
+    value: '', listeners: new Map(), focus() { this.focused = true; },
     addEventListener(event, listener) { this.listeners.set(event, listener); },
   });
   return actionFields.get(id);
 };
 const actionCalls = [];
 const actionContext = vm.createContext({
-  element: actionField, withBusy: callback => callback(),
+  element: actionField, withBusy: callback => callback(), snapshot: null, activeView: 'task',
+  creatingTask: false, creatingTaskPreviousId: '', selectedTaskId: null, render: () => {},
   Workflow: {kResearch: 0, kBrowserSteward: 1, kSafeDownload: 2, kShopping: 3},
   AgentMode: {kAct: 1, kAutomate: 2}, selectedWorkflow: null,
   detectModels: () => {}, saveModel: () => {},
   selectDetectedModel: () => {}, syncDetectedModel: () => {}, resetDetectedModels: () => {},
   proxy: {handler: {createTask: async (...args) => {
-    actionCalls.push(args); return {snapshot: {taskId: ''}};
-  }}},
+    actionCalls.push(args); return {snapshot: {taskId: `task-${actionCalls.length}`, lastError: ''}};
+  }, requestPlan: async taskId => ({snapshot: {taskId}})}},
 });
 vm.runInContext(actionCode, actionContext);
 actionContext.bindActions();
@@ -311,6 +349,17 @@ for (const [goal, workflow] of [['下载官方安装包', 2], ['购买商品', 3
 }
 assert.equal(actionFailures.length, 0, `自动化错误选择工作流：${actionFailures.join(' | ')}`);
 console.log('PASS: 自动化入口及普通任务对照 9/9（真实按钮绑定单元测试，非实机验收）');
+for (const [goal, interval] of [['每小时检查网页变化', '60'], ['每2小时检查网页变化', '']]) {
+  const before = actionCalls.length;
+  actionField('goal').value = goal;
+  await actionField('plan-button').listeners.get('click')();
+  assert.equal(actionCalls.length, before, '引导不能直接创建任务');
+  assert.equal(actionField('automation-goal').value, goal);
+  assert.equal(actionField('automation-schedule').value, interval);
+  assert.equal(actionContext.activeView, 'automation');
+}
+console.log('PASS: 普通输入只预填监控确认面板 2/2');
+
 
 const timelineRenderer = tree.statements.find(node =>
   ts.isFunctionDeclaration(node) && node.name?.text === 'renderTimeline');
@@ -387,3 +436,22 @@ for (const [label, input, expected] of [
 assert.equal(restoredUiFailures.length, 0,
     `恢复后的界面状态错误：${restoredUiFailures.join(' | ')}`);
 console.log('PASS: 无计划及空时间线状态 10/10（DOM 单元测试，非实机验收）');
+
+// 来源标题取浏览器字段，模型正文和控件文本不能覆盖引用标题。
+const resultFunctions = ['renderResult', 'hasPartialResult', 'scheduledTaskStatus'];
+vm.runInContext(ts.transpileModule(tree.statements.filter(node =>
+  ts.isFunctionDeclaration(node) && resultFunctions.includes(node.name?.text))
+  .map(node => node.getText(tree)).join('\n'), {
+  compilerOptions: {target: ts.ScriptTarget.ES2022},
+}).outputText, rendererContext);
+const sourceResult = task({state: 'completed', resultOutcome: 'completed',
+  resultSummary: '模型正文中的上传入口', resultSources: ['https://fixture.example/article'],
+  resultSourceTitles: ['浏览器页面标题'], researchSaveAvailable: false});
+rendererContext.renderResult(sourceResult);
+assert.equal(element('result-sources').children[0].children[0].textContent,
+  '浏览器页面标题 · https://fixture.example/article');
+assert.equal(element('result-summary').textContent, sourceResult.resultSummary);
+rendererContext.renderResult({...sourceResult, resultSourceTitles: []});
+assert.equal(element('result-sources').children[0].children[0].textContent,
+  'https://fixture.example/article');
+console.log('PASS: 浏览器来源标题与模型正文隔离 3/3');
