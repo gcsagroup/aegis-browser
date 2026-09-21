@@ -39,6 +39,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   // API keys are encrypted with OSCrypt before being stored in this local,
   // non-syncable dictionary. Values are never exposed through WebUI status.
   registry->RegisterDictionaryPref(prefs::kModelApiKeyCiphertexts);
+  registry->RegisterBooleanPref(prefs::kTypeSafeGoalRoutingEnabled, false);
+  // The independent TypeSafe credential is encrypted with OSCrypt and remains
+  // local to this profile. It is never returned through WebUI snapshots.
+  registry->RegisterStringPref(prefs::kTypeSafeApiKeyCiphertext, std::string());
   // 仅用于识别有真实 user setting 的旧配置；新安装不会从这些默认值迁移。
   registry->RegisterStringPref(prefs::kOllamaBaseUrl, "http://127.0.0.1:11434");
   registry->RegisterStringPref(prefs::kOllamaModel, "llama3.2:3b");

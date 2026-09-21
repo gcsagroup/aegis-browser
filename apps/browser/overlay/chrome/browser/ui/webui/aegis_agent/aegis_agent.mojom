@@ -15,6 +15,13 @@ enum Workflow {
   kShopping = 3,
 };
 
+enum TypeSafeSettingsError {
+  kNone = 0,
+  kValidation = 1,
+  kStorage = 2,
+  kSuperseded = 3,
+};
+
 struct PlanStep {
   string step_id;
   string title;
@@ -97,6 +104,9 @@ struct TaskSnapshot {
   string model_provider;
   string model_base_url;
   string model_name;
+  bool typesafe_enabled;
+  bool typesafe_key_configured;
+  TypeSafeSettingsError typesafe_settings_error;
   int32 active_tab_id;
   string active_origin;
   string invocation_context;
@@ -131,6 +141,10 @@ interface PageHandler {
                  string model,
                  string api_key,
                  bool clear_api_key) => (TaskSnapshot snapshot);
+
+  ConfigureTypeSafe(bool enabled,
+                    string api_key,
+                    bool clear_api_key) => (TaskSnapshot snapshot);
 
   ListModels(string provider, string base_url, string api_key)
       => (bool ok, string error, array<string> models);

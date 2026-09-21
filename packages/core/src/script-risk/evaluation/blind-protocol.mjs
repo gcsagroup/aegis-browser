@@ -900,6 +900,7 @@ export async function importVerifiedCandidateModule(component, name) {
 function logicalFilePath(value, field) {
   const normalized = requiredString(value, field, 512);
   assertBlind(!normalized.includes("\\"), `${field} must use POSIX separators`);
+  // eslint-disable-next-line no-control-regex -- this validator rejects control characters by design.
   assertBlind(!/[\u0000-\u001f\u007f]/.test(normalized), `${field} contains control characters`);
   assertBlind(!normalized.startsWith("/"), `${field} must be relative`);
   assertBlind(posix.normalize(normalized) === normalized, `${field} is not canonical`);

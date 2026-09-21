@@ -78,7 +78,9 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 ## Lint、单元测试与覆盖率口径
 
-根 `pnpm run lint` 使用 ESLint 9 flat config，实际分析 `packages/core/src/**/*.ts` 与 `scripts/ci/**/*.mjs`。它采用 JavaScript/TypeScript recommended 的正确性规则；`tsc --noEmit` 仍由独立 `typecheck` 执行。为了接纳现有代码，例外限制在具体范围：测试文件允许现有 `@ts-nocheck`、精度边界常量与字符串 escape；`privacy/pii.ts` 保留现有正则 escape；`structure-signature.ts` 保留两个空扩展 interface。新增 CI fixture 会证明合法代码退出 0、未定义标识符退出非 0。这里没有把 ESLint 描述成格式化器或完整风格门。
+根 `pnpm run lint` 使用 ESLint 9 flat config，当前 required CI 仍只分析 `packages/core/src/**/*.ts` 与 `scripts/ci/**/*.mjs`。它采用 JavaScript/TypeScript recommended 的正确性规则；`tsc --noEmit` 仍由独立 `typecheck` 执行。为了接纳现有代码，例外限制在具体范围：测试文件允许现有 `@ts-nocheck`、精度边界常量与字符串 escape；`privacy/pii.ts` 保留现有正则 escape；`structure-signature.ts` 保留两个空扩展 interface。新增 CI fixture 会证明合法代码退出 0、未定义标识符退出非 0。这里没有把 ESLint 描述成格式化器或完整风格门。
+
+DEV 阶段另提供 `mise exec -- pnpm run quality:static` 作为本地只读静态检查入口；它尚未接入 `quality:fast`、GitHub required check 或分支保护。该入口对所有已跟踪 JavaScript/Node 文件执行 `node --check`，对 Python 执行 AST 解析，对 shell 执行 `bash -n`，对 workflow 执行 `actionlint`，并以 warning 级 `ShellCheck` 检查所有已跟踪 shell 脚本；同时运行 core `typecheck` 和扩展的一方源码 ESLint。扩展 ESLint 覆盖 browser/iOS/core 的 Node 脚本、iOS SharedWebExtension 与本地静态检查脚本；`third_party`、实验 prototype、文档预览脚本及 script-risk 的恶意/混淆 fixture 只进入全仓语法检查，不进入 ESLint 规则门。结果固定写入被忽略的 `.artifacts/static-checks/report.json`，便于连续本地调试比较；待该入口稳定后再单独评审 CI 集成。
 
 基础 `quality` job 复用一次现有套件，不为覆盖率重跑整套测试。其报告目录包含 `coverage-manifest.json`，各语言分别记录 scope、报告路径、摘要与哈希，`aggregateCoverage` 固定为 `null`：
 

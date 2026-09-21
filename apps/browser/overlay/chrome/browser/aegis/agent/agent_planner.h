@@ -54,6 +54,11 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
     const AgentModelEvent& event,
     std::string* error);
 
+// Applies the route invariants shared by every decision provider. The target
+// is normalized in place so browser-only routes cannot retain an unused target
+// and public URLs use their canonical form.
+bool ValidateAndNormalizeGoalRoute(AgentGoalRoute* route, std::string* error);
+
 // Narrows a model-proposed route using intent that must remain browser-owned.
 // Product discovery cannot silently gain shopping authority, and a named-site
 // request cannot be redirected to a general search engine or unrelated host.

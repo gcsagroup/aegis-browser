@@ -39,6 +39,10 @@ inline constexpr char kModelBaseUrl[] = "aegis.model_base_url";
 inline constexpr char kModelName[] = "aegis.model_name";
 inline constexpr char kModelApiKeyCiphertexts[] =
     "aegis.model_api_key_ciphertexts";
+inline constexpr char kTypeSafeGoalRoutingEnabled[] =
+    "aegis.typesafe_goal_routing_enabled";
+inline constexpr char kTypeSafeApiKeyCiphertext[] =
+    "aegis.typesafe_api_key_ciphertext";
 // Legacy Ollama prefs retained only for one-way migration.
 inline constexpr char kOllamaBaseUrl[] = "aegis.ollama_base_url";
 inline constexpr char kOllamaModel[] = "aegis.ollama_model";

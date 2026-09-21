@@ -256,6 +256,114 @@ for (const [label, run] of modelCases) {
 assert.equal(modelFailures.length, 0, '模型表单状态回归未全部通过');
 console.log(`PASS: 模型表单状态 ${modelCases.length}/${modelCases.length}（DOM 单元测试，非实机验收）`);
 
+// TypeSafe 是独立的可选路由设置；运行真实产品函数验证密钥不回填、可保留既有
+// 密钥启用，以及清除密钥必定同时关闭远程路由。
+const typesafeFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
+  ['renderTypeSafe', 'saveTypeSafe'].includes(node.name?.text));
+for (const name of ['renderTypeSafe', 'saveTypeSafe']) {
+  assert(typesafeFunctions.some(node => node.name.text === name), `TypeSafe 表单函数缺失：${name}`);
+}
+const typesafeCode = ts.transpileModule(
+    typesafeFunctions.map(node => node.getText(tree)).join('\n'),
+    {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
+function typesafeHarness(initial = {
+  typesafeEnabled: false, typesafeKeyConfigured: false,
+  typesafeSettingsError: 0, lastError: '',
+}) {
+  const fields = new Map();
+  const field = name => {
+    if (!fields.has(name)) fields.set(name, {
+      value: '', textContent: '', disabled: false, checked: false, open: false,
+    });
+    return fields.get(name);
+  };
+  const calls = [];
+  let response = {snapshot: initial};
+  const sandbox = vm.createContext({
+    element: field, typesafeBusy: false, typesafeEnabledDirty: false,
+    snapshot: initial, loadTimeData: {getString: key => key},
+    TypeSafeSettingsError: {kNone: 0, kValidation: 1, kStorage: 2, kSuperseded: 3},
+    proxy: {handler: {configureTypeSafe: async (...args) => {
+      calls.push(args);
+      if (response instanceof Error) throw response;
+      return response;
+    }}},
+  });
+  sandbox.render = next => {
+    sandbox.snapshot = next;
+    sandbox.renderTypeSafe(next);
+  };
+  vm.runInContext(typesafeCode, sandbox);
+  sandbox.render(initial);
+  return {field, calls, sandbox, setResponse: value => { response = value; }};
+}
+const typesafeCases = [
+  ['默认关闭且无密钥', async () => {
+    const h = typesafeHarness();
+    assert.equal(h.field('typesafe-state').textContent, 'typesafeDisabled');
+    assert.equal(h.field('clear-typesafe-key-button').disabled, true);
+  }],
+  ['未编辑复选框随异步和跨窗口快照刷新', async () => {
+    const h = typesafeHarness();
+    h.sandbox.render({
+      typesafeEnabled: true, typesafeKeyConfigured: true, lastError: '',
+    });
+    assert.equal(h.field('typesafe-enabled').checked, true);
+    assert.equal(h.field('typesafe-state').textContent, 'typesafeEnabled');
+  }],
+  ['用户未保存的复选框修改不被后台快照覆盖', async () => {
+    const initial = {typesafeEnabled: false, typesafeKeyConfigured: true, lastError: ''};
+    const h = typesafeHarness(initial);
+    h.field('typesafe-enabled').checked = true;
+    h.sandbox.typesafeEnabledDirty = true;
+    h.sandbox.render(initial);
+    assert.equal(h.field('typesafe-enabled').checked, true);
+    assert.equal(h.field('typesafe-state').textContent, 'typesafeConfigured');
+  }],
+  ['已有密钥可不重新输入而启用', async () => {
+    const initial = {typesafeEnabled: false, typesafeKeyConfigured: true, lastError: ''};
+    const h = typesafeHarness(initial);
+    h.field('typesafe-enabled').checked = true;
+    h.sandbox.typesafeEnabledDirty = true;
+    h.setResponse({snapshot: {...initial, typesafeEnabled: true}});
+    await h.sandbox.saveTypeSafe(false);
+    assert.deepEqual(h.calls[0], [true, '', false]);
+    assert.equal(h.field('typesafe-state').textContent, 'typesafeEnabled');
+    assert.equal(h.field('typesafe-api-key').value, '');
+  }],
+  ['清除密钥同时关闭且不向页面回填', async () => {
+    const initial = {typesafeEnabled: true, typesafeKeyConfigured: true, lastError: ''};
+    const h = typesafeHarness(initial);
+    h.field('typesafe-api-key').value = 'synthetic-test-value';
+    h.setResponse({snapshot: {
+      typesafeEnabled: false, typesafeKeyConfigured: false, lastError: '',
+    }});
+    await h.sandbox.saveTypeSafe(true);
+    assert.deepEqual(h.calls[0], [false, '', true]);
+    assert.equal(h.field('typesafe-api-key').value, '');
+    assert.equal(h.field('typesafe-feedback').textContent, 'typesafeCleared');
+  }],
+  ['保存失败清空密码输入且不显示原始错误', async () => {
+    const h = typesafeHarness();
+    h.field('typesafe-enabled').checked = true;
+    h.field('typesafe-api-key').value = 'synthetic-test-value';
+    h.setResponse({snapshot: {
+      typesafeEnabled: false, typesafeKeyConfigured: false,
+      typesafeSettingsError: 2,
+      lastError: 'secure credential storage unavailable: synthetic-private-error',
+    }});
+    await h.sandbox.saveTypeSafe(false);
+    assert.deepEqual(h.calls[0], [true, 'synthetic-test-value', false]);
+    assert.equal(h.field('typesafe-api-key').value, '');
+    assert.equal(h.field('typesafe-feedback').textContent, 'typesafeStorageError');
+    assert.equal(h.field('typesafe-feedback').textContent.includes('synthetic-private-error'), false);
+  }],
+];
+for (const [label, run] of typesafeCases) await run().catch(error => {
+  throw new Error(`${label}: ${error.message}`);
+});
+console.log(`PASS: TypeSafe 独立设置 ${typesafeCases.length}/${typesafeCases.length}（DOM 单元测试，非实机验收）`);
+
 // 执行真实按钮绑定，禁止语句不应替自动化选择一次性的高风险工作流。
 const actionFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
   ['inferWorkflow', 'bindActions'].includes(node.name?.text));
