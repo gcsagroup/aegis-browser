@@ -1,10 +1,17 @@
-From 0141000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From b4e22954de00b783c6ed4db01fdd7b853d40c02a Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Sat, 19 Sep 2026 00:55:00 +0800
 Subject: [PATCH] feat(aegis): gate Worker main-resource traffic
 
 ---
+ .../access_proxying_url_loader_factory.cc     | 23 ++++++
+ .../access_proxying_url_loader_factory.h      | 18 ++--
+ ...proxying_url_loader_factory_browsertest.cc | 82 ++++++++++++++++++-
+ .../browser/chrome_content_browser_client.cc  |  7 ++
+ 4 files changed, 122 insertions(+), 8 deletions(-)
+
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index fd6970f506..48e165ed73 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -269,6 +269,29 @@ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
@@ -38,6 +45,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b
  void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
      Profile* profile,
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 67fb2a33c7..6c84b9959b 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -32,13 +32,13 @@ class AccessPublishedRequestRuntime;
@@ -73,6 +81,7 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/
        Profile* profile,
        content::RenderFrameHost* frame,
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 0ba06d1c16..f496161dd4 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 @@ -48,10 +48,20 @@ constexpr char kProxyGroup[] = "proxy-group-browser-test";
@@ -196,19 +205,20 @@ diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_brow
                         RuntimePolicyUpdateRoutesExistingFactoryThroughProxy) {
    PublishProxyPolicy(/*publish_endpoint=*/true);
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 831659445a..af9c159ae6 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6748,6 +6748,13 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
-     aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
-         Profile::FromBrowserContext(browser_context), frame, *navigation_id,
+@@ -6829,6 +6829,13 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
          factory_builder);
    }
-+
+ 
 +  if (type == URLLoaderFactoryType::kWorkerMainResource && frame) {
 +    aegis::access::AccessProxyingURLLoaderFactory::
 +        MaybeProxyWorkerMainResource(
 +            Profile::FromBrowserContext(browser_context), frame,
 +            factory_builder);
 +  }
- 
++
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
+   if (disable_secure_dns) {
+     WebContents* web_contents = WebContents::FromRenderFrameHost(frame);

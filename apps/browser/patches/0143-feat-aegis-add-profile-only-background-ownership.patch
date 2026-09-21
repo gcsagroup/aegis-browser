@@ -22,7 +22,7 @@ diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/
 +    "//chrome/browser/profiles:test_support",
 +    "//components/aegis_access",
 +    "//content/public/browser",
-+    "//content/public/test",
++    "//content/test:test_support",
 +    "//net",
 +    "//services/network/public/mojom",
 +    "//testing/gtest",
