@@ -5,8 +5,8 @@ Subject: [PATCH] fix(access): return committed mutation retries
 
 ---
  .../access/access_service_coordinator.cc      | 17 ++++++++--
- .../access_service_coordinator_unittest.cc    | 34 +++++++++++++++++++
- 2 files changed, 49 insertions(+), 2 deletions(-)
+ .../access_service_coordinator_unittest.cc    | 35 ++++++++++++++++++++
+ 2 files changed, 50 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
 index cc0f805..a98eb1d 100644
@@ -44,10 +44,10 @@ index cc0f805..a98eb1d 100644
    auto built = store_->BuildPreparedCandidateSnapshot(transaction.pending);
    if (built.status != StoreStatus::kValid || !built.value) {
 diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
-index 6bf5a61..62a43bd 100644
+index 6bf5a61..a2c2bb9 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
 +++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
-@@ -199,6 +199,40 @@ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck)
+@@ -199,6 +199,41 @@ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck)
    EXPECT_EQ(durable.value->policy_generation, result.Get().policy_generation);
  }
  
@@ -76,6 +76,7 @@ index 6bf5a61..62a43bd 100644
 +  EXPECT_EQ(retry.Get().status, AccessMutationTransactionStatus::kCommitted);
 +  EXPECT_EQ(retry.Get().store_status, StoreStatus::kValid);
 +  EXPECT_EQ(retry.Get().policy_generation, committed_generation);
++  task_environment_.RunUntilIdle();
 +  EXPECT_FALSE(client_->metadata);
 +  EXPECT_FALSE(client_->reply);
 +  EXPECT_EQ(coordinator_->state_generation(), 1u);
@@ -90,4 +91,3 @@ index 6bf5a61..62a43bd 100644
    auto store = OpenStore();
 -- 
 2.54.0 (Apple Git-157)
-
