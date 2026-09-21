@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 
 #include "base/supports_user_data.h"
@@ -58,6 +59,18 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
 
   AccessPolicyPublicationResult PublishCommittedPolicySnapshot(
       const StoredPolicySnapshot& stored);
+  // Publishes an already validated PREPARED candidate into request-time memory
+  // before durable commit. The same ownership and monotonic generation rules
+  // as committed publication apply; this call does not imply persistence.
+  AccessPolicyPublicationResult PublishPreparedPolicyCandidate(
+      const StoredPolicySnapshot& candidate);
+
+  // Restores the pre-mutation runtime snapshot only when the currently
+  // published value is still the exact PREPARED candidate. This prevents a
+  // delayed failure path from overwriting a newer publication.
+  bool RollbackPreparedPolicyCandidate(
+      const StoredPolicySnapshot& candidate,
+      const std::optional<StoredPolicySnapshot>& previous);
 
   const aegis_access::PublishedAccessPolicySnapshot*
   GetPublishedPolicySnapshot(const aegis_access::OwnershipKey& owner) const;
@@ -74,6 +87,8 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
 
  private:
   explicit AccessPublishedRequestRuntime(Profile* profile);
+  AccessPolicyPublicationResult PublishPolicySnapshot(
+      const StoredPolicySnapshot& stored);
 
   Profile* const profile_;
   std::map<std::string, aegis_access::PublishedAccessPolicySnapshot>

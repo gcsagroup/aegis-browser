@@ -1,0 +1,194 @@
+From 0b8b912c5ef70731422663111695b0353344a0fa Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 21 Sep 2026 14:33:17 +0800
+Subject: [PATCH] feat(aegis): acknowledge exact access policy publication
+
+---
+ .../network/network_service_proxy_delegate.cc | 36 ++++++++++
+ .../network/network_service_proxy_delegate.h  |  4 ++
+ ...network_service_proxy_delegate_unittest.cc | 66 +++++++++++++++++++
+ .../public/mojom/network_context.mojom        | 19 +++++-
+ 4 files changed, 124 insertions(+), 1 deletion(-)
+
+diff --git a/services/network/network_service_proxy_delegate.cc b/services/network/network_service_proxy_delegate.cc
+index 8075625c0c..7a1888a1af 100644
+--- a/services/network/network_service_proxy_delegate.cc
++++ b/services/network/network_service_proxy_delegate.cc
+@@ -197,6 +197,42 @@ void NetworkServiceProxyDelegate::OnCustomProxyConfigUpdated(
+   std::move(callback).Run();
+ }
+ 
++void NetworkServiceProxyDelegate::OnAegisAccessPolicyPublished(
++    mojom::AegisAccessPolicyPublicationMetadataPtr metadata,
++    OnAegisAccessPolicyPublishedCallback callback) {
++  const bool valid =
++      metadata && !metadata->operation_id.empty() &&
++      metadata->operation_sequence != 0 && metadata->policy_generation != 0 &&
++      metadata->policy_generation == metadata->operation_sequence &&
++      metadata->network_epoch != 0 && metadata->channel <= 3 &&
++      !metadata->profile_token.empty() &&
++      !metadata->storage_partition_token.empty();
++  if (!valid) {
++    std::move(callback).Run(false);
++    return;
++  }
++  // This channel belongs to one browser-owned NetworkContext. Bind its owner
++  // on first publication and retain a monotonic publication receipt. Routing
++  // policy itself remains in the browser request runtime, never in SQLite here.
++  if (aegis_policy_publication_) {
++    const auto& current = *aegis_policy_publication_;
++    if (metadata->channel != current.channel ||
++        metadata->profile_token != current.profile_token ||
++        metadata->storage_partition_token != current.storage_partition_token ||
++        metadata->operation_sequence < current.operation_sequence ||
++        metadata->network_epoch < current.network_epoch ||
++        (metadata->selection_generation != 0 &&
++         metadata->selection_generation < current.selection_generation) ||
++        (metadata->operation_sequence == current.operation_sequence &&
++         !metadata->Equals(current))) {
++      std::move(callback).Run(false);
++      return;
++    }
++  }
++  aegis_policy_publication_ = std::move(metadata);
++  std::move(callback).Run(true);
++}
++
+ bool NetworkServiceProxyDelegate::IsInProxyConfig(
+     const net::ProxyChain& proxy_chain) const {
+   if (!proxy_chain.IsValid() || proxy_chain.is_direct()) {
+diff --git a/services/network/network_service_proxy_delegate.h b/services/network/network_service_proxy_delegate.h
+index 3e0dcc4e99..7442379399 100644
+--- a/services/network/network_service_proxy_delegate.h
++++ b/services/network/network_service_proxy_delegate.h
+@@ -82,7 +82,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+   void OnCustomProxyConfigUpdated(
+       mojom::CustomProxyConfigPtr proxy_config,
+       OnCustomProxyConfigUpdatedCallback callback) override;
++  void OnAegisAccessPolicyPublished(
++      mojom::AegisAccessPolicyPublicationMetadataPtr metadata,
++      OnAegisAccessPolicyPublishedCallback callback) override;
+ 
++  mojom::AegisAccessPolicyPublicationMetadataPtr aegis_policy_publication_;
+   mojom::CustomProxyConfigPtr proxy_config_;
+   mojo::Receiver<mojom::CustomProxyConfigClient> receiver_;
+   mojo::Remote<mojom::CustomProxyConnectionObserver> observer_;
+diff --git a/services/network/network_service_proxy_delegate_unittest.cc b/services/network/network_service_proxy_delegate_unittest.cc
+index 6f533552a4..e73bcc68ba 100644
+--- a/services/network/network_service_proxy_delegate_unittest.cc
++++ b/services/network/network_service_proxy_delegate_unittest.cc
+@@ -121,6 +121,20 @@ class NetworkServiceProxyDelegateTest : public testing::Test {
+     loop.Run();
+   }
+ 
++  bool PublishAegisAccessPolicy(
++      mojom::AegisAccessPolicyPublicationMetadataPtr metadata) {
++    base::RunLoop loop;
++    std::optional<bool> accepted;
++    client_->OnAegisAccessPolicyPublished(
++        std::move(metadata),
++        base::BindLambdaForTesting([&](bool value) {
++          accepted = value;
++          loop.Quit();
++        }));
++    loop.Run();
++    return accepted.value_or(false);
++  }
++
+   void RunUntilIdle() { task_environment_.RunUntilIdle(); }
+ 
+   TestCustomProxyConnectionObserver* TestObserver() const { return observer_; }
+@@ -134,6 +148,58 @@ class NetworkServiceProxyDelegateTest : public testing::Test {
+   base::test::TaskEnvironment task_environment_;
+ };
+ 
++TEST_F(NetworkServiceProxyDelegateTest,
++       AegisAccessPolicyPublicationAcknowledgesOnlyValidExactMetadata) {
++  auto config = mojom::CustomProxyConfig::New();
++  auto delegate = CreateDelegate(std::move(config));
++
++  auto valid = mojom::AegisAccessPolicyPublicationMetadata::New();
++  valid->operation_id = "operation-42";
++  valid->operation_sequence = 42;
++  valid->policy_generation = 42;
++  valid->selection_generation = 7;
++  valid->network_epoch = 9;
++  valid->channel = 0;
++  valid->profile_token = "profile-token";
++  valid->storage_partition_token = "partition-token";
++  auto same = valid->Clone();
++  auto older = valid->Clone();
++  auto wrong_partition = valid->Clone();
++  auto changed_version = valid->Clone();
++  EXPECT_TRUE(PublishAegisAccessPolicy(std::move(valid)));
++  EXPECT_TRUE(PublishAegisAccessPolicy(std::move(same)));
++  older->operation_sequence = 41;
++  older->policy_generation = 41;
++  older->operation_id = "operation-41";
++  EXPECT_FALSE(PublishAegisAccessPolicy(std::move(older)));
++  wrong_partition->storage_partition_token = "other-partition";
++  EXPECT_FALSE(PublishAegisAccessPolicy(std::move(wrong_partition)));
++  changed_version->network_epoch = 10;
++  EXPECT_FALSE(PublishAegisAccessPolicy(std::move(changed_version)));
++
++  auto stale = mojom::AegisAccessPolicyPublicationMetadata::New();
++  stale->operation_id = "operation-42";
++  stale->operation_sequence = 42;
++  stale->policy_generation = 41;
++  stale->selection_generation = 7;
++  stale->network_epoch = 9;
++  stale->channel = 0;
++  stale->profile_token = "profile-token";
++  stale->storage_partition_token = "partition-token";
++  EXPECT_FALSE(PublishAegisAccessPolicy(std::move(stale)));
++
++  auto wrong_owner = mojom::AegisAccessPolicyPublicationMetadata::New();
++  wrong_owner->operation_id = "operation-43";
++  wrong_owner->operation_sequence = 43;
++  wrong_owner->policy_generation = 43;
++  wrong_owner->selection_generation = 0;
++  wrong_owner->network_epoch = 10;
++  wrong_owner->channel = 4;
++  wrong_owner->profile_token = "profile-token";
++  wrong_owner->storage_partition_token = "partition-token";
++  EXPECT_FALSE(PublishAegisAccessPolicy(std::move(wrong_owner)));
++}
++
+ TEST_F(NetworkServiceProxyDelegateTest, NullConfigDoesNotCrash) {
+   mojo::Remote<mojom::CustomProxyConfigClient> client;
+   auto delegate = std::make_unique<NetworkServiceProxyDelegate>(
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+index 09da137f59..faf72d35cf 100644
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -176,9 +176,26 @@ interface CookieStoreReadyCallback {
+   OnCookieStoreReady();
+ };
+ 
+-// Client to update the custom proxy config.
++// Exact browser-owned identity for one Aegis Access policy candidate. The
++// NetworkContext ACKs only the exact metadata it received; this does not grant
++// authority to read or reconstruct policy state in the Network Service.
++struct AegisAccessPolicyPublicationMetadata {
++  string operation_id;
++  uint64 operation_sequence;
++  uint64 policy_generation;
++  uint64 selection_generation;
++  uint64 network_epoch;
++  uint32 channel;
++  string profile_token;
++  string storage_partition_token;
++};
++
++// Client to update the custom proxy config and acknowledge exact Aegis Access
++// policy candidate publication.
+ interface CustomProxyConfigClient {
+   OnCustomProxyConfigUpdated(CustomProxyConfig proxy_config) => ();
++  OnAegisAccessPolicyPublished(AegisAccessPolicyPublicationMetadata metadata)
++      => (bool accepted);
+ };
+ 
+ // Sent by TrustedURLLoaderHeaderClient to perform modifications for a request.
+-- 
+2.54.0 (Apple Git-157)
+

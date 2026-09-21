@@ -1,0 +1,411 @@
+From 37c7794c1e8341d50ce12a2c1ae7f6907de78ea2 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 21 Sep 2026 20:40:57 +0800
+Subject: [PATCH] fix(access): scope selection generations by proxy group
+
+---
+ .../access_network_context_transport.cc       |  3 ++
+ ...cess_network_context_transport_unittest.cc | 35 +++++++++++++++++
+ .../access_request_dispatch_state_unittest.cc | 16 +++++---
+ .../access/access_service_coordinator.cc      | 16 +++++---
+ .../access_service_coordinator_unittest.cc    |  5 +++
+ .../policy_publication_ack_tracker.cc         |  7 +++-
+ .../policy_publication_ack_tracker.h          |  8 ++--
+ ...cy_publication_ack_tracker_contract_test.h | 23 ++++++++++-
+ .../network/network_service_proxy_delegate.cc | 13 +++++++
+ .../network/network_service_proxy_delegate.h  |  6 +++
+ ...network_service_proxy_delegate_unittest.cc | 39 +++++++++++++++++++
+ .../public/mojom/network_context.mojom        |  1 +
+ 12 files changed, 155 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index a38334a..af57dc2 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -63,6 +63,7 @@ bool IsCandidateIdentityValid(
+       identity.operation_id.empty() || identity.operation_sequence == 0 ||
+       identity.policy_generation == 0 ||
+       identity.policy_generation != identity.operation_sequence ||
++      (identity.selection_generation == 0) != identity.proxy_group_id.empty() ||
+       identity.network_epoch == 0 || identity.network_epoch != network_epoch);
+ }
+ 
+@@ -368,6 +369,7 @@ bool AccessNetworkContextTransport::SelectionMatchesIdentity(
+     return true;
+   }
+   return state.endpoint && state.endpoint->owner == identity.selector.owner &&
++         state.endpoint->proxy_group_id == identity.proxy_group_id &&
+          state.endpoint->generations.selection_generation ==
+              identity.selection_generation &&
+          state.endpoint->generations.network_epoch == identity.network_epoch &&
+@@ -399,6 +401,7 @@ void AccessNetworkContextTransport::PublishPolicyCandidateToClients(
+   metadata->operation_id = identity.operation_id;
+   metadata->operation_sequence = identity.operation_sequence;
+   metadata->policy_generation = identity.policy_generation;
++  metadata->proxy_group_id = identity.proxy_group_id;
+   metadata->selection_generation = identity.selection_generation;
+   metadata->network_epoch = identity.network_epoch;
+   metadata->channel = static_cast<uint32_t>(owner.channel);
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 8bebae0..39f4881 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -476,6 +476,41 @@ TEST_F(AccessNetworkContextTransportTest, CandidateRejectsForgedVersionsAndOwner
+   }
+ }
+ 
++TEST_F(AccessNetworkContextTransportTest,
++       ProxyCandidateIdentityMustMatchSelectedGroup) {
++  auto first = CreateDelegate({});
++  const auto endpoint = EndpointFor({});
++  ASSERT_TRUE(
++      transport_->PublishProxySelection({}, {kTargetHost}, endpoint));
++  auto identity = CandidateIdentity(endpoint.owner, transport_->network_epoch());
++  identity.proxy_group_id = endpoint.proxy_group_id;
++  identity.selection_generation = endpoint.generations.selection_generation;
++
++  std::optional<bool> settled;
++  const auto accepted = transport_->PublishPolicyCandidateWithAck(
++      identity, endpoint.owner,
++      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
++                     &settled));
++  EXPECT_EQ(accepted.status, AccessNetworkConfigAckStatus::kStarted);
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(settled);
++  EXPECT_TRUE(*settled);
++
++  identity.operation_id = "candidate-11";
++  identity.operation_sequence = 11;
++  identity.policy_generation = 11;
++  identity.proxy_group_id = "other-group";
++  settled.reset();
++  const auto rejected = transport_->PublishPolicyCandidateWithAck(
++      identity, endpoint.owner,
++      base::BindOnce([](std::optional<bool>* out, bool value) { *out = value; },
++                     &settled));
++  EXPECT_EQ(rejected.status,
++            AccessNetworkConfigAckStatus::kInvalidPublication);
++  ASSERT_TRUE(settled);
++  EXPECT_FALSE(*settled);
++}
++
+ TEST_F(AccessNetworkContextTransportTest,
+        NonIdempotentFirstSendUsesSelectedProxy) {
+   const base::FilePath partition;
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
+index 003e3fc..a701fea 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
++++ b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <memory>
+ #include <string>
++#include <utility>
+ 
+ #include "chrome/test/base/testing_profile.h"
+ #include "content/public/test/browser_task_environment.h"
+@@ -60,13 +61,16 @@ aegis_access::PolicyPublicationAckRequirements PublicationFor(
+     uint64_t operation_sequence,
+     uint64_t policy_generation,
+     const std::string& operation_id) {
++  aegis_access::PolicyPublicationIdentity identity;
++  identity.operation_id = operation_id;
++  identity.operation_sequence = operation_sequence;
++  identity.policy_generation = policy_generation;
++  identity.proxy_group_id.clear();
++  identity.selection_generation = 0;
++  identity.network_epoch = record.generations.network_epoch;
++  identity.selector = SelectorFor(record);
+   return {
+-      {operation_id,
+-       operation_sequence,
+-       policy_generation,
+-       0,
+-       record.generations.network_epoch,
+-       SelectorFor(record)},
++      std::move(identity),
+       {"browser-runtime", "network-context"},
+       true,
+   };
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 8757c56..cc1658f 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -269,12 +269,16 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
+   if (!selection_generation) {
+     return Result(AccessMutationTransactionStatus::kProxySelectionUnavailable);
+   }
+-  transaction.identity = {pending.operation_id,
+-                          pending.operation_sequence,
+-                          pending.candidate.policy_generation,
+-                          *selection_generation,
+-                          transport->network_epoch(),
+-                          transaction.identity.selector};
++  transaction.identity.operation_id = pending.operation_id;
++  transaction.identity.operation_sequence = pending.operation_sequence;
++  transaction.identity.policy_generation =
++      pending.candidate.policy_generation;
++  transaction.identity.proxy_group_id =
++      pending.candidate.members.front().policy.mode == AccessMode::kProxy
++          ? pending.candidate.members.front().policy.proxy_group_id
++          : std::string();
++  transaction.identity.selection_generation = *selection_generation;
++  transaction.identity.network_epoch = transport->network_epoch();
+   const auto begin = dispatch->BeginPolicyPublication(
+       {transaction.identity, {"network-context"}, false});
+   if (begin.status != aegis_access::PolicyPublicationAckStatus::kPending) {
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index 55d03ef..6bf5a61 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -180,6 +180,8 @@ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck)
+   EXPECT_EQ(client_->metadata->operation_id, "ordinary-operation");
+   EXPECT_EQ(client_->metadata->policy_generation,
+             client_->metadata->operation_sequence);
++  EXPECT_TRUE(client_->metadata->proxy_group_id.empty());
++  EXPECT_EQ(client_->metadata->selection_generation, 0u);
+   EXPECT_EQ(pending_store->ReadCommittedSnapshot(owner_.storage_partition_token)
+                 .status, StoreStatus::kRecoveryRequired);
+   const auto* runtime = AccessPublishedRequestRuntime::Get(profile_.get());
+@@ -316,6 +318,9 @@ TEST_F(AccessMutationTransactionTest,
+   task_environment_.RunUntilIdle();
+ 
+   ASSERT_TRUE(client_->reply);
++  ASSERT_TRUE(client_->metadata);
++  EXPECT_EQ(client_->metadata->proxy_group_id, "proxy-group");
++  EXPECT_EQ(client_->metadata->selection_generation, selection.generation);
+   EXPECT_EQ(transport_->CurrentSelection(owner_)->exact_hosts,
+             (std::vector<std::string>{"news.example", "other.example"}));
+   std::move(client_->reply).Run(true);
+diff --git a/components/aegis_access/policy_publication_ack_tracker.cc b/components/aegis_access/policy_publication_ack_tracker.cc
+index 56b8f54..6ef776c 100644
+--- a/components/aegis_access/policy_publication_ack_tracker.cc
++++ b/components/aegis_access/policy_publication_ack_tracker.cc
+@@ -94,6 +94,9 @@ PolicyPublicationAckStatus PolicyPublicationAckTracker::ValidateIdentity(
+   if (identity.policy_generation != entry.identity.policy_generation) {
+     return PolicyPublicationAckStatus::kVersionMismatch;
+   }
++  if (identity.proxy_group_id != entry.identity.proxy_group_id) {
++    return PolicyPublicationAckStatus::kVersionMismatch;
++  }
+   if (identity.selection_generation < entry.identity.selection_generation ||
+       identity.network_epoch < entry.identity.network_epoch) {
+     return PolicyPublicationAckStatus::kStaleGeneration;
+@@ -112,6 +115,8 @@ PolicyPublicationAckStatus PolicyPublicationAckTracker::ValidateRequirements(
+       requirements.identity.operation_sequence == 0 ||
+       requirements.identity.policy_generation == 0 ||
+       requirements.identity.network_epoch == 0 ||
++      (requirements.identity.selection_generation == 0) !=
++          requirements.identity.proxy_group_id.empty() ||
+       !IsValidRequestCancellationSelector(requirements.identity.selector) ||
+       requirements.required_ack_tokens.empty() ||
+       requirements.required_ack_tokens.size() >
+@@ -311,4 +316,4 @@ PolicyPublicationAckResult PolicyPublicationAckTracker::Finalize(
+   return {PolicyPublicationAckStatus::kFinalized, snapshot};
+ }
+ 
+-}  // namespace aegis_access
+\ No newline at end of file
++}  // namespace aegis_access
+diff --git a/components/aegis_access/policy_publication_ack_tracker.h b/components/aegis_access/policy_publication_ack_tracker.h
+index 84bb6e0..3c64794 100644
+--- a/components/aegis_access/policy_publication_ack_tracker.h
++++ b/components/aegis_access/policy_publication_ack_tracker.h
+@@ -35,10 +35,12 @@ struct PolicyPublicationIdentity {
+   std::string operation_id;
+   uint64_t operation_sequence = 0;
+   uint64_t policy_generation = 0;
+-  // Exact request-runtime versions published with this candidate. A DIRECT
+-  // candidate has no proxy selection and therefore keeps selection_generation
+-  // at zero; network_epoch must always identify the owning NetworkContext era.
++  // Logical proxy group that owns selection_generation. A DIRECT candidate
++  // keeps this empty and selection_generation at zero. A PROXY candidate must
++  // bind both fields so independent group counters cannot be compared.
++  std::string proxy_group_id;
+   uint64_t selection_generation = 0;
++  // Exact browser-owned NetworkContext era published with this candidate.
+   uint64_t network_epoch = 0;
+   RequestCancellationSelector selector;
+ 
+diff --git a/components/aegis_access/policy_publication_ack_tracker_contract_test.h b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
+index afb3936..82ee1d0 100644
+--- a/components/aegis_access/policy_publication_ack_tracker_contract_test.h
++++ b/components/aegis_access/policy_publication_ack_tracker_contract_test.h
+@@ -33,7 +33,7 @@ inline PolicyPublicationIdentity PublicationIdentity(
+     uint64_t generation,
+     const std::string& operation_id = "operation-ack",
+     const std::string& host = "target.example") {
+-  return {operation_id, sequence, generation, 7, 9,
++  return {operation_id, sequence, generation, "proxy-group", 7, 9,
+           PublicationSelector(host)};
+ }
+ 
+@@ -200,6 +200,20 @@ inline void ExpectInvalidRequirementsFailClosed(
+       tracker.Begin(empty).status ==
+           PolicyPublicationAckStatus::kInvalidOperation,
+       "empty required ack set is invalid");
++
++  auto proxy_without_group = PublicationRequirements();
++  proxy_without_group.identity.proxy_group_id.clear();
++  observer.Expect(
++      tracker.Begin(proxy_without_group).status ==
++          PolicyPublicationAckStatus::kInvalidOperation,
++      "proxy selection generation requires a group identity");
++
++  auto direct_with_group = PublicationRequirements();
++  direct_with_group.identity.selection_generation = 0;
++  observer.Expect(
++      tracker.Begin(direct_with_group).status ==
++          PolicyPublicationAckStatus::kInvalidOperation,
++      "direct publication cannot retain a proxy group identity");
+ }
+ 
+ inline void ExpectRuntimeVersionMismatchCannotAcknowledge(
+@@ -221,6 +235,13 @@ inline void ExpectRuntimeVersionMismatchCannotAcknowledge(
+       tracker.Acknowledge(wrong_epoch, "network-context").status ==
+           PolicyPublicationAckStatus::kVersionMismatch,
+       "different network epoch cannot acknowledge current publication");
++
++  auto wrong_group = current.identity;
++  wrong_group.proxy_group_id = "other-proxy-group";
++  observer.Expect(
++      tracker.Acknowledge(wrong_group, "network-context").status ==
++          PolicyPublicationAckStatus::kVersionMismatch,
++      "wrong proxy group cannot acknowledge current publication");
+ }
+ 
+ inline void ExpectAbortedPublicationReleasesCapacity(
+diff --git a/services/network/network_service_proxy_delegate.cc b/services/network/network_service_proxy_delegate.cc
+index a147bee..1b0db93 100644
+--- a/services/network/network_service_proxy_delegate.cc
++++ b/services/network/network_service_proxy_delegate.cc
+@@ -204,6 +204,8 @@ void NetworkServiceProxyDelegate::OnAegisAccessPolicyPublished(
+       metadata && !metadata->operation_id.empty() &&
+       metadata->operation_sequence != 0 && metadata->policy_generation != 0 &&
+       metadata->policy_generation == metadata->operation_sequence &&
++      (metadata->selection_generation == 0) ==
++          metadata->proxy_group_id.empty() &&
+       metadata->network_epoch != 0 && metadata->channel <= 3 &&
+       !metadata->profile_token.empty() &&
+       !metadata->storage_partition_token.empty();
+@@ -227,6 +229,17 @@ void NetworkServiceProxyDelegate::OnAegisAccessPolicyPublished(
+       return;
+     }
+   }
++  if (metadata->selection_generation != 0) {
++    const auto selection = aegis_selection_generation_by_proxy_group_.find(
++        metadata->proxy_group_id);
++    if (selection != aegis_selection_generation_by_proxy_group_.end() &&
++        metadata->selection_generation < selection->second) {
++      std::move(callback).Run(false);
++      return;
++    }
++    aegis_selection_generation_by_proxy_group_.insert_or_assign(
++        metadata->proxy_group_id, metadata->selection_generation);
++  }
+   aegis_policy_publication_ = std::move(metadata);
+   std::move(callback).Run(true);
+ }
+diff --git a/services/network/network_service_proxy_delegate.h b/services/network/network_service_proxy_delegate.h
+index 7442379..39b4f14 100644
+--- a/services/network/network_service_proxy_delegate.h
++++ b/services/network/network_service_proxy_delegate.h
+@@ -5,6 +5,10 @@
+ #ifndef SERVICES_NETWORK_NETWORK_SERVICE_PROXY_DELEGATE_H_
+ #define SERVICES_NETWORK_NETWORK_SERVICE_PROXY_DELEGATE_H_
+ 
++#include <cstdint>
++#include <map>
++#include <string>
++
+ #include "base/component_export.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/types/expected.h"
+@@ -87,6 +91,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+       OnAegisAccessPolicyPublishedCallback callback) override;
+ 
+   mojom::AegisAccessPolicyPublicationMetadataPtr aegis_policy_publication_;
++  std::map<std::string, uint64_t>
++      aegis_selection_generation_by_proxy_group_;
+   mojom::CustomProxyConfigPtr proxy_config_;
+   mojo::Receiver<mojom::CustomProxyConfigClient> receiver_;
+   mojo::Remote<mojom::CustomProxyConnectionObserver> observer_;
+diff --git a/services/network/network_service_proxy_delegate_unittest.cc b/services/network/network_service_proxy_delegate_unittest.cc
+index e73bcc6..b34b9bf 100644
+--- a/services/network/network_service_proxy_delegate_unittest.cc
++++ b/services/network/network_service_proxy_delegate_unittest.cc
+@@ -157,6 +157,7 @@ TEST_F(NetworkServiceProxyDelegateTest,
+   valid->operation_id = "operation-42";
+   valid->operation_sequence = 42;
+   valid->policy_generation = 42;
++  valid->proxy_group_id = "proxy-group";
+   valid->selection_generation = 7;
+   valid->network_epoch = 9;
+   valid->channel = 0;
+@@ -181,6 +182,7 @@ TEST_F(NetworkServiceProxyDelegateTest,
+   stale->operation_id = "operation-42";
+   stale->operation_sequence = 42;
+   stale->policy_generation = 41;
++  stale->proxy_group_id = "proxy-group";
+   stale->selection_generation = 7;
+   stale->network_epoch = 9;
+   stale->channel = 0;
+@@ -200,6 +202,43 @@ TEST_F(NetworkServiceProxyDelegateTest,
+   EXPECT_FALSE(PublishAegisAccessPolicy(std::move(wrong_owner)));
+ }
+ 
++TEST_F(NetworkServiceProxyDelegateTest,
++       AegisSelectionGenerationIsMonotonicWithinEachProxyGroup) {
++  auto config = mojom::CustomProxyConfig::New();
++  auto delegate = CreateDelegate(std::move(config));
++  auto metadata = [](const std::string& operation_id,
++                     uint64_t operation_sequence,
++                     const std::string& proxy_group_id,
++                     uint64_t selection_generation) {
++    auto value = mojom::AegisAccessPolicyPublicationMetadata::New();
++    value->operation_id = operation_id;
++    value->operation_sequence = operation_sequence;
++    value->policy_generation = operation_sequence;
++    value->proxy_group_id = proxy_group_id;
++    value->selection_generation = selection_generation;
++    value->network_epoch = 9;
++    value->channel = 0;
++    value->profile_token = "profile-token";
++    value->storage_partition_token = "partition-token";
++    return value;
++  };
++
++  EXPECT_TRUE(PublishAegisAccessPolicy(
++      metadata("group-a-2", 50, "group-a", 2)));
++  EXPECT_TRUE(PublishAegisAccessPolicy(
++      metadata("group-b-1", 51, "group-b", 1)));
++  EXPECT_FALSE(PublishAegisAccessPolicy(
++      metadata("group-a-stale", 52, "group-a", 1)));
++  EXPECT_TRUE(PublishAegisAccessPolicy(
++      metadata("group-a-3", 52, "group-a", 3)));
++  EXPECT_TRUE(
++      PublishAegisAccessPolicy(metadata("direct", 53, "", 0)));
++  EXPECT_FALSE(PublishAegisAccessPolicy(
++      metadata("missing-group", 54, "", 1)));
++  EXPECT_FALSE(PublishAegisAccessPolicy(
++      metadata("direct-with-group", 54, "group-a", 0)));
++}
++
+ TEST_F(NetworkServiceProxyDelegateTest, NullConfigDoesNotCrash) {
+   mojo::Remote<mojom::CustomProxyConfigClient> client;
+   auto delegate = std::make_unique<NetworkServiceProxyDelegate>(
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+index faf72d3..bfc492a 100644
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -183,6 +183,7 @@ struct AegisAccessPolicyPublicationMetadata {
+   string operation_id;
+   uint64 operation_sequence;
+   uint64 policy_generation;
++  string proxy_group_id;
+   uint64 selection_generation;
+   uint64 network_epoch;
+   uint32 channel;
+-- 
+2.54.0 (Apple Git-157)
+

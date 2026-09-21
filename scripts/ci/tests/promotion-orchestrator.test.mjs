@@ -7,7 +7,9 @@ import test from 'node:test';
 import YAML from 'yaml';
 
 import {
-  applyReadmeMirror,
+  assertRemoteHeads,
+  publishCandidate,
+  validateActivePull,
   classifyBranchRelationship,
   closedPullBlocks,
   inferPromotionTitle,
@@ -34,7 +36,7 @@ function testDependencies(overrides = {}) {
     handleExistingPulls: async () => false,
     branchRelationship: () => ({state: 'same', originMain: 'main', upstreamMain: 'main'}),
     requireGreenQuality: async () => true,
-    pushOrigin: () => {},
+    createUpstreamSync: async () => {},
     createUpstreamPromotion: async () => {},
     isAncestor: () => true,
     createMainToDevelopSync: async () => {},
@@ -267,32 +269,7 @@ test('open promotion inspection classifies manual, active, empty, and conflictin
   assert.deepEqual(multiple.automation.map(({kind}) => kind), ['sync', 'upstream']);
 });
 
-test('README mirror commits only when upstream README content changes the promotion tree', () => {
-  const unchangedGitCalls = [];
-  const unchanged = applyReadmeMirror({
-    gitFn: (...args) => unchangedGitCalls.push(args),
-    commandFn: () => ({status: 0}),
-  });
-  assert.equal(unchanged, false);
-  assert.equal(unchangedGitCalls.length, 1);
-
-  const changedGitCalls = [];
-  const changedCommandCalls = [];
-  const changed = applyReadmeMirror({
-    gitFn: (...args) => changedGitCalls.push(args),
-    commandFn: (name, args, options) => {
-      changedCommandCalls.push({name, args, options});
-      return {status: args[0] === 'diff' ? 1 : 0};
-    },
-  });
-  assert.equal(changed, true);
-  assert.equal(changedGitCalls.length, 2);
-  assert.deepEqual(changedGitCalls[1].slice(0, 2), ['add', '--']);
-  assert.equal(changedCommandCalls.at(-1).args.at(-2), '-m');
-  assert.equal(changedCommandCalls.at(-1).args.at(-1), 'chore(promotion): mirror upstream README');
-});
-
-test('origin-behind transition verifies upstream quality then fast-forwards personal main', async () => {
+test('origin-behind transition verifies upstream quality then requests a preserving sync PR', async () => {
   const relation = {state: 'origin-behind', originMain: 'personal-old', upstreamMain: 'upstream-new'};
   const relations = [relation, {...relation}];
   const qualityCalls = [];
@@ -303,10 +280,10 @@ test('origin-behind transition verifies upstream quality then fast-forwards pers
       qualityCalls.push(args);
       return true;
     },
-    pushOrigin: (...args) => pushes.push(args),
+    createUpstreamSync: async (...args) => pushes.push(args),
   }));
   assert.deepEqual(qualityCalls, [[promotionConfig.upstreamRepo, 'main', 'upstream-new', promotionConfig.upstreamToken]]);
-  assert.deepEqual(pushes, [['upstream-new:refs/heads/main', promotionConfig.forkToken]]);
+  assert.deepEqual(pushes, [[promotionConfig, relation]]);
 });
 
 test('origin-behind transition defers when branch state drifts after quality verification', async () => {
@@ -317,7 +294,7 @@ test('origin-behind transition defers when branch state drifts after quality ver
   let pushed = false;
   await runPromotionCycle(promotionConfig, testDependencies({
     branchRelationship: () => relations.shift(),
-    pushOrigin: () => { pushed = true; },
+    createUpstreamSync: async () => { pushed = true; },
   }));
   assert.equal(pushed, false);
 });
@@ -330,13 +307,7 @@ test('origin-ahead transition creates upstream promotion after exact personal ma
     branchRelationship: () => relations.shift(),
     createUpstreamPromotion: async (...args) => created.push(args),
   }));
-  assert.deepEqual(created, [[
-    promotionConfig.personalRepo,
-    promotionConfig.upstreamRepo,
-    'personal-new',
-    'upstream-old',
-    promotionConfig.upstreamToken,
-  ]]);
+  assert.deepEqual(created, [[promotionConfig, relation]]);
 });
 
 test('origin-ahead transition defers when branch state drifts after quality verification', async () => {
@@ -357,7 +328,7 @@ test('diverged main relationship fails closed before any promotion mutation', as
   await assert.rejects(
     runPromotionCycle(promotionConfig, testDependencies({
       branchRelationship: () => ({state: 'diverged', originMain: 'personal-sha', upstreamMain: 'upstream-sha'}),
-      pushOrigin: () => { mutated = true; },
+      createUpstreamSync: async () => { mutated = true; },
       createUpstreamPromotion: async () => { mutated = true; },
       createMainToDevelopSync: async () => { mutated = true; },
       createDevelopToMainPromotion: async () => { mutated = true; },
@@ -397,12 +368,7 @@ test('same-main transition promotes validated develop after both quality recheck
     [promotionConfig.personalRepo, 'main', 'main-sha', promotionConfig.readToken],
     [promotionConfig.personalRepo, 'develop', 'develop-sha', promotionConfig.readToken],
   ]);
-  assert.deepEqual(promotionCalls, [[
-    promotionConfig.personalRepo,
-    'main-sha',
-    'develop-sha',
-    promotionConfig.forkToken,
-  ]]);
+  assert.deepEqual(promotionCalls, [[promotionConfig, relation, 'develop-sha']]);
 });
 
 test('same-main transition is a no-op when develop already equals main', async () => {
@@ -476,4 +442,102 @@ test('promotion workflow validator rejects trust-boundary mutations', () => {
   } finally {
     rmSync(directory, {recursive: true, force: true});
   }
+});
+
+test('export and upstream-sync PRs are detected, manual export blocks and legacy main is retained', () => {
+  const personalRepo = promotionConfig.personalRepo;
+  const upstreamRepo = promotionConfig.upstreamRepo;
+  const make = (ref, marker) => ({base: {ref: 'main'}, head: {ref, repo: {full_name: personalRepo}}, body: marker});
+  const exportPull = make('automation/export-main-upstream', '<!-- aegis-promotion-orchestrator:upstream-main -->');
+  const inspect = (personalOpen, upstreamOpen) => inspectOpenPromotionPulls({personalOpen, upstreamOpen, personalRepo, upstreamRepo});
+  assert.equal(inspect([], [exportPull]).active.kind, 'upstream');
+  assert.equal(inspect([], [{...exportPull, body: ''}]).status, 'manual');
+  assert.equal(inspect([make('automation/upstream-sync-main-upstream', '<!-- aegis-promotion-orchestrator:upstream-to-main -->')], []).active.kind, 'upstreamSync');
+  assert.equal(inspect([], [exportPull, {...exportPull, head: {...exportPull.head, ref: 'main'}}]).status, 'multiple');
+});
+
+test('remote source drift rejects candidate authorization', async () => {
+  await assert.rejects(assertRemoteHeads([{repo: 'owner/repo', branch: 'main', sha: 'expected'}], async () => ({object: {sha: 'changed'}})), /changed during candidate preparation/u);
+});
+
+function publicationFixture({existing = null, fetched = 'candidate-head', drift = false} = {}) {
+  const candidate = {branch: 'automation/export-main-upstream', originMain: 'main', upstreamMain: 'upstream', productSource: 'main', baseTree: 'base-tree', readmeSource: 'upstream', tree: 'expected-tree', parents: ['main'], message: 'export'};
+  const writes = [];
+  const validations = [];
+  let sourceReads = 0;
+  const deps = {
+    remoteSha: () => existing,
+    fetchBranch: () => {},
+    sha: () => fetched,
+    entries: () => [],
+    validate: (...args) => validations.push(args),
+    api: async (repo, path, request) => {
+      if (request.method === 'POST') {
+        writes.push({path, ...request});
+        if (path === '/git/trees') return {sha: 'expected-tree'};
+        if (path === '/git/commits') return {sha: 'candidate-head'};
+        if (path === '/git/refs') return {};
+        throw new Error(`Unexpected write ${path}`);
+      }
+      if (path === '/git/ref/heads/main') {
+        sourceReads += 1;
+        return {object: {sha: drift && sourceReads > 2 ? 'changed' : repo === promotionConfig.personalRepo ? 'main' : 'upstream'}};
+      }
+      return {object: {sha: fetched}};
+    },
+  };
+  return {candidate, writes, validations, deps};
+}
+
+test('publication creates a new immutable ref only after tree verification, with no ref updates', async () => {
+  const f = publicationFixture();
+  assert.equal(await publishCandidate(promotionConfig, f.candidate, f.deps), 'candidate-head');
+  assert.deepEqual(f.writes.map(({path}) => path), ['/git/trees', '/git/commits', '/git/refs']);
+  assert.equal(f.writes[0].body.base_tree, 'base-tree');
+  assert.deepEqual(f.writes[1].body.parents, ['main']);
+  assert.deepEqual(f.writes[2].body, {ref: `refs/heads/${f.candidate.branch}`, sha: 'candidate-head'});
+  assert.deepEqual(f.validations, [[f.candidate, 'candidate-head']]);
+});
+
+test('publication safely reuses the immutable branch without writes and rejects fetch races', async () => {
+  const f = publicationFixture({existing: 'candidate-head'});
+  assert.equal(await publishCandidate(promotionConfig, f.candidate, f.deps), 'candidate-head');
+  assert.deepEqual(f.writes, []);
+  assert.equal(f.validations.length, 1);
+  const changed = publicationFixture({existing: 'old-head', fetched: 'changed-head'});
+  await assert.rejects(publishCandidate(promotionConfig, changed.candidate, changed.deps), /changed during fetch/u);
+  assert.deepEqual(changed.writes, []);
+});
+
+test('source movement during remote object creation stops before publishing the ref', async () => {
+  const f = publicationFixture({drift: true});
+  await assert.rejects(publishCandidate(promotionConfig, f.candidate, f.deps), /changed during candidate preparation/u);
+  assert.deepEqual(f.writes.map(({path}) => path), ['/git/trees', '/git/commits']);
+});
+
+test('remote tree mismatch stops before publishing a commit or ref', async () => {
+  const f = publicationFixture();
+  const api = f.deps.api;
+  f.deps.api = (...args) => args[1] === '/git/trees' ? {sha: 'wrong-tree'} : api(...args);
+  await assert.rejects(publishCandidate(promotionConfig, f.candidate, f.deps), /remote candidate tree mismatch/u);
+  assert.deepEqual(f.writes, []);
+});
+
+test('create-ref collision fails closed without attempting update or force push', async () => {
+  const f = publicationFixture();
+  const api = f.deps.api;
+  f.deps.api = (...args) => {
+    if (args[1] === '/git/refs') throw new Error('Reference already exists');
+    return api(...args);
+  };
+  await assert.rejects(publishCandidate(promotionConfig, f.candidate, f.deps), /Reference already exists/u);
+  assert.deepEqual(f.writes.map(({path}) => path), ['/git/trees', '/git/commits']);
+});
+
+test('active export rejects source drift and candidate auto-merge before requesting review', async () => {
+  const candidate = {branch: 'automation/export-current-upstream'};
+  const active = {kind: 'upstream', pr: {head: {ref: 'automation/export-old-upstream', sha: 'head'}, base: {sha: 'upstream'}}};
+  const deps = {sha: (ref) => ref === 'origin/main' ? 'current' : 'upstream', build: () => candidate};
+  await assert.rejects(validateActivePull(active, promotionConfig, deps), /stale candidate source SHAs/u);
+  await assert.rejects(validateActivePull({...active, pr: {...active.pr, auto_merge: {}}}, promotionConfig, deps), /explicit final CI\/review/u);
 });

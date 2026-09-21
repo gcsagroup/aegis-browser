@@ -16,6 +16,10 @@ bool IsValidSelectionBinding(const AccessProxySelectionBinding& binding) {
 
 }  // namespace
 
+ProxySelectionGenerationState::ProxySelectionGenerationState() = default;
+
+ProxySelectionGenerationState::~ProxySelectionGenerationState() = default;
+
 ProxySelectionGenerationCommitResult ProxySelectionGenerationState::Commit(
     AccessProxySelectionBinding binding) {
   if (exhausted_) {

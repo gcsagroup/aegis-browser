@@ -150,3 +150,10 @@
 0149-fix-aegis-browser-test-direct-gn-deps.patch
 0150-feat-aegis-add-access-service-coordinator-lifecycle.patch
 0151-fix-aegis-identity-generation-state-style.patch
+0152-feat-aegis-ack-exact-access-policy-publication.patch
+0153-feat-access-publish-prepared-snapshots.patch
+0154-fix-access-selection-lifecycle-style.patch
+0155-refactor-access-snapshot-transaction-stages.patch
+0156-fix-access-canonical-proxy-candidate-hosts.patch
+0157-fix-access-scope-selection-generation-by-proxy-group.patch
+0158-refactor-access-publication-candidate-preparation.patch

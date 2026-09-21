@@ -47,6 +47,9 @@ BROWSER_PROCESS_PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0148-feat-aegis-gate-l
 BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-direct-gn-deps.patch"
 ACCESS_COORDINATOR_PATCH_FILE="$BROWSER_DIR/patches/0150-feat-aegis-add-access-service-coordinator-lifecycle.patch"
 IDENTITY_GENERATION_STYLE_PATCH_FILE="$BROWSER_DIR/patches/0151-fix-aegis-identity-generation-state-style.patch"
+CANONICAL_PROXY_PATCH_FILE="$BROWSER_DIR/patches/0156-fix-access-canonical-proxy-candidate-hosts.patch"
+SCOPED_SELECTION_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0157-fix-access-scope-selection-generation-by-proxy-group.patch"
+PUBLICATION_PREPARATION_PATCH_FILE="$BROWSER_DIR/patches/0158-refactor-access-publication-candidate-preparation.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
@@ -156,12 +159,39 @@ rg -Fq 'source_set("access_service_coordinator")' "$ACCESS_BUILD" ||
   fail "overlay must define the Profile-owned Access service coordinator"
 rg -Fq 'test("access_service_coordinator_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the Access service coordinator lifecycle regression"
+coordinator_test_block="$(awk '/^test\("access_service_coordinator_unittests"\)/,/^}/' "$ACCESS_BUILD")"
+[[ "$coordinator_test_block" == *'":access_proxy_selection_generation_source",'* ]] ||
+  fail "coordinator test must directly depend on the proxy selection generation source"
 rg -Fq 'MainNavigationRoutingIsolatedAcrossProfiles' "$BROWSER_PROXY_TEST" ||
   fail "browser proxy regression must cover real two-Profile navigation isolation"
 rg -Fq '+source_set("access_service_coordinator")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the Access service coordinator"
 rg -Fq '+test("access_service_coordinator_unittests")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the coordinator lifecycle regression"
+rg -Fq '+    ":access_proxy_selection_generation_source",' \
+  "$CANONICAL_PROXY_PATCH_FILE" ||
+  fail "patch 0156 must deliver the coordinator test direct GN dependency"
+rg -Fq '+  string proxy_group_id;' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must bind policy publication metadata to a proxy group"
+rg -Fq '+      aegis_selection_generation_by_proxy_group_;' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must retain selection high-water marks per proxy group"
+rg -Fq '+       AegisSelectionGenerationIsMonotonicWithinEachProxyGroup) {' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must cover cross-group and same-group generation ordering"
+rg -Fq 'identity.proxy_group_id.clear();' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc" ||
+  fail "dispatch-state DIRECT fixture must bind an explicit empty proxy group"
+rg -Fq '+  identity.proxy_group_id.clear();' \
+  "$SCOPED_SELECTION_GENERATION_PATCH_FILE" ||
+  fail "patch 0157 must update the dispatch-state publication fixture"
+rg -Fq 'PrepareTransportCandidate(MutationTransaction& transaction)' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_service_coordinator.h" ||
+  fail "coordinator must isolate transport-candidate preparation"
+rg -Fq '+  PrepareTransportCandidate(transaction);' \
+  "$PUBLICATION_PREPARATION_PATCH_FILE" ||
+  fail "patch 0158 must deliver the publication preparation refactor"
 rg -Fq '+                       MainNavigationRoutingIsolatedAcrossProfiles) {' \
   "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the real two-Profile navigation regression"
@@ -899,10 +929,17 @@ expected_access_tail="$(cat <<'EOF'
 0149-fix-aegis-browser-test-direct-gn-deps.patch
 0150-feat-aegis-add-access-service-coordinator-lifecycle.patch
 0151-fix-aegis-identity-generation-state-style.patch
+0152-feat-aegis-ack-exact-access-policy-publication.patch
+0153-feat-access-publish-prepared-snapshots.patch
+0154-fix-access-selection-lifecycle-style.patch
+0155-refactor-access-snapshot-transaction-stages.patch
+0156-fix-access-canonical-proxy-candidate-hosts.patch
+0157-fix-access-scope-selection-generation-by-proxy-group.patch
+0158-refactor-access-publication-candidate-preparation.patch
 EOF
 )"
-[[ "$(tail -n 37 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0151"
+[[ "$(tail -n 44 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0158"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
