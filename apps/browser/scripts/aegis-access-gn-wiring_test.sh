@@ -50,6 +50,7 @@ IDENTITY_GENERATION_STYLE_PATCH_FILE="$BROWSER_DIR/patches/0151-fix-aegis-identi
 CANONICAL_PROXY_PATCH_FILE="$BROWSER_DIR/patches/0156-fix-access-canonical-proxy-candidate-hosts.patch"
 SCOPED_SELECTION_GENERATION_PATCH_FILE="$BROWSER_DIR/patches/0157-fix-access-scope-selection-generation-by-proxy-group.patch"
 PUBLICATION_PREPARATION_PATCH_FILE="$BROWSER_DIR/patches/0158-refactor-access-publication-candidate-preparation.patch"
+COMMITTED_RETRY_PATCH_FILE="$BROWSER_DIR/patches/0159-fix-access-return-committed-mutation-retries.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
@@ -192,6 +193,18 @@ rg -Fq 'PrepareTransportCandidate(MutationTransaction& transaction)' \
 rg -Fq '+  PrepareTransportCandidate(transaction);' \
   "$PUBLICATION_PREPARATION_PATCH_FILE" ||
   fail "patch 0158 must deliver the publication preparation refactor"
+rg -Fq 'prepared.value->phase == MutationPhase::kCommitted' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_service_coordinator.cc" ||
+  fail "coordinator must return an existing committed mutation"
+rg -Fq '+  if (prepared.value->phase == MutationPhase::kCommitted) {' \
+  "$COMMITTED_RETRY_PATCH_FILE" ||
+  fail "patch 0159 must deliver committed mutation retry handling"
+rg -Fq 'CommittedRetryReturnsOriginalResultWithoutRepublishing' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_service_coordinator_unittest.cc" ||
+  fail "coordinator tests must cover committed mutation retries"
+rg -Fq '+       CommittedRetryReturnsOriginalResultWithoutRepublishing) {' \
+  "$COMMITTED_RETRY_PATCH_FILE" ||
+  fail "patch 0159 must deliver the committed mutation retry regression"
 rg -Fq '+                       MainNavigationRoutingIsolatedAcrossProfiles) {' \
   "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the real two-Profile navigation regression"
@@ -936,10 +949,11 @@ expected_access_tail="$(cat <<'EOF'
 0156-fix-access-canonical-proxy-candidate-hosts.patch
 0157-fix-access-scope-selection-generation-by-proxy-group.patch
 0158-refactor-access-publication-candidate-preparation.patch
+0159-fix-access-return-committed-mutation-retries.patch
 EOF
 )"
-[[ "$(tail -n 44 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0158"
+[[ "$(tail -n 45 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0159"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

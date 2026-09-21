@@ -157,3 +157,4 @@
 0156-fix-access-canonical-proxy-candidate-hosts.patch
 0157-fix-access-scope-selection-generation-by-proxy-group.patch
 0158-refactor-access-publication-candidate-preparation.patch
+0159-fix-access-return-committed-mutation-retries.patch
