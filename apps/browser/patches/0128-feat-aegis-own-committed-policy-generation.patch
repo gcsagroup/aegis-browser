@@ -1,11 +1,16 @@
-From 3deb07f3c7b502b3efb2036d625a182553af930f Mon Sep 17 00:00:00 2001
+From d334a3980b9cf567dfab33a357e267c99d7fb4dd Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 18 Sep 2026 16:05:00 +0800
 Subject: [PATCH] feat(aegis): own committed policy generation
 
 ---
+ .../browser/aegis/access/access_rule_store.cc |  17 +-
+ .../browser/aegis/access/access_rule_store.h  |   8 +-
+ .../access/access_rule_store_unittest.cc      | 169 +++++++++++++-----
+ 3 files changed, 136 insertions(+), 58 deletions(-)
+
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
-index 1bc85cd..dc0364f 100644
+index 1bc85cd042..dc0364fee1 100644
 --- a/chrome/browser/aegis/access/access_rule_store.cc
 +++ b/chrome/browser/aegis/access/access_rule_store.cc
 @@ -745,6 +745,7 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
@@ -72,7 +77,7 @@ index 1bc85cd..dc0364f 100644
        expected.request_fingerprint != record.request_fingerprint ||
        expected.owner != record.owner ||
 diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
-index 843cebb..f0cac3b 100644
+index 843cebb382..f0cac3b25c 100644
 --- a/chrome/browser/aegis/access/access_rule_store.h
 +++ b/chrome/browser/aegis/access/access_rule_store.h
 @@ -183,8 +183,9 @@ struct PendingMutationRecord {
@@ -98,7 +103,7 @@ index 843cebb..f0cac3b 100644
                                          const std::string& fingerprint);
    StoreResult<RecoveryState> LoadRecoveryState();
 diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
-index 462fbe4..2ca9168 100644
+index 462fbe4886..2ca916852d 100644
 --- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
 +++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
 @@ -179,10 +179,9 @@ PendingMutationRecord Prepare(AccessRuleStore* store,
@@ -230,7 +235,7 @@ index 462fbe4..2ca9168 100644
    }
  }
  
-@@ -551,24 +587,73 @@ TEST(AccessRuleStoreTest, RevisionSequenceFingerprintAndGenerationAreBound) {
+@@ -551,14 +587,22 @@ TEST(AccessRuleStoreTest, RevisionSequenceFingerprintAndGenerationAreBound) {
    ASSERT_EQ(store.Open(), StoreStatus::kValid);
    PendingMutationRecord pending =
        Prepare(&store, Mutation("bound", AccessMode::kProxy));
@@ -257,7 +262,7 @@ index 462fbe4..2ca9168 100644
  
    EXPECT_EQ(
        store.PrepareSiteGroupMutation(Mutation("stale", AccessMode::kDirect, 0))
-           .status,
+@@ -566,9 +610,50 @@ TEST(AccessRuleStoreTest, RevisionSequenceFingerprintAndGenerationAreBound) {
        StoreStatus::kConflict);
    PendingMutationRecord next =
        Prepare(&store, Mutation("next", AccessMode::kDirect, 1));
@@ -407,7 +412,7 @@ index 462fbe4..2ca9168 100644
    const auto snapshot = reopened.ReadCommittedSnapshot("partition-A");
    ASSERT_EQ(snapshot.status, StoreStatus::kValid);
    ASSERT_TRUE(snapshot.value.has_value());
-@@ -1104,17 +1186,15 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
+@@ -1104,8 +1186,7 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
      Commit(
          &store,
          Prepare(&store, Mutation("partition-A-op", AccessMode::kProxy, 0,
@@ -417,7 +422,7 @@ index 462fbe4..2ca9168 100644
      EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status,
                StoreStatus::kValid);
      EXPECT_EQ(store.ReadCommittedSnapshot("partition-B").status,
-               StoreStatus::kMissing);
+@@ -1113,8 +1194,7 @@ TEST(AccessRuleStoreTest, IsolatesProfilesPartitionsAndAllChannels) {
      Commit(&store,
             Prepare(&store, Mutation("partition-B-op", AccessMode::kDirect, 0,
                                      Owner(channels[i], profile, "partition-B"),
@@ -480,5 +485,3 @@ index 462fbe4..2ca9168 100644
      RouteInput input{
          .policy_state = match.policy_state,
          .effective_mode = match.effective_mode,
--- 
-2.39.0

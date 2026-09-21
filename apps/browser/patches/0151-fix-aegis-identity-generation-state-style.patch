@@ -1,0 +1,42 @@
+From 263aead7427baa91dfec00b6a5bbe71fa435530a Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Mon, 21 Sep 2026 00:44:21 +0800
+Subject: [PATCH] fix(aegis): move identity state lifecycle out of line
+
+---
+ components/aegis_access/access_identity_generation_state.cc | 4 ++++
+ components/aegis_access/access_identity_generation_state.h  | 3 ++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/components/aegis_access/access_identity_generation_state.cc b/components/aegis_access/access_identity_generation_state.cc
+index 6ad2b59..9cfaf1d 100644
+--- a/components/aegis_access/access_identity_generation_state.cc
++++ b/components/aegis_access/access_identity_generation_state.cc
+@@ -33,6 +33,10 @@ bool IsValidIdentityBinding(const AccessIdentityBinding& binding) {
+ 
+ }  // namespace
+ 
++IdentityGenerationState::IdentityGenerationState() = default;
++
++IdentityGenerationState::~IdentityGenerationState() = default;
++
+ IdentityGenerationCommitResult IdentityGenerationState::Commit(
+     AccessIdentityBinding binding) {
+   if (exhausted_) {
+diff --git a/components/aegis_access/access_identity_generation_state.h b/components/aegis_access/access_identity_generation_state.h
+index 6c1abd0..c9155cc 100644
+--- a/components/aegis_access/access_identity_generation_state.h
++++ b/components/aegis_access/access_identity_generation_state.h
+@@ -46,7 +46,8 @@ struct IdentityGenerationCommitResult {
+ // the identity transition.
+ class IdentityGenerationState {
+  public:
+-  IdentityGenerationState() = default;
++  IdentityGenerationState();
++  ~IdentityGenerationState();
+ 
+   IdentityGenerationState(const IdentityGenerationState&) = delete;
+   IdentityGenerationState& operator=(const IdentityGenerationState&) = delete;
+-- 
+2.54.0 (Apple Git-157)
+

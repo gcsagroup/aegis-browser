@@ -452,7 +452,7 @@ diff --git a/chrome/browser/aegis/access/access_proxy_selection_generation_sourc
 new file mode 100644
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_proxy_selection_generation_source.cc
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,79 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
