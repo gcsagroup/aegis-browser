@@ -13,7 +13,9 @@
 #include "base/files/file_path.h"
 #include "base/functional/callback_forward.h"
 #include "base/supports_user_data.h"
+#include "base/memory/weak_ptr.h"
 #include "components/aegis_access/access_proxy_route_adapter.h"
+#include "components/aegis_access/policy_publication_ack_tracker.h"
 #include "components/aegis_access/access_route_types.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
 #include "net/base/network_change_notifier.h"
@@ -30,11 +32,19 @@ enum class AccessNetworkConfigAckStatus {
   kMissingPartition,
   kNoClients,
   kBuildFailed,
+  kInvalidPublication,
 };
 
 struct AccessNetworkConfigAckResult {
   AccessNetworkConfigAckStatus status = AccessNetworkConfigAckStatus::kBuildFailed;
   size_t required_client_acks = 0;
+};
+
+struct AccessTransportSelection {
+  std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
+  std::vector<std::string> exact_hosts;
+  friend bool operator==(const AccessTransportSelection&,
+                         const AccessTransportSelection&) = default;
 };
 
 // Profile-owned transport state for the first Network Service integration
@@ -112,6 +122,22 @@ class AccessNetworkContextTransport
       const aegis_access::OwnershipKey& owner,
       base::OnceCallback<void(bool)> all_clients_settled);
 
+  // Publishes only the exact PREPARED policy identity/version to every owning
+  // NetworkContext. This is a candidate-specific execution ACK and deliberately
+  // does not reuse custom-proxy config re-publication as policy proof.
+  AccessNetworkConfigAckResult PublishPolicyCandidateWithAck(
+      const aegis_access::PolicyPublicationIdentity& identity,
+      const aegis_access::OwnershipKey& owner,
+      base::OnceCallback<void(bool)> all_clients_settled);
+
+  std::optional<aegis_access::RegisteredProxyEndpoint> CurrentEndpoint(
+      const aegis_access::OwnershipKey& owner) const;
+  std::optional<AccessTransportSelection> CurrentSelection(
+      const aegis_access::OwnershipKey& owner) const;
+  bool ReplaceSelection(const aegis_access::OwnershipKey& owner,
+                        const AccessTransportSelection& expected,
+                        const AccessTransportSelection& replacement);
+
   network::mojom::CustomProxyConfigPtr BuildConfigForTesting(
       const base::FilePath& relative_partition_path) const;
   void FlushClientsForTesting(const base::FilePath& relative_partition_path);
@@ -123,6 +149,7 @@ class AccessNetworkContextTransport
     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
     std::vector<std::string> exact_hosts;
     mojo::RemoteSet<network::mojom::CustomProxyConfigClient> clients;
+    uint64_t clients_generation = 0;
   };
 
   AccessNetworkContextTransport();
@@ -143,11 +170,24 @@ class AccessNetworkContextTransport
       PartitionState& state,
       const network::mojom::CustomProxyConfigPtr& config,
       base::OnceCallback<void(bool)> all_clients_settled);
+  static bool SelectionMatchesIdentity(
+      const PartitionState& state,
+      const aegis_access::PolicyPublicationIdentity& identity);
+  bool PublicationStillCurrent(
+      const aegis_access::PolicyPublicationIdentity& identity,
+      uint64_t clients_generation,
+      size_t client_count) const;
+  void PublishPolicyCandidateToClients(
+      PartitionState& state,
+      const aegis_access::PolicyPublicationIdentity& identity,
+      const aegis_access::OwnershipKey& owner,
+      base::OnceCallback<void(bool)> all_clients_settled);
   void Broadcast(PartitionState& state);
 
   std::string runtime_profile_token_;
   uint64_t network_epoch_ = 1;
   std::map<std::string, PartitionState> partitions_;
+  base::WeakPtrFactory<AccessNetworkContextTransport> weak_factory_{this};
 };
 
 }  // namespace aegis::access

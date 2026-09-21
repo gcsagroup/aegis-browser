@@ -52,9 +52,11 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 ## 分支职责与日常路径
 
-个人 Fork 的 GitHub 默认分支为 `develop`（2026-09-20 回读）；个人 `main` 用于对外展示和公开晋升，开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR。准备公开晋升时先确认个人 `main` 没有未发布的独有产品提交，并只以 fast-forward 同步最新 `upstream/main`；再把更新后的 `main` 合入 `develop`，解决冲突并验证 develop。随后从最终 `develop` 创建一次性 promotion 分支，按下述 README 镜像规则处理后向个人 `main` 提 PR，经最终 HEAD Review、托管 CI 与合并后 main push CI 固化个人发布候选。个人 `main` 成功后，才以该精确状态向 `gcsagroup/aegis-browser:main` 提 PR。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
+个人 Fork 的 GitHub 默认分支为 `develop`（2026-09-20 回读）；个人 `main` 用于对外展示和公开晋升，开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR；用户明确要求的个人展示维护可以作为独立、有限范围的 PR，不借此带入未晋升的产品代码。最终 develop 经独立 promotion PR 晋升到个人 main，使用 merge commit 并核验 main push CI；再从该 main 的精确 SHA 创建上游导出候选。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
 
-当前 README 采用临时镜像规则：个人 `main` 的 `README.md`、`README.zh-CN.md`、`README.zh-TW.md` 必须与当次 `upstream/main` 对应文件逐字一致；`develop` 上的 README 修改继续保留用于开发，但在公开晋升时暂不带入 `main`。promotion 分支应从最终 `develop` 创建，再从已刷新后的 `upstream/main` 恢复这三份 README，确认三者 blob/hash 一致后才向个人 `main` 提 PR。该规则只忽略这三份 README，不允许借此丢弃其他 develop 改动。
+README 的个人与上游展示从 2026-09-21 起分开维护，取代旧的“个人 main 逐字镜像上游”规则：个人 main/develop 保留个人 Codacy 项目（`72c871eba82e471ebc05eaacd4d45218`）的 main/develop 两个明确标注分支的徽章。内部 develop → main 晋升保留个人 README。只有创建上游导出候选时，才从本次刷新并冻结的 `upstream/main` 恢复 `README.md`、`README.zh-CN.md`、`README.zh-TW.md`，校验三者 blob/hash 与上游一致，同时验证其他文件与个人 main 一致。上游 PR 使用该独立导出分支，不直接使用个人 main；上游自己的 Codacy 徽章因此不被个人项目 ID 覆盖。只存在这三份 README 差异时不创建空的上游晋升 PR。
+
+上游回同步也必须保留个人 README：在可审查的同步候选中合入上游并恢复个人展示，经 PR、Review、CI 后合并，不能用 fast-forward 擦掉个人徽章。冲突、未知分叉或陈旧候选应停止，不能扩大忽略范围或丢弃产品改动。
 
 2026-09-15 的分支迁移取代之前 DEV main 的工作方式；PR #20 的 main-only 验证方案已废止，不能沿用其目标分支或旧结果放行 develop。既有历史 SHA/报告保留原事件和分支身份。
 
@@ -102,7 +104,7 @@ HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆
 
 根 `.codacy.yml` 已按官方 Java glob 语义精确忽略依赖、构建/生成输出与补丁运输文件，未整体排除 `third_party`，因此 `apps/browser/overlay/third_party/aegis*` 中的本仓集成仍可分析。配置文件不能启用 Codacy 工具；工具选择与仓库授权必须在 Codacy UI 完成。
 
-README 的 CI 与 Codacy Grade 徽章均选择个人 Fork 的 `develop`。2026-09-15 协调者已在 Codacy UI 回读 App 接入、develop 分析启用且设为默认，main 保留分析。此配置状态不等于当前提交的 Grade 或覆盖率已通过；协调者仍须核对项目对应 `quinn521/aegis-browser`、目标分支 `develop` 及当前被测 SHA，不能复用 main 分支的旧 Grade 作为新分支结果。覆盖率上传仍需单独配置与验收。
+个人 README 的两个 Codacy Grade 徽章分别选择个人 Fork 的 `main` 和 `develop`，两条链接显式带分支参数；CI 徽章的范围按其 URL 和正文单独解释。2026-09-21 恢复时两个 Grade SVG 均返回 A，该服务端快照不是未来提交的通过证明。2026-09-15 协调者已在 Codacy UI 回读 App 接入、develop 分析启用且设为默认，main 保留分析。此配置状态不等于当前提交的 Grade 或覆盖率已通过；协调者仍须核对项目对应 `quinn521/aegis-browser`、目标分支 `develop` 及当前被测 SHA，不能复用 main 分支的旧 Grade 作为新分支结果。覆盖率上传仍需单独配置与验收。
 
 质量工作流只生成并上传 CI artifact，不加入 token 或 coverage upload job；Grade 徽章不是覆盖率上传证明。未来上传必须使用短期仓库级 secret，禁止给 fork PR 暴露 secret，并把覆盖报告绑定到实际被测提交：PR `pull_request` CI 测试的是 GitHub 合并候选 M，不是产品分支 H；develop/main push 则绑定 S。本地账号、密码、API token 与仓库 token 均不得进入仓库、日志或公开文档。
 
@@ -135,13 +137,13 @@ PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API �
 2. 保存仓库合并设置、develop/main 保护与规则集快照；记录实际 check 名和 GitHub Actions 来源。
 3. 增量启用 PR 必需、严格 base 同步、`quality-gate` 必需、禁止强推/删除；人工审批、最后推送批准、旧批准失效及管理员策略按实际服务端配置记录，不擅自降低已有规则。
 4. 回读设置，记录管理员账号和合并身份的 bypass 状态；不得把管理员可绕过误报为不可绕过。套餐或 API 拒绝时报告限制，不关闭必需检查。
-5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；日常功能先等待 S 的真实 develop push run 成功。公开晋升还必须完成最新 upstream/main → 个人 main 快进同步、main → develop 对齐，再从最终 develop 创建 promotion 分支、按 README 镜像规则恢复三份 README 后向个人 main 提 PR，并等待个人 main 的 S push run 成功后才允许创建上游 PR。
+5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；日常功能先等待 S 的真实 develop push run 成功。公开晋升必须完成上游同步及 main/develop 对齐，保留个人 README 向个人 main 提 PR，并等待 main 的 S push run 成功。然后创建独立上游导出分支，仅在该候选恢复三份上游 README，重新核验最终 HEAD 的 local full quality、public diff、hosted CI 和独立 Review。
 
 对 `develop` 或个人 `main` 的交付 PR，在服务端保护能够阻止未完成 Review/CI 的前提下，创建 PR 后开启 GitHub 原生 auto-merge；Review、Codacy 或 CI 发现问题时先修复并 push 新 HEAD，让 review 与检查覆盖最终提交。若仓库只有同一管理员身份、GitHub 人类 Approve 无法满足，则不得伪造自我批准；只能在独立 Review 与所有必需检查成功后由管理员精确合并。独立模型 Review 是外部证据，并不等同 GitHub 已强制一名独立人类批准。
 
 ## 上游公开导出
 
-不要从 DEV `develop` 直接向上游提 PR。先按本指南完成个人 `main` 的晋升：个人 main 已 fast-forward 吸收最新 `upstream/main`，develop 已反向吸收该 main，最终 develop 已生成 promotion 分支并按 README 镜像规则恢复三份 README，该 promotion PR 已 Review/CI/合并且 main push CI 成功。随后以个人 `main` 的精确 SHA 作为上游 PR head，并以最新 `upstream/main` 为 base；创建上游 PR 前，在独立干净 worktree 中 checkout 该 `origin/main` 精确 SHA，使下列 `HEAD` 明确等于待发布的个人 main，再运行：
+不要从 DEV `develop` 或带个人 README 的 `main` 直接向上游提 PR。先完成个人 main 的晋升和真实 push CI，再从冻结的 `origin/main` 精确 SHA 创建独立 `automation/export-*` 分支；只恢复本次冻结 `upstream/main` 的三份 README，提交后让下列 `HEAD` 明确指向最终导出候选，而不是原个人 main。记录个人来源 SHA、上游 base SHA、导出 HEAD 及三份 README blob，校验除 README 外所有文件与个人 main 一致，再运行：
 
 ```bash
 node scripts/ci/check-public-diff.mjs \
@@ -163,9 +165,9 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 `.github/workflows/promotion-orchestrator.yml` 把上述分支推进实现成串行状态机。它只在受信任的 `develop` / `main` push、每 15 分钟调度和人工 dispatch 上运行，并通过固定 concurrency 保证一次只推进一个状态；PR、fork PR 与 `pull_request_target` 都不会执行该控制器。控制器在每个转换前重新 fetch `origin/main`、`origin/develop` 与 `upstream/main`，并要求对应分支精确 SHA 的最新 `.github/workflows/quality.yml` push run 及其最新 attempt 中 `quality`、`quality-gate` 两个 job 全部成功；缺失或运行中只等待，失败直接停止。PR、人工 dispatch 或其他 workflow 的同名成功检查不能替代这项分支 push 证据。
 
-自动链路依次执行：上游 `main` 若只领先个人 `main`，在确认 upstream 精确 SHA 绿灯后仅允许 fast-forward 个人 `main`；个人 `main` 尚未进入 `develop` 时创建 `main -> develop` PR 并使用 merge commit auto-merge；对齐后的 `develop` 生成一次性 `automation/promote-<sha>` 分支，按 README 镜像规则恢复三份 README，再创建 `develop -> main` PR；个人 `main` 合并后等待其 push `quality-gate`，然后以个人 `main` 向 `gcsagroup/aegis-browser:main` 创建上游 PR。内部 PR 自动请求 `@copilot` 并启用 merge-commit auto-merge，让服务端 CI/Review 继续作为真正的合并门；上游 PR只请求 `@copilot`，不自动合并。上游合并并且 upstream push `quality-gate` 成功后，下一次控制器运行仅在个人 `main` 是 upstream `main` 祖先时 fast-forward 回同步；若两边分叉则 fail closed，禁止 force push 或自动改写历史。
+自动链路串行处理上游同步、main → develop 对齐、develop → main 晋升和独立上游导出。内部晋升保留个人 README，导出候选才使用上游 README。导出分支绑定个人 main 与上游 base 的精确 SHA，已存在的候选只能在内容与来源一致时复用，不强推改写。只有 README 差异时不创建上游 PR。main → develop 对齐 PR 保留 merge-commit auto-merge；新建个人晋升、上游同步和上游导出 PR 请求 `@copilot` 后等待协调者验证最终 HEAD 的 Review、Codacy、必需 CI，再显式合并。候选 PR 不由控制器提前启用 auto-merge，避免来源前移后继续合并冻结快照。上游回同步以保留个人 README 的 PR 完成；未知分叉仍 fail closed，不强推、不覆盖个人展示。
 
-控制器的 `GITHUB_TOKEN` 固定为 `actions: read` 与 `contents: read`，只读取个人仓库精确 SHA 的 workflow run 与 job，不读取或修改 PR。启用前在个人 Fork 的 Actions secrets 配置两个独立凭据：`AEGIS_FORK_AUTOMATION_TOKEN` 读取个人 PR 状态，并负责 automation branch、PR、auto-merge 和受保护 `main` 的 fast-forward，至少需要该 Fork 的 Contents/PR 写权限并且身份必须允许这次 fast-forward；`AEGIS_UPSTREAM_TOKEN` 读取 upstream 的精确 workflow run/job 与 PR 状态，并负责创建/更新 upstream PR 和请求 reviewer，至少需要 upstream 的 Actions/Contents 读权限与 PR 写权限。缺任一 secret 时控制器直接失败，不进行降级授权。凭据值不得写入仓库、日志或 PR。两个 secret 配置完成并验证权限后，再把仓库变量 `AEGIS_PROMOTION_AUTOMATION` 设置为 `enabled`；变量未启用时整个 job 保持关闭。
+控制器的 `GITHUB_TOKEN` 固定为 `actions: read` 与 `contents: read`，只读取个人仓库精确 SHA 的 workflow run 与 job，不读取或修改 PR。启用前在个人 Fork 的 Actions secrets 配置两个独立凭据：`AEGIS_FORK_AUTOMATION_TOKEN` 读取个人 PR 状态，并负责 automation branch、PR、auto-merge 和上游导出/同步候选分支，至少需要该 Fork 的 Contents/PR 写权限；`AEGIS_UPSTREAM_TOKEN` 读取 upstream 的精确 workflow run/job 与 PR 状态，并负责创建/更新 upstream PR 和请求 reviewer，至少需要 upstream 的 Actions/Contents 读权限与 PR 写权限。缺任一 secret 时控制器直接失败，不进行降级授权。凭据值不得写入仓库、日志或 PR。两个 secret 配置完成并验证权限后，再把仓库变量 `AEGIS_PROMOTION_AUTOMATION` 设置为 `enabled`；变量未启用时整个 job 保持关闭。
 
 ## Chromium 集成边界与故障分类
 
