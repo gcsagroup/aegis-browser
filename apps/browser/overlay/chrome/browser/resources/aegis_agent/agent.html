@@ -93,6 +93,30 @@
         </div>
       </details>
 
+      <details id="typesafe-details" class="card model-card">
+        <summary>
+          <span id="typesafe-settings-label"></span>
+          <strong id="typesafe-state"></strong>
+        </summary>
+        <div class="model-body">
+          <p id="typesafe-disclosure" class="help"></p>
+          <label class="toggle-row" for="typesafe-enabled">
+            <input id="typesafe-enabled" type="checkbox">
+            <span id="typesafe-enabled-label"></span>
+          </label>
+          <div class="field-grid">
+            <label for="typesafe-api-key" id="typesafe-api-key-label"></label>
+            <input id="typesafe-api-key" type="password" maxlength="4096"
+                   autocomplete="off" spellcheck="false">
+          </div>
+          <div class="model-actions">
+            <button id="clear-typesafe-key-button" type="button"></button>
+            <button id="save-typesafe-button" class="primary" type="button"></button>
+          </div>
+          <p id="typesafe-feedback" class="help" role="status"></p>
+        </div>
+      </details>
+
       <section id="target-card" class="target-card">
         <span id="target-label" class="eyebrow"></span>
         <strong id="target-value"></strong>

@@ -30,6 +30,7 @@
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/agent/agent_model_client.h"
 #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
+#include "chrome/browser/aegis/agent/typesafe_goal_router_client.h"
 #include "chrome/browser/aegis/model_provider_policy.h"
 #include "chrome/browser/browser_process.h"
 #if !BUILDFLAG(IS_ANDROID)
@@ -751,8 +752,47 @@ bool AegisAgentService::BeginPlanning(const std::string& task_id) {
 void AegisAgentService::RouteGoal(std::string goal,
                                   AgentWorkflowKind requested_workflow,
                                   GoalRouteCallback callback) {
+  if (goal_route_for_testing_) {
+    std::move(callback).Run(true, std::string(), goal_route_for_testing_);
+    return;
+  }
+  if (pending_goal_route_callback_ ||
+      (typesafe_goal_router_client_ && typesafe_goal_router_client_->busy()) ||
+      (goal_router_client_ && goal_router_client_->busy())) {
+    std::move(callback).Run(false, "another goal is being understood",
+                            std::nullopt);
+    return;
+  }
+  const uint64_t generation = ++goal_route_generation_;
+  pending_goal_route_callback_ = std::move(callback);
+  AegisService* settings = AegisServiceFactory::GetForProfileIfExists(profile_);
+  std::optional<std::string> typesafe_api_key =
+      settings ? settings->TypeSafeApiKeyForBrowserAgent(profile_)
+               : std::nullopt;
+  if (typesafe_api_key) {
+    if (!typesafe_goal_router_client_) {
+      typesafe_goal_router_client_ =
+          std::make_unique<TypeSafeGoalRouterClient>(
+              profile_->GetDefaultStoragePartition()
+                  ->GetURLLoaderFactoryForBrowserProcess());
+    }
+    const uint64_t settings_generation =
+        settings->TypeSafeSettingsGeneration();
+    std::optional<TypeSafeGoalRouterClient::RequestId> request_id =
+        typesafe_goal_router_client_->Start(
+            goal, std::move(*typesafe_api_key),
+            base::BindOnce(&AegisAgentService::OnTypeSafeGoalRouteResult,
+                           weak_ptr_factory_.GetWeakPtr(), generation,
+                           settings_generation, goal, requested_workflow));
+    if (request_id && typesafe_goal_router_client_->busy()) {
+      typesafe_goal_router_request_id_ = std::move(*request_id);
+    }
+    return;
+  }
   RouteGoalAttempt(std::move(goal), requested_workflow,
-                   /*repair_attempt=*/0, std::string(), std::move(callback));
+                   /*repair_attempt=*/0, std::string(),
+                   base::BindOnce(&AegisAgentService::CompleteGoalRouting,
+                                  weak_ptr_factory_.GetWeakPtr(), generation));
 }
 
 void AegisAgentService::RouteGoalAttempt(std::string goal,
@@ -834,6 +874,78 @@ void AegisAgentService::SetGoalRouterClientForTesting(
     std::unique_ptr<AgentModelClient> client) {
   CHECK(!goal_router_client_ || !goal_router_client_->busy());
   goal_router_client_ = std::move(client);
+}
+
+void AegisAgentService::SetTypeSafeGoalRouterClientForTesting(
+    std::unique_ptr<TypeSafeGoalRouterClient> client) {
+  CHECK(!typesafe_goal_router_client_ || !typesafe_goal_router_client_->busy());
+  typesafe_goal_router_client_ = std::move(client);
+}
+
+void AegisAgentService::CancelPendingGoalRouting() {
+  ++goal_route_generation_;
+  if (typesafe_goal_router_client_ &&
+      !typesafe_goal_router_request_id_.empty()) {
+    typesafe_goal_router_client_->Cancel(typesafe_goal_router_request_id_);
+  }
+  typesafe_goal_router_request_id_.clear();
+  if (goal_router_client_ && !goal_router_request_id_.empty()) {
+    goal_router_client_->Cancel(goal_router_request_id_);
+  }
+  goal_router_request_id_.clear();
+  if (pending_goal_route_callback_) {
+    GoalRouteCallback callback = std::move(pending_goal_route_callback_);
+    std::move(callback).Run(false, "goal routing was cancelled", std::nullopt);
+  }
+}
+
+void AegisAgentService::OnTypeSafeGoalRouteResult(
+    uint64_t generation,
+    uint64_t settings_generation,
+    std::string goal,
+    AgentWorkflowKind requested_workflow,
+    bool ok,
+    std::string /*error*/,
+    std::optional<AgentGoalRoute> route) {
+  if (generation != goal_route_generation_ || shutting_down_) {
+    return;
+  }
+  AegisService* settings = AegisServiceFactory::GetForProfileIfExists(profile_);
+  if (!settings || !settings->IsTypeSafeGoalRoutingEnabled() ||
+      settings->TypeSafeSettingsGeneration() != settings_generation) {
+    typesafe_goal_router_request_id_.clear();
+    CompleteGoalRouting(generation, false, "goal routing settings changed",
+                        std::nullopt);
+    return;
+  }
+  typesafe_goal_router_request_id_.clear();
+  if (ok && route) {
+    *route = ConstrainGoalRouteToUserIntent(goal, std::move(*route));
+    std::string validation_error;
+    if (ValidateAndNormalizeGoalRoute(&*route, &validation_error)) {
+      CompleteGoalRouting(generation, true, std::string(), std::move(route));
+      return;
+    }
+  }
+  // TypeSafe is an optional decision layer. Any transport, protocol, or
+  // confidence failure falls through once to the existing configured model.
+  RouteGoalAttempt(std::move(goal), requested_workflow,
+                   /*repair_attempt=*/0, std::string(),
+                   base::BindOnce(&AegisAgentService::CompleteGoalRouting,
+                                  weak_ptr_factory_.GetWeakPtr(), generation));
+}
+
+void AegisAgentService::CompleteGoalRouting(
+    uint64_t generation,
+    bool ok,
+    std::string error,
+    std::optional<AgentGoalRoute> route) {
+  if (generation != goal_route_generation_ ||
+      !pending_goal_route_callback_) {
+    return;
+  }
+  GoalRouteCallback callback = std::move(pending_goal_route_callback_);
+  std::move(callback).Run(ok, std::move(error), std::move(route));
 }
 
 void AegisAgentService::SetTaskModelClientForTesting(
@@ -1263,6 +1375,7 @@ bool AegisAgentService::CancelTask(const std::string& task_id) {
 }
 
 void AegisAgentService::CancelAllForDisable() {
+  CancelPendingGoalRouting();
   monitor_timer_.Stop();
   monitor_url_checks_.clear();
   monitor_page_checks_.clear();
@@ -3957,10 +4070,7 @@ void AegisAgentService::Shutdown() {
   monitor_url_checks_.clear();
   monitor_page_checks_.clear();
   weak_ptr_factory_.InvalidateWeakPtrs();
-  if (goal_router_client_ && !goal_router_request_id_.empty()) {
-    goal_router_client_->Cancel(goal_router_request_id_);
-  }
-  goal_router_request_id_.clear();
+  CancelPendingGoalRouting();
   for (const auto& [task_id, request_id] : model_request_ids_) {
     auto client = model_clients_.find(task_id);
     if (client != model_clients_.end()) {
@@ -4324,10 +4434,7 @@ void AegisAgentService::OnCriticalStoreWriteFinished(bool ok) {
   monitor_url_checks_.clear();
   monitor_page_checks_.clear();
   pending_invocation_context_.reset();
-  if (goal_router_client_ && !goal_router_request_id_.empty()) {
-    goal_router_client_->Cancel(goal_router_request_id_);
-  }
-  goal_router_request_id_.clear();
+  CancelPendingGoalRouting();
   for (const auto& [task_id, request_id] : model_request_ids_) {
     auto client = model_clients_.find(task_id);
     if (client != model_clients_.end()) {

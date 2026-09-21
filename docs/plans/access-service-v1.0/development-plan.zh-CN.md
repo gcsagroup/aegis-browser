@@ -1,5 +1,23 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
+## 2026-09-22：已提交 mutation 的幂等重试修复
+
+上游 [PR #21](https://github.com/gcsagroup/aegis-browser/pull/21) 已以 merge commit `6e2c5701f980e0ce50b9c5d04e151713b90ae49b` 合入；对应 upstream/main push CI run `35619634792` 与 C++ run `35619634801` 均成功。独立 Astra High 的合并后审查发现一个 P2 正确性缺口：同一 `operation_id` 与 `request_fingerprint` 首次成功后，`PrepareSiteGroupMutation` 会在重试时返回既有 `COMMITTED` journal 记录，但 coordinator 仍把它交给只接受 `PREPARED` 的 candidate builder，最终把 durable 成功误报为失败。
+
+个人仓已通过 PR #153 将上游 merge ancestry 回灌到 `main@86609c69ed4c82061807e3e3b9a4a4ad089aecfb`，其 push CI run `35620964157` 成功；PR #154 再把该 ancestry 合入包含 PR #141 静态质量门的 `develop@f0d01d63d0e7bf6dea2390041f51026073272d1b`，push CI run `35622236927` 成功。两次同步均为 tree-preserving merge，个人 README 与 Codacy 徽章保持个人项目配置。
+
+当前修复单元只处理已提交 operation 的幂等响应：可信 selector、普通 DIRECT/PROXY 请求和 store 校验保持原顺序；发现相同指纹的 `COMMITTED` 记录时，立即返回 `kCommitted`、`StoreStatus::kValid` 与原 `committed_policy_generation`，不再次发布 runtime/transport，不请求 NetworkContext ACK，不清理 journal，也不增加 coordinator `state_generation`。`SUPERSEDED` 或其他非 `PREPARED` 阶段继续 fail closed。PR #155 的实现与 coordinator 回归已以 `develop@798e7ec991d1384b0034500373bb94ab5d367f12` 合入，精确 push CI run `35625233377` 与 C++ run `35625233397` 成功；但其初始 HEAD `ef23e0d69061f03c42c90ed19f68c4e9369c1552` 的 Astra High 复审为 `BLOCKED`，因为测试在检查无重复 Mojo publication 前没有排空异步消息，可能漏检迟到发布。准备后续修复期间，PR #145 已合入为 `develop@3afab7b7a9b98504c39a85ecdd69b89429b9a194`，精确 push CI run `35626285577` 成功；当前分支已重放到该最新 develop，保留同步返回断言，并在无发布断言前执行 `RunUntilIdle()`。旧 HEAD 与旧基线的本地/托管/审查证据不能转用。
+
+交付包含 overlay、顺序补丁 `0159`、单元回归和本文档/Handoff。合并前必须绑定最终 HEAD 完成 patch format、GN wiring、本地 full quality、托管 quality/quality-gate 与 C++、Codacy Medium+ 门槛、全部 conversation resolved 和独立 Astra High 复审。仓库基础门与测试源码不等于固定 Chromium/GTest 已执行；在同一固定候选实际运行新增 coordinator 用例及既有真实入口矩阵前，native 证据继续 `NOT_RUN`，G0 继续 **UNVERIFIED**。
+
+后续测试修复 [PR #156](https://github.com/quinn521/aegis-browser/pull/156) 已以最终 HEAD `dd7344eb8d85bd5eec41b5898ffd5d7f71256117` 通过本地 full quality、托管 CI/C++、Codacy、全部 conversation resolved 与同一 Astra High reviewer 复审，并以 merge commit `9752825c7aceefe6ba675576a98fb23bc5fb26fc` 合入 develop；对应 push CI run `35627511526` 与 C++ run `35627511757` 均成功。随后建立的个人 main 晋升 [PR #157](https://github.com/quinn521/aegis-browser/pull/157) 因 Codacy AI 的测试重复 Medium 意见改回 develop，最终 HEAD `59e5cf5c93b6554471483c20705f26cb2e572b64` 提取共享配置 helper，并以 merge commit `5036b6277b8eea3abd12591855abf8531c66d40d` 合入 develop；精确 develop push CI run `35632734631` 的 quality 与 quality-gate 成功。
+
+从 `develop@5036b627` 建立的下一次个人 main 晋升 [PR #158](https://github.com/quinn521/aegis-browser/pull/158) 已通过初始本地、托管 CI/C++ 和 Codacy static，但 Codacy AI 新增三个 Medium：WebUI 用错误文本子串识别安全存储失败、TypeSafe client 同时承担 HTTP 与响应解析、取消请求通过 `InvalidateWeakPtrs()` 影响整个 client。按 develop 先行规则，#158 已改回 develop 并重置到 `5036b627`。当前修复让 AegisService 返回稳定的设置错误类别并通过 Mojo snapshot 交给 WebUI；将 JSON schema 校验与领域映射移到独立 `TypeSafeGoalResponseParser`；完成回调绑定精确 request ID，取消旧请求不再使整个 weak-pointer 域失效。新增回归证明取消后 replacement request 可独立完成，UI 合同测试证明存储提示只读取结构化类别。现有共享配置 helper 已覆盖 Low 级 fixture 建议，场景专属请求与断言保持展开。
+
+实现与回归提交 `fb2b2c86e3f06c8957a623c8c83a132912baff66`（tree `6e89b38deb9e9cf8c10ea1a39927551ffc060d6a`）已对 `develop@5036b627` 完成本地 full quality：`PASS`、`sourceStable=true`，输入/最终摘要同为 `edfe9fb1304448554c38f0d020bf36a02c79bcbd38e752721a6ef9c97bf8362b`，native classification 为 `REQUIRED`。该结果包含 standalone Access 与 TypeSafe choice contract，但不编译或运行本次 Chromium Agent C++；固定 Chromium/GTest 和真实入口仍为 `NOT_RUN`，G0 继续 **UNVERIFIED**。本次文档提交会形成新的最终 HEAD，必须再跑完整质量门。
+
+后续严格按顺序执行：#158 的最终 HEAD 必须重新取得 local full quality、托管 CI，并在 C++ workflow 路径过滤不自动触发时显式记录其范围；同时要求无 Medium+ Codacy、全部 conversation resolved 和 Astra High CLEAR。实际合并并确认精确 develop push CI 成功后，才重新执行个人 main 晋升和上游导出。上游导出继续恢复上游 README/Codacy 徽章，回灌继续保留个人 README。任何 HEAD 变化都使旧的质量、CI 与审查证据失效。
+
 ## 2026-09-21：个人 Codacy 与上游 README 隔离维护
 
 用户要求恢复个人 main/develop 的 Codacy，并在晋升时忽略个人徽章。三份个人 README 使用个人项目 `72c871eba82e471ebc05eaacd4d45218`，分别标注 main/develop；上游保留其项目 `7b3008e649154ca0a7d5906c514488cc`。内部晋升保留个人 README，独立上游导出候选才恢复本次 upstream/main 的三份 README，并校验其他文件不变；同步回个人分支也保留个人展示。流程以 [DEV CI 指南](../../development/ci.zh-CN.md) 为准。
