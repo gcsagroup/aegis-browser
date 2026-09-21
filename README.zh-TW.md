@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 單元測試](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![目前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 單元測試](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![目前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
 **一個本機優先的隱私與安全瀏覽器，內建可控的 AI Agent。先做好 macOS，再推進 iPhone 與 iPad。**
 
@@ -34,6 +34,7 @@ Aegis 把隱私控制、安全檢查、原生瀏覽器能力和 AI Agent 直接�
 
 - **CI**：公共 `main` 的儲存庫級品質門檻。
 - **C++ 單元測試**：執行 standalone C++20 Access 測試，以及 Chromium GoogleTest wiring / patch contract；它**不代表**完整 Chromium GoogleTest 可執行檔或全部真實瀏覽器執行情境已經通過。
+- **Codacy Grade** 顯示上游 `gcsagroup/aegis-browser` 的 `main` 分支靜態分析結果，不代表測試覆蓋率或執行階段驗收。
 - **License / 平台徽章**：描述儲存庫授權與目前產品優先級，不代表發布資格。
 
 完整 Chromium 建置、目前瀏覽器執行行為、真實網路場景、Developer ID 簽署、公證、安裝與升級驗收仍屬於 macOS 獨立發布門檻。
