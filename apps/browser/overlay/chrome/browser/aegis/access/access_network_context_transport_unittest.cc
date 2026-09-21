@@ -374,6 +374,22 @@ TEST_F(AccessNetworkContextTransportTest, DirectCandidateRestoresNativeForOnlyTa
   ExpectProxyResolution(delegate.get(), "https://target.example/");
 }
 
+TEST_F(AccessNetworkContextTransportTest,
+       ReplaceSelectionRejectsUnsortedExactHosts) {
+  auto delegate = CreateDelegate({});
+  ASSERT_TRUE(delegate);
+  const auto endpoint = EndpointFor({});
+  ASSERT_TRUE(transport_->PublishProxySelection(
+      {}, {"a.example", "z.example"}, endpoint));
+  const auto previous = *transport_->CurrentSelection(endpoint.owner);
+  auto candidate = previous;
+  candidate.exact_hosts = {"z.example", "a.example"};
+
+  EXPECT_FALSE(
+      transport_->ReplaceSelection(endpoint.owner, previous, candidate));
+  EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
+}
+
 TEST_F(AccessNetworkContextTransportTest, ExactCandidateRequiresEveryContext) {
   auto first = CreateDelegate({});
   auto second = CreateDelegate({});
