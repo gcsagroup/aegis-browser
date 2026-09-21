@@ -23,16 +23,10 @@ namespace aegis::agent {
 inline constexpr char kTypeSafeSystemOneEndpoint[] =
     "https://api.typesafe.ai/v1/systemone";
 inline constexpr char kTypeSafeGoalRouterModel[] = "jev-latest";
-inline constexpr double kTypeSafeGoalRouteMinimumConfidence = 0.8;
 
 std::optional<std::string> BuildTypeSafeGoalRequestBody(
     std::string_view goal,
     std::string* error);
-std::optional<AgentGoalRoute> ParseTypeSafeGoalResponse(
-    std::string_view body,
-    std::string_view original_goal,
-    std::string* error);
-
 class TypeSafeGoalRouterClient {
  public:
   using RequestId = std::string;
@@ -54,7 +48,7 @@ class TypeSafeGoalRouterClient {
   bool busy() const { return loader_ != nullptr; }
 
  private:
-  void OnComplete(std::optional<std::string> body);
+  void OnComplete(RequestId request_id, std::optional<std::string> body);
 
   std::unique_ptr<network::SimpleURLLoader> loader_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;

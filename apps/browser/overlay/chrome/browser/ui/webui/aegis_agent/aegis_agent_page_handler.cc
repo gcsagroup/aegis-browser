@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -44,6 +45,21 @@ using aegis::agent::AgentRiskLevel;
 using aegis::agent::AgentTask;
 using aegis::agent::AgentTaskState;
 using aegis::agent::AgentWorkflowKind;
+
+aegis_agent::mojom::TypeSafeSettingsError ConvertTypeSafeSettingsError(
+    aegis::TypeSafeSettingsError error) {
+  switch (error) {
+    case aegis::TypeSafeSettingsError::kNone:
+      return aegis_agent::mojom::TypeSafeSettingsError::kNone;
+    case aegis::TypeSafeSettingsError::kValidation:
+      return aegis_agent::mojom::TypeSafeSettingsError::kValidation;
+    case aegis::TypeSafeSettingsError::kStorage:
+      return aegis_agent::mojom::TypeSafeSettingsError::kStorage;
+    case aegis::TypeSafeSettingsError::kSuperseded:
+      return aegis_agent::mojom::TypeSafeSettingsError::kSuperseded;
+  }
+  NOTREACHED();
+}
 
 const char* ModeName(AgentMode mode) {
   switch (mode) {
@@ -496,9 +512,13 @@ void AegisAgentPageHandler::ConfigureTypeSafe(
     bool clear_api_key,
     ConfigureTypeSafeCallback callback) {
   last_error_.clear();
+  typesafe_settings_error_ =
+      aegis_agent::mojom::TypeSafeSettingsError::kNone;
   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
   if (!core_service) {
     last_error_ = "TypeSafe settings are unavailable for this profile";
+    typesafe_settings_error_ =
+        aegis_agent::mojom::TypeSafeSettingsError::kValidation;
     std::move(callback).Run(BuildSnapshot());
     return;
   }
@@ -893,8 +913,10 @@ void AegisAgentPageHandler::OnModelConfigured(ConfigureModelCallback callback,
 void AegisAgentPageHandler::OnTypeSafeConfigured(
     ConfigureTypeSafeCallback callback,
     bool ok,
-    std::string error) {
+    std::string error,
+    aegis::TypeSafeSettingsError error_type) {
   last_error_ = ok ? std::string() : std::move(error);
+  typesafe_settings_error_ = ConvertTypeSafeSettingsError(error_type);
   std::move(callback).Run(BuildSnapshot());
 }
 
@@ -991,6 +1013,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
             .has_value() &&
         aegis::IsValidModelName(*provider, snapshot->model_name);
   }
+  snapshot->typesafe_settings_error = typesafe_settings_error_;
   tabs::TabInterface* tab = ContentTab(browser_);
   if (tab) {
     snapshot->active_tab_id = tab->GetHandle().raw_value();

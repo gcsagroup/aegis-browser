@@ -28,6 +28,10 @@ class BrowserWindowInterface;
 class AegisAgentUI;
 class AegisAgentCoreServiceObserver;
 
+namespace aegis {
+enum class TypeSafeSettingsError;
+}
+
 namespace aegis::agent {
 class AegisAgentService;
 }
@@ -125,7 +129,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
                          std::string error);
   void OnTypeSafeConfigured(ConfigureTypeSafeCallback callback,
                             bool ok,
-                            std::string error);
+                            std::string error,
+                            aegis::TypeSafeSettingsError error_type);
   void OnModelsListed(ListModelsCallback callback,
                       bool ok,
                       std::string error,
@@ -145,6 +150,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
   std::string active_task_id_;
   std::string last_error_;
+  aegis_agent::mojom::TypeSafeSettingsError typesafe_settings_error_ =
+      aegis_agent::mojom::TypeSafeSettingsError::kNone;
   mojo::Remote<aegis_agent::mojom::Page> page_;
   mojo::Receiver<aegis_agent::mojom::PageHandler> receiver_;
   PrefChangeRegistrar pref_change_registrar_;
