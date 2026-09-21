@@ -1544,11 +1544,12 @@ void AegisService::SetTypeSafeGoalRoutingSettings(
     bool enabled,
     const std::string& api_key,
     bool clear_api_key,
-    base::OnceCallback<void(bool, std::string)> done) {
+    TypeSafeSettingsCallback done) {
   std::optional<std::string> validation_error =
       ValidateTypeSafeSettingsMutation(api_key, clear_api_key);
   if (validation_error) {
-    std::move(done).Run(false, std::move(*validation_error));
+    std::move(done).Run(false, std::move(*validation_error),
+                        TypeSafeSettingsError::kValidation);
     return;
   }
   if (auto* agent_service =
@@ -1589,36 +1590,38 @@ std::optional<std::string> AegisService::ValidateTypeSafeSettingsMutation(
 }
 
 void AegisService::ClearTypeSafeGoalRoutingSettings(
-    base::OnceCallback<void(bool, std::string)> done) {
+    TypeSafeSettingsCallback done) {
   typesafe_settings_update_pending_ = false;
   typesafe_api_key_.clear();
   prefs_->SetString(prefs::kTypeSafeApiKeyCiphertext, std::string());
   prefs_->SetBoolean(prefs::kTypeSafeGoalRoutingEnabled, false);
   NotifyObservers();
-  std::move(done).Run(true, std::string());
+  std::move(done).Run(true, std::string(), TypeSafeSettingsError::kNone);
 }
 
 void AegisService::SetTypeSafeGoalRoutingEnabledOnly(
     bool enabled,
-    base::OnceCallback<void(bool, std::string)> done) {
+    TypeSafeSettingsCallback done) {
   typesafe_settings_update_pending_ = false;
   if (enabled && !HasTypeSafeApiKey()) {
-    std::move(done).Run(false, "TypeSafe API key is not configured");
+    std::move(done).Run(false, "TypeSafe API key is not configured",
+                        TypeSafeSettingsError::kValidation);
     return;
   }
   prefs_->SetBoolean(prefs::kTypeSafeGoalRoutingEnabled, enabled);
   NotifyObservers();
-  std::move(done).Run(true, std::string());
+  std::move(done).Run(true, std::string(), TypeSafeSettingsError::kNone);
 }
 
 void AegisService::BeginSaveTypeSafeApiKey(
     uint64_t generation,
     bool enabled,
     std::string api_key,
-    base::OnceCallback<void(bool, std::string)> done) {
+    TypeSafeSettingsCallback done) {
   if (!g_browser_process || !g_browser_process->os_crypt_async()) {
     typesafe_settings_update_pending_ = false;
-    std::move(done).Run(false, "secure credential storage unavailable");
+    std::move(done).Run(false, "secure credential storage unavailable",
+                        TypeSafeSettingsError::kStorage);
     return;
   }
   // Do not let a route started during OSCrypt work observe the new settings
@@ -1633,23 +1636,26 @@ void AegisService::SaveTypeSafeApiKey(
     uint64_t generation,
     bool enabled,
     std::string api_key,
-    base::OnceCallback<void(bool, std::string)> done,
+    TypeSafeSettingsCallback done,
     scoped_refptr<os_crypt_async::Encryptor> encryptor) {
   if (generation != typesafe_settings_generation_) {
-    std::move(done).Run(false, "TypeSafe settings changed while saving");
+    std::move(done).Run(false, "TypeSafe settings changed while saving",
+                        TypeSafeSettingsError::kSuperseded);
     return;
   }
   if (!prefs_ || !profile_ || profile_->IsOffTheRecord() || !encryptor ||
       !encryptor->IsEncryptionAvailable()) {
     typesafe_settings_update_pending_ = false;
-    std::move(done).Run(false, "secure credential storage unavailable");
+    std::move(done).Run(false, "secure credential storage unavailable",
+                        TypeSafeSettingsError::kStorage);
     return;
   }
   std::optional<std::vector<uint8_t>> ciphertext =
       encryptor->EncryptString(api_key);
   if (!ciphertext) {
     typesafe_settings_update_pending_ = false;
-    std::move(done).Run(false, "failed to encrypt TypeSafe API key");
+    std::move(done).Run(false, "failed to encrypt TypeSafe API key",
+                        TypeSafeSettingsError::kStorage);
     return;
   }
   prefs_->SetString(prefs::kTypeSafeApiKeyCiphertext,
@@ -1660,7 +1666,7 @@ void AegisService::SaveTypeSafeApiKey(
   typesafe_credential_available_ = true;
   typesafe_settings_update_pending_ = false;
   NotifyObservers();
-  std::move(done).Run(true, std::string());
+  std::move(done).Run(true, std::string(), TypeSafeSettingsError::kNone);
 }
 
 void AegisService::LoadTypeSafeCredential() {

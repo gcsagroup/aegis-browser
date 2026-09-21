@@ -244,7 +244,7 @@ class AegisAgentServiceTest : public testing::Test {
     if (!settings) {
       return nullptr;
     }
-    base::test::TestFuture<bool, std::string> configured;
+    base::test::TestFuture<bool, std::string, TypeSafeSettingsError> configured;
     settings->SetTypeSafeGoalRoutingSettings(
         true, "ts-fixture-secret", false, configured.GetCallback());
     if (!configured.Get<0>()) {
@@ -567,7 +567,7 @@ TEST_F(AegisAgentServiceTest, ReplacingTypeSafeSettingsCancelsPendingRoute) {
                      route.GetCallback());
   factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
 
-  base::test::TestFuture<bool, std::string> disabled;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> disabled;
   settings->SetTypeSafeGoalRoutingSettings(false, std::string(), false,
                                            disabled.GetCallback());
   EXPECT_TRUE(disabled.Get<0>()) << disabled.Get<1>();
