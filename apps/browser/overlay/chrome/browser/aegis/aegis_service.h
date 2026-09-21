@@ -93,6 +93,18 @@ class AegisServiceObserver : public base::CheckedObserver {
   virtual void OnAegisStateChanged() = 0;
 };
 
+enum class TypeSafeSettingsError {
+  kNone,
+  kValidation,
+  kStorage,
+  kSuperseded,
+};
+
+using TypeSafeSettingsCallback =
+    base::OnceCallback<void(bool ok,
+                            std::string error,
+                            TypeSafeSettingsError error_type)>;
+
 class AegisService : public KeyedService,
                      public chrome::mojom::AegisHost,
                      public ProfileObserver {
@@ -196,7 +208,7 @@ class AegisService : public KeyedService,
       bool enabled,
       const std::string& api_key,
       bool clear_api_key,
-      base::OnceCallback<void(bool ok, std::string error)> done);
+      TypeSafeSettingsCallback done);
   void SetModelSettings(
       const std::string& provider,
       const std::string& base_url,
@@ -384,20 +396,20 @@ class AegisService : public KeyedService,
       const std::string& api_key,
       bool clear_api_key) const;
   void ClearTypeSafeGoalRoutingSettings(
-      base::OnceCallback<void(bool, std::string)> done);
+      TypeSafeSettingsCallback done);
   void SetTypeSafeGoalRoutingEnabledOnly(
       bool enabled,
-      base::OnceCallback<void(bool, std::string)> done);
+      TypeSafeSettingsCallback done);
   void BeginSaveTypeSafeApiKey(
       uint64_t generation,
       bool enabled,
       std::string api_key,
-      base::OnceCallback<void(bool, std::string)> done);
+      TypeSafeSettingsCallback done);
   void SaveTypeSafeApiKey(
       uint64_t generation,
       bool enabled,
       std::string api_key,
-      base::OnceCallback<void(bool, std::string)> done,
+      TypeSafeSettingsCallback done,
       scoped_refptr<os_crypt_async::Encryptor> encryptor);
   void PersistModelConfiguration(const std::string& provider,
                                  const std::string& base_url,

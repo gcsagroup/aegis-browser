@@ -15,6 +15,13 @@ enum Workflow {
   kShopping = 3,
 };
 
+enum TypeSafeSettingsError {
+  kNone = 0,
+  kValidation = 1,
+  kStorage = 2,
+  kSuperseded = 3,
+};
+
 struct PlanStep {
   string step_id;
   string title;
@@ -99,6 +106,7 @@ struct TaskSnapshot {
   string model_name;
   bool typesafe_enabled;
   bool typesafe_key_configured;
+  TypeSafeSettingsError typesafe_settings_error;
   int32 active_tab_id;
   string active_origin;
   string invocation_context;
