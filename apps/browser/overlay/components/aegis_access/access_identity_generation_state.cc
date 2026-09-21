@@ -33,6 +33,10 @@ bool IsValidIdentityBinding(const AccessIdentityBinding& binding) {
 
 }  // namespace
 
+IdentityGenerationState::IdentityGenerationState() = default;
+
+IdentityGenerationState::~IdentityGenerationState() = default;
+
 IdentityGenerationCommitResult IdentityGenerationState::Commit(
     AccessIdentityBinding binding) {
   if (exhausted_) {

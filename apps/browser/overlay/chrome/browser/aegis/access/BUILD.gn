@@ -145,6 +145,31 @@ source_set("access_published_request_runtime") {
   ]
 }
 
+source_set("access_service_coordinator") {
+  sources = [
+    "access_service_coordinator.cc",
+    "access_service_coordinator.h",
+  ]
+  deps = [
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+  ]
+}
+
+test("access_service_coordinator_unittests") {
+  sources = [ "access_service_coordinator_unittest.cc" ]
+  deps = [
+    ":access_service_coordinator",
+    "//build:chromeos_buildflags",
+    "//chrome/browser/profiles:test_support",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
+    "//content/test:test_support",
+    "//testing/gtest",
+  ]
+}
+
 test("access_browser_request_adapter_unittests") {
   sources = [ "access_browser_request_adapter_unittest.cc" ]
   deps = [

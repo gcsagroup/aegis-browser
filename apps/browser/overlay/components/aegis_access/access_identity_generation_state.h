@@ -46,7 +46,8 @@ struct IdentityGenerationCommitResult {
 // the identity transition.
 class IdentityGenerationState {
  public:
-  IdentityGenerationState() = default;
+  IdentityGenerationState();
+  ~IdentityGenerationState();
 
   IdentityGenerationState(const IdentityGenerationState&) = delete;
   IdentityGenerationState& operator=(const IdentityGenerationState&) = delete;
