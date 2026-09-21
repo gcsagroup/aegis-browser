@@ -87,6 +87,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
       const MutationTransaction& transaction) const;
   std::optional<AccessMutationTransactionResult> BeginPublication(
       MutationTransaction& transaction);
+  void PrepareTransportCandidate(MutationTransaction& transaction);
   std::optional<AccessMutationTransactionResult> PublishCandidate(
       MutationTransaction& transaction);
   void RequestPublicationAck(std::unique_ptr<MutationTransaction> transaction);
