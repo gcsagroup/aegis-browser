@@ -387,10 +387,11 @@ TEST_F(AegisServiceModelSettingsTest,
   EXPECT_FALSE(service->IsTypeSafeGoalRoutingEnabled());
   EXPECT_FALSE(service->HasTypeSafeApiKey());
 
-  base::test::TestFuture<bool, std::string> saved;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> saved;
   service->SetTypeSafeGoalRoutingSettings(true, kApiKey, false,
                                           saved.GetCallback());
   ASSERT_TRUE(saved.Get<0>()) << saved.Get<1>();
+  EXPECT_EQ(saved.Get<2>(), TypeSafeSettingsError::kNone);
   EXPECT_TRUE(service->IsTypeSafeGoalRoutingEnabled());
   EXPECT_TRUE(service->HasTypeSafeApiKey());
   const std::string ciphertext = profile()->GetPrefs()->GetString(
@@ -400,7 +401,7 @@ TEST_F(AegisServiceModelSettingsTest,
   EXPECT_EQ(kApiKey,
             service->TypeSafeApiKeyForBrowserAgent(profile()).value_or(""));
 
-  base::test::TestFuture<bool, std::string> replaced;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> replaced;
   service->SetTypeSafeGoalRoutingSettings(
       true, kReplacementApiKey, false, replaced.GetCallback());
   EXPECT_FALSE(replaced.IsReady());
@@ -416,25 +417,25 @@ TEST_F(AegisServiceModelSettingsTest,
        DisablesReenablesAndClearsIndependentTypeSafeKey) {
   constexpr char kApiKey[] = "ts-test-routing-secret";
   AegisService* service = this->service();
-  base::test::TestFuture<bool, std::string> saved;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> saved;
   service->SetTypeSafeGoalRoutingSettings(true, kApiKey, false,
                                           saved.GetCallback());
   ASSERT_TRUE(saved.Get<0>()) << saved.Get<1>();
 
-  base::test::TestFuture<bool, std::string> disabled;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> disabled;
   service->SetTypeSafeGoalRoutingSettings(false, std::string(), false,
                                           disabled.GetCallback());
   ASSERT_TRUE(disabled.Get<0>()) << disabled.Get<1>();
   EXPECT_FALSE(service->IsTypeSafeGoalRoutingEnabled());
   EXPECT_TRUE(service->HasTypeSafeApiKey());
 
-  base::test::TestFuture<bool, std::string> reenabled;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> reenabled;
   service->SetTypeSafeGoalRoutingSettings(true, std::string(), false,
                                           reenabled.GetCallback());
   ASSERT_TRUE(reenabled.Get<0>()) << reenabled.Get<1>();
   EXPECT_TRUE(service->IsTypeSafeGoalRoutingEnabled());
 
-  base::test::TestFuture<bool, std::string> cleared;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> cleared;
   service->SetTypeSafeGoalRoutingSettings(true, std::string(), true,
                                           cleared.GetCallback());
   ASSERT_TRUE(cleared.Get<0>()) << cleared.Get<1>();
@@ -452,10 +453,11 @@ TEST_F(AegisServiceModelSettingsTest, TypeSafeRoutingIsUnavailableInIncognito) {
   AegisService* incognito =
       AegisServiceFactory::GetForProfile(off_the_record);
   ASSERT_TRUE(incognito);
-  base::test::TestFuture<bool, std::string> saved;
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> saved;
   incognito->SetTypeSafeGoalRoutingSettings(
       true, "ts-private-session-secret", false, saved.GetCallback());
   EXPECT_FALSE(saved.Get<0>());
+  EXPECT_EQ(saved.Get<2>(), TypeSafeSettingsError::kValidation);
   EXPECT_FALSE(incognito->IsTypeSafeGoalRoutingEnabled());
   EXPECT_FALSE(incognito->HasTypeSafeApiKey());
 }

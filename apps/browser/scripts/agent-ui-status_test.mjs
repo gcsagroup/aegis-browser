@@ -267,7 +267,8 @@ const typesafeCode = ts.transpileModule(
     typesafeFunctions.map(node => node.getText(tree)).join('\n'),
     {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
 function typesafeHarness(initial = {
-  typesafeEnabled: false, typesafeKeyConfigured: false, lastError: '',
+  typesafeEnabled: false, typesafeKeyConfigured: false,
+  typesafeSettingsError: 0, lastError: '',
 }) {
   const fields = new Map();
   const field = name => {
@@ -281,6 +282,7 @@ function typesafeHarness(initial = {
   const sandbox = vm.createContext({
     element: field, typesafeBusy: false, typesafeEnabledDirty: false,
     snapshot: initial, loadTimeData: {getString: key => key},
+    TypeSafeSettingsError: {kNone: 0, kValidation: 1, kStorage: 2, kSuperseded: 3},
     proxy: {handler: {configureTypeSafe: async (...args) => {
       calls.push(args);
       if (response instanceof Error) throw response;
@@ -347,6 +349,7 @@ const typesafeCases = [
     h.field('typesafe-api-key').value = 'synthetic-test-value';
     h.setResponse({snapshot: {
       typesafeEnabled: false, typesafeKeyConfigured: false,
+      typesafeSettingsError: 2,
       lastError: 'secure credential storage unavailable: synthetic-private-error',
     }});
     await h.sandbox.saveTypeSafe(false);

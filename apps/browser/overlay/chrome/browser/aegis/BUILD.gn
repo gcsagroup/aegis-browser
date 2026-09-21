@@ -65,6 +65,8 @@ source_set("agent_model_transport") {
     "agent/agent_model_client.h",
     "agent/typesafe_goal_router_client.cc",
     "agent/typesafe_goal_router_client.h",
+    "agent/typesafe_goal_response_parser.cc",
+    "agent/typesafe_goal_response_parser.h",
   ]
   deps = [
     ":agent_core",

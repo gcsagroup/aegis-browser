@@ -10,7 +10,11 @@ import type {
   PlanSummary,
   TaskSnapshot,
 } from './aegis_agent.mojom-webui.js';
-import {AgentMode, Workflow} from './aegis_agent.mojom-webui.js';
+import {
+  AgentMode,
+  TypeSafeSettingsError,
+  Workflow,
+} from './aegis_agent.mojom-webui.js';
 import {BrowserProxy} from './browser_proxy.js';
 
 let proxy: BrowserProxy;
@@ -1023,10 +1027,11 @@ async function saveTypeSafe(clearApiKey = false) {
       element('typesafe-feedback').textContent = loadTimeData.getString(
           clearApiKey ? 'typesafeCleared' : 'typesafeSaved');
     } else {
-      const storageFailure = response.snapshot.lastError.includes('credential') ||
-          response.snapshot.lastError.includes('encrypt');
       element('typesafe-feedback').textContent = loadTimeData.getString(
-          storageFailure ? 'typesafeStorageError' : 'typesafeSaveError');
+          response.snapshot.typesafeSettingsError ===
+                  TypeSafeSettingsError.kStorage ?
+              'typesafeStorageError' :
+              'typesafeSaveError');
       element<HTMLDetailsElement>('typesafe-details').open = true;
     }
   } catch {

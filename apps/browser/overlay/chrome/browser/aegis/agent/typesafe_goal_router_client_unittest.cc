@@ -2,6 +2,8 @@
 
 #include "chrome/browser/aegis/agent/typesafe_goal_router_client.h"
 
+#include "chrome/browser/aegis/agent/typesafe_goal_response_parser.h"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -107,12 +109,12 @@ TEST_F(TypeSafeGoalRouterClientTest, SendsOnlyBoundedGoalDecisionRequest) {
 TEST_F(TypeSafeGoalRouterClientTest,
        RejectsLowConfidenceAndContradictoryDistributions) {
   std::string error;
-  EXPECT_FALSE(ParseTypeSafeGoalResponse(
+  EXPECT_FALSE(TypeSafeGoalResponseParser::Parse(
       R"({"model":"jev","answers":{"workflow":{"type":"choice","choice":"research","confidence":0.79,"probabilities":{"research":0.92,"browser_steward":0.03,"safe_download":0.03,"shopping":0.02}},"entry_kind":{"type":"choice","choice":"web_search","confidence":0.9,"probabilities":{"browser_only":0.05,"web_search":0.95}}}})",
       kGoal, &error));
   EXPECT_FALSE(error.empty());
 
-  EXPECT_FALSE(ParseTypeSafeGoalResponse(
+  EXPECT_FALSE(TypeSafeGoalResponseParser::Parse(
       R"({"model":"jev","answers":{"workflow":{"type":"choice","choice":"research","confidence":0.95,"probabilities":{"research":0.02,"browser_steward":0.03,"safe_download":0.03,"shopping":0.92}},"entry_kind":{"type":"choice","choice":"web_search","confidence":0.9,"probabilities":{"browser_only":0.05,"web_search":0.95}}}})",
       kGoal, &error));
   EXPECT_NE(error.find("contradicts"), std::string::npos);
@@ -121,14 +123,15 @@ TEST_F(TypeSafeGoalRouterClientTest,
 TEST_F(TypeSafeGoalRouterClientTest,
        RejectsIncompatibleWorkflowAndOversizedDerivedSearch) {
   std::string error;
-  EXPECT_FALSE(ParseTypeSafeGoalResponse(
+  EXPECT_FALSE(TypeSafeGoalResponseParser::Parse(
       R"({"model":"jev","answers":{"workflow":{"type":"choice","choice":"browser_steward","confidence":0.95,"probabilities":{"research":0.02,"browser_steward":0.92,"safe_download":0.03,"shopping":0.03}},"entry_kind":{"type":"choice","choice":"web_search","confidence":0.9,"probabilities":{"browser_only":0.05,"web_search":0.95}}}})",
       kGoal, &error));
   EXPECT_EQ(error, "goal route contains an invalid search query");
 
   const std::string oversized_goal(1025, 'a');
   EXPECT_FALSE(
-      ParseTypeSafeGoalResponse(kValidResponse, oversized_goal, &error));
+      TypeSafeGoalResponseParser::Parse(kValidResponse, oversized_goal,
+                                        &error));
   EXPECT_EQ(error, "goal route contains an invalid search query");
 }
 
@@ -153,6 +156,29 @@ TEST_F(TypeSafeGoalRouterClientTest, CancelSettlesCallbackAndStopsRequest) {
   EXPECT_FALSE(done.Get<0>());
   EXPECT_NE(done.Get<1>().find("cancelled"), std::string::npos);
   EXPECT_FALSE(client_.busy());
+}
+
+TEST_F(TypeSafeGoalRouterClientTest,
+       CancelledRequestDoesNotAffectReplacementRequest) {
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> first;
+  const std::optional<std::string> first_id =
+      client_.Start(kGoal, kApiKey, first.GetCallback());
+  ASSERT_TRUE(first_id);
+  const GURL endpoint(kTypeSafeSystemOneEndpoint);
+  factory_.WaitForRequest(endpoint);
+  ASSERT_TRUE(client_.Cancel(*first_id));
+
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>>
+      replacement;
+  const std::optional<std::string> replacement_id =
+      client_.Start(kGoal, kApiKey, replacement.GetCallback());
+  ASSERT_TRUE(replacement_id);
+  EXPECT_NE(*first_id, *replacement_id);
+  factory_.WaitForRequest(endpoint);
+  ASSERT_TRUE(factory_.SimulateResponseForPendingRequest(endpoint.spec(),
+                                                          kValidResponse));
+  EXPECT_TRUE(replacement.Get<0>()) << replacement.Get<1>();
+  EXPECT_TRUE(replacement.Get<2>().has_value());
 }
 
 TEST_F(TypeSafeGoalRouterClientTest, TimesOutWithoutRetry) {
