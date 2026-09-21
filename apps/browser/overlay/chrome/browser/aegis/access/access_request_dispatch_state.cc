@@ -109,11 +109,31 @@ AccessRequestDispatchState::MarkPolicyPublicationTerminationsComplete(
   return publication_acks_.MarkTerminationsComplete(identity);
 }
 
+bool AccessRequestDispatchState::CanCommitPolicyPublication(
+    const aegis_access::PolicyPublicationIdentity& identity) const {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  return publication_acks_.CanCommit(identity);
+}
+
 aegis_access::PolicyPublicationAckResult
 AccessRequestDispatchState::MarkPolicyPublicationDurablyCommitted(
     const aegis_access::PolicyPublicationIdentity& identity) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   return publication_acks_.MarkDurablyCommitted(identity);
+}
+
+aegis_access::PolicyPublicationAckResult
+AccessRequestDispatchState::FailPolicyPublication(
+    const aegis_access::PolicyPublicationIdentity& identity) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  return publication_acks_.Abort(identity);
+}
+
+aegis_access::PolicyPublicationAckResult
+AccessRequestDispatchState::FinalizePolicyPublication(
+    const aegis_access::PolicyPublicationIdentity& identity) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  return publication_acks_.Finalize(identity);
 }
 
 AccessPolicyBarrierReleaseResult
@@ -144,20 +164,24 @@ AccessRequestDispatchState::ReleaseBlockBarrierForReadyPublication(
 AccessNetworkConfigAckResult
 AccessRequestDispatchState::RequestNetworkContextPublicationAck(
     const aegis_access::PolicyPublicationIdentity& identity,
-    const aegis_access::OwnershipKey& owner) {
+    const aegis_access::OwnershipKey& owner,
+    base::OnceCallback<void(bool)> completion) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   AccessNetworkContextTransport* transport =
       AccessNetworkContextTransport::Get(profile_);
   if (!transport) {
     publication_acks_.MarkFailed(identity);
+    if (completion) {
+      std::move(completion).Run(false);
+    }
     return {AccessNetworkConfigAckStatus::kMissingTransport, 0};
   }
   AccessNetworkConfigAckResult result =
-      transport->RepublishCurrentConfigWithAck(
-          owner,
+      transport->PublishPolicyCandidateWithAck(
+          identity, owner,
           base::BindOnce(
               &AccessRequestDispatchState::OnNetworkContextPublicationAck,
-              weak_factory_.GetWeakPtr(), identity));
+              weak_factory_.GetWeakPtr(), identity, std::move(completion)));
   if (result.status != AccessNetworkConfigAckStatus::kStarted) {
     publication_acks_.MarkFailed(identity);
   }
@@ -166,13 +190,22 @@ AccessRequestDispatchState::RequestNetworkContextPublicationAck(
 
 void AccessRequestDispatchState::OnNetworkContextPublicationAck(
     aegis_access::PolicyPublicationIdentity identity,
+    base::OnceCallback<void(bool)> completion,
     bool acknowledged) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (acknowledged) {
-    publication_acks_.Acknowledge(identity, "network-context");
-    return;
+    const auto result =
+        publication_acks_.Acknowledge(identity, "network-context");
+    acknowledged = result.status ==
+                       aegis_access::PolicyPublicationAckStatus::kPending ||
+                   result.status ==
+                       aegis_access::PolicyPublicationAckStatus::kReady;
+  } else {
+    publication_acks_.MarkFailed(identity);
   }
-  publication_acks_.MarkFailed(identity);
+  if (completion) {
+    std::move(completion).Run(acknowledged);
+  }
 }
 
 }  // namespace aegis::access

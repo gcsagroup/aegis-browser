@@ -6,6 +6,7 @@
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/browser_task_environment.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -35,6 +36,7 @@ class AccessPublishedRequestRuntimeTest : public testing::Test {
     return snapshot;
   }
 
+  content::BrowserTaskEnvironment task_environment_;
   std::unique_ptr<TestingProfile> profile_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
   raw_ptr<AccessPublishedRequestRuntime> runtime_ = nullptr;
@@ -81,6 +83,41 @@ TEST_F(AccessPublishedRequestRuntimeTest, CrossProfileOwnerIsRejected) {
   const auto result = runtime_->PublishCommittedPolicySnapshot(snapshot);
   EXPECT_EQ(result.status, AccessPolicyPublicationStatus::kOwnershipMismatch);
   EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(snapshot.owner), nullptr);
+}
+
+TEST_F(AccessPublishedRequestRuntimeTest, PreparedCandidateRollbackRestoresBase) {
+  const auto previous = Snapshot(1);
+  const auto candidate = Snapshot(2);
+  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(previous).status,
+            AccessPolicyPublicationStatus::kPublished);
+  ASSERT_EQ(runtime_->PublishPreparedPolicyCandidate(candidate).status,
+            AccessPolicyPublicationStatus::kPublished);
+  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_)->policy_generation, 2u);
+  EXPECT_TRUE(runtime_->RollbackPreparedPolicyCandidate(candidate, previous));
+  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_)->policy_generation, 1u);
+  EXPECT_FALSE(runtime_->RollbackPreparedPolicyCandidate(candidate, previous));
+}
+
+TEST_F(AccessPublishedRequestRuntimeTest, RollbackCannotClobberNewerPublication) {
+  ASSERT_EQ(runtime_->PublishPreparedPolicyCandidate(Snapshot(2)).status,
+            AccessPolicyPublicationStatus::kPublished);
+  ASSERT_EQ(runtime_->PublishCommittedPolicySnapshot(Snapshot(3)).status,
+            AccessPolicyPublicationStatus::kPublished);
+  EXPECT_FALSE(runtime_->RollbackPreparedPolicyCandidate(Snapshot(2), Snapshot(1)));
+  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_)->policy_generation, 3u);
+  EXPECT_EQ(runtime_->PublishPreparedPolicyCandidate(Snapshot(2)).status,
+            AccessPolicyPublicationStatus::kStaleGeneration);
+}
+
+TEST_F(AccessPublishedRequestRuntimeTest, FirstPreparedCandidateCanBeRemoved) {
+  ASSERT_EQ(runtime_->PublishPreparedPolicyCandidate(Snapshot(1)).status,
+            AccessPolicyPublicationStatus::kPublished);
+  EXPECT_TRUE(runtime_->RollbackPreparedPolicyCandidate(Snapshot(1), std::nullopt));
+  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_), nullptr);
+  auto forged = Snapshot(2);
+  forged.owner.profile_token = "other-profile";
+  EXPECT_EQ(runtime_->PublishPreparedPolicyCandidate(forged).status,
+            AccessPolicyPublicationStatus::kOwnershipMismatch);
 }
 
 TEST_F(AccessPublishedRequestRuntimeTest, InvalidationFailsClosed) {
