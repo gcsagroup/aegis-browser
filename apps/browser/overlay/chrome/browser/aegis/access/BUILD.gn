@@ -172,6 +172,7 @@ test("access_service_coordinator_unittests") {
   deps = [
     ":access_network_context_transport",
     ":access_published_request_runtime",
+    ":access_proxy_selection_generation_source",
     "//mojo/public/cpp/bindings",
     "//services/network/public/mojom",
     ":access_service_coordinator",

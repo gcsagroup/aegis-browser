@@ -36,6 +36,7 @@ bool IsCanonicalExactHost(const std::string& host) {
 
 bool AreCanonicalExactHosts(const std::vector<std::string>& exact_hosts) {
   return !exact_hosts.empty() && exact_hosts.size() <= kMaxExactHosts &&
+         std::ranges::is_sorted(exact_hosts) &&
          std::adjacent_find(exact_hosts.begin(), exact_hosts.end()) ==
              exact_hosts.end() &&
          std::ranges::all_of(exact_hosts, IsCanonicalExactHost);

@@ -154,3 +154,4 @@
 0153-feat-access-publish-prepared-snapshots.patch
 0154-fix-access-selection-lifecycle-style.patch
 0155-refactor-access-snapshot-transaction-stages.patch
+0156-fix-access-canonical-proxy-candidate-hosts.patch

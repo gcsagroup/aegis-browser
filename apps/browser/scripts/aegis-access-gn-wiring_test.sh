@@ -47,6 +47,7 @@ BROWSER_PROCESS_PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0148-feat-aegis-gate-l
 BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-direct-gn-deps.patch"
 ACCESS_COORDINATOR_PATCH_FILE="$BROWSER_DIR/patches/0150-feat-aegis-add-access-service-coordinator-lifecycle.patch"
 IDENTITY_GENERATION_STYLE_PATCH_FILE="$BROWSER_DIR/patches/0151-fix-aegis-identity-generation-state-style.patch"
+CANONICAL_PROXY_PATCH_FILE="$BROWSER_DIR/patches/0156-fix-access-canonical-proxy-candidate-hosts.patch"
 PROFILE_ONLY_BACKGROUND_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc"
 BROWSER_PROXY_TEST="$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc"
 BROWSER_TEST_WIRING_PATCH_FILE="$BROWSER_DIR/patches/0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch"
@@ -156,12 +157,18 @@ rg -Fq 'source_set("access_service_coordinator")' "$ACCESS_BUILD" ||
   fail "overlay must define the Profile-owned Access service coordinator"
 rg -Fq 'test("access_service_coordinator_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the Access service coordinator lifecycle regression"
+coordinator_test_block="$(awk '/^test\("access_service_coordinator_unittests"\)/,/^}/' "$ACCESS_BUILD")"
+[[ "$coordinator_test_block" == *'":access_proxy_selection_generation_source",'* ]] ||
+  fail "coordinator test must directly depend on the proxy selection generation source"
 rg -Fq 'MainNavigationRoutingIsolatedAcrossProfiles' "$BROWSER_PROXY_TEST" ||
   fail "browser proxy regression must cover real two-Profile navigation isolation"
 rg -Fq '+source_set("access_service_coordinator")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the Access service coordinator"
 rg -Fq '+test("access_service_coordinator_unittests")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the coordinator lifecycle regression"
+rg -Fq '+    ":access_proxy_selection_generation_source",' \
+  "$CANONICAL_PROXY_PATCH_FILE" ||
+  fail "patch 0156 must deliver the coordinator test direct GN dependency"
 rg -Fq '+                       MainNavigationRoutingIsolatedAcrossProfiles) {' \
   "$ACCESS_COORDINATOR_PATCH_FILE" ||
   fail "patch 0150 must deliver the real two-Profile navigation regression"
@@ -903,10 +910,11 @@ expected_access_tail="$(cat <<'EOF'
 0153-feat-access-publish-prepared-snapshots.patch
 0154-fix-access-selection-lifecycle-style.patch
 0155-refactor-access-snapshot-transaction-stages.patch
+0156-fix-access-canonical-proxy-candidate-hosts.patch
 EOF
 )"
-[[ "$(tail -n 41 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0155"
+[[ "$(tail -n 42 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0156"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
