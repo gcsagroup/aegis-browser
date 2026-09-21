@@ -10,6 +10,8 @@
 
 交付包含 overlay、顺序补丁 `0159`、单元回归和本文档/Handoff。合并前必须绑定最终 HEAD 完成 patch format、GN wiring、本地 full quality、托管 quality/quality-gate 与 C++、Codacy Medium+ 门槛、全部 conversation resolved 和独立 Astra High 复审。仓库基础门与测试源码不等于固定 Chromium/GTest 已执行；在同一固定候选实际运行新增 coordinator 用例及既有真实入口矩阵前，native 证据继续 `NOT_RUN`，G0 继续 **UNVERIFIED**。
 
+后续测试修复 [PR #156](https://github.com/quinn521/aegis-browser/pull/156) 已以最终 HEAD `dd7344eb8d85bd5eec41b5898ffd5d7f71256117` 通过本地 full quality、托管 CI/C++、Codacy、全部 conversation resolved 与同一 Astra High reviewer 复审，并以 merge commit `9752825c7aceefe6ba675576a98fb23bc5fb26fc` 合入 develop；对应 push CI run `35627511526` 与 C++ run `35627511757` 均成功。随后建立的个人 main 晋升 [PR #157](https://github.com/quinn521/aegis-browser/pull/157) 初始候选 `bc85374aa97754178895e688a9c59d52b7951167` 与该 develop tree 完全一致，且本地、托管与 Astra High 证据已通过；Codacy AI 随后新增一个 Medium conversation，指出四个 TypeSafe 路由测试重复设置本地模型和 TypeSafe 凭据。按 develop 先行规则，#157 已关闭 auto-merge、改回以 develop 为目标，并把分支重置到 `9752825`；当前只在 `AegisAgentServiceTest` fixture 提取共享配置 helper，保持测试场景与产品行为不变。该修复的最终 HEAD 必须重新取得全部门禁，旧晋升 HEAD 的证据不得转用。
+
 后续严格按顺序执行：当前测试修复 PR 实际合并并确认精确 develop push CI 成功后，才重新执行个人 main 晋升和上游导出；上游导出继续恢复上游 README/Codacy 徽章，回灌继续保留个人 README。任何 HEAD 变化都使旧的质量、CI 与审查证据失效。
 
 ## 2026-09-21：个人 Codacy 与上游 README 隔离维护
