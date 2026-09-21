@@ -4,7 +4,7 @@
 
 用户要求恢复个人 main/develop 的 Codacy，并在晋升时忽略个人徽章。三份个人 README 使用个人项目 `72c871eba82e471ebc05eaacd4d45218`，分别标注 main/develop；上游保留其项目 `7b3008e649154ca0a7d5906c514488cc`。内部晋升保留个人 README，独立上游导出候选才恢复本次 upstream/main 的三份 README，并校验其他文件不变；同步回个人分支也保留个人展示。流程以 [DEV CI 指南](../../development/ci.zh-CN.md) 为准。
 
-本项只维护展示和晋升隔离，不升级 native/G0 证据。实时回读 PR #139 已合并到 `develop@2c591b739071487b82995e155d602a1f094caa09`，该提交 CI run `35580551685` 成功；下方 PR #139 OPEN/Draft 描述是旧快照，不能作为当前状态。本项最终 HEAD 的本地质量、托管 CI、独立审查及个人 main 恢复 PR 分别在交付 PR 中记录，未完成项不能写作 PASS。
+本项只维护展示和晋升隔离，不升级 native/G0 证据。PR #142 已以 squash commit `211bfd33fe0e07ab59fed8fccbf4b17bd0fc56d0` 合并到 develop，其 push CI run `35588469947` 的 quality / quality-gate 均成功；最终 HEAD `32cf623a99f0687f9f6e9602af56af98e2a3da98` 的本地 full quality、Codacy 与 Astra High 独立审查均通过。旧 main→develop PR #140 绑定旧 base，控制器按 fail-closed 拒绝继续，已由 PR #143 的最新 develop + 个人 main 显式 merge 候选取代；该候选带入 main 独有的脚本质量修复，并保留 develop 上的个人 Codacy README。PR #143 同时关闭 Codacy review 提出的日志可诊断性、缺失 series 文件和末行无换行回归缺口；个人 main 恢复仍须等待本同步 PR 和其 develop push CI 通过。
 
 ## 2026-09-21：commit/publish snapshot 阶段（待验证）
 

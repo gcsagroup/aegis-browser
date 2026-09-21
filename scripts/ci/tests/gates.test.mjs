@@ -476,11 +476,17 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
 test('Mac quality chain retains shared tests and isolates platform-specific execution', () => {
   const rootScripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts;
   const browserScripts = JSON.parse(readFileSync(join(root, 'apps/browser/package.json'), 'utf8')).scripts;
+  const browserScriptQualityChecks = readFileSync(
+    join(root, 'apps/browser/scripts/run-script-quality-checks.sh'),
+    'utf8',
+  );
   assert.doesNotMatch(rootScripts['quality:fast'], /test:android|test:model-relay|test:winrm/u);
   for (const name of ['test:scripts', 'test:agent-ui', 'test:local-model']) assert.ok(rootScripts['quality:fast'].includes(name));
   assert.match(browserScripts['test:local-model'], /verify-agent-local-model_test/u);
-  assert.doesNotMatch(browserScripts['test:scripts'], /package-android|winrm-model-relay/u);
-  for (const name of ['test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScripts['test:scripts'].includes(name));
+  assert.equal(browserScripts['test:scripts'], 'bash ./scripts/run-script-quality-checks.sh');
+  assert.doesNotMatch(browserScriptQualityChecks, /package-android|winrm-model-relay/u);
+  for (const name of ['patch-series-format-regression_test.sh', 'test-aegis-access-native.sh', 'sign-chromium-app_test.sh', 'fetch-toolchain_test.sh', 'verify-agent-local-model.mjs']) assert.ok(browserScriptQualityChecks.includes(name));
+  assert.match(browserScriptQualityChecks, /run_check 'patch series regression fixtures'/u);
   for (const name of ['test:android-target', 'test:android-ui', 'test:scripts:android', 'test:winrm-model-relay']) assert.ok(rootScripts['quality:other-platforms'].includes(name));
 });
 
