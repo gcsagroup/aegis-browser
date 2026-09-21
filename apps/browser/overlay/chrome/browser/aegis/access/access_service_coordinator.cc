@@ -285,6 +285,14 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
     return Result(AccessMutationTransactionStatus::kPublicationTrackerRejected);
   }
   transaction.tracker_started = true;
+  PrepareTransportCandidate(transaction);
+  return std::nullopt;
+}
+
+void AccessServiceCoordinator::PrepareTransportCandidate(
+    MutationTransaction& transaction) {
+  auto* transport = AccessNetworkContextTransport::Get(profile_);
+  const auto& pending = transaction.pending;
   transaction.previous_selection = *transport->CurrentSelection(pending.owner);
   transaction.candidate_selection = transaction.previous_selection;
   if (transaction.candidate_selection.endpoint) {
@@ -304,7 +312,6 @@ AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
           insertion, transaction.identity.selector.exact_host);
     }
   }
-  return std::nullopt;
 }
 
 std::optional<AccessMutationTransactionResult>
