@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -25,6 +26,11 @@
 class Profile;
 class BrowserWindowInterface;
 class AegisAgentUI;
+class AegisAgentCoreServiceObserver;
+
+namespace aegis {
+enum class TypeSafeSettingsError;
+}
 
 namespace aegis::agent {
 class AegisAgentService;
@@ -52,6 +58,10 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
                       const std::string& api_key,
                       bool clear_api_key,
                       ConfigureModelCallback callback) override;
+  void ConfigureTypeSafe(bool enabled,
+                         const std::string& api_key,
+                         bool clear_api_key,
+                         ConfigureTypeSafeCallback callback) override;
   void ListModels(const std::string& provider,
                   const std::string& base_url,
                   const std::string& api_key,
@@ -117,6 +127,10 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   void OnModelConfigured(ConfigureModelCallback callback,
                          bool ok,
                          std::string error);
+  void OnTypeSafeConfigured(ConfigureTypeSafeCallback callback,
+                            bool ok,
+                            std::string error,
+                            aegis::TypeSafeSettingsError error_type);
   void OnModelsListed(ListModelsCallback callback,
                       bool ok,
                       std::string error,
@@ -136,6 +150,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
   std::string active_task_id_;
   std::string last_error_;
+  aegis_agent::mojom::TypeSafeSettingsError typesafe_settings_error_ =
+      aegis_agent::mojom::TypeSafeSettingsError::kNone;
   mojo::Remote<aegis_agent::mojom::Page> page_;
   mojo::Receiver<aegis_agent::mojom::PageHandler> receiver_;
   PrefChangeRegistrar pref_change_registrar_;
@@ -146,6 +162,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   base::ScopedObservation<aegis::agent::AegisAgentService,
                           aegis::agent::AegisAgentServiceObserver>
       service_observation_{this};
+  std::unique_ptr<AegisAgentCoreServiceObserver> core_service_observer_;
   base::WeakPtrFactory<AegisAgentPageHandler> weak_ptr_factory_{this};
 };
 

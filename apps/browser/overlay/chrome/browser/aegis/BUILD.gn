@@ -43,6 +43,8 @@ source_set("agent_core") {
     "agent/agent_types.h",
     "agent/agent_workflow.cc",
     "agent/agent_workflow.h",
+    "agent/typesafe_choice_contract.cc",
+    "agent/typesafe_choice_contract.h",
     "agent/v2_runtime_spike.cc",
     "agent/v2_runtime_spike.h",
   ]
@@ -61,6 +63,10 @@ source_set("agent_model_transport") {
   sources = [
     "agent/agent_model_client.cc",
     "agent/agent_model_client.h",
+    "agent/typesafe_goal_router_client.cc",
+    "agent/typesafe_goal_router_client.h",
+    "agent/typesafe_goal_response_parser.cc",
+    "agent/typesafe_goal_response_parser.h",
   ]
   deps = [
     ":agent_core",
@@ -215,7 +221,10 @@ source_set("aegis") {
 
 if (!is_android) {
   test("aegis_agent_model_unittests") {
-    sources = [ "agent/agent_model_client_unittest.cc" ]
+    sources = [
+      "agent/agent_model_client_unittest.cc",
+      "agent/typesafe_goal_router_client_unittest.cc",
+    ]
     deps = [
       ":agent_model_transport",
       "//base/test:run_all_unittests",

@@ -1728,7 +1728,7 @@ function parseTraceRecords(traceEvents, candidateRecordLimit) {
     'trace 事件集合不是数组',
   );
   const records = [];
-  for (const [eventIndex, event] of traceEvents.entries()) {
+  for (const event of traceEvents) {
     assert(
       event && typeof event === 'object' && !Array.isArray(event),
       'trace-invalid',

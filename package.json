@@ -11,6 +11,8 @@
     "ci:test": "node --test ./scripts/ci/tests/*.test.mjs",
     "ci:validate-workflow": "node ./scripts/ci/validate-workflow.mjs .github/workflows/quality.yml && node ./scripts/ci/validate-promotion-workflow.mjs",
     "ci:check-public-diff": "node ./scripts/ci/check-public-diff.mjs",
+    "quality:static": "node ./scripts/dev/run-static-checks.mjs",
+    "test:static": "node --test ./scripts/dev/tests/*.test.mjs",
     "quality:fast": "corepack pnpm run lint && corepack pnpm --filter @gcsa-aegis/core typecheck && corepack pnpm --filter @gcsa-aegis/core test && corepack pnpm --filter @gcsa-aegis/browser test:scripts && corepack pnpm --filter @gcsa-aegis/browser test:agent-ui && corepack pnpm --filter @gcsa-aegis/browser test:local-model && node ./scripts/check-repo-contracts.mjs && corepack pnpm --filter @gcsa-aegis/core build",
     "contracts:check": "node ./scripts/check-repo-contracts.mjs",
     "threat-feeds:compile": "pnpm --filter @gcsa-aegis/core compile-threat-feeds",
@@ -40,6 +42,7 @@
     "browser:status": "pnpm --filter @gcsa-aegis/browser status",
     "test": "pnpm --filter @gcsa-aegis/core test",
     "lint": "eslint \"packages/core/src/**/*.ts\" \"scripts/ci/**/*.mjs\" --max-warnings 0",
+    "lint:static": "eslint \"packages/core/src/**/*.ts\" \"scripts/ci/**/*.mjs\" \"scripts/dev/**/*.mjs\" \"scripts/check-repo-contracts.mjs\" \"apps/browser/scripts/**/*.mjs\" \"apps/ios/scripts/**/*.mjs\" \"apps/ios/Tests/**/*.mjs\" \"apps/ios/SharedWebExtension/*.js\" \"packages/core/scripts/**/*.mjs\" \"packages/core/src/script-risk/evaluation/*.mjs\" --max-warnings 0",
     "typecheck": "pnpm --filter @gcsa-aegis/core typecheck",
     "quality:other-platforms": "corepack pnpm --filter @gcsa-aegis/browser test:android-target && corepack pnpm --filter @gcsa-aegis/browser test:android-ui && corepack pnpm --filter @gcsa-aegis/browser test:scripts:android && corepack pnpm --filter @gcsa-aegis/browser test:winrm-model-relay"
   },
