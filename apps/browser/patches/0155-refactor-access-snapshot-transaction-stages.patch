@@ -1,0 +1,928 @@
+From 3724f5687ac5d5c9f309a8a10d26865312195422 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 21 Sep 2026 16:39:31 +0800
+Subject: [PATCH] refactor(access): split snapshot transaction validation and
+ publication
+
+---
+ .../access_network_context_transport.cc       |  77 +--
+ .../access/access_network_context_transport.h |   7 +
+ ...proxying_url_loader_factory_browsertest.cc |  57 ++-
+ .../browser/aegis/access/access_rule_store.cc |  83 +--
+ .../access/access_service_coordinator.cc      | 478 +++++++++---------
+ .../aegis/access/access_service_coordinator.h |  29 +-
+ 6 files changed, 407 insertions(+), 324 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 9e82712abf..9779d9abfc 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -54,6 +54,17 @@ aegis_access::RoutePlan RoutePlanForEndpoint(
+   return plan;
+ }
+ 
++bool IsCandidateIdentityValid(
++    const aegis_access::PolicyPublicationIdentity& identity,
++    uint64_t network_epoch) {
++  return !(
++      !aegis_access::IsValidRequestCancellationSelector(identity.selector) ||
++      identity.operation_id.empty() || identity.operation_sequence == 0 ||
++      identity.policy_generation == 0 ||
++      identity.policy_generation != identity.operation_sequence ||
++      identity.network_epoch == 0 || identity.network_epoch != network_epoch);
++}
++
+ }  // namespace
+ 
+ // static
+@@ -291,11 +302,7 @@ AccessNetworkContextTransport::PublishPolicyCandidateWithAck(
+   if (!OwnsConfiguredPartition(owner) || identity.selector.owner != owner) {
+     return fail(AccessNetworkConfigAckStatus::kInvalidOwner);
+   }
+-  if (!aegis_access::IsValidRequestCancellationSelector(identity.selector) ||
+-      identity.operation_id.empty() || identity.operation_sequence == 0 ||
+-      identity.policy_generation == 0 ||
+-      identity.policy_generation != identity.operation_sequence ||
+-      identity.network_epoch == 0 || identity.network_epoch != network_epoch_) {
++  if (!IsCandidateIdentityValid(identity, network_epoch_)) {
+     return fail(AccessNetworkConfigAckStatus::kInvalidPublication);
+   }
+   auto it = partitions_.find(owner.storage_partition_token);
+@@ -306,15 +313,8 @@ AccessNetworkContextTransport::PublishPolicyCandidateWithAck(
+   if (state.clients.empty()) {
+     return fail(AccessNetworkConfigAckStatus::kNoClients);
+   }
+-  if (identity.selection_generation != 0) {
+-    if (!state.endpoint.has_value() || state.endpoint->owner != owner ||
+-        state.endpoint->generations.selection_generation !=
+-            identity.selection_generation ||
+-        state.endpoint->generations.network_epoch != identity.network_epoch ||
+-        !std::binary_search(state.exact_hosts.begin(), state.exact_hosts.end(),
+-                            identity.selector.exact_host)) {
+-      return fail(AccessNetworkConfigAckStatus::kInvalidPublication);
+-    }
++  if (!SelectionMatchesIdentity(state, identity)) {
++    return fail(AccessNetworkConfigAckStatus::kInvalidPublication);
+   }
+ 
+   const size_t required_acks = state.clients.size();
+@@ -360,6 +360,35 @@ bool AccessNetworkContextTransport::ReplaceSelection(
+   return true;
+ }
+ 
++bool AccessNetworkContextTransport::SelectionMatchesIdentity(
++    const PartitionState& state,
++    const aegis_access::PolicyPublicationIdentity& identity) {
++  if (identity.selection_generation == 0) {
++    return true;
++  }
++  return state.endpoint && state.endpoint->owner == identity.selector.owner &&
++         state.endpoint->generations.selection_generation ==
++             identity.selection_generation &&
++         state.endpoint->generations.network_epoch == identity.network_epoch &&
++         std::binary_search(state.exact_hosts.begin(), state.exact_hosts.end(),
++                            identity.selector.exact_host);
++}
++
++bool AccessNetworkContextTransport::PublicationStillCurrent(
++    const aegis_access::PolicyPublicationIdentity& identity,
++    uint64_t clients_generation,
++    size_t client_count) const {
++  if (network_epoch_ != identity.network_epoch) {
++    return false;
++  }
++  const auto it =
++      partitions_.find(identity.selector.owner.storage_partition_token);
++  return it != partitions_.end() &&
++         it->second.clients_generation == clients_generation &&
++         it->second.clients.size() == client_count &&
++         SelectionMatchesIdentity(it->second, identity);
++}
++
+ void AccessNetworkContextTransport::PublishPolicyCandidateToClients(
+     PartitionState& state,
+     const aegis_access::PolicyPublicationIdentity& identity,
+@@ -384,23 +413,9 @@ void AccessNetworkContextTransport::PublishPolicyCandidateToClients(
+              uint64_t clients_generation, size_t client_count,
+              std::shared_ptr<bool> succeeded,
+              base::OnceCallback<void(bool)> completion) {
+-            bool current = transport &&
+-                           transport->network_epoch_ == identity.network_epoch;
+-            if (current) {
+-              const auto it = transport->partitions_.find(
+-                  identity.selector.owner.storage_partition_token);
+-              current = it != transport->partitions_.end() &&
+-                        it->second.clients_generation == clients_generation &&
+-                        it->second.clients.size() == client_count;
+-              if (current && identity.selection_generation != 0) {
+-                current = it->second.endpoint &&
+-                          it->second.endpoint->generations.selection_generation ==
+-                              identity.selection_generation &&
+-                          std::binary_search(it->second.exact_hosts.begin(),
+-                                             it->second.exact_hosts.end(),
+-                                             identity.selector.exact_host);
+-              }
+-            }
++            const bool current =
++                transport && transport->PublicationStillCurrent(
++                                 identity, clients_generation, client_count);
+             std::move(completion).Run(*succeeded && current);
+           },
+           weak_factory_.GetWeakPtr(), identity, state.clients_generation,
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 73f6658334..139d67279b 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -170,6 +170,13 @@ class AccessNetworkContextTransport
+       PartitionState& state,
+       const network::mojom::CustomProxyConfigPtr& config,
+       base::OnceCallback<void(bool)> all_clients_settled);
++  static bool SelectionMatchesIdentity(
++      const PartitionState& state,
++      const aegis_access::PolicyPublicationIdentity& identity);
++  bool PublicationStillCurrent(
++      const aegis_access::PolicyPublicationIdentity& identity,
++      uint64_t clients_generation,
++      size_t client_count) const;
+   void PublishPolicyCandidateToClients(
+       PartitionState& state,
+       const aegis_access::PolicyPublicationIdentity& identity,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index e75224ce8c..bb7418a7af 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -67,6 +67,36 @@ constexpr char kTargetHost[] = "target.example";
+ constexpr char kUnselectedRedirectHost[] = "redirect-unselected.example";
+ constexpr char kProxyGroup[] = "proxy-group-browser-test";
+ 
++SiteGroupMutationRequest PreparedNavigationRequest(const OwnershipKey& owner) {
++  SiteGroupMutationRequest request;
++  request.operation_id = "prepared-navigation";
++  request.request_fingerprint = "prepared-navigation-fingerprint";
++  request.candidate_group = {
++      .site_toggle_id = "navigation-toggle",
++      .canonical_host = kTargetHost,
++      .owner = owner,
++      .http_top_level_site = "http://target.example",
++      .https_top_level_site = "https://target.example",
++      .member_rule_ids = {"navigation:http", "navigation:https"},
++  };
++  for (const auto& scheme : {std::string("http"), std::string("https")}) {
++    request.candidate_members.push_back({
++        .rule_id = "navigation:" + scheme,
++        .owner = owner,
++        .site_toggle_id = "navigation-toggle",
++        .top_level_site = scheme + "://target.example",
++        .exact_host = kTargetHost,
++        .schemes = {RequestScheme::kHttp, RequestScheme::kHttps,
++                    RequestScheme::kWs, RequestScheme::kWss},
++        .ports = PortScope::kAllBrowserPermitted,
++        .mode = AccessMode::kProxy,
++        .proxy_group_id = kProxyGroup,
++        .protection_override = ProtectionOverride::kNone,
++    });
++  }
++  return request;
++}
++
+ enum class ServiceWorkerRequestKind {
+   kOther,
+   kMainScript,
+@@ -820,32 +850,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        MainNavigationConsumesPreparedSnapshotBeforeCommit) {
+   AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(*owner_));
+   ASSERT_EQ(store.Open(), StoreStatus::kValid);
+-  SiteGroupMutationRequest request;
+-  request.operation_id = "prepared-navigation";
+-  request.request_fingerprint = "prepared-navigation-fingerprint";
+-  request.candidate_group = {
+-      .site_toggle_id = "navigation-toggle",
+-      .canonical_host = kTargetHost,
+-      .owner = *owner_,
+-      .http_top_level_site = "http://target.example",
+-      .https_top_level_site = "https://target.example",
+-      .member_rule_ids = {"navigation:http", "navigation:https"},
+-  };
+-  for (const auto& scheme : {std::string("http"), std::string("https")}) {
+-    request.candidate_members.push_back({
+-        .rule_id = "navigation:" + scheme,
+-        .owner = *owner_,
+-        .site_toggle_id = "navigation-toggle",
+-        .top_level_site = scheme + "://target.example",
+-        .exact_host = kTargetHost,
+-        .schemes = {RequestScheme::kHttp, RequestScheme::kHttps,
+-                    RequestScheme::kWs, RequestScheme::kWss},
+-        .ports = PortScope::kAllBrowserPermitted,
+-        .mode = AccessMode::kProxy,
+-        .proxy_group_id = kProxyGroup,
+-        .protection_override = ProtectionOverride::kNone,
+-    });
+-  }
++  const auto request = PreparedNavigationRequest(*owner_);
+   const auto prepared = store.PrepareSiteGroupMutation(request);
+   ASSERT_TRUE(prepared.value) << prepared.detail;
+   EXPECT_EQ(prepared.value->committed_policy_generation, 0u);
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 566ba87574..887352c040 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -474,6 +474,51 @@ bool BindAndRunRuleInsert(sql::Database* database,
+   return insert.Run();
+ }
+ 
++bool IsPreparedCandidateValid(const PendingMutationRecord& expected) {
++  return !(expected.phase != MutationPhase::kPrepared ||
++           expected.operation_id.empty() || expected.operation_sequence == 0 ||
++           expected.committed_policy_generation != 0 ||
++           expected.candidate.policy_generation !=
++               expected.operation_sequence ||
++           !IsCompleteOwner(expected.owner) ||
++           expected.candidate.group.owner != expected.owner);
++}
++
++void ReplacePreparedSiteGroup(StoredPolicySnapshot* candidate,
++                              const PendingMutationRecord& expected) {
++  bool replaced = false;
++  for (StoredSiteGroup& group : candidate->site_groups) {
++    if (group.group.site_toggle_id != expected.candidate.group.site_toggle_id) {
++      continue;
++    }
++    group = expected.candidate;
++    group.policy_generation = expected.operation_sequence;
++    replaced = true;
++    break;
++  }
++  if (!replaced) {
++    StoredSiteGroup group = expected.candidate;
++    group.policy_generation = expected.operation_sequence;
++    candidate->site_groups.push_back(std::move(group));
++  }
++  std::sort(candidate->site_groups.begin(), candidate->site_groups.end(),
++            [](const StoredSiteGroup& left, const StoredSiteGroup& right) {
++              return left.group.site_toggle_id < right.group.site_toggle_id;
++            });
++}
++
++StoreResult<StoredPolicySnapshot> ValidatePreparedSnapshot(
++    StoredPolicySnapshot candidate) {
++  StoreResult<MatcherRuleSetCandidate> validated =
++      AccessRuleStore::AdaptMatcherSnapshot(candidate);
++  if (validated.status != StoreStatus::kValid || !validated.value.has_value()) {
++    return SnapshotError(validated.status, validated.detail.empty()
++                                               ? "invalid_prepared_snapshot"
++                                               : validated.detail);
++  }
++  return {StoreStatus::kValid, std::move(candidate), {}};
++}
++
+ }  // namespace
+ 
+ AccessStoreBinding::AccessStoreBinding(AccessStoreKind kind,
+@@ -1365,12 +1410,7 @@ AccessRuleStore::BuildPreparedCandidateSnapshot(
+   if (!is_open_) {
+     return SnapshotError(terminal_status_, "store_not_open");
+   }
+-  if (expected.phase != MutationPhase::kPrepared ||
+-      expected.operation_id.empty() || expected.operation_sequence == 0 ||
+-      expected.committed_policy_generation != 0 ||
+-      expected.candidate.policy_generation != expected.operation_sequence ||
+-      !IsCompleteOwner(expected.owner) ||
+-      expected.candidate.group.owner != expected.owner) {
++  if (!IsPreparedCandidateValid(expected)) {
+     return SnapshotError(StoreStatus::kInvalidArgument,
+                          "invalid_prepared_candidate");
+   }
+@@ -1398,36 +1438,9 @@ AccessRuleStore::BuildPreparedCandidateSnapshot(
+   candidate.owner = expected.owner;
+   candidate.policy_generation = expected.operation_sequence;
+ 
+-  bool replaced = false;
+-  for (StoredSiteGroup& group : candidate.site_groups) {
+-    if (group.group.site_toggle_id !=
+-        expected.candidate.group.site_toggle_id) {
+-      continue;
+-    }
+-    group = expected.candidate;
+-    group.policy_generation = expected.operation_sequence;
+-    replaced = true;
+-    break;
+-  }
+-  if (!replaced) {
+-    StoredSiteGroup group = expected.candidate;
+-    group.policy_generation = expected.operation_sequence;
+-    candidate.site_groups.push_back(std::move(group));
+-  }
+-  std::sort(candidate.site_groups.begin(), candidate.site_groups.end(),
+-            [](const StoredSiteGroup& left, const StoredSiteGroup& right) {
+-              return left.group.site_toggle_id < right.group.site_toggle_id;
+-            });
++  ReplacePreparedSiteGroup(&candidate, expected);
+ 
+-  StoreResult<MatcherRuleSetCandidate> validated =
+-      AdaptMatcherSnapshot(candidate);
+-  if (validated.status != StoreStatus::kValid ||
+-      !validated.value.has_value()) {
+-    return SnapshotError(validated.status, validated.detail.empty()
+-                                               ? "invalid_prepared_snapshot"
+-                                               : validated.detail);
+-  }
+-  return {StoreStatus::kValid, std::move(candidate), {}};
++  return ValidatePreparedSnapshot(std::move(candidate));
+ }
+ 
+ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 98cfe6df43..9cbb28c562 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -104,6 +104,24 @@ AccessServiceCoordinator* AccessServiceCoordinator::GetOrCreate(
+   return result;
+ }
+ 
++struct AccessServiceCoordinator::MutationTransaction {
++  MutationTransaction();
++  ~MutationTransaction();
++
++  PendingMutationRecord pending;
++  StoredPolicySnapshot candidate;
++  std::optional<StoredPolicySnapshot> previous;
++  AccessTransportSelection previous_selection;
++  AccessTransportSelection candidate_selection;
++  aegis_access::PolicyPublicationIdentity identity;
++  base::OnceCallback<void(AccessMutationTransactionResult)> completion;
++  bool tracker_started = false;
++  bool runtime_published = false;
++};
++
++AccessServiceCoordinator::MutationTransaction::MutationTransaction() = default;
++AccessServiceCoordinator::MutationTransaction::~MutationTransaction() = default;
++
+ void AccessServiceCoordinator::CommitSiteGroupMutation(
+     std::unique_ptr<AccessRuleStore> supplied_store,
+     SiteGroupMutationRequest request,
+@@ -124,172 +142,184 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+   if (supplied_store) {
+     store_ = std::move(supplied_store);
+   }
+-  AccessRuleStore* store = store_.get();
+   mutation_in_flight_ = true;
+-  auto fail = [&](AccessMutationTransactionResult result) {
+-    Finish(std::move(completion), result);
+-  };
++  auto transaction = std::make_unique<MutationTransaction>();
++  transaction->completion = std::move(completion);
++  transaction->identity.selector = std::move(selector);
++  if (auto failure = PrepareCandidate(*transaction, request)) {
++    FailTransaction(std::move(transaction), *failure);
++    return;
++  }
++  if (auto failure = BeginPublication(*transaction)) {
++    FailTransaction(std::move(transaction), *failure);
++    return;
++  }
++  if (auto failure = PublishCandidate(*transaction)) {
++    FailTransaction(std::move(transaction), *failure);
++    return;
++  }
++  RequestPublicationAck(std::move(transaction));
++}
+ 
+-  if (!store || !store->is_open() || !SelectorMatchesMutation(selector, request) ||
++std::optional<AccessMutationTransactionResult>
++AccessServiceCoordinator::PrepareCandidate(
++    MutationTransaction& transaction,
++    const SiteGroupMutationRequest& request) {
++  if (!store_ || !store_->is_open() ||
++      !SelectorMatchesMutation(transaction.identity.selector, request) ||
+       !OrdinaryMutationMode(request).has_value()) {
+-    fail(Result(AccessMutationTransactionStatus::kInvalidRequest));
+-    return;
++    return Result(AccessMutationTransactionStatus::kInvalidRequest);
++  }
++  if (auto failure = ReadPreviousSnapshot(transaction, request)) {
++    return failure;
+   }
++  auto prepared = store_->PrepareSiteGroupMutation(request);
++  if (prepared.status != StoreStatus::kValid || !prepared.value) {
++    return Result(AccessMutationTransactionStatus::kPrepareFailed,
++                  prepared.status);
++  }
++  transaction.pending = std::move(*prepared.value);
++  auto built = store_->BuildPreparedCandidateSnapshot(transaction.pending);
++  if (built.status != StoreStatus::kValid || !built.value) {
++    return Result(AccessMutationTransactionStatus::kCandidateBuildFailed,
++                  built.status);
++  }
++  transaction.candidate = std::move(*built.value);
++  return ValidateTransportScope(transaction, *OrdinaryMutationMode(request));
++}
+ 
+-  std::optional<StoredPolicySnapshot> previous;
+-  StoreResult<StoredPolicySnapshot> prior = store->ReadCommittedSnapshot(
++std::optional<AccessMutationTransactionResult>
++AccessServiceCoordinator::ReadPreviousSnapshot(
++    MutationTransaction& transaction,
++    const SiteGroupMutationRequest& request) {
++  auto prior = store_->ReadCommittedSnapshot(
+       request.candidate_group.owner.storage_partition_token);
+-  if (prior.status == StoreStatus::kValid && prior.value.has_value()) {
+-    previous = std::move(*prior.value);
++  if (prior.status == StoreStatus::kValid && prior.value) {
++    transaction.previous = std::move(*prior.value);
+   } else if (prior.status != StoreStatus::kMissing) {
+-    fail(Result(AccessMutationTransactionStatus::kStoreReadFailed,
+-                prior.status));
+-    return;
++    return Result(AccessMutationTransactionStatus::kStoreReadFailed,
++                  prior.status);
+   }
++  return std::nullopt;
++}
+ 
+-  StoreResult<PendingMutationRecord> prepared =
+-      store->PrepareSiteGroupMutation(request);
+-  if (prepared.status != StoreStatus::kValid || !prepared.value.has_value()) {
+-    fail(Result(AccessMutationTransactionStatus::kPrepareFailed,
+-                prepared.status));
+-    return;
++std::optional<AccessMutationTransactionResult>
++AccessServiceCoordinator::ValidateTransportScope(
++    const MutationTransaction& transaction,
++    AccessMode mode) const {
++  // CustomProxyConfig selects by destination host, not top-level-site scope.
++  const auto matcher =
++      AccessRuleStore::AdaptMatcherSnapshot(transaction.candidate);
++  if (!matcher.value) {
++    return Result(AccessMutationTransactionStatus::kUnsupportedTransportScope);
++  }
++  const auto& host = transaction.identity.selector.exact_host;
++  const bool incompatible = std::ranges::any_of(
++      matcher.value->rules, [&](const AccessPolicyRule& rule) {
++        const bool overlaps = rule.destination_host == host ||
++                              (rule.include_subdomains &&
++                               host.ends_with("." + rule.destination_host));
++        const bool opposite =
++            (mode == AccessMode::kDirect && rule.mode == AccessMode::kProxy) ||
++            (mode == AccessMode::kProxy && rule.mode == AccessMode::kDirect);
++        return overlaps && opposite;
++      });
++  if (incompatible) {
++    return Result(AccessMutationTransactionStatus::kUnsupportedTransportScope);
+   }
+-  PendingMutationRecord pending = std::move(*prepared.value);
+-
+-  auto supersede_and_fail = [&](AccessMutationTransactionResult result) {
+-    const auto cleanup = store->SupersedePreparedMutation(
+-        pending.operation_id, pending.request_fingerprint);
+-    if (cleanup != StoreStatus::kValid) {
+-      result.store_status = cleanup;
+-    }
+-    Finish(std::move(completion), result);
+-  };
++  return std::nullopt;
++}
+ 
+-  StoreResult<StoredPolicySnapshot> built =
+-      store->BuildPreparedCandidateSnapshot(pending);
+-  if (built.status != StoreStatus::kValid || !built.value.has_value()) {
+-    supersede_and_fail(Result(AccessMutationTransactionStatus::kCandidateBuildFailed,
+-                              built.status));
+-    return;
++std::optional<uint64_t> AccessServiceCoordinator::SelectionGeneration(
++    const MutationTransaction& transaction) const {
++  const auto& pending = transaction.pending;
++  if (pending.candidate.members.front().policy.mode != AccessMode::kProxy) {
++    return 0;
+   }
+-  StoredPolicySnapshot candidate = std::move(*built.value);
+-
+-  // The current CustomProxyConfig transport selects by destination host,
+-  // not by top-level-site scope. Refuse a mixed DIRECT/PROXY candidate for
+-  // this host rather than break an unrelated retained rule in another scope.
+-  const auto matcher = AccessRuleStore::AdaptMatcherSnapshot(candidate);
+-  const auto requested_mode = *OrdinaryMutationMode(request);
+-  if (!matcher.value || std::ranges::any_of(
+-          matcher.value->rules, [&](const AccessPolicyRule& rule) {
+-            const bool overlaps = rule.destination_host == selector.exact_host ||
+-                (rule.include_subdomains && selector.exact_host.ends_with(
+-                    "." + rule.destination_host));
+-            const bool incompatible =
+-                (requested_mode == AccessMode::kDirect && rule.mode == AccessMode::kProxy) ||
+-                (requested_mode == AccessMode::kProxy && rule.mode == AccessMode::kDirect);
+-            return overlaps && incompatible;
+-          })) {
+-    supersede_and_fail(
+-        Result(AccessMutationTransactionStatus::kUnsupportedTransportScope));
+-    return;
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto& group = pending.candidate.members.front().policy.proxy_group_id;
++  const auto endpoint = transport->CaptureSelectedProxyEndpoint(
++      pending.owner, group, transaction.identity.selector.exact_host);
++  auto* source = AccessProxySelectionGenerationSource::Get(profile_);
++  if (!endpoint || !source || endpoint->generations.selection_generation == 0 ||
++      endpoint->generations.network_epoch != transport->network_epoch() ||
++      source->selection_generation(group) !=
++          endpoint->generations.selection_generation) {
++    return std::nullopt;
+   }
++  return endpoint->generations.selection_generation;
++}
+ 
+-  AccessPublishedRequestRuntime* runtime =
+-      AccessPublishedRequestRuntime::GetOrCreate(profile_);
+-  if (!runtime) {
+-    supersede_and_fail(Result(AccessMutationTransactionStatus::kMissingRuntime));
+-    return;
++std::optional<AccessMutationTransactionResult>
++AccessServiceCoordinator::BeginPublication(MutationTransaction& transaction) {
++  if (!AccessPublishedRequestRuntime::GetOrCreate(profile_)) {
++    return Result(AccessMutationTransactionStatus::kMissingRuntime);
+   }
+-  AccessRequestDispatchState* dispatch =
+-      AccessRequestDispatchState::GetOrCreate(profile_);
++  auto* dispatch = AccessRequestDispatchState::GetOrCreate(profile_);
+   if (!dispatch) {
+-    supersede_and_fail(
+-        Result(AccessMutationTransactionStatus::kMissingDispatchState));
+-    return;
++    return Result(AccessMutationTransactionStatus::kMissingDispatchState);
+   }
+-  AccessNetworkContextTransport* transport =
+-      AccessNetworkContextTransport::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto& pending = transaction.pending;
+   if (!transport || !transport->OwnsConfiguredPartition(pending.owner)) {
+-    supersede_and_fail(Result(AccessMutationTransactionStatus::kMissingTransport));
+-    return;
+-  }
+-
+-  const AccessMode mode = pending.candidate.members.front().policy.mode;
+-  uint64_t selection_generation = 0;
+-  if (mode == AccessMode::kProxy) {
+-    const std::string& proxy_group_id =
+-        pending.candidate.members.front().policy.proxy_group_id;
+-    const auto endpoint = transport->CaptureSelectedProxyEndpoint(
+-        pending.owner, proxy_group_id, selector.exact_host);
+-    if (!endpoint.has_value() ||
+-        endpoint->generations.selection_generation == 0 ||
+-        endpoint->generations.network_epoch != transport->network_epoch() ||
+-        !AccessProxySelectionGenerationSource::Get(profile_) ||
+-        AccessProxySelectionGenerationSource::Get(profile_)->selection_generation(
+-            proxy_group_id) != endpoint->generations.selection_generation) {
+-      supersede_and_fail(
+-          Result(AccessMutationTransactionStatus::kProxySelectionUnavailable));
+-      return;
+-    }
+-    selection_generation = endpoint->generations.selection_generation;
+-  }
+-
+-  aegis_access::PolicyPublicationIdentity identity{
+-      pending.operation_id,
+-      pending.operation_sequence,
+-      pending.candidate.policy_generation,
+-      selection_generation,
+-      transport->network_epoch(),
+-      selector,
+-  };
+-  const auto begin = dispatch->BeginPolicyPublication({
+-      identity,
+-      {"network-context"},
+-      false,
+-  });
++    return Result(AccessMutationTransactionStatus::kMissingTransport);
++  }
++  const auto selection_generation = SelectionGeneration(transaction);
++  if (!selection_generation) {
++    return Result(AccessMutationTransactionStatus::kProxySelectionUnavailable);
++  }
++  transaction.identity = {pending.operation_id,
++                          pending.operation_sequence,
++                          pending.candidate.policy_generation,
++                          *selection_generation,
++                          transport->network_epoch(),
++                          transaction.identity.selector};
++  const auto begin = dispatch->BeginPolicyPublication(
++      {transaction.identity, {"network-context"}, false});
+   if (begin.status != aegis_access::PolicyPublicationAckStatus::kPending) {
+-    supersede_and_fail(
+-        Result(AccessMutationTransactionStatus::kPublicationTrackerRejected));
+-    return;
++    return Result(AccessMutationTransactionStatus::kPublicationTrackerRejected);
+   }
+-
+-  const auto previous_selection = *transport->CurrentSelection(pending.owner);
+-  auto candidate_selection = previous_selection;
+-  if (candidate_selection.endpoint) {
+-    candidate_selection.endpoint->generations.policy_generation =
++  transaction.tracker_started = true;
++  transaction.previous_selection = *transport->CurrentSelection(pending.owner);
++  transaction.candidate_selection = transaction.previous_selection;
++  if (transaction.candidate_selection.endpoint) {
++    transaction.candidate_selection.endpoint->generations.policy_generation =
+         pending.operation_sequence;
+   }
+-  if (mode == AccessMode::kDirect) {
+-    std::erase(candidate_selection.exact_hosts, selector.exact_host);
++  if (pending.candidate.members.front().policy.mode == AccessMode::kDirect) {
++    std::erase(transaction.candidate_selection.exact_hosts,
++               transaction.identity.selector.exact_host);
+   }
++  return std::nullopt;
++}
+ 
+-  const AccessPolicyPublicationResult publication =
+-      runtime->PublishPreparedPolicyCandidate(candidate);
++std::optional<AccessMutationTransactionResult>
++AccessServiceCoordinator::PublishCandidate(MutationTransaction& transaction) {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto publication =
++      runtime->PublishPreparedPolicyCandidate(transaction.candidate);
+   if (publication.status != AccessPolicyPublicationStatus::kPublished &&
+       publication.status != AccessPolicyPublicationStatus::kUnchanged) {
+-    dispatch->FailPolicyPublication(identity);
+-    supersede_and_fail(
+-        Result(AccessMutationTransactionStatus::kRuntimePublicationFailed));
+-    return;
++    return Result(AccessMutationTransactionStatus::kRuntimePublicationFailed);
+   }
+-
+-  if (!transport->ReplaceSelection(pending.owner, previous_selection,
+-                                   candidate_selection)) {
+-    runtime->RollbackPreparedPolicyCandidate(candidate, previous);
+-    dispatch->FailPolicyPublication(identity);
+-    supersede_and_fail(
+-        Result(AccessMutationTransactionStatus::kRuntimePublicationFailed));
+-    return;
++  transaction.runtime_published = true;
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  if (!transport->ReplaceSelection(transaction.pending.owner,
++                                   transaction.previous_selection,
++                                   transaction.candidate_selection)) {
++    return Result(AccessMutationTransactionStatus::kRuntimePublicationFailed);
+   }
++  return std::nullopt;
++}
+ 
+-  // Copy call arguments before moving transaction ownership into the callback.
+-  const auto publication_identity = identity;
+-  const auto publication_owner = pending.owner;
+-  auto settlement = std::make_shared<base::OnceCallback<void(bool)>>(base::BindOnce(
+-      &AccessServiceCoordinator::OnNetworkContextPublicationAck,
+-      weak_factory_.GetWeakPtr(), std::move(pending),
+-      std::move(candidate), std::move(previous), previous_selection, candidate_selection, std::move(identity),
+-      std::move(completion)));
++void AccessServiceCoordinator::RequestPublicationAck(
++    std::unique_ptr<MutationTransaction> transaction) {
++  // Copy arguments before moving ownership into the callback.
++  const auto identity = transaction->identity;
++  const auto owner = transaction->pending.owner;
++  auto settlement = std::make_shared<base::OnceCallback<void(bool)>>(
++      base::BindOnce(&AccessServiceCoordinator::OnNetworkContextPublicationAck,
++                     weak_factory_.GetWeakPtr(), std::move(transaction)));
+   auto settle = [](std::shared_ptr<base::OnceCallback<void(bool)>> callback,
+                    bool accepted) {
+     if (*callback) {
+@@ -298,113 +328,111 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+   };
+   publication_timeout_.Start(
+       FROM_HERE, base::Seconds(30), base::BindOnce(settle, settlement, false));
+-  dispatch->RequestNetworkContextPublicationAck(
+-      publication_identity, publication_owner,
+-      base::BindOnce(settle, settlement));
++  AccessRequestDispatchState::Get(profile_)
++      ->RequestNetworkContextPublicationAck(identity, owner,
++                                            base::BindOnce(settle, settlement));
+ }
+ 
+-void AccessServiceCoordinator::OnNetworkContextPublicationAck(
+-    PendingMutationRecord pending,
+-    StoredPolicySnapshot candidate,
+-    std::optional<StoredPolicySnapshot> previous,
+-    AccessTransportSelection previous_selection,
+-    AccessTransportSelection candidate_selection,
+-    aegis_access::PolicyPublicationIdentity identity,
+-    base::OnceCallback<void(AccessMutationTransactionResult)> completion,
+-    bool acknowledged) {
+-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  AccessRuleStore* store = store_.get();
+-  AccessPublishedRequestRuntime* runtime =
+-      AccessPublishedRequestRuntime::Get(profile_);
+-  AccessRequestDispatchState* dispatch = AccessRequestDispatchState::Get(profile_);
+-
+-  auto fail_and_restore = [&](AccessMutationTransactionStatus status,
+-                              StoreStatus store_status = StoreStatus::kValid) {
+-    if (dispatch) {
+-      dispatch->FailPolicyPublication(identity);
+-    }
+-    if (runtime) {
+-      if (runtime->RollbackPreparedPolicyCandidate(candidate, previous)) {
+-        if (auto* transport = AccessNetworkContextTransport::Get(profile_)) {
+-          transport->ReplaceSelection(pending.owner, candidate_selection,
+-                                      previous_selection);
+-        }
+-      }
+-    }
+-    if (store) {
+-      const auto cleanup = store->SupersedePreparedMutation(
+-          pending.operation_id, pending.request_fingerprint);
+-      if (cleanup != StoreStatus::kValid) {
+-        store_status = cleanup;
+-      }
+-    }
+-    Finish(std::move(completion), Result(status, store_status));
+-  };
+-
+-  if (!acknowledged || !dispatch || !runtime || !store) {
+-    fail_and_restore(AccessMutationTransactionStatus::kNetworkPublicationFailed);
+-    return;
+-  }
+-
+-  // ACKs cross an asynchronous boundary. The exact candidate and proxy
+-  // selection must still be current at the durable commit point.
++bool AccessServiceCoordinator::CandidateStillCurrent(
++    const MutationTransaction& transaction) const {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+-  const auto* published = runtime->GetPublishedPolicySnapshot(pending.owner);
+-  const auto adapted = AccessRuleStore::AdaptMatcherSnapshot(candidate);
+-  if (!transport || !transport->OwnsConfiguredPartition(pending.owner) ||
+-      transport->network_epoch() != identity.network_epoch || !published ||
+-      !adapted.value ||
++  const auto& owner = transaction.pending.owner;
++  if (!runtime || !transport || !transport->OwnsConfiguredPartition(owner) ||
++      transport->network_epoch() != transaction.identity.network_epoch) {
++    return false;
++  }
++  const auto* published = runtime->GetPublishedPolicySnapshot(owner);
++  const auto adapted =
++      AccessRuleStore::AdaptMatcherSnapshot(transaction.candidate);
++  if (!published || !adapted.value ||
+       *published != aegis_access::PublishedAccessPolicySnapshot{
+                         adapted.value->owner,
+                         adapted.value->committed_policy_generation,
+                         adapted.value->rules}) {
+-    fail_and_restore(AccessMutationTransactionStatus::kNetworkPublicationFailed);
+-    return;
++    return false;
+   }
+-  if (transport->CurrentSelection(pending.owner) != candidate_selection) {
+-    fail_and_restore(AccessMutationTransactionStatus::kNetworkPublicationFailed);
+-    return;
++  return transport->CurrentSelection(owner) ==
++             transaction.candidate_selection &&
++         SelectionGeneration(transaction) ==
++             transaction.identity.selection_generation;
++}
++
++void AccessServiceCoordinator::FailTransaction(
++    std::unique_ptr<MutationTransaction> transaction,
++    AccessMutationTransactionResult result) {
++  if (transaction->tracker_started) {
++    if (auto* dispatch = AccessRequestDispatchState::Get(profile_)) {
++      dispatch->FailPolicyPublication(transaction->identity);
++    }
+   }
+-  if (identity.selection_generation != 0) {
+-    const auto endpoint = transport->CaptureSelectedProxyEndpoint(
+-        pending.owner, pending.candidate.members.front().policy.proxy_group_id,
+-        identity.selector.exact_host);
+-    auto* selection = AccessProxySelectionGenerationSource::Get(profile_);
+-    if (!endpoint || !selection ||
+-        selection->selection_generation(endpoint->proxy_group_id) !=
+-            identity.selection_generation ||
+-        endpoint->generations.selection_generation != identity.selection_generation) {
+-      fail_and_restore(AccessMutationTransactionStatus::kNetworkPublicationFailed);
+-      return;
++  if (transaction->runtime_published) {
++    RestoreCandidate(*transaction);
++  }
++  if (store_ && !transaction->pending.operation_id.empty()) {
++    const auto cleanup = store_->SupersedePreparedMutation(
++        transaction->pending.operation_id,
++        transaction->pending.request_fingerprint);
++    if (cleanup != StoreStatus::kValid) {
++      result.store_status = cleanup;
+     }
+   }
++  Finish(std::move(transaction->completion), result);
++}
+ 
+-  if (!dispatch->CanCommitPolicyPublication(identity)) {
+-    fail_and_restore(AccessMutationTransactionStatus::kPublicationTrackerRejected);
++void AccessServiceCoordinator::RestoreCandidate(
++    const MutationTransaction& transaction) {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  if (!runtime || !runtime->RollbackPreparedPolicyCandidate(
++                      transaction.candidate, transaction.previous)) {
+     return;
+   }
+-  // From this check through finalization, execution stays synchronous on UI.
+-  // The store transaction neither pumps tasks nor invokes external callbacks.
+-  // Thus the validated tracker entry cannot change before its infallible
+-  // in-memory commit/finalize transitions. Never report a committed durable
+-  // mutation as a rolled-back transaction.
+-  StoreResult<PendingMutationRecord> committed =
+-      store->CommitPreparedMutation(pending);
+-  if (committed.status != StoreStatus::kValid || !committed.value.has_value()) {
+-    fail_and_restore(AccessMutationTransactionStatus::kCommitFailed,
+-                     committed.status);
+-    return;
++  if (auto* transport = AccessNetworkContextTransport::Get(profile_)) {
++    transport->ReplaceSelection(transaction.pending.owner,
++                                transaction.candidate_selection,
++                                transaction.previous_selection);
+   }
++}
+ 
+-  const auto ready = dispatch->MarkPolicyPublicationDurablyCommitted(identity);
++void AccessServiceCoordinator::OnNetworkContextPublicationAck(
++    std::unique_ptr<MutationTransaction> transaction,
++    bool acknowledged) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  auto* dispatch = AccessRequestDispatchState::Get(profile_);
++  if (!acknowledged || !dispatch || !store_ ||
++      !CandidateStillCurrent(*transaction)) {
++    FailTransaction(
++        std::move(transaction),
++        Result(AccessMutationTransactionStatus::kNetworkPublicationFailed));
++    return;
++  }
++  if (!dispatch->CanCommitPolicyPublication(transaction->identity)) {
++    FailTransaction(
++        std::move(transaction),
++        Result(AccessMutationTransactionStatus::kPublicationTrackerRejected));
++    return;
++  }
++  // Through finalization, execution is synchronous on UI. The store neither
++  // pumps tasks nor invokes callbacks: validated tracker transitions cannot
++  // change here. Never report a durable commit as a rolled-back transaction.
++  auto committed = store_->CommitPreparedMutation(transaction->pending);
++  if (committed.status != StoreStatus::kValid || !committed.value) {
++    FailTransaction(std::move(transaction),
++                    Result(AccessMutationTransactionStatus::kCommitFailed,
++                           committed.status));
++    return;
++  }
++  const auto ready =
++      dispatch->MarkPolicyPublicationDurablyCommitted(transaction->identity);
+   CHECK(ready.status == aegis_access::PolicyPublicationAckStatus::kReady);
+-  const auto finalized = dispatch->FinalizePolicyPublication(identity);
++  const auto finalized =
++      dispatch->FinalizePolicyPublication(transaction->identity);
+   CHECK(finalized.status == aegis_access::PolicyPublicationAckStatus::kFinalized);
+-
+   ++state_generation_;
+-  Finish(std::move(completion),
+-         Result(AccessMutationTransactionStatus::kCommitted,
+-                StoreStatus::kValid, committed.value->committed_policy_generation));
++  Finish(
++      std::move(transaction->completion),
++      Result(AccessMutationTransactionStatus::kCommitted, StoreStatus::kValid,
++             committed.value->committed_policy_generation));
+ }
+ 
+ void AccessServiceCoordinator::Finish(
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index 008c527679..00de83048f 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -73,14 +73,29 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+ 
+  private:
+   explicit AccessServiceCoordinator(Profile* profile);
++  struct MutationTransaction;
++  std::optional<AccessMutationTransactionResult> PrepareCandidate(
++      MutationTransaction& transaction,
++      const SiteGroupMutationRequest& request);
++  std::optional<AccessMutationTransactionResult> ReadPreviousSnapshot(
++      MutationTransaction& transaction,
++      const SiteGroupMutationRequest& request);
++  std::optional<AccessMutationTransactionResult> ValidateTransportScope(
++      const MutationTransaction& transaction,
++      AccessMode mode) const;
++  std::optional<uint64_t> SelectionGeneration(
++      const MutationTransaction& transaction) const;
++  std::optional<AccessMutationTransactionResult> BeginPublication(
++      MutationTransaction& transaction);
++  std::optional<AccessMutationTransactionResult> PublishCandidate(
++      MutationTransaction& transaction);
++  void RequestPublicationAck(std::unique_ptr<MutationTransaction> transaction);
++  bool CandidateStillCurrent(const MutationTransaction& transaction) const;
++  void FailTransaction(std::unique_ptr<MutationTransaction> transaction,
++                       AccessMutationTransactionResult result);
++  void RestoreCandidate(const MutationTransaction& transaction);
+   void OnNetworkContextPublicationAck(
+-      PendingMutationRecord pending,
+-      StoredPolicySnapshot candidate,
+-      std::optional<StoredPolicySnapshot> previous,
+-      AccessTransportSelection previous_selection,
+-      AccessTransportSelection candidate_selection,
+-      aegis_access::PolicyPublicationIdentity identity,
+-      base::OnceCallback<void(AccessMutationTransactionResult)> completion,
++      std::unique_ptr<MutationTransaction> transaction,
+       bool acknowledged);
+   void Finish(
+       base::OnceCallback<void(AccessMutationTransactionResult)> completion,
+-- 
+2.54.0 (Apple Git-157)
+

@@ -235,6 +235,12 @@ class AccessRuleStore {
       const std::string& storage_partition_token);
   StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
       const SiteGroupMutationRequest& request);
+  // Builds the full in-memory candidate represented by one exact PREPARED
+  // journal record without advancing durable state. Unrelated committed groups
+  // and independent rules are preserved; only the candidate site group is
+  // replaced at the reserved operation/policy generation.
+  StoreResult<StoredPolicySnapshot> BuildPreparedCandidateSnapshot(
+      const PendingMutationRecord& expected);
   StoreResult<PendingMutationRecord> CommitPreparedMutation(
       const PendingMutationRecord& expected);
   StoreStatus SupersedePreparedMutation(const std::string& operation_id,

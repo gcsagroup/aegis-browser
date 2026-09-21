@@ -1,5 +1,48 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
+## 2026-09-21：个人 Codacy 与上游 README 隔离维护
+
+用户要求恢复个人 main/develop 的 Codacy，并在晋升时忽略个人徽章。三份个人 README 使用个人项目 `72c871eba82e471ebc05eaacd4d45218`，分别标注 main/develop；上游保留其项目 `7b3008e649154ca0a7d5906c514488cc`。内部晋升保留个人 README，独立上游导出候选才恢复本次 upstream/main 的三份 README，并校验其他文件不变；同步回个人分支也保留个人展示。流程以 [DEV CI 指南](../../development/ci.zh-CN.md) 为准。
+
+本项只维护展示和晋升隔离，不升级 native/G0 证据。PR #142 已以 squash commit `211bfd33fe0e07ab59fed8fccbf4b17bd0fc56d0` 合并到 develop，其 push CI run `35588469947` 的 quality / quality-gate 均成功；最终 HEAD `32cf623a99f0687f9f6e9602af56af98e2a3da98` 的本地 full quality、Codacy 与 Astra High 独立审查均通过。旧 main→develop PR #140 绑定旧 base，控制器按 fail-closed 拒绝继续；替代同步 PR #143 已在最终 HEAD `c619c4d8737b8f82c0669d411a9a60c15f76bf16` 关闭 Codacy review 提出的日志可诊断性、缺失 series 文件和末行无换行回归缺口，并以 merge commit `aded49ef24bc088d88b380f7db5a525830d63d65` 合入 develop。对应 develop push CI run `35590221938` 的 quality / quality-gate 均成功。
+
+首个个人 main 晋升候选 PR #144 的托管检查通过后，Codacy review 发现代理候选没有显式把目标 host 加入 allowlist，且 `ReplaceSelection` 接受未排序 host 后会破坏 `binary_search` 前提。为避免修复先落到 main 并使 develop 落后，#144 已重新定向到 `develop@aded49ef24bc088d88b380f7db5a525830d63d65`：代理 mutation 从当前 endpoint 和权威 selection generation 构造候选，插入目标 host 并保持排序；transport 拒绝未排序 replacement。新增 unit 覆盖 DIRECT 后重新加入 PROXY allowlist 以及未排序 replacement fail-closed，并以顺序补丁 0156 保持 overlay 对齐。Astra High 随后发现 coordinator test 直接 include proxy selection source 却未声明直接 GN 依赖；0156 与 wiring 回归已补齐该依赖。
+
+PR #144 最终 HEAD `b2b7b3b9246320b6a1530b1033016cc79fb7b13e` 的本地 full quality 为 PASS，`sourceStable=true`，输入/最终摘要同为 `5c3c5bb80bf5bcc2ceb86285b6f16c14b6de93407ee2ad0ac7fdde075e595711`；托管 quality、quality-gate、C++ unit、Codacy 与 Astra High 最终 HEAD 复审均通过，三个 Codacy conversation 均已解决。该 PR 已 squash merge 为 `develop@3b7f66658afeb192339b5ad60eaf9463cb5b96e6`，其 push CI run `35593565545` 的 quality / quality-gate 成功。后续文档修正 [PR #146](https://github.com/quinn521/aegis-browser/pull/146) 在最终 HEAD `a49738e099cd8e1a722a66129e854261735e4e8c` 取得本地 full quality PASS、`sourceStable=true` 和匹配摘要 `820a5a4267d1446fd6723f956ef17c152cde4d6f58a175d35f7986c2a8dc8788`；托管 CI run `35596978055` 的 quality / quality-gate、Medium+ Codacy 门槛和同一 Astra High reviewer 均通过，四个 Codacy conversation 均已解决。GitHub 已将 #146 squash merge 为 `develop@b2b34d42f5cb2b75b748352ef099c95801dbddb4`，对应 push CI run `35597328811` 成功。
+
+[PR #147](https://github.com/quinn521/aegis-browser/pull/147) 已在最终 HEAD `08d49e6226b353ef04b086d12039767721ad4977`（tree `f45c0fa24f58d24078eac585ec0e595d8658bf9d`）完成 0157 修复。本地 full quality 为 PASS、`sourceStable=true`，输入/最终摘要同为 `9ccb7119e25d96b722695e89fb2a42b6534860cfb32eed913a75a1fd9f1ed8ac`；托管 CI run `35601244970`、C++ run `35601244785`、Codacy 和同一 Astra High reviewer 最终复审均通过，且无未解决 conversation。GitHub 已将 #147 squash merge 为 `develop@9d59d23609d47b1158767bd333579478f9ea7a43`，对应 develop push CI run `35601662252` 的 quality / quality-gate 成功。
+
+个人 main 晋升候选 [PR #148](https://github.com/quinn521/aegis-browser/pull/148) 从该精确 `develop` 建立，初始 HEAD/tree 与 `9d59d23`/`f45c0fa` 完全一致，三份 README 保留个人 Codacy 项目 `72c871eba82e471ebc05eaacd4d45218` 的 main/develop 徽章。该初始 HEAD 的本地 full quality 为 PASS、`sourceStable=true`、摘要仍为 `9ccb7119...`，但 Codacy 在 `AccessServiceCoordinator::BeginPublication` 报出一个 Medium：54 行超过 50 行门槛。为避免修复只落到 main 并使 develop 落后，#148 转向 develop，只交付行为不变的 candidate preparation 提取、顺序补丁 0158、wiring 回归及本文档/Handoff。Minor 圈复杂度记录但不阻塞。修复 commit `f7d610d75af36e78e3a0d0a4841d180c232b5472`（tree `2e5a447546c6de03d94ead3ed1aff2a2cf0acb48`）的补丁格式、GN wiring 与 848 项 Access checks 通过；本地 full quality 为 PASS、`sourceStable=true`、输入/最终摘要同为 `19485eeceb33a1f4cdda6a38bc4bcf66a7f2e9b8a79d148557546fa599073084`；托管 C++ run `35602778691`、CI run `35602778700`、Codacy 无问题和同一 Astra High reviewer CLEAR 均已取得。本文档同步会产生新的最终 HEAD，因此合并前仍须把本地/托管/Codacy/同一 reviewer 证据重新绑定到该最终 HEAD，并确认全部 conversation resolved。mirror/upstream 按用户最新要求暂缓；仓库门禁不证明 Chromium GN/GTest/runtime，G0 继续 **UNVERIFIED**。
+
+## 2026-09-21：commit/publish snapshot 阶段（代码已合并；native 验证仍欠账）
+
+本阶段基线为 `develop@3154d39871ddd592a1be609abf9c90c78d7e29c6`，范围为普通 DIRECT/PROXY 网站协议组事务。[Fork PR #139](https://github.com/quinn521/aegis-browser/pull/139) 已合并，合并提交为 `2c591b7`。以下行为说明保留已交付的源码边界；固定 Chromium/GTest/真实入口仍是后续 native 证据欠账。
+
+冻结事务顺序为：验证可信 selector 与 store → PREPARED journal 预留 operationSequence → 从旧 durable base 构造完整候选 → 发布到浏览器 request runtime → 向所属 NetworkContext 发布精确 operation/G/S/E 与 owner/partition → 全部候选 ACK → 再原子 durable commit → finalize。PREPARED 的 `committed_policy_generation` 始终为 0，候选及成功提交的 policy generation 都等于预留的 operationSequence。请求路由只读取内存快照，不读取 SQLite。`RepublishCurrentConfigWithAck` 不能作为候选发布证据。
+
+Profile 持有首个可信 store（含 ephemeral 会话库），后续 mutation 传空指针复用，禁止替换库。候选保留无关网站组和独立规则。当前 transport 只有 partition/host 粒度：同 host 的其他规则需要相反 DIRECT/PROXY 策略时，发布前返回 `kUnsupportedTransportScope`，保留原状态；不宣称已实现按 top-level-site 区分的 transport。浏览器同步重绑定保留端点的 policy generation，并在 DIRECT 时从 CustomProxyConfig 的 exact-host 列表移除目标网站、保留其他网站；候选 config 与 metadata 使用同一 Mojo channel 顺序发送。失败仅在候选仍精确匹配时恢复旧快照/端点，并 supersede journal；清理写入失败透传 store 错误并保留待恢复边界。提交前重新核对 runtime、权威 selection source 的 S/E、完整端点及所有 NetworkContext 的集合；新 context、版本变化、错误或丢失 ACK、30 秒超时均阻止提交。迟到 ACK 不能复活已取消的事务；失败的 exact identity 释放 tracker 容量。Network Service 在受信任的 context channel 上保存 owner 绑定与候选回执，并按 proxy group 保存 selection generation 高水位；它允许独立组使用各自计数，拒绝同组回退，也不从数据库重建策略。BLOCK/ALLOW 的屏障及取消流程、可信 UI 入口、真实身份/节点提交与 Xray 集成不属于此阶段。
+
+| 证据 | 当前边界 |
+| --- | --- |
+| 实现及测试源码 | 已增加 candidate builder、coordinator transaction、runtime rollback、transport/version ACK，以及 unit/真实主导航回归源码；0157 按 proxy group 绑定 selection generation；#148 的 0158 仅提取 transport candidate preparation，保持行为不变并同步 overlay/顺序补丁。 |
+| 本地 standalone C++ | #148 修复 commit `f7d610d` 执行通过 848 checks，含 patch format 与 GN wiring；本文档提交后的最终 HEAD 仍需重跑。这不是 SQLite/GN/GTest/browser 执行证据。 |
+| Chromium/GTest/真实入口 | **NOT_RUN / BLOCKED**：已核实旧 PR135 retry3 权威退出文件为 1，首个失败是 `ProxySelectionGenerationState` 的 inline constructor / missing out-of-line destructor style 检查。该源码问题已由 #139 的 0154 修复，但尚无重建后的固定候选 PASS；缓存和旧二进制均不是当前证据，旧工作区不改动。 |
+| 独立审查 | #148 的 Astra High reviewer 已对 `f7d610d` / `2e5a447` 给出 CLEAR，无 Medium+ 发现；本文档提交产生新 HEAD 后，必须由同一 reviewer 复审并再次 CLEAR。 |
+| 本地 full quality | 修复 commit `f7d610d` 对 `origin/develop@9d59d23` 为 PASS、`sourceStable=true`，输入/最终摘要同为 `19485eeceb33a1f4cdda6a38bc4bcf66a7f2e9b8a79d148557546fa599073084`；本文档提交使该证据失效，最终 HEAD 必须重新运行完整质量门并保持摘要一致。 |
+| Hosted CI / 合并 | #148 修复 commit `f7d610d` 的 C++ run `35602778691`、CI run `35602778700` 与 Codacy 已通过；本文档提交后的最终 HEAD 必须重新通过同一门禁、全部 conversation resolved 和同一 Astra reviewer CLEAR，再 squash merge 到 develop 并核验精确 develop push CI。 |
+| G0 | **UNVERIFIED**。基础质量或测试源码不能升级为 native/runtime 验收。 |
+
+在宣告 G0 或依赖 native 验收继续扩展请求入口前，必须在同一固定候选实际执行 coordinator、store、runtime、transport、dispatch/tracker 单元与回归，并执行 `MainNavigationConsumesPreparedSnapshotBeforeCommit`、`MainNavigationRoutingIsolatedAcrossProfiles` 及既有导航/redirect/Worker/SharedWorker/Service Worker/missing endpoint/BLOCK/LoadingPredictor/frame prefetch 矩阵。零匹配、非零退出、不同候选均失败。上述未完成证据债与 #139 已完成的合并状态分开跟踪，也不能由仓库 CI 或测试源码替代。
+
+本轮后续顺序：
+
+1. 在 #148 完成 0158、wiring regression 和本文档/Handoff，转向 develop 后冻结最终 HEAD，取得 local full quality、hosted CI、无 Medium+ Codacy、全部 conversation resolved 和同一 Astra High reviewer CLEAR。
+2. 将 #148 squash merge 到 develop，确认 GitHub 实际 MERGED，并核验精确合并提交的 develop push CI。
+3. 仅在 #148 的 develop push CI 通过后，从最新 develop 建新的个人 main 晋升 worktree/PR，保留三份个人 Codacy README；最终 HEAD 门禁通过后使用 merge commit，并核验 main push CI。
+4. mirror/upstream 导出按用户最新要求暂缓；后续仍严格一阶段一 PR，并在同 PR 更新 plan/Handoff。native/G0 欠账继续独立登记，不用仓库晋升结果升级。
+
+## 历史核验记录（2026-09-20，非当前门禁结论）
+
 状态日期：2026-09-21（Asia/Shanghai）。本页是从当前 `develop` 继续实施的入口；[交接与精确证据](handoff-20260920.zh-CN.md)记录本次基线和待验证事项，[A01–A118 / PF01–PF13 验收追踪表](acceptance-tracker.zh-CN.md)是逐行覆盖与证据的唯一台账，[P0 历史实现记录](p0-implementation.zh-CN.md)保留切片过程。行为、验收项和 G0–G3 门槛以[冻结规范修订 4](spec.zh-CN.md)及[冻结清单](freeze.json)为准；本文不修改合同。分支、PR、Review 与最终 HEAD 门禁按[DEV CI 与上游推进指南](../../development/ci.zh-CN.md)执行。
 
 ## 当前判断与交付边界
@@ -23,7 +66,7 @@ G0 保持 **UNVERIFIED**，G1–G3 **未达到**。早于补丁 `0150` 的固定
 | 顺序 | 对应单元 | 下一交付和前置条件 | 完成证据 |
 | --- | --- | --- | --- |
 | 1 | P0 验证底座 | 旧 149-patch Chromium 候选已因 `IdentityGenerationState` style 编译错误退出；在同一固定 Chromium 基线重放 PR #135 最终的 151-patch 序列（含 `0150`、`0151`），再关闭编译和真实入口回归欠账，评估固定源码、工具链和 GN 参数下的 HTTP 代理/拒绝路径。发现失败先修复对应最小源码或环境问题。 | 记录源码树、补丁、GN args、目标、退出码、测试名、过滤器和原始日志；按规范第 12 节逐项判 G0，不能只凭 GN 成功或窄范围 prefetch PASS 判通过。 |
-| 2 | P1–P2 与 P4–P5 的最小协调闭环 | 在现有 Profile/StoragePartition 所有权基础上，定义并接入生产 coordinator：可信当前 host → 普通 `SetSiteProxy` 的网站协议组选择（DEV/Alpha 的三策略、ALLOW/BLOCK 为独立调试规则，按冻结合同协调）→ identity、selection、base-proxy 等真实代次 → 原子持久化与恢复 → committed snapshot 发布到所属 NetworkContext → 请求派发/取消的执行点 ACK → UI 状态。先以受控本地 HTTP fixture 验证，Xray 依赖留在后续单元。 | 两个普通 Profile/多个 partition 无串用；超时和取消不接受迟到结果；重启只恢复已提交状态；退出账户不直连回退；BLOCK 先装本地屏障，按流终止且失败保留；保存失败不显示“已保存”；关闭恢复原有代理设置。记录 G/S/E/identity/base-proxy 精确版本和 ACK。 |
+| 2 | P1–P2 与 P4–P5 的最小协调闭环 | 在现有 Profile/StoragePartition 所有权基础上，定义并接入生产 coordinator：可信当前 host → 普通 `SetSiteProxy` 的网站协议组选择（DEV/Alpha 的三策略、ALLOW/BLOCK 为独立调试规则，按冻结合同协调）→ identity、selection、base-proxy 等真实代次 → PREPARED journal → candidate snapshot 发布到内存与所属 NetworkContext → 请求派发/取消的执行点 ACK → 原子 durable commit 与恢复 → UI 状态。先以受控本地 HTTP fixture 验证，Xray 依赖留在后续单元。 | 两个普通 Profile/多个 partition 无串用；超时和取消不接受迟到结果；重启只恢复已提交状态；退出账户不直连回退；BLOCK 先装本地屏障，按流终止且失败保留；保存失败不显示“已保存”；关闭恢复原有代理设置。记录 G/S/E/identity/base-proxy 精确版本和 ACK。 |
 | 3 | P3 + P3a | 在协调闭环上接固定 Xray 资产与 Profile 级 HTTP 入口，打通受控服务端的 VLESS + RAW(TCP) + REALITY + XTLS Vision；接入自动登记、签名配置、准入、租约、健康探测、稳定分配和确认故障后的切换。 | 实际 HTTP→REALITY 往返、凭据隔离、超时/撤销/入口故障不直连、节点保持与切换记录；服务和部署参数版本绑定。SOCKS5 与兼容出站在 P7 完整验收。 |
 | 4 | P3c–P3d | 主链路稳定后实现服务端实际双向字节计量、幂等账本与额度预算；执行物理 VPS/账户限速、公平分配与并发准入。跨节点账本和租约先用多节点 fixture 验证，部署第二个执行节点前完成真实联调。 | 对账、重试/乱序/断线/周期重置、额度耗尽在途截断、Vision/splice 快路径计量与预算实测，记录误差和容量上限；UI 秒级变化不能代替服务端对账。 |
 | 5 | P3b + P4–P6 完整面 | 补精确正常/失败目标采集与全部可信请求归属、真实终止句柄；三策略联合发布和版本化撤销；提供 `SetSiteProxy`、工具栏/管理页、状态/用量与 DEV/Alpha 调试视图，并验证四渠道原生接口隔离。 | 导航、子资源、下载/流、frame/Worker 等逐入口覆盖报告；BLOCK/ALLOW 的旧代次和旧 ACK 竞争；离线关闭/阻断仍可操作；开关与连接状态分离；Beta/Release 无调试管理接口。 |

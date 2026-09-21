@@ -33,7 +33,8 @@ inline PolicyPublicationIdentity PublicationIdentity(
     uint64_t generation,
     const std::string& operation_id = "operation-ack",
     const std::string& host = "target.example") {
-  return {operation_id, sequence, generation, PublicationSelector(host)};
+  return {operation_id, sequence, generation, "proxy-group", 7, 9,
+          PublicationSelector(host)};
 }
 
 inline PolicyPublicationAckRequirements PublicationRequirements(
@@ -53,6 +54,8 @@ inline void ExpectPublicationWaitsForEveryCompletion(
   observer.Expect(
       tracker.Begin(requirements).status == PolicyPublicationAckStatus::kPending,
       "publication begins pending");
+  observer.Expect(!tracker.CanCommit(requirements.identity),
+                  "unacknowledged publication cannot commit");
   observer.Expect(
       tracker.Acknowledge(requirements.identity, "browser-runtime").status ==
           PolicyPublicationAckStatus::kPending,
@@ -66,6 +69,8 @@ inline void ExpectPublicationWaitsForEveryCompletion(
           PolicyPublicationAckStatus::kPending,
       "termination still waits for durable commit");
 
+  observer.Expect(tracker.CanCommit(requirements.identity),
+                  "all execution prerequisites permit synchronous durable commit");
   const auto committed = tracker.MarkDurablyCommitted(requirements.identity);
   observer.Expect(committed.status == PolicyPublicationAckStatus::kReady,
                   "durable commit makes publication ready");
@@ -195,6 +200,70 @@ inline void ExpectInvalidRequirementsFailClosed(
       tracker.Begin(empty).status ==
           PolicyPublicationAckStatus::kInvalidOperation,
       "empty required ack set is invalid");
+
+  auto proxy_without_group = PublicationRequirements();
+  proxy_without_group.identity.proxy_group_id.clear();
+  observer.Expect(
+      tracker.Begin(proxy_without_group).status ==
+          PolicyPublicationAckStatus::kInvalidOperation,
+      "proxy selection generation requires a group identity");
+
+  auto direct_with_group = PublicationRequirements();
+  direct_with_group.identity.selection_generation = 0;
+  observer.Expect(
+      tracker.Begin(direct_with_group).status ==
+          PolicyPublicationAckStatus::kInvalidOperation,
+      "direct publication cannot retain a proxy group identity");
+}
+
+inline void ExpectRuntimeVersionMismatchCannotAcknowledge(
+    PolicyPublicationAckTrackerTestObserver& observer) {
+  PolicyPublicationAckTracker tracker(8, 4);
+  const auto current = PublicationRequirements(40, 40, "operation-current");
+  tracker.Begin(current);
+
+  auto stale_selection = current.identity;
+  stale_selection.selection_generation = 6;
+  observer.Expect(
+      tracker.Acknowledge(stale_selection, "network-context").status ==
+          PolicyPublicationAckStatus::kStaleGeneration,
+      "stale selection generation cannot acknowledge current publication");
+
+  auto wrong_epoch = current.identity;
+  wrong_epoch.network_epoch = 10;
+  observer.Expect(
+      tracker.Acknowledge(wrong_epoch, "network-context").status ==
+          PolicyPublicationAckStatus::kVersionMismatch,
+      "different network epoch cannot acknowledge current publication");
+
+  auto wrong_group = current.identity;
+  wrong_group.proxy_group_id = "other-proxy-group";
+  observer.Expect(
+      tracker.Acknowledge(wrong_group, "network-context").status ==
+          PolicyPublicationAckStatus::kVersionMismatch,
+      "wrong proxy group cannot acknowledge current publication");
+}
+
+inline void ExpectAbortedPublicationReleasesCapacity(
+    PolicyPublicationAckTrackerTestObserver& observer) {
+  PolicyPublicationAckTracker tracker(1, 4);
+  const auto first = PublicationRequirements();
+  observer.Expect(tracker.Begin(first).status == PolicyPublicationAckStatus::kPending,
+                  "begin abort fixture");
+  auto forged = first.identity;
+  ++forged.network_epoch;
+  observer.Expect(tracker.Abort(forged).status == PolicyPublicationAckStatus::kNotFound,
+                  "different identity cannot abort publication");
+  observer.Expect(tracker.size() == 1, "forged abort retains entry");
+  observer.Expect(tracker.Abort(first.identity).status == PolicyPublicationAckStatus::kFailed,
+                  "exact abort retires entry");
+  observer.Expect(tracker.size() == 0, "abort releases bounded capacity");
+  const auto next = PublicationRequirements(2, 2, "next", "next.example");
+  observer.Expect(tracker.Begin(next).status == PolicyPublicationAckStatus::kPending,
+                  "new selector can use released slot");
+  observer.Expect(tracker.Acknowledge(first.identity, "network-context").status ==
+                      PolicyPublicationAckStatus::kNotFound,
+                  "late aborted ACK cannot reactivate entry");
 }
 
 inline void RunPolicyPublicationAckTrackerUnitTests(
@@ -210,6 +279,8 @@ inline void RunPolicyPublicationAckTrackerRegressionTests(
   ExpectNewerOperationInvalidatesLateAck(observer);
   ExpectExecutionPointFailureStaysFailClosed(observer);
   ExpectGenerationCannotMoveBackward(observer);
+  ExpectRuntimeVersionMismatchCannotAcknowledge(observer);
+  ExpectAbortedPublicationReleasesCapacity(observer);
 }
 
 }  // namespace aegis_access::test
