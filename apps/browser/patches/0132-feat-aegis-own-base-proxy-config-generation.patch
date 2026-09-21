@@ -1,11 +1,227 @@
-From 0132000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0929b6d3d4b63d7736e8da61fa08e2d5f5c00c76 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Fri, 18 Sep 2026 17:36:00 +0800
 Subject: [PATCH] feat(aegis): own base proxy config generation
 
 ---
+ chrome/browser/net/BUILD.gn                   |   1 +
+ .../net/profile_network_context_service.cc    |   7 +
+ .../net/profile_network_context_service.h     |   4 +
+ chrome/browser/net/proxy_config_monitor.cc    |   7 +-
+ chrome/browser/net/proxy_config_monitor.h     |   9 ++
+ components/aegis_access/BUILD.gn              |  19 +++
+ ...cess_base_proxy_config_generation_state.cc |  39 ++++++
+ ...ccess_base_proxy_config_generation_state.h |  49 +++++++
+ ...xy_config_generation_state_contract_test.h | 125 ++++++++++++++++++
+ ..._proxy_config_generation_state_unittest.cc |  30 +++++
+ 10 files changed, 289 insertions(+), 1 deletion(-)
+ create mode 100644 components/aegis_access/access_base_proxy_config_generation_state.cc
+ create mode 100644 components/aegis_access/access_base_proxy_config_generation_state.h
+ create mode 100644 components/aegis_access/access_base_proxy_config_generation_state_contract_test.h
+ create mode 100644 components/aegis_access/access_base_proxy_config_generation_state_unittest.cc
+
+diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
+index 2cc67a9b73..8250bfd225 100644
+--- a/chrome/browser/net/BUILD.gn
++++ b/chrome/browser/net/BUILD.gn
+@@ -161,6 +161,7 @@ source_set("impl") {
+     ":key_pinning_proto",
+     "//base:build_time",
+     "//chrome/browser/aegis/access:access_network_context_transport",
++    "//components/aegis_access:access_base_proxy_config_generation_state",
+     "//chrome/browser:browser_features",
+     "//chrome/browser:browser_process",
+     "//chrome/browser:browser_process_platform_part",
+diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
+index 907dc165c9..0c3d0fad71 100644
+--- a/chrome/browser/net/profile_network_context_service.cc
++++ b/chrome/browser/net/profile_network_context_service.cc
+@@ -1192,6 +1192,13 @@ void ProfileNetworkContextService::FlushProxyConfigMonitorForTesting() {
+   proxy_config_monitor_->FlushForTesting();  // IN-TEST
+ }
+ 
++uint64_t ProfileNetworkContextService::GetAegisBaseProxyConfigGeneration()
++    const {
++  return proxy_config_monitor_
++             ? proxy_config_monitor_->base_proxy_config_generation()
++             : 0;
++}
++
+ void ProfileNetworkContextService::SetDiscardDomainReliabilityUploadsForTesting(
+     bool value) {
+   g_discard_domain_reliability_uploads_for_testing = new bool(value);
+diff --git a/chrome/browser/net/profile_network_context_service.h b/chrome/browser/net/profile_network_context_service.h
+index 042b06278c..597bab4c56 100644
+--- a/chrome/browser/net/profile_network_context_service.h
++++ b/chrome/browser/net/profile_network_context_service.h
+@@ -5,6 +5,7 @@
+ #ifndef CHROME_BROWSER_NET_PROFILE_NETWORK_CONTEXT_SERVICE_H_
+ #define CHROME_BROWSER_NET_PROFILE_NETWORK_CONTEXT_SERVICE_H_
+ 
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -131,6 +132,9 @@ class ProfileNetworkContextService
+   // Flushes all pending proxy configuration changes.
+   void FlushProxyConfigMonitorForTesting();
+ 
++  // Current generation of Chromium's native system/PAC/extension proxy config.
++  uint64_t GetAegisBaseProxyConfigGeneration() const;
++
+   static void SetDiscardDomainReliabilityUploadsForTesting(bool value);
+ 
+   void set_client_cert_store_factory_for_testing(
+diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
+index 50e7a07af8..65f3742190 100644
+--- a/chrome/browser/net/proxy_config_monitor.cc
++++ b/chrome/browser/net/proxy_config_monitor.cc
+@@ -99,8 +99,10 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
+   net::ProxyConfigWithAnnotation proxy_config;
+   net::ProxyConfigService::ConfigAvailability availability =
+       proxy_config_service_->GetLatestProxyConfig(&proxy_config);
+-  if (availability != net::ProxyConfigService::CONFIG_PENDING)
++  if (availability != net::ProxyConfigService::CONFIG_PENDING) {
++    base_proxy_config_generation_state_.PublishCurrentConfig();
+     network_context_params->initial_proxy_config = proxy_config;
++  }
+ }
+ 
+ void ProxyConfigMonitor::FlushForTesting() {
+@@ -112,6 +114,9 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
+     net::ProxyConfigService::ConfigAvailability availability) {
+   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+          !BrowserThread::IsThreadInitialized(BrowserThread::UI));
++  if (availability != net::ProxyConfigService::CONFIG_PENDING) {
++    base_proxy_config_generation_state_.AdvanceOnConfigChange();
++  }
+   for (const auto& proxy_config_client : proxy_config_client_set_) {
+     switch (availability) {
+       case net::ProxyConfigService::CONFIG_VALID:
+diff --git a/chrome/browser/net/proxy_config_monitor.h b/chrome/browser/net/proxy_config_monitor.h
+index 6c060b52d2..e4796f7ac5 100644
+--- a/chrome/browser/net/proxy_config_monitor.h
++++ b/chrome/browser/net/proxy_config_monitor.h
+@@ -5,11 +5,13 @@
+ #ifndef CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_
+ #define CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_
+ 
++#include <cstdint>
+ #include <memory>
+ #include <string>
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "build/buildflag.h"
++#include "components/aegis_access/access_base_proxy_config_generation_state.h"
+ #include "extensions/buildflags/buildflags.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "mojo/public/cpp/bindings/remote_set.h"
+@@ -67,6 +69,10 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
+   // configuration changes have been applied.
+   void FlushForTesting();
+ 
++  uint64_t base_proxy_config_generation() const {
++    return base_proxy_config_generation_state_.generation();
++  }
++
+  private:
+   // net::ProxyConfigService::Observer implementation:
+   void OnProxyConfigChanged(
+@@ -83,6 +89,9 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
+   void OnRequestMaybeFailedDueToProxySettings(int32_t net_error) override;
+ #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+ 
++  aegis_access::BaseProxyConfigGenerationState
++      base_proxy_config_generation_state_;
++
+   std::unique_ptr<net::ProxyConfigService> proxy_config_service_;
+   // Monitors global and Profile prefs related to proxy configuration.
+   std::unique_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 102bf64e8a..87f5188a74 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -41,6 +41,13 @@ source_set("access_proxy_selection_generation_state") {
+   ]
+ }
+ 
++source_set("access_base_proxy_config_generation_state") {
++  sources = [
++    "access_base_proxy_config_generation_state.cc",
++    "access_base_proxy_config_generation_state.h",
++  ]
++}
++
+ source_set("browser_request_metadata_seed") {
+   sources = [
+     "browser_request_metadata_seed.cc",
+@@ -120,6 +127,18 @@ test("access_proxy_selection_generation_state_unittests") {
+   ]
+ }
+ 
++test("access_base_proxy_config_generation_state_unittests") {
++  sources = [
++    "access_base_proxy_config_generation_state_contract_test.h",
++    "access_base_proxy_config_generation_state_unittest.cc",
++  ]
++  deps = [
++    ":access_base_proxy_config_generation_state",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("browser_request_metadata_seed_unittests") {
+   sources = [
+     "browser_request_metadata_seed_contract_test.h",
+diff --git a/components/aegis_access/access_base_proxy_config_generation_state.cc b/components/aegis_access/access_base_proxy_config_generation_state.cc
+new file mode 100644
+index 0000000000..6f13f19489
+--- /dev/null
++++ b/components/aegis_access/access_base_proxy_config_generation_state.cc
+@@ -0,0 +1,39 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_base_proxy_config_generation_state.h"
++
++#include <limits>
++
++namespace aegis_access {
++
++BaseProxyConfigGenerationResult
++BaseProxyConfigGenerationState::PublishCurrentConfig() {
++  if (exhausted_) {
++    return {BaseProxyConfigGenerationStatus::kExhausted, 0};
++  }
++  if (generation_ != 0) {
++    return {BaseProxyConfigGenerationStatus::kUnchanged, generation_};
++  }
++
++  generation_ = 1;
++  return {BaseProxyConfigGenerationStatus::kPublished, generation_};
++}
++
++BaseProxyConfigGenerationResult
++BaseProxyConfigGenerationState::AdvanceOnConfigChange() {
++  if (exhausted_) {
++    return {BaseProxyConfigGenerationStatus::kExhausted, 0};
++  }
++  if (generation_ == std::numeric_limits<uint64_t>::max()) {
++    exhausted_ = true;
++    generation_ = 0;
++    return {BaseProxyConfigGenerationStatus::kExhausted, 0};
++  }
++
++  ++generation_;
++  return {generation_ == 1 ? BaseProxyConfigGenerationStatus::kPublished
++                           : BaseProxyConfigGenerationStatus::kAdvanced,
++          generation_};
++}
++
++}  // namespace aegis_access
 diff --git a/components/aegis_access/access_base_proxy_config_generation_state.h b/components/aegis_access/access_base_proxy_config_generation_state.h
 new file mode 100644
+index 0000000000..7f1afe8131
 --- /dev/null
 +++ b/components/aegis_access/access_base_proxy_config_generation_state.h
 @@ -0,0 +1,49 @@
@@ -58,52 +274,9 @@ new file mode 100644
 +}  // namespace aegis_access
 +
 +#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_BASE_PROXY_CONFIG_GENERATION_STATE_H_
-diff --git a/components/aegis_access/access_base_proxy_config_generation_state.cc b/components/aegis_access/access_base_proxy_config_generation_state.cc
-new file mode 100644
---- /dev/null
-+++ b/components/aegis_access/access_base_proxy_config_generation_state.cc
-@@ -0,0 +1,39 @@
-+// Copyright 2026 GCSA
-+
-+#include "components/aegis_access/access_base_proxy_config_generation_state.h"
-+
-+#include <limits>
-+
-+namespace aegis_access {
-+
-+BaseProxyConfigGenerationResult
-+BaseProxyConfigGenerationState::PublishCurrentConfig() {
-+  if (exhausted_) {
-+    return {BaseProxyConfigGenerationStatus::kExhausted, 0};
-+  }
-+  if (generation_ != 0) {
-+    return {BaseProxyConfigGenerationStatus::kUnchanged, generation_};
-+  }
-+
-+  generation_ = 1;
-+  return {BaseProxyConfigGenerationStatus::kPublished, generation_};
-+}
-+
-+BaseProxyConfigGenerationResult
-+BaseProxyConfigGenerationState::AdvanceOnConfigChange() {
-+  if (exhausted_) {
-+    return {BaseProxyConfigGenerationStatus::kExhausted, 0};
-+  }
-+  if (generation_ == std::numeric_limits<uint64_t>::max()) {
-+    exhausted_ = true;
-+    generation_ = 0;
-+    return {BaseProxyConfigGenerationStatus::kExhausted, 0};
-+  }
-+
-+  ++generation_;
-+  return {generation_ == 1 ? BaseProxyConfigGenerationStatus::kPublished
-+                           : BaseProxyConfigGenerationStatus::kAdvanced,
-+          generation_};
-+}
-+
-+}  // namespace aegis_access
 diff --git a/components/aegis_access/access_base_proxy_config_generation_state_contract_test.h b/components/aegis_access/access_base_proxy_config_generation_state_contract_test.h
 new file mode 100644
+index 0000000000..3f8c33df74
 --- /dev/null
 +++ b/components/aegis_access/access_base_proxy_config_generation_state_contract_test.h
 @@ -0,0 +1,125 @@
@@ -234,6 +407,7 @@ new file mode 100644
 +#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_BASE_PROXY_CONFIG_GENERATION_STATE_CONTRACT_TEST_H_
 diff --git a/components/aegis_access/access_base_proxy_config_generation_state_unittest.cc b/components/aegis_access/access_base_proxy_config_generation_state_unittest.cc
 new file mode 100644
+index 0000000000..ac8b0b21cf
 --- /dev/null
 +++ b/components/aegis_access/access_base_proxy_config_generation_state_unittest.cc
 @@ -0,0 +1,30 @@
@@ -267,154 +441,3 @@ new file mode 100644
 +
 +}  // namespace
 +}  // namespace aegis_access::test
-diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
---- a/components/aegis_access/BUILD.gn
-+++ b/components/aegis_access/BUILD.gn
-@@ -34,6 +34,13 @@ source_set("access_proxy_selection_generation_state") {
-   ]
- }
- 
-+source_set("access_base_proxy_config_generation_state") {
-+  sources = [
-+    "access_base_proxy_config_generation_state.cc",
-+    "access_base_proxy_config_generation_state.h",
-+  ]
-+}
-+
- source_set("browser_request_metadata_seed") {
-   sources = [
-     "browser_request_metadata_seed.cc",
-@@ -108,6 +115,18 @@ test("access_proxy_selection_generation_state_unittests") {
-   ]
- }
- 
-+test("access_base_proxy_config_generation_state_unittests") {
-+  sources = [
-+    "access_base_proxy_config_generation_state_contract_test.h",
-+    "access_base_proxy_config_generation_state_unittest.cc",
-+  ]
-+  deps = [
-+    ":access_base_proxy_config_generation_state",
-+    "//base/test:run_all_unittests",
-+    "//testing/gtest",
-+  ]
-+}
-+
- test("browser_request_metadata_seed_unittests") {
-   sources = [
-     "browser_request_metadata_seed_contract_test.h",
-diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
---- a/chrome/browser/net/BUILD.gn
-+++ b/chrome/browser/net/BUILD.gn
-@@ -160,6 +160,7 @@ source_set("impl") {
-   deps = [
-     ":key_pinning_proto",
-     "//base:build_time",
-     "//chrome/browser/aegis/access:access_network_context_transport",
-+    "//components/aegis_access:access_base_proxy_config_generation_state",
-     "//chrome/browser:browser_features",
-     "//chrome/browser:browser_process",
-     "//chrome/browser:browser_process_platform_part",
-diff --git a/chrome/browser/net/proxy_config_monitor.h b/chrome/browser/net/proxy_config_monitor.h
---- a/chrome/browser/net/proxy_config_monitor.h
-+++ b/chrome/browser/net/proxy_config_monitor.h
-@@ -6,10 +6,12 @@
- #define CHROME_BROWSER_NET_PROXY_CONFIG_MONITOR_H_
- 
-+#include <cstdint>
- #include <memory>
- #include <string>
- 
- #include "base/memory/raw_ptr.h"
- #include "build/buildflag.h"
-+#include "components/aegis_access/access_base_proxy_config_generation_state.h"
- #include "extensions/buildflags/buildflags.h"
- #include "mojo/public/cpp/bindings/receiver_set.h"
- #include "mojo/public/cpp/bindings/remote_set.h"
-@@ -66,6 +68,10 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
-   // configuration changes have been applied.
-   void FlushForTesting();
- 
-+  uint64_t base_proxy_config_generation() const {
-+    return base_proxy_config_generation_state_.generation();
-+  }
-+
-  private:
-   // net::ProxyConfigService::Observer implementation:
-   void OnProxyConfigChanged(
-@@ -83,6 +89,9 @@ class ProxyConfigMonitor : public net::ProxyConfigService::Observer,
-   void OnRequestMaybeFailedDueToProxySettings(int32_t net_error) override;
- #endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
- 
-+  aegis_access::BaseProxyConfigGenerationState
-+      base_proxy_config_generation_state_;
-+
-   std::unique_ptr<net::ProxyConfigService> proxy_config_service_;
-   // Monitors global and Profile prefs related to proxy configuration.
-   std::unique_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
-diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
---- a/chrome/browser/net/proxy_config_monitor.cc
-+++ b/chrome/browser/net/proxy_config_monitor.cc
-@@ -99,8 +99,10 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
-   net::ProxyConfigWithAnnotation proxy_config;
-   net::ProxyConfigService::ConfigAvailability availability =
-       proxy_config_service_->GetLatestProxyConfig(&proxy_config);
--  if (availability != net::ProxyConfigService::CONFIG_PENDING)
-+  if (availability != net::ProxyConfigService::CONFIG_PENDING) {
-+    base_proxy_config_generation_state_.PublishCurrentConfig();
-     network_context_params->initial_proxy_config = proxy_config;
-+  }
- }
- 
- void ProxyConfigMonitor::FlushForTesting() {
-@@ -112,6 +114,9 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
-     const net::ProxyConfigWithAnnotation& config,
-     net::ProxyConfigService::ConfigAvailability availability) {
-   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
-          !BrowserThread::IsThreadInitialized(BrowserThread::UI));
-+  if (availability != net::ProxyConfigService::CONFIG_PENDING) {
-+    base_proxy_config_generation_state_.AdvanceOnConfigChange();
-+  }
-   for (const auto& proxy_config_client : proxy_config_client_set_) {
-     switch (availability) {
-       case net::ProxyConfigService::CONFIG_VALID:
-diff --git a/chrome/browser/net/profile_network_context_service.h b/chrome/browser/net/profile_network_context_service.h
---- a/chrome/browser/net/profile_network_context_service.h
-+++ b/chrome/browser/net/profile_network_context_service.h
-@@ -5,6 +5,7 @@
- #ifndef CHROME_BROWSER_NET_PROFILE_NETWORK_CONTEXT_SERVICE_H_
- #define CHROME_BROWSER_NET_PROFILE_NETWORK_CONTEXT_SERVICE_H_
- 
-+#include <cstdint>
- #include <memory>
- #include <string>
- #include <utility>
-@@ -131,6 +132,9 @@ class ProfileNetworkContextService
-   // Flushes all pending proxy configuration changes.
-   void FlushProxyConfigMonitorForTesting();
- 
-+  // Current generation of Chromium's native system/PAC/extension proxy config.
-+  uint64_t GetAegisBaseProxyConfigGeneration() const;
-+
-   static void SetDiscardDomainReliabilityUploadsForTesting(bool value);
- 
-   void set_client_cert_store_factory_for_testing(
-diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
---- a/chrome/browser/net/profile_network_context_service.cc
-+++ b/chrome/browser/net/profile_network_context_service.cc
-@@ -1190,6 +1190,12 @@ void ProfileNetworkContextService::FlushProxyConfigMonitorForTesting() {
-   proxy_config_monitor_->FlushForTesting();  // IN-TEST
- }
- 
-+uint64_t ProfileNetworkContextService::GetAegisBaseProxyConfigGeneration()
-+    const {
-+  return proxy_config_monitor_
-+             ? proxy_config_monitor_->base_proxy_config_generation()
-+             : 0;
-+}
-+
- void ProfileNetworkContextService::SetDiscardDomainReliabilityUploadsForTesting(
-     bool value) {
-   g_discard_domain_reliability_uploads_for_testing = new bool(value);
--- 
-2.39.0

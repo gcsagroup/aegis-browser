@@ -1,10 +1,44 @@
-From 0135000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From d5e8c1ac8b3f946af29f5e1ed6811c86112d0f38 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Fri, 18 Sep 2026 18:50:00 +0800
 Subject: [PATCH] feat(aegis): gate real document URLLoader traffic
 
 ---
+ chrome/browser/BUILD.gn                       |   1 +
+ chrome/browser/aegis/BUILD.gn                 |   7 +
+ chrome/browser/aegis/access/BUILD.gn          |  48 ++
+ .../access_network_context_transport.cc       |  27 +
+ .../access/access_network_context_transport.h |  10 +
+ ...cess_network_context_transport_unittest.cc |  71 ++
+ .../access_proxying_url_loader_factory.cc     | 641 ++++++++++++++++++
+ .../access_proxying_url_loader_factory.h      | 113 +++
+ ...proxying_url_loader_factory_browsertest.cc | 258 +++++++
+ .../access/access_request_dispatch_state.cc   |  56 ++
+ .../access/access_request_dispatch_state.h    |  43 ++
+ .../access_request_dispatch_state_unittest.cc |  44 ++
+ .../browser/chrome_content_browser_client.cc  |   8 +
+ 13 files changed, 1327 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+ create mode 100644 chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+ create mode 100644 chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+ create mode 100644 chrome/browser/aegis/access/access_request_dispatch_state.cc
+ create mode 100644 chrome/browser/aegis/access/access_request_dispatch_state.h
+ create mode 100644 chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index a3483655cf..9488a27700 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -403,6 +403,7 @@ source_set("chrome_browser_main") {
+     "//base",
+     "//build:buildflag_header_h",
+     "//chrome/browser/aegis",
++    "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+     "//chrome/browser/first_run",
+     "//chrome/browser/lifetime",
+     "//chrome/browser/ui/startup",
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 109a6825f8..0a0ed26e52 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -232,6 +232,7 @@ if (!is_android) {
@@ -36,6 +70,7 @@ diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
        "//components/bookmarks/test",
        "//components/prefs",
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index b201818705..a7cd516a1c 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -67,6 +67,43 @@ source_set("access_network_context_transport") {
@@ -92,7 +127,7 @@ diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/
 +    ":access_request_dispatch_state",
 +    "//base/test:run_all_unittests",
 +    "//chrome/browser/profiles:test_support",
-+    "//content/public/test",
++    "//content/test:test_support",
 +    "//testing/gtest",
 +  ]
 +}
@@ -101,6 +136,7 @@ diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/
    sources = [ "access_identity_generation_source_unittest.cc" ]
    deps = [
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 0bfd2b877e..af9ffee149 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport.cc
 @@ -209,6 +209,33 @@ bool AccessNetworkContextTransport::ClearProxySelection(
@@ -138,6 +174,7 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/c
  AccessNetworkContextTransport::BuildConfigForTesting(
      const base::FilePath& relative_partition_path) const {
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 57553773f7..12aae9fdba 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.h
 +++ b/chrome/browser/aegis/access/access_network_context_transport.h
 @@ -78,6 +78,16 @@ class AccessNetworkContextTransport
@@ -158,6 +195,7 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/ch
        const base::FilePath& relative_partition_path) const;
    void FlushClientsForTesting(const base::FilePath& relative_partition_path);
 diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 7e0d1c7b73..75dbef9e02 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
 @@ -163,6 +163,77 @@ TEST_F(AccessNetworkContextTransportTest,
@@ -240,6 +278,7 @@ diff --git a/chrome/browser/aegis/access/access_network_context_transport_unitte
    const base::FilePath partition;
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 new file mode 100644
+index 0000000000..abccc258bd
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -0,0 +1,641 @@
@@ -886,6 +925,7 @@ new file mode 100644
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 new file mode 100644
+index 0000000000..959b808eda
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -0,0 +1,113 @@
@@ -1004,6 +1044,7 @@ new file mode 100644
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PROXYING_URL_LOADER_FACTORY_H_
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 new file mode 100644
+index 0000000000..e08c021895
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
 @@ -0,0 +1,258 @@
@@ -1267,6 +1308,7 @@ new file mode 100644
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chrome/browser/aegis/access/access_request_dispatch_state.cc
 new file mode 100644
+index 0000000000..27512e5a51
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.cc
 @@ -0,0 +1,56 @@
@@ -1328,6 +1370,7 @@ new file mode 100644
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
 new file mode 100644
+index 0000000000..4769e1f9d8
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
 @@ -0,0 +1,43 @@
@@ -1376,6 +1419,7 @@ new file mode 100644
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_REQUEST_DISPATCH_STATE_H_
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
 new file mode 100644
+index 0000000000..e267cd9ea0
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc
 @@ -0,0 +1,44 @@
@@ -1423,21 +1467,11 @@ new file mode 100644
 +
 +}  // namespace
 +}  // namespace aegis::access
-diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
---- a/chrome/browser/BUILD.gn
-+++ b/chrome/browser/BUILD.gn
-@@ -400,6 +400,7 @@ source_set("chrome_browser_main") {
-   public = [ "chrome_browser_main.h" ]
-   deps = [
-     "//chrome/browser/aegis",
-+    "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
-     ":buildflags",
-     "//base",
-     "//build:buildflag_header_h",
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index aa02e8b6ec..6affcdc214 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -162,6 +162,7 @@
+@@ -166,6 +166,7 @@
  #include "chrome/browser/sensor/chrome_sensor_delegate.h"
  #include "chrome/browser/serial/chrome_serial_delegate.h"
  #include "chrome/browser/sharing/sms/sms_remote_fetcher.h"
@@ -1445,17 +1479,17 @@ diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/ch
  #include "chrome/browser/signin/chrome_signin_proxying_url_loader_factory.h"
  #include "chrome/browser/signin/chrome_signin_url_loader_throttle.h"
  #include "chrome/browser/signin/header_modification_delegate_impl.h"
-@@ -6733,6 +6734,13 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
-   signin::ProxyingURLLoaderFactory::MaybeProxyRequest(
+@@ -6814,6 +6815,13 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
        frame, type == URLLoaderFactoryType::kNavigation, request_initiator,
        isolation_info, factory_builder);
-+
+ 
 +  if (type == URLLoaderFactoryType::kDocumentSubResource && frame) {
 +    aegis::access::AccessProxyingURLLoaderFactory::
 +        MaybeProxyDocumentSubresource(
 +            Profile::FromBrowserContext(browser_context), frame,
 +            factory_builder);
 +  }
- 
++
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
    if (disable_secure_dns) {
+     WebContents* web_contents = WebContents::FromRenderFrameHost(frame);
