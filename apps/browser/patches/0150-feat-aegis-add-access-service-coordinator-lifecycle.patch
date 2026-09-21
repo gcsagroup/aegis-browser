@@ -1,0 +1,340 @@
+From 6ebcc7123424d1f725cceb1732e735f81f7a4e26 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Sun, 20 Sep 2026 19:05:00 +0800
+Subject: [PATCH] feat(aegis): add access service coordinator lifecycle
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ chrome/browser/aegis/access/BUILD.gn          |  25 +++++
+ ...proxying_url_loader_factory_browsertest.cc |  31 ++++++
+ .../access/access_service_coordinator.cc      |  46 ++++++++
+ .../aegis/access/access_service_coordinator.h |  41 +++++++
+ .../access_service_coordinator_unittest.cc    | 100 ++++++++++++++++++
+ 6 files changed, 246 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_service_coordinator.cc
+ create mode 100644 chrome/browser/aegis/access/access_service_coordinator.h
+ create mode 100644 chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 8a53fb9af0..8552380164 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -240,6 +240,8 @@ if (!is_android) {
+       ":agent_model_transport",
+       "//base",
+       "//base/test:test_support",
++      "//build:chromeos_buildflags",
++      "//chrome/browser:browser_process",
+       "//chrome/browser/aegis/access:access_browser_request_adapter",
+       "//chrome/browser/aegis/access:access_network_context_transport",
+       "//chrome/browser/aegis/access:access_identity_generation_source",
+@@ -252,6 +254,7 @@ if (!is_android) {
+       "//chrome/browser/notifications:test_support",
+       "//chrome/browser/prefs",
+       "//chrome/browser/profiles:profile",
++      "//chrome/browser/profiles:profile_manager",
+       "//chrome/browser/renderer_context_menu:test_support",
+       "//chrome/browser/search_engines",
+       "//chrome/browser/ui",
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 89f1e733d1..58e644a400 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -145,6 +145,31 @@ source_set("access_published_request_runtime") {
+   ]
+ }
+ 
++source_set("access_service_coordinator") {
++  sources = [
++    "access_service_coordinator.cc",
++    "access_service_coordinator.h",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/aegis:profile_support",
++    "//chrome/browser/profiles:profile",
++  ]
++}
++
++test("access_service_coordinator_unittests") {
++  sources = [ "access_service_coordinator_unittest.cc" ]
++  deps = [
++    ":access_service_coordinator",
++    "//build:chromeos_buildflags",
++    "//chrome/browser/profiles:test_support",
++    "//chrome/test:test_support",
++    "//chrome/test:test_support_unit",
++    "//content/test:test_support",
++    "//testing/gtest",
++  ]
++}
++
+ test("access_browser_request_adapter_unittests") {
+   sources = [ "access_browser_request_adapter_unittest.cc" ]
+   deps = [
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index ddb3d82c28..30e27c2487 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -13,15 +13,19 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/test/run_until.h"
+ #include "base/test/test_future.h"
++#include "build/chromeos_buildflags.h"
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "chrome/browser/aegis/access/access_identity_generation_source.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
++#include "chrome/browser/browser_process.h"
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/profiles/profile_manager.h"
++#include "chrome/browser/profiles/profile_test_util.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+@@ -803,6 +807,33 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
++#if !BUILDFLAG(IS_CHROMEOS)
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       MainNavigationRoutingIsolatedAcrossProfiles) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++
++  size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/1u);
++
++  ProfileManager* profile_manager = g_browser_process->profile_manager();
++  ASSERT_NE(profile_manager, nullptr);
++  Profile* second_profile = &profiles::testing::CreateProfileSync(
++      profile_manager, profile_manager->GenerateNextProfileDirectoryPath());
++  ASSERT_NE(second_profile, nullptr);
++  Browser* second_browser = CreateBrowser(second_profile);
++  ASSERT_NE(second_browser, nullptr);
++
++  origin_before = origin_requests_.load(std::memory_order_relaxed);
++  proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  EXPECT_TRUE(ui_test_utils::NavigateToURL(second_browser, target_url()));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/0u);
++}
++#endif
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        SubframeNavigationWithoutPolicyPreservesNativePath) {
+   NavigateNewIframe(target_url());
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+new file mode 100644
+index 0000000000..af79b0848f
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -0,0 +1,46 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_service_coordinator.h"
++
++#include <memory>
++
++#include "chrome/browser/aegis/aegis_profile_support.h"
++#include "chrome/browser/profiles/profile.h"
++
++namespace aegis::access {
++
++namespace {
++const void* const kAccessServiceCoordinatorKey = &kAccessServiceCoordinatorKey;
++}
++
++AccessServiceCoordinator::AccessServiceCoordinator() = default;
++
++AccessServiceCoordinator::~AccessServiceCoordinator() = default;
++
++AccessServiceCoordinator* AccessServiceCoordinator::Get(Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  return static_cast<AccessServiceCoordinator*>(
++      profile->GetUserData(kAccessServiceCoordinatorKey));
++}
++
++AccessServiceCoordinator* AccessServiceCoordinator::GetOrCreate(
++    Profile* profile) {
++  if (!profile || !aegis::IsAegisProfileSupported(profile)) {
++    return nullptr;
++  }
++
++  auto* existing = Get(profile);
++  if (existing) {
++    return existing;
++  }
++
++  auto coordinator = std::unique_ptr<AccessServiceCoordinator>(
++      new AccessServiceCoordinator());
++  auto* result = coordinator.get();
++  profile->SetUserData(kAccessServiceCoordinatorKey, std::move(coordinator));
++  return result;
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+new file mode 100644
+index 0000000000..641d3a854b
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SERVICE_COORDINATOR_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SERVICE_COORDINATOR_H_
++
++#include <cstdint>
++
++#include "base/supports_user_data.h"
++
++class Profile;
++
++namespace aegis::access {
++
++// Profile owned coordination point for future product mutations and committed
++// policy flows. The coordinator owns the order of state publication: durable
++// state is committed first, then generations are captured, then runtime state
++// is published.
++//
++// This first slice intentionally exposes only the lifecycle boundary. Request
++// routing continues to consume published snapshots until a product entry point
++// is wired here.
++class AccessServiceCoordinator : public base::SupportsUserData::Data {
++ public:
++  static AccessServiceCoordinator* Get(Profile* profile);
++  static AccessServiceCoordinator* GetOrCreate(Profile* profile);
++
++  AccessServiceCoordinator(const AccessServiceCoordinator&) = delete;
++  AccessServiceCoordinator& operator=(const AccessServiceCoordinator&) = delete;
++  ~AccessServiceCoordinator() override;
++
++  uint64_t state_generation() const { return state_generation_; }
++
++ private:
++  AccessServiceCoordinator();
++
++  uint64_t state_generation_ = 0;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SERVICE_COORDINATOR_H_
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+new file mode 100644
+index 0000000000..cb6adedef9
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -0,0 +1,100 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_service_coordinator.h"
++
++#include <memory>
++
++#include "build/chromeos_buildflags.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/profiles/profile_testing_helper.h"
++#include "chrome/test/base/testing_profile.h"
++#include "content/public/test/browser_task_environment.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++class AccessServiceCoordinatorTest : public testing::Test {
++ protected:
++  content::BrowserTaskEnvironment task_environment_;
++};
++
++TEST_F(AccessServiceCoordinatorTest, RejectsNullProfile) {
++  EXPECT_EQ(AccessServiceCoordinator::Get(nullptr), nullptr);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(nullptr), nullptr);
++}
++
++TEST_F(AccessServiceCoordinatorTest, ReusesProfileOwnedCoordinator) {
++  auto profile = TestingProfile::Builder().Build();
++  EXPECT_EQ(AccessServiceCoordinator::Get(profile.get()), nullptr);
++
++  auto* first = AccessServiceCoordinator::GetOrCreate(profile.get());
++  auto* second = AccessServiceCoordinator::GetOrCreate(profile.get());
++
++  ASSERT_TRUE(first);
++  EXPECT_EQ(first, second);
++  EXPECT_EQ(AccessServiceCoordinator::Get(profile.get()), first);
++  EXPECT_EQ(first->state_generation(), 0u);
++}
++
++TEST_F(AccessServiceCoordinatorTest, ProfilesNeverShareCoordinatorState) {
++  auto first_profile = TestingProfile::Builder().Build();
++  auto second_profile = TestingProfile::Builder().Build();
++
++  auto* first = AccessServiceCoordinator::GetOrCreate(first_profile.get());
++  auto* second = AccessServiceCoordinator::GetOrCreate(second_profile.get());
++
++  ASSERT_TRUE(first);
++  ASSERT_TRUE(second);
++  EXPECT_NE(first, second);
++  EXPECT_EQ(first->state_generation(), 0u);
++  EXPECT_EQ(second->state_generation(), 0u);
++}
++
++class AccessServiceCoordinatorProfileSupportTest
++    : public testing::Test,
++      public ProfileTestingHelper {
++ public:
++  void SetUp() override {
++    testing::Test::SetUp();
++    ProfileTestingHelper::SetUp();
++  }
++};
++
++TEST_F(AccessServiceCoordinatorProfileSupportTest,
++       FollowsAegisProfileSupportContract) {
++  auto* regular = AccessServiceCoordinator::GetOrCreate(regular_profile());
++  auto* incognito = AccessServiceCoordinator::GetOrCreate(incognito_profile());
++
++  ASSERT_TRUE(regular);
++  ASSERT_TRUE(incognito);
++  EXPECT_NE(regular, incognito);
++  EXPECT_EQ(AccessServiceCoordinator::Get(regular_profile()), regular);
++  EXPECT_EQ(AccessServiceCoordinator::Get(incognito_profile()), incognito);
++
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(guest_profile()), nullptr);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(guest_profile_otr()), nullptr);
++
++#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(system_profile()), nullptr);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(system_profile_otr()), nullptr);
++#endif
++
++#if BUILDFLAG(IS_CHROMEOS)
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(signin_profile()), nullptr);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(signin_profile_otr()), nullptr);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(lockscreen_profile()), nullptr);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(lockscreen_profile_otr()),
++            nullptr);
++#endif
++
++  Profile* auxiliary_off_the_record = regular_profile()->GetOffTheRecordProfile(
++      Profile::OTRProfileID::CreateUniqueForTesting(),
++      /*create_if_needed=*/true);
++  ASSERT_TRUE(auxiliary_off_the_record);
++  EXPECT_EQ(AccessServiceCoordinator::GetOrCreate(auxiliary_off_the_record),
++            nullptr);
++}
++
++}  // namespace
++}  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+
