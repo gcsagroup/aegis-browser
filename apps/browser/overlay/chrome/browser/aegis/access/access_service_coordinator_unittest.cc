@@ -224,6 +224,7 @@ TEST_F(AccessMutationTransactionTest,
   EXPECT_EQ(retry.Get().status, AccessMutationTransactionStatus::kCommitted);
   EXPECT_EQ(retry.Get().store_status, StoreStatus::kValid);
   EXPECT_EQ(retry.Get().policy_generation, committed_generation);
+  task_environment_.RunUntilIdle();
   EXPECT_FALSE(client_->metadata);
   EXPECT_FALSE(client_->reply);
   EXPECT_EQ(coordinator_->state_generation(), 1u);
