@@ -61,7 +61,12 @@ aegis_access::PolicyPublicationAckRequirements PublicationFor(
     uint64_t policy_generation,
     const std::string& operation_id) {
   return {
-      {operation_id, operation_sequence, policy_generation, SelectorFor(record)},
+      {operation_id,
+       operation_sequence,
+       policy_generation,
+       0,
+       record.generations.network_epoch,
+       SelectorFor(record)},
       {"browser-runtime", "network-context"},
       true,
   };
