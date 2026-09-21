@@ -14,7 +14,9 @@
 
 从 `develop@5036b627` 建立的下一次个人 main 晋升 [PR #158](https://github.com/quinn521/aegis-browser/pull/158) 已通过初始本地、托管 CI/C++ 和 Codacy static，但 Codacy AI 新增三个 Medium：WebUI 用错误文本子串识别安全存储失败、TypeSafe client 同时承担 HTTP 与响应解析、取消请求通过 `InvalidateWeakPtrs()` 影响整个 client。按 develop 先行规则，#158 已改回 develop 并重置到 `5036b627`。当前修复让 AegisService 返回稳定的设置错误类别并通过 Mojo snapshot 交给 WebUI；将 JSON schema 校验与领域映射移到独立 `TypeSafeGoalResponseParser`；完成回调绑定精确 request ID，取消旧请求不再使整个 weak-pointer 域失效。新增回归证明取消后 replacement request 可独立完成，UI 合同测试证明存储提示只读取结构化类别。现有共享配置 helper 已覆盖 Low 级 fixture 建议，场景专属请求与断言保持展开。
 
-后续严格按顺序执行：#158 的最终 HEAD 必须重新取得 local full quality、托管 CI/C++、无 Medium+ Codacy、全部 conversation resolved 和 Astra High CLEAR；实际合并并确认精确 develop push CI 成功后，才重新执行个人 main 晋升和上游导出。上游导出继续恢复上游 README/Codacy 徽章，回灌继续保留个人 README。任何 HEAD 变化都使旧的质量、CI 与审查证据失效；仓库门禁不升级固定 Chromium/GTest 证据，G0 继续 **UNVERIFIED**。
+实现与回归提交 `fb2b2c86e3f06c8957a623c8c83a132912baff66`（tree `6e89b38deb9e9cf8c10ea1a39927551ffc060d6a`）已对 `develop@5036b627` 完成本地 full quality：`PASS`、`sourceStable=true`，输入/最终摘要同为 `edfe9fb1304448554c38f0d020bf36a02c79bcbd38e752721a6ef9c97bf8362b`，native classification 为 `REQUIRED`。该结果包含 standalone Access 与 TypeSafe choice contract，但不编译或运行本次 Chromium Agent C++；固定 Chromium/GTest 和真实入口仍为 `NOT_RUN`，G0 继续 **UNVERIFIED**。本次文档提交会形成新的最终 HEAD，必须再跑完整质量门。
+
+后续严格按顺序执行：#158 的最终 HEAD 必须重新取得 local full quality、托管 CI，并在 C++ workflow 路径过滤不自动触发时显式记录其范围；同时要求无 Medium+ Codacy、全部 conversation resolved 和 Astra High CLEAR。实际合并并确认精确 develop push CI 成功后，才重新执行个人 main 晋升和上游导出。上游导出继续恢复上游 README/Codacy 徽章，回灌继续保留个人 README。任何 HEAD 变化都使旧的质量、CI 与审查证据失效。
 
 ## 2026-09-21：个人 Codacy 与上游 README 隔离维护
 
