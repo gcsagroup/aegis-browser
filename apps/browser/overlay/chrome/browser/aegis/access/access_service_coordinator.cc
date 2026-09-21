@@ -146,8 +146,12 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
   auto transaction = std::make_unique<MutationTransaction>();
   transaction->completion = std::move(completion);
   transaction->identity.selector = std::move(selector);
-  if (auto failure = PrepareCandidate(*transaction, request)) {
-    FailTransaction(std::move(transaction), *failure);
+  if (auto outcome = PrepareCandidate(*transaction, request)) {
+    if (outcome->status == AccessMutationTransactionStatus::kCommitted) {
+      Finish(std::move(transaction->completion), *outcome);
+    } else {
+      FailTransaction(std::move(transaction), *outcome);
+    }
     return;
   }
   if (auto failure = BeginPublication(*transaction)) {
@@ -177,6 +181,15 @@ AccessServiceCoordinator::PrepareCandidate(
   if (prepared.status != StoreStatus::kValid || !prepared.value) {
     return Result(AccessMutationTransactionStatus::kPrepareFailed,
                   prepared.status);
+  }
+  if (prepared.value->phase == MutationPhase::kCommitted) {
+    return Result(AccessMutationTransactionStatus::kCommitted,
+                  StoreStatus::kValid,
+                  prepared.value->committed_policy_generation);
+  }
+  if (prepared.value->phase != MutationPhase::kPrepared) {
+    return Result(AccessMutationTransactionStatus::kPrepareFailed,
+                  StoreStatus::kConflict);
   }
   transaction.pending = std::move(*prepared.value);
   auto built = store_->BuildPreparedCandidateSnapshot(transaction.pending);
