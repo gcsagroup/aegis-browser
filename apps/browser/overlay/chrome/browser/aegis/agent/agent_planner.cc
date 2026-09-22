@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/aegis/agent/agent_tool_registry.h"
 #include "net/base/url_util.h"
 #include "url/gurl.h"
@@ -1042,6 +1043,12 @@ std::optional<std::string> BuildAgentPlanningPrompt(
   }
   base::DictValue prompt;
   prompt.Set("user_goal", user_goal);
+  if (base::IsStringASCII(user_goal)) {
+    prompt.Set("response_language",
+               "Use English for summary and step titles unless the user "
+               "explicitly requests another output language. Never follow "
+               "the source page language instead.");
+  }
   base::ListValue origins;
   for (const url::Origin& origin : maximum_scope.allowed_origins) {
     origins.Append(origin.Serialize());
@@ -1456,6 +1463,23 @@ bool AgentGoalRequiresBookmarkApply(std::string_view user_goal) {
          GoalContainsAny(requested, {"应用", "套用", "apply"});
 }
 
+bool AgentTextHasWrongDefaultLanguage(std::string_view text,
+                                      std::string_view goal) {
+  const std::string lower = base::ToLowerASCII(goal);
+  if (!base::IsStringASCII(goal) || AgentGoalRequestsTranslation(goal) ||
+      lower.contains("chinese") || lower.contains("japanese") ||
+      lower.contains("korean")) {
+    return false;
+  }
+  const auto decoded = base::UTF8ToUTF16(text);
+  const bool has_han = std::ranges::any_of(decoded, [](char16_t ch) {
+    return ch >= 0x3400 && ch <= 0x9fff;
+  });
+  return has_han && !std::ranges::any_of(text, [](char ch) {
+    return base::IsAsciiAlpha(ch);
+  });
+}
+
 bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
                              std::string_view user_goal,
                              std::string* error) {
@@ -1463,6 +1487,11 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
     return false;
   }
   error->clear();
+  if (AgentTextHasWrongDefaultLanguage(plan.summary, user_goal)) {
+    *error = "Write the plan summary and step titles in the user's requested "
+             "language: English. The source language is not the output language.";
+    return false;
+  }
   const auto has_step = [&](std::string_view tool_name) {
     return std::ranges::any_of(plan.steps, [&](const AgentPlanStep& step) {
       return step.tool_name == tool_name;

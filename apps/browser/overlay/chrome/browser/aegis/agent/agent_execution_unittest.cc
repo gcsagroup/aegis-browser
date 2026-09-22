@@ -27,6 +27,79 @@ AgentTaskScope ExecutionScope() {
   return scope;
 }
 
+TEST(AegisAgentExecutionTest, BoundBookmarkListRequiresApprovedReadScope) {
+  auto scope = ExecutionScope();
+  AgentPlanStep step{.step_id = "list", .title = "读取收藏",
+                     .tool_name = "bookmark.list",
+                     .risk = AgentRiskLevel::kR0ReadOnly};
+  AgentTask denied("denied", "预览收藏", AgentMode::kAct, scope);
+  EXPECT_FALSE(BuildBoundBookmarkListCall(denied, step, 0));
+  scope.allowed_tools.insert("bookmark.list");
+  AgentTask no_data("no-data", "预览收藏", AgentMode::kAct, scope);
+  EXPECT_FALSE(BuildBoundBookmarkListCall(no_data, step, 0));
+  scope.allowed_data_classes.insert(AgentDataClass::kBookmarks);
+  AgentTask allowed("allowed", "预览收藏", AgentMode::kAct, scope);
+  auto call = BuildBoundBookmarkListCall(allowed, step, 0);
+  ASSERT_TRUE(call);
+  EXPECT_EQ(call->tool_name, "bookmark.list");
+  EXPECT_TRUE(call->arguments.empty());
+  EXPECT_FALSE(BuildBoundBookmarkListCall(allowed, step, 3));
+  step.tool_name = "bookmark.apply";
+  EXPECT_FALSE(BuildBoundBookmarkListCall(allowed, step, 0));
+  step.tool_name = "bookmark.list";
+  step.risk = AgentRiskLevel::kR2ExternalSideEffect;
+  EXPECT_FALSE(BuildBoundBookmarkListCall(allowed, step, 0));
+}
+
+TEST(AegisAgentExecutionTest, SummarySourceLabelsUseActualPageMetadata) {
+  AgentToolResult page;
+  page.ok = true;
+  page.value.Set("url", "https://fixture.example/actual");
+  page.value.Set("title", "实际来源页面");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back({.tool_name = "page.extract", .result = std::move(page)});
+  AgentCompletionSummary completion{.outcome = "completed",
+      .summary = "1. 稳定指标为 42\n2. 来源说明：合成上传入口\n"
+                 "> 来源：原文引用\n```\n来源：代码原文\n```",
+      .source_urls = {"https://fixture.example/actual"}};
+  NormalizeAgentSummarySourceLabels(&completion, history);
+  EXPECT_EQ(completion.summary,
+      "1. 稳定指标为 42\n2. 来源说明：实际来源页面\n"
+      "> 来源：原文引用\n```\n来源：代码原文\n```");
+  completion.summary = "Source: invented upload form";
+  NormalizeAgentSummarySourceLabels(&completion, {});
+  EXPECT_EQ(completion.summary, "Source: https://fixture.example/actual");
+  completion.source_urls.clear();
+  completion.summary = "来源：尚无引用";
+  NormalizeAgentSummarySourceLabels(&completion, history);
+  EXPECT_EQ(completion.summary, "来源：尚无引用");
+}
+
+TEST(AegisAgentExecutionTest, OfficialIdentityQuestionDoesNotOfferAdvertisement) {
+  auto scope = ExecutionScope();
+  scope.allowed_tools.insert("download.find_official");
+  AgentToolResult source;
+  source.ok = true;
+  source.value.Set("candidate_url", "https://fixture.example/advertisement");
+  source.value.Set("source_url", "https://fixture.example/advertisement");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back({.tool_name = "download.find_official", .result = std::move(source)});
+  for (const char* goal : {"这张广告是否属于官方？给出证据。",
+                           "Is this an official advertisement? Cite evidence."}) {
+    AgentCompletionSummary completion{.outcome = "completed", .summary = "官方候选"};
+    NormalizeAgentDownloadCompletion(&completion, goal, scope, history);
+    EXPECT_EQ(completion.summary.find("候选"), std::string::npos);
+    EXPECT_EQ(completion.summary.find("candidate"), std::string::npos);
+    EXPECT_TRUE(completion.summary.contains("不足") ||
+                completion.summary.contains("insufficient"));
+    auto page_scope = ExecutionScope();
+    completion.summary = "官方候选";
+    NormalizeAgentDownloadCompletion(&completion, goal, page_scope, {});
+    EXPECT_TRUE(completion.summary.contains("不足") ||
+                completion.summary.contains("insufficient"));
+  }
+}
+
 TEST(AegisAgentExecutionTest, DownloadExtractionUsesRealBoundedFields) {
   AgentToolRegistry registry;
   auto tool = registry.ModelToolForName("page.extract");
@@ -1293,12 +1366,13 @@ TEST(AegisAgentExecutionTest, FinalOutputRequirementsPreserveOriginalGoal) {
       EXPECT_EQ(*done->FindString("required_step"), "agent.complete");
       const auto* requirements = done->FindList("final_output_requirements");
       ASSERT_TRUE(requirements);
-      ASSERT_EQ(requirements->size(), 3u);
-      EXPECT_NE((*requirements)[0].GetString().find("明确指定的输出或翻译语言优先"),
+      ASSERT_EQ(requirements->size(), 4u);
+      EXPECT_TRUE((*requirements)[0].GetString().contains("上传入口名称不能当作来源标题"));
+      EXPECT_NE((*requirements)[1].GetString().find("明确指定的输出或翻译语言优先"),
                 std::string::npos);
-      EXPECT_NE((*requirements)[1].GetString().find("未要求列表时不强加"),
+      EXPECT_NE((*requirements)[2].GetString().find("未要求列表时不强加"),
                 std::string::npos);
-      EXPECT_NE((*requirements)[2].GetString().find("不能用要点摘要替代完整译文"),
+      EXPECT_NE((*requirements)[3].GetString().find("不能用要点摘要替代完整译文"),
                 std::string::npos);
     }
   }

@@ -68,6 +68,15 @@ AgentModelEvent GoalRouteEvent(std::string workflow,
   return event;
 }
 
+TEST(AegisAgentPlannerTest, EnglishGoalRejectsClearlyWrongDefaultLanguage) {
+  EXPECT_TRUE(AgentTextHasWrongDefaultLanguage("总结页面并列出来源。", "Summarize this page."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("Summarize the page.", "Summarize this page."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("总结页面。", "总结当前页面。"));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("总结页面。", "Summarize in Chinese."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("翻译文本", "Translate this page into Chinese."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("42", "Read the metric."));
+}
+
 TEST(AegisAgentPlannerTest, TaskTabGoalCannotExpandToWindowMetadata) {
   for (const char* goal :
        {"列出这个任务打开的标签页。", "列出本任务的标签页",
@@ -140,7 +149,9 @@ TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
     event.tool_call_id = "plan";
     event.tool_name = "agent.submit_plan";
     event.arguments.Set("schema_version", kAgentSchemaVersion);
-    event.arguments.Set("summary", "核对页面读取范围");
+    event.arguments.Set("summary", std::string_view(goal).starts_with("Do not")
+                                       ? "Check the page reading scope"
+                                       : "核对页面读取范围");
     base::ListValue steps;
     steps.Append(base::DictValue()
                      .Set("id", "read")

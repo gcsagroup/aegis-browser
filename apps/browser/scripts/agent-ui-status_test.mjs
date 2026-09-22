@@ -11,7 +11,7 @@ const sourcePath = process.argv[2] || fileURLToPath(new URL(
     '../overlay/chrome/browser/resources/aegis_agent/agent.ts', import.meta.url));
 const source = readFileSync(sourcePath, 'utf8');
 const tree = ts.createSourceFile(sourcePath, source, ts.ScriptTarget.Latest, true);
-const names = ['scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError', 'inferAutomationSchedule'];
+const names = ['scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal'];
 const functions = tree.statements.filter(node =>
   ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
 assert.equal(functions.length, names.length, '必须测试真实产品函数，不能跳过缺失函数');
@@ -295,8 +295,8 @@ console.log(`PASS: 模型表单状态 ${modelCases.length}/${modelCases.length}�
 
 // 执行真实按钮绑定，禁止语句不应替自动化选择一次性的高风险工作流。
 const actionFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
-  ['inferWorkflow', 'inferAutomationSchedule', 'bindActions', 'showCreatedTask'].includes(node.name?.text));
-assert.equal(actionFunctions.length, 4);
+  ['inferWorkflow', 'inferAutomationSchedule', 'bindActions', 'showCreatedTask', 'reviewCurrentDownload', 'isDownloadedFileReviewGoal'].includes(node.name?.text));
+assert.equal(actionFunctions.length, 6);
 const actionCode = ts.transpileModule(actionFunctions.map(node => node.getText(tree)).join('\n'), {
   compilerOptions: {target: ts.ScriptTarget.ES2022},
 }).outputText;
@@ -310,6 +310,7 @@ const actionField = id => {
 };
 const actionCalls = [];
 const actionContext = vm.createContext({
+  loadTimeData: {getString: key => key}, busy: false,
   element: actionField, withBusy: callback => callback(), snapshot: null, activeView: 'task',
   creatingTask: false, creatingTaskPreviousId: '', selectedTaskId: null, render: () => {},
   Workflow: {kResearch: 0, kBrowserSteward: 1, kSafeDownload: 2, kShopping: 3},
@@ -455,3 +456,51 @@ rendererContext.renderResult({...sourceResult, resultSourceTitles: []});
 assert.equal(element('result-sources').children[0].children[0].textContent,
   'https://fixture.example/article');
 console.log('PASS: 浏览器来源标题与模型正文隔离 3/3');
+
+const downloadReviewGoals = [
+  ['核对刚下载的文件是否已经安装。', true],
+  ['检查这次下载文件的哈希是否变更', true],
+  ['核對剛下載的檔案是否已安裝', true],
+  ['Check whether the downloaded file has been installed.', true],
+  ['Has this download been installed?', true],
+  ['核对刚下载的文件，然后安装', false],
+  ['下载并安装这个文件', false],
+  ['不要核对刚下载的文件是否安装', false],
+  ['Check this download and install it', false],
+  ['Check whether the page offers an installer', false],
+  ['核对当前官方发布页', false],
+];
+for (const [goal, expected] of downloadReviewGoals) {
+  assert.equal(context.isDownloadedFileReviewGoal(goal), expected, goal);
+}
+console.log(`PASS: 下载回读问答与操作命令分离 ${downloadReviewGoals.length}/${downloadReviewGoals.length}`);
+for (const [value, key] of Object.entries({
+  'browser verified all actions; model summary fallback used': 'timelineVerifiedFallback',
+  reflecting: 'timelineVerifying', awaiting_action_approval: 'statusApproval',
+  'exact action approval required': 'timelineActionApprovalRequired',
+  'exact action approval consumed': 'timelineActionApprovalConsumed',
+  'cancelled by user': 'timelineCancelledByUser',
+  'execution model failed twice': 'timelineExecutionModelFailed',
+})) {
+  rendererContext.renderTimeline({...task({}), timeline: [{...timelineEvent, title: value, detail: value}]});
+  const row = element('timeline').children[0];
+  assert.equal(row.textContent, key);
+  assert(row.children[0].textContent.startsWith(key));
+}
+console.log('PASS: 新增时间线状态与详情本地化 7/7');
+
+const createCountBeforeReview = actionCalls.length;
+actionContext.snapshot = null;
+actionField('goal').value = '核对刚下载的文件是否已经安装。';
+await actionField('plan-button').listeners.get('click')();
+assert.equal(actionCalls.length, createCountBeforeReview);
+assert.equal(actionField('download-review-status').textContent, 'downloadReviewUnassociated');
+assert.equal(actionField('download-evidence-card').open, true);
+let reviewedId = '';
+actionContext.snapshot = {taskId: 'download-task', state: 'completed', downloadEvidence: [{name: 'download_id', value: 'native-guid'}]};
+actionContext.proxy.handler.reviewDownload = async id => { reviewedId = id; return {status: 'match', sha256: 'fixture-hash'}; };
+await actionField('plan-button').listeners.get('click')();
+assert.equal(reviewedId, 'download-task');
+assert.equal(actionCalls.length, createCountBeforeReview);
+assert.equal(actionField('download-review-status').textContent, 'downloadReviewMatch\nSHA-256: fixture-hash');
+console.log('PASS: 安装问答复用当前任务回执且不创建下载任务 2/2');

@@ -541,7 +541,14 @@ function renderResult(next: TaskSnapshot) {
 }
 
 function renderDownloadEvidence(next: TaskSnapshot) {
-  const fields = next.downloadEvidence || [];
+  const evidence = next.downloadEvidence || [];
+  const goal = next.goal || '';
+  const identityQuestion = /官方|official/i.test(goal) &&
+      /证据|證據|是否|属于|屬於|evidence|is this/i.test(goal) &&
+      !evidence.some(field => field.name === 'download_id');
+  // 身份问答保留来源证据，不把筛选器的占位地址显示为待下载文件。
+  const fields = identityQuestion ?
+      evidence.filter(field => field.name !== 'candidate_url') : evidence;
   const list = element('download-evidence');
   list.replaceChildren();
   const labels: {[key: string]: string} = {
@@ -582,6 +589,56 @@ function renderDownloadEvidence(next: TaskSnapshot) {
   review.disabled = busy || next.state !== 'completed';
 }
 
+// 仅将已下载文件的状态问答送入原生回读；下载或安装命令仍走正常授权流程。
+function isDownloadedFileReviewGoal(goal: string): boolean {
+  const text = goal.trim().toLowerCase();
+  const reference = /(?:刚|剛|已|这次|這次|刚才|剛才).{0,4}(?:下载|下載)|downloaded|this download/.test(text);
+  const question = /核对|核對|检查|檢查|是否|有没有|有沒有|check|verify|is |has |was /.test(text);
+  const state = /安装|安裝|摘要|哈希|完整|变更|變更|存在|install|hash|integrity|changed|exist/.test(text);
+  const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)|do not|不要|别|別/.test(text);
+  return reference && question && state && !command;
+}
+
+async function reviewCurrentDownload() {
+  const card = element<HTMLDetailsElement>('download-evidence-card');
+  card.hidden = false;
+  card.open = true;
+  if (!snapshot?.taskId || snapshot.state !== 'completed' ||
+      !snapshot.downloadEvidence.some(field => field.name === 'download_id')) {
+    element('download-evidence-card').hidden = false;
+    element('download-review-status').textContent =
+        loadTimeData.getString('downloadReviewUnassociated');
+    return;
+  }
+  const taskId = snapshot.taskId;
+  const button = element<HTMLButtonElement>('review-download');
+  button.disabled = true;
+  element('download-review-status').textContent =
+      loadTimeData.getString('downloadReviewPending');
+  try {
+    const result = await proxy.handler.reviewDownload(taskId);
+    if (snapshot?.taskId !== taskId) {
+      return;
+    }
+    const keys: {[key: string]: string} = {
+      match: 'downloadReviewMatch', changed: 'downloadReviewChanged',
+      missing: 'downloadReviewMissing', too_large: 'downloadReviewTooLarge',
+    };
+    element('download-review-status').textContent =
+        loadTimeData.getString(keys[result.status] || 'downloadReviewUnavailable') +
+        (result.sha256 ? `\nSHA-256: ${result.sha256}` : '');
+  } catch {
+    if (snapshot?.taskId === taskId) {
+      element('download-review-status').textContent =
+          loadTimeData.getString('downloadReviewUnavailable');
+    }
+  } finally {
+    if (snapshot?.taskId === taskId) {
+      button.disabled = busy || snapshot.state !== 'completed';
+    }
+  }
+}
+
 function renderTimeline(next: TaskSnapshot) {
   const partial = hasPartialResult(next);
   const finished = next.resultOutcome === 'completed';
@@ -605,6 +662,16 @@ function renderTimeline(next: TaskSnapshot) {
           .replace('$1', match?.[1] || 'browser action');
     }
     const keyByValue: {[key: string]: string} = {
+      'browser verified all actions; model summary fallback used':
+          'timelineVerifiedFallback',
+      'reflecting': 'timelineVerifying',
+      'awaiting_action_approval': 'statusApproval',
+      'user_takeover': 'statusTakeover',
+      'exact action approval required': 'timelineActionApprovalRequired',
+      'exact action approval consumed': 'timelineActionApprovalConsumed',
+      'cancelled by user': 'timelineCancelledByUser',
+      'task cancelled by user': 'timelineCancelledByUser',
+      'execution model failed twice': 'timelineExecutionModelFailed',
       'planning': 'timelinePlanning',
       'planning started': 'timelinePlanningDetail',
       'planning repair': 'timelinePlanningRepair',
@@ -1424,6 +1491,9 @@ function bindActions() {
   }, true));
   element('plan-button').addEventListener('click', () => {
     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+    if (isDownloadedFileReviewGoal(goal)) {
+      return reviewCurrentDownload();
+    }
     const schedule = inferAutomationSchedule(goal);
     if (schedule !== null) {
       element<HTMLTextAreaElement>('automation-goal').value = goal;
@@ -1447,38 +1517,7 @@ function bindActions() {
       return proxy.handler.requestPlan(created.snapshot.taskId);
     }, true);
   });
-  element('review-download').addEventListener('click', async () => {
-    if (!snapshot?.taskId || snapshot.state !== 'completed') {
-      return;
-    }
-    const taskId = snapshot.taskId;
-    const button = element<HTMLButtonElement>('review-download');
-    button.disabled = true;
-    element('download-review-status').textContent =
-        loadTimeData.getString('downloadReviewPending');
-    try {
-      const result = await proxy.handler.reviewDownload(taskId);
-      if (snapshot?.taskId !== taskId) {
-        return;
-      }
-      const keys: {[key: string]: string} = {
-        match: 'downloadReviewMatch', changed: 'downloadReviewChanged',
-        missing: 'downloadReviewMissing', too_large: 'downloadReviewTooLarge',
-      };
-      element('download-review-status').textContent =
-          loadTimeData.getString(keys[result.status] || 'downloadReviewUnavailable') +
-          (result.sha256 ? `\nSHA-256: ${result.sha256}` : '');
-    } catch {
-      if (snapshot?.taskId === taskId) {
-        element('download-review-status').textContent =
-            loadTimeData.getString('downloadReviewUnavailable');
-      }
-    } finally {
-      if (snapshot?.taskId === taskId) {
-        button.disabled = busy || snapshot.state !== 'completed';
-      }
-    }
-  });
+  element('review-download').addEventListener('click', reviewCurrentDownload);
   element('create-automation-button').addEventListener(
       'click', () => withBusy(async () => {
         const goal =

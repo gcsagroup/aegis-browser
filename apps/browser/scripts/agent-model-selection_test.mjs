@@ -13,7 +13,7 @@ assert(!html.includes('<datalist') && !html.includes('list="model-options"'));
 const tree = ts.createSourceFile('agent.ts', source, ts.ScriptTarget.Latest, true);
 const names = ['option', 'renderModel', 'resetDetectedModels', 'selectDetectedModel',
   'syncDetectedModel', 'detectModels', 'friendlyModelError', 'bindActions',
-  'saveModel', 'showModelSaveError'];
+  'saveModel', 'showModelSaveError', 'reviewCurrentDownload'];
 const functions = tree.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
 assert.equal(functions.length, names.length);
 const code = ts.transpileModule(functions.map(node => node.getText(tree)).join('\n'), {
