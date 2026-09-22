@@ -15,6 +15,8 @@
 
 上游 `gcsagroup/aegis-browser` 的 Copilot 只承担 PR 语义 Review，不自动写入或合并代码。仓库级 Review 规则来自 PR head 中的 `.github/copilot-instructions.md` 与匹配路径的 `.github/instructions/*.instructions.md`；因此 Review 结论必须绑定当前 PR 最终 head，push 新提交后旧结论不能直接复用。
 
+上游 main 的晋升 PR 必须通过 `quality-gate` 和 `Codacy Static Code Analysis`，并完成适用的集成验证与最终 Review；个人 develop 不接入 Codacy。个人 main 为上游精确镜像，后续发布 workflow 采用共享源码、个人仓库执行条件与受保护 environment，不在镜像上添加个人专属提交。
+
 服务端策略单独使用一个针对 `main` 的 GitHub branch ruleset：自动请求 Copilot code review，并在每次新 push 后重新 Review；Draft PR 不自动触发。Copilot approval 不作为必需审批，也不替代独立 reviewer、Codacy、`quality-gate`、Chromium 集成、设备、签名或发布证据。该 Ruleset 和 Copilot 可用性属于 GitHub 服务端状态，须由管理员/API 实时回读，不能由仓库文件或本地测试证明。
 
 ## 当前优先方案：GitHub 托管

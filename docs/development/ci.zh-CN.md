@@ -4,7 +4,7 @@
 
 ## 规则入口与本机配置
 
-本指南的 `develop` 版本是日常开发、PR 审查、合并与公开晋升流程的唯一维护入口。历史方案只用于追溯，不另行维护同一套操作规则。晋升用 `main` 可能尚未包含最新 DEV 流程，开始交付任务时应先刷新并读取 `origin/develop` 对应版本。
+本指南的 `develop` 版本是日常开发、PR 审查、合并与公开晋升流程的唯一维护入口。历史方案只用于追溯，不另行维护同一套操作规则。镜像 `main` 可能尚未包含最新 DEV 流程，开始交付任务时应先刷新并读取 `origin/develop` 对应版本。
 
 个人偏好和本机模型覆盖设置放在本机 `AGENTS.md`，通过 `.git/info/exclude`（或已有本机排除规则）忽略，不提交仓库。通用模型分工见下节；个人文件引用本指南，不复制整套分支流程。Git worktree 不会自动复制未跟踪文件；新工作区如需个人入口，应在本机配置并用 `git check-ignore AGENTS.md` 验证。已跟踪的文件不能依靠 ignore 隐藏，须单独处理，不能为清理而删除用户文件。
 
@@ -44,7 +44,7 @@
 
 仓库级 Copilot 规则放在 `.github/copilot-instructions.md`；对 CI/治理文件的额外约束放在 `.github/instructions/ci-governance.instructions.md`。Copilot 应优先报告可复现的语义问题，不重复低价值格式噪音。服务端是否启用自动 Review、是否在每次 push 后复审、是否允许 Copilot approval 计入合并条件，都必须从 GitHub 实时回读，不能由这些 Markdown 文件推断。
 
-日常 `develop` 路径为：Codex 在隔离分支实现并跑最终 HEAD 本地门 → GitHub PR 上进行 Copilot Review 与独立 Review → `quality-gate`、Codacy 和实际保护条件分别核验 → 合并到 `develop` → 再核验 S 的真实 push CI。任一 Review 或门禁发现问题都回到原实现者修复，新的 HEAD 使旧 Review/检查证据失效时必须重新覆盖。
+日常 `develop` 路径为：Codex 在隔离分支实现并跑最终 HEAD 本地门 → GitHub PR 上进行 Copilot Review 与独立 Review → `quality-gate` 和实际保护条件分别核验；个人 Fork 不接入 Codacy，Codacy 在上游晋升 PR 收口 → 合并到 `develop` → 再核验 S 的真实 push CI。任一 Review 或门禁发现问题都回到原实现者修复，新的 HEAD 使旧 Review/检查证据失效时必须重新覆盖。
 
 上游公开 PR 使用同一套仓库指令，但 GitHub Copilot 自动 Review 的服务端策略独立配置在 `gcsagroup/aegis-browser`，仅针对上游 `main` 的 PR；推荐每次新 push 自动复审、Draft 不自动 Review，并保持 Copilot approval 不计入必需审批。这样 Copilot 提供第二视角，但不会获得绕过人工与确定性门禁的合并权。
 
@@ -52,15 +52,15 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 ## 分支职责与日常路径
 
-个人 Fork 的 GitHub 默认分支为 `develop`（2026-09-20 回读）；个人 `main` 用于对外展示和公开晋升，开发、维护与发布准备的工作主线仍为 `develop`。日常开发从最新 `origin/develop` 建隔离 `codex/*` 分支，PR 目标为 `develop`，合并后验证该提交的真实 push CI。`main` 不接收个人日常功能 PR；用户明确要求的个人展示维护可以作为独立、有限范围的 PR，不借此带入未晋升的产品代码。最终 develop 经独立 promotion PR 晋升到个人 main，使用 merge commit 并核验 main push CI；再从该 main 的精确 SHA 创建上游导出候选。禁止强推 main/develop，也不能将 develop 的绿灯直接当作 main 或上游通过。
+个人 Fork 的默认分支保持 `develop`。日常从最新 `origin/develop` 建隔离 `codex/*` 分支，功能/修复 PR 指向 `develop`，使用 squash merge 并验证合并后 S 的真实 push CI。已知行为、安全或隐私缺陷及时修复；后移 Codacy 不等于后移所有 Review。
 
-README 的个人与上游展示从 2026-09-21 起分开维护，取代旧的“个人 main 逐字镜像上游”规则：个人 main/develop 保留个人 Codacy 项目（`72c871eba82e471ebc05eaacd4d45218`）的 main/develop 两个明确标注分支的徽章。内部 develop → main 晋升保留个人 README。只有创建上游导出候选时，才从本次刷新并冻结的 `upstream/main` 恢复 `README.md`、`README.zh-CN.md`、`README.zh-TW.md`，校验三者 blob/hash 与上游一致，同时验证其他文件与个人 main 一致。上游 PR 使用该独立导出分支，不直接使用个人 main；上游自己的 Codacy 徽章因此不被个人项目 ID 覆盖。只存在这三份 README 差异时不创建空的上游晋升 PR。
+2026-09-22 起，晋升路径调整为 **develop → 独立晋升分支 → upstream/main → 回流 develop**。个人 `main` 只镜像上游，不能接收 develop 晋升、个人 README 维护或其他产品 PR。同步完成时必须满足 `origin/main == upstream/main` 的提交 SHA 完全相同，不能仅比较 tree 或排除 README 后的内容。镜像只允许快进，上游异常改写、个人领先或分叉都停止处理并保留提交，不自动强推。
 
-上游回同步也必须保留个人 README：在可审查的同步候选中合入上游并恢复个人展示，经 PR、Review、CI 后合并，不能用 fast-forward 擦掉个人徽章。冲突、未知分叉或陈旧候选应停止，不能扩大忽略范围或丢弃产品改动。
+三份 README、`.codacy.yml`、workflow 与其他源码采用共享版本，不再维护个人 main/develop 的 Codacy 徽章，不再在导出或回流时替换 README。徽章标注上游分析身份，不代表 develop 通过。2026-09-21 的 README 特例和 develop → 个人 main → 导出上游流程停止使用；历史 SHA/报告保留原身份。
 
-2026-09-15 的分支迁移取代之前 DEV main 的工作方式；PR #20 的 main-only 验证方案已废止，不能沿用其目标分支或旧结果放行 develop。既有历史 SHA/报告保留原事件和分支身份。
+个人 `main` 保留为后续发布 Action 入口。为了保持 SHA 镜像，未来 workflow 源码须先进入上游，再同步到个人 main；执行可通过 `github.repository == 'quinn521/aegis-browser'` 限定个人仓库，签名与发布凭据仅配置在个人仓库受保护 environment。发布默认手动触发，校验 main 与 upstream/main、选定 SHA、适用测试及制品来源；镜像 push 本身不授权发布。当前流程变更不添加发布、打包、签名或上传动作。
 
-`quality.yml` 同时保留 `develop` 与 `main` 的自动验证，便于个人开发与公共上游使用相同配置；其他分支不重复运行 push CI。push 并发组包含完整 ref，develop/main 互不占组；PR 按编号隔离并取消旧运行，人工补跑按 run ID 隔离。默认分支、保护与 Codacy 分支配置属于服务端设置，须由协调者独立回读，不由 YAML 或徽章证明。
+`quality.yml` 继续验证 develop/main PR 与 push，检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
 
 ## 固定工具链与本地完整门
 
@@ -106,7 +106,9 @@ HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆
 
 根 `.codacy.yml` 已按官方 Java glob 语义精确忽略依赖、构建/生成输出与补丁运输文件，未整体排除 `third_party`，因此 `apps/browser/overlay/third_party/aegis*` 中的本仓集成仍可分析。配置文件不能启用 Codacy 工具；工具选择与仓库授权必须在 Codacy UI 完成。
 
-个人 README 的两个 Codacy Grade 徽章分别选择个人 Fork 的 `main` 和 `develop`，两条链接显式带分支参数；CI 徽章的范围按其 URL 和正文单独解释。2026-09-21 恢复时两个 Grade SVG 均返回 A，该服务端快照不是未来提交的通过证明。2026-09-15 协调者已在 Codacy UI 回读 App 接入、develop 分析启用且设为默认，main 保留分析。此配置状态不等于当前提交的 Grade 或覆盖率已通过；协调者仍须核对项目对应 `quinn521/aegis-browser`、目标分支 `develop` 及当前被测 SHA，不能复用 main 分支的旧 Grade 作为新分支结果。覆盖率上传仍需单独配置与验收。
+Codacy 正式分析范围为上游 `gcsagroup/aegis-browser` 的 main 及以 main 为目标的 PR，个人 Fork 停止分析/回报；仓库内 `.codacy.yml` 仍保留供上游使用。仅关闭 develop 的 Analyze 开关不足以保证停止分析，因为新 PR 可能重新启用目标分支。配置个人仓库集成时保存历史与规则，先用可逆设置关闭个人分析和自动评审，验证新 develop PR 不产生 Codacy 检查，同时确认上游 fork PR 仍能分析。不要全局卸载 App 或无记录删除历史项目。
+
+上游必须配置实际检查名 `Codacy Static Code Analysis`（Codacy Production App）与 `quality-gate`（GitHub Actions）为 required checks，维护者回读来源、状态与有效 HEAD。真实问题在晋升分支修复并加回归测试；误报记录规则、位置、理由和证据后在对应项目处理，不能凭本地判断把 ACTION_REQUIRED 记为通过。Copilot、独立 Review 与适用的 Chromium 集成要求继续独立存在。
 
 质量工作流只生成并上传 CI artifact，不加入 token 或 coverage upload job；Grade 徽章不是覆盖率上传证明。未来上传必须使用短期仓库级 secret，禁止给 fork PR 暴露 secret，并把覆盖报告绑定到实际被测提交：PR `pull_request` CI 测试的是 GitHub 合并候选 M，不是产品分支 H；develop/main push 则绑定 S。本地账号、密码、API token 与仓库 token 均不得进入仓库、日志或公开文档。
 
@@ -131,45 +133,53 @@ PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API �
 
 人工补跑只允许在 `develop` 或 `main` 上选择该次所选分支的精确 `target_sha`，同时提供其精确祖先 `base_sha`。这种 `workflow_dispatch` 结果保留事件类型，不伪装成 PR 或正常 develop/main push 结果。
 
-## 初次启用保护
+## 保护与合并
 
-首次 CI PR 在保护尚不存在时按分步方式初始化：
+开发 PR 保留 strict `quality-gate`、禁止强推/删除及现有 Review 要求。新上游晋升 PR 必须核验最后 H 的 Codacy、托管 CI、独立 Review、实际保护及适用 native 集成证据，不能用 DEV 绿灯替代。模型 Review 不等于 GitHub 人类 Approve；无法满足的服务端审批如实等待，不伪造批准。
 
-1. 本地最终 HEAD 全量通过，并让 Draft PR 的 `quality` 与 `quality-gate` 全部成功；其他平台报告不属于当前自动门。
-2. 保存仓库合并设置、develop/main 保护与规则集快照；记录实际 check 名和 GitHub Actions 来源。
-3. 增量启用 PR 必需、严格 base 同步、`quality-gate` 必需、禁止强推/删除；人工审批、最后推送批准、旧批准失效及管理员策略按实际服务端配置记录，不擅自降低已有规则。
-4. 回读设置，记录管理员账号和合并身份的 bypass 状态；不得把管理员可绕过误报为不可绕过。套餐或 API 拒绝时报告限制，不关闭必需检查。
-5. 独立 reviewer 覆盖最终 H 后由协调任务精确 HEAD 合并；日常功能先等待 S 的真实 develop push run 成功。公开晋升必须完成上游同步及 main/develop 对齐，保留个人 README 向个人 main 提 PR，并等待 main 的 S push run 成功。然后创建独立上游导出分支，仅在该候选恢复三份上游 README，重新核验最终 HEAD 的 local full quality、public diff、hosted CI 和独立 Review。
+个人 main 使用镜像专用保护：`lock_branch=true`、`allow_fork_syncing=true`、`enforce_admins=true`，禁止强推和删除。只通过 GitHub 的 upstream sync 快进，不用普通 PR 合并制造新提交；开发用 PR/审批/required-check 规则从个人 main 迁移到上游 main。切换前保存完整保护快照，逐项回读并核对叠加 ruleset。同步失败不得通过临时解锁或强推重试。
 
-对 `develop` 或个人 `main` 的交付 PR，在服务端保护能够阻止未完成 Review/CI 的前提下，创建 PR 后开启 GitHub 原生 auto-merge；Review、Codacy 或 CI 发现问题时先修复并 push 新 HEAD，让 review 与检查覆盖最终提交。若仓库只有同一管理员身份、GitHub 人类 Approve 无法满足，则不得伪造自我批准；只能在独立 Review 与所有必需检查成功后由管理员精确合并。独立模型 Review 是外部证据，并不等同 GitHub 已强制一名独立人类批准。
+普通功能/修复 PR → develop 使用 squash；晋升 PR → upstream/main 与上游回流 PR → develop 使用 merge commit，保留来源与修复的祖先关系。仅在最终 HEAD 检查和 Review 齐备后由协调者合并；控制器不批准、合并或启用候选 auto-merge。已知 CI/Review 阻塞不得通过管理员身份绕过。
 
-## 上游公开导出
+## 上游晋升与修复回流
 
-不要从 DEV `develop` 或带个人 README 的 `main` 直接向上游提 PR。先完成个人 main 的晋升和真实 push CI，再从冻结的 `origin/main` 精确 SHA 创建独立 `automation/export-*` 分支；只恢复本次冻结 `upstream/main` 的三份 README，提交后让下列 `HEAD` 明确指向最终导出候选，而不是原个人 main。记录个人来源 SHA、上游 base SHA、导出 HEAD 及三份 README blob，校验除 README 外所有文件与个人 main 一致，再运行：
+先将当前 upstream/main 回流 develop，经 Review 和实际 develop push CI 验证。冻结本批 develop 来源 D 和上游 base B（B 必须是 D 的祖先），创建独立 `codex/promote-<D完整SHA>-<B完整SHA>` 分支，初始 H=D，PR 目标为 upstream/main。后续 develop 可以前进，但不自动加入本批。
+
+review 修复允许追加到候选分支，使 H0 → H1 → H2。来源 D/B 保持记录，所有新 H 都须重新覆盖本地/托管 CI、Codacy 与 Review。控制器只校验候选仍包含原来源并等待，不重建/覆盖分支、不强推、不把 branch name 中的 D 当作当前 H。base 前移时重新同步并验证 B/H/M；不把上一轮 M 的结果转用。新需求移到后续批次，修复者负责具体修复及对应回归测试。
+
+对最终候选运行：
 
 ```bash
-node scripts/ci/check-public-diff.mjs \
-  --base upstream/main \
-  --head HEAD
-
+node scripts/ci/check-public-diff.mjs --base upstream/main --head HEAD
 mise exec -- node scripts/ci/run-quality.mjs \
-  --scope full \
-  --base upstream/main \
-  --public-base upstream/main \
+  --scope full --base upstream/main --public-base upstream/main \
   --report-dir ".artifacts/ci/upstream-$(git rev-parse --short HEAD)"
 ```
 
-导出检查同时检查最终差异和每个新提交的历史，拒绝 `AGENTS.md`、`agent.md` 及大小写变体的新增、修改、删除或重命名；上游 base 中已有但完全未改的同名文件不会误报。不能用 `.gitignore` 掩盖已经跟踪的个人文件，也不能先提交个人文件再在后续提交删除。
+公开差异校验同时检查最终差异和每个新提交，拒绝 `AGENTS.md`、`agent.md` 及大小写变体的变动；不能先提交后删除或依赖 ignore 掩盖。
 
-上游得到新的 B/H/M，必须重跑本地、托管 CI 和独立 review；DEV 的成功只作为来源映射，不是上游成功。
+上游合并后记录真实 S 和 push CI。个人 main 快进镜像到上游已有提交，不制造同步 commit。之后从 S 创建 `codex/backflow-<S完整SHA>` 分支，PR 到 develop；允许为冲突追加修复，所有产品修复、测试和共享规则必须回流。回流使用 merge commit，再验证实际 develop push CI；下一批必须包含上游祖先且该 develop 来源验证通过。提前 backport 的重要修复保留映射，不能用局部 cherry-pick 代替最终祖先对齐。
 
-### 串行晋升自动化
+### 串行控制器
 
-`.github/workflows/promotion-orchestrator.yml` 把上述分支推进实现成串行状态机。它只在受信任的 `develop` / `main` push、每 15 分钟调度和人工 dispatch 上运行，并通过固定 concurrency 保证一次只推进一个状态；PR、fork PR 与 `pull_request_target` 都不会执行该控制器。控制器在每个转换前重新 fetch `origin/main`、`origin/develop` 与 `upstream/main`，并要求对应分支精确 SHA 的最新 `.github/workflows/quality.yml` push run 及其最新 attempt 中 `quality`、`quality-gate` 两个 job 全部成功；缺失或运行中只等待，失败直接停止。PR、人工 dispatch 或其他 workflow 的同名成功检查不能替代这项分支 push 证据。
+`.github/workflows/promotion-orchestrator.yml` 只从个人仓库 develop 的 push、每 15 分钟 schedule 或 develop 手动 dispatch 运行，使用固定 concurrency。双重校验仓库、ref、事件和版本变量 `AEGIS_PROMOTION_AUTOMATION=direct-upstream-v2`；旧值 `enabled` 不启动新控制器，新值不启动旧控制器。PR、main、上游仓库或未知事件不能执行带写权限的转换。候选源码只作为 Git 对象读取，不在凭据环境执行。
 
-自动链路串行处理上游同步、main → develop 对齐、develop → main 晋升和独立上游导出。内部晋升保留个人 README，导出候选才使用上游 README。导出分支绑定个人 main 与上游 base 的精确 SHA，已存在的候选只能在内容与来源一致时复用，不强推改写。只有 README 差异时不创建上游 PR。main → develop 对齐 PR 保留 merge-commit auto-merge；新建个人晋升、上游同步和上游导出 PR 请求 `@copilot` 后等待协调者验证最终 HEAD 的 Review、Codacy、必需 CI，再显式合并。候选 PR 不由控制器提前启用 auto-merge，避免来源前移后继续合并冻结快照。上游回同步以保留个人 README 的 PR 完成；未知分叉仍 fail closed，不强推、不覆盖个人展示。
+每次只执行一个转换：
 
-控制器的 `GITHUB_TOKEN` 固定为 `actions: read` 与 `contents: read`，只读取个人仓库精确 SHA 的 workflow run 与 job，不读取或修改 PR。启用前在个人 Fork 的 Actions secrets 配置两个独立凭据：`AEGIS_FORK_AUTOMATION_TOKEN` 读取个人 PR 状态，并负责 automation branch、PR、auto-merge 和上游导出/同步候选分支，至少需要该 Fork 的 Contents/PR 写权限；`AEGIS_UPSTREAM_TOKEN` 读取 upstream 的精确 workflow run/job 与 PR 状态，并负责创建/更新 upstream PR 和请求 reviewer，至少需要 upstream 的 Actions/Contents 读权限与 PR 写权限。缺任一 secret 时控制器直接失败，不进行降级授权。凭据值不得写入仓库、日志或 PR。两个 secret 配置完成并验证权限后，再把仓库变量 `AEGIS_PROMOTION_AUTOMATION` 设置为 `enabled`；变量未启用时整个 job 保持关闭。
+1. 刷新个人 main/develop、上游 main；分页列出活动 PR。任一该 fork 的上游 main PR、个人 main PR 或回流 PR存在时等待；多条活动路径需要协调者处理。旧导出 PR（包括迁移中的 #22）保留并阻止创建重复批次，不被自动改写。
+2. 没有活动路径且个人 main 落后时，验证 ancestor、仓库 parent 和锁定保护，然后调用 `merge-upstream`；只接受 fast-forward/none，回读双方 SHA 相同。上游 push CI 失败不改变镜像的事实身份，但阻止后续新批次。
+3. main 一致后验证上游 S 的 quality push run；develop 未包含 S 时创建回流 PR并等待。
+4. develop 已包含 S 且存在实际 tree 差异时，验证 develop 精确 D 的 quality push run，再创建独立上游晋升 PR。无差异不创建空 PR。
+
+`promotion-quality.mjs` 核对精确仓库/分支/SHA、quality.yml、push 事件、最新 run/attempt 以及唯一 quality、quality-gate jobs；缺失/运行中等待，失败停止。发布候选前后重新核对远端 SHA，create-ref 冲突不改写已有分支；合法后续修复按祖先关系复用。已关闭未合并批次不自动重建。
+
+`GITHUB_TOKEN` 仅 actions/contents read；`AEGIS_FORK_AUTOMATION_TOKEN` 负责个人 PR、候选 ref 与受保护的 upstream sync；`AEGIS_UPSTREAM_TOKEN` 负责上游 Actions/Contents 读和 PR 写。仓库 ruleset 自动请求 Copilot，控制器不发布讨论消息或审批。任何 secret 不进入日志、PR 或源码。
+
+### 迁移与失败恢复
+
+启用前保存三个远端 SHA、保护/规则集、自动化变量及开放 PR。现存个人 main 的产品提交必须保留：优先使现有上游批次完成修复、必需验收并以 merge commit 合入，再快进个人 main。若 main 领先/分叉且无活动上游批次，控制器明确失败；另做可审查迁移，不能直接 reset 或强推。
+
+代码、GitHub 保护和 Codacy 服务端接入分别验收；个人 fork 尚未停止分析或上游门禁未配置时保持 `paused`。迁移可能等待现有上游 PR 的 native 验收，不能把控制器交付等同于镜像已经完成。发生问题时暂停控制器并保留分支/PR/证据，按同一路径人工修复；不要恢复旧 develop → 个人 main 流程。
 
 ## Chromium 集成边界与故障分类
 

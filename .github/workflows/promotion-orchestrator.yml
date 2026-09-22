@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - develop
-      - main
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -20,7 +19,7 @@ concurrency:
 jobs:
   promote:
     name: promotion-orchestrator
-    if: ${{ vars.AEGIS_PROMOTION_AUTOMATION == 'enabled' }}
+    if: ${{ github.repository == 'quinn521/aegis-browser' && github.ref == 'refs/heads/develop' && vars.AEGIS_PROMOTION_AUTOMATION == 'direct-upstream-v2' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -38,5 +37,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AEGIS_FORK_AUTOMATION_TOKEN: ${{ secrets.AEGIS_FORK_AUTOMATION_TOKEN }}
           AEGIS_UPSTREAM_TOKEN: ${{ secrets.AEGIS_UPSTREAM_TOKEN }}
-          AEGIS_UPSTREAM_REPOSITORY: gcsagroup/aegis-browser
+          AEGIS_PROMOTION_AUTOMATION: ${{ vars.AEGIS_PROMOTION_AUTOMATION }}
         run: node scripts/ci/promotion-orchestrator.mjs
