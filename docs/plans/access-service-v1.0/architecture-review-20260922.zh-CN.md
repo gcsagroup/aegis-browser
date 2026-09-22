@@ -1,6 +1,6 @@
 # Aegis 访问服务 V1.0：架构复核与实施技术方案
 
-日期：2026-09-22。源码基线：`quinn521/aegis-browser:develop@dd53b6ec4827b2f8ce730a428a81278aefd05bc5`。性质：文档设计决策，产品实现和运行验证仍待完成。
+日期：2026-09-22。本次续接基线：`quinn521/aegis-browser:develop@c08b6321fe2878ba62c8d9757a3f4ae4e4f17470`，即 [#164](https://github.com/quinn521/aegis-browser/pull/164) 的合并提交。保留 #164 的架构决策，补齐并行实施合同与当前候选边界；拟新增能力仍需实现和运行验证。状态快照：2026-09-22 06:15 UTC，后续结果以对应候选的报告为准。
 
 本文调整实施技术方案、风险验证顺序和首阶段部署规模，不修改[冻结修订 4](spec.zh-CN.md)的用户行为、A01–A118、PF01–PF13 或 G0–G3。`freeze.json` 及其保护文件保持原字节；本文不能成为降级冻结要求的豁免。若原型证明原合同不可实现，提交失败证据、明确行为差异和规范修订，再评审冻结；不能仅修改清单哈希或检查脚本放行。执行顺序见[开发计划](development-plan.zh-CN.md)，下一窗口见[Handoff](handoff-20260920.zh-CN.md)。
 
@@ -12,11 +12,11 @@
 | --- | --- | --- |
 | `AccessServiceCoordinator` 已有普通 DIRECT/PROXY 的 PREPARED、候选发布、精确 ACK、durable commit、回滚和幂等重试 | 不能继续写成“只有生命周期空壳”；也不代表可信 UI、身份/节点生产提交或完整 BLOCK/ALLOW 已接通 | 复用已有事务边界，补真实入口与恢复验证 |
 | `AccessNetworkContextTransport::PartitionState` 只有一个 endpoint 和 exact-host 列表 | 规则可按顶层 SchemefulSite、目标 host、scheme/port、代理组区分，执行层无法完整表达并存路由 | 请求级路由能力是扩展规则和入口前的关键依赖 |
-| PR #162 在 `a7de699bf8916c81e918be7ede423feaa7a6f7a0` 拒绝相交 host 的异组候选，仍为 OPEN/Draft | 这是保护性拒绝，未合入基线，也不提供完整按站点/代理组选路 | 保留保护直到新传输用真实正反路径证明可替代；测试不同 host/不同组，不能只测相交 host |
-| runner #161 已合入 `f598ccd8792ec0fc30031a74595fe48a2d54db96`；GN 修复 #163 已合入当前 `dd53b6e…` | #163 最终 H `988c509…` 报告原参数完整 GN 检查 PASS（31,751 targets），随后 Ninja 在 bundled LLD 解析 macOS 27 SDK target 时失败，未运行 GTest | GN 修复不等于 native/runtime PASS；核验当前候选、工具/SDK、独立参数变体与实际运行，不能复用旧失败或局部成功放行 |
+| PR #162 在 `682997a6974fe76966e82276d7611ba59da30c42` 拒绝相交 host 的异组候选，仍为 OPEN/Draft | 已更新到 #164 基线并将功能补丁重编号为 0161；这是保护性拒绝，未合入，也不提供完整按站点/代理组选路 | 先完成该候选的原生双目标和浏览器回归；保留保护直到新传输用真实正反路径证明可替代；不同 host/不同组仍需独立正路径 |
+| runner #161 已合入 `f598ccd8792ec0fc30031a74595fe48a2d54db96`；GN 修复 #163 已合入 `dd53b6ec4827b2f8ce730a428a81278aefd05bc5`，两者合并后 CI 成功 | 旧候选原参数通过 GN，Ninja 曾遇 bundled LLD/macOS 27 SDK 兼容失败；当前切到 #162 的 H，单独记录 `use_lld=false` 参数，完整 GN 检查 exit 0，Coordinator 编译中，尚无测试执行结果 | 原参数和本机参数变体分别记录；两项代码交付、GN 成功和后台编译均不能标记 Phase 3/W0 完成 |
 | Xray 用户统计存在，但持久账本和传输预算不是 Stats API 的同义词 | 某些 splice 路径统计延迟，适用性取决于固定版本、真实入站/出站和操作系统 | 将计量/截断/崩溃恢复提前为独立 P0 验证，与浏览器底座并行 |
 
-源码依据：[传输状态](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/apps/browser/overlay/chrome/browser/aegis/access/access_network_context_transport.h)、[请求派发](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/apps/browser/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc)、[协调器](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/apps/browser/overlay/chrome/browser/aegis/access/access_service_coordinator.cc)。[#161](https://github.com/quinn521/aegis-browser/pull/161) 与 [#163](https://github.com/quinn521/aegis-browser/pull/163) 的状态来自本次 GitHub 回读，native 结果引用 #163 对其最终候选的报告，本轮未重新运行。开放 #162 仍是独立候选；其旧 0160 与已合入 GN 的 0160 需在接续时重新协调编号/基线并验证，不能直接拼接旧序列。
+源码依据：[传输状态](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/apps/browser/overlay/chrome/browser/aegis/access/access_network_context_transport.h)、[请求派发](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/apps/browser/overlay/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc)、[协调器](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/apps/browser/overlay/chrome/browser/aegis/access/access_service_coordinator.cc)。这些是架构复核时的源码依据；当前 PR 身份与运行记录见 [Handoff](handoff-20260920.zh-CN.md)。本次回读了 #164 合并后 CI、#162 当前 PR 及 native JSON/日志；没有另起 Chromium 构建。旧 #162 的 `a7de699…`、旧 0160 编号和 #163 的 `988c509…` 构建属于历史候选，不能恢复为当前执行入口。
 
 ## 2. 请求级路由决策
 
@@ -113,3 +113,17 @@ W2 在实际 Linux 服务端适用路径及客户端适用快路径绑定 Xray c
 W0 的全量既有必需回归 PASS 是后续浏览器产品能力扩展的前置条件；W1 接线原型只能在隔离候选中验证，不以 standalone 或 GN 成功宣告完成。W1 不通过时暂停新增调试规则和入口；W2 不通过时暂停额度/计量可用承诺及 Alpha 判定。两线可并行做独立实验，W3 联合结论必须等待它们的匹配证据。
 
 保留正式 G0 的原有代理组合、BLOCK/缓存、认证/渠道、资源等全部要求；W0/W1/W2/W3 任一小里程碑均不自动升级 G0。G0 未通过不得对外把技术原型宣称 Alpha。仓库质量门、独立 Review、native、真实服务和分发证据分开记录。
+
+## 6. 从架构决策到可评审增量
+
+下表细化 #164 的实施合同，不增加冻结验收编号，也不表示表中接口已经存在。W0 期间可先完成 W1 接口盘点、实验设计及独立 fixture；依赖真实浏览器的新能力实现与运行按 W0 退出条件接续。W2 的独立服务端实验不等待 Chromium 构建。
+
+| 增量 | 输入与交付边界 | 必需验证 / 不可替代项 |
+| --- | --- | --- |
+| W1a 可信上下文接线清单 | 为导航、redirect、子资源及后台入口逐一列出当前文件/签名/调用序列、owner 来源、跨进程序列化与失效点；标明既有能力和拟新增字段 | 每个载体都能追溯到 browser-owned owner；缺失/伪造/过期输入的失败路径；仅存在结构体不算真实接线 |
+| W1b 多组路由最小执行器 | 使用当前 matcher 和版本合同，把不可变决定送到实际 proxy/stream；端点注册、准备等待和热路径分离；不得用请求前切换 partition 全局配置实现并发 | 同 CDN 异组及不同 host 异组同时到达对应受控出口；原生未命中流量不变，首次 POST/PATCH 无重放；#162 保护的移除需与替代能力证明同审 |
+| W1c 复用/重启与最小认证 | 对连接池、HTTP/2、CONNECT、auth/retry cache、旧 registration 和重启逐项给出兼容/失效策略；完成 HTTP/SOCKS5 两种入口的最小 Profile 认证适配 | 正确凭据成功、跨 Profile/未登记/过期凭据拒绝，关闭 Profile 后失效；复用实际连接的隔离与重启正反控制；未通过不能判 W1 或 G0 |
+| W2a 计量与预算实验协议 | 先绑定受控节点/执行人、Xray commit/二进制、OS/内核、flow/配置、权威计数点、耐久策略、误差及超额预算，再执行第 3 节矩阵 | 区分实际字节与预留余额；原始长连接/耗尽/kill-restart/splice 数据及覆盖；资源未绑定为 BLOCKED，不生成假运行数据 |
+| W3 集成清单 | 只消费已验证的路由能力、实际身份/节点提交和计量预算接口；明确 Profile 创建/关闭、Network Service 重启、发布与持久化失败的状态转换 | 同一产品产物和匹配服务配置完成纵向路径；独立原型各自通过不能直接拼成集成 PASS |
+
+Q 负责可复现构建与证据，F 负责产品行为与功能候选；Q 可代 F 在一个独占候选上执行重型 native 测试，此时产品身份仍是 F 的 H，不能变成 Q 旧 H 的结果。一次只允许一个所有者写入该源码/out，交接前核对进程、锁、来源和参数。完整工作顺序与停止条件以[开发计划](development-plan.zh-CN.md)为准。
