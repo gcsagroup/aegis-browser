@@ -170,7 +170,7 @@ export async function createCandidatePull(config, state, candidate, overrides = 
   }
   await ops.assertHeads([...sourceRefs(config, state),
     headRef(config.personalRepo, candidate.branch, head, config.forkToken)]);
-  // GitHub rulesets request Copilot review. The controller never approves/merges.
+  // The controller leaves reviewer, Ready, approval, and merge transitions to the coordinator.
   ops.log(`Created ${candidate.kind}: ${pull.html_url}`);
 }
 

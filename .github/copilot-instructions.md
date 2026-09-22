@@ -1,6 +1,6 @@
-# Aegis Browser Copilot review instructions
+# Aegis Browser optional Copilot review instructions
 
-Use these instructions primarily for pull-request review. Focus on defects, security/privacy regressions, incorrect assumptions, missing tests, and delivery-governance violations. Avoid repeating formatting or low-value style findings that deterministic tooling already covers.
+Use these instructions only when Copilot review is explicitly invoked. Copilot review is not automatically requested and is not a Ready, merge, or promotion prerequisite. Focus on defects, security/privacy regressions, incorrect assumptions, missing tests, and delivery-governance violations. Avoid repeating formatting or low-value style findings that deterministic tooling already covers.
 
 ## Review priorities
 
@@ -13,7 +13,7 @@ Use these instructions primarily for pull-request review. Focus on defects, secu
 ## Delivery evidence boundaries
 
 - `docs/development/ci.zh-CN.md` is the delivery authority for the personal fork. Follow its current `develop` branch flow and evidence identity rules.
-- GitHub Copilot review is semantic review evidence only. It does not replace the independent reviewer, hosted CI, upstream Codacy, human approval requirements, Chromium integration evidence, device evidence, signing, or release acceptance.
+- An explicitly requested GitHub Copilot review is optional supplementary evidence only. Its absence does not block the current workflow, and its presence does not replace the independent reviewer, hosted CI, upstream Codacy, human approval requirements, Chromium integration evidence, device evidence, signing, or release acceptance.
 - Codacy is the deterministic quality/security scanner. Do not duplicate a Codacy-style finding unless it has a concrete semantic, security, or compatibility impact that the PR author should act on.
 - Do not infer a green `quality-gate`, Codacy result, branch protection, server-side setting, or merge readiness from repository text, badges, comments, or local output. Those states require live evidence for the exact final head.
 - Preserve the H/B/M/S distinction documented by the project: PR head, PR base, GitHub merge candidate, and post-merge branch commit are separate evidence identities.
