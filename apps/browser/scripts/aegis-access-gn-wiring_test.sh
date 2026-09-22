@@ -106,10 +106,27 @@ for ownership_header in \
   request_cancellation_contract_test.h \
   request_dispatch_barrier_contract_test.h \
   request_ownership_registry_contract_test.h \
-  request_ownership_registry_test_support.h \
   request_ownership_registry_unit_test.h; do
   [[ "$dispatch_gate_test_block" == *"\"$ownership_header\""* ]] ||
     fail "dispatch gate test must own transitive header $ownership_header"
+done
+ownership_support_block="$(
+  awk '/^source_set\("request_ownership_registry_test_support"\) \{/,/^}$/' "$COMPONENT_BUILD"
+)"
+[[ "$ownership_support_block" == *'testonly = true'* ]] ||
+  fail "shared ownership support must remain test-only"
+[[ "$ownership_support_block" == *'public = [ "request_ownership_registry_test_support.h" ]'* ]] ||
+  fail "shared ownership support must publish its header"
+[[ "$ownership_support_block" == *'public_deps = [ ":request_ownership_registry" ]'* ]] ||
+  fail "shared ownership support must export the registry header dependency"
+[[ "$(rg -F -c '"request_ownership_registry_test_support.h"' "$COMPONENT_BUILD")" == 1 ]] ||
+  fail "shared ownership support header must have exactly one owner"
+for support_consumer in aegis_access_unittests request_dispatch_gate_unittests request_ownership_registry_unittests; do
+  consumer_block="$(awk -v target="$support_consumer" '$0 == "test(\"" target "\") {",/^}$/' "$COMPONENT_BUILD")"
+  [[ "$consumer_block" == *'":request_ownership_registry_test_support"'* ]] ||
+    fail "$support_consumer must depend on the shared ownership support target"
+  [[ "$ownership_support_block" == *"\":$support_consumer\""* ]] ||
+    fail "shared ownership support must allow $support_consumer"
 done
 rg -Fq 'source_set("browser_request_metadata_seed")' "$COMPONENT_BUILD" ||
   fail "overlay does not define the browser metadata seed"
@@ -950,10 +967,11 @@ expected_access_tail="$(cat <<'EOF'
 0157-fix-access-scope-selection-generation-by-proxy-group.patch
 0158-refactor-access-publication-candidate-preparation.patch
 0159-fix-access-return-committed-mutation-retries.patch
+0160-fix-native-gn-dependency-wiring.patch
 EOF
 )"
-[[ "$(tail -n 45 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "Access patch tail must remain sequential through patch 0159"
+[[ "$(tail -n 46 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "Access patch tail must remain sequential through patch 0160"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

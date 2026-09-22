@@ -63,10 +63,10 @@ source_set("agent_model_transport") {
   sources = [
     "agent/agent_model_client.cc",
     "agent/agent_model_client.h",
-    "agent/typesafe_goal_router_client.cc",
-    "agent/typesafe_goal_router_client.h",
     "agent/typesafe_goal_response_parser.cc",
     "agent/typesafe_goal_response_parser.h",
+    "agent/typesafe_goal_router_client.cc",
+    "agent/typesafe_goal_router_client.h",
   ]
   deps = [
     ":agent_core",
@@ -91,6 +91,29 @@ source_set("profile_support") {
   }
 }
 
+source_set("download_prefs") {
+  sources = [
+    "aegis_download_prefs.cc",
+    "aegis_download_prefs.h",
+  ]
+  deps = [
+    "//base",
+    "//components/download/public/common:public",
+    "//components/prefs",
+  ]
+}
+
+source_set("prefs") {
+  sources = [
+    "aegis_prefs.cc",
+    "aegis_prefs.h",
+  ]
+  deps = [
+    "//chrome/common/aegis",
+    "//components/pref_registry",
+  ]
+}
+
 source_set("aegis") {
   sources = [
     "aegis_ai_control.cc",
@@ -99,8 +122,6 @@ source_set("aegis") {
     "aegis_bounce_observer.h",
     "aegis_cookie_janitor.cc",
     "aegis_cookie_janitor.h",
-    "aegis_download_prefs.cc",
-    "aegis_download_prefs.h",
     "aegis_link_sanitize_navigation_throttle.cc",
     "aegis_link_sanitize_navigation_throttle.h",
     "aegis_phish_blocking_page.cc",
@@ -111,8 +132,6 @@ source_set("aegis") {
     "aegis_phish_navigation_throttle.h",
     "aegis_phish_tab_helper.cc",
     "aegis_phish_tab_helper.h",
-    "aegis_prefs.cc",
-    "aegis_prefs.h",
     "aegis_service.cc",
     "aegis_service.h",
     "aegis_service_factory.cc",
@@ -132,7 +151,11 @@ source_set("aegis") {
     "threat_feed_updater.cc",
     "threat_feed_updater.h",
   ]
-  public_deps = [ ":profile_support" ]
+  public_deps = [
+    ":download_prefs",
+    ":prefs",
+    ":profile_support",
+  ]
   deps = [
     ":model_provider_policy",
     "//base",
@@ -252,14 +275,14 @@ if (!is_android) {
       "//build:chromeos_buildflags",
       "//chrome/browser:browser_process",
       "//chrome/browser/aegis/access:access_browser_request_adapter",
-      "//chrome/browser/aegis/access:access_network_context_transport",
       "//chrome/browser/aegis/access:access_identity_generation_source",
+      "//chrome/browser/aegis/access:access_network_context_transport",
       "//chrome/browser/aegis/access:access_proxy_selection_generation_source",
       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
       "//chrome/browser/aegis/access:access_published_request_runtime",
       "//chrome/browser/aegis/access:access_request_dispatch_state",
-      "//chrome/browser/net:impl",
       "//chrome/browser/bookmarks",
+      "//chrome/browser/net:impl",
       "//chrome/browser/notifications:test_support",
       "//chrome/browser/prefs",
       "//chrome/browser/profiles:profile",
@@ -333,6 +356,8 @@ test("aegis_agent_core_unittests") {
     "//testing/gtest",
     "//url",
   ]
+
+  deps += [ "//sql" ]
 }
 
 fuzzer_test("aegis_agent_model_protocol_fuzzer") {
