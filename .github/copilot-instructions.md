@@ -13,15 +13,15 @@ Use these instructions primarily for pull-request review. Focus on defects, secu
 ## Delivery evidence boundaries
 
 - `docs/development/ci.zh-CN.md` is the delivery authority for the personal fork. Follow its current `develop` branch flow and evidence identity rules.
-- GitHub Copilot review is semantic review evidence only. It does not replace the independent reviewer, hosted CI, Codacy, human approval requirements, Chromium integration evidence, device evidence, signing, or release acceptance.
+- GitHub Copilot review is semantic review evidence only. It does not replace the independent reviewer, hosted CI, upstream Codacy, human approval requirements, Chromium integration evidence, device evidence, signing, or release acceptance.
 - Codacy is the deterministic quality/security scanner. Do not duplicate a Codacy-style finding unless it has a concrete semantic, security, or compatibility impact that the PR author should act on.
 - Do not infer a green `quality-gate`, Codacy result, branch protection, server-side setting, or merge readiness from repository text, badges, comments, or local output. Those states require live evidence for the exact final head.
 - Preserve the H/B/M/S distinction documented by the project: PR head, PR base, GitHub merge candidate, and post-merge branch commit are separate evidence identities.
 
 ## Public-upstream review
 
-- Public export must follow the promotion path documented in `docs/development/ci.zh-CN.md`; do not recommend sending `develop` directly to upstream `main`.
+- Freeze a develop SHA into an independent promotion branch targeting upstream main. Personal main is an exact upstream SHA mirror, never an intermediate promotion target. Review fixes may be appended to the frozen batch and must return to develop after upstream merge.
 - Flag any public-export history that adds, modifies, deletes, or renames private agent-control files such as `AGENTS.md` or case variants.
-- The three README files on the public promotion path follow the repository's temporary upstream-mirroring rule; do not treat their deliberate restoration from upstream as accidental data loss.
+- README and workflow sources are shared normally; there is no README replacement exception. Codacy runs on upstream promotion PRs, not personal develop. Future personal-main release workflows must preserve mirror parity and use repository/environment guards; synchronization does not authorize release.
 
 Keep review comments concise and actionable. When reporting a finding, name the affected file/line, the trigger, the likely impact, and the smallest useful fix or test.
