@@ -435,6 +435,12 @@ function renderCheckoutSummary(checkout: CheckoutSummary|null) {
           `${checkout.observationFingerprint.slice(0, 16)}…`);
 }
 
+// 风险等级来自浏览器；只翻译展示，不改变审批规则。
+function humanRisk(value: string): string {
+  const level = value.match(/^R([0-3])(?:\b|\s|$)/)?.[1];
+  return level ? loadTimeData.getString('riskLevel' + level) : value;
+}
+
 function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
   const card = element('plan-card');
   card.hidden = !hasTask;
@@ -457,7 +463,7 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
     return;
   }
   risk.hidden = false;
-  risk.textContent = plan.maxRisk;
+  risk.textContent = humanRisk(plan.maxRisk);
   element('plan-summary').textContent = plan.summary;
   if (details) {
     details.hidden = false;
@@ -467,7 +473,7 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
   addDefinition(
       scope, loadTimeData.getString('provider'),
       `${plan.provider} · ${plan.model} · ${plan.destination}`);
-  addDefinition(scope, loadTimeData.getString('risk'), plan.maxRisk);
+  addDefinition(scope, loadTimeData.getString('risk'), humanRisk(plan.maxRisk));
   addDefinition(
       scope, loadTimeData.getString('origins'), plan.origins.join(', '));
   addDefinition(
@@ -484,7 +490,7 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
     const li = document.createElement('li');
     li.textContent = step.title;
     const detail = document.createElement('small');
-    detail.textContent = `${step.toolName} · ${step.risk}`;
+    detail.textContent = `${step.toolName} · ${humanRisk(step.risk)}`;
     li.append(detail);
     steps.append(li);
   }
@@ -544,7 +550,7 @@ function renderDownloadEvidence(next: TaskSnapshot) {
   const evidence = next.downloadEvidence || [];
   const goal = next.goal || '';
   const identityQuestion = /官方|official/i.test(goal) &&
-      /证据|證據|是否|属于|屬於|evidence|is this/i.test(goal) &&
+      /是否|属于|屬於|证明.{0,8}官方|證明.{0,8}官方|is this|is it|verify.{0,16}official/i.test(goal) &&
       !evidence.some(field => field.name === 'download_id');
   // 身份问答保留来源证据，不把筛选器的占位地址显示为待下载文件。
   const fields = identityQuestion ?
@@ -595,7 +601,13 @@ function isDownloadedFileReviewGoal(goal: string): boolean {
   const reference = /(?:刚|剛|已|这次|這次|刚才|剛才).{0,4}(?:下载|下載)|downloaded|this download/.test(text);
   const question = /核对|核對|检查|檢查|是否|有没有|有沒有|check|verify|is |has |was /.test(text);
   const state = /安装|安裝|摘要|哈希|完整|变更|變更|存在|install|hash|integrity|changed|exist/.test(text);
-  const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)|do not|不要|别|別/.test(text);
+  // “不要安装”限定副作用，不是否定“核对”；明确否定核对时不劫持入口。
+  if (/(?:不要|别|別|do not|don't)\s*(?:核对|核對|检查|檢查|check|verify)/.test(text)) {
+    return false;
+  }
+  const permittedReview = text.replace(
+      /(?:不要|别|別)\s*(?:执行|執行|运行|運行|安装|安裝|下载|下載)|(?:do not|don't)\s*(?:run|execute|install|download)(?:\s+(?:it|this|the file))?/g, '');
+  const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)/.test(permittedReview);
   return reference && question && state && !command;
 }
 
@@ -650,6 +662,11 @@ function renderTimeline(next: TaskSnapshot) {
       scheduled === 'paused' ? 'automationPausedHelp' :
       scheduled ? 'automationScheduledHelp' : 'noTask');
   const list = element('timeline');
+  const signature = JSON.stringify([events, partial, finished, scheduled]);
+  if (list.dataset['snapshot'] === signature) {
+    return;
+  }
+  list.dataset['snapshot'] = signature;
   list.replaceChildren();
   const friendlyTimelineText = (value: string): string => {
     if (value.includes('原操作已失效')) {
@@ -662,6 +679,36 @@ function renderTimeline(next: TaskSnapshot) {
           .replace('$1', match?.[1] || 'browser action');
     }
     const keyByValue: {[key: string]: string} = {
+      'Actor execution service unavailable': 'timelineDetail1',
+      'Actor execution service unavailable after recovery': 'timelineDetail2',
+      'action result is uncertain; automatic replay refused': 'timelineDetail3',
+      'browser action requires user control': 'timelineDetail4',
+      'checkout document disappeared after revalidation': 'timelineDetail5',
+      'checkout facts changed; old summary invalidated': 'timelineDetail6',
+      'checkout facts could not be re-read before takeover': 'timelineDetail7',
+      'checkout revalidation cursor could not be persisted': 'timelineDetail8',
+      'checkout summary failed browser source validation': 'timelineDetail9',
+      'execution cursor could not be persisted': 'timelineDetail10',
+      'execution model budget exhausted': 'timelineDetail11',
+      'execution model request could not be started': 'timelineDetail12',
+      'failed action cursor could not be persisted': 'timelineDetail13',
+      'final action completed under user control': 'timelineDetail14',
+      'fresh browser observation was rejected': 'timelineDetail15',
+      'fresh observation tab disappeared': 'timelineDetail16',
+      'fresh recovery consent granted; observation required': 'timelineDetail17',
+      'model requested an action after the plan ended': 'timelineDetail18',
+      'no live scoped tab was available for a fresh observation': 'timelineDetail19',
+      'overlapping model request rejected': 'timelineDetail20',
+      'paused by user': 'timelineDetail21',
+      'recovered task expired before consent': 'timelineDetail22',
+      'resumed after fresh observation': 'timelineDetail23',
+      'tool context changed before execution': 'timelineDetail24',
+      'tool context could not be rebound': 'timelineDetail25',
+      'unsupported execution model provider': 'timelineDetail26',
+      'user interacted with a controlled tab': 'timelineDetail27',
+      'user takeover ended; fresh consent required': 'timelineDetail28',
+      'user takeover required': 'timelineDetail29',
+      'verified action cursor could not be persisted': 'timelineDetail30',
       'browser verified all actions; model summary fallback used':
           'timelineVerifiedFallback',
       'reflecting': 'timelineVerifying',
@@ -987,10 +1034,14 @@ function render(next: TaskSnapshot) {
   snapshot = next;
   element('status').dataset['tone'] = taskCreationError && !next.taskId ?
       'danger' : statusTone(next);
-  element('status').textContent = taskCreationError && !next.taskId ?
+  const statusText = taskCreationError && !next.taskId ?
       loadTimeData.getString('statusFailed') : busy && !next.taskId ?
       loadTimeData.getString('statusUnderstanding') :
       humanStatus(next);
+  // 相同状态不重复修改 live region，也不抢正在编辑的焦点。
+  if (element('status').textContent !== statusText) {
+    element('status').textContent = statusText;
+  }
   const goal = element<HTMLTextAreaElement>('goal');
   element('target-value').textContent =
       refersToCurrentPage(goal.value) && next.activeOrigin ?
@@ -1051,7 +1102,7 @@ function render(next: TaskSnapshot) {
         takeover ? 'takeoverReady' : 'waitingApproval');
     element('approval-detail').textContent =
         `${pendingApproval.toolName} · ${pendingApproval.origin} · ` +
-        pendingApproval.risk;
+        humanRisk(pendingApproval.risk);
     const transfer = pendingApproval.isDataTransfer;
     element('approval-data-flow').hidden = !transfer;
     element('approval-data-flow').textContent = transfer ?

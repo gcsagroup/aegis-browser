@@ -200,3 +200,4 @@
 0200-fix-native-bookmark-call-builder-2-0-059.patch
 0201-test-language-and-source-output-contracts-2-0-060.patch
 0202-fix-review-visibility-and-identity-source-copy-2-0-061.patch
+0203-fix-agent-copy-announcements-and-input-scope-2-0-062.patch

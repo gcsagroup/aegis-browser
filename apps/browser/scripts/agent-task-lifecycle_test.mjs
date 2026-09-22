@@ -10,7 +10,7 @@ const file = process.argv[2] || repo + '/apps/browser/overlay/chrome/browser/res
 const ts = createRequire(repo + '/packages/core/package.json')('typescript');
 const source = readFileSync(file, 'utf8');
 const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-const names = ['render', 'withBusy', 'bindActions', 'humanStatus', 'statusTone',
+const names = ['humanRisk', 'render', 'withBusy', 'bindActions', 'humanStatus', 'statusTone',
   'showCreatedTask', 'scheduledTaskStatus', 'hasPartialResult', 'friendlyError', 'inferWorkflow', 'refersToCurrentPage', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal', 'reviewCurrentDownload'];
 const selected = tree.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
 assert.equal(selected.length, names.length);
@@ -128,7 +128,7 @@ const transferTask = {...b, taskId: 'url-approval', state: 'awaiting_action_appr
     requiresUserTakeover: false}};
 context.render(transferTask);
 assert.equal(element('approval-card').hidden, false);
-assert.match(element('approval-detail').textContent, /R2/);
+assert.match(element('approval-detail').textContent, /riskLevel2/);
 assert.match(element('approval-data-flow').textContent, /https:\/\/source.example/);
 assert.equal(element('approval-target-url').textContent, transferTask.pendingApproval.targetUrl);
 assert.equal(element('approval-target-url').hidden, false);
