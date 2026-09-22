@@ -164,6 +164,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 `.github/workflows/promotion-orchestrator.yml` 只从个人仓库 develop 的 push、每 15 分钟 schedule 或 develop 手动 dispatch 运行，使用固定 concurrency。双重校验仓库、ref、事件和版本变量 `AEGIS_PROMOTION_AUTOMATION=direct-upstream-v2`；旧值 `enabled` 不启动新控制器，新值不启动旧控制器。PR、main、上游仓库或未知事件不能执行带写权限的转换。候选源码只作为 Git 对象读取，不在凭据环境执行。
 
+自动创建的晋升与回流 PR 一律为 Draft。协调者完成准备并进入最终评审时才将当前候选转为 Ready；控制器不自动切换 Ready 状态。
+
 每次只执行一个转换：
 
 1. 刷新个人 main/develop、上游 main；分页列出活动 PR。任一该 fork 的上游 main PR、个人 main PR 或回流 PR存在时等待；多条活动路径需要协调者处理。旧导出 PR（包括迁移中的 #22）保留并阻止创建重复批次，不被自动改写。

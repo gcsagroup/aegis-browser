@@ -173,6 +173,31 @@ function creationDependencies(overrides = {}) {
     api: async () => pr, log: () => {}, ...overrides};
 }
 
+for (const kind of ['promotion', 'backflow']) {
+  test(`actual ${kind} PR creation requests Draft in the destination repository`, async () => {
+    const promotion = kind === 'promotion';
+    const selected = promotion ? candidate : buildCandidate(kind, B, D);
+    const repo = promotion ? config.upstreamRepo : config.personalRepo;
+    const base = promotion ? 'main' : 'develop';
+    const pr = {number: 12, head: {ref: selected.branch, sha: selected.source,
+      repo: {full_name: config.personalRepo}},
+    base: {ref: base, sha: selected.base, repo: {full_name: repo}}};
+    const writes = [];
+    await createCandidatePull(config, state, selected, creationDependencies({
+      publish: async () => selected.source,
+      inventory: async () => writes.length ? {repo, pr} : null,
+      api: async (destination, path, args) => {writes.push({destination, path, ...args}); return pr;},
+    }));
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].destination, repo);
+    assert.equal(writes[0].path, '/pulls');
+    assert.equal(writes[0].method, 'POST');
+    assert.equal(writes[0].body.base, base);
+    assert.equal(writes[0].body.head, `quinn521:${selected.branch}`);
+    assert.equal(writes[0].body.draft, true);
+  });
+}
+
 test('actual PR creation rechecks external writers after preparation before POST', async () => {
   let competing = false, posts = 0;
   await assert.rejects(createCandidatePull(config, state, candidate, creationDependencies({
