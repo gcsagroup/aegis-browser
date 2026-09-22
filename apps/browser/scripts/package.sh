@@ -358,7 +358,7 @@ if [[ "$component" -eq 0 ]]; then
     echo "Refusing symlink package App: $DIST_ROOT/$PRODUCT_APP_NAME" >&2
     exit 1
   fi
-  rm -rf "$DIST_ROOT/$PRODUCT_APP_NAME"
+  rm -rf "${DIST_ROOT:?}/${PRODUCT_APP_NAME:?}"
   ditto "$APP_PATH" "$DIST_ROOT/$PRODUCT_APP_NAME"
   IDENTITY_ARTIFACTS+=("$DIST_ROOT/$PRODUCT_APP_NAME")
   echo "Copied $DIST_ROOT/$PRODUCT_APP_NAME"

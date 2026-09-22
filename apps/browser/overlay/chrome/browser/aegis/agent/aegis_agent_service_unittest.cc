@@ -23,6 +23,9 @@
 #include "chrome/browser/actor/ui/test_support/mock_actor_ui_state_manager.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
 #include "chrome/browser/aegis/agent/agent_model_client.h"
+#include "chrome/browser/aegis/agent/typesafe_goal_router_client.h"
+#include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/aegis/features.h"
 #include "chrome/common/aegis/pref_names.h"
@@ -232,6 +235,25 @@ class AegisAgentServiceTest : public testing::Test {
   void TearDown() override { profile_ = nullptr; }
 
  protected:
+  AegisService* ConfigureTypeSafeGoalRouting() {
+    profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
+    profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
+                                    "http://127.0.0.1:8765/v1");
+    profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+    AegisService* settings = AegisServiceFactory::GetForProfile(profile_);
+    if (!settings) {
+      return nullptr;
+    }
+    base::test::TestFuture<bool, std::string, TypeSafeSettingsError> configured;
+    settings->SetTypeSafeGoalRoutingSettings(
+        true, "ts-fixture-secret", false, configured.GetCallback());
+    if (!configured.Get<0>()) {
+      ADD_FAILURE() << configured.Get<1>();
+      return nullptr;
+    }
+    return settings;
+  }
+
   void FlushTaskStore(AegisAgentService* service) {
     base::test::TestFuture<bool> flushed;
     service->FlushTaskStoreForTesting(flushed.GetCallback());
@@ -426,6 +448,7 @@ TEST_F(AegisAgentServiceTest,
     service->RouteGoal("整理收藏夹", AgentWorkflowKind::kResearch,
                        result.GetCallback());
     factory.WaitForRequest(endpoint);
+    EXPECT_FALSE(factory.IsPending(kTypeSafeSystemOneEndpoint));
     ASSERT_EQ(factory.NumPending(), 1);
     const auto payload = base::JSONReader::ReadDict(
         network::GetUploadData(factory.GetPendingRequest(0)->request),
@@ -444,6 +467,113 @@ TEST_F(AegisAgentServiceTest,
         R"({"status":"completed","output":[{"type":"function_call","call_id":"route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"browser_steward\",\"entry_kind\":\"browser_only\",\"target\":\"\",\"summary\":\"整理收藏夹\"}"}]})"));
     EXPECT_TRUE(result.Get<0>()) << result.Get<1>();
   }
+}
+
+TEST_F(AegisAgentServiceTest, TypeSafeRoutesHighConfidenceGoalBeforeLocalModel) {
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetTypeSafeGoalRouterClientForTesting(
+      std::make_unique<TypeSafeGoalRouterClient>(factory.GetSafeWeakWrapper()));
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
+  service->RouteGoal("Compare three USB hubs", AgentWorkflowKind::kResearch,
+                     result.GetCallback());
+  factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
+  ASSERT_TRUE(factory.SimulateResponseForPendingRequest(
+      kTypeSafeSystemOneEndpoint,
+      R"({"model":"jev-1.13.0","answers":{"workflow":{"type":"choice","choice":"research","confidence":0.9,"probabilities":{"research":0.91,"browser_steward":0.03,"safe_download":0.03,"shopping":0.03}},"entry_kind":{"type":"choice","choice":"web_search","confidence":0.9,"probabilities":{"browser_only":0.05,"web_search":0.95}}}})"));
+  EXPECT_TRUE(result.Get<0>()) << result.Get<1>();
+  ASSERT_TRUE(result.Get<2>());
+  EXPECT_EQ(result.Get<2>()->entry_kind, AgentGoalEntryKind::kWebSearch);
+  EXPECT_EQ(result.Get<2>()->target, "Compare three USB hubs");
+  EXPECT_FALSE(factory.IsPending("http://127.0.0.1:8765/v1/responses"));
+}
+
+TEST_F(AegisAgentServiceTest,
+       TypeSafeLowConfidenceFallsBackOnceToExistingGoalRouter) {
+  const GURL local_endpoint("http://127.0.0.1:8765/v1/responses");
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetTypeSafeGoalRouterClientForTesting(
+      std::make_unique<TypeSafeGoalRouterClient>(factory.GetSafeWeakWrapper()));
+  service->SetGoalRouterClientForTesting(
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
+  service->RouteGoal("Compare three USB hubs", AgentWorkflowKind::kResearch,
+                     result.GetCallback());
+  factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
+  ASSERT_TRUE(factory.SimulateResponseForPendingRequest(
+      kTypeSafeSystemOneEndpoint,
+      R"({"model":"jev-1.13.0","answers":{"workflow":{"type":"choice","choice":"research","confidence":0.79,"probabilities":{"research":0.91,"browser_steward":0.03,"safe_download":0.03,"shopping":0.03}},"entry_kind":{"type":"choice","choice":"web_search","confidence":0.9,"probabilities":{"browser_only":0.05,"web_search":0.95}}}})"));
+  factory.WaitForRequest(local_endpoint);
+  EXPECT_EQ(factory.NumPending(), 1);
+  ASSERT_TRUE(factory.SimulateResponseForPendingRequest(
+      local_endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"research\",\"entry_kind\":\"web_search\",\"target\":\"Compare three USB hubs\",\"summary\":\"Compare options\"}"}]})"));
+  EXPECT_TRUE(result.Get<0>()) << result.Get<1>();
+  EXPECT_EQ(factory.NumPending(), 0);
+}
+
+TEST_F(AegisAgentServiceTest,
+       TypeSafeIncompatibleRouteFallsBackOnceToExistingGoalRouter) {
+  const GURL local_endpoint("http://127.0.0.1:8765/v1/responses");
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetTypeSafeGoalRouterClientForTesting(
+      std::make_unique<TypeSafeGoalRouterClient>(factory.GetSafeWeakWrapper()));
+  service->SetGoalRouterClientForTesting(
+      std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
+  service->RouteGoal("Compare three USB hubs", AgentWorkflowKind::kResearch,
+                     result.GetCallback());
+  factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
+  ASSERT_TRUE(factory.SimulateResponseForPendingRequest(
+      kTypeSafeSystemOneEndpoint,
+      R"({"model":"jev-1.13.0","answers":{"workflow":{"type":"choice","choice":"browser_steward","confidence":0.9,"probabilities":{"research":0.03,"browser_steward":0.91,"safe_download":0.03,"shopping":0.03}},"entry_kind":{"type":"choice","choice":"web_search","confidence":0.9,"probabilities":{"browser_only":0.05,"web_search":0.95}}}})"));
+  factory.WaitForRequest(local_endpoint);
+  EXPECT_EQ(factory.NumPending(), 1);
+  ASSERT_TRUE(factory.SimulateResponseForPendingRequest(
+      local_endpoint.spec(),
+      R"({"status":"completed","output":[{"type":"function_call","call_id":"route","name":"agent.route_goal","arguments":"{\"schema_version\":1,\"workflow\":\"research\",\"entry_kind\":\"web_search\",\"target\":\"Compare three USB hubs\",\"summary\":\"Compare options\"}"}]})"));
+  EXPECT_TRUE(result.Get<0>()) << result.Get<1>();
+  ASSERT_TRUE(result.Get<2>());
+  EXPECT_EQ(result.Get<2>()->workflow, AgentWorkflowKind::kResearch);
+  EXPECT_EQ(factory.NumPending(), 0);
+}
+
+TEST_F(AegisAgentServiceTest, ReplacingTypeSafeSettingsCancelsPendingRoute) {
+  AegisService* settings = ConfigureTypeSafeGoalRouting();
+  ASSERT_TRUE(settings);
+
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetTypeSafeGoalRouterClientForTesting(
+      std::make_unique<TypeSafeGoalRouterClient>(factory.GetSafeWeakWrapper()));
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> route;
+  service->RouteGoal("Compare three USB hubs", AgentWorkflowKind::kResearch,
+                     route.GetCallback());
+  factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
+
+  base::test::TestFuture<bool, std::string, TypeSafeSettingsError> disabled;
+  settings->SetTypeSafeGoalRoutingSettings(false, std::string(), false,
+                                           disabled.GetCallback());
+  EXPECT_TRUE(disabled.Get<0>()) << disabled.Get<1>();
+  EXPECT_FALSE(route.Get<0>());
+  EXPECT_THAT(route.Get<1>(), HasSubstr("cancelled"));
+  EXPECT_EQ(factory.NumPending(), 0);
 }
 
 TEST_F(AegisAgentServiceTest,

@@ -1,0 +1,93 @@
+From c0b7714bc71655e972c67b1b2d7f318ee4eeffc5 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 22 Sep 2026 00:01:35 +0800
+Subject: [PATCH] fix(access): return committed mutation retries
+
+---
+ .../access/access_service_coordinator.cc      | 17 ++++++++--
+ .../access_service_coordinator_unittest.cc    | 35 ++++++++++++++++++++
+ 2 files changed, 50 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index cc0f805..a98eb1d 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -146,8 +146,12 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+   auto transaction = std::make_unique<MutationTransaction>();
+   transaction->completion = std::move(completion);
+   transaction->identity.selector = std::move(selector);
+-  if (auto failure = PrepareCandidate(*transaction, request)) {
+-    FailTransaction(std::move(transaction), *failure);
++  if (auto outcome = PrepareCandidate(*transaction, request)) {
++    if (outcome->status == AccessMutationTransactionStatus::kCommitted) {
++      Finish(std::move(transaction->completion), *outcome);
++    } else {
++      FailTransaction(std::move(transaction), *outcome);
++    }
+     return;
+   }
+   if (auto failure = BeginPublication(*transaction)) {
+@@ -178,6 +182,15 @@ AccessServiceCoordinator::PrepareCandidate(
+     return Result(AccessMutationTransactionStatus::kPrepareFailed,
+                   prepared.status);
+   }
++  if (prepared.value->phase == MutationPhase::kCommitted) {
++    return Result(AccessMutationTransactionStatus::kCommitted,
++                  StoreStatus::kValid,
++                  prepared.value->committed_policy_generation);
++  }
++  if (prepared.value->phase != MutationPhase::kPrepared) {
++    return Result(AccessMutationTransactionStatus::kPrepareFailed,
++                  StoreStatus::kConflict);
++  }
+   transaction.pending = std::move(*prepared.value);
+   auto built = store_->BuildPreparedCandidateSnapshot(transaction.pending);
+   if (built.status != StoreStatus::kValid || !built.value) {
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index 6bf5a61..a2c2bb9 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -199,6 +199,41 @@ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck)
+   EXPECT_EQ(durable.value->policy_generation, result.Get().policy_generation);
+ }
+ 
++TEST_F(AccessMutationTransactionTest,
++       CommittedRetryReturnsOriginalResultWithoutRepublishing) {
++  auto store = OpenStore();
++  auto* retained_store = store.get();
++  const auto request = Mutation();
++  base::test::TestFuture<AccessMutationTransactionResult> first;
++  coordinator_->CommitSiteGroupMutation(std::move(store), request, Selector(),
++                                        first.GetCallback());
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(client_->reply);
++  std::move(client_->reply).Run(true);
++  ASSERT_TRUE(first.Wait());
++  ASSERT_EQ(first.Get().status, AccessMutationTransactionStatus::kCommitted);
++  const uint64_t committed_generation = first.Get().policy_generation;
++  ASSERT_GT(committed_generation, 0u);
++
++  client_->metadata.reset();
++  base::test::TestFuture<AccessMutationTransactionResult> retry;
++  coordinator_->CommitSiteGroupMutation(nullptr, request, Selector(),
++                                        retry.GetCallback());
++
++  ASSERT_TRUE(retry.IsReady());
++  EXPECT_EQ(retry.Get().status, AccessMutationTransactionStatus::kCommitted);
++  EXPECT_EQ(retry.Get().store_status, StoreStatus::kValid);
++  EXPECT_EQ(retry.Get().policy_generation, committed_generation);
++  task_environment_.RunUntilIdle();
++  EXPECT_FALSE(client_->metadata);
++  EXPECT_FALSE(client_->reply);
++  EXPECT_EQ(coordinator_->state_generation(), 1u);
++  const auto durable =
++      retained_store->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(durable.value);
++  EXPECT_EQ(durable.value->policy_generation, committed_generation);
++}
++
+ TEST_F(AccessMutationTransactionTest, FailedAckRemovesCandidateWithoutCommit) {
+   base::test::TestFuture<AccessMutationTransactionResult> result;
+   auto store = OpenStore();
+-- 
+2.54.0 (Apple Git-157)
