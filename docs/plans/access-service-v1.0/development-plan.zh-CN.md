@@ -1,6 +1,6 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
-更新日期：2026-09-22。源码基线：`origin/develop@dd53b6ec4827b2f8ce730a428a81278aefd05bc5`。本次仅调整文档和实施顺序，没有新增产品代码或运行验收。
+更新日期：2026-09-22。续接基线：`origin/develop@c08b6321fe2878ba62c8d9757a3f4ae4e4f17470`（[#164](https://github.com/quinn521/aegis-browser/pull/164) 已合并）。本次落实该方案的工作拆分、双窗口职责和状态快照，没有新增产品代码或运行验收。
 
 ## 当前依据与结论
 
@@ -10,7 +10,22 @@
 
 当前已有普通 DIRECT/PROXY coordinator、候选快照发布、执行 ACK、durable commit、幂等重试以及多个浏览器入口的源码回归。可信 `SetSiteProxy` 用户闭环、身份/节点生产提交、真实 Xray、计量/额度和完整请求矩阵尚未闭合。host 级单 endpoint transport 仍不足以实现全部规则语义；拒绝冲突不能代替不同路由并存。
 
-截至本次读源/PR 元数据核验，没有新增固定 Chromium/GTest 或真实服务 PASS；**G0 继续 UNVERIFIED，G1–G3 未达到**。#161 runner 与 #163 GN 修复已合入当前基线。#163 最终候选报告完整 GN 检查 PASS，之后 Ninja 遇到 bundled LLD 与 macOS 27 SDK target 的兼容失败；记录 `use_lld=false` 的独立本地参数变体在继续构建，未有 GTest PASS。本轮未运行 native，合并与 GN 成功均不替代当前候选运行证据。
+截至 2026-09-22 06:15 UTC 的 GitHub 与本地运行记录核验，**G0 继续 UNVERIFIED，G1–G3 未达到**。#161 runner、#163 GN 修复和 #164 方案均已合并且各自 develop push CI 成功。#162 已更新到本基线，H=`682997a…`，功能补丁为 0161，仍为 Draft；Q 当前代 F 编译该 H 的 Coordinator，使用单独记录的 `use_lld=false` 参数，完整 GN 检查通过，GTest/browser runtime 未运行。旧 `988c509…` 构建已中断并保留日志；不得继续按旧 H 的“17 目标运行中”说明接续。精确身份、报告位置及证据来源见 [Handoff](handoff-20260920.zh-CN.md)。
+
+## 当前双窗口执行板
+
+W0 是底座工作包，#162 是其中一个需要先闭环的保护性修复；#162 通过不等于 W0、完整请求级路由或 G0 通过。以下状态是上述时间点的快照，开始操作前刷新，不把背景编译进度写成固定完成比例。
+
+| 顺序 / 负责人 | 当前状态 | 下一动作与完成条件 |
+| --- | --- | --- |
+| Q：#161/#163 代码底座 | MERGED；最终 PR 门和合并后 CI 成功 | 复用已合入 runner/接线，保留历史失败；不重新建立同类 runner |
+| Q 代 F：#162 原生验证 | `682997a…` 源码准入和 GN PASS，Coordinator BUILDING；测试 NOT_RUN | 同一 H/参数先运行 `access_service_coordinator_unittests` 与 `aegis_access_unittests`，再运行冲突后导航 browser fixture；每项保留枚举/非零匹配/退出码/二进制哈希/源码稳定性 |
+| F：#162 功能交付 | 更新基准及 0161 顺序重放已完成；当前 local full、独立复审、hosted/C++/Codacy 报告通过，仍 Draft | 原生证据完成后刷新 B/H/M、检查与 Review；Ready → Auto squash → 验证合并后 S push CI。基线变化不在构建中途直接 rebase 被测工作树 |
+| Q：W0 剩余覆盖 | 尚未完成；当前双目标加单一 fixture 不是全矩阵 | 选择下一冻结候选，完成其余必需 Access unit 和下节全部既有入口回归，给出覆盖缺口清单 |
+| F：W1a 接口/fixture 准备 | 本方案计划项，不宣称已实现 | 可与 W0 并行只读盘点/设计；W0 完成后依次推进 W1b 路由、W1c 复用/重启与 HTTP/SOCKS5 最小认证，最后联合判定 W1 |
+| W2 服务端实验 | 资源/负责人未在本交接绑定，BLOCKED（实验执行） | 可并行准备 W2a 协议；实际运行须先绑定受控节点、固定构建和事前预算，不因 W0 等待而宣称 W2 无法设计 |
+
+仍保留两个执行窗口。服务端责任角色不自动代表已新建第三个任务或已获部署资源；需要实际执行 W2 时由协调者明确承接人和环境。
 
 ## 实施顺序与依赖
 
@@ -18,7 +33,7 @@ W0–W6 是本计划的工作包，不改变冻结 P0–P8 和 G0–G3 的定义
 
 | 工作包 | 对应冻结单元 | 工作与前置条件 | 退出证据 |
 | --- | --- | --- | --- |
-| W0 固定 Chromium 底座 | P0 | 复用已合入 #161 runner/#163 GN 修复，刷新 #162 基线与补丁编号；冻结新候选，核对 LLD/SDK 与独立参数变体的真实编译结果；不修改其他任务的构建工作区 | 当前候选全部必需 Access unit、既有真实入口矩阵实际 PASS；零匹配/部分运行不算完成；保留全部目标、过滤器、日志、退出码和来源树 |
+| W0 固定 Chromium 底座 | P0 | 复用已合入 #161 runner/#163 GN 修复；#162 的基线/编号已在当前 H 更新，先完成该候选双目标和 browser fixture，再覆盖剩余必需目标；核对 LLD/SDK 与独立参数变体；不修改其他任务的构建工作区 | 当前候选全部必需 Access unit、既有真实入口矩阵实际 PASS；零匹配/部分运行不算完成；保留全部目标、过滤器、日志、退出码和来源树 |
 | W1 请求级路由原型 | P0/P1/P2 | W0 关闭现有基线欠账后，在隔离候选验证可信上下文从 Browser 到实际 proxy/stream 的载体、每组多端点注册与连接隔离；先交接口清单，再实现最小并发场景；同阶段完成固定 Chromium 的最小 HTTP/SOCKS5 Profile 认证与隔离原型 | A/B 同 CDN 异组、不同 host 异组、scheme/port、DIRECT/PROXY/REJECT、redirect、POST/PATCH、两 Profile、旧连接及 Network Service 重启的正反路径；A78 的两入口最小认证/隔离用例实际运行；接口和性能风险有明确结论 |
 | W2 Vision 计量可行性 | P0 的早期风险实验；支持后续 P3c/P3d | 与 W0/W1 并行；绑定受控 Linux 服务端、固定 Xray/配置/内核、权威计数点、集中账本与预算原型。资源未就绪就记录 BLOCKED | 长连接未结束时计量、额度耗尽截断、崩溃/重启/失联恢复和 splice 对照；先冻结误差预算再测量；不把 Stats API 轮询当数据面额度执行 |
 | W3 最小纵向闭环 | P1/P2/P3/P5/P6 子集 | W0/W1/W2 各自证据满足前置条件；单执行节点、有限预置测试账户；接可信网站开关、真实身份/节点代次、持久化和 UI 状态 | 同一浏览器产物：网站开启 → HTTP→REALITY → 故障不直连 → Network Service 重启恢复 → 两 Profile 不串用；候选提交失败/取消/旧 ACK 不误报、不重放 |
@@ -60,10 +75,14 @@ W2 执行[计量实验矩阵](architecture-review-20260922.zh-CN.md)，输出明
 
 先验证可信 L2/L3 产物和汇总判定，再优化缓存/分片，随后 L4/L5。不将日常电脑注册为公开 PR runner，不让候选自行指定可信标签/身份；缓存只复用构建输入，不复用 PASS。相关 Mac 最低/当前系统矩阵在支持合同中绑定，其他平台另行验收。
 
+质量演进的 Phase 1 静态、Phase 2 行为单测、Phase 3 Chromium native、Phase 4 browser regression、Phase 5 CI report mode、Phase 6 required gate 是验证体系分期，不能与 W0–W6 或 G0–G3 一一等同。W0 同时需要 Phase 3 和适用 Phase 4 证据；#161/#163 代码合并不等于 Phase 3 完成。Report mode 和新增 required gate 仍是后续独立工作，本次不提前接入。
+
 ## 交付与停止条件
 
 每个工作包拆成可独立审查的小 PR；同 PR 更新 plan、Handoff 与涉及的验收映射。新产品单元必须实际执行相关 unit 与真实入口 regression，最终 HEAD 对应的 local full quality、托管 CI、Codacy 和独立 Review 按 DEV 指南完成；文档调整不补造产品测试。未知、缺失、零匹配、取消、过期 SHA 和部分运行不得提升证据等级。
 
 W0 未完成时，浏览器线先处理 native 基线；W1 未通过时停止新增调试规则/请求入口；W2 未通过时不承诺实时计量、严格额度或 Alpha 可用。独立的设计/服务端实验继续推进，受阻状态和第一处失败归属写入 Handoff。若需要改冻结行为，另提带失败证据的规范修订；不在实现或本计划中静默放宽。
 
-以精确产品 head/tree、Chromium/V8 patched tree、配置和二进制 hash、测试名/匹配数、退出码、原始日志、run/attempt 记录证据。基础 CI、native、真实服务、G0–G3 和分发分别报告。本次工作没有合并、晋升、部署或发布动作。
+以精确产品 head/tree、Chromium/V8 patched tree、配置和二进制 hash、测试名/匹配数、退出码、原始日志、run/attempt 记录证据。基础 CI、native、真实服务、G0–G3 和分发分别报告。
+
+本轮用户已授权满足条件后开启 Auto 并合并：普通 develop PR 使用 squash，问题先 Review、修复，再对新 H 重验；合并后验证真实 S push CI。服务端若只强制基础 CI，需先独立核验未被保护表达的 Review/Codacy/适用 native 条件，才开启 Auto 或精确 H 合并，不把当前 Draft 提前放行。这一授权不表示 required CI 能证明全部验收，也不延伸为上游晋升、部署或发布授权。

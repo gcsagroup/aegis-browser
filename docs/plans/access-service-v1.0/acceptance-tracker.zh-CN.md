@@ -4,6 +4,8 @@
 
 ## 2026-09-22 架构复核后的待执行映射
 
+#164 合并后续接：基线 `c08b632…`；#162 候选已更新到 `682997a…` / 补丁 0161。06:15 UTC 快照确认 Q 正代 F 编译 Coordinator，所选双目标与单一 browser fixture 尚无 runtime 结果。该窄范围交付与 W0 全矩阵分别判定；本次只更新[技术方案的增量合同](architecture-review-20260922.zh-CN.md)、[计划的双窗口执行板](development-plan.zh-CN.md)和[Handoff 身份/接续入口](handoff-20260920.zh-CN.md)，以下 131 个主行状态与既有 S01–S12 证据不变。
+
 [实施技术方案](architecture-review-20260922.zh-CN.md)及[开发计划 W0–W6](development-plan.zh-CN.md)调整执行顺序，未新增本候选 native/service PASS。下面只是计划实验与冻结主行的关联，不是测试源码 ID，也不升级主行。原 S01–S12 保留原 SHA/执行范围；131 行中的 UNVERIFIED 不等于未实现，须在新候选逐场景复核。
 
 | 工作包 | 待补实际测试与证据 | 关联主行 / 边界 |
