@@ -32,21 +32,21 @@
 
 所有 `feat(...)` 功能 PR 都必须在同一 PR 内同时交付两类可执行测试：**单元测试**直接验证新增逻辑、边界和错误返回；**回归测试**固定至少一个既有安全/兼容性不变量或本功能可能重新引入的历史故障。两类测试都必须在最终 HEAD 实际执行并通过，缺任一类不得合并；不能以静态字符串检查、仅编译通过、增加 mock 数量或其他模块的既有测试代替。若改动实际上只有文档，应使用 `docs(...)` 而不是用 `feat(...)` 绕过该门槛。
 
-## Codex + GitHub Copilot + Codacy 三层职责
+## Codex + 独立 Review + Codacy 三层职责
 
 三层工具各自负责不同证据，不能互相替代：
 
 | 层 | 主要职责 | 不能替代 |
 | --- | --- | --- |
 | Codex | 设计、实现、修复、测试执行、按本指南准备 PR 与证据 | 独立 Review、托管 CI、Codacy 服务端分析、GitHub 服务端保护 |
-| GitHub Copilot code review | 在 GitHub PR 上读取项目上下文做语义 Review，重点发现行为、接口、安全/隐私、状态机、测试缺口和治理问题 | Codacy 的确定性扫描、独立 reviewer、必需检查、人类审批 |
+| 独立 Review | 在新上下文中对照原始需求检查最终 HEAD，重点发现行为、接口、安全/隐私、状态机、测试缺口和治理问题 | Codacy 的确定性扫描、托管 CI、必需检查、人类审批 |
 | Codacy Production | 静态质量与安全规则、复杂度/重复代码及已接入指标的持续分析 | 业务语义 Review、真实运行测试、Chromium/设备/签名/发布证据 |
 
-仓库级 Copilot 规则放在 `.github/copilot-instructions.md`；对 CI/治理文件的额外约束放在 `.github/instructions/ci-governance.instructions.md`。Copilot 应优先报告可复现的语义问题，不重复低价值格式噪音。服务端是否启用自动 Review、是否在每次 push 后复审、是否允许 Copilot approval 计入合并条件，都必须从 GitHub 实时回读，不能由这些 Markdown 文件推断。
+`.github/copilot-instructions.md` 与 `.github/instructions/ci-governance.instructions.md` 仅保留为将来显式调用 Copilot Review 时的可选审查提示；当前 personal develop 和 upstream main 流程不自动请求 Copilot，也不把 Copilot 结果作为 Ready、合并或晋升前置条件，不要求贡献者购买 Copilot 方案。仓库文件不能证明服务端 Review、保护或授权状态，相关状态必须实时回读。
 
-日常 `develop` 路径为：Codex 在隔离分支实现并跑最终 HEAD 本地门 → GitHub PR 上进行 Copilot Review 与独立 Review → `quality-gate` 和实际保护条件分别核验；个人 Fork 不接入 Codacy，Codacy 在上游晋升 PR 收口 → 合并到 `develop` → 再核验 S 的真实 push CI。任一 Review 或门禁发现问题都回到原实现者修复，新的 HEAD 使旧 Review/检查证据失效时必须重新覆盖。
+日常 `develop` 路径为：Codex 在隔离分支实现并跑最终 HEAD 本地门 → GitHub PR 上进行独立 Review → `quality-gate` 和实际保护条件分别核验；个人 Fork 不接入 Codacy，Codacy 在上游晋升 PR 收口 → 合并到 `develop` → 再核验 S 的真实 push CI。任一 Review 或门禁发现问题都回到原实现者修复，新的 HEAD 使旧 Review/检查证据失效时必须重新覆盖。
 
-上游公开 PR 使用同一套仓库指令，但 GitHub Copilot 自动 Review 的服务端策略独立配置在 `gcsagroup/aegis-browser`，仅针对上游 `main` 的 PR；推荐每次新 push 自动复审、Draft 不自动 Review，并保持 Copilot approval 不计入必需审批。这样 Copilot 提供第二视角，但不会获得绕过人工与确定性门禁的合并权。
+上游公开 PR 使用同一套独立 Review 规则，并额外要求上游 Codacy、`quality-gate` 和适用集成证据。Copilot 自动 Review ruleset 保持停用；未来若重新启用，必须另行评审权益、费用、触发范围和证据身份，且不能据此绕过当前门禁。
 
 PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经是非 `release` 的 Conventional Commit 标题时保持人工标题；标题为 `release: ...` 或非 Conventional 格式时，从 PR 提交消息（含 squash/merge commit body）提取候选：优先最后一个 `feat(...)`，没有 feature 时使用最后一个非 `release` Conventional Commit，并移除末尾 `(#123)`。找不到明确候选时不改标题。该 workflow 使用 `pull_request_target` 只为更新 PR 元数据，固定 checkout 目标分支的 base SHA、关闭凭据持久化，禁止执行 PR head 代码或读取仓库 secret。
 
@@ -108,7 +108,7 @@ HTML、CSS、JSON/data 与 GN/GNI 按静态/数据输入单列，不伪造行覆
 
 Codacy 正式分析范围为上游 `gcsagroup/aegis-browser` 的 main 及以 main 为目标的 PR，个人 Fork 停止分析/回报；仓库内 `.codacy.yml` 仍保留供上游使用。仅关闭 develop 的 Analyze 开关不足以保证停止分析，因为新 PR 可能重新启用目标分支。配置个人仓库集成时保存历史与规则，先用可逆设置关闭个人分析和自动评审，验证新 develop PR 不产生 Codacy 检查，同时确认上游 fork PR 仍能分析。不要全局卸载 App 或无记录删除历史项目。
 
-上游必须配置实际检查名 `Codacy Static Code Analysis`（Codacy Production App）与 `quality-gate`（GitHub Actions）为 required checks，维护者回读来源、状态与有效 HEAD。真实问题在晋升分支修复并加回归测试；误报记录规则、位置、理由和证据后在对应项目处理，不能凭本地判断把 ACTION_REQUIRED 记为通过。Copilot、独立 Review 与适用的 Chromium 集成要求继续独立存在。
+上游必须配置实际检查名 `Codacy Static Code Analysis`（Codacy Production App）与 `quality-gate`（GitHub Actions）为 required checks，维护者回读来源、状态与有效 HEAD。真实问题在晋升分支修复并加回归测试；误报记录规则、位置、理由和证据后在对应项目处理，不能凭本地判断把 ACTION_REQUIRED 记为通过。独立 Review 与适用的 Chromium 集成要求继续独立存在。
 
 质量工作流只生成并上传 CI artifact，不加入 token 或 coverage upload job；Grade 徽章不是覆盖率上传证明。未来上传必须使用短期仓库级 secret，禁止给 fork PR 暴露 secret，并把覆盖报告绑定到实际被测提交：PR `pull_request` CI 测试的是 GitHub 合并候选 M，不是产品分支 H；develop/main push 则绑定 S。本地账号、密码、API token 与仓库 token 均不得进入仓库、日志或公开文档。
 
@@ -175,7 +175,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 `promotion-quality.mjs` 核对精确仓库/分支/SHA、quality.yml、push 事件、最新 run/attempt 以及唯一 quality、quality-gate jobs；缺失/运行中等待，失败停止。发布候选前后重新核对远端 SHA，create-ref 冲突不改写已有分支；合法后续修复按祖先关系复用。已关闭未合并批次不自动重建。
 
-`GITHUB_TOKEN` 仅 actions/contents read；`AEGIS_FORK_AUTOMATION_TOKEN` 负责个人 PR、候选 ref 与受保护的 upstream sync；`AEGIS_UPSTREAM_TOKEN` 负责上游 Actions/Contents 读和 PR 写。仓库 ruleset 自动请求 Copilot，控制器不发布讨论消息或审批。任何 secret 不进入日志、PR 或源码。
+`GITHUB_TOKEN` 仅 actions/contents read；`AEGIS_FORK_AUTOMATION_TOKEN` 负责个人 PR、候选 ref 与受保护的 upstream sync；`AEGIS_UPSTREAM_TOKEN` 负责上游 Actions/Contents 读和 PR 写。控制器只创建 Draft 候选，不请求 reviewer、不切换 Ready、不发布讨论消息或审批；这些转换由串行协调者在证据齐备后执行。任何 secret 不进入日志、PR 或源码。
 
 ### 迁移与失败恢复
 
