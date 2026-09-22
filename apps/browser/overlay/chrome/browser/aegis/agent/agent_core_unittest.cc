@@ -1724,5 +1724,52 @@ TEST(AegisAgentResultVerifierTest,
   EXPECT_TRUE(verify().postcondition_met);
 }
 
+
+TEST(AegisAgentPolicyTest, ScopedTabsDoNotAuthorizeUnrequestedClosure) {
+  AgentToolRegistry registry;
+  AgentPolicyBroker broker(&registry);
+  auto scope = TestScope();
+  scope.allowed_tools.insert("tab.close");
+  scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
+  AgentTask task("closure", "列出尚未关闭的标签页", AgentMode::kAct, scope);
+  AgentToolCall call;
+  call.action_id = "close";
+  call.tool_name = "tab.close";
+  call.arguments.Set("tab_ids", base::ListValue().Append(7));
+  call.arguments.Set("revision", "current");
+  auto decision = broker.Evaluate(task, call, std::nullopt, base::Time::Now());
+  EXPECT_EQ(decision.disposition, AgentPolicyDisposition::kDeny);
+  EXPECT_EQ(decision.error, AgentErrorCode::kScopeViolation);
+}
+
+TEST(AegisAgentResultVerifierTest, CloseRequiresExactPostActionReadback) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  auto scope = TestScope();
+  scope.allowed_tools.insert("tab.close");
+  AgentTask task("closure", "关闭指定标签页", AgentMode::kAct, scope);
+  AgentToolCall call;
+  call.action_id = "close";
+  call.tool_name = "tab.close";
+  call.arguments.Set("tab_ids", base::ListValue().Append(7));
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "标签关闭回读";
+  result.value.Set("revision", "after");
+  const auto* descriptor = registry.Find("tab.close");
+  ASSERT_TRUE(descriptor);
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("requested", 1);
+  result.value.Set("closed_tab_ids", base::ListValue().Append(7));
+  result.value.Set("remaining_tab_ids", base::ListValue());
+  EXPECT_TRUE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("remaining_tab_ids", base::ListValue().Append(7));
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+  result.value.Set("remaining_tab_ids", base::ListValue());
+  result.value.Set("closed_tab_ids", base::ListValue().Append(8));
+  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
+}
+
 }  // namespace
 }  // namespace aegis::agent

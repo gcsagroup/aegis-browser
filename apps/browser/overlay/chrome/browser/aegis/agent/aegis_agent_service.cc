@@ -685,6 +685,9 @@ AgentTask* AegisAgentService::CreateTask(std::string goal,
     return nullptr;
   }
   const std::string task_id = AgentTask::GenerateTaskId();
+  if (!AgentGoalRequestsTabClose(goal)) {
+    scope.allowed_tools.erase("tab.close");
+  }
   auto task = std::make_unique<AgentTask>(task_id, std::move(goal), mode,
                                           std::move(scope));
   AgentTask* result = task.get();
@@ -3074,6 +3077,8 @@ void AegisAgentService::FinishRuntime(
       NormalizeAgentBookmarkApplyCompletion(&*completion, *task,
                                             it->second->evidence_history);
       NormalizeAgentTabGroupCompletion(&*completion, *task,
+                                       it->second->evidence_history);
+      NormalizeAgentTabCloseCompletion(&*completion, *task,
                                        it->second->evidence_history);
       NormalizeAgentDownloadCompletion(&*completion, task->goal(),
                                        task->scope(),

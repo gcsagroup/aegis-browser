@@ -820,6 +820,11 @@ void AegisAgentPageHandler::CreateResolvedTask(
     bool browser_only,
     bool use_current_page,
     CreateTaskCallback callback) {
+  if (aegis::agent::AgentBrowserGoalNeedsClarification(goal, workflow)) {
+    last_error_ = "browser goal needs an explicit target";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
   const std::optional<aegis::agent::AgentModelDestination> model_destination =
       service_ ? service_->ConfiguredModelDestination() : std::nullopt;
   tabs::TabInterface* tab = ContentTab(browser_);

@@ -525,3 +525,7 @@ const agentHtml = readFileSync(new URL('../overlay/chrome/browser/resources/aegi
 assert(!/<ol[^>]*id="timeline"[^>]*aria-live/.test(agentHtml));
 assert(/id="status"[^>]*role="status"[^>]*aria-atomic="true"/.test(agentHtml));
 console.log('PASS: 风险文字、稳定时间线与单一任务状态播报');
+
+assert.equal(context.friendlyError('browser goal needs an explicit target', false),
+    'browserGoalClarification');
+console.log('PASS: 含糊浏览器目标显示可操作的澄清提示');

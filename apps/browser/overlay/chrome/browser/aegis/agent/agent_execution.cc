@@ -601,16 +601,14 @@ AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation,
   outcome.Set("enum", std::move(choices));
   properties.Set("outcome", std::move(outcome));
   auto summary = StringSchema(4096);
-  summary.Set(
-      "description",
-      "用户可见的完整结果。语言以user_goal明确指定的输出或翻译语言为先，"
-      "否则跟随用户请求的语言，不跟随plan_summary或网页的语言。"
-      "用户要求列出重点时，用换行分隔的编号或项目符号逐条写出具体重点；"
-      "明确指定数量或其他格式时遵守原要求。未要求列表时不强加列表。"
-      "提交前校对重复字和错别字，但不擅自改写直接引用的原文。"
-      "不要用网页按钮、表单或上传控件的名称充当来源名；"
-      "引用来源通过source_urls交由浏览器展示。"
-      "翻译任务仍须忠实交付所选原文的完整译文。");
+  // 协议规则只说一次；对用户显示的结果仍遵循原目标的语言与格式。
+  summary.Set("description",
+      "Deliver the complete requested result. Follow the explicit output or "
+      "translation language, otherwise the user's language, not the plan or "
+      "page language. Respect requested format and item count; separate requested "
+      "points with newlines, without imposing a list. Proofread typos without "
+      "rewriting direct quotes. Cite through source_urls; control labels are not "
+      "source names. Translation must faithfully cover all selected source text.");
   properties.Set("summary", std::move(summary));
   properties.Set("source_urls", StringArraySchema(4096, 32));
   properties.Set("unfinished_items", StringArraySchema(1024, 100));
@@ -1118,11 +1116,9 @@ std::string BuildAgentExecutionPrompt(
   if (task.scope().selected_pages_research) {
     envelope.Set("research_storage_status", "not_saved");
     envelope.Set("research_storage_contract",
-                 "只交付所选来源的比较内容，不声称已保存、存档或持久化。"
-                 "研究结果只有用户点击保存且浏览器存储成功后才算保存；"
-                 "浏览器会单独显示待保存及保存结果，无须在summary中代述。"
-                 "outcome和unfinished_items只判断来源读取与比较是否完成，"
-                 "不要把保存列为未完成事项，也不要附加保存状态行。");
+                 "Return source comparison only. Saving requires a user click "
+                 "and successful browser storage. Do not claim saved, add saving "
+                 "status to summary, or treat saving as unfinished comparison.");
   }
   envelope.Set("plan_summary", plan.summary);
   envelope.Set("next_step_index", static_cast<int>(next_step));
@@ -1165,37 +1161,33 @@ std::string BuildAgentExecutionPrompt(
   } else {
     envelope.Set("required_step", "agent.complete");
     if (task.scope().selected_pages_research) {
-      envelope.Set(
-          "research_comparison_contract",
-          "research_comparisons按用户目标选择最多6个可逐字核对的比较维度。"
-          "每维label必须是原文字段名，prefix必须含label；所有来源共用相同"
-          "prefix和suffix，中间的value是各来源原文值（保留单位）。"
-          "prefix+value+suffix必须逐字出现在该来源已读正文中，行内节点可拼接；"
-          "每个已读来源恰好一项source_url和value，未找到该字段填空字符串。"
-          "例如原文'延迟：18 ms。'用label='延迟',prefix='延迟：',"
-          "value='18 ms',suffix='。'。不能取数字的一部分，不能换算或改写。"
-          "浏览器依据原文值自动生成事实表、分组、数量及相对多数值的差异，"
-          "不使用summary中的自由分类结论。无法按共同原文上下文核对时返回"
-          "partial并明确未完成项；不能只比较无关字段来宣称用户目标完成。");
+      envelope.Set("research_comparison_contract",
+          "Select up to 6 dimensions relevant to user_goal. label is a verbatim "
+          "source field name included in prefix. Use the same prefix/suffix for "
+          "all sources; prefix+value+suffix must occur verbatim in each source's "
+          "read text (inline nodes may join). Preserve full values and units, no "
+          "conversion or partial numbers. Supply exactly one source_url/value "
+          "per read source; missing fields use an empty value. Example: '延迟：18 ms。' "
+          "uses label='延迟', prefix='延迟：', value='18 ms', suffix='。'. Browser "
+          "derives groups/counts/differences from verified values, not summary. "
+          "Return partial with unfinished_items if requested dimensions cannot "
+          "be verified; unrelated fields do not complete the goal.");
     }
     // 交付要求来自原始目标，不从模型生成的计划或不可信网页推断。
     // 只在完成阶段发送，不增加工具参数阶段开销或额外模型调用。
     base::ListValue output_requirements;
     output_requirements.Append(
-        "来源名称由浏览器在source_"
-        "urls引用区显示。summary只写事实，不另写来源说明"
-        "或当前来源标签；表单、按钮和上传入口名称不能当作来源标题。");
+        "Browser renders source names from source_urls; do not add source-label "
+        "lines or use form/button/upload control labels as source names.");
     output_requirements.Append(
-        "最终结果直接给用户阅读，以user_goal为准；plan_summary和网页内容的语言"
-        "不是输出语言要求。明确指定的输出或翻译语言优先，否则使用用户请求的语言"
-        "。");
+        "user_goal determines output language; explicit output/translation "
+        "language wins over the goal, plan and source language.");
     output_requirements.Append(
-        "按user_goal交付所需内容和格式：要求列出重点时，summary中用换行分隔的"
-        "编号或项目符号逐条列出具体事实；指定数量时遵守数量，未要求列表时不强加"
-        "。");
+        "Follow the requested format/count. Use newline-separated points only "
+        "when requested; do not impose a list.");
     output_requirements.Append(
-        "仅使用已核验的证据，不为凑条数编造内容；无法满足目标时如实返回partial"
-        "并列出未完成项。翻译任务不能用要点摘要替代完整译文。");
+        "Only verified facts. Missing requirements mean partial and "
+        "unfinished_items. Never substitute a summary for a full translation.");
     envelope.Set("final_output_requirements", std::move(output_requirements));
   }
   base::ListValue maximum_origins;
@@ -2159,6 +2151,54 @@ void NormalizeAgentTabGroupCompletion(
     completion->unfinished_items.push_back(
         "尚未确认覆盖目标中的全部标签。请在研究工作台勾选要分组的网页，再点击分"
         "组。");
+  }
+}
+
+void NormalizeAgentTabCloseCompletion(
+    AgentCompletionSummary* completion, const AgentTask& task,
+    base::span<const AgentExecutionEvidence> history) {
+  if (!completion || !AgentGoalRequestsTabClose(task.goal())) {
+    return;
+  }
+  base::flat_set<int> closed;
+  bool valid = false;
+  for (const auto& item : history) {
+    if (item.tool_name != "tab.close") {
+      continue;
+    }
+    const auto* ids = item.result.value.FindList("closed_tab_ids");
+    const auto* remaining = item.result.value.FindList("remaining_tab_ids");
+    valid = item.result.ok && ids && !ids->empty() && remaining &&
+            remaining->empty() && item.result.value.FindInt("requested") ==
+                                      static_cast<int>(ids->size());
+    if (!valid) {
+      break;
+    }
+    for (const auto& id : *ids) {
+      if (!id.is_int() || !task.AllowsTab(id.GetInt()) ||
+          !closed.insert(id.GetInt()).second) {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) {
+      break;
+    }
+  }
+  const bool english = base::IsStringASCII(task.goal());
+  completion->summary = valid
+      ? (english ? "Browser verified closed tabs: " : "浏览器已回读确认关闭标签页：") +
+            base::NumberToString(closed.size())
+      : (english ? "Tab closure is not fully verified." : "标签关闭尚未完成原生回读核验。");
+  // 混合任务不再保留可能包含旧标签状态的模型正文，也不擅自宣称全部完成。
+  const bool mixed = std::ranges::any_of(history, [](const auto& item) {
+    return item.tool_name != "tab.list" && item.tool_name != "tab.close";
+  });
+  if (!valid || mixed) {
+    completion->outcome = "partial";
+    completion->unfinished_items.push_back(
+        english ? "Verify remaining task requirements and any still-open tabs."
+                : "请核对其余任务要求及仍未关闭的标签页。");
   }
 }
 

@@ -692,6 +692,75 @@ bool AgentGoalRequestsWindowTabMetadata(std::string_view goal) {
   });
 }
 
+bool AgentBrowserGoalNeedsClarification(std::string_view goal,
+                                       AgentWorkflowKind workflow) {
+  return workflow == AgentWorkflowKind::kBrowserSteward &&
+         !GoalRequestsBrowserData(RequestedGoalText(goal)) &&
+         !GoalContainsAny(RequestedGoalText(goal),
+                          {"收藏", "历史", "歷史", "下载", "下載", "权限",
+                           "權限", "监控", "監控", "history", "download",
+                           "permission", "monitor"});
+}
+
+bool AgentGoalRequestsTabClose(std::string_view goal) {
+  // 肯定关键词筛选不能消除原始写入限制；冲突目标要求用户重新明确。
+  if (BookmarkGoalIsReadOnly(goal) ||
+      GoalContainsAny(goal, {"不要关闭", "不要關閉", "不关闭", "不關閉",
+          "别关闭", "別關閉", "别关掉", "別關掉", "不要关掉", "不要關掉",
+          "请勿关闭", "請勿關閉", "不要实际关闭", "不要實際關閉",
+          "不要真正关闭", "不要真正關閉", "不要执行", "不要執行",
+          "不执行", "不執行", "do not close", "don't close", "don’t close",
+          "never close", "without closing", "without actually closing",
+          "do not execute", "don't execute", "do not actually close",
+          "preview", "预览", "預覽"})) {
+    return false;
+  }
+  std::string requested = RequestedGoalText(goal);
+  for (std::string_view separator :
+       {"。", "；", "，", ";", ",", "然后", "然後", "并且", "並且", "并", "並",
+        " and then ", " and "}) {
+    base::ReplaceSubstringsAfterOffset(&requested, 0, separator, "\n");
+  }
+  for (auto command : base::SplitStringPiece(
+           requested, "\n", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+    bool stripped = true;
+    while (stripped) {
+      stripped = false;
+      for (std::string_view prefix :
+           {"please ", "help me ", "now ", "请", "請", "帮我", "幫我",
+            "立即", "现在", "現在", "直接", "再"}) {
+        if (command.starts_with(prefix)) {
+          command.remove_prefix(prefix.size());
+          command = base::TrimWhitespaceASCII(command, base::TRIM_LEADING);
+          stripped = true;
+          break;
+        }
+      }
+    }
+    // 不把状态、条件、疑问或引用文字中的动词提升为操作授权。
+    if (GoalContainsAny(command,
+                        {"?", "？", "是否", "吗", "嗎", "如果", "若", " if ",
+                         "\"", "“", "”", "「", "」", "未关闭", "未關閉",
+                         "不要", "別", "别", "不关闭", "不關閉", "之前", "以前",
+                         "preview", "before closing", "before you close"})) {
+      continue;
+    }
+    const bool target = GoalContainsAny(command, {"标签", "標籤"}) ||
+                        ContainsAsciiWord(command, "tab") ||
+                        ContainsAsciiWord(command, "tabs");
+    const bool verb = command.starts_with("close ") ||
+                      command.starts_with("关闭") || command.starts_with("關閉") ||
+                      command.starts_with("关掉") || command.starts_with("關掉") ||
+                      ((command.starts_with("把") || command.starts_with("将") ||
+                        command.starts_with("將")) &&
+                       GoalContainsAny(command, {"关闭", "關閉", "关掉", "關掉"}));
+    if (target && verb) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool AgentGoalRequiresPageEvidence(std::string_view user_goal) {
   const std::string requested = RequestedGoalText(user_goal);
   if (GoalContainsAny(requested,
@@ -795,8 +864,8 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
     return false;
   }
   const auto requests_other_entry = [](std::string_view prefix) {
-    if (GoalContainsAny(prefix, {"上网搜索", "上網搜尋", "全网搜索", "全網搜尋",
-                                 "search the web", "search for "}) ||
+    if (GoalContainsAny(prefix, {"上网搜索", "上網搜尋", "全网搜索", "全網搜尋", "搜索", "搜尋", "查找",
+                                 "search the web", "search for ", "find ", "look for "}) ||
         (NamedSiteForGoal(prefix) && GoalRequestsNamedSiteSearch(prefix))) {
       return true;
     }
@@ -819,7 +888,7 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
   // 指代只在同一名词短语内成立，不跨标点、动作或过去/未来页面限定。
   // 允许描述词，不枚举“官方合成发布”等具体页面名称。
   constexpr std::string_view markers[] = {
-      "当前",   "當前",  "目前",     "这个",
+      "当前",   "當前",  "目前",     "这个", "这篇", "這篇",
       "這個",   "this ", "current ", "currently open ",
       "active "};
   for (std::string_view marker : markers) {
@@ -838,7 +907,7 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
       const size_t begin = start + marker.size();
       const std::string_view phrase = std::string_view(requested).substr(begin);
       for (std::string_view noun :
-           {"页", "頁", "网站", "網站", "page", "tab", "website"}) {
+           {"页", "頁", "网站", "網站", "文章", "page", "tab", "website", "article"}) {
         const size_t end = phrase.find(noun);
         if (end == std::string_view::npos || end > 72u) {
           continue;
@@ -1032,6 +1101,7 @@ Never request secrets, passwords, OTP values, cookies, payment-card values, arbi
 Final purchase, payment, refund, cancellation, posting, messaging, authorization, and signature always require user takeover.
 When user_goal contains a browser-owned schedule, include exactly one monitor.create step and make it the final listed step. Without a browser-owned schedule, do not include monitor.create.
 Every plan step object contains only id, title, and tool. Never put interval_minutes or any other execution argument in a plan step; the browser supplies those arguments during execution.
+tab.close requires an explicit user request to close tabs, a preceding tab.list, and a summary and step title that clearly disclose closing tabs. A status such as not yet closed is not a close request.
 Keep the plan minimal. The browser independently validates every field and computes risk.)";
 }
 
@@ -1507,6 +1577,28 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan &plan,
     });
   };
   const std::string requested = RequestedGoalText(user_goal);
+  if (has_step("tab.close")) {
+    if (!AgentGoalRequestsTabClose(user_goal)) {
+      *error = "tab.close requires an explicit user request to close tabs";
+      return false;
+    }
+    if (!AgentGoalRequestsTabClose(plan.summary)) {
+      *error = "tab.close must be disclosed in the plan summary";
+      return false;
+    }
+    bool listed = false;
+    for (const auto& step : plan.steps) {
+      if (step.tool_name == "tab.list") {
+        listed = true;
+      } else if (step.tool_name == "tab.close") {
+        if (!listed || !AgentGoalRequestsTabClose(step.title)) {
+          *error = "tab.close requires a fresh tab.list and explicit close title";
+          return false;
+        }
+        listed = false;
+      }
+    }
+  }
   if (GoalRequestsSafeDownload(requested) && !IsBookmarkGoal(requested) &&
       !AgentGoalRequestsTranslation(user_goal) &&
       (!GoalContainsAny(requested, {"安装", "安裝", "install"}) ||

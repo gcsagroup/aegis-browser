@@ -1382,10 +1382,10 @@ TEST(AegisAgentExecutionTest, CompletionSchemaDescribesUserVisibleDelivery) {
     EXPECT_EQ(summary->FindInt("maxLength"), 4096);
     const auto *description = summary->FindString("description");
     ASSERT_TRUE(description);
-    EXPECT_NE(description->find("否则跟随用户请求的语言"), std::string::npos);
-    EXPECT_NE(description->find("换行分隔"), std::string::npos);
-    EXPECT_NE(description->find("未要求列表时不强加列表"), std::string::npos);
-    EXPECT_NE(description->find("完整译文"), std::string::npos);
+    EXPECT_NE(description->find("otherwise the user's language"), std::string::npos);
+    EXPECT_NE(description->find("newlines"), std::string::npos);
+    EXPECT_NE(description->find("without imposing a list"), std::string::npos);
+    EXPECT_NE(description->find("all selected source text"), std::string::npos);
     EXPECT_EQ(properties->contains("translation_segments"), translation);
   }
 }
@@ -1422,14 +1422,14 @@ TEST(AegisAgentExecutionTest, FinalOutputRequirementsPreserveOriginalGoal) {
       ASSERT_TRUE(requirements);
       ASSERT_EQ(requirements->size(), 4u);
       EXPECT_TRUE((*requirements)[0].GetString().contains(
-          "上传入口名称不能当作来源标题"));
+          "control labels as source names"));
       EXPECT_NE(
-          (*requirements)[1].GetString().find("明确指定的输出或翻译语言优先"),
+          (*requirements)[1].GetString().find("explicit output/translation"),
           std::string::npos);
-      EXPECT_NE((*requirements)[2].GetString().find("未要求列表时不强加"),
+      EXPECT_NE((*requirements)[2].GetString().find("do not impose a list"),
                 std::string::npos);
       EXPECT_NE(
-          (*requirements)[3].GetString().find("不能用要点摘要替代完整译文"),
+          (*requirements)[3].GetString().find("Never substitute a summary for a full translation"),
           std::string::npos);
     }
   }
@@ -2981,6 +2981,32 @@ TEST(AegisAgentExecutionTest, ResearchCompletionRequiresStructuredComparisons) {
   ASSERT_EQ(parsed->research_comparisons.size(), 1u);
   EXPECT_EQ(parsed->research_comparisons[0].values[0].value, "18 ms");
   EXPECT_FALSE(ParseCompletionSummary(event, &error));
+}
+
+
+TEST(AegisAgentExecutionTest, CloseSummaryCannotRepeatPreActionOpenState) {
+  auto scope = ExecutionScope();
+  scope.allowed_tab_ids = {7};
+  scope.allowed_tools.insert("tab.close");
+  AgentTask task("closure", "关闭本任务标签页", AgentMode::kAct, scope);
+  AgentCompletionSummary completion;
+  completion.outcome = "completed";
+  completion.summary = "标签页仍然打开";
+  AgentExecutionEvidence evidence;
+  evidence.tool_name = "tab.close";
+  evidence.result.ok = true;
+  evidence.result.value.Set("requested", 1);
+  evidence.result.value.Set("closed_tab_ids", base::ListValue().Append(7));
+  evidence.result.value.Set("remaining_tab_ids", base::ListValue());
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(std::move(evidence));
+  NormalizeAgentTabCloseCompletion(&completion, task, history);
+  EXPECT_EQ(completion.summary, "浏览器已回读确认关闭标签页：1");
+  EXPECT_EQ(completion.outcome, "completed");
+  history[0].result.value.Set("remaining_tab_ids", base::ListValue().Append(7));
+  NormalizeAgentTabCloseCompletion(&completion, task, history);
+  EXPECT_EQ(completion.outcome, "partial");
+  EXPECT_FALSE(completion.unfinished_items.empty());
 }
 
 } // namespace
