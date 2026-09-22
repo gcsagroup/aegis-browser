@@ -20,11 +20,11 @@
 
 **当前状态**
 
-行为合同冻结为 V1.0 修订 4，包含 118 项功能/交付验收、13 项性能指标及 G0–G3。2026-09-22 核验的 `origin/develop@dd53b6ec4827b2f8ce730a428a81278aefd05bc5` 已有普通 DIRECT/PROXY coordinator、候选快照发布、执行点 ACK、durable commit、回滚和幂等重试；可信 `SetSiteProxy`、身份/节点生产提交、真实 Xray、计量/额度及完整请求矩阵仍未闭合。
+行为合同冻结为 V1.0 修订 4，包含 118 项功能/交付验收、13 项性能指标及 G0–G3。2026-09-22 核验的 `origin/develop@c08b6321fe2878ba62c8d9757a3f4ae4e4f17470` 已合入 #164 技术方案，已有普通 DIRECT/PROXY coordinator、候选快照发布、执行点 ACK、durable commit、回滚和幂等重试；可信 `SetSiteProxy`、身份/节点生产提交、真实 Xray、计量/额度及完整请求矩阵仍未闭合。
 
 本次[技术方案调整](architecture-review-20260922.zh-CN.md)保留冻结合同，优先证明请求级路由能表达完整规则、连接复用不会串路由，并把 Vision 长连接计量/额度截断/崩溃恢复提前为并行 P0 实验。工程验证先使用单执行节点、集中账本和有限测试账户；最终 G1/G2/G3 的能力、身份、渠道和协议范围不缩减。
 
-本次没有新增固定 Chromium、服务端或最终包运行证据。G0 仍为 UNVERIFIED，G1–G3 未达到；runner #161 与 GN 修复 #163 已合入，#163 报告完整 GN 检查通过而 Ninja/GTest 仍有独立欠账；#162 仍为开放候选。这些源码、报告或仓库检查不升级阶段结论。当前依赖见[开发计划](development-plan.zh-CN.md)，历史精确证据由[Handoff](handoff-20260920.zh-CN.md)链接追溯。
+本次没有新增 GTest/browser、服务端或最终包验收结果。G0 仍为 UNVERIFIED，G1–G3 未达到；runner #161、GN 修复 #163 和方案 #164 均已合并且各自 push CI 成功。#162 已更新为 `682997a…` / 补丁 0161，仍为 Draft；Q 代 F 在该候选完成 GN 并继续编译，原生双目标及 browser fixture 尚未运行。这只是 W0 的一部分，不能升级 Phase 3/W0 或产品阶段结论。双窗口职责和 W1/W2 拆分见[开发计划](development-plan.zh-CN.md)，精确身份及接续记录由[Handoff](handoff-20260920.zh-CN.md)维护。
 
 **1. 产品定位与范围**
 
