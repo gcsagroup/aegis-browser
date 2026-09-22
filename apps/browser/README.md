@@ -6,7 +6,9 @@ GCSA-aegis Browser is a Chromium fork that integrates privacy and security contr
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
-The installed macOS candidate is Ver 2.0 (057), Chromium 153.0.8010.53, with 198 Chromium patches and 3 V8 patches. All 535 native checks passed. The unified task result is 75/90, with 2 failures, 9 prerequisite blocks and 4 insufficient-evidence results; the 90% gate is not met. The 100 security cases, input/performance measurements, language checks and release limitations have separate conclusions. See the [final batch record](../../docs/audit/integration-final-batch-2026-09-22.zh-CN.md).
+> **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
+
+> 历史 057 验收记录：The installed macOS candidate is Ver 2.0 (057), Chromium 153.0.8010.53, with 198 Chromium patches and 3 V8 patches. All 535 native checks passed. The unified task result is 75/90, with 2 failures, 9 prerequisite blocks and 4 insufficient-evidence results; the 90% gate is not met. The 100 security cases, input/performance measurements, language checks and release limitations have separate conclusions. See the [final batch record](../../docs/audit/integration-final-batch-2026-09-22.zh-CN.md).
 
 ## 历史基线（2026-09-16）
 

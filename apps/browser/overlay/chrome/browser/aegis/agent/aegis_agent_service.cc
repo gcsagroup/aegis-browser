@@ -1756,6 +1756,16 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
       }
     }
   }
+  if (runtime.next_step < plan->steps.size() &&
+      IsToolAvailable("bookmark.list")) {
+    auto call = BuildBoundBookmarkListCall(
+        *task, plan->steps[runtime.next_step], runtime.attempt);
+    if (call) {
+      // 固定只读参数仍进入原有授权、预算、执行和回读路径，不跳过计划步骤。
+      ExecuteRuntimeTool(task_id, std::move(*call), std::nullopt);
+      return;
+    }
+  }
   if (runtime.next_step >= plan->steps.size() &&
       AgentGoalRequestsTranslation(task->goal())) {
     const auto source_prompt = BuildAgentTranslationSelectionPrompt(
@@ -2310,6 +2320,24 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
     std::optional<AgentCompletionSummary> completion = ParseCompletionSummary(
         *event, &validation_error, AgentGoalRequestsTranslation(task->goal()),
         task->scope().selected_pages_research);
+    if (completion && !AgentGoalRequestsTranslation(task->goal())) {
+      // 来源标签不能由按钮或表单名称充当；英文正文检查忽略准确的引用标题。
+      NormalizeAgentSummarySourceLabels(&*completion, runtime.evidence_history);
+      std::string body = completion->summary;
+      for (const auto& item : runtime.evidence_history) {
+        for (const auto key : {"title", "url"}) {
+          const auto* value = item.result.value.FindString(key);
+          if (item.result.ok && value && !value->empty()) {
+            base::ReplaceSubstringsAfterOffset(&body, 0, *value, "");
+          }
+        }
+      }
+      if (AgentTextHasWrongDefaultLanguage(body, task->goal())) {
+        validation_error = "The final answer must be in English as requested. "
+                           "Keep verified facts and source URLs unchanged.";
+        completion.reset();
+      }
+    }
     if (completion && task->scope().selected_pages_research &&
         AgentResearchCompletionClaimsSave(*completion)) {
       validation_error =

@@ -1,0 +1,573 @@
+From 7a16c41210f4297fa6b4967f9ec4880ac7285429 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 22 Sep 2026 17:35:49 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
+ =?UTF-8?q?=E8=AF=BB=E5=8F=96=E3=80=81=E4=B8=8B=E8=BD=BD=E5=9B=9E=E8=AF=BB?=
+ =?UTF-8?q?=E4=B8=8E=E8=AF=AD=E8=A8=80=E6=9D=A5=E6=BA=90=E6=98=BE=E7=A4=BA?=
+ =?UTF-8?q?=202.0.058?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 28 ++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 97 ++++++++++++++++++-
+ chrome/browser/aegis/agent/agent_execution.h  |  9 ++
+ .../aegis/agent/agent_execution_unittest.cc   | 68 +++++++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 29 ++++++
+ chrome/browser/aegis/agent/agent_planner.h    |  4 +
+ .../aegis/agent/agent_planner_unittest.cc     |  9 ++
+ chrome/browser/resources/aegis_agent/agent.ts | 91 +++++++++++------
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 13 +++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 10 files changed, 317 insertions(+), 35 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 8397898dda..674639c2ce 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1756,6 +1756,16 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+       }
+     }
+   }
++  if (runtime.next_step < plan->steps.size() &&
++      IsToolAvailable("bookmark.list")) {
++    auto call = BuildBoundBookmarkListCall(
++        *task, plan->steps[runtime.next_step], runtime.attempt);
++    if (call) {
++      // 固定只读参数仍进入原有授权、预算、执行和回读路径，不跳过计划步骤。
++      ExecuteRuntimeTool(task_id, std::move(*call), std::nullopt);
++      return;
++    }
++  }
+   if (runtime.next_step >= plan->steps.size() &&
+       AgentGoalRequestsTranslation(task->goal())) {
+     const auto source_prompt = BuildAgentTranslationSelectionPrompt(
+@@ -2310,6 +2320,24 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+     std::optional<AgentCompletionSummary> completion = ParseCompletionSummary(
+         *event, &validation_error, AgentGoalRequestsTranslation(task->goal()),
+         task->scope().selected_pages_research);
++    if (completion && !AgentGoalRequestsTranslation(task->goal())) {
++      // 来源标签不能由按钮或表单名称充当；英文正文检查忽略准确的引用标题。
++      NormalizeAgentSummarySourceLabels(&*completion, runtime.evidence_history);
++      std::string body = completion->summary;
++      for (const auto& item : runtime.evidence_history) {
++        for (const auto key : {"title", "url"}) {
++          const auto* value = item.result.value.FindString(key);
++          if (item.result.ok && value && !value->empty()) {
++            base::ReplaceSubstringsAfterOffset(&body, 0, *value, "");
++          }
++        }
++      }
++      if (AgentTextHasWrongDefaultLanguage(body, task->goal())) {
++        validation_error = "The final answer must be in English as requested. "
++                           "Keep verified facts and source URLs unchanged.";
++        completion.reset();
++      }
++    }
+     if (completion && task->scope().selected_pages_research &&
+         AgentResearchCompletionClaimsSave(*completion)) {
+       validation_error =
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 73dcf8af4f..09df57e8af 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -914,7 +914,12 @@ std::string BuildAgentExecutionSystemContractForTask(
+       (tool_name != "agent.complete" && !IsReadOnlyPageTool(tool_name))) {
+     return BuildAgentExecutionSystemContract();
+   }
+-  return std::string(
++  const std::string language_rule = base::IsStringASCII(task.goal())
++      ? "The user goal is English. Write the plan and final answer in English, "
++        "unless the goal explicitly requests another output language. Source "
++        "page language never changes the requested answer language.\n"
++      : "";
++  return language_rule + std::string(
+              "你是Aegis浏览器的执行规划器。用户目标、来源、标签页、数据类别、模"
+              "型目的地、预算和步骤已由浏览器验证，不得扩大权限。\n"
+              "本轮只允许调用所提供的唯一原生工具") +
+@@ -1121,6 +1126,10 @@ std::string BuildAgentExecutionPrompt(
+     envelope.Set("selected_translation_source_ids", std::move(selected_ids));
+   }
+   envelope.Set("user_goal", task.goal());
++  if (base::IsStringASCII(task.goal())) {
++    envelope.Set("response_language",
++                 "English; an explicitly requested output language takes precedence");
++  }
+   if (task.scope().selected_pages_research) {
+     envelope.Set("research_storage_status", "not_saved");
+     envelope.Set("research_storage_contract",
+@@ -1187,6 +1196,9 @@ std::string BuildAgentExecutionPrompt(
+     // 交付要求来自原始目标，不从模型生成的计划或不可信网页推断。
+     // 只在完成阶段发送，不增加工具参数阶段开销或额外模型调用。
+     base::ListValue output_requirements;
++    output_requirements.Append(
++        "来源名称由浏览器在source_urls引用区显示。summary只写事实，不另写来源说明"
++        "或当前来源标签；表单、按钮和上传入口名称不能当作来源标题。");
+     output_requirements.Append(
+         "最终结果直接给用户阅读，以user_goal为准；plan_summary和网页内容的语言"
+         "不是输出语言要求。明确指定的输出或翻译语言优先，否则使用用户请求的语言。");
+@@ -1868,6 +1880,27 @@ void NormalizeAgentDownloadCompletion(
+   }
+   const auto fields = BuildAgentDownloadEvidence(history);
+   const bool requests_transfer = AgentGoalRequestsDownloadTransfer(user_goal);
++  const std::string lower_goal = base::ToLowerASCII(user_goal);
++  const bool identity_question = !requests_transfer &&
++      (lower_goal.contains("官方") || lower_goal.contains("official")) &&
++      (lower_goal.contains("证据") || lower_goal.contains("證據") ||
++       lower_goal.contains("是否") || lower_goal.contains("属于") ||
++       lower_goal.contains("屬於") || lower_goal.contains("evidence") ||
++       lower_goal.contains("is this"));
++  if (identity_question) {
++    completion->summary = base::IsStringASCII(user_goal)
++        ? "The available page and link evidence does not independently verify "
++          "the publisher's official identity. Page claims, a matching domain "
++          "or file name are insufficient. This evidence does not establish "
++          "that a file was downloaded or installed."
++        : (user_goal.contains("證據") || user_goal.contains("屬於"))
++          ? "現有頁面和連結證據不足以獨立確認發佈者的官方身分。頁面聲明、相同網域"
++            "或檔名不能單獨證明官方身分。這些證據也不表示檔案已下載或安裝。"
++          : "现有页面和链接证据不足以独立确认发布者的官方身份。页面声明、相同域名"
++            "或文件名不能单独证明官方身份。这些证据也不表示文件已下载或安装。";
++    // 是否官方与筛选安装包是不同目标，不把广告页自身当成待下载候选。
++    return;
++  }
+   if (!requests_transfer && !fields.contains("candidate_url")) {
+     // 只读降级保留原生观察中的链接；候选文件不冒充已读取的来源页面。
+     base::flat_set<std::string> links;
+@@ -2024,6 +2057,68 @@ bool NormalizeAgentCompletionSourcesForEvidence(
+   return AgentCompletionSourcesMatchEvidence(*completion, evidence_history);
+ }
+ 
++std::optional<AgentToolCall> BuildBoundBookmarkListCall(
++    const AgentTask& task, const AgentPlanStep& step, int attempt) {
++  if (attempt < 0 || attempt >= 3 || step.tool_name != "bookmark.list" ||
++      step.risk != AgentRiskLevel::kR0ReadOnly ||
++      !task.scope().AllowsTool("bookmark.list") ||
++      !task.scope().AllowsDataClass(AgentDataClass::kBookmarks)) {
++    return std::nullopt;
++  }
++  AgentModelEvent event;
++  event.type = AgentModelEventType::kToolCall;
++  event.tool_name = "bookmark.list";
++  std::string error;
++  return BindExecutionToolCall(task, step, std::nullopt, attempt, event, &error);
++}
++
++void NormalizeAgentSummarySourceLabels(
++    AgentCompletionSummary* completion,
++    base::span<const AgentExecutionEvidence> history) {
++  if (!completion || completion->source_urls.empty()) {
++    return;
++  }
++  std::vector<std::string> titles;
++  for (const auto& url : completion->source_urls) {
++    std::string title = url;
++    for (const auto& item : history) {
++      if (item.result.ok && base::StartsWith(item.tool_name, "page.") &&
++          item.result.value.FindString("url") &&
++          *item.result.value.FindString("url") == url) {
++        const auto* name = item.result.value.FindString("title");
++        if (name && !name->empty() && name->size() <= 256u &&
++            name->find_first_of("\r\n") == std::string::npos) {
++          title = *name;
++          break;
++        }
++      }
++    }
++    titles.push_back(std::move(title));
++  }
++  auto lines = base::SplitString(completion->summary, "\n",
++                                base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++  bool in_code = false;
++  for (auto& line : lines) {
++    if (base::TrimWhitespaceASCII(line, base::TRIM_LEADING).starts_with("```")) {
++      in_code = !in_code;
++    }
++    const size_t start = line.find_first_not_of("0123456789. -*\t");
++    if (in_code || start == std::string::npos) {
++      continue;
++    }
++    for (const auto label : {"来源说明：", "当前来源：", "来源：",
++                            "來源說明：", "目前來源：", "來源：",
++                            "Source: ", "Current source: ",
++                            "Source description: "}) {
++      if (std::string_view(line).substr(start).starts_with(label)) {
++        line = line.substr(0, start) + label + base::JoinString(titles, "; ");
++        break;
++      }
++    }
++  }
++  completion->summary = base::JoinString(lines, "\n");
++}
++
+ void NormalizeAgentTabGroupCompletion(
+     AgentCompletionSummary* completion,
+     const AgentTask& task,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index daa0e7488a..e10bdd8470 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -66,6 +66,15 @@ void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
+ base::DictValue BuildAgentDownloadEvidence(
+     base::span<const AgentExecutionEvidence> history);
+ 
++// 已批准计划中的无参数收藏读取不需要模型再生成同一个空参数对象。
++std::optional<AgentToolCall> BuildBoundBookmarkListCall(
++    const AgentTask& task, const AgentPlanStep& step, int attempt);
++
++// 只校正独立来源标签行；事实正文和明确引用的原文不重写。
++void NormalizeAgentSummarySourceLabels(
++    AgentCompletionSummary* completion,
++    base::span<const AgentExecutionEvidence> history);
++
+ // 下载结果只按原生回执描述，页面按钮文案和模型文字不能证明已经开始或取消。
+ void NormalizeAgentDownloadCompletion(
+     AgentCompletionSummary* completion,
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 75ab28ebab..22e1163efa 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -27,6 +27,74 @@ AgentTaskScope ExecutionScope() {
+   return scope;
+ }
+ 
++TEST(AegisAgentExecutionTest, BoundBookmarkListRequiresApprovedReadScope) {
++  auto scope = ExecutionScope();
++  AgentPlanStep step{.step_id = "list", .title = "读取收藏",
++                     .tool_name = "bookmark.list",
++                     .risk = AgentRiskLevel::kR0ReadOnly};
++  AgentTask denied("denied", "预览收藏", AgentMode::kAct, scope);
++  EXPECT_FALSE(BuildBoundBookmarkListCall(denied, step, 0));
++  scope.allowed_tools.insert("bookmark.list");
++  AgentTask no_data("no-data", "预览收藏", AgentMode::kAct, scope);
++  EXPECT_FALSE(BuildBoundBookmarkListCall(no_data, step, 0));
++  scope.allowed_data_classes.insert(AgentDataClass::kBookmarks);
++  AgentTask allowed("allowed", "预览收藏", AgentMode::kAct, scope);
++  auto call = BuildBoundBookmarkListCall(allowed, step, 0);
++  ASSERT_TRUE(call);
++  EXPECT_EQ(call->tool_name, "bookmark.list");
++  EXPECT_TRUE(call->arguments.empty());
++  EXPECT_FALSE(BuildBoundBookmarkListCall(allowed, step, 3));
++  step.tool_name = "bookmark.apply";
++  EXPECT_FALSE(BuildBoundBookmarkListCall(allowed, step, 0));
++  step.tool_name = "bookmark.list";
++  step.risk = AgentRiskLevel::kR2ExternalSideEffect;
++  EXPECT_FALSE(BuildBoundBookmarkListCall(allowed, step, 0));
++}
++
++TEST(AegisAgentExecutionTest, SummarySourceLabelsUseActualPageMetadata) {
++  AgentToolResult page;
++  page.ok = true;
++  page.value.Set("url", "https://fixture.example/actual");
++  page.value.Set("title", "实际来源页面");
++  std::vector<AgentExecutionEvidence> history;
++  history.push_back({.tool_name = "page.extract", .result = std::move(page)});
++  AgentCompletionSummary completion{.outcome = "completed",
++      .summary = "1. 稳定指标为 42\n2. 来源说明：合成上传入口\n"
++                 "> 来源：原文引用\n```\n来源：代码原文\n```",
++      .source_urls = {"https://fixture.example/actual"}};
++  NormalizeAgentSummarySourceLabels(&completion, history);
++  EXPECT_EQ(completion.summary,
++      "1. 稳定指标为 42\n2. 来源说明：实际来源页面\n"
++      "> 来源：原文引用\n```\n来源：代码原文\n```");
++  completion.summary = "Source: invented upload form";
++  NormalizeAgentSummarySourceLabels(&completion, {});
++  EXPECT_EQ(completion.summary, "Source: https://fixture.example/actual");
++  completion.source_urls.clear();
++  completion.summary = "来源：尚无引用";
++  NormalizeAgentSummarySourceLabels(&completion, history);
++  EXPECT_EQ(completion.summary, "来源：尚无引用");
++}
++
++TEST(AegisAgentExecutionTest, OfficialIdentityQuestionDoesNotOfferAdvertisement) {
++  auto scope = ExecutionScope();
++  scope.allowed_tools.insert("download.find_official");
++  AgentToolResult source;
++  source.ok = true;
++  source.value.Set("candidate_url", "https://fixture.example/advertisement");
++  source.value.Set("source_url", "https://fixture.example/advertisement");
++  std::vector<AgentExecutionEvidence> history;
++  history.push_back({.tool_name = "download.find_official", .result = std::move(source)});
++  for (const char* goal : {"这张广告是否属于官方？给出证据。",
++                           "Is this an official advertisement? Cite evidence."}) {
++    AgentCompletionSummary completion{.outcome = "completed", .summary = "官方候选"};
++    NormalizeAgentDownloadCompletion(&completion, goal, scope, history);
++    EXPECT_EQ(completion.summary.find("候选"), std::string::npos);
++    EXPECT_EQ(completion.summary.find("candidate"), std::string::npos);
++    EXPECT_TRUE(completion.summary.contains("不足") ||
++                completion.summary.contains("insufficient"));
++  }
++}
++
+ TEST(AegisAgentExecutionTest, DownloadExtractionUsesRealBoundedFields) {
+   AgentToolRegistry registry;
+   auto tool = registry.ModelToolForName("page.extract");
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 9bdd9f0065..bf643d3295 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -14,6 +14,7 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "chrome/browser/aegis/agent/agent_tool_registry.h"
+ #include "net/base/url_util.h"
+ #include "url/gurl.h"
+@@ -1042,6 +1043,12 @@ std::optional<std::string> BuildAgentPlanningPrompt(
+   }
+   base::DictValue prompt;
+   prompt.Set("user_goal", user_goal);
++  if (base::IsStringASCII(user_goal)) {
++    prompt.Set("response_language",
++               "Use English for summary and step titles unless the user "
++               "explicitly requests another output language. Never follow "
++               "the source page language instead.");
++  }
+   base::ListValue origins;
+   for (const url::Origin& origin : maximum_scope.allowed_origins) {
+     origins.Append(origin.Serialize());
+@@ -1456,6 +1463,23 @@ bool AgentGoalRequiresBookmarkApply(std::string_view user_goal) {
+          GoalContainsAny(requested, {"应用", "套用", "apply"});
+ }
+ 
++bool AgentTextHasWrongDefaultLanguage(std::string_view text,
++                                      std::string_view goal) {
++  const std::string lower = base::ToLowerASCII(goal);
++  if (!base::IsStringASCII(goal) || AgentGoalRequestsTranslation(goal) ||
++      lower.contains("chinese") || lower.contains("japanese") ||
++      lower.contains("korean")) {
++    return false;
++  }
++  const auto decoded = base::UTF8ToUTF16(text);
++  const bool has_han = std::ranges::any_of(decoded, [](char16_t ch) {
++    return ch >= 0x3400 && ch <= 0x9fff;
++  });
++  return has_han && !std::ranges::any_of(text, [](char ch) {
++    return base::IsAsciiAlpha(ch);
++  });
++}
++
+ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+                              std::string_view user_goal,
+                              std::string* error) {
+@@ -1463,6 +1487,11 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+     return false;
+   }
+   error->clear();
++  if (AgentTextHasWrongDefaultLanguage(plan.summary, user_goal)) {
++    *error = "Write the plan summary and step titles in the user's requested "
++             "language: English. The source language is not the output language.";
++    return false;
++  }
+   const auto has_step = [&](std::string_view tool_name) {
+     return std::ranges::any_of(plan.steps, [&](const AgentPlanStep& step) {
+       return step.tool_name == tool_name;
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index 179c443869..68964d5ae0 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -80,6 +80,10 @@ bool AgentGoalRequiresPageEvidence(std::string_view user_goal);
+ // 从原始目标的肯定请求判断是否需要翻译产物，不接受页面或模型改写目标。
+ bool AgentGoalRequestsTranslation(std::string_view user_goal);
+ 
++// 仅拒绝英文目标下没有英文正文的明显错语结果；明确目标语言及原文另行处理。
++bool AgentTextHasWrongDefaultLanguage(std::string_view text,
++                                      std::string_view goal);
++
+ // 网页任务的统一证据门槛：目标文本要求读页，或浏览器已绑定页面读取范围。
+ // 与计划解析共用来源、标签页及 page.observe 绑定判断，不增加任何授权。
+ bool AgentTaskRequiresPageEvidence(std::string_view user_goal,
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index a625175c29..c09f090af8 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -68,6 +68,15 @@ AgentModelEvent GoalRouteEvent(std::string workflow,
+   return event;
+ }
+ 
++TEST(AegisAgentPlannerTest, EnglishGoalRejectsClearlyWrongDefaultLanguage) {
++  EXPECT_TRUE(AgentTextHasWrongDefaultLanguage("总结页面并列出来源。", "Summarize this page."));
++  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("Summarize the page.", "Summarize this page."));
++  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("总结页面。", "总结当前页面。"));
++  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("总结页面。", "Summarize in Chinese."));
++  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("翻译文本", "Translate this page into Chinese."));
++  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("42", "Read the metric."));
++}
++
+ TEST(AegisAgentPlannerTest, TaskTabGoalCannotExpandToWindowMetadata) {
+   for (const char* goal :
+        {"列出这个任务打开的标签页。", "列出本任务的标签页",
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index aaaec57206..b46bb9cd7a 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -582,6 +582,53 @@ function renderDownloadEvidence(next: TaskSnapshot) {
+   review.disabled = busy || next.state !== 'completed';
+ }
+ 
++// 仅将已下载文件的状态问答送入原生回读；下载或安装命令仍走正常授权流程。
++function isDownloadedFileReviewGoal(goal: string): boolean {
++  const text = goal.trim().toLowerCase();
++  const reference = /(?:刚|剛|已|这次|這次|刚才|剛才).{0,4}(?:下载|下載)|downloaded|this download/.test(text);
++  const question = /核对|核對|检查|檢查|是否|有没有|有沒有|check|verify|is |has |was /.test(text);
++  const state = /安装|安裝|摘要|哈希|完整|变更|變更|存在|install|hash|integrity|changed|exist/.test(text);
++  const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)|do not|不要|别|別/.test(text);
++  return reference && question && state && !command;
++}
++
++async function reviewCurrentDownload() {
++  if (!snapshot?.taskId || snapshot.state !== 'completed' ||
++      !snapshot.downloadEvidence.some(field => field.name === 'download_id')) {
++    element('download-evidence-card').hidden = false;
++    element('download-review-status').textContent =
++        loadTimeData.getString('downloadReviewUnassociated');
++    return;
++  }
++  const taskId = snapshot.taskId;
++  const button = element<HTMLButtonElement>('review-download');
++  button.disabled = true;
++  element('download-review-status').textContent =
++      loadTimeData.getString('downloadReviewPending');
++  try {
++    const result = await proxy.handler.reviewDownload(taskId);
++    if (snapshot?.taskId !== taskId) {
++      return;
++    }
++    const keys: {[key: string]: string} = {
++      match: 'downloadReviewMatch', changed: 'downloadReviewChanged',
++      missing: 'downloadReviewMissing', too_large: 'downloadReviewTooLarge',
++    };
++    element('download-review-status').textContent =
++        loadTimeData.getString(keys[result.status] || 'downloadReviewUnavailable') +
++        (result.sha256 ? `\nSHA-256: ${result.sha256}` : '');
++  } catch {
++    if (snapshot?.taskId === taskId) {
++      element('download-review-status').textContent =
++          loadTimeData.getString('downloadReviewUnavailable');
++    }
++  } finally {
++    if (snapshot?.taskId === taskId) {
++      button.disabled = busy || snapshot.state !== 'completed';
++    }
++  }
++}
++
+ function renderTimeline(next: TaskSnapshot) {
+   const partial = hasPartialResult(next);
+   const finished = next.resultOutcome === 'completed';
+@@ -605,6 +652,14 @@ function renderTimeline(next: TaskSnapshot) {
+           .replace('$1', match?.[1] || 'browser action');
+     }
+     const keyByValue: {[key: string]: string} = {
++      'reflecting': 'timelineVerifying',
++      'awaiting_action_approval': 'statusApproval',
++      'user_takeover': 'statusTakeover',
++      'exact action approval required': 'timelineActionApprovalRequired',
++      'exact action approval consumed': 'timelineActionApprovalConsumed',
++      'cancelled by user': 'timelineCancelledByUser',
++      'task cancelled by user': 'timelineCancelledByUser',
++      'execution model failed twice': 'timelineExecutionModelFailed',
+       'planning': 'timelinePlanning',
+       'planning started': 'timelinePlanningDetail',
+       'planning repair': 'timelinePlanningRepair',
+@@ -1424,6 +1479,9 @@ function bindActions() {
+   }, true));
+   element('plan-button').addEventListener('click', () => {
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
++    if (isDownloadedFileReviewGoal(goal)) {
++      return reviewCurrentDownload();
++    }
+     const schedule = inferAutomationSchedule(goal);
+     if (schedule !== null) {
+       element<HTMLTextAreaElement>('automation-goal').value = goal;
+@@ -1447,38 +1505,7 @@ function bindActions() {
+       return proxy.handler.requestPlan(created.snapshot.taskId);
+     }, true);
+   });
+-  element('review-download').addEventListener('click', async () => {
+-    if (!snapshot?.taskId || snapshot.state !== 'completed') {
+-      return;
+-    }
+-    const taskId = snapshot.taskId;
+-    const button = element<HTMLButtonElement>('review-download');
+-    button.disabled = true;
+-    element('download-review-status').textContent =
+-        loadTimeData.getString('downloadReviewPending');
+-    try {
+-      const result = await proxy.handler.reviewDownload(taskId);
+-      if (snapshot?.taskId !== taskId) {
+-        return;
+-      }
+-      const keys: {[key: string]: string} = {
+-        match: 'downloadReviewMatch', changed: 'downloadReviewChanged',
+-        missing: 'downloadReviewMissing', too_large: 'downloadReviewTooLarge',
+-      };
+-      element('download-review-status').textContent =
+-          loadTimeData.getString(keys[result.status] || 'downloadReviewUnavailable') +
+-          (result.sha256 ? `\nSHA-256: ${result.sha256}` : '');
+-    } catch {
+-      if (snapshot?.taskId === taskId) {
+-        element('download-review-status').textContent =
+-            loadTimeData.getString('downloadReviewUnavailable');
+-      }
+-    } finally {
+-      if (snapshot?.taskId === taskId) {
+-        button.disabled = busy || snapshot.state !== 'completed';
+-      }
+-    }
+-  });
++  element('review-download').addEventListener('click', reviewCurrentDownload);
+   element('create-automation-button').addEventListener(
+       'click', () => withBusy(async () => {
+         const goal =
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 9f98b407dd..f9dfbbbdc8 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -177,6 +177,11 @@ void AddStrings(content::WebUIDataSource* source) {
+       "下載來源與實際結果");
+   add("reviewDownload", "Recheck this downloaded file", "继续核对这次下载",
+       "繼續核對這次下載");
++  add("downloadReviewUnassociated",
++      "No completed download receipt is associated with this task. Open the "
++      "original download task to recheck its file. Installation is not verified.",
++      "当前任务没有关联的已完成下载回执。请回到原下载任务核对文件；安装状态未核验。",
++      "目前任務沒有關聯的已完成下載回執。請回到原下載任務核對檔案；安裝狀態未核驗。");
+   add("downloadReviewPending", "Reading this file locally…",
+       "正在本机重新读取这次下载的文件…", "正在本機重新讀取這次下載的檔案…");
+   add("downloadReviewMatch",
+@@ -662,6 +667,14 @@ void AddStrings(content::WebUIDataSource* source) {
+       "AI "
+       "沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試"
+       "。");
++  add("timelineActionApprovalRequired", "Waiting for approval of this action",
++      "正在等待你确认这一个操作", "正在等待你確認這一個操作");
++  add("timelineActionApprovalConsumed", "This action was approved and started",
++      "已按你的确认开始执行这一个操作", "已按你的確認開始執行這一個操作");
++  add("timelineCancelledByUser", "You cancelled the task",
++      "你已取消任务", "你已取消任務");
++  add("timelineExecutionModelFailed", "The AI request failed twice; the task stopped",
++      "AI 请求连续两次失败，任务已停止", "AI 請求連續兩次失敗，任務已停止");
+   add("timelinePlanning", "Understanding the task", "正在理解任务",
+       "正在理解任務");
+   add("timelinePlanningDetail", "Identifying the target and planning steps",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7d742f517c..c156b1a2fd 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.57";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (057)";
++inline constexpr char kProductVersion[] = "2.0.0.58";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (058)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

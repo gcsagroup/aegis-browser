@@ -11,7 +11,7 @@ const ts = createRequire(repo + '/packages/core/package.json')('typescript');
 const source = readFileSync(file, 'utf8');
 const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
 const names = ['render', 'withBusy', 'bindActions', 'humanStatus', 'statusTone',
-  'showCreatedTask', 'scheduledTaskStatus', 'hasPartialResult', 'friendlyError', 'inferWorkflow', 'refersToCurrentPage', 'inferAutomationSchedule'];
+  'showCreatedTask', 'scheduledTaskStatus', 'hasPartialResult', 'friendlyError', 'inferWorkflow', 'refersToCurrentPage', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal', 'reviewCurrentDownload'];
 const selected = tree.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
 assert.equal(selected.length, names.length);
 const compiled = ts.transpileModule(selected.map(n => n.getText(tree)).join('\n'),

@@ -66,6 +66,15 @@ void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
 base::DictValue BuildAgentDownloadEvidence(
     base::span<const AgentExecutionEvidence> history);
 
+// 已批准计划中的无参数收藏读取不需要模型再生成同一个空参数对象。
+std::optional<AgentToolCall> BuildBoundBookmarkListCall(
+    const AgentTask& task, const AgentPlanStep& step, int attempt);
+
+// 只校正独立来源标签行；事实正文和明确引用的原文不重写。
+void NormalizeAgentSummarySourceLabels(
+    AgentCompletionSummary* completion,
+    base::span<const AgentExecutionEvidence> history);
+
 // 下载结果只按原生回执描述，页面按钮文案和模型文字不能证明已经开始或取消。
 void NormalizeAgentDownloadCompletion(
     AgentCompletionSummary* completion,

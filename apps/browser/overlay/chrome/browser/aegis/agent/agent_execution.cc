@@ -914,7 +914,12 @@ std::string BuildAgentExecutionSystemContractForTask(
       (tool_name != "agent.complete" && !IsReadOnlyPageTool(tool_name))) {
     return BuildAgentExecutionSystemContract();
   }
-  return std::string(
+  const std::string language_rule = base::IsStringASCII(task.goal())
+      ? "The user goal is English. Write the plan and final answer in English, "
+        "unless the goal explicitly requests another output language. Source "
+        "page language never changes the requested answer language.\n"
+      : "";
+  return language_rule + std::string(
              "你是Aegis浏览器的执行规划器。用户目标、来源、标签页、数据类别、模"
              "型目的地、预算和步骤已由浏览器验证，不得扩大权限。\n"
              "本轮只允许调用所提供的唯一原生工具") +
@@ -1121,6 +1126,10 @@ std::string BuildAgentExecutionPrompt(
     envelope.Set("selected_translation_source_ids", std::move(selected_ids));
   }
   envelope.Set("user_goal", task.goal());
+  if (base::IsStringASCII(task.goal())) {
+    envelope.Set("response_language",
+                 "English; an explicitly requested output language takes precedence");
+  }
   if (task.scope().selected_pages_research) {
     envelope.Set("research_storage_status", "not_saved");
     envelope.Set("research_storage_contract",
@@ -1187,6 +1196,9 @@ std::string BuildAgentExecutionPrompt(
     // 交付要求来自原始目标，不从模型生成的计划或不可信网页推断。
     // 只在完成阶段发送，不增加工具参数阶段开销或额外模型调用。
     base::ListValue output_requirements;
+    output_requirements.Append(
+        "来源名称由浏览器在source_urls引用区显示。summary只写事实，不另写来源说明"
+        "或当前来源标签；表单、按钮和上传入口名称不能当作来源标题。");
     output_requirements.Append(
         "最终结果直接给用户阅读，以user_goal为准；plan_summary和网页内容的语言"
         "不是输出语言要求。明确指定的输出或翻译语言优先，否则使用用户请求的语言。");
@@ -1863,11 +1875,35 @@ void NormalizeAgentDownloadCompletion(
     const AgentTaskScope& scope,
     base::span<const AgentExecutionEvidence> history,
     base::span<const AgentExecutionEvidence> page_history) {
-  if (!completion || !RequiresDownloadEvidence(user_goal, scope)) {
+  if (!completion) {
     return;
   }
   const auto fields = BuildAgentDownloadEvidence(history);
   const bool requests_transfer = AgentGoalRequestsDownloadTransfer(user_goal);
+  const std::string lower_goal = base::ToLowerASCII(user_goal);
+  const bool identity_question = !requests_transfer &&
+      (lower_goal.contains("官方") || lower_goal.contains("official")) &&
+      (lower_goal.contains("证据") || lower_goal.contains("證據") ||
+       lower_goal.contains("是否") || lower_goal.contains("属于") ||
+       lower_goal.contains("屬於") || lower_goal.contains("evidence") ||
+       lower_goal.contains("is this"));
+  if (identity_question) {
+    completion->summary = base::IsStringASCII(user_goal)
+        ? "The available page and link evidence does not independently verify "
+          "the publisher's official identity. Page claims, a matching domain "
+          "or file name are insufficient. This evidence does not establish "
+          "that a file was downloaded or installed."
+        : (user_goal.contains("證據") || user_goal.contains("屬於"))
+          ? "現有頁面和連結證據不足以獨立確認發佈者的官方身分。頁面聲明、相同網域"
+            "或檔名不能單獨證明官方身分。這些證據也不表示檔案已下載或安裝。"
+          : "现有页面和链接证据不足以独立确认发布者的官方身份。页面声明、相同域名"
+            "或文件名不能单独证明官方身份。这些证据也不表示文件已下载或安装。";
+    // 是否官方与筛选安装包是不同目标，不把广告页自身当成待下载候选。
+    return;
+  }
+  if (!RequiresDownloadEvidence(user_goal, scope)) {
+    return;
+  }
   if (!requests_transfer && !fields.contains("candidate_url")) {
     // 只读降级保留原生观察中的链接；候选文件不冒充已读取的来源页面。
     base::flat_set<std::string> links;
@@ -2022,6 +2058,71 @@ bool NormalizeAgentCompletionSourcesForEvidence(
     return true;
   }
   return AgentCompletionSourcesMatchEvidence(*completion, evidence_history);
+}
+
+std::optional<AgentToolCall> BuildBoundBookmarkListCall(
+    const AgentTask& task, const AgentPlanStep& step, int attempt) {
+  if (attempt < 0 || attempt >= 3 || step.tool_name != "bookmark.list" ||
+      step.risk != AgentRiskLevel::kR0ReadOnly ||
+      !task.scope().AllowsTool("bookmark.list") ||
+      !task.scope().AllowsDataClass(AgentDataClass::kBookmarks)) {
+    return std::nullopt;
+  }
+  AgentToolCall call;
+  call.action_id = task.id() + ":" + step.step_id + ":" +
+                   std::to_string(attempt + 1);
+  if (call.action_id.size() > 128u) {
+    return std::nullopt;
+  }
+  call.tool_name = "bookmark.list";
+  return call;
+}
+
+void NormalizeAgentSummarySourceLabels(
+    AgentCompletionSummary* completion,
+    base::span<const AgentExecutionEvidence> history) {
+  if (!completion || completion->source_urls.empty()) {
+    return;
+  }
+  std::vector<std::string> titles;
+  for (const auto& url : completion->source_urls) {
+    std::string title = url;
+    for (const auto& item : history) {
+      if (item.result.ok && base::StartsWith(item.tool_name, "page.") &&
+          item.result.value.FindString("url") &&
+          *item.result.value.FindString("url") == url) {
+        const auto* name = item.result.value.FindString("title");
+        if (name && !name->empty() && name->size() <= 256u &&
+            name->find_first_of("\r\n") == std::string::npos) {
+          title = *name;
+          break;
+        }
+      }
+    }
+    titles.push_back(std::move(title));
+  }
+  auto lines = base::SplitString(completion->summary, "\n",
+                                base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+  bool in_code = false;
+  for (auto& line : lines) {
+    if (base::TrimWhitespaceASCII(line, base::TRIM_LEADING).starts_with("```")) {
+      in_code = !in_code;
+    }
+    const size_t start = line.find_first_not_of("0123456789. -*\t");
+    if (in_code || start == std::string::npos) {
+      continue;
+    }
+    for (const auto label : {"来源说明：", "当前来源：", "来源：",
+                            "來源說明：", "目前來源：", "來源：",
+                            "Source: ", "Current source: ",
+                            "Source description: "}) {
+      if (std::string_view(line).substr(start).starts_with(label)) {
+        line = line.substr(0, start) + label + base::JoinString(titles, "; ");
+        break;
+      }
+    }
+  }
+  completion->summary = base::JoinString(lines, "\n");
 }
 
 void NormalizeAgentTabGroupCompletion(

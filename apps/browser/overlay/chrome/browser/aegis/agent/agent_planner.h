@@ -80,6 +80,10 @@ bool AgentGoalRequiresPageEvidence(std::string_view user_goal);
 // 从原始目标的肯定请求判断是否需要翻译产物，不接受页面或模型改写目标。
 bool AgentGoalRequestsTranslation(std::string_view user_goal);
 
+// 仅拒绝英文目标下没有英文正文的明显错语结果；明确目标语言及原文另行处理。
+bool AgentTextHasWrongDefaultLanguage(std::string_view text,
+                                      std::string_view goal);
+
 // 网页任务的统一证据门槛：目标文本要求读页，或浏览器已绑定页面读取范围。
 // 与计划解析共用来源、标签页及 page.observe 绑定判断，不增加任何授权。
 bool AgentTaskRequiresPageEvidence(std::string_view user_goal,

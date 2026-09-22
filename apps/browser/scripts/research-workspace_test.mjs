@@ -103,3 +103,12 @@ ctx.renderDownloadEvidence({downloadEvidence:[]});
 assert.equal(element('download-evidence-card').hidden,true);
 assert.equal(element('download-evidence').children.length,0);
 console.log('下载证据界面回归通过：白名单、未核验身份、惰性文本、文件名与空态。');
+
+const identityEvidence = [{name: 'source_url', value: 'https://fixture.example/ad'},
+  {name: 'candidate_url', value: 'https://fixture.example/ad'}];
+ctx.renderDownloadEvidence({goal: '这个下载页有足够证据属于官方吗？', downloadEvidence: identityEvidence});
+assert.equal(element('download-evidence').children.length, 2);
+assert.equal(element('download-evidence').children[0].textContent, 'downloadEvidenceSource');
+ctx.renderDownloadEvidence({goal: '找到官方下载链接', downloadEvidence: identityEvidence});
+assert.equal(element('download-evidence').children.length, 4);
+console.log('PASS: 身份问答不把来源页作为候选文件，普通查找保持候选 2/2');

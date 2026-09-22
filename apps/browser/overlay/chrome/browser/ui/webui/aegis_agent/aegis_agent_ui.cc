@@ -177,6 +177,11 @@ void AddStrings(content::WebUIDataSource* source) {
       "下載來源與實際結果");
   add("reviewDownload", "Recheck this downloaded file", "继续核对这次下载",
       "繼續核對這次下載");
+  add("downloadReviewUnassociated",
+      "No completed download receipt is associated with this task. Open the "
+      "original download task to recheck its file. Installation is not verified.",
+      "当前任务没有关联的已完成下载回执。请回到原下载任务核对文件；安装状态未核验。",
+      "目前任務沒有關聯的已完成下載回執。請回到原下載任務核對檔案；安裝狀態未核驗。");
   add("downloadReviewPending", "Reading this file locally…",
       "正在本机重新读取这次下载的文件…", "正在本機重新讀取這次下載的檔案…");
   add("downloadReviewMatch",
@@ -662,6 +667,16 @@ void AddStrings(content::WebUIDataSource* source) {
       "AI "
       "沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試"
       "。");
+  add("timelineVerifiedFallback", "Browser actions were checked; native results were retained",
+      "浏览器操作已核对，已保留原生结果", "瀏覽器操作已核對，已保留原生結果");
+  add("timelineActionApprovalRequired", "Waiting for approval of this action",
+      "正在等待你确认这一个操作", "正在等待你確認這一個操作");
+  add("timelineActionApprovalConsumed", "This action was approved and started",
+      "已按你的确认开始执行这一个操作", "已按你的確認開始執行這一個操作");
+  add("timelineCancelledByUser", "You cancelled the task",
+      "你已取消任务", "你已取消任務");
+  add("timelineExecutionModelFailed", "The AI request failed twice; the task stopped",
+      "AI 请求连续两次失败，任务已停止", "AI 請求連續兩次失敗，任務已停止");
   add("timelinePlanning", "Understanding the task", "正在理解任务",
       "正在理解任務");
   add("timelinePlanningDetail", "Identifying the target and planning steps",
