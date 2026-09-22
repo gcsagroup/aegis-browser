@@ -4,7 +4,7 @@
 
 GCSA-aegis is a local-first privacy and security browser project with two product lines: the Chromium fork under [`apps/browser`](apps/browser/README.md) and the native iOS browser under [`apps/ios`](apps/ios/README.md). Core capabilities stay inside each browser product; the project does not revive the retired standalone-extension product.
 
-> **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
+> **2026-09-22 local candidate:** macOS Ver 2.0 (062), Chromium 153.0.8010.53, 203+3 patches. Copy and announcement cleanup passed 541 native checks and nine representative tasks. Full-chain input is 22.28% below the original baseline; the 30% target, VoiceOver listening and overall acceptance remain open. The colleague’s remote code is synchronized separately, without integration. A newly observed ambiguous-goal issue awaits a follow-up decision. [Batch report](docs/audit/closure-2026-09-22.zh-CN.md)
 
 > 历史 057 验收记录：**2026-09-22 local candidate:** macOS Ver 2.0 (057), Chromium 153.0.8010.53, 198+3 patches; 535 native checks passed and unified task acceptance is 75/90. Overall acceptance is not complete. The separate remote networking line, public distribution and other platforms remain outside this candidate’s qualification. [Final batch report](docs/audit/integration-final-batch-2026-09-22.zh-CN.md)
 

@@ -11,7 +11,7 @@ const sourcePath = process.argv[2] || fileURLToPath(new URL(
     '../overlay/chrome/browser/resources/aegis_agent/agent.ts', import.meta.url));
 const source = readFileSync(sourcePath, 'utf8');
 const tree = ts.createSourceFile(sourcePath, source, ts.ScriptTarget.Latest, true);
-const names = ['scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal'];
+const names = ['humanRisk', 'scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal'];
 const functions = tree.statements.filter(node =>
   ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
 assert.equal(functions.length, names.length, '必须测试真实产品函数，不能跳过缺失函数');
@@ -466,6 +466,10 @@ const downloadReviewGoals = [
   ['核对刚下载的文件，然后安装', false],
   ['下载并安装这个文件', false],
   ['不要核对刚下载的文件是否安装', false],
+  ['核对刚下载的文件是否安装，不要执行', true],
+  ['核對剛下載的檔案是否安裝，不要安裝', true],
+  ['Check whether the downloaded file has been installed; do not install it.', true],
+  ['Do not check whether the downloaded file is installed.', false],
   ['Check this download and install it', false],
   ['Check whether the page offers an installer', false],
   ['核对当前官方发布页', false],
@@ -504,3 +508,20 @@ assert.equal(reviewedId, 'download-task');
 assert.equal(actionCalls.length, createCountBeforeReview);
 assert.equal(actionField('download-review-status').textContent, 'downloadReviewMatch\nSHA-256: fixture-hash');
 console.log('PASS: 安装问答复用当前任务回执且不创建下载任务 2/2');
+
+// 不变快照保留节点，状态刷新不会把整段历史再次送入旁白。
+const stableTimeline = {...task({}), timeline: [timelineEvent]};
+rendererContext.renderTimeline(stableTimeline);
+const originalRow = element('timeline').children[0];
+rendererContext.renderTimeline(stableTimeline);
+assert.equal(element('timeline').children[0], originalRow);
+rendererContext.renderTimeline({...stableTimeline, timeline: [timelineEvent, {...timelineEvent, title: 'paused by user'}]});
+assert.equal(element('timeline').children.length, 2);
+assert.equal(element('timeline').children[1].textContent, 'timelineDetail21');
+for (const [risk, label] of [['R0 · read only', 'riskLevel0'], ['R1 · reversible', 'riskLevel1'], ['R2 · approval required', 'riskLevel2'], ['R3 · user takeover', 'riskLevel3'], ['R9 unknown', 'R9 unknown']]) {
+  assert.equal(context.humanRisk(risk), label);
+}
+const agentHtml = readFileSync(new URL('../overlay/chrome/browser/resources/aegis_agent/agent.html', import.meta.url), 'utf8');
+assert(!/<ol[^>]*id="timeline"[^>]*aria-live/.test(agentHtml));
+assert(/id="status"[^>]*role="status"[^>]*aria-atomic="true"/.test(agentHtml));
+console.log('PASS: 风险文字、稳定时间线与单一任务状态播报');

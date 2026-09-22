@@ -17,12 +17,12 @@
 namespace network {
 class SharedURLLoaderFactory;
 class SimpleURLLoader;
-}  // namespace network
+} // namespace network
 
 namespace aegis {
 // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
-inline constexpr char kProductVersion[] = "2.0.0.61";
-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (061)";
+inline constexpr char kProductVersion[] = "2.0.0.62";
+inline constexpr char kProductVersionLabel[] = "Ver 2.0 (062)";
 inline constexpr char kReleaseAPI[] =
     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
 inline constexpr char kReleasePage[] =
@@ -52,16 +52,16 @@ struct ReleaseResult {
 ReleaseResult ParseGitHubRelease(std::string_view json,
                                  std::string_view current_version,
                                  std::string_view platform);
-bool IsAllowedReleaseDownloadURL(const GURL& url);
+bool IsAllowedReleaseDownloadURL(const GURL &url);
 std::string GitHubUpdatePlatform();
 // 校验大小和 SHA-256 后写入隐藏暂存目录；此时仍未对用户交付。
 // 无论成功失败都接管并清理临时文件；不执行安装包。
 base::FilePath StageVerifiedRelease(base::FilePath temporary_file,
-                                    const ReleaseAsset& asset,
-                                    const base::FilePath& downloads);
+                                    const ReleaseAsset &asset,
+                                    const base::FilePath &downloads);
 
 class GitHubUpdate {
- public:
+public:
   enum class State {
     kUnchecked,
     kChecking,
@@ -74,16 +74,15 @@ class GitHubUpdate {
     kEmpty
   };
   using Callback =
-      base::RepeatingCallback<void(State, int, const std::string&)>;
+      base::RepeatingCallback<void(State, int, const std::string &)>;
   GitHubUpdate(scoped_refptr<network::SharedURLLoaderFactory> factory,
-               base::FilePath downloads,
-               std::string platform,
+               base::FilePath downloads, std::string platform,
                std::string locale = "en");
   ~GitHubUpdate();
   void Check(Callback callback);
   base::FilePath GetDownloadedUpdatePath() const { return downloaded_file_; }
 
- private:
+private:
   void OnRelease(std::optional<std::string> body);
   void OnDownloaded(base::FilePath path);
   void OnSaved(base::FilePath path);
@@ -109,6 +108,6 @@ struct ProductUpdateStatus {
   std::string message;
   int progress = 0;
 };
-const ProductUpdateStatus& GetProductUpdateStatus();
-}  // namespace aegis
-#endif  // CHROME_BROWSER_UI_WEBUI_HELP_AEGIS_GITHUB_UPDATE_H_
+const ProductUpdateStatus &GetProductUpdateStatus();
+} // namespace aegis
+#endif // CHROME_BROWSER_UI_WEBUI_HELP_AEGIS_GITHUB_UPDATE_H_

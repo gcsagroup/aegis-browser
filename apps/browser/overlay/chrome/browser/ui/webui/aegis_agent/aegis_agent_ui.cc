@@ -45,25 +45,23 @@ UiLanguage CurrentLanguage() {
                                         : UiLanguage::kEnglish;
 }
 
-const char* Localized(UiLanguage language,
-                      const char* english,
-                      const char* simplified,
-                      const char* traditional) {
+const char *Localized(UiLanguage language, const char *english,
+                      const char *simplified, const char *traditional) {
   switch (language) {
-    case UiLanguage::kEnglish:
-      return english;
-    case UiLanguage::kSimplifiedChinese:
-      return simplified;
-    case UiLanguage::kTraditionalChinese:
-      return traditional;
+  case UiLanguage::kEnglish:
+    return english;
+  case UiLanguage::kSimplifiedChinese:
+    return simplified;
+  case UiLanguage::kTraditionalChinese:
+    return traditional;
   }
 }
 
-void AddStrings(content::WebUIDataSource* source) {
+void AddStrings(content::WebUIDataSource *source) {
   const UiLanguage language = CurrentLanguage();
   source->AddString("language", g_browser_process->GetApplicationLocale());
-  auto add = [&](const char* key, const char* en, const char* zh_cn,
-                 const char* zh_tw) {
+  auto add = [&](const char *key, const char *en, const char *zh_cn,
+                 const char *zh_tw) {
     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
   };
   add("title", "GCSA Aegis AI Assistant", "GCSA Aegis AI 助手",
@@ -179,9 +177,12 @@ void AddStrings(content::WebUIDataSource* source) {
       "繼續核對這次下載");
   add("downloadReviewUnassociated",
       "No completed download receipt is associated with this task. Open the "
-      "original download task to recheck its file. Installation is not verified.",
-      "当前任务没有关联的已完成下载回执。请回到原下载任务核对文件；安装状态未核验。",
-      "目前任務沒有關聯的已完成下載回執。請回到原下載任務核對檔案；安裝狀態未核驗。");
+      "original download task to recheck its file. Installation is not "
+      "verified.",
+      "当前任务没有关联的已完成下载回执。请回到原下载任务核对文件；安装状态未核"
+      "验。",
+      "目前任務沒有關聯的已完成下載回執。請回到原下載任務核對檔案；安裝狀態未核"
+      "驗。");
   add("downloadReviewPending", "Reading this file locally…",
       "正在本机重新读取这次下载的文件…", "正在本機重新讀取這次下載的檔案…");
   add("downloadReviewMatch",
@@ -554,7 +555,8 @@ void AddStrings(content::WebUIDataSource* source) {
       "执行已结束，尚无完整结果", "執行已結束，尚無完整結果");
   add("statusFailed", "Needs attention", "遇到问题", "遇到問題");
   add("pendingActionPageChanged",
-      "The page changed or closed, so the pending action expired. Start a new task on the target page and review the action.",
+      "The page changed or closed, so the pending action expired. Start a new "
+      "task on the target page and review the action.",
       "页面已变化或关闭，原操作已失效。请在目标页面重新发起任务并核对操作。",
       "頁面已變更或關閉，原操作已失效。請在目標頁面重新發起任務並核對操作。");
   add("pageContextUnavailableError",
@@ -667,15 +669,89 @@ void AddStrings(content::WebUIDataSource* source) {
       "AI "
       "沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試"
       "。");
-  add("timelineVerifiedFallback", "Browser actions were checked; native results were retained",
+  add("timelineDetail1", "Actor execution service unavailable",
+      "执行引擎暂不可用，请重启浏览器后重试",
+      "執行引擎暫不可用，請重新啟動瀏覽器後重試");
+  add("timelineDetail2", "Actor execution service unavailable after recovery",
+      "恢复后执行引擎仍不可用，请重启浏览器",
+      "恢復後執行引擎仍不可用，請重新啟動瀏覽器");
+  add("timelineDetail3", "Action result is uncertain; automatic replay refused",
+      "操作结果无法确认，已停止自动重试", "操作結果無法確認，已停止自動重試");
+  add("timelineDetail4", "Browser action requires user control",
+      "此操作需要你接管浏览器", "此操作需要你接管瀏覽器");
+  add("timelineDetail5", "Checkout document disappeared after revalidation",
+      "结账页面已不可用，请重新核对", "結帳頁面已不可用，請重新核對");
+  add("timelineDetail6", "Checkout facts changed; old summary invalidated",
+      "结账内容已变化，旧摘要已失效", "結帳內容已變化，舊摘要已失效");
+  add("timelineDetail7", "Checkout facts could not be re-read before takeover",
+      "接管前无法重新读取结账内容", "接管前無法重新讀取結帳內容");
+  add("timelineDetail8", "Checkout revalidation cursor could not be persisted",
+      "无法保存结账核对进度，任务已停止", "無法儲存結帳核對進度，任務已停止");
+  add("timelineDetail9", "Checkout summary failed browser source validation",
+      "结账摘要与页面证据不符，已停止", "結帳摘要與頁面證據不符，已停止");
+  add("timelineDetail10", "Execution cursor could not be persisted",
+      "无法保存执行进度，任务已停止", "無法儲存執行進度，任務已停止");
+  add("timelineDetail11", "Execution model budget exhausted",
+      "已达到本次 AI 请求上限，任务已停止",
+      "已達到本次 AI 請求上限，任務已停止");
+  add("timelineDetail12", "Execution model request could not be started",
+      "无法发起 AI 请求，请检查模型配置", "無法發起 AI 請求，請檢查模型設定");
+  add("timelineDetail13", "Failed action cursor could not be persisted",
+      "无法保存失败操作的进度，已停止", "無法儲存失敗操作的進度，已停止");
+  add("timelineDetail14", "Final action completed under user control",
+      "最终操作已由你接管完成", "最終操作已由你接管完成");
+  add("timelineDetail15", "Fresh browser observation was rejected",
+      "最新页面内容未通过检查，任务已停止",
+      "最新頁面內容未通過檢查，任務已停止");
+  add("timelineDetail16", "Fresh observation tab disappeared",
+      "读取页面时标签页已关闭", "讀取頁面時分頁已關閉");
+  add("timelineDetail17",
+      "Fresh recovery consent granted; observation required",
+      "已确认恢复，将重新读取页面", "已確認恢復，將重新讀取頁面");
+  add("timelineDetail18", "Model requested an action after the plan ended",
+      "AI 请求了计划外操作，已阻止执行", "AI 請求了計畫外操作，已阻止執行");
+  add("timelineDetail19",
+      "No live scoped tab was available for a fresh observation",
+      "授权范围内没有可读取的标签页", "授權範圍內沒有可讀取的分頁");
+  add("timelineDetail20", "Overlapping model request rejected",
+      "已有 AI 请求正在处理，未重复发送", "已有 AI 請求正在處理，未重複傳送");
+  add("timelineDetail21", "Paused by user", "你已暂停任务", "你已暫停任務");
+  add("timelineDetail22", "Recovered task expired before consent",
+      "恢复的任务已过期，请创建新任务", "恢復的任務已過期，請建立新任務");
+  add("timelineDetail23", "Resumed after fresh observation",
+      "已重新读取页面并恢复任务", "已重新讀取頁面並恢復任務");
+  add("timelineDetail24", "Tool context changed before execution",
+      "操作前页面环境已变化，已停止执行", "操作前頁面環境已變化，已停止執行");
+  add("timelineDetail25", "Tool context could not be rebound",
+      "无法重新关联操作页面，任务已停止", "無法重新關聯操作頁面，任務已停止");
+  add("timelineDetail26", "Unsupported execution model provider",
+      "当前模型服务不支持此执行方式", "目前模型服務不支援此執行方式");
+  add("timelineDetail27", "User interacted with a controlled tab",
+      "你正在操作任务页面，自动执行已暂停",
+      "你正在操作任務頁面，自動執行已暫停");
+  add("timelineDetail28", "User takeover ended; fresh consent required",
+      "接管已结束，继续任务前需要重新确认",
+      "接管已結束，繼續任務前需要重新確認");
+  add("timelineDetail29", "User takeover required", "此步骤需要你接管操作",
+      "此步驟需要你接管操作");
+  add("timelineDetail30", "Verified action cursor could not be persisted",
+      "无法保存已核对的操作进度，任务已停止",
+      "無法儲存已核對的操作進度，任務已停止");
+  add("riskLevel0", "Read only", "只读取信息", "僅讀取資訊");
+  add("riskLevel1", "Reversible change", "可撤销的修改", "可復原的修改");
+  add("riskLevel2", "Your approval required", "需要你确认", "需要你確認");
+  add("riskLevel3", "Your control required", "需要你接管", "需要你接管");
+  add("timelineVerifiedFallback",
+      "Browser actions were checked; native results were retained",
       "浏览器操作已核对，已保留原生结果", "瀏覽器操作已核對，已保留原生結果");
   add("timelineActionApprovalRequired", "Waiting for approval of this action",
       "正在等待你确认这一个操作", "正在等待你確認這一個操作");
   add("timelineActionApprovalConsumed", "This action was approved and started",
       "已按你的确认开始执行这一个操作", "已按你的確認開始執行這一個操作");
-  add("timelineCancelledByUser", "You cancelled the task",
-      "你已取消任务", "你已取消任務");
-  add("timelineExecutionModelFailed", "The AI request failed twice; the task stopped",
+  add("timelineCancelledByUser", "You cancelled the task", "你已取消任务",
+      "你已取消任務");
+  add("timelineExecutionModelFailed",
+      "The AI request failed twice; the task stopped",
       "AI 请求连续两次失败，任务已停止", "AI 請求連續兩次失敗，任務已停止");
   add("timelinePlanning", "Understanding the task", "正在理解任务",
       "正在理解任務");
@@ -780,7 +856,7 @@ void AddStrings(content::WebUIDataSource* source) {
   add("sources", "Browser sources", "浏览器来源", "瀏覽器來源");
 }
 
-}  // namespace
+} // namespace
 
 AegisAgentUIConfig::AegisAgentUIConfig()
     : AegisAgentUIConfigBase(content::kChromeUIUntrustedScheme,
@@ -789,8 +865,8 @@ AegisAgentUIConfig::AegisAgentUIConfig()
 AegisAgentUIConfig::~AegisAgentUIConfig() = default;
 
 bool AegisAgentUIConfig::IsWebUIEnabled(
-    content::BrowserContext* browser_context) {
-  Profile* profile =
+    content::BrowserContext *browser_context) {
+  Profile *profile =
       browser_context ? Profile::FromBrowserContext(browser_context) : nullptr;
   if (!base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
       !aegis::IsAegisProfileSupported(profile)) {
@@ -803,9 +879,9 @@ bool AegisAgentUIConfig::IsWebUIEnabled(
 #endif
 }
 
-AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
+AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
     : AegisAgentUIControllerBase(web_ui) {
-  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+  content::WebUIDataSource *source = content::WebUIDataSource::CreateAndAdd(
       web_ui->GetWebContents()->GetBrowserContext(),
       chrome::kChromeUIUntrustedAegisAgentURL);
   webui::SetupWebUIDataSource(source, kAegisAgentResources,
@@ -828,7 +904,7 @@ AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
       "trusted-types static-types;");
 
 #if !BUILDFLAG(IS_ANDROID)
-  Profile* profile = Profile::FromWebUI(web_ui);
+  Profile *profile = Profile::FromWebUI(web_ui);
   content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(
                                            profile, /*serve_untrusted=*/true));
 #endif
