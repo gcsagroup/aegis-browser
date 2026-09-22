@@ -53,6 +53,9 @@ warnings=0
 check_overlay_matches_checkout >/dev/null
 assert_eq 1 "$errors" "内容漂移必须硬失败"
 
+# check_overlay_matches_checkout comes from the sourced status.sh and reads this
+# shell variable directly; ShellCheck cannot follow the dynamic source path.
+# shellcheck disable=SC2034
 SKIP_OVERLAY_CHECK=1
 errors=0
 warnings=0

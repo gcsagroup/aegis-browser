@@ -93,6 +93,18 @@ class AegisServiceObserver : public base::CheckedObserver {
   virtual void OnAegisStateChanged() = 0;
 };
 
+enum class TypeSafeSettingsError {
+  kNone,
+  kValidation,
+  kStorage,
+  kSuperseded,
+};
+
+using TypeSafeSettingsCallback =
+    base::OnceCallback<void(bool ok,
+                            std::string error,
+                            TypeSafeSettingsError error_type)>;
+
 class AegisService : public KeyedService,
                      public chrome::mojom::AegisHost,
                      public ProfileObserver {
@@ -183,6 +195,20 @@ class AegisService : public KeyedService,
       const std::string& base_url) const;
   std::string ModelCredentialState(const std::string& provider,
                                    const std::string& base_url) const;
+  bool IsTypeSafeGoalRoutingEnabled() const;
+  bool HasTypeSafeApiKey() const;
+  uint64_t TypeSafeSettingsGeneration() const {
+    return typesafe_settings_generation_;
+  }
+  // Browser-process-only access to the separately stored TypeSafe secret.
+  // Incognito and disabled configurations always return nullopt.
+  std::optional<std::string> TypeSafeApiKeyForBrowserAgent(
+      const Profile* requesting_profile) const;
+  void SetTypeSafeGoalRoutingSettings(
+      bool enabled,
+      const std::string& api_key,
+      bool clear_api_key,
+      TypeSafeSettingsCallback done);
   void SetModelSettings(
       const std::string& provider,
       const std::string& base_url,
@@ -283,6 +309,12 @@ class AegisService : public KeyedService,
   bool model_credentials_loading_ = false;
   bool model_credentials_loaded_ = false;
   bool model_credentials_available_ = true;
+  std::string typesafe_api_key_;
+  bool typesafe_credential_loading_ = false;
+  bool typesafe_credential_loaded_ = false;
+  bool typesafe_credential_available_ = true;
+  bool typesafe_settings_update_pending_ = false;
+  uint64_t typesafe_settings_generation_ = 0;
   std::unique_ptr<AiControl> ai_control_;
   mojo::ReceiverSet<chrome::mojom::AegisHost, int> host_receivers_;
   base::ScopedObservation<Profile, ProfileObserver> profile_observation_{this};
@@ -357,6 +389,28 @@ class AegisService : public KeyedService,
                        std::string api_key,
                        base::OnceCallback<void(bool, std::string)> done,
                        scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  void LoadTypeSafeCredential();
+  void OnTypeSafeCredentialLoaded(
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
+  std::optional<std::string> ValidateTypeSafeSettingsMutation(
+      const std::string& api_key,
+      bool clear_api_key) const;
+  void ClearTypeSafeGoalRoutingSettings(
+      TypeSafeSettingsCallback done);
+  void SetTypeSafeGoalRoutingEnabledOnly(
+      bool enabled,
+      TypeSafeSettingsCallback done);
+  void BeginSaveTypeSafeApiKey(
+      uint64_t generation,
+      bool enabled,
+      std::string api_key,
+      TypeSafeSettingsCallback done);
+  void SaveTypeSafeApiKey(
+      uint64_t generation,
+      bool enabled,
+      std::string api_key,
+      TypeSafeSettingsCallback done,
+      scoped_refptr<os_crypt_async::Encryptor> encryptor);
   void PersistModelConfiguration(const std::string& provider,
                                  const std::string& base_url,
                                  const std::string& model);

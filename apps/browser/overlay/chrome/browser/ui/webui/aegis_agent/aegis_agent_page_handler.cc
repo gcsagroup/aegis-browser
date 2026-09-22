@@ -10,6 +10,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -44,6 +45,21 @@ using aegis::agent::AgentRiskLevel;
 using aegis::agent::AgentTask;
 using aegis::agent::AgentTaskState;
 using aegis::agent::AgentWorkflowKind;
+
+aegis_agent::mojom::TypeSafeSettingsError ConvertTypeSafeSettingsError(
+    aegis::TypeSafeSettingsError error) {
+  switch (error) {
+    case aegis::TypeSafeSettingsError::kNone:
+      return aegis_agent::mojom::TypeSafeSettingsError::kNone;
+    case aegis::TypeSafeSettingsError::kValidation:
+      return aegis_agent::mojom::TypeSafeSettingsError::kValidation;
+    case aegis::TypeSafeSettingsError::kStorage:
+      return aegis_agent::mojom::TypeSafeSettingsError::kStorage;
+    case aegis::TypeSafeSettingsError::kSuperseded:
+      return aegis_agent::mojom::TypeSafeSettingsError::kSuperseded;
+  }
+  NOTREACHED();
+}
 
 const char* ModeName(AgentMode mode) {
   switch (mode) {
@@ -376,6 +392,23 @@ aegis::AegisService* CoreServiceForProfile(Profile* profile) {
 
 }  // namespace
 
+class AegisAgentCoreServiceObserver final
+    : public aegis::AegisServiceObserver {
+ public:
+  AegisAgentCoreServiceObserver(aegis::AegisService* service,
+                                base::RepeatingClosure on_changed)
+      : on_changed_(std::move(on_changed)), observation_(this) {
+    observation_.Observe(service);
+  }
+
+  void OnAegisStateChanged() override { on_changed_.Run(); }
+
+ private:
+  base::RepeatingClosure on_changed_;
+  base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
+      observation_;
+};
+
 AegisAgentPageHandler::AegisAgentPageHandler(
     Profile* profile,
     BrowserWindowInterface* browser,
@@ -409,6 +442,12 @@ AegisAgentPageHandler::AegisAgentPageHandler(
   ObserveService(service_);
   if (service_) {
     ObserveTask(service_->MostRecentTask());
+  }
+  if (aegis::AegisService* core_service = CoreServiceForProfile(profile_)) {
+    core_service_observer_ = std::make_unique<AegisAgentCoreServiceObserver>(
+        core_service,
+        base::BindRepeating(&AegisAgentPageHandler::PushSnapshot,
+                            weak_ptr_factory_.GetWeakPtr()));
   }
 }
 
@@ -464,6 +503,33 @@ void AegisAgentPageHandler::ConfigureModel(const std::string& provider,
   core_service->SetModelSettings(
       provider, base_url, model, api_key, clear_api_key,
       base::BindOnce(&AegisAgentPageHandler::OnModelConfigured,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
+}
+
+void AegisAgentPageHandler::ConfigureTypeSafe(
+    bool enabled,
+    const std::string& api_key,
+    bool clear_api_key,
+    ConfigureTypeSafeCallback callback) {
+  last_error_.clear();
+  typesafe_settings_error_ =
+      aegis_agent::mojom::TypeSafeSettingsError::kNone;
+  aegis::AegisService* core_service = CoreServiceForProfile(profile_);
+  if (!core_service) {
+    last_error_ = "TypeSafe settings are unavailable for this profile";
+    typesafe_settings_error_ =
+        aegis_agent::mojom::TypeSafeSettingsError::kValidation;
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  // Replacing or disabling the independent credential immediately revokes any
+  // in-flight routing request before OSCrypt work completes.
+  if (service_) {
+    service_->CancelPendingGoalRouting();
+  }
+  core_service->SetTypeSafeGoalRoutingSettings(
+      enabled, api_key, clear_api_key,
+      base::BindOnce(&AegisAgentPageHandler::OnTypeSafeConfigured,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
 
@@ -844,6 +910,16 @@ void AegisAgentPageHandler::OnModelConfigured(ConfigureModelCallback callback,
   std::move(callback).Run(BuildSnapshot());
 }
 
+void AegisAgentPageHandler::OnTypeSafeConfigured(
+    ConfigureTypeSafeCallback callback,
+    bool ok,
+    std::string error,
+    aegis::TypeSafeSettingsError error_type) {
+  last_error_ = ok ? std::string() : std::move(error);
+  typesafe_settings_error_ = ConvertTypeSafeSettingsError(error_type);
+  std::move(callback).Run(BuildSnapshot());
+}
+
 void AegisAgentPageHandler::OnModelsListed(ListModelsCallback callback,
                                            bool ok,
                                            std::string error,
@@ -921,6 +997,9 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
     snapshot->model_provider = core_service->ConfiguredModelProvider();
     snapshot->model_base_url = core_service->ConfiguredModelBaseUrl();
     snapshot->model_name = core_service->ConfiguredModelName();
+    snapshot->typesafe_enabled =
+        core_service->IsTypeSafeGoalRoutingEnabled();
+    snapshot->typesafe_key_configured = core_service->HasTypeSafeApiKey();
     PrefService* prefs = profile_->GetPrefs();
     const std::optional<aegis::ModelProvider> provider =
         aegis::ParseModelProvider(snapshot->model_provider);
@@ -934,6 +1013,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
             .has_value() &&
         aegis::IsValidModelName(*provider, snapshot->model_name);
   }
+  snapshot->typesafe_settings_error = typesafe_settings_error_;
   tabs::TabInterface* tab = ContentTab(browser_);
   if (tab) {
     snapshot->active_tab_id = tab->GetHandle().raw_value();
