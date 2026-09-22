@@ -44,7 +44,8 @@ AgentModelRequest Request(AgentModelProvider provider, bool stream) {
   request.user_prompt = "Observe the approved page.";
   request.tools.push_back(ObserveTool());
   request.required_tool_name = "page.observe";
-  request.reasoning_effort = "none";
+  request.reasoning_effort =
+      provider == AgentModelProvider::kOpenAICompatible ? "none" : "";
   request.stream = stream;
   return request;
 }
@@ -63,6 +64,74 @@ const AgentModelEvent* FindEvent(const AgentModelParseResult& result,
     }
   }
   return nullptr;
+}
+
+TEST(AegisAgentModelProtocolTest,
+     EmitsSelectedEffortAndPreservesUnknownDefault) {
+  auto request = Request(AgentModelProvider::kOpenAICompatible, false);
+  request.reasoning_effort = "xhigh";
+  request.max_output_tokens = 16384;
+  std::string error;
+  auto body = BuildAgentModelRequestBody(request, &error);
+  ASSERT_TRUE(body) << error;
+  auto parsed = base::JSONReader::ReadDict(*body, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(parsed);
+  EXPECT_EQ(*parsed->FindDict("reasoning")->FindString("effort"), "xhigh");
+  EXPECT_EQ(parsed->FindInt("max_output_tokens"), 16384);
+  request.reasoning_effort.clear();
+  body = BuildAgentModelRequestBody(request, &error);
+  ASSERT_TRUE(body);
+  EXPECT_FALSE(body->contains("reasoning"));
+  request.reasoning_effort = "high";
+  request.provider = AgentModelProvider::kAnthropic;
+  EXPECT_FALSE(BuildAgentModelRequestBody(request, &error));
+}
+
+TEST(AegisAgentModelProtocolTest, KeepsCachedAndReasoningUsageAsSubsets) {
+  const auto result = ParseAgentModelResponse(
+      AgentModelProvider::kOpenAICompatible,
+      R"({"status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":40,
+        "input_tokens_details":{"cached_tokens":60},
+        "output_tokens_details":{"reasoning_tokens":30}}})",
+      false, Tools());
+  ASSERT_TRUE(result.ok()) << result.error;
+  const auto* usage = FindEvent(result, AgentModelEventType::kUsage);
+  ASSERT_TRUE(usage);
+  EXPECT_EQ(usage->usage.cached_input_tokens, 60);
+  EXPECT_EQ(usage->usage.reasoning_tokens, 30);
+  EXPECT_EQ(usage->usage.output_tokens, 40);
+}
+
+TEST(AegisAgentModelProtocolTest, GeminiIncludesThoughtsAndCachedPromptUsage) {
+  const auto result = ParseAgentModelResponse(
+      AgentModelProvider::kGemini,
+      R"({"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}],
+        "usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":20,
+          "thoughtsTokenCount":30,"cachedContentTokenCount":60}})",
+      false, Tools());
+  ASSERT_TRUE(result.ok()) << result.error;
+  const auto* usage = FindEvent(result, AgentModelEventType::kUsage);
+  ASSERT_TRUE(usage);
+  EXPECT_EQ(usage->usage.output_tokens, 50);
+  EXPECT_EQ(usage->usage.reasoning_tokens, 30);
+  EXPECT_EQ(usage->usage.cached_input_tokens, 60);
+  EXPECT_TRUE(usage->usage.billing_complete);
+}
+
+TEST(AegisAgentModelProtocolTest,
+     AnthropicCacheCreationCannotClaimCompleteCost) {
+  const auto result = ParseAgentModelResponse(
+      AgentModelProvider::kAnthropic,
+      R"({"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn",
+        "usage":{"input_tokens":100,"output_tokens":20,
+          "cache_read_input_tokens":60,"cache_creation_input_tokens":40}})",
+      false, Tools());
+  ASSERT_TRUE(result.ok()) << result.error;
+  const auto* usage = FindEvent(result, AgentModelEventType::kUsage);
+  ASSERT_TRUE(usage);
+  EXPECT_EQ(usage->usage.input_tokens, 200);
+  EXPECT_EQ(usage->usage.cached_input_tokens, 60);
+  EXPECT_FALSE(usage->usage.billing_complete);
 }
 
 TEST(AegisAgentModelProtocolTest, BuildsProviderSpecificRestrictedTools) {

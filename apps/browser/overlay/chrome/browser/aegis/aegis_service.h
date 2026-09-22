@@ -23,6 +23,7 @@
 #include "base/timer/timer.h"
 #include "chrome/browser/aegis/privacy_event_store.h"
 #include "chrome/browser/aegis/summary_policy.h"
+#include "chrome/browser/aegis/agent/agent_model_router.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/common/aegis/miner_guard_model.h"
 #include "chrome/common/aegis/phish_score.h"
@@ -195,6 +196,13 @@ class AegisService : public KeyedService,
       const std::string& base_url) const;
   std::string ModelCredentialState(const std::string& provider,
                                    const std::string& base_url) const;
+  agent::AgentModelSelectionMode ConfiguredAgentModelSelectionMode() const;
+  int AgentModelCatalogRevision() const;
+  std::vector<agent::AgentModelCatalogEntry> AgentModelCatalog() const;
+  bool SetAgentModelRoutingSettings(
+      agent::AgentModelSelectionMode mode,
+      std::vector<agent::AgentModelCatalogEntry> catalog,
+      std::string* error);
   bool IsTypeSafeGoalRoutingEnabled() const;
   bool HasTypeSafeApiKey() const;
   uint64_t TypeSafeSettingsGeneration() const {
