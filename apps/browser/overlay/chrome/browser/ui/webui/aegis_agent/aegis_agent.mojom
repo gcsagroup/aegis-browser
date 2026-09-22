@@ -22,6 +22,41 @@ enum TypeSafeSettingsError {
   kSuperseded = 3,
 };
 
+enum ModelSelectionMode {
+  kFixed = 0,
+  kBalanced = 1,
+  kQuality = 2,
+  kCost = 3,
+  kLocalOnly = 4,
+};
+
+struct GenerationProfile {
+  string effort;
+  int32 max_output_tokens;
+};
+
+struct ModelPoolEntry {
+  string id;
+  string provider;
+  string base_url;
+  string model;
+  bool enabled;
+  bool supports_tool_calls;
+  bool supports_long_context;
+  bool supports_strong_reasoning;
+  int32 quality_score;
+  int32 latency_score;
+  string cost_microusd_per_million_tokens;
+  int32 priority;
+  array<string> supported_efforts;
+  GenerationProfile default_profile;
+  GenerationProfile basic_profile;
+  GenerationProfile strong_profile;
+  string input_price;
+  string cached_input_price;
+  string output_price;
+};
+
 struct PlanStep {
   string step_id;
   string title;
@@ -42,6 +77,25 @@ struct PlanSummary {
   string provider;
   string model;
   string destination;
+  string fallback_provider;
+  string fallback_model;
+  string fallback_destination;
+  ModelSelectionMode model_selection_mode;
+  string typesafe_outcome;
+  string typesafe_model;
+  string typesafe_decisions;
+  int32 typesafe_input_tokens;
+  int32 typesafe_output_tokens;
+  string typesafe_latency_ms;
+  bool fallback_used;
+  string model_input_tokens;
+  string model_output_tokens;
+  string model_latency_ms;
+  string estimated_model_cost_microusd;
+  string reasoning_effort;
+  int32 max_output_tokens;
+  bool estimated_cost_complete;
+  string routing_observations_json;
   string max_risk;
   array<PlanStep> steps;
 };
@@ -104,6 +158,9 @@ struct TaskSnapshot {
   string model_provider;
   string model_base_url;
   string model_name;
+  ModelSelectionMode model_selection_mode;
+  int32 model_catalog_revision;
+  array<ModelPoolEntry> model_pool;
   bool typesafe_enabled;
   bool typesafe_key_configured;
   TypeSafeSettingsError typesafe_settings_error;
@@ -113,7 +170,9 @@ struct TaskSnapshot {
   string suggested_goal;
   string task_id;
   string state;
+  string routing_observations_json;
   string mode;
+  string goal_route_observations_json;
   string goal;
   PlanSummary? plan;
   string result_summary;
@@ -145,6 +204,10 @@ interface PageHandler {
   ConfigureTypeSafe(bool enabled,
                     string api_key,
                     bool clear_api_key) => (TaskSnapshot snapshot);
+
+  ConfigureModelRouting(ModelSelectionMode mode,
+                        array<ModelPoolEntry> model_pool)
+      => (TaskSnapshot snapshot);
 
   ListModels(string provider, string base_url, string api_key)
       => (bool ok, string error, array<string> models);

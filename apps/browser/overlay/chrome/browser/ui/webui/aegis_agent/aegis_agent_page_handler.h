@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/aegis/agent/agent_execution.h"
+#include "chrome/browser/aegis/agent/agent_model_router.h"
 #include "chrome/browser/aegis/agent/agent_planner.h"
 #include "chrome/browser/aegis/agent/agent_service_observer.h"
 #include "chrome/browser/aegis/agent/agent_task.h"
@@ -62,6 +63,10 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
                          const std::string& api_key,
                          bool clear_api_key,
                          ConfigureTypeSafeCallback callback) override;
+  void ConfigureModelRouting(
+      aegis_agent::mojom::ModelSelectionMode mode,
+      std::vector<aegis_agent::mojom::ModelPoolEntryPtr> model_pool,
+      ConfigureModelRoutingCallback callback) override;
   void ListModels(const std::string& provider,
                   const std::string& base_url,
                   const std::string& api_key,
@@ -122,6 +127,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
       std::optional<GURL> routed_url,
       bool browser_only,
       bool use_current_page,
+      aegis::agent::AgentModelRequirements model_requirements,
+      bool route_was_required,
       CreateTaskCallback callback);
   void OnPlanReady(const std::string& task_id, bool ok, std::string error);
   void OnModelConfigured(ConfigureModelCallback callback,

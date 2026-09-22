@@ -6,12 +6,14 @@ import {loadTimeData} from '//resources/js/load_time_data.js';
 
 import type {
   CheckoutSummary,
+  ModelPoolEntry,
   MonitorSummary,
   PlanSummary,
   TaskSnapshot,
 } from './aegis_agent.mojom-webui.js';
 import {
   AgentMode,
+  ModelSelectionMode,
   TypeSafeSettingsError,
   Workflow,
 } from './aegis_agent.mojom-webui.js';
@@ -22,6 +24,7 @@ let snapshot: TaskSnapshot|null = null;
 let selectedWorkflow: Workflow|null = null;
 let busy = false;
 let modelBusy = false;
+let modelRoutingBusy = false;
 let typesafeBusy = false;
 let goalUserEdited = false;
 let modelFormInitialized = false;
@@ -254,6 +257,31 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
   addDefinition(
       scope, loadTimeData.getString('provider'),
       `${plan.provider} · ${plan.model} · ${plan.destination}`);
+  addDefinition(scope, loadTimeData.getString('generationProfile'),
+      `${plan.reasoningEffort || 'default'} · ${plan.maxOutputTokens || 'auto'}`);
+  if (plan.fallbackModel) {
+    addDefinition(
+        scope, loadTimeData.getString('fallbackModel'),
+        `${plan.fallbackProvider} · ${plan.fallbackModel} · ` +
+            plan.fallbackDestination);
+  }
+  addDefinition(
+      scope, loadTimeData.getString('typesafeObservation'),
+      `${plan.typesafeOutcome || 'not_required'} · ` +
+          `${plan.typesafeModel || '—'} · ${plan.typesafeLatencyMs} ms · ` +
+          `${plan.typesafeInputTokens + plan.typesafeOutputTokens} tokens`);
+  addDefinition(
+      scope, loadTimeData.getString('modelUsage'),
+      `${plan.fallbackUsed ? loadTimeData.getString('fallbackUsed') : ''}` +
+          `${plan.fallbackUsed ? ' · ' : ''}` +
+          `${Number(plan.modelInputTokens) + Number(plan.modelOutputTokens)} tokens · ` +
+          `${plan.modelLatencyMs} ms`);
+  addDefinition(
+      scope, loadTimeData.getString('estimatedModelCost'),
+      plan.estimatedModelCostMicrousd ?
+      `${plan.estimatedModelCostMicrousd} µUSD · ` +
+          loadTimeData.getString(plan.estimatedCostComplete ? 'costComplete' : 'costPartial') :
+      loadTimeData.getString('runtimeCostUnknown'));
   addDefinition(scope, loadTimeData.getString('risk'), plan.maxRisk);
   addDefinition(
       scope, loadTimeData.getString('origins'), plan.origins.join(', '));
@@ -491,6 +519,33 @@ function renderModel(next: TaskSnapshot) {
   element<HTMLInputElement>('model-api-key').disabled = modelBusy;
   element<HTMLButtonElement>('detect-models-button').disabled = modelBusy;
   element<HTMLButtonElement>('save-model-button').disabled = modelBusy;
+  const routingMode = element<HTMLSelectElement>('model-routing-mode');
+  routingMode.value = String(next.modelSelectionMode);
+  routingMode.disabled = modelRoutingBusy;
+  element<HTMLButtonElement>('add-model-pool-button').disabled =
+      modelBusy || modelRoutingBusy || !model.value.trim();
+  const pool = element<HTMLUListElement>('model-pool');
+  pool.replaceChildren();
+  for (const entry of next.modelPool) {
+    const item = document.createElement('li');
+    const label = document.createElement('span');
+    label.textContent = `${entry.provider} · ${entry.model}`;
+    const detail = document.createElement('small');
+    const cost = entry.costMicrousdPerMillionTokens ||
+        loadTimeData.getString('modelCostUnknown');
+    detail.textContent =
+        `Q${entry.qualityScore} · L${entry.latencyScore} · ${cost}`;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = loadTimeData.getString('removeModelPool');
+    remove.disabled = modelRoutingBusy;
+    remove.addEventListener('click', () => {
+      void saveModelRouting(
+          next.modelPool.filter(candidate => candidate.id !== entry.id));
+    });
+    item.append(label, detail, remove);
+    pool.append(item);
+  }
 }
 
 function renderTypeSafe(next: TaskSnapshot) {
@@ -503,7 +558,8 @@ function renderTypeSafe(next: TaskSnapshot) {
       next.typesafeKeyConfigured ?
       loadTimeData.getString('typesafeConfigured') :
       loadTimeData.getString('typesafeDisabled');
-  enabled.disabled = typesafeBusy;
+  enabled.disabled = typesafeBusy ||
+      next.modelSelectionMode === ModelSelectionMode.kLocalOnly;
   element<HTMLInputElement>('typesafe-api-key').disabled = typesafeBusy;
   element<HTMLButtonElement>('save-typesafe-button').disabled = typesafeBusy;
   element<HTMLButtonElement>('clear-typesafe-key-button').disabled =
@@ -622,6 +678,18 @@ function maybeAutoRun(next: TaskSnapshot) {
   }
 }
 
+function renderRoutingObservations(next: TaskSnapshot) {
+  const hasTask = Boolean(next.taskId);
+  element('routing-observations-details').hidden = !hasTask;
+  element<HTMLTextAreaElement>('routing-observations').value =
+      hasTask ? next.routingObservationsJson || '{}' : '';
+  const routes = next.goalRouteObservationsJson || '[]';
+  const hasRoutes = routes !== '[]';
+  element('goal-route-observations-details').hidden = !hasRoutes;
+  element<HTMLTextAreaElement>('goal-route-observations').value =
+      hasRoutes ? routes : '';
+}
+
 function render(next: TaskSnapshot) {
   snapshot = next;
   element('status').dataset['tone'] = statusTone(next);
@@ -656,6 +724,7 @@ function render(next: TaskSnapshot) {
   renderModel(next);
   renderTypeSafe(next);
   renderPlan(next.plan || null, Boolean(next.taskId), next.state);
+  renderRoutingObservations(next);
   renderResult(next);
   renderTimeline(next);
   renderMonitors(next.monitors);
@@ -775,6 +844,15 @@ function initializeLabels() {
   text('api-key-label', 'apiKeyLabel');
   text('detect-models-button', 'detectModels');
   text('save-model-button', 'saveModel');
+  text('model-routing-mode-label', 'modelRoutingMode');
+  text('model-quality-label', 'modelQualityScore');
+  text('model-latency-label', 'modelLatencyScore');
+  text('model-cost-label', 'modelCost');
+  text('model-supports-tools-label', 'modelSupportsTools');
+  text('model-supports-long-context-label', 'modelSupportsLongContext');
+  text('model-supports-strong-reasoning-label',
+      'modelSupportsStrongReasoning');
+  text('add-model-pool-button', 'addModelPool');
   text('typesafe-settings-label', 'typesafeSettings');
   text('typesafe-disclosure', 'typesafeDisclosure');
   text('typesafe-enabled-label', 'typesafeEnable');
@@ -999,6 +1077,100 @@ async function saveModel() {
   }
 }
 
+async function saveModelRouting(modelPool: ModelPoolEntry[]) {
+  if (modelRoutingBusy) {
+    return;
+  }
+  // Capture the user's choice before render() reapplies the persisted
+  // snapshot while the request is in flight.
+  const mode = Number(element<HTMLSelectElement>('model-routing-mode').value) as
+      ModelSelectionMode;
+  modelRoutingBusy = true;
+  element('model-routing-feedback').textContent = '';
+  if (snapshot) {
+    render(snapshot);
+  }
+  try {
+    const response = await proxy.handler.configureModelRouting(mode, modelPool);
+    render(response.snapshot);
+    element('model-routing-feedback').textContent =
+        response.snapshot.lastError ?
+        loadTimeData.getString('modelRoutingError') :
+        loadTimeData.getString('modelRoutingSaved');
+  } catch {
+    element('model-routing-feedback').textContent =
+        loadTimeData.getString('modelRoutingError');
+  } finally {
+    modelRoutingBusy = false;
+    if (snapshot) {
+      render(snapshot);
+    }
+  }
+}
+
+function boundedScore(id: string): number {
+  const value = Number(element<HTMLInputElement>(id).value);
+  return Number.isInteger(value) ? Math.min(100, Math.max(0, value)) : 50;
+}
+
+function readGenerationProfile(id: string) {
+  const value = element<HTMLInputElement>(id).value.trim();
+  if (!value) {
+    return {effort: '', maxOutputTokens: 0};
+  }
+  if (!/^(none|minimal|low|medium|high|xhigh)?:[0-9]+$/.test(value)) {
+    return {effort: '', maxOutputTokens: -1};
+  }
+  const [effort, budget] = value.split(':');
+  return {effort: effort || '', maxOutputTokens: Number(budget)};
+}
+
+function addCurrentModelToPool() {
+  if (!snapshot) {
+    return;
+  }
+  const provider = element<HTMLSelectElement>('model-provider').value;
+  const baseUrl = element<HTMLInputElement>('model-base-url').value.trim();
+  const model = element<HTMLInputElement>('model-name').value.trim();
+  if (!provider || !baseUrl || !model) {
+    element('model-routing-feedback').textContent =
+        loadTimeData.getString('modelRoutingError');
+    return;
+  }
+  const cost = element<HTMLInputElement>('model-cost').value.trim();
+  const previous = snapshot.modelPool.find(
+      entry => entry.provider === provider && entry.baseUrl === baseUrl &&
+          entry.model === model);
+  const entry: ModelPoolEntry = {
+    id: previous?.id || `model-${Date.now()}`,
+    provider,
+    baseUrl,
+    model,
+    enabled: true,
+    supportsToolCalls:
+        element<HTMLInputElement>('model-supports-tools').checked,
+    supportsLongContext:
+        element<HTMLInputElement>('model-supports-long-context').checked,
+    supportsStrongReasoning:
+        element<HTMLInputElement>('model-supports-strong-reasoning').checked,
+    qualityScore: boundedScore('model-quality-score'),
+    latencyScore: boundedScore('model-latency-score'),
+    costMicrousdPerMillionTokens: cost,
+    priority: 0,
+    supportedEfforts: element<HTMLInputElement>('model-efforts').value
+                         .split(',').map(value => value.trim()).filter(Boolean),
+    defaultProfile: readGenerationProfile('model-profile-default'),
+    basicProfile: readGenerationProfile('model-profile-basic'),
+    strongProfile: readGenerationProfile('model-profile-strong'),
+    inputPrice: element<HTMLInputElement>('model-input-price').value.trim(),
+    cachedInputPrice: element<HTMLInputElement>('model-cache-price').value.trim(),
+    outputPrice: element<HTMLInputElement>('model-output-price').value.trim(),
+  };
+  const pool = snapshot.modelPool.filter(candidate => candidate.id !== entry.id);
+  pool.push(entry);
+  void saveModelRouting(pool);
+}
+
 async function saveTypeSafe(clearApiKey = false) {
   if (typesafeBusy) {
     return;
@@ -1081,6 +1253,13 @@ function bindActions() {
   element('model-base-url').addEventListener('input', resetDetectedModels);
   element('model-api-key').addEventListener('input', resetDetectedModels);
   element('save-model-button').addEventListener('click', saveModel);
+  element('add-model-pool-button').addEventListener(
+      'click', addCurrentModelToPool);
+  element('model-routing-mode').addEventListener('change', () => {
+    if (snapshot) {
+      void saveModelRouting(snapshot.modelPool);
+    }
+  });
   element('save-typesafe-button').addEventListener(
       'click', () => saveTypeSafe(false));
   element('clear-typesafe-key-button').addEventListener(

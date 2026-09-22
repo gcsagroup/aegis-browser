@@ -2,8 +2,11 @@
 // Intended path: chrome/browser/aegis/aegis_service.cc
 
 #include "chrome/browser/aegis/aegis_service.h"
+#include "chrome/browser/aegis/agent/agent_generation_profile_json.h"
+#include "chrome/browser/aegis/agent/agent_model_accounting_json.h"
 
 #include <algorithm>
+#include <limits>
 #include <string_view>
 
 #include "base/base64.h"
@@ -67,6 +70,7 @@ constexpr base::TimeDelta kObserverNotificationInterval =
 constexpr base::TimeDelta kMinerObservationWindow = base::Seconds(30);
 constexpr size_t kMaxMinerDocuments = 100;
 constexpr size_t kMaxModelApiKeyBytes = 4096;
+constexpr size_t kMaxAgentModelCatalogEntries = 8;
 constexpr std::string_view kLegacyOllamaBaseUrl = "http://127.0.0.1:11434";
 constexpr std::string_view kLegacyOllamaModel = "llama3.2:3b";
 
@@ -102,6 +106,39 @@ std::optional<std::string> NormalizeModelBaseUrl(ModelProvider provider,
   return parsed.ReplaceComponents(replacements).spec();
 }
 
+std::string_view AgentModelSelectionModeName(
+    agent::AgentModelSelectionMode mode) {
+  switch (mode) {
+    case agent::AgentModelSelectionMode::kFixed:
+      return "fixed";
+    case agent::AgentModelSelectionMode::kBalanced:
+      return "balanced";
+    case agent::AgentModelSelectionMode::kQuality:
+      return "quality";
+    case agent::AgentModelSelectionMode::kCost:
+      return "cost";
+    case agent::AgentModelSelectionMode::kLocalOnly:
+      return "local_only";
+  }
+}
+
+agent::AgentModelSelectionMode ParseAgentModelSelectionMode(
+    std::string_view value) {
+  if (value == "balanced") {
+    return agent::AgentModelSelectionMode::kBalanced;
+  }
+  if (value == "quality") {
+    return agent::AgentModelSelectionMode::kQuality;
+  }
+  if (value == "cost") {
+    return agent::AgentModelSelectionMode::kCost;
+  }
+  if (value == "local_only") {
+    return agent::AgentModelSelectionMode::kLocalOnly;
+  }
+  return agent::AgentModelSelectionMode::kFixed;
+}
+
 std::string ModelCredentialKey(ModelProvider provider,
                                const std::string& normalized_base_url) {
   return std::string(ModelProviderId(provider)) + "|" + normalized_base_url;
@@ -126,6 +163,111 @@ bool IsValidModelCredentialKey(std::string_view key) {
 bool HasUserSetting(PrefService* prefs, const char* name) {
   const PrefService::Preference* preference = prefs->FindPreference(name);
   return preference && preference->HasUserSetting();
+}
+
+std::optional<agent::AgentModelCatalogEntry> DeserializeAgentModelCatalogEntry(
+    const base::DictValue& item) {
+  const std::string* id = item.FindString("id");
+  const std::string* provider_name = item.FindString("provider");
+  const std::string* base_url = item.FindString("base_url");
+  const std::string* model = item.FindString("model");
+  const std::optional<bool> enabled = item.FindBool("enabled");
+  const std::optional<bool> tools = item.FindBool("supports_tool_calls");
+  const std::optional<bool> long_context =
+      item.FindBool("supports_long_context");
+  const std::optional<bool> reasoning =
+      item.FindBool("supports_strong_reasoning");
+  const std::optional<int> quality = item.FindInt("quality_score");
+  const std::optional<int> latency = item.FindInt("latency_score");
+  const std::optional<int> priority = item.FindInt("priority");
+  const std::optional<ModelProvider> provider =
+      provider_name ? ParseModelProvider(*provider_name) : std::nullopt;
+  const std::optional<std::string> endpoint =
+      provider && base_url ? NormalizeModelBaseUrl(*provider, *base_url)
+                           : std::nullopt;
+  if (!id || !model || !enabled || !tools || !long_context || !reasoning ||
+      !quality || !latency || !priority || !provider || !endpoint ||
+      !IsValidModelName(*provider, *model)) {
+    return std::nullopt;
+  }
+  agent::AgentModelCatalogEntry entry{
+      .id = *id,
+      .destination =
+          {.kind = IsLocalModelEndpoint(*provider, GURL(*endpoint))
+                       ? agent::AgentModelDestination::Kind::kLoopback
+                       : agent::AgentModelDestination::Kind::kCloud,
+           .provider = std::string(ModelProviderId(*provider)),
+           .endpoint = *endpoint,
+           .model = *model},
+      .enabled = *enabled,
+      .authorized = true,
+      .supports_tool_calls = *tools,
+      .supports_long_context = *long_context,
+      .supports_strong_reasoning = *reasoning,
+      .quality_score = *quality,
+      .latency_score = *latency,
+      .priority = *priority};
+  if (const std::optional<int> cost =
+          item.FindInt("cost_microusd_per_million_tokens")) {
+    entry.cost_microusd_per_million_tokens = *cost;
+  }
+  if (!agent::ReadGenerationPolicy(item, &entry.generation_policy) ||
+      !agent::ReadTokenPrices(item, "token_prices", &entry.token_prices)) {
+    return std::nullopt;
+  }
+  return entry.IsValid() ? std::make_optional(std::move(entry)) : std::nullopt;
+}
+
+std::optional<base::DictValue> SerializeAgentModelCatalogEntry(
+    agent::AgentModelCatalogEntry* entry,
+    base::flat_set<std::string>* ids) {
+  const std::optional<ModelProvider> provider =
+      ParseModelProvider(entry->destination.provider);
+  const std::optional<std::string> endpoint =
+      provider ? NormalizeModelBaseUrl(*provider, entry->destination.endpoint)
+               : std::nullopt;
+  if (!provider || !endpoint ||
+      !IsValidModelName(*provider, entry->destination.model) ||
+      !ids->insert(entry->id).second ||
+      (entry->cost_microusd_per_million_tokens &&
+       *entry->cost_microusd_per_million_tokens >
+           std::numeric_limits<int>::max())) {
+    return std::nullopt;
+  }
+  entry->destination.provider = std::string(ModelProviderId(*provider));
+  entry->destination.endpoint = *endpoint;
+  entry->destination.kind =
+      IsLocalModelEndpoint(*provider, GURL(*endpoint))
+          ? agent::AgentModelDestination::Kind::kLoopback
+          : agent::AgentModelDestination::Kind::kCloud;
+  entry->authorized = true;
+  if (!entry->IsValid()) {
+    return std::nullopt;
+  }
+  base::DictValue item;
+  item.Set("id", entry->id);
+  item.Set("provider", entry->destination.provider);
+  item.Set("base_url", entry->destination.endpoint);
+  item.Set("model", entry->destination.model);
+  item.Set("enabled", entry->enabled);
+  item.Set("supports_tool_calls", entry->supports_tool_calls);
+  item.Set("supports_long_context", entry->supports_long_context);
+  item.Set("supports_strong_reasoning", entry->supports_strong_reasoning);
+  item.Set("quality_score", entry->quality_score);
+  item.Set("latency_score", entry->latency_score);
+  item.Set("priority", entry->priority);
+  agent::WriteGenerationPolicy(entry->generation_policy, &item);
+  item.Set("token_prices", agent::SerializeTokenPrices(entry->token_prices));
+  if (entry->cost_microusd_per_million_tokens) {
+    item.Set("cost_microusd_per_million_tokens",
+             static_cast<int>(*entry->cost_microusd_per_million_tokens));
+  }
+  return item;
+}
+
+bool IsValidAgentModelSelectionMode(agent::AgentModelSelectionMode mode) {
+  return mode >= agent::AgentModelSelectionMode::kFixed &&
+         mode <= agent::AgentModelSelectionMode::kLocalOnly;
 }
 
 std::optional<std::string> LegacyOllamaBaseToOpenAI(
@@ -1518,6 +1660,115 @@ std::string AegisService::ModelCredentialState(
   return model_credentials_available_ ? "ready" : "unavailable";
 }
 
+agent::AgentModelSelectionMode
+AegisService::ConfiguredAgentModelSelectionMode() const {
+  return prefs_ ? ParseAgentModelSelectionMode(
+                      prefs_->GetString(prefs::kAgentModelSelectionMode))
+                : agent::AgentModelSelectionMode::kFixed;
+}
+
+int AegisService::AgentModelCatalogRevision() const {
+  return prefs_ ? std::max(0, prefs_->GetInteger(
+                                  prefs::kAgentModelCatalogRevision))
+                : 0;
+}
+
+std::vector<agent::AgentModelCatalogEntry>
+AegisService::AgentModelCatalog() const {
+  std::vector<agent::AgentModelCatalogEntry> result;
+  if (!prefs_) {
+    return result;
+  }
+  const base::ListValue& stored = prefs_->GetList(prefs::kAgentModelCatalog);
+  for (const base::Value& value : stored) {
+    const base::DictValue* item = value.GetIfDict();
+    if (!item) {
+      continue;
+    }
+    std::optional<agent::AgentModelCatalogEntry> entry =
+        DeserializeAgentModelCatalogEntry(*item);
+    if (entry) {
+      // Adding an entry is the user's explicit destination authorization.
+      // Credential availability is checked again immediately before use.
+      result.push_back(std::move(*entry));
+    }
+    if (result.size() >= kMaxAgentModelCatalogEntries) {
+      break;
+    }
+  }
+  if (!result.empty() || !HasUserSetting(prefs_, prefs::kModelProvider) ||
+      !HasUserSetting(prefs_, prefs::kModelBaseUrl) ||
+      !HasUserSetting(prefs_, prefs::kModelName)) {
+    return result;
+  }
+
+  const std::optional<ModelProvider> provider =
+      ParseModelProvider(ConfiguredModelProvider());
+  const std::optional<std::string> endpoint =
+      provider ? NormalizeModelBaseUrl(*provider, ConfiguredModelBaseUrl())
+               : std::nullopt;
+  const std::string model = ConfiguredModelName();
+  if (provider && endpoint && IsValidModelName(*provider, model)) {
+    result.push_back({
+        .id = "fixed",
+        .destination =
+            {.kind = IsLocalModelEndpoint(*provider, GURL(*endpoint))
+                         ? agent::AgentModelDestination::Kind::kLoopback
+                         : agent::AgentModelDestination::Kind::kCloud,
+             .provider = std::string(ModelProviderId(*provider)),
+             .endpoint = *endpoint,
+             .model = model},
+        .enabled = true,
+        .authorized = true});
+  }
+  return result;
+}
+
+bool AegisService::SetAgentModelRoutingSettings(
+    agent::AgentModelSelectionMode mode,
+    std::vector<agent::AgentModelCatalogEntry> catalog,
+    std::string* error) {
+  if (!error || !prefs_) {
+    return false;
+  }
+  error->clear();
+  if (!IsValidAgentModelSelectionMode(mode) ||
+      catalog.size() > kMaxAgentModelCatalogEntries ||
+      (mode != agent::AgentModelSelectionMode::kFixed && catalog.empty())) {
+    *error = "invalid Agent model routing settings";
+    return false;
+  }
+  base::flat_set<std::string> ids;
+  base::ListValue serialized;
+  for (agent::AgentModelCatalogEntry& entry : catalog) {
+    std::optional<base::DictValue> item =
+        SerializeAgentModelCatalogEntry(&entry, &ids);
+    if (!item) {
+      *error = "invalid Agent model catalog entry";
+      return false;
+    }
+    serialized.Append(std::move(*item));
+  }
+  // A route is bound to the model policy that started it. Revoke pending
+  // analysis before publishing a different mode, catalog, or revision so a
+  // late TypeSafe/model callback cannot mix old requirements with new models.
+  if (auto* agent_service =
+          agent::AegisAgentServiceFactory::GetForProfileIfExists(profile_)) {
+    agent_service->CancelPendingGoalRouting();
+    agent_service->InvalidatePendingModelDispatches();
+  }
+  prefs_->SetList(prefs::kAgentModelCatalog, std::move(serialized));
+  prefs_->SetString(prefs::kAgentModelSelectionMode,
+                    AgentModelSelectionModeName(mode));
+  const int revision = AgentModelCatalogRevision();
+  prefs_->SetInteger(prefs::kAgentModelCatalogRevision,
+                     revision == std::numeric_limits<int>::max()
+                         ? 1
+                         : revision + 1);
+  NotifyObservers();
+  return true;
+}
+
 bool AegisService::IsTypeSafeGoalRoutingEnabled() const {
   return prefs_ && profile_ && !profile_->IsOffTheRecord() &&
          !typesafe_settings_update_pending_ &&
@@ -1719,6 +1970,11 @@ void AegisService::OnTypeSafeCredentialLoaded(
 void AegisService::PersistModelConfiguration(const std::string& provider,
                                              const std::string& base_url,
                                              const std::string& model) {
+  if (auto* agent_service =
+          agent::AegisAgentServiceFactory::GetForProfileIfExists(profile_)) {
+    agent_service->CancelPendingGoalRouting();
+    agent_service->InvalidatePendingModelDispatches();
+  }
   prefs_->SetString(prefs::kModelProvider, provider);
   prefs_->SetString(prefs::kModelBaseUrl, base_url);
   prefs_->SetString(prefs::kModelName, model);

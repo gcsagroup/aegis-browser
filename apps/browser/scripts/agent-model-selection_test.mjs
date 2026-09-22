@@ -13,7 +13,7 @@ assert(!html.includes('<datalist') && !html.includes('list="model-options"'));
 const tree = ts.createSourceFile('agent.ts', source, ts.ScriptTarget.Latest, true);
 const names = ['option', 'renderModel', 'resetDetectedModels', 'selectDetectedModel',
   'syncDetectedModel', 'detectModels', 'friendlyModelError', 'bindActions',
-  'saveModel', 'showModelSaveError'];
+  'saveModel', 'saveModelRouting', 'showModelSaveError', 'readGenerationProfile'];
 const functions = tree.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
 assert.equal(functions.length, names.length);
 const code = ts.transpileModule(functions.map(node => node.getText(tree)).join('\n'), {
@@ -40,10 +40,14 @@ function harness(name = models[1]) {
   let response = {ok: true, models};
   let modelRequests = 0;
   const saved = [];
+  const savedRouting = [];
   const snapshot = {modelConfigured: true, modelProvider: 'openai',
-    modelBaseUrl: 'http://127.0.0.1:8000/v1', modelName: name, lastError: ''};
+    modelBaseUrl: 'http://127.0.0.1:8000/v1', modelName: name, lastError: '',
+    modelSelectionMode: 0, modelPool: []};
   const context = vm.createContext({element: field, snapshot, modelBusy: false,
-    modelFormInitialized: false, loadTimeData: {getString: key => key},
+    modelRoutingBusy: false, modelFormInitialized: false,
+    addCurrentModelToPool: () => {},
+    loadTimeData: {getString: key => key},
     document: {createElement: () => ({})}, proxy: {handler: {
       listModels: async () => {
         modelRequests++;
@@ -54,15 +58,23 @@ function harness(name = models[1]) {
         saved.push(args);
         return {snapshot: {...snapshot, modelName: args[2]}};
       },
+      configureModelRouting: async (...args) => {
+        savedRouting.push(args);
+        return {snapshot: {...snapshot, modelSelectionMode: args[0]}};
+      },
     }},
   });
   vm.runInContext(code, context);
-  context.render = next => { context.snapshot = next; context.renderModel(next); };
+  context.render = next => {
+    context.snapshot = next;
+    field('model-routing-mode').value = String(next.modelSelectionMode);
+    context.renderModel(next);
+  };
   context.render(snapshot);
   context.bindActions();
   const fire = (id, event) => field(id).listeners.get(event)();
-  return {field, context, saved, fire, respond: value => { response = value; },
-    requests: () => modelRequests};
+  return {field, context, saved, savedRouting, fire,
+    respond: value => { response = value; }, requests: () => modelRequests};
 }
 let passed = 0;
 async function check(label, fn) { await fn(); passed++; console.log('PASS: ' + label); }
@@ -152,5 +164,24 @@ await check('检测期间禁用选择，响应完成后恢复', async () => {
   done({ok: true, models});
   await pending;
   assert.equal(h.field('model-options').disabled, false);
+});
+await check('路由模式在忙碌渲染前冻结并按用户选择提交', async () => {
+  const h = harness();
+  h.field('model-routing-mode').value = '3';
+  await h.context.saveModelRouting([]);
+  assert.equal(h.savedRouting.length, 1);
+  assert.equal(h.savedRouting[0][0], 3);
+});
+await check('推理 profile 保留默认、解析配置并拒绝错误预算格式', async () => {
+  const h = harness();
+  const read = value => {
+    h.field('profile').value = value;
+    return JSON.parse(JSON.stringify(h.context.readGenerationProfile('profile')));
+  };
+  assert.deepEqual(read(''), {effort: '', maxOutputTokens: 0});
+  assert.deepEqual(read('high:16384'), {effort: 'high', maxOutputTokens: 16384});
+  assert.deepEqual(read(':4096'), {effort: '', maxOutputTokens: 4096});
+  assert.equal(read('high:invalid').maxOutputTokens, -1);
+  assert.equal(read('ultra:4096').maxOutputTokens, -1);
 });
 console.log(`模型选择回归 ${passed}/${passed}，另含 HTML 结构检查；非实机验收。`);

@@ -119,6 +119,34 @@ base::DictValue EntryKindQuestion() {
       std::move(criteria));
 }
 
+base::DictValue ReasoningNeedQuestion() {
+  base::DictValue criteria;
+  criteria.Set("unknown", "The goal does not reveal the reasoning demand");
+  criteria.Set("basic", "A direct lookup, extraction, or short transformation");
+  criteria.Set("strong", "Comparison, synthesis, ambiguity, or multi-constraint reasoning");
+  return ChoiceQuestion("How much reasoning does this goal require?",
+                        std::move(criteria));
+}
+
+base::DictValue ContextNeedQuestion() {
+  base::DictValue criteria;
+  criteria.Set("unknown", "The goal does not reveal the context size");
+  criteria.Set("short", "A small amount of page or task context is sufficient");
+  criteria.Set("long", "The task likely combines many sources or a long page");
+  return ChoiceQuestion("How much context is likely required?",
+                        std::move(criteria));
+}
+
+base::DictValue OutputNeedQuestion() {
+  base::DictValue criteria;
+  criteria.Set("unknown", "The requested output form is unclear");
+  criteria.Set("short_extraction", "A short fact or bounded extraction");
+  criteria.Set("comprehensive", "A detailed explanation or comparison");
+  criteria.Set("multi_step", "A plan or result requiring multiple browser steps");
+  return ChoiceQuestion("What output shape does the goal require?",
+                        std::move(criteria));
+}
+
 int ResponseCode(network::SimpleURLLoader* loader) {
   if (!loader || !loader->ResponseInfo() ||
       !loader->ResponseInfo()->headers) {
@@ -144,6 +172,9 @@ std::optional<std::string> BuildTypeSafeGoalRequestBody(
   base::DictValue questions;
   questions.Set("workflow", WorkflowQuestion());
   questions.Set("entry_kind", EntryKindQuestion());
+  questions.Set("reasoning_need", ReasoningNeedQuestion());
+  questions.Set("context_need", ContextNeedQuestion());
+  questions.Set("output_need", OutputNeedQuestion());
 
   base::DictValue request;
   request.Set("state", std::string(goal));
@@ -197,6 +228,8 @@ TypeSafeGoalRouterClient::Start(std::string goal,
 
   request_id_ = base::UnguessableToken::Create().ToString();
   original_goal_ = std::move(goal);
+  started_at_ = base::TimeTicks::Now();
+  last_latency_ = base::TimeDelta();
   callback_ = std::move(callback);
   loader_ = network::SimpleURLLoader::Create(std::move(request),
                                               kTrafficAnnotation);
@@ -218,6 +251,10 @@ bool TypeSafeGoalRouterClient::Cancel(const RequestId& request_id) {
   loader_.reset();
   request_id_.reset();
   original_goal_.clear();
+  if (!started_at_.is_null()) {
+    last_latency_ = base::TimeTicks::Now() - started_at_;
+  }
+  started_at_ = base::TimeTicks();
   Callback callback = std::move(callback_);
   if (callback) {
     std::move(callback).Run(false, "TypeSafe goal routing was cancelled",
@@ -233,6 +270,9 @@ void TypeSafeGoalRouterClient::OnComplete(RequestId request_id,
   }
   Callback callback = std::move(callback_);
   std::string original_goal = std::move(original_goal_);
+  const base::TimeDelta latency = base::TimeTicks::Now() - started_at_;
+  last_latency_ = latency;
+  started_at_ = base::TimeTicks();
   const int response_code = ResponseCode(loader_.get());
   const int net_error = loader_ ? loader_->NetError() : net::ERR_FAILED;
   const bool request_ok = loader_ && net_error == net::OK && body &&
@@ -248,10 +288,13 @@ void TypeSafeGoalRouterClient::OnComplete(RequestId request_id,
     return;
   }
   std::string error;
-  std::optional<AgentGoalRoute> route =
+  std::optional<TypeSafeGoalAnalysis> analysis =
       TypeSafeGoalResponseParser::Parse(*body, original_goal, &error);
-  std::move(callback).Run(route.has_value(), std::move(error),
-                          std::move(route));
+  if (analysis) {
+    analysis->latency = latency;
+  }
+  std::move(callback).Run(analysis.has_value(), std::move(error),
+                          std::move(analysis));
 }
 
 }  // namespace aegis::agent

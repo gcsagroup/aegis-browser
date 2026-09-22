@@ -39,6 +39,11 @@ inline constexpr char kModelBaseUrl[] = "aegis.model_base_url";
 inline constexpr char kModelName[] = "aegis.model_name";
 inline constexpr char kModelApiKeyCiphertexts[] =
     "aegis.model_api_key_ciphertexts";
+inline constexpr char kAgentModelSelectionMode[] =
+    "aegis.agent_model_selection_mode";
+inline constexpr char kAgentModelCatalog[] = "aegis.agent_model_catalog";
+inline constexpr char kAgentModelCatalogRevision[] =
+    "aegis.agent_model_catalog_revision";
 inline constexpr char kTypeSafeGoalRoutingEnabled[] =
     "aegis.typesafe_goal_routing_enabled";
 inline constexpr char kTypeSafeApiKeyCiphertext[] =

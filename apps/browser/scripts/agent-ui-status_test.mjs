@@ -135,18 +135,24 @@ const modelCode = ts.transpileModule(modelFunctions.map(node => node.getText(tre
 const savedModel = {
   modelConfigured: true, modelProvider: 'openai',
   modelBaseUrl: 'http://127.0.0.1:8000/v1', modelName: 'previous-model', lastError: '',
+  modelSelectionMode: 0, modelPool: [],
 };
 const requestedModel = 'Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit';
 function modelHarness(initial = savedModel) {
   const fields = new Map();
   const field = name => {
-    if (!fields.has(name)) fields.set(name, {value: '', textContent: '', disabled: false, open: true});
+    if (!fields.has(name)) fields.set(name, {
+      value: '', textContent: '', disabled: false, open: true,
+      replaceChildren() {}, append() {}, addEventListener() {},
+    });
     return fields.get(name);
   };
   const calls = [];
   let response = {snapshot: {...savedModel, modelName: requestedModel}};
   const sandbox = vm.createContext({
-    element: field, modelBusy: false, modelFormInitialized: false, snapshot: initial,
+    element: field, modelBusy: false, modelRoutingBusy: false,
+    modelFormInitialized: false, snapshot: initial,
+    document: {createElement: tag => new TestElement(tag)},
     loadTimeData: {getString: key => key},
     proxy: {handler: {configureModel: async (...args) => {
       calls.push(args);
@@ -268,7 +274,7 @@ const typesafeCode = ts.transpileModule(
     {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
 function typesafeHarness(initial = {
   typesafeEnabled: false, typesafeKeyConfigured: false,
-  typesafeSettingsError: 0, lastError: '',
+  typesafeSettingsError: 0, lastError: '', modelSelectionMode: 0,
 }) {
   const fields = new Map();
   const field = name => {
@@ -282,6 +288,7 @@ function typesafeHarness(initial = {
   const sandbox = vm.createContext({
     element: field, typesafeBusy: false, typesafeEnabledDirty: false,
     snapshot: initial, loadTimeData: {getString: key => key},
+    ModelSelectionMode: {kLocalOnly: 4},
     TypeSafeSettingsError: {kNone: 0, kValidation: 1, kStorage: 2, kSuperseded: 3},
     proxy: {handler: {configureTypeSafe: async (...args) => {
       calls.push(args);
@@ -385,6 +392,7 @@ const actionContext = vm.createContext({
   Workflow: {kResearch: 0, kBrowserSteward: 1, kSafeDownload: 2, kShopping: 3},
   AgentMode: {kAct: 1, kAutomate: 2}, selectedWorkflow: null,
   detectModels: () => {}, saveModel: () => {},
+  addCurrentModelToPool: () => {}, saveModelRouting: () => {}, snapshot: null,
   selectDetectedModel: () => {}, syncDetectedModel: () => {}, resetDetectedModels: () => {},
   proxy: {handler: {createTask: async (...args) => {
     actionCalls.push(args); return {snapshot: {taskId: ''}};
@@ -449,6 +457,40 @@ console.log('PASS: 监控收尾与部分完成时间线 6/6（DOM 单元测试�
 const planRenderer = tree.statements.find(node =>
   ts.isFunctionDeclaration(node) && node.name?.text === 'renderPlan');
 assert(planRenderer);
+const observationsRenderer = tree.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === 'renderRoutingObservations');
+assert(observationsRenderer);
+vm.runInContext(ts.transpileModule(observationsRenderer.getText(tree), {
+  compilerOptions: {target: ts.ScriptTarget.ES2022},
+}).outputText, rendererContext);
+for (const state of ['failed', 'cancelled', 'planning', 'paused_by_user']) {
+  const observations = JSON.stringify({attempts_complete: false, attempts: []});
+  rendererContext.renderRoutingObservations({
+    taskId: 'failed-without-plan', state, plan: null,
+    routingObservationsJson: observations,
+  });
+  assert.equal(element('routing-observations-details').hidden, false, state);
+  assert.equal(element('routing-observations').value, observations, state);
+}
+rendererContext.renderRoutingObservations({taskId: '', plan: null});
+assert.equal(element('routing-observations-details').hidden, true);
+assert.equal(element('routing-observations').value, '');
+console.log('PASS: 无计划失败/取消/规划/暂停均可复制观测，离开任务清空观测（DOM）');
+const unboundRoutes = '[{"route_id":"cancelled-route","status":"cancelled","attempts":[]}]';
+for (const taskId of ['', 'previous-unrelated-task']) {
+  rendererContext.renderRoutingObservations({
+    taskId, plan: null, routingObservationsJson: '{"task":"previous"}',
+    goalRouteObservationsJson: unboundRoutes,
+  });
+  assert.equal(element('goal-route-observations-details').hidden, false);
+  assert.equal(element('goal-route-observations').value, unboundRoutes);
+  assert.equal(element('routing-observations').value,
+      taskId ? '{"task":"previous"}' : '');
+}
+rendererContext.renderRoutingObservations({taskId: '', goalRouteObservationsJson: '[]'});
+assert.equal(element('goal-route-observations-details').hidden, true);
+assert.equal(element('goal-route-observations').value, '');
+console.log('PASS: 未建任务快筛记录独立显示，不冒充旧任务，空历史清除（DOM）');
 vm.runInContext(ts.transpileModule(planRenderer.getText(tree), {
   compilerOptions: {target: ts.ScriptTarget.ES2022},
 }).outputText, rendererContext);

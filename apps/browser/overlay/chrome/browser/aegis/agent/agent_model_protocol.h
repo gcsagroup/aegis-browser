@@ -64,6 +64,9 @@ int AgentModelToolOutputTokenLimit(std::string_view tool_name);
 struct AgentModelUsage {
   int64_t input_tokens = 0;
   int64_t output_tokens = 0;
+  std::optional<int64_t> cached_input_tokens;
+  std::optional<int64_t> reasoning_tokens;
+  bool billing_complete = true;
 };
 
 struct AgentModelEvent {
@@ -75,9 +78,24 @@ struct AgentModelEvent {
   AgentModelUsage usage;
 };
 
+enum class AgentModelRequestFailure {
+  kNone = 0,
+  kBusy = 1,
+  kConfiguration = 2,
+  kNetwork = 3,
+  kTimeout = 4,
+  kRateLimited = 5,
+  kServiceUnavailable = 6,
+  kHttpPermanent = 7,
+  kResponseFormat = 8,
+};
+
+bool IsTransientAgentModelFailure(AgentModelRequestFailure failure);
+
 struct AgentModelParseResult {
   std::vector<AgentModelEvent> events;
   std::string error;
+  AgentModelRequestFailure failure = AgentModelRequestFailure::kNone;
 
   bool ok() const { return error.empty(); }
 };

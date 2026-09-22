@@ -156,6 +156,25 @@ std::string RequestError(int response_code, int net_error) {
   return "agent model request failed";
 }
 
+AgentModelRequestFailure RequestFailure(int response_code, int net_error) {
+  if (net_error == net::ERR_TIMED_OUT) {
+    return AgentModelRequestFailure::kTimeout;
+  }
+  if (response_code == 429) {
+    return AgentModelRequestFailure::kRateLimited;
+  }
+  if (response_code == 502 || response_code == 503 || response_code == 504) {
+    return AgentModelRequestFailure::kServiceUnavailable;
+  }
+  if (response_code >= 300 && response_code <= 599) {
+    return AgentModelRequestFailure::kHttpPermanent;
+  }
+  if (net_error != net::OK) {
+    return AgentModelRequestFailure::kNetwork;
+  }
+  return AgentModelRequestFailure::kHttpPermanent;
+}
+
 }  // namespace
 
 GURL BuildAgentModelEndpoint(ModelProvider provider,
@@ -193,11 +212,17 @@ std::optional<AgentModelClient::RequestId> AgentModelClient::Start(
     AgentModelRequest request,
     Callback done) {
   if (loader_) {
-    std::move(done).Run(false, "agent model request already in progress", {});
+    AgentModelParseResult result;
+    result.failure = AgentModelRequestFailure::kBusy;
+    std::move(done).Run(false, "agent model request already in progress",
+                        std::move(result));
     return std::nullopt;
   }
   if (!url_loader_factory_) {
-    std::move(done).Run(false, "agent model network unavailable", {});
+    AgentModelParseResult result;
+    result.failure = AgentModelRequestFailure::kNetwork;
+    std::move(done).Run(false, "agent model network unavailable",
+                        std::move(result));
     return std::nullopt;
   }
   const GURL base_url(config.base_url.empty()
@@ -207,14 +232,19 @@ std::optional<AgentModelClient::RequestId> AgentModelClient::Start(
       !IsValidApiKey(config.api_key) ||
       !IsValidModelName(config.provider, request.model) ||
       ProtocolProvider(config.provider) != request.provider) {
-    std::move(done).Run(false, "invalid agent model configuration", {});
+    AgentModelParseResult result;
+    result.failure = AgentModelRequestFailure::kConfiguration;
+    std::move(done).Run(false, "invalid agent model configuration",
+                        std::move(result));
     return std::nullopt;
   }
 
   std::string error;
   std::optional<std::string> body = BuildAgentModelRequestBody(request, &error);
   if (!body) {
-    std::move(done).Run(false, std::move(error), {});
+    AgentModelParseResult result;
+    result.failure = AgentModelRequestFailure::kConfiguration;
+    std::move(done).Run(false, std::move(error), std::move(result));
     return std::nullopt;
   }
   const GURL endpoint = BuildAgentModelEndpoint(config.provider, base_url,
@@ -259,6 +289,10 @@ std::optional<AgentModelClient::RequestId> AgentModelClient::Start(
       IsLocalModelEndpoint(config.provider, base_url)
           ? kLocalTrafficAnnotation
           : kWebsiteTrafficAnnotation);
+  // Preserve the HTTP status for typed retry policy. Without this,
+  // SimpleURLLoader maps non-2xx responses to ERR_HTTP_RESPONSE_CODE_FAILURE
+  // before the client can distinguish permanent 4xx from transient 429/5xx.
+  loader_->SetAllowHttpErrorResults(true);
   loader_->AttachStringForUpload(*body, "application/json");
   loader_->SetTimeoutDuration(
       ModelProviderChatTimeout(config.provider, base_url));
@@ -291,7 +325,10 @@ void AgentModelClient::OnComplete(Callback done,
   request_id_.reset();
   if (!request_ok) {
     active_tools_.clear();
-    std::move(done).Run(false, RequestError(response_code, net_error), {});
+    AgentModelParseResult result;
+    result.failure = RequestFailure(response_code, net_error);
+    std::move(done).Run(false, RequestError(response_code, net_error),
+                        std::move(result));
     return;
   }
   AgentModelParseResult result = ParseAgentModelResponse(
@@ -302,6 +339,7 @@ void AgentModelClient::OnComplete(Callback done,
     // distinguish a repairable model-format error from a transport failure.
     // The parser only exposes bounded validation text, never the raw provider
     // response.
+    result.failure = AgentModelRequestFailure::kResponseFormat;
     const std::string error = result.error;
     std::move(done).Run(false, error, std::move(result));
     return;
