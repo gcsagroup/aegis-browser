@@ -1,0 +1,570 @@
+From 0965196f0b8963bed5dfb718d0b01e28e5765bac Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 22 Sep 2026 13:16:58 +0800
+Subject: [PATCH] fix: restore native GN dependency ownership
+
+Give shared test support one owner, export public header dependencies,
+and add missing direct include dependencies. Synchronize affected overlay
+BUILD files with the transport patch; retain the fixed Chromium pin.
+---
+ chrome/browser/BUILD.gn                       |  2 +
+ chrome/browser/actor/BUILD.gn                 |  2 +
+ chrome/browser/aegis/BUILD.gn                 | 50 ++++++++++++++++---
+ chrome/browser/devtools/BUILD.gn              |  4 ++
+ chrome/browser/download/BUILD.gn              |  2 +
+ chrome/browser/download/download_ui_model.cc  |  2 +-
+ chrome/browser/net/BUILD.gn                   |  6 ++-
+ chrome/browser/prefs/BUILD.gn                 |  7 ++-
+ chrome/browser/profiles/BUILD.gn              |  2 +
+ chrome/browser/ui/toolbar/BUILD.gn            |  4 ++
+ .../ui/toolbar/pinned_toolbar/BUILD.gn        |  4 ++
+ chrome/browser/ui/webui/aegis/BUILD.gn        |  2 +
+ chrome/browser/ui/webui/downloads/BUILD.gn    |  7 +++
+ .../webui/downloads/downloads_list_tracker.cc |  2 +-
+ chrome/browser/ui/webui/help/BUILD.gn         | 13 +++--
+ chrome/test/BUILD.gn                          |  5 ++
+ components/aegis_access/BUILD.gn              | 29 ++++++++---
+ .../internal/common/parallel_download_utils.h |  4 +-
+ .../public/common/parallel_download_configs.h |  5 ++
+ net/dns/BUILD.gn                              |  1 +
+ 20 files changed, 126 insertions(+), 27 deletions(-)
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 9488a27700..71c6764361 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1950,6 +1950,8 @@ source_set("core") {
+   if (safe_browsing_mode == 1) {
+     deps += [ "//chrome/browser/ui/webui/reset_password" ]
+   }
++
++  deps += [ "//chrome/browser/aegis/access:access_proxying_url_loader_factory" ]
+ }
+ 
+ # This target no longer has any sources of its own; it only aggregates
+diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
+index 6cb7a779a1..f32b79c489 100644
+--- a/chrome/browser/actor/BUILD.gn
++++ b/chrome/browser/actor/BUILD.gn
+@@ -371,6 +371,8 @@ source_set("unit_tests") {
+     deps += [ "//third_party/fuzztest" ]
+   }
+   data = [ "//tools/metrics/histograms/metadata/actor/histograms.xml" ]
++
++  deps += [ "//chrome/common/aegis" ]
+ }
+ 
+ source_set("tools_test_support") {
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 8552380164..96e5b48e23 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -43,6 +43,8 @@ source_set("agent_core") {
+     "agent/agent_types.h",
+     "agent/agent_workflow.cc",
+     "agent/agent_workflow.h",
++    "agent/typesafe_choice_contract.cc",
++    "agent/typesafe_choice_contract.h",
+     "agent/v2_runtime_spike.cc",
+     "agent/v2_runtime_spike.h",
+   ]
+@@ -61,6 +63,10 @@ source_set("agent_model_transport") {
+   sources = [
+     "agent/agent_model_client.cc",
+     "agent/agent_model_client.h",
++    "agent/typesafe_goal_response_parser.cc",
++    "agent/typesafe_goal_response_parser.h",
++    "agent/typesafe_goal_router_client.cc",
++    "agent/typesafe_goal_router_client.h",
+   ]
+   deps = [
+     ":agent_core",
+@@ -85,6 +91,29 @@ source_set("profile_support") {
+   }
+ }
+ 
++source_set("download_prefs") {
++  sources = [
++    "aegis_download_prefs.cc",
++    "aegis_download_prefs.h",
++  ]
++  deps = [
++    "//base",
++    "//components/download/public/common:public",
++    "//components/prefs",
++  ]
++}
++
++source_set("prefs") {
++  sources = [
++    "aegis_prefs.cc",
++    "aegis_prefs.h",
++  ]
++  deps = [
++    "//chrome/common/aegis",
++    "//components/pref_registry",
++  ]
++}
++
+ source_set("aegis") {
+   sources = [
+     "aegis_ai_control.cc",
+@@ -93,8 +122,6 @@ source_set("aegis") {
+     "aegis_bounce_observer.h",
+     "aegis_cookie_janitor.cc",
+     "aegis_cookie_janitor.h",
+-    "aegis_download_prefs.cc",
+-    "aegis_download_prefs.h",
+     "aegis_link_sanitize_navigation_throttle.cc",
+     "aegis_link_sanitize_navigation_throttle.h",
+     "aegis_phish_blocking_page.cc",
+@@ -105,8 +132,6 @@ source_set("aegis") {
+     "aegis_phish_navigation_throttle.h",
+     "aegis_phish_tab_helper.cc",
+     "aegis_phish_tab_helper.h",
+-    "aegis_prefs.cc",
+-    "aegis_prefs.h",
+     "aegis_service.cc",
+     "aegis_service.h",
+     "aegis_service_factory.cc",
+@@ -126,7 +151,11 @@ source_set("aegis") {
+     "threat_feed_updater.cc",
+     "threat_feed_updater.h",
+   ]
+-  public_deps = [ ":profile_support" ]
++  public_deps = [
++    ":download_prefs",
++    ":prefs",
++    ":profile_support",
++  ]
+   deps = [
+     ":model_provider_policy",
+     "//base",
+@@ -215,7 +244,10 @@ source_set("aegis") {
+ 
+ if (!is_android) {
+   test("aegis_agent_model_unittests") {
+-    sources = [ "agent/agent_model_client_unittest.cc" ]
++    sources = [
++      "agent/agent_model_client_unittest.cc",
++      "agent/typesafe_goal_router_client_unittest.cc",
++    ]
+     deps = [
+       ":agent_model_transport",
+       "//base/test:run_all_unittests",
+@@ -243,14 +275,14 @@ if (!is_android) {
+       "//build:chromeos_buildflags",
+       "//chrome/browser:browser_process",
+       "//chrome/browser/aegis/access:access_browser_request_adapter",
+-      "//chrome/browser/aegis/access:access_network_context_transport",
+       "//chrome/browser/aegis/access:access_identity_generation_source",
++      "//chrome/browser/aegis/access:access_network_context_transport",
+       "//chrome/browser/aegis/access:access_proxy_selection_generation_source",
+       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+       "//chrome/browser/aegis/access:access_published_request_runtime",
+       "//chrome/browser/aegis/access:access_request_dispatch_state",
+-      "//chrome/browser/net:impl",
+       "//chrome/browser/bookmarks",
++      "//chrome/browser/net:impl",
+       "//chrome/browser/notifications:test_support",
+       "//chrome/browser/prefs",
+       "//chrome/browser/profiles:profile",
+@@ -324,6 +356,8 @@ test("aegis_agent_core_unittests") {
+     "//testing/gtest",
+     "//url",
+   ]
++
++  deps += [ "//sql" ]
+ }
+ 
+ fuzzer_test("aegis_agent_model_protocol_fuzzer") {
+diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
+index d82bacaf13..cee7a09729 100644
+--- a/chrome/browser/devtools/BUILD.gn
++++ b/chrome/browser/devtools/BUILD.gn
+@@ -646,6 +646,10 @@ if (enable_devtools_frontend) {
+     if (!is_android || enable_desktop_android_extensions) {
+       sources += [ "global_confirm_info_bar_browsertest.cc" ]
+     }
++
++    if (!is_android) {
++      deps += [ "//chrome/common/aegis" ]
++    }
+   }
+ }
+ 
+diff --git a/chrome/browser/download/BUILD.gn b/chrome/browser/download/BUILD.gn
+index cbf4c6da56..83ee4f4679 100644
+--- a/chrome/browser/download/BUILD.gn
++++ b/chrome/browser/download/BUILD.gn
+@@ -394,6 +394,8 @@ source_set("impl") {
+   if (safe_browsing_mode != 0 && enterprise_cloud_content_analysis) {
+     deps += [ "//chrome/browser/enterprise/connectors/reporting" ]
+   }
++
++  deps += [ "//chrome/browser/aegis:download_prefs" ]
+ }
+ 
+ source_set("status_text_builder_utils") {
+diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
+index 397d5a2436..298fab9d56 100644
+--- a/chrome/browser/download/download_ui_model.cc
++++ b/chrome/browser/download/download_ui_model.cc
+@@ -31,7 +31,7 @@
+ #include "chrome/common/url_constants.h"
+ #include "chrome/grit/branded_strings.h"
+ #include "chrome/grit/generated_resources.h"
+-#include "components/download/internal/common/parallel_download_utils.h"
++#include "components/download/public/common/parallel_download_configs.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/enterprise/common/proto/connectors.pb.h"
+ #include "components/google/core/common/google_util.h"
+diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
+index 8250bfd225..78582fbc24 100644
+--- a/chrome/browser/net/BUILD.gn
++++ b/chrome/browser/net/BUILD.gn
+@@ -122,6 +122,9 @@ source_set("net") {
+     public += [ "server_certificate_database_service_factory.h" ]
+     public_deps += [ "//components/server_certificate_database" ]
+   }
++
++  public_deps +=
++      [ "//components/aegis_access:access_base_proxy_config_generation_state" ]
+ }
+ 
+ source_set("impl") {
+@@ -160,12 +163,11 @@ source_set("impl") {
+   deps = [
+     ":key_pinning_proto",
+     "//base:build_time",
+-    "//chrome/browser/aegis/access:access_network_context_transport",
+-    "//components/aegis_access:access_base_proxy_config_generation_state",
+     "//chrome/browser:browser_features",
+     "//chrome/browser:browser_process",
+     "//chrome/browser:browser_process_platform_part",
+     "//chrome/browser:primitives",
++    "//chrome/browser/aegis/access:access_network_context_transport",
+     "//chrome/browser/browsing_data:constants",
+     "//chrome/browser/component_updater",
+     "//chrome/browser/content_settings:content_settings_factory",
+diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
+index 36a8ca6c91..cb29d13946 100644
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -451,7 +451,7 @@ source_set("impl") {
+   if (!is_android) {
+     deps += [
+       "//chrome/browser/hid",
+-      "//chrome/browser/indigo:indigo",
++      "//chrome/browser/indigo",
+       "//chrome/browser/ui/read_anything:prefs",
+       "//chrome/browser/ui/webui/cr_components/theme_color_picker:impl",
+       "//chrome/browser/ui/webui/history",
+@@ -474,6 +474,11 @@ source_set("impl") {
+   if (!is_android) {
+     deps += [ "//chrome/browser/ui:browser_view_prefs" ]
+   }
++
++  deps += [
++    "//chrome/browser/aegis:download_prefs",
++    "//chrome/browser/aegis:prefs",
++  ]
+ }
+ 
+ # There are users of this util such as //c/b/ash/app_restore. If it's part of
+diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
+index a7c4b7eab4..db4074344a 100644
+--- a/chrome/browser/profiles/BUILD.gn
++++ b/chrome/browser/profiles/BUILD.gn
+@@ -956,6 +956,8 @@ source_set("profiles_extra_parts_impl") {
+   if (enable_offline_pages) {
+     deps += [ "//chrome/browser/offline_pages" ]
+   }
++
++  deps += [ "//chrome/browser/aegis" ]
+ }
+ 
+ source_set("profile_downloader") {
+diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
+index fb4b5dc68d..086fed4767 100644
+--- a/chrome/browser/ui/toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/BUILD.gn
+@@ -96,6 +96,10 @@ source_set("toolbar") {
+     ]
+     deps += [ "//extensions/common:common_constants" ]
+   }
++
++  if (!is_android) {
++    deps += [ "//chrome/common/aegis" ]
++  }
+ }
+ 
+ source_set("impl") {
+diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+index 449a04e3e9..f6f3caaab1 100644
+--- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+@@ -53,6 +53,10 @@ source_set("impl") {
+     ]
+     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+   }
++
++  if (!is_android) {
++    deps += [ "//chrome/common/aegis" ]
++  }
+ }
+ 
+ if (!is_android) {
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 64781b003b..e2e4799bc9 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -31,4 +31,6 @@ source_set("aegis") {
+       "//chrome/browser/ui/tabs:tab_strip",
+     ]
+   }
++
++  deps += [ "//chrome/browser:browser_process" ]
+ }
+diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
+index 3c1d6428c2..fe49aded4d 100644
+--- a/chrome/browser/ui/webui/downloads/BUILD.gn
++++ b/chrome/browser/ui/webui/downloads/BUILD.gn
+@@ -75,6 +75,11 @@ source_set("downloads") {
+     "//ui/webui",
+     "//url",
+   ]
++
++  deps += [
++    "//chrome/browser/aegis",
++    "//chrome/browser/aegis:download_prefs",
++  ]
+ }
+ 
+ source_set("unit_tests") {
+@@ -99,4 +104,6 @@ source_set("unit_tests") {
+     "//testing/gmock",
+     "//testing/gtest",
+   ]
++
++  deps += [ "//chrome/browser/aegis" ]
+ }
+diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
+index 3225aa9019..3206d756d6 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
+@@ -35,7 +35,7 @@
+ #include "chrome/browser/extensions/api/downloads/downloads_api.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
+-#include "components/download/internal/common/parallel_download_utils.h"
++#include "components/download/public/common/parallel_download_configs.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/download/public/common/download_item.h"
+ #include "components/download/public/common/download_item_rename_handler.h"
+diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
+index d2cf914fe4..0e576c16a2 100644
+--- a/chrome/browser/ui/webui/help/BUILD.gn
++++ b/chrome/browser/ui/webui/help/BUILD.gn
+@@ -159,7 +159,6 @@ if (!is_android && !is_chromeos) {
+     # 只链接 HTTP 夹具，避免更新模块测试引入整个
+     # network_service。
+     sources = [
+-      "aegis_settings_safety_unittest.cc",
+       "//chrome/browser/profile_resetter/reset_report_uploader.cc",
+       "//chrome/browser/profile_resetter/reset_report_uploader.h",
+       "//services/network/test/test_url_loader_factory.cc",
+@@ -167,15 +166,16 @@ if (!is_android && !is_chromeos) {
+       "//services/network/test/test_utils.cc",
+       "//services/network/test/test_utils.h",
+       "aegis_github_update_unittest.cc",
++      "aegis_settings_safety_unittest.cc",
+     ]
+     deps = [
+-      "//chrome/browser/profile_resetter:profile_reset_report_proto",
+-      "//components/keyed_service/core",
+-      "//google_apis",
+       ":aegis_github_update",
+       "//base/test:run_all_unittests",
+       "//base/test:test_support",
++      "//chrome/browser/profile_resetter:profile_reset_report_proto",
++      "//components/keyed_service/core",
+       "//crypto",
++      "//google_apis",
+       "//mojo/core/embedder",
+       "//mojo/public/cpp/bindings",
+       "//net",
+@@ -183,5 +183,10 @@ if (!is_android && !is_chromeos) {
+       "//services/network/public/mojom",
+       "//testing/gtest",
+     ]
++
++    deps += [
++      "//build:branding_buildflags",
++      "//content/public/browser",
++    ]
+   }
+ }
+diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
+index acda71e7c3..209dc8d103 100644
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -9118,6 +9118,11 @@ test("unit_tests") {
+   if (!is_android) {
+     deps += [ "//chrome/browser/ui:accelerator_table" ]
+   }
++
++  deps += [
++    "//chrome/browser/aegis:download_prefs",
++    "//chrome/browser/invalidation",
++  ]
+ }
+ 
+ static_library("test_support_unit") {
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index bb886be102..96c5a602ad 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -101,10 +101,10 @@ source_set("published_request_runtime") {
+ 
+ source_set("aegis_access") {
+   sources = [
+-    "access_proxy_route_adapter.cc",
+-    "access_proxy_route_adapter.h",
+     "access_policy_evaluator.cc",
+     "access_policy_evaluator.h",
++    "access_proxy_route_adapter.cc",
++    "access_proxy_route_adapter.h",
+     "access_route_planner.cc",
+     "access_route_planner.h",
+     "request_policy_context.cc",
+@@ -184,7 +184,6 @@ test("request_ownership_registry_unittests") {
+     "request_cancellation_contract_test.h",
+     "request_dispatch_barrier_contract_test.h",
+     "request_ownership_registry_contract_test.h",
+-    "request_ownership_registry_test_support.h",
+     "request_ownership_registry_unit_test.h",
+     "request_ownership_registry_unittest.cc",
+   ]
+@@ -193,6 +192,8 @@ test("request_ownership_registry_unittests") {
+     "//base/test:run_all_unittests",
+     "//testing/gtest",
+   ]
++
++  deps += [ ":request_ownership_registry_test_support" ]
+ }
+ 
+ test("policy_publication_ack_tracker_unittests") {
+@@ -214,7 +215,6 @@ test("request_dispatch_gate_unittests") {
+     "request_dispatch_gate_contract_test.h",
+     "request_dispatch_gate_unittest.cc",
+     "request_ownership_registry_contract_test.h",
+-    "request_ownership_registry_test_support.h",
+     "request_ownership_registry_unit_test.h",
+   ]
+   deps = [
+@@ -222,13 +222,15 @@ test("request_dispatch_gate_unittests") {
+     "//base/test:run_all_unittests",
+     "//testing/gtest",
+   ]
++
++  deps += [ ":request_ownership_registry_test_support" ]
+ }
+ 
+ test("aegis_access_unittests") {
+   sources = [
+     "access_local_proxy_acceptance_unittest.cc",
+-    "access_proxy_route_adapter_unittest.cc",
+     "access_policy_evaluator_unittest.cc",
++    "access_proxy_route_adapter_unittest.cc",
+     "access_route_planner_contract_test.h",
+     "access_route_planner_unittest.cc",
+     "published_request_runtime_contract_test.h",
+@@ -239,18 +241,31 @@ test("aegis_access_unittests") {
+   deps = [
+     ":aegis_access",
+     ":generate_policy_matcher_vectors",
+-    ":published_request_runtime",
+     ":generate_route_planner_vectors",
++    ":published_request_runtime",
+     "//base",
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
+     "//mojo/public/cpp/bindings",
+     "//net:test_support",
+     "//services/network:network_service",
++    "//services/network:test_support",
+     "//services/network/public/cpp",
+     "//services/network/public/mojom",
+-    "//services/network:test_support",
+     "//testing/gtest",
+     "//url",
+   ]
++
++  deps += [ ":request_ownership_registry_test_support" ]
++}
++
++source_set("request_ownership_registry_test_support") {
++  testonly = true
++  public = [ "request_ownership_registry_test_support.h" ]
++  public_deps = [ ":request_ownership_registry" ]
++  visibility = [
++    ":aegis_access_unittests",
++    ":request_dispatch_gate_unittests",
++    ":request_ownership_registry_unittests",
++  ]
+ }
+diff --git a/components/download/internal/common/parallel_download_utils.h b/components/download/internal/common/parallel_download_utils.h
+index c7d10302b4..d587f2f661 100644
+--- a/components/download/internal/common/parallel_download_utils.h
++++ b/components/download/internal/common/parallel_download_utils.h
+@@ -8,6 +8,7 @@
+ #include <vector>
+ 
+ #include "components/download/public/common/download_export.h"
++#include "components/download/public/common/parallel_download_configs.h"
+ #include "components/download/public/common/download_file_impl.h"
+ #include "components/download/public/common/download_item.h"
+ 
+@@ -51,9 +52,6 @@ FindSlicesForRemainingContent(int64_t current_offset,
+ // than the minimum size.
+ COMPONENTS_DOWNLOAD_EXPORT int64_t GetMinSliceSizeConfig();
+ 
+-// Get the request count for parallel download from finch configuration.
+-COMPONENTS_DOWNLOAD_EXPORT int GetParallelRequestCountConfig();
+-
+ // Get the time delay to send parallel requests after the response of original
+ // request is handled.
+ COMPONENTS_DOWNLOAD_EXPORT base::TimeDelta GetParallelRequestDelayConfig();
+diff --git a/components/download/public/common/parallel_download_configs.h b/components/download/public/common/parallel_download_configs.h
+index 1be713fcc6..eae3899cda 100644
+--- a/components/download/public/common/parallel_download_configs.h
++++ b/components/download/public/common/parallel_download_configs.h
+@@ -5,8 +5,13 @@
+ #ifndef COMPONENTS_DOWNLOAD_PUBLIC_COMMON_PARALLEL_DOWNLOAD_CONFIGS_H_
+ #define COMPONENTS_DOWNLOAD_PUBLIC_COMMON_PARALLEL_DOWNLOAD_CONFIGS_H_
+ 
++#include "components/download/public/common/download_export.h"
++
+ namespace download {
+ 
++// Get the request count for parallel download from Finch configuration.
++COMPONENTS_DOWNLOAD_EXPORT int GetParallelRequestCountConfig();
++
+ // Finch parameter key value to enable parallel download. Used in enabled
+ // experiment group that needs other parameters, such as min_slice_size, but
+ // don't want to actually do parallel download.
+diff --git a/net/dns/BUILD.gn b/net/dns/BUILD.gn
+index d97fb126e1..24cf8b2b8f 100644
+--- a/net/dns/BUILD.gn
++++ b/net/dns/BUILD.gn
+@@ -254,6 +254,7 @@ source_set("host_resolver") {
+     "//ios/web_view:*",
+ 
+     # Tests and test support.
++    "//components/aegis_access:aegis_access_unittests",
+     "//chrome/test/*",
+     "//content/shell:content_shell_lib",
+     "//content/test:*",
+-- 
+2.54.0 (Apple Git-157)

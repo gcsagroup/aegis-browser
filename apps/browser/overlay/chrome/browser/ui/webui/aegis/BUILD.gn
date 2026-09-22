@@ -31,4 +31,6 @@ source_set("aegis") {
       "//chrome/browser/ui/tabs:tab_strip",
     ]
   }
+
+  deps += [ "//chrome/browser:browser_process" ]
 }
