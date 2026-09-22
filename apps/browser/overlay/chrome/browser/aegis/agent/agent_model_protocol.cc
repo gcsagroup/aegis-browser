@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include "base/containers/flat_set.h"
@@ -19,6 +20,13 @@
 #include "chrome/common/aegis/security_text.h"
 
 namespace aegis::agent {
+
+bool IsTransientAgentModelFailure(AgentModelRequestFailure failure) {
+  return failure == AgentModelRequestFailure::kNetwork ||
+         failure == AgentModelRequestFailure::kTimeout ||
+         failure == AgentModelRequestFailure::kRateLimited ||
+         failure == AgentModelRequestFailure::kServiceUnavailable;
+}
 
 bool IsQwenModelName(std::string_view model) {
   const std::string normalized = base::ToLowerASCII(model);
@@ -407,6 +415,78 @@ bool ReadNonNegativeInteger(const base::DictValue& dict,
   return false;
 }
 
+bool ReadOpenAIUsageDetails(const base::DictValue& usage,
+                            AgentModelParseResult* result) {
+  auto& tokens = result->events.back().usage;
+  for (const auto& [parent, key, total, destination] :
+       {std::tuple{"input_tokens_details", "cached_tokens", tokens.input_tokens,
+                   &tokens.cached_input_tokens},
+        std::tuple{"output_tokens_details", "reasoning_tokens",
+                   tokens.output_tokens, &tokens.reasoning_tokens}}) {
+    if (!usage.contains(parent)) {
+      continue;
+    }
+    const auto* details = usage.FindDict(parent);
+    int64_t count = 0;
+    if (!details ||
+        (details->contains(key) &&
+         (!ReadNonNegativeInteger(*details, key, &count) || count > total))) {
+      result->error = "OpenAI token details are invalid";
+      return false;
+    }
+    if (details->contains(key)) {
+      *destination = count;
+    }
+  }
+  return true;
+}
+
+bool NormalizeProviderUsage(const base::DictValue& usage,
+                            bool gemini,
+                            AgentModelParseResult* result) {
+  auto& tokens = result->events.back().usage;
+  const char* cached_key =
+      gemini ? "cachedContentTokenCount" : "cache_read_input_tokens";
+  const char* extra_key =
+      gemini ? "thoughtsTokenCount" : "cache_creation_input_tokens";
+  int64_t cached = 0;
+  int64_t extra = 0;
+  if ((usage.contains(cached_key) &&
+       !ReadNonNegativeInteger(usage, cached_key, &cached)) ||
+      (usage.contains(extra_key) &&
+       !ReadNonNegativeInteger(usage, extra_key, &extra))) {
+    result->error = "provider cache or reasoning usage is invalid";
+    return false;
+  }
+  if (gemini) {
+    if (extra > kMaxSafeInteger - tokens.output_tokens ||
+        cached > tokens.input_tokens) {
+      result->error = "Gemini usage overflow or invalid cache count";
+      return false;
+    }
+    tokens.output_tokens += extra;
+    if (usage.contains(extra_key)) {
+      tokens.reasoning_tokens = extra;
+    }
+  } else {
+    if (cached > kMaxSafeInteger - tokens.input_tokens ||
+        extra > kMaxSafeInteger - tokens.input_tokens - cached) {
+      result->error = "Anthropic usage overflow";
+      return false;
+    }
+    tokens.input_tokens += cached + extra;
+  }
+  if (usage.contains(cached_key)) {
+    tokens.cached_input_tokens = cached;
+  }
+  // Cache creation has a separate tariff not represented by this catalog.
+  // Missing provider detail remains unknown rather than under-billed.
+  tokens.billing_complete =
+      usage.contains(extra_key) &&
+      (gemini || (extra == 0 && usage.contains(cached_key)));
+  return true;
+}
+
 AgentModelParseResult ParseOpenAINonStream(
     const base::DictValue& root,
     const std::vector<AgentModelToolDefinition>& tools) {
@@ -466,7 +546,8 @@ AgentModelParseResult ParseOpenAINonStream(
     int64_t output_tokens = 0;
     if (!ReadNonNegativeInteger(*usage, "input_tokens", &input) ||
         !ReadNonNegativeInteger(*usage, "output_tokens", &output_tokens) ||
-        !AppendUsage(input, output_tokens, &result)) {
+        !AppendUsage(input, output_tokens, &result) ||
+        !ReadOpenAIUsageDetails(*usage, &result)) {
       if (result.error.empty()) {
         result.error = "OpenAI usage is invalid";
       }
@@ -520,7 +601,8 @@ AgentModelParseResult ParseAnthropicNonStream(
     int64_t output_tokens = 0;
     if (!ReadNonNegativeInteger(*usage, "input_tokens", &input) ||
         !ReadNonNegativeInteger(*usage, "output_tokens", &output_tokens) ||
-        !AppendUsage(input, output_tokens, &result)) {
+        !AppendUsage(input, output_tokens, &result) ||
+        !NormalizeProviderUsage(*usage, false, &result)) {
       if (result.error.empty()) {
         result.error = "Anthropic usage is invalid";
       }
@@ -584,7 +666,8 @@ AgentModelParseResult ParseGeminiChunk(
     if (!ReadNonNegativeInteger(*usage, "promptTokenCount", &input) ||
         !ReadNonNegativeInteger(*usage, "candidatesTokenCount",
                                 &output_tokens) ||
-        !AppendUsage(input, output_tokens, &result)) {
+        !AppendUsage(input, output_tokens, &result) ||
+        !NormalizeProviderUsage(*usage, true, &result)) {
       if (result.error.empty()) {
         result.error = "Gemini usage is invalid";
       }
@@ -730,7 +813,8 @@ AgentModelParseResult ParseOpenAIStream(
         int64_t output = 0;
         if (!ReadNonNegativeInteger(*usage, "input_tokens", &input) ||
             !ReadNonNegativeInteger(*usage, "output_tokens", &output) ||
-            !AppendUsage(input, output, &result)) {
+            !AppendUsage(input, output, &result) ||
+            !ReadOpenAIUsageDetails(*usage, &result)) {
           if (result.error.empty()) {
             result.error = "OpenAI stream usage is invalid";
           }
@@ -851,9 +935,12 @@ AgentModelParseResult ParseAnthropicStream(
       })) {
     return Fail("Anthropic stream ended before completion");
   }
-  if ((have_input_usage || have_output_usage) &&
+  if (have_input_usage && have_output_usage &&
       !AppendUsage(input_tokens, output_tokens, &result)) {
     return result;
+  }
+  if (have_input_usage && have_output_usage) {
+    result.events.back().usage.billing_complete = false;
   }
   AppendCompleted(&result);
   return result;
@@ -926,7 +1013,10 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
        request.reasoning_effort != "minimal" &&
        request.reasoning_effort != "low" &&
        request.reasoning_effort != "medium" &&
-       request.reasoning_effort != "high") ||
+       request.reasoning_effort != "high" &&
+       request.reasoning_effort != "xhigh") ||
+      (!request.reasoning_effort.empty() &&
+       request.provider != AgentModelProvider::kOpenAICompatible) ||
       (request.disable_model_thinking &&
        request.provider != AgentModelProvider::kOpenAICompatible)) {
     *error = "invalid model request";

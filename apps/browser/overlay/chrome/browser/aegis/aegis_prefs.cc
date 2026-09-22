@@ -39,6 +39,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   // API keys are encrypted with OSCrypt before being stored in this local,
   // non-syncable dictionary. Values are never exposed through WebUI status.
   registry->RegisterDictionaryPref(prefs::kModelApiKeyCiphertexts);
+  registry->RegisterStringPref(prefs::kAgentModelSelectionMode, "fixed");
+  registry->RegisterListPref(prefs::kAgentModelCatalog);
+  registry->RegisterIntegerPref(prefs::kAgentModelCatalogRevision, 0);
   registry->RegisterBooleanPref(prefs::kTypeSafeGoalRoutingEnabled, false);
   // The independent TypeSafe credential is encrypted with OSCrypt and remains
   // local to this profile. It is never returned through WebUI snapshots.
