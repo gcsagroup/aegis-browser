@@ -28,6 +28,7 @@
 #include "base/timer/timer.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
+#include "chrome/browser/aegis/agent/agent_planner.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -1245,6 +1246,12 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
   }
 
   if (call.tool_name == "tab.close") {
+    if (!AgentGoalRequestsTabClose(task->goal())) {
+      std::move(callback).Run(ErrorResult(
+          call.action_id, AgentErrorCode::kScopeViolation,
+          "tab.close requires an explicit user request to close tabs"));
+      return;
+    }
     std::ranges::sort(located_tabs,
                       [](const LocatedTab& left, const LocatedTab& right) {
                         if (left.tab_list != right.tab_list) {
@@ -1268,6 +1275,14 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
     AgentToolResult result =
         SuccessResult(call.action_id, "tab close requested");
     result.value.Set("requested", static_cast<int>(located_tabs.size()));
+    base::ListValue closed;
+    base::ListValue remaining;
+    // 关闭请求可能被网页离开提示推迟；发出请求不等于标签已消失。
+    for (int32_t id : unique_ids) {
+      (FindTab(profile_, id) ? remaining : closed).Append(id);
+    }
+    result.value.Set("closed_tab_ids", std::move(closed));
+    result.value.Set("remaining_tab_ids", std::move(remaining));
     result.value.Set("revision", TabRevision(profile_, *task));
     std::move(callback).Run(std::move(result));
     return;

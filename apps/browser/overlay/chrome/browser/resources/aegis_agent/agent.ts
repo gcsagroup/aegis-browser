@@ -80,7 +80,7 @@ function inferWorkflow(goal: string): Workflow {
 }
 
 function refersToCurrentPage(goal: string): boolean {
-  return /当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
+  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
       .test(goal);
 }
 
@@ -890,6 +890,9 @@ function renderModel(next: TaskSnapshot) {
 }
 
 function friendlyError(error: string, hasPlan: boolean): string {
+  if (error.includes('browser goal needs an explicit target')) {
+    return loadTimeData.getString('browserGoalClarification');
+  }
   if (error.includes('原操作已失效')) {
     return loadTimeData.getString('pendingActionPageChanged');
   }

@@ -11,6 +11,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/uuid.h"
+#include "chrome/browser/aegis/agent/agent_planner.h"
 #include "crypto/sha2.h"
 #include "url/gurl.h"
 
@@ -91,6 +92,11 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
       !task.scope().AllowsDataClass(descriptor->data_class)) {
     return Deny(AgentErrorCode::kScopeViolation,
                 "tool or data class is outside task scope");
+  }
+  if (call.tool_name == "tab.close" &&
+      !AgentGoalRequestsTabClose(task.goal())) {
+    return Deny(AgentErrorCode::kScopeViolation,
+                "tab.close requires an explicit user request to close tabs");
   }
   std::optional<AgentModelToolDefinition> tool_schema =
       registry_->ModelToolForName(call.tool_name);

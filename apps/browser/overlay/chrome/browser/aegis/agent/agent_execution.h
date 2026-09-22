@@ -89,6 +89,12 @@ void NormalizeAgentTabGroupCompletion(
     const AgentTask& task,
     base::span<const AgentExecutionEvidence> history);
 
+// 关闭结果取本任务原生回读；模型不能复述关闭前的列表作为当前状态。
+void NormalizeAgentTabCloseCompletion(
+    AgentCompletionSummary* completion,
+    const AgentTask& task,
+    base::span<const AgentExecutionEvidence> history);
+
 // history 仅接收本任务通过权限、批准与写入后回读核验的工具回执。
 void NormalizeAgentBookmarkApplyCompletion(
     AgentCompletionSummary* completion,

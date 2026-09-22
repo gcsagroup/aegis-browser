@@ -529,7 +529,8 @@ TEST(AegisAgentPlannerTest, WindowMetadataBindingComesOnlyFromBrowserScope) {
 
 TEST(AegisAgentPlannerTest, CurrentPageModifiersCannotRouteToAnotherSite) {
   for (const auto *goal :
-       {"从当前官方合成发布页下载适合本机 macOS arm64 "
+       {"总结这篇文章，附上来源。", "總結這篇文章", "Summarize this article.",
+        "从当前官方合成发布页下载适合本机 macOS arm64 "
         "的测试安装包，核验页面公布的 "
         "SHA-256。只下载，不打开、不执行、不安装。",
         "从当前官方发布页下载测试安装包", "从当前官方下载页下载",
@@ -560,7 +561,8 @@ TEST(AegisAgentPlannerTest, CurrentPageBindingPreservesExplicitOtherTargets) {
   for (const auto *goal :
        {"打开 https://example.com/releases 并总结当前页面",
         "从 www.example.com 下载并核对当前页面", "去 GitHub 搜索当前官方发布页",
-        "在京东搜索当前产品页面", "上网搜索当前官方发布页",
+        "在京东搜索当前产品页面", "上网搜索当前官方发布页", "搜索这篇文章的其他来源",
+        "Find this article on the web", "不要总结这篇文章，请搜索新资料",
         "打开另一个网站再总结当前页面", "访问 Mozilla 并总结当前页面",
         "不要读取当前官方发布页；请搜索浏览器论文",
         "当前版本的官方发布页是什么", "当前时间是多少，搜索官方发布页",
@@ -1496,6 +1498,44 @@ TEST(AegisAgentPlannerTest, InstallerSourceGoalRequiresNativeCandidateCheck) {
                           .tool_name = "download.find_official"});
     EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
   }
+}
+
+
+TEST(AegisAgentPlannerTest, CloseRequiresExplicitActionNotStatusOrQuestion) {
+  for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",
+       "不要关闭标签页", "把未关闭的标签页列出", "如何关闭标签页", "如果有重复就关闭标签页",
+       "List tabs that are not closed", "Should I close this tab?", "Do not close tabs",
+       "Explain \"close tabs\"", "关闭标签页之前先列出", "close tabs?",
+       "关闭标签页，但不要实际关闭", "Close tabs without actually closing them",
+       "Close tabs. Do not close any tabs.", "关闭标签页，只预览方案不要修改"}) {
+    EXPECT_FALSE(AgentGoalRequestsTabClose(goal)) << goal;
+  }
+  for (const char* goal : {"关闭本任务标签页", "请把当前标签页关掉", "請關閉指定標籤頁",
+       "Please close this task's tabs.", "List tabs and close selected tabs."}) {
+    EXPECT_TRUE(AgentGoalRequestsTabClose(goal)) << goal;
+  }
+  EXPECT_TRUE(AgentBrowserGoalNeedsClarification("其他尚未关闭的条件",
+                                               AgentWorkflowKind::kBrowserSteward));
+  EXPECT_FALSE(AgentBrowserGoalNeedsClarification("列出标签页",
+                                                AgentWorkflowKind::kBrowserSteward));
+}
+
+TEST(AegisAgentPlannerTest, ClosePlanMustDiscloseActionAndRefreshList) {
+  AgentTaskPlan plan;
+  plan.summary = "关闭指定标签页";
+  plan.steps = {{.step_id="list", .title="列出标签页", .tool_name="tab.list"},
+                {.step_id="close", .title="关闭指定标签页", .tool_name="tab.close"}};
+  std::string error;
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "列出未关闭的标签页", &error));
+  EXPECT_TRUE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+  plan.summary = "检查并列出尚未关闭的标签页";
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+  plan.summary = "关闭指定标签页";
+  plan.steps.back().title = "列出标签页";
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+  plan.steps.back().title = "关闭指定标签页";
+  plan.steps.erase(plan.steps.begin());
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
 }
 
 } // namespace

@@ -569,6 +569,10 @@ void AddStrings(content::WebUIDataSource *source) {
       "沒有讀取其他網頁。請等待頁面載入或檢查網路後重試本任務。");
   add("planFailed", "The task did not start. Edit the goal and try again.",
       "任务未开始，可以修改目标后重试。", "任務未開始，可以修改目標後重試。");
+  add("browserGoalClarification",
+      "Please name what to check or change, such as listing tabs or closing a specific tab. Nothing has been changed.",
+      "请说明要检查或修改的对象，例如列出标签页，或关闭指定标签页。目前没有做任何修改。",
+      "請說明要檢查或修改的對象，例如列出標籤頁，或關閉指定標籤頁。目前沒有做任何修改。");
   add("taskInputError",
       "The task or schedule is invalid. Edit it and try again.",
       "任务内容或定时设置无效，请修改后重试。",

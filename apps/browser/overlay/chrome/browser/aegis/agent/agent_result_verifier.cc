@@ -198,7 +198,7 @@ AgentToolCall AgentResultVerifier::RetainVerificationContext(
         context.arguments.Set(name, value->Clone());
       }
     }
-  } else if (call.tool_name == "tab.group") {
+  } else if (call.tool_name == "tab.group" || call.tool_name == "tab.close") {
     if (const auto* ids = call.arguments.FindList("tab_ids")) {
       context.arguments.Set("tab_ids", ids->Clone());
     }
@@ -339,9 +339,24 @@ AgentVerificationDecision AgentResultVerifier::Verify(
     return Accept(true, "标签组与请求的标签集合一致");
   }
   if (call.tool_name == "tab.close") {
-    return HasString(value, "revision")
-               ? Accept(true, "post-action tab revision is present")
-               : Reject("tab mutation lacks a post-action revision");
+    const auto* requested = call.arguments.FindList("tab_ids");
+    const auto* closed = value.FindList("closed_tab_ids");
+    const auto* remaining = value.FindList("remaining_tab_ids");
+    if (!requested || requested->empty() || !closed || !remaining ||
+        !remaining->empty() || requested->size() != closed->size() ||
+        value.FindInt("requested") != static_cast<int>(requested->size()) ||
+        !HasString(value, "revision")) {
+      return Reject("标签关闭尚未完成原生回读");
+    }
+    base::flat_set<int> seen;
+    for (const auto& id : *closed) {
+      if (!id.is_int() || !task.AllowsTab(id.GetInt()) ||
+          !seen.insert(id.GetInt()).second ||
+          !std::ranges::contains(*requested, id)) {
+        return Reject("标签关闭回读与请求不一致");
+      }
+    }
+    return Accept(true, "请求的标签均已关闭");
   }
   if (call.tool_name == "window.list") {
     return HasList(value, "windows") && HasString(value, "revision")

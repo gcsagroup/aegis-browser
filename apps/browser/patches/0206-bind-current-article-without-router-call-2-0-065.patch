@@ -1,0 +1,105 @@
+From cc33d34ead4702dd9f354c9942259682c04b202c Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 23 Sep 2026 05:32:40 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=98=8E=E7=A1=AE=E5=BD=93=E5=89=8D=E6=96=87?=
+ =?UTF-8?q?=E7=AB=A0=E5=85=A5=E5=8F=A3=EF=BC=8C=E7=9C=81=E5=8E=BB=E5=A4=9A?=
+ =?UTF-8?q?=E4=BD=99=E6=A8=A1=E5=9E=8B=E8=B7=AF=E7=94=B1=202.0.065?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_planner.cc          | 8 ++++----
+ chrome/browser/aegis/agent/agent_planner_unittest.cc | 6 ++++--
+ chrome/browser/resources/aegis_agent/agent.ts        | 2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h   | 4 ++--
+ 4 files changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 231345b8c8..33b6353a4f 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -864,8 +864,8 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
+     return false;
+   }
+   const auto requests_other_entry = [](std::string_view prefix) {
+-    if (GoalContainsAny(prefix, {"上网搜索", "上網搜尋", "全网搜索", "全網搜尋",
+-                                 "search the web", "search for "}) ||
++    if (GoalContainsAny(prefix, {"上网搜索", "上網搜尋", "全网搜索", "全網搜尋", "搜索", "搜尋", "查找",
++                                 "search the web", "search for ", "find ", "look for "}) ||
+         (NamedSiteForGoal(prefix) && GoalRequestsNamedSiteSearch(prefix))) {
+       return true;
+     }
+@@ -888,7 +888,7 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
+   // 指代只在同一名词短语内成立，不跨标点、动作或过去/未来页面限定。
+   // 允许描述词，不枚举“官方合成发布”等具体页面名称。
+   constexpr std::string_view markers[] = {
+-      "当前",   "當前",  "目前",     "这个",
++      "当前",   "當前",  "目前",     "这个", "这篇", "這篇",
+       "這個",   "this ", "current ", "currently open ",
+       "active "};
+   for (std::string_view marker : markers) {
+@@ -907,7 +907,7 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
+       const size_t begin = start + marker.size();
+       const std::string_view phrase = std::string_view(requested).substr(begin);
+       for (std::string_view noun :
+-           {"页", "頁", "网站", "網站", "page", "tab", "website"}) {
++           {"页", "頁", "网站", "網站", "文章", "page", "tab", "website", "article"}) {
+         const size_t end = phrase.find(noun);
+         if (end == std::string_view::npos || end > 72u) {
+           continue;
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index a995e40d9a..c0081784cc 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -529,7 +529,8 @@ TEST(AegisAgentPlannerTest, WindowMetadataBindingComesOnlyFromBrowserScope) {
+ 
+ TEST(AegisAgentPlannerTest, CurrentPageModifiersCannotRouteToAnotherSite) {
+   for (const auto *goal :
+-       {"从当前官方合成发布页下载适合本机 macOS arm64 "
++       {"总结这篇文章，附上来源。", "總結這篇文章", "Summarize this article.",
++        "从当前官方合成发布页下载适合本机 macOS arm64 "
+         "的测试安装包，核验页面公布的 "
+         "SHA-256。只下载，不打开、不执行、不安装。",
+         "从当前官方发布页下载测试安装包", "从当前官方下载页下载",
+@@ -560,7 +561,8 @@ TEST(AegisAgentPlannerTest, CurrentPageBindingPreservesExplicitOtherTargets) {
+   for (const auto *goal :
+        {"打开 https://example.com/releases 并总结当前页面",
+         "从 www.example.com 下载并核对当前页面", "去 GitHub 搜索当前官方发布页",
+-        "在京东搜索当前产品页面", "上网搜索当前官方发布页",
++        "在京东搜索当前产品页面", "上网搜索当前官方发布页", "搜索这篇文章的其他来源",
++        "Find this article on the web", "不要总结这篇文章，请搜索新资料",
+         "打开另一个网站再总结当前页面", "访问 Mozilla 并总结当前页面",
+         "不要读取当前官方发布页；请搜索浏览器论文",
+         "当前版本的官方发布页是什么", "当前时间是多少，搜索官方发布页",
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 39a512d8ad..62e6845ac6 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -80,7 +80,7 @@ function inferWorkflow(goal: string): Workflow {
+ }
+ 
+ function refersToCurrentPage(goal: string): boolean {
+-  return /当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
++  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
+       .test(goal);
+ }
+ 
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ec8db1914a..4a0e8967b4 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.64";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (064)";
++inline constexpr char kProductVersion[] = "2.0.0.65";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (065)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
