@@ -160,7 +160,7 @@ export async function createCandidatePull(config, state, candidate, overrides = 
   // Concurrency groups cannot serialize other human/automation writers.
   if (await ops.inventory(config)) throw new Error('Another promotion path appeared before PR creation');
   const pull = await ops.api(repo, '/pulls', {token, method: 'POST',
-    body: {base, head: `${owner}:${candidate.branch}`, title, body}});
+    body: {base, head: `${owner}:${candidate.branch}`, title, body, draft: true}});
   if (pull.head?.sha !== head || pull.base?.sha !== candidate.base ||
       pull.head?.ref !== candidate.branch || pull.head?.repo?.full_name !== config.personalRepo ||
       pull.base?.repo?.full_name !== repo || pull.base?.ref !== base) throw new Error('PR identity changed during creation');
