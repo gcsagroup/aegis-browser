@@ -2254,7 +2254,7 @@ class OwnedProcessTree {
         return alive;
       }
       await delay(POLL_INTERVAL_MS);
-    } while (true);
+    } while (true); // eslint-disable-line no-constant-condition -- exits through the checks above.
   }
 
   evidence(survivors = []) {

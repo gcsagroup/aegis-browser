@@ -199,6 +199,41 @@ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck) 
   EXPECT_EQ(durable.value->policy_generation, result.Get().policy_generation);
 }
 
+TEST_F(AccessMutationTransactionTest,
+       CommittedRetryReturnsOriginalResultWithoutRepublishing) {
+  auto store = OpenStore();
+  auto* retained_store = store.get();
+  const auto request = Mutation();
+  base::test::TestFuture<AccessMutationTransactionResult> first;
+  coordinator_->CommitSiteGroupMutation(std::move(store), request, Selector(),
+                                        first.GetCallback());
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(client_->reply);
+  std::move(client_->reply).Run(true);
+  ASSERT_TRUE(first.Wait());
+  ASSERT_EQ(first.Get().status, AccessMutationTransactionStatus::kCommitted);
+  const uint64_t committed_generation = first.Get().policy_generation;
+  ASSERT_GT(committed_generation, 0u);
+
+  client_->metadata.reset();
+  base::test::TestFuture<AccessMutationTransactionResult> retry;
+  coordinator_->CommitSiteGroupMutation(nullptr, request, Selector(),
+                                        retry.GetCallback());
+
+  ASSERT_TRUE(retry.IsReady());
+  EXPECT_EQ(retry.Get().status, AccessMutationTransactionStatus::kCommitted);
+  EXPECT_EQ(retry.Get().store_status, StoreStatus::kValid);
+  EXPECT_EQ(retry.Get().policy_generation, committed_generation);
+  task_environment_.RunUntilIdle();
+  EXPECT_FALSE(client_->metadata);
+  EXPECT_FALSE(client_->reply);
+  EXPECT_EQ(coordinator_->state_generation(), 1u);
+  const auto durable =
+      retained_store->ReadCommittedSnapshot(owner_.storage_partition_token);
+  ASSERT_TRUE(durable.value);
+  EXPECT_EQ(durable.value->policy_generation, committed_generation);
+}
+
 TEST_F(AccessMutationTransactionTest, FailedAckRemovesCandidateWithoutCommit) {
   base::test::TestFuture<AccessMutationTransactionResult> result;
   auto store = OpenStore();

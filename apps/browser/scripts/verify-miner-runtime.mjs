@@ -1460,7 +1460,7 @@ class OwnedProcessTree {
         return alive;
       }
       await delay(POLL_INTERVAL_MS);
-    } while (true);
+    } while (true); // eslint-disable-line no-constant-condition -- exits through the checks above.
   }
 
   evidence(survivors = []) {
@@ -2622,7 +2622,10 @@ async function runSelfTest() {
         try {
           process.kill(child.pid, 'SIGKILL');
         } catch (error) {
-          if (error?.code !== 'ESRCH') throw error;
+          if (error?.code !== 'ESRCH') {
+            // eslint-disable-next-line no-unsafe-finally -- cleanup failure must fail this regression record.
+            throw error;
+          }
         }
       }
       await rm(root, {recursive: true, force: true});
