@@ -11,13 +11,13 @@
 
 工作流只读仓库，不创建 Release、不合并 PR、不正式签名公证、不替换现用 App。不会绕过源码冲突或测试失败；失败时保留补丁名、Git 现场、日志及旧产物。上游检测不具备自动进行语义适配的能力；新版本仍需生成并修正候选分支，修复提交后构建自动继续。当前未接入自动写代码的代理。
 
-## GitHub Copilot PR Review
+## PR Review 与 Codacy
 
-上游 `gcsagroup/aegis-browser` 的 Copilot 只承担 PR 语义 Review，不自动写入或合并代码。仓库级 Review 规则来自 PR head 中的 `.github/copilot-instructions.md` 与匹配路径的 `.github/instructions/*.instructions.md`；因此 Review 结论必须绑定当前 PR 最终 head，push 新提交后旧结论不能直接复用。
+上游 `gcsagroup/aegis-browser` 的 PR 使用独立 Review 检查语义、行为、安全与治理问题。Review 结论必须绑定当前 PR 最终 head，push 新提交后旧结论不能直接复用。仓库中的 `.github/copilot-instructions.md` 与匹配路径的 `.github/instructions/*.instructions.md` 仅供未来显式调用 Copilot 时提供可选提示，不代表服务端已启用，也不是当前流程门槛。
 
 上游 main 的晋升 PR 必须通过 `quality-gate` 和 `Codacy Static Code Analysis`，并完成适用的集成验证与最终 Review；个人 develop 不接入 Codacy。个人 main 为上游精确镜像，后续发布 workflow 采用共享源码、个人仓库执行条件与受保护 environment，不在镜像上添加个人专属提交。
 
-服务端策略单独使用一个针对 `main` 的 GitHub branch ruleset：自动请求 Copilot code review，并在每次新 push 后重新 Review；Draft PR 不自动触发。Copilot approval 不作为必需审批，也不替代独立 reviewer、Codacy、`quality-gate`、Chromium 集成、设备、签名或发布证据。该 Ruleset 和 Copilot 可用性属于 GitHub 服务端状态，须由管理员/API 实时回读，不能由仓库文件或本地测试证明。
+针对 `main` 的 Copilot code review ruleset 当前保持停用，个人 develop 也不自动请求 Copilot；不购买 Copilot 方案、不等待 Copilot 结果。上游 Codacy、`quality-gate`、独立 reviewer、适用 Chromium 集成、设备、签名和发布证据按各自范围继续执行。ruleset、Codacy 授权和分支保护均属于服务端状态，须由管理员/API 实时回读，不能由仓库文件或本地测试证明。
 
 ## 当前优先方案：GitHub 托管
 
