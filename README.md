@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy main](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=main)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard?branch=main) [![Codacy develop](https://app.codacy.com/project/badge/Grade/72c871eba82e471ebc05eaacd4d45218?branch=develop)](https://app.codacy.com/gh/quinn521/aegis-browser/dashboard?branch=develop) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Current platform: macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![Current platform: macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
 
 **A local-first privacy and security browser with a controllable AI Agent. macOS comes first; iPhone and iPad are next.**
 
@@ -33,7 +33,7 @@ Detailed engineering boundaries live in the [Browser guide](apps/browser/README.
 The badges above report different scopes:
 
 - **CI** is the repository quality gate for public `main`.
-- **Codacy main / develop** report static analysis for the corresponding personal-fork branch (`quinn521/aegis-browser`), not coverage or runtime acceptance. Upstream promotion preserves the upstream repository’s own README badges.
+- **Codacy Grade** reports static analysis for upstream `gcsagroup/aegis-browser` on `main`; it does not establish test coverage or runtime acceptance.
 - **C++ Unit Tests** runs standalone C++20 Access tests plus Chromium GoogleTest wiring/patch contracts. It does **not** claim that the full Chromium GoogleTest binary or every browser runtime scenario passed.
 - **License** and platform badges describe repository metadata and current product priority, not release status.
 

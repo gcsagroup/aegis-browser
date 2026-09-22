@@ -1,6 +1,6 @@
 # DEV 到上游的 CI、审查与自动合并实施方案
 
-> **2026-09-16 分支职责更新：** 以下初始方案的 DEV main 路径已被取代。个人 Fork 的 GitHub 默认分支改为 `main`，但开发、维护、发布准备与日常 PR/合并目标仍为 `develop`；个人 `main` 作为默认展示与公开晋升线。当前三份顶层 README 暂时与 `upstream/main` 镜像，develop 的 README 修改不随晋升带入 main。公共 CI 同时验证 main/develop，人工补跑只接受这两个分支；导出来自已验证的 develop 状态经 promotion 分支形成的个人 main。PR #20 的 main-only 验证方案废止，当前操作以 [CI 指南](../development/ci.zh-CN.md) 为准。历史观察和 SHA 不改写、不转作 develop 证据。
+> **2026-09-22：历史方案，仅供追溯。** 当前流程为 develop → 独立晋升分支 → upstream/main → 回流 develop；个人 main 精确镜像上游并预留未来发布 Action 入口。操作规则以 [CI 指南](../development/ci.zh-CN.md) 为唯一入口；下文旧分支路径与观察不作为当前配置或验收证据。
 
 日期：2026-09-14（初始设计与观察）。2026-09-15 范围更新：当前只关注 macOS；自动 CI 仅 `quality` 与 `quality-gate`，后者只依赖并严格要求 `quality=success`。Linux/Windows 覆盖率及 iOS/Android 工作流均仅手动运行，不属于当前合并门。Android 与 WinRM 专属套件保留在 `quality:other-platforms` 显式入口；共享与 Mac 测试仍由 `quality:fast` 执行。本文历史 SHA/初始观察保留，当前操作以 [CI 指南](../development/ci.zh-CN.md) 为准。
 
