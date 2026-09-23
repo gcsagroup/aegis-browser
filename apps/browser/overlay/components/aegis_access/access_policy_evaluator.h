@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "components/aegis_access/request_policy_context.h"
+#include "components/aegis_access/site_proxy_rule_group.h"
 
 namespace aegis_access {
 

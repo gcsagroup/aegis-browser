@@ -1,0 +1,46 @@
+From 1d6fc7da3dd3721297403b0194bbd0d574f0f873 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 23 Sep 2026 14:49:12 +0800
+Subject: [PATCH] fix(aegis): initialize Mojo for proxy acceptance tests
+
+---
+ components/aegis_access/BUILD.gn                               | 1 +
+ .../aegis_access/access_local_proxy_acceptance_unittest.cc     | 3 +++
+ 2 files changed, 4 insertions(+)
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 5c8f3169a7..01b0f6a6f2 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -246,6 +246,7 @@ test("aegis_access_unittests") {
+     "//base",
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
++    "//mojo/core/embedder",
+     "//mojo/public/cpp/bindings",
+     "//net:test_support",
+     "//services/network:network_service",
+diff --git a/components/aegis_access/access_local_proxy_acceptance_unittest.cc b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
+index 7a2b5a12d2..23105425eb 100644
+--- a/components/aegis_access/access_local_proxy_acceptance_unittest.cc
++++ b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
+@@ -12,6 +12,7 @@
+ #include "base/functional/bind.h"
+ #include "base/notreached.h"
+ #include "base/test/task_environment.h"
++#include "mojo/core/embedder/embedder.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "net/base/isolation_info.h"
+ #include "net/base/load_flags.h"
+@@ -111,6 +112,8 @@ void CountProxyRequest(std::atomic<size_t>* connect_counter,
+ 
+ class AccessLocalProxyAcceptanceTest : public testing::Test {
+  protected:
++  static void SetUpTestSuite() { mojo::core::Init(); }
++
+   AccessLocalProxyAcceptanceTest()
+       : task_environment_(base::test::TaskEnvironment::MainThreadType::IO),
+         http_origin_(net::test_server::EmbeddedTestServer::TYPE_HTTP),
+-- 
+2.54.0 (Apple Git-157)
+

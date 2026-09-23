@@ -1,0 +1,106 @@
+From 5b5ae58ef9f1993498b8b162ed3739b76344ddbb Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 23 Sep 2026 09:51:48 +0800
+Subject: [PATCH] fix(history): match routing tests to branded sidebar
+
+---
+ .../webui/history/history_routing_test.ts     | 44 +++++++++++++++++++
+ 1 file changed, 44 insertions(+)
+
+diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
+index 367f1a4736..3813ad74f2 100644
+--- a/chrome/test/data/webui/history/history_routing_test.ts
++++ b/chrome/test/data/webui/history/history_routing_test.ts
+@@ -8,9 +8,16 @@ import type {HistoryAppElement, HistorySideBarElement} from 'chrome://history/hi
+ import {BrowserProxyImpl, CrRouter, historyClustersBrowserProxyFactory, historyEmbeddingsBrowserProxyFactory, HistoryEmbeddingsPageHandlerRemote, MetricsProxyImpl, PageHandlerRemote as HistoryClustersPageHandlerRemote} from 'chrome://history/history.js';
+ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
++// <if expr="_google_chrome or _is_chrome_for_testing">
+ import {keyDownOn} from 'chrome://webui-test/keyboard_mock_interactions.js';
++// </if>
+ import {TestMock} from 'chrome://webui-test/test_mock.js';
++// <if expr="_google_chrome or _is_chrome_for_testing">
+ import {eventToPromise, isVisible, microtasksFinished} from 'chrome://webui-test/test_util.js';
++// </if>
++// <if expr="not _google_chrome and not _is_chrome_for_testing">
++import {isVisible, microtasksFinished} from 'chrome://webui-test/test_util.js';
++// </if>
+ 
+ import {TestMetricsProxy} from './history_clusters/utils.js';
+ import {TestHistoryBrowserProxy} from './test_browser_proxy.js';
+@@ -62,7 +69,13 @@ import {navigateTo} from './test_util.js';
+       assertEquals(app.$.history, app.$.tabsContent.selectedItem);
+ 
+       navigateTo('/syncedTabs', app);
++      // <if expr="_google_chrome or _is_chrome_for_testing">
+       await eventToPromise('iron-select', sidebar.$.menu);
++      // </if>
++      // <if expr="not _google_chrome and not _is_chrome_for_testing">
++      // The unbranded sidebar has no synced-tabs item to select.
++      await microtasksFinished();
++      // </if>
+ 
+       assertEquals('chrome://history/syncedTabs', window.location.href);
+       await microtasksFinished();
+@@ -111,6 +124,7 @@ import {navigateTo} from './test_util.js';
+           sidebar.$.history.getAttribute('path'));
+     });
+ 
++    // <if expr="_google_chrome or _is_chrome_for_testing">
+     test('route updates from tabs and sidebar menu items', async function() {
+       assertEquals('history', sidebar.$.menu.selected);
+       assertEquals('chrome://history/', window.location.href);
+@@ -157,6 +171,34 @@ import {navigateTo} from './test_util.js';
+         assertEquals('chrome://history/', window.location.href);
+       }
+     });
++    // </if>
++
++    // <if expr="not _google_chrome and not _is_chrome_for_testing">
++    test('local routes work without a synced tabs sidebar entry', async () => {
++      assertEquals(null, sidebar.shadowRoot.querySelector('#syncedTabs'));
++      assertEquals('history', sidebar.$.menu.selected);
++      assertEquals('chrome://history/', sidebar.$.history.href);
++
++      navigateTo('/?q=local', app);
++      await microtasksFinished();
++      assertEquals('local', app.$.toolbar.searchTerm);
++      assertEquals('chrome://history/?q=local', window.location.href);
++
++      if (isHistoryClustersEnabled) {
++        const historyTabs = app.shadowRoot.querySelector('cr-tabs');
++        assertTrue(!!historyTabs);
++        historyTabs.selected = 1;
++        await microtasksFinished();
++        assertEquals('grouped', sidebar.$.menu.selected);
++        assertEquals('chrome://history/grouped?q=local', window.location.href);
++
++        historyTabs.selected = 0;
++        await microtasksFinished();
++        assertEquals('history', sidebar.$.menu.selected);
++        assertEquals('chrome://history/?q=local', window.location.href);
++      }
++    });
++    // </if>
+ 
+     test('search updates from route', async function() {
+       assertEquals('chrome://history/', window.location.href);
+@@ -177,6 +219,7 @@ import {navigateTo} from './test_util.js';
+       assertEquals('chrome://history/?q=' + searchTerm, window.location.href);
+     });
+ 
++    // <if expr="_google_chrome or _is_chrome_for_testing">
+     test(
+         'search is preserved across tabs and sidebar menu items',
+         async function() {
+@@ -213,6 +256,7 @@ import {navigateTo} from './test_util.js';
+                 window.location.href);
+           }
+         });
++    // </if>
+ 
+     test(
+         'routing to chrome://history/syncedTabs works correctly',
+-- 
+2.54.0 (Apple Git-157)
+

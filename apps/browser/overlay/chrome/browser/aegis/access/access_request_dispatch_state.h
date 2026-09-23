@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
@@ -92,7 +93,7 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
       base::OnceCallback<void(bool)> completion,
       bool acknowledged);
 
-  Profile* const profile_;
+  const raw_ptr<Profile> profile_;
   aegis_access::RequestDispatchBarrierRegistry barriers_;
   aegis_access::RequestOwnershipRegistry ownership_;
   aegis_access::PolicyPublicationAckTracker publication_acks_;

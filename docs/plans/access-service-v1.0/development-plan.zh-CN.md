@@ -2,6 +2,20 @@
 
 更新日期：2026-09-22。续接基线：`origin/develop@c08b6321fe2878ba62c8d9757a3f4ae4e4f17470`（[#164](https://github.com/quinn521/aegis-browser/pull/164) 已合并）。本次落实该方案的工作拆分、双窗口职责和状态快照，没有新增产品代码或运行验收。
 
+## 2026-09-22：F 独立 transport scope 准入增量
+
+本增量补齐普通网站 mutation 在同 host 或 DNS label 后缀已存在异组 PROXY 时的发布前拒绝，不重复旧 trusted-site UI 候选或 #155/#156 重试语义。#161 runner、#163 GN 修复、#166 模型路由补丁 0161 与 #171 回流的 TypeSafe 补丁 0162/0163 已进入当前基线；本增量的准入补丁顺序编号为 0164，后续修复为 0165–0167。实现、验收不变量、实际模型路由与证据边界见 [F Handoff](transport-scope-handoff-20260922.zh-CN.md)。standalone 行为检查已通过，nativeImpact 为 REQUIRED；固定 Chromium unit/browser runtime 未执行通过前保持 NOT_RUN，G0 仍 UNVERIFIED。
+
+## 2026-09-24：PR #162 H12 精确证据快照
+
+此快照绑定 B=`131da2fec25b783e0cc42374728e1f5ffb01cf53`、H=`6664528b5017487fddb9b2b919a83d9d8c157027`、tree=`5140c64316b6cdddc2c86554283261a7d98228d6`。GitHub PR merge candidate M=`0723b8d11f219f97eb6fbc44c1510a60c975d440` 的两个父提交依次为 B/H。
+
+- H 的本地 full quality、fixed Chromium ordered-source admission 与 transition verification 均 PASS；补丁输入为 Chromium 169 项、V8 2 项，重放树分别为 `2b924501f5eb8aeac1ce9a911f710f773fe8690d` 与 `5a6be89cfa0c35d8eb6ee81aec3cb8100780f7e9`。
+- 固定 Chromium 151 native 三目标 PASS：`access_service_coordinator_unittests` 16 项、`aegis_access_unittests` 45 项、`access_rule_store_unittests` 35 项，共 96 项。`browser_tests` 构建及 Access 冲突后导航、History 路由、Settings About 三项 fixture 均 PASS；History 与 Settings 的指定内层 Mocha 用例均已观测，sourceStable=true。
+- 对应 PR #162 H 的独立代码复审为 CLEAR。GitHub `quality`、`quality-gate` 与 `c++-unit-tests` 均在 `pull_request` attempt 1 成功：CI run `35909462990`，C++ run `35909462942`。
+
+以上只记录所列 B/H/M 和当时的证据；任何后续提交都须按 DEV CI 指南重新绑定并验证，不从此快照转用最终 HEAD 结论。
+
 ## 当前依据与结论
 
 行为和完整门槛以[冻结修订 4](spec.zh-CN.md)为准；实施技术决策见[架构复核与实施方案](architecture-review-20260922.zh-CN.md)；逐项事实写入[A/PF 台账](acceptance-tracker.zh-CN.md)；下一工作窗口及证据边界见[Handoff](handoff-20260920.zh-CN.md)。历史 P0 切片保留在[p0-implementation](p0-implementation.zh-CN.md)。

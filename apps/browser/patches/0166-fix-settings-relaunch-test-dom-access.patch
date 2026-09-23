@@ -1,0 +1,28 @@
+From 066641601420cd8622c1e4eabc27bf45e92f77dc Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 23 Sep 2026 10:11:52 +0800
+Subject: [PATCH] fix(settings): inspect relaunch control through DOM in WebUI
+ test
+
+---
+ chrome/test/data/webui/settings/about_page_test.ts | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
+index 6813b3efcd..782f494711 100644
+--- a/chrome/test/data/webui/settings/about_page_test.ts
++++ b/chrome/test/data/webui/settings/about_page_test.ts
+@@ -176,7 +176,9 @@ suite('AllBuilds', function() {
+     fireStatusChanged(UpdateStatus.DISABLED,
+         {message: '安装包已下载并校验，请退出浏览器后安装。', aegisUpdateReady: true});
+     await microtasksFinished();
+-    assertTrue(page.$.relaunch.hidden);
++    const relaunch = page.shadowRoot.querySelector<HTMLElement>('#relaunch')!;
++    assertTrue(!!relaunch);
++    assertTrue(relaunch.hidden);
+     assertFalse(page.shadowRoot.querySelector<HTMLElement>('#aegisShowUpdate')!.hidden);
+     assertTrue(page.shadowRoot.querySelector<HTMLButtonElement>('#aegisCheckUpdate')!.disabled);
+     assertTrue(page.$.updateStatusMessage.textContent.includes('请退出浏览器后安装'));
+-- 
+2.54.0 (Apple Git-157)
+

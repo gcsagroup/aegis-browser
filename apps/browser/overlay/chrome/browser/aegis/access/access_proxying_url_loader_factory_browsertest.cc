@@ -11,6 +11,7 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/run_loop.h"
 #include "base/test/run_until.h"
 #include "base/test/test_future.h"
 #include "build/chromeos_buildflags.h"
@@ -20,6 +21,7 @@
 #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
 #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+#include "chrome/browser/aegis/access/access_service_coordinator.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
@@ -37,7 +39,9 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -55,6 +59,10 @@ namespace aegis::access {
 
 class AccessRuleStoreTestPeer {
  public:
+  static StoreStatus Import(AccessRuleStore* store, StoredAccessRule rule) {
+    return store->ImportIndependentRuleForTesting(std::move(rule));
+  }
+
   static AccessStoreBinding Ephemeral(const OwnershipKey& owner) {
     return AccessStoreBinding(AccessStoreKind::kEphemeralProfile, owner.channel,
                               "prepared-browser-test", owner.profile_token, {}, {});
@@ -809,6 +817,26 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     }
   }
 
+  std::optional<aegis_access::RequestCancellationSelector> CurrentSiteSelector() {
+    const auto metadata = BuildBrowserOwnedRequestMetadata(
+        browser()->profile(), base::BindRepeating(
+            &AccessProxyingURLLoaderFactoryBrowserTest::web_contents,
+            base::Unretained(this)),
+        web_contents()->GetPrimaryMainFrame()->GetFrameTreeNodeId(), std::nullopt);
+    if (!metadata.metadata) {
+      return std::nullopt;
+    }
+    const auto context = aegis_access::CanonicalizeBrowserOwnedRequest(
+        *metadata.metadata, target_url());
+    if (!context.context) {
+      return std::nullopt;
+    }
+    const auto& value = *context.context;
+    return aegis_access::RequestCancellationSelector{
+        value.owner(), value.document_token(), value.pending_navigation_token(),
+        value.top_level_site(), value.exact_host(), value.scheme(), value.port()};
+  }
+
   std::atomic<size_t> origin_requests_{0};
   std::atomic<size_t> proxy_requests_{0};
   net::test_server::EmbeddedTestServer target_origin_;
@@ -873,6 +901,51 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   EXPECT_EQ(store.ReadCommittedSnapshot(owner_->storage_partition_token).status,
             StoreStatus::kRecoveryRequired);
   EXPECT_EQ(prepared.value->committed_policy_generation, 0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       ConflictingSiteProxyGroupPreservesNavigationRoute) {
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->profile());
+  ASSERT_TRUE(runtime);
+  const auto* published = runtime->GetPublishedPolicySnapshot(*owner_);
+  ASSERT_TRUE(published);
+  const auto published_before = *published;
+  auto store = std::make_unique<AccessRuleStore>(
+      AccessRuleStoreTestPeer::Ephemeral(*owner_));
+  ASSERT_EQ(store->Open(), StoreStatus::kValid);
+  StoredAccessRule independent;
+  independent.policy = published_before.rules.front();
+  independent.source = StoredRuleSource::kTestFixture;
+  independent.lifetime = StoredRuleLifetime::kPersistent;
+  ASSERT_EQ(AccessRuleStoreTestPeer::Import(store.get(), independent),
+            StoreStatus::kValid);
+  auto request = PreparedNavigationRequest(*owner_);
+  for (auto& member : request.candidate_members) {
+    member.proxy_group_id = "conflicting-group";
+  }
+  const auto selector = CurrentSiteSelector();
+  ASSERT_TRUE(selector);
+  const auto selection_before = transport_->CurrentSelection(*owner_);
+  auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->profile());
+  ASSERT_TRUE(coordinator);
+  base::test::TestFuture<AccessMutationTransactionResult> result;
+  coordinator->CommitSiteGroupMutation(std::move(store), request, *selector,
+                                        result.GetCallback());
+  ASSERT_TRUE(result.Wait());
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(result.Get().status,
+            AccessMutationTransactionStatus::kUnsupportedTransportScope);
+  EXPECT_EQ(*runtime->GetPublishedPolicySnapshot(*owner_), published_before);
+  EXPECT_EQ(transport_->CurrentSelection(*owner_), selection_before);
+  EXPECT_EQ(coordinator->state_generation(), 0u);
+  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), target_url().Resolve("/after-rejected-site-mutation")));
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/1u);
 }
 
 #if !BUILDFLAG(IS_CHROMEOS)

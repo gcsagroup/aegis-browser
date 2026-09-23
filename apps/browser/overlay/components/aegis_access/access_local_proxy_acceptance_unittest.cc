@@ -12,7 +12,9 @@
 #include "base/functional/bind.h"
 #include "base/notreached.h"
 #include "base/test/task_environment.h"
+#include "mojo/core/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/isolation_info.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -111,6 +113,8 @@ void CountProxyRequest(std::atomic<size_t>* connect_counter,
 
 class AccessLocalProxyAcceptanceTest : public testing::Test {
  protected:
+  static void SetUpTestSuite() { mojo::core::Init(); }
+
   AccessLocalProxyAcceptanceTest()
       : task_environment_(base::test::TaskEnvironment::MainThreadType::IO),
         http_origin_(net::test_server::EmbeddedTestServer::TYPE_HTTP),
@@ -130,7 +134,8 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
                             base::Unretained(&proxy_connect_requests_)));
     proxy_server_.RegisterRequestHandler(base::BindRepeating(
         &HandleHttpProxyRequest, base::Unretained(&proxy_http_requests_)));
-    const net::HostPortPair connect_destination = https_origin_.host_port_pair();
+    const net::HostPortPair connect_destination =
+        net::HostPortPair::FromURL(https_origin_.GetURL(kTargetHost, "/"));
     proxy_server_.EnableConnectProxy({connect_destination});
     ASSERT_TRUE(proxy_server_.Start());
 

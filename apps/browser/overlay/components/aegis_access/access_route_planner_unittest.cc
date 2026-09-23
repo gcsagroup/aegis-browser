@@ -25,5 +25,15 @@ TEST(SiteProxyRuleGroupTest, CompleteAtomicGroupContract) {
   RunSiteProxyRuleGroupContractTests(observer);
 }
 
+TEST(SiteProxyRuleGroupTest, TransportCompatibilityUnit) {
+  GtestObserver observer;
+  RunSiteProxyTransportUnitTests(observer);
+}
+
+TEST(SiteProxyRuleGroupTest, TransportCompatibilityRegression) {
+  GtestObserver observer;
+  RunSiteProxyTransportRegressionTests(observer);
+}
+
 }  // namespace
 }  // namespace aegis_access::test

@@ -119,7 +119,7 @@ constexpr char kCreateJournalSql[] = R"sql(
     after_image TEXT NOT NULL
   ))sql";
 
-bool IsKnownChannel(ChannelNamespace channel) {
+bool IsKnownStoreChannel(ChannelNamespace channel) {
   switch (channel) {
     case ChannelNamespace::kDev:
     case ChannelNamespace::kAlpha:
@@ -169,8 +169,8 @@ OwnershipKey OwnerFor(const AccessStoreBinding& binding,
   return {binding.channel(), binding.runtime_profile_token(), partition};
 }
 
-bool IsCompleteOwner(const OwnershipKey& owner) {
-  return IsKnownChannel(owner.channel) && Bounded(owner.profile_token) &&
+bool IsBoundedStoreOwner(const OwnershipKey& owner) {
+  return IsKnownStoreChannel(owner.channel) && Bounded(owner.profile_token) &&
          Bounded(owner.storage_partition_token);
 }
 
@@ -331,7 +331,7 @@ bool ValidateStoredRule(const StoredAccessRule& rule,
                         const OwnershipKey& owner,
                         bool independent) {
   const AccessPolicyRule& policy = rule.policy;
-  if (!IsCompleteOwner(owner) || policy.owner != owner ||
+  if (!IsBoundedStoreOwner(owner) || policy.owner != owner ||
       !Bounded(policy.rule_id) ||
       !IsCanonicalHostLike(policy.destination_host) ||
       policy.row_revision == 0 || policy.last_operation_sequence == 0 ||
@@ -480,7 +480,7 @@ bool IsPreparedCandidateValid(const PendingMutationRecord& expected) {
            expected.committed_policy_generation != 0 ||
            expected.candidate.policy_generation !=
                expected.operation_sequence ||
-           !IsCompleteOwner(expected.owner) ||
+           !IsBoundedStoreOwner(expected.owner) ||
            expected.candidate.group.owner != expected.owner);
 }
 
@@ -555,7 +555,7 @@ AccessRuleStore::~AccessRuleStore() {
 
 bool AccessRuleStore::IsBindingValid() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!IsKnownChannel(binding_.channel()) ||
+  if (!IsKnownStoreChannel(binding_.channel()) ||
       !Bounded(binding_.durable_profile_id()) ||
       !Bounded(binding_.runtime_profile_token())) {
     return false;
@@ -973,7 +973,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
     return MutationError(StoreStatus::kInvalidArgument, "invalid_request");
   }
   const OwnershipKey expected_owner = request.candidate_group.owner;
-  if (!IsCompleteOwner(expected_owner) ||
+  if (!IsBoundedStoreOwner(expected_owner) ||
       expected_owner.channel != binding_.channel() ||
       expected_owner.profile_token != binding_.runtime_profile_token() ||
       request.candidate_group.revision != 0 ||
@@ -1249,12 +1249,11 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
                : MutationError(StoreStatus::kIoError, "mutation_read_failed");
   }
   const int state = row.ColumnInt(1);
-  if ((prepared_only && state != kPrepared) || state < kPrepared ||
-      state > kSuperseded) {
-    return MutationError(state < kPrepared || state > kSuperseded
-                             ? StoreStatus::kCorrupt
-                             : StoreStatus::kMissing,
-                         "mutation_not_prepared");
+  if (state < kPrepared || state > kSuperseded) {
+    return MutationError(StoreStatus::kCorrupt, "invalid_mutation_state");
+  }
+  if (prepared_only && state != kPrepared) {
+    return MutationError(StoreStatus::kConflict, "mutation_not_prepared");
   }
   const std::string trusted_path =
       binding_.kind() == AccessStoreKind::kPersistentProfile
@@ -1587,7 +1586,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
 
 StoreResult<MatcherRuleSetCandidate> AccessRuleStore::AdaptMatcherSnapshot(
     const StoredPolicySnapshot& stored) {
-  if (!IsCompleteOwner(stored.owner) || stored.policy_generation == 0) {
+  if (!IsBoundedStoreOwner(stored.owner) || stored.policy_generation == 0) {
     return {StoreStatus::kCorrupt, std::nullopt, "invalid_snapshot_header"};
   }
   MatcherRuleSetCandidate matcher;

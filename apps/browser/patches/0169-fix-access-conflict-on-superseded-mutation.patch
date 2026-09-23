@@ -1,0 +1,34 @@
+From 5b672b4c3a6647ffbb0754630eb888bb5ebe858e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 24 Sep 2026 01:42:34 +0800
+Subject: [PATCH] fix(access): conflict on superseded prepared mutation
+
+---
+ chrome/browser/aegis/access/access_rule_store.cc | 11 +++++------
+ 1 file changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index b3b9b6afe3..108b9c891a 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -1249,12 +1249,11 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
+                : MutationError(StoreStatus::kIoError, "mutation_read_failed");
+   }
+   const int state = row.ColumnInt(1);
+-  if ((prepared_only && state != kPrepared) || state < kPrepared ||
+-      state > kSuperseded) {
+-    return MutationError(state < kPrepared || state > kSuperseded
+-                             ? StoreStatus::kCorrupt
+-                             : StoreStatus::kMissing,
+-                         "mutation_not_prepared");
++  if (state < kPrepared || state > kSuperseded) {
++    return MutationError(StoreStatus::kCorrupt, "invalid_mutation_state");
++  }
++  if (prepared_only && state != kPrepared) {
++    return MutationError(StoreStatus::kConflict, "mutation_not_prepared");
+   }
+   const std::string trusted_path =
+       binding_.kind() == AccessStoreKind::kPersistentProfile
+-- 
+2.54.0 (Apple Git-157)
+
