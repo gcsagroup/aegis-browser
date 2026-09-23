@@ -160,3 +160,4 @@
 0159-fix-access-return-committed-mutation-retries.patch
 0160-fix-native-gn-dependency-wiring.patch
 0161-feat-aegis-route-agent-tasks-across-model-pool.patch
+0162-fix-typesafe-bearer-header.patch
