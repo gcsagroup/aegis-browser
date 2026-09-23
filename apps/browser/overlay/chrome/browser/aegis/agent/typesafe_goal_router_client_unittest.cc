@@ -304,7 +304,7 @@ TEST_F(TypeSafeGoalRouterClientTest,
   workflow->Set("choice", "browser_steward");
   workflow->Set("confidence", 0.95);
   probabilities->Set("research", 0.02);
-  probabilities->Set("browser_steward", 0.92);
+  probabilities->Set("browser_steward", 0.93);
   std::optional<std::string> incompatible_body = WriteJson(*incompatible);
   ASSERT_TRUE(incompatible_body);
   EXPECT_FALSE(TypeSafeGoalResponseParser::Parse(*incompatible_body, kGoal,
