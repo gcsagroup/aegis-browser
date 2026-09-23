@@ -115,9 +115,13 @@ ownership_support_block="$(
 )"
 [[ "$ownership_support_block" == *'testonly = true'* ]] ||
   fail "shared ownership support must remain test-only"
+[[ "$ownership_support_block" == *'sources = [ "request_ownership_registry_test_support.cc" ]'* ]] ||
+  fail "shared ownership support must compile its out-of-line implementation"
+[[ "$ownership_support_block" == *'"//base",'* ]] ||
+  fail "shared ownership support must expose its raw_ptr base dependency"
 [[ "$ownership_support_block" == *'public = [ "request_ownership_registry_test_support.h" ]'* ]] ||
   fail "shared ownership support must publish its header"
-[[ "$ownership_support_block" == *'public_deps = [ ":request_ownership_registry" ]'* ]] ||
+[[ "$ownership_support_block" == *'public_deps = ['*'":request_ownership_registry",'*'"//base",'* ]] ||
   fail "shared ownership support must export the registry header dependency"
 [[ "$(rg -F -c '"request_ownership_registry_test_support.h"' "$COMPONENT_BUILD")" == 1 ]] ||
   fail "shared ownership support header must have exactly one owner"
@@ -921,6 +925,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0150 must appear once in series"
 [[ "$(rg -F -c '0151-fix-aegis-identity-generation-state-style.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0151 must appear once in series"
+[[ "$(rg -F -c '0167-fix-access-proxy-acceptance-mojo-init.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0167 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -971,10 +977,16 @@ expected_access_tail="$(cat <<'EOF'
 0161-feat-aegis-route-agent-tasks-across-model-pool.patch
 0162-fix-typesafe-bearer-header.patch
 0163-fix-typesafe-workflow-test-distribution.patch
+0164-fix-access-reject-conflicting-site-proxy-groups.patch
+0165-fix-history-routing-without-synced-sidebar.patch
+0166-fix-settings-relaunch-test-dom-access.patch
+0167-fix-access-proxy-acceptance-mojo-init.patch
+0168-fix-access-proxy-connect-allowlist-host.patch
+0169-fix-access-conflict-on-superseded-mutation.patch
 EOF
 )"
-[[ "$(tail -n 49 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "patch tail must retain the Access sequence through patch 0160 before patches 0161-0163"
+[[ "$(tail -n 55 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "patch tail must retain TypeSafe 0162-0163 before Access patches 0164-0169"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does
