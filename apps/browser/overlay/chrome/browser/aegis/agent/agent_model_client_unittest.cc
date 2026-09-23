@@ -183,8 +183,29 @@ TEST_F(AgentModelClientTest, DoesNotLeakProviderErrorOrApiKey) {
       endpoint.spec(), "provider-private-body", net::HTTP_UNAUTHORIZED));
   EXPECT_FALSE(result.Get<0>());
   EXPECT_THAT(result.Get<1>(), HasSubstr("HTTP 401"));
+  EXPECT_EQ(result.Get<2>().failure,
+            AgentModelRequestFailure::kHttpPermanent);
+  EXPECT_FALSE(IsTransientAgentModelFailure(result.Get<2>().failure));
   EXPECT_THAT(result.Get<1>(), Not(HasSubstr("sk-fixture-secret")));
   EXPECT_THAT(result.Get<1>(), Not(HasSubstr("provider-private-body")));
+}
+
+TEST_F(AgentModelClientTest, ClassifiesRetryableProviderFailure) {
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  AgentModelClient client(factory_.GetSafeWeakWrapper());
+  AgentModelClientConfig config{.provider = ModelProvider::kOpenAI,
+                                .base_url = "http://127.0.0.1:8765/v1"};
+  base::test::TestFuture<bool, std::string, AgentModelParseResult> result;
+  ASSERT_TRUE(client.Start(
+      std::move(config), Request(AgentModelProvider::kOpenAICompatible, false),
+      result.GetCallback()));
+  Pending(endpoint);
+  EXPECT_TRUE(factory_.SimulateResponseForPendingRequest(
+      endpoint.spec(), "temporarily unavailable", net::HTTP_SERVICE_UNAVAILABLE));
+  EXPECT_FALSE(result.Get<0>());
+  EXPECT_EQ(result.Get<2>().failure,
+            AgentModelRequestFailure::kServiceUnavailable);
+  EXPECT_TRUE(IsTransientAgentModelFailure(result.Get<2>().failure));
 }
 
 TEST_F(AgentModelClientTest, PreservesBoundedProtocolFailureForOneRepair) {
