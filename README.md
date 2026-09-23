@@ -33,8 +33,8 @@ Detailed engineering boundaries live in the [Browser guide](apps/browser/README.
 The badges above report different scopes:
 
 - **CI** is the repository quality gate for public `main`.
-- **Codacy Grade** reports static analysis for upstream `gcsagroup/aegis-browser` on `main`; it does not establish test coverage or runtime acceptance.
 - **C++ Unit Tests** runs standalone C++20 Access tests plus Chromium GoogleTest wiring/patch contracts. It does **not** claim that the full Chromium GoogleTest binary or every browser runtime scenario passed.
+- **Codacy Grade** reports static analysis for upstream `gcsagroup/aegis-browser` on `main`; it does not establish test coverage or runtime acceptance.
 - **License** and platform badges describe repository metadata and current product priority, not release status.
 
 Full Chromium builds, current browser runtime behavior, real-network scenarios, Developer ID signing, notarization, installation and upgrade acceptance remain separate macOS release gates.

@@ -33,8 +33,8 @@ Aegis 把隱私控制、安全檢查、原生瀏覽器能力和 AI Agent 直接�
 頂部徽章代表不同範圍：
 
 - **CI**：公共 `main` 的儲存庫級品質門檻。
-- **Codacy Grade** 顯示上游 `gcsagroup/aegis-browser` 的 `main` 分支靜態分析結果，不代表測試覆蓋率或執行階段驗收。
 - **C++ 單元測試**：執行 standalone C++20 Access 測試，以及 Chromium GoogleTest wiring / patch contract；它**不代表**完整 Chromium GoogleTest 可執行檔或全部真實瀏覽器執行情境已經通過。
+- **Codacy Grade** 顯示上游 `gcsagroup/aegis-browser` 的 `main` 分支靜態分析結果，不代表測試覆蓋率或執行階段驗收。
 - **License / 平台徽章**：描述儲存庫授權與目前產品優先級，不代表發布資格。
 
 完整 Chromium 建置、目前瀏覽器執行行為、真實網路場景、Developer ID 簽署、公證、安裝與升級驗收仍屬於 macOS 獨立發布門檻。

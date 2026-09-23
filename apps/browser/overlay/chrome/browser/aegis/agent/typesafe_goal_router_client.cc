@@ -9,7 +9,6 @@
 
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
-#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
@@ -77,6 +76,12 @@ bool IsValidApiKey(std::string_view api_key) {
   return !api_key.empty() && api_key.size() <= kMaxApiKeyBytes &&
          base::IsStringUTF8(api_key) && !HasControlCharacter(api_key) &&
          base::TrimWhitespaceASCII(api_key, base::TRIM_ALL) == api_key;
+}
+
+std::string BuildBearerAuthorization(std::string_view api_key) {
+  std::string authorization = "Bearer ";
+  authorization.append(api_key);
+  return authorization;
 }
 
 base::DictValue ChoiceQuestion(std::string instructions,
@@ -224,7 +229,7 @@ TypeSafeGoalRouterClient::Start(std::string goal,
   request->headers.SetHeader(net::HttpRequestHeaders::kAccept,
                              "application/json");
   request->headers.SetHeader(net::HttpRequestHeaders::kAuthorization,
-                             base::StrCat({"Bearer ", api_key}));
+                             BuildBearerAuthorization(api_key));
 
   request_id_ = base::UnguessableToken::Create().ToString();
   original_goal_ = std::move(goal);

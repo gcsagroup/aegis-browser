@@ -33,8 +33,8 @@ Aegis 把隐私控制、安全检查、原生浏览器能力和 AI Agent 直接�
 顶部徽章代表不同范围：
 
 - **CI**：公共 `main` 的仓库级质量门。
-- **Codacy Grade** 展示上游 `gcsagroup/aegis-browser` 的 `main` 分支静态分析结果，不代表测试覆盖率或运行时验收。
 - **C++ 单元测试**：执行 standalone C++20 Access 测试，以及 Chromium GoogleTest wiring / patch contract；它**不代表**完整 Chromium GoogleTest 可执行文件或全部真实浏览器运行场景已经通过。
+- **Codacy Grade** 展示上游 `gcsagroup/aegis-browser` 的 `main` 分支静态分析结果，不代表测试覆盖率或运行时验收。
 - **License / 平台徽章**：描述仓库许可证与当前产品优先级，不代表发行资格。
 
 完整 Chromium 构建、当前浏览器运行行为、真实网络场景、Developer ID 签名、公证、安装与升级验收仍属于 macOS 独立发行门禁。
