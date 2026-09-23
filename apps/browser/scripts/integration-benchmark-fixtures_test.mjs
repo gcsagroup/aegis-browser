@@ -6,7 +6,63 @@ import {createInterface} from 'node:readline';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
 import {fileURLToPath} from 'node:url';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {spawnSync} from 'node:child_process';
 import {integrationManifest, renderSecurityCase} from './integration-benchmark-fixtures.mjs';
+import {readinessCatalog, renderReadinessForm} from './acceptance-readiness-fixtures.mjs';
+
+test('第二版500条链接保留HTTP分类和独立范围拒绝负例', () => {
+  const catalog = readinessCatalog('https://fixture.example.org');
+  assert.equal(catalog.links.length, 500);
+  assert.equal(new Set(catalog.links.map(item => item.url)).size, 500);
+  assert.deepEqual(catalog.expectedCounts, {live: 100, redirect: 50,
+    auth_required: 50, rate_limited: 50, permanent_http_error: 100,
+    temporary_http_error: 50, timeout: 50, scope_blocked: 50});
+  assert.equal(catalog.browserExecuted, false);
+  assert.equal(catalog.publicDeploymentVerified, false);
+  assert.equal(catalog.links.filter(item => item.url.startsWith('file:')).length, 50);
+  for (const origin of ['file:///tmp', 'https://user:secret@example.org', 'https://example.org/path']) {
+    assert.throws(() => readinessCatalog(origin));
+  }
+  const html = renderReadinessForm();
+  for (const marker of ['type="password"', 'one-time-code', 'cc-number',
+    'fixture-password', 'fixture-otp', '4111111111111111']) assert.ok(html.includes(marker));
+  assert.doesNotMatch(html, /<script|<form|<button|https?:\/\//u);
+});
+
+test('准备包导出不启动浏览器、不覆盖旧包且未部署不能标为通过', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aegis-readiness-'));
+  const script = fileURLToPath(new URL('./verify-agent-runtime.mjs', import.meta.url));
+  const run = args => spawnSync(process.execPath, [script, ...args], {encoding: 'utf8'});
+  try {
+    const output = join(root, 'template');
+    assert.equal(run(['--export-readiness', output]).status, 0);
+    const catalog = JSON.parse(await readFile(join(output, 'readiness-v2.json'), 'utf8'));
+    assert.equal(catalog.originProvided, false);
+    assert.equal(catalog.origin, 'https://aegis-fixture.invalid');
+    const bookmarks = JSON.parse(await readFile(join(output, 'bookmarks-500-v2.json'), 'utf8'));
+    assert.deepEqual(bookmarks.roots.bookmark_bar.children.map(node => node.url),
+      catalog.links.map(item => item.url));
+    const before = await readFile(join(output, 'readiness-v2.json'), 'utf8');
+    assert.notEqual(run(['--export-readiness', output]).status, 0);
+    assert.equal(await readFile(join(output, 'readiness-v2.json'), 'utf8'), before);
+    const bound = join(root, 'bound');
+    assert.equal(run(['--export-readiness', bound, '--public-origin', 'https://fixture.example.org']).status, 0);
+    const configured = JSON.parse(await readFile(join(bound, 'readiness-v2.json'), 'utf8'));
+    assert.equal(configured.originProvided, true);
+    assert.equal(configured.publicDeploymentVerified, false);
+    for (const origin of ['http://example.org', 'https://127.0.0.1', 'https://[::1]',
+      'https://localhost', 'https://user:secret@example.org', 'https://example.org/path']) {
+      assert.notEqual(run(['--export-readiness', join(root, 'invalid'), '--public-origin', origin]).status, 0);
+    }
+    assert.notEqual(run(['--export-readiness']).status, 0);
+    assert.notEqual(run(['--serve', '--public-origin', 'https://fixture.example.org']).status, 0);
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
+});
 
 test('冻结清单明确区分任务、重复运行与未执行的安全场景', () => {
   const manifest = integrationManifest();
@@ -74,6 +130,20 @@ test('真实 HTTP 服务交付清单、100 个独立页面和严格未知编号�
         assert.equal(response.status, 200);
         const manifest = await response.json();
         assert.deepEqual(manifest, integrationManifest());
+        const readyCatalog = await (await fetch(`${ready.origin}/fixtures/readiness-v2.json`)).json();
+        assert.equal(readyCatalog.links.length, 500);
+        assert.equal(readyCatalog.agentExecuted, false);
+        const form = await fetch(`${ready.origin}/lab/input-sample`);
+        assert.equal(form.status, 200);
+        assert.match(form.headers.get('set-cookie'), /fixture-cookie; HttpOnly/u);
+        assert.ok((await form.text()).includes(renderReadinessForm()));
+        for (const [kind, code] of [['live', 200], ['redirect', 302], ['auth', 403],
+          ['rate', 429], ['gone', 410], ['missing', 404], ['temporary', 503]]) {
+          assert.equal((await fetch(`${ready.origin}/status/${kind}`, {redirect: 'manual'})).status, code);
+        }
+        assert.equal((await fetch(`${ready.origin}/status/head-unsupported`, {method: 'HEAD'})).status, 405);
+        assert.equal((await fetch(`${ready.origin}/status/head-unsupported`)).status, 200);
+        await assert.rejects(fetch(`${ready.origin}/status/timeout`, {signal: AbortSignal.timeout(100)}));
         for (const item of manifest.securityCases) {
           const page = await fetch(`${ready.origin}/integration/security/${item.id}`);
           assert.equal(page.status, 200, item.id);
