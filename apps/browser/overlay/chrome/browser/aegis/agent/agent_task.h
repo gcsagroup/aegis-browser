@@ -72,6 +72,9 @@ class AgentTask {
   }
   base::Time created_at() const { return created_at_; }
   const std::vector<AgentTaskEvent>& events() const { return events_; }
+  const AgentModelRoutingMetrics& model_routing_metrics() const {
+    return model_routing_metrics_;
+  }
 
   bool TransitionTo(AgentTaskState next, std::string reason);
   // Records a browser-verified informational event without changing state.
@@ -89,6 +92,13 @@ class AgentTask {
   bool AdoptOwnedTab(int32_t tab_id);
   bool ReleaseOwnedTab(int32_t tab_id);
   bool HasExpired(base::Time now) const;
+  bool SetInitialModelRoutingMetrics(AgentModelRoutingMetrics metrics);
+  void RecordModelObservation(int64_t input_tokens,
+                              int64_t output_tokens,
+                              base::TimeDelta latency);
+  void RecordModelFallback();
+  bool RecordModelAttempt(AgentModelAttempt attempt);
+  bool CompleteModelAttempt(const AgentModelAttempt& observation);
 
   void AddObserver(AgentTaskObserver* observer);
   void RemoveObserver(AgentTaskObserver* observer);
@@ -114,6 +124,7 @@ class AgentTask {
   int tool_calls_used_ = 0;
   int model_calls_used_ = 0;
   int network_requests_used_ = 0;
+  AgentModelRoutingMetrics model_routing_metrics_;
   base::flat_set<int32_t> owned_tab_ids_;
   const base::Time created_at_;
   std::vector<AgentTaskEvent> events_;
