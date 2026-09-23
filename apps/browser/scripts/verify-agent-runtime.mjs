@@ -6,10 +6,11 @@ import {createServer} from 'node:http';
 import {dirname, resolve} from 'node:path';
 import process from 'node:process';
 import {integrationManifest, renderSecurityCase} from './integration-benchmark-fixtures.mjs';
+import {readinessCatalog, readinessLinks, renderReadinessForm} from './acceptance-readiness-fixtures.mjs';
 
 const SOURCE_COUNT = 10;
 const BOOKMARK_COUNT = 500;
-const FIXTURE_VERSION = 6;
+const FIXTURE_VERSION = 7;
 const DOWNLOAD_BYTES = Object.freeze({
   'macos-arm64': Buffer.from(
       'Aegis Browser Agent fixture macOS arm64 v1\n'.repeat(4096)),
@@ -971,6 +972,13 @@ class AgentFixtureServer {
       });
       return;
     }
+    if (path === '/lab/input-sample') {
+      this.record(request);
+      html(response, 200, fixturePage('合成资料输入样例', renderReadinessForm()), {
+        'set-cookie': 'aegis_sensitive=fixture-cookie; HttpOnly; SameSite=Strict; Path=/',
+      });
+      return;
+    }
     if (path.startsWith('/status/')) {
       await this.handleStatus(request, response, path.slice('/status/'.length));
       return;
@@ -1152,6 +1160,11 @@ class AgentFixtureServer {
       json(response, 200, generateBookmarks(this.origin));
       return;
     }
+    if (path === '/fixtures/readiness-v2.json') {
+      this.record(request);
+      json(response, 200, readinessCatalog(this.origin));
+      return;
+    }
     if (path === '/evidence/requests') {
       this.record(request);
       json(response, 200, {requests: this.requests});
@@ -1225,6 +1238,11 @@ class AgentFixtureServer {
     }
     if (statusKind === 'missing') {
       response.writeHead(404);
+      response.end();
+      return;
+    }
+    if (statusKind === 'temporary') {
+      response.writeHead(503, {'retry-after': '1'});
       response.end();
       return;
     }
@@ -1304,6 +1322,8 @@ function parseArgs(argv) {
     selfTest: false,
     serve: false,
     writeBookmarks: null,
+    exportReadiness: null,
+    publicOrigin: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -1321,6 +1341,18 @@ function parseArgs(argv) {
       options.report = argv[++index];
     } else if (argument === '--write-bookmarks') {
       options.writeBookmarks = argv[++index];
+    } else if (argument === '--export-readiness') {
+      options.exportReadiness = argv[++index];
+      assert(options.exportReadiness && !options.exportReadiness.startsWith('--'),
+             '--export-readiness需要新的输出目录');
+    } else if (argument === '--public-origin') {
+      options.publicOrigin = argv[++index];
+      const url = new URL(options.publicOrigin);
+      assert(url.protocol === 'https:' && url.origin === options.publicOrigin &&
+                 !url.username && !url.password && !url.hostname.includes(':') &&
+                 !/^[\d.]+$/.test(url.hostname) && url.hostname.includes('.') &&
+                 !/(^|\.)(localhost|local|internal|test|invalid)$/.test(url.hostname),
+             '--public-origin需要无凭据、无路径的公开HTTPS域名');
     } else if (argument === '--help' || argument === '-h') {
       options.help = true;
     } else {
@@ -1329,8 +1361,12 @@ function parseArgs(argv) {
   }
   assert(Number.isSafeInteger(options.port) && options.port >= 0 &&
              options.port <= 65535, '--port 必须是 0–65535 的整数');
-  assert(options.selfTest || options.serve || options.writeBookmarks || options.help,
-         '请选择 --self-test、--serve 或 --write-bookmarks');
+  assert(!options.publicOrigin || options.exportReadiness,
+         '--public-origin仅用于导出，不改变本机服务监听范围');
+  assert(!options.exportReadiness || !(options.selfTest || options.serve || options.writeBookmarks),
+         '导出不能与启动服务或其他写入混用');
+  assert(options.selfTest || options.serve || options.writeBookmarks || options.exportReadiness || options.help,
+         '请选择 --self-test、--serve、--write-bookmarks或--export-readiness');
   return options;
 }
 
@@ -1341,6 +1377,8 @@ function usage() {
       [--ready-file PATH] [--log-file PATH]
   node apps/browser/scripts/verify-agent-runtime.mjs --write-bookmarks PATH
       [--port N]
+  node apps/browser/scripts/verify-agent-runtime.mjs --export-readiness NEW_DIR
+      [--public-origin https://受控测试域名]
 
 该脚本只监听数值 loopback，提供 A1–A5 确定性页面、500 条收藏夹、URL
 状态、下载、购物和 OpenAI-compatible 恶意/正常模型响应夹具。
@@ -1820,6 +1858,31 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     usage();
+    return;
+  }
+  if (options.exportReadiness) {
+    const origin = options.publicOrigin || 'https://aegis-fixture.invalid';
+    const catalog = readinessCatalog(origin);
+    const bookmarks = generateBookmarks(origin);
+    const links = readinessLinks(origin);
+    bookmarks.roots.bookmark_bar.children.forEach((node, index) => {
+      node.url = links[index].url;
+    });
+    const output = resolve(options.exportReadiness);
+    // 整目录拒绝覆盖，避免改写历史资料或把旧验收记录混进新包。
+    await mkdir(output, {recursive: false});
+    for (const [name, data] of Object.entries({
+      'readiness-v2.json': {...catalog, originProvided: Boolean(options.publicOrigin)},
+      'bookmarks-500-v2.json': bookmarks,
+      'tasks-original.json': integrationManifest(),
+      'task-overrides-v2.json': {
+        T14: {fixture: 'bookmarks-500-v2.json', status: 'not_run'},
+        T29: {path: catalog.sensitivePage, legacyPath: catalog.legacySensitivePage, status: 'not_run'},
+      },
+    })) await writeFile(resolve(output, name), JSON.stringify(data, null, 2) + '\n', {flag: 'wx'});
+    await writeFile(resolve(output, 'input-sample.html'), fixturePage('合成资料输入样例', renderReadinessForm()), {flag: 'wx'});
+    process.stdout.write(JSON.stringify({output, publicDeploymentVerified: false,
+      browserExecuted: false, originProvided: Boolean(options.publicOrigin)}) + '\n');
     return;
   }
   if (options.selfTest) {
