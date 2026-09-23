@@ -1,0 +1,939 @@
+From 34704c878e5a37a0bac5d0c303e07f4423ede10d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 23 Sep 2026 08:49:29 +0800
+Subject: [PATCH] fix: declare raw_ptr test-support dependency
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   2 +
+ ...ess_browser_request_adapter_browsertest.cc |   1 +
+ .../access_proxying_url_loader_factory.h      |   1 +
+ ...proxying_url_loader_factory_browsertest.cc |  73 +++++++++++
+ .../access_proxying_url_tracked_request.cc    |   2 +
+ .../access/access_published_request_runtime.h |   3 +-
+ .../access/access_request_dispatch_state.h    |   3 +-
+ .../browser/aegis/access/access_rule_store.cc |  16 +--
+ .../access/access_rule_store_unittest.cc      |  25 ++++
+ .../access/access_service_coordinator.cc      |  14 +-
+ .../aegis/access/access_service_coordinator.h |   3 +-
+ .../access_service_coordinator_unittest.cc    | 123 +++++++++++++++---
+ components/aegis_access/BUILD.gn              |   6 +-
+ .../aegis_access/access_policy_evaluator.h    |   1 +
+ .../access_route_planner_contract_test.h      |  63 +++++++++
+ .../access_route_planner_native_test.cc       |   2 +
+ .../access_route_planner_unittest.cc          |  10 ++
+ ...request_ownership_registry_test_support.cc |  63 +++++++++
+ .../request_ownership_registry_test_support.h |  68 ++++------
+ .../aegis_access/site_proxy_rule_group.cc     |  21 +++
+ .../aegis_access/site_proxy_rule_group.h      |  18 +++
+ 21 files changed, 436 insertions(+), 82 deletions(-)
+ create mode 100644 components/aegis_access/request_ownership_registry_test_support.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 93b385350a..d50cb76f9e 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -287,6 +287,8 @@ if (!is_android) {
+       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+       "//chrome/browser/aegis/access:access_published_request_runtime",
+       "//chrome/browser/aegis/access:access_request_dispatch_state",
++      "//chrome/browser/aegis/access:access_rule_store",
++      "//chrome/browser/aegis/access:access_service_coordinator",
+       "//chrome/browser/bookmarks",
+       "//chrome/browser/net:impl",
+       "//chrome/browser/notifications:test_support",
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+index 719d230de8..0318a679f7 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+@@ -15,6 +15,7 @@
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/render_process_host.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/prerender_test_util.h"
+ #include "net/base/schemeful_site.h"
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index d1ce895062..a2edc318f8 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -12,6 +12,7 @@
+ #include "base/containers/unique_ptr_adapters.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
++#include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "components/aegis_access/request_policy_context.h"
+ #include "content/public/browser/frame_tree_node_id.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index bb7418a7af..da8f2c8b8c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -11,6 +11,7 @@
+ #include "base/files/file_path.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/run_loop.h"
+ #include "base/test/run_until.h"
+ #include "base/test/test_future.h"
+ #include "build/chromeos_buildflags.h"
+@@ -20,6 +21,7 @@
+ #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
++#include "chrome/browser/aegis/access/access_service_coordinator.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
+@@ -37,7 +39,9 @@
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/storage_partition_config.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
++#include "net/dns/mock_host_resolver.h"
+ #include "net/http/http_status_code.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+@@ -55,6 +59,10 @@ namespace aegis::access {
+ 
+ class AccessRuleStoreTestPeer {
+  public:
++  static StoreStatus Import(AccessRuleStore* store, StoredAccessRule rule) {
++    return store->ImportIndependentRuleForTesting(std::move(rule));
++  }
++
+   static AccessStoreBinding Ephemeral(const OwnershipKey& owner) {
+     return AccessStoreBinding(AccessStoreKind::kEphemeralProfile, owner.channel,
+                               "prepared-browser-test", owner.profile_token, {}, {});
+@@ -809,6 +817,26 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     }
+   }
+ 
++  std::optional<aegis_access::RequestCancellationSelector> CurrentSiteSelector() {
++    const auto metadata = BuildBrowserOwnedRequestMetadata(
++        browser()->profile(), base::BindRepeating(
++            &AccessProxyingURLLoaderFactoryBrowserTest::web_contents,
++            base::Unretained(this)),
++        web_contents()->GetPrimaryMainFrame()->GetFrameTreeNodeId(), std::nullopt);
++    if (!metadata.metadata) {
++      return std::nullopt;
++    }
++    const auto context = aegis_access::CanonicalizeBrowserOwnedRequest(
++        *metadata.metadata, target_url());
++    if (!context.context) {
++      return std::nullopt;
++    }
++    const auto& value = *context.context;
++    return aegis_access::RequestCancellationSelector{
++        value.owner(), value.document_token(), value.pending_navigation_token(),
++        value.top_level_site(), value.exact_host(), value.scheme(), value.port()};
++  }
++
+   std::atomic<size_t> origin_requests_{0};
+   std::atomic<size_t> proxy_requests_{0};
+   net::test_server::EmbeddedTestServer target_origin_;
+@@ -875,6 +903,51 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(prepared.value->committed_policy_generation, 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       ConflictingSiteProxyGroupPreservesNavigationRoute) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
++  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->profile());
++  ASSERT_TRUE(runtime);
++  const auto* published = runtime->GetPublishedPolicySnapshot(*owner_);
++  ASSERT_TRUE(published);
++  const auto published_before = *published;
++  auto store = std::make_unique<AccessRuleStore>(
++      AccessRuleStoreTestPeer::Ephemeral(*owner_));
++  ASSERT_EQ(store->Open(), StoreStatus::kValid);
++  StoredAccessRule independent;
++  independent.policy = published_before.rules.front();
++  independent.source = StoredRuleSource::kTestFixture;
++  independent.lifetime = StoredRuleLifetime::kPersistent;
++  ASSERT_EQ(AccessRuleStoreTestPeer::Import(store.get(), independent),
++            StoreStatus::kValid);
++  auto request = PreparedNavigationRequest(*owner_);
++  for (auto& member : request.candidate_members) {
++    member.proxy_group_id = "conflicting-group";
++  }
++  const auto selector = CurrentSiteSelector();
++  ASSERT_TRUE(selector);
++  const auto selection_before = transport_->CurrentSelection(*owner_);
++  auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->profile());
++  ASSERT_TRUE(coordinator);
++  base::test::TestFuture<AccessMutationTransactionResult> result;
++  coordinator->CommitSiteGroupMutation(std::move(store), request, *selector,
++                                        result.GetCallback());
++  ASSERT_TRUE(result.Wait());
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(result.Get().status,
++            AccessMutationTransactionStatus::kUnsupportedTransportScope);
++  EXPECT_EQ(*runtime->GetPublishedPolicySnapshot(*owner_), published_before);
++  EXPECT_EQ(transport_->CurrentSelection(*owner_), selection_before);
++  EXPECT_EQ(coordinator->state_generation(), 0u);
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), target_url().Resolve("/after-rejected-site-mutation")));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/1u);
++}
++
+ #if !BUILDFLAG(IS_CHROMEOS)
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        MainNavigationRoutingIsolatedAcrossProfiles) {
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+index 4ced1887a7..c8a66d8ad6 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+@@ -13,6 +13,8 @@
+ #include "net/base/net_errors.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
++#include "services/network/public/mojom/early_hints.mojom.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ 
+ namespace aegis::access {
+ namespace {
+diff --git a/chrome/browser/aegis/access/access_published_request_runtime.h b/chrome/browser/aegis/access/access_published_request_runtime.h
+index a4ac8de7e1..48be85326f 100644
+--- a/chrome/browser/aegis/access/access_published_request_runtime.h
++++ b/chrome/browser/aegis/access/access_published_request_runtime.h
+@@ -8,6 +8,7 @@
+ #include <optional>
+ #include <string>
+ 
++#include "base/memory/raw_ptr.h"
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_rule_store.h"
+ #include "components/aegis_access/access_policy_evaluator.h"
+@@ -90,7 +91,7 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
+   AccessPolicyPublicationResult PublishPolicySnapshot(
+       const StoredPolicySnapshot& stored);
+ 
+-  Profile* const profile_;
++  const raw_ptr<Profile> profile_;
+   std::map<std::string, aegis_access::PublishedAccessPolicySnapshot>
+       policy_snapshots_;
+ };
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
+index 813c8b752a..374dc11136 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state.h
++++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
+@@ -7,6 +7,7 @@
+ #include <string>
+ 
+ #include "base/functional/callback_forward.h"
++#include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+@@ -92,7 +93,7 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
+       base::OnceCallback<void(bool)> completion,
+       bool acknowledged);
+ 
+-  Profile* const profile_;
++  const raw_ptr<Profile> profile_;
+   aegis_access::RequestDispatchBarrierRegistry barriers_;
+   aegis_access::RequestOwnershipRegistry ownership_;
+   aegis_access::PolicyPublicationAckTracker publication_acks_;
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 887352c040..b3b9b6afe3 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -119,7 +119,7 @@ constexpr char kCreateJournalSql[] = R"sql(
+     after_image TEXT NOT NULL
+   ))sql";
+ 
+-bool IsKnownChannel(ChannelNamespace channel) {
++bool IsKnownStoreChannel(ChannelNamespace channel) {
+   switch (channel) {
+     case ChannelNamespace::kDev:
+     case ChannelNamespace::kAlpha:
+@@ -169,8 +169,8 @@ OwnershipKey OwnerFor(const AccessStoreBinding& binding,
+   return {binding.channel(), binding.runtime_profile_token(), partition};
+ }
+ 
+-bool IsCompleteOwner(const OwnershipKey& owner) {
+-  return IsKnownChannel(owner.channel) && Bounded(owner.profile_token) &&
++bool IsBoundedStoreOwner(const OwnershipKey& owner) {
++  return IsKnownStoreChannel(owner.channel) && Bounded(owner.profile_token) &&
+          Bounded(owner.storage_partition_token);
+ }
+ 
+@@ -331,7 +331,7 @@ bool ValidateStoredRule(const StoredAccessRule& rule,
+                         const OwnershipKey& owner,
+                         bool independent) {
+   const AccessPolicyRule& policy = rule.policy;
+-  if (!IsCompleteOwner(owner) || policy.owner != owner ||
++  if (!IsBoundedStoreOwner(owner) || policy.owner != owner ||
+       !Bounded(policy.rule_id) ||
+       !IsCanonicalHostLike(policy.destination_host) ||
+       policy.row_revision == 0 || policy.last_operation_sequence == 0 ||
+@@ -480,7 +480,7 @@ bool IsPreparedCandidateValid(const PendingMutationRecord& expected) {
+            expected.committed_policy_generation != 0 ||
+            expected.candidate.policy_generation !=
+                expected.operation_sequence ||
+-           !IsCompleteOwner(expected.owner) ||
++           !IsBoundedStoreOwner(expected.owner) ||
+            expected.candidate.group.owner != expected.owner);
+ }
+ 
+@@ -555,7 +555,7 @@ AccessRuleStore::~AccessRuleStore() {
+ 
+ bool AccessRuleStore::IsBindingValid() const {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+-  if (!IsKnownChannel(binding_.channel()) ||
++  if (!IsKnownStoreChannel(binding_.channel()) ||
+       !Bounded(binding_.durable_profile_id()) ||
+       !Bounded(binding_.runtime_profile_token())) {
+     return false;
+@@ -973,7 +973,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+     return MutationError(StoreStatus::kInvalidArgument, "invalid_request");
+   }
+   const OwnershipKey expected_owner = request.candidate_group.owner;
+-  if (!IsCompleteOwner(expected_owner) ||
++  if (!IsBoundedStoreOwner(expected_owner) ||
+       expected_owner.channel != binding_.channel() ||
+       expected_owner.profile_token != binding_.runtime_profile_token() ||
+       request.candidate_group.revision != 0 ||
+@@ -1587,7 +1587,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
+ 
+ StoreResult<MatcherRuleSetCandidate> AccessRuleStore::AdaptMatcherSnapshot(
+     const StoredPolicySnapshot& stored) {
+-  if (!IsCompleteOwner(stored.owner) || stored.policy_generation == 0) {
++  if (!IsBoundedStoreOwner(stored.owner) || stored.policy_generation == 0) {
+     return {StoreStatus::kCorrupt, std::nullopt, "invalid_snapshot_header"};
+   }
+   MatcherRuleSetCandidate matcher;
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index 0d3a873624..51f763a101 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -870,6 +870,31 @@ TEST(AccessRuleStoreTest, AdapterRejectsInvalidAtomicSiteGroups) {
+   expect_rejected(mismatched_toggle);
+ }
+ 
++TEST(AccessRuleStoreTest, AdapterPreservesBoundedOwnerValidation) {
++  // The shared owner helper only checks for nonempty tokens. Storage must
++  // retain its stricter length bound when resolving the two helpers' names.
++  for (const size_t length : {size_t{0}, size_t{256}, size_t{257}}) {
++    for (const bool profile_token : {false, true}) {
++      StoredPolicySnapshot snapshot;
++      snapshot.owner = Owner();
++      snapshot.policy_generation = 1;
++      std::string& token = profile_token
++                               ? snapshot.owner.profile_token
++                               : snapshot.owner.storage_partition_token;
++      token.assign(length, 'a');
++      const auto result = AccessRuleStore::AdaptMatcherSnapshot(snapshot);
++      EXPECT_EQ(result.status, length == 256 ? StoreStatus::kValid
++                                            : StoreStatus::kCorrupt);
++      EXPECT_EQ(result.value.has_value(), length == 256);
++    }
++  }
++  StoredPolicySnapshot invalid_channel;
++  invalid_channel.owner = Owner(ChannelNamespace::kInvalid);
++  invalid_channel.policy_generation = 1;
++  EXPECT_EQ(AccessRuleStore::AdaptMatcherSnapshot(invalid_channel).status,
++            StoreStatus::kCorrupt);
++}
++
+ TEST(AccessRuleStoreTest, AdapterRejectsSnapshotGenerationMismatch) {
+   StoredPolicySnapshot stale_group = StoredSnapshotForAdapter(7, 8);
+   StoreResult<MatcherRuleSetCandidate> result =
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index a98eb1d5f6..0ce21c40dc 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -226,16 +226,14 @@ AccessServiceCoordinator::ValidateTransportScope(
+   if (!matcher.value) {
+     return Result(AccessMutationTransactionStatus::kUnsupportedTransportScope);
+   }
+-  const auto& host = transaction.identity.selector.exact_host;
++  const aegis_access::SiteProxyTransportRule candidate{
++      transaction.identity.selector.exact_host, false, mode,
++      transaction.pending.candidate.members.front().policy.proxy_group_id};
+   const bool incompatible = std::ranges::any_of(
+       matcher.value->rules, [&](const AccessPolicyRule& rule) {
+-        const bool overlaps = rule.destination_host == host ||
+-                              (rule.include_subdomains &&
+-                               host.ends_with("." + rule.destination_host));
+-        const bool opposite =
+-            (mode == AccessMode::kDirect && rule.mode == AccessMode::kProxy) ||
+-            (mode == AccessMode::kProxy && rule.mode == AccessMode::kDirect);
+-        return overlaps && opposite;
++        return !aegis_access::IsSiteProxyTransportCompatible(
++            candidate, {rule.destination_host, rule.include_subdomains,
++                        rule.mode, rule.proxy_group_id});
+       });
+   if (incompatible) {
+     return Result(AccessMutationTransactionStatus::kUnsupportedTransportScope);
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index d2ab100a8b..ee42e777e0 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -8,6 +8,7 @@
+ #include <optional>
+ 
+ #include "base/functional/callback_forward.h"
++#include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/supports_user_data.h"
+ #include "base/timer/timer.h"
+@@ -102,7 +103,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+       base::OnceCallback<void(AccessMutationTransactionResult)> completion,
+       AccessMutationTransactionResult result);
+ 
+-  Profile* const profile_;
++  const raw_ptr<Profile> profile_;
+   std::unique_ptr<AccessRuleStore> store_;
+   uint64_t state_generation_ = 0;
+   bool mutation_in_flight_ = false;
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index a2c2bb90ae..5a7bee173d 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -6,6 +6,7 @@
+ #include <optional>
+ 
+ #include "base/files/scoped_temp_dir.h"
++#include "base/memory/raw_ptr.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+@@ -160,10 +161,49 @@ class AccessMutationTransactionTest : public AccessServiceCoordinatorTest {
+     return selector;
+   }
+ 
++  void ImportOtherSiteProxyRule(AccessRuleStore* store,
++                                const std::string& proxy_group) {
++    StoredAccessRule independent;
++    independent.policy = {
++        .rule_id = "other-site-proxy",
++        .owner = owner_,
++        .scope = PolicyScope::kSite,
++        .top_level_site = "https://other.example",
++        .destination_host = "news.example",
++        .schemes = {RequestScheme::kHttps},
++        .ports = {PortScope::kAllBrowserPermitted, {}},
++        .mode = AccessMode::kProxy,
++        .proxy_group_id = proxy_group,
++        .protection_override = ProtectionOverride::kNone,
++        .row_revision = 1,
++        .last_operation_sequence = 1,
++    };
++    independent.source = StoredRuleSource::kTestFixture;
++    independent.lifetime = StoredRuleLifetime::kPersistent;
++    ASSERT_EQ(AccessRuleStoreTestPeer::Import(store, independent),
++              StoreStatus::kValid);
++  }
++
++  void ConfigurePrimaryProxyGroup() {
++    auto* source =
++        AccessProxySelectionGenerationSource::GetOrCreate(profile_.get());
++    ASSERT_TRUE(source);
++    const auto selection = source->CommitSelection(
++        {"proxy-group", "endpoint", "lease", "assignment", 1});
++    ASSERT_EQ(selection.status,
++              aegis_access::ProxySelectionGenerationCommitStatus::kCommitted);
++    const aegis_access::RegisteredProxyEndpoint endpoint{
++        "registration", "proxy-group", owner_,
++        {7, 2, selection.generation, transport_->network_epoch(), 5},
++        aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", 18080};
++    ASSERT_TRUE(transport_->PublishProxySelection(
++        {}, {"news.example", "other.example"}, endpoint));
++  }
++
+   base::ScopedTempDir directory_;
+   std::unique_ptr<TestingProfile> profile_;
+-  AccessNetworkContextTransport* transport_ = nullptr;
+-  AccessServiceCoordinator* coordinator_ = nullptr;
++  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
++  raw_ptr<AccessServiceCoordinator> coordinator_ = nullptr;
+   OwnershipKey owner_;
+   std::unique_ptr<HeldPolicyClient> client_;
+ };
+@@ -413,24 +453,7 @@ TEST_F(AccessMutationTransactionTest, EphemeralStoreSurvivesConsecutiveMutations
+ TEST_F(AccessMutationTransactionTest, MixedSameHostScopesFailBeforePublication) {
+   auto store = OpenStore();
+   auto* retained_store = store.get();
+-  StoredAccessRule independent;
+-  independent.policy = {
+-      .rule_id = "other-site-proxy",
+-      .owner = owner_,
+-      .scope = PolicyScope::kSite,
+-      .top_level_site = "https://other.example",
+-      .destination_host = "news.example",
+-      .schemes = {RequestScheme::kHttps},
+-      .ports = {PortScope::kAllBrowserPermitted, {}},
+-      .mode = AccessMode::kProxy,
+-      .proxy_group_id = "independent-proxy",
+-      .protection_override = ProtectionOverride::kNone,
+-      .row_revision = 1,
+-      .last_operation_sequence = 1,
+-  };
+-  independent.source = StoredRuleSource::kTestFixture;
+-  independent.lifetime = StoredRuleLifetime::kPersistent;
+-  ASSERT_EQ(AccessRuleStoreTestPeer::Import(store.get(), independent), StoreStatus::kValid);
++  ImportOtherSiteProxyRule(store.get(), "independent-proxy");
+   const auto before = store->ReadCommittedSnapshot(owner_.storage_partition_token);
+   ASSERT_TRUE(before.value);
+   base::test::TestFuture<AccessMutationTransactionResult> result;
+@@ -446,6 +469,66 @@ TEST_F(AccessMutationTransactionTest, MixedSameHostScopesFailBeforePublication)
+   EXPECT_EQ(coordinator_->state_generation(), 0u);
+ }
+ 
++TEST_F(AccessMutationTransactionTest,
++       DifferentSameHostProxyGroupsFailBeforePublication) {
++  ConfigurePrimaryProxyGroup();
++  task_environment_.RunUntilIdle();
++  auto store = OpenStore();
++  auto* retained_store = store.get();
++  ImportOtherSiteProxyRule(store.get(), "independent-proxy");
++  const auto before = store->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(before.value);
++  const auto selection_before = transport_->CurrentSelection(owner_);
++  auto mutation = Mutation();
++  for (auto& member : mutation.candidate_members) {
++    member.mode = AccessMode::kProxy;
++    member.proxy_group_id = "proxy-group";
++  }
++  base::test::TestFuture<AccessMutationTransactionResult> result;
++  coordinator_->CommitSiteGroupMutation(std::move(store), mutation, Selector(),
++                                        result.GetCallback());
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(result.IsReady());
++  EXPECT_EQ(result.Get().status,
++            AccessMutationTransactionStatus::kUnsupportedTransportScope);
++  EXPECT_EQ(result.Get().store_status, StoreStatus::kValid);
++  EXPECT_FALSE(client_->metadata);
++  EXPECT_FALSE(client_->reply);
++  const auto after = retained_store->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(after.value);
++  EXPECT_EQ(*after.value, *before.value);
++  EXPECT_EQ(transport_->CurrentSelection(owner_), selection_before);
++  EXPECT_EQ(coordinator_->state_generation(), 0u);
++}
++
++TEST_F(AccessMutationTransactionTest,
++       SameHostSameProxyGroupRemainsPublishable) {
++  ConfigurePrimaryProxyGroup();
++  auto store = OpenStore();
++  auto* retained_store = store.get();
++  ImportOtherSiteProxyRule(store.get(), "proxy-group");
++  auto mutation = Mutation();
++  for (auto& member : mutation.candidate_members) {
++    member.mode = AccessMode::kProxy;
++    member.proxy_group_id = "proxy-group";
++  }
++  base::test::TestFuture<AccessMutationTransactionResult> result;
++  coordinator_->CommitSiteGroupMutation(std::move(store), mutation, Selector(),
++                                        result.GetCallback());
++  task_environment_.RunUntilIdle();
++  ASSERT_TRUE(client_->metadata);
++  ASSERT_TRUE(client_->reply);
++  EXPECT_EQ(client_->metadata->proxy_group_id, "proxy-group");
++  std::move(client_->reply).Run(true);
++  ASSERT_TRUE(result.Wait());
++  EXPECT_EQ(result.Get().status, AccessMutationTransactionStatus::kCommitted);
++  const auto snapshot = retained_store->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(snapshot.value);
++  EXPECT_EQ(snapshot.value->site_groups.size(), 1u);
++  EXPECT_EQ(snapshot.value->independent_rules.size(), 1u);
++  EXPECT_EQ(coordinator_->state_generation(), 1u);
++}
++
+ TEST_F(AccessMutationTransactionTest, ForgedSelectorDoesNotPrepareMutation) {
+   auto selector = Selector();
+   selector.owner.profile_token = "other-profile";
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 96c5a602ad..5c8f3169a7 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -261,8 +261,12 @@ test("aegis_access_unittests") {
+ 
+ source_set("request_ownership_registry_test_support") {
+   testonly = true
++  sources = [ "request_ownership_registry_test_support.cc" ]
+   public = [ "request_ownership_registry_test_support.h" ]
+-  public_deps = [ ":request_ownership_registry" ]
++  public_deps = [
++    ":request_ownership_registry",
++    "//base",
++  ]
+   visibility = [
+     ":aegis_access_unittests",
+     ":request_dispatch_gate_unittests",
+diff --git a/components/aegis_access/access_policy_evaluator.h b/components/aegis_access/access_policy_evaluator.h
+index 46bf6e5cce..7e4197d8b6 100644
+--- a/components/aegis_access/access_policy_evaluator.h
++++ b/components/aegis_access/access_policy_evaluator.h
+@@ -8,6 +8,7 @@
+ #include <vector>
+ 
+ #include "components/aegis_access/request_policy_context.h"
++#include "components/aegis_access/site_proxy_rule_group.h"
+ 
+ namespace aegis_access {
+ 
+diff --git a/components/aegis_access/access_route_planner_contract_test.h b/components/aegis_access/access_route_planner_contract_test.h
+index be8ac8f249..0ec34d7a49 100644
+--- a/components/aegis_access/access_route_planner_contract_test.h
++++ b/components/aegis_access/access_route_planner_contract_test.h
+@@ -174,6 +174,69 @@ inline void ExpectUnknown(ContractTestObserver& observer,
+               GroupPresence::kPresent, GroupSelection::kUnknown, error);
+ }
+ 
++inline void RunSiteProxyTransportUnitTests(ContractTestObserver& observer) {
++  const SiteProxyTransportRule candidate{
++      "news.example", false, AccessMode::kProxy, "group-a"};
++  observer.Expect(IsSiteProxyTransportCompatible(candidate, candidate),
++                  "transport accepts the same proxy group");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      candidate, {"news.example", false, AccessMode::kProxy,
++                                  "group-b"}),
++                  "transport rejects a different proxy group on the same host");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      candidate, {"example", true, AccessMode::kProxy, "group-b"}),
++                  "transport rejects an overlapping suffix with another group");
++  observer.Expect(IsSiteProxyTransportCompatible(
++                      candidate, {"example", true, AccessMode::kProxy, "group-a"}),
++                  "transport permits an overlapping suffix in the same group");
++  observer.Expect(IsSiteProxyTransportCompatible(
++                      candidate, {"other.example", false, AccessMode::kProxy,
++                                  "group-b"}),
++                  "transport preserves unrelated host rules");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      {"news.example", false, AccessMode::kProxy, ""}, candidate),
++                  "transport rejects a proxy candidate with no group");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      {"", false, AccessMode::kDirect, ""}, candidate),
++                  "transport rejects an empty candidate host");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      {"news.example", true, AccessMode::kProxy, "group-a"},
++                      candidate),
++                  "ordinary mutations cannot widen to subdomains");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      {"news.example", false, AccessMode::kDirect, "group-a"},
++                      candidate),
++                  "direct candidates cannot carry a proxy group");
++  observer.Expect(!IsSiteProxyTransportCompatible(
++                      {"news.example", false, AccessMode::kReject, ""}, candidate),
++                  "ordinary mutations do not admit debug reject candidates");
++}
++
++inline void RunSiteProxyTransportRegressionTests(ContractTestObserver& observer) {
++  const SiteProxyTransportRule proxy{
++      "news.example", false, AccessMode::kProxy, "group-a"};
++  const SiteProxyTransportRule direct{
++      "news.example", false, AccessMode::kDirect, ""};
++  observer.Expect(!IsSiteProxyTransportCompatible(proxy, direct) &&
++                      !IsSiteProxyTransportCompatible(direct, proxy),
++                  "existing opposite-mode conflict rejection remains symmetric");
++  observer.Expect(IsSiteProxyTransportCompatible(direct, direct),
++                  "same-host direct rules remain compatible");
++  observer.Expect(IsSiteProxyTransportCompatible(
++                      proxy, {"news.example", false, AccessMode::kReject, ""}),
++                  "transport compatibility does not remove independent rejection");
++  observer.Expect(IsSiteProxyTransportCompatible(
++                      proxy, {"ews.example", true, AccessMode::kProxy, "group-b"}),
++                  "suffix overlap requires a complete DNS label");
++  observer.Expect(IsSiteProxyTransportCompatible(
++                      proxy, {"example", false, AccessMode::kProxy, "group-b"}),
++                  "an exact parent host does not cover its subdomains");
++  observer.Expect(IsSiteProxyTransportCompatible(
++                      proxy, {"child.news.example", true, AccessMode::kProxy,
++                              "group-b"}),
++                  "a child suffix does not cover its parent");
++}
++
+ inline void RunSiteProxyRuleGroupContractTests(
+     ContractTestObserver& observer) {
+   SiteProxyRuleGroup group = ValidGroup();
+diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
+index a816020091..022baace04 100644
+--- a/components/aegis_access/access_route_planner_native_test.cc
++++ b/components/aegis_access/access_route_planner_native_test.cc
+@@ -47,6 +47,8 @@ int main() {
+   NativeObserver observer;
+   aegis_access::test::RunRoutePlannerContractTests(observer);
+   aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
++  aegis_access::test::RunSiteProxyTransportUnitTests(observer);
++  aegis_access::test::RunSiteProxyTransportRegressionTests(observer);
+   aegis_access::test::RunRequestOwnershipRegistryUnitTests(observer);
+   aegis_access::test::RunRequestOwnershipRegistryRegressionTests(observer);
+   aegis_access::test::RunTargetedRequestCancellationUnitTests(observer);
+diff --git a/components/aegis_access/access_route_planner_unittest.cc b/components/aegis_access/access_route_planner_unittest.cc
+index 2bbf910517..0d01482eb6 100644
+--- a/components/aegis_access/access_route_planner_unittest.cc
++++ b/components/aegis_access/access_route_planner_unittest.cc
+@@ -25,5 +25,15 @@ TEST(SiteProxyRuleGroupTest, CompleteAtomicGroupContract) {
+   RunSiteProxyRuleGroupContractTests(observer);
+ }
+ 
++TEST(SiteProxyRuleGroupTest, TransportCompatibilityUnit) {
++  GtestObserver observer;
++  RunSiteProxyTransportUnitTests(observer);
++}
++
++TEST(SiteProxyRuleGroupTest, TransportCompatibilityRegression) {
++  GtestObserver observer;
++  RunSiteProxyTransportRegressionTests(observer);
++}
++
+ }  // namespace
+ }  // namespace aegis_access::test
+diff --git a/components/aegis_access/request_ownership_registry_test_support.cc b/components/aegis_access/request_ownership_registry_test_support.cc
+new file mode 100644
+index 0000000000..e9c458e15a
+--- /dev/null
++++ b/components/aegis_access/request_ownership_registry_test_support.cc
+@@ -0,0 +1,63 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/request_ownership_registry_test_support.h"
++
++#include <utility>
++
++namespace aegis_access::test {
++
++RecordingTerminationHandle::RecordingTerminationHandle(int* call_count)
++    : call_count_(call_count) {}
++
++RecordingTerminationHandle::RecordingTerminationHandle(
++    int* call_count,
++    RequestOwnershipRegistry* registry,
++    std::string request_id,
++    OwnershipKey owner,
++    GenerationTuple generations,
++    bool* erased_before_callback)
++    : call_count_(call_count),
++      registry_(registry),
++      request_id_(std::move(request_id)),
++      owner_(std::move(owner)),
++      generations_(generations),
++      erased_before_callback_(erased_before_callback) {}
++
++RecordingTerminationHandle::~RecordingTerminationHandle() = default;
++
++void RecordingTerminationHandle::Terminate() {
++  ++*call_count_;
++  if (registry_ && erased_before_callback_) {
++    *erased_before_callback_ =
++        registry_->Lookup(request_id_, owner_, generations_).status ==
++        RequestOwnershipStatus::kNotFound;
++  }
++}
++
++BatchVisibilityTerminationHandle::BatchVisibilityTerminationHandle(
++    int* call_count,
++    RequestOwnershipRegistry* registry,
++    OwnershipKey owner,
++    std::vector<WatchedRequest> watched,
++    bool* all_erased_before_callback)
++    : call_count_(call_count),
++      registry_(registry),
++      owner_(std::move(owner)),
++      watched_(std::move(watched)),
++      all_erased_before_callback_(all_erased_before_callback) {}
++
++BatchVisibilityTerminationHandle::~BatchVisibilityTerminationHandle() = default;
++
++void BatchVisibilityTerminationHandle::Terminate() {
++  ++*call_count_;
++  bool all_erased = true;
++  for (const auto& watched : watched_) {
++    if (registry_->Lookup(watched.request_id, owner_, watched.generations)
++            .status != RequestOwnershipStatus::kNotFound) {
++      all_erased = false;
++    }
++  }
++  *all_erased_before_callback_ &= all_erased;
++}
++
++}  // namespace aegis_access::test
+diff --git a/components/aegis_access/request_ownership_registry_test_support.h b/components/aegis_access/request_ownership_registry_test_support.h
+index 482d10c4d0..aa47832bd1 100644
+--- a/components/aegis_access/request_ownership_registry_test_support.h
++++ b/components/aegis_access/request_ownership_registry_test_support.h
+@@ -10,8 +10,19 @@
+ 
+ #include "components/aegis_access/request_ownership_registry.h"
+ 
++#if __has_include("base/memory/raw_ptr.h")
++#include "base/memory/raw_ptr.h"
++#endif
++
+ namespace aegis_access::test {
+ 
++#if __has_include("base/memory/raw_ptr.h")
++template <typename T>
++using RegistryTestPtr = raw_ptr<T>;
++#else
++template <typename T>
++using RegistryTestPtr = T*;
++#endif
+ 
+ class RequestOwnershipRegistryTestObserver {
+  public:
+@@ -45,38 +56,25 @@ inline RequestOwnershipRecord ProfileOwnershipRecord(
+ 
+ class RecordingTerminationHandle final : public RequestTerminationHandle {
+  public:
+-  explicit RecordingTerminationHandle(int* call_count)
+-      : call_count_(call_count) {}
++  explicit RecordingTerminationHandle(int* call_count);
+ 
+   RecordingTerminationHandle(int* call_count,
+                              RequestOwnershipRegistry* registry,
+                              std::string request_id,
+                              OwnershipKey owner,
+                              GenerationTuple generations,
+-                             bool* erased_before_callback)
+-      : call_count_(call_count),
+-        registry_(registry),
+-        request_id_(std::move(request_id)),
+-        owner_(std::move(owner)),
+-        generations_(generations),
+-        erased_before_callback_(erased_before_callback) {}
+-
+-  void Terminate() override {
+-    ++*call_count_;
+-    if (registry_ && erased_before_callback_) {
+-      *erased_before_callback_ =
+-          registry_->Lookup(request_id_, owner_, generations_).status ==
+-          RequestOwnershipStatus::kNotFound;
+-    }
+-  }
++                             bool* erased_before_callback);
++  ~RecordingTerminationHandle() override;
++
++  void Terminate() override;
+ 
+  private:
+-  int* call_count_;
+-  RequestOwnershipRegistry* registry_ = nullptr;
++  RegistryTestPtr<int> call_count_;
++  RegistryTestPtr<RequestOwnershipRegistry> registry_ = nullptr;
+   std::string request_id_;
+   OwnershipKey owner_;
+   GenerationTuple generations_;
+-  bool* erased_before_callback_ = nullptr;
++  RegistryTestPtr<bool> erased_before_callback_ = nullptr;
+ };
+ 
+ inline RequestOwnershipRecord PendingOwnershipRecord(
+@@ -129,31 +127,17 @@ class BatchVisibilityTerminationHandle final : public RequestTerminationHandle {
+       RequestOwnershipRegistry* registry,
+       OwnershipKey owner,
+       std::vector<WatchedRequest> watched,
+-      bool* all_erased_before_callback)
+-      : call_count_(call_count),
+-        registry_(registry),
+-        owner_(std::move(owner)),
+-        watched_(std::move(watched)),
+-        all_erased_before_callback_(all_erased_before_callback) {}
+-
+-  void Terminate() override {
+-    ++*call_count_;
+-    bool all_erased = true;
+-    for (const auto& watched : watched_) {
+-      if (registry_->Lookup(watched.request_id, owner_, watched.generations)
+-              .status != RequestOwnershipStatus::kNotFound) {
+-        all_erased = false;
+-      }
+-    }
+-    *all_erased_before_callback_ &= all_erased;
+-  }
++      bool* all_erased_before_callback);
++  ~BatchVisibilityTerminationHandle() override;
++
++  void Terminate() override;
+ 
+  private:
+-  int* call_count_;
+-  RequestOwnershipRegistry* registry_;
++  RegistryTestPtr<int> call_count_;
++  RegistryTestPtr<RequestOwnershipRegistry> registry_;
+   OwnershipKey owner_;
+   std::vector<WatchedRequest> watched_;
+-  bool* all_erased_before_callback_;
++  RegistryTestPtr<bool> all_erased_before_callback_;
+ };
+ 
+ }  // namespace aegis_access::test
+diff --git a/components/aegis_access/site_proxy_rule_group.cc b/components/aegis_access/site_proxy_rule_group.cc
+index 0525f77bf3..dfaad9e6f8 100644
+--- a/components/aegis_access/site_proxy_rule_group.cc
++++ b/components/aegis_access/site_proxy_rule_group.cc
+@@ -25,6 +25,27 @@ bool HasCompleteSchemeSet(const std::vector<RequestScheme>& schemes) {
+ 
+ }  // namespace
+ 
++bool IsSiteProxyTransportCompatible(const SiteProxyTransportRule& candidate,
++                                    const SiteProxyTransportRule& existing) {
++  if (candidate.host.empty() || candidate.include_subdomains ||
++      (candidate.mode != AccessMode::kDirect &&
++       candidate.mode != AccessMode::kProxy) ||
++      (candidate.mode == AccessMode::kProxy) == candidate.proxy_group_id.empty()) {
++    return false;
++  }
++  const bool overlaps =
++      candidate.host == existing.host ||
++      (existing.include_subdomains && !existing.host.empty() &&
++       candidate.host.size() > existing.host.size() &&
++       candidate.host.ends_with(existing.host) &&
++       candidate.host[candidate.host.size() - existing.host.size() - 1] == '.');
++  if (!overlaps || existing.mode == AccessMode::kReject) {
++    return true;
++  }
++  return candidate.mode == existing.mode &&
++         candidate.proxy_group_id == existing.proxy_group_id;
++}
++
+ GroupValidation ValidateSiteProxyRuleGroup(
+     const OwnershipKey& expected_owner,
+     const SiteProxyRuleGroup* group,
+diff --git a/components/aegis_access/site_proxy_rule_group.h b/components/aegis_access/site_proxy_rule_group.h
+index 69e71ed6de..3a13ec2ed6 100644
+--- a/components/aegis_access/site_proxy_rule_group.h
++++ b/components/aegis_access/site_proxy_rule_group.h
+@@ -5,6 +5,7 @@
+ 
+ #include <cstdint>
+ #include <string>
++#include <string_view>
+ #include <vector>
+ 
+ #include "components/aegis_access/access_route_types.h"
+@@ -99,6 +100,23 @@ struct GroupValidation {
+       default;
+ };
+ 
++// A borrowed view of a validated rule's host-level transport requirements.
++// Ownership, canonical host spelling and rule shape are validated by the
++// caller. This check does not grant authority or match a request's site scope.
++struct SiteProxyTransportRule {
++  std::string_view host;
++  bool include_subdomains = false;
++  AccessMode mode = AccessMode::kInvalid;
++  std::string_view proxy_group_id;
++};
++
++// Ordinary site mutations cover one exact host and all browser-permitted
++// schemes/ports. The current partition transport cannot distinguish top-level
++// sites, ports or schemes for that host. Reject overlapping rules requiring
++// a different mode or proxy group before publishing a candidate.
++bool IsSiteProxyTransportCompatible(const SiteProxyTransportRule& candidate,
++                                    const SiteProxyTransportRule& existing);
++
+ // Validates the atomic HTTP/HTTPS member pair supplied by a trusted adapter.
+ // expected_owner comes from the native service/storage context, independently
+ // of the stored group. The other inputs must already contain canonical
+-- 
+2.54.0 (Apple Git-157)
+

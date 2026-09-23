@@ -287,6 +287,8 @@ if (!is_android) {
       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
       "//chrome/browser/aegis/access:access_published_request_runtime",
       "//chrome/browser/aegis/access:access_request_dispatch_state",
+      "//chrome/browser/aegis/access:access_rule_store",
+      "//chrome/browser/aegis/access:access_service_coordinator",
       "//chrome/browser/bookmarks",
       "//chrome/browser/net:impl",
       "//chrome/browser/notifications:test_support",
