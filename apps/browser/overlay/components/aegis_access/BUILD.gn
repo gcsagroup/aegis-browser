@@ -101,10 +101,10 @@ source_set("published_request_runtime") {
 
 source_set("aegis_access") {
   sources = [
-    "access_proxy_route_adapter.cc",
-    "access_proxy_route_adapter.h",
     "access_policy_evaluator.cc",
     "access_policy_evaluator.h",
+    "access_proxy_route_adapter.cc",
+    "access_proxy_route_adapter.h",
     "access_route_planner.cc",
     "access_route_planner.h",
     "request_policy_context.cc",
@@ -184,7 +184,6 @@ test("request_ownership_registry_unittests") {
     "request_cancellation_contract_test.h",
     "request_dispatch_barrier_contract_test.h",
     "request_ownership_registry_contract_test.h",
-    "request_ownership_registry_test_support.h",
     "request_ownership_registry_unit_test.h",
     "request_ownership_registry_unittest.cc",
   ]
@@ -193,6 +192,8 @@ test("request_ownership_registry_unittests") {
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]
+
+  deps += [ ":request_ownership_registry_test_support" ]
 }
 
 test("policy_publication_ack_tracker_unittests") {
@@ -214,7 +215,6 @@ test("request_dispatch_gate_unittests") {
     "request_dispatch_gate_contract_test.h",
     "request_dispatch_gate_unittest.cc",
     "request_ownership_registry_contract_test.h",
-    "request_ownership_registry_test_support.h",
     "request_ownership_registry_unit_test.h",
   ]
   deps = [
@@ -222,13 +222,15 @@ test("request_dispatch_gate_unittests") {
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]
+
+  deps += [ ":request_ownership_registry_test_support" ]
 }
 
 test("aegis_access_unittests") {
   sources = [
     "access_local_proxy_acceptance_unittest.cc",
-    "access_proxy_route_adapter_unittest.cc",
     "access_policy_evaluator_unittest.cc",
+    "access_proxy_route_adapter_unittest.cc",
     "access_route_planner_contract_test.h",
     "access_route_planner_unittest.cc",
     "published_request_runtime_contract_test.h",
@@ -239,18 +241,31 @@ test("aegis_access_unittests") {
   deps = [
     ":aegis_access",
     ":generate_policy_matcher_vectors",
-    ":published_request_runtime",
     ":generate_route_planner_vectors",
+    ":published_request_runtime",
     "//base",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//mojo/public/cpp/bindings",
     "//net:test_support",
     "//services/network:network_service",
+    "//services/network:test_support",
     "//services/network/public/cpp",
     "//services/network/public/mojom",
-    "//services/network:test_support",
     "//testing/gtest",
     "//url",
+  ]
+
+  deps += [ ":request_ownership_registry_test_support" ]
+}
+
+source_set("request_ownership_registry_test_support") {
+  testonly = true
+  public = [ "request_ownership_registry_test_support.h" ]
+  public_deps = [ ":request_ownership_registry" ]
+  visibility = [
+    ":aegis_access_unittests",
+    ":request_dispatch_gate_unittests",
+    ":request_ownership_registry_unittests",
   ]
 }

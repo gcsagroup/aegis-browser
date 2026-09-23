@@ -42,7 +42,8 @@
     "status": "bash ./scripts/status.sh",
     "test:local-model": "node --test ./scripts/verify-agent-local-model_test.mjs",
     "test:winrm-model-relay": "node --check ./scripts/agent-winrm-model-relay.mjs && node ./scripts/agent-winrm-model-relay.mjs --self-test",
-    "test:scripts:android": "bash ./scripts/package-android-guards_test.sh && bash -n ./scripts/package-android.sh"
+    "test:scripts:android": "bash ./scripts/package-android-guards_test.sh && bash -n ./scripts/package-android.sh",
+    "test:chromium-access": "python3 ../../scripts/dev/chromium_access_gtests.py"
   },
   "devDependencies": {
     "@gcsa-aegis/core": "workspace:*"

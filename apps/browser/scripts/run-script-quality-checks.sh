@@ -14,7 +14,10 @@ run_check() {
 run_check 'patch series formats' bash ./scripts/patch-series-format_test.sh
 run_check 'patch series regression fixtures' bash ./scripts/patch-series-format-regression_test.sh
 run_check 'Access native unit tests' bash ./scripts/test-aegis-access-native.sh
+run_check 'fixed Chromium Access GTest runner tests' python3 -B ../../scripts/dev/chromium_access_gtests_test.py
 run_check 'TypeSafe choice contract unit tests' bash ./scripts/typesafe-choice-contract_test.sh
+run_check 'model generation profiles and accounting' bash ./scripts/agent-generation-profile_test.sh
+run_check 'paired model routing evaluation' node --test ./scripts/evaluate-agent-model-routing_test.mjs
 run_check 'vector generators' bash ./scripts/vector-generators_test.sh
 run_check 'Access GN wiring' bash ./scripts/aegis-access-gn-wiring_test.sh
 run_check 'browser status script' bash ./scripts/status_test.sh
