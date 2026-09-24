@@ -1,14 +1,9 @@
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 072b60ec81..0ce94f0744 100644
+index 072b60ec81..601711d918 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -6919,9 +6919,11 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactoryForDocument(
-     content::RenderFrameHost* frame,
-     const DocumentURLLoaderFactoryContext& document_context,
+@@ -6921,7 +6921,6 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactoryForDocument(
      network::URLLoaderFactoryBuilder& factory_builder) {
-+  if (!document_context.is_network_service_default_factory) {
-+    return;
-+  }
    aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
        Profile::FromBrowserContext(browser_context), frame,
 -      document_context.document_url,
@@ -16,41 +11,24 @@ index 072b60ec81..0ce94f0744 100644
  }
  
 diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
-index 39046750fd..944a304e00 100644
+index 39046750fd..b3131bf454 100644
 --- a/content/browser/renderer_host/render_frame_host_impl.cc
 +++ b/content/browser/renderer_host/render_frame_host_impl.cc
-@@ -14247,6 +14247,9 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
-   const url::Origin request_initiator =
-       params->request_initiator_origin_lock.value();
-   const net::IsolationInfo isolation_info = params->isolation_info;
-+  ContentBrowserClient::DocumentURLLoaderFactoryContext network_context =
-+      document_context;
-+  network_context.is_network_service_default_factory = true;
+@@ -12938,7 +12938,7 @@ void RenderFrameHostImpl::CommitNavigation(
+                   /*bypass_redirect_checks=*/nullptr,
+                   /*navigation_id=*/std::nullopt,
+                   /*navigation_response_task_runner=*/nullptr,
+-                  subresource_loader_factories_config.document_context()));
++                  /*document_context=*/std::nullopt));
  
-   bool bypass_redirect_checks = false;
-   url_loader_factory::CreateAndConnectToPendingReceiver(
-@@ -14262,7 +14265,8 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
-           request_initiator, isolation_info, ukm_source_id,
-           &bypass_redirect_checks,
-           document_context.committing_navigation_id,
--          /*navigation_response_task_runner=*/nullptr, document_context),
-+          /*navigation_response_task_runner=*/nullptr,
-+          std::move(network_context)),
-       devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
-           this));
-   return bypass_redirect_checks;
-diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 312ba6850b..ddb1d9e5a8 100644
---- a/content/public/browser/content_browser_client.h
-+++ b/content/public/browser/content_browser_client.h
-@@ -2030,6 +2030,10 @@ class CONTENT_EXPORT ContentBrowserClient {
-   struct DocumentURLLoaderFactoryContext {
-     GURL document_url;
-     std::optional<int64_t> committing_navigation_id;
-+    // Set only when Content creates a Network Service-backed default factory.
-+    // The document URL alone cannot distinguish it from a restricted WebUI or
-+    // MHTML factory.
-+    bool is_network_service_default_factory = false;
-   };
- 
-   // Allows the embedder to intercept URLLoaderFactory interfaces used by the
+       // If the renderer has webui bindings, then don't give it access to
+       // network loader for security reasons.
+@@ -13067,7 +13067,7 @@ void RenderFrameHostImpl::CommitNavigation(
+               /*bypass_redirect_checks=*/nullptr,
+               /*navigation_id=*/std::nullopt,
+               /*navigation_response_task_runner=*/nullptr,
+-              subresource_loader_factories_config.document_context()),
++              /*document_context=*/std::nullopt),
+           devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
+               this));
+       subresource_loader_factories->pending_scheme_specific_factories().emplace(
