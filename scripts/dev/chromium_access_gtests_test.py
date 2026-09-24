@@ -240,10 +240,13 @@ SuiteTwo/Variant.
                                                "global_tags": tags or []}))
             write([complete])
             self.assertEqual(sut.runtime_test_count(summary, expected), 2)
+            write([{**complete, expected[1]: [{"status": "SUCCESS", "result_parts": [{"type": "success"}]}]}])
+            self.assertEqual(sut.runtime_test_count(summary, expected), 2)
             invalid = [[], [{}], [{expected[0]: complete[expected[0]]}],
                        [complete, complete],
                        [{**complete, expected[1]: [{"status": "SKIPPED"}]}],
                        [{**complete, expected[1]: [{"status": "FAILURE"}]}],
+                       [{**complete, expected[1]: [{"status": "SUCCESS", "result_parts": [{"type": "skip"}]}]}],
                        [{**complete, expected[1]: [{"status": "SUCCESS"}] * 2}]]
             for results in invalid:
                 with self.subTest(results=results):
@@ -330,6 +333,9 @@ SuiteTwo/Variant.
                 "    print('  Second')\n"
                 "    print('  DISABLED_NotSelected')\n"
                 "    raise SystemExit(0)\n"
+                "# Chromium checks switch presence, even when its value is zero.\n"
+                "assert not any(a.split('=', 1)[0] == '--gtest_also_run_disabled_tests' for a in sys.argv)\n"
+                "assert 'GTEST_ALSO_RUN_DISABLED_TESTS' not in os.environ\n"
                 "with open(os.environ['AEGIS_TEST_TRACE'], 'w', encoding='utf-8') as f:\n"
                 "    f.write(' '.join(sys.argv[1:]))\n"
                 "summary = next(a.split('=', 1)[1] for a in sys.argv if a.startswith('--test-launcher-summary-output='))\n"
@@ -339,7 +345,8 @@ SuiteTwo/Variant.
                 encoding="utf-8",
             )
             binary.chmod(0o755)
-            env = dict(os.environ, AEGIS_TEST_TRACE=str(trace))
+            env = dict(os.environ, AEGIS_TEST_TRACE=str(trace),
+                       GTEST_ALSO_RUN_DISABLED_TESTS="1")
 
             context = sut.TargetContext(src, out, report, env, str(autoninja), 3)
             result = sut.run_target(
@@ -347,13 +354,16 @@ SuiteTwo/Variant.
 
             self.assertEqual(result["tests"], 2)
             self.assertEqual(result["result"], "PASS")
+            self.assertEqual(context.env["GTEST_ALSO_RUN_DISABLED_TESTS"], "1")
             invocation = trace.read_text(encoding="utf-8")
             self.assertIn("--test-launcher-jobs=3", invocation)
             self.assertIn("--test-launcher-retry-limit=0", invocation)
+            self.assertIn("--test-launcher-test-part-results-limit=-1", invocation)
             self.assertIn("--test-launcher-total-shards=1", invocation)
             self.assertIn("--test-launcher-shard-index=0", invocation)
             self.assertIn("--gtest_filter=*", invocation)
             self.assertIn("--gtest_repeat=1", invocation)
+            self.assertNotIn("--gtest_also_run_disabled_tests", invocation)
             self.assertEqual(result["listedTests"], 3)
             self.assertEqual(result["runtimeSummarySha256"], sut.sha256(report / result["runtimeSummary"]))
             self.assertTrue((report / "fake_unittests.build.log").is_file())

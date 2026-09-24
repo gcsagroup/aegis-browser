@@ -138,8 +138,9 @@ def run_process(command: Iterable[str], *, cwd=None, env=None,
     # PATH/DEPOT_TOOLS_DIR and explicit GN/Ninja paths are trusted local configuration.
     # command_argv validates an absolute executable and literal non-NUL arguments;
     # the real-process regression proves shell metacharacters stay literal. Quoting
-    # argv elements would corrupt them. Review: 7805e05, B603 and the exact rule below.
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    # argv elements would corrupt them. The dynamic-argv audit rule is a false
+    # positive at this trusted local tool boundary, not a tainted-input exception.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
     return subprocess.run(argv, cwd=cwd, env=env, input=input_text, stdout=output,  # nosec B603
                           stderr=subprocess.STDOUT, text=True, shell=False, check=check)
 
@@ -275,6 +276,13 @@ def runtime_test_count(summary: Path, expected: list[str]) -> int:
                 or not isinstance(attempts[0], dict)
                 or attempts[0].get("status") != "SUCCESS"):
             raise ValueError(f"GTest did not execute successfully exactly once: {name}")
+        # Chromium can label GTEST_SKIP() as SUCCESS while preserving the skip
+        # in result_parts, including a SetUp() skip before the test body runs.
+        parts = attempts[0].get("result_parts", [])
+        if (not isinstance(parts, list)
+                or any(not isinstance(part, dict) or part.get("type") != "success"
+                       for part in parts)):
+            raise ValueError(f"GTest runtime contains a skipped or failed result part: {name}")
     if set(data.get("global_tags", [])) & {
             "EARLY_SUMMARY", "CAUGHT_TERMINATION_SIGNAL", "BROKEN_TEST_EARLY_EXIT"}:
         raise ValueError("GTest runtime receipt is incomplete")
@@ -351,12 +359,15 @@ def run_target(target, context: TargetContext, evidence=None, save=None) -> dict
     log = context.report / f"{binary.name}.test.log"
     summary = context.report / f"{binary.name}.runtime.json"
     summary.unlink(missing_ok=True)  # A zero-exit early return must not reuse an old receipt.
+    runtime_env = dict(context.env)
+    runtime_env.pop("GTEST_ALSO_RUN_DISABLED_TESTS", None)
     run_logged([str(binary), f"--test-launcher-jobs={context.jobs}",
                 "--test-launcher-retry-limit=0", "--test-launcher-print-test-stdio=always",
+                "--test-launcher-test-part-results-limit=-1",
                 "--test-launcher-total-shards=1", "--test-launcher-shard-index=0",
-                "--gtest_filter=*", "--gtest_repeat=1", "--gtest_also_run_disabled_tests=0",
+                "--gtest_filter=*", "--gtest_repeat=1",
                 f"--test-launcher-summary-output={summary}"],
-               cwd=context.src, env=context.env, log=log)
+               cwd=context.src, env=runtime_env, log=log)
     tests = runtime_test_count(summary, row["expectedTests"])
     if sha256(binary) != row["binarySha256"]:
         raise ValueError(f"test binary changed during execution: {binary}")
