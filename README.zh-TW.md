@@ -79,13 +79,23 @@ macOS 可以獨立達到發布條件，不需要等待 iOS。各里程碑的完�
 
 ## 貢獻與文件
 
-公開貢獻請 Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser)，提交範圍聚焦的改動，執行相關檢查，並向上游 `main` 分支提交 Pull Request。請說明改動範圍、驗證證據和已知限制。在 GCSA Aegis 開發 Fork 中工作的維護者，請遵循單獨的 [`develop` 工作流程](docs/development/ci.zh-CN.md)。
+### 參與貢獻
 
-- [文件索引](docs/README.zh-TW.md) · [路線圖](docs/roadmap.zh-TW.md) · [架構](docs/architecture.zh-TW.md)
-- [Browser 工程指南](apps/browser/README.zh-TW.md) · [iOS 工程指南](apps/ios/README.zh-TW.md)
-- [研究與限制](docs/research-map.zh-TW.md) · [歷史稽核紀錄](docs/audit/README.zh-TW.md) · [變更紀錄](CHANGELOG.md)
+公開貢獻請 Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser)，提交範圍聚焦的改動，執行相關檢查，並向上游 `main` 分支提交 Pull Request。請說明改動範圍、驗證證據和已知限制。
 
-GCSA 原創原始碼採用 [Apache-2.0](LICENSE)。Chromium、libtorrent 與其他第三方元件保留各自授權。另見[第三方開源致謝](THIRD_PARTY_NOTICES.md)。
+在 GCSA Aegis 開發 Fork 中工作的維護者，請遵循單獨的 [`develop` 工作流程](docs/development/ci.zh-CN.md)。
+
+### 文件導覽
+
+- **專案：** [文件索引](docs/README.zh-TW.md) · [路線圖](docs/roadmap.zh-TW.md) · [架構](docs/architecture.zh-TW.md)
+- **工程：** [Browser 工程指南](apps/browser/README.zh-TW.md) · [iOS 工程指南](apps/ios/README.zh-TW.md)
+- **參考：** [研究與限制](docs/research-map.zh-TW.md) · [歷史稽核紀錄](docs/audit/README.zh-TW.md) · [變更紀錄](CHANGELOG.md)
+
+### 授權與致謝
+
+GCSA 原創原始碼採用 [Apache-2.0](LICENSE)。Chromium、libtorrent 與其他第三方元件保留各自授權。
+
+另見[第三方開源致謝](THIRD_PARTY_NOTICES.md)。
 
 <details>
 <summary>徽章說明</summary>
