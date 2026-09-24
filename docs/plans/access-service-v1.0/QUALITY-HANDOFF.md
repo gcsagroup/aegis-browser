@@ -1,10 +1,24 @@
 # QUALITY-HANDOFF：W0 固定 Chromium 验证
 
-更新：2026-09-24 11:30 UTC（六对象编译后、全矩阵前快照）。负责人 Q；本记录是执行入口，后续结果以各 attempt 的原始报告和 PR 精确 H 说明继续登记。历史 PR 或构建报告各保留自己的身份。W0 未完成，G0 UNVERIFIED；本轮不新增 required gate。
+更新：2026-09-24 18:16 UTC（#177 合并后证据核对）。负责人 Q；本页保留各候选失败和旧执行快照，最新结果见下节。W0 的选定原生及浏览器矩阵已在 #177 最终 H 通过，但不据此升级 G0 或 131 个验收主行；本轮不新增 required gate。
 
-## 冻结来源与所有权
+## #177 最终交付与适用边界
 
-- 初始盘点 D：`7f74e0a4e971f91d08d90536e429aba7b82cf37d`；原生执行前纳入仅 README 排版的 #176，当前 B=`42f48b535f4ff0c302b6c4e98762fcee86495e1c`。最终交付 H 由运行报告/Git PR 绑定；M、S 尚未生成，不能用 B 冒充它们。
+#177 的 B=`42f48b535f4ff0c302b6c4e98762fcee86495e1c`、H=`1f86a6e218c2bccebf2654c266a4d6e2ab0e2e37`、PR 测试 M=`547ed2a2f0368f9d15dde0bd481edf8184209252`（父提交 B/H、tree 与 H 相同）。2026-09-24 18:10:37 UTC 使用 squash merge 进入 develop，S=`43e4e55070d098986585034616029588a75e104d`，单父 B、tree=`47d39dbdbfe74d4bea51cca0740e5980cae84885` 与 H 相同。以下证据只支持该 H、M 或 S 各自的身份，不转用于新晋升候选。
+
+| 验证 | 最终结果和原始回执 |
+| --- | --- |
+| 固定源准入 | `source-attempt21/result.json` PASS/sourceStable=true；Chromium patched HEAD=`1609c11c72e0c2e51500808b96864c37b7e4c467`、tree=`7beea934d52bd9c37c4470304cd1966260b8a951` |
+| 原生与浏览器 | `native-attempt5/result.json` 17 个目标、181 项 PASS；`browser-attempt17/result.json` Chrome 56/56 PASS；`content-attempt6/result.json` Content 6/6 PASS；均为 H1f86a6e、sourceStable=true，逐目标二进制与 runtime 摘要见原始回执 |
+| 本地与托管 PR | 产品树 `.artifacts/ci/local-1f86a6e-mise/report.json` full PASS/sourceStable=true；PR quality/quality-gate run `36020104115` attempt 1 SUCCESS，C++ run `36020104055` attempt 1 SUCCESS；托管质量报告绑定 B/H/M |
+| 独立 Review | 同一最终 B/H/M 的 Astra/high 原始回执 `.artifacts/ci/pr177-final-independent-review.md`：CLEAR，未发现未关闭的确定 P1/P2，覆盖边界以原文为准 |
+| develop 实际推送 | S 的 CI run `36039414436` attempt 1 quality/quality-gate SUCCESS、C++ run `36039414451` attempt 1 SUCCESS；推送报告 `quality-evidence-36039414436-1` 的 testedSha=S、sourceStable=true |
+
+上述 Chromium 回执位于 `/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/evidence/`，本地质量及 Review 回执位于产品工作树的 `.artifacts/ci/`；它们均非 Git 提交内容，换机器须取得原始回执。原生构建使用记录中的 macOS 26.5 SDK / bundled LLD 本机参数变体。MHTML 普通分支用计数替代终端；relay watchdog/取消、完整缓存/BFCache/prerender BLOCK、性能与发布范围仍有独立覆盖缺口。故这里关闭的是 #177 已声明代码与测试证据审查，不把 W0/G0、131 个主行或其他候选判为已验收。
+
+## 历史执行快照：冻结来源与所有权
+
+- 初始盘点 D：`7f74e0a4e971f91d08d90536e429aba7b82cf37d`；原生执行前纳入仅 README 排版的 #176，当时候选 B=`42f48b535f4ff0c302b6c4e98762fcee86495e1c`。当时 M、S 尚未生成；最终身份见本页开头。
 - 产品工作树：`/Volumes/ExternalSSD/repositories/aegis-browser-worktrees/access-w0-quality-20260924`，分支 `codex/access-w0-quality-20260924`。
 - Q 新候选：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/src`；从闲置 H13 副本进行 APFS clone，仅复用构建输入。各次 source admission 和失败报告独立保存；相对输出 `out/Pr129Verification` 可增量复用构建对象，但二进制和运行结果必须重新绑定最终 H。
 - Chromium 固定 `151.0.7922.77` / `ff37cfca210138f2a40b843b4a8195ab7e4fc7ff`；新 patched tree、V8、参数/二进制哈希与 sourceStable 须由新候选实际生成。
@@ -70,13 +84,13 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 - H=`c6f14c2ed670dd2b8ed714def9caa17850758655`：0185 保留非 HTTP 原 default，0186 增加真实导航取消回归，source admission 11 通过；`browser-attempt11` 构建中主动中断，0 项 runtime、sourceStable=true。独立预审指出 0186 的 pending Clone 同步 Flush 会等待尚未绑定的对端而挂起；后续 5fd9a25 删去该 Flush。另有更重要的 P1：MHTML 子帧最终 URL 可为 HTTP，但原 default 是禁网 factory，0185 仍只凭 HTTP URL 将它重建为普通网络 factory。
 - 0187 仅在 RFHI 确实创建 NetworkService default 时记录可信资格并允许 prefetch 重建；MHTML/WebUI 等原受限 default 保持原 bundle，restricted/recursive 路径在新建跨源 factory 前拒绝。新增真实 HTTP MHTML 子帧 `content_browsertests` 回归。独立复审发现初稿变量作用域编译阻塞，H=`882c354357b8e7f4e9e9948e144bd99188a57e76` 已修复；`source-attempt13` PASS/sourceStable，Chromium tree=`b97227ce6ad046a51681903d57be496b33c29bad`。`compile-0187-objects13` 的 RFHI、prefetch service、Chrome hook/Aegis factory 与 browser fixture 六对象全部编译 PASS/sourceStable，**无完整链接或 runtime**。同一 Astra/high 静态复审暂无未关闭 P1/P2；最终复审仍须绑定新 H 的实际运行证据。
 
-以上 source admission 是补丁与 overlay 的精确来源检查，不是编译或运行通过。后续最终 H 仍需 local full、全部 17 个 native target、扩展 Chrome browser 矩阵、独立 `content_browsertests` 的 prefetch 回归、同一审查人的最终复审及托管 PR 精确 B/H/M 检查；#177 保持 Draft，不合并。台账 131 个主行与 G0 均不升级。
+以上是 H882c354 时的源码准入与待验清单，不是最终运行结论。#177 已按本页开头的最终 H 完成相应矩阵、复审与合并；台账 131 个主行与 G0 均不因此升级。
 
-## 最小完成矩阵
+## 历史最小完成矩阵（#177 最终结果见开头）
 
 17 个目标在本轮源代码 BUILD.gn 中均有声明。下列“历史”专指上述 H13 receipt，NOT_RUN 不断言从未在其他候选执行。第一候选失败详情见上节；下一修复候选每项目标必须实际枚举非零测试并执行，记录命令/退出码、summary、二进制哈希、sourceStable。
 
-| unit target | H13 历史结果 | Q 下一修复候选 |
+| unit target | H13 历史结果 | 2026-09-24 11:30 旧快照 |
 | --- | --- | --- |
 | `access_identity_generation_state_unittests` | NOT_RUN | NOT_RUN；缺新候选执行证据 |
 | `access_proxy_selection_generation_state_unittests` | NOT_RUN | NOT_RUN；缺新候选执行证据 |
@@ -98,7 +112,7 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 
 第三候选 Access browser suite 包含 38 个 `AccessProxyingURLLoaderFactoryBrowserTest` 源码定义和 3 个 `AccessLoadingPredictorPrefetchBrowserTest`，共 41 项；后续候选又新增回归，最终数量以新二进制的实际非零枚举为准。历史 clone 只含 3/17 个 unit 二进制，另 14 个需要构建。
 
-| 必需入口 | 源码映射 / 范围 | 当前缺口 |
+| 必需入口 | 源码映射 / 范围 | 2026-09-24 11:30 旧快照 |
 | --- | --- | --- |
 | 导航 / redirect | `MainNavigation*`、`SubframeNavigation*`、`SameHostRedirectReevaluatesThroughProxy`、`RedirectToUnselectedHostFailsClosed` | 缺新候选执行证据 |
 | PREPARED / Profile 隔离 | `MainNavigationConsumesPreparedSnapshotBeforeCommit`、`MainNavigationRoutingIsolatedAcrossProfiles` | 缺新候选执行证据，必须精确非零枚举 |
@@ -110,7 +124,7 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 
 资源占用独立于上述源码/执行缺口：主机重启后旧 Hc9 Ninja 已消失，旧报告 `TESTING`、sourceStable=null 与双锁保留为 `INTERRUPTED_UNKNOWN`。协调任务随后取得旧 owner 明确交接，下一重型构建时段归 Q；启动前仍须重查实际进程/容量，只管理 Q 的候选锁。
 
-## 本轮已执行与下一动作
+## 历史执行计划（#177 完成前快照）
 
 1. 刷新远端 B/D 与 main/upstream 身份，建立外盘隔离工作树；原始 inventory、PR 和进程快照在产品树 `.artifacts/w0-quality-20260924/`。
 2. `mise exec -- python -B scripts/dev/chromium_access_gtests_test.py`：17 tests，exit 0；只证明 runner 回归，不是 Chromium unit/browser 结果。
@@ -118,4 +132,4 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 4. 资源释放后 Q 取得自己的 candidate lock；按 unit 小批次串行执行 coordinator/store/runtime/transport/dispatch/tracker 及其余已声明目标，再 build/list/run 真实 browser 入口。每次实际非零枚举，禁重试掩盖失败，首次失败按设施/产品分类并报告协调者。
 5. 最终 H 运行 local full quality、独立 Astra/high Review、托管 PR B/H/M + attempt + check source；合并由协调者按实时授权/门槛决定。未闭环项明确保留，不升级 131 个 A/PF 主行。
 
-主会话只能确认模型家族 GPT-6，精确后缀/effort 未由运行时暴露；有界测试实现阶段显式选 `gpt-6-sol` / `xhigh`。最终独立 Review 尚未执行。
+主会话只能确认模型家族 GPT-6，精确后缀/effort 未由运行时暴露；有界测试实现阶段显式选 `gpt-6-sol` / `xhigh`。该快照时最终独立 Review 尚未执行；#177 最终回执见本页开头。

@@ -6,7 +6,7 @@
 
 Q 冻结起点 `7f74e0a4e971f91d08d90536e429aba7b82cf37d`。#162 最终 H13=`4670c4dd…` 已合并为 S=`ca4e1b24…`；已回读其三目标 96 tests 的 `PARTIAL_PASS` 与三组 browser fixture PASS 原始记录。它们属于历史 H13，不为新候选或下表 131 个主行补造 PASS。完整测试名、原始报告路径/哈希、当前执行结果与缺口类别集中于 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
 
-第一候选 Hcf2329a 实际完成前 10 个 unit targets 共 81 tests 后遇第 11 个 adapter 启动崩溃；browser 实际枚举 41 项，1 项通过后因 favicon 计数污染失败。两次整体为 FAIL/sourceStable=true，后续新候选执行 `NOT_RUN`；本轮另新增 3 个真实 LoadingPredictor `PrefetchManager::Start` 入口 fixture 源码，待最终 H 枚举运行。S04 的 helper 边界仍有效。旧 #162 Draft/BUILDING 状态仅属于下节注明的历史时间点。本轮不修改 131 个主行的判定或冻结规范。
+第一候选 Hcf2329a 实际完成前 10 个 unit targets 共 81 tests 后遇第 11 个 adapter 启动崩溃；browser 实际枚举 41 项，1 项通过后因 favicon 计数污染失败。两次整体为 FAIL/sourceStable=true，**当时**后续候选尚未运行。本轮新增的 3 个真实 LoadingPredictor `PrefetchManager::Start` 入口 fixture 已在 #177 最终 H 的浏览器矩阵中实际枚举和执行；最终 H 的 17/181 原生、56 Chrome browser、6 Content browser 结果见页尾和 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。S04 的 helper 边界仍有效。旧 #162 Draft/BUILDING 状态仅属于下节注明的历史时间点。本轮不修改 131 个主行的判定或冻结规范。
 
 ## 历史：2026-09-22 架构复核后的待执行映射
 
@@ -193,4 +193,6 @@ Q 第二候选 H745bf3c 执行补记：11 targets/86 tests 通过后 dispatch_st
 
 Q 第三候选 Hceb6ead：设施编译修复已过，但 transport 尾点 host 接纳及 frame prefetch 缺 endpoint 直连暴露产品缺陷。NetLog 已证实后者 DIRECT/HTTP200；native 总门和 browser 总门均 FAIL/sourceStable。尾点按保守拒绝设计修复，保无 snapshot 的 native 边界；prefetch 另定位实际入口。局部通过与剩余目标补充诊断不升级 W0/G0 或131主行，详见 QUALITY-HANDOFF 第三候选记录。
 
-Q 后续候选状态：0175–0186 的局部源码/编译/browser 证据与失败归档见 QUALITY-HANDOFF。已准入 Hc6f14c2 的 browser 构建主动中断、0 runtime；独立预审发现 HTTP URL 的 MHTML 子帧原禁网 default 可被 prefetch 重建为网络 factory。0187 已补 RFHI 可信资格与真实 MHTML 子帧回归，pending Clone 测试设施也已修正；H882c354 的六关键对象编译 PASS/sourceStable，完整链接和 runtime 未验。W0 未完成，G0 继续 UNVERIFIED，131 个主行判定不变。
+Q 历史候选状态：0175–0186 的局部源码/编译/browser 证据与失败归档见 QUALITY-HANDOFF。Hc6f14c2 的 browser 构建主动中断、0 runtime；独立预审发现 HTTP URL 的 MHTML 子帧原禁网 default 可被 prefetch 重建为网络 factory。0187 补 RFHI 可信资格与真实 MHTML 子帧回归，pending Clone 测试设施也已修正；H882c354 当时仅六关键对象编译 PASS/sourceStable，完整链接和 runtime 未验。这些均为旧头部快照，不转用于最终 H。
+
+Q #177 最终证据（2026-09-24）：B42f48b5/H1f86a6e/M547ed2a/S43e4e55 的身份和原始路径见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。同一 H 的固定 Chromium 17 个原生目标/181 项、Chrome browser 56 项、Content browser 6 项均 PASS/sourceStable；独立 Review CLEAR，PR 托管检查及 S push CI 通过。该结果关闭所列选定矩阵和 #177 代码审查，不等于完整缓存/BFCache/prerender BLOCK、性能、发布或 131 个冻结主行的逐场景验收；W0/G0 不升级，131 个主行判定保持原状。

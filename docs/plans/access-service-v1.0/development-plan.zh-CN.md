@@ -1,6 +1,7 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
-更新日期：2026-09-24。Q 本轮冻结起点为 `origin/develop@7f74e0a4e971f91d08d90536e429aba7b82cf37d`；main/upstream 同为 `c1399852270c1bbce612dbea1558266d6fc57162`。当前证据、剩余矩阵和构建所有权见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。以下旧日期段落保留为历史快照，不作为当前执行指令。
+更新日期：2026-09-24 18:16 UTC。#177 已合并到 develop@`43e4e55070d098986585034616029588a75e104d`，该 S 的推送质量与 C++ CI 已通过；main/upstream 同为 `c1399852270c1bbce612dbea1558266d6fc57162`。Q 的最终 #177 B/H/M、原生及浏览器原始回执与未覆盖范围见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。下面旧日期候选保留为历史快照，不作为当前执行指令；G0 与 131 个主行不因 #177 的局部矩阵通过而升级。
+
 ## 历史：2026-09-22 F 独立 transport scope 准入增量
 
 本增量补齐普通网站 mutation 在同 host 或 DNS label 后缀已存在异组 PROXY 时的发布前拒绝，不重复旧 trusted-site UI 候选或 #155/#156 重试语义。#161 runner、#163 GN 修复、#166 模型路由补丁 0161 与 #171 回流的 TypeSafe 补丁 0162/0163 已进入当前基线；本增量的准入补丁顺序编号为 0164，后续修复为 0165–0167。实现、验收不变量、实际模型路由与证据边界见 [F Handoff](transport-scope-handoff-20260922.zh-CN.md)。standalone 行为检查已通过，nativeImpact 为 REQUIRED；固定 Chromium unit/browser runtime 未执行通过前保持 NOT_RUN，G0 仍 UNVERIFIED。
@@ -25,18 +26,18 @@
 
 截至 2026-09-24 本轮回读，#162 已 MERGED，最终 H=`4670c4dd5f24db61f38f102cc60475658e63554a`，S=`ca4e1b24c750746d6e20a83fa58f1d2500791d02`。该 H 三个选定 unit target 共 96 项及三组 browser fixture 的原始报告通过；native 总状态是 `PARTIAL_PASS`。这些历史结果不转用于新的候选。**W0 未闭环，G0 继续 UNVERIFIED，G1–G3 未达到。**
 
-## 当前双窗口执行板
+## 2026-09-24 18:16 UTC 执行板
 
 | 顺序 / 负责人 | 当前状态 | 下一动作与完成条件 |
 | --- | --- | --- |
-| Q：固定基线与矩阵 | `7f74e0a…` 冻结；17 个 unit 目标有 GN 源码声明；Access browser 源码定义 38 项 | 目标声明和测试源码不代替实际二进制枚举；在 Q 最终候选逐项运行 |
+| Q：固定基线与矩阵 | 初始冻结 D7f74e0a；最终 H1f86a6e 的 17 个原生目标及 Chrome/Content browser 已实际非零枚举和运行 | 保留每次候选的精确身份；不从源码声明、旧头或单项通过推断 G0/主行验收 |
 | Q：历史 #162 核验 | H13 三目标 16+45+35，native `PARTIAL_PASS`；Access 冲突导航/History/Settings 三组 PASS | 保留 H13 身份、原始路径与哈希；不恢复 H12/`682997a…` 的构建指令 |
-| Q：W0 剩余执行 | 第三候选 Hceb6ead 的 native/browser 均 FAIL；后续独立预审发现 MHTML HTTP 子帧原禁网 default 被重建为可联网 factory。0187 已以 RFHI 可信资格修复源码并加入真实 MHTML 回归；H882c354 的六关键对象编译 PASS/sourceStable，但仍无完整链接或 runtime；详见 QUALITY-HANDOFF | 保留全部失败与主动中断回执；对最终候选运行 local full、17 target、Chrome 与 Content browser 矩阵，同 reviewer 复审及托管 CI；Q 继续持有独立构建时段 |
-| Q：LoadingPredictor 回归设施 | 新增真实 `PrefetchManager::Start` 三项 regression 源码；已有 helper 和模式选择 unit 不足以替代 | 最终 H 实际 build/list/run 验证；当前缺运行证据，不是已证实产品语义失败 |
+| Q：W0 选定矩阵 | #177 最终 H1f86a6e：17 target/181 native、56 Chrome browser、6 Content browser 均 PASS/sourceStable；local full、托管 PR CI、独立 Review、develop S push CI 均通过 | 保留旧失败与中断回执；按 QUALITY-HANDOFF 的覆盖边界继续 G0/主行验收。Q 已释放重型构建槽，由 #23 的独立原生任务串行使用 |
+| Q：LoadingPredictor 回归设施 | #177 最终 H 的 Chrome 56/56 与 Content 6/6 已实际 build/list/run；真实 `PrefetchManager::Start` 回归包含在该证据范围 | 不扩称预测生成、导航触发或全部浏览器入口已覆盖；剩余范围见 QUALITY-HANDOFF |
 | F：W1a 接口/fixture 准备 | 与 Q 独立；#166 模型路由后续工作 DEFERRED | 可并行准备 W1a，不操作 Q source/out/锁；W0 关闭后再推进 W1b/W1c |
 | W2 服务端实验 | 执行资源/负责人未绑定，BLOCKED（实验执行） | 可准备协议；实际部署或付费 API 调用需另有授权 |
 
-Q 独占本轮新的 Chromium candidate、out、验证证据及共享 plan/Handoff/tracker 状态修订；F 的独立文件不由 Q 覆盖。精确目录、原始证据和缺口分类见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
+Q 的 #177 Chromium candidate、out、验证证据由 Q 保管；已释放唯一重型构建槽，#23 Hc9 的独立重试按交接串行使用。F 的独立文件不由 Q 覆盖。精确目录、原始证据和缺口分类见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
 
 ## 实施顺序与依赖
 
