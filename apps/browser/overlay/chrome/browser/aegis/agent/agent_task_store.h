@@ -156,6 +156,10 @@ class AgentTaskStore {
   bool IsInitializedForTesting() const { return initialized_; }
 
  private:
+  bool VerifyGoalRouteBinding(const std::string& route_id,
+                              const AgentModelRoutingMetrics& metrics);
+  bool BindGoalRouteToTask(const std::string& route_id,
+                          const std::string& task_id);
   bool SaveTaskRecordInternal(AgentTaskStoreRecord record,
                               std::optional<std::string> route_id);
   static std::string SerializeScope(const AgentTaskScope& scope);

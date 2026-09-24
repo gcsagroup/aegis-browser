@@ -8,6 +8,8 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -307,6 +309,17 @@ TEST(AegisAgentTaskStoreTest,
          .model_routing_metrics = std::move(task_metrics),
          .created_at = base::Time::Now()},
         second.route_id));
+    // A second task must not steal a committed route or leave an orphan task.
+    EXPECT_FALSE(store.SaveTaskRecordAndBindGoalRoute(
+        {.task_id = "55555555-5555-4555-8555-555555555555",
+         .state = AgentTaskState::kDraft,
+         .mode = AgentMode::kAsk,
+         .goal_summary = "duplicate routed task",
+         .scope = StoreTestScope(),
+         .model_routing_metrics = second.metrics,
+         .created_at = base::Time::Now()},
+        second.route_id));
+    EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
   }
 
   AgentTaskStore restarted(path);
@@ -640,6 +653,26 @@ TEST(AegisAgentTaskStoreTest, ReadsPreCostSnapshotRoutingMetrics) {
   ASSERT_TRUE(metrics);
   EXPECT_FALSE(metrics->primary_model_cost_microusd_per_million_tokens);
   EXPECT_FALSE(metrics->fallback_model_cost_microusd_per_million_tokens);
+}
+
+TEST(AegisAgentTaskStoreTest, RejectsUnknownAndIncompleteRoutingMetrics) {
+  const std::string serialized =
+      AgentTaskStore::SerializeModelRoutingMetrics(AgentModelRoutingMetrics());
+  auto value = base::JSONReader::ReadDict(serialized, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(value);
+  ASSERT_TRUE(AgentTaskStore::DeserializeModelRoutingMetrics(serialized));
+  for (const auto* field : {"typesafe_outcome", "attempts_complete",
+                             "primary_model_cost_microusd_per_million_tokens"}) {
+    auto incomplete = value->Clone();
+    ASSERT_TRUE(incomplete.Remove(field));
+    std::string json;
+    ASSERT_TRUE(base::JSONWriter::Write(incomplete, &json));
+    EXPECT_FALSE(AgentTaskStore::DeserializeModelRoutingMetrics(json)) << field;
+  }
+  value->Set("unknown_future_field", "unreviewed content");
+  std::string json;
+  ASSERT_TRUE(base::JSONWriter::Write(*value, &json));
+  EXPECT_FALSE(AgentTaskStore::DeserializeModelRoutingMetrics(json));
 }
 
 TEST(AegisAgentTaskStoreTest,
