@@ -479,6 +479,9 @@ TEST_F(AegisAgentServiceTest,
   profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
   profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
                                 "http://127.0.0.1:8765/v1");
+  profile_->GetPrefs()->SetString(
+      aegis::prefs::kModelName, "Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit");
+  ASSERT_TRUE(AegisServiceFactory::GetForProfile(profile_));
   AegisAgentService* service =
       AegisAgentServiceFactory::GetForProfile(profile_);
   ASSERT_TRUE(service);
@@ -496,6 +499,8 @@ TEST_F(AegisAgentServiceTest,
     base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
     service->RouteGoal("整理收藏夹", AgentWorkflowKind::kResearch,
                        result.GetCallback());
+    ASSERT_FALSE(result.IsReady())
+        << (result.IsReady() ? result.Get<1>() : std::string());
     factory.WaitForRequest(endpoint);
     EXPECT_FALSE(factory.IsPending(kTypeSafeSystemOneEndpoint));
     ASSERT_EQ(factory.NumPending(), 1);
@@ -1155,6 +1160,7 @@ TEST_F(AegisAgentServiceTest,
   profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
   profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
   profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+  ASSERT_TRUE(AegisServiceFactory::GetForProfile(profile_));
 
   network::TestURLLoaderFactory factory;
   AegisAgentService* service =
@@ -1167,6 +1173,8 @@ TEST_F(AegisAgentServiceTest,
       route_result;
   service->RouteGoal("整理并检查失效收藏夹", AgentWorkflowKind::kResearch,
                      route_result.GetCallback());
+  ASSERT_FALSE(route_result.IsReady())
+      << (route_result.IsReady() ? route_result.Get<1>() : std::string());
   factory.WaitForRequest(endpoint);
   EXPECT_THAT(*factory.pending_requests(), SizeIs(1));
   EXPECT_TRUE(factory.SimulateResponseForPendingRequest(
