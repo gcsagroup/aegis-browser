@@ -8,6 +8,8 @@
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -38,6 +40,18 @@ TEST(AegisAgentTaskStoreTest, SavesOnlyRedactedMetadataAndRecoversSafely) {
     ASSERT_TRUE(store.Initialize());
     AgentTask task("task-1", "goal stays in memory", AgentMode::kAct,
                    StoreTestScope());
+    AgentModelRoutingMetrics routing_metrics{
+        .typesafe_attempted = true,
+        .typesafe_qualified = true,
+        .typesafe_outcome = "qualified",
+        .typesafe_model = "jev-1.13.0",
+        .typesafe_decisions = "workflow=research:0.92",
+        .typesafe_input_tokens = 42,
+        .typesafe_output_tokens = 18,
+        .typesafe_latency_ms = 860,
+        .primary_model_cost_microusd_per_million_tokens = 125,
+        .fallback_model_cost_microusd_per_million_tokens = 250};
+    ASSERT_TRUE(task.SetInitialModelRoutingMetrics(routing_metrics));
     ASSERT_TRUE(task.TransitionTo(AgentTaskState::kPlanning, "test"));
     ASSERT_TRUE(
         task.TransitionTo(AgentTaskState::kAwaitingTaskConsent, "test"));
@@ -63,6 +77,18 @@ TEST(AegisAgentTaskStoreTest, SavesOnlyRedactedMetadataAndRecoversSafely) {
     EXPECT_EQ(recovered[0].tool_calls_used, 2);
     EXPECT_EQ(recovered[0].model_calls_used, 1);
     EXPECT_EQ(recovered[0].network_requests_used, 1);
+    EXPECT_TRUE(recovered[0].model_routing_metrics.typesafe_qualified);
+    EXPECT_EQ(recovered[0].model_routing_metrics.typesafe_model,
+              "jev-1.13.0");
+    EXPECT_EQ(recovered[0].model_routing_metrics.typesafe_latency_ms, 860);
+    EXPECT_EQ(recovered[0]
+                  .model_routing_metrics
+                  .primary_model_cost_microusd_per_million_tokens,
+              125);
+    EXPECT_EQ(recovered[0]
+                  .model_routing_metrics
+                  .fallback_model_cost_microusd_per_million_tokens,
+              250);
     std::optional<AgentTaskScope> restored_scope =
         AgentTaskStore::DeserializeScope(recovered[0].scope_json);
     ASSERT_TRUE(restored_scope);
@@ -125,6 +151,203 @@ TEST(AegisAgentTaskStoreTest, RoundTripsBrowserBoundWindowMetadataScope) {
   EXPECT_TRUE(restored->IsNoBroaderThan(scope));
   EXPECT_TRUE(scope.IsNoBroaderThan(*restored));
   EXPECT_FALSE(restored->AllowsTab(41));
+}
+
+TEST(AegisAgentTaskStoreTest, RoundTripsFrozenAutomaticModelBinding) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  AgentTaskStore store(temp_dir.GetPath().AppendASCII("tasks.sqlite"));
+  ASSERT_TRUE(store.Initialize());
+  AgentTaskScope scope = StoreTestScope();
+  scope.model_selection_mode = AgentModelSelectionMode::kQuality;
+  scope.model_catalog_revision = 12;
+  scope.model_generation_profile = {"low", 4096};
+  scope.fallback_generation_profile = {"high", 16384};
+  scope.model_token_prices = {.input = 100, .cached_input = 20, .output = 500};
+  scope.model_fallback_destination = scope.model_destination;
+  scope.model_fallback_destination->model = "fixture-backup";
+  AgentTask task("automatic-model-binding", "route fixture", AgentMode::kAsk,
+                 scope);
+  ASSERT_TRUE(store.SaveTask(task, "route fixture", false));
+  const auto tasks = store.LoadUnfinishedTasks();
+  ASSERT_EQ(tasks.size(), 1u);
+  auto restored = AgentTaskStore::DeserializeScope(tasks[0].scope_json);
+  ASSERT_TRUE(restored);
+  EXPECT_EQ(restored->model_selection_mode,
+            AgentModelSelectionMode::kQuality);
+  EXPECT_EQ(restored->model_catalog_revision, 12);
+  EXPECT_EQ(restored->model_generation_profile.effort, "low");
+  EXPECT_EQ(restored->fallback_generation_profile.max_output_tokens, 16384);
+  EXPECT_EQ(restored->model_token_prices.cached_input, 20);
+  auto changed = *restored;
+  changed.model_generation_profile.effort = "high";
+  EXPECT_FALSE(changed.IsNoBroaderThan(scope));
+  ASSERT_TRUE(restored->model_fallback_destination);
+  EXPECT_EQ(restored->model_fallback_destination->model, "fixture-backup");
+  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
+  EXPECT_TRUE(scope.IsNoBroaderThan(*restored));
+}
+
+TEST(AegisAgentTaskStoreTest,
+     ObservationIdsKeepOverlappingCallsAndPendingUsage) {
+  AgentTask task("observation-fixture", "fixture", AgentMode::kAsk,
+                 StoreTestScope());
+  ASSERT_TRUE(task.RecordModelAttempt({.model = "primary",
+                                       .effort = "low",
+                                       .prices = {.input = 100, .output = 200},
+                                       .observation_id = "first",
+                                       .completed = false}));
+  ASSERT_TRUE(task.RecordModelAttempt({.model = "backup",
+                                       .effort = "high",
+                                       .prices = {.input = 300, .output = 400},
+                                       .observation_id = "second",
+                                       .completed = false}));
+  AgentModelAttempt second{.input_tokens = 10,
+                           .output_tokens = 20,
+                           .latency_ms = 300,
+                           .succeeded = true,
+                           .observation_id = "second"};
+  ASSERT_TRUE(task.CompleteModelAttempt(second));
+  EXPECT_FALSE(task.CompleteModelAttempt(second));
+  EXPECT_EQ(task.model_routing_metrics().model_output_tokens, 20);
+  auto restored = AgentTaskStore::DeserializeModelRoutingMetrics(
+      AgentTaskStore::SerializeModelRoutingMetrics(
+          task.model_routing_metrics()));
+  ASSERT_TRUE(restored);
+  ASSERT_EQ(restored->attempts.size(), 2u);
+  EXPECT_FALSE(restored->attempts[0].completed);
+  EXPECT_FALSE(restored->attempts[0].input_tokens);
+  EXPECT_EQ(restored->attempts[1].model, "backup");
+  EXPECT_EQ(restored->attempts[1].prices.output, 400);
+  EXPECT_EQ(restored->attempts[1].latency_ms, 300);
+}
+
+TEST(AegisAgentTaskStoreTest, RoundTripsAttemptUnknownUsageAndFrozenPrices) {
+  AgentModelRoutingMetrics metrics;
+  metrics.attempts_complete = true;
+  metrics.attempts.push_back(
+      {.model = "small",
+       .effort = "low",
+       .input_tokens = 100,
+       .cached_input_tokens = 50,
+       .output_tokens = 20,
+       .reasoning_tokens = 10,
+       .prices = {.input = 100, .cached_input = 20, .output = 500}});
+  metrics.attempts.push_back({.kind = "typesafe", .model = "jev"});
+  auto restored = AgentTaskStore::DeserializeModelRoutingMetrics(
+      AgentTaskStore::SerializeModelRoutingMetrics(metrics));
+  ASSERT_TRUE(restored);
+  ASSERT_EQ(restored->attempts.size(), 2u);
+  EXPECT_EQ(restored->attempts[0].cached_input_tokens, 50);
+  EXPECT_EQ(restored->attempts[0].prices.output, 500);
+  EXPECT_FALSE(restored->attempts[1].input_tokens);
+  EXPECT_FALSE(restored->attempts[1].prices.input);
+}
+
+TEST(AegisAgentTaskStoreTest,
+     PersistsIndependentGoalRoutesWithoutOverwritingUnknownUsage) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const base::FilePath path =
+      temp_dir.GetPath().AppendASCII("goal-routes.sqlite");
+  const base::Time created = base::Time::Now() - base::Minutes(1);
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    AgentGoalRouteObservation first{
+        .route_id = "11111111-1111-4111-8111-111111111111",
+        .status = AgentGoalRouteStatus::kPending,
+        .created_at = created,
+        .updated_at = created,
+    };
+    first.metrics.typesafe_attempted = true;
+    first.metrics.typesafe_outcome = "started";
+    first.metrics.attempts.push_back(
+        {.kind = "typesafe",
+         .phase = "screening",
+         .observation_id = "typesafe-pending",
+         .completed = false});
+    ASSERT_TRUE(store.SaveGoalRouteObservation(first));
+
+    first.status = AgentGoalRouteStatus::kCancelled;
+    first.metrics.attempts_complete = false;
+    first.created_at = created + base::Seconds(30);
+    first.updated_at = base::Time::Now();
+    ASSERT_TRUE(store.SaveGoalRouteObservation(first));
+
+    AgentGoalRouteObservation second{
+        .route_id = "22222222-2222-4222-8222-222222222222",
+        .status = AgentGoalRouteStatus::kCompleted,
+        .created_at = base::Time::Now(),
+        .updated_at = base::Time::Now(),
+    };
+    second.metrics.typesafe_outcome = "fallback";
+    second.metrics.attempts_complete = true;
+    second.metrics.attempts.push_back(
+        {.model = "fixture-model",
+         .effort = "low",
+         .succeeded = false,
+         .phase = "screening",
+         .observation_id = "generation-failed"});
+    ASSERT_TRUE(store.SaveGoalRouteObservation(second));
+    EXPECT_FALSE(store.SaveTaskRecordAndBindGoalRoute(
+        {.task_id = "44444444-4444-4444-8444-444444444444",
+         .state = AgentTaskState::kDraft,
+         .mode = AgentMode::kAsk,
+         .goal_summary = "mismatched routed task",
+         .scope = StoreTestScope(),
+         .created_at = base::Time::Now()},
+        second.route_id));
+    EXPECT_TRUE(store.LoadUnfinishedTasks().empty());
+    AgentModelRoutingMetrics task_metrics = second.metrics;
+    task_metrics.primary_model_cost_microusd_per_million_tokens = 1234;
+    ASSERT_TRUE(store.SaveTaskRecordAndBindGoalRoute(
+        {.task_id = "33333333-3333-4333-8333-333333333333",
+         .state = AgentTaskState::kDraft,
+         .mode = AgentMode::kAsk,
+         .goal_summary = "redacted routed task",
+         .scope = StoreTestScope(),
+         .model_routing_metrics = std::move(task_metrics),
+         .created_at = base::Time::Now()},
+        second.route_id));
+    // A second task must not steal a committed route or leave an orphan task.
+    EXPECT_FALSE(store.SaveTaskRecordAndBindGoalRoute(
+        {.task_id = "55555555-5555-4555-8555-555555555555",
+         .state = AgentTaskState::kDraft,
+         .mode = AgentMode::kAsk,
+         .goal_summary = "duplicate routed task",
+         .scope = StoreTestScope(),
+         .model_routing_metrics = second.metrics,
+         .created_at = base::Time::Now()},
+        second.route_id));
+    EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
+    // A late screening result must not erase a committed task binding.
+    second.status = AgentGoalRouteStatus::kCancelled;
+    second.updated_at = base::Time::Now();
+    EXPECT_FALSE(store.SaveGoalRouteObservation(second));
+  }
+
+  AgentTaskStore restarted(path);
+  ASSERT_TRUE(restarted.Initialize());
+  const auto observations = restarted.LoadGoalRouteObservations();
+  ASSERT_EQ(observations.size(), 2u);
+  EXPECT_EQ(observations[0].route_id,
+            "11111111-1111-4111-8111-111111111111");
+  EXPECT_EQ(observations[0].status, AgentGoalRouteStatus::kCancelled);
+  EXPECT_EQ(observations[0].created_at, created);
+  EXPECT_GT(observations[0].updated_at, created);
+  ASSERT_EQ(observations[0].metrics.attempts.size(), 1u);
+  EXPECT_FALSE(observations[0].metrics.attempts[0].completed);
+  EXPECT_FALSE(observations[0].metrics.attempts[0].input_tokens);
+  EXPECT_EQ(observations[1].route_id,
+            "22222222-2222-4222-8222-222222222222");
+  EXPECT_EQ(observations[1].task_id,
+            "33333333-3333-4333-8333-333333333333");
+  EXPECT_EQ(observations[1].status, AgentGoalRouteStatus::kCompleted);
+  ASSERT_EQ(observations[1].metrics.attempts.size(), 1u);
+  EXPECT_TRUE(observations[1].metrics.attempts[0].completed);
+  EXPECT_FALSE(observations[1].metrics.attempts[0].input_tokens);
+  EXPECT_FALSE(observations[1].metrics.attempts[0].output_tokens);
 }
 
 TEST(AegisAgentTaskStoreTest, RejectsBroadenedOrMalformedStoredScope) {
@@ -380,9 +603,86 @@ TEST(AegisAgentTaskStoreTest, MigratesVersionSevenWithoutLosingMonitorState) {
   sql::Database inspected("AegisAgent");
   ASSERT_TRUE(inspected.Open(path));
   sql::MetaTable meta;
-  ASSERT_TRUE(meta.Init(&inspected, 8, 8));
-  EXPECT_EQ(meta.GetVersionNumber(), 8);
-  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 8);
+  ASSERT_TRUE(meta.Init(&inspected, 9, 9));
+  EXPECT_EQ(meta.GetVersionNumber(), 11);
+  EXPECT_EQ(meta.GetCompatibleVersionNumber(), 11);
+}
+
+TEST(AegisAgentTaskStoreTest,
+     MigratesActualVersionEightSchemaWithoutRoutingMetricsColumn) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const auto path = temp_dir.GetPath().AppendASCII("version-eight.sqlite");
+  {
+    AgentTaskStore store(path);
+    ASSERT_TRUE(store.Initialize());
+    AgentTask task("version-eight-task", "legacy task", AgentMode::kAsk,
+                   StoreTestScope());
+    ASSERT_TRUE(store.SaveTask(task, "legacy task", false));
+  }
+  {
+    sql::Database legacy("AegisAgent");
+    ASSERT_TRUE(legacy.Open(path));
+    ASSERT_TRUE(legacy.DoesColumnExist("agent_tasks", "model_routing_json"));
+    ASSERT_TRUE(legacy.Execute(
+        "ALTER TABLE agent_tasks DROP COLUMN model_routing_json"));
+    ASSERT_FALSE(legacy.DoesColumnExist("agent_tasks", "model_routing_json"));
+    sql::MetaTable meta;
+    ASSERT_TRUE(meta.Init(&legacy, 8, 8));
+    ASSERT_TRUE(meta.SetVersionNumber(8));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(8));
+  }
+  {
+    AgentTaskStore migrated(path);
+    ASSERT_TRUE(migrated.Initialize());
+    const auto tasks = migrated.LoadUnfinishedTasks();
+    ASSERT_EQ(tasks.size(), 1u);
+    EXPECT_EQ(tasks[0].task_id, "version-eight-task");
+    EXPECT_FALSE(tasks[0].model_routing_metrics.typesafe_attempted);
+  }
+  sql::Database inspected("AegisAgent");
+  ASSERT_TRUE(inspected.Open(path));
+  EXPECT_TRUE(inspected.DoesColumnExist("agent_tasks", "model_routing_json"));
+}
+
+TEST(AegisAgentTaskStoreTest, ReadsPreCostSnapshotRoutingMetrics) {
+  const auto metrics = AgentTaskStore::DeserializeModelRoutingMetrics(R"({
+    "typesafe_attempted":true,
+    "typesafe_qualified":false,
+    "typesafe_outcome":"fallback",
+    "typesafe_model":"",
+    "typesafe_decisions":"",
+    "typesafe_input_tokens":0,
+    "typesafe_output_tokens":0,
+    "typesafe_latency_ms":"10",
+    "fallback_used":false,
+    "model_input_tokens":"20",
+    "model_output_tokens":"30",
+    "model_latency_ms":"40"
+  })");
+  ASSERT_TRUE(metrics);
+  EXPECT_FALSE(metrics->primary_model_cost_microusd_per_million_tokens);
+  EXPECT_FALSE(metrics->fallback_model_cost_microusd_per_million_tokens);
+}
+
+TEST(AegisAgentTaskStoreTest, RejectsUnknownAndIncompleteRoutingMetrics) {
+  const std::string serialized =
+      AgentTaskStore::SerializeModelRoutingMetrics(AgentModelRoutingMetrics());
+  auto value = base::JSONReader::ReadDict(serialized, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(value);
+  ASSERT_TRUE(AgentTaskStore::DeserializeModelRoutingMetrics(serialized));
+  for (const auto* field : {"typesafe_outcome", "attempts_complete",
+                             "primary_model_cost_microusd_per_million_tokens"}) {
+    auto incomplete = value->Clone();
+    ASSERT_TRUE(incomplete.Remove(field));
+    std::string json;
+    ASSERT_TRUE(base::JSONWriter::Write(incomplete, &json));
+    EXPECT_FALSE(AgentTaskStore::DeserializeModelRoutingMetrics(json)) << field;
+  }
+  value->Set("unknown_future_field", "unreviewed content");
+  std::string json;
+  ASSERT_TRUE(base::JSONWriter::Write(*value, &json));
+  EXPECT_FALSE(AgentTaskStore::DeserializeModelRoutingMetrics(json));
 }
 
 TEST(AegisAgentTaskStoreTest,
@@ -432,9 +732,9 @@ TEST(AegisAgentTaskStoreTest, RejectsFutureVersionWithoutRewritingDatabase) {
     sql::Database future("AegisAgent");
     ASSERT_TRUE(future.Open(path));
     sql::MetaTable meta;
-    ASSERT_TRUE(meta.Init(&future, 9, 9));
-    ASSERT_TRUE(meta.SetVersionNumber(9));
-    ASSERT_TRUE(meta.SetCompatibleVersionNumber(9));
+    ASSERT_TRUE(meta.Init(&future, 11, 11));
+    ASSERT_TRUE(meta.SetVersionNumber(12));
+    ASSERT_TRUE(meta.SetCompatibleVersionNumber(12));
   }
   std::string before;
   ASSERT_TRUE(base::ReadFileToString(path, &before));
