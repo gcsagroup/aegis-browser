@@ -1,6 +1,8 @@
 // Copyright 2026 GCSA
 
 #include "chrome/browser/aegis/agent/agent_task_store.h"
+#include "chrome/browser/aegis/agent/agent_generation_profile_json.h"
+#include "chrome/browser/aegis/agent/agent_model_accounting_json.h"
 
 #include <algorithm>
 #include <cctype>
@@ -10,7 +12,9 @@
 #include "base/containers/flat_set.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/uuid.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "url/origin.h"
@@ -19,9 +23,9 @@ namespace aegis::agent {
 
 namespace {
 
-// v8 增加持久化的摘要失败状态；旧程序不认识该状态，不能继续读取/覆写。
-constexpr int kCurrentVersion = 8;
-constexpr int kCompatibleVersion = 8;
+// v11 adds a task-independent ledger for paid goal-screening calls.
+constexpr int kCurrentVersion = 11;
+constexpr int kCompatibleVersion = 11;
 constexpr size_t kMaxSummaryBytes = 4096;
 
 constexpr char kCreateTasksSql[] = R"(
@@ -35,6 +39,7 @@ constexpr char kCreateTasksSql[] = R"(
     tool_calls_used INTEGER NOT NULL DEFAULT 0,
     model_calls_used INTEGER NOT NULL DEFAULT 0,
     network_requests_used INTEGER NOT NULL DEFAULT 0,
+    model_routing_json TEXT NOT NULL DEFAULT '{}',
     created_us INTEGER NOT NULL,
     updated_us INTEGER NOT NULL
   ))";
@@ -81,6 +86,16 @@ constexpr char kCreatePlansSql[] = R"(
     updated_us INTEGER NOT NULL
   ))";
 
+constexpr char kCreateGoalRoutesSql[] = R"(
+  CREATE TABLE IF NOT EXISTS agent_goal_routes(
+    route_id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL DEFAULT '',
+    status INTEGER NOT NULL,
+    model_routing_json TEXT NOT NULL,
+    created_us INTEGER NOT NULL,
+    updated_us INTEGER NOT NULL
+  ))";
+
 bool IsValidStoredState(int state) {
   return state >= static_cast<int>(AgentTaskState::kDraft) &&
          state <= static_cast<int>(AgentTaskState::kExpired);
@@ -89,6 +104,19 @@ bool IsValidStoredState(int state) {
 bool IsValidStoredMode(int mode) {
   return mode >= static_cast<int>(AgentMode::kAsk) &&
          mode <= static_cast<int>(AgentMode::kAutomate);
+}
+
+bool IsValidGoalRouteStatus(int status) {
+  return status >= static_cast<int>(AgentGoalRouteStatus::kPending) &&
+         status <= static_cast<int>(AgentGoalRouteStatus::kCancelled);
+}
+
+bool IsValidGoalRouteObservation(const AgentGoalRouteObservation& observation) {
+  return base::Uuid::ParseCaseInsensitive(observation.route_id).is_valid() &&
+         observation.task_id.size() <= 64u &&
+         observation.metrics.IsValid() && !observation.created_at.is_null() &&
+         !observation.updated_at.is_null() &&
+         observation.updated_at >= observation.created_at;
 }
 
 bool IsSafePlanStepId(std::string_view value) {
@@ -120,6 +148,88 @@ std::optional<std::string> SerializePlanSteps(const AgentTaskPlan& plan) {
              : std::nullopt;
 }
 
+bool ParseRoutingCounter(const base::DictValue& value,
+                         std::string_view name,
+                         int64_t* destination) {
+  const std::string* serialized = value.FindString(name);
+  return serialized && base::StringToInt64(*serialized, destination);
+}
+
+bool PopulateRequiredRoutingMetrics(const base::DictValue& value,
+                                    AgentModelRoutingMetrics* metrics) {
+  const std::optional<bool> attempted = value.FindBool("typesafe_attempted");
+  const std::optional<bool> qualified = value.FindBool("typesafe_qualified");
+  const std::string* outcome = value.FindString("typesafe_outcome");
+  const std::string* model = value.FindString("typesafe_model");
+  const std::string* decisions = value.FindString("typesafe_decisions");
+  const std::optional<int> typesafe_input =
+      value.FindInt("typesafe_input_tokens");
+  const std::optional<int> typesafe_output =
+      value.FindInt("typesafe_output_tokens");
+  const std::optional<bool> fallback = value.FindBool("fallback_used");
+  if (!attempted || !qualified || !outcome || !model || !decisions ||
+      !typesafe_input || !typesafe_output || !fallback ||
+      !ParseRoutingCounter(value, "typesafe_latency_ms",
+                           &metrics->typesafe_latency_ms) ||
+      !ParseRoutingCounter(value, "model_input_tokens",
+                           &metrics->model_input_tokens) ||
+      !ParseRoutingCounter(value, "model_output_tokens",
+                           &metrics->model_output_tokens) ||
+      !ParseRoutingCounter(value, "model_latency_ms",
+                           &metrics->model_latency_ms)) {
+    return false;
+  }
+  metrics->typesafe_attempted = *attempted;
+  metrics->typesafe_qualified = *qualified;
+  metrics->typesafe_outcome = *outcome;
+  metrics->typesafe_model = *model;
+  metrics->typesafe_decisions = *decisions;
+  metrics->typesafe_input_tokens = *typesafe_input;
+  metrics->typesafe_output_tokens = *typesafe_output;
+  metrics->fallback_used = *fallback;
+  return true;
+}
+
+bool PopulateRoutingCostSnapshot(const base::DictValue& value,
+                                 AgentModelRoutingMetrics* metrics) {
+  const std::string* primary =
+      value.FindString("primary_model_cost_microusd_per_million_tokens");
+  const std::string* fallback =
+      value.FindString("fallback_model_cost_microusd_per_million_tokens");
+  if (!primary || !fallback) {
+    return false;
+  }
+  if (!primary->empty()) {
+    int64_t parsed = 0;
+    if (!base::StringToInt64(*primary, &parsed)) {
+      return false;
+    }
+    metrics->primary_model_cost_microusd_per_million_tokens = parsed;
+  }
+  if (!fallback->empty()) {
+    int64_t parsed = 0;
+    if (!base::StringToInt64(*fallback, &parsed)) {
+      return false;
+    }
+    metrics->fallback_model_cost_microusd_per_million_tokens = parsed;
+  }
+  return true;
+}
+
+std::optional<std::string> SerializeScreeningAttempts(
+    const AgentModelRoutingMetrics& metrics) {
+  base::ListValue attempts;
+  for (const auto& attempt : metrics.attempts) {
+    if (attempt.phase == "screening") {
+      attempts.Append(SerializeModelAttempt(attempt));
+    }
+  }
+  std::string json;
+  return base::JSONWriter::Write(attempts, &json)
+             ? std::make_optional(std::move(json))
+             : std::nullopt;
+}
+
 }  // namespace
 
 AgentTaskStore::AgentTaskStore(base::FilePath database_path, bool in_memory)
@@ -145,7 +255,8 @@ bool AgentTaskStore::Initialize() {
       !database_.Execute(kCreateTasksSql) ||
       !database_.Execute(kCreateActionsSql) ||
       !database_.Execute(kCreateMonitorsSql) ||
-      !database_.Execute(kCreatePlansSql)) {
+      !database_.Execute(kCreatePlansSql) ||
+      !database_.Execute(kCreateGoalRoutesSql)) {
     database_.Close();
     return false;
   }
@@ -202,6 +313,27 @@ bool AgentTaskStore::Initialize() {
     return false;
   }
   if (meta_table_.GetVersionNumber() == 7 &&
+      !meta_table_.SetVersionNumber(8)) {
+    database_.Close();
+    return false;
+  }
+  if (meta_table_.GetVersionNumber() == 8) {
+    if ((!database_.DoesColumnExist("agent_tasks", "model_routing_json") &&
+         !database_.Execute(
+             "ALTER TABLE agent_tasks ADD COLUMN model_routing_json TEXT NOT "
+             "NULL DEFAULT '{}'")) ||
+        !meta_table_.SetVersionNumber(kCurrentVersion) ||
+        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion)) {
+      database_.Close();
+      return false;
+    }
+  }
+  if (meta_table_.GetVersionNumber() == 9 &&
+      !meta_table_.SetVersionNumber(10)) {
+    database_.Close();
+    return false;
+  }
+  if (meta_table_.GetVersionNumber() == 10 &&
       (!meta_table_.SetVersionNumber(kCurrentVersion) ||
        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion))) {
     database_.Close();
@@ -242,6 +374,7 @@ std::optional<StoredAgentState> AgentTaskStore::InitializeAndLoad(
     }
   }
   state.monitors = LoadMonitors();
+  state.goal_routes = LoadGoalRouteObservations();
   return state;
 }
 
@@ -258,22 +391,78 @@ bool AgentTaskStore::SaveTask(const AgentTask& task,
       .tool_calls_used = task.tool_calls_used(),
       .model_calls_used = task.model_calls_used(),
       .network_requests_used = task.network_requests_used(),
+      .model_routing_metrics = task.model_routing_metrics(),
       .created_at = task.created_at(),
   };
   return SaveTaskRecord(std::move(record));
 }
 
 bool AgentTaskStore::SaveTaskRecord(AgentTaskStoreRecord record) {
+  return SaveTaskRecordInternal(std::move(record), std::nullopt);
+}
+
+bool AgentTaskStore::SaveTaskRecordAndBindGoalRoute(
+    AgentTaskStoreRecord record,
+    const std::string& route_id) {
+  if (!base::Uuid::ParseCaseInsensitive(route_id).is_valid()) {
+    return false;
+  }
+  return SaveTaskRecordInternal(std::move(record), route_id);
+}
+
+// Called only inside SaveTaskRecordInternal's transaction so validation,
+// task persistence and route binding either all commit or all roll back.
+bool AgentTaskStore::VerifyGoalRouteBinding(
+    const std::string& route_id,
+    const AgentModelRoutingMetrics& metrics) {
+  sql::Statement route(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT status,task_id,model_routing_json FROM agent_goal_routes "
+      "WHERE route_id=?"));
+  route.BindString(0, route_id);
+  if (!route.Step() ||
+      route.ColumnInt(0) != static_cast<int>(AgentGoalRouteStatus::kCompleted) ||
+      !route.ColumnString(1).empty()) {
+    return false;
+  }
+  const auto route_metrics =
+      DeserializeModelRoutingMetrics(route.ColumnString(2));
+  return route_metrics && SerializeScreeningAttempts(*route_metrics) ==
+                              SerializeScreeningAttempts(metrics);
+}
+
+bool AgentTaskStore::BindGoalRouteToTask(const std::string& route_id,
+                                       const std::string& task_id) {
+  sql::Statement bind(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "UPDATE agent_goal_routes SET task_id=?,updated_us=? WHERE "
+      "route_id=? AND task_id='' AND status=?"));
+  bind.BindString(0, task_id);
+  bind.BindInt64(1, SerializeTime(base::Time::Now()));
+  bind.BindString(2, route_id);
+  bind.BindInt(3, static_cast<int>(AgentGoalRouteStatus::kCompleted));
+  return bind.Run() && database_.GetLastChangeCount() == 1;
+}
+
+bool AgentTaskStore::SaveTaskRecordInternal(
+    AgentTaskStoreRecord record,
+    std::optional<std::string> route_id) {
   if (!initialized_ || record.task_id.empty() ||
       !IsSafeSummary(record.goal_summary)) {
     return false;
   }
   const std::string scope_json = SerializeScope(record.scope);
-  if (scope_json.empty()) {
+  const std::string metrics_json =
+      SerializeModelRoutingMetrics(record.model_routing_metrics);
+  if (scope_json.empty() || metrics_json.empty()) {
     return false;
   }
   sql::Transaction transaction(&database_);
   if (!transaction.Begin()) {
+    return false;
+  }
+  if (route_id &&
+      !VerifyGoalRouteBinding(*route_id, record.model_routing_metrics)) {
     return false;
   }
 
@@ -281,7 +470,8 @@ bool AgentTaskStore::SaveTaskRecord(AgentTaskStoreRecord record) {
       SQL_FROM_HERE,
       "UPDATE agent_tasks SET state=?,mode=?,goal_summary=?,scope_json=?,"
       "has_external_side_effect=?,tool_calls_used=?,model_calls_used=?,"
-      "network_requests_used=?,updated_us=? WHERE task_id=?"));
+      "network_requests_used=?,model_routing_json=?,updated_us=? WHERE "
+      "task_id=?"));
   update.BindInt(0, static_cast<int>(record.state));
   update.BindInt(1, static_cast<int>(record.mode));
   update.BindString(2, record.goal_summary);
@@ -290,33 +480,120 @@ bool AgentTaskStore::SaveTaskRecord(AgentTaskStoreRecord record) {
   update.BindInt(5, record.tool_calls_used);
   update.BindInt(6, record.model_calls_used);
   update.BindInt(7, record.network_requests_used);
-  update.BindInt64(8, SerializeTime(base::Time::Now()));
-  update.BindString(9, record.task_id);
+  update.BindString(8, metrics_json);
+  update.BindInt64(9, SerializeTime(base::Time::Now()));
+  update.BindString(10, record.task_id);
   if (!update.Run()) {
     return false;
   }
-  if (database_.GetLastChangeCount() == 1) {
-    return transaction.Commit();
+  if (database_.GetLastChangeCount() != 1) {
+    sql::Statement insert(database_.GetCachedStatement(
+        SQL_FROM_HERE,
+        "INSERT INTO agent_tasks(task_id,state,mode,goal_summary,scope_json,"
+        "has_external_side_effect,tool_calls_used,model_calls_used,"
+        "network_requests_used,model_routing_json,created_us,updated_us) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"));
+    insert.BindString(0, record.task_id);
+    insert.BindInt(1, static_cast<int>(record.state));
+    insert.BindInt(2, static_cast<int>(record.mode));
+    insert.BindString(3, record.goal_summary);
+    insert.BindString(4, scope_json);
+    insert.BindBool(5, record.has_external_side_effect);
+    insert.BindInt(6, record.tool_calls_used);
+    insert.BindInt(7, record.model_calls_used);
+    insert.BindInt(8, record.network_requests_used);
+    insert.BindString(9, metrics_json);
+    insert.BindInt64(10, SerializeTime(record.created_at));
+    insert.BindInt64(11, SerializeTime(base::Time::Now()));
+    if (!insert.Run()) {
+      return false;
+    }
   }
+  if (route_id && !BindGoalRouteToTask(*route_id, record.task_id)) {
+    return false;
+  }
+  return transaction.Commit();
+}
 
+bool AgentTaskStore::SaveGoalRouteObservation(
+    AgentGoalRouteObservation observation) {
+  if (!initialized_ || !observation.task_id.empty() ||
+      !IsValidGoalRouteObservation(observation)) {
+    return false;
+  }
+  const std::string metrics_json =
+      SerializeModelRoutingMetrics(observation.metrics);
+  if (metrics_json.empty()) {
+    return false;
+  }
+  sql::Transaction transaction(&database_);
+  if (!transaction.Begin()) {
+    return false;
+  }
+  // Chromium disables SQLite UPSERT. Keep insertion and refresh atomic while
+  // preserving the original creation time and any committed task binding.
   sql::Statement insert(database_.GetCachedStatement(
       SQL_FROM_HERE,
-      "INSERT INTO agent_tasks(task_id,state,mode,goal_summary,scope_json,"
-      "has_external_side_effect,tool_calls_used,model_calls_used,"
-      "network_requests_used,created_us,updated_us) "
-      "VALUES(?,?,?,?,?,?,?,?,?,?,?)"));
-  insert.BindString(0, record.task_id);
-  insert.BindInt(1, static_cast<int>(record.state));
-  insert.BindInt(2, static_cast<int>(record.mode));
-  insert.BindString(3, record.goal_summary);
-  insert.BindString(4, scope_json);
-  insert.BindBool(5, record.has_external_side_effect);
-  insert.BindInt(6, record.tool_calls_used);
-  insert.BindInt(7, record.model_calls_used);
-  insert.BindInt(8, record.network_requests_used);
-  insert.BindInt64(9, SerializeTime(record.created_at));
-  insert.BindInt64(10, SerializeTime(base::Time::Now()));
-  return insert.Run() && transaction.Commit();
+      "INSERT OR IGNORE INTO agent_goal_routes(route_id,task_id,status,"
+      "model_routing_json,created_us,updated_us) VALUES(?,?,?,?,?,?)"));
+  insert.BindString(0, observation.route_id);
+  insert.BindString(1, observation.task_id);
+  insert.BindInt(2, static_cast<int>(observation.status));
+  insert.BindString(3, metrics_json);
+  insert.BindInt64(4, SerializeTime(observation.created_at));
+  insert.BindInt64(5, SerializeTime(observation.updated_at));
+  if (!insert.Run()) {
+    return false;
+  }
+  sql::Statement update(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "UPDATE agent_goal_routes SET status=?,model_routing_json=?,updated_us=? "
+      "WHERE route_id=? AND task_id=''"));
+  update.BindInt(0, static_cast<int>(observation.status));
+  update.BindString(1, metrics_json);
+  update.BindInt64(2, SerializeTime(observation.updated_at));
+  update.BindString(3, observation.route_id);
+  if (!update.Run() || database_.GetLastChangeCount() != 1) {
+    return false;
+  }
+  return transaction.Commit();
+}
+
+std::vector<AgentGoalRouteObservation>
+AgentTaskStore::LoadGoalRouteObservations() {
+  std::vector<AgentGoalRouteObservation> observations;
+  if (!initialized_) {
+    return observations;
+  }
+  sql::Statement statement(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT route_id,task_id,status,model_routing_json,created_us,updated_us "
+      "FROM agent_goal_routes ORDER BY updated_us DESC LIMIT 1000"));
+  while (statement.Step()) {
+    const int status = statement.ColumnInt(2);
+    const auto metrics =
+        DeserializeModelRoutingMetrics(statement.ColumnString(3));
+    AgentGoalRouteObservation observation{
+        .route_id = statement.ColumnString(0),
+        .task_id = statement.ColumnString(1),
+        .status = static_cast<AgentGoalRouteStatus>(status),
+        .metrics = metrics.value_or(AgentModelRoutingMetrics()),
+        .created_at = DeserializeTime(statement.ColumnInt64(4)),
+        .updated_at = DeserializeTime(statement.ColumnInt64(5)),
+    };
+    if (!IsValidGoalRouteStatus(status) || !metrics ||
+        !IsValidGoalRouteObservation(observation)) {
+      observations.clear();
+      return observations;
+    }
+    observations.push_back(std::move(observation));
+  }
+  if (!statement.Succeeded()) {
+    observations.clear();
+  } else {
+    std::ranges::reverse(observations);
+  }
+  return observations;
 }
 
 bool AgentTaskStore::AppendActionSummary(const std::string& task_id,
@@ -352,7 +629,8 @@ std::vector<StoredAgentTask> AgentTaskStore::LoadUnfinishedTasks() {
       SQL_FROM_HERE,
       "SELECT task_id,state,mode,goal_summary,scope_json,"
       "has_external_side_effect,tool_calls_used,model_calls_used,"
-      "network_requests_used,created_us,updated_us FROM agent_tasks "
+      "network_requests_used,model_routing_json,created_us,updated_us FROM "
+      "agent_tasks "
       "WHERE state NOT IN (10,11,12,13) OR "
       "(state=10 AND EXISTS(SELECT 1 FROM agent_monitors "
       "WHERE agent_monitors.task_id=agent_tasks.task_id)) "
@@ -374,8 +652,15 @@ std::vector<StoredAgentTask> AgentTaskStore::LoadUnfinishedTasks() {
     task.tool_calls_used = statement.ColumnInt(6);
     task.model_calls_used = statement.ColumnInt(7);
     task.network_requests_used = statement.ColumnInt(8);
-    task.created_at = DeserializeTime(statement.ColumnInt64(9));
-    task.updated_at = DeserializeTime(statement.ColumnInt64(10));
+    const std::optional<AgentModelRoutingMetrics> metrics =
+        DeserializeModelRoutingMetrics(statement.ColumnString(9));
+    if (!metrics) {
+      tasks.clear();
+      return tasks;
+    }
+    task.model_routing_metrics = *metrics;
+    task.created_at = DeserializeTime(statement.ColumnInt64(10));
+    task.updated_at = DeserializeTime(statement.ColumnInt64(11));
     if (task.has_external_side_effect ||
         task.state == AgentTaskState::kAwaitingActionApproval ||
         task.state == AgentTaskState::kUserTakeover) {
@@ -590,11 +875,28 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
   const base::ListValue* data_classes = value.FindList("allowed_data_classes");
   const base::DictValue* budgets = value.FindDict("budgets");
   const base::DictValue* destination = value.FindDict("model_destination");
+  const base::DictValue* fallback_destination =
+      value.FindDict("model_fallback_destination");
   const base::Value* metadata_window = value.Find("tab_metadata_window_id");
-  if (value.size() != (metadata_window ? 7u : 6u) ||
+  const base::Value* selection_mode = value.Find("model_selection_mode");
+  const base::Value* catalog_revision = value.Find("model_catalog_revision");
+  const bool has_routing_binding = selection_mode || catalog_revision ||
+                                   fallback_destination;
+  const size_t expected_size = (metadata_window ? 7u : 6u) +
+                               (has_routing_binding ? 2u : 0u) +
+                               (fallback_destination ? 1u : 0u) +
+                               value.contains("model_generation_profile") +
+                               value.contains("fallback_generation_profile") +
+                               value.contains("model_token_prices") +
+                               value.contains("fallback_token_prices");
+  if (value.size() != expected_size ||
       (metadata_window && !metadata_window->is_int()) || !origins || !tab_ids ||
       !tools || !data_classes || !budgets || !destination ||
+      (has_routing_binding &&
+       (!selection_mode || !selection_mode->is_int() || !catalog_revision ||
+        !catalog_revision->is_int())) ||
       budgets->size() != 5u || destination->size() != 4u ||
+      (fallback_destination && fallback_destination->size() != 4u) ||
       origins->size() > 64u || tab_ids->size() > 20u || tools->size() > 128u ||
       data_classes->size() > 7u) {
     return std::nullopt;
@@ -665,7 +967,95 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
   scope.model_destination.provider = *provider;
   scope.model_destination.endpoint = *endpoint;
   scope.model_destination.model = *model;
+  if (has_routing_binding) {
+    const int mode = selection_mode->GetInt();
+    const int revision = catalog_revision->GetInt();
+    if (mode < static_cast<int>(AgentModelSelectionMode::kFixed) ||
+        mode > static_cast<int>(AgentModelSelectionMode::kLocalOnly) ||
+        revision < 0) {
+      return std::nullopt;
+    }
+    scope.model_selection_mode = static_cast<AgentModelSelectionMode>(mode);
+    scope.model_catalog_revision = revision;
+  }
+  if (fallback_destination) {
+    const std::optional<int> fallback_kind =
+        fallback_destination->FindInt("kind");
+    const std::string* fallback_provider =
+        fallback_destination->FindString("provider");
+    const std::string* fallback_endpoint =
+        fallback_destination->FindString("endpoint");
+    const std::string* fallback_model =
+        fallback_destination->FindString("model");
+    if (!fallback_kind ||
+        *fallback_kind <
+            static_cast<int>(AgentModelDestination::Kind::kOnDevice) ||
+        *fallback_kind >
+            static_cast<int>(AgentModelDestination::Kind::kCloud) ||
+        !fallback_provider || !fallback_endpoint || !fallback_model) {
+      return std::nullopt;
+    }
+    scope.model_fallback_destination = AgentModelDestination{
+        .kind = static_cast<AgentModelDestination::Kind>(*fallback_kind),
+        .provider = *fallback_provider,
+        .endpoint = *fallback_endpoint,
+        .model = *fallback_model};
+  }
+  if (!ReadGenerationProfile(value, "model_generation_profile",
+                             &scope.model_generation_profile) ||
+      !ReadGenerationProfile(value, "fallback_generation_profile",
+                             &scope.fallback_generation_profile) ||
+      !ReadTokenPrices(value, "model_token_prices",
+                       &scope.model_token_prices) ||
+      !ReadTokenPrices(value, "fallback_token_prices",
+                       &scope.fallback_token_prices)) {
+    return std::nullopt;
+  }
   return scope.IsValid() ? std::make_optional(std::move(scope)) : std::nullopt;
+}
+
+// static
+std::optional<AgentModelRoutingMetrics>
+AgentTaskStore::DeserializeModelRoutingMetrics(
+    std::string_view metrics_json) {
+  std::optional<base::DictValue> value =
+      base::JSONReader::ReadDict(metrics_json, base::JSON_PARSE_RFC);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (value->empty()) {
+    return AgentModelRoutingMetrics();
+  }
+  const bool has_cost_snapshot =
+      value->contains("primary_model_cost_microusd_per_million_tokens") ||
+      value->contains("fallback_model_cost_microusd_per_million_tokens");
+  const bool has_attempts = value->contains("attempts");
+  if (value->size() !=
+      (has_cost_snapshot ? 14u : 12u) + (has_attempts ? 2u : 0u)) {
+    return std::nullopt;
+  }
+  AgentModelRoutingMetrics metrics;
+  if (has_attempts) {
+    const auto* attempts = value->FindList("attempts");
+    const auto complete = value->FindBool("attempts_complete");
+    if (!attempts || attempts->size() > 1000 || !complete) {
+      return std::nullopt;
+    }
+    metrics.attempts_complete = *complete;
+    for (const auto& item : *attempts) {
+      auto attempt = ReadModelAttempt(item);
+      if (!attempt) {
+        return std::nullopt;
+      }
+      metrics.attempts.push_back(std::move(*attempt));
+    }
+  }
+  if (!PopulateRequiredRoutingMetrics(*value, &metrics) ||
+      (has_cost_snapshot && !PopulateRoutingCostSnapshot(*value, &metrics))) {
+    return std::nullopt;
+  }
+  return metrics.IsValid() ? std::make_optional(std::move(metrics))
+                           : std::nullopt;
 }
 
 bool AgentTaskStore::DeleteTask(const std::string& task_id) {
@@ -728,8 +1118,15 @@ bool AgentTaskStore::Prune(base::Time unfinished_before,
       "updated_us < ?) OR (state NOT IN (10,11,12,13) AND updated_us < ?)"));
   delete_tasks.BindInt64(0, SerializeTime(completed_before));
   delete_tasks.BindInt64(1, SerializeTime(unfinished_before));
+  sql::Statement delete_goal_routes(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "DELETE FROM agent_goal_routes WHERE (status IN (1,2) AND updated_us "
+      "< ?) OR (status=0 AND updated_us < ?)"));
+  delete_goal_routes.BindInt64(0, SerializeTime(completed_before));
+  delete_goal_routes.BindInt64(1, SerializeTime(unfinished_before));
   return delete_actions.Run() && delete_monitors.Run() && delete_plans.Run() &&
-         delete_tasks.Run() && transaction.Commit();
+         delete_tasks.Run() && delete_goal_routes.Run() &&
+         transaction.Commit();
 }
 
 // static
@@ -822,7 +1219,69 @@ std::string AgentTaskStore::SerializeScope(const AgentTaskScope& scope) {
   destination.Set("endpoint", scope.model_destination.endpoint);
   destination.Set("model", scope.model_destination.model);
   value.Set("model_destination", std::move(destination));
+  value.Set("model_selection_mode",
+            static_cast<int>(scope.model_selection_mode));
+  value.Set("model_catalog_revision", scope.model_catalog_revision);
+  value.Set("model_generation_profile",
+            SerializeGenerationProfile(scope.model_generation_profile));
+  value.Set("fallback_generation_profile",
+            SerializeGenerationProfile(scope.fallback_generation_profile));
+  value.Set("model_token_prices",
+            SerializeTokenPrices(scope.model_token_prices));
+  value.Set("fallback_token_prices",
+            SerializeTokenPrices(scope.fallback_token_prices));
+  if (scope.model_fallback_destination) {
+    base::DictValue fallback;
+    fallback.Set("kind",
+                 static_cast<int>(scope.model_fallback_destination->kind));
+    fallback.Set("provider", scope.model_fallback_destination->provider);
+    fallback.Set("endpoint", scope.model_fallback_destination->endpoint);
+    fallback.Set("model", scope.model_fallback_destination->model);
+    value.Set("model_fallback_destination", std::move(fallback));
+  }
 
+  std::string output;
+  return base::JSONWriter::Write(value, &output) ? output : std::string();
+}
+
+// static
+std::string AgentTaskStore::SerializeModelRoutingMetrics(
+    const AgentModelRoutingMetrics& metrics) {
+  if (!metrics.IsValid()) {
+    return std::string();
+  }
+  base::DictValue value;
+  base::ListValue attempts;
+  for (const auto& attempt : metrics.attempts) {
+    attempts.Append(SerializeModelAttempt(attempt));
+  }
+  value.Set("attempts", std::move(attempts));
+  value.Set("attempts_complete", metrics.attempts_complete);
+  value.Set("typesafe_attempted", metrics.typesafe_attempted);
+  value.Set("typesafe_qualified", metrics.typesafe_qualified);
+  value.Set("typesafe_outcome", metrics.typesafe_outcome);
+  value.Set("typesafe_model", metrics.typesafe_model);
+  value.Set("typesafe_decisions", metrics.typesafe_decisions);
+  value.Set("typesafe_input_tokens", metrics.typesafe_input_tokens);
+  value.Set("typesafe_output_tokens", metrics.typesafe_output_tokens);
+  value.Set("typesafe_latency_ms",
+            base::NumberToString(metrics.typesafe_latency_ms));
+  value.Set("fallback_used", metrics.fallback_used);
+  value.Set("primary_model_cost_microusd_per_million_tokens",
+            metrics.primary_model_cost_microusd_per_million_tokens
+                ? base::NumberToString(
+                      *metrics.primary_model_cost_microusd_per_million_tokens)
+                : std::string());
+  value.Set("fallback_model_cost_microusd_per_million_tokens",
+            metrics.fallback_model_cost_microusd_per_million_tokens
+                ? base::NumberToString(
+                      *metrics.fallback_model_cost_microusd_per_million_tokens)
+                : std::string());
+  value.Set("model_input_tokens",
+            base::NumberToString(metrics.model_input_tokens));
+  value.Set("model_output_tokens",
+            base::NumberToString(metrics.model_output_tokens));
+  value.Set("model_latency_ms", base::NumberToString(metrics.model_latency_ms));
   std::string output;
   return base::JSONWriter::Write(value, &output) ? output : std::string();
 }

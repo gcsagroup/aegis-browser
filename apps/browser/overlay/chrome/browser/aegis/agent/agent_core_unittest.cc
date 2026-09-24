@@ -242,6 +242,29 @@ TEST(AegisAgentTaskTest, PlanningCanOnlyNarrowScopeBeforeConsent) {
   EXPECT_FALSE(task.AdoptPlanScope(std::move(narrower)));
 }
 
+TEST(AegisAgentTaskTest, PlanningCannotAddOrReplaceAuthorizedFallback) {
+  AgentTaskScope maximum = TestScope();
+  maximum.model_selection_mode = AgentModelSelectionMode::kBalanced;
+  maximum.model_catalog_revision = 7;
+  maximum.model_fallback_destination = maximum.model_destination;
+  maximum.model_fallback_destination->model = "fixture-backup";
+  ASSERT_TRUE(maximum.IsValid());
+
+  AgentTask task("task-model-binding", "plan fixture", AgentMode::kAct,
+                 maximum);
+  ASSERT_TRUE(task.TransitionTo(AgentTaskState::kPlanning, "test"));
+  AgentTaskScope removed = maximum;
+  removed.model_fallback_destination.reset();
+  EXPECT_TRUE(task.AdoptPlanScope(removed));
+
+  AgentTaskScope replaced = maximum;
+  replaced.model_fallback_destination->model = "unapproved-backup";
+  EXPECT_FALSE(replaced.IsNoBroaderThan(maximum));
+  AgentTaskScope new_fallback = removed;
+  new_fallback.model_fallback_destination = maximum.model_fallback_destination;
+  EXPECT_FALSE(new_fallback.IsNoBroaderThan(removed));
+}
+
 TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
   AgentModelDestination destination;
   destination.provider = "aegis-local";
