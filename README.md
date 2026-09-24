@@ -79,13 +79,23 @@ The desktop browser is a Chromium fork; iOS is a separate native implementation.
 
 ## Contributing and documentation
 
-For a public contribution, fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser), make a focused change, run relevant checks, and open a pull request against upstream `main`. Include the scope, validation evidence and known limitations. Maintainers working in the GCSA Aegis development fork follow the separate [`develop` workflow](docs/development/ci.zh-CN.md) (Simplified Chinese).
+### Contributing
 
-- [Documentation index](docs/README.md) · [Roadmap](docs/roadmap.md) · [Architecture](docs/architecture.md)
-- [Browser engineering guide](apps/browser/README.md) · [iOS engineering guide](apps/ios/README.md)
-- [Research and limitations](docs/research-map.md) · [Historical audit records](docs/audit/README.md) · [Changelog](CHANGELOG.md)
+For a public contribution, fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser), make a focused change, run relevant checks, and open a pull request against upstream `main`. Include the scope, validation evidence and known limitations.
 
-GCSA-authored source uses [Apache-2.0](LICENSE). Chromium, libtorrent and other third-party components retain their own licenses. See the [third-party acknowledgements](THIRD_PARTY_NOTICES.md).
+Maintainers working in the GCSA Aegis development fork follow the separate [`develop` workflow](docs/development/ci.zh-CN.md) (Simplified Chinese).
+
+### Documentation
+
+- **Project:** [Documentation index](docs/README.md) · [Roadmap](docs/roadmap.md) · [Architecture](docs/architecture.md)
+- **Engineering:** [Browser engineering guide](apps/browser/README.md) · [iOS engineering guide](apps/ios/README.md)
+- **Reference:** [Research and limitations](docs/research-map.md) · [Historical audit records](docs/audit/README.md) · [Changelog](CHANGELOG.md)
+
+### License and acknowledgements
+
+GCSA-authored source uses [Apache-2.0](LICENSE). Chromium, libtorrent and other third-party components retain their own licenses.
+
+See the [third-party acknowledgements](THIRD_PARTY_NOTICES.md).
 
 <details>
 <summary>What the badges show</summary>
