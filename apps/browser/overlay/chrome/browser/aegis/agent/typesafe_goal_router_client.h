@@ -11,7 +11,8 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/aegis/agent/agent_planner.h"
+#include "base/time/time.h"
+#include "chrome/browser/aegis/agent/typesafe_goal_response_parser.h"
 
 namespace network {
 class SharedURLLoaderFactory;
@@ -33,7 +34,7 @@ class TypeSafeGoalRouterClient {
   using Callback = base::OnceCallback<void(
       bool ok,
       std::string error,
-      std::optional<AgentGoalRoute> route)>;
+      std::optional<TypeSafeGoalAnalysis> analysis)>;
 
   explicit TypeSafeGoalRouterClient(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
@@ -46,6 +47,7 @@ class TypeSafeGoalRouterClient {
                                  Callback callback);
   bool Cancel(const RequestId& request_id);
   bool busy() const { return loader_ != nullptr; }
+  base::TimeDelta last_latency() const { return last_latency_; }
 
  private:
   void OnComplete(RequestId request_id, std::optional<std::string> body);
@@ -54,6 +56,8 @@ class TypeSafeGoalRouterClient {
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
   std::optional<RequestId> request_id_;
   std::string original_goal_;
+  base::TimeTicks started_at_;
+  base::TimeDelta last_latency_;
   Callback callback_;
   base::WeakPtrFactory<TypeSafeGoalRouterClient> weak_ptr_factory_{this};
 };

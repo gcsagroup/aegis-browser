@@ -2,6 +2,7 @@
 
 #include "chrome/browser/aegis/aegis_service.h"
 
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -94,6 +95,57 @@ class CountingAegisServiceObserver : public AegisServiceObserver {
  private:
   int change_count_ = 0;
 };
+
+TEST_F(AegisServiceModelSettingsTest,
+       ModelCatalogPricesRetainInt64PrecisionAndReadLegacyIntegers) {
+  agent::AgentModelCatalogEntry entry{
+      .id = "price-fixture",
+      .destination = {.kind = agent::AgentModelDestination::Kind::kCloud,
+                      .provider = "openai",
+                      .endpoint = "https://api.openai.com/v1",
+                      .model = "gpt-4.1"},
+      .enabled = true,
+      .authorized = true};
+  std::string error;
+  for (const int64_t price : {int64_t{0},
+                              int64_t{std::numeric_limits<int>::max()},
+                              int64_t{std::numeric_limits<int>::max()} + 1,
+                              std::numeric_limits<int64_t>::max()}) {
+    entry.cost_microusd_per_million_tokens = price;
+    ASSERT_TRUE(service()->SetAgentModelRoutingSettings(
+        agent::AgentModelSelectionMode::kCost, {entry}, &error)) << error;
+    const auto restored = service()->AgentModelCatalog();
+    ASSERT_EQ(restored.size(), 1u);
+    EXPECT_EQ(restored[0].cost_microusd_per_million_tokens, price);
+    const auto& stored = profile()->GetPrefs()->GetList(prefs::kAgentModelCatalog);
+    ASSERT_EQ(stored.size(), 1u);
+    EXPECT_TRUE(stored[0].GetDict()
+                    .FindString("cost_microusd_per_million_tokens"));
+  }
+
+  auto legacy = profile()->GetPrefs()->GetList(prefs::kAgentModelCatalog).Clone();
+  legacy[0].GetDict().Set("cost_microusd_per_million_tokens", 2147483647);
+  profile()->GetPrefs()->SetList(prefs::kAgentModelCatalog, std::move(legacy));
+  const auto restored_legacy = service()->AgentModelCatalog();
+  ASSERT_EQ(restored_legacy.size(), 1u);
+  EXPECT_EQ(restored_legacy[0].cost_microusd_per_million_tokens, 2147483647);
+
+  for (const auto* invalid : {"", "-1", "9223372036854775808", "1.5", "invalid"}) {
+    auto stored = profile()->GetPrefs()->GetList(prefs::kAgentModelCatalog).Clone();
+    stored[0].GetDict().Set("cost_microusd_per_million_tokens", invalid);
+    profile()->GetPrefs()->SetList(prefs::kAgentModelCatalog, std::move(stored));
+    EXPECT_TRUE(service()->AgentModelCatalog().empty()) << invalid;
+  }
+  entry.cost_microusd_per_million_tokens = -1;
+  EXPECT_FALSE(service()->SetAgentModelRoutingSettings(
+      agent::AgentModelSelectionMode::kCost, {entry}, &error));
+  entry.cost_microusd_per_million_tokens.reset();
+  ASSERT_TRUE(service()->SetAgentModelRoutingSettings(
+      agent::AgentModelSelectionMode::kCost, {entry}, &error)) << error;
+  const auto unknown = service()->AgentModelCatalog();
+  ASSERT_EQ(unknown.size(), 1u);
+  EXPECT_FALSE(unknown[0].cost_microusd_per_million_tokens);
+}
 
 TEST_F(AegisServiceModelSettingsTest,
        NewProfileDefaultsToOpenAIWithoutMigration) {

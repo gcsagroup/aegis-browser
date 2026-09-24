@@ -579,6 +579,47 @@ summary {
   padding: 4px 8px;
 }
 
+.model-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.model-capabilities label {
+  align-items: center;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.model-pool {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.model-pool li {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: 1fr auto;
+  padding: 8px 10px;
+}
+
+.model-pool small {
+  color: var(--muted);
+  grid-column: 1;
+}
+
+.model-pool button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
 .error {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--danger) 42%, transparent);

@@ -159,7 +159,6 @@ if (!is_android && !is_chromeos) {
     # 只链接 HTTP 夹具，避免更新模块测试引入整个
     # network_service。
     sources = [
-      "aegis_settings_safety_unittest.cc",
       "//chrome/browser/profile_resetter/reset_report_uploader.cc",
       "//chrome/browser/profile_resetter/reset_report_uploader.h",
       "//services/network/test/test_url_loader_factory.cc",
@@ -167,21 +166,27 @@ if (!is_android && !is_chromeos) {
       "//services/network/test/test_utils.cc",
       "//services/network/test/test_utils.h",
       "aegis_github_update_unittest.cc",
+      "aegis_settings_safety_unittest.cc",
     ]
     deps = [
-      "//chrome/browser/profile_resetter:profile_reset_report_proto",
-      "//components/keyed_service/core",
-      "//google_apis",
       ":aegis_github_update",
       "//base/test:run_all_unittests",
       "//base/test:test_support",
+      "//chrome/browser/profile_resetter:profile_reset_report_proto",
+      "//components/keyed_service/core",
       "//crypto",
+      "//google_apis",
       "//mojo/core/embedder",
       "//mojo/public/cpp/bindings",
       "//net",
       "//services/network/public/cpp",
       "//services/network/public/mojom",
       "//testing/gtest",
+    ]
+
+    deps += [
+      "//build:branding_buildflags",
+      "//content/public/browser",
     ]
   }
 }

@@ -35,6 +35,7 @@ struct StoredAgentTask {
   int tool_calls_used = 0;
   int model_calls_used = 0;
   int network_requests_used = 0;
+  AgentModelRoutingMetrics model_routing_metrics;
   base::Time created_at;
   base::Time updated_at;
   RecoveryDisposition recovery = RecoveryDisposition::kRequireFreshConsent;
@@ -59,6 +60,7 @@ struct AgentTaskStoreRecord {
   int tool_calls_used = 0;
   int model_calls_used = 0;
   int network_requests_used = 0;
+  AgentModelRoutingMetrics model_routing_metrics;
   base::Time created_at;
 };
 
@@ -67,10 +69,28 @@ struct StoredAgentPlanEntry {
   StoredAgentPlan stored_plan;
 };
 
+enum class AgentGoalRouteStatus {
+  kPending = 0,
+  kCompleted = 1,
+  kCancelled = 2,
+};
+
+// Redacted accounting for goal screening that exists before a task. It never
+// stores the goal, prompt, provider endpoint, credentials, or model response.
+struct AgentGoalRouteObservation {
+  std::string route_id;
+  std::string task_id;
+  AgentGoalRouteStatus status = AgentGoalRouteStatus::kPending;
+  AgentModelRoutingMetrics metrics;
+  base::Time created_at;
+  base::Time updated_at;
+};
+
 struct StoredAgentState {
   std::vector<StoredAgentTask> tasks;
   std::vector<StoredAgentPlanEntry> plans;
   std::vector<AgentMonitorDefinition> monitors;
+  std::vector<AgentGoalRouteObservation> goal_routes;
 };
 
 // Profile-local storage for resumable metadata and redacted action summaries.
@@ -91,6 +111,10 @@ class AgentTaskStore {
                 std::string goal_summary,
                 bool has_external_side_effect);
   bool SaveTaskRecord(AgentTaskStoreRecord record);
+  bool SaveTaskRecordAndBindGoalRoute(AgentTaskStoreRecord record,
+                                      const std::string& route_id);
+  bool SaveGoalRouteObservation(AgentGoalRouteObservation observation);
+  std::vector<AgentGoalRouteObservation> LoadGoalRouteObservations();
   bool AppendActionSummary(const std::string& task_id,
                            const std::string& action_id,
                            const std::string& tool_name,
@@ -115,6 +139,11 @@ class AgentTaskStore {
 
   static std::optional<AgentTaskScope> DeserializeScope(
       std::string_view scope_json);
+  static std::optional<AgentModelRoutingMetrics>
+  DeserializeModelRoutingMetrics(std::string_view metrics_json);
+  // Redacted allowlisted observations, also exposed for local evaluation.
+  static std::string SerializeModelRoutingMetrics(
+      const AgentModelRoutingMetrics& metrics);
   // Goals and persisted summaries share the same secret/control-character
   // boundary. Callers must reject unsafe values before queueing asynchronous
   // storage work so an invalid task is never exposed to the UI.
@@ -127,6 +156,12 @@ class AgentTaskStore {
   bool IsInitializedForTesting() const { return initialized_; }
 
  private:
+  bool VerifyGoalRouteBinding(const std::string& route_id,
+                              const AgentModelRoutingMetrics& metrics);
+  bool BindGoalRouteToTask(const std::string& route_id,
+                          const std::string& task_id);
+  bool SaveTaskRecordInternal(AgentTaskStoreRecord record,
+                              std::optional<std::string> route_id);
   static std::string SerializeScope(const AgentTaskScope& scope);
   static int64_t SerializeTime(base::Time time);
   static base::Time DeserializeTime(int64_t value);

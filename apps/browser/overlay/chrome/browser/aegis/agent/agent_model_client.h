@@ -49,6 +49,9 @@ class AgentModelClient {
                                  Callback done);
   bool Cancel(RequestId request_id);
   bool busy() const { return loader_ != nullptr; }
+  base::WeakPtr<AgentModelClient> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
 
  private:
   void OnComplete(Callback done, std::optional<std::string> body);
