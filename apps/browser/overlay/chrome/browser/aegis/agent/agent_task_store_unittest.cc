@@ -123,10 +123,6 @@ TEST(AegisAgentTaskStoreTest, InMemoryStoreNeverCreatesOrRecoversDiskState) {
                    StoreTestScope());
     ASSERT_TRUE(store.SaveTask(task, "Ephemeral task", false));
     EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
-    // A late screening result must not erase a committed task binding.
-    second.status = AgentGoalRouteStatus::kCancelled;
-    second.updated_at = base::Time::Now();
-    EXPECT_FALSE(store.SaveGoalRouteObservation(second));
     EXPECT_FALSE(base::PathExists(path));
   }
 
@@ -325,6 +321,10 @@ TEST(AegisAgentTaskStoreTest,
          .created_at = base::Time::Now()},
         second.route_id));
     EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
+    // A late screening result must not erase a committed task binding.
+    second.status = AgentGoalRouteStatus::kCancelled;
+    second.updated_at = base::Time::Now();
+    EXPECT_FALSE(store.SaveGoalRouteObservation(second));
   }
 
   AgentTaskStore restarted(path);
