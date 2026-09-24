@@ -123,6 +123,10 @@ TEST(AegisAgentTaskStoreTest, InMemoryStoreNeverCreatesOrRecoversDiskState) {
                    StoreTestScope());
     ASSERT_TRUE(store.SaveTask(task, "Ephemeral task", false));
     EXPECT_EQ(store.LoadUnfinishedTasks().size(), 1u);
+    // A late screening result must not erase a committed task binding.
+    second.status = AgentGoalRouteStatus::kCancelled;
+    second.updated_at = base::Time::Now();
+    EXPECT_FALSE(store.SaveGoalRouteObservation(second));
     EXPECT_FALSE(base::PathExists(path));
   }
 
@@ -271,6 +275,7 @@ TEST(AegisAgentTaskStoreTest,
 
     first.status = AgentGoalRouteStatus::kCancelled;
     first.metrics.attempts_complete = false;
+    first.created_at = created + base::Seconds(30);
     first.updated_at = base::Time::Now();
     ASSERT_TRUE(store.SaveGoalRouteObservation(first));
 
@@ -329,6 +334,8 @@ TEST(AegisAgentTaskStoreTest,
   EXPECT_EQ(observations[0].route_id,
             "11111111-1111-4111-8111-111111111111");
   EXPECT_EQ(observations[0].status, AgentGoalRouteStatus::kCancelled);
+  EXPECT_EQ(observations[0].created_at, created);
+  EXPECT_GT(observations[0].updated_at, created);
   ASSERT_EQ(observations[0].metrics.attempts.size(), 1u);
   EXPECT_FALSE(observations[0].metrics.attempts[0].completed);
   EXPECT_FALSE(observations[0].metrics.attempts[0].input_tokens);
@@ -336,6 +343,7 @@ TEST(AegisAgentTaskStoreTest,
             "22222222-2222-4222-8222-222222222222");
   EXPECT_EQ(observations[1].task_id,
             "33333333-3333-4333-8333-333333333333");
+  EXPECT_EQ(observations[1].status, AgentGoalRouteStatus::kCompleted);
   ASSERT_EQ(observations[1].metrics.attempts.size(), 1u);
   EXPECT_TRUE(observations[1].metrics.attempts[0].completed);
   EXPECT_FALSE(observations[1].metrics.attempts[0].input_tokens);
@@ -624,12 +632,14 @@ TEST(AegisAgentTaskStoreTest,
     ASSERT_TRUE(meta.SetVersionNumber(8));
     ASSERT_TRUE(meta.SetCompatibleVersionNumber(8));
   }
-  AgentTaskStore migrated(path);
-  ASSERT_TRUE(migrated.Initialize());
-  const auto tasks = migrated.LoadUnfinishedTasks();
-  ASSERT_EQ(tasks.size(), 1u);
-  EXPECT_EQ(tasks[0].task_id, "version-eight-task");
-  EXPECT_FALSE(tasks[0].model_routing_metrics.typesafe_attempted);
+  {
+    AgentTaskStore migrated(path);
+    ASSERT_TRUE(migrated.Initialize());
+    const auto tasks = migrated.LoadUnfinishedTasks();
+    ASSERT_EQ(tasks.size(), 1u);
+    EXPECT_EQ(tasks[0].task_id, "version-eight-task");
+    EXPECT_FALSE(tasks[0].model_routing_metrics.typesafe_attempted);
+  }
   sql::Database inspected("AegisAgent");
   ASSERT_TRUE(inspected.Open(path));
   EXPECT_TRUE(inspected.DoesColumnExist("agent_tasks", "model_routing_json"));
