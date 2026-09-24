@@ -1233,7 +1233,10 @@ void AegisAgentService::CancelPendingGoalRouting() {
   }
   if (pending_goal_route_callback_) {
     GoalRouteCallback callback = std::move(pending_goal_route_callback_);
-    std::move(callback).Run(false, "goal routing was cancelled", std::nullopt);
+    std::move(callback).Run(false,
+                            storage_ready_ ? "goal routing was cancelled"
+                                           : "Agent task storage is unavailable",
+                            std::nullopt);
   }
 }
 
