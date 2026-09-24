@@ -81,7 +81,6 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   static void MaybeProxyDocumentSubresource(
       Profile* profile,
       content::RenderFrameHost* frame,
-      const GURL& document_url,
       std::optional<int64_t> navigation_id,
       network::URLLoaderFactoryBuilder& factory_builder);
   static void MaybeProxyWorkerMainResource(
