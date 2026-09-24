@@ -1,0 +1,228 @@
+From 486b639d3493fa0f99ded1aa2d1d707178fdcf76 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 21:18:18 +0800
+Subject: [PATCH] Fix Access URLLoader relay completion ordering and browser
+ fixtures
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  1 +
+ ...proxying_url_loader_factory_browsertest.cc | 79 ++++++++++++++++++-
+ .../access_proxying_url_tracked_request.cc    | 22 +++++-
+ .../access_proxying_url_tracked_request.h     |  3 +
+ 4 files changed, 102 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 4cb2d4d..9ca7a60 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -320,6 +320,7 @@ if (!is_android) {
+       "//content/test:test_support",
+       "//mojo/public/cpp/bindings",
+       "//net:test_support",
++      "//services/network:test_support",
+       "//services/network/public/cpp",
+       "//testing/gtest",
+       "//ui/message_center/public/cpp",
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 8a35dd6..5bf6a77 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -70,6 +70,7 @@
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
++#include "services/network/test/test_url_loader_factory.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+@@ -557,7 +558,8 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+             "window.aegisFetchState = 'pending';"
+             "fetch($1, {mode: 'no-cors'})"
+             ".then(() => { window.aegisFetchState = 'resolved'; })"
+-            ".catch(() => { window.aegisFetchState = 'blocked'; });",
++            ".catch(() => { window.aegisFetchState = 'blocked'; });"
++            "true;",
+             url.spec())));
+   }
+ 
+@@ -623,7 +625,9 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->method = "GET";
+     request->url = url;
+-    request->destination = network::mojom::RequestDestination::kDocument;
++    request->load_flags = net::LOAD_PREFETCH;
++    request->mode = network::mojom::RequestMode::kNoCors;
++    request->destination = network::mojom::RequestDestination::kEmpty;
+     auto loader = network::SimpleURLLoader::Create(
+         std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
+     base::test::TestFuture<std::optional<std::string>> result;
+@@ -1605,6 +1609,77 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                      /*proxy_delta=*/1u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       TargetLoaderDisconnectWaitsForClientCompletion) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  auto* dispatch_state =
++      AccessRequestDispatchState::GetOrCreate(browser()->profile());
++  ASSERT_NE(dispatch_state, nullptr);
++  const size_t ownership_before = dispatch_state->ownership().size();
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
++  network::URLLoaderFactoryBuilder builder;
++  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
++      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      worker_page_url(), std::nullopt, builder);
++  ASSERT_EQ(builder.num_interceptors(), 1u);
++  scoped_refptr<network::SharedURLLoaderFactory> factory =
++      std::move(builder).Finish(terminal.GetSafeWeakWrapper());
++
++  const GURL completed_url = target_url().Resolve("/relay-complete");
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = completed_url;
++  request->request_initiator = url::Origin::Create(worker_page_url());
++  auto loader = network::SimpleURLLoader::Create(
++      std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++  base::test::TestFuture<std::optional<std::string>> result;
++  loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++      factory.get(), result.GetCallback());
++  terminal.WaitForRequest(completed_url);
++  ASSERT_EQ(terminal.NumPending(), 1);
++  ASSERT_EQ(dispatch_state->ownership().size(), ownership_before + 1u);
++  ASSERT_NE(terminal.pending_requests()->front().test_url_loader, nullptr);
++
++  // The downstream control pipe closes before its independent client pipe
++  // delivers OnComplete. This order must not turn a successful response into
++  // a connection error or remove its ownership record prematurely.
++  terminal.pending_requests()->front().test_url_loader.reset();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(result.IsReady());
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before + 1u);
++  ASSERT_TRUE(terminal.SimulateResponseForPendingRequest(
++      completed_url.spec(), "relay-ok"));
++  ASSERT_TRUE(result.Wait());
++  EXPECT_EQ(result.Get(), std::optional<std::string>("relay-ok"));
++  EXPECT_EQ(loader->NetError(), net::OK);
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before);
++
++  // A real downstream client disconnect without OnComplete still cleans up.
++  const GURL disconnected_url = target_url().Resolve("/relay-disconnect");
++  auto disconnected_request = std::make_unique<network::ResourceRequest>();
++  disconnected_request->url = disconnected_url;
++  disconnected_request->request_initiator =
++      url::Origin::Create(worker_page_url());
++  auto disconnected_loader = network::SimpleURLLoader::Create(
++      std::move(disconnected_request), TRAFFIC_ANNOTATION_FOR_TESTS);
++  base::test::TestFuture<std::optional<std::string>> disconnected_result;
++  disconnected_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++      factory.get(), disconnected_result.GetCallback());
++  terminal.WaitForRequest(disconnected_url);
++  ASSERT_EQ(terminal.NumPending(), 1);
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before + 1u);
++  terminal.pending_requests()->front().test_url_loader.reset();
++  terminal.pending_requests()->front().client.reset();
++  ASSERT_TRUE(disconnected_result.Wait());
++  EXPECT_NE(disconnected_loader->NetError(), net::OK);
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        PrefetchWithoutEndpointFailsClosed) {
+   size_t origin_before = 0;
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+index c8a66d8..dfe17f8 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+@@ -7,6 +7,7 @@
+ #include <utility>
+ 
+ #include "base/functional/bind.h"
++#include "base/time/time.h"
+ #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+ #include "content/public/browser/browser_thread.h"
+@@ -19,6 +20,8 @@
+ namespace aegis::access {
+ namespace {
+ 
++constexpr base::TimeDelta kClientCompletionTimeout = base::Seconds(30);
++
+ class TrackedRequestTerminationHandle final
+     : public aegis_access::RequestTerminationHandle {
+  public:
+@@ -93,7 +96,7 @@ void AccessProxyingURLTrackedRequest::Start(
+       target_loader_.BindNewPipeAndPassReceiver(), request_id, options, request,
+       std::move(proxy_client), traffic_annotation);
+   target_loader_.set_disconnect_handler(base::BindOnce(
+-      &AccessProxyingURLTrackedRequest::OnBindingError,
++      &AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected,
+       weak_factory_.GetWeakPtr()));
+ }
+ 
+@@ -255,6 +258,22 @@ void AccessProxyingURLTrackedRequest::OnBindingError() {
+   }
+ }
+ 
++void AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected() {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (finished_) {
++    return;
++  }
++  // URLLoader and URLLoaderClient use separate Mojo pipes. The target can
++  // close its control pipe after HTTP 200 but before OnComplete is delivered.
++  // Keep the relay alive for the client terminal event, with a bound for a
++  // target that leaves the client pipe open indefinitely.
++  target_loader_.reset();
++  client_completion_watchdog_.Start(
++      FROM_HERE, kClientCompletionTimeout,
++      base::BindOnce(&AccessProxyingURLTrackedRequest::FailClosed,
++                     weak_factory_.GetWeakPtr(), /*complete_registry=*/true));
++}
++
+ void AccessProxyingURLTrackedRequest::FailClosed(bool complete_registry) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   if (finished_) {
+@@ -274,6 +293,7 @@ void AccessProxyingURLTrackedRequest::Finish(bool complete_registry) {
+     return;
+   }
+   finished_ = true;
++  client_completion_watchdog_.Stop();
+   if (complete_registry && ownership_registered_) {
+     dispatch_state_->ownership().Complete(
+         ownership_record_.request_id, ownership_record_.owner,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+index 2e2a4ba..1915296 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+@@ -8,6 +8,7 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/timer/timer.h"
+ #include "components/aegis_access/request_ownership_registry.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+@@ -81,6 +82,7 @@ class AccessProxyingURLTrackedRequest final
+  private:
+   bool RebindOwnershipForRedirect(const GURL& follow_url);
+   void OnBindingError();
++  void OnTargetLoaderDisconnected();
+   void FailClosed(bool complete_registry);
+   void Finish(bool complete_registry);
+ 
+@@ -95,6 +97,7 @@ class AccessProxyingURLTrackedRequest final
+   mojo::Remote<network::mojom::URLLoader> target_loader_;
+   mojo::Receiver<network::mojom::URLLoaderClient> client_receiver_{this};
+   mojo::Remote<network::mojom::URLLoaderClient> target_client_;
++  base::OneShotTimer client_completion_watchdog_;
+   base::WeakPtrFactory<AccessProxyingURLTrackedRequest> weak_factory_{this};
+ };
+ 
+-- 
+2.54.0 (Apple Git-157)
+

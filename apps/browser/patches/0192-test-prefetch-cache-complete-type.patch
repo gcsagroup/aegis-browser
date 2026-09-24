@@ -1,0 +1,25 @@
+From bb1ddfb93e8ae7a349ee9a465397e96b7fc16015 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 22:27:01 +0800
+Subject: [PATCH] Include signed exchange cache definition in prefetch browser
+ test
+
+---
+ content/browser/loader/prefetch_browsertest.cc | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 098e372..2c0f8d6 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -26,6 +26,7 @@
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
+ #include "content/browser/storage_partition_impl.h"
+ #include "content/browser/web_package/mock_signed_exchange_handler.h"
++#include "content/browser/web_package/prefetched_signed_exchange_cache.h"
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+-- 
+2.54.0 (Apple Git-157)
+

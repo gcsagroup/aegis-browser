@@ -1,0 +1,242 @@
+From bc027685dd14de51838b3b2c5d4176b59c725a51 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 23:08:25 +0800
+Subject: [PATCH] Fix prefetch browser fixture completion and setup
+
+---
+ .../browser/loader/prefetch_browsertest.cc    | 113 +++++++++---------
+ 1 file changed, 56 insertions(+), 57 deletions(-)
+
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 2c0f8d6..154f014 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -56,7 +56,9 @@
+ #include "services/network/public/cpp/features.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/mojom/url_loader_factory.mojom.h"
+ #include "services/network/test/test_url_loader_factory.h"
++#include "services/network/test/test_url_loader_client.h"
+ #include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "url/origin.h"
+@@ -104,20 +106,19 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+ 
+   auto start_prefetch = [&](network::mojom::URLLoaderFactory* factory,
+                             const GURL& url,
+-                            base::test::TestFuture<std::optional<std::string>>&
+-                                result) {
+-    auto request = std::make_unique<network::ResourceRequest>();
+-    request->url = url;
+-    request->load_flags = net::LOAD_PREFETCH;
+-    request->mode = network::mojom::RequestMode::kNoCors;
+-    request->destination = network::mojom::RequestDestination::kEmpty;
+-    request->request_initiator =
++                            network::TestURLLoaderClient* client,
++                            mojo::Remote<network::mojom::URLLoader>* loader) {
++    network::ResourceRequest request;
++    request.url = url;
++    request.load_flags = net::LOAD_PREFETCH;
++    request.mode = network::mojom::RequestMode::kNoCors;
++    request.destination = network::mojom::RequestDestination::kEmpty;
++    request.request_initiator =
+         url::Origin::Create(embedded_test_server()->GetURL("/first"));
+-    auto loader = network::SimpleURLLoader::Create(
+-        std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
+-    loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+-        factory, result.GetCallback());
+-    return loader;
++    factory->CreateLoaderAndStart(
++        loader->BindNewPipeAndPassReceiver(), 0,
++        network::mojom::kURLLoadOptionNone, request, client->CreateRemote(),
++        net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+   };
+ 
+   mojo::Remote<network::mojom::URLLoaderFactory> committed_factory;
+@@ -126,17 +127,19 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       frame->GetFrameTreeNodeId(),
+       partition->GetURLLoaderFactoryForBrowserProcess(), frame->GetWeakPtr(),
+       nullptr);
+-  base::test::TestFuture<std::optional<std::string>> committed_result;
+-  auto committed_loader = start_prefetch(
+-      committed_factory.get(),
+-      embedded_test_server()->GetURL("/pending-prefetch-committed"),
+-      committed_result);
++  network::TestURLLoaderClient committed_client;
++  mojo::Remote<network::mojom::URLLoader> committed_loader;
++  start_prefetch(committed_factory.get(),
++                 embedded_test_server()->GetURL("/pending-prefetch-committed"),
++                 &committed_client, &committed_loader);
+   committed_factory.FlushForTesting();
+-  EXPECT_FALSE(committed_result.IsReady());
++  EXPECT_FALSE(committed_client.has_received_completion());
+   EXPECT_EQ(committed_requests->GetRequestCount(), 0);
+   committed_context->OnDidCommitNavigation(frame->GetWeakDocumentPtr());
+-  ASSERT_TRUE(committed_result.Wait());
+-  EXPECT_EQ(committed_loader->NetError(), net::OK);
++  committed_client.RunUntilComplete();
++  EXPECT_EQ(committed_client.completion_status().error_code, net::OK);
++  EXPECT_TRUE(committed_client.has_received_response());
++  EXPECT_EQ(committed_client.completion_status().decoded_body_length, 2);
+   EXPECT_EQ(committed_requests->GetRequestCount(), 1);
+ 
+   mojo::Remote<network::mojom::URLLoaderFactory> cancelled_factory;
+@@ -145,36 +148,35 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       frame->GetFrameTreeNodeId(),
+       partition->GetURLLoaderFactoryForBrowserProcess(), frame->GetWeakPtr(),
+       nullptr);
+-  base::test::TestFuture<std::optional<std::string>> cancelled_result;
+-  auto cancelled_loader = start_prefetch(
+-      cancelled_factory.get(),
+-      embedded_test_server()->GetURL("/pending-prefetch-cancelled"),
+-      cancelled_result);
++  network::TestURLLoaderClient cancelled_client;
++  mojo::Remote<network::mojom::URLLoader> cancelled_loader;
++  start_prefetch(cancelled_factory.get(),
++                 embedded_test_server()->GetURL("/pending-prefetch-cancelled"),
++                 &cancelled_client, &cancelled_loader);
+   cancelled_factory.FlushForTesting();
+-  EXPECT_FALSE(cancelled_result.IsReady());
++  EXPECT_FALSE(cancelled_client.has_received_completion());
+   EXPECT_EQ(cancelled_requests->GetRequestCount(), 0);
+   cancelled_context->OnNavigationCancelled();
+-  ASSERT_TRUE(cancelled_result.Wait());
+-  EXPECT_EQ(cancelled_loader->NetError(), net::ERR_ABORTED);
++  cancelled_client.RunUntilComplete();
++  EXPECT_EQ(cancelled_client.completion_status().error_code, net::ERR_ABORTED);
++  EXPECT_FALSE(cancelled_client.has_received_response());
+   EXPECT_EQ(cancelled_requests->GetRequestCount(), 0);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+                        FileDocumentPrefetchUsesSchemeFactory) {
++  base::ScopedAllowBlockingForTesting allow_blocking;
+   base::ScopedTempDir temp_dir;
+-  {
+-    base::ScopedAllowBlockingForTesting allow_blocking;
+-    ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+-    ASSERT_TRUE(base::WriteFile(
+-        temp_dir.GetPath().AppendASCII("page.html"),
+-        "<!doctype html><script>window.prefetchDone = new Promise(resolve => "
+-        "window.resolvePrefetch = resolve)</script>"
+-        "<link rel='prefetch' as='document' href='resource.txt' "
+-        "onload=\"resolvePrefetch('loaded')\" "
+-        "onerror=\"resolvePrefetch('error')\">"));
+-    ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("resource.txt"),
+-                                "file-prefetch-ok"));
+-  }
++  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
++  ASSERT_TRUE(base::WriteFile(
++      temp_dir.GetPath().AppendASCII("page.html"),
++      "<!doctype html><script>window.prefetchDone = new Promise(resolve => "
++      "window.resolvePrefetch = resolve)</script>"
++      "<link rel='prefetch' href='resource.txt' "
++      "onload=\"resolvePrefetch('loaded')\" "
++      "onerror=\"resolvePrefetch('error')\">"));
++  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("resource.txt"),
++                              ""));
+ 
+   ASSERT_TRUE(NavigateToURL(
+       shell(), net::FilePathToFileURL(temp_dir.GetPath().AppendASCII("page.html"))));
+@@ -190,7 +192,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       [](const net::test_server::HttpRequest&)
+           -> std::unique_ptr<net::test_server::HttpResponse> {
+         auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+-        response->set_content("network-response");
++        response->set_content("");
+         return response;
+       }));
+   auto healthy_requests = RequestCounter::CreateAndMonitor(
+@@ -233,7 +235,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   EXPECT_EQ(load_prefetch(
+                 healthy_factory.get(),
+                 embedded_test_server()->GetURL("/non-http-default-health")),
+-            "network-response");
++            "");
+   EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
+ 
+   ASSERT_TRUE(NavigateToURL(shell(), GURL("data:text/html,restricted-document")));
+@@ -242,7 +244,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   const GURL restricted_url =
+       embedded_test_server()->GetURL("/non-http-default-restricted");
+   network::TestURLLoaderFactory restricted_default;
+-  restricted_default.AddResponse(restricted_url.spec(), "restricted-response");
++  restricted_default.AddResponse(restricted_url.spec(), "");
+   mojo::Receiver<network::mojom::URLLoaderFactory> restricted_receiver(
+       &restricted_default);
+   auto restricted_bundle =
+@@ -257,7 +259,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       nullptr, std::move(restricted_bundle));
+   restricted_context->OnDidCommitNavigation(frame->GetWeakDocumentPtr());
+   EXPECT_EQ(load_prefetch(restricted_factory.get(), restricted_url),
+-            "restricted-response");
++            "");
+   EXPECT_EQ(restricted_default.total_requests(), 1u);
+   EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
+   EXPECT_EQ(restricted_requests->GetRequestCount(), 0);
+@@ -269,7 +271,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       [](const net::test_server::HttpRequest&)
+           -> std::unique_ptr<net::test_server::HttpResponse> {
+         auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+-        response->set_content("network-response");
++        response->set_content("");
+         return response;
+       }));
+   auto healthy_requests = RequestCounter::CreateAndMonitor(
+@@ -281,7 +283,6 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   auto recursive_requests = RequestCounter::CreateAndMonitor(
+       embedded_test_server(), "/mhtml-prefetch-recursive");
+   ASSERT_TRUE(embedded_test_server()->Start());
+-  host_resolver()->AddRule("example.com", "127.0.0.1");
+ 
+   auto* partition = static_cast<StoragePartitionImpl*>(
+       shell()->web_contents()->GetBrowserContext()->GetDefaultStoragePartition());
+@@ -323,7 +324,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+                               "/mhtml-prefetch-health"),
+                           healthy_page, /*additional_load_flags=*/0,
+                           /*recursive=*/false),
+-            (std::pair(net::OK, std::string("network-response"))));
++            (std::pair(net::OK, std::string(""))));
+   EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
+ 
+   // The archive gives its iframe an HTTP committed URL but a NotImplemented
+@@ -343,13 +344,11 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       "Content-Location: http://example.com/found.html\n\nchild\n"
+       "--MHTML_BOUNDARY--";
+   base::ReplaceChars(archive, "\n", "\r\n", &archive);
++  base::ScopedAllowBlockingForTesting allow_blocking;
+   base::ScopedTempDir temp_dir;
+-  {
+-    base::ScopedAllowBlockingForTesting allow_blocking;
+-    ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+-    ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("page.mhtml"),
+-                                archive));
+-  }
++  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
++  ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("page.mhtml"),
++                              archive));
+   ASSERT_TRUE(NavigateToURL(
+       shell(), net::FilePathToFileURL(temp_dir.GetPath().AppendASCII(
+                    "page.mhtml"))));
+@@ -401,7 +400,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       [](const net::test_server::HttpRequest&)
+           -> std::unique_ptr<net::test_server::HttpResponse> {
+         auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+-        response->set_content("ok");
++        response->set_content("");
+         return response;
+       }));
+   auto queued_requests = RequestCounter::CreateAndMonitor(
+@@ -497,7 +496,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+       [](const net::test_server::HttpRequest&)
+           -> std::unique_ptr<net::test_server::HttpResponse> {
+         auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+-        response->set_content("ok");
++        response->set_content("");
+         return response;
+       }));
+   auto healthy_requests = RequestCounter::CreateAndMonitor(
+-- 
+2.54.0 (Apple Git-157)
+

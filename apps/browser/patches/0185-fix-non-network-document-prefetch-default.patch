@@ -1,0 +1,168 @@
+From 8a3364adaab18d39a5c40961b0a3eca3643afcf5 Mon Sep 17 00:00:00 2001
+From: Codex <codex@example.invalid>
+Date: Thu, 24 Sep 2026 18:23:53 +0800
+Subject: [PATCH] Preserve restricted defaults for non-network document
+ prefetch
+
+---
+ .../browser/loader/prefetch_browsertest.cc    | 81 +++++++++++++++++++
+ .../prefetch_url_loader_service_context.cc    | 33 +++++---
+ 2 files changed, 101 insertions(+), 13 deletions(-)
+
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 6326500..9458ed6 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -36,6 +36,7 @@
+ #include "content/public/test/test_frame_navigation_observer.h"
+ #include "content/public/test/url_loader_monitor.h"
+ #include "content/shell/browser/shell.h"
++#include "mojo/public/cpp/bindings/receiver.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "net/base/features.h"
+ #include "net/base/filename_util.h"
+@@ -51,6 +52,8 @@
+ #include "services/network/public/cpp/features.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/test/test_url_loader_factory.h"
++#include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "url/origin.h"
+ 
+@@ -176,6 +179,84 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   EXPECT_EQ(GetPrefetchURLLoaderCallCount(), 1);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
++                       NonHttpDocumentPrefetchPreservesRestrictedDefault) {
++  embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
++      [](const net::test_server::HttpRequest&)
++          -> std::unique_ptr<net::test_server::HttpResponse> {
++        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++        response->set_content("network-response");
++        return response;
++      }));
++  auto healthy_requests = RequestCounter::CreateAndMonitor(
++      embedded_test_server(), "/non-http-default-health");
++  auto restricted_requests = RequestCounter::CreateAndMonitor(
++      embedded_test_server(), "/non-http-default-restricted");
++  ASSERT_TRUE(embedded_test_server()->Start());
++
++  auto* partition = static_cast<StoragePartitionImpl*>(
++      shell()->web_contents()->GetBrowserContext()->GetDefaultStoragePartition());
++  auto* service = partition->GetSubresourceProxyingURLLoaderService();
++  auto load_prefetch = [&](network::mojom::URLLoaderFactory* factory,
++                           const GURL& url) {
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = url;
++    request->load_flags = net::LOAD_PREFETCH;
++    request->destination = network::mojom::RequestDestination::kDocument;
++    request->request_initiator = url::Origin::Create(
++        shell()->web_contents()->GetLastCommittedURL());
++    auto loader = network::SimpleURLLoader::Create(
++        std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++    base::test::TestFuture<std::optional<std::string>> result;
++    loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++        factory, result.GetCallback());
++    EXPECT_TRUE(result.Wait());
++    EXPECT_EQ(loader->NetError(), net::OK);
++    return result.Get().value_or("");
++  };
++
++  ASSERT_TRUE(NavigateToURL(shell(), embedded_test_server()->GetURL("/first")));
++  auto* frame = static_cast<RenderFrameHostImpl*>(
++      shell()->web_contents()->GetPrimaryMainFrame());
++  mojo::Remote<network::mojom::URLLoaderFactory> healthy_factory;
++  auto healthy_context = service->GetFactory(
++      healthy_factory.BindNewPipeAndPassReceiver(), frame->GetFrameTreeNodeId(),
++      partition->GetURLLoaderFactoryForBrowserProcess(), frame->GetWeakPtr(),
++      nullptr);
++  healthy_context->OnDidCommitNavigation(frame->GetWeakDocumentPtr());
++  EXPECT_EQ(load_prefetch(
++                healthy_factory.get(),
++                embedded_test_server()->GetURL("/non-http-default-health")),
++            "network-response");
++  EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
++
++  ASSERT_TRUE(NavigateToURL(shell(), GURL("data:text/html,restricted-document")));
++  frame = static_cast<RenderFrameHostImpl*>(
++      shell()->web_contents()->GetPrimaryMainFrame());
++  const GURL restricted_url =
++      embedded_test_server()->GetURL("/non-http-default-restricted");
++  network::TestURLLoaderFactory restricted_default;
++  restricted_default.AddResponse(restricted_url.spec(), "restricted-response");
++  mojo::Receiver<network::mojom::URLLoaderFactory> restricted_receiver(
++      &restricted_default);
++  auto restricted_bundle =
++      std::make_unique<blink::PendingURLLoaderFactoryBundle>();
++  restricted_bundle->pending_default_factory() =
++      restricted_receiver.BindNewPipeAndPassRemote();
++  mojo::Remote<network::mojom::URLLoaderFactory> restricted_factory;
++  auto restricted_context = service->GetFactory(
++      restricted_factory.BindNewPipeAndPassReceiver(),
++      frame->GetFrameTreeNodeId(),
++      partition->GetURLLoaderFactoryForBrowserProcess(), frame->GetWeakPtr(),
++      nullptr, std::move(restricted_bundle));
++  restricted_context->OnDidCommitNavigation(frame->GetWeakDocumentPtr());
++  EXPECT_EQ(load_prefetch(restricted_factory.get(), restricted_url),
++            "restricted-response");
++  EXPECT_EQ(restricted_default.total_requests(), 1u);
++  EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
++  EXPECT_EQ(restricted_requests->GetRequestCount(), 0);
++}
++
+ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+                        CancelledNavigationAbortsQueuedFactoryAndClone) {
+   embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+diff --git a/content/browser/loader/prefetch_url_loader_service_context.cc b/content/browser/loader/prefetch_url_loader_service_context.cc
+index c4e5fa7..7acf71f 100644
+--- a/content/browser/loader/prefetch_url_loader_service_context.cc
++++ b/content/browser/loader/prefetch_url_loader_service_context.cc
+@@ -194,23 +194,30 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(
+         isolation_info_iterator->second;
+     network_loader_factory_to_use = current_context.cross_origin_factory;
+   } else {
+-    // Build this factory only after the document commits. The ordinary
+-    // subresource factory bundle was cloned before commit, so its default
+-    // factory can miss embedder interception installed for the document.
++    // Build this factory only after the document commits. An HTTP(S)
++    // document's ordinary bundle was cloned before commit, so its network
++    // default can miss embedder interception installed for the document.
++    // Other documents may have a restricted default factory (for example,
++    // WebUI). Preserve that factory rather than granting it network access.
+     if (!current_context.document_prefetch_factory) {
+       auto factories =
+           std::move(current_context.document_prefetch_pending_bundle);
+-      if (!factories) {
+-        // Synthetic callers may supply only a browser-process factory.
+-        factories = std::make_unique<blink::PendingURLLoaderFactoryBundle>();
++      if (current_context.render_frame_host->GetLastCommittedURL()
++              .SchemeIsHTTPOrHTTPS()) {
++        if (!factories) {
++          // Synthetic callers may supply only a browser-process factory.
++          factories = std::make_unique<blink::PendingURLLoaderFactoryBundle>();
++        }
++        factories->pending_default_factory().reset();
++        factories->set_bypass_redirect_checks(
++            current_context.render_frame_host
++                ->CreateNetworkServiceDefaultFactory(
++                    factories->pending_default_factory()
++                        .InitWithNewPipeAndPassReceiver()));
+       }
+-      factories->pending_default_factory().reset();
+-      factories->set_bypass_redirect_checks(
+-          current_context.render_frame_host->CreateNetworkServiceDefaultFactory(
+-              factories->pending_default_factory()
+-                  .InitWithNewPipeAndPassReceiver()));
+-      current_context.document_prefetch_factory =
+-          network::SharedURLLoaderFactory::Create(std::move(factories));
++      current_context.document_prefetch_factory = factories
++          ? network::SharedURLLoaderFactory::Create(std::move(factories))
++          : current_context.factory;
+     }
+     network_loader_factory_to_use =
+         current_context.document_prefetch_factory;
+-- 
+2.54.0 (Apple Git-157)
+

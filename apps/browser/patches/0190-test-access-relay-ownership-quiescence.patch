@@ -1,0 +1,29 @@
+From 0fca8d21e9aa2b757807a8b601937c59693a0420 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 21:44:53 +0800
+Subject: [PATCH] Quiesce Access ownership before relay-order assertions
+
+---
+ .../access_proxying_url_loader_factory_browsertest.cc       | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 3f8ac50..2026fbc 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -1617,6 +1617,12 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   auto* dispatch_state =
+       AccessRequestDispatchState::GetOrCreate(browser()->profile());
+   ASSERT_NE(dispatch_state, nullptr);
++  // Navigation and automatic page requests can finish after NavigateToURL.
++  // Establish an empty registry before asserting exact relay ownership
++  // transitions; an unrelated completion could otherwise hide the new entry.
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return dispatch_state->ownership().size() == 0u; }))
++      << "Previous request ownership did not quiesce";
+   const size_t ownership_before = dispatch_state->ownership().size();
+   const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+   const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+-- 
+2.54.0 (Apple Git-157)
+

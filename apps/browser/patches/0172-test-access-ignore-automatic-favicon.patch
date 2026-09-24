@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Thu, 24 Sep 2026 07:27:30 +0000
+Subject: [PATCH] test(access): exclude automatic favicon from route counts
+
+Serve only /favicon.ico without incrementing controlled request
+counters, so Chromium navigation icon fetching cannot hide the
+resource-specific routing delta. Include actual counts on failure.
+
+---
+ 1 file changed, 18 insertions(+), 1 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 76a2931..1dd2712 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -204,6 +204,18 @@
+   return BuildServiceWorkerReply(counter, request, /*proxy_response=*/true);
+ }
+ 
++std::unique_ptr<net::test_server::HttpResponse> IgnoreAutomaticFavicon(
++    const net::test_server::HttpRequest& request) {
++  if (request.GetURL().path_piece() != "/favicon.ico") {
++    return nullptr;
++  }
++
++  // Chromium fetches this after navigation; only route-test resources count.
++  auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++  response->set_code(net::HTTP_NO_CONTENT);
++  return response;
++}
++
+ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
+     std::atomic<size_t>* counter,
+     const char* body,
+@@ -319,10 +331,14 @@
+     host_resolver()->AddRule(kTargetHost, "127.0.0.1");
+     host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
+ 
++    target_origin_.RegisterRequestHandler(
++        base::BindRepeating(&IgnoreAutomaticFavicon));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &ServiceWorkerOriginReply, base::Unretained(&origin_requests_)));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &CountAndReply, base::Unretained(&origin_requests_), "origin"));
++    proxy_server_.RegisterRequestHandler(
++        base::BindRepeating(&IgnoreAutomaticFavicon));
+     proxy_server_.RegisterRequestHandler(base::BindRepeating(
+         &ServiceWorkerProxyReply, base::Unretained(&proxy_requests_)));
+     proxy_server_.RegisterRequestHandler(base::BindRepeating(
+@@ -869,7 +885,8 @@
+   EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+   EXPECT_TRUE(base::test::RunUntil([&] {
+     return origin_requests_.load(std::memory_order_relaxed) == 1u;
+-  }));
++  })) << "origin=" << origin_requests_.load(std::memory_order_relaxed)
++      << " proxy=" << proxy_requests_.load(std::memory_order_relaxed);
+   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
+-- 
+2.50.1

@@ -5,10 +5,16 @@
 #include <memory>
 
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace aegis::access {
 namespace {
+
+class AccessProxySelectionGenerationSourceTest : public testing::Test {
+ protected:
+  content::BrowserTaskEnvironment task_environment_;
+};
 
 aegis_access::AccessProxySelectionBinding InitialSelection() {
   return {"group-a", "endpoint-a", "lease-a", "assignment-a", 1};
@@ -18,7 +24,7 @@ aegis_access::AccessProxySelectionBinding SwitchedSelection() {
   return {"group-a", "endpoint-b", "lease-b", "assignment-b", 2};
 }
 
-TEST(AccessProxySelectionGenerationSourceTest,
+TEST_F(AccessProxySelectionGenerationSourceTest,
      StartsUnpublishedUntilCommittedSelection) {
   auto profile = TestingProfile::Builder().Build();
   auto* source =
@@ -35,7 +41,7 @@ TEST(AccessProxySelectionGenerationSourceTest,
   EXPECT_EQ(source->selection_generation("group-a"), 1u);
 }
 
-TEST(AccessProxySelectionGenerationSourceTest,
+TEST_F(AccessProxySelectionGenerationSourceTest,
      CommittedSelectionSwitchAdvancesGeneration) {
   auto profile = TestingProfile::Builder().Build();
   auto* source =
@@ -50,7 +56,7 @@ TEST(AccessProxySelectionGenerationSourceTest,
   EXPECT_EQ(source->binding_for_group("group-a")->endpoint_id, "endpoint-b");
 }
 
-TEST(AccessProxySelectionGenerationSourceTest,
+TEST_F(AccessProxySelectionGenerationSourceTest,
      StaleBindingRevisionCannotOverwriteNewerSelection) {
   auto profile = TestingProfile::Builder().Build();
   auto* source =
@@ -69,7 +75,7 @@ TEST(AccessProxySelectionGenerationSourceTest,
   EXPECT_EQ(source->binding_for_group("group-a")->endpoint_id, "endpoint-b");
 }
 
-TEST(AccessProxySelectionGenerationSourceTest,
+TEST_F(AccessProxySelectionGenerationSourceTest,
      ProxyGroupsAndProfilesAreIsolated) {
   auto first_profile = TestingProfile::Builder().Build();
   auto second_profile = TestingProfile::Builder().Build();

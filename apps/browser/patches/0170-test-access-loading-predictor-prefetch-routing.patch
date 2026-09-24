@@ -1,0 +1,231 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Thu, 24 Sep 2026 07:06:07 +0000
+Subject: [PATCH] test(access): cover LoadingPredictor prefetch routing
+
+Exercise PrefetchManager::Start through its production URL loader setup
+against controlled origin and proxy servers. Assert native, selected
+proxy, and missing-endpoint fail-closed routing after completion.
+
+---
+ 2 files changed, 162 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index d50cb76..a64e3ab 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -292,6 +292,9 @@
+       "//chrome/browser/bookmarks",
+       "//chrome/browser/net:impl",
+       "//chrome/browser/notifications:test_support",
++      "//chrome/browser/predictors:config",
++      "//chrome/browser/predictors:impl",
++      "//chrome/browser/predictors:predictors",
+       "//chrome/browser/prefs",
+       "//chrome/browser/profiles:profile",
+       "//chrome/browser/profiles:profile_manager",
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index da8f2c8..76a2931 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -7,12 +7,16 @@
+ #include <memory>
+ #include <optional>
+ #include <string>
+-
++#include <vector>
++
++#include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/run_loop.h"
+ #include "base/test/run_until.h"
++#include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+@@ -25,6 +29,10 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
++#include "chrome/browser/predictors/predictors_features.h"
++#include "chrome/browser/predictors/predictors_switches.h"
++#include "chrome/browser/predictors/prefetch_manager.h"
++#include "chrome/browser/predictors/resource_prefetch_predictor.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_test_util.h"
+@@ -41,6 +49,7 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
++#include "net/base/net_errors.h"
+ #include "net/dns/mock_host_resolver.h"
+ #include "net/http/http_status_code.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+@@ -51,6 +60,7 @@
+ #include "services/network/public/cpp/simple_url_loader.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
++#include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
+@@ -1409,5 +1419,153 @@
+   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
++class LoadingPredictorPrefetchCompletion final
++    : public predictors::PrefetchManager::Delegate,
++      public predictors::PrefetchManager::Observer {
++ public:
++  LoadingPredictorPrefetchCompletion(const GURL& navigation_url,
++                                     const GURL& resource_url)
++      : navigation_url_(navigation_url), resource_url_(resource_url) {}
++
++  base::WeakPtr<predictors::PrefetchManager::Delegate> GetDelegateWeakPtr() {
++    return weak_factory_.GetWeakPtr();
++  }
++
++  void PrefetchInitiated(const GURL& url, const GURL& prefetch_url) override {
++    EXPECT_EQ(url, navigation_url_);
++    EXPECT_EQ(prefetch_url, resource_url_);
++    ++initiated_count_;
++  }
++
++  void PrefetchFinished(
++      std::unique_ptr<predictors::PrefetchStats> stats) override {
++    EXPECT_EQ(stats->url, navigation_url_);
++    delegate_finished_ = true;
++  }
++
++  void OnPrefetchFinished(
++      const GURL& url,
++      const GURL& prefetch_url,
++      const network::URLLoaderCompletionStatus& status) override {
++    EXPECT_EQ(url, navigation_url_);
++    EXPECT_EQ(prefetch_url, resource_url_);
++    completion_error_ = status.error_code;
++    ++completion_count_;
++  }
++
++  void OnAllPrefetchesFinished(const GURL& url) override {
++    EXPECT_EQ(url, navigation_url_);
++    all_done_.SetValue();
++  }
++
++  bool Wait() { return all_done_.Wait(); }
++  size_t initiated_count() const { return initiated_count_; }
++  size_t completion_count() const { return completion_count_; }
++  bool delegate_finished() const { return delegate_finished_; }
++  std::optional<int> completion_error() const { return completion_error_; }
++
++ private:
++  const GURL navigation_url_;
++  const GURL resource_url_;
++  size_t initiated_count_ = 0;
++  size_t completion_count_ = 0;
++  bool delegate_finished_ = false;
++  std::optional<int> completion_error_;
++  base::test::TestFuture<void> all_done_;
++  base::WeakPtrFactory<LoadingPredictorPrefetchCompletion> weak_factory_{this};
++};
++
++class AccessLoadingPredictorPrefetchBrowserTest
++    : public AccessProxyingURLLoaderFactoryBrowserTest {
++ public:
++  AccessLoadingPredictorPrefetchBrowserTest() {
++    features_.InitWithFeatures(
++        {features::kLoadingPredictorPrefetch,
++         features::kPrefetchManagerUseNetworkContextPrefetch},
++        {});
++  }
++
++  void SetUpCommandLine(base::CommandLine* command_line) override {
++    AccessProxyingURLLoaderFactoryBrowserTest::SetUpCommandLine(command_line);
++    command_line->AppendSwitch(
++        switches::kLoadingPredictorAllowLocalRequestForTesting);
++  }
++
++ protected:
++  std::optional<int> StartPrefetchAndWait(const GURL& resource_url) {
++    const GURL navigation_url = web_contents()->GetLastCommittedURL();
++    LoadingPredictorPrefetchCompletion completion(navigation_url, resource_url);
++    predictors::PrefetchManager manager(completion.GetDelegateWeakPtr(),
++                                        browser()->profile());
++    manager.set_observer_for_testing(&completion);
++    manager.Start(navigation_url,
++                  {predictors::PrefetchRequest(
++                      resource_url, network::mojom::RequestDestination::kScript)});
++    if (!completion.Wait()) {
++      ADD_FAILURE() << "PrefetchManager did not finish its production request";
++      return std::nullopt;
++    }
++    EXPECT_EQ(completion.initiated_count(), 1u);
++    EXPECT_EQ(completion.completion_count(), 1u);
++    EXPECT_TRUE(completion.delegate_finished());
++    return completion.completion_error();
++  }
++
++ private:
++  base::test::ScopedFeatureList features_;
++};
++
++IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
++                       WithoutPolicyPreservesNativePath) {
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  const std::optional<int> completion_error = StartPrefetchAndWait(target_url());
++  ASSERT_TRUE(completion_error.has_value());
++  EXPECT_EQ(*completion_error, net::OK);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/0u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
++                       UsesSelectedProxy) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  const std::optional<int> completion_error = StartPrefetchAndWait(target_url());
++  ASSERT_TRUE(completion_error.has_value());
++  EXPECT_EQ(*completion_error, net::OK);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/1u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessLoadingPredictorPrefetchBrowserTest,
++                       WithoutEndpointFailsClosed) {
++  // Prove this fixture can observe a completed origin request before checking
++  // that a selected host with no endpoint sends nothing to either server.
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  const std::optional<int> healthy_error = StartPrefetchAndWait(
++      target_url().Resolve("/loading-predictor-health"));
++  ASSERT_TRUE(healthy_error.has_value());
++  ASSERT_EQ(*healthy_error, net::OK);
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++
++  PublishProxyPolicy(/*publish_endpoint=*/false);
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  const std::optional<int> completion_error = StartPrefetchAndWait(
++      target_url().Resolve("/loading-predictor-blocked"));
++  ASSERT_TRUE(completion_error.has_value());
++  EXPECT_NE(*completion_error, net::OK);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.50.1

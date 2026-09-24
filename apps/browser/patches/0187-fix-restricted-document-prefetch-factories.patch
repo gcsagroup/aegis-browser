@@ -1,0 +1,375 @@
+From cdac6d55e0797c836d5fedad78b6b44f71f8b242 Mon Sep 17 00:00:00 2001
+From: Codex <codex@example.invalid>
+Date: Thu, 24 Sep 2026 18:53:44 +0800
+Subject: [PATCH] Preserve restricted document defaults across prefetch paths
+
+---
+ .../browser/loader/prefetch_browsertest.cc    | 134 ++++++++++++++++++
+ .../prefetch_url_loader_service_context.cc    |  19 ++-
+ ...subresource_proxying_url_loader_service.cc |  31 +++-
+ .../subresource_proxying_url_loader_service.h |  21 ++-
+ .../renderer_host/render_frame_host_impl.cc   |   9 +-
+ 5 files changed, 207 insertions(+), 7 deletions(-)
+
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 9458ed6..2bdaa85 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -11,14 +11,17 @@
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/run_loop.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/test/bind.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/test_future.h"
+ #include "base/threading/thread_restrictions.h"
++#include "base/unguessable_token.h"
+ #include "build/build_config.h"
+ #include "content/browser/loader/prefetch_browsertest_base.h"
+ #include "content/browser/loader/subresource_proxying_url_loader_service.h"
++#include "content/browser/renderer_host/frame_tree_node.h"
+ #include "content/browser/renderer_host/navigation_request.h"
+ #include "content/browser/renderer_host/render_frame_host_impl.h"
+ #include "content/browser/storage_partition_impl.h"
+@@ -257,6 +260,137 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   EXPECT_EQ(restricted_requests->GetRequestCount(), 0);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
++                       HttpMhtmlSubframePrefetchKeepsRestrictedDefault) {
++  embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
++      [](const net::test_server::HttpRequest&)
++          -> std::unique_ptr<net::test_server::HttpResponse> {
++        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++        response->set_content("network-response");
++        return response;
++      }));
++  auto healthy_requests = RequestCounter::CreateAndMonitor(
++      embedded_test_server(), "/mhtml-prefetch-health");
++  auto blocked_requests = RequestCounter::CreateAndMonitor(
++      embedded_test_server(), "/mhtml-prefetch-blocked");
++  auto restricted_requests = RequestCounter::CreateAndMonitor(
++      embedded_test_server(), "/mhtml-prefetch-restricted");
++  auto recursive_requests = RequestCounter::CreateAndMonitor(
++      embedded_test_server(), "/mhtml-prefetch-recursive");
++  ASSERT_TRUE(embedded_test_server()->Start());
++  host_resolver()->AddRule("example.com", "127.0.0.1");
++
++  auto* partition = static_cast<StoragePartitionImpl*>(
++      shell()->web_contents()->GetBrowserContext()->GetDefaultStoragePartition());
++  auto* service = partition->GetSubresourceProxyingURLLoaderService();
++  auto load_prefetch = [&](network::mojom::URLLoaderFactory* factory,
++                           const GURL& url, const GURL& initiator,
++                           int additional_load_flags, bool recursive) {
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = url;
++    request->load_flags = net::LOAD_PREFETCH | additional_load_flags;
++    request->destination = network::mojom::RequestDestination::kDocument;
++    request->request_initiator = url::Origin::Create(initiator);
++    if (recursive) {
++      request->recursive_prefetch_token = base::UnguessableToken::Create();
++    }
++    auto loader = network::SimpleURLLoader::Create(
++        std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++    base::test::TestFuture<std::optional<std::string>> result;
++    loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++        factory, result.GetCallback());
++    EXPECT_TRUE(result.Wait());
++    return std::pair(loader->NetError(), result.Get().value_or(""));
++  };
++
++  const GURL healthy_page = embedded_test_server()->GetURL("/first");
++  ASSERT_TRUE(NavigateToURL(shell(), healthy_page));
++  auto* healthy_frame = static_cast<RenderFrameHostImpl*>(
++      shell()->web_contents()->GetPrimaryMainFrame());
++  mojo::Remote<network::mojom::URLLoaderFactory> healthy_factory;
++  const auto healthy_kind = service->CloneCommittedDocumentFactoryForTesting(
++      healthy_frame, healthy_factory.BindNewPipeAndPassReceiver());
++  ASSERT_TRUE(healthy_kind.has_value());
++  EXPECT_EQ(*healthy_kind,
++            SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++                kNetworkService);
++  EXPECT_EQ(load_prefetch(healthy_factory.get(),
++                          embedded_test_server()->GetURL(
++                              "/mhtml-prefetch-health"),
++                          healthy_page, /*additional_load_flags=*/0,
++                          /*recursive=*/false),
++            (std::pair(net::OK, std::string("network-response"))));
++  EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
++
++  // The archive gives its iframe an HTTP committed URL but a NotImplemented
++  // default factory. Its original restriction must survive prefetch routing.
++  const GURL child_url("http://example.com/found.html");
++  std::string archive =
++      "From: The chromium developers\n"
++      "Subject: <the subject>\n"
++      "Date: Mon, May 27 2019 11:55:42 GMT+0200\n"
++      "MIME-Version: 1.0\n"
++      "Content-Type: multipart/related; boundary=\"MHTML_BOUNDARY\"; "
++      "type=\"text/html\"\n\n"
++      "--MHTML_BOUNDARY\nContent-Type: text/html\n"
++      "Content-Location: http://example.com/\n\n"
++      "<iframe src=\"http://example.com/found.html\"></iframe>\n"
++      "--MHTML_BOUNDARY\nContent-Type: text/html\n"
++      "Content-Location: http://example.com/found.html\n\nchild\n"
++      "--MHTML_BOUNDARY--";
++  base::ReplaceChars(archive, "\n", "\r\n", &archive);
++  base::ScopedTempDir temp_dir;
++  {
++    base::ScopedAllowBlockingForTesting allow_blocking;
++    ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
++    ASSERT_TRUE(base::WriteFile(temp_dir.GetPath().AppendASCII("page.mhtml"),
++                                archive));
++  }
++  ASSERT_TRUE(NavigateToURL(
++      shell(), net::FilePathToFileURL(temp_dir.GetPath().AppendASCII(
++                   "page.mhtml"))));
++  auto* main_frame = static_cast<RenderFrameHostImpl*>(
++      shell()->web_contents()->GetPrimaryMainFrame());
++  ASSERT_EQ(main_frame->child_count(), 1u);
++  auto* child_frame = main_frame->child_at(0)->current_frame_host();
++  ASSERT_TRUE(child_frame->is_mhtml_document());
++  ASSERT_EQ(child_frame->GetLastCommittedURL(), child_url);
++
++  mojo::Remote<network::mojom::URLLoaderFactory> restricted_factory;
++  const auto restricted_kind = service->CloneCommittedDocumentFactoryForTesting(
++      child_frame, restricted_factory.BindNewPipeAndPassReceiver());
++  ASSERT_TRUE(restricted_kind.has_value());
++  EXPECT_EQ(*restricted_kind,
++            SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++                kPreserve);
++  EXPECT_EQ(load_prefetch(restricted_factory.get(),
++                          embedded_test_server()->GetURL(
++                              "/mhtml-prefetch-blocked"),
++                          child_url, /*additional_load_flags=*/0,
++                          /*recursive=*/false)
++                .first,
++            net::ERR_NOT_IMPLEMENTED);
++  EXPECT_EQ(load_prefetch(restricted_factory.get(),
++                          embedded_test_server()->GetURL(
++                              "/mhtml-prefetch-restricted"),
++                          child_url,
++                          net::LOAD_RESTRICTED_PREFETCH_FOR_MAIN_FRAME,
++                          /*recursive=*/false)
++                .first,
++            net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_EQ(load_prefetch(restricted_factory.get(),
++                          embedded_test_server()->GetURL(
++                              "/mhtml-prefetch-recursive"),
++                          child_url, /*additional_load_flags=*/0,
++                          /*recursive=*/true)
++                .first,
++            net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
++  EXPECT_EQ(blocked_requests->GetRequestCount(), 0);
++  EXPECT_EQ(restricted_requests->GetRequestCount(), 0);
++  EXPECT_EQ(recursive_requests->GetRequestCount(), 0);
++}
++
+ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+                        CancelledNavigationAbortsQueuedFactoryAndClone) {
+   embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+diff --git a/content/browser/loader/prefetch_url_loader_service_context.cc b/content/browser/loader/prefetch_url_loader_service_context.cc
+index 7acf71f..a4c7944 100644
+--- a/content/browser/loader/prefetch_url_loader_service_context.cc
++++ b/content/browser/loader/prefetch_url_loader_service_context.cc
+@@ -115,6 +115,20 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(
+     return;
+   }
+ 
++  // Cross-origin and recursive prefetch paths build a separate NetworkService
++  // factory. Do not let them bypass an original WebUI/MHTML restricted default.
++  if (current_context.document_default_factory_kind ==
++          SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++              kPreserve &&
++      ((resource_request.load_flags &
++        net::LOAD_RESTRICTED_PREFETCH_FOR_MAIN_FRAME) ||
++       resource_request.recursive_prefetch_token)) {
++    mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
++        ->OnComplete(
++            network::URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
++    return;
++  }
++
+   scoped_refptr<network::SharedURLLoaderFactory> network_loader_factory_to_use;
+ 
+   if (resource_request.load_flags &
+@@ -202,7 +216,10 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(
+     if (!current_context.document_prefetch_factory) {
+       auto factories =
+           std::move(current_context.document_prefetch_pending_bundle);
+-      if (current_context.render_frame_host->GetLastCommittedURL()
++      if (current_context.document_default_factory_kind ==
++              SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++                  kNetworkService &&
++          current_context.render_frame_host->GetLastCommittedURL()
+               .SchemeIsHTTPOrHTTPS()) {
+         if (!factories) {
+           // Synthetic callers may supply only a browser-process factory.
+diff --git a/content/browser/loader/subresource_proxying_url_loader_service.cc b/content/browser/loader/subresource_proxying_url_loader_service.cc
+index de1b86b..da0236a 100644
+--- a/content/browser/loader/subresource_proxying_url_loader_service.cc
++++ b/content/browser/loader/subresource_proxying_url_loader_service.cc
+@@ -30,13 +30,15 @@ SubresourceProxyingURLLoaderService::BindContext::BindContext(
+     scoped_refptr<PrefetchedSignedExchangeCache>
+         prefetched_signed_exchange_cache,
+     std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
+-        document_prefetch_pending_bundle)
++        document_prefetch_pending_bundle,
++    DocumentDefaultFactoryKind document_default_factory_kind)
+     : frame_tree_node_id(frame_tree_node_id),
+       factory(factory),
+       render_frame_host(std::move(render_frame_host)),
+       cross_origin_factory(nullptr),
+       document_prefetch_pending_bundle(
+           std::move(document_prefetch_pending_bundle)),
++      document_default_factory_kind(document_default_factory_kind),
+       prefetched_signed_exchange_cache(
+           std::move(prefetched_signed_exchange_cache)) {}
+ 
+@@ -105,14 +107,16 @@ SubresourceProxyingURLLoaderService::GetFactory(
+     scoped_refptr<PrefetchedSignedExchangeCache>
+         prefetched_signed_exchange_cache,
+     std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
+-        document_prefetch_pending_bundle) {
++        document_prefetch_pending_bundle,
++    DocumentDefaultFactoryKind document_default_factory_kind) {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+ 
+   auto bind_context = base::MakeRefCounted<BindContext>(
+       frame_tree_node_id, subresource_proxying_factory_bundle,
+       std::move(render_frame_host),
+       std::move(prefetched_signed_exchange_cache),
+-      std::move(document_prefetch_pending_bundle));
++      std::move(document_prefetch_pending_bundle),
++      document_default_factory_kind);
+ 
+   base::WeakPtr<BindContext> weak_bind_context =
+       bind_context->weak_ptr_factory.GetWeakPtr();
+@@ -123,6 +127,27 @@ SubresourceProxyingURLLoaderService::GetFactory(
+   return weak_bind_context;
+ }
+ 
++std::optional<SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind>
++SubresourceProxyingURLLoaderService::
++    CloneCommittedDocumentFactoryForTesting(
++        RenderFrameHostImpl* frame,
++        mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver) {
++  DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  for (const auto& [_, context] :
++       loader_factory_receivers_.GetAllContexts()) {
++    if ((*context)->document_state() != BindContext::DocumentState::kCommitted ||
++        (*context)->render_frame_host.get() != frame ||
++        (*context)->document.AsRenderFrameHostIfValid() != frame) {
++      continue;
++    }
++    const DocumentDefaultFactoryKind kind =
++        (*context)->document_default_factory_kind;
++    loader_factory_receivers_.Add(this, std::move(receiver), *context);
++    return kind;
++  }
++  return std::nullopt;
++}
++
+ void SubresourceProxyingURLLoaderService::CreateLoaderAndStart(
+     mojo::PendingReceiver<network::mojom::URLLoader> receiver,
+     int32_t request_id,
+diff --git a/content/browser/loader/subresource_proxying_url_loader_service.h b/content/browser/loader/subresource_proxying_url_loader_service.h
+index 5d472c5..2d3467f 100644
+--- a/content/browser/loader/subresource_proxying_url_loader_service.h
++++ b/content/browser/loader/subresource_proxying_url_loader_service.h
+@@ -6,6 +6,7 @@
+ #define CONTENT_BROWSER_LOADER_SUBRESOURCE_PROXYING_URL_LOADER_SERVICE_H_
+ 
+ #include <memory>
++#include <optional>
+ #include <string>
+ #include <vector>
+ 
+@@ -38,6 +39,11 @@ class RenderFrameHostImpl;
+ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+     : public network::mojom::URLLoaderFactory {
+  public:
++  // Only a default factory created by NetworkService may be replaced after
++  // commit. WebUI and MHTML documents can have a restricted default even when
++  // the committed URL is HTTP(S).
++  enum class DocumentDefaultFactoryKind { kPreserve, kNetworkService };
++
+   struct CONTENT_EXPORT BindContext : public base::RefCounted<BindContext> {
+     // `factory` is a clone of the default factory bundle for document
+     // subresource requests.
+@@ -47,7 +53,8 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+                 scoped_refptr<PrefetchedSignedExchangeCache>
+                     prefetched_signed_exchange_cache,
+                 std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
+-                    document_prefetch_pending_bundle);
++                    document_prefetch_pending_bundle,
++                DocumentDefaultFactoryKind document_default_factory_kind);
+ 
+     enum class DocumentState { kPending, kCommitted, kInvalid };
+ 
+@@ -73,6 +80,7 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+     // Only its network default is replaced after commit.
+     std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
+         document_prefetch_pending_bundle;
++    const DocumentDefaultFactoryKind document_default_factory_kind;
+ 
+     scoped_refptr<PrefetchedSignedExchangeCache>
+         prefetched_signed_exchange_cache;
+@@ -116,7 +124,16 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+       scoped_refptr<PrefetchedSignedExchangeCache>
+           prefetched_signed_exchange_cache,
+       std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
+-          document_prefetch_pending_bundle = nullptr);
++          document_prefetch_pending_bundle = nullptr,
++      DocumentDefaultFactoryKind document_default_factory_kind =
++          DocumentDefaultFactoryKind::kPreserve);
++
++  // Binds a clone of the factory created for this exact committed document.
++  // Returns its original default kind, or nullopt if no receiver exists.
++  std::optional<DocumentDefaultFactoryKind>
++  CloneCommittedDocumentFactoryForTesting(
++      RenderFrameHostImpl* frame,
++      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver);
+ 
+   PrefetchURLLoaderServiceContext&
+   prefetch_url_loader_service_context_for_testing() {
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+index 9ca9cab..3904675 100644
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -12892,6 +12892,9 @@ void RenderFrameHostImpl::CommitNavigation(
+ 
+   std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
+       subresource_loader_factories;
++  auto document_default_factory_kind =
++      SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++          kPreserve;
+   if (!is_same_document || is_first_navigation) {
+     recreate_default_url_loader_factory_after_network_service_crash_ = false;
+     subresource_loader_factories =
+@@ -12973,6 +12976,9 @@ void RenderFrameHostImpl::CommitNavigation(
+       // Otherwise default to a Network Service-backed loader from the
+       // appropriate NetworkContext.
+       recreate_default_url_loader_factory_after_network_service_crash_ = true;
++      document_default_factory_kind =
++          SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++              kNetworkService;
+ 
+       // Otherwise default to a Network Service-backed loader from the
+       // appropriate NetworkContext.
+@@ -13156,7 +13162,8 @@ void RenderFrameHostImpl::CommitNavigation(
+                                subresource_proxying_factory_bundle,
+                                weak_ptr_factory_.GetWeakPtr(),
+                                EnsurePrefetchedSignedExchangeCache(),
+-                               std::move(document_prefetch_pending_bundle));
++                               std::move(document_prefetch_pending_bundle),
++                               document_default_factory_kind);
+ 
+       navigation_request
+           ->set_subresource_proxying_url_loader_service_bind_context(
+-- 
+2.54.0 (Apple Git-157)
+

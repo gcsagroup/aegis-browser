@@ -185,6 +185,75 @@ TEST(RequestPolicyContextTest, RejectsUntrustedOrAmbiguousShapes) {
             RequestContextError::kInvalidPort);
 }
 
+TEST(RequestPolicyContextTest, RejectsTrailingDotRequestHostForEveryOwner) {
+  const BrowserOwnedRequestMetadata metadata[] = {
+      DocumentMetadata(GURL("https://top.example/page")),
+      {"request-navigation", TestOwner(),
+       RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
+       std::nullopt},
+      {"request-profile", TestOwner(), RequestAttributionKind::kProfileOnly,
+       {}, {}, std::nullopt},
+  };
+  const GURL request_urls[] = {
+      GURL("https://target.example./resource"),
+      GURL("https://target.example%2e/resource"),
+      GURL("https://target.example%E3%80%82/resource"),
+  };
+  for (const GURL& request_url : request_urls) {
+    ASSERT_TRUE(request_url.is_valid());
+    ASSERT_EQ(request_url.host(), "target.example.");
+    for (const BrowserOwnedRequestMetadata& owner : metadata) {
+      const RequestPolicyContextResult result =
+          CanonicalizeBrowserOwnedRequest(owner, request_url);
+      EXPECT_EQ(result.error, RequestContextError::kInvalidUrl);
+      EXPECT_FALSE(result.context.has_value());
+    }
+  }
+}
+
+TEST(RequestPolicyContextTest, RejectsTrailingDotTopLevelSite) {
+  const GURL top_url("https://top.example./page");
+  const net::SchemefulSite top_site(top_url);
+  ASSERT_EQ(top_site.GetURL().host(), "top.example.");
+
+  const BrowserOwnedRequestMetadata metadata[] = {
+      DocumentMetadata(top_url),
+      {"request-navigation", TestOwner(),
+       RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
+       top_site},
+  };
+  for (const BrowserOwnedRequestMetadata& owner : metadata) {
+    const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
+        owner, GURL("https://target.example/resource"));
+    EXPECT_EQ(result.error, RequestContextError::kInvalidTopLevelSite);
+    EXPECT_FALSE(result.context.has_value());
+  }
+}
+
+TEST(RequestPolicyContextTest, AcceptsIpHostAfterGurlRemovesTrailingDot) {
+  // GURL canonicalizes these original spellings before policy sees the URL.
+  const BrowserOwnedRequestMetadata metadata =
+      DocumentMetadata(GURL("https://127.0.0.1./page"));
+  ASSERT_TRUE(metadata.top_frame_site.has_value());
+  EXPECT_EQ(metadata.top_frame_site->GetURL().host(), "127.0.0.1");
+
+  const GURL request_urls[] = {
+      GURL("http://127.0.0.1./resource"),
+      GURL("http://127.0.0.1%2e/resource"),
+      GURL("http://127.1./resource"),
+  };
+  for (const GURL& request_url : request_urls) {
+    ASSERT_TRUE(request_url.is_valid());
+    ASSERT_EQ(request_url.host(), "127.0.0.1");
+    const RequestPolicyContextResult result =
+        CanonicalizeBrowserOwnedRequest(metadata, request_url);
+    EXPECT_EQ(result.error, RequestContextError::kNone);
+    ASSERT_TRUE(result.context.has_value());
+    EXPECT_EQ(result.context->exact_host(), "127.0.0.1");
+    EXPECT_EQ(result.context->top_level_site(), "https://127.0.0.1");
+  }
+}
+
 TEST(RequestPolicyContextTest, RejectsWebSocketAsPendingTopLevelNavigation) {
   const BrowserOwnedRequestMetadata metadata{
       "request-navigation", TestOwner(),
