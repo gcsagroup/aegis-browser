@@ -410,6 +410,40 @@ bool AgentTaskStore::SaveTaskRecordAndBindGoalRoute(
   return SaveTaskRecordInternal(std::move(record), route_id);
 }
 
+// Called only inside SaveTaskRecordInternal's transaction so validation,
+// task persistence and route binding either all commit or all roll back.
+bool AgentTaskStore::VerifyGoalRouteBinding(
+    const std::string& route_id,
+    const AgentModelRoutingMetrics& metrics) {
+  sql::Statement route(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT status,task_id,model_routing_json FROM agent_goal_routes "
+      "WHERE route_id=?"));
+  route.BindString(0, route_id);
+  if (!route.Step() ||
+      route.ColumnInt(0) != static_cast<int>(AgentGoalRouteStatus::kCompleted) ||
+      !route.ColumnString(1).empty()) {
+    return false;
+  }
+  const auto route_metrics =
+      DeserializeModelRoutingMetrics(route.ColumnString(2));
+  return route_metrics && SerializeScreeningAttempts(*route_metrics) ==
+                              SerializeScreeningAttempts(metrics);
+}
+
+bool AgentTaskStore::BindGoalRouteToTask(const std::string& route_id,
+                                       const std::string& task_id) {
+  sql::Statement bind(database_.GetCachedStatement(
+      SQL_FROM_HERE,
+      "UPDATE agent_goal_routes SET task_id=?,updated_us=? WHERE "
+      "route_id=? AND task_id='' AND status=?"));
+  bind.BindString(0, task_id);
+  bind.BindInt64(1, SerializeTime(base::Time::Now()));
+  bind.BindString(2, route_id);
+  bind.BindInt(3, static_cast<int>(AgentGoalRouteStatus::kCompleted));
+  return bind.Run() && database_.GetLastChangeCount() == 1;
+}
+
 bool AgentTaskStore::SaveTaskRecordInternal(
     AgentTaskStoreRecord record,
     std::optional<std::string> route_id) {
@@ -427,27 +461,9 @@ bool AgentTaskStore::SaveTaskRecordInternal(
   if (!transaction.Begin()) {
     return false;
   }
-  if (route_id) {
-    sql::Statement route(database_.GetCachedStatement(
-        SQL_FROM_HERE,
-        "SELECT status,task_id,model_routing_json FROM agent_goal_routes "
-        "WHERE route_id=?"));
-    route.BindString(0, *route_id);
-    if (!route.Step() ||
-        route.ColumnInt(0) !=
-            static_cast<int>(AgentGoalRouteStatus::kCompleted) ||
-        !route.ColumnString(1).empty()) {
-      return false;
-    }
-    auto route_metrics =
-        DeserializeModelRoutingMetrics(route.ColumnString(2));
-    if (!route_metrics) {
-      return false;
-    }
-    if (SerializeScreeningAttempts(*route_metrics) !=
-        SerializeScreeningAttempts(record.model_routing_metrics)) {
-      return false;
-    }
+  if (route_id &&
+      !VerifyGoalRouteBinding(*route_id, record.model_routing_metrics)) {
+    return false;
   }
 
   sql::Statement update(database_.GetCachedStatement(
@@ -493,18 +509,8 @@ bool AgentTaskStore::SaveTaskRecordInternal(
       return false;
     }
   }
-  if (route_id) {
-    sql::Statement bind(database_.GetCachedStatement(
-        SQL_FROM_HERE,
-        "UPDATE agent_goal_routes SET task_id=?,updated_us=? WHERE "
-        "route_id=? AND task_id='' AND status=?"));
-    bind.BindString(0, record.task_id);
-    bind.BindInt64(1, SerializeTime(base::Time::Now()));
-    bind.BindString(2, *route_id);
-    bind.BindInt(3, static_cast<int>(AgentGoalRouteStatus::kCompleted));
-    if (!bind.Run() || database_.GetLastChangeCount() != 1) {
-      return false;
-    }
+  if (route_id && !BindGoalRouteToTask(*route_id, record.task_id)) {
+    return false;
   }
   return transaction.Commit();
 }
