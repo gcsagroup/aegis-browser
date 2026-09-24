@@ -15,6 +15,7 @@
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 #include "components/aegis_access/request_policy_context.h"
 #include "content/public/browser/frame_tree_node_id.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/url_loader_factory_builder.h"
@@ -65,8 +66,11 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       std::optional<int64_t> navigation_id,
       std::optional<int> profile_only_render_process_id,
       content::StoragePartition* profile_only_storage_partition,
-      aegis_access::BrowserOwnedRequestMetadata factory_metadata,
-      network::URLLoaderFactoryBuilder& factory_builder,
+      aegis_access::OwnershipKey factory_owner,
+      std::optional<aegis_access::BrowserOwnedRequestMetadata> factory_metadata,
+      mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
+      mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
+      std::optional<content::WeakDocumentPtr> document,
       DisconnectCallback on_disconnect);
   AccessProxyingURLLoaderFactory(const AccessProxyingURLLoaderFactory&) =
       delete;
@@ -77,6 +81,8 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   static void MaybeProxyDocumentSubresource(
       Profile* profile,
       content::RenderFrameHost* frame,
+      const GURL& document_url,
+      std::optional<int64_t> navigation_id,
       network::URLLoaderFactoryBuilder& factory_builder);
   static void MaybeProxyWorkerMainResource(
       Profile* profile,
@@ -179,7 +185,10 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   const std::optional<int64_t> navigation_id_;
   const std::optional<int> profile_only_render_process_id_;
   const raw_ptr<content::StoragePartition> profile_only_storage_partition_;
-  const aegis_access::BrowserOwnedRequestMetadata factory_metadata_;
+  const aegis_access::OwnershipKey factory_owner_;
+  const std::optional<aegis_access::BrowserOwnedRequestMetadata>
+      factory_metadata_;
+  const std::optional<content::WeakDocumentPtr> document_;
 
   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
   std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,

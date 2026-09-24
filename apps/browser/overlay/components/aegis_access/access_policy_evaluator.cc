@@ -44,6 +44,9 @@ bool IsKnownProtectionOverride(ProtectionOverride protection_override) {
 }
 
 bool IsCanonicalHost(const std::string& host, bool include_subdomains) {
+  if (host.empty() || host.back() == '.') {
+    return false;
+  }
   url::CanonHostInfo host_info;
   const std::string canonical = net::CanonicalizeHost(host, &host_info);
   if (canonical.empty() || canonical != host ||
@@ -67,7 +70,9 @@ bool IsCanonicalTopLevelSite(const std::string& value) {
     return false;
   }
   const net::SchemefulSite site = net::SchemefulSite::Deserialize(value);
-  return !site.opaque() && site.GetURL().SchemeIsHTTPOrHTTPS() &&
+  const GURL site_url = site.GetURL();
+  return !site.opaque() && site_url.SchemeIsHTTPOrHTTPS() &&
+         !site_url.host().empty() && site_url.host().back() != '.' &&
          site.Serialize() == value;
 }
 

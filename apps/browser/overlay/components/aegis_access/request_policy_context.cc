@@ -31,7 +31,9 @@ RequestPolicyContextResult Error(RequestContextError error) {
 }
 
 bool IsUsableTopLevelSite(const net::SchemefulSite& site) {
-  return !site.opaque() && site.GetURL().SchemeIsHTTPOrHTTPS() &&
+  const GURL site_url = site.GetURL();
+  return !site.opaque() && site_url.SchemeIsHTTPOrHTTPS() &&
+         !site_url.host().empty() && site_url.host().back() != '.' &&
          !site.Serialize().empty();
 }
 
@@ -104,6 +106,9 @@ RequestPolicyContextResult CanonicalizeBrowserOwnedRequest(
   }
   if (request_url.host().empty()) {
     return Error(RequestContextError::kMissingHost);
+  }
+  if (request_url.host().back() == '.') {
+    return Error(RequestContextError::kInvalidUrl);
   }
   const int effective_port = request_url.EffectiveIntPort();
   if (effective_port <= 0 || effective_port > 65535) {

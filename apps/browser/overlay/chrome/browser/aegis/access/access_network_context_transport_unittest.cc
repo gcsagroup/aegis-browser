@@ -140,7 +140,7 @@ TEST_F(AccessNetworkContextTransportTest, OffPreservesNativeProxyResult) {
   const net::ProxyInfo result =
       Resolve(delegate.get(), "https://target.example/path");
   EXPECT_EQ(result.proxy_list().ToPacString(),
-            "PROXY native.example:3128; DIRECT");
+            "PROXY native.example:3128;DIRECT");
 }
 
 TEST_F(AccessNetworkContextTransportTest,
@@ -157,12 +157,12 @@ TEST_F(AccessNetworkContextTransportTest,
   const net::ProxyInfo other =
       Resolve(delegate.get(), "https://other.example/path");
   EXPECT_EQ(other.proxy_list().ToPacString(),
-            "PROXY native.example:3128; DIRECT");
+            "PROXY native.example:3128;DIRECT");
 
   const net::ProxyInfo subdomain =
       Resolve(delegate.get(), "https://sub.target.example/path");
   EXPECT_EQ(subdomain.proxy_list().ToPacString(),
-            "PROXY native.example:3128; DIRECT");
+            "PROXY native.example:3128;DIRECT");
 }
 
 TEST_F(AccessNetworkContextTransportTest,
@@ -367,7 +367,7 @@ TEST_F(AccessNetworkContextTransportTest, DirectCandidateRestoresNativeForOnlyTa
   transport_->FlushClientsForTesting({});
   EXPECT_EQ(Resolve(delegate.get(), "https://target.example/")
                 .proxy_list().ToPacString(),
-            "PROXY native.example:3128; DIRECT");
+            "PROXY native.example:3128;DIRECT");
   ExpectProxyResolution(delegate.get(), "https://other.example/");
   ASSERT_TRUE(transport_->ReplaceSelection(endpoint.owner, candidate, previous));
   transport_->FlushClientsForTesting({});
@@ -388,6 +388,28 @@ TEST_F(AccessNetworkContextTransportTest,
   EXPECT_FALSE(
       transport_->ReplaceSelection(endpoint.owner, previous, candidate));
   EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
+}
+
+TEST_F(AccessNetworkContextTransportTest,
+       RejectsTrailingDotReplacementAndCaptureWithoutChangingSelection) {
+  auto delegate = CreateDelegate({});
+  ASSERT_TRUE(delegate);
+  const auto endpoint = EndpointFor({});
+  ASSERT_TRUE(transport_->PublishProxySelection({}, {kTargetHost}, endpoint));
+  const auto previous = *transport_->CurrentSelection(endpoint.owner);
+  auto candidate = previous;
+  candidate.exact_hosts = {"target.example."};
+
+  EXPECT_FALSE(
+      transport_->ReplaceSelection(endpoint.owner, previous, candidate));
+  EXPECT_FALSE(transport_
+                   ->CaptureSelectedProxyEndpoint(
+                       endpoint.owner, endpoint.proxy_group_id,
+                       "target.example.")
+                   .has_value());
+  EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
+  transport_->FlushClientsForTesting({});
+  ExpectProxyResolution(delegate.get(), "https://target.example/");
 }
 
 TEST_F(AccessNetworkContextTransportTest, ExactCandidateRequiresEveryContext) {
@@ -558,7 +580,7 @@ TEST_F(AccessNetworkContextTransportTest,
   const net::ProxyInfo restored =
       Resolve(delegate.get(), "https://target.example/");
   EXPECT_EQ(restored.proxy_list().ToPacString(),
-            "PROXY native.example:3128; DIRECT");
+            "PROXY native.example:3128;DIRECT");
 }
 
 TEST_F(AccessNetworkContextTransportTest, StoragePartitionsAreIsolated) {
@@ -579,7 +601,7 @@ TEST_F(AccessNetworkContextTransportTest, StoragePartitionsAreIsolated) {
   EXPECT_EQ(Resolve(isolated_delegate.get(), "https://target.example/")
                 .proxy_list()
                 .ToPacString(),
-            "PROXY native.example:3128; DIRECT");
+            "PROXY native.example:3128;DIRECT");
 }
 
 TEST_F(AccessNetworkContextTransportTest,
@@ -720,6 +742,8 @@ TEST_F(AccessNetworkContextTransportTest,
       partition, {kTargetHost, kTargetHost}, endpoint));
   EXPECT_FALSE(transport_->PublishProxySelection(
       partition, {"TARGET.example"}, endpoint));
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, {"target.example."}, endpoint));
   transport_->FlushClientsForTesting(partition);
 
   ExpectProxyResolution(delegate.get(),
@@ -763,6 +787,8 @@ TEST_F(AccessNetworkContextTransportTest, RejectsNonCanonicalHostSelection) {
       partition, {"TARGET.example"}, endpoint));
   EXPECT_FALSE(transport_->PublishProxySelection(
       partition, {"target.example."}, endpoint));
+  EXPECT_FALSE(transport_->PublishProxySelection(
+      partition, {"127.0.0.1."}, endpoint));
 }
 
 }  // namespace
