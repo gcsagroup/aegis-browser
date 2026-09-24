@@ -5,10 +5,16 @@
 #include <memory>
 
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace aegis::access {
 namespace {
+
+class AccessIdentityGenerationSourceTest : public testing::Test {
+ protected:
+  content::BrowserTaskEnvironment task_environment_;
+};
 
 aegis_access::AccessIdentityBinding GuestIdentity() {
   return {aegis_access::AccessIdentityKind::kInstallationGuest,
@@ -20,7 +26,7 @@ aegis_access::AccessIdentityBinding AccountIdentity() {
           "account-principal", "account-entitlement", "prod", "access"};
 }
 
-TEST(AccessIdentityGenerationSourceTest,
+TEST_F(AccessIdentityGenerationSourceTest,
      StartsUnpublishedUntilCommittedIdentity) {
   auto profile = TestingProfile::Builder().Build();
   auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
@@ -35,7 +41,7 @@ TEST(AccessIdentityGenerationSourceTest,
   EXPECT_EQ(source->identity_generation(), 1u);
 }
 
-TEST(AccessIdentityGenerationSourceTest,
+TEST_F(AccessIdentityGenerationSourceTest,
      CommittedIdentityTransitionsAdvanceGeneration) {
   auto profile = TestingProfile::Builder().Build();
   auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
@@ -52,7 +58,7 @@ TEST(AccessIdentityGenerationSourceTest,
   EXPECT_EQ(source->CommitIdentity(GuestIdentity()).generation, 4u);
 }
 
-TEST(AccessIdentityGenerationSourceTest, ProfileOwnedSourcesAreIsolated) {
+TEST_F(AccessIdentityGenerationSourceTest, ProfileOwnedSourcesAreIsolated) {
   auto first_profile = TestingProfile::Builder().Build();
   auto second_profile = TestingProfile::Builder().Build();
   auto* first =
@@ -68,7 +74,7 @@ TEST(AccessIdentityGenerationSourceTest, ProfileOwnedSourcesAreIsolated) {
   EXPECT_FALSE(second->binding().has_value());
 }
 
-TEST(AccessIdentityGenerationSourceTest, InvalidIdentityNeverPublishes) {
+TEST_F(AccessIdentityGenerationSourceTest, InvalidIdentityNeverPublishes) {
   auto profile = TestingProfile::Builder().Build();
   auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
   ASSERT_TRUE(source);

@@ -1,0 +1,111 @@
+From 1fd742c79c95bcaa665b060b6767372ba26c5c1b Mon Sep 17 00:00:00 2001
+From: Codex <codex@example.invalid>
+Date: Thu, 24 Sep 2026 18:27:59 +0800
+Subject: [PATCH] Test cancelled document navigation closes pending factory
+ clones
+
+---
+ ...proxying_url_loader_factory_browsertest.cc | 81 +++++++++++++++++++
+ 1 file changed, 81 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 2646a08..30db0d0 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -45,6 +45,8 @@
+ #include "components/aegis_access/access_identity_generation_state.h"
+ #include "components/aegis_access/access_proxy_selection_generation_state.h"
+ #include "components/aegis_access/request_policy_context.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/storage_partition_config.h"
+@@ -1232,6 +1234,85 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                      /*proxy_delta=*/0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       CancelledNavigationClosesPendingFactoryAndClone) {
++  const GURL first_page = worker_page_url();
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), first_page));
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(FetchNoStore(target_url().Resolve("/cancel-health")));
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++
++  const GURL pending_url =
++      target_origin_.GetURL(kTargetHost, "/worker-page?pending-cancel");
++  content::TestNavigationManager navigation(web_contents(), pending_url);
++  auto pending_navigation = web_contents()->GetController().LoadURL(
++      pending_url, content::Referrer(), ui::PAGE_TRANSITION_TYPED,
++      std::string());
++  ASSERT_TRUE(pending_navigation);
++  ASSERT_TRUE(navigation.WaitForResponse());
++  content::NavigationHandle* handle = navigation.GetNavigationHandle();
++  ASSERT_NE(handle, nullptr);
++  content::RenderFrameHost* pending_frame = handle->GetRenderFrameHost();
++  ASSERT_NE(pending_frame, nullptr);
++
++  network::URLLoaderFactoryBuilder builder;
++  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
++      browser()->profile(), pending_frame, pending_url,
++      handle->GetNavigationId(), builder);
++  scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
++      std::move(builder).Finish(
++          browser()->profile()
++              ->GetDefaultStoragePartition()
++              ->GetURLLoaderFactoryForBrowserProcess());
++  mojo::Remote<network::mojom::URLLoaderFactory> clone;
++  pending_factory->Clone(clone.BindNewPipeAndPassReceiver());
++
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  auto start_queued = [&](network::mojom::URLLoaderFactory* factory,
++                          const GURL& url,
++                          base::test::TestFuture<std::optional<std::string>>&
++                              result) {
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = url;
++    request->request_initiator = url::Origin::Create(pending_url);
++    request->load_flags = net::LOAD_BYPASS_CACHE;
++    auto loader = network::SimpleURLLoader::Create(
++        std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++    loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++        factory, result.GetCallback());
++    return loader;
++  };
++  base::test::TestFuture<std::optional<std::string>> original_result;
++  base::test::TestFuture<std::optional<std::string>> clone_result;
++  auto original_loader = start_queued(
++      pending_factory.get(), target_url().Resolve("/cancel-original"),
++      original_result);
++  auto clone_loader = start_queued(
++      clone.get(), target_url().Resolve("/cancel-clone"), clone_result);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(original_result.IsReady());
++  EXPECT_FALSE(clone_result.IsReady());
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++
++  web_contents()->Stop();
++  ASSERT_TRUE(navigation.WaitForNavigationFinished());
++  ASSERT_TRUE(original_result.Wait());
++  ASSERT_TRUE(clone_result.Wait());
++  EXPECT_NE(original_loader->NetError(), net::OK);
++  EXPECT_NE(clone_loader->NetError(), net::OK);
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), first_page);
++  EXPECT_EQ(web_contents(),
++            browser()->tab_strip_model()->GetActiveWebContents());
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++}
++
+ class AccessProxyingURLLoaderFactorySameFrameBrowserTest
+     : public AccessProxyingURLLoaderFactoryBrowserTest {
+  public:
+-- 
+2.54.0 (Apple Git-157)

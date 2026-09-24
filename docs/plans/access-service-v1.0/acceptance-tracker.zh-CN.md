@@ -2,7 +2,13 @@
 
 创建于 2026-09-20（Asia/Shanghai），来源是[冻结规范修订 4](spec.zh-CN.md)第 11、14 节的全部 **A01–A118 与 PF01–PF13，共 131 个主行**。下表场景列逐字摘取冻结表的场景/指标列，判定条件仍以规范原文为准。此表是当前映射、执行与证据的唯一台账；[开发计划](development-plan.zh-CN.md)给出推进顺序，[交接](handoff-20260920.zh-CN.md)给出来源快照。新增产品功能须同 PR 交付并在最终 HEAD 实际执行 unit 与真实入口 regression；文档改动不需要补造产品测试。
 
-## 2026-09-22 架构复核后的待执行映射
+## 2026-09-24 W0 当前执行证据
+
+Q 冻结起点 `7f74e0a4e971f91d08d90536e429aba7b82cf37d`。#162 最终 H13=`4670c4dd…` 已合并为 S=`ca4e1b24…`；已回读其三目标 96 tests 的 `PARTIAL_PASS` 与三组 browser fixture PASS 原始记录。它们属于历史 H13，不为新候选或下表 131 个主行补造 PASS。完整测试名、原始报告路径/哈希、当前执行结果与缺口类别集中于 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
+
+第一候选 Hcf2329a 实际完成前 10 个 unit targets 共 81 tests 后遇第 11 个 adapter 启动崩溃；browser 实际枚举 41 项，1 项通过后因 favicon 计数污染失败。两次整体为 FAIL/sourceStable=true，后续新候选执行 `NOT_RUN`；本轮另新增 3 个真实 LoadingPredictor `PrefetchManager::Start` 入口 fixture 源码，待最终 H 枚举运行。S04 的 helper 边界仍有效。旧 #162 Draft/BUILDING 状态仅属于下节注明的历史时间点。本轮不修改 131 个主行的判定或冻结规范。
+
+## 历史：2026-09-22 架构复核后的待执行映射
 
 #164 合并后续接：基线 `c08b632…`；#162 候选已更新到 `682997a…` / 补丁 0161。06:15 UTC 快照确认 Q 正代 F 编译 Coordinator，所选双目标与单一 browser fixture 尚无 runtime 结果。该窄范围交付与 W0 全矩阵分别判定；本次只更新[技术方案的增量合同](architecture-review-20260922.zh-CN.md)、[计划的双窗口执行板](development-plan.zh-CN.md)和[Handoff 身份/接续入口](handoff-20260920.zh-CN.md)，以下 131 个主行状态与既有 S01–S12 证据不变。
 
@@ -182,3 +188,9 @@
 | PF13 | BLOCK 本地屏障在接收协调任务内安装；发布后的拒绝确认/在途本地终止 ≤2 秒；总操作预算 5 秒 | PARTIAL_SOURCE | S08、S09（仅功能） | NOT_RUN | NOT_EVALUATED | PARTIAL；无并发/2 秒/5 秒实测 | SRC-287 |
 
 更新某一主行前，逐个列出冻结断言的适用子场景与实际观察，分别给出 `PASS`、`FAIL`、`BLOCKED` 或 `NOT_RUN`；局部结果需保持 `PARTIAL` 并注明剩余项。PF 指标还要记录规范规定的样本、规模、分布、计时起止及设备/网络条件。A90 的最终包证据与 A114 的文档预览独立登记，不能从源码或本地质量门推断发布就绪。
+
+Q 第二候选 H745bf3c 执行补记：11 targets/86 tests 通过后 dispatch_state 测试 raw_ptr 编译失败；browser 固定 API 编译失败、0 runtime。保留整体 FAIL/sourceStable 和未运行范围，131 主行不变，第三候选重验待执行。
+
+Q 第三候选 Hceb6ead：设施编译修复已过，但 transport 尾点 host 接纳及 frame prefetch 缺 endpoint 直连暴露产品缺陷。NetLog 已证实后者 DIRECT/HTTP200；native 总门和 browser 总门均 FAIL/sourceStable。尾点按保守拒绝设计修复，保无 snapshot 的 native 边界；prefetch 另定位实际入口。局部通过与剩余目标补充诊断不升级 W0/G0 或131主行，详见 QUALITY-HANDOFF 第三候选记录。
+
+Q 后续候选状态：0175–0186 的局部源码/编译/browser 证据与失败归档见 QUALITY-HANDOFF。已准入 Hc6f14c2 的 browser 构建主动中断、0 runtime；独立预审发现 HTTP URL 的 MHTML 子帧原禁网 default 可被 prefetch 重建为网络 factory。0187 已补 RFHI 可信资格与真实 MHTML 子帧回归，pending Clone 测试设施也已修正；H882c354 的六关键对象编译 PASS/sourceStable，完整链接和 runtime 未验。W0 未完成，G0 继续 UNVERIFIED，131 个主行判定不变。

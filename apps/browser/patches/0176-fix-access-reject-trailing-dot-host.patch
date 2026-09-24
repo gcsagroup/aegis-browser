@@ -1,0 +1,321 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Thu, 24 Sep 2026 08:15:42 +0000
+Subject: [PATCH] fix(access): reject trailing-dot hosts at policy boundaries
+
+Reject hosts ending in a dot in transport selection, trusted request
+context, and published-rule validation. Preserve native routing when no
+Access snapshot exists, and test fail-closed behavior after publication.
+
+---
+ chrome/browser/aegis/access/access_network_context_transport.cc | 2 +-
+ chrome/browser/aegis/access/access_network_context_transport_unittest.cc | 24 ++++++++++++++++++++
+ chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc | 71 ++++++++++++++++++++
+ components/aegis_access/access_policy_evaluator.cc | 7 ++++++-
+ components/aegis_access/access_policy_evaluator_unittest.cc | 19 +++++++++++++++++++
+ components/aegis_access/request_policy_context.cc | 7 ++++++-
+ components/aegis_access/request_policy_context_unittest.cc | 45 ++++++++++++++++++++
+ 7 files changed, 172 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index af57dc2..487f309 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -27,7 +27,7 @@
+ constexpr size_t kMaxPartitionKeyBytes = 1024;
+ 
+ bool IsCanonicalExactHost(const std::string& host) {
+-  if (host.empty()) {
++  if (host.empty() || host.back() == '.') {
+     return false;
+   }
+   const GURL url("https://" + host + "/");
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 4ccd537..5c8f291 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -388,6 +388,28 @@
+   EXPECT_FALSE(
+       transport_->ReplaceSelection(endpoint.owner, previous, candidate));
+   EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
++}
++
++TEST_F(AccessNetworkContextTransportTest,
++       RejectsTrailingDotReplacementAndCaptureWithoutChangingSelection) {
++  auto delegate = CreateDelegate({});
++  ASSERT_TRUE(delegate);
++  const auto endpoint = EndpointFor({});
++  ASSERT_TRUE(transport_->PublishProxySelection({}, {kTargetHost}, endpoint));
++  const auto previous = *transport_->CurrentSelection(endpoint.owner);
++  auto candidate = previous;
++  candidate.exact_hosts = {"target.example."};
++
++  EXPECT_FALSE(
++      transport_->ReplaceSelection(endpoint.owner, previous, candidate));
++  EXPECT_FALSE(transport_
++                   ->CaptureSelectedProxyEndpoint(
++                       endpoint.owner, endpoint.proxy_group_id,
++                       "target.example.")
++                   .has_value());
++  EXPECT_EQ(transport_->CurrentSelection(endpoint.owner), previous);
++  transport_->FlushClientsForTesting({});
++  ExpectProxyResolution(delegate.get(), "https://target.example/");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest, ExactCandidateRequiresEveryContext) {
+@@ -720,6 +742,8 @@
+       partition, {kTargetHost, kTargetHost}, endpoint));
+   EXPECT_FALSE(transport_->PublishProxySelection(
+       partition, {"TARGET.example"}, endpoint));
++  EXPECT_FALSE(transport_->PublishProxySelection(
++      partition, {"target.example."}, endpoint));
+   transport_->FlushClientsForTesting(partition);
+ 
+   ExpectProxyResolution(delegate.get(),
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index ecb8f21..1e794de 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -82,6 +82,7 @@
+ namespace {
+ 
+ constexpr char kTargetHost[] = "target.example";
++constexpr char kTrailingDotTargetHost[] = "target.example.";
+ constexpr char kUnselectedRedirectHost[] = "redirect-unselected.example";
+ constexpr char kProxyGroup[] = "proxy-group-browser-test";
+ 
+@@ -329,6 +330,7 @@
+     InProcessBrowserTest::SetUpOnMainThread();
+ 
+     host_resolver()->AddRule(kTargetHost, "127.0.0.1");
++    host_resolver()->AddRule(kTrailingDotTargetHost, "127.0.0.1");
+     host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
+ 
+     target_origin_.RegisterRequestHandler(
+@@ -469,6 +471,16 @@
+   }
+ 
+   bool FetchTarget() { return Fetch(target_url()); }
++
++  bool FetchNoStore(const GURL& url) {
++    return content::EvalJs(
++               web_contents(),
++               content::JsReplace(
++                   "fetch($1, {mode: 'no-cors', cache: 'no-store'})"
++                   ".then(() => true).catch(() => false)",
++                   url.spec()))
++        .ExtractBool();
++  }
+ 
+   std::optional<std::string> FetchBrowserProcessPrefetchOnPartition(
+       content::StoragePartition* partition,
+@@ -878,6 +890,65 @@
+     return origin_requests_.load(std::memory_order_relaxed) == 1u;
+   }));
+   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       TrailingDotHostStaysNativeWithoutPolicyAndBlocksAfterPublish) {
++  const GURL trailing_url =
++      target_origin_.GetURL(kTrailingDotTargetHost, "/resource");
++  ASSERT_EQ(trailing_url.host(), kTrailingDotTargetHost);
++
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(FetchNoStore(trailing_url));
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  const size_t origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  EXPECT_FALSE(FetchNoStore(trailing_url));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++
++  ASSERT_TRUE(FetchNoStore(target_url()));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/1u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       TrailingDotTopFrameBlocksCanonicalSubresourceAfterPublish) {
++  const GURL trailing_page =
++      target_origin_.GetURL(kTrailingDotTargetHost, "/worker-page");
++  ASSERT_EQ(trailing_page.host(), kTrailingDotTargetHost);
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), trailing_page));
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++
++  const size_t native_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t native_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(FetchNoStore(target_url()));
++  ExpectRoutingDelta(native_origin_before, native_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  const size_t origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  EXPECT_FALSE(FetchNoStore(target_url()));
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+
+diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
+index 972fb42..5bc5803 100644
+--- a/components/aegis_access/access_policy_evaluator.cc
++++ b/components/aegis_access/access_policy_evaluator.cc
+@@ -44,6 +44,9 @@
+ }
+ 
+ bool IsCanonicalHost(const std::string& host, bool include_subdomains) {
++  if (host.empty() || host.back() == '.') {
++    return false;
++  }
+   url::CanonHostInfo host_info;
+   const std::string canonical = net::CanonicalizeHost(host, &host_info);
+   if (canonical.empty() || canonical != host ||
+@@ -67,7 +70,9 @@
+     return false;
+   }
+   const net::SchemefulSite site = net::SchemefulSite::Deserialize(value);
+-  return !site.opaque() && site.GetURL().SchemeIsHTTPOrHTTPS() &&
++  const GURL site_url = site.GetURL();
++  return !site.opaque() && site_url.SchemeIsHTTPOrHTTPS() &&
++         !site_url.host().empty() && site_url.host().back() != '.' &&
+          site.Serialize() == value;
+ }
+ 
+
+diff --git a/components/aegis_access/access_policy_evaluator_unittest.cc b/components/aegis_access/access_policy_evaluator_unittest.cc
+index 5cdce01..6448a53 100644
+--- a/components/aegis_access/access_policy_evaluator_unittest.cc
++++ b/components/aegis_access/access_policy_evaluator_unittest.cc
+@@ -287,6 +287,25 @@
+   EXPECT_EQ(EvaluateAccessPolicy(DocumentContext(), Snapshot({host})).reason,
+             PolicyMatchReason::kInvalidRule);
+ 
++  AccessPolicyRule trailing_host =
++      Rule("trailing-host", PolicyScope::kProfile, "cdn.example.test.",
++           AccessMode::kProxy);
++  const PolicyMatchResult trailing_host_result = EvaluateAccessPolicy(
++      DocumentContext(), Snapshot({trailing_host}));
++  EXPECT_EQ(trailing_host_result.policy_state, PolicyState::kInvalid);
++  EXPECT_EQ(trailing_host_result.reason, PolicyMatchReason::kInvalidRule);
++
++  AccessPolicyRule trailing_site =
++      Rule("trailing-site", PolicyScope::kSite, "cdn.example.test",
++           AccessMode::kProxy);
++  const net::SchemefulSite site(GURL("https://www.example.test./"));
++  ASSERT_EQ(site.GetURL().host(), "example.test.");
++  trailing_site.top_level_site = site.Serialize();
++  const PolicyMatchResult trailing_site_result = EvaluateAccessPolicy(
++      DocumentContext(), Snapshot({trailing_site}));
++  EXPECT_EQ(trailing_site_result.policy_state, PolicyState::kInvalid);
++  EXPECT_EQ(trailing_site_result.reason, PolicyMatchReason::kInvalidRule);
++
+   AccessPolicyRule schemes = Rule("schemes", PolicyScope::kSite,
+                                   "cdn.example.test", AccessMode::kDirect);
+   schemes.schemes = {RequestScheme::kHttps, RequestScheme::kHttp};
+
+diff --git a/components/aegis_access/request_policy_context.cc b/components/aegis_access/request_policy_context.cc
+index 0383c80..270b57f 100644
+--- a/components/aegis_access/request_policy_context.cc
++++ b/components/aegis_access/request_policy_context.cc
+@@ -31,7 +31,9 @@
+ }
+ 
+ bool IsUsableTopLevelSite(const net::SchemefulSite& site) {
+-  return !site.opaque() && site.GetURL().SchemeIsHTTPOrHTTPS() &&
++  const GURL site_url = site.GetURL();
++  return !site.opaque() && site_url.SchemeIsHTTPOrHTTPS() &&
++         !site_url.host().empty() && site_url.host().back() != '.' &&
+          !site.Serialize().empty();
+ }
+ 
+@@ -105,6 +107,9 @@
+   if (request_url.host().empty()) {
+     return Error(RequestContextError::kMissingHost);
+   }
++  if (request_url.host().back() == '.') {
++    return Error(RequestContextError::kInvalidUrl);
++  }
+   const int effective_port = request_url.EffectiveIntPort();
+   if (effective_port <= 0 || effective_port > 65535) {
+     return Error(RequestContextError::kInvalidPort);
+
+diff --git a/components/aegis_access/request_policy_context_unittest.cc b/components/aegis_access/request_policy_context_unittest.cc
+index d3b5764..19daebf 100644
+--- a/components/aegis_access/request_policy_context_unittest.cc
++++ b/components/aegis_access/request_policy_context_unittest.cc
+@@ -185,6 +185,51 @@
+             RequestContextError::kInvalidPort);
+ }
+ 
++TEST(RequestPolicyContextTest, RejectsTrailingDotRequestHostForEveryOwner) {
++  const BrowserOwnedRequestMetadata metadata[] = {
++      DocumentMetadata(GURL("https://top.example/page")),
++      {"request-navigation", TestOwner(),
++       RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
++       std::nullopt},
++      {"request-profile", TestOwner(), RequestAttributionKind::kProfileOnly,
++       {}, {}, std::nullopt},
++  };
++  const GURL request_urls[] = {
++      GURL("https://target.example./resource"),
++      GURL("https://target.example%2e/resource"),
++      GURL("https://target.example%E3%80%82/resource"),
++  };
++  for (const GURL& request_url : request_urls) {
++    ASSERT_TRUE(request_url.is_valid());
++    ASSERT_EQ(request_url.host(), "target.example.");
++    for (const BrowserOwnedRequestMetadata& owner : metadata) {
++      const RequestPolicyContextResult result =
++          CanonicalizeBrowserOwnedRequest(owner, request_url);
++      EXPECT_EQ(result.error, RequestContextError::kInvalidUrl);
++      EXPECT_FALSE(result.context.has_value());
++    }
++  }
++}
++
++TEST(RequestPolicyContextTest, RejectsTrailingDotTopLevelSite) {
++  const GURL top_url("https://top.example./page");
++  const net::SchemefulSite top_site(top_url);
++  ASSERT_EQ(top_site.GetURL().host(), "top.example.");
++
++  const BrowserOwnedRequestMetadata metadata[] = {
++      DocumentMetadata(top_url),
++      {"request-navigation", TestOwner(),
++       RequestAttributionKind::kPendingNavigation, {}, "navigation-token",
++       top_site},
++  };
++  for (const BrowserOwnedRequestMetadata& owner : metadata) {
++    const RequestPolicyContextResult result = CanonicalizeBrowserOwnedRequest(
++        owner, GURL("https://target.example/resource"));
++    EXPECT_EQ(result.error, RequestContextError::kInvalidTopLevelSite);
++    EXPECT_FALSE(result.context.has_value());
++  }
++}
++
+ TEST(RequestPolicyContextTest, RejectsWebSocketAsPendingTopLevelNavigation) {
+   const BrowserOwnedRequestMetadata metadata{
+       "request-navigation", TestOwner(),
+-- 
+2.50.1
