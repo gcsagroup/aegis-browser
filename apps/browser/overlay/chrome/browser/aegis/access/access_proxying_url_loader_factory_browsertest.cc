@@ -872,6 +872,33 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
             url.spec())));
   }
 
+  std::string FetchFromInlineIframe(bool srcdoc, const GURL& resource) {
+    const std::string markup =
+        "<!doctype html><script>"
+        "fetch('" + resource.spec() +
+        "', {mode:'no-cors',cache:'no-store'})"
+        ".then(() => parent.postMessage('loaded', '*'), "
+        "() => parent.postMessage('error', '*'));</script>";
+    return content::EvalJs(
+               web_contents(),
+               content::JsReplace(
+                   "new Promise(resolve => {"
+                   "  const frame = document.createElement('iframe');"
+                   "  const listener = event => {"
+                   "    if (event.source !== frame.contentWindow) return;"
+                   "    window.removeEventListener('message', listener);"
+                   "    frame.remove();"
+                   "    resolve(event.data);"
+                   "  };"
+                   "  window.addEventListener('message', listener);"
+                   "  if ($1) frame.srcdoc = $2;"
+                   "  else frame.src = 'data:text/html;base64,' + btoa($2);"
+                   "  document.body.appendChild(frame);"
+                   "})",
+                   srcdoc, markup))
+        .ExtractString();
+  }
+
   uint64_t CommitIdentityGenerationForProxyPolicy() {
     auto* identity =
         AccessIdentityGenerationSource::GetOrCreate(browser()->profile());
@@ -1037,6 +1064,50 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
             "loaded");
   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
                      /*proxy_delta=*/0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       DataIframeWithoutEndpointFailsClosed) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  const GURL resource = target_url().Resolve("/data-iframe-policy");
+  const size_t healthy_origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t healthy_proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_EQ(FetchFromInlineIframe(/*srcdoc=*/false, resource), "loaded");
+  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
+                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
+
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+  const size_t blocked_origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t blocked_proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_EQ(FetchFromInlineIframe(/*srcdoc=*/false, resource), "error");
+  ExpectRoutingDelta(blocked_origin_before, blocked_proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       SrcdocIframeWithoutEndpointFailsClosed) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  const GURL resource = target_url().Resolve("/srcdoc-iframe-policy");
+  const size_t healthy_origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t healthy_proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_EQ(FetchFromInlineIframe(/*srcdoc=*/true, resource), "loaded");
+  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
+                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
+
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+  const size_t blocked_origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t blocked_proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_EQ(FetchFromInlineIframe(/*srcdoc=*/true, resource), "error");
+  ExpectRoutingDelta(blocked_origin_before, blocked_proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
