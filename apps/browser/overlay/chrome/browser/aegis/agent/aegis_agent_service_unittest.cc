@@ -80,6 +80,11 @@ class AegisAgentServiceTestPeer {
       scoped_refptr<os_crypt_async::Encryptor> encryptor) {
     service->OnMonitorTargetsDecryptorReady(monitor_id, std::move(encryptor));
   }
+
+  static void FailGoalRouteStoreCompletion(AegisAgentService* service) {
+    service->OnGoalRoutingFinalized(service->goal_route_generation_, true,
+                                    std::string(), std::nullopt, false);
+  }
 };
 
 class AegisBrowserToolsTestPeer {
@@ -789,6 +794,38 @@ TEST_F(AegisAgentServiceTest,
 }
 
 TEST_F(AegisAgentServiceTest,
+       GoalRouteStorageFailureCompletesOnceWithStorageError) {
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetTypeSafeGoalRouterClientForTesting(
+      std::make_unique<TypeSafeGoalRouterClient>(factory.GetSafeWeakWrapper()));
+
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
+  service->RouteGoal("Compare three USB hubs", AgentWorkflowKind::kResearch,
+                     result.GetCallback());
+  DrainTaskRunners();
+  factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
+  EXPECT_FALSE(result.IsReady());
+
+  AegisAgentServiceTestPeer::FailGoalRouteStoreCompletion(service);
+  ASSERT_TRUE(result.IsReady());
+  EXPECT_FALSE(result.Get<0>());
+  EXPECT_EQ(result.Get<1>(), "Agent task storage is unavailable");
+  EXPECT_FALSE(result.Get<2>());
+  EXPECT_FALSE(service->IsEnabled());
+  result.Clear();
+
+  // A repeated store completion or cancellation must not fulfill it again.
+  AegisAgentServiceTestPeer::FailGoalRouteStoreCompletion(service);
+  service->CancelPendingGoalRouting();
+  DrainTaskRunners();
+  EXPECT_FALSE(result.IsReady());
+}
+
+TEST_F(AegisAgentServiceTest,
        CancelledScreeningKeepsUnknownAttemptAndNextRouteSeparate) {
   ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
   network::TestURLLoaderFactory factory;
@@ -805,6 +842,7 @@ TEST_F(AegisAgentServiceTest,
   factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
   service->CancelPendingGoalRouting();
   EXPECT_FALSE(first.Get<0>());
+  EXPECT_EQ(first.Get<1>(), "goal routing was cancelled");
   FlushTaskStore(service);
 
   auto cancelled_value = base::JSONReader::Read(
