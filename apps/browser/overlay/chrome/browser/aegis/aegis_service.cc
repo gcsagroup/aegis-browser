@@ -17,6 +17,7 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
+#include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -120,6 +121,7 @@ std::string_view AgentModelSelectionModeName(
     case agent::AgentModelSelectionMode::kLocalOnly:
       return "local_only";
   }
+  NOTREACHED();
 }
 
 agent::AgentModelSelectionMode ParseAgentModelSelectionMode(
@@ -207,9 +209,17 @@ std::optional<agent::AgentModelCatalogEntry> DeserializeAgentModelCatalogEntry(
       .quality_score = *quality,
       .latency_score = *latency,
       .priority = *priority};
-  if (const std::optional<int> cost =
-          item.FindInt("cost_microusd_per_million_tokens")) {
-    entry.cost_microusd_per_million_tokens = *cost;
+  if (const base::Value* cost =
+          item.Find("cost_microusd_per_million_tokens")) {
+    int64_t parsed = 0;
+    if (cost->is_int()) {
+      // Read catalogs saved before prices used lossless decimal strings.
+      parsed = cost->GetInt();
+    } else if (!cost->is_string() ||
+               !base::StringToInt64(cost->GetString(), &parsed)) {
+      return std::nullopt;
+    }
+    entry.cost_microusd_per_million_tokens = parsed;
   }
   if (!agent::ReadGenerationPolicy(item, &entry.generation_policy) ||
       !agent::ReadTokenPrices(item, "token_prices", &entry.token_prices)) {
@@ -228,10 +238,7 @@ std::optional<base::DictValue> SerializeAgentModelCatalogEntry(
                : std::nullopt;
   if (!provider || !endpoint ||
       !IsValidModelName(*provider, entry->destination.model) ||
-      !ids->insert(entry->id).second ||
-      (entry->cost_microusd_per_million_tokens &&
-       *entry->cost_microusd_per_million_tokens >
-           std::numeric_limits<int>::max())) {
+      !ids->insert(entry->id).second) {
     return std::nullopt;
   }
   entry->destination.provider = std::string(ModelProviderId(*provider));
@@ -260,7 +267,7 @@ std::optional<base::DictValue> SerializeAgentModelCatalogEntry(
   item.Set("token_prices", agent::SerializeTokenPrices(entry->token_prices));
   if (entry->cost_microusd_per_million_tokens) {
     item.Set("cost_microusd_per_million_tokens",
-             static_cast<int>(*entry->cost_microusd_per_million_tokens));
+             base::NumberToString(*entry->cost_microusd_per_million_tokens));
   }
   return item;
 }

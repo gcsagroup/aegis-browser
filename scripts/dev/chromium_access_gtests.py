@@ -138,8 +138,10 @@ def run_process(command: Iterable[str], *, cwd=None, env=None,
     # PATH/DEPOT_TOOLS_DIR and explicit GN/Ninja paths are trusted local configuration.
     # command_argv validates an absolute executable and literal non-NUL arguments;
     # the real-process regression proves shell metacharacters stay literal. Quoting
-    # argv elements would corrupt them. Review: 7805e05, B603 and the exact rule below.
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    # argv elements would corrupt them. Both rules below flag this local tool
+    # boundary: dynamic argv and developer-selected tools from env/CLI. Neither
+    # receives remote input; changes to this trust boundary require a new review.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     return subprocess.run(argv, cwd=cwd, env=env, input=input_text, stdout=output,  # nosec B603
                           stderr=subprocess.STDOUT, text=True, shell=False, check=check)
 
@@ -245,14 +247,47 @@ def verify_tree(repo: Path, base: str, patches: Path, overlay: Path | None = Non
     return actual
 
 
+def gtest_names(output: str) -> list[str]:
+    names = []
+    suite = ""
+    for line in output.splitlines():
+        value = line.split("#", 1)[0].strip()
+        if not line.startswith(" ") and value.endswith("."):
+            suite = value
+        elif line.startswith("  ") and value and suite:
+            names.append(suite + value)
+    return names
+
+
 def count_gtests(output: str) -> int:
-    return sum(
-        1
-        for line in output.splitlines()
-        if line.startswith("  ")
-        and line.strip()
-        and not line.lstrip().startswith("#")
-    )
+    return len(gtest_names(output))
+
+
+def runtime_test_count(summary: Path, expected: list[str]) -> int:
+    """Require a fresh Chromium launcher receipt for every enabled listed test."""
+    data = json.loads(summary.read_text(encoding="utf-8"))
+    iterations = data.get("per_iteration_data")
+    if not isinstance(iterations, list) or len(iterations) != 1:
+        raise ValueError("GTest runtime must report exactly one iteration")
+    results = iterations[0]
+    if not isinstance(results, dict) or not results or set(results) != set(expected):
+        raise ValueError("GTest runtime does not match the nonzero listed test set")
+    for name, attempts in results.items():
+        if (not isinstance(attempts, list) or len(attempts) != 1
+                or not isinstance(attempts[0], dict)
+                or attempts[0].get("status") != "SUCCESS"):
+            raise ValueError(f"GTest did not execute successfully exactly once: {name}")
+        # Chromium can label GTEST_SKIP() as SUCCESS while preserving the skip
+        # in result_parts, including a SetUp() skip before the test body runs.
+        parts = attempts[0].get("result_parts", [])
+        if (not isinstance(parts, list)
+                or any(not isinstance(part, dict) or part.get("type") != "success"
+                       for part in parts)):
+            raise ValueError(f"GTest runtime contains a skipped or failed result part: {name}")
+    if set(data.get("global_tags", [])) & {
+            "EARLY_SUMMARY", "CAUGHT_TERMINATION_SIGNAL", "BROKEN_TEST_EARLY_EXIT"}:
+        raise ValueError("GTest runtime receipt is incomplete")
+    return len(results)
 
 
 def run_logged(
@@ -303,11 +338,16 @@ def list_target(binary: Path, context: TargetContext, row, save) -> None:
     row["listing"] = "RUNNING"
     save()
     log = context.report / f"{binary.name}.list.log"
-    run_logged([str(binary), "--gtest_list_tests"], cwd=context.src, env=context.env, log=log)
-    tests = count_gtests(log.read_text(encoding="utf-8"))
-    if tests <= 0:
+    run_logged([str(binary), "--gtest_list_tests", "--gtest_filter=*"],
+               cwd=context.src, env=context.env, log=log)
+    names = gtest_names(log.read_text(encoding="utf-8"))
+    enabled = [name for name in names
+               if not any(part.startswith("DISABLED_") for part in name.replace("/", ".").split("."))]
+    if not enabled:
         raise ValueError(f"GTest target reported zero tests: {row['label']}")
-    row.update(listing="PASS", tests=tests, listLog=log.name)
+    if len(names) != len(set(names)):
+        raise ValueError(f"GTest listing contains duplicate tests: {row['label']}")
+    row.update(listing="PASS", listedTests=len(names), expectedTests=enabled, listLog=log.name)
 
 
 def run_target(target, context: TargetContext, evidence=None, save=None) -> dict[str, object]:
@@ -318,12 +358,22 @@ def run_target(target, context: TargetContext, evidence=None, save=None) -> dict
     row["runtime"] = "RUNNING"
     persist()
     log = context.report / f"{binary.name}.test.log"
+    summary = context.report / f"{binary.name}.runtime.json"
+    summary.unlink(missing_ok=True)  # A zero-exit early return must not reuse an old receipt.
+    runtime_env = dict(context.env)
+    runtime_env.pop("GTEST_ALSO_RUN_DISABLED_TESTS", None)
     run_logged([str(binary), f"--test-launcher-jobs={context.jobs}",
-                "--test-launcher-retry-limit=0", "--test-launcher-print-test-stdio=always"],
-               cwd=context.src, env=context.env, log=log)
+                "--test-launcher-retry-limit=0", "--test-launcher-print-test-stdio=always",
+                "--test-launcher-test-part-results-limit=-1",
+                "--test-launcher-total-shards=1", "--test-launcher-shard-index=0",
+                "--gtest_filter=*", "--gtest_repeat=1",
+                f"--test-launcher-summary-output={summary}"],
+               cwd=context.src, env=runtime_env, log=log)
+    tests = runtime_test_count(summary, row["expectedTests"])
     if sha256(binary) != row["binarySha256"]:
         raise ValueError(f"test binary changed during execution: {binary}")
-    row.update(runtime="PASS", result="PASS", testLog=log.name)
+    row.update(runtime="PASS", result="PASS", tests=tests, testLog=log.name,
+               runtimeSummary=summary.name, runtimeSummarySha256=sha256(summary))
     return row
 
 
@@ -350,14 +400,16 @@ def execution_env() -> dict[str, str]:
 
 def acquire_lock(src: Path) -> Path:
     parent = src.parent
-    candidate_lock = parent / ".aegis-ci-lock"
-    if candidate_lock.exists():
-        raise ValueError(f"Chromium candidate build is already using this checkout: {candidate_lock}")
-    lock = parent / ".aegis-access-gtest-lock"
+    legacy_lock = parent / ".aegis-access-gtest-lock"
+    if legacy_lock.exists():
+        raise ValueError(f"an older Access GTest run is already active: {legacy_lock}")
+    # Use the same atomic lock as apps/browser/scripts/ci/candidate.py, in both
+    # launch orders. Checking its existence while acquiring a different lock races.
+    lock = parent / ".aegis-ci-lock"
     try:
         lock.mkdir()
     except FileExistsError as error:
-        raise ValueError(f"another Access GTest run is already active: {lock}") from error
+        raise ValueError(f"Chromium candidate build or Access GTest run is already active: {lock}") from error
     return lock
 
 

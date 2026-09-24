@@ -168,6 +168,7 @@ class ChromiumAccessGTestsRunnerTests(unittest.TestCase):
             self.assertEqual(len(result["targets"]), 17)
             self.assertTrue(all(t["result"] == "NOT_RUN" for t in result["targets"]))
             self.assertFalse((root / ".aegis-access-gtest-lock").exists())
+            self.assertFalse((root / ".aegis-ci-lock").exists())
 
     def test_failed_gn_retains_primary_and_post_source_failure(self):
         with tempfile.TemporaryDirectory() as root:
@@ -228,6 +229,36 @@ SuiteTwo/Variant.
   Third/0  # GetParam() = 1
 """
         self.assertEqual(sut.count_gtests(listing), 3)
+
+    def test_runtime_receipt_requires_complete_successful_execution(self):
+        expected = ["Suite.First", "Suite.Second"]
+        complete = {name: [{"status": "SUCCESS"}] for name in expected}
+        with tempfile.TemporaryDirectory() as root:
+            summary = Path(root) / "runtime.json"
+            def write(results, tags=None):
+                summary.write_text(json.dumps({"per_iteration_data": results,
+                                               "global_tags": tags or []}))
+            write([complete])
+            self.assertEqual(sut.runtime_test_count(summary, expected), 2)
+            write([{**complete, expected[1]: [{"status": "SUCCESS", "result_parts": [{"type": "success"}]}]}])
+            self.assertEqual(sut.runtime_test_count(summary, expected), 2)
+            invalid = [[], [{}], [{expected[0]: complete[expected[0]]}],
+                       [complete, complete],
+                       [{**complete, expected[1]: [{"status": "SKIPPED"}]}],
+                       [{**complete, expected[1]: [{"status": "FAILURE"}]}],
+                       [{**complete, expected[1]: [{"status": "SUCCESS", "result_parts": [{"type": "skip"}]}]}],
+                       [{**complete, expected[1]: [{"status": "SUCCESS"}] * 2}]]
+            for results in invalid:
+                with self.subTest(results=results):
+                    write(results)
+                    with self.assertRaises(ValueError):
+                        sut.runtime_test_count(summary, expected)
+            write([complete], ["EARLY_SUMMARY"])
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                sut.runtime_test_count(summary, expected)
+            summary.unlink()
+            with self.assertRaises(FileNotFoundError):
+                sut.runtime_test_count(summary, expected)
 
     def test_series_rejects_duplicate_and_unsafe_paths(self):
         with tempfile.TemporaryDirectory() as root:
@@ -295,18 +326,27 @@ SuiteTwo/Variant.
             trace = base / "trace.txt"
             binary.write_text(
                 "#!/usr/bin/env python3\n"
-                "import os, sys\n"
+                "import json, os, sys\n"
                 "if '--gtest_list_tests' in sys.argv:\n"
                 "    print('FakeSuite.')\n"
                 "    print('  First')\n"
                 "    print('  Second')\n"
+                "    print('  DISABLED_NotSelected')\n"
                 "    raise SystemExit(0)\n"
+                "# Chromium checks switch presence, even when its value is zero.\n"
+                "assert not any(a.split('=', 1)[0] == '--gtest_also_run_disabled_tests' for a in sys.argv)\n"
+                "assert 'GTEST_ALSO_RUN_DISABLED_TESTS' not in os.environ\n"
                 "with open(os.environ['AEGIS_TEST_TRACE'], 'w', encoding='utf-8') as f:\n"
-                "    f.write(' '.join(sys.argv[1:]))\n",
+                "    f.write(' '.join(sys.argv[1:]))\n"
+                "summary = next(a.split('=', 1)[1] for a in sys.argv if a.startswith('--test-launcher-summary-output='))\n"
+                "if not os.environ.get('AEGIS_TEST_NO_RECEIPT'):\n"
+                "    with open(summary, 'w', encoding='utf-8') as f:\n"
+                "        json.dump({'per_iteration_data': [{'FakeSuite.First': [{'status': 'SUCCESS'}], 'FakeSuite.Second': [{'status': 'SUCCESS'}]}]}, f)\n",
                 encoding="utf-8",
             )
             binary.chmod(0o755)
-            env = dict(os.environ, AEGIS_TEST_TRACE=str(trace))
+            env = dict(os.environ, AEGIS_TEST_TRACE=str(trace),
+                       GTEST_ALSO_RUN_DISABLED_TESTS="1")
 
             context = sut.TargetContext(src, out, report, env, str(autoninja), 3)
             result = sut.run_target(
@@ -314,18 +354,34 @@ SuiteTwo/Variant.
 
             self.assertEqual(result["tests"], 2)
             self.assertEqual(result["result"], "PASS")
+            self.assertEqual(context.env["GTEST_ALSO_RUN_DISABLED_TESTS"], "1")
             invocation = trace.read_text(encoding="utf-8")
             self.assertIn("--test-launcher-jobs=3", invocation)
             self.assertIn("--test-launcher-retry-limit=0", invocation)
+            self.assertIn("--test-launcher-test-part-results-limit=-1", invocation)
+            self.assertIn("--test-launcher-total-shards=1", invocation)
+            self.assertIn("--test-launcher-shard-index=0", invocation)
+            self.assertIn("--gtest_filter=*", invocation)
+            self.assertIn("--gtest_repeat=1", invocation)
+            self.assertNotIn("--gtest_also_run_disabled_tests", invocation)
+            self.assertEqual(result["listedTests"], 3)
+            self.assertEqual(result["runtimeSummarySha256"], sut.sha256(report / result["runtimeSummary"]))
             self.assertTrue((report / "fake_unittests.build.log").is_file())
             self.assertTrue((report / "fake_unittests.list.log").is_file())
             self.assertTrue((report / "fake_unittests.test.log").is_file())
+            # Exiting zero without a receipt must fail even when a prior PASS
+            # receipt exists in the reused report directory.
+            context.env["AEGIS_TEST_NO_RECEIPT"] = "1"
+            with self.assertRaises(FileNotFoundError):
+                sut.run_target(("//fake:fake_unittests", "fake:fake_unittests", "fake_unittests"), context)
+            del context.env["AEGIS_TEST_NO_RECEIPT"]
             binary.write_text(binary.read_text() + "\nraise SystemExit(7)\n")
             row = {}
             with self.assertRaises(subprocess.CalledProcessError):
                 sut.run_target(("//fake:fake_unittests", "fake:fake_unittests", "fake_unittests"),
                                context, evidence=row)
-            self.assertEqual(row["tests"], 2)
+            self.assertEqual(row["listedTests"], 3)
+            self.assertNotIn("tests", row)
             self.assertEqual(row["binarySha256"], sut.sha256(binary))
             self.assertEqual(row["build"], "PASS")
             self.assertEqual(row["listing"], "PASS")
@@ -344,10 +400,20 @@ SuiteTwo/Variant.
 
             lock = sut.acquire_lock(src)
             try:
+                self.assertEqual(lock, candidate)
+                # Candidate builds acquire this exact path with mkdir(). The
+                # reverse launch order must be excluded atomically as well.
+                with self.assertRaises(FileExistsError):
+                    candidate.mkdir()
                 with self.assertRaisesRegex(ValueError, "already active"):
                     sut.acquire_lock(src)
             finally:
                 lock.rmdir()
+            legacy = parent / ".aegis-access-gtest-lock"
+            legacy.mkdir()
+            with self.assertRaisesRegex(ValueError, "older Access"):
+                sut.acquire_lock(src)
+            self.assertFalse(candidate.exists())
 
 
 if __name__ == "__main__":
