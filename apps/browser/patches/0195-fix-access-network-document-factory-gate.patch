@@ -1,3 +1,13 @@
+From c93e8eb44cd760840bf4dbe3aec1a3c63440c98f Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 25 Sep 2026 07:08:48 +0800
+Subject: [PATCH] Gate Access interception to network document factories
+
+---
+ chrome/browser/chrome_content_browser_client.cc         | 1 -
+ content/browser/renderer_host/render_frame_host_impl.cc | 4 ++--
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
 index 072b60ec81..601711d918 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
@@ -32,3 +42,6 @@ index 39046750fd..b3131bf454 100644
            devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
                this));
        subresource_loader_factories->pending_scheme_specific_factories().emplace(
+-- 
+2.54.0 (Apple Git-157)
+
