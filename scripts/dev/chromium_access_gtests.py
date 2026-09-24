@@ -138,9 +138,10 @@ def run_process(command: Iterable[str], *, cwd=None, env=None,
     # PATH/DEPOT_TOOLS_DIR and explicit GN/Ninja paths are trusted local configuration.
     # command_argv validates an absolute executable and literal non-NUL arguments;
     # the real-process regression proves shell metacharacters stay literal. Quoting
-    # argv elements would corrupt them. The dynamic-argv audit rule is a false
-    # positive at this trusted local tool boundary, not a tainted-input exception.
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    # argv elements would corrupt them. Both rules below flag this local tool
+    # boundary: dynamic argv and developer-selected tools from env/CLI. Neither
+    # receives remote input; changes to this trust boundary require a new review.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     return subprocess.run(argv, cwd=cwd, env=env, input=input_text, stdout=output,  # nosec B603
                           stderr=subprocess.STDOUT, text=True, shell=False, check=check)
 
