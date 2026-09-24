@@ -3,6 +3,7 @@
 #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
 #include "chrome/browser/aegis/access/access_proxying_url_tracked_request.h"
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -11,6 +12,7 @@
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
@@ -21,13 +23,17 @@
 #include "components/aegis_access/access_policy_evaluator.h"
 #include "components/aegis_access/published_request_runtime.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/global_routing_id.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "net/base/net_errors.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
+#include "url/origin.h"
 
 namespace aegis::access {
 namespace {
@@ -212,6 +218,100 @@ CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
       BuildBrowserOwnedProfileRequestMetadata(profile, partition));
 }
 
+// CommitNavigation constructs and clones this factory before the new document
+// is active. Keep the wrapper endpoint unbound until the exact navigation
+// commits, so queued parser requests cannot be attributed to the old document.
+class PendingDocumentFactory : public content::WebContentsObserver {
+ public:
+  using CompletionCallback = base::OnceCallback<void(
+      std::optional<aegis_access::BrowserOwnedRequestMetadata>,
+      std::optional<content::WeakDocumentPtr>)>;
+
+  PendingDocumentFactory(
+      Profile* profile,
+      content::WebContents* contents,
+      content::RenderFrameHost* frame,
+      int64_t navigation_id,
+      aegis_access::OwnershipKey owner,
+      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
+      mojo::PendingRemote<network::mojom::URLLoaderFactory> target,
+      CompletionCallback on_complete)
+      : content::WebContentsObserver(contents),
+        profile_(profile),
+        frame_id_(frame->GetGlobalId()),
+        navigation_id_(navigation_id),
+        owner_(std::move(owner)),
+        receiver_(std::move(receiver)),
+        target_(std::move(target)),
+        on_complete_(std::move(on_complete)) {}
+
+  PendingDocumentFactory(const PendingDocumentFactory&) = delete;
+  PendingDocumentFactory& operator=(const PendingDocumentFactory&) = delete;
+  ~PendingDocumentFactory() override = default;
+
+  mojo::PendingReceiver<network::mojom::URLLoaderFactory> TakeReceiver() {
+    return std::move(receiver_);
+  }
+  mojo::PendingRemote<network::mojom::URLLoaderFactory> TakeTarget() {
+    return std::move(target_);
+  }
+  const aegis_access::OwnershipKey& owner() const { return owner_; }
+
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (navigation->GetNavigationId() != navigation_id_) {
+      return;
+    }
+    content::RenderFrameHost* frame =
+        navigation->HasCommitted() && !navigation->IsSameDocument() &&
+                !navigation->IsErrorPage()
+            ? navigation->GetRenderFrameHost()
+            : nullptr;
+    if (!frame || frame->GetGlobalId() != frame_id_ ||
+        !frame->GetPage().IsPrimary()) {
+      Finish(std::nullopt, std::nullopt);
+      return;
+    }
+
+    auto metadata = CaptureProxyFactoryMetadata(profile_, frame, std::nullopt);
+    if (metadata &&
+        (metadata->attribution_kind !=
+             aegis_access::RequestAttributionKind::kDocument ||
+         metadata->owner != owner_)) {
+      metadata.reset();
+    }
+    Finish(std::move(metadata), frame->GetWeakDocumentPtr());
+  }
+
+  void RenderFrameDeleted(content::RenderFrameHost* frame) override {
+    if (frame->GetGlobalId() == frame_id_) {
+      Finish(std::nullopt, std::nullopt);
+    }
+  }
+
+  void WebContentsDestroyed() override { Finish(std::nullopt, std::nullopt); }
+
+ private:
+  void Finish(
+      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
+      std::optional<content::WeakDocumentPtr> document) {
+    Observe(nullptr);
+    // Erasing this observer inside its notification would destroy the active
+    // callback frame. Completing on the next UI task also keeps queued Mojo
+    // requests unbound until the document identity has been captured.
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(on_complete_),
+                                  std::move(metadata), std::move(document)));
+  }
+
+  const raw_ptr<Profile> profile_;
+  const content::GlobalRenderFrameHostId frame_id_;
+  const int64_t navigation_id_;
+  const aegis_access::OwnershipKey owner_;
+  mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver_;
+  mojo::PendingRemote<network::mojom::URLLoaderFactory> target_;
+  CompletionCallback on_complete_;
+};
+
 class BrowserContextData : public base::SupportsUserData::Data {
  public:
   BrowserContextData(const BrowserContextData&) = delete;
@@ -227,20 +327,54 @@ class BrowserContextData : public base::SupportsUserData::Data {
       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
       network::URLLoaderFactoryBuilder& factory_builder) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    auto* self =
-        static_cast<BrowserContextData*>(profile->GetUserData(kBrowserContextDataKey));
-    if (!self) {
-      self = new BrowserContextData();
-      profile->SetUserData(kBrowserContextDataKey, base::WrapUnique(self));
+    BrowserContextData* self = GetOrCreate(profile);
+    std::optional<content::WeakDocumentPtr> document;
+    if (factory_metadata.attribution_kind ==
+        aegis_access::RequestAttributionKind::kDocument) {
+      content::WebContents* contents =
+          content::WebContents::FromFrameTreeNodeId(frame_tree_node_id);
+      content::RenderFrameHost* frame =
+          contents ? contents->UnsafeFindFrameByFrameTreeNodeId(
+                         frame_tree_node_id)
+                   : nullptr;
+      if (!frame) {
+        return;
+      }
+      document = frame->GetWeakDocumentPtr();
     }
 
+    auto [receiver, target] = factory_builder.Append();
+    const aegis_access::OwnershipKey owner = factory_metadata.owner;
     auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
         profile, frame_tree_node_id, navigation_id,
         profile_only_render_process_id, profile_only_storage_partition,
-        std::move(factory_metadata), factory_builder,
+        owner, std::move(factory_metadata), std::move(receiver),
+        std::move(target),
+        std::move(document),
         base::BindOnce(&BrowserContextData::RemoveProxy,
                        self->weak_factory_.GetWeakPtr()));
     self->proxies_.emplace(std::move(proxy));
+  }
+
+  static void StartPendingDocument(
+      Profile* profile,
+      content::WebContents* contents,
+      content::RenderFrameHost* frame,
+      int64_t navigation_id,
+      aegis_access::OwnershipKey owner,
+      network::URLLoaderFactoryBuilder& factory_builder) {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    BrowserContextData* self = GetOrCreate(profile);
+    auto [receiver, target] = factory_builder.Append();
+    const uint64_t pending_id = ++self->next_pending_id_;
+    self->pending_documents_.emplace(
+        pending_id,
+        std::make_unique<PendingDocumentFactory>(
+            profile, contents, frame, navigation_id, std::move(owner),
+            std::move(receiver),
+            std::move(target),
+            base::BindOnce(&BrowserContextData::CompletePendingDocument,
+                           self->weak_factory_.GetWeakPtr(), pending_id)));
   }
 
   void RemoveProxy(AccessProxyingURLLoaderFactory* proxy) {
@@ -250,12 +384,75 @@ class BrowserContextData : public base::SupportsUserData::Data {
     proxies_.erase(it);
   }
 
- private:
-  BrowserContextData() = default;
+  static void StartUnattributedDocument(
+      Profile* profile,
+      content::RenderFrameHost* frame,
+      aegis_access::OwnershipKey owner,
+      network::URLLoaderFactoryBuilder& factory_builder) {
+    BrowserContextData* self = GetOrCreate(profile);
+    auto [receiver, target] = factory_builder.Append();
+    auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
+        /*profile_only_storage_partition=*/nullptr, std::move(owner),
+        std::nullopt, std::move(receiver), std::move(target),
+        frame->GetWeakDocumentPtr(),
+        base::BindOnce(&BrowserContextData::RemoveProxy,
+                       self->weak_factory_.GetWeakPtr()));
+    self->proxies_.emplace(std::move(proxy));
+  }
 
+ private:
+  static BrowserContextData* GetOrCreate(Profile* profile) {
+    auto* self = static_cast<BrowserContextData*>(
+        profile->GetUserData(kBrowserContextDataKey));
+    if (!self) {
+      self = new BrowserContextData(profile);
+      profile->SetUserData(kBrowserContextDataKey, base::WrapUnique(self));
+    }
+    return self;
+  }
+
+  void CompletePendingDocument(
+      uint64_t pending_id,
+      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
+      std::optional<content::WeakDocumentPtr> document) {
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    auto it = pending_documents_.find(pending_id);
+    CHECK(it != pending_documents_.end());
+    std::unique_ptr<PendingDocumentFactory> owned = std::move(it->second);
+    pending_documents_.erase(it);
+    content::RenderFrameHost* frame =
+        document ? document->AsRenderFrameHostIfValid() : nullptr;
+    if (!frame || !frame->GetPage().IsPrimary() ||
+        frame->GetBrowserContext() != profile_) {
+      return;  // Closing the unbound receiver fails any queued request.
+    }
+    if (metadata &&
+        (metadata->attribution_kind !=
+             aegis_access::RequestAttributionKind::kDocument ||
+         metadata->owner != owned->owner())) {
+      metadata.reset();
+    }
+
+    auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+        profile_, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
+        /*profile_only_storage_partition=*/nullptr, owned->owner(),
+        std::move(metadata),
+        owned->TakeReceiver(), owned->TakeTarget(), std::move(document),
+        base::BindOnce(&BrowserContextData::RemoveProxy,
+                       weak_factory_.GetWeakPtr()));
+    proxies_.emplace(std::move(proxy));
+  }
+
+  explicit BrowserContextData(Profile* profile) : profile_(profile) {}
+
+  const raw_ptr<Profile> profile_;
   std::set<std::unique_ptr<AccessProxyingURLLoaderFactory>,
            base::UniquePtrComparator>
       proxies_;
+  std::map<uint64_t, std::unique_ptr<PendingDocumentFactory>>
+      pending_documents_;
+  uint64_t next_pending_id_ = 0;
   base::WeakPtrFactory<BrowserContextData> weak_factory_{this};
 };
 
@@ -307,20 +504,27 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
     std::optional<int64_t> navigation_id,
     std::optional<int> profile_only_render_process_id,
     content::StoragePartition* profile_only_storage_partition,
-    aegis_access::BrowserOwnedRequestMetadata factory_metadata,
-    network::URLLoaderFactoryBuilder& factory_builder,
+    aegis_access::OwnershipKey factory_owner,
+    std::optional<aegis_access::BrowserOwnedRequestMetadata> factory_metadata,
+    mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
+    mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
+    std::optional<content::WeakDocumentPtr> document,
     DisconnectCallback on_disconnect)
     : profile_(profile),
       frame_tree_node_id_(frame_tree_node_id),
       navigation_id_(navigation_id),
       profile_only_render_process_id_(profile_only_render_process_id),
       profile_only_storage_partition_(profile_only_storage_partition),
+      factory_owner_(std::move(factory_owner)),
       factory_metadata_(std::move(factory_metadata)),
+      document_(std::move(document)),
       on_disconnect_(std::move(on_disconnect)) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const bool is_profile_only =
-      factory_metadata_.attribution_kind ==
+  const bool is_profile_only = factory_metadata_.has_value() &&
+      factory_metadata_->attribution_kind ==
       aegis_access::RequestAttributionKind::kProfileOnly;
+  CHECK(aegis_access::IsCompleteOwner(factory_owner_));
+  CHECK(!factory_metadata_ || factory_metadata_->owner == factory_owner_);
   const bool has_profile_only_process =
       profile_only_render_process_id_.has_value();
   const bool has_profile_only_partition =
@@ -334,7 +538,6 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
   } else {
     CHECK(frame_tree_node_id_);
   }
-  auto [loader_receiver, target_factory] = factory_builder.Append();
   target_factory_.Bind(std::move(target_factory));
   target_factory_.set_disconnect_handler(base::BindOnce(
       &AccessProxyingURLLoaderFactory::OnTargetFactoryError,
@@ -353,8 +556,57 @@ AccessProxyingURLLoaderFactory::~AccessProxyingURLLoaderFactory() {
 void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
     Profile* profile,
     content::RenderFrameHost* frame,
+    const GURL& document_url,
+    std::optional<int64_t> navigation_id,
     network::URLLoaderFactoryBuilder& factory_builder) {
-  MaybeProxyFrameOwnedFactory(profile, frame, factory_builder);
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!aegis::IsAegisProfileSupported(profile) || !frame ||
+      frame->GetBrowserContext() != profile ||
+      !document_url.SchemeIsHTTPOrHTTPS()) {
+    return;
+  }
+  // This fixed owner is browser-owned even when a sandboxed document's
+  // top-level site is opaque and document attribution cannot be captured.
+  const AccessBrowserRequestMetadataResult partition_metadata =
+      BuildBrowserOwnedProfileRequestMetadata(profile,
+                                              frame->GetStoragePartition());
+  if (partition_metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
+      !partition_metadata.metadata.has_value()) {
+    return;
+  }
+  aegis_access::OwnershipKey owner = partition_metadata.metadata->owner;
+
+  if (navigation_id.has_value()) {
+    content::WebContents* contents =
+        content::WebContents::FromRenderFrameHost(frame);
+    if (!contents || contents->GetBrowserContext() != profile ||
+        !frame->GetMainFrame() || !contents->GetPrimaryMainFrame() ||
+        frame->GetMainFrame()->GetFrameTreeNodeId() !=
+            contents->GetPrimaryMainFrame()->GetFrameTreeNodeId()) {
+      return;
+    }
+    BrowserContextData::StartPendingDocument(
+        profile, contents, frame, *navigation_id, std::move(owner),
+        factory_builder);
+    return;
+  }
+  if (!frame->GetPage().IsPrimary()) {
+    return;
+  }
+  std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
+      CaptureProxyFactoryMetadata(profile, frame, std::nullopt);
+  if (metadata &&
+      metadata->attribution_kind ==
+          aegis_access::RequestAttributionKind::kDocument &&
+      metadata->owner == owner) {
+    BrowserContextData::StartProxying(
+        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
+        /*profile_only_storage_partition=*/nullptr, std::move(*metadata),
+        factory_builder);
+    return;
+  }
+  BrowserContextData::StartUnattributedDocument(
+      profile, frame, std::move(owner), factory_builder);
 }
 
 // static
@@ -473,7 +725,8 @@ AccessProxyingURLLoaderFactory::EvaluateRedirect(
 AccessBrowserRequestMetadataResult
 AccessProxyingURLLoaderFactory::CaptureCurrentMetadata() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (factory_metadata_.attribution_kind ==
+  CHECK(factory_metadata_);
+  if (factory_metadata_->attribution_kind ==
       aegis_access::RequestAttributionKind::kProfileOnly) {
     if (profile_only_render_process_id_.has_value()) {
       return BuildBrowserOwnedProfileOnlyRequestMetadata(
@@ -502,11 +755,25 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
   CHECK(ownership_record);
   *net_error = net::ERR_BLOCKED_BY_CLIENT;
 
+  if (document_.has_value() &&
+      !document_->AsRenderFrameHostIfValid()) {
+    *net_error = net::ERR_ABORTED;
+    return RequestDisposition::kBlock;
+  }
+
   AccessPublishedRequestRuntime* runtime =
       AccessPublishedRequestRuntime::Get(profile_);
   const aegis_access::PublishedAccessPolicySnapshot* factory_snapshot =
-      runtime ? runtime->GetPublishedPolicySnapshot(factory_metadata_.owner)
+      runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_)
               : nullptr;
+
+  // A sandboxed HTTP document can have an opaque top-level site. Preserve
+  // native behavior without a published policy, but never let a published
+  // policy fall through to DIRECT when attribution cannot be established.
+  if (!factory_metadata_) {
+    return factory_snapshot ? RequestDisposition::kBlock
+                            : RequestDisposition::kPreserveNative;
+  }
 
   AccessBrowserRequestMetadataResult metadata = CaptureCurrentMetadata();
   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
@@ -517,7 +784,7 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
 
   aegis_access::BrowserOwnedRequestMetadata evaluated_metadata =
       std::move(*metadata.metadata);
-  if (!SameAttributionScope(factory_metadata_, evaluated_metadata)) {
+  if (!SameAttributionScope(*factory_metadata_, evaluated_metadata)) {
     return factory_snapshot ? RequestDisposition::kBlock
                             : RequestDisposition::kPreserveNative;
   }

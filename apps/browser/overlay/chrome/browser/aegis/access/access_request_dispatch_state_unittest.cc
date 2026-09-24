@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "base/memory/raw_ref.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,13 +22,13 @@ class AccessRequestDispatchStateTest : public testing::Test {
 class FlagTerminationHandle final
     : public aegis_access::RequestTerminationHandle {
  public:
-  explicit FlagTerminationHandle(bool* terminated) : terminated_(terminated) {}
+  explicit FlagTerminationHandle(bool& terminated) : terminated_(terminated) {}
   ~FlagTerminationHandle() override = default;
 
   void Terminate() override { *terminated_ = true; }
 
  private:
-  bool* terminated_;
+  raw_ref<bool> terminated_;
 };
 
 aegis_access::RequestOwnershipRecord TestRecord() {
@@ -102,6 +103,9 @@ TEST_F(AccessRequestDispatchStateTest, ProfilesAreIsolated) {
 
 TEST_F(AccessRequestDispatchStateTest,
        BlockBarrierTerminatesMatchingDispatchedRequest) {
+  // The termination handle belongs to the profile state and may outlive an
+  // early assertion return, so its flag must outlive the profile.
+  bool terminated = false;
   auto profile = TestingProfile::Builder().Build();
   auto* state = AccessRequestDispatchState::GetOrCreate(profile.get());
   ASSERT_NE(state, nullptr);
@@ -109,10 +113,9 @@ TEST_F(AccessRequestDispatchStateTest,
   const aegis_access::RequestOwnershipRecord record = TestRecord();
   ASSERT_EQ(state->ownership().Register(record),
             aegis_access::RequestOwnershipStatus::kOk);
-  bool terminated = false;
   ASSERT_EQ(state->ownership().MarkDispatched(
                 record.request_id, record.owner, record.generations,
-                std::make_unique<FlagTerminationHandle>(&terminated)),
+                std::make_unique<FlagTerminationHandle>(terminated)),
             aegis_access::RequestOwnershipStatus::kOk);
 
   const AccessBlockAndCancelResult result =

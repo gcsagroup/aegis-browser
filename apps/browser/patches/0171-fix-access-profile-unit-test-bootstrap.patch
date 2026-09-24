@@ -1,0 +1,174 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Thu, 24 Sep 2026 07:22:14 +0000
+Subject: [PATCH] fix(access): initialize Chrome profile unit test runtime
+
+Use the Chrome unit-test main for Profile-owning Access tests so
+Chrome paths, resources, and Mojo are initialized before fixtures.
+Provide a BrowserTaskEnvironment in source-generation fixtures.
+
+---
+ 3 files changed, 32 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 737185f..0e57c40 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -191,9 +191,10 @@
+     ":access_browser_request_adapter",
+     ":access_network_context_transport",
+     "//base",
+-    "//base/test:run_all_unittests",
+-    "//base/test:test_support",
+-    "//chrome/browser/profiles:test_support",
++    "//base/test:test_support",
++    "//chrome/browser/profiles:test_support",
++    "//chrome/test:test_support",
++    "//chrome/test:test_support_unit",
+     "//components/aegis_access",
+     "//content/public/browser",
+     "//content/test:test_support",
+@@ -220,9 +221,11 @@
+   sources = [ "access_identity_generation_source_unittest.cc" ]
+   deps = [
+     ":access_identity_generation_source",
+-    "//base/test:run_all_unittests",
+-    "//chrome/browser/profiles:test_support",
++    "//chrome/browser/profiles:test_support",
++    "//chrome/test:test_support",
++    "//chrome/test:test_support_unit",
+     "//components/aegis_access:access_identity_generation_state",
++    "//content/test:test_support",
+     "//testing/gtest",
+   ]
+ }
+@@ -231,9 +234,11 @@
+   sources = [ "access_proxy_selection_generation_source_unittest.cc" ]
+   deps = [
+     ":access_proxy_selection_generation_source",
+-    "//base/test:run_all_unittests",
+-    "//chrome/browser/profiles:test_support",
++    "//chrome/browser/profiles:test_support",
++    "//chrome/test:test_support",
++    "//chrome/test:test_support_unit",
+     "//components/aegis_access:access_proxy_selection_generation_state",
++    "//content/test:test_support",
+     "//testing/gtest",
+   ]
+ }
+diff --git a/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc b/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc
+index 0eb2702..60a169c 100644
+--- a/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc
++++ b/chrome/browser/aegis/access/access_identity_generation_source_unittest.cc
+@@ -5,10 +5,16 @@
+ #include <memory>
+ 
+ #include "chrome/test/base/testing_profile.h"
++#include "content/public/test/browser_task_environment.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+ namespace {
++
++class AccessIdentityGenerationSourceTest : public testing::Test {
++ protected:
++  content::BrowserTaskEnvironment task_environment_;
++};
+ 
+ aegis_access::AccessIdentityBinding GuestIdentity() {
+   return {aegis_access::AccessIdentityKind::kInstallationGuest,
+@@ -20,7 +26,7 @@
+           "account-principal", "account-entitlement", "prod", "access"};
+ }
+ 
+-TEST(AccessIdentityGenerationSourceTest,
++TEST_F(AccessIdentityGenerationSourceTest,
+      StartsUnpublishedUntilCommittedIdentity) {
+   auto profile = TestingProfile::Builder().Build();
+   auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
+@@ -35,7 +41,7 @@
+   EXPECT_EQ(source->identity_generation(), 1u);
+ }
+ 
+-TEST(AccessIdentityGenerationSourceTest,
++TEST_F(AccessIdentityGenerationSourceTest,
+      CommittedIdentityTransitionsAdvanceGeneration) {
+   auto profile = TestingProfile::Builder().Build();
+   auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
+@@ -52,7 +58,7 @@
+   EXPECT_EQ(source->CommitIdentity(GuestIdentity()).generation, 4u);
+ }
+ 
+-TEST(AccessIdentityGenerationSourceTest, ProfileOwnedSourcesAreIsolated) {
++TEST_F(AccessIdentityGenerationSourceTest, ProfileOwnedSourcesAreIsolated) {
+   auto first_profile = TestingProfile::Builder().Build();
+   auto second_profile = TestingProfile::Builder().Build();
+   auto* first =
+@@ -68,7 +74,7 @@
+   EXPECT_FALSE(second->binding().has_value());
+ }
+ 
+-TEST(AccessIdentityGenerationSourceTest, InvalidIdentityNeverPublishes) {
++TEST_F(AccessIdentityGenerationSourceTest, InvalidIdentityNeverPublishes) {
+   auto profile = TestingProfile::Builder().Build();
+   auto* source = AccessIdentityGenerationSource::GetOrCreate(profile.get());
+   ASSERT_TRUE(source);
+diff --git a/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc b/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc
+index 65e43eb..f12a69f 100644
+--- a/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc
++++ b/chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc
+@@ -5,10 +5,16 @@
+ #include <memory>
+ 
+ #include "chrome/test/base/testing_profile.h"
++#include "content/public/test/browser_task_environment.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+ namespace {
++
++class AccessProxySelectionGenerationSourceTest : public testing::Test {
++ protected:
++  content::BrowserTaskEnvironment task_environment_;
++};
+ 
+ aegis_access::AccessProxySelectionBinding InitialSelection() {
+   return {"group-a", "endpoint-a", "lease-a", "assignment-a", 1};
+@@ -18,7 +24,7 @@
+   return {"group-a", "endpoint-b", "lease-b", "assignment-b", 2};
+ }
+ 
+-TEST(AccessProxySelectionGenerationSourceTest,
++TEST_F(AccessProxySelectionGenerationSourceTest,
+      StartsUnpublishedUntilCommittedSelection) {
+   auto profile = TestingProfile::Builder().Build();
+   auto* source =
+@@ -35,7 +41,7 @@
+   EXPECT_EQ(source->selection_generation("group-a"), 1u);
+ }
+ 
+-TEST(AccessProxySelectionGenerationSourceTest,
++TEST_F(AccessProxySelectionGenerationSourceTest,
+      CommittedSelectionSwitchAdvancesGeneration) {
+   auto profile = TestingProfile::Builder().Build();
+   auto* source =
+@@ -50,7 +56,7 @@
+   EXPECT_EQ(source->binding_for_group("group-a")->endpoint_id, "endpoint-b");
+ }
+ 
+-TEST(AccessProxySelectionGenerationSourceTest,
++TEST_F(AccessProxySelectionGenerationSourceTest,
+      StaleBindingRevisionCannotOverwriteNewerSelection) {
+   auto profile = TestingProfile::Builder().Build();
+   auto* source =
+@@ -69,7 +75,7 @@
+   EXPECT_EQ(source->binding_for_group("group-a")->endpoint_id, "endpoint-b");
+ }
+ 
+-TEST(AccessProxySelectionGenerationSourceTest,
++TEST_F(AccessProxySelectionGenerationSourceTest,
+      ProxyGroupsAndProfilesAreIsolated) {
+   auto first_profile = TestingProfile::Builder().Build();
+   auto second_profile = TestingProfile::Builder().Build();
+-- 
+2.50.1

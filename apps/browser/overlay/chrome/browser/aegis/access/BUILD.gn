@@ -191,9 +191,10 @@ test("access_browser_request_adapter_unittests") {
     ":access_browser_request_adapter",
     ":access_network_context_transport",
     "//base",
-    "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//chrome/browser/profiles:test_support",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
     "//components/aegis_access",
     "//content/public/browser",
     "//content/test:test_support",
@@ -220,9 +221,11 @@ test("access_identity_generation_source_unittests") {
   sources = [ "access_identity_generation_source_unittest.cc" ]
   deps = [
     ":access_identity_generation_source",
-    "//base/test:run_all_unittests",
     "//chrome/browser/profiles:test_support",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
     "//components/aegis_access:access_identity_generation_state",
+    "//content/test:test_support",
     "//testing/gtest",
   ]
 }
@@ -231,9 +234,11 @@ test("access_proxy_selection_generation_source_unittests") {
   sources = [ "access_proxy_selection_generation_source_unittest.cc" ]
   deps = [
     ":access_proxy_selection_generation_source",
-    "//base/test:run_all_unittests",
     "//chrome/browser/profiles:test_support",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
     "//components/aegis_access:access_proxy_selection_generation_state",
+    "//content/test:test_support",
     "//testing/gtest",
   ]
 }
