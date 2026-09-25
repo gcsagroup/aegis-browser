@@ -870,6 +870,31 @@ TEST(AccessRuleStoreTest, AdapterRejectsInvalidAtomicSiteGroups) {
   expect_rejected(mismatched_toggle);
 }
 
+TEST(AccessRuleStoreTest, AdapterPreservesBoundedOwnerValidation) {
+  // The shared owner helper only checks for nonempty tokens. Storage must
+  // retain its stricter length bound when resolving the two helpers' names.
+  for (const size_t length : {size_t{0}, size_t{256}, size_t{257}}) {
+    for (const bool profile_token : {false, true}) {
+      StoredPolicySnapshot snapshot;
+      snapshot.owner = Owner();
+      snapshot.policy_generation = 1;
+      std::string& token = profile_token
+                               ? snapshot.owner.profile_token
+                               : snapshot.owner.storage_partition_token;
+      token.assign(length, 'a');
+      const auto result = AccessRuleStore::AdaptMatcherSnapshot(snapshot);
+      EXPECT_EQ(result.status, length == 256 ? StoreStatus::kValid
+                                            : StoreStatus::kCorrupt);
+      EXPECT_EQ(result.value.has_value(), length == 256);
+    }
+  }
+  StoredPolicySnapshot invalid_channel;
+  invalid_channel.owner = Owner(ChannelNamespace::kInvalid);
+  invalid_channel.policy_generation = 1;
+  EXPECT_EQ(AccessRuleStore::AdaptMatcherSnapshot(invalid_channel).status,
+            StoreStatus::kCorrupt);
+}
+
 TEST(AccessRuleStoreTest, AdapterRejectsSnapshotGenerationMismatch) {
   StoredPolicySnapshot stale_group = StoredSnapshotForAdapter(7, 8);
   StoreResult<MatcherRuleSetCandidate> result =

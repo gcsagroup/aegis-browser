@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Thu, 24 Sep 2026 07:44:57 +0000
+Subject: [PATCH] test(access): use Chromium 151 GURL path API
+
+Read the request path through GURL::path(), the accessor provided by
+the fixed Chromium version, when excluding automatic favicon fetches.
+
+---
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 1dd2712..ecb8f21 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -206,7 +206,7 @@
+ 
+ std::unique_ptr<net::test_server::HttpResponse> IgnoreAutomaticFavicon(
+     const net::test_server::HttpRequest& request) {
+-  if (request.GetURL().path_piece() != "/favicon.ico") {
++  if (request.GetURL().path() != "/favicon.ico") {
+     return nullptr;
+   }
+ 
+
+-- 
+2.50.1

@@ -1,0 +1,62 @@
+From 3518c50fa6b2fb835e0c8c39d54756b966a368c3 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Builder <patch-builder@invalid>
+Date: Thu, 24 Sep 2026 17:56:02 +0800
+Subject: [PATCH] fix(access): carry document identity through auxiliary
+ factories
+
+---
+ .../interest_group/ad_auction_service_impl.cc        |  7 ++++++-
+ .../browser/renderer_host/render_frame_host_impl.cc  | 12 ++++++++++--
+ 2 files changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/content/browser/interest_group/ad_auction_service_impl.cc b/content/browser/interest_group/ad_auction_service_impl.cc
+index 156f08a..1c06833 100644
+--- a/content/browser/interest_group/ad_auction_service_impl.cc
++++ b/content/browser/interest_group/ad_auction_service_impl.cc
+@@ -715,7 +715,12 @@ void AdAuctionServiceImpl::CreateUnderlyingTrustedURLLoaderFactory(
+           render_frame_host().GetProcess()->GetDeprecatedID(), url::Origin(),
+           net::IsolationInfo(),
+           ukm::SourceIdObj::FromInt64(
+-              render_frame_host().GetPageUkmSourceId())));
++              render_frame_host().GetPageUkmSourceId()),
++          /*bypass_redirect_checks=*/nullptr,
++          /*navigation_id=*/std::nullopt,
++          /*navigation_response_task_runner=*/nullptr,
++          ContentBrowserClient::DocumentURLLoaderFactoryContext{
++              render_frame_host().GetLastCommittedURL(), std::nullopt}));
+ }
+ 
+ void AdAuctionServiceImpl::PreconnectSocket(
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+index a05222a..9ca9cab 100644
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -12931,7 +12931,11 @@ void RenderFrameHostImpl::CommitNavigation(
+                   browser_context, this, GetProcess()->GetDeprecatedID(),
+                   subresource_loader_factories_config.origin(),
+                   net::IsolationInfo(),
+-                  subresource_loader_factories_config.ukm_source_id()));
++                  subresource_loader_factories_config.ukm_source_id(),
++                  /*bypass_redirect_checks=*/nullptr,
++                  /*navigation_id=*/std::nullopt,
++                  /*navigation_response_task_runner=*/nullptr,
++                  subresource_loader_factories_config.document_context()));
+ 
+       // If the renderer has webui bindings, then don't give it access to
+       // network loader for security reasons.
+@@ -13053,7 +13057,11 @@ void RenderFrameHostImpl::CommitNavigation(
+               GetBrowserContext(), this, GetProcess()->GetDeprecatedID(),
+               subresource_loader_factories_config.origin(),
+               net::IsolationInfo(),
+-              subresource_loader_factories_config.ukm_source_id()),
++              subresource_loader_factories_config.ukm_source_id(),
++              /*bypass_redirect_checks=*/nullptr,
++              /*navigation_id=*/std::nullopt,
++              /*navigation_response_task_runner=*/nullptr,
++              subresource_loader_factories_config.document_context()),
+           devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
+               this));
+       subresource_loader_factories->pending_scheme_specific_factories().emplace(
+-- 
+2.54.0 (Apple Git-157)
+

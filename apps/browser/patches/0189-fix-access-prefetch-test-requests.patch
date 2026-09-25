@@ -1,0 +1,120 @@
+From 296f5bd7ea84f5357f3403ca62a47b6e35b0037a Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 21:30:36 +0800
+Subject: [PATCH] Fix Access prefetch fixture request shape and relay test type
+
+---
+ ...proxying_url_loader_factory_browsertest.cc | 35 +++++++++++++++++++
+ .../browser/loader/prefetch_browsertest.cc    | 15 +++++---
+ 2 files changed, 45 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 5bf6a77..3f8ac50 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -69,6 +69,7 @@
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
++#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+ #include "services/network/test/test_url_loader_factory.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -1676,6 +1677,40 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_TRUE(disconnected_result.Wait());
+   EXPECT_NE(disconnected_loader->NetError(), net::OK);
+   EXPECT_EQ(dispatch_state->ownership().size(), ownership_before);
++
++  // A BLOCK barrier must also terminate a request during the interval after
++  // control-pipe disconnect but before client completion or watchdog expiry.
++  const GURL blocked_url = target_url().Resolve("/relay-blocked");
++  auto blocked_request = std::make_unique<network::ResourceRequest>();
++  blocked_request->url = blocked_url;
++  blocked_request->request_initiator = url::Origin::Create(worker_page_url());
++  auto blocked_loader = network::SimpleURLLoader::Create(
++      std::move(blocked_request), TRAFFIC_ANNOTATION_FOR_TESTS);
++  base::test::TestFuture<std::optional<std::string>> blocked_result;
++  blocked_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++      factory.get(), blocked_result.GetCallback());
++  terminal.WaitForRequest(blocked_url);
++  ASSERT_EQ(terminal.NumPending(), 1);
++  ASSERT_EQ(dispatch_state->ownership().size(), ownership_before + 1u);
++  terminal.pending_requests()->back().test_url_loader.reset();
++  base::RunLoop().RunUntilIdle();
++  ASSERT_FALSE(blocked_result.IsReady());
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before + 1u);
++
++  aegis_access::RequestCancellationSelector selector;
++  BuildCancellationSelector(blocked_url, &selector);
++  const AccessBlockAndCancelResult barrier_result =
++      dispatch_state->InstallBlockBarrierAndCancelMatching(
++          {"relay-control-disconnected", 1, std::move(selector)});
++  EXPECT_EQ(barrier_result.barrier_status,
++            aegis_access::RequestDispatchBarrierStatus::kOk);
++  EXPECT_EQ(barrier_result.cancellation_status,
++            aegis_access::RequestOwnershipStatus::kOk);
++  EXPECT_EQ(barrier_result.matched_requests, 1u);
++  EXPECT_EQ(barrier_result.terminated_requests, 1u);
++  ASSERT_TRUE(blocked_result.Wait());
++  EXPECT_NE(blocked_loader->NetError(), net::OK);
++  EXPECT_EQ(dispatch_state->ownership().size(), ownership_before);
+   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                      /*proxy_delta=*/0u);
+ }
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 2bdaa85..098e372 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -108,7 +108,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->url = url;
+     request->load_flags = net::LOAD_PREFETCH;
+-    request->destination = network::mojom::RequestDestination::kDocument;
++    request->mode = network::mojom::RequestMode::kNoCors;
++    request->destination = network::mojom::RequestDestination::kEmpty;
+     request->request_initiator =
+         url::Origin::Create(embedded_test_server()->GetURL("/first"));
+     auto loader = network::SimpleURLLoader::Create(
+@@ -205,7 +206,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->url = url;
+     request->load_flags = net::LOAD_PREFETCH;
+-    request->destination = network::mojom::RequestDestination::kDocument;
++    request->mode = network::mojom::RequestMode::kNoCors;
++    request->destination = network::mojom::RequestDestination::kEmpty;
+     request->request_initiator = url::Origin::Create(
+         shell()->web_contents()->GetLastCommittedURL());
+     auto loader = network::SimpleURLLoader::Create(
+@@ -289,7 +291,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->url = url;
+     request->load_flags = net::LOAD_PREFETCH | additional_load_flags;
+-    request->destination = network::mojom::RequestDestination::kDocument;
++    request->mode = network::mojom::RequestMode::kNoCors;
++    request->destination = network::mojom::RequestDestination::kEmpty;
+     request->request_initiator = url::Origin::Create(initiator);
+     if (recursive) {
+       request->recursive_prefetch_token = base::UnguessableToken::Create();
+@@ -439,7 +442,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->url = url;
+     request->load_flags = net::LOAD_PREFETCH;
+-    request->destination = network::mojom::RequestDestination::kDocument;
++    request->mode = network::mojom::RequestMode::kNoCors;
++    request->destination = network::mojom::RequestDestination::kEmpty;
+     request->request_initiator = url::Origin::Create(first_url);
+     auto loader = network::SimpleURLLoader::Create(
+         std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
+@@ -516,7 +520,8 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+     auto request = std::make_unique<network::ResourceRequest>();
+     request->url = url;
+     request->load_flags = net::LOAD_PREFETCH;
+-    request->destination = network::mojom::RequestDestination::kDocument;
++    request->mode = network::mojom::RequestMode::kNoCors;
++    request->destination = network::mojom::RequestDestination::kEmpty;
+     request->request_initiator =
+         url::Origin::Create(embedded_test_server()->GetURL("/first"));
+     auto loader = network::SimpleURLLoader::Create(
+-- 
+2.54.0 (Apple Git-157)
+
