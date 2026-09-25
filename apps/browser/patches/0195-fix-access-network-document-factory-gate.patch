@@ -1,0 +1,47 @@
+From c93e8eb44cd760840bf4dbe3aec1a3c63440c98f Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 25 Sep 2026 07:08:48 +0800
+Subject: [PATCH] Gate Access interception to network document factories
+
+---
+ chrome/browser/chrome_content_browser_client.cc         | 1 -
+ content/browser/renderer_host/render_frame_host_impl.cc | 4 ++--
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 072b60ec81..601711d918 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6921,7 +6921,6 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactoryForDocument(
+     network::URLLoaderFactoryBuilder& factory_builder) {
+   aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+       Profile::FromBrowserContext(browser_context), frame,
+-      document_context.document_url,
+       document_context.committing_navigation_id, factory_builder);
+ }
+ 
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+index 39046750fd..b3131bf454 100644
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -12938,7 +12938,7 @@ void RenderFrameHostImpl::CommitNavigation(
+                   /*bypass_redirect_checks=*/nullptr,
+                   /*navigation_id=*/std::nullopt,
+                   /*navigation_response_task_runner=*/nullptr,
+-                  subresource_loader_factories_config.document_context()));
++                  /*document_context=*/std::nullopt));
+ 
+       // If the renderer has webui bindings, then don't give it access to
+       // network loader for security reasons.
+@@ -13067,7 +13067,7 @@ void RenderFrameHostImpl::CommitNavigation(
+               /*bypass_redirect_checks=*/nullptr,
+               /*navigation_id=*/std::nullopt,
+               /*navigation_response_task_runner=*/nullptr,
+-              subresource_loader_factories_config.document_context()),
++              /*document_context=*/std::nullopt),
+           devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
+               this));
+       subresource_loader_factories->pending_scheme_specific_factories().emplace(
+-- 
+2.54.0 (Apple Git-157)
+

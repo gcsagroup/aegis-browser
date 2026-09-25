@@ -1,0 +1,718 @@
+From 3a1364210610640b2b4ad1c3f6c92a787c261b37 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Builder <patch-builder@invalid>
+Date: Thu, 24 Sep 2026 17:14:45 +0800
+Subject: [PATCH] fix(access): bind document factory only after exact commit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   2 +
+ .../access_proxying_url_loader_factory.cc     | 206 +++++++++++++++++-
+ .../access_proxying_url_loader_factory.h      |   7 +-
+ ...proxying_url_loader_factory_browsertest.cc | 191 ++++++++++++++++
+ .../browser/chrome_content_browser_client.cc  |  11 +-
+ .../renderer_host/render_frame_host_impl.cc   |  14 +-
+ .../renderer_host/render_frame_host_impl.h    |   6 +-
+ 7 files changed, 418 insertions(+), 19 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index a64e3ab..4cb2d4d 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -316,7 +316,9 @@ if (!is_android) {
+       "//components/bookmarks/test",
+       "//components/prefs",
+       "//components/search_engines",
++      "//content/public/common",
+       "//content/test:test_support",
++      "//mojo/public/cpp/bindings",
+       "//net:test_support",
+       "//services/network/public/cpp",
+       "//testing/gtest",
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index a24a9c2..b9fc476 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -11,6 +11,7 @@
+ #include "base/functional/bind.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/memory/weak_ptr.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+@@ -21,9 +22,12 @@
+ #include "components/aegis_access/access_policy_evaluator.h"
+ #include "components/aegis_access/published_request_runtime.h"
+ #include "content/public/browser/browser_thread.h"
++#include "content/public/browser/global_routing_id.h"
++#include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/page.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_observer.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "net/base/net_errors.h"
+ #include "services/network/public/cpp/resource_request.h"
+@@ -212,6 +216,96 @@ CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
+       BuildBrowserOwnedProfileRequestMetadata(profile, partition));
+ }
+ 
++// CommitNavigation constructs and clones this factory before the new document
++// is active. Keep the wrapper endpoint unbound until the exact navigation
++// commits, so queued parser requests cannot be attributed to the old document.
++class PendingDocumentFactory : public content::WebContentsObserver {
++ public:
++  using CompletionCallback = base::OnceCallback<void(
++      PendingDocumentFactory*,
++      std::optional<aegis_access::BrowserOwnedRequestMetadata>,
++      std::optional<content::WeakDocumentPtr>)>;
++
++  PendingDocumentFactory(
++      Profile* profile,
++      content::WebContents* contents,
++      content::RenderFrameHost* frame,
++      int64_t navigation_id,
++      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
++      mojo::PendingRemote<network::mojom::URLLoaderFactory> target,
++      CompletionCallback on_complete)
++      : content::WebContentsObserver(contents),
++        profile_(profile),
++        frame_id_(frame->GetGlobalId()),
++        navigation_id_(navigation_id),
++        receiver_(std::move(receiver)),
++        target_(std::move(target)),
++        on_complete_(std::move(on_complete)) {}
++
++  PendingDocumentFactory(const PendingDocumentFactory&) = delete;
++  PendingDocumentFactory& operator=(const PendingDocumentFactory&) = delete;
++  ~PendingDocumentFactory() override = default;
++
++  mojo::PendingReceiver<network::mojom::URLLoaderFactory> TakeReceiver() {
++    return std::move(receiver_);
++  }
++  mojo::PendingRemote<network::mojom::URLLoaderFactory> TakeTarget() {
++    return std::move(target_);
++  }
++
++  void DidFinishNavigation(content::NavigationHandle* navigation) override {
++    if (navigation->GetNavigationId() != navigation_id_) {
++      return;
++    }
++    content::RenderFrameHost* frame =
++        navigation->HasCommitted() && !navigation->IsSameDocument() &&
++                !navigation->IsErrorPage()
++            ? navigation->GetRenderFrameHost()
++            : nullptr;
++    if (!frame || frame->GetGlobalId() != frame_id_ ||
++        !frame->GetPage().IsPrimary()) {
++      Finish(std::nullopt, std::nullopt);
++      return;
++    }
++
++    auto metadata = CaptureProxyFactoryMetadata(profile_, frame, std::nullopt);
++    if (!metadata || metadata->attribution_kind !=
++                         aegis_access::RequestAttributionKind::kDocument) {
++      Finish(std::nullopt, std::nullopt);
++      return;
++    }
++    Finish(std::move(metadata), frame->GetWeakDocumentPtr());
++  }
++
++  void RenderFrameDeleted(content::RenderFrameHost* frame) override {
++    if (frame->GetGlobalId() == frame_id_) {
++      Finish(std::nullopt, std::nullopt);
++    }
++  }
++
++  void WebContentsDestroyed() override { Finish(std::nullopt, std::nullopt); }
++
++ private:
++  void Finish(
++      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
++      std::optional<content::WeakDocumentPtr> document) {
++    Observe(nullptr);
++    // Erasing this observer inside its notification would destroy the active
++    // callback frame. Completing on the next UI task also keeps queued Mojo
++    // requests unbound until the document identity has been captured.
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(std::move(on_complete_), this,
++                                  std::move(metadata), std::move(document)));
++  }
++
++  const raw_ptr<Profile> profile_;
++  const content::GlobalRenderFrameHostId frame_id_;
++  const int64_t navigation_id_;
++  mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver_;
++  mojo::PendingRemote<network::mojom::URLLoaderFactory> target_;
++  CompletionCallback on_complete_;
++};
++
+ class BrowserContextData : public base::SupportsUserData::Data {
+  public:
+   BrowserContextData(const BrowserContextData&) = delete;
+@@ -227,22 +321,49 @@ class BrowserContextData : public base::SupportsUserData::Data {
+       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+       network::URLLoaderFactoryBuilder& factory_builder) {
+     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-    auto* self =
+-        static_cast<BrowserContextData*>(profile->GetUserData(kBrowserContextDataKey));
+-    if (!self) {
+-      self = new BrowserContextData();
+-      profile->SetUserData(kBrowserContextDataKey, base::WrapUnique(self));
++    BrowserContextData* self = GetOrCreate(profile);
++    std::optional<content::WeakDocumentPtr> document;
++    if (factory_metadata.attribution_kind ==
++        aegis_access::RequestAttributionKind::kDocument) {
++      content::WebContents* contents =
++          content::WebContents::FromFrameTreeNodeId(frame_tree_node_id);
++      content::RenderFrameHost* frame =
++          contents ? contents->UnsafeFindFrameByFrameTreeNodeId(
++                         frame_tree_node_id)
++                   : nullptr;
++      if (!frame) {
++        return;
++      }
++      document = frame->GetWeakDocumentPtr();
+     }
+ 
++    auto [receiver, target] = factory_builder.Append();
+     auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+         profile, frame_tree_node_id, navigation_id,
+         profile_only_render_process_id, profile_only_storage_partition,
+-        std::move(factory_metadata), factory_builder,
++        std::move(factory_metadata), std::move(receiver), std::move(target),
++        std::move(document),
+         base::BindOnce(&BrowserContextData::RemoveProxy,
+                        self->weak_factory_.GetWeakPtr()));
+     self->proxies_.emplace(std::move(proxy));
+   }
+ 
++  static void StartPendingDocument(
++      Profile* profile,
++      content::WebContents* contents,
++      content::RenderFrameHost* frame,
++      int64_t navigation_id,
++      network::URLLoaderFactoryBuilder& factory_builder) {
++    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++    BrowserContextData* self = GetOrCreate(profile);
++    auto [receiver, target] = factory_builder.Append();
++    self->pending_documents_.emplace(std::make_unique<PendingDocumentFactory>(
++        profile, contents, frame, navigation_id, std::move(receiver),
++        std::move(target),
++        base::BindOnce(&BrowserContextData::CompletePendingDocument,
++                       self->weak_factory_.GetWeakPtr())));
++  }
++
+   void RemoveProxy(AccessProxyingURLLoaderFactory* proxy) {
+     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+     auto it = proxies_.find(proxy);
+@@ -251,11 +372,51 @@ class BrowserContextData : public base::SupportsUserData::Data {
+   }
+ 
+  private:
+-  BrowserContextData() = default;
++  static BrowserContextData* GetOrCreate(Profile* profile) {
++    auto* self = static_cast<BrowserContextData*>(
++        profile->GetUserData(kBrowserContextDataKey));
++    if (!self) {
++      self = new BrowserContextData(profile);
++      profile->SetUserData(kBrowserContextDataKey, base::WrapUnique(self));
++    }
++    return self;
++  }
++
++  void CompletePendingDocument(
++      PendingDocumentFactory* pending,
++      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
++      std::optional<content::WeakDocumentPtr> document) {
++    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++    auto it = pending_documents_.find(pending);
++    CHECK(it != pending_documents_.end());
++    auto node = pending_documents_.extract(it);
++    std::unique_ptr<PendingDocumentFactory> owned = std::move(node.value());
++    content::RenderFrameHost* frame =
++        document ? document->AsRenderFrameHostIfValid() : nullptr;
++    if (!metadata || !frame || !frame->GetPage().IsPrimary() ||
++        frame->GetBrowserContext() != profile_ ||
++        metadata->attribution_kind !=
++            aegis_access::RequestAttributionKind::kDocument) {
++      return;  // Closing the unbound receiver fails any queued request.
++    }
++
++    auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
++        profile_, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
++        /*profile_only_storage_partition=*/nullptr, std::move(*metadata),
++        owned->TakeReceiver(), owned->TakeTarget(), std::move(document),
++        base::BindOnce(&BrowserContextData::RemoveProxy,
++                       weak_factory_.GetWeakPtr()));
++    proxies_.emplace(std::move(proxy));
++  }
++
++  explicit BrowserContextData(Profile* profile) : profile_(profile) {}
+ 
++  const raw_ptr<Profile> profile_;
+   std::set<std::unique_ptr<AccessProxyingURLLoaderFactory>,
+            base::UniquePtrComparator>
+       proxies_;
++  std::set<std::unique_ptr<PendingDocumentFactory>, base::UniquePtrComparator>
++      pending_documents_;
+   base::WeakPtrFactory<BrowserContextData> weak_factory_{this};
+ };
+ 
+@@ -308,7 +469,9 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+     std::optional<int> profile_only_render_process_id,
+     content::StoragePartition* profile_only_storage_partition,
+     aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+-    network::URLLoaderFactoryBuilder& factory_builder,
++    mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
++    mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
++    std::optional<content::WeakDocumentPtr> document,
+     DisconnectCallback on_disconnect)
+     : profile_(profile),
+       frame_tree_node_id_(frame_tree_node_id),
+@@ -316,6 +479,7 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+       profile_only_render_process_id_(profile_only_render_process_id),
+       profile_only_storage_partition_(profile_only_storage_partition),
+       factory_metadata_(std::move(factory_metadata)),
++      document_(std::move(document)),
+       on_disconnect_(std::move(on_disconnect)) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   const bool is_profile_only =
+@@ -334,7 +498,6 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+   } else {
+     CHECK(frame_tree_node_id_);
+   }
+-  auto [loader_receiver, target_factory] = factory_builder.Append();
+   target_factory_.Bind(std::move(target_factory));
+   target_factory_.set_disconnect_handler(base::BindOnce(
+       &AccessProxyingURLLoaderFactory::OnTargetFactoryError,
+@@ -353,7 +516,26 @@ AccessProxyingURLLoaderFactory::~AccessProxyingURLLoaderFactory() {
+ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+     Profile* profile,
+     content::RenderFrameHost* frame,
++    std::optional<int64_t> navigation_id,
+     network::URLLoaderFactoryBuilder& factory_builder) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (navigation_id.has_value()) {
++    if (!aegis::IsAegisProfileSupported(profile) || !frame ||
++        frame->GetBrowserContext() != profile) {
++      return;
++    }
++    content::WebContents* contents =
++        content::WebContents::FromRenderFrameHost(frame);
++    if (!contents || contents->GetBrowserContext() != profile ||
++        !frame->GetMainFrame() || !contents->GetPrimaryMainFrame() ||
++        frame->GetMainFrame()->GetFrameTreeNodeId() !=
++            contents->GetPrimaryMainFrame()->GetFrameTreeNodeId()) {
++      return;
++    }
++    BrowserContextData::StartPendingDocument(
++        profile, contents, frame, *navigation_id, factory_builder);
++    return;
++  }
+   MaybeProxyFrameOwnedFactory(profile, frame, factory_builder);
+ }
+ 
+@@ -502,6 +684,12 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
+   CHECK(ownership_record);
+   *net_error = net::ERR_BLOCKED_BY_CLIENT;
+ 
++  if (document_.has_value() &&
++      !document_->AsRenderFrameHostIfValid()) {
++    *net_error = net::ERR_ABORTED;
++    return RequestDisposition::kBlock;
++  }
++
+   AccessPublishedRequestRuntime* runtime =
+       AccessPublishedRequestRuntime::Get(profile_);
+   const aegis_access::PublishedAccessPolicySnapshot* factory_snapshot =
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index a2edc31..5c0789a 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -15,6 +15,7 @@
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "components/aegis_access/request_policy_context.h"
+ #include "content/public/browser/frame_tree_node_id.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
+@@ -66,7 +67,9 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       std::optional<int> profile_only_render_process_id,
+       content::StoragePartition* profile_only_storage_partition,
+       aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+-      network::URLLoaderFactoryBuilder& factory_builder,
++      mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
++      mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
++      std::optional<content::WeakDocumentPtr> document,
+       DisconnectCallback on_disconnect);
+   AccessProxyingURLLoaderFactory(const AccessProxyingURLLoaderFactory&) =
+       delete;
+@@ -77,6 +80,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   static void MaybeProxyDocumentSubresource(
+       Profile* profile,
+       content::RenderFrameHost* frame,
++      std::optional<int64_t> navigation_id,
+       network::URLLoaderFactoryBuilder& factory_builder);
+   static void MaybeProxyWorkerMainResource(
+       Profile* profile,
+@@ -180,6 +184,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   const std::optional<int> profile_only_render_process_id_;
+   const raw_ptr<content::StoragePartition> profile_only_storage_partition_;
+   const aegis_access::BrowserOwnedRequestMetadata factory_metadata_;
++  const std::optional<content::WeakDocumentPtr> document_;
+ 
+   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
+   std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index d743e27..fa23ac2 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <atomic>
+ #include <cstdint>
++#include <limits>
+ #include <memory>
+ #include <optional>
+ #include <string>
+@@ -47,8 +48,11 @@
+ #include "content/public/browser/storage_partition.h"
+ #include "content/public/browser/storage_partition_config.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/content_features.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+ #include "net/dns/mock_host_resolver.h"
+ #include "net/http/http_status_code.h"
+@@ -64,6 +68,7 @@
+ #include "services/network/public/mojom/fetch_api.mojom-shared.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
++#include "url/origin.h"
+ 
+ namespace aegis::access {
+ 
+@@ -217,6 +222,29 @@ std::unique_ptr<net::test_server::HttpResponse> IgnoreAutomaticFavicon(
+   return response;
+ }
+ 
++std::unique_ptr<net::test_server::HttpResponse> ParserEarlyPageReply(
++    std::atomic<size_t>* counter,
++    net::test_server::EmbeddedTestServer* origin,
++    const net::test_server::HttpRequest& request) {
++  if (request.GetURL().path() != "/parser-early-page") {
++    return nullptr;
++  }
++  counter->fetch_add(1, std::memory_order_relaxed);
++  const char* resource = request.relative_url.find("blocked") !=
++                                 std::string::npos
++                             ? "/resource?parser-blocked"
++                             : "/resource?parser-healthy";
++  auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++  response->set_code(net::HTTP_OK);
++  response->set_content(
++      "<!doctype html><script>window.parserFetchDone = "
++      "fetch('" + origin->GetURL(kTargetHost, resource).spec() +
++      "', {mode:'no-cors',cache:'no-store'})"
++      ".then(() => 'loaded', () => 'error');</script>");
++  response->set_content_type("text/html");
++  return response;
++}
++
+ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
+     std::atomic<size_t>* counter,
+     const char* body,
+@@ -348,6 +376,9 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+     target_origin_.RegisterRequestHandler(
+         base::BindRepeating(&IgnoreAutomaticFavicon));
++    target_origin_.RegisterRequestHandler(base::BindRepeating(
++        &ParserEarlyPageReply, base::Unretained(&origin_requests_),
++        base::Unretained(&target_origin_)));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &ServiceWorkerOriginReply, base::Unretained(&origin_requests_)));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+@@ -485,6 +516,22 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   bool FetchTarget() { return Fetch(target_url()); }
+ 
++  int FetchWithFactory(network::mojom::URLLoaderFactory* factory,
++                       const GURL& url,
++                       const GURL& initiator_url) {
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = url;
++    request->request_initiator = url::Origin::Create(initiator_url);
++    request->load_flags = net::LOAD_BYPASS_CACHE;
++    auto loader = network::SimpleURLLoader::Create(
++        std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++    base::test::TestFuture<std::optional<std::string>> result;
++    loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++        factory, result.GetCallback());
++    EXPECT_TRUE(result.Wait());
++    return loader->NetError();
++  }
++
+   bool FetchNoStore(const GURL& url) {
+     return content::EvalJs(
+                web_contents(),
+@@ -905,6 +952,150 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       ParserEarlySubresourceWaitsForCommittedDocument) {
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), target_origin_.GetURL("localhost", "/parser-early-page?healthy")));
++  EXPECT_EQ(content::EvalJs(web_contents(), "window.parserFetchDone")
++                .ExtractString(),
++            "loaded");
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/2u, /*proxy_delta=*/0u);
++
++  PublishProxyPolicy(/*publish_endpoint=*/false);
++  const size_t blocked_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t blocked_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), target_origin_.GetURL("localhost", "/parser-early-page?blocked")));
++  EXPECT_EQ(content::EvalJs(web_contents(), "window.parserFetchDone")
++                .ExtractString(),
++            "error");
++  // The unselected page loads once; its parser-issued target request does not.
++  ExpectRoutingDelta(blocked_origin_before, blocked_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       ParserEarlySubresourceUsesSelectedProxy) {
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), target_origin_.GetURL("localhost", "/parser-early-page?healthy")));
++  EXPECT_EQ(content::EvalJs(web_contents(), "window.parserFetchDone")
++                .ExtractString(),
++            "loaded");
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/1u);
++}
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       PendingDocumentFactoryClosesWhenTabIsDestroyed) {
++  ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
++                browser(), worker_page_url(),
++                WindowOpenDisposition::NEW_FOREGROUND_TAB,
++                ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
++            nullptr);
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  ASSERT_TRUE(FetchNoStore(target_url().Resolve("/pending-health")));
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  network::URLLoaderFactoryBuilder builder;
++  // A synthetic never-committing navigation leaves the new wrapper endpoint
++  // pending. Destroying its WebContents must close queued requests, not run
++  // them through the downstream factory.
++  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
++      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      std::numeric_limits<int64_t>::max(), builder);
++  scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
++      std::move(builder).Finish(
++          browser()->profile()
++              ->GetDefaultStoragePartition()
++              ->GetURLLoaderFactoryForBrowserProcess());
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = target_url().Resolve("/pending-cancelled");
++  request->request_initiator = url::Origin::Create(worker_page_url());
++  auto loader = network::SimpleURLLoader::Create(
++      std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++  base::test::TestFuture<std::optional<std::string>> result;
++  loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++      pending_factory.get(), result.GetCallback());
++  base::RunLoop().RunUntilIdle();
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++
++  browser()->tab_strip_model()->CloseWebContentsAt(
++      browser()->tab_strip_model()->active_index(), TabCloseTypes::CLOSE_NONE);
++  ASSERT_TRUE(result.Wait());
++  EXPECT_NE(loader->NetError(), net::OK);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
++                     /*proxy_delta=*/0u);
++}
++
++class AccessProxyingURLLoaderFactorySameFrameBrowserTest
++    : public AccessProxyingURLLoaderFactoryBrowserTest {
++ public:
++  AccessProxyingURLLoaderFactorySameFrameBrowserTest() {
++    features_.InitAndDisableFeature(features::kRenderDocument);
++  }
++
++ private:
++  base::test::ScopedFeatureList features_;
++};
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactorySameFrameBrowserTest,
++                       SameFrameOldDocumentFactoryCloneAbortsWithoutPolicy) {
++  const GURL first_page = worker_page_url();
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), first_page));
++  content::RenderFrameHost* frame = web_contents()->GetPrimaryMainFrame();
++  ASSERT_NE(frame, nullptr);
++  const content::GlobalRenderFrameHostId frame_id = frame->GetGlobalId();
++  const content::WeakDocumentPtr first_document = frame->GetWeakDocumentPtr();
++
++  mojo::Remote<network::mojom::URLLoaderFactory> first_factory;
++  frame->CreateNetworkServiceDefaultFactory(
++      first_factory.BindNewPipeAndPassReceiver());
++  mojo::Remote<network::mojom::URLLoaderFactory> old_clone;
++  first_factory->Clone(old_clone.BindNewPipeAndPassReceiver());
++  const size_t healthy_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t healthy_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  EXPECT_EQ(FetchWithFactory(first_factory.get(),
++                             target_url().Resolve("/same-frame-health"),
++                             first_page),
++            net::OK);
++  ExpectRoutingDelta(healthy_origin_before, healthy_proxy_before,
++                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
++
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), target_origin_.GetURL(kTargetHost, "/worker-page?second")));
++  ASSERT_EQ(web_contents()->GetPrimaryMainFrame()->GetGlobalId(), frame_id);
++  ASSERT_EQ(first_document.AsRenderFrameHostIfValid(), nullptr);
++  const size_t stale_origin_before =
++      origin_requests_.load(std::memory_order_relaxed);
++  const size_t stale_proxy_before =
++      proxy_requests_.load(std::memory_order_relaxed);
++  EXPECT_EQ(FetchWithFactory(old_clone.get(),
++                             target_url().Resolve("/same-frame-stale"),
++                             first_page),
++            net::ERR_ABORTED);
++  ExpectRoutingDelta(stale_origin_before, stale_proxy_before,
++                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        TrailingDotHostStaysNativeWithoutPolicyAndBlocksAfterPublish) {
+   const GURL trailing_url =
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 1b92dc1..b07a2a5 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6792,10 +6792,17 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+   // NOTE: Some unit test environments do not initialize
+   // BrowserContextKeyedAPI factories for e.g. WebRequest.
+   if (web_request_api) {
++    // For a document factory this ID identifies the document being committed,
++    // not a navigation URLLoaderFactory request. Keep the pre-existing
++    // webRequest subresource contract while passing the ID to Aegis below.
++    std::optional<int64_t> web_request_navigation_id = navigation_id;
++    if (type == URLLoaderFactoryType::kDocumentSubResource) {
++      web_request_navigation_id.reset();
++    }
+     bool use_proxy_for_web_request =
+         web_request_api->MaybeProxyURLLoaderFactory(
+             browser_context, frame, render_process_id, type,
+-            std::move(navigation_id), ukm_source_id, factory_builder,
++            std::move(web_request_navigation_id), ukm_source_id, factory_builder,
+             header_client, navigation_response_task_runner, request_initiator);
+     if (bypass_redirect_checks) {
+       *bypass_redirect_checks = use_proxy_for_web_request;
+@@ -6818,7 +6825,7 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+   if (type == URLLoaderFactoryType::kDocumentSubResource && frame) {
+     aegis::access::AccessProxyingURLLoaderFactory::
+         MaybeProxyDocumentSubresource(
+-            Profile::FromBrowserContext(browser_context), frame,
++            Profile::FromBrowserContext(browser_context), frame, navigation_id,
+             factory_builder);
+   }
+ 
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+index d1a4c29..5fe7feb 100644
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -12965,7 +12965,8 @@ void RenderFrameHostImpl::CommitNavigation(
+                   subresource_loader_factories_config,
+                   "RFHI::CommitNavigation"),
+               subresource_loader_factories_config.ukm_source_id(),
+-              pending_default_factory.InitWithNewPipeAndPassReceiver());
++              pending_default_factory.InitWithNewPipeAndPassReceiver(),
++              navigation_request->GetNavigationId());
+       subresource_loader_factories->set_bypass_redirect_checks(
+           bypass_redirect_checks);
+     }
+@@ -14161,9 +14162,11 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryAndObserve(
+     network::mojom::URLLoaderFactoryParamsPtr params,
+     ukm::SourceIdObj ukm_source_id,
+     mojo::PendingReceiver<network::mojom::URLLoaderFactory>
+-        default_factory_receiver) {
++        default_factory_receiver,
++    std::optional<int64_t> committing_navigation_id) {
+   bool bypass_redirect_checks = CreateNetworkServiceDefaultFactoryInternal(
+-      std::move(params), ukm_source_id, std::move(default_factory_receiver));
++      std::move(params), ukm_source_id, std::move(default_factory_receiver),
++      committing_navigation_id);
+ 
+   // Add a disconnect handler when Network Service is running
+   // out-of-process.
+@@ -14201,7 +14204,8 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
+     network::mojom::URLLoaderFactoryParamsPtr params,
+     ukm::SourceIdObj ukm_source_id,
+     mojo::PendingReceiver<network::mojom::URLLoaderFactory>
+-        default_factory_receiver) {
++        default_factory_receiver,
++    std::optional<int64_t> committing_navigation_id) {
+   CHECK(params->request_initiator_origin_lock.has_value());
+   const url::Origin request_initiator =
+       params->request_initiator_origin_lock.value();
+@@ -14219,7 +14223,7 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
+       url_loader_factory::ContentClientParams(
+           GetBrowserContext(), this, GetProcess()->GetDeprecatedID(),
+           request_initiator, isolation_info, ukm_source_id,
+-          &bypass_redirect_checks),
++          &bypass_redirect_checks, committing_navigation_id),
+       devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
+           this));
+   return bypass_redirect_checks;
+diff --git a/content/browser/renderer_host/render_frame_host_impl.h b/content/browser/renderer_host/render_frame_host_impl.h
+index 0dcf0ff..f3c3b9d 100644
+--- a/content/browser/renderer_host/render_frame_host_impl.h
++++ b/content/browser/renderer_host/render_frame_host_impl.h
+@@ -3825,7 +3825,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
+       network::mojom::URLLoaderFactoryParamsPtr params,
+       ukm::SourceIdObj ukm_source_id,
+       mojo::PendingReceiver<network::mojom::URLLoaderFactory>
+-          default_factory_receiver);
++          default_factory_receiver,
++      std::optional<int64_t> committing_navigation_id = std::nullopt);
+ 
+   // Asks an appropriate `NetworkService` to create a new URLLoaderFactory with
+   // the given `params` and binds the factory to the `default_factory_receiver`.
+@@ -3842,7 +3843,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
+       network::mojom::URLLoaderFactoryParamsPtr params,
+       ukm::SourceIdObj ukm_source_id,
+       mojo::PendingReceiver<network::mojom::URLLoaderFactory>
+-          default_factory_receiver);
++          default_factory_receiver,
++      std::optional<int64_t> committing_navigation_id = std::nullopt);
+ 
+   // Returns true if the ExecuteJavaScript() API can be used on this host.
+   // The checks do not apply to ExecuteJavaScriptInIsolatedWorld, nor to
+-- 
+2.54.0 (Apple Git-157)
+

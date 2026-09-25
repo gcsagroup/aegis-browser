@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Thu, 24 Sep 2026 08:03:11 +0000
+Subject: [PATCH] test(access): match Chromium 151 PAC serialization
+
+The fixed Chromium ProxyList::ToPacString() joins entries with a bare
+semicolon. Keep the native-proxy assertions exact with that format.
+
+---
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+index 39f4881..4ccd537 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport_unittest.cc
+@@ -140,7 +140,7 @@
+   const net::ProxyInfo result =
+       Resolve(delegate.get(), "https://target.example/path");
+   EXPECT_EQ(result.proxy_list().ToPacString(),
+-            "PROXY native.example:3128; DIRECT");
++            "PROXY native.example:3128;DIRECT");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+@@ -157,12 +157,12 @@
+   const net::ProxyInfo other =
+       Resolve(delegate.get(), "https://other.example/path");
+   EXPECT_EQ(other.proxy_list().ToPacString(),
+-            "PROXY native.example:3128; DIRECT");
++            "PROXY native.example:3128;DIRECT");
+ 
+   const net::ProxyInfo subdomain =
+       Resolve(delegate.get(), "https://sub.target.example/path");
+   EXPECT_EQ(subdomain.proxy_list().ToPacString(),
+-            "PROXY native.example:3128; DIRECT");
++            "PROXY native.example:3128;DIRECT");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+@@ -367,7 +367,7 @@
+   transport_->FlushClientsForTesting({});
+   EXPECT_EQ(Resolve(delegate.get(), "https://target.example/")
+                 .proxy_list().ToPacString(),
+-            "PROXY native.example:3128; DIRECT");
++            "PROXY native.example:3128;DIRECT");
+   ExpectProxyResolution(delegate.get(), "https://other.example/");
+   ASSERT_TRUE(transport_->ReplaceSelection(endpoint.owner, candidate, previous));
+   transport_->FlushClientsForTesting({});
+@@ -558,7 +558,7 @@
+   const net::ProxyInfo restored =
+       Resolve(delegate.get(), "https://target.example/");
+   EXPECT_EQ(restored.proxy_list().ToPacString(),
+-            "PROXY native.example:3128; DIRECT");
++            "PROXY native.example:3128;DIRECT");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest, StoragePartitionsAreIsolated) {
+@@ -579,7 +579,7 @@
+   EXPECT_EQ(Resolve(isolated_delegate.get(), "https://target.example/")
+                 .proxy_list()
+                 .ToPacString(),
+-            "PROXY native.example:3128; DIRECT");
++            "PROXY native.example:3128;DIRECT");
+ }
+ 
+ TEST_F(AccessNetworkContextTransportTest,
+
+-- 
+2.50.1

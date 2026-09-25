@@ -25,6 +25,27 @@ bool HasCompleteSchemeSet(const std::vector<RequestScheme>& schemes) {
 
 }  // namespace
 
+bool IsSiteProxyTransportCompatible(const SiteProxyTransportRule& candidate,
+                                    const SiteProxyTransportRule& existing) {
+  if (candidate.host.empty() || candidate.include_subdomains ||
+      (candidate.mode != AccessMode::kDirect &&
+       candidate.mode != AccessMode::kProxy) ||
+      (candidate.mode == AccessMode::kProxy) == candidate.proxy_group_id.empty()) {
+    return false;
+  }
+  const bool overlaps =
+      candidate.host == existing.host ||
+      (existing.include_subdomains && !existing.host.empty() &&
+       candidate.host.size() > existing.host.size() &&
+       candidate.host.ends_with(existing.host) &&
+       candidate.host[candidate.host.size() - existing.host.size() - 1] == '.');
+  if (!overlaps || existing.mode == AccessMode::kReject) {
+    return true;
+  }
+  return candidate.mode == existing.mode &&
+         candidate.proxy_group_id == existing.proxy_group_id;
+}
+
 GroupValidation ValidateSiteProxyRuleGroup(
     const OwnershipKey& expected_owner,
     const SiteProxyRuleGroup* group,

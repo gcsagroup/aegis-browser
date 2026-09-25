@@ -1,0 +1,27 @@
+From f8141844484157e8b437ddf3b6223cb0a88fe106 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 21:55:26 +0800
+Subject: [PATCH] Discard consumed fake loader before next relay request
+
+---
+ .../access/access_proxying_url_loader_factory_browsertest.cc  | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 2026fbc..88098f6 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -1683,6 +1683,10 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_TRUE(disconnected_result.Wait());
+   EXPECT_NE(disconnected_loader->NetError(), net::OK);
+   EXPECT_EQ(dispatch_state->ownership().size(), ownership_before);
++  // TestURLLoaderFactory retains manually disconnected pending requests.
++  // Remove the consumed entry before WaitForRequest scans its client remote.
++  ASSERT_EQ(terminal.pending_requests()->size(), 1u);
++  terminal.pending_requests()->clear();
+ 
+   // A BLOCK barrier must also terminate a request during the interval after
+   // control-pipe disconnect but before client completion or watchdog expiry.
+-- 
+2.54.0 (Apple Git-157)
+

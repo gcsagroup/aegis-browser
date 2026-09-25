@@ -10,8 +10,19 @@
 
 #include "components/aegis_access/request_ownership_registry.h"
 
+#if __has_include("base/memory/raw_ptr.h")
+#include "base/memory/raw_ptr.h"
+#endif
+
 namespace aegis_access::test {
 
+#if __has_include("base/memory/raw_ptr.h")
+template <typename T>
+using RegistryTestPtr = raw_ptr<T>;
+#else
+template <typename T>
+using RegistryTestPtr = T*;
+#endif
 
 class RequestOwnershipRegistryTestObserver {
  public:
@@ -45,38 +56,25 @@ inline RequestOwnershipRecord ProfileOwnershipRecord(
 
 class RecordingTerminationHandle final : public RequestTerminationHandle {
  public:
-  explicit RecordingTerminationHandle(int* call_count)
-      : call_count_(call_count) {}
+  explicit RecordingTerminationHandle(int* call_count);
 
   RecordingTerminationHandle(int* call_count,
                              RequestOwnershipRegistry* registry,
                              std::string request_id,
                              OwnershipKey owner,
                              GenerationTuple generations,
-                             bool* erased_before_callback)
-      : call_count_(call_count),
-        registry_(registry),
-        request_id_(std::move(request_id)),
-        owner_(std::move(owner)),
-        generations_(generations),
-        erased_before_callback_(erased_before_callback) {}
+                             bool* erased_before_callback);
+  ~RecordingTerminationHandle() override;
 
-  void Terminate() override {
-    ++*call_count_;
-    if (registry_ && erased_before_callback_) {
-      *erased_before_callback_ =
-          registry_->Lookup(request_id_, owner_, generations_).status ==
-          RequestOwnershipStatus::kNotFound;
-    }
-  }
+  void Terminate() override;
 
  private:
-  int* call_count_;
-  RequestOwnershipRegistry* registry_ = nullptr;
+  RegistryTestPtr<int> call_count_;
+  RegistryTestPtr<RequestOwnershipRegistry> registry_ = nullptr;
   std::string request_id_;
   OwnershipKey owner_;
   GenerationTuple generations_;
-  bool* erased_before_callback_ = nullptr;
+  RegistryTestPtr<bool> erased_before_callback_ = nullptr;
 };
 
 inline RequestOwnershipRecord PendingOwnershipRecord(
@@ -129,31 +127,17 @@ class BatchVisibilityTerminationHandle final : public RequestTerminationHandle {
       RequestOwnershipRegistry* registry,
       OwnershipKey owner,
       std::vector<WatchedRequest> watched,
-      bool* all_erased_before_callback)
-      : call_count_(call_count),
-        registry_(registry),
-        owner_(std::move(owner)),
-        watched_(std::move(watched)),
-        all_erased_before_callback_(all_erased_before_callback) {}
+      bool* all_erased_before_callback);
+  ~BatchVisibilityTerminationHandle() override;
 
-  void Terminate() override {
-    ++*call_count_;
-    bool all_erased = true;
-    for (const auto& watched : watched_) {
-      if (registry_->Lookup(watched.request_id, owner_, watched.generations)
-              .status != RequestOwnershipStatus::kNotFound) {
-        all_erased = false;
-      }
-    }
-    *all_erased_before_callback_ &= all_erased;
-  }
+  void Terminate() override;
 
  private:
-  int* call_count_;
-  RequestOwnershipRegistry* registry_;
+  RegistryTestPtr<int> call_count_;
+  RegistryTestPtr<RequestOwnershipRegistry> registry_;
   OwnershipKey owner_;
   std::vector<WatchedRequest> watched_;
-  bool* all_erased_before_callback_;
+  RegistryTestPtr<bool> all_erased_before_callback_;
 };
 
 }  // namespace aegis_access::test

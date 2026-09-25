@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "base/memory/raw_ptr.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/aegis/access/access_rule_store.h"
 #include "components/aegis_access/access_policy_evaluator.h"
@@ -90,7 +91,7 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
   AccessPolicyPublicationResult PublishPolicySnapshot(
       const StoredPolicySnapshot& stored);
 
-  Profile* const profile_;
+  const raw_ptr<Profile> profile_;
   std::map<std::string, aegis_access::PublishedAccessPolicySnapshot>
       policy_snapshots_;
 };

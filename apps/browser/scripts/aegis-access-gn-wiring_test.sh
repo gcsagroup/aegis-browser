@@ -44,6 +44,7 @@ SERVICE_WORKER_SUBRESOURCE_PATCH_FILE="$BROWSER_DIR/patches/0145-feat-aegis-gate
 SERVICE_WORKER_SCRIPT_PATCH_FILE="$BROWSER_DIR/patches/0146-feat-aegis-gate-process-service-worker-script-traffic.patch"
 PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0147-feat-aegis-gate-frame-prefetch-traffic.patch"
 BROWSER_PROCESS_PREFETCH_PATCH_FILE="$BROWSER_DIR/patches/0148-feat-aegis-gate-loading-predictor-prefetch.patch"
+PROFILE_TEST_BOOTSTRAP_PATCH_FILE="$BROWSER_DIR/patches/0171-fix-access-profile-unit-test-bootstrap.patch"
 BROWSER_TEST_DEPS_PATCH_FILE="$BROWSER_DIR/patches/0149-fix-aegis-browser-test-direct-gn-deps.patch"
 ACCESS_COORDINATOR_PATCH_FILE="$BROWSER_DIR/patches/0150-feat-aegis-add-access-service-coordinator-lifecycle.patch"
 IDENTITY_GENERATION_STYLE_PATCH_FILE="$BROWSER_DIR/patches/0151-fix-aegis-identity-generation-state-style.patch"
@@ -115,9 +116,13 @@ ownership_support_block="$(
 )"
 [[ "$ownership_support_block" == *'testonly = true'* ]] ||
   fail "shared ownership support must remain test-only"
+[[ "$ownership_support_block" == *'sources = [ "request_ownership_registry_test_support.cc" ]'* ]] ||
+  fail "shared ownership support must compile its out-of-line implementation"
+[[ "$ownership_support_block" == *'"//base",'* ]] ||
+  fail "shared ownership support must expose its raw_ptr base dependency"
 [[ "$ownership_support_block" == *'public = [ "request_ownership_registry_test_support.h" ]'* ]] ||
   fail "shared ownership support must publish its header"
-[[ "$ownership_support_block" == *'public_deps = [ ":request_ownership_registry" ]'* ]] ||
+[[ "$ownership_support_block" == *'public_deps = ['*'":request_ownership_registry",'*'"//base",'* ]] ||
   fail "shared ownership support must export the registry header dependency"
 [[ "$(rg -F -c '"request_ownership_registry_test_support.h"' "$COMPONENT_BUILD")" == 1 ]] ||
   fail "shared ownership support header must have exactly one owner"
@@ -180,6 +185,21 @@ rg -Fq 'test("access_service_coordinator_unittests")' "$ACCESS_BUILD" ||
 coordinator_test_block="$(awk '/^test\("access_service_coordinator_unittests"\)/,/^}/' "$ACCESS_BUILD")"
 [[ "$coordinator_test_block" == *'":access_proxy_selection_generation_source",'* ]] ||
   fail "coordinator test must directly depend on the proxy selection generation source"
+for profile_test in \
+  access_browser_request_adapter_unittests \
+  access_identity_generation_source_unittests \
+  access_proxy_selection_generation_source_unittests; do
+  profile_test_block="$(awk -v target="$profile_test" \
+    '$0 == "test(\"" target "\") {" { inside = 1 } inside { print } inside && $0 == "}" { exit }' \
+    "$ACCESS_BUILD")"
+  [[ "$profile_test_block" == *'"//chrome/test:test_support_unit",'* ]] ||
+    fail "$profile_test must initialize Chrome paths, resources, and Mojo"
+  [[ "$profile_test_block" != *'"//base/test:run_all_unittests",'* ]] ||
+    fail "$profile_test must not link the base-only test main"
+done
+[[ "$(rg -F -c '+    "//chrome/test:test_support_unit",' \
+  "$PROFILE_TEST_BOOTSTRAP_PATCH_FILE")" == 3 ]] ||
+  fail "patch 0171 must bootstrap all three Profile-owning unit targets"
 rg -Fq 'MainNavigationRoutingIsolatedAcrossProfiles' "$BROWSER_PROXY_TEST" ||
   fail "browser proxy regression must cover real two-Profile navigation isolation"
 rg -Fq '+source_set("access_service_coordinator")' "$ACCESS_COORDINATOR_PATCH_FILE" ||
@@ -921,6 +941,8 @@ fi
   "$SERIES_FILE")" == 1 ]] || fail "patch 0150 must appear once in series"
 [[ "$(rg -F -c '0151-fix-aegis-identity-generation-state-style.patch' \
   "$SERIES_FILE")" == 1 ]] || fail "patch 0151 must appear once in series"
+[[ "$(rg -F -c '0167-fix-access-proxy-acceptance-mojo-init.patch' \
+  "$SERIES_FILE")" == 1 ]] || fail "patch 0167 must appear once in series"
 expected_access_tail="$(cat <<'EOF'
 0115-feat-aegis-add-trusted-policy-context-matching.patch
 0116-feat-aegis-add-access-rule-store-recovery.patch
@@ -971,10 +993,43 @@ expected_access_tail="$(cat <<'EOF'
 0161-feat-aegis-route-agent-tasks-across-model-pool.patch
 0162-fix-typesafe-bearer-header.patch
 0163-fix-typesafe-workflow-test-distribution.patch
+0164-fix-access-reject-conflicting-site-proxy-groups.patch
+0165-fix-history-routing-without-synced-sidebar.patch
+0166-fix-settings-relaunch-test-dom-access.patch
+0167-fix-access-proxy-acceptance-mojo-init.patch
+0168-fix-access-proxy-connect-allowlist-host.patch
+0169-fix-access-conflict-on-superseded-mutation.patch
+0170-test-access-loading-predictor-prefetch-routing.patch
+0171-fix-access-profile-unit-test-bootstrap.patch
+0172-test-access-ignore-automatic-favicon.patch
+0173-test-access-dispatch-termination-raw-ref.patch
+0174-test-access-favicon-gurl-path-api.patch
+0175-test-access-pac-serialization-fixture.patch
+0176-fix-access-reject-trailing-dot-host.patch
+0177-fix-access-document-prefetch-factory.patch
+0178-fix-access-precommit-document-factory.patch
+0179-fix-access-pending-document-callback-lifetime.patch
+0180-fix-access-precommit-document-eligibility.patch
+0181-fix-access-document-prefetch-and-opaque-sandbox.patch
+0182-fix-access-auxiliary-document-factory-context.patch
+0183-test-access-sandbox-recreation-prefetch.patch
+0184-test-access-same-frame-disable-bfcache.patch
+0185-fix-non-network-document-prefetch-default.patch
+0186-test-access-cancelled-document-factory-clones.patch
+0187-fix-restricted-document-prefetch-factories.patch
+0188-fix-access-loader-relay-completion.patch
+0189-fix-access-prefetch-test-requests.patch
+0190-test-access-relay-ownership-quiescence.patch
+0191-test-access-clear-disconnected-loader-fixture.patch
+0192-test-prefetch-cache-complete-type.patch
+0193-fix-prefetch-browser-fixtures.patch
+0194-test-restricted-mhtml-prefetch-default.patch
+0195-fix-access-network-document-factory-gate.patch
+0196-fix-access-built-in-data-navigation-terminal.patch
 EOF
 )"
-[[ "$(tail -n 49 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
-  fail "patch tail must retain the Access sequence through patch 0160 before patches 0161-0163"
+[[ "$(tail -n 82 "$SERIES_FILE")" == "$expected_access_tail" ]] ||
+  fail "patch tail must retain TypeSafe 0162-0163 before Access patches 0164-0196"
 
 # The developer build still requests only Chromium's production chrome target.
 # root_extra_deps makes the test discoverable from test-only gn_all and does

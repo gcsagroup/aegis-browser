@@ -287,6 +287,33 @@ TEST(AccessPolicyEvaluatorTest, InvalidStoredNormalizationFailsClosed) {
   EXPECT_EQ(EvaluateAccessPolicy(DocumentContext(), Snapshot({host})).reason,
             PolicyMatchReason::kInvalidRule);
 
+  AccessPolicyRule trailing_host =
+      Rule("trailing-host", PolicyScope::kProfile, "cdn.example.test.",
+           AccessMode::kProxy);
+  const PolicyMatchResult trailing_host_result = EvaluateAccessPolicy(
+      DocumentContext(), Snapshot({trailing_host}));
+  EXPECT_EQ(trailing_host_result.policy_state, PolicyState::kInvalid);
+  EXPECT_EQ(trailing_host_result.reason, PolicyMatchReason::kInvalidRule);
+
+  AccessPolicyRule trailing_ip_host =
+      Rule("trailing-ip-host", PolicyScope::kProfile, "127.0.0.1.",
+           AccessMode::kProxy);
+  const PolicyMatchResult trailing_ip_host_result = EvaluateAccessPolicy(
+      DocumentContext(), Snapshot({trailing_ip_host}));
+  EXPECT_EQ(trailing_ip_host_result.policy_state, PolicyState::kInvalid);
+  EXPECT_EQ(trailing_ip_host_result.reason, PolicyMatchReason::kInvalidRule);
+
+  AccessPolicyRule trailing_site =
+      Rule("trailing-site", PolicyScope::kSite, "cdn.example.test",
+           AccessMode::kProxy);
+  const net::SchemefulSite site(GURL("https://www.example.test./"));
+  ASSERT_EQ(site.GetURL().host(), "example.test.");
+  trailing_site.top_level_site = site.Serialize();
+  const PolicyMatchResult trailing_site_result = EvaluateAccessPolicy(
+      DocumentContext(), Snapshot({trailing_site}));
+  EXPECT_EQ(trailing_site_result.policy_state, PolicyState::kInvalid);
+  EXPECT_EQ(trailing_site_result.reason, PolicyMatchReason::kInvalidRule);
+
   AccessPolicyRule schemes = Rule("schemes", PolicyScope::kSite,
                                   "cdn.example.test", AccessMode::kDirect);
   schemes.schemes = {RequestScheme::kHttps, RequestScheme::kHttp};

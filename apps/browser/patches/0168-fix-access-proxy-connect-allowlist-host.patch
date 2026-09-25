@@ -1,0 +1,34 @@
+From cf853f0cfa512dad3ff000b31f1a2ae2262bb3a1 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 24 Sep 2026 00:54:59 +0800
+Subject: [PATCH] test(access): fix CONNECT proxy allowlist hostname
+
+---
+ .../aegis_access/access_local_proxy_acceptance_unittest.cc    | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/components/aegis_access/access_local_proxy_acceptance_unittest.cc b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
+index 23105425eb..a288637db2 100644
+--- a/components/aegis_access/access_local_proxy_acceptance_unittest.cc
++++ b/components/aegis_access/access_local_proxy_acceptance_unittest.cc
+@@ -14,6 +14,7 @@
+ #include "base/test/task_environment.h"
+ #include "mojo/core/embedder/embedder.h"
+ #include "mojo/public/cpp/bindings/remote.h"
++#include "net/base/host_port_pair.h"
+ #include "net/base/isolation_info.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+@@ -133,7 +134,8 @@ class AccessLocalProxyAcceptanceTest : public testing::Test {
+                             base::Unretained(&proxy_connect_requests_)));
+     proxy_server_.RegisterRequestHandler(base::BindRepeating(
+         &HandleHttpProxyRequest, base::Unretained(&proxy_http_requests_)));
+-    const net::HostPortPair connect_destination = https_origin_.host_port_pair();
++    const net::HostPortPair connect_destination =
++        net::HostPortPair::FromURL(https_origin_.GetURL(kTargetHost, "/"));
+     proxy_server_.EnableConnectProxy({connect_destination});
+     ASSERT_TRUE(proxy_server_.Start());
+ 
+-- 
+2.54.0 (Apple Git-157)
+

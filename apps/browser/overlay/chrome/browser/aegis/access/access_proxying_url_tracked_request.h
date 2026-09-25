@@ -8,6 +8,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/timer/timer.h"
 #include "components/aegis_access/request_ownership_registry.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -81,6 +82,7 @@ class AccessProxyingURLTrackedRequest final
  private:
   bool RebindOwnershipForRedirect(const GURL& follow_url);
   void OnBindingError();
+  void OnTargetLoaderDisconnected();
   void FailClosed(bool complete_registry);
   void Finish(bool complete_registry);
 
@@ -95,6 +97,7 @@ class AccessProxyingURLTrackedRequest final
   mojo::Remote<network::mojom::URLLoader> target_loader_;
   mojo::Receiver<network::mojom::URLLoaderClient> client_receiver_{this};
   mojo::Remote<network::mojom::URLLoaderClient> target_client_;
+  base::OneShotTimer client_completion_watchdog_;
   base::WeakPtrFactory<AccessProxyingURLTrackedRequest> weak_factory_{this};
 };
 

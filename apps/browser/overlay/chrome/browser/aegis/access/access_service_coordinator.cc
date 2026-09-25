@@ -226,16 +226,14 @@ AccessServiceCoordinator::ValidateTransportScope(
   if (!matcher.value) {
     return Result(AccessMutationTransactionStatus::kUnsupportedTransportScope);
   }
-  const auto& host = transaction.identity.selector.exact_host;
+  const aegis_access::SiteProxyTransportRule candidate{
+      transaction.identity.selector.exact_host, false, mode,
+      transaction.pending.candidate.members.front().policy.proxy_group_id};
   const bool incompatible = std::ranges::any_of(
       matcher.value->rules, [&](const AccessPolicyRule& rule) {
-        const bool overlaps = rule.destination_host == host ||
-                              (rule.include_subdomains &&
-                               host.ends_with("." + rule.destination_host));
-        const bool opposite =
-            (mode == AccessMode::kDirect && rule.mode == AccessMode::kProxy) ||
-            (mode == AccessMode::kProxy && rule.mode == AccessMode::kDirect);
-        return overlaps && opposite;
+        return !aegis_access::IsSiteProxyTransportCompatible(
+            candidate, {rule.destination_host, rule.include_subdomains,
+                        rule.mode, rule.proxy_group_id});
       });
   if (incompatible) {
     return Result(AccessMutationTransactionStatus::kUnsupportedTransportScope);

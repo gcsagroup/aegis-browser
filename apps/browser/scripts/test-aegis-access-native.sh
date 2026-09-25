@@ -68,6 +68,7 @@ fi
   "$COMPONENT_DIR/access_route_planner.cc" \
   "$COMPONENT_DIR/site_proxy_rule_group.cc" \
   "$COMPONENT_DIR/request_ownership_registry.cc" \
+  "$COMPONENT_DIR/request_ownership_registry_test_support.cc" \
   "$COMPONENT_DIR/request_dispatch_gate.cc" \
   "$COMPONENT_DIR/browser_request_metadata_seed.cc" \
   "$COMPONENT_DIR/published_request_runtime.cc" \

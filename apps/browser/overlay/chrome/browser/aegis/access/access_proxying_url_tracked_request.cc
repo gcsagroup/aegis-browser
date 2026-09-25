@@ -7,15 +7,20 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/time/time.h"
 #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
 #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_errors.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
+#include "services/network/public/mojom/early_hints.mojom.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace aegis::access {
 namespace {
+
+constexpr base::TimeDelta kClientCompletionTimeout = base::Seconds(30);
 
 class TrackedRequestTerminationHandle final
     : public aegis_access::RequestTerminationHandle {
@@ -91,7 +96,7 @@ void AccessProxyingURLTrackedRequest::Start(
       target_loader_.BindNewPipeAndPassReceiver(), request_id, options, request,
       std::move(proxy_client), traffic_annotation);
   target_loader_.set_disconnect_handler(base::BindOnce(
-      &AccessProxyingURLTrackedRequest::OnBindingError,
+      &AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected,
       weak_factory_.GetWeakPtr()));
 }
 
@@ -253,6 +258,22 @@ void AccessProxyingURLTrackedRequest::OnBindingError() {
   }
 }
 
+void AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (finished_) {
+    return;
+  }
+  // URLLoader and URLLoaderClient use separate Mojo pipes. The target can
+  // close its control pipe after HTTP 200 but before OnComplete is delivered.
+  // Keep the relay alive for the client terminal event, with a bound for a
+  // target that leaves the client pipe open indefinitely.
+  target_loader_.reset();
+  client_completion_watchdog_.Start(
+      FROM_HERE, kClientCompletionTimeout,
+      base::BindOnce(&AccessProxyingURLTrackedRequest::FailClosed,
+                     weak_factory_.GetWeakPtr(), /*complete_registry=*/true));
+}
+
 void AccessProxyingURLTrackedRequest::FailClosed(bool complete_registry) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (finished_) {
@@ -272,6 +293,7 @@ void AccessProxyingURLTrackedRequest::Finish(bool complete_registry) {
     return;
   }
   finished_ = true;
+  client_completion_watchdog_.Stop();
   if (complete_registry && ownership_registered_) {
     dispatch_state_->ownership().Complete(
         ownership_record_.request_id, ownership_record_.owner,

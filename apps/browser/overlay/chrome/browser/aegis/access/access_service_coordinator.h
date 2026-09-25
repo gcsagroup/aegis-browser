@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "base/timer/timer.h"
@@ -102,7 +103,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
       base::OnceCallback<void(AccessMutationTransactionResult)> completion,
       AccessMutationTransactionResult result);
 
-  Profile* const profile_;
+  const raw_ptr<Profile> profile_;
   std::unique_ptr<AccessRuleStore> store_;
   uint64_t state_generation_ = 0;
   bool mutation_in_flight_ = false;

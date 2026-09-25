@@ -27,7 +27,7 @@ constexpr size_t kMaxExactHosts = 256;
 constexpr size_t kMaxPartitionKeyBytes = 1024;
 
 bool IsCanonicalExactHost(const std::string& host) {
-  if (host.empty()) {
+  if (host.empty() || host.back() == '.') {
     return false;
   }
   const GURL url("https://" + host + "/");
