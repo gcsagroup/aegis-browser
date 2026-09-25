@@ -51,6 +51,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/storage_partition_config.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/browser_test.h"
@@ -417,6 +418,33 @@ std::unique_ptr<net::test_server::HttpResponse> ProxyReply(
   response->set_content_type("text/plain");
   return response;
 }
+
+class DataNavigationOutcomeObserver : public content::WebContentsObserver {
+ public:
+  explicit DataNavigationOutcomeObserver(content::WebContents* contents)
+      : content::WebContentsObserver(contents) {}
+
+  void DidFinishNavigation(content::NavigationHandle* navigation) override {
+    if (!navigation->GetURL().SchemeIs("data")) {
+      return;
+    }
+    ++count_;
+    net_error_ = navigation->GetNetErrorCode();
+    has_committed_ = navigation->HasCommitted();
+    is_error_page_ = navigation->IsErrorPage();
+  }
+
+  int count() const { return count_; }
+  int net_error() const { return net_error_; }
+  bool has_committed() const { return has_committed_; }
+  bool is_error_page() const { return is_error_page_; }
+
+ private:
+  int count_ = 0;
+  int net_error_ = net::ERR_FAILED;
+  bool has_committed_ = false;
+  bool is_error_page_ = false;
+};
 
 class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
  public:
@@ -1110,6 +1138,56 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
             "loaded");
   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
                      /*proxy_delta=*/0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       PublishedProxyPolicyPreservesDataNavigationAndBlocksFetch) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  PublishProxyPolicy(/*publish_endpoint=*/false);
+  DataNavigationOutcomeObserver navigation(web_contents());
+  const GURL resource = target_url().Resolve("/published-data-proxy");
+  const size_t origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+
+  const std::string ready = CreateInlineIframe(/*srcdoc=*/false, resource);
+  EXPECT_EQ(navigation.count(), 1);
+  EXPECT_EQ(navigation.net_error(), net::OK);
+  EXPECT_TRUE(navigation.has_committed());
+  EXPECT_FALSE(navigation.is_error_page());
+  ASSERT_EQ(ready, "ready");
+  ExpectRoutingDelta(origin_before, proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+
+  EXPECT_EQ(FetchFromInlineIframe(), "error");
+  ExpectRoutingDelta(origin_before, proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       PublishedRejectPolicyPreservesDataNavigationAndBlocksFetch) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  PublishRejectPolicy();
+  DataNavigationOutcomeObserver navigation(web_contents());
+  const GURL resource = target_url().Resolve("/published-data-reject");
+  const size_t origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+
+  const std::string ready = CreateInlineIframe(/*srcdoc=*/false, resource);
+  EXPECT_EQ(navigation.count(), 1);
+  EXPECT_EQ(navigation.net_error(), net::OK);
+  EXPECT_TRUE(navigation.has_committed());
+  EXPECT_FALSE(navigation.is_error_page());
+  ASSERT_EQ(ready, "ready");
+  ExpectRoutingDelta(origin_before, proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+
+  EXPECT_EQ(FetchFromInlineIframe(), "error");
+  ExpectRoutingDelta(origin_before, proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
