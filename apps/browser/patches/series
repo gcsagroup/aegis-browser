@@ -194,3 +194,4 @@
 0193-fix-prefetch-browser-fixtures.patch
 0194-test-restricted-mhtml-prefetch-default.patch
 0195-fix-access-network-document-factory-gate.patch
+0196-fix-access-built-in-data-navigation-terminal.patch
