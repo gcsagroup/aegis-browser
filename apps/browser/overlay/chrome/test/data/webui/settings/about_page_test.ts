@@ -67,7 +67,7 @@ suite('AllBuilds', function() {
   async function initNewPage(): Promise<void> {
     aboutBrowserProxy.reset();
     lifetimeBrowserProxy.reset();
-    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+    document.body.replaceChildren();
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
     document.body.appendChild(page);
@@ -414,7 +414,7 @@ suite('OfficialBuild', function() {
     AboutPageBrowserProxyImpl.setInstance(browserProxy);
     openWindowProxy = new TestOpenWindowProxy();
     OpenWindowProxyImpl.setInstance(openWindowProxy);
-    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+    document.body.replaceChildren();
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
     document.body.appendChild(page);

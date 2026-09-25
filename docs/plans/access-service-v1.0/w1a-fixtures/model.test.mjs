@@ -259,12 +259,12 @@ test('regression: redirect reissues every hop while sent POST/PATCH cannot be re
   assert.equal(model.dispatch(first).ok, true);
   assert.equal(model.dispatch(first).reason, 'already_sent');
   assert.equal(model.dispatch(model.evaluate(post)).reason, 'already_sent');
-  const redirected = model.redirect(post, { target: 'https://cdn.example/after',
+  const redirected = model.nextHop(post, { target: 'https://cdn.example/after',
     method: 'POST', navigation: 'subresource' });
   const second = model.evaluate(redirected);
   assert.deepEqual([second.hop, second.registrationId], [1, 'shop-r1']);
   assert.equal(model.dispatch(second).ok, true);
-  const main = model.redirect(redirected, { target: 'https://cdn.example/final',
+  const main = model.nextHop(redirected, { target: 'https://cdn.example/final',
     method: 'POST', navigation: 'main', nextTopLevelSite: 'https://mail.test' });
   const third = model.evaluate(main);
   assert.deepEqual([third.hop, third.registrationId], [2, 'mail-r1']);
@@ -449,7 +449,7 @@ test('regression: native redirect can become proxy or reject at its new hop', ()
   ]) {
     const initial = issue(model, issuer, 'https://native.test/', `native-${index}`);
     assert.equal(model.dispatch(model.evaluate(initial)).ok, true);
-    const redirected = model.redirect(initial, { target, method: 'GET',
+    const redirected = model.nextHop(initial, { target, method: 'GET',
       navigation: 'subresource' });
     const next = model.evaluate(redirected);
     assert.deepEqual([next.hop, next.action], [1, action]);
@@ -626,7 +626,7 @@ for (const mode of ['REJECT', 'PROXY']) {
     } else {
       const initial = issue(model, issuer, 'https://unrelated.example/', `${mode}-redirect`);
       assert.equal(model.dispatch(model.evaluate(initial)).ok, true);
-      const redirected = model.redirect(initial, { target: 'https://target.example./',
+      const redirected = model.nextHop(initial, { target: 'https://target.example./',
         method: 'GET', navigation: 'subresource' });
       assertNoNativeSend(redirected, `${mode} redirected trailing-dot target`);
     }
@@ -662,7 +662,7 @@ test('regression: published snapshot rejects trailing-dot target and top site ev
   }
   const initial = issue(model, issuer, 'https://unmatched.example/', 'site-tail-redirect');
   assert.equal(model.dispatch(model.evaluate(initial)).ok, true);
-  const redirected = model.redirect(initial, { target: 'https://unmatched.example/',
+  const redirected = model.nextHop(initial, { target: 'https://unmatched.example/',
     method: 'GET', navigation: 'main', nextTopLevelSite: 'https://shop.test.' });
   const redirectDecision = model.evaluate(redirected);
   assert.deepEqual([redirectDecision.action, redirectDecision.reason],
@@ -693,7 +693,7 @@ test('regression: never-published owner keeps trailing-dot initial and redirect 
     const initial = issue(model, issuer, 'https://unmatched.example/',
       `native-redirect-${index}`);
     assert.equal(model.dispatch(model.evaluate(initial)).ok, true);
-    const redirected = model.redirect(initial, { target, method: 'GET', navigation,
+    const redirected = model.nextHop(initial, { target, method: 'GET', navigation,
       nextTopLevelSite });
     const decision = model.evaluate(redirected);
     assert.deepEqual([decision.action, decision.reason], ['native', 'no_access_snapshot']);
@@ -774,7 +774,7 @@ test('regression: parsed IPv4 single-dot target and site match canonical routes'
   }
   const initial = issue(model, issuer, 'https://unrelated.test/', 'ip-redirect');
   assert.equal(model.dispatch(model.evaluate(initial)).ok, true);
-  const redirected = model.redirect(initial, { target: 'https://resource.test/',
+  const redirected = model.nextHop(initial, { target: 'https://resource.test/',
     method: 'GET', navigation: 'main', nextTopLevelSite: 'https://127.0.0.1.' });
   assert.equal(model.evaluate(redirected).registrationId, 'shop-r1');
   assert.equal(model.dispatch(model.evaluate(redirected)).ok, true);

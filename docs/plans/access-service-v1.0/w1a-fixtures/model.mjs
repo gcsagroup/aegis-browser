@@ -244,7 +244,7 @@ export class RequestRoutingContractModel {
     return issued;
   }
 
-  redirect(issued, { target, method, navigation = 'subresource', nextTopLevelSite }) {
+  nextHop(issued, { target, method, navigation = 'subresource', nextTopLevelSite }) {
     const source = this.#issued.get(issued);
     if (!source) return fail('unissued_request');
     const state = this.#owners.get(source.key);
