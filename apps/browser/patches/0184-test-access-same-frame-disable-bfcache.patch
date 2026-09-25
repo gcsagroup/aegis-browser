@@ -1,0 +1,33 @@
+From e3b0d9defa5e98cd613c62489e9c3cbd1485f20d Mon Sep 17 00:00:00 2001
+From: Aegis Patch Builder <patch-builder@invalid>
+Date: Thu, 24 Sep 2026 18:00:03 +0800
+Subject: [PATCH] test(access): disable BFCache for same-frame clone fixture
+
+---
+ .../access/access_proxying_url_loader_factory_browsertest.cc   | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index c4f170b..9f0450e 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -51,6 +51,7 @@
+ #include "content/public/browser/storage_partition_config.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/content_features.h"
++#include "content/public/test/back_forward_cache_util.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+@@ -1246,6 +1247,8 @@ class AccessProxyingURLLoaderFactorySameFrameBrowserTest
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactorySameFrameBrowserTest,
+                        SameFrameOldDocumentFactoryCloneAbortsWithoutPolicy) {
++  content::DisableBackForwardCacheForTesting(
++      web_contents(), content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
+   const GURL first_page = worker_page_url();
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), first_page));
+   content::RenderFrameHost* frame = web_contents()->GetPrimaryMainFrame();
+-- 
+2.54.0 (Apple Git-157)
+

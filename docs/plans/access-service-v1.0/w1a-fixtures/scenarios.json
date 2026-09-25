@@ -1,0 +1,61 @@
+{
+  "commonGenerations": {
+    "policy_generation": 3,
+    "identity_generation": 2,
+    "network_epoch": 4,
+    "base_proxy_config_generation": 5
+  },
+  "routes": [
+    {
+      "id": "shop-cdn",
+      "scope": "site",
+      "topLevelSite": "https://shop.test",
+      "exactHost": "cdn.example",
+      "scheme": "https",
+      "port": 443,
+      "mode": "PROXY",
+      "groupId": "shopping"
+    },
+    {
+      "id": "mail-cdn",
+      "scope": "site",
+      "topLevelSite": "https://mail.test",
+      "exactHost": "cdn.example",
+      "scheme": "https",
+      "port": 443,
+      "mode": "PROXY",
+      "groupId": "mail"
+    },
+    {
+      "id": "shop-api",
+      "scope": "site",
+      "topLevelSite": "https://shop.test",
+      "exactHost": "api.shop.test",
+      "scheme": "https",
+      "port": 443,
+      "mode": "PROXY",
+      "groupId": "payments"
+    },
+    {
+      "id": "explicit-native",
+      "scope": "profile",
+      "exactHost": "native.test",
+      "scheme": "https",
+      "port": 443,
+      "mode": "DIRECT"
+    },
+    {
+      "id": "blocked-api",
+      "scope": "profile",
+      "exactHost": "blocked.test",
+      "scheme": "https",
+      "port": 443,
+      "mode": "REJECT"
+    }
+  ],
+  "endpoints": [
+    { "groupId": "shopping", "registrationId": "shop-r1", "selection_generation": 11, "port": 18101 },
+    { "groupId": "mail", "registrationId": "mail-r1", "selection_generation": 12, "port": 18102 },
+    { "groupId": "payments", "registrationId": "pay-r1", "selection_generation": 13, "port": 18103 }
+  ]
+}
