@@ -45,7 +45,7 @@ import {navigateTo} from './test_util.js';
 
     setup(function() {
       window.history.replaceState({}, '', '/');
-      document.body.innerHTML = window.trustedTypes!.emptyHTML;
+      document.body.replaceChildren();
       CrRouter.resetForTesting();
       const clustersHandler =
           TestMock.fromClass(HistoryClustersPageHandlerRemote);
@@ -289,7 +289,7 @@ suite(`routing-test-with-history-clusters-pref-set`, () => {
 
   setup(function() {
     window.history.replaceState({}, '', '/');
-    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+    document.body.replaceChildren();
     CrRouter.resetForTesting();
     testProxy = new TestHistoryBrowserProxy();
     BrowserProxyImpl.setInstance(testProxy);
@@ -351,7 +351,7 @@ suite(`routing-test-with-history-embeddings-enabled`, () => {
 
   setup(() => {
     window.history.replaceState({}, '', '/');
-    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+    document.body.replaceChildren();
     CrRouter.resetForTesting();
 
     // Some extra setup of mocking proxies to get the history-app to work.
