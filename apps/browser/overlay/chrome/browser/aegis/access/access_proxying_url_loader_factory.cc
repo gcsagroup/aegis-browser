@@ -556,13 +556,14 @@ AccessProxyingURLLoaderFactory::~AccessProxyingURLLoaderFactory() {
 void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
     Profile* profile,
     content::RenderFrameHost* frame,
-    const GURL& document_url,
     std::optional<int64_t> navigation_id,
     network::URLLoaderFactoryBuilder& factory_builder) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  // Content supplies this hook only for Network Service-backed document
+  // factories. Non-network WebUI and scheme-specific terminals keep their
+  // original restricted behavior and never reach this wrapper.
   if (!aegis::IsAegisProfileSupported(profile) || !frame ||
-      frame->GetBrowserContext() != profile ||
-      !document_url.SchemeIsHTTPOrHTTPS()) {
+      frame->GetBrowserContext() != profile) {
     return;
   }
   // This fixed owner is browser-owned even when a sandboxed document's
