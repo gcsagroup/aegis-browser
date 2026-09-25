@@ -47,6 +47,8 @@ int main() {
   NativeObserver observer;
   aegis_access::test::RunRoutePlannerContractTests(observer);
   aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
+  aegis_access::test::RunSiteProxyTransportUnitTests(observer);
+  aegis_access::test::RunSiteProxyTransportRegressionTests(observer);
   aegis_access::test::RunRequestOwnershipRegistryUnitTests(observer);
   aegis_access::test::RunRequestOwnershipRegistryRegressionTests(observer);
   aegis_access::test::RunTargetedRequestCancellationUnitTests(observer);

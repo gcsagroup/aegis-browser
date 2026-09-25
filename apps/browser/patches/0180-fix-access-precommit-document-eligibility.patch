@@ -1,0 +1,138 @@
+From e5eb32ee9a53204bae84cad5e1c40a3a9aab5358 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Builder <patch-builder@invalid>
+Date: Thu, 24 Sep 2026 17:24:44 +0800
+Subject: [PATCH] fix(access): limit pending document gate to configured HTTP
+ origins
+
+---
+ .../access_proxying_url_loader_factory.cc     | 15 ++++++++++++-
+ .../access_proxying_url_loader_factory.h      |  4 ++++
+ ...proxying_url_loader_factory_browsertest.cc | 22 +++++++++++++++++++
+ .../browser/chrome_content_browser_client.cc  |  4 ++--
+ 4 files changed, 42 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index ebd9b12..31b43df 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -33,6 +33,7 @@
+ #include "net/base/net_errors.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
++#include "url/origin.h"
+ 
+ namespace aegis::access {
+ namespace {
+@@ -520,12 +521,24 @@ AccessProxyingURLLoaderFactory::~AccessProxyingURLLoaderFactory() {
+ void AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+     Profile* profile,
+     content::RenderFrameHost* frame,
++    const url::Origin& request_initiator,
+     std::optional<int64_t> navigation_id,
+     network::URLLoaderFactoryBuilder& factory_builder) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   if (navigation_id.has_value()) {
+     if (!aegis::IsAegisProfileSupported(profile) || !frame ||
+-        frame->GetBrowserContext() != profile) {
++        frame->GetBrowserContext() != profile ||
++        !request_initiator.GetURL().SchemeIsHTTPOrHTTPS()) {
++      return;
++    }
++    // Publication requires this same transport and configured partition.
++    // Resolve only Profile ownership here: the new document identity does
++    // not exist until commit, and the current RFH may still hold the old one.
++    const AccessBrowserRequestMetadataResult partition_metadata =
++        BuildBrowserOwnedProfileRequestMetadata(profile,
++                                                frame->GetStoragePartition());
++    if (partition_metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
++        !partition_metadata.metadata.has_value()) {
+       return;
+     }
+     content::WebContents* contents =
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 5c0789a..05680ca 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -23,6 +23,9 @@
+ 
+ class GURL;
+ class Profile;
++namespace url {
++class Origin;
++}
+ 
+ namespace content {
+ class RenderFrameHost;
+@@ -80,6 +83,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   static void MaybeProxyDocumentSubresource(
+       Profile* profile,
+       content::RenderFrameHost* frame,
++      const url::Origin& request_initiator,
+       std::optional<int64_t> navigation_id,
+       network::URLLoaderFactoryBuilder& factory_builder);
+   static void MaybeProxyWorkerMainResource(
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index fa23ac2..296740c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -10,6 +10,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include "base/base64.h"
+ #include "base/command_line.h"
+ #include "base/files/file_path.h"
+ #include "base/functional/bind.h"
+@@ -952,6 +953,26 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   EXPECT_EQ(proxy_requests_.load(std::memory_order_relaxed), 0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       DataDocumentWithoutPolicyPreservesNativeSubresource) {
++  const GURL resource = target_url().Resolve("/data-document-health");
++  const std::string markup =
++      "<!doctype html><script>window.resourceDone = "
++      "fetch('" + resource.spec() +
++      "', {mode:'no-cors',cache:'no-store'})"
++      ".then(() => 'loaded', () => 'error');</script>";
++  const GURL data_page("data:text/html;base64," + base::Base64Encode(markup));
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), data_page));
++  EXPECT_EQ(content::EvalJs(web_contents(), "window.resourceDone")
++                .ExtractString(),
++            "loaded");
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/0u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        ParserEarlySubresourceWaitsForCommittedDocument) {
+   const size_t healthy_origin_before =
+@@ -1018,6 +1039,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   // them through the downstream factory.
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+       browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      url::Origin::Create(worker_page_url()),
+       std::numeric_limits<int64_t>::max(), builder);
+   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
+       std::move(builder).Finish(
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index b07a2a5..1af92dd 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6825,8 +6825,8 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+   if (type == URLLoaderFactoryType::kDocumentSubResource && frame) {
+     aegis::access::AccessProxyingURLLoaderFactory::
+         MaybeProxyDocumentSubresource(
+-            Profile::FromBrowserContext(browser_context), frame, navigation_id,
+-            factory_builder);
++            Profile::FromBrowserContext(browser_context), frame,
++            request_initiator, navigation_id, factory_builder);
+   }
+ 
+   if (type == URLLoaderFactoryType::kNavigation && frame &&
+-- 
+2.54.0 (Apple Git-157)
+

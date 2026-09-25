@@ -80,6 +80,11 @@ class AegisAgentServiceTestPeer {
       scoped_refptr<os_crypt_async::Encryptor> encryptor) {
     service->OnMonitorTargetsDecryptorReady(monitor_id, std::move(encryptor));
   }
+
+  static void FailGoalRouteStoreCompletion(AegisAgentService* service) {
+    service->OnGoalRoutingFinalized(service->goal_route_generation_, true,
+                                    std::string(), std::nullopt, false);
+  }
 };
 
 class AegisBrowserToolsTestPeer {
@@ -474,6 +479,9 @@ TEST_F(AegisAgentServiceTest,
   profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
   profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
                                 "http://127.0.0.1:8765/v1");
+  profile_->GetPrefs()->SetString(
+      aegis::prefs::kModelName, "Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit");
+  ASSERT_TRUE(AegisServiceFactory::GetForProfile(profile_));
   AegisAgentService* service =
       AegisAgentServiceFactory::GetForProfile(profile_);
   ASSERT_TRUE(service);
@@ -491,6 +499,8 @@ TEST_F(AegisAgentServiceTest,
     base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
     service->RouteGoal("整理收藏夹", AgentWorkflowKind::kResearch,
                        result.GetCallback());
+    ASSERT_FALSE(result.IsReady())
+        << (result.IsReady() ? result.Get<1>() : std::string());
     factory.WaitForRequest(endpoint);
     EXPECT_FALSE(factory.IsPending(kTypeSafeSystemOneEndpoint));
     ASSERT_EQ(factory.NumPending(), 1);
@@ -789,6 +799,38 @@ TEST_F(AegisAgentServiceTest,
 }
 
 TEST_F(AegisAgentServiceTest,
+       GoalRouteStorageFailureCompletesOnceWithStorageError) {
+  ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
+  network::TestURLLoaderFactory factory;
+  AegisAgentService* service =
+      AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service);
+  service->SetTypeSafeGoalRouterClientForTesting(
+      std::make_unique<TypeSafeGoalRouterClient>(factory.GetSafeWeakWrapper()));
+
+  base::test::TestFuture<bool, std::string, std::optional<AgentGoalRoute>> result;
+  service->RouteGoal("Compare three USB hubs", AgentWorkflowKind::kResearch,
+                     result.GetCallback());
+  DrainTaskRunners();
+  factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
+  EXPECT_FALSE(result.IsReady());
+
+  AegisAgentServiceTestPeer::FailGoalRouteStoreCompletion(service);
+  ASSERT_TRUE(result.IsReady());
+  EXPECT_FALSE(result.Get<0>());
+  EXPECT_EQ(result.Get<1>(), "Agent task storage is unavailable");
+  EXPECT_FALSE(result.Get<2>());
+  EXPECT_FALSE(service->IsEnabled());
+  result.Clear();
+
+  // A repeated store completion or cancellation must not fulfill it again.
+  AegisAgentServiceTestPeer::FailGoalRouteStoreCompletion(service);
+  service->CancelPendingGoalRouting();
+  DrainTaskRunners();
+  EXPECT_FALSE(result.IsReady());
+}
+
+TEST_F(AegisAgentServiceTest,
        CancelledScreeningKeepsUnknownAttemptAndNextRouteSeparate) {
   ASSERT_TRUE(ConfigureTypeSafeGoalRouting());
   network::TestURLLoaderFactory factory;
@@ -805,6 +847,7 @@ TEST_F(AegisAgentServiceTest,
   factory.WaitForRequest(GURL(kTypeSafeSystemOneEndpoint));
   service->CancelPendingGoalRouting();
   EXPECT_FALSE(first.Get<0>());
+  EXPECT_EQ(first.Get<1>(), "goal routing was cancelled");
   FlushTaskStore(service);
 
   auto cancelled_value = base::JSONReader::Read(
@@ -1117,6 +1160,7 @@ TEST_F(AegisAgentServiceTest,
   profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
   profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl, kBaseUrl);
   profile_->GetPrefs()->SetString(aegis::prefs::kModelName, "fixture-model");
+  ASSERT_TRUE(AegisServiceFactory::GetForProfile(profile_));
 
   network::TestURLLoaderFactory factory;
   AegisAgentService* service =
@@ -1129,6 +1173,8 @@ TEST_F(AegisAgentServiceTest,
       route_result;
   service->RouteGoal("整理并检查失效收藏夹", AgentWorkflowKind::kResearch,
                      route_result.GetCallback());
+  ASSERT_FALSE(route_result.IsReady())
+      << (route_result.IsReady() ? route_result.Get<1>() : std::string());
   factory.WaitForRequest(endpoint);
   EXPECT_THAT(*factory.pending_requests(), SizeIs(1));
   EXPECT_TRUE(factory.SimulateResponseForPendingRequest(

@@ -174,6 +174,69 @@ inline void ExpectUnknown(ContractTestObserver& observer,
               GroupPresence::kPresent, GroupSelection::kUnknown, error);
 }
 
+inline void RunSiteProxyTransportUnitTests(ContractTestObserver& observer) {
+  const SiteProxyTransportRule candidate{
+      "news.example", false, AccessMode::kProxy, "group-a"};
+  observer.Expect(IsSiteProxyTransportCompatible(candidate, candidate),
+                  "transport accepts the same proxy group");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      candidate, {"news.example", false, AccessMode::kProxy,
+                                  "group-b"}),
+                  "transport rejects a different proxy group on the same host");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      candidate, {"example", true, AccessMode::kProxy, "group-b"}),
+                  "transport rejects an overlapping suffix with another group");
+  observer.Expect(IsSiteProxyTransportCompatible(
+                      candidate, {"example", true, AccessMode::kProxy, "group-a"}),
+                  "transport permits an overlapping suffix in the same group");
+  observer.Expect(IsSiteProxyTransportCompatible(
+                      candidate, {"other.example", false, AccessMode::kProxy,
+                                  "group-b"}),
+                  "transport preserves unrelated host rules");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      {"news.example", false, AccessMode::kProxy, ""}, candidate),
+                  "transport rejects a proxy candidate with no group");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      {"", false, AccessMode::kDirect, ""}, candidate),
+                  "transport rejects an empty candidate host");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      {"news.example", true, AccessMode::kProxy, "group-a"},
+                      candidate),
+                  "ordinary mutations cannot widen to subdomains");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      {"news.example", false, AccessMode::kDirect, "group-a"},
+                      candidate),
+                  "direct candidates cannot carry a proxy group");
+  observer.Expect(!IsSiteProxyTransportCompatible(
+                      {"news.example", false, AccessMode::kReject, ""}, candidate),
+                  "ordinary mutations do not admit debug reject candidates");
+}
+
+inline void RunSiteProxyTransportRegressionTests(ContractTestObserver& observer) {
+  const SiteProxyTransportRule proxy{
+      "news.example", false, AccessMode::kProxy, "group-a"};
+  const SiteProxyTransportRule direct{
+      "news.example", false, AccessMode::kDirect, ""};
+  observer.Expect(!IsSiteProxyTransportCompatible(proxy, direct) &&
+                      !IsSiteProxyTransportCompatible(direct, proxy),
+                  "existing opposite-mode conflict rejection remains symmetric");
+  observer.Expect(IsSiteProxyTransportCompatible(direct, direct),
+                  "same-host direct rules remain compatible");
+  observer.Expect(IsSiteProxyTransportCompatible(
+                      proxy, {"news.example", false, AccessMode::kReject, ""}),
+                  "transport compatibility does not remove independent rejection");
+  observer.Expect(IsSiteProxyTransportCompatible(
+                      proxy, {"ews.example", true, AccessMode::kProxy, "group-b"}),
+                  "suffix overlap requires a complete DNS label");
+  observer.Expect(IsSiteProxyTransportCompatible(
+                      proxy, {"example", false, AccessMode::kProxy, "group-b"}),
+                  "an exact parent host does not cover its subdomains");
+  observer.Expect(IsSiteProxyTransportCompatible(
+                      proxy, {"child.news.example", true, AccessMode::kProxy,
+                              "group-b"}),
+                  "a child suffix does not cover its parent");
+}
+
 inline void RunSiteProxyRuleGroupContractTests(
     ContractTestObserver& observer) {
   SiteProxyRuleGroup group = ValidGroup();

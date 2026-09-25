@@ -1,0 +1,116 @@
+From e1ede03e82c0262bd2b917ab1418d9855cae0c14 Mon Sep 17 00:00:00 2001
+From: Aegis Patch Builder <patch-builder@invalid>
+Date: Thu, 24 Sep 2026 17:57:38 +0800
+Subject: [PATCH] test(access): verify opaque document recreation and prefetch
+
+---
+ ...proxying_url_loader_factory_browsertest.cc | 73 +++++++++++++++++++
+ 1 file changed, 73 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index d4f1724..c4f170b 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -271,6 +272,33 @@ std::unique_ptr<net::test_server::HttpResponse> SandboxedPageReply(
+   return response;
+ }
+ 
++std::unique_ptr<net::test_server::HttpResponse> SandboxedPrefetchPageReply(
++    std::atomic<size_t>* counter,
++    net::test_server::EmbeddedTestServer* origin,
++    const net::test_server::HttpRequest& request) {
++  if (request.GetURL().path() != "/sandboxed-prefetch-page") {
++    return nullptr;
++  }
++  counter->fetch_add(1, std::memory_order_relaxed);
++  const bool healthy = request.relative_url.find("healthy") !=
++                       std::string::npos;
++  const char* resource = healthy ? "/resource?sandbox-prefetch-healthy"
++                                 : "/resource?sandbox-prefetch-blocked";
++  auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++  response->set_code(net::HTTP_OK);
++  response->AddCustomHeader("Content-Security-Policy",
++                            "sandbox allow-scripts");
++  response->set_content(
++      "<!doctype html><script>window.prefetchDone = new Promise(resolve => "
++      "window.resolvePrefetch = resolve)</script>"
++      "<link rel='prefetch' as='document' href='" +
++      origin->GetURL(kTargetHost, resource).spec() +
++      "' onload=\"resolvePrefetch('loaded')\" "
++      "onerror=\"resolvePrefetch('error')\">");
++  response->set_content_type("text/html");
++  return response;
++}
++
+ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
+     std::atomic<size_t>* counter,
+     const char* body,
+@@ -408,6 +436,9 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &SandboxedPageReply, base::Unretained(&origin_requests_),
+         base::Unretained(&target_origin_)));
++    target_origin_.RegisterRequestHandler(base::BindRepeating(
++        &SandboxedPrefetchPageReply, base::Unretained(&origin_requests_),
++        base::Unretained(&target_origin_)));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+         &ServiceWorkerOriginReply, base::Unretained(&origin_requests_)));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+@@ -1086,6 +1117,27 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+             "error");
+   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
+                      /*proxy_delta=*/0u);
++
++  // A newly created factory for this already committed opaque document must
++  // still carry its trusted HTTP document URL and fail closed.
++  content::RenderFrameHost* frame = web_contents()->GetPrimaryMainFrame();
++  ASSERT_TRUE(frame->GetLastCommittedOrigin().opaque());
++  mojo::Remote<network::mojom::URLLoaderFactory> recreated_factory;
++  frame->CreateNetworkServiceDefaultFactory(
++      recreated_factory.BindNewPipeAndPassReceiver());
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = target_url().Resolve("/resource?sandbox-recreated");
++  request->request_initiator = frame->GetLastCommittedOrigin();
++  request->load_flags = net::LOAD_BYPASS_CACHE;
++  auto loader = network::SimpleURLLoader::Create(
++      std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
++  base::test::TestFuture<std::optional<std::string>> result;
++  loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
++      recreated_factory.get(), result.GetCallback());
++  ASSERT_TRUE(result.Wait());
++  EXPECT_EQ(loader->NetError(), net::ERR_BLOCKED_BY_CLIENT);
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/0u);
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+@@ -1108,6 +1160,28 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                      /*proxy_delta=*/0u);
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       SandboxedHttpPrefetchWithPolicyFailsClosed) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(),
++      target_origin_.GetURL("localhost", "/sandboxed-prefetch-page?healthy")));
++  ASSERT_EQ(content::EvalJs(web_contents(), "window.prefetchDone")
++                .ExtractString(),
++            "loaded");
++  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
++  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
++
++  PublishProxyPolicy(/*publish_endpoint=*/false);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(),
++      target_origin_.GetURL("localhost", "/sandboxed-prefetch-page?blocked")));
++  EXPECT_EQ(content::EvalJs(web_contents(), "window.prefetchDone")
++                .ExtractString(),
++            "error");
++  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
++                     /*proxy_delta=*/0u);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        PendingDocumentFactoryClosesWhenTabIsDestroyed) {
+   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
+-- 
+2.54.0 (Apple Git-157)

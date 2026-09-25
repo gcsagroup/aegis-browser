@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "components/aegis_access/access_route_types.h"
@@ -98,6 +99,23 @@ struct GroupValidation {
   friend bool operator==(const GroupValidation&, const GroupValidation&) =
       default;
 };
+
+// A borrowed view of a validated rule's host-level transport requirements.
+// Ownership, canonical host spelling and rule shape are validated by the
+// caller. This check does not grant authority or match a request's site scope.
+struct SiteProxyTransportRule {
+  std::string_view host;
+  bool include_subdomains = false;
+  AccessMode mode = AccessMode::kInvalid;
+  std::string_view proxy_group_id;
+};
+
+// Ordinary site mutations cover one exact host and all browser-permitted
+// schemes/ports. The current partition transport cannot distinguish top-level
+// sites, ports or schemes for that host. Reject overlapping rules requiring
+// a different mode or proxy group before publishing a candidate.
+bool IsSiteProxyTransportCompatible(const SiteProxyTransportRule& candidate,
+                                    const SiteProxyTransportRule& existing);
 
 // Validates the atomic HTTP/HTTPS member pair supplied by a trusted adapter.
 // expected_owner comes from the native service/storage context, independently

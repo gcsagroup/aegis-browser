@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/raw_ptr.h"
 #include "base/test/test_future.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
@@ -160,10 +161,49 @@ class AccessMutationTransactionTest : public AccessServiceCoordinatorTest {
     return selector;
   }
 
+  void ImportOtherSiteProxyRule(AccessRuleStore* store,
+                                const std::string& proxy_group) {
+    StoredAccessRule independent;
+    independent.policy = {
+        .rule_id = "other-site-proxy",
+        .owner = owner_,
+        .scope = PolicyScope::kSite,
+        .top_level_site = "https://other.example",
+        .destination_host = "news.example",
+        .schemes = {RequestScheme::kHttps},
+        .ports = {PortScope::kAllBrowserPermitted, {}},
+        .mode = AccessMode::kProxy,
+        .proxy_group_id = proxy_group,
+        .protection_override = ProtectionOverride::kNone,
+        .row_revision = 1,
+        .last_operation_sequence = 1,
+    };
+    independent.source = StoredRuleSource::kTestFixture;
+    independent.lifetime = StoredRuleLifetime::kPersistent;
+    ASSERT_EQ(AccessRuleStoreTestPeer::Import(store, independent),
+              StoreStatus::kValid);
+  }
+
+  void ConfigurePrimaryProxyGroup() {
+    auto* source =
+        AccessProxySelectionGenerationSource::GetOrCreate(profile_.get());
+    ASSERT_TRUE(source);
+    const auto selection = source->CommitSelection(
+        {"proxy-group", "endpoint", "lease", "assignment", 1});
+    ASSERT_EQ(selection.status,
+              aegis_access::ProxySelectionGenerationCommitStatus::kCommitted);
+    const aegis_access::RegisteredProxyEndpoint endpoint{
+        "registration", "proxy-group", owner_,
+        {7, 2, selection.generation, transport_->network_epoch(), 5},
+        aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", 18080};
+    ASSERT_TRUE(transport_->PublishProxySelection(
+        {}, {"news.example", "other.example"}, endpoint));
+  }
+
   base::ScopedTempDir directory_;
   std::unique_ptr<TestingProfile> profile_;
-  AccessNetworkContextTransport* transport_ = nullptr;
-  AccessServiceCoordinator* coordinator_ = nullptr;
+  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+  raw_ptr<AccessServiceCoordinator> coordinator_ = nullptr;
   OwnershipKey owner_;
   std::unique_ptr<HeldPolicyClient> client_;
 };
@@ -413,24 +453,7 @@ TEST_F(AccessMutationTransactionTest, EphemeralStoreSurvivesConsecutiveMutations
 TEST_F(AccessMutationTransactionTest, MixedSameHostScopesFailBeforePublication) {
   auto store = OpenStore();
   auto* retained_store = store.get();
-  StoredAccessRule independent;
-  independent.policy = {
-      .rule_id = "other-site-proxy",
-      .owner = owner_,
-      .scope = PolicyScope::kSite,
-      .top_level_site = "https://other.example",
-      .destination_host = "news.example",
-      .schemes = {RequestScheme::kHttps},
-      .ports = {PortScope::kAllBrowserPermitted, {}},
-      .mode = AccessMode::kProxy,
-      .proxy_group_id = "independent-proxy",
-      .protection_override = ProtectionOverride::kNone,
-      .row_revision = 1,
-      .last_operation_sequence = 1,
-  };
-  independent.source = StoredRuleSource::kTestFixture;
-  independent.lifetime = StoredRuleLifetime::kPersistent;
-  ASSERT_EQ(AccessRuleStoreTestPeer::Import(store.get(), independent), StoreStatus::kValid);
+  ImportOtherSiteProxyRule(store.get(), "independent-proxy");
   const auto before = store->ReadCommittedSnapshot(owner_.storage_partition_token);
   ASSERT_TRUE(before.value);
   base::test::TestFuture<AccessMutationTransactionResult> result;
@@ -444,6 +467,66 @@ TEST_F(AccessMutationTransactionTest, MixedSameHostScopesFailBeforePublication) 
   ASSERT_TRUE(after.value);
   EXPECT_EQ(*after.value, *before.value);
   EXPECT_EQ(coordinator_->state_generation(), 0u);
+}
+
+TEST_F(AccessMutationTransactionTest,
+       DifferentSameHostProxyGroupsFailBeforePublication) {
+  ConfigurePrimaryProxyGroup();
+  task_environment_.RunUntilIdle();
+  auto store = OpenStore();
+  auto* retained_store = store.get();
+  ImportOtherSiteProxyRule(store.get(), "independent-proxy");
+  const auto before = store->ReadCommittedSnapshot(owner_.storage_partition_token);
+  ASSERT_TRUE(before.value);
+  const auto selection_before = transport_->CurrentSelection(owner_);
+  auto mutation = Mutation();
+  for (auto& member : mutation.candidate_members) {
+    member.mode = AccessMode::kProxy;
+    member.proxy_group_id = "proxy-group";
+  }
+  base::test::TestFuture<AccessMutationTransactionResult> result;
+  coordinator_->CommitSiteGroupMutation(std::move(store), mutation, Selector(),
+                                        result.GetCallback());
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(result.IsReady());
+  EXPECT_EQ(result.Get().status,
+            AccessMutationTransactionStatus::kUnsupportedTransportScope);
+  EXPECT_EQ(result.Get().store_status, StoreStatus::kValid);
+  EXPECT_FALSE(client_->metadata);
+  EXPECT_FALSE(client_->reply);
+  const auto after = retained_store->ReadCommittedSnapshot(owner_.storage_partition_token);
+  ASSERT_TRUE(after.value);
+  EXPECT_EQ(*after.value, *before.value);
+  EXPECT_EQ(transport_->CurrentSelection(owner_), selection_before);
+  EXPECT_EQ(coordinator_->state_generation(), 0u);
+}
+
+TEST_F(AccessMutationTransactionTest,
+       SameHostSameProxyGroupRemainsPublishable) {
+  ConfigurePrimaryProxyGroup();
+  auto store = OpenStore();
+  auto* retained_store = store.get();
+  ImportOtherSiteProxyRule(store.get(), "proxy-group");
+  auto mutation = Mutation();
+  for (auto& member : mutation.candidate_members) {
+    member.mode = AccessMode::kProxy;
+    member.proxy_group_id = "proxy-group";
+  }
+  base::test::TestFuture<AccessMutationTransactionResult> result;
+  coordinator_->CommitSiteGroupMutation(std::move(store), mutation, Selector(),
+                                        result.GetCallback());
+  task_environment_.RunUntilIdle();
+  ASSERT_TRUE(client_->metadata);
+  ASSERT_TRUE(client_->reply);
+  EXPECT_EQ(client_->metadata->proxy_group_id, "proxy-group");
+  std::move(client_->reply).Run(true);
+  ASSERT_TRUE(result.Wait());
+  EXPECT_EQ(result.Get().status, AccessMutationTransactionStatus::kCommitted);
+  const auto snapshot = retained_store->ReadCommittedSnapshot(owner_.storage_partition_token);
+  ASSERT_TRUE(snapshot.value);
+  EXPECT_EQ(snapshot.value->site_groups.size(), 1u);
+  EXPECT_EQ(snapshot.value->independent_rules.size(), 1u);
+  EXPECT_EQ(coordinator_->state_generation(), 1u);
 }
 
 TEST_F(AccessMutationTransactionTest, ForgedSelectorDoesNotPrepareMutation) {

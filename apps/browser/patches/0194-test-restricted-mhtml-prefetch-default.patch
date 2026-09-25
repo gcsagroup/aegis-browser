@@ -1,0 +1,72 @@
+From a64f2e03095498d0a266a969d805109ada6eb933 Mon Sep 17 00:00:00 2001
+From: Codex <codex@local>
+Date: Thu, 24 Sep 2026 23:24:08 +0800
+Subject: [PATCH] Observe restricted MHTML prefetch without debug-fatal default
+
+---
+ .../browser/loader/prefetch_browsertest.cc    | 40 +++++++++++++++----
+ 1 file changed, 32 insertions(+), 8 deletions(-)
+
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 154f014..279c98d 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -363,16 +363,9 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   const auto restricted_kind = service->CloneCommittedDocumentFactoryForTesting(
+       child_frame, restricted_factory.BindNewPipeAndPassReceiver());
+   ASSERT_TRUE(restricted_kind.has_value());
+-  EXPECT_EQ(*restricted_kind,
++  ASSERT_EQ(*restricted_kind,
+             SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
+                 kPreserve);
+-  EXPECT_EQ(load_prefetch(restricted_factory.get(),
+-                          embedded_test_server()->GetURL(
+-                              "/mhtml-prefetch-blocked"),
+-                          child_url, /*additional_load_flags=*/0,
+-                          /*recursive=*/false)
+-                .first,
+-            net::ERR_NOT_IMPLEMENTED);
+   EXPECT_EQ(load_prefetch(restricted_factory.get(),
+                           embedded_test_server()->GetURL(
+                               "/mhtml-prefetch-restricted"),
+@@ -388,6 +381,37 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+                           /*recursive=*/true)
+                 .first,
+             net::ERR_BLOCKED_BY_CLIENT);
++
++  // The real MHTML default is NotImplementedURLLoaderFactory, whose
++  // CreateLoaderAndStart deliberately crashes in DCHECK builds. Exercise the
++  // ordinary branch with a counting substitute, but keep the actual committed
++  // MHTML frame and the factory kind observed from its production context.
++  const GURL blocked_url =
++      embedded_test_server()->GetURL("/mhtml-prefetch-blocked");
++  network::TestURLLoaderFactory observed_default;
++  observed_default.AddResponse(
++      blocked_url, nullptr, "",
++      network::URLLoaderCompletionStatus(net::ERR_NOT_IMPLEMENTED));
++  mojo::Receiver<network::mojom::URLLoaderFactory> observed_receiver(
++      &observed_default);
++  auto observed_bundle =
++      std::make_unique<blink::PendingURLLoaderFactoryBundle>();
++  observed_bundle->pending_default_factory() =
++      observed_receiver.BindNewPipeAndPassRemote();
++  mojo::Remote<network::mojom::URLLoaderFactory> observed_factory;
++  auto observed_context = service->GetFactory(
++      observed_factory.BindNewPipeAndPassReceiver(),
++      child_frame->GetFrameTreeNodeId(),
++      partition->GetURLLoaderFactoryForBrowserProcess(),
++      child_frame->GetWeakPtr(), nullptr, std::move(observed_bundle),
++      *restricted_kind);
++  observed_context->OnDidCommitNavigation(child_frame->GetWeakDocumentPtr());
++  EXPECT_EQ(load_prefetch(observed_factory.get(), blocked_url, child_url,
++                          /*additional_load_flags=*/0,
++                          /*recursive=*/false)
++                .first,
++            net::ERR_NOT_IMPLEMENTED);
++  EXPECT_EQ(observed_default.total_requests(), 1u);
+   EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
+   EXPECT_EQ(blocked_requests->GetRequestCount(), 0);
+   EXPECT_EQ(restricted_requests->GetRequestCount(), 0);
+-- 
+2.54.0 (Apple Git-157)
+
