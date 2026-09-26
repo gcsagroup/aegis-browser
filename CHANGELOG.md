@@ -10,15 +10,16 @@ The package version remains `0.1.0`, but no `0.1.0` release, Git tag, or binary 
 
 ### 2026-09-14 source update: UI corrections and browser updates
 
-- Patches 0109–0113 add GitHub Release checking and verified installer downloads, shared product-update state, accurate model-configuration status, and trilingual settings and built-in page corrections.
-- Local macOS acceptance: Ver 1.1 (018), 32 findings addressed, 18 native tests and 116 UI checks passed; 170 changed messages and translation placeholders checked. Windows/Android device acceptance and a real Release installation remain unverified. No binary or tag is published with this source update.
+- Patches 0109–0113 add GitHub Release checking and installer downloads with size and SHA-256 verification, shared product-update state, accurate model-configuration status, and trilingual settings and built-in page corrections. Download verification does not replace release signing, notarization, or installation acceptance.
+- Historical local macOS acceptance on 2026-09-13: Ver 1.1 (018), 32 findings addressed, 18 native tests and 116 UI checks passed; 170 changed messages and translation placeholders checked. Ver 1.1 (018) identifies the local test App, not a published release or the repository package version. These results cover that test App and the recorded scope, not later source revisions. Windows/Android device acceptance and a real Release installation remain unverified. No binary or tag was published with this source update.
+- The 2026-09-14 source-submission record confirms that replaying patches 0109–0113 onto the historical 108-patch tree `319366182c31108e29e62d2f2199aff29a0b86e8` produced tree `6032269758860056c1371ed5d6f9ed6902c23596`. This is a dated replay result, not current-source or release qualification.
 - [018 验收记录](docs/ui-copy-acceptance.zh-CN.md) · [更新流程](docs/github-browser-updates.zh-CN.md)
 
 ### Release status
 
 - Consolidated development history into `main` on 2026-09-10. Patches 0107–0108 cover startup monitor recovery and verified runtime/summary fixes. [Verification record](docs/audit/main-consolidation-2026-09-10.md); no App build or binary release was performed.
 
-- Synchronized Browser Agent v2 to 108 top-level Chromium patches plus 2 nested V8 patches and replayed them exactly to source tree `319366182c31108e29e62d2f2199aff29a0b86e8`.
+- Historical 2026-09-10 baseline: Browser Agent v2 contained 108 top-level Chromium patches plus 2 nested V8 patches, replayed exactly to source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. The 2026-09-14 update above records the subsequent replay result; neither tree identifies the current source by itself.
 - Patch 0106 fixes blocking locale lookup on Windows UI threads without removing the remote-control warning; rebuilt platform regression acceptance remains pending.
 - The 57-, 65-, 67-, 95-, and 97-patch records remain historical evidence and do not qualify the current v2 artifacts.
 - The project remains release No-Go. Source synchronization does not authorize a tag, GitHub Release, binary, signing, notarization, Play upload, or production deployment.
@@ -74,7 +75,7 @@ The package version remains `0.1.0`, but no `0.1.0` release, Git tag, or binary 
 
 ### Known limitations
 
-- No trusted build attestation, product Developer ID signature, hardened-runtime notarization, stapling, or installed-App acceptance.
+- Formal release qualification remains incomplete: no trusted build attestation, product Developer ID signature, hardened-runtime notarization, stapling, or end-to-end installation and upgrade acceptance for a formal release package. The local 018 test App installation and macOS checks above do not establish release qualification.
 - Android and Windows current-source build/device qualification is in progress; no package is accepted until its exact identity and runtime record are complete.
 - Chromium egress, telemetry, updater, crash-reporting, and representative feature-behavior audits remain incomplete.
 - Phase 2 research uses a synthetic formal fixture. Phase 3 is a separate 13-sample operator-blinded public pilot with recall `1/3`; neither is generalizable production accuracy, false-positive, or security proof.
