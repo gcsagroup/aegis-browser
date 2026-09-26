@@ -1,0 +1,92 @@
+From 594213878223e177b4c213dc2b71632a78f1a538 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Sat, 26 Sep 2026 15:20:13 +0800
+Subject: [PATCH] fix(prefetch): reject committed MHTML before default factory
+
+---
+ .../browser/loader/prefetch_browsertest.cc    | 40 +++++--------------
+ .../prefetch_url_loader_service_context.cc    | 10 +++++
+ 2 files changed, 19 insertions(+), 31 deletions(-)
+
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index 279c98db00..453db1cf6f 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -366,6 +366,14 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+   ASSERT_EQ(*restricted_kind,
+             SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
+                 kPreserve);
++  const int loader_calls_before = GetPrefetchURLLoaderCallCount();
++  const GURL blocked_url =
++      embedded_test_server()->GetURL("/mhtml-prefetch-blocked");
++  EXPECT_EQ(load_prefetch(restricted_factory.get(), blocked_url, child_url,
++                          /*additional_load_flags=*/0,
++                          /*recursive=*/false)
++                .first,
++            net::ERR_BLOCKED_BY_CLIENT);
+   EXPECT_EQ(load_prefetch(restricted_factory.get(),
+                           embedded_test_server()->GetURL(
+                               "/mhtml-prefetch-restricted"),
+@@ -381,37 +389,7 @@ IN_PROC_BROWSER_TEST_F(PrefetchBrowserTestBase,
+                           /*recursive=*/true)
+                 .first,
+             net::ERR_BLOCKED_BY_CLIENT);
+-
+-  // The real MHTML default is NotImplementedURLLoaderFactory, whose
+-  // CreateLoaderAndStart deliberately crashes in DCHECK builds. Exercise the
+-  // ordinary branch with a counting substitute, but keep the actual committed
+-  // MHTML frame and the factory kind observed from its production context.
+-  const GURL blocked_url =
+-      embedded_test_server()->GetURL("/mhtml-prefetch-blocked");
+-  network::TestURLLoaderFactory observed_default;
+-  observed_default.AddResponse(
+-      blocked_url, nullptr, "",
+-      network::URLLoaderCompletionStatus(net::ERR_NOT_IMPLEMENTED));
+-  mojo::Receiver<network::mojom::URLLoaderFactory> observed_receiver(
+-      &observed_default);
+-  auto observed_bundle =
+-      std::make_unique<blink::PendingURLLoaderFactoryBundle>();
+-  observed_bundle->pending_default_factory() =
+-      observed_receiver.BindNewPipeAndPassRemote();
+-  mojo::Remote<network::mojom::URLLoaderFactory> observed_factory;
+-  auto observed_context = service->GetFactory(
+-      observed_factory.BindNewPipeAndPassReceiver(),
+-      child_frame->GetFrameTreeNodeId(),
+-      partition->GetURLLoaderFactoryForBrowserProcess(),
+-      child_frame->GetWeakPtr(), nullptr, std::move(observed_bundle),
+-      *restricted_kind);
+-  observed_context->OnDidCommitNavigation(child_frame->GetWeakDocumentPtr());
+-  EXPECT_EQ(load_prefetch(observed_factory.get(), blocked_url, child_url,
+-                          /*additional_load_flags=*/0,
+-                          /*recursive=*/false)
+-                .first,
+-            net::ERR_NOT_IMPLEMENTED);
+-  EXPECT_EQ(observed_default.total_requests(), 1u);
++  EXPECT_EQ(GetPrefetchURLLoaderCallCount(), loader_calls_before);
+   EXPECT_EQ(healthy_requests->GetRequestCount(), 1);
+   EXPECT_EQ(blocked_requests->GetRequestCount(), 0);
+   EXPECT_EQ(restricted_requests->GetRequestCount(), 0);
+diff --git a/content/browser/loader/prefetch_url_loader_service_context.cc b/content/browser/loader/prefetch_url_loader_service_context.cc
+index a4c7944126..3ed5b0e781 100644
+--- a/content/browser/loader/prefetch_url_loader_service_context.cc
++++ b/content/browser/loader/prefetch_url_loader_service_context.cc
+@@ -115,6 +115,16 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(
+     return;
+   }
+ 
++  // An MHTML document cannot make network requests. Reject prefetch before
++  // reaching its NotImplementedURLLoaderFactory, including ordinary prefetch
++  // that would otherwise use the document's preserved default factory.
++  if (current_context.render_frame_host->is_mhtml_document()) {
++    mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
++        ->OnComplete(
++            network::URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
++    return;
++  }
++
+   // Cross-origin and recursive prefetch paths build a separate NetworkService
+   // factory. Do not let them bypass an original WebUI/MHTML restricted default.
+   if (current_context.document_default_factory_kind ==
+-- 
+2.54.0 (Apple Git-157)
+
