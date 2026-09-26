@@ -12,6 +12,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s prototypes/access-mete
 
 The same command is exposed as `pnpm run test:access-metering` and included in `quality:fast`. Tests bind only `127.0.0.1`, create temporary SQLite files, use no credentials or external network, and kill only their own relay subprocesses. Every socket, process readiness, marker, and settlement wait in the tests has a timeout.
 
+The subprocess launcher trusts the test interpreter, repository checkout and inherited environment. It executes `sys.executable` with this checkout's `relay.py`, an argv list of fixture values, and explicit `shell=False`; external request data never supplies launch arguments. Database and fault-marker paths come from the test's temporary directory. The import and this one launcher carry narrowly scoped exceptions for Bandit `B404`/`B603` and Semgrep `python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit`, documenting the audited test-code use. Other calls and rules remain enabled. Re-audit these exceptions if the launcher begins accepting external inputs; the separate process is required to preserve the real kill/restart tests.
+
 For manual local inspection, start the origin and relay in separate terminals, using a fresh local database path:
 
 ```sh
