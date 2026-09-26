@@ -13,20 +13,39 @@ const owner = (profile_token, storage_partition_token = 'default') => ({
 const tuple = (selection_generation, common = fixture.commonGenerations) => ({
   ...common, selection_generation,
 });
+const credentialIdentityFor = (routeOwner, registrationId) => JSON.stringify([
+  routeOwner.channel, routeOwner.profile_token, routeOwner.storage_partition_token, registrationId,
+]);
 const endpointIdentity = (port, transport = 'http') => ({
-  transport, host: '127.0.0.1', port, credentialIdentity: `credential-${port}`,
+  transport, host: '127.0.0.1', port, listenerIncarnation: `listener-${port}`,
 });
+
+function register(model, { owner: routeOwner, group, registrationId, endpointIdentity: identity,
+  tuple: generations, incarnation, credentialIdentity, expiresAt = 100,
+  connectionDeadline = 200 }) {
+  const credentialHandle = model.issueCredentialHandle({
+    issuer: model.trustedIssuer(routeOwner), owner: routeOwner, group, registrationId,
+    transport: identity.transport, listenerIncarnation: identity.listenerIncarnation,
+    credentialIdentity,
+  });
+  return model.registerEndpoint({ owner: routeOwner, group, registrationId,
+    endpointIdentity: identity, tuple: generations, incarnation, credentialHandle,
+    expiresAt, connectionDeadline });
+}
 
 function prepare(model, routeOwner, incarnation, { rules = fixture.routes,
   endpoints = fixture.endpoints, common = fixture.commonGenerations } = {}) {
   assert.equal(model.restart(routeOwner, incarnation).ok, true);
   const issuer = model.trustedIssuer(routeOwner);
   for (const endpoint of endpoints) {
-    assert.equal(model.registerEndpoint({
+    assert.equal(register(model, {
       owner: routeOwner, group: endpoint.groupId,
       registrationId: endpoint.registrationId, incarnation,
-      endpointIdentity: endpointIdentity(endpoint.port),
+      endpointIdentity: { ...endpointIdentity(endpoint.port),
+        listenerIncarnation: endpoint.listenerIncarnation },
       tuple: tuple(endpoint.selection_generation, common),
+      credentialIdentity: credentialIdentityFor(routeOwner, endpoint.registrationId),
+      expiresAt: endpoint.expiresAt, connectionDeadline: endpoint.connectionDeadline,
     }).ok, true);
   }
   const publication = model.publishSnapshot({
@@ -114,13 +133,15 @@ test('unit: zero generations and lost registration cannot become READY', () => {
   const model = new RequestRoutingContractModel();
   const routeOwner = owner('incomplete');
   assert.equal(model.restart(routeOwner, 'context-1').ok, true);
-  assert.equal(model.registerEndpoint({ owner: routeOwner, group: 'shopping',
+  assert.equal(register(model, { owner: routeOwner, group: 'shopping',
     registrationId: 'invalid', incarnation: 'context-1',
-    endpointIdentity: endpointIdentity(18101), tuple: { ...tuple(11), network_epoch: 0 } }).reason,
+    endpointIdentity: endpointIdentity(18101), tuple: { ...tuple(11), network_epoch: 0 },
+    credentialIdentity: credentialIdentityFor(routeOwner, 'invalid') }).reason,
   'invalid_registration');
-  assert.equal(model.registerEndpoint({ owner: routeOwner, group: 'shopping',
+  assert.equal(register(model, { owner: routeOwner, group: 'shopping',
     registrationId: 'valid', incarnation: 'context-1',
-    endpointIdentity: endpointIdentity(18101), tuple: tuple(11) }).ok, true);
+    endpointIdentity: endpointIdentity(18101), tuple: tuple(11),
+    credentialIdentity: credentialIdentityFor(routeOwner, 'valid') }).ok, true);
   const zero = model.publishSnapshot({ owner: routeOwner, incarnation: 'context-1',
     commonGenerations: { ...fixture.commonGenerations, policy_generation: 0 },
     rules: [fixture.routes[0]], endpoints: [{ groupId: 'shopping', registrationId: 'valid' }] });
@@ -183,10 +204,11 @@ function prepareAfterRestart(model, routeOwner, incarnation) {
     ...endpoint, registrationId: `${endpoint.registrationId}-${incarnation}`,
   }));
   for (const endpoint of endpoints) {
-    assert.equal(model.registerEndpoint({ owner: routeOwner, incarnation,
+    assert.equal(register(model, { owner: routeOwner, incarnation,
       group: endpoint.groupId, registrationId: endpoint.registrationId,
       endpointIdentity: endpointIdentity(endpoint.port),
-      tuple: tuple(endpoint.selection_generation) }).ok, true);
+      tuple: tuple(endpoint.selection_generation),
+      credentialIdentity: credentialIdentityFor(routeOwner, endpoint.registrationId) }).ok, true);
   }
   const published = model.publishSnapshot({ owner: routeOwner, incarnation,
     commonGenerations: fixture.commonGenerations, rules: fixture.routes,
@@ -200,18 +222,27 @@ test('regression: Profile, OTR, partition and restart separate registration and 
   const b = owner('profile-B');
   const otr = owner('profile-A-OTR');
   const partition = owner('profile-A', 'isolated-partition');
-  const issuers = [a, b, otr, partition].map((routeOwner) =>
+  const routeOwners = [a, b, otr, partition];
+  const issuers = routeOwners.map((routeOwner) =>
     prepare(model, routeOwner, 'context-1'));
   const decisions = issuers.map((issuer, index) => model.evaluate(issue(model, issuer,
     'https://cdn.example/', `profile-${index}`)));
   assert.equal(new Set(decisions.map((decision) => decision.reuseKey)).size, 4);
+  const credentialIdentities = decisions.map((decision, index) =>
+    model.authorizeCredentialLookup(decision, { owner: routeOwners[index],
+      registrationId: 'shop-r1', transport: 'http',
+      credentialHandle: decision.credentialHandle }).credentialIdentity);
+  assert.deepEqual(credentialIdentities, routeOwners.map((routeOwner) =>
+    credentialIdentityFor(routeOwner, 'shop-r1')));
+  assert.equal(new Set(credentialIdentities).size, 4);
   assert.equal(model.dispatch(decisions[0]).ok, true);
   assert.equal(model.restart(a, 'context-2').ok, true);
   assert.equal(model.dispatch(decisions[1]).ok, true);
   assert.equal(model.dispatch(decisions[2]).ok, true);
   assert.equal(model.dispatch(decisions[3]).ok, true);
   assert.equal(model.authorizeCredentialLookup(decisions[0], {
-    owner: a, registrationId: 'shop-r1', transport: 'http' }).ok, false);
+    owner: a, registrationId: 'shop-r1', transport: 'http',
+    credentialHandle: decisions[0].credentialHandle }).ok, false);
   assert.equal(issue(model, issuers[0], 'https://cdn.example/', 'after-restart').reason,
     'untrusted_or_unknown_issuer');
   const restoringIssuer = model.trustedIssuer(a);
@@ -229,8 +260,9 @@ test('regression: group-specific selection and missing registrations invalidate 
   const issuer = prepare(model, routeOwner, 'context-1');
   const shopping = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'shop-old'));
   const mail = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'mail-old', 'https://mail.test'));
-  assert.equal(model.registerEndpoint({ owner: routeOwner, group: 'mail', registrationId: 'mail-r2',
-    incarnation: 'context-1', endpointIdentity: endpointIdentity(18112), tuple: tuple(22) }).ok, true);
+  assert.equal(register(model, { owner: routeOwner, group: 'mail', registrationId: 'mail-r2',
+    incarnation: 'context-1', endpointIdentity: endpointIdentity(18112), tuple: tuple(22),
+    credentialIdentity: credentialIdentityFor(routeOwner, 'mail-r2') }).ok, true);
   const endpoints = fixture.endpoints.map(({ groupId, registrationId }) => ({
     groupId, registrationId: groupId === 'mail' ? 'mail-r2' : registrationId,
   }));
@@ -285,9 +317,10 @@ test('regression: required POST waits with send zero, then dispatches once after
     'https://shop.test', { method: 'POST', requireProxy: true });
   const waiting = model.evaluate(post);
   assert.deepEqual([waiting.action, model.dispatch(waiting).ok], ['wait-fail', false]);
-  assert.equal(model.registerEndpoint({ owner: routeOwner, group: 'shopping',
+  assert.equal(register(model, { owner: routeOwner, group: 'shopping',
     registrationId: 'post-r1', incarnation: 'context-1',
-    endpointIdentity: endpointIdentity(18101), tuple: tuple(11) }).ok, true);
+    endpointIdentity: endpointIdentity(18101), tuple: tuple(11),
+    credentialIdentity: credentialIdentityFor(routeOwner, 'post-r1') }).ok, true);
   const candidate = model.publishSnapshot({ owner: routeOwner, incarnation: 'context-1',
     commonGenerations: fixture.commonGenerations, rules: [fixture.routes[0]],
     endpoints: [{ groupId: 'shopping', registrationId: 'post-r1' }] });
@@ -306,13 +339,15 @@ test('unit: credential lookup binds owner, registration, transport and active sn
   prepare(model, b, 'context-1');
   const decision = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'auth'));
   assert.deepEqual(model.authorizeCredentialLookup(decision, {
-    owner: a, registrationId: 'shop-r1', transport: 'http' }),
-  { ok: true, credentialIdentity: 'credential-18101' });
+    owner: a, registrationId: 'shop-r1', transport: 'http',
+    credentialHandle: decision.credentialHandle }),
+  { ok: true, credentialIdentity: credentialIdentityFor(a, 'shop-r1') });
   for (const candidate of [
     { owner: b, registrationId: 'shop-r1', transport: 'http' },
     { owner: a, registrationId: 'mail-r1', transport: 'http' },
     { owner: a, registrationId: 'shop-r1', transport: 'socks5' },
-  ]) assert.equal(model.authorizeCredentialLookup(decision, candidate).reason,
+  ]) assert.equal(model.authorizeCredentialLookup(decision, {
+    ...candidate, credentialHandle: decision.credentialHandle }).reason,
     'credential_binding_denied');
 });
 
@@ -350,10 +385,11 @@ test('regression: each GenerationTuple field and same-address registration chang
     let selection = oldEndpoint.selection_generation;
     if (field === 'selection_generation') selection += 1;
     else nextCommon[field] += 1;
-    assert.equal(model.registerEndpoint({ owner: routeOwner, group: 'shopping',
+    assert.equal(register(model, { owner: routeOwner, group: 'shopping',
       registrationId: `shop-new-${field}`, incarnation: 'context-1',
       endpointIdentity: endpointIdentity(oldEndpoint.port),
-      tuple: tuple(selection, nextCommon) }).ok, true);
+      tuple: tuple(selection, nextCommon),
+      credentialIdentity: credentialIdentityFor(routeOwner, `shop-new-${field}`) }).ok, true);
     const published = model.publishSnapshot({ owner: routeOwner, incarnation: 'context-1',
       commonGenerations: nextCommon, rules,
       endpoints: [{ groupId: 'shopping', registrationId: `shop-new-${field}` }] });
@@ -419,9 +455,10 @@ test('regression: all six policy mode transitions invalidate old decisions', () 
     });
     const old = model.evaluate(issue(model, issuer, 'https://target.test/', `old-${from}-${to}`));
     const nextCommon = { ...fixture.commonGenerations, policy_generation: 4 };
-    assert.equal(model.registerEndpoint({ owner: routeOwner, group: 'shopping',
+    assert.equal(register(model, { owner: routeOwner, group: 'shopping',
       registrationId: 'shop-r2', incarnation: 'context-1',
-      endpointIdentity: endpointIdentity(18101), tuple: tuple(11, nextCommon) }).ok, true);
+      endpointIdentity: endpointIdentity(18101), tuple: tuple(11, nextCommon),
+      credentialIdentity: credentialIdentityFor(routeOwner, 'shop-r2') }).ok, true);
     const newRule = { ...oldRule, mode: to };
     if (to === 'PROXY') newRule.groupId = 'shopping';
     else delete newRule.groupId;
@@ -556,9 +593,10 @@ test('regression: sent POST tombstone survives restart and forbids same-hop repl
     'https://shop.test', { method: 'POST' });
   assert.equal(model.evaluate(sameHop).action, 'wait-fail');
   const nextCommon = { ...fixture.commonGenerations, network_epoch: 5 };
-  assert.equal(model.registerEndpoint({ owner: routeOwner, incarnation: 'context-2',
+  assert.equal(register(model, { owner: routeOwner, incarnation: 'context-2',
     group: 'shopping', registrationId: 'post-new-context',
-    endpointIdentity: endpointIdentity(18101), tuple: tuple(11, nextCommon) }).ok, true);
+    endpointIdentity: endpointIdentity(18101), tuple: tuple(11, nextCommon),
+    credentialIdentity: credentialIdentityFor(routeOwner, 'post-new-context') }).ok, true);
   const publication = model.publishSnapshot({ owner: routeOwner, incarnation: 'context-2',
     commonGenerations: nextCommon, rules: [fixture.routes[0]],
     endpoints: [{ groupId: 'shopping', registrationId: 'post-new-context' }] });
@@ -574,18 +612,18 @@ test('regression: registration ID cannot be reused after unregister, restart or 
   const model = new RequestRoutingContractModel();
   const routeOwner = owner('registration-history');
   assert.equal(model.restart(routeOwner, 'context-1').ok, true);
-  const register = (incarnation, credentialIdentity) => model.registerEndpoint({
+  const registerSameId = (incarnation, credentialIdentity) => register(model, {
     owner: routeOwner, incarnation, group: 'shopping', registrationId: 'r1',
-    endpointIdentity: { ...endpointIdentity(18101), credentialIdentity }, tuple: tuple(11),
+    endpointIdentity: endpointIdentity(18101), tuple: tuple(11), credentialIdentity,
   });
-  assert.equal(register('context-1', 'first-credential').ok, true);
+  assert.equal(registerSameId('context-1', 'first-credential').ok, true);
   assert.equal(model.unregisterEndpoint(routeOwner, 'r1'), true);
-  assert.equal(register('context-1', 'new-credential').reason, 'registration_id_reused');
+  assert.equal(registerSameId('context-1', 'new-credential').reason, 'registration_id_reused');
   assert.equal(model.restart(routeOwner, 'context-2').ok, true);
-  assert.equal(register('context-2', 'third-credential').reason, 'registration_id_reused');
+  assert.equal(registerSameId('context-2', 'third-credential').reason, 'registration_id_reused');
   assert.equal(model.close(routeOwner).ok, true);
   assert.equal(model.restart(routeOwner, 'context-3').ok, true);
-  assert.equal(register('context-3', 'fourth-credential').reason, 'registration_id_reused');
+  assert.equal(registerSameId('context-3', 'fourth-credential').reason, 'registration_id_reused');
 });
 
 test('unit: publication refuses a trailing-dot exactHost rule', () => {
@@ -817,4 +855,169 @@ test('regression: normalized IPv4 proxy with lost endpoint does not fall back na
   assert.deepEqual([decision.action, decision.reason],
     ['wait-fail', 'registration_unavailable']);
   assert.equal(model.dispatch(decision).reason, 'registration_unavailable');
+});
+
+test('unit: only a live trusted issuer can mint an immutable, exact-bound credential handle', () => {
+  const model = new RequestRoutingContractModel();
+  const a = owner('handle-A');
+  const b = owner('handle-B');
+  assert.equal(model.restart(a, 'context-1').ok, true);
+  assert.equal(model.restart(b, 'context-1').ok, true);
+  const issuer = model.trustedIssuer(a);
+  const binding = { issuer, owner: a, group: 'shopping', registrationId: 'r1',
+    transport: 'http', listenerIncarnation: 'listener-1', credentialIdentity: 'cred-1' };
+  const mint = (changes = {}) => model.issueCredentialHandle({ ...binding, ...changes });
+  const handle = mint();
+  assert.equal(Object.isFrozen(handle), true);
+  assert.deepEqual(Object.keys(handle), []);
+  assert.equal(mint({ issuer: {} }).reason, 'invalid_credential_issuer_or_binding');
+  assert.equal(mint({ owner: b }).reason, 'invalid_credential_issuer_or_binding');
+  assert.equal(mint({ credentialIdentity: '' }).reason, 'invalid_credential_issuer_or_binding');
+  const admission = { owner: a, group: 'shopping', registrationId: 'r1',
+    incarnation: 'context-1', tuple: tuple(11),
+    endpointIdentity: { transport: 'http', host: '127.0.0.1', port: 18101,
+      listenerIncarnation: 'listener-1' }, expiresAt: 100, connectionDeadline: 200 };
+  for (const credentialHandle of [undefined, {}, Object.freeze({}),
+    mint({ group: 'mail' }), mint({ registrationId: 'r2' }),
+    mint({ transport: 'socks5' }), mint({ listenerIncarnation: 'listener-2' }),
+    model.issueCredentialHandle({ ...binding, issuer: model.trustedIssuer(b), owner: b })]) {
+    assert.equal(model.registerEndpoint({ ...admission, credentialHandle }).reason,
+      'invalid_registration');
+  }
+  for (const [expiresAt, connectionDeadline] of [
+    [0, 200], [Infinity, 200], [NaN, 200], [100, 99], [100, Infinity], ['100', 200],
+  ]) assert.equal(model.registerEndpoint({ ...admission, credentialHandle: handle,
+    expiresAt, connectionDeadline }).reason, 'invalid_registration');
+  assert.equal(model.registerEndpoint({ ...admission, credentialHandle: handle }).ok, true);
+  const publication = model.publishSnapshot({ owner: a, incarnation: 'context-1',
+    commonGenerations: fixture.commonGenerations, rules: [fixture.routes[0]],
+    endpoints: [{ groupId: 'shopping', registrationId: 'r1' }] });
+  assert.equal(model.acknowledgeModelSnapshot(publication.receipt).ok, true);
+  const decision = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'handle-test'));
+  const lookup = { owner: a, registrationId: 'r1', transport: 'http' };
+  assert.equal(decision.credentialHandle, handle);
+  assert.equal(model.authorizeCredentialLookup(decision, { ...lookup,
+    credentialHandle: {} }).reason, 'credential_binding_denied');
+  assert.deepEqual(model.authorizeCredentialLookup(decision, { ...lookup,
+    credentialHandle: handle }), { ok: true, credentialIdentity: 'cred-1' });
+  assert.equal(model.restart(a, 'context-2').ok, true);
+  assert.equal(mint().reason, 'invalid_credential_issuer_or_binding');
+  assert.equal(model.registerEndpoint({ ...admission, incarnation: 'context-2',
+    registrationId: 'r2', credentialHandle: handle }).reason, 'invalid_registration');
+});
+
+test('unit: monotonic lease boundaries gate admission, publication, ACK and selection', () => {
+  const model = new RequestRoutingContractModel();
+  const a = owner('lease-boundary');
+  assert.equal(model.restart(a, 'context-1').ok, true);
+  const issuer = model.trustedIssuer(a);
+  assert.equal(register(model, { owner: a, group: 'shopping', registrationId: 'short',
+    incarnation: 'context-1', endpointIdentity: endpointIdentity(18101),
+    tuple: tuple(11), credentialIdentity: credentialIdentityFor(a, 'short'),
+    expiresAt: 10, connectionDeadline: 10 }).ok, true);
+  const publish = () => model.publishSnapshot({ owner: a, incarnation: 'context-1',
+    commonGenerations: fixture.commonGenerations, rules: [fixture.routes[0]],
+    endpoints: [{ groupId: 'shopping', registrationId: 'short' }] });
+  assert.equal(model.advanceClock(9).ok, true);
+  const pending = publish();
+  assert.equal(pending.ok, true);
+  assert.equal(model.advanceClock(8).reason, 'invalid_clock_advance');
+  assert.equal(model.advanceClock(Infinity).reason, 'invalid_clock_advance');
+  assert.equal(model.advanceClock(9.5).ok, true);
+  assert.equal(model.advanceClock(10).ok, true);
+  assert.equal(model.acknowledgeModelSnapshot(pending.receipt).reason,
+    'registration_lost_before_model_ack');
+  assert.equal(publish().reason, 'missing_or_stale_registration');
+  assert.equal(register(model, { owner: a, group: 'shopping', registrationId: 'at-boundary',
+    incarnation: 'context-1', endpointIdentity: endpointIdentity(18101),
+    tuple: tuple(11), credentialIdentity: credentialIdentityFor(a, 'at-boundary'),
+    expiresAt: 10, connectionDeadline: 20 }).reason,
+  'invalid_registration');
+  assert.equal(model.evaluate(issue(model, issuer, 'https://native.test/', 'native')).action,
+    'native');
+});
+
+test('regression: expiry races fail selected PROXY while another CDN group and native stay usable', () => {
+  const model = new RequestRoutingContractModel();
+  const a = owner('lease-race');
+  const issuer = prepare(model, a, 'context-1');
+  const old = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'old-proxy'));
+  assert.deepEqual(model.authorizeCredentialLookup(old, { owner: a,
+    registrationId: 'shop-r1', transport: 'http', credentialHandle: old.credentialHandle }),
+  { ok: true, credentialIdentity: credentialIdentityFor(a, 'shop-r1') });
+  assert.equal(model.advanceClock(99).ok, true);
+  const beforeExpiry = model.evaluate(issue(model, issuer, 'https://cdn.example/',
+    'before-expiry'));
+  assert.deepEqual(model.authorizeCredentialLookup(beforeExpiry, { owner: a,
+    registrationId: 'shop-r1', transport: 'http',
+    credentialHandle: beforeExpiry.credentialHandle }),
+  { ok: true, credentialIdentity: credentialIdentityFor(a, 'shop-r1') });
+  assert.equal(model.dispatch(beforeExpiry).ok, true);
+  const sentPost = issue(model, issuer, 'https://cdn.example/', 'sent-post',
+    'https://shop.test', { method: 'POST' });
+  assert.equal(model.dispatch(model.evaluate(sentPost)).ok, true);
+  assert.equal(model.advanceClock(100).ok, true);
+  assert.equal(model.dispatch(old).reason, 'registration_expired');
+  const denied = model.authorizeCredentialLookup(old, { owner: a,
+    registrationId: 'shop-r1', transport: 'http', credentialHandle: old.credentialHandle });
+  assert.equal(denied.reason, 'credential_binding_denied');
+  const expired = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'expired'));
+  assert.deepEqual([expired.action, expired.reason, expired.credentialHandle],
+    ['wait-fail', 'registration_expired', null]);
+  assert.equal(model.dispatch(expired).reason, 'registration_expired');
+  const mail = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'mail-live',
+    'https://mail.test'));
+  assert.deepEqual([mail.action, mail.registrationId], ['proxy', 'mail-r1']);
+  assert.equal(model.dispatch(mail).ok, true);
+  assert.equal(model.dispatch(model.evaluate(issue(model, issuer,
+    'https://native.test/', 'native-live'))).ok, true);
+
+  const renewedIdentity = { ...endpointIdentity(18101),
+    listenerIncarnation: 'listener-renewed' };
+  assert.equal(register(model, { owner: a, group: 'shopping', registrationId: 'shop-r1',
+    incarnation: 'context-1', endpointIdentity: renewedIdentity,
+    credentialIdentity: 'cred-renewed-reused-id',
+    tuple: tuple(11), expiresAt: 250, connectionDeadline: 300 }).reason,
+  'registration_id_reused');
+  assert.equal(register(model, { owner: a, group: 'shopping', registrationId: 'shop-r2',
+    incarnation: 'context-1', endpointIdentity: renewedIdentity,
+    credentialIdentity: 'cred-renewed',
+    tuple: tuple(11), expiresAt: 250, connectionDeadline: 300 }).ok, true);
+  const publication = model.publishSnapshot({ owner: a, incarnation: 'context-1',
+    commonGenerations: fixture.commonGenerations, rules: fixture.routes,
+    endpoints: fixture.endpoints.map(({ groupId, registrationId }) => ({
+      groupId, registrationId: groupId === 'shopping' ? 'shop-r2' : registrationId,
+    })) });
+  assert.equal(model.acknowledgeModelSnapshot(publication.receipt).ok, true);
+  const fresh = model.evaluate(issue(model, issuer, 'https://cdn.example/', 'fresh'));
+  assert.equal(fresh.action, 'proxy');
+  assert.notEqual(fresh.reuseKey, old.reuseKey);
+  assert.deepEqual(model.authorizeCredentialLookup(fresh, { owner: a,
+    registrationId: 'shop-r2', transport: 'http', credentialHandle: fresh.credentialHandle }),
+  { ok: true, credentialIdentity: 'cred-renewed' });
+  assert.equal(model.dispatch(fresh).ok, true);
+  assert.equal(model.dispatch(model.evaluate(issue(model, issuer, 'https://cdn.example/',
+    'sent-post', 'https://shop.test', { method: 'POST' }))).reason, 'already_sent');
+});
+
+test('regression: redirect requires a sent prior hop and expiry cannot replay its next hop', () => {
+  const model = new RequestRoutingContractModel();
+  const a = owner('redirect-lease');
+  const issuer = prepare(model, a, 'context-1');
+  const first = issue(model, issuer, 'https://cdn.example/one', 'redirect-post',
+    'https://shop.test', { method: 'POST' });
+  const redirect = () => model.nextHop(first, { target: 'https://cdn.example/two',
+    method: 'POST', navigation: 'subresource' });
+  assert.equal(redirect().reason, 'redirect_source_not_sent');
+  assert.equal(model.dispatch(model.evaluate(first)).ok, true);
+  const second = redirect();
+  assert.equal(second.hop, 1);
+  const selected = model.evaluate(second);
+  assert.equal(model.advanceClock(100).ok, true);
+  assert.equal(model.dispatch(selected).reason, 'registration_expired');
+  assert.deepEqual([model.evaluate(second).action, model.evaluate(second).reason],
+    ['wait-fail', 'registration_expired']);
+  assert.equal(model.dispatch(model.evaluate(first)).reason, 'already_sent');
+  assert.equal(model.nextHop(second, { target: 'https://cdn.example/three',
+    method: 'POST' }).reason, 'redirect_source_not_sent');
 });

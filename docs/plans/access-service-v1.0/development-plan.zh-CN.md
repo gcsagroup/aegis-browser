@@ -33,6 +33,7 @@
 | Q：固定基线与矩阵 | 初始冻结 D7f74e0a；最终 H1f86a6e 的 17 个原生目标及 Chrome/Content browser 已实际非零枚举和运行 | 保留每次候选的精确身份；不从源码声明、旧头或单项通过推断 G0/主行验收 |
 | Q：历史 #162 核验 | H13 三目标 16+45+35，native `PARTIAL_PASS`；Access 冲突导航/History/Settings 三组 PASS | 保留 H13 身份、原始路径与哈希；不恢复 H12/`682997a…` 的构建指令 |
 | Q：W0 选定矩阵 | #177 最终 H1f86a6e：17 target/181 native、56 Chrome browser、6 Content browser 均 PASS/sourceStable；local full、托管 PR CI、独立 Review、develop S push CI 均通过 | 保留旧失败与中断回执；按 QUALITY-HANDOFF 的覆盖边界继续 G0/主行验收。Q 已释放重型构建槽，由 #23 的独立原生任务串行使用 |
+| Q：W0 新候选回归 | 0197–0200 增加 relay 取消/watchdog、真实缓存命中后 REJECT、已提交 MHTML 子帧预取早拒绝；精确身份和本轮结果见 QUALITY-HANDOFF 与独立原始回执 | 候选须重新执行 source admission、原生与真实入口矩阵及质量门；旧 H 的通过不转作新 H 的结果，完整 BFCache/prerender、G0 与主行仍分别判断 |
 | Q：LoadingPredictor 回归设施 | #177 最终 H 的 Chrome 56/56 与 Content 6/6 已实际 build/list/run；真实 `PrefetchManager::Start` 回归包含在该证据范围 | 不扩称预测生成、导航触发或全部浏览器入口已覆盖；剩余范围见 QUALITY-HANDOFF |
 | F：W1a 接口/fixture 准备 | 与 Q 独立；#166 模型路由后续工作 DEFERRED | 可并行准备 W1a，不操作 Q source/out/锁；W0 关闭后再推进 W1b/W1c |
 | W2 服务端实验 | 执行资源/负责人未绑定，BLOCKED（实验执行） | 可准备协议；实际部署或付费 API 调用需另有授权 |

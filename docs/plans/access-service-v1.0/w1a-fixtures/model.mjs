@@ -86,9 +86,30 @@ export class RequestRoutingContractModel {
   #sentHops = new Map();
   #lastCommittedRules = new Map();
   #issuers = new WeakMap();
+  #credentialHandles = new WeakMap();
   #issued = new WeakMap();
   #decisions = new WeakMap();
   #nextSnapshotId = 1;
+  #now = 0;
+
+  advanceClock(now) {
+    if (!Number.isFinite(now) || now < this.#now) return fail('invalid_clock_advance');
+    this.#now = now;
+    return Object.freeze({ ok: true, now });
+  }
+
+  #liveRegistration(entry) {
+    return this.#now < entry.expiresAt && this.#now < entry.connectionDeadline;
+  }
+
+  #credentialBound(entry, key) {
+    if (!entry) return false;
+    const credential = this.#credentialHandles.get(entry.credentialHandle);
+    return credential?.key === key && credential.incarnation === entry.incarnation &&
+      credential.group === entry.group && credential.registrationId === entry.registrationId &&
+      credential.transport === entry.endpointIdentity.transport &&
+      credential.listenerIncarnation === entry.endpointIdentity.listenerIncarnation;
+  }
 
   restart(owner, newIncarnation) {
     if (!validOwner(owner) || typeof newIncarnation !== 'string' || !newIncarnation) {
@@ -131,26 +152,60 @@ export class RequestRoutingContractModel {
     return token;
   }
 
+  issueCredentialHandle({ issuer, owner, group, registrationId, transport,
+    listenerIncarnation, credentialIdentity }) {
+    const authority = this.#issuers.get(issuer);
+    const key = ownerKey(owner);
+    const state = this.#owners.get(key);
+    if (!validOwner(owner) || !authority || authority.key !== key || !state ||
+        authority.incarnation !== state.incarnation ||
+        typeof group !== 'string' || !group ||
+        typeof registrationId !== 'string' || !registrationId ||
+        !['http', 'socks5'].includes(transport) ||
+        typeof listenerIncarnation !== 'string' || !listenerIncarnation ||
+        typeof credentialIdentity !== 'string' || !credentialIdentity) {
+      return fail('invalid_credential_issuer_or_binding');
+    }
+    const handle = Object.freeze({});
+    this.#credentialHandles.set(handle, Object.freeze({
+      key, incarnation: state.incarnation, group, registrationId, transport,
+      listenerIncarnation, credentialIdentity,
+    }));
+    return handle;
+  }
+
   close(owner) {
     if (!validOwner(owner)) return fail('invalid_owner');
     return Object.freeze({ ok: this.#owners.delete(ownerKey(owner)) });
   }
 
-  registerEndpoint({ owner, group, registrationId, endpointIdentity, tuple, incarnation }) {
+  registerEndpoint({ owner, group, registrationId, endpointIdentity, tuple, incarnation,
+    credentialHandle, expiresAt, connectionDeadline }) {
     const state = this.#owners.get(ownerKey(owner));
     if (!validOwner(owner) || !state || state.incarnation !== incarnation) return fail('stale_incarnation');
+    const credential = this.#credentialHandles.get(credentialHandle);
     if (!validTuple(tuple) || typeof group !== 'string' || !group ||
         typeof registrationId !== 'string' || !registrationId ||
         !['http', 'socks5'].includes(endpointIdentity?.transport) ||
         endpointIdentity?.host !== '127.0.0.1' ||
         !Number.isInteger(endpointIdentity?.port) || endpointIdentity.port < 1 ||
-        endpointIdentity.port > 65535 || !endpointIdentity?.credentialIdentity) {
+        endpointIdentity.port > 65535 || endpointIdentity.credentialIdentity !== undefined ||
+        typeof endpointIdentity?.listenerIncarnation !== 'string' ||
+        !endpointIdentity.listenerIncarnation ||
+        !credential || credential.key !== ownerKey(owner) ||
+        credential.incarnation !== incarnation || credential.group !== group ||
+        credential.registrationId !== registrationId ||
+        credential.transport !== endpointIdentity.transport ||
+        credential.listenerIncarnation !== endpointIdentity.listenerIncarnation ||
+        !Number.isFinite(expiresAt) || !Number.isFinite(connectionDeadline) ||
+        !(this.#now < expiresAt && expiresAt <= connectionDeadline)) {
       return fail('invalid_registration');
     }
     if (state.usedRegistrationIds.has(registrationId)) return fail('registration_id_reused');
     state.registrations.set(registrationId, Object.freeze({
       group, registrationId, endpointIdentity: Object.freeze(copy(endpointIdentity)),
-      tuple: Object.freeze(copy(tuple)), incarnation,
+      tuple: Object.freeze(copy(tuple)), incarnation, credentialHandle,
+      expiresAt, connectionDeadline,
     }));
     state.usedRegistrationIds.add(registrationId);
     return Object.freeze({ ok: true, registrationId });
@@ -173,6 +228,7 @@ export class RequestRoutingContractModel {
           typeof binding?.registrationId !== 'string' || !binding.registrationId ||
           groupMap.has(binding.groupId) || !entry ||
           entry.group !== binding.groupId || entry.incarnation !== incarnation ||
+          !this.#liveRegistration(entry) || !this.#credentialBound(entry, ownerKey(owner)) ||
           !sameFields(entry.tuple, commonGenerations, commonFields)) {
         return fail('missing_or_stale_registration');
       }
@@ -203,7 +259,8 @@ export class RequestRoutingContractModel {
       return fail('stale_or_forged_model_ack');
     }
     for (const [group, entry] of state.pending.groups) {
-      if (state.registrations.get(entry.registrationId) !== entry || entry.group !== group) {
+      if (state.registrations.get(entry.registrationId) !== entry || entry.group !== group ||
+          !this.#liveRegistration(entry) || !this.#credentialBound(entry, receipt.ownerKey)) {
         return fail('registration_lost_before_model_ack');
       }
     }
@@ -314,8 +371,11 @@ export class RequestRoutingContractModel {
       else if (rule?.mode === 'PROXY') {
         group = rule.groupId;
         entry = snapshot.groups.get(group);
-        if (!entry || state.registrations.get(entry.registrationId) !== entry) {
+        if (!entry || state.registrations.get(entry.registrationId) !== entry ||
+            !this.#credentialBound(entry, source.key)) {
           action = 'wait-fail'; reason = 'registration_unavailable';
+        } else if (!this.#liveRegistration(entry)) {
+          action = 'wait-fail'; reason = 'registration_expired';
         } else { action = 'proxy'; reason = 'PROXY'; }
       } else if (rule?.mode === 'DIRECT') reason = 'DIRECT';
       else if (issued.requireProxy) { action = 'wait-fail'; reason = 'required_route_missing'; }
@@ -327,9 +387,11 @@ export class RequestRoutingContractModel {
       nativeProxyConfigGeneration: snapshot?.commonGenerations.base_proxy_config_generation ?? null,
       groupId: action === 'proxy' ? group : null,
       registrationId: action === 'proxy' ? entry.registrationId : null,
+      credentialHandle: action === 'proxy' ? entry.credentialHandle : null,
       tuple: action === 'proxy' ? entry.tuple : null,
       reuseKey: action === 'proxy' ? JSON.stringify([
-        source.key, group, entry.registrationId, ...tupleKey(entry.tuple), state.incarnation,
+        source.key, group, entry.registrationId, entry.endpointIdentity.listenerIncarnation,
+        ...tupleKey(entry.tuple), state.incarnation,
       ]) : null,
     });
     this.#decisions.set(decision, { source, issued, snapshot, entry, sent: false });
@@ -347,9 +409,14 @@ export class RequestRoutingContractModel {
     if (record.sent || state.sentHops.has(hopKey)) return fail('already_sent');
     if (decision.action === 'reject') return fail('locally_rejected');
     if (decision.action === 'wait-fail') return fail(decision.reason);
-    if (decision.action === 'proxy' &&
-        state.registrations.get(record.entry.registrationId) !== record.entry) {
-      return fail('registration_unavailable');
+    if (decision.action === 'proxy') {
+      if (state.registrations.get(record.entry.registrationId) !== record.entry) {
+        return fail('registration_unavailable');
+      }
+      if (!this.#credentialBound(record.entry, record.source.key)) {
+        return fail('credential_binding_denied');
+      }
+      if (!this.#liveRegistration(record.entry)) return fail('registration_expired');
     }
     record.sent = true;
     state.sentHops.add(hopKey);
@@ -357,15 +424,27 @@ export class RequestRoutingContractModel {
       hop: decision.hop, registrationId: decision.registrationId });
   }
 
-  authorizeCredentialLookup(decision, { owner, registrationId, transport }) {
+  authorizeCredentialLookup(decision, { owner, registrationId, transport, credentialHandle }) {
     const record = this.#decisions.get(decision);
     const state = this.#owners.get(ownerKey(owner));
-    if (!record || decision.action !== 'proxy' || !state ||
+    if (!record || decision.action !== 'proxy' || !record.entry || !state ||
         record.source.key !== ownerKey(owner) || state.active !== record.snapshot ||
         state.incarnation !== decision.incarnation ||
         registrationId !== decision.registrationId ||
+        credentialHandle !== record.entry?.credentialHandle ||
         state.registrations.get(registrationId) !== record.entry ||
-        transport !== record.entry.endpointIdentity.transport) return fail('credential_binding_denied');
-    return Object.freeze({ ok: true, credentialIdentity: record.entry.endpointIdentity.credentialIdentity });
+        transport !== record.entry.endpointIdentity.transport ||
+        !this.#credentialBound(record.entry, record.source.key) ||
+        !this.#liveRegistration(record.entry)) return fail('credential_binding_denied');
+    const credential = this.#credentialHandles.get(record.entry.credentialHandle);
+    if (!credential || credential.key !== record.source.key ||
+        credential.incarnation !== decision.incarnation ||
+        credential.group !== decision.groupId ||
+        credential.registrationId !== registrationId ||
+        credential.transport !== transport ||
+        credential.listenerIncarnation !== record.entry.endpointIdentity.listenerIncarnation) {
+      return fail('credential_binding_denied');
+    }
+    return Object.freeze({ ok: true, credentialIdentity: credential.credentialIdentity });
   }
 }
