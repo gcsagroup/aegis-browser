@@ -426,6 +426,7 @@ class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
                     return True
 
             idle_timers: list[ManualIdleTimer] = []
+            previous_idle: ManualIdleTimer | None = None
 
             async def origin_handler(reader: asyncio.StreamReader,
                                      writer: asyncio.StreamWriter) -> None:
@@ -523,6 +524,7 @@ class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
                     # The timer scheduled before this PREPARE must be canceled.
                     # Firing it would cancel an otherwise valid held permit.
                     if fire_previous_idle:
+                        self.assertIsNotNone(previous_idle)
                         self.assertFalse(previous_idle.fire())
                     else:
                         # Let the denied direction finish its close decision.

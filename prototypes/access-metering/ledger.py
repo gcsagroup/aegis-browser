@@ -80,8 +80,8 @@ class Ledger:
                         UNIQUE(account_id, period_id, stream_id, direction, sequence),
                         FOREIGN KEY(account_id, period_id) REFERENCES periods(account_id, period_id)
                     )""")
-                    connection.execute(f"PRAGMA application_id={APPLICATION_ID}")
-                    connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                    connection.execute("PRAGMA application_id=0x57324D54")
+                    connection.execute("PRAGMA user_version=1")
                     connection.commit()
                 self._check_database(connection)
         except sqlite3.Error as error:
@@ -108,8 +108,10 @@ class Ledger:
             raise LedgerError("unknown ledger schema version")
         if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
             raise LedgerError("ledger foreign key check failed")
-        for table in ("accounts", "periods", "permits"):
-            connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+        # Keep the required-table probes literal: no identifier comes from input.
+        connection.execute("SELECT 1 FROM accounts LIMIT 1").fetchone()
+        connection.execute("SELECT 1 FROM periods LIMIT 1").fetchone()
+        connection.execute("SELECT 1 FROM permits LIMIT 1").fetchone()
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
