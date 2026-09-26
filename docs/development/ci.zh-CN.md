@@ -12,26 +12,60 @@
 
 ## AI 辅助开发的模型分工
 
-以下是本项目使用 AI 辅助开发时的默认分工，不要求贡献者购买或使用特定模型。用户明确指定时按任务要求选择；本机忽略的 `AGENTS.md` 可以覆盖模型默认值，但不能覆盖本指南的交付、评审、测试和 CI 门槛。
+Model and effort choices below apply to this project and its linked worktrees.
+Explicit task-level user choices take precedence. Keep this project table as the
+single source for model routing, escalation, and unavailable-route handling.
 
-| 任务 | 模型与推理强度 | 交付要求 |
-| --- | --- | --- |
-| 范围明确的盘点、证据整理、日志归类和机械性文档工作 | `gpt-6-luna`，`medium`；必要时 `high` | 给出可复核的来源或命令、结论及未检查范围；超出边界时升级。 |
-| 日常实现、普通低风险修复 | `gpt-6-sol`，`high` | 代码、相关测试及实际执行结果；发现设计问题及时反馈。 |
-| 涉及模块边界、接口或架构不确定性 | 先 `gpt-6-astra`，`high` 设计，再由 Sol 实现 | 设计明确范围、模块边界、接口、不变量、验收用例和回滚办法；实现复杂度决定 Sol 使用 `high` 或 `xhigh`。 |
-| 复杂状态或跨模块实现 | `gpt-6-sol`，`xhigh` | 验证关键状态变化和跨模块回归。 |
-| 聚焦调试多次不收敛 | 先由 `gpt-6-astra`，`high` 重新检查设计，再由 `gpt-6-sol`，`xhigh` 实施 | 根据失败证据调整假设，避免重复无效检查。 |
-| 独立 Review | 新上下文的 `gpt-6-astra`，`high` | 对照原始需求检查代码，也可质疑架构；问题注明具体位置、触发条件和影响。 |
-| 高风险设计或评审 | 按需使用 `gpt-6-astra`，`xhigh` | 说明关键风险及对应验证证据。 |
-| 修复与复审 | 原实现者修复，同一独立评审者复审 | 关闭阻塞问题，验证相关回归，复审绑定最终 HEAD。 |
+When a linked worktree lacks machine-local agent guidance, locate its primary
+checkout through `git rev-parse --git-common-dir` and read the relevant private
+guidance there. Do not copy ignored personal guidance into commits or PRs.
 
-默认由一个任务负责人完成工作；表中列出三种模型不表示每项任务都要启动三个代理。模型阶段可以串行进行；仅在用户或适用仓库规则明确要求协作时，才委派边界清楚、可独立验收的子任务。Luna 遇到行为变更、接口契约不清、跨模块状态、安全/隐私风险或 Chromium 集成问题时，应交由 Sol 或 Astra 处理；若 Luna 承担范围明确的低风险修改，由 Sol 核对改动并运行相关检查。
+| Work | Model / effort |
+|---|---|
+| Bounded inventory, evidence collection, log classification, or mechanical documentation | `gpt-6-luna`, `max` |
+| Routine implementation or low-risk fix | `gpt-6-sol`, `max` |
+| Module boundary, interface, or architecture uncertainty | `gpt-6-astra`, `high` for the design; then `gpt-6-sol`, `xhigh` for implementation |
+| Complex state or cross-module implementation | `gpt-6-sol`, `max` |
+| Focused debugging repeatedly fails to converge | Recheck the design with `gpt-6-astra`, `xhigh`, then resume implementation with `gpt-6-sol`, `xhigh` |
+| High-risk design or review | `gpt-6-astra`, `ultra` when warranted |
+| Independent code review | Fresh-context `gpt-6-astra`, `high` |
+| Re-review after fixes | The same independent reviewer, on the final candidate |
 
-普通低风险本地改动无需单独的架构阶段或独立评审；一旦进入日常开发 PR 或上游晋升 PR，仍须按下文完成独立 Review。单纯问答、只读检查和一般规划可沿用当前任务模型；形成架构设计交付物时使用上表的 Astra 设计分工。
+When high-risk review escalation is warranted, its effort takes precedence over ordinary independent-review effort. These routes apply when selecting a model for a task or stage. Ordinary questions, small read-only checks, and general planning may stay in the current session; do not start another agent solely to change models. An architecture design deliverable follows the Astra design route.
 
-模型和推理强度需要在任务或工具中显式选择，文档不会自动切换运行中的模型。要求的模型不可用时，说明实际使用的模型、未知的推理强度及尚缺的阶段，不把替代执行报告成指定模型已完成。
+- Use one task owner by default. Model stages may run in sequence; this table does
+  not call for three agents on every task. Delegate only when the user or applicable
+  instructions explicitly request it, and give each delegate a bounded, independently
+  useful task.
+- All agents must support conclusions with sources or commands and state what was
+  not checked, with detail proportional to the task. Escalate behavior changes,
+  unclear contracts, cross-module state, security/privacy risk, and complex native
+  integration from Luna to Sol or Astra. Sol verifies bounded low-risk edits
+  delegated to Luna and runs the relevant checks.
+- Routine low-risk local edits do not require a separate architecture stage or
+  independent reviewer unless the user or a repository rule requests it. Delivery
+  PRs and upstream promotion follow the repository's independent-review requirements.
+- Keep fixes with the implementer. Give the independent reviewer the requirements,
+  design, base/head SHAs, actual diff, and validation evidence; do not pass the
+  implementer's discussion as review context. The reviewer checks the final
+  candidate after each relevant fix.
+- Select the model and effort explicitly when the available controls support them.
+  These rules do not switch a running task automatically. If a required route is
+  unavailable, report the runtime-confirmed model and effort, mark unknown values,
+  and identify the missing stage. Continue unaffected authorized work; ordinary
+  local work may stay in the current session. A required independent review still
+  needs a separate reviewer and the prescribed model or a user-authorized alternative.
+- Questions, read-only checks, and general planning may keep the current model unless
+  the user specifies one. An architecture design deliverable follows the Astra design
+  route above.
+- Review does not replace meaningful tests or hosted CI. Bind evidence to the final
+  HEAD for committed work and to the actual working-tree diff and inputs for
+  uncommitted work. These defaults do not authorize merging, release, credentials,
+  or bypassing a required gate.
 
-独立评审使用原始需求、设计、精确 base/head SHA、代码差异和验证证据，不继承实现者的讨论上下文。修复仍由原实现者完成；复审保留评审者上下文并覆盖最终代码。模型评审不能替代测试、托管 CI 或服务端要求的人工 Approve，也不授予合并、发布、凭据使用或绕过保护的权限。最终 HEAD 的必需门槛通过后，才进入后续合并与合并后 CI 验证。
+架构设计须明确范围、模块边界、接口、不变量、验收用例和回滚办法；模型选择不能替代这些设计交付要求。
+
+普通低风险本地改动无需额外独立评审；日常开发 PR 与上游晋升 PR 仍须按下文完成独立 Review。模型分工不要求贡献者购买特定模型，也不替代服务端人工 Approve。
 
 所有 `feat(...)` 功能 PR 都必须在同一 PR 内同时交付两类可执行测试：**单元测试**直接验证新增逻辑、边界和错误返回；**回归测试**固定至少一个既有安全/兼容性不变量或本功能可能重新引入的历史故障。两类测试都必须在最终 HEAD 实际执行并通过，缺任一类不得合并；不能以静态字符串检查、仅编译通过、增加 mock 数量或其他模块的既有测试代替。若改动实际上只有文档，应使用 `docs(...)` 而不是用 `feat(...)` 绕过该门槛。
 
