@@ -19,7 +19,9 @@
 #include "base/run_loop.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/test_future.h"
+#include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 #include "chrome/browser/aegis/access/access_identity_generation_source.h"
@@ -311,6 +313,12 @@ std::unique_ptr<net::test_server::HttpResponse> CountAndReply(
   counter->fetch_add(1, std::memory_order_relaxed);
   auto response = std::make_unique<net::test_server::BasicHttpResponse>();
   response->set_code(net::HTTP_OK);
+  if (request.GetURL().path() == "/cacheable-resource") {
+    response->AddCustomHeader("Cache-Control", "public, max-age=3600");
+    response->set_content("origin-cache");
+    response->set_content_type("text/plain");
+    return response;
+  }
   if (request.relative_url.find("/startup-prefetch-page") !=
       std::string::npos) {
     response->set_content(
@@ -1965,6 +1973,142 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   EXPECT_EQ(dispatch_state->ownership().size(), ownership_before);
   ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
                      /*proxy_delta=*/0u);
+
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       CallerCancelAfterTargetLoaderDisconnectReleasesOwnership) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+  auto* dispatch_state =
+      AccessRequestDispatchState::GetOrCreate(browser()->profile());
+  ASSERT_NE(dispatch_state, nullptr);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&] { return dispatch_state->ownership().size() == 0u; }));
+  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+
+  network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+  network::URLLoaderFactoryBuilder builder;
+  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
+      std::nullopt, builder);
+  ASSERT_EQ(builder.num_interceptors(), 1u);
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      std::move(builder).Finish(terminal.GetSafeWeakWrapper());
+
+  const GURL cancelled_url = target_url().Resolve("/relay-caller-cancelled");
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = cancelled_url;
+  request->request_initiator = url::Origin::Create(worker_page_url());
+  auto loader = network::SimpleURLLoader::Create(
+      std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
+  base::test::TestFuture<std::optional<std::string>> result;
+  loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+      factory.get(), result.GetCallback());
+  terminal.WaitForRequest(cancelled_url);
+  ASSERT_EQ(terminal.NumPending(), 1);
+  ASSERT_EQ(dispatch_state->ownership().size(), 1u);
+  const base::TimeTicks target_disconnected_at = base::TimeTicks::Now();
+  terminal.pending_requests()->front().test_url_loader.reset();
+  base::RunLoop().RunUntilIdle();
+  ASSERT_FALSE(result.IsReady());
+  ASSERT_EQ(dispatch_state->ownership().size(), 1u);
+
+  loader.reset();
+  {
+    // The production watchdog starts after target disconnect and fires after
+    // 30 seconds. Cancellation must release ownership before that fallback.
+    base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(5));
+    ASSERT_TRUE(base::test::RunUntil(
+        [&] { return dispatch_state->ownership().size() == 0u; }));
+    EXPECT_FALSE(result.IsReady());
+    ASSERT_TRUE(base::test::RunUntil([&] {
+      return !terminal.pending_requests()->front().client.is_connected();
+    }));
+  }
+  EXPECT_LT(base::TimeTicks::Now() - target_disconnected_at,
+            base::Seconds(10));
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       TargetLoaderDisconnectWatchdogFailsClosed) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+  auto* dispatch_state =
+      AccessRequestDispatchState::GetOrCreate(browser()->profile());
+  ASSERT_NE(dispatch_state, nullptr);
+  ASSERT_TRUE(base::test::RunUntil(
+      [&] { return dispatch_state->ownership().size() == 0u; }));
+  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+
+  network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+  network::URLLoaderFactoryBuilder builder;
+  AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
+      std::nullopt, builder);
+  ASSERT_EQ(builder.num_interceptors(), 1u);
+  scoped_refptr<network::SharedURLLoaderFactory> factory =
+      std::move(builder).Finish(terminal.GetSafeWeakWrapper());
+
+  const GURL timed_out_url = target_url().Resolve("/relay-watchdog");
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = timed_out_url;
+  request->request_initiator = url::Origin::Create(worker_page_url());
+  auto loader = network::SimpleURLLoader::Create(
+      std::move(request), TRAFFIC_ANNOTATION_FOR_TESTS);
+  base::test::TestFuture<std::optional<std::string>> result;
+  loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+      factory.get(), result.GetCallback());
+  terminal.WaitForRequest(timed_out_url);
+  ASSERT_EQ(terminal.NumPending(), 1);
+  ASSERT_EQ(dispatch_state->ownership().size(), 1u);
+  terminal.pending_requests()->front().test_url_loader.reset();
+  base::RunLoop().RunUntilIdle();
+  ASSERT_FALSE(result.IsReady());
+  ASSERT_EQ(dispatch_state->ownership().size(), 1u);
+
+  // Exercise the production 30-second timer rather than invoking FailClosed
+  // directly; the bound also fails if the timer is never armed.
+  {
+    base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(45));
+    ASSERT_TRUE(result.Wait());
+  }
+  EXPECT_EQ(result.Get(), std::nullopt);
+  EXPECT_EQ(loader->NetError(), net::ERR_BLOCKED_BY_CLIENT);
+  EXPECT_EQ(dispatch_state->ownership().size(), 0u);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return !terminal.pending_requests()->front().client.is_connected();
+  }));
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/0u);
+
+  // The timed-out relay must not poison a later request in the same factory.
+  terminal.pending_requests()->clear();
+  const GURL healthy_url = target_url().Resolve("/relay-after-watchdog");
+  auto healthy_request = std::make_unique<network::ResourceRequest>();
+  healthy_request->url = healthy_url;
+  healthy_request->request_initiator = url::Origin::Create(worker_page_url());
+  auto healthy_loader = network::SimpleURLLoader::Create(
+      std::move(healthy_request), TRAFFIC_ANNOTATION_FOR_TESTS);
+  base::test::TestFuture<std::optional<std::string>> healthy_result;
+  healthy_loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
+      factory.get(), healthy_result.GetCallback());
+  terminal.WaitForRequest(healthy_url);
+  ASSERT_EQ(terminal.NumPending(), 1);
+  ASSERT_EQ(dispatch_state->ownership().size(), 1u);
+  ASSERT_TRUE(terminal.SimulateResponseForPendingRequest(
+      healthy_url.spec(), "relay-after-watchdog-ok"));
+  ASSERT_TRUE(healthy_result.Wait());
+  EXPECT_EQ(healthy_result.Get(),
+            std::optional<std::string>("relay-after-watchdog-ok"));
+  EXPECT_EQ(healthy_loader->NetError(), net::OK);
+  EXPECT_EQ(dispatch_state->ownership().size(), 0u);
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/0u,
+                     /*proxy_delta=*/0u);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
@@ -2312,6 +2456,49 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
     return proxy_requests_.load(std::memory_order_relaxed) == 1u;
   }));
   EXPECT_EQ(origin_requests_.load(std::memory_order_relaxed), 0u);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       RejectPolicyBlocksCachedSubresourceDelivery) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+  const GURL cached_url =
+      target_origin_.GetURL(kTargetHost, "/cacheable-resource?block-after-hit");
+  auto fetch_body = [&](const GURL& url) {
+    return content::EvalJs(
+               web_contents(),
+               content::JsReplace(
+                   "fetch($1, {cache: 'force-cache'})"
+                   ".then(response => response.text())"
+                   ".catch(() => 'blocked')",
+                   url.spec()))
+        .ExtractString();
+  };
+
+  const size_t origin_before = origin_requests_.load(std::memory_order_relaxed);
+  const size_t proxy_before = proxy_requests_.load(std::memory_order_relaxed);
+  ASSERT_EQ(fetch_body(cached_url), "origin-cache");
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
+                     /*proxy_delta=*/0u);
+  ASSERT_EQ(fetch_body(cached_url), "origin-cache");
+  ExpectRoutingDelta(origin_before, proxy_before, /*origin_delta=*/1u,
+                     /*proxy_delta=*/0u);
+
+  PublishRejectPolicy();
+  const size_t blocked_origin_before =
+      origin_requests_.load(std::memory_order_relaxed);
+  const size_t blocked_proxy_before =
+      proxy_requests_.load(std::memory_order_relaxed);
+  EXPECT_EQ(fetch_body(cached_url), "blocked");
+  ExpectRoutingDelta(blocked_origin_before, blocked_proxy_before,
+                     /*origin_delta=*/0u, /*proxy_delta=*/0u);
+
+  // A fresh unmatched destination must still work, proving the observation
+  // path is healthy after REJECT publication.
+  const GURL healthy_url = target_origin_.GetURL(
+      kUnselectedRedirectHost, "/cacheable-resource?unmatched-health");
+  EXPECT_TRUE(Fetch(healthy_url));
+  ExpectRoutingDelta(blocked_origin_before, blocked_proxy_before,
+                     /*origin_delta=*/1u, /*proxy_delta=*/0u);
 }
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
