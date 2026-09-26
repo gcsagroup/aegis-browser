@@ -1,6 +1,6 @@
 # QUALITY-HANDOFF：W0 固定 Chromium 验证
 
-更新：2026-09-24 18:16 UTC（#177 合并后证据核对）。负责人 Q；本页保留各候选失败和旧执行快照，最新结果见下节。W0 的选定原生及浏览器矩阵已在 #177 最终 H 通过，但不据此升级 G0 或 131 个验收主行；本轮不新增 required gate。
+更新：2026-09-26（#24 晋升、#181 回流后的同树证据核对）。负责人 Q；本页保留各候选失败和旧执行快照，最新结果见下节。W0 的选定原生及浏览器矩阵已在 #177 最终 H 通过，并在回流 S 的同产品树复验；不据此升级 G0 或 131 个验收主行，也不新增 required gate。
 
 ## #177 最终交付与适用边界
 
@@ -14,7 +14,24 @@
 | 独立 Review | 同一最终 B/H/M 的 Astra/high 原始回执 `.artifacts/ci/pr177-final-independent-review.md`：CLEAR，未发现未关闭的确定 P1/P2，覆盖边界以原文为准 |
 | develop 实际推送 | S 的 CI run `36039414436` attempt 1 quality/quality-gate SUCCESS、C++ run `36039414451` attempt 1 SUCCESS；推送报告 `quality-evidence-36039414436-1` 的 testedSha=S、sourceStable=true |
 
-上述 Chromium 回执位于 `/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/evidence/`，本地质量及 Review 回执位于产品工作树的 `.artifacts/ci/`；它们均非 Git 提交内容，换机器须取得原始回执。原生构建使用记录中的 macOS 26.5 SDK / bundled LLD 本机参数变体。MHTML 普通分支用计数替代终端；relay watchdog/取消、完整缓存/BFCache/prerender BLOCK、性能与发布范围仍有独立覆盖缺口。故这里关闭的是 #177 已声明代码与测试证据审查，不把 W0/G0、131 个主行或其他候选判为已验收。
+上述 Chromium 回执位于 `/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/evidence/`，本地质量及 Review 回执位于产品工作树的 `.artifacts/ci/`；它们均非 Git 提交内容，换机器须取得原始回执。原生构建使用记录中的 macOS 26.5 SDK / bundled LLD 本机参数变体。MHTML 用例以带请求计数的 `TestURLLoaderFactory` 替代生产 `NotImplementedURLLoaderFactory`；它等待替身终态并断言 `ERR_NOT_IMPLEMENTED` 和请求计数，但未观察生产默认 factory 的真实终态回调（该默认 factory 在 DCHECK 下会触发 fatal）。relay watchdog/取消、完整缓存/BFCache/prerender BLOCK、性能与发布范围仍有独立覆盖缺口。故这里关闭的是 #177 已声明代码与测试证据审查，不把 W0/G0、131 个主行或其他候选判为已验收。
+
+## PR #24 晋升及 #181 回流后的同产品树补充验证（2026-09-25）
+
+develop 回流提交 `D=2b23b2c18541b5176d0354dfa128cd6bc21f02ab` 的 tree 为 `126e0d3ddace92c1f3a90f6fdcfc6866ef8d5819`；上游晋升提交 `S=00a3ef5e1ea6648e3a654d1fe6a0544ab3fe7d43` 的 tree 相同。**D 与 S 是不同提交**：以下固定 Chromium 运行绑定 S，只按相同产品 tree 说明 D 的源码适用性，不能写成 D 提交本身的 Chromium 运行回执。
+
+| 验证 | 精确结果和回执 |
+| --- | --- |
+| 固定源码准入 | S 的 `source-attempt1/result.json`：PASS、`sourceStable=true`；SHA-256 `567d8c5df8c3894d431ce8d4539240e851e5bb3408ccc6478f7754dd9eba9606`。产品 S/tree 如上；Chromium `3335e38b6f9d7bd7afa0888fd9cd21b4432139e7`、patched tree `a3295c3f1f00ab47bb761431a377dc08b02eb4b5`；V8 `b92a5251698f708857ac3ad31511925071ada349`、tree `5a6be89cfa0c35d8eb6ee81aec3cb8100780f7e9`；GN args SHA-256 `c5bd7ca95e89d92bb191776115ef840fd8061d5e56b5294c23d0c05a6300e904`。 |
+| Access 原生矩阵 | `native-access-s-attempt1/result.json`：17 个目标、181/181 tests PASS、`sourceStable=true`；SHA-256 `4ba1ac2ff0ec48d3495f5c65e1350d8974b879c9a6cdca9f2ca5c8e732b1589a`。 |
+| Chrome Access 浏览器矩阵 | `browser-matrix-s-attempt1/result.json`：62/62 PASS、`sourceStable=true`；SHA-256 `dbf5d19c1eb2e381b2bb6a95565040e1c50c116fa702ac869c5d8966a91f58ef`。 |
+| Content 浏览器矩阵 | `content-matrix-s-attempt1/result.json`：6/6 PASS、`sourceStable=true`；SHA-256 `8b41eb2e60974a99e622f095aadf096a339f9237bff7ab5e640855270d6f5c10`。 |
+| 聚焦回归 | policy-first `data:` 导航 2/2 PASS（`published-data-s-attempt1/result.json`，SHA-256 `df92167f77498e5edc5006705bbafbc4061dd00e9038b24e1c8020405f2e2772`）；inline 文档 4/4 PASS（`inline-s-attempt1/result.json`，SHA-256 `0b0c43181e43fe023f0004866042d17aca9bf7998ea64757ae53094125ce0a2a`）；均 `sourceStable=true`。 |
+| develop 托管质量门 | D 的 push run `36089419885` attempt 1 中 `quality` 与 `quality-gate` SUCCESS；artifact `quality-evidence-36089419885-1`（id `10845305960`）报告 `result=PASS`、`testedSha=D`、`testedTree=126e0d3`、`sourceStable=true`、`nativeIntegration=REQUIRED`。独立 C++ push run `36089419763` SUCCESS。 |
+
+这组回执补强了同 tree 下的 W0 选定范围：17/181 Access 原生、62 项 Chrome Access、6 项 Content，以及 `data:`、inline 文档和真实 `PrefetchManager::Start` 入口回归。Content 的 `HttpMhtmlSubframePrefetchKeepsRestrictedDefault` 已实际通过，但使用上述 `TestURLLoaderFactory` 替身；生产 MHTML 默认 factory 的终态回调仍未观察。其他未覆盖项包括 relay watchdog 到期/调用方取消、完整 HTTP 缓存/BFCache/prerender BLOCK、性能和发布矩阵；W0 的这些剩余项须继续单独验收。当前没有固定 Chromium 进程；S/D 对应的新证据根无锁。遗留 PR23 证据根保留旧锁标记，原 owner 进程已不在，所有权未确认前不得清理或复用。
+
+G0 仍为 `UNVERIFIED`：同树矩阵不是两 Profile 的真实多策略/双出口、HTTP/SOCKS5 认证或 Network Service 重启与真实服务流量证明。验收追踪表中的 131 个 A/PF 主行仍为 `NOT_EVALUATED`；同 tree 回执只能补充局部测试映射，不能将主行升级为 PASS。要声称 D 的 Chromium 运行通过，仍需在 D 精确提交身份上生成独立准入和运行回执。
 
 ## 历史执行快照：冻结来源与所有权
 

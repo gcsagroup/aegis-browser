@@ -2,11 +2,17 @@
 
 创建于 2026-09-20（Asia/Shanghai），来源是[冻结规范修订 4](spec.zh-CN.md)第 11、14 节的全部 **A01–A118 与 PF01–PF13，共 131 个主行**。下表场景列逐字摘取冻结表的场景/指标列，判定条件仍以规范原文为准。此表是当前映射、执行与证据的唯一台账；[开发计划](development-plan.zh-CN.md)给出推进顺序，[交接](handoff-20260920.zh-CN.md)给出来源快照。新增产品功能须同 PR 交付并在最终 HEAD 实际执行 unit 与真实入口 regression；文档改动不需要补造产品测试。
 
-## 2026-09-24 W0 当前执行证据
+## 2026-09-26 W0 当前执行证据
 
 Q 冻结起点 `7f74e0a4e971f91d08d90536e429aba7b82cf37d`。#162 最终 H13=`4670c4dd…` 已合并为 S=`ca4e1b24…`；已回读其三目标 96 tests 的 `PARTIAL_PASS` 与三组 browser fixture PASS 原始记录。它们属于历史 H13，不为新候选或下表 131 个主行补造 PASS。完整测试名、原始报告路径/哈希、当前执行结果与缺口类别集中于 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
 
 第一候选 Hcf2329a 实际完成前 10 个 unit targets 共 81 tests 后遇第 11 个 adapter 启动崩溃；browser 实际枚举 41 项，1 项通过后因 favicon 计数污染失败。两次整体为 FAIL/sourceStable=true，**当时**后续候选尚未运行。本轮新增的 3 个真实 LoadingPredictor `PrefetchManager::Start` 入口 fixture 已在 #177 最终 H 的浏览器矩阵中实际枚举和执行；最终 H 的 17/181 原生、56 Chrome browser、6 Content browser 结果见页尾和 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。S04 的 helper 边界仍有效。旧 #162 Draft/BUILDING 状态仅属于下节注明的历史时间点。本轮不修改 131 个主行的判定或冻结规范。
+
+### 2026-09-25 晋升回流后的同树补充执行（证据键 S25）
+
+回流 `D=2b23b2c18541b5176d0354dfa128cd6bc21f02ab` 与上游晋升 `S=00a3ef5e1ea6648e3a654d1fe6a0544ab3fe7d43` 的产品 tree 都是 `126e0d3ddace92c1f3a90f6fdcfc6866ef8d5819`，但提交 SHA 不同。S 的固定 Chromium 回执目录为 `/Volumes/ExternalSSD/repositories/aegis-chromium-access-backflow-s-20260925/evidence/`；总汇 `s-final-summary.json` SHA-256 为 `00cb9b46d04435b175332355d8257dc0daa5b67f9a74243518cfa446467fc206`。其中 Access 原生 17 个目标/181 项、Chrome Access 62 项、Content 6 项、policy-first `data:` 2 项、inline 文档 4 项均 PASS 且 `sourceStable=true`；Chromium patched tree=`a3295c3f1f00ab47bb761431a377dc08b02eb4b5`，V8 tree=`5a6be89cfa0c35d8eb6ee81aec3cb8100780f7e9`。精确回执和报告哈希见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md) 的 S 同树记录。D 的 push run `36089419885` attempt 1 中 `quality`/`quality-gate` 成功，报告绑定 D/tree 并为 `sourceStable=true`；这不是 D 的固定 Chromium 运行。以下 S25 只为已列局部子项补同树执行映射，D 的固定 Chromium 执行仍记 `NOT_RUN`，131 主行仍不升级。
+
+Content 6 项包含 `PrefetchBrowserTestBase.HttpMhtmlSubframePrefetchKeepsRestrictedDefault`，其 S25 实际通过日志为 `content-matrix-s-attempt1/05.test.log`。按 `apps/browser/patches/0194-test-restricted-mhtml-prefetch-default.patch`，此用例以 `TestURLLoaderFactory` 替代会在 DCHECK 下触发 fatal 的生产 `NotImplementedURLLoaderFactory`；测试等待替身返回 `ERR_NOT_IMPLEMENTED` 并断言请求计数。因此已覆盖的是请求被交给受限默认 factory 类型及替身终态，生产默认 factory 自身的终态回调仍未观察。
 
 ## 历史：2026-09-22 架构复核后的待执行映射
 
@@ -36,16 +42,16 @@ Q 冻结起点 `7f74e0a4e971f91d08d90536e429aba7b82cf37d`。#162 最终 H13=`467
 
 | 子项 | 映射主行 | 测试 ID / 来源 | 执行与实际范围 | 主行剩余缺口 |
 | --- | --- | --- | --- | --- |
-| S01 | A01 | `AccessProxyingURLLoaderFactoryBrowserTest.NoPublishedPolicyPreservesNativePath` | `SRC-287`，Chromium `NOT_RUN`；无已发布策略时原生路径源码用例 | 原有代理组合、真实网络与两种子场景尚未验收 |
-| S02 | A10 | `AccessPublishedRequestRuntimeTest.CrossProfileOwnerIsRejected`；`AccessRequestDispatchStateTest.ProfilesAreIsolated` | `SRC-287`，Chromium `NOT_RUN`；所有权/dispatch 局部隔离 | 两个 Profile 同站真实流量、凭据和事件隔离未证实 |
-| S03 | A14、A77 | `AccessProxyingURLLoaderFactoryBrowserTest.ProxyPolicyWithoutSelectedEndpointFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；缺 endpoint 子场景 | 内核运行中退出、完整路由等待与性能仍未验收 |
-| S04 | A17 | `AccessProxyingURLLoaderFactoryBrowserTest.BrowserProcessPrefetchWithoutEndpointFailsClosed`；`BrowserProcessPrefetchRedirectToUnselectedHostFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；直接调用 `MaybeProxyBrowserProcessPrefetch` helper；源码断言分别为 `origin_delta=0, proxy_delta=0` 与 `origin_delta=0, proxy_delta=1`（合法初始代理请求） | 真实 prefetch 入口 feature on/off、DNS/preconnect/IPv4/IPv6 均未验收 |
-| S05 | A18 | `AccessProxyingURLLoaderFactoryBrowserTest.WorkerMainResourceUsesSelectedProxy`；`WorkerMainResourceWithoutEndpointFailsClosed` | `SRC-287`，Chromium `NOT_RUN`；Worker 主资源局部 | HTTPS/ws/wss 和页面归属完整矩阵未验收 |
-| S06 | A53 | `AccessNetworkContextTransportTest.NetworkChangeAdvancesEpochAndRejectsStaleEndpoint`；`CaptureRejectsEndpointAfterNetworkEpochChanges` | `SRC-287`，Chromium `NOT_RUN`；旧 network epoch/endpoint 局部 | 旧 ACK/探测、多标签页重试及并发预算未验收 |
-| S07 | A76 | `AccessProxyingURLLoaderFactoryBrowserTest.MainNavigationUsesPendingNavigationProxy`；`MainNavigationRedirectReevaluatesThroughProxy` | `SRC-287`，Chromium `NOT_RUN`；源码调用 `ui_test_utils::NavigateToURL`，导航与重定向子场景 | POST/PATCH 首次发送、唯一服务端标记、企业/系统/扩展代理矩阵未验收 |
-| S08 | A96、PF13（仅功能子场景） | `AccessProxyingURLLoaderFactoryBrowserTest.BlockBarrierTerminatesInFlightProxyRequest` | `SRC-287`，Chromium `NOT_RUN`；单个 pending fetch 局部 | 上传/下载/媒体/SSE/ws/wss、共享流和 PF13 时间预算未验收 |
-| S09 | A97、PF13（仅旧 ACK 子场景） | `AccessRequestDispatchStateTest.LateAckCannotReleaseNewerBlockBarrier` | `SRC-287`，Chromium `NOT_RUN`；旧 ACK 与新 BLOCK barrier 局部 | 旧探测/身份/提交、其他目标继续与 UI 结果；PF13 并发与 2 秒/5 秒实测未验收 |
-| S10 | A108 | `AccessProxyingURLLoaderFactoryBrowserTest.MainNavigationRedirectReevaluatesThroughProxy` | `SRC-287`，Chromium `NOT_RUN`；HTTP 导航重定向局部 | HTTPS/WS/WSS、端口、CDN/iframe/子域和无 pageToken 矩阵未验收 |
+| S01 | A01 | `AccessProxyingURLLoaderFactoryBrowserTest.NoPublishedPolicyPreservesNativePath` | `SRC-287` 为历史源码映射；S25 `browser-matrix-s-attempt1/result.json` 的 62 项中该用例 PASS，`sourceStable=true`；D 精确 Chromium 仍 `NOT_RUN` | 原有代理组合、真实网络与两种子场景尚未验收 |
+| S02 | A10 | `AccessPublishedRequestRuntimeTest.CrossProfileOwnerIsRejected`；`AccessRequestDispatchStateTest.ProfilesAreIsolated` | S25 `native-access-s-attempt1` 的 17/181 中上述两例及 `AccessProxySelectionGenerationSourceTest.ProxyGroupsAndProfilesAreIsolated` PASS；D 精确 Chromium 仍 `NOT_RUN` | 两个 Profile 同站真实流量、凭据和事件隔离未证实 |
+| S03 | A14、A77 | `AccessProxyingURLLoaderFactoryBrowserTest.ProxyPolicyWithoutSelectedEndpointFailsClosed` | S25 `browser-matrix-s-attempt1/result.json` 的 62 项中该用例 PASS，`sourceStable=true`；D 精确 Chromium 仍 `NOT_RUN` | 内核运行中退出、完整路由等待与性能仍未验收 |
+| S04 | A17 | `AccessProxyingURLLoaderFactoryBrowserTest.BrowserProcessPrefetchWithoutEndpointFailsClosed`；`BrowserProcessPrefetchRedirectToUnselectedHostFailsClosed` | S25 62 项矩阵中缺 endpoint 与 redirect helper 用例 PASS；同一矩阵另有真实 `AccessLoadingPredictorPrefetchBrowserTest` 三项 PASS（`PrefetchManager::Start`），但 helper 与真实入口分开判读；D 精确 Chromium 仍 `NOT_RUN` | 预测生成、feature on/off、DNS/preconnect/IPv4/IPv6 均未验收 |
+| S05 | A18 | `AccessProxyingURLLoaderFactoryBrowserTest.WorkerMainResourceUsesSelectedProxy`；`WorkerMainResourceWithoutEndpointFailsClosed` | S25 `browser-matrix-s-attempt1/result.json` 的 62 项中这两例 PASS，`sourceStable=true`；D 精确 Chromium 仍 `NOT_RUN` | HTTPS/ws/wss 和页面归属完整矩阵未验收 |
+| S06 | A53 | `AccessNetworkContextTransportTest.NetworkChangeAdvancesEpochAndRejectsStaleEndpoint`；`CaptureRejectsEndpointAfterNetworkEpochChanges` | S25 `native-access-s-attempt1/access_network_context_transport_unittests.test.log` 中两例 PASS，属于 17/181；D 精确 Chromium 仍 `NOT_RUN` | Network Service 重启、旧 ACK/探测、多标签页重试及并发预算未验收 |
+| S07 | A76 | `AccessProxyingURLLoaderFactoryBrowserTest.MainNavigationUsesPendingNavigationProxy`；`MainNavigationRedirectReevaluatesThroughProxy` | S25 `browser-matrix-s-attempt1/result.json` 的 62 项中导航与重定向用例 PASS，`sourceStable=true`；D 精确 Chromium 仍 `NOT_RUN` | POST/PATCH 首次发送、唯一服务端标记、企业/系统/扩展代理矩阵未验收 |
+| S08 | A96、PF13（仅功能子场景） | `AccessProxyingURLLoaderFactoryBrowserTest.BlockBarrierTerminatesInFlightProxyRequest` | S25 `browser-matrix-s-attempt1/result.json` 的 62 项中单 pending fetch 用例 PASS，`sourceStable=true`；D 精确 Chromium 仍 `NOT_RUN` | 上传/下载/媒体/SSE/ws/wss、共享流和 PF13 时间预算未验收 |
+| S09 | A97、PF13（仅旧 ACK 子场景） | `AccessRequestDispatchStateTest.LateAckCannotReleaseNewerBlockBarrier` | S25 `native-access-s-attempt1/access_request_dispatch_state_unittests.test.log` 中旧 ACK 用例 PASS，属于 17/181；D 精确 Chromium 仍 `NOT_RUN` | 旧探测/身份/提交、其他目标继续与 UI 结果；PF13 并发与 2 秒/5 秒实测未验收 |
+| S10 | A108 | `AccessProxyingURLLoaderFactoryBrowserTest.MainNavigationRedirectReevaluatesThroughProxy` | S25 `browser-matrix-s-attempt1/result.json` 的 62 项中 HTTP 导航重定向用例 PASS，`sourceStable=true`；D 精确 Chromium 仍 `NOT_RUN` | HTTPS/WS/WSS、端口、CDN/iframe/子域和无 pageToken 矩阵未验收 |
 | S11 | A113 | `RunSiteProxyRuleGroupContractTests`，`access_route_planner_contract_test.h`；standalone runner | `L-F699`，**仅纯 C++ 网站协议组完整性合同局部 PASS**，包含成员缺失；无 Chromium runtime | 崩溃恢复、乱序 ACK、真实导航、调试覆盖和 UI unknown 未验收 |
 | S12 | A114 | `verify-preview.cjs` + `preview-checks.json`，13 项离线 DOM 检查 | `L-F699`，**仅文档交互预览局部 PASS**；不是产品浏览器运行 | 独立打开与真实渲染/渠道原生接口隔离未验收 |
 
