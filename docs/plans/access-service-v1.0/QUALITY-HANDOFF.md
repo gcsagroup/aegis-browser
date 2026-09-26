@@ -1,6 +1,18 @@
 # QUALITY-HANDOFF：W0 固定 Chromium 验证
 
-更新：2026-09-26（#24 晋升、#181 回流后的同树证据核对）。负责人 Q；本页保留各候选失败和旧执行快照，最新结果见下节。W0 的选定原生及浏览器矩阵已在 #177 最终 H 通过，并在回流 S 的同产品树复验；不据此升级 G0 或 131 个验收主行，也不新增 required gate。
+更新：2026-09-26（Q 新候选增加真实入口回归）。负责人 Q；本页保留各候选失败和旧执行快照。#177 的选定矩阵及 #181 回流同树复验仍按原精确身份解释；新候选的结果须读取本轮独立回执，不沿用旧候选的 PASS。G0 和 131 个验收主行均不因本轮局部回归升级，也不新增 required gate。
+
+## Q 新候选：取消、watchdog、缓存与 MHTML
+
+本候选在固定 Chromium 补 0197–0200，相关 Chromium 源码与产品 overlay 保持由有序 patch series 重放：
+
+| 入口 | 新增断言与边界 |
+| --- | --- |
+| Access relay | 调用方在目标 loader 断开后取消，验证所有权释放；目标断开后的 watchdog 到期必须闭合失败。两个场景各自从独立测试初始状态执行。 |
+| HTTP 缓存 | 真实资源先填充缓存，再以同 URL 和强制使用缓存重复读取，要求源站计数不增加；发布 REJECT 后同 URL 必须失败、源站和代理均无新增请求，并以未匹配 URL 正路径确认观测链仍活跃。 |
+| 已提交 MHTML 子帧 | 在真实归档子帧的浏览器持有文档身份上，将普通、restricted 和 recursive prefetch 于构建 loader/default factory 前以 `ERR_BLOCKED_BY_CLIENT` 终止；普通 HTTP 文档和非 MHTML `kPreserve` 仍有正路径。该回归不再使用 `TestURLLoaderFactory` 代替 MHTML 生产默认 factory。 |
+
+验收时须为**最终产品 H** 重新记录固定 Chromium/V8 的 head/tree、patch/overlay 与 GN 参数哈希、目标二进制哈希、实际非零枚举、逐项运行退出码和 `sourceStable=true`；原始结果留在本轮独立证据根 `/Volumes/ExternalSSD/repositories/aegis-chromium-w0-q-20260926/evidence/`。若运行、托管 CI 或独立复审不满足该 H，保持候选未验收。即使本轮选定矩阵全部通过，完整 BFCache/prerender BLOCK、跨入口性能、双 Profile/双出口、真实服务和分发仍各有原规范门槛；这些不能由此处的缓存或 MHTML 单例推断为通过。生产 MHTML 的新断言只证明这条已提交 prefetch 路径在触及禁网默认 factory 前失败，不证明默认 factory 本身的回调安全或所有归档加载路径。
 
 ## #177 最终交付与适用边界
 
