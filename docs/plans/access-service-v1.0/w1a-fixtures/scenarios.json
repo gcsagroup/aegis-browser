@@ -54,8 +54,8 @@
     }
   ],
   "endpoints": [
-    { "groupId": "shopping", "registrationId": "shop-r1", "selection_generation": 11, "port": 18101 },
-    { "groupId": "mail", "registrationId": "mail-r1", "selection_generation": 12, "port": 18102 },
-    { "groupId": "payments", "registrationId": "pay-r1", "selection_generation": 13, "port": 18103 }
+    { "groupId": "shopping", "registrationId": "shop-r1", "selection_generation": 11, "port": 18101, "listenerIncarnation": "shop-listener-1", "expiresAt": 100, "connectionDeadline": 200 },
+    { "groupId": "mail", "registrationId": "mail-r1", "selection_generation": 12, "port": 18102, "listenerIncarnation": "mail-listener-1", "expiresAt": 150, "connectionDeadline": 200 },
+    { "groupId": "payments", "registrationId": "pay-r1", "selection_generation": 13, "port": 18103, "listenerIncarnation": "pay-listener-1", "expiresAt": 180, "connectionDeadline": 200 }
   ]
 }
