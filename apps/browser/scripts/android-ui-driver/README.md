@@ -17,13 +17,13 @@
 
 ```sh
 node apps/browser/scripts/android-agent-ui.mjs build \
-  --sdk /Users/lazy/Library/Android/sdk \
+  --sdk ${ANDROID_SDK_ROOT} \
   --jdk /opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home \
   --output /绝对路径/新的工具构建目录
 
 node apps/browser/scripts/android-agent-ui.mjs self-test \
-  --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \
-  --serial 48311FDKD002P8 \
+  --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
+  --serial ${ANDROID_DEVICE_SERIAL} \
   --driver-build /绝对路径/工具构建目录 \
   --output /绝对路径/新的自测结果.json
 ```
@@ -69,11 +69,11 @@ node apps/browser/scripts/android-agent-ui.mjs self-test \
 
 ```sh
 node apps/browser/scripts/android-agent-ui.mjs snapshot \
-  --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \
-  --serial 48311FDKD002P8 \
+  --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
+  --serial ${ANDROID_DEVICE_SERIAL} \
   --driver-build /绝对路径/工具构建目录 \
   --profile /data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1 \
-  --source-root /Users/lazy/Projects/GCSA-aegis-chromium-linux-amd64/src \
+  --source-root ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-chromium-linux-amd64/src \
   --manifest /绝对路径/候选清单.json \
   --build-dir /绝对路径/候选构建记录目录 \
   --output /绝对路径/新的界面快照.json
@@ -83,7 +83,7 @@ node apps/browser/scripts/android-agent-ui.mjs snapshot \
 
 ## 已验证与未验证
 
-2026-09-06，Pixel 9 Pro Fold `48311FDKD002P8` 的工具自测通过：中文及 emoji 输入、点击后的完整回显、过期快照拒绝、错误应用拒绝、密码框拒绝、密码内容隐藏，共 6 项。宿主单元测试 13 项通过，已加入 `pnpm quality:fast`。
+2026-09-06，Pixel 9 Pro Fold `${ANDROID_DEVICE_SERIAL}` 的工具自测通过：中文及 emoji 输入、点击后的完整回显、过期快照拒绝、错误应用拒绝、密码框拒绝、密码内容隐藏，共 6 项。宿主单元测试 13 项通过，已加入 `pnpm quality:fast`。
 
 真实设备上的浏览器原生前置检查拒绝了默认 `app_chrome` Profile；拒绝发生在读取浏览器界面之前。最新浏览器 APK 尚未完成，因此尚未把此驱动用于最新浏览器任务，也不将工具自测等同于 WebUI 可操作或 Qwen 端到端通过。
 

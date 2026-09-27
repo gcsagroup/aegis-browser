@@ -21,9 +21,9 @@
 
 ## 固定入口与恢复
 
-- App：`/Users/lazy/Applications/GCSA Aegis Test.app`
-- 独立资料：`/Users/lazy/Library/Application Support/GCSA Aegis Acceptance`
-- 使用用户已同意的 `Apple Development: lazy@lolrz.com`，身份指纹 `2CECC81C4E125A9C25CCA52AE002FCEBC7616B91`。
+- App：`${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`
+- 独立资料：`${LOCAL_APPLICATION_SUPPORT_ROOT}/GCSA Aegis Acceptance`
+- 个人签名身份及证书指纹仅保存在本地签名证据中，公开文档不记录其具体值。
 - 测试副本的 `CrProductDirName` 固定为 `GCSA Aegis Acceptance`，直接启动也使用独立资料，不依赖每次传入命令行参数。
 - 旧R19包及原资料完整保留在 `.artifacts/v2-final/macos-page-evidence-ui-r19/`。资料在旧进程正常退出后复制，不删除旧数据。
 - 退出检查曾使旧包自动启动一次无参数空白窗口，已立即正常退出；之后只重启固定包。未手动修改该空白窗口的浏览资料。

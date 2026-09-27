@@ -37,9 +37,9 @@
 
 ## 实机检查记录
 
-固定 App：`/Users/lazy/Applications/GCSA Aegis Test.app`。
+固定 App：`${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`。
 
-固定验收资料：`/Users/lazy/Library/Application Support/GCSA Aegis Acceptance`。重置、语言和模型写入测试使用单独可丢弃资料，结束后恢复固定验收资料。
+固定验收资料：`${LOCAL_APPLICATION_SUPPORT_ROOT}/GCSA Aegis Acceptance`。重置、语言和模型写入测试使用单独可丢弃资料，结束后恢复固定验收资料。
 
 本轮使用 Computer Use 实际操作固定 App；同一路径经历 011、015、016 的修复与复验，018 完成最终三语关键页验收。初始 003 报告保留为基线，不将其待验收状态误作最终结论。
 

@@ -20,7 +20,7 @@
 - `test-macos-monitor-recovery-r1.mjs --verify-only` 核验最新 44 文件候选的源码、测试程序及原始结果，435 项保留的原生测试均为单次成功，包括真实 renderer 到原生拦截页的加盐凭据页用例。这是对完整结果的复核，不是本轮重新执行全部 435 项。
 - Computer Use 返回 Mac 锁屏，本轮没有绕过锁屏，也没有新增人工界面验收。默认 App 未替换，Android 本轮候选目录尚无完成状态或新 APK，不能说用户现有安装版已经升级。Windows/Android 最新安装版的完整验收仍单独待完成。
 
-最新完整原生证据：`/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/macos-monitor-recovery-tests-r1/`。
+最新完整原生证据：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/macos-monitor-recovery-tests-r1/`。
 
 交付结论：针对文章所述字符混淆的开发补丁已存在且专项回归通过；它恢复既有文本检测并移除模型输入中的隐藏载体，不保证识别所有诈骗、阻止所有提示词注入，也不替代邮件服务器防护或安装版升级。
 
@@ -32,7 +32,7 @@
 - 通过 `test-macos-monitor-conditions-r7.mjs --verify-only` 重新核对完整候选的源码、测试程序和原始结果，确认 429 项原生测试的保留结果均为单次成功；这是结果复核，不是本轮重新执行全部 429 项。其中包含真实页面经 renderer、风险检测到原生拦截页的 Unicode 加盐用例。
 - Computer Use 本轮返回 Mac 锁屏，没有自动解锁或新增手动界面证据。默认 App 未改写；Windows、Android 最新安装包及整套 Agent 的交付条件仍未完成。本文仅确认这一文本防护缺口已在开发代码中补齐，不宣称全面阻止钓鱼、所有提示词注入或保护邮件服务器。
 
-最新完整原生证据：`/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/macos-monitor-conditions-tests-r7/`。以下保留先前验证和失败记录，不用新结果覆盖旧结果。
+最新完整原生证据：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/macos-monitor-conditions-tests-r7/`。以下保留先前验证和失败记录，不用新结果覆盖旧结果。
 
 ## 前次状态摘要（07:44，北京时间）
 
@@ -104,7 +104,7 @@ Qwen 使用用户指定的 `http://127.0.0.1:8000/v1` 和
 
 ## 证据与交付边界
 
-本机证据根目录：`/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/`。
+本机证据根目录：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/`。
 
 - `macos-ascii-smuggling-r1/`：首轮编译、失败测试与调试器定位。
 - `macos-ascii-smuggling-r2/`：生产代码编译、单元测试、真实 App 隔离工作区与日志；界面截图在本轮对话中。
@@ -146,7 +146,7 @@ Android 源码工作区也已同步同一份 38 文件增量，修改前后逐�
 
 macOS 在全新的独立源码/输出工作区完成编译，通用防护 87/87、Agent Core 92/92、浏览器单元 151/151、原生浏览器 54/54 均单次通过，清单与实际测试集合一致。最新 browser_tests SHA-256 为 `edf8c52b6bd07f1483e748ae2f274247fcf1c3199591d26aa99086df049ca90c`，原始结果 JSON SHA-256 为 `db6919d499124600736511e0d64fbb958e2122d38ceb27b1e125f9bf1cb528dd`。共享 Core 168/168 与类型检查也重新通过。
 
-本轮独立工作区为 `/Users/lazy/Projects/GCSA-aegis-agent-acceptance/src`，只在该新目录补齐基线测试资产；canonical 和 Android 的 17 项原有删除未动。真实 Qwen 从空白页打开本地资料并返回两项正文事实的界面复测通过；此项是普通摘要端到端证据，不冒充隐藏注入的端到端攻击测试。专题攻击仍以此前真实拦截页及生产模型协议诊断为证据。
+本轮独立工作区为 `${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-agent-acceptance/src`，只在该新目录补齐基线测试资产；canonical 和 Android 的 17 项原有删除未动。真实 Qwen 从空白页打开本地资料并返回两项正文事实的界面复测通过；此项是普通摘要端到端证据，不冒充隐藏注入的端到端攻击测试。专题攻击仍以此前真实拦截页及生产模型协议诊断为证据。
 
 Windows 上一轮原生浏览器结果为 50 项成功、2 项失败、1 项崩溃。两项失败是已正确阻断后，中英文提示断言不匹配；崩溃是测试等待动画帧超时后仍读取布尔结果引起。工具栏生命周期回归通过。更早的 Session 0 可见性等待失败与默认后台优先级断言失败分别保留，不能和这轮结果混合统计。
 

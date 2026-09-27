@@ -1,6 +1,6 @@
 # P0 首个实现切片：原生路由计划与网站协议组完整性
 
-日期：2026-09-14。设计：Astra high；实现：Sol xhigh；独立审查：Astra high，新上下文。
+日期：2026-09-14。设计、实现与独立审查分阶段执行，审查使用新上下文。
 
 用户已授权在当前访问服务文档基础上继续开发。行为权威仍是 `spec.zh-CN.md` V1.0 修订 4 与 `freeze.json`；本文件不修改冻结行为、数量或 G0–G3 门槛。
 
@@ -12,7 +12,7 @@
 
 当日快照：
 
-- Fork `quinn521/aegis-browser` 的默认分支已经是 `develop`。当前 `develop` 为 `488544b89b43cd22fc1476aec2f44ef50275bce4`；个人 `main` 为 `013d5ba639b177a599a3036f24c82e07026568d3`。
+- 开发 Fork 的默认分支已经是 `develop`。当前 `develop` 为 `488544b89b43cd22fc1476aec2f44ef50275bce4`；个人 `main` 为 `013d5ba639b177a599a3036f24c82e07026568d3`。
 - 当前 `develop` 的 Access patch 序列已经落到：`0121` RequestOwnershipRegistry、`0122` targeted cancellation、`0123` dispatch BLOCK barrier、`0124` ownership contract refactor、`0125` request dispatch gate、`0126` browser-owned request metadata adapter。旧快照中的 0124–0128 编号不再对应当前主线。
 - `PublishedRequestRuntime` 尚未进入当前 `develop`，因此下一实现号从 `0127` 开始。旧本地堆叠中的 published runtime、committed policy generation 与 NetworkContext epoch 只保留为历史实验依据，不能作为当前主线已合入能力。
 - `GenerationTuple` 五个字段已经存在于合同类型中，但当前合入主线没有完成任何一个可用于真实请求派发的 production lifecycle source。AccessRuleStore 可以持久化 `committed_policy_generation`，但该值仍由未来发布者传入；NetworkContext transport 会消费 generation tuple，但尚未拥有真实 `network_epoch` 生命周期。因此当前合入状态按 **0/5 production generation source** 计算。
@@ -112,7 +112,7 @@
 
 本轮需在现有 `test:scripts` / `quality:fast` 中接入原生测试命令；缺编译器要明确失败或由显式单独检查报告 BLOCKED，不输出 PASS。新组件提供 GN source_set 与适当测试目标。遵循 overlay + 顺序补丁交付模型：可为新增组件生成只添加新路径的 format-patch 并验证等价，不假造已在固定 Chromium 完整重放。不要运行会重写 0001 或清理现有状态的 seed 脚本。
 
-必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 Astra high review 审查最终实现和测试；Sol 修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
+必须运行相关原生测试、仓库要求的 `quality:fast`、差异检查。最终补录 compiler、命令、实际 head、测试结果和未执行项。独立 review 审查最终实现和测试；实现者修复后复审。CI、合并、main 门槛由主任务按实际可用入口和授权分别处理。
 
 P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真实适配及入口接线、同步回调外等待、真实 URLLoader/导航/HTTP2/HTTP3 终止句柄、BLOCK 发布后的执行点 ACK/2 秒预算、NetworkContext/连接池代次、原有代理来源与企业约束检测、HTTP/SOCKS Profile 认证、渠道/安装身份、Vision 计量、完整 Chrome 构建及真实浏览器路径。当前已绑定 Chromium 151 精确 checkout，并完成下述独立 GN 目标的图接线、首次构建、运行和无操作增量构建；不创建或下载新的大型 checkout，不改固定 App。
 
@@ -157,11 +157,11 @@ P0 剩余：RequestOwnershipRegistry 与 dispatch barrier 的浏览器/导航真
 - `out/AegisLocalDev/aegis_access_unittests --gtest_color=no`：21 个 GTest PASS，包含原 42 条路由向量/网站组合同、5 组请求规范化测试、14 条共享匹配向量及补充边界回归。
 - `packages/core/node_modules/.bin/vitest run packages/core/src/access/policy-matcher-vectors.test.ts packages/core/src/access/route-planner-vectors.test.ts`：2 文件、2 测试 PASS。首次 pnpm 包装命令被 pnpm 10 的 `verify-deps-before-run=install` 默认行为尝试更新依赖，并因未批准 esbuild build script 中止；未批准脚本，也未保留它对 workspace 配置的建议修改。随后直接调用已安装的 Vitest 二进制确认定向用例。
 - `0115-feat-aegis-add-trusted-policy-context-matching.patch` 从 0114 后的父提交应用成功，应用结果与 overlay 逐文件一致；审查修正后的补丁 SHA-256 为 `cdcd077b4e1b53b81b315ca2fa9b7bd768508fce8e24495c93fa45d2eeaab4c8`。
-- `CHROMIUM_ROOT=/Volumes/ExternalSSD/repositories/aegis-chromium-151 bash apps/browser/scripts/status.sh` 确认 115 个顶层补丁的稳定 patch-id、checkout HEAD `83ff75c84f7425b79212c30425b329fe60e0ecd3`、overlay 等价及 2 个 V8 补丁均匹配；整体命令仍 exit 1，因为开发目录缺少完整 `GCSA Aegis.app` 可执行文件，Release/Android 也未构建。该状态不提升完整浏览器门槛。
+- `CHROMIUM_ROOT=${LOCAL_WORKSPACE_ROOT}/aegis-chromium-151 bash apps/browser/scripts/status.sh` 确认 115 个顶层补丁的稳定 patch-id、checkout HEAD `83ff75c84f7425b79212c30425b329fe60e0ecd3`、overlay 等价及 2 个 V8 补丁均匹配；整体命令仍 exit 1，因为开发目录缺少完整 `GCSA Aegis.app` 可执行文件，Release/Android 也未构建。该状态不提升完整浏览器门槛。
 
 仓库全量快速门禁随后以 `pnpm_config_verify_deps_before_run=false pnpm run quality:fast` 执行 PASS。该显式配置只关闭运行脚本前的隐式依赖安装，不跳过 lint、typecheck、test、browser scripts、Agent UI、Android target/UI、model relay、仓库合同或 build：core 共 28 个文件、170 个测试 PASS；browser 原生 runner 完成 487 次断言检查；GN 接线、脚本 fixture、Android 目标 38 项、Android UI 13 项、model relay 22 项、合同检查和两段 tsup 构建均通过。工作树没有修改 `package.json`、`pnpm-lock.yaml` 或 `pnpm-workspace.yaml`。
 
-独立 Astra high review 在个人 Fork PR #3 的 `a3d2fb0f36bd2c01f21e8b61235feb8f46681082` 上隔离复现两个阻塞：根 host 同时命中精确规则和 `includeSubdomains=true` 后缀规则时，旧实现按请求字符串相等误把后缀规则标成 exact；未知 `RequestAttributionKind` 整数值会穿过无 `default` 的 switch 并生成 context。修复把 exact 定义绑定到规则类型 `includeSubdomains=false`，并对未知枚举明确返回 `invalid_attribution` 且无 context；同一 GTest 补充根域名下后缀 selector 更窄/相同以及正反规则排列的回归，互斥 metadata 和异常枚举均检查无 context。修复后的固定 Chromium 目标重新编译 4 个对象并链接成功，21 个 GTest 全部 PASS；0115 也已从 0114 父提交重新应用并与 overlay 逐文件一致。原 `a3d2fb0` 保留，仓库修复使用后续独立提交，供同一 reviewer 在新 HEAD 复审。
+独立 review 在个人 Fork PR #3 的 `a3d2fb0f36bd2c01f21e8b61235feb8f46681082` 上隔离复现两个阻塞：根 host 同时命中精确规则和 `includeSubdomains=true` 后缀规则时，旧实现按请求字符串相等误把后缀规则标成 exact；未知 `RequestAttributionKind` 整数值会穿过无 `default` 的 switch 并生成 context。修复把 exact 定义绑定到规则类型 `includeSubdomains=false`，并对未知枚举明确返回 `invalid_attribution` 且无 context；同一 GTest 补充根域名下后缀 selector 更窄/相同以及正反规则排列的回归，互斥 metadata 和异常枚举均检查无 context。修复后的固定 Chromium 目标重新编译 4 个对象并链接成功，21 个 GTest 全部 PASS；0115 也已从 0114 父提交重新应用并与 overlay 逐文件一致。原 `a3d2fb0` 保留，仓库修复使用后续独立提交，供同一 reviewer 在新 HEAD 复审。
 
 这些结果仅证明固定 Chromium API 上的规范化与纯匹配决策可编译、可运行，以及仓库快速门禁通过。PR #3 尚需修复 HEAD 的独立复审与 hosted CI；Network Service 派发、等待/取消、连接复用、真实 HTTP/WS、Xray、企业策略、性能及 DPI 均未执行，G0 与 A76/A108/A113/A115/A116/A117/A118 整行仍不是 PASS。
 

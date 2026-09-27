@@ -2,7 +2,7 @@
 
 日期：2026-09-24。产品证据基线 **B=`7f74e0a4e971f91d08d90536e429aba7b82cf37d`**；工作分支 `codex/access-w1a-routing-contract-20260924`。本文是 W1a 设计与独立合同 fixture 的输入，所有标为“拟新增”的 API 均未实现。**W0 未完成，W1b/W1c 禁入，G0 仍 UNVERIFIED**；本文不授予生产接线、Chromium 构建、节点接入、收费 API 或发布权限。
 
-本轮仅只读核对产品 overlay/patch，以及固定 Chromium checkout `/Volumes/ExternalSSD/repositories/aegis-chromium-phase3-20260922/pr23-088fc98/src` 中列明的文件。该 checkout 的观察 HEAD 为 `e4c4a82fffc2b8e804dd971e108a430a84a05747`，并非 B 的干净重放证明。没有修改 candidate、V8、out、锁或 GN 参数，也没有 sync/replay/reset/Ninja。源码存在不代表本候选编译、真实接线或运行通过。
+本轮仅只读核对产品 overlay/patch，以及固定 Chromium checkout `${LOCAL_WORKSPACE_ROOT}/aegis-chromium-phase3-20260922/pr23-088fc98/src` 中列明的文件。该 checkout 的观察 HEAD 为 `e4c4a82fffc2b8e804dd971e108a430a84a05747`，并非 B 的干净重放证明。没有修改 candidate、V8、out、锁或 GN 参数，也没有 sync/replay/reset/Ninja。源码存在不代表本候选编译、真实接线或运行通过。
 
 ## 1. 决策与冻结边界
 
@@ -167,7 +167,7 @@ W1c 最小真实实验输入为固定 Chromium 候选/二进制哈希、固定�
 
 真实负路径保留合法初始 hop 的代理计数；不能把 redirect 前的一次合法发送改写为零。代理真实转发本就会到 origin，“origin 非零”不能单独证明 DIRECT；需关联 ID、入口/出口、连接日志联合证明。性能 PF01–PF03、PF07/PF08/PF12 继续使用冻结规模/时序；本纯模型不产出任何网络性能或资源达标结论。
 
-## 9. Sol/xhigh 的独立 executable contract fixture
+## 9. 独立 executable contract fixture
 
 允许在 `w1a-fixtures/` 新增 Node 模型、`node:test` 用例和 README；不导入生产 router，不修改 overlay/patch、native runner、GN、共享 plan/handoff/tracker。模型只是本设计的可执行 oracle，**不是生产组件、不是 Chromium 适配，也不是独立安全边界**。JavaScript 对象身份、private map 和 token 不证明 Mojo/跨进程不可伪造。
 

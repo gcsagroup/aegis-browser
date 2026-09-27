@@ -20,8 +20,8 @@ Profile，也不能成为正式产品的通用 CDP 权限根。
 
 - Chromium 固定版本：`151.0.7922.77`。
 - 浏览器补丁：67 个顶层 Chromium patch，2 个 V8 patch。
-- 主工作区：`/Users/lazy/Projects/GCSA-aegis`，保持 `main`，不承载原型依赖和产物。
-- 原型工作区：`/Users/lazy/Projects/GCSA-aegis-agent-v2-prototypes`。
+- 主工作区：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis`，保持 `main`，不承载原型依赖和产物。
+- 原型工作区：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-agent-v2-prototypes`。
 - 原型分支：`codex/aegis-browser-agent-v2-prototypes`。
 - Node.js：`25.2.1`；pnpm：`9.15.0`。
 - Python：P1 使用独立环境；Skyvern 因版本上限固定使用系统现有 Python `3.13.9`，不使用
