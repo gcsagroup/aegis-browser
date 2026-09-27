@@ -1,6 +1,6 @@
 # W2 local isolated metering fixture
 
-This prototype exercises one local TCP relay, an independent loopback origin, and a central SQLite byte-permit ledger. It is a **local fixture only**. It does not implement or validate Xray, VLESS/REALITY/Vision, Linux splice, browser integration, authenticated accounts, remote nodes, a hosted accounting service, or production quotas.
+This prototype exercises one local TCP relay, an independent loopback origin, and a central SQLite byte-permit ledger. A separate two-logical-node model exercises durable byte leases and independent node journals. Both are **local fixtures only**. They do not implement or validate Xray, VLESS/REALITY/Vision, Linux splice, browser integration, authenticated accounts, remote nodes, a hosted accounting service, or production quotas.
 
 ## Run
 
@@ -11,6 +11,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s prototypes/access-mete
 ```
 
 The same command is exposed as `pnpm run test:access-metering` and included in `quality:fast`. Tests bind only `127.0.0.1`, create temporary SQLite files, use no credentials or external network, and kill only their own relay subprocesses. Every socket, process readiness, marker, and settlement wait in the tests has a timeout.
+
+## Two logical nodes and central leases
+
+`lease_ledger.py` and `lease_node.py` are separate from the TCP relay. Tests create the central SQLite file and each node's journal explicitly with `create=True`; reopening uses the default `create=False`, so a missing file fails closed instead of silently starting a new balance. Two logical nodes share one finite account quota. A central grant reserves a bounded byte lease in a durable transaction. Repeating the same boot or grant request key returns its original result, including partial grants and denials; a changed request with the same key fails.
+
+Each node persists a chunk PREPARE before invoking a test sink. Immediately before the sink, the journal checks lease expiry and any **known** epoch fence again. A durable local COMPLETE advances that node's two-direction cumulative counters. The center accepts only bound, monotonic reports and moves accepted bytes from `held` to `actual` without increasing available quota. Latest identical reports are idempotent; older reports return STALE and do not debit again. `uncertain` is the remaining held portion of leases whose node restart or expiry is known to the center. Unknown crashes may leave held bytes without an uncertain flag until that notification; read-only snapshots never perform recovery. Expiry and epoch changes do not automatically release reservations.
+
+An offline old node may continue within its already issued, unexpired lease until it learns of a newer epoch; the center keeps that old lease reserved while a new session uses only the remaining account budget. This models quota conservation, **not** instantaneous remote revocation. A failed adoption of a newer session stops the active local scope. A valid fence that cannot be stored for an inactive scope stops all sends in that process; rejected invalid identifiers are not retained. The node journals simulated sends, not authoritative origin receipt; a sink callback is useful for the controlled tests but is not Xray's target-connection byte counter. These tests do not demonstrate real two-server independence, RateLease, physical rate/burst limits, server authentication, power-loss durability, Vision/splice accounting, UI latency, or A118/PF04/PF09 acceptance. The [design boundary](../../docs/plans/access-service-v1.0/W2-MULTINODE-PREP-20260928.zh-CN.md) lists the fixed fixture caps and pending real-resource inputs.
 
 The subprocess launcher trusts the test interpreter, repository checkout and inherited environment. It executes `sys.executable` with this checkout's `relay.py`, an argv list of fixture values, and explicit `shell=False`; external request data never supplies launch arguments. Database and fault-marker paths come from the test's temporary directory. The import and this one launcher carry narrowly scoped exceptions for Bandit `B404`/`B603` and Semgrep `python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit`, documenting the audited test-code use. Other calls and rules remain enabled. Re-audit these exceptions if the launcher begins accepting external inputs; the separate process is required to preserve the real kill/restart tests.
 
