@@ -7,7 +7,8 @@ import os
 import select
 import socket
 import sqlite3
-import subprocess
+# Owned relay subprocesses are required for the real kill/restart tests below.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import time
@@ -189,8 +190,12 @@ class RelayTests(unittest.TestCase):
         if after_send_marker is not None:
             command.extend(("--pause-after-send-marker", str(after_send_marker)))
         environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, env=environment)
+        # Trust the test interpreter, checkout and inherited environment. All argv
+        # values come from this fixture; no external request data reaches the launcher.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        process = subprocess.Popen(  # nosec B603
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, env=environment, shell=False)
         self.processes.append(process)
         readable, _, _ = select.select([process.stdout], [], [], 3)
         if not readable:
@@ -426,6 +431,7 @@ class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
                     return True
 
             idle_timers: list[ManualIdleTimer] = []
+            previous_idle: ManualIdleTimer | None = None
 
             async def origin_handler(reader: asyncio.StreamReader,
                                      writer: asyncio.StreamWriter) -> None:
@@ -523,6 +529,7 @@ class ConcurrentPermitTests(unittest.IsolatedAsyncioTestCase):
                     # The timer scheduled before this PREPARE must be canceled.
                     # Firing it would cancel an otherwise valid held permit.
                     if fire_previous_idle:
+                        self.assertIsNotNone(previous_idle)
                         self.assertFalse(previous_idle.fire())
                     else:
                         # Let the denied direction finish its close decision.
