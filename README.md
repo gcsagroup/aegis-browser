@@ -1,4 +1,4 @@
-# Aegis
+# Aegis browser
 
 <p align="center">
   <picture>
