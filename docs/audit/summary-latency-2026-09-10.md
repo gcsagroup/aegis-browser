@@ -57,7 +57,7 @@
 
 ## 固定App与本地Qwen实测
 
-- 确认固定App已退出后，04:31将更新包放回同一入口 `/Users/lazy/Applications/GCSA Aegis Test.app`。沿用个人开发签名及独立资料目录，严格签名验证再次通过；未改系统授权、模型设置或端点。
+- 确认固定App已退出后，04:31将更新包放回同一入口 `${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`。沿用个人开发签名及独立资料目录，严格签名验证再次通过；未改系统授权、模型设置或端点。
 - 旧包完整保留为 `.artifacts/v2-final/summary-latency-r1/fixed-app-before-performance.app`；独立资料副本为同目录 `acceptance-profile-before-performance`，没有删除原资料。
 - 使用Computer Use实际打开侧栏、点击“总结当前页”和“开始任务”。模型仍为 `Huihui-Qwen3.5-9B-abliterated-mlx-4bit`，目标 `https://www.cnbeta.com.tw/`，目标文本与此前耗时任务一致。
 - 第一轮界面时间线：04:35:07开始，04:35:12计划准备好并执行，04:35:30核验完成并显示总结及来源，按秒级显示计23秒。实际截图检查了总结、来源和时间线。结果是一段摘要，没有按目标单独列出要点，不能将结果格式视为完整达标。
@@ -90,7 +90,7 @@
 - 完整App、服务和浏览器测试程序构建成功；168项核心、87项通用、183项服务回归分别全部单次通过，文件名为 `core-tests-monitor-log.json`、`common-tests-monitor-log.json`、`browser-unit-tests-monitor-log.json`。两项定向浏览器用例均单次通过，记录为 `monitor-log-focused-green.json`，修复前失败记录保留。
 - 正在重跑整组原生浏览器回归；模型响应仍是测试夹具，系统通知由测试接收器核验，不代替固定App、本地Qwen或真实系统通知显示验证。
 - 修复后整组浏览器回归全部单次通过，结果为 `browser-tests-monitor-log-green.json`：74项普通测试，另有1个冷启动前置阶段，启动器共报告75个执行阶段。和168项核心、87项通用、183项服务合计512项原生测试，定向用例不重复计入总数；最初整组失败、诊断重复和修复前失败记录均保留。
-- 确认固定App仍未运行后，将同一开发证书签名的新包更新至 `/Users/lazy/Applications/GCSA Aegis Test.app`，严格签名验证再次通过。前一包保留为 `fixed-app-before-monitor-log.app`，资料副本为 `acceptance-profile-before-monitor-log`；沿用独立资料目录，没有删除旧包、修改系统授权或提交发布。
+- 确认固定App仍未运行后，将同一开发证书签名的新包更新至 `${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`，严格签名验证再次通过。前一包保留为 `fixed-app-before-monitor-log.app`，资料副本为 `acceptance-profile-before-monitor-log`；沿用独立资料目录，没有删除旧包、修改系统授权或提交发布。
 - 本次未再尝试锁屏下的UI操作。固定App包含监控日志修复，但该包的真实Qwen语言/格式、用户界面操作和系统通知显示仍需用户手动解锁后验证。
 
 ## 原始验收清单复核与Android源码同步

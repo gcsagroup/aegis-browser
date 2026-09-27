@@ -7,19 +7,27 @@ import {requireGreenQuality} from './promotion-quality.mjs';
 import {inferPromotionTitle} from './promotion-title.mjs';
 
 export const MODE = 'direct-upstream-v2';
-const PERSONAL = 'quinn521/aegis-browser';
 const UPSTREAM = 'gcsagroup/aegis-browser';
+const REPOSITORY_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\/[A-Za-z0-9._-]{1,100}$/u;
 
 export function loadPromotionConfig(env = process.env) {
-  if (env.GITHUB_REPOSITORY !== PERSONAL || env.GITHUB_REF !== 'refs/heads/develop' ||
+  const personalRepo = env.AEGIS_PROMOTION_FORK_REPOSITORY;
+  if (typeof personalRepo !== 'string' || !REPOSITORY_NAME.test(personalRepo) ||
+      ['.', '..'].includes(personalRepo.split('/')[1])) {
+    throw new Error('AEGIS_PROMOTION_FORK_REPOSITORY must be a valid owner/repository');
+  }
+  if (personalRepo.toLowerCase() === UPSTREAM.toLowerCase()) {
+    throw new Error('AEGIS_PROMOTION_FORK_REPOSITORY must differ from upstream');
+  }
+  if (env.GITHUB_REPOSITORY !== personalRepo || env.GITHUB_REF !== 'refs/heads/develop' ||
       !['push', 'schedule', 'workflow_dispatch'].includes(env.GITHUB_EVENT_NAME) ||
       env.AEGIS_PROMOTION_AUTOMATION !== MODE) {
-    throw new Error('Controller requires the personal develop trusted context and v2 opt-in');
+    throw new Error('Controller requires the configured fork develop trusted context and v2 opt-in');
   }
   for (const name of ['GH_TOKEN', 'AEGIS_FORK_AUTOMATION_TOKEN', 'AEGIS_UPSTREAM_TOKEN']) {
     if (!env[name]) throw new Error(`${name} is required`);
   }
-  return {personalRepo: PERSONAL, upstreamRepo: UPSTREAM, readToken: env.GH_TOKEN,
+  return {personalRepo, upstreamRepo: UPSTREAM, readToken: env.GH_TOKEN,
     forkToken: env.AEGIS_FORK_AUTOMATION_TOKEN, upstreamToken: env.AEGIS_UPSTREAM_TOKEN};
 }
 

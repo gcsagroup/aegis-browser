@@ -190,7 +190,7 @@ Computer Use 对 `chrome-untrusted` 侧栏可读但写入不稳定，因此京�
 执行和完成阶段分别映射，缺少 `agent.complete` 时明确说明页面已读取但模型未生成最终回答。
 
 永久回归覆盖“隐式当前页目标不新建标签页”。完整主检出
-`/Users/lazy/Projects/GCSA-aegis-chromium/src` 在提交 `854079c515` 上完成完整 App 增量构建，Agent Core
+`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-chromium/src` 在提交 `854079c515` 上完成完整 App 增量构建，Agent Core
 66/66、定向 BrowserTest 13/13 通过。使用用户指定的
 `http://127.0.0.1:8000/v1` 与
 `Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit`，原句在本地 fixture 上无重试完成真实闭环，耗时
