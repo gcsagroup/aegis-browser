@@ -1,71 +1,24 @@
 # DEV CI 与上游推进操作指南
 
-本指南对应个人 Fork `quinn521/aegis-browser` 的 DEV `develop`。它建立基础质量门和可核验的合并证据，不替代 Chromium 完整构建、真实网络、签名、设备或发布验收。
+本指南对应已配置的开发 Fork 的 DEV `develop`。它建立基础质量门和可核验的合并证据，不替代 Chromium 完整构建、真实网络、签名、设备或发布验收。
 
 ## 规则入口与本机配置
 
 本指南的 `develop` 版本是日常开发、PR 审查、合并与公开晋升流程的唯一维护入口。历史方案只用于追溯，不另行维护同一套操作规则。镜像 `main` 可能尚未包含最新 DEV 流程，开始交付任务时应先刷新并读取 `origin/develop` 对应版本。
 
-个人偏好和本机模型覆盖设置放在本机 `AGENTS.md`，通过 `.git/info/exclude`（或已有本机排除规则）忽略，不提交仓库。通用模型分工见下节；个人文件引用本指南，不复制整套分支流程。Git worktree 不会自动复制未跟踪文件；新工作区如需个人入口，应在本机配置并用 `git check-ignore AGENTS.md` 验证。已跟踪的文件不能依靠 ignore 隐藏，须单独处理，不能为清理而删除用户文件。
+个人偏好和本机模型覆盖设置放在本机 `AGENTS.md`，通过 `.git/info/exclude`（或已有本机排除规则）忽略，不提交仓库。公开交付职责见下节；个人文件引用本指南，不复制整套分支流程。Git worktree 不会自动复制未跟踪文件；新工作区如需个人入口，应在本机配置并用 `git check-ignore AGENTS.md` 验证。已跟踪的文件不能依靠 ignore 隐藏，须单独处理，不能为清理而删除用户文件。
 
 只有涉及开发交付、审查、合并或同步时才读取本指南；无关问答和不涉及交付的简单编辑不强制读取。
 
-## AI 辅助开发的模型分工
+## 开发职责与独立审查
 
-Model and effort choices below apply to this project and its linked worktrees.
-Explicit task-level user choices take precedence. Keep this project table as the
-single source for model routing, escalation, and unavailable-route handling.
+公开指南只规定交付职责、验证和审查门槛。维护者的模型选择、推理档位、本机目录及账号配置保存在未跟踪的本机配置或仓库设置中，不作为公开贡献要求。公开记录中的 `${LOCAL_WORKSPACE_ROOT}`、`${LOCAL_APPLICATIONS_ROOT}`、`${LOCAL_APPLICATION_SUPPORT_ROOT}` 为脱敏路径占位符，具体映射仅保存在本地证据索引。
 
-When a linked worktree lacks machine-local agent guidance, locate its primary
-checkout through `git rev-parse --git-common-dir` and read the relevant private
-guidance there. Do not copy ignored personal guidance into commits or PRs.
-
-| Work | Model / effort |
-|---|---|
-| Bounded inventory, evidence collection, log classification, or mechanical documentation | `gpt-6-luna`, `max` |
-| Routine implementation or low-risk fix | `gpt-6-sol`, `max` |
-| Module boundary, interface, or architecture uncertainty | `gpt-6-astra`, `high` for the design; then `gpt-6-sol`, `xhigh` for implementation |
-| Complex state or cross-module implementation | `gpt-6-sol`, `max` |
-| Focused debugging repeatedly fails to converge | Recheck the design with `gpt-6-astra`, `xhigh`, then resume implementation with `gpt-6-sol`, `xhigh` |
-| High-risk design or review | `gpt-6-astra`, `ultra` when warranted |
-| Independent code review | Fresh-context `gpt-6-astra`, `high` |
-| Re-review after fixes | The same independent reviewer, on the final candidate |
-
-When high-risk review escalation is warranted, its effort takes precedence over ordinary independent-review effort. These routes apply when selecting a model for a task or stage. Ordinary questions, small read-only checks, and general planning may stay in the current session; do not start another agent solely to change models. An architecture design deliverable follows the Astra design route.
-
-- Use one task owner by default. Model stages may run in sequence; this table does
-  not call for three agents on every task. Delegate only when the user or applicable
-  instructions explicitly request it, and give each delegate a bounded, independently
-  useful task.
-- All agents must support conclusions with sources or commands and state what was
-  not checked, with detail proportional to the task. Escalate behavior changes,
-  unclear contracts, cross-module state, security/privacy risk, and complex native
-  integration from Luna to Sol or Astra. Sol verifies bounded low-risk edits
-  delegated to Luna and runs the relevant checks.
-- Routine low-risk local edits do not require a separate architecture stage or
-  independent reviewer unless the user or a repository rule requests it. Delivery
-  PRs and upstream promotion follow the repository's independent-review requirements.
-- Keep fixes with the implementer. Give the independent reviewer the requirements,
-  design, base/head SHAs, actual diff, and validation evidence; do not pass the
-  implementer's discussion as review context. The reviewer checks the final
-  candidate after each relevant fix.
-- Select the model and effort explicitly when the available controls support them.
-  These rules do not switch a running task automatically. If a required route is
-  unavailable, report the runtime-confirmed model and effort, mark unknown values,
-  and identify the missing stage. Continue unaffected authorized work; ordinary
-  local work may stay in the current session. A required independent review still
-  needs a separate reviewer and the prescribed model or a user-authorized alternative.
-- Questions, read-only checks, and general planning may keep the current model unless
-  the user specifies one. An architecture design deliverable follows the Astra design
-  route above.
-- Review does not replace meaningful tests or hosted CI. Bind evidence to the final
-  HEAD for committed work and to the actual working-tree diff and inputs for
-  uncommitted work. These defaults do not authorize merging, release, credentials,
-  or bypassing a required gate.
-
-架构设计须明确范围、模块边界、接口、不变量、验收用例和回滚办法；模型选择不能替代这些设计交付要求。
-
-普通低风险本地改动无需额外独立评审；日常开发 PR 与上游晋升 PR 仍须按下文完成独立 Review。模型分工不要求贡献者购买特定模型，也不替代服务端人工 Approve。
+- 实现者负责代码、测试与问题修复；复杂接口和状态变更先明确设计、不变量与验收用例。
+- 独立审查使用新上下文，对照原始需求、base/head、真实差异和测试证据；修复后由同一 reviewer 复审最终候选。
+- 发现行为、安全或隐私风险时升级设计审查，不能以工具选择代替工程结论。
+- 审查、测试、托管 CI 和服务端审批分别核验；修改或 rebase 后重新绑定最终 HEAD。
+- 个人执行偏好不进入共享文档，不替代合并授权或必需检查。
 
 所有 `feat(...)` 功能 PR 都必须在同一 PR 内同时交付两类可执行测试：**单元测试**直接验证新增逻辑、边界和错误返回；**回归测试**固定至少一个既有安全/兼容性不变量或本功能可能重新引入的历史故障。两类测试都必须在最终 HEAD 实际执行并通过，缺任一类不得合并；不能以静态字符串检查、仅编译通过、增加 mock 数量或其他模块的既有测试代替。若改动实际上只有文档，应使用 `docs(...)` 而不是用 `feat(...)` 绕过该门槛。
 
@@ -95,7 +48,7 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 三份 README、`.codacy.yml`、workflow 与其他源码采用共享版本，不再维护个人 main/develop 的 Codacy 徽章，不再在导出或回流时替换 README。徽章标注上游分析身份，不代表 develop 通过。2026-09-21 的 README 特例和 develop → 个人 main → 导出上游流程停止使用；历史 SHA/报告保留原身份。
 
-个人 `main` 保留为后续发布 Action 入口。为了保持 SHA 镜像，未来 workflow 源码须先进入上游，再同步到个人 main；执行可通过 `github.repository == 'quinn521/aegis-browser'` 限定个人仓库，签名与发布凭据仅配置在个人仓库受保护 environment。发布默认手动触发，校验 main 与 upstream/main、选定 SHA、适用测试及制品来源；镜像 push 本身不授权发布。当前流程变更不添加发布、打包、签名或上传动作。
+个人 `main` 保留为后续发布 Action 入口。为了保持 SHA 镜像，未来 workflow 源码须先进入上游，再同步到个人 main；执行可通过仓库变量 `AEGIS_PROMOTION_FORK_REPOSITORY` 与 `github.repository` 的精确匹配限定个人仓库，签名与发布凭据仅配置在个人仓库受保护 environment。发布默认手动触发，校验 main 与 upstream/main、选定 SHA、适用测试及制品来源；镜像 push 本身不授权发布。当前流程变更不添加发布、打包、签名或上传动作。
 
 `quality.yml` 继续验证 develop/main PR 与 push，检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
 
@@ -199,7 +152,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 ### 串行控制器
 
-`.github/workflows/promotion-orchestrator.yml` 只从个人仓库 develop 的 push、每 15 分钟 schedule 或 develop 手动 dispatch 运行，使用固定 concurrency。双重校验仓库、ref、事件和版本变量 `AEGIS_PROMOTION_AUTOMATION=direct-upstream-v2`；旧值 `enabled` 不启动新控制器，新值不启动旧控制器。PR、main、上游仓库或未知事件不能执行带写权限的转换。候选源码只作为 Git 对象读取，不在凭据环境执行。
+`.github/workflows/promotion-orchestrator.yml` 只从个人仓库 develop 的 push、每 15 分钟 schedule 或 develop 手动 dispatch 运行，使用固定 concurrency。校验必填仓库变量 `AEGIS_PROMOTION_FORK_REPOSITORY` 与当前仓库完全一致、ref、事件和版本变量 `AEGIS_PROMOTION_AUTOMATION=direct-upstream-v2`；旧值 `enabled` 不启动新控制器，新值不启动旧控制器。PR、main、上游仓库或未知事件不能执行带写权限的转换。仓库变量缺失、格式无效、与当前仓库不符或指向上游时拒绝执行；具体 Fork 身份仅在仓库设置中配置，不写入共享源码。候选源码只作为 Git 对象读取，不在凭据环境执行。
 
 自动创建的晋升与回流 PR 一律为 Draft。协调者完成准备并进入最终评审时才将当前候选转为 Ready；控制器不自动切换 Ready 状态。
 
@@ -224,7 +177,7 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 报告中的 `nativeIntegration` 采用保守分类：overlay、patch、C++/GN、Chromium 固定版本及关键生成/同步脚本变更为 `REQUIRED`；未明确分类的产品路径为 `REVIEW_REQUIRED`；纯文档和本基础 CI 变更可为 `NOT_APPLICABLE`。`quality:fast` 中的独立 native runner 不等于固定 Chromium workspace 的 GN/GTest 或浏览器集成证明。
 
-目前没有为公开 PR 确认安全、隔离、可销毁的专用 Chromium runner，因此 C 层保持 `BLOCKED`。不得把日常电脑注册成公开 PR runner，不得让候选 PR 自选可信标签或 SHA，也不得与正在使用 `/Volumes/ExternalSSD/repositories/aegis-chromium-151/src` 的任务并发 reset、重放或构建。后续控制器必须从可信端校验产品 H、Chromium/V8 base、patched tree、patch series、GN args、目标与退出码，并隔离凭据、缓存信任域和构建锁。
+目前没有为公开 PR 确认安全、隔离、可销毁的专用 Chromium runner，因此 C 层保持 `BLOCKED`。不得把日常电脑注册成公开 PR runner，不得让候选 PR 自选可信标签或 SHA，也不得与正在使用 `${LOCAL_WORKSPACE_ROOT}/aegis-chromium-151/src` 的任务并发 reset、重放或构建。后续控制器必须从可信端校验产品 H、Chromium/V8 base、patched tree、patch series、GN args、目标与退出码，并隔离凭据、缓存信任域和构建锁。
 
 故障按第一处真实失败分类：
 
