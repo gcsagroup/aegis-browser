@@ -18,7 +18,7 @@
 2. [合同 fixture](w1a-fixtures/README.md)：独立 Node 模型及 unit/regression，测试所需的不可变输入、并存路径与拒绝路径。CI 的薄入口纳入现有 `ci:test`，不添加 required check。
 3. 本交接：交付边界、复核命令与 W2 实验输入；不将模型 PASS 写入 A/PF 主行。
 
-设计阶段显式选择 Astra/high，fixture 实现选择 Sol/xhigh，独立评审使用新上下文 Astra/high。任务负责人的运行时模型/effort 若未由运行时回执提供，不根据文档或自身推测补填。
+设计、fixture 实现与独立评审分别记录，独立评审使用新上下文。执行环境身份以本地运行时回执为准；未核验项不得推测补填。
 
 ## 复核与证据身份
 
@@ -54,7 +54,7 @@ PR [#178](https://github.com/quinn521/aegis-browser/pull/178) 的旧 H=`eda9dfd1
 
 同一独立评审者在后续 H=`ecb87f32998ec06eb1b8f182bd7c6205a9ec85f2` 发现 IPv4 单尾点边界：Node URL 将 `127.0.0.1.` 先归一为 `127.0.0.1`，旧模型因原始配置与请求混用检查而接受非规范本站规则、或使已发布快照的请求按非预期 native 派发。Q 随后用固定 Chromium 151 GURL 动态实验明确：配置原始 host/site 拒绝尾点或非 canonical 拼写；请求按解析后的 host/site 决策，IPv4 单尾点、`%2e` 与 `127.1.` 同 canonical IPv4 路由；DNS 尾点和 IPv4 双尾点仍保留并在已有快照/恢复约束下拒绝。从未发布快照且无恢复约束继续原生。F 仅修 Node 合同模型和本 W1a 文档；Q 的实验不是本模型执行的 Chromium 验收，仍以 Q 原始回执为准。旧 H 的 review/CI 不能转用到本次修复候选。
 
-Q 给出的实验索引为 `/Volumes/ExternalSSD/repositories/access-ipv4-dot-diagnostic-18ldxaa3`；其 manifest 报告 compile/run 均 exit 0，`probe.cc` SHA-256 `18fb49cd6fc465b9e9cb8aded3411bf47c8b65cda98965dc2a6c2ba284e78ad3`，`result.log` SHA-256 `2d4b7500a12a7eee8907f4e23dc1e3bb78913e0fdc48c96b5b811d32a6883dee`。这些身份由 Q 转交，F 未亲自执行 Chromium probe；新 H 的模型、完整本地门和同评审者复审须另行记录。
+Q 给出的实验索引为 `${LOCAL_WORKSPACE_ROOT}/access-ipv4-dot-diagnostic-18ldxaa3`；其 manifest 报告 compile/run 均 exit 0，`probe.cc` SHA-256 `18fb49cd6fc465b9e9cb8aded3411bf47c8b65cda98965dc2a6c2ba284e78ad3`，`result.log` SHA-256 `2d4b7500a12a7eee8907f4e23dc1e3bb78913e0fdc48c96b5b811d32a6883dee`。这些身份由 Q 转交，F 未亲自执行 Chromium probe；新 H 的模型、完整本地门和同评审者复审须另行记录。
 
 ## W2：仅整理实验输入
 

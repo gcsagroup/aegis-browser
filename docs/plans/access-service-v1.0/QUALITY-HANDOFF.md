@@ -12,7 +12,7 @@
 | HTTP 缓存 | 真实资源先填充缓存，再以同 URL 和强制使用缓存重复读取，要求源站计数不增加；发布 REJECT 后同 URL 必须失败、源站和代理均无新增请求，并以未匹配 URL 正路径确认观测链仍活跃。 |
 | 已提交 MHTML 子帧 | 在真实归档子帧的浏览器持有文档身份上，将普通、restricted 和 recursive prefetch 于构建 loader/default factory 前以 `ERR_BLOCKED_BY_CLIENT` 终止；普通 HTTP 文档和非 MHTML `kPreserve` 仍有正路径。该回归不再使用 `TestURLLoaderFactory` 代替 MHTML 生产默认 factory。 |
 
-验收时须为**最终产品 H** 重新记录固定 Chromium/V8 的 head/tree、patch/overlay 与 GN 参数哈希、目标二进制哈希、实际非零枚举、逐项运行退出码和 `sourceStable=true`；原始结果留在本轮独立证据根 `/Volumes/ExternalSSD/repositories/aegis-chromium-w0-q-20260926/evidence/`。若运行、托管 CI 或独立复审不满足该 H，保持候选未验收。即使本轮选定矩阵全部通过，完整 BFCache/prerender BLOCK、跨入口性能、双 Profile/双出口、真实服务和分发仍各有原规范门槛；这些不能由此处的缓存或 MHTML 单例推断为通过。生产 MHTML 的新断言只证明这条已提交 prefetch 路径在触及禁网默认 factory 前失败，不证明默认 factory 本身的回调安全或所有归档加载路径。
+验收时须为**最终产品 H** 重新记录固定 Chromium/V8 的 head/tree、patch/overlay 与 GN 参数哈希、目标二进制哈希、实际非零枚举、逐项运行退出码和 `sourceStable=true`；原始结果留在本轮独立证据根 `${LOCAL_WORKSPACE_ROOT}/aegis-chromium-w0-q-20260926/evidence/`。若运行、托管 CI 或独立复审不满足该 H，保持候选未验收。即使本轮选定矩阵全部通过，完整 BFCache/prerender BLOCK、跨入口性能、双 Profile/双出口、真实服务和分发仍各有原规范门槛；这些不能由此处的缓存或 MHTML 单例推断为通过。生产 MHTML 的新断言只证明这条已提交 prefetch 路径在触及禁网默认 factory 前失败，不证明默认 factory 本身的回调安全或所有归档加载路径。
 
 ## #177 最终交付与适用边界
 
@@ -23,10 +23,10 @@
 | 固定源准入 | `source-attempt21/result.json` PASS/sourceStable=true；Chromium patched HEAD=`1609c11c72e0c2e51500808b96864c37b7e4c467`、tree=`7beea934d52bd9c37c4470304cd1966260b8a951` |
 | 原生与浏览器 | `native-attempt5/result.json` 17 个目标、181 项 PASS；`browser-attempt17/result.json` Chrome 56/56 PASS；`content-attempt6/result.json` Content 6/6 PASS；均为 H1f86a6e、sourceStable=true，逐目标二进制与 runtime 摘要见原始回执 |
 | 本地与托管 PR | 产品树 `.artifacts/ci/local-1f86a6e-mise/report.json` full PASS/sourceStable=true；PR quality/quality-gate run `36020104115` attempt 1 SUCCESS，C++ run `36020104055` attempt 1 SUCCESS；托管质量报告绑定 B/H/M |
-| 独立 Review | 同一最终 B/H/M 的 Astra/high 原始回执 `.artifacts/ci/pr177-final-independent-review.md`：CLEAR，未发现未关闭的确定 P1/P2，覆盖边界以原文为准 |
+| 独立 Review | 同一最终 B/H/M 的原始回执 `.artifacts/ci/pr177-final-independent-review.md`：CLEAR，未发现未关闭的确定 P1/P2，覆盖边界以原文为准 |
 | develop 实际推送 | S 的 CI run `36039414436` attempt 1 quality/quality-gate SUCCESS、C++ run `36039414451` attempt 1 SUCCESS；推送报告 `quality-evidence-36039414436-1` 的 testedSha=S、sourceStable=true |
 
-上述 Chromium 回执位于 `/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/evidence/`，本地质量及 Review 回执位于产品工作树的 `.artifacts/ci/`；它们均非 Git 提交内容，换机器须取得原始回执。原生构建使用记录中的 macOS 26.5 SDK / bundled LLD 本机参数变体。MHTML 用例以带请求计数的 `TestURLLoaderFactory` 替代生产 `NotImplementedURLLoaderFactory`；它等待替身终态并断言 `ERR_NOT_IMPLEMENTED` 和请求计数，但未观察生产默认 factory 的真实终态回调（该默认 factory 在 DCHECK 下会触发 fatal）。relay watchdog/取消、完整缓存/BFCache/prerender BLOCK、性能与发布范围仍有独立覆盖缺口。故这里关闭的是 #177 已声明代码与测试证据审查，不把 W0/G0、131 个主行或其他候选判为已验收。
+上述 Chromium 回执位于 `${LOCAL_WORKSPACE_ROOT}/aegis-chromium-w0-20260924/evidence/`，本地质量及 Review 回执位于产品工作树的 `.artifacts/ci/`；它们均非 Git 提交内容，换机器须取得原始回执。原生构建使用记录中的 macOS 26.5 SDK / bundled LLD 本机参数变体。MHTML 用例以带请求计数的 `TestURLLoaderFactory` 替代生产 `NotImplementedURLLoaderFactory`；它等待替身终态并断言 `ERR_NOT_IMPLEMENTED` 和请求计数，但未观察生产默认 factory 的真实终态回调（该默认 factory 在 DCHECK 下会触发 fatal）。relay watchdog/取消、完整缓存/BFCache/prerender BLOCK、性能与发布范围仍有独立覆盖缺口。故这里关闭的是 #177 已声明代码与测试证据审查，不把 W0/G0、131 个主行或其他候选判为已验收。
 
 ## PR #24 晋升及 #181 回流后的同产品树补充验证（2026-09-25）
 
@@ -48,8 +48,8 @@ G0 仍为 `UNVERIFIED`：同树矩阵不是两 Profile 的真实多策略/双出
 ## 历史执行快照：冻结来源与所有权
 
 - 初始盘点 D：`7f74e0a4e971f91d08d90536e429aba7b82cf37d`；原生执行前纳入仅 README 排版的 #176，当时候选 B=`42f48b535f4ff0c302b6c4e98762fcee86495e1c`。当时 M、S 尚未生成；最终身份见本页开头。
-- 产品工作树：`/Volumes/ExternalSSD/repositories/aegis-browser-worktrees/access-w0-quality-20260924`，分支 `codex/access-w0-quality-20260924`。
-- Q 新候选：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/src`；从闲置 H13 副本进行 APFS clone，仅复用构建输入。各次 source admission 和失败报告独立保存；相对输出 `out/Pr129Verification` 可增量复用构建对象，但二进制和运行结果必须重新绑定最终 H。
+- 产品工作树：`${LOCAL_WORKSPACE_ROOT}/aegis-browser-worktrees/access-w0-quality-20260924`，分支 `codex/access-w0-quality-20260924`。
+- Q 新候选：`${LOCAL_WORKSPACE_ROOT}/aegis-chromium-w0-20260924/src`；从闲置 H13 副本进行 APFS clone，仅复用构建输入。各次 source admission 和失败报告独立保存；相对输出 `out/Pr129Verification` 可增量复用构建对象，但二进制和运行结果必须重新绑定最终 H。
 - Chromium 固定 `151.0.7922.77` / `ff37cfca210138f2a40b843b4a8195ab7e4fc7ff`；新 patched tree、V8、参数/二进制哈希与 sourceStable 须由新候选实际生成。
 - 首轮资源核验：外盘 APFS 挂载、可写，约 350 GiB 可用；重型构建前重查。
 - 其他任务：PID 64342 / PPID 63161，`evidence/pr23-c9b07b7/native-two-targets.py`，产品 H=`c9b07b72d249b5e1ac1978e11f863b2d953e668a`，source=`aegis-chromium-phase3-20260922/pr23-088fc98/src`，out=`out/Pr129Verification`；其 `.aegis-pr23-native-slot` 与 `.aegis-ci-lock` 归原任务。Q 不 kill/reset/replay，不在它运行时启动第二个重型 Ninja。以上 PID 只是观测快照，启动前重新检查。
@@ -58,7 +58,7 @@ G0 仍为 `UNVERIFIED`：同树矩阵不是两 Profile 的真实多策略/双出
 
 GitHub 回读 #162：B=`131da2fec25b783e0cc42374728e1f5ffb01cf53`，最终 H=`4670c4dd5f24db61f38f102cc60475658e63554a`，S=`ca4e1b24c750746d6e20a83fa58f1d2500791d02`，2026-09-23 19:51:06 UTC MERGED。旧 H12=`6664528…`/M=`0723b8d…` 不能当作 H13 的 M。
 
-历史 evidence 根目录：`/Volumes/ExternalSSD/repositories/aegis-chromium-phase3-20260922/evidence/pr162-h13-4670c4d/`。本地证据不属于 Git 提交，换机器须取得原始文件。
+历史 evidence 根目录：`${LOCAL_WORKSPACE_ROOT}/aegis-chromium-phase3-20260922/evidence/pr162-h13-4670c4d/`。本地证据不属于 Git 提交，换机器须取得原始文件。
 
 | 报告 | 结果及准确范围 | SHA-256 |
 | --- | --- | --- |
@@ -79,9 +79,9 @@ browser binary SHA-256=`603a83cb2ad79f798fff517105e2e54ad2d8898cd5d512fbf3c14488
 | native attempt 1 | **FAIL/sourceStable=true**；前 10 targets 共 81 tests PASS，第 11 adapter target 首项在 TestingProfile SetUp 因 `chrome::DIR_USER_DATA`（1001）未注册而崩溃，另外 4 项 SKIPPED，后 6 targets NOT_RUN；实际 out args 在首个 runtime 前及结束后哈希相同 |
 | browser attempt 1 | **FAIL/sourceStable=true**；41 项实际枚举，NoPublishedPolicyPreservesNativePath PASS；第 2 MainNavigationWithoutPolicyPreservesNativePath 的 origin==1 等待超时，后 39 项 NOT_RUN |
 | navigation diagnostic 1 | 同 H 精确用例重跑 exit 1；netlog 捕获 `/resource` 外的 `/favicon.ico` GET，后者收到 HTTP 200/origin；原 fixture 对两者均计数。证据支持修观测范围，不能改成 >=1 放宽断言 |
-| 独立 Review | 产品代码 Astra/high CLEAR；外部 browser driver 的 actual out args 稳定性 P2 修后同 reviewer CLEAR。代码 CLEAR 不消除上述真实失败 |
+| 独立 Review | 产品代码 CLEAR；外部 browser driver 的 actual out args 稳定性 P2 修后同 reviewer CLEAR。代码 CLEAR 不消除上述真实失败 |
 
-Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/evidence/`。`native-attempt1/`、`browser-attempt1/` 和 `navigation-diagnostic1/` 保存命令、退出码、二进制 hash、summary 与原始日志；不要覆盖 attempt 或删除失败记录。0171 修三个 Profile unit 的 Chrome suite/任务环境，0172 将自动 favicon 与业务请求计数分开；两项均属测试设施修复，修后运行仍待证明。
+Q evidence 根：`${LOCAL_WORKSPACE_ROOT}/aegis-chromium-w0-20260924/evidence/`。`native-attempt1/`、`browser-attempt1/` 和 `navigation-diagnostic1/` 保存命令、退出码、二进制 hash、summary 与原始日志；不要覆盖 attempt 或删除失败记录。0171 修三个 Profile unit 的 Chrome suite/任务环境，0172 将自动 favicon 与业务请求计数分开；两项均属测试设施修复，修后运行仍待证明。
 
 ## 第二候选与编译失败归档
 
@@ -100,7 +100,7 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 - `browser-attempt3` **FAIL/sourceStable=true**：41 项实际枚举，前 10 PASS（包括 favicon 修复后的导航、PREPARED/Profile 隔离、frame prefetch native/proxy）；第 11 `PrefetchWithoutEndpointFailsClosed` 得到 loaded 而非 error，后 30 NOT_RUN。失败 ASSERT 之后的 origin/proxy 计数并未执行，不能从无计数报错推断没有请求。
 - `prefetch-diagnostic3` 同 H/二进制精确复现 FAIL/sourceStable=true。NetLog 的 target `/resource` 请求带 Sec-Purpose:prefetch，新建 cache entry，代理解析 DIRECT，实际 GET 获得 HTTP 200 / Content-Length 6（origin）。这是缺 endpoint 的真实直连缺陷，不是 DOM 事件格式或 cache hit。
 
-尾点边界经独立 Astra/xhigh 只读检查：transport、请求 context 和内存规则校验需一致拒绝尾点，Store 已拒绝；不将尾点静默剥离并合并 site。固定 Chromium 的 GURL/PSL/site 及 Network Service host 匹配保留尾点。保留 factory 先查 snapshot 的顺序：无 published snapshot 的有效尾点网站仍 native；存在 snapshot 时尾点目标或 top-level-site fail-closed，包括没有匹配规则的请求。请求侧拒绝是本轮保守设计选择，规范要求统一处理但未规定唯一算法。新增真实入口回归须证明有效 DNS 正路径与发布后零 origin/proxy 增量；模型反例不替代浏览器证据。
+尾点边界经独立只读检查：transport、请求 context 和内存规则校验需一致拒绝尾点，Store 已拒绝；不将尾点静默剥离并合并 site。固定 Chromium 的 GURL/PSL/site 及 Network Service host 匹配保留尾点。保留 factory 先查 snapshot 的顺序：无 published snapshot 的有效尾点网站仍 native；存在 snapshot 时尾点目标或 top-level-site fail-closed，包括没有匹配规则的请求。请求侧拒绝是本轮保守设计选择，规范要求统一处理但未规定唯一算法。新增真实入口回归须证明有效 DNS 正路径与发布后零 origin/proxy 增量；模型反例不替代浏览器证据。
 
 0175–0176 修正 PAC fixture 和尾点边界，0177–0186 继续修复文档 factory、prefetch 和身份绑定；下节记录后续候选的独立结果。保留原 41 项并纳入新增回归，最终二进制的实际枚举数量必须记录。W0/G0 不因上述局部通过升级。
 
@@ -111,7 +111,7 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 - H=`79e89a07565f11345082c285b426ea0b2a2c535d`：source admission 8 与定向对象编译通过；`browser-document-diagnostic8` 实际 9 项通过、1 项失败，sourceStable=true。失败的旧 Clone 用例在 RFH 身份前置断言处停止，未触达 Clone 请求。独立预审发现 sandbox HTTP opaque origin 可跳过 wrapper、预提交 prefetch 被误中止、重建 bundle 丢失特殊 factory；此 H 未通过审查。
 - H=`f8ccc94dd6ffa0bc2a2b1d1360c4d5155755fe92`：0181–0184 与 overlay 准入 9、local full 通过；`browser-attempt9` 在 GN 检查发现 Chrome browser test 引用 Content 私有头，0 项 runtime。H=`d89d1f272d7342ef55068e03f2e5424411590f5c` 改用公开 RFH API，source admission 10 通过；`browser-attempt10` 因独立预审发现非 HTTP 受限 default factory 被替换，在 Ninja 351/2316 时主动中断，0 项 runtime、sourceStable=true。
 - H=`c6f14c2ed670dd2b8ed714def9caa17850758655`：0185 保留非 HTTP 原 default，0186 增加真实导航取消回归，source admission 11 通过；`browser-attempt11` 构建中主动中断，0 项 runtime、sourceStable=true。独立预审指出 0186 的 pending Clone 同步 Flush 会等待尚未绑定的对端而挂起；后续 5fd9a25 删去该 Flush。另有更重要的 P1：MHTML 子帧最终 URL 可为 HTTP，但原 default 是禁网 factory，0185 仍只凭 HTTP URL 将它重建为普通网络 factory。
-- 0187 仅在 RFHI 确实创建 NetworkService default 时记录可信资格并允许 prefetch 重建；MHTML/WebUI 等原受限 default 保持原 bundle，restricted/recursive 路径在新建跨源 factory 前拒绝。新增真实 HTTP MHTML 子帧 `content_browsertests` 回归。独立复审发现初稿变量作用域编译阻塞，H=`882c354357b8e7f4e9e9948e144bd99188a57e76` 已修复；`source-attempt13` PASS/sourceStable，Chromium tree=`b97227ce6ad046a51681903d57be496b33c29bad`。`compile-0187-objects13` 的 RFHI、prefetch service、Chrome hook/Aegis factory 与 browser fixture 六对象全部编译 PASS/sourceStable，**无完整链接或 runtime**。同一 Astra/high 静态复审暂无未关闭 P1/P2；最终复审仍须绑定新 H 的实际运行证据。
+- 0187 仅在 RFHI 确实创建 NetworkService default 时记录可信资格并允许 prefetch 重建；MHTML/WebUI 等原受限 default 保持原 bundle，restricted/recursive 路径在新建跨源 factory 前拒绝。新增真实 HTTP MHTML 子帧 `content_browsertests` 回归。独立复审发现初稿变量作用域编译阻塞，H=`882c354357b8e7f4e9e9948e144bd99188a57e76` 已修复；`source-attempt13` PASS/sourceStable，Chromium tree=`b97227ce6ad046a51681903d57be496b33c29bad`。`compile-0187-objects13` 的 RFHI、prefetch service、Chrome hook/Aegis factory 与 browser fixture 六对象全部编译 PASS/sourceStable，**无完整链接或 runtime**。同一静态复审暂无未关闭 P1/P2；最终复审仍须绑定新 H 的实际运行证据。
 
 以上是 H882c354 时的源码准入与待验清单，不是最终运行结论。#177 已按本页开头的最终 H 完成相应矩阵、复审与合并；台账 131 个主行与 G0 均不因此升级。
 
@@ -159,6 +159,6 @@ Q evidence 根：`/Volumes/ExternalSSD/repositories/aegis-chromium-w0-20260924/e
 2. `mise exec -- python -B scripts/dev/chromium_access_gtests_test.py`：17 tests，exit 0；只证明 runner 回归，不是 Chromium unit/browser 结果。
 3. LoadingPredictor regression 源码与健康观测检查就绪后冻结最终 H，做 ordered patches + exact overlay 准入；保存新 Chromium/V8 tree、参数、工具、源码输入摘要。
 4. 资源释放后 Q 取得自己的 candidate lock；按 unit 小批次串行执行 coordinator/store/runtime/transport/dispatch/tracker 及其余已声明目标，再 build/list/run 真实 browser 入口。每次实际非零枚举，禁重试掩盖失败，首次失败按设施/产品分类并报告协调者。
-5. 最终 H 运行 local full quality、独立 Astra/high Review、托管 PR B/H/M + attempt + check source；合并由协调者按实时授权/门槛决定。未闭环项明确保留，不升级 131 个 A/PF 主行。
+5. 最终 H 运行 local full quality、独立 Review、托管 PR B/H/M + attempt + check source；合并由协调者按实时授权/门槛决定。未闭环项明确保留，不升级 131 个 A/PF 主行。
 
-主会话只能确认模型家族 GPT-6，精确后缀/effort 未由运行时暴露；有界测试实现阶段显式选 `gpt-6-sol` / `xhigh`。该快照时最终独立 Review 尚未执行；#177 最终回执见本页开头。
+该快照的主会话执行环境身份未完整核验，具体执行配置保留在本地回执。该快照时最终独立 Review 尚未执行；#177 最终回执见本页开头。

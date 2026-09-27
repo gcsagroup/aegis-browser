@@ -83,8 +83,6 @@ The desktop browser is a Chromium fork; iOS is a separate native implementation.
 
 For a public contribution, fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser), make a focused change, run relevant checks, and open a pull request against upstream `main`. Include the scope, validation evidence and known limitations.
 
-Maintainers working in the GCSA Aegis development fork follow the separate [`develop` workflow](docs/development/ci.zh-CN.md) (Simplified Chinese).
-
 ### Documentation
 
 - **Project:** [Documentation index](docs/README.md) · [Roadmap](docs/roadmap.md) · [Architecture](docs/architecture.md)

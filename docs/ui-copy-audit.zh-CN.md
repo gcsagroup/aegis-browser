@@ -6,7 +6,7 @@
 
 ## 检查范围与证据
 
-实机对象为 `/Users/lazy/Applications/GCSA Aegis Test.app`，进程路径已核对；关于页显示 `Ver 1.1 (003)`、`Chromium 151.0.7922.77 (arm64)`。通过 Computer Use 操作原生浏览器，读取页面和无障碍文本，并检查下载设置、防护中心的实际截图。
+实机对象为 `${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`，进程路径已核对；关于页显示 `Ver 1.1 (003)`、`Chromium 151.0.7922.77 (arm64)`。通过 Computer Use 操作原生浏览器，读取页面和无障碍文本，并检查下载设置、防护中心的实际截图。
 
 | 范围 | 本轮检查情况 |
 | --- | --- |
@@ -121,16 +121,16 @@
 
 - [关于页模板](../apps/browser/overlay/chrome/browser/resources/settings/about_page/about_page.html.ts)
 - [GitHub 更新状态文案](../apps/browser/overlay/chrome/browser/ui/webui/help/aegis_github_update.cc)
-- 安全检查版本状态（当前构建树）：`/Users/lazy/Projects/GCSA-aegis-build/macos/src/chrome/browser/ui/safety_hub/safety_hub_util.cc`
+- 安全检查版本状态（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/ui/safety_hub/safety_hub_util.cc`
 - [模型状态显示](../apps/browser/overlay/chrome/browser/resources/aegis_agent/agent.ts)
 - [模型配置判定](../apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc)
 - [AI 助手文案](../apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc)
 - [防护中心中文文案](../apps/browser/overlay/chrome/browser/ui/webui/aegis/aegis_ui.cc)
-- 隐私设置入口说明（当前构建树）：`/Users/lazy/Projects/GCSA-aegis-build/macos/src/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc`
+- 隐私设置入口说明（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc`
 - [下载中心文案](../apps/browser/overlay/chrome/browser/resources/downloads/aegis_download_panel.html.ts)
 - [下载中心语言分流](../apps/browser/overlay/chrome/browser/resources/downloads/aegis_download_panel.ts)
 - [工具栏语言分流](../apps/browser/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc)
-- 重置反馈条件（当前构建树）：`/Users/lazy/Projects/GCSA-aegis-build/macos/src/chrome/browser/ui/webui/settings/reset_settings_handler.cc`
-- 重置报告目标地址（当前构建树）：`/Users/lazy/Projects/GCSA-aegis-build/macos/src/chrome/browser/profile_resetter/reset_report_uploader.cc`
-- 设置品牌资源（当前构建树）：`/Users/lazy/Projects/GCSA-aegis-build/macos/src/chrome/app/settings_chromium_strings.grdp`
-- 浏览器品牌资源（当前构建树）：`/Users/lazy/Projects/GCSA-aegis-build/macos/src/chrome/app/chromium_strings.grd`
+- 重置反馈条件（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/ui/webui/settings/reset_settings_handler.cc`
+- 重置报告目标地址（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/profile_resetter/reset_report_uploader.cc`
+- 设置品牌资源（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/app/settings_chromium_strings.grdp`
+- 浏览器品牌资源（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/app/chromium_strings.grd`
