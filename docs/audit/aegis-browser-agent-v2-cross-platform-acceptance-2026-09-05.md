@@ -1064,7 +1064,7 @@ tree 为 `2c509e07ec25fa8811adae17f9826e967c9bcee1`，包含 106 个顶层补丁
 
 ## 本地证据
 
-以 `/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/` 为证据根目录：
+以 `${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/` 为证据根目录：
 
 - `windows-protection-headless-r2/evidence.zip`：保留的真实 Windows 崩溃测试，SHA-256
   `36e8420b25e16e5364624e6b9287ee13e0a7b37e991964433b7bd202c251f637`。
@@ -1170,7 +1170,7 @@ macOS 使用本地临时签名；没有 Developer ID 签名或公证，不具备
 App 模型规划至浏览器操作的界面验收。首轮测试与模型原始引用断言失败均保留。
 
 详细诊断记录保存在本地证据文件
-`/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/当前窗口标签统计修复-20260905.md`
+`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/当前窗口标签统计修复-20260905.md`
 （不随仓库发布）。
 源码基线仍为 `383d157c`，十九个受控修改已与 overlay 对齐，未生成最终提交。
 macOS/Android 十七个外部删除的测试夹具文件仍待恢复确认；没有将删除吸收进发行候选。
@@ -1438,13 +1438,13 @@ Android 在专用容器确认为停止后同步到上述同一 44 文件候选�
 
 资源故障单独记录：R1 脚本最初因 Docker 进程清单缺 PID 列而在只读预检停止；修正后实际链接仍报 `Too many open files in system`。冻结容器 11 秒后自动恢复未能释放句柄。随后向核实的 Android Siso PID 17 正常发送 SIGINT，29 分 07 秒这一轮留下 6588 已完成、0 编译失败、68824 剩余；不是编译错误。停止容器后仍有约 21.7 万个 Aegis 文件被虚拟机缓存占用。确认所有五个容器都已停止且重启策略均为 `no` 后，正常退出 Docker Desktop，系统文件句柄从约 22.7 万降至不足 1 万，同一源码和原优化设置下的 R2 链接及 174 项测试成功。没有修改内核限制、删除缓存/数据、关闭静态检查或启动其他项目容器。Docker 与 Android 构建将在 macOS 验证完成后恢复。
 
-Docker Desktop 已正常恢复，其他四个项目容器保持停止。Android 在容器退出状态下同步同一 44 文件候选的 3 个增量文件；旧源码逐文件解包哈希校验通过，原有 17 个夹具删除保持不变，证据为 `android-monitor-recovery-source-r1/`。新构建入口为 `build-android-monitor-recovery-r1.mjs`，证据为 `android-monitor-recovery-r1/`。根据实测虚拟机 18 核、25159270400 字节内存，将编译并发由 2 提升到 4；仅调整构建并发，静态检查、编译器安全配置与优化均不变。没有清除缓存。Pixel 9 Pro Fold（`48311FDKD002P8`）经 ADB 确认在线，但尚无新 APK，不能把旧安装结果算作新候选通过。
+Docker Desktop 已正常恢复，其他四个项目容器保持停止。Android 在容器退出状态下同步同一 44 文件候选的 3 个增量文件；旧源码逐文件解包哈希校验通过，原有 17 个夹具删除保持不变，证据为 `android-monitor-recovery-source-r1/`。新构建入口为 `build-android-monitor-recovery-r1.mjs`，证据为 `android-monitor-recovery-r1/`。根据实测虚拟机 18 核、25159270400 字节内存，将编译并发由 2 提升到 4；仅调整构建并发，静态检查、编译器安全配置与优化均不变。没有清除缓存。Pixel 9 Pro Fold（`${ANDROID_DEVICE_SERIAL}`）经 ADB 确认在线，但尚无新 APK，不能把旧安装结果算作新候选通过。
 
 Computer Use 本轮仍返回 Mac 锁屏，尚无新增真实系统授权和界面交互证据；Windows 传输安全告警仍需人工核查。第 5、8、9、10 项及其余跨平台实机门槛保持未关闭。下一步优先等待 Android 新包并进行真机验收，不在活动构建期间修改这份冻结源码；页面变化摘要和真实定时触发仍需完成，不能缩减十项标准。
 
 ## Android 真机目标检查：拒绝旧 APK 和未证实的测试 Profile
 
-本轮没有安装、启动、停止或操作手机上的浏览器，也没有修改资料、调试设置或命令行文件。只读检查发现：Pixel 9 Pro Fold `48311FDKD002P8` 当前已亮屏解锁，`app.gcsa.aegis` 的版本号仍为 `151.0.7922.77`，实际安装 APK SHA-256 为 `326057099a0020849ed7f28762b8d87e8b6042056159db544224bbd8b04f3764`，最近更新时间为 9 月 5 日。运行进程打开的 History、Cookies、存储和 Agent 数据库位于 `/data/user/0/app.gcsa.aegis/app_chrome/Default`，不是先前准备的独立测试目录。因此不能在这份默认资料中继续执行验收任务。
+本轮没有安装、启动、停止或操作手机上的浏览器，也没有修改资料、调试设置或命令行文件。只读检查发现：Pixel 9 Pro Fold `${ANDROID_DEVICE_SERIAL}` 当前已亮屏解锁，`app.gcsa.aegis` 的版本号仍为 `151.0.7922.77`，实际安装 APK SHA-256 为 `326057099a0020849ed7f28762b8d87e8b6042056159db544224bbd8b04f3764`，最近更新时间为 9 月 5 日。运行进程打开的 History、Cookies、存储和 Agent 数据库位于 `/data/user/0/app.gcsa.aegis/app_chrome/Default`，不是先前准备的独立测试目录。因此不能在这份默认资料中继续执行验收任务。
 
 设备上的 `/data/local/tmp/chrome-command-line` 与本机旧准备文件摘要也不同；仅凭那份准备文件不能证明运行参数生效，亦不能由此断言是某个具体开关失效。本轮没有读取命令行正文或浏览数据库内容，报告仅保留包、版本、摘要、Profile 根路径和设备状态。真实检查报告为本机 `.artifacts/v2-final/android-target-inspect-r1.json`，时间 09:35:37，明确记录 `targetVerified=false`、`uiTested=false`、`runtimeTested=false`。
 
@@ -1460,19 +1460,19 @@ Computer Use 本轮仍返回 Mac 锁屏，尚无新增真实系统授权和界�
 
 ```sh
 node apps/browser/scripts/verify-android-agent-target.mjs verify \
-  --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \
-  --serial 48311FDKD002P8 \
+  --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
+  --serial ${ANDROID_DEVICE_SERIAL} \
   --profile /data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1 \
-  --source-root /Users/lazy/Projects/GCSA-aegis-chromium-linux-amd64/src \
-  --manifest /Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/monitor-recovery-candidate-r1/manifest.json \
-  --build-dir /Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/android-monitor-recovery-r1
+  --source-root ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-chromium-linux-amd64/src \
+  --manifest ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/monitor-recovery-candidate-r1/manifest.json \
+  --build-dir ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/android-monitor-recovery-r1
 ```
 
 执行位置为集成工作区。Android 本轮始终复用现有构建句柄；只增补宿主验收脚本和文档，冻结的 44 个 Chromium 文件未改动。必须继续完成入口可点击、中文输入、本地 Qwen 任务闭环、全部常用场景、真实定时与保护行为，不能用这个前置检查替代十项完成标准。
 
 ## Android 中文 UI 驱动已完成真机自测
 
-2026-09-06 10:05，在 Pixel 9 Pro Fold `48311FDKD002P8` 安装了本次新建、此前不存在的测试工具 `app.gcsa.aegis.qa.driver`。没有替换浏览器，没有向默认浏览器发送点击、输入或资料修改命令。工具没有网络权限、启动器入口或常驻服务；通过一次性 instrumentation 的公共无障碍节点操作完成中文输入，不申请常驻无障碍授权，不关闭用户已有无障碍服务。
+2026-09-06 10:05，在 Pixel 9 Pro Fold `${ANDROID_DEVICE_SERIAL}` 安装了本次新建、此前不存在的测试工具 `app.gcsa.aegis.qa.driver`。没有替换浏览器，没有向默认浏览器发送点击、输入或资料修改命令。工具没有网络权限、启动器入口或常驻服务；通过一次性 instrumentation 的公共无障碍节点操作完成中文输入，不申请常驻无障碍授权，不关闭用户已有无障碍服务。
 
 新增宿主脚本 `apps/browser/scripts/android-agent-ui.mjs`、原生测试夹具及 [使用说明](../../apps/browser/scripts/android-ui-driver/README.md)。宿主与设备两侧均保留候选/资料边界，拒绝锁屏、其他 App、密码框和执行前已变化的界面；只读 Profile 校验只检查已打开文件的路径，不读取数据库内容。工具不会安装浏览器、设置调试 App、解锁设备或更改浏览器资料。
 
@@ -2343,7 +2343,7 @@ R4只将该谓词及对应断言改为无事件循环的请求列表读取，保
 ## 9月10日补充：macOS提速实测及监控日志修复
 
 最新分项证据见[当前页总结延迟与修复记录](summary-latency-2026-09-10.md)。
-固定验收入口已收敛为 `/Users/lazy/Applications/GCSA Aegis Test.app`，沿用用户已确认的
+固定验收入口已收敛为 `${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`，沿用用户已确认的
 个人开发签名和独立资料目录；旧包及资料副本完整保留。此处不构成发行签名或公证声明。
 
 性能版在同一9B本地Qwen、同一cnBeta首页与同一目标下，两轮实际任务记录分别为
