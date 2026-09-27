@@ -45,3 +45,7 @@
 ## 本地两进程数据路径增量
 
 [两进程设计与测试输入](W2-LOCAL-RELAY-PREP-20260928.zh-CN.md)将中心 lease 与节点 journal 接到两个独立 loopback relay/origin 子进程。新测试观察真实本机 socket 的单次非阻塞发送、短写保守预留、双向累计、四个 kill/restart 窗口、到期/围栏与模拟中心失联；origin 收/发量和账本 `actual/held/uncertain` 分开保存。它仍是本地测试进程与共享临时 SQLite，不具备真实 Linux/Xray/Vision、服务端鉴权、跨 VPS 或物理速率的证据。最终结果须绑定实现提交的本地门、独立复审与托管 CI；WS+TLS 回测 TODO 和真实 W2 的 `BLOCKED_RESOURCE` / `NOT_RUN` 保持。
+
+## 单执行点服务端适配设计输入
+
+[P3c/A118 适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)基于 `develop@93b0deb4c6ecdd8009755cda02fb627d5eff6cea` 盘点已有符号，定义拟议的鉴权归属、双向目标 byte、许可/write/完成边界、缓冲及故障上界、持久重试和 SM-00–SM-07 验收场景。当前仅有设计文档；真实 Xray 代码位置、服务端/账本负责人、受控资源与实验阈值待绑定，尤其下行 writer 的准确目标字节完成语义仍待证明。RateLease/PF09、PF04 UI 采样及真实服务端实现另行交付；A118 整体状态不变。
