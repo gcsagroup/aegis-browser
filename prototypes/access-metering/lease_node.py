@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import socket
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -25,6 +26,10 @@ SCHEMA_VERSION = 1
 
 class NodeError(RuntimeError):
     """No simulated send may proceed without a durable local permit."""
+
+
+class JournalStorageError(NodeError):
+    """The journal cannot reliably prove or persist its accounting state."""
 
 
 def _node_valid(value: object, label: str, *, minimum: int | None = None,
@@ -49,7 +54,7 @@ class NodeJournal:
         self.clock = clock
         self.fail_before_commit: Callable[[], None] | None = None
         self.active_sessions: dict[tuple[str, str, str], str] = {}
-        self.sent_chunks: set[str] = set()
+        self.sent_chunks: dict[str, int] = {}
         self.blocked_scopes: set[tuple[str, str, str]] = set()
         self.blocked_all = False
         self._send_lock = threading.RLock()
@@ -83,7 +88,7 @@ class NodeJournal:
                     connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 self._check_database(connection)
         except sqlite3.Error as error:
-            raise NodeError(f"journal unavailable: {error}") from error
+            raise JournalStorageError(f"journal unavailable: {error}") from error
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
@@ -100,11 +105,11 @@ class NodeJournal:
     @staticmethod
     def _check_database(connection: sqlite3.Connection) -> None:
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
-            raise NodeError("journal integrity check failed")
+            raise JournalStorageError("journal integrity check failed")
         if connection.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
-            raise NodeError("unknown journal application id")
+            raise JournalStorageError("unknown journal application id")
         if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
-            raise NodeError("unknown journal schema version")
+            raise JournalStorageError("unknown journal schema version")
         for table in ("fences", "sessions", "leases", "chunks", "pending"):
             connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
 
@@ -124,7 +129,7 @@ class NodeJournal:
                         connection.rollback()
                     raise
         except sqlite3.Error as error:
-            raise NodeError(f"journal unavailable: {error}") from error
+            raise JournalStorageError(f"journal unavailable: {error}") from error
 
     @staticmethod
     def _scope(row: sqlite3.Row) -> tuple[str, str, str]:
@@ -303,21 +308,71 @@ class NodeJournal:
                                            (chunk["lease_id"],)).fetchone()
                 self._usable(connection, lease)
                 sink(chunk["direction"], chunk["size"])
-                self.sent_chunks.add(chunk_id)
+                self.sent_chunks[chunk_id] = chunk["size"]
+
+    def send_socket_once(self, chunk_id: str, destination: socket.socket,
+                         data: bytes, *, send_limit: int | None = None) -> int:
+        """One bounded nonblocking syscall; an unsent tail remains reserved."""
+        _node_valid(chunk_id, "chunk")
+        if not isinstance(destination, socket.socket) or destination.getblocking():
+            raise NodeError("destination must be a nonblocking socket")
+        if type(data) is not bytes or not data or len(data) > MAX_CHUNK_BYTES:
+            raise NodeError("invalid socket data length")
+        if send_limit is not None:
+            _node_valid(send_limit, "single send limit", minimum=1,
+                        maximum=MAX_CHUNK_BYTES)
+        with self._send_lock:
+            with self._transaction() as connection:
+                chunk = connection.execute("SELECT * FROM chunks WHERE chunk_id=?",
+                                           (chunk_id,)).fetchone()
+                if chunk is None or chunk["state"] != "PREPARED":
+                    raise NodeError("chunk not ready to send")
+                if len(data) != chunk["size"]:
+                    raise NodeError("socket data length differs from prepared size")
+                if send_limit is not None and send_limit > chunk["size"]:
+                    raise NodeError("single send limit exceeds prepared size")
+                lease = connection.execute("SELECT * FROM leases WHERE lease_id=?",
+                                           (chunk["lease_id"],)).fetchone()
+                self._usable(connection, lease)
+                connection.execute("UPDATE chunks SET state='SENDING' WHERE chunk_id=?",
+                                   (chunk_id,))
+            # This second write lock serializes other journal handles' fences with
+            # the one nonblocking syscall. No network wait or callback runs here.
+            with self._transaction(run_fault_hook=False) as connection:
+                lease = connection.execute("SELECT * FROM leases WHERE lease_id=?",
+                                           (chunk["lease_id"],)).fetchone()
+                self._usable(connection, lease)
+                sent = destination.send(data[:send_limit])
+                if not 0 <= sent <= (send_limit or len(data)):
+                    raise NodeError("invalid socket send result")
+                if sent:
+                    self.sent_chunks[chunk_id] = sent
+                return sent
 
     def complete(self, chunk_id: str) -> None:
-        if chunk_id not in self.sent_chunks:
-            raise NodeError("no send proof in this process")
-        with self._transaction() as connection:
-            chunk = connection.execute("SELECT * FROM chunks WHERE chunk_id=?",
-                                       (chunk_id,)).fetchone()
-            if chunk is None or chunk["state"] != "SENDING":
-                raise NodeError("chunk not awaiting completion")
-            field = "up" if chunk["direction"] == "up" else "down"
-            connection.execute("UPDATE chunks SET state='COMPLETE' WHERE chunk_id=?", (chunk_id,))
-            connection.execute(f"UPDATE leases SET {field}={field}+? WHERE lease_id=?",
-                               (chunk["size"], chunk["lease_id"]))
-        self.sent_chunks.remove(chunk_id)
+        with self._send_lock:
+            sent = self.sent_chunks.get(chunk_id)
+            if sent is None:
+                raise NodeError("no send proof in this process")
+            with self._transaction() as connection:
+                chunk = connection.execute("SELECT * FROM chunks WHERE chunk_id=?",
+                                           (chunk_id,)).fetchone()
+                if chunk is None or chunk["state"] != "SENDING" or sent > chunk["size"]:
+                    raise NodeError("chunk not awaiting completion")
+                field = "up" if chunk["direction"] == "up" else "down"
+                connection.execute("UPDATE chunks SET state='COMPLETE' WHERE chunk_id=?", (chunk_id,))
+                connection.execute(f"UPDATE leases SET {field}={field}+? WHERE lease_id=?",
+                                   (sent, chunk["lease_id"]))
+            del self.sent_chunks[chunk_id]
+
+    def lease_ids(self) -> list[str]:
+        """Bounded durable lease inventory for report replay before a new boot."""
+        with self._connection() as connection:
+            self._check_database(connection)
+            rows = connection.execute("SELECT lease_id FROM leases ORDER BY lease_id").fetchall()
+            if len(rows) > MAX_NODE_LEASES:
+                raise NodeError("local lease capacity exceeded")
+            return [row[0] for row in rows]
 
     def local_balance(self, lease_id: str) -> tuple[int, int, int]:
         with self._connection() as connection:
