@@ -41,3 +41,7 @@
 [双节点设计与边界](W2-MULTINODE-PREP-20260928.zh-CN.md)在现有单 relay 之外准备中心 byte lease、两个独立节点 journal、幂等授权、累计上报、epoch/周期隔离和保守崩溃恢复。它只使用本机临时 SQLite、可控时钟和模拟发送；原 loopback relay 及其原有验收口径保持独立。新增代码与测试结果须绑定交付时的最终 HEAD，设计审查结论不替代代码审查、CI 或真实服务证据。
 
 指定管理页的 VLESS + WS + TLS 候选依用户要求保留为**相关开发完成后回测 TODO**，本地双节点夹具不向该节点发流量，也不能代替 Linux REALITY/Vision 实验。A36/A37 的跨节点/上报子场景仅获得本地状态机准备；真实账户身份、多物理节点、A118、PF04/PF09 仍须另行绑定受控节点、权威计数点与冻结预算后执行，台账状态暂不升级。
+
+## 本地两进程数据路径增量
+
+[两进程设计与测试输入](W2-LOCAL-RELAY-PREP-20260928.zh-CN.md)将中心 lease 与节点 journal 接到两个独立 loopback relay/origin 子进程。新测试观察真实本机 socket 的单次非阻塞发送、短写保守预留、双向累计、四个 kill/restart 窗口、到期/围栏与模拟中心失联；origin 收/发量和账本 `actual/held/uncertain` 分开保存。它仍是本地测试进程与共享临时 SQLite，不具备真实 Linux/Xray/Vision、服务端鉴权、跨 VPS 或物理速率的证据。最终结果须绑定实现提交的本地门、独立复审与托管 CI；WS+TLS 回测 TODO 和真实 W2 的 `BLOCKED_RESOURCE` / `NOT_RUN` 保持。
