@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import socket
 import tempfile
 import unittest
 from dataclasses import replace
@@ -628,6 +629,53 @@ class NodeJournalTests(unittest.TestCase):
                     self.assertEqual((balance.actual_bytes, balance.held_bytes,
                                       balance.uncertain_bytes), (4, 0, 0))
                 self.assertEqual(len(received), int(stage in ("sending", "completed", "reported")))
+
+    def test_one_nonblocking_socket_send_counts_only_short_write(self) -> None:
+        destination, peer = socket.socketpair()
+        self.addCleanup(destination.close)
+        self.addCleanup(peer.close)
+        destination.setblocking(False)
+        peer.settimeout(1)
+        chunk = self.node.prepare(self.lease.lease_id, "up", 4)
+        self.assertEqual(self.node.send_socket_once(chunk, destination, b"abcd", send_limit=2), 2)
+        self.node.complete(chunk)
+        self.assertEqual(peer.recv(4), b"ab")
+        self.assertEqual(self.node.local_balance(self.lease.lease_id), (2, 0, 4))
+        record = self.node.pending_report(self.lease.lease_id)
+        self.node.ack(record, self.center.report(record))
+        balance = self.center.snapshot("acct", "p1")
+        self.assertEqual((balance.actual_bytes, balance.held_bytes,
+                          balance.remaining_bytes), (2, 5, 3))
+        with self.assertRaises(NodeError):
+            self.node.send_socket_once(chunk, destination, b"abcd")
+
+    def test_socket_send_validates_nonblocking_and_exact_prepared_data(self) -> None:
+        destination, peer = socket.socketpair()
+        self.addCleanup(destination.close)
+        self.addCleanup(peer.close)
+        chunk = self.node.prepare(self.lease.lease_id, "up", 4)
+        with self.assertRaisesRegex(NodeError, "nonblocking"):
+            self.node.send_socket_once(chunk, destination, b"abcd")
+        destination.setblocking(False)
+        with self.assertRaisesRegex(NodeError, "length"):
+            self.node.send_socket_once(chunk, destination, b"abc")
+        self.assertEqual(self.node.send_socket_once(chunk, destination, b"abcd"), 4)
+        self.node.complete(chunk)
+
+    def test_socket_send_rechecks_expiry_after_sending_commit(self) -> None:
+        destination, peer = socket.socketpair()
+        self.addCleanup(destination.close)
+        self.addCleanup(peer.close)
+        destination.setblocking(False)
+        peer.setblocking(False)
+        chunk = self.node.prepare(self.lease.lease_id, "up", 1)
+        self.node.fail_before_commit = lambda: setattr(self.clock, "value", self.lease.expires_at)
+        with self.assertRaisesRegex(NodeError, "expired"):
+            self.node.send_socket_once(chunk, destination, b"a")
+        self.node.fail_before_commit = None
+        with self.assertRaises(BlockingIOError):
+            peer.recv(1)
+        self.assertEqual(self.node.local_balance(self.lease.lease_id), (0, 0, 1))
 
 
 if __name__ == "__main__":
