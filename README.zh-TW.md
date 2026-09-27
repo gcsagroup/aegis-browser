@@ -83,8 +83,6 @@ macOS 可以獨立達到發布條件，不需要等待 iOS。各里程碑的完�
 
 公開貢獻請 Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser)，提交範圍聚焦的改動，執行相關檢查，並向上游 `main` 分支提交 Pull Request。請說明改動範圍、驗證證據和已知限制。
 
-在 GCSA Aegis 開發 Fork 中工作的維護者，請遵循單獨的 [`develop` 工作流程](docs/development/ci.zh-CN.md)。
-
 ### 文件導覽
 
 - **專案：** [文件索引](docs/README.zh-TW.md) · [路線圖](docs/roadmap.zh-TW.md) · [架構](docs/architecture.zh-TW.md)

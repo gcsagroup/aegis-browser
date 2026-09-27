@@ -19,7 +19,7 @@ concurrency:
 jobs:
   promote:
     name: promotion-orchestrator
-    if: ${{ github.repository == 'quinn521/aegis-browser' && github.ref == 'refs/heads/develop' && vars.AEGIS_PROMOTION_AUTOMATION == 'direct-upstream-v2' }}
+    if: ${{ vars.AEGIS_PROMOTION_FORK_REPOSITORY != '' && github.repository == vars.AEGIS_PROMOTION_FORK_REPOSITORY && github.repository != 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/develop' && vars.AEGIS_PROMOTION_AUTOMATION == 'direct-upstream-v2' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -37,5 +37,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AEGIS_FORK_AUTOMATION_TOKEN: ${{ secrets.AEGIS_FORK_AUTOMATION_TOKEN }}
           AEGIS_UPSTREAM_TOKEN: ${{ secrets.AEGIS_UPSTREAM_TOKEN }}
+          AEGIS_PROMOTION_FORK_REPOSITORY: ${{ vars.AEGIS_PROMOTION_FORK_REPOSITORY }}
           AEGIS_PROMOTION_AUTOMATION: ${{ vars.AEGIS_PROMOTION_AUTOMATION }}
         run: node scripts/ci/promotion-orchestrator.mjs

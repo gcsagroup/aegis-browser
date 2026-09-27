@@ -17,12 +17,12 @@
 
 ```sh
 node apps/browser/scripts/android-agent-ui.mjs build \
-  --sdk /Users/lazy/Library/Android/sdk \
+  --sdk ${ANDROID_SDK_ROOT} \
   --jdk /opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home \
   --output /绝对路径/新的工具构建目录
 
 node apps/browser/scripts/android-agent-ui.mjs self-test \
-  --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \
+  --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
   --serial 48311FDKD002P8 \
   --driver-build /绝对路径/工具构建目录 \
   --output /绝对路径/新的自测结果.json
@@ -69,11 +69,11 @@ node apps/browser/scripts/android-agent-ui.mjs self-test \
 
 ```sh
 node apps/browser/scripts/android-agent-ui.mjs snapshot \
-  --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \
+  --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
   --serial 48311FDKD002P8 \
   --driver-build /绝对路径/工具构建目录 \
   --profile /data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1 \
-  --source-root /Users/lazy/Projects/GCSA-aegis-chromium-linux-amd64/src \
+  --source-root ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-chromium-linux-amd64/src \
   --manifest /绝对路径/候选清单.json \
   --build-dir /绝对路径/候选构建记录目录 \
   --output /绝对路径/新的界面快照.json

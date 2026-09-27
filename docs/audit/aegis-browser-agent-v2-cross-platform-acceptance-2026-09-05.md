@@ -1064,7 +1064,7 @@ tree 为 `2c509e07ec25fa8811adae17f9826e967c9bcee1`，包含 106 个顶层补丁
 
 ## 本地证据
 
-以 `/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/` 为证据根目录：
+以 `${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/` 为证据根目录：
 
 - `windows-protection-headless-r2/evidence.zip`：保留的真实 Windows 崩溃测试，SHA-256
   `36e8420b25e16e5364624e6b9287ee13e0a7b37e991964433b7bd202c251f637`。
@@ -1170,7 +1170,7 @@ macOS 使用本地临时签名；没有 Developer ID 签名或公证，不具备
 App 模型规划至浏览器操作的界面验收。首轮测试与模型原始引用断言失败均保留。
 
 详细诊断记录保存在本地证据文件
-`/Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/当前窗口标签统计修复-20260905.md`
+`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/当前窗口标签统计修复-20260905.md`
 （不随仓库发布）。
 源码基线仍为 `383d157c`，十九个受控修改已与 overlay 对齐，未生成最终提交。
 macOS/Android 十七个外部删除的测试夹具文件仍待恢复确认；没有将删除吸收进发行候选。
@@ -1460,12 +1460,12 @@ Computer Use 本轮仍返回 Mac 锁屏，尚无新增真实系统授权和界�
 
 ```sh
 node apps/browser/scripts/verify-android-agent-target.mjs verify \
-  --adb /Users/lazy/Library/Android/sdk/platform-tools/adb \
+  --adb ${ANDROID_SDK_ROOT}/platform-tools/adb \
   --serial 48311FDKD002P8 \
   --profile /data/user/0/app.gcsa.aegis/aegis-test-user-data-recovery-r1 \
-  --source-root /Users/lazy/Projects/GCSA-aegis-chromium-linux-amd64/src \
-  --manifest /Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/monitor-recovery-candidate-r1/manifest.json \
-  --build-dir /Users/lazy/Projects/GCSA-aegis/.artifacts/v2-final/android-monitor-recovery-r1
+  --source-root ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-chromium-linux-amd64/src \
+  --manifest ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/monitor-recovery-candidate-r1/manifest.json \
+  --build-dir ${LOCAL_WORKSPACE_ROOT}/GCSA-aegis/.artifacts/v2-final/android-monitor-recovery-r1
 ```
 
 执行位置为集成工作区。Android 本轮始终复用现有构建句柄；只增补宿主验收脚本和文档，冻结的 44 个 Chromium 文件未改动。必须继续完成入口可点击、中文输入、本地 Qwen 任务闭环、全部常用场景、真实定时与保护行为，不能用这个前置检查替代十项完成标准。
@@ -2343,7 +2343,7 @@ R4只将该谓词及对应断言改为无事件循环的请求列表读取，保
 ## 9月10日补充：macOS提速实测及监控日志修复
 
 最新分项证据见[当前页总结延迟与修复记录](summary-latency-2026-09-10.md)。
-固定验收入口已收敛为 `/Users/lazy/Applications/GCSA Aegis Test.app`，沿用用户已确认的
+固定验收入口已收敛为 `${LOCAL_APPLICATIONS_ROOT}/GCSA Aegis Test.app`，沿用用户已确认的
 个人开发签名和独立资料目录；旧包及资料副本完整保留。此处不构成发行签名或公证声明。
 
 性能版在同一9B本地Qwen、同一cnBeta首页与同一目标下，两轮实际任务记录分别为

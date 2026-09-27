@@ -12,7 +12,7 @@
 
 | 角色 | 仓库与分支 | 用途 |
 | --- | --- | --- |
-| DEV | `quinn521/aegis-browser:main` | 个人开发集成主线；DEV 是仓库角色，不是长期分支名 |
+| DEV | 开发 Fork 的 `main` | 个人开发集成主线；DEV 是仓库角色，不是长期分支名 |
 | 开发 | 个人 Fork 的 `codex/*` | CI 与功能切片先向 DEV main 提 PR |
 | 上游提交 | 个人 Fork 的独立 `codex/upstream-*` | 携带已在 DEV 验证的公开变更 |
 | 上游 | `gcsagroup/aegis-browser:main` | 接收经 DEV 验证的 PR，独立执行自己的门槛 |
@@ -30,13 +30,13 @@
 1. 从最新 DEV main 创建隔离开发分支，实施 CI 或功能切片。
 2. 提交前运行完整本地质量门；生成最终提交后核对源码树及证据身份。
 3. 向 DEV main 提 Draft PR，在 GitHub 托管 runner 上执行质量门。
-4. Astra high 独立 review；Sol 修复，原 reviewer 在保留上下文的情况下复审最终 HEAD。
+4. 独立 review；实现者修复，原 reviewer 在保留上下文的情况下复审最终 HEAD。
 5. 当前协调任务确认本地、CI、review、分支保护和冲突状态，执行 DEV 合并。
 6. 对 DEV main 的实际合并提交执行 push CI。失败则停止向上游推进。
 7. 创建只包含已验证公开变更的上游提交分支；排除个性化文件，重新运行本地及 PR CI。
 8. 上游 PR 满足自身最终代码审查和必需检查后才合并；再检查上游 main。
 
-CI 实现采用 Sol xhigh；架构调整采用 Astra high；独立 review 使用 fresh-context Astra high。实现任务不得自行批准自己的 review，也不自行执行合并。用户已授权当前协调任务在门槛全部满足后自动合并，正常绿灯不重复请求确认。
+CI 实现、架构设计与独立 review 分别交接，独立 review 使用新上下文。实现任务不得自行批准自己的 review，也不自行执行合并。合并须遵循当前授权和实际门槛，不继承历史会话授权。
 
 ## 3. 本地与托管质量门共用入口
 
@@ -233,7 +233,7 @@ A/B完成：配置代码已独立review、DEV PR实际hosted CI通过、保护�
 
 ## 13. 新实现任务交接
 
-实施工作树：`/Volumes/ExternalSSD/repositories/aegis-browser-worktrees/ci-gates-plan`，初始分支 `codex/ci-gates-plan`，base为本文件第1节DEV SHA；本方案仅新增文档，未修改现有功能和CI。实现前刷新origin/main，与功能任务协调package.json等共享文件，原Chromium构建区不可并发占用。
+实施工作树：`${LOCAL_WORKSPACE_ROOT}/aegis-browser-worktrees/ci-gates-plan`，初始分支 `codex/ci-gates-plan`，base为本文件第1节DEV SHA；本方案仅新增文档，未修改现有功能和CI。实现前刷新origin/main，与功能任务协调package.json等共享文件，原Chromium构建区不可并发占用。
 
 功能任务 `01a09eaf-6ce3-76f3-9412-542511a3d978` 继续访问服务；CI任务专职本方案A/B/C。先完成A/B到可review的DEV Draft PR，不在缺少native隔离环境时停止所有基础工作；C如阻塞，明确所需环境和已完成边界。每次交付提供PR、base/head、命令/退出码、run/attempt、review状态和下一步。合并由原协调任务执行。
 

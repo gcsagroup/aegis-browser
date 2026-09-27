@@ -20,7 +20,7 @@
 
 行为和完整门槛以[冻结修订 4](spec.zh-CN.md)为准；实施技术决策见[架构复核与实施方案](architecture-review-20260922.zh-CN.md)；逐项事实写入[A/PF 台账](acceptance-tracker.zh-CN.md)；下一工作窗口及证据边界见[Handoff](handoff-20260920.zh-CN.md)。历史 P0 切片保留在[p0-implementation](p0-implementation.zh-CN.md)。
 
-之前累计在本页的 PR 推进日志已由本次清晰的当前计划替代，原文保留在[精确基线版本](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/docs/plans/access-service-v1.0/development-plan.zh-CN.md)，仅用于追溯，不再执行其中“下一步合并 #135/#148/#158”等历史指令。分支、模型分工、审查和最终 HEAD 门禁只引用[DEV CI 指南](../../development/ci.zh-CN.md)。
+之前累计在本页的 PR 推进日志已由本次清晰的当前计划替代，原文保留在[精确基线版本](https://github.com/quinn521/aegis-browser/blob/c4ffb50a0d8efc684aa1ba0022daf5113def19a6/docs/plans/access-service-v1.0/development-plan.zh-CN.md)，仅用于追溯，不再执行其中“下一步合并 #135/#148/#158”等历史指令。分支、交付职责、审查和最终 HEAD 门禁只引用[DEV CI 指南](../../development/ci.zh-CN.md)。
 
 当前已有普通 DIRECT/PROXY coordinator、候选快照发布、执行 ACK、durable commit、幂等重试以及多个浏览器入口的源码回归。可信 `SetSiteProxy` 用户闭环、身份/节点生产提交、真实 Xray、计量/额度和完整请求矩阵尚未闭合。host 级单 endpoint transport 仍不足以实现全部规则语义；拒绝冲突不能代替不同路由并存。
 

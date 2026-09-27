@@ -25,6 +25,6 @@
 
 ## 模型与所有权
 
-独立设计范围评审实际为 Astra high；可用子代理列表不提供 Sol，指定 Sol 实现阶段无法执行，主任务以当前 Astra 完成实现（主任务 effort 未由工具显式确认）。最终评审使用另一新上下文 Astra high，修复后同一 reviewer 复审。评审不代替测试、托管检查或人工批准。
+独立设计范围评审已执行；原记录中的指定执行环境存在可用性与身份核验限制，详情保留在本地回执。最终评审使用另一新上下文，修复后同一 reviewer 复审。评审不代替测试、托管检查或人工批准。
 
 产品 worktree：`aegis-browser-worktrees/trusted-current-site-boundary-20260922`；native 候选：`aegis-chromium-feature-scope-20260922`。F 不写 Q 专属目录。回退按独立提交 revert；不改数据库格式，不删除现场。
