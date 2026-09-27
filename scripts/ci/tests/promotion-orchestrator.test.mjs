@@ -11,7 +11,7 @@ import {assertRemoteHeads, listPulls} from '../promotion-github.mjs';
 import {buildCandidate} from '../promotion-candidate.mjs';
 
 const root = resolve(import.meta.dirname, '../../..');
-const config = {personalRepo:'quinn521/aegis-browser',upstreamRepo:'gcsagroup/aegis-browser',readToken:'read',forkToken:'fork',upstreamToken:'upstream'};
+const config = {personalRepo:'fixture-maintainer/aegis-browser',upstreamRepo:'gcsagroup/aegis-browser',readToken:'read',forkToken:'fork',upstreamToken:'upstream'};
 const B = 'a'.repeat(40), D = 'b'.repeat(40), H = 'c'.repeat(40);
 const state = {state:'same',originMain:B,upstreamMain:B,develop:D};
 const candidate = buildCandidate('promotion',D,B,()=>true);
@@ -25,13 +25,34 @@ function pull(branch=candidate.branch, head=H) {
     base:{ref:'main',sha:B,repo:{full_name:config.upstreamRepo}}};
 }
 
-test('v2 controller rejects old mode, main, other repositories and untrusted events',()=>{
+test('v2 controller runs only for the configured fork, trusted event/ref and opt-in',async()=>{
   const env={GITHUB_REPOSITORY:config.personalRepo,GITHUB_REF:'refs/heads/develop',GITHUB_EVENT_NAME:'push',
-    AEGIS_PROMOTION_AUTOMATION:MODE,GH_TOKEN:'read',AEGIS_FORK_AUTOMATION_TOKEN:'fork',AEGIS_UPSTREAM_TOKEN:'upstream'};
-  assert.deepEqual(loadPromotionConfig(env),config);
-  for (const [key,value] of [['GITHUB_REF','refs/heads/main'],['GITHUB_REPOSITORY',config.upstreamRepo],
+    AEGIS_PROMOTION_FORK_REPOSITORY:config.personalRepo,AEGIS_PROMOTION_AUTOMATION:MODE,
+    GH_TOKEN:'read',AEGIS_FORK_AUTOMATION_TOKEN:'fork',AEGIS_UPSTREAM_TOKEN:'upstream'};
+  const loaded = loadPromotionConfig(env);
+  assert.deepEqual(loaded,config);
+  assert.equal(await runPromotionCycle(loaded,operations({sameTree:()=>true})),'idle');
+  for (const [key,value] of [['GITHUB_REF','refs/heads/main'],['GITHUB_REPOSITORY','other-fixture/aegis-browser'],
     ['GITHUB_EVENT_NAME','pull_request_target'],['AEGIS_PROMOTION_AUTOMATION','enabled'],['GH_TOKEN','']]) {
     assert.throws(()=>loadPromotionConfig({...env,[key]:value}));
+  }
+});
+
+test('missing, malformed, mismatched or upstream fork variable cannot authorize a cycle',()=>{
+  const env={GITHUB_REPOSITORY:config.personalRepo,GITHUB_REF:'refs/heads/develop',GITHUB_EVENT_NAME:'push',
+    AEGIS_PROMOTION_FORK_REPOSITORY:config.personalRepo,AEGIS_PROMOTION_AUTOMATION:MODE,
+    GH_TOKEN:'read',AEGIS_FORK_AUTOMATION_TOKEN:'fork',AEGIS_UPSTREAM_TOKEN:'upstream'};
+  const missing={...env};
+  delete missing.AEGIS_PROMOTION_FORK_REPOSITORY;
+  assert.throws(()=>loadPromotionConfig(missing),/AEGIS_PROMOTION_FORK_REPOSITORY/u);
+  for (const value of ['', 'fixture-maintainer', 'fixture-maintainer/.', 'fixture-maintainer/..',
+    'fixture-maintainer/aegis-browser/extra', 'fixture-maintainer/../bad', 'fixture-maintainer/aegis-browser\n']) {
+    assert.throws(()=>loadPromotionConfig({...env,AEGIS_PROMOTION_FORK_REPOSITORY:value}),/AEGIS_PROMOTION_FORK_REPOSITORY/u);
+  }
+  assert.throws(()=>loadPromotionConfig({...env,AEGIS_PROMOTION_FORK_REPOSITORY:'other-fixture/aegis-browser'}),/configured fork/u);
+  for (const upstream of [config.upstreamRepo,'GCSAGROUP/AEGIS-BROWSER']) {
+    assert.throws(()=>loadPromotionConfig({...env,GITHUB_REPOSITORY:upstream,
+      AEGIS_PROMOTION_FORK_REPOSITORY:upstream}),/differ from upstream/u);
   }
 });
 
@@ -147,7 +168,7 @@ test('open PR inventory follows pagination rather than overlooking an older acti
   assert.equal(all.length,101);assert.equal(seen.length,2);assert.equal(all.at(-1).number,22);
 });
 
-test('workflow validator rejects old enablement, main/PR triggers and write-token contexts',()=>{
+test('workflow validator rejects missing fork gates, old enablement, main/PR triggers and write-token contexts',()=>{
   const original=YAML.parse(readFileSync(join(root,'.github/workflows/promotion-orchestrator.yml'),'utf8'));
   const dir=mkdtempSync(join(tmpdir(),'aegis-workflow-'));
   try {
@@ -158,6 +179,9 @@ test('workflow validator rejects old enablement, main/PR triggers and write-toke
     assert.equal(validate(original).status,0);
     for (const mutate of [w=>w.on.push.branches.push('main'),w=>{w.on.pull_request={};},
       w=>{w.jobs.promote.if="${{ vars.AEGIS_PROMOTION_AUTOMATION == 'enabled' }}";},
+      w=>{w.jobs.promote.if=w.jobs.promote.if.replace("vars.AEGIS_PROMOTION_FORK_REPOSITORY != '' && ",'');},
+      w=>{w.jobs.promote.if=w.jobs.promote.if.replace(" && github.repository != 'gcsagroup/aegis-browser'",'');},
+      w=>{delete w.jobs.promote.steps[2].env.AEGIS_PROMOTION_FORK_REPOSITORY;},
       w=>{w.permissions.contents='write';},w=>{w.jobs.promote.steps[0].with['persist-credentials']=true;}]) {
       const changed=structuredClone(original);mutate(changed);assert.notEqual(validate(changed).status,0);
     }
@@ -193,7 +217,7 @@ for (const kind of ['promotion', 'backflow']) {
     assert.equal(writes[0].path, '/pulls');
     assert.equal(writes[0].method, 'POST');
     assert.equal(writes[0].body.base, base);
-    assert.equal(writes[0].body.head, `quinn521:${selected.branch}`);
+    assert.equal(writes[0].body.head, `fixture-maintainer:${selected.branch}`);
     assert.equal(writes[0].body.draft, true);
   });
 }

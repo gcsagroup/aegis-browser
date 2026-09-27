@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {qualityWorkflowRunState, requireGreenQuality} from '../promotion-quality.mjs';
-const promotionConfig = {personalRepo: 'quinn521/aegis-browser', readToken: 'read', forkToken: 'fork', upstreamToken: 'upstream'};
+const promotionConfig = {personalRepo: 'fixture-maintainer/aegis-browser', readToken: 'read', forkToken: 'fork', upstreamToken: 'upstream'};
 function qualityRun({id, branch, sha, conclusion = 'success', runAttempt = 1}) {
   return {
     id,

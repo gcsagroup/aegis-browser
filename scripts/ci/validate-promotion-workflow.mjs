@@ -40,8 +40,8 @@ try {
   if (job?.name !== 'promotion-orchestrator' || job?.['runs-on'] !== 'ubuntu-24.04' || job?.['timeout-minutes'] !== 10) {
     fail('Promotion job identity, runner, or timeout changed');
   }
-  if (job?.if !== "${{ github.repository == 'quinn521/aegis-browser' && github.ref == 'refs/heads/develop' && vars.AEGIS_PROMOTION_AUTOMATION == 'direct-upstream-v2' }}") {
-    fail('Promotion job must remain explicitly gated by AEGIS_PROMOTION_AUTOMATION');
+  if (job?.if !== "${{ vars.AEGIS_PROMOTION_FORK_REPOSITORY != '' && github.repository == vars.AEGIS_PROMOTION_FORK_REPOSITORY && github.repository != 'gcsagroup/aegis-browser' && github.ref == 'refs/heads/develop' && vars.AEGIS_PROMOTION_AUTOMATION == 'direct-upstream-v2' }}") {
+    fail('Promotion job must require the configured fork, trusted develop ref and v2 opt-in');
   }
   if (job.permissions || 'continue-on-error' in job) fail('Promotion job may not override permissions or suppress failures');
 
@@ -63,8 +63,9 @@ try {
     runner?.env?.GH_TOKEN !== '${{ github.token }}' ||
     runner?.env?.AEGIS_FORK_AUTOMATION_TOKEN !== '${{ secrets.AEGIS_FORK_AUTOMATION_TOKEN }}' ||
     runner?.env?.AEGIS_UPSTREAM_TOKEN !== '${{ secrets.AEGIS_UPSTREAM_TOKEN }}' ||
+    runner?.env?.AEGIS_PROMOTION_FORK_REPOSITORY !== '${{ vars.AEGIS_PROMOTION_FORK_REPOSITORY }}' ||
     runner?.env?.AEGIS_PROMOTION_AUTOMATION !== '${{ vars.AEGIS_PROMOTION_AUTOMATION }}'
-  ) fail('Promotion workflow token and upstream bindings changed');
+  ) fail('Promotion workflow token and repository variable bindings changed');
   if ('continue-on-error' in runner || runner.if) fail('Promotion transition may not suppress or conditionally hide failures');
 
   if (/pull_request(?:_target)?|workflow_run|self-hosted/u.test(source)) fail('Promotion workflow may not execute from PR, workflow_run, or self-hosted contexts');
