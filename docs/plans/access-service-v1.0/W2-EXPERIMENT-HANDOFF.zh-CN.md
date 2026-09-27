@@ -35,3 +35,9 @@
 本地实验入口为 [`prototypes/access-metering/README.md`](../../../prototypes/access-metering/README.md)，可用 `pnpm run test:access-metering` 执行；它接入 `quality:fast`。SQLite 账本记录 `actual_bytes`、`held_bytes`、`uncertain_bytes`，loopback relay 在转发前取得有限许可；测试包含连接未关闭时的用量、独立 origin 字节、双向共享额度截断和两个 kill/restart 窗口。fixture 没有未确认 byte 的自动结算机制，旧许可会继续占用额度。
 
 本地 fixture 通过时只给 `LOCAL_FIXTURE_PASS`，精确结果绑定对应提交与测试报告。真实 W2 的 A118、PF04/PF09、适用 Vision/splice 快路径、权威字节对账、生产额度执行和恢复仍为 `BLOCKED_RESOURCE` / `NOT_RUN`；G0–G3 不因本记录改变。
+
+## 2026-09-28 本地双逻辑节点增量
+
+[双节点设计与边界](W2-MULTINODE-PREP-20260928.zh-CN.md)在现有单 relay 之外准备中心 byte lease、两个独立节点 journal、幂等授权、累计上报、epoch/周期隔离和保守崩溃恢复。它只使用本机临时 SQLite、可控时钟和模拟发送；原 loopback relay 及其原有验收口径保持独立。新增代码与测试结果须绑定交付时的最终 HEAD，设计审查结论不替代代码审查、CI 或真实服务证据。
+
+指定管理页的 VLESS + WS + TLS 候选依用户要求保留为**相关开发完成后回测 TODO**，本地双节点夹具不向该节点发流量，也不能代替 Linux REALITY/Vision 实验。A36/A37 的跨节点/上报子场景仅获得本地状态机准备；真实账户身份、多物理节点、A118、PF04/PF09 仍须另行绑定受控节点、权威计数点与冻结预算后执行，台账状态暂不升级。
