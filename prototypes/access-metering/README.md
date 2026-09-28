@@ -12,6 +12,19 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s prototypes/access-mete
 
 The same command is exposed as `pnpm run test:access-metering` and included in `quality:fast`. Tests bind only `127.0.0.1`, create temporary SQLite files, use no credentials or external network, and kill only their own relay subprocesses. Every socket, process readiness, marker, and settlement wait in the tests has a timeout.
 
+## Synthetic SM-00 manifest preflight
+
+[`sm00_preflight.py`](sm00_preflight.py) is a **check-only, offline** preparation for the [P3c/A118 SM-00 design](../../docs/plans/access-service-v1.0/W2-SERVER-METERING-DESIGN-20260928.zh-CN.md). It reads a bounded local JSON file and emits `LOCAL_PREFLIGHT_ONLY` plus its SHA-256. It has no endpoint, socket, process, API, deployment, or resource-discovery action. Run the committed synthetic example from the repository root:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 prototypes/access-metering/sm00_preflight.py \
+  --check-only --manifest prototypes/access-metering/sm00_synthetic_manifest.json
+```
+
+The example contains invented `synthetic-*` identities and fingerprints, including a fabricated 40-character source value. None identifies a real Xray build, operator, server, credential, or origin. The validator accepts only schema `sm00-synthetic-v1` with `SYNTHETIC_ONLY` classification, synthetic resource and identity references, six fixed-format build digests, explicit target-byte boundaries, and evidence fields for every declared writer and both synthetic fast directions. It requires finite byte, time, concurrency, failure, retry, storage, and stop budgets, plus a durable request/recovery contract. Missing fields, extra endpoint/credential fields, placeholders such as `TBD`, duplicate JSON keys, invalid numeric types, broken account/realm mappings, omitted path evidence, symlinked manifest files, and oversized/nonregular input fail closed. Error output does not print manifest values.
+
+Static hash shape and `synthetic-all-paths-enumerated` are **input checks**, not proof that a real binary has those hashes or that an actual Xray path has been found. This schema intentionally rejects real deployment identities. A future production manifest needs separately reviewed code locations, authenticated resource binding, owners, frozen thresholds, a runtime watchdog, and independent evidence. Passing this command is neither a runnable SM-00 service result nor A118/PF04/PF09 acceptance. The supplied WS+TLS candidate stays a development-complete retest TODO.
+
 ## Two logical nodes and central leases
 
 `lease_ledger.py` and `lease_node.py` are separate from the TCP relay. Tests create the central SQLite file and each node's journal explicitly with `create=True`; reopening uses the default `create=False`, so a missing file fails closed instead of silently starting a new balance. Two logical nodes share one finite account quota. A central grant reserves a bounded byte lease in a durable transaction. Repeating the same boot or grant request key returns its original result, including partial grants and denials; a changed request with the same key fails.
