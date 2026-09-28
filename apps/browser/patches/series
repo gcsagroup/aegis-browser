@@ -204,3 +204,4 @@
 0204-fix-tab-close-intent-and-native-receipts-2-0-063.patch
 0205-preserve-negative-close-constraints-2-0-064.patch
 0206-bind-current-article-without-router-call-2-0-065.patch
+0207-fix-android-build-dependencies-2-0-066.patch

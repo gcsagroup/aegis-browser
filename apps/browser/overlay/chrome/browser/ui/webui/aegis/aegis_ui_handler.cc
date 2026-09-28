@@ -36,7 +36,8 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
-#include "chrome/browser/ui/side_panel/side_panel_entry.h"
+// GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
+#include "chrome/browser/ui/side_panel/side_panel_entry.h"  // nogncheck
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #endif
