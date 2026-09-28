@@ -4,20 +4,15 @@
 
 [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml)
 
-GCSA-aegis Browser is a Chromium fork that integrates privacy and security controls in the browser and engine layers. It is not an Electron shell and does not treat an extension as the product.
+GCSA-aegis Browser integrates privacy and security controls into Chromium and its engine.
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
 ## Current status
 
-- The current source is on `main`. All 108 Chromium patches replay from the pinned base to tree `319366182c31108e29e62d2f2199aff29a0b86e8`; [the 2026-09-10 consolidation record](../../docs/audit/main-consolidation-2026-09-10.md) separates source verification from incomplete platform acceptance.
+macOS is the current focus; runtime, real-network and distribution validation remain open. Other platforms follow the [roadmap](../../docs/roadmap.md).
 
-- The Browser Agent v2 candidate lists **108 top-level Chromium patches** plus **2 nested V8 patches**. Patches 0079–0095 replay to `c930fa41ef7e9522f145848f3080ee0cc1edc4d8`; patch 0096 replays to `f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f`; patch 0097 produces `a3040bb0dea05e87c2a141b9a29a237a96953620`; patch 0098 produces `911f5c45acf3de10741008cf8f40948d57d31b7a`; patch 0099 produces `54f2d8dcf03ecf53b074b4919769ea652fdf5ab5` (tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`); patch 0100 produces `44b79c59cf594b83af5c181842a57c2604d209ed` (tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`); patch 0101 produces `1c63ce994b2815fe1f3dc07608ff121d987e0441` (tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`); and patch 0102 produces committed source `13807aaf086948bdff0370e356718d0c2ac54d27` (tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`).
-- The 57-, 65-, 67-, 95-, and 97-patch records remain historical snapshots and do not qualify the 108-patch artifacts.
-- macOS native and browser tests have passed for the candidate source; exact platform manifests and final UI acceptance remain required. There is no product-signed, notarized, installed, or published desktop release.
-- Android and Windows candidate builds are in validation; no APK, AAB, or Windows package is accepted until the device/host records are complete.
-
-The repository therefore has no release-ready desktop or Android artifact.
+The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) records historical replay and test results, not qualification of the current source.
 
 ## Pinned Chromium base
 
@@ -37,8 +32,6 @@ The pin is a fixed snapshot. It does not track newer Stable releases automatical
 - [Overlay synchronization rules](./docs/overlay.md)
 - [Chromium tree layout](./docs/tree-layout.md)
 - [Patch maintenance notes](./patches/README.md)
-
-For operational truth, use `patches/series`, `patches/v8/series`, and the scripts under `scripts/`. A historical status note is not a substitute for a fresh replay, build, or runtime check.
 
 ## Repository layout
 
@@ -63,7 +56,7 @@ The Chromium root may also be recorded in `apps/browser/.chromium-root`, which i
 
 ## Local workflow
 
-Run commands from the repository root. Bootstrap, fetch, sync, and dependency downloads use the network.
+Complete the [workspace setup](../../README.md#getting-started) first. Run commands from the repository root with the mise toolchain active (`mise exec -- <command>` if needed). Bootstrap, fetch, sync and dependency downloads use the network.
 
 ```bash
 # Prepare depot_tools.
@@ -80,7 +73,7 @@ pnpm --filter @gcsa-aegis/browser bootstrap:libtorrent
 
 # Build and run the component development app.
 pnpm --filter @gcsa-aegis/browser build
-pnpm --filter @gcsa-aegis/browser run
+pnpm run browser:run
 
 # Produce a non-component Release build-tree input.
 pnpm --filter @gcsa-aegis/browser build:release
@@ -116,16 +109,9 @@ Build success alone does not promote an output to RC or release status.
 
 ## Patch and overlay model
 
-`overlay/` records the expected Aegis integration source. It is neither a standalone product nor the applied source of record. Changes must be exported into the ordered patch series and replayed on the exact pinned Chromium base.
+`overlay/` holds the expected integration source. Export changes into the ordered [Chromium](./patches/series) and [V8](./patches/v8/series) patch lists, then replay them on the pinned bases. Those lists define the current inventory; historical counts and tree hashes belong in [audit records](../../docs/audit/README.md).
 
-The current source accounting is:
-
-- 108 top-level patches listed for Chromium.
-- 2 additional patches applied inside the nested V8 checkout.
-- The 57-, 65-, 67-, 95-, and 97-patch identities are historical and do not cover the current v2 candidate.
-- Patches 0079–0095 passed an exact isolated-index replay on the previously verified 78-patch tree; patch 0096 independently produced the exact 96-patch tree; patch 0097 produced the exact 97-patch tree; patch 0098 produced the exact 98-patch tree `7069e2b065466bbab3e3007e5866a3790e85ed47`; patch 0099 produced the exact 99-patch tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`; patch 0100 produced the exact 100-patch tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`; patch 0101 produced the exact 101-patch tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`; and patch 0102 produced the exact 102-patch tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`. Artifact identity and runtime qualification remain platform-specific.
-
-“Present in the series” means only that a patch file is listed. It does not prove successful replay, build reproducibility, platform acceptance, signing, packaging, or publication.
+A listed patch is not proof of successful replay, build or runtime validation.
 
 ## Product boundaries
 
@@ -159,8 +145,6 @@ Before any desktop publication, the same candidate must have:
 4. product identity, signing, notarization, and packaging;
 5. fresh-install and upgrade acceptance on representative systems; and
 6. an explicit release decision.
-
-All 108 Chromium patches and both V8 patches passed complete isolated-index replay from their pinned bases. The recent local macOS candidate has 527 native-test results; this source publication did not rebuild or release an App, APK, or Windows package. Final Qwen output, installed-platform acceptance, production signing, and notarization remain separate gates.
 
 ## Android
 

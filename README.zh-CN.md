@@ -14,93 +14,87 @@
 
 **一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。macOS 优先，随后推进 iPhone 与 iPad。**
 
-[开始参与](#开始参与) · [平台进度](#平台进度) · [路线图](docs/roadmap.zh-CN.md) · [Browser 指南](apps/browser/README.zh-CN.md) · [iOS 指南](apps/ios/README.zh-CN.md) · [文档](docs/README.zh-CN.md)
+[开始参与](#开始参与) · [平台进度](#平台进度) · [路线图](docs/roadmap.zh-CN.md) · [文档](docs/README.zh-CN.md)
 
----
-
-Aegis 正在持续开发。**发行 No-Go：**macOS 浏览器和原生 iOS/iPadOS App 均尚无完成发行验收的可分发版本。
+Aegis 正在开发中，尚无通过发行验收的可分发版本。
 
 ## 核心能力
 
-| 能力 | 用途 | 平台与当前阶段 |
-| --- | --- | --- |
-| 隐私浏览 | 在 macOS 上通过链接、Cookie、钓鱼及部分指纹保护减少追踪与高风险导航；原生 App 隔离普通与私密配置。 | macOS：源码已包含，运行验收待完成。iOS/iPadOS：已有记录的 Simulator 基线，当前源码待重新验证。 |
-| 可控 Agent | 展示计划，由浏览器策略约束操作，并在敏感操作前请求确认。 | macOS：源码已包含，运行验收待完成。iOS/iPadOS：四条离线工作流已有记录的 Simulator 基线。 |
-| 原生下载 | 使用 Chromium 浏览器下载界面及受限的下载路径。 | macOS：源码已包含，运行验收待完成。 |
-| 访问策略 | 通过原生代理组件路由选定流量；必要路径不可用时按 fail-closed 处理。 | macOS：源码已包含，集成与真实网络验收待完成。 |
+| 能力 | 范围 |
+| --- | --- |
+| 隐私浏览 | macOS 上的链接、Cookie、钓鱼及部分指纹保护；iOS 普通与私密配置隔离。 |
+| 可控 Agent | 可见计划、浏览器策略约束和敏感操作确认；iOS 提供四条离线工作流。 |
+| 原生下载 | macOS 上的 Chromium 下载界面与受限下载路径。 |
+| 访问策略 | macOS 上的选定流量代理路由；必要路径不可用时按 fail-closed 处理。 |
 
 ## 开始参与
 
 ### 准备开发环境
 
-仓库通过 [`.mise.toml`](.mise.toml) 固定 Node.js `22.23.1`、pnpm `9.15.0` 和 Python `3.11.9`。请安装 Git、[mise](https://mise.jdx.dev/)、ripgrep（`rg`）和支持 C++20 的编译器（默认使用 `clang++`）。在 macOS 上，可运行 `xcode-select --install` 安装 Xcode Command Line Tools；使用 Homebrew 时可运行 `brew install ripgrep`。
+安装 Git、[mise](https://mise.jdx.dev/)、ripgrep（`rg`）和 C++20 编译器（默认 `clang++`）。macOS 可用 `xcode-select --install` 安装 Command Line Tools，Homebrew 用户可用 `brew install ripgrep`。信任工具链配置前，请先查看 [`.mise.toml`](.mise.toml)。
 
 ```bash
 git clone https://github.com/gcsagroup/aegis-browser.git
 cd aegis-browser
+mise trust .mise.toml
 mise install
 mise exec -- pnpm install --frozen-lockfile
 mise exec -- pnpm run quality:fast
 ```
 
-这组命令运行共享 workspace 检查；不会获取或构建 Chromium，也不验证原生 iOS App。
+这组命令执行共享 workspace 检查，不获取 Chromium，也不构建两端原生 App。
 
 ### 从源码构建 macOS 浏览器
 
-按照 [Browser 工程指南](apps/browser/README.zh-CN.md)准备 `depot_tools`、获取独立的大型 Chromium 固定版本源码、重放补丁序列，以及构建并运行浏览器。Chromium 还需要额外的主机依赖；该指南提供构建和验证命令。
+[Browser 指南](apps/browser/README.zh-CN.md)包含主机依赖、`depot_tools`、独立 Chromium 源码、补丁重放、构建与验证步骤。
 
 ### 打开 iOS 工程
 
-[iOS 工程指南](apps/ios/README.zh-CN.md)说明 Xcode 与 Simulator 前提、仓库中的 `apps/ios/Aegis.xcodeproj`，以及 iPhone/iPad Simulator 流程。仅在需要重新生成工程时才使用 XcodeGen。
+打开 `apps/ios/Aegis.xcodeproj`；Xcode 和 iPhone/iPad Simulator 配置见 [iOS 指南](apps/ios/README.zh-CN.md)。仅重新生成工程时需要 XcodeGen。
 
 ## 平台进度
 
-| 平台 | 优先级 | 当前状态 |
+| 平台 | 优先级 | 状态 |
 | --- | --- | --- |
-| macOS | 当前 | Chromium 集成和 Access Service 持续推进；当前源码的运行与分发验收仍待完成。 |
-| iOS / iPadOS | 下一阶段 | 原生 SwiftUI/WKWebView App 已有记录的 Simulator 基线；当前源码、真机与分发验收仍待完成。 |
-| Windows / Android / Linux | 后续 | 已有源码和评估入口；当前不承诺近期发行。 |
+| macOS | 当前 | Chromium 与 Access 集成推进中；当前源码的运行、真实网络和分发验收待完成。 |
+| iOS / iPadOS | 下一阶段 | 已有记录的 Simulator 基线；当前源码、真机和分发验收待完成。 |
+| Windows / Android / Linux | 后续 | 保留源码和评估工具，暂不承诺近期发行。 |
 
-macOS 可以独立达到发行条件，不需要等待 iOS。各里程碑的完成标准见[路线图](docs/roadmap.zh-CN.md)。完整浏览器构建、真实网络场景、真机验收、签名、公证、安装与升级分别属于发行门槛。
+macOS 可独立于 iOS 达到发行条件。完成标准见[路线图](docs/roadmap.zh-CN.md)。
 
 ## 隐私与 AI
 
-网页摘要使用有界页面快照，并由浏览器再次校验和脱敏；敏感页面会退回设备端启发式处理。远程摘要请求可能将经过裁剪和脱敏的页面内容发送给用户选择的兼容模型端点；使用非 loopback 目的地前，需要明确选择并确认。Browser Agent 的操作受浏览器策略约束，敏感操作还需要单独确认。iOS Agent 工作流目前离线运行，没有生产远程模型链路。这些控制不构成通用的数据防泄漏边界，详见[架构与隐私边界](docs/architecture.zh-CN.md)。
+远程摘要会将经过浏览器校验、裁剪和脱敏的页面内容发往所选模型端点；非 loopback 目的地需要明确选择并确认。敏感页面使用设备端启发式处理。Agent 操作受浏览器策略约束，敏感操作需单独确认；iOS Agent 离线运行。这些控制不构成通用的数据防泄漏系统，详见[隐私边界](docs/architecture.zh-CN.md)。
 
 ## 架构
 
 | 目录 | 职责 |
 | --- | --- |
-| [`packages/core`](packages/core) | 共享 TypeScript 策略逻辑、生成资源和 Agent 契约。 |
-| [`apps/browser`](apps/browser) | Chromium 集成、原生浏览器服务、构建脚本和桌面打包。 |
-| [`apps/ios`](apps/ios) | 原生 SwiftUI/WKWebView App、策略与 Agent 模块、内嵌扩展。 |
-
-桌面浏览器基于 Chromium fork；iOS 是独立的原生实现。具体实现见[架构文档](docs/architecture.zh-CN.md)和各平台工程指南。
+| [`packages/core`](packages/core) | 共享 TypeScript 策略、生成资源和 Agent 契约。 |
+| [`apps/browser`](apps/browser) | Chromium fork、原生服务、构建和桌面打包。 |
+| [`apps/ios`](apps/ios) | 原生 SwiftUI/WKWebView App 与内嵌扩展。 |
 
 ## 贡献与文档
 
 ### 参与贡献
 
-公开贡献请 Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser)，提交范围聚焦的改动，运行相关检查，并向上游 `main` 分支提交 Pull Request。请说明改动范围、验证证据和已知限制。
+Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser)，向上游 `main` 提交范围聚焦的 PR，附上验证结果和已知限制。
 
 ### 文档导航
 
-- **项目：** [文档索引](docs/README.zh-CN.md) · [路线图](docs/roadmap.zh-CN.md) · [架构](docs/architecture.zh-CN.md)
-- **工程：** [Browser 工程指南](apps/browser/README.zh-CN.md) · [iOS 工程指南](apps/ios/README.zh-CN.md)
-- **参考：** [研究与限制](docs/research-map.zh-CN.md) · [历史审计记录](docs/audit/README.zh-CN.md) · [变更记录](CHANGELOG.md)
+[文档索引](docs/README.zh-CN.md) · [架构](docs/architecture.zh-CN.md) · [研究](docs/research-map.zh-CN.md) · [历史审计](docs/audit/README.zh-CN.md) · [变更记录](CHANGELOG.zh-CN.md)
 
 ### 许可证与鸣谢
 
-GCSA 原创源码采用 [Apache-2.0](LICENSE)。Chromium、libtorrent 与其他第三方组件保留各自许可证。
-
-另见[第三方开源鸣谢](THIRD_PARTY_NOTICES.md)。
+GCSA 原创源码采用 [Apache-2.0](LICENSE)。第三方组件保留各自许可证，见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
 <details>
 <summary>徽章说明</summary>
 
-- **CI**：显示公开 `main` 分支的质量工作流结果，不代表 Chromium 运行或分发验收。
-- **C++ 单元测试**：覆盖 standalone C++20 Access 测试，以及 Chromium GoogleTest wiring 和补丁检查，不代表完整 Chromium GoogleTest 或浏览器运行覆盖。
-- **Codacy Grade**：显示上游 `gcsagroup/aegis-browser` 的 `main` 分支静态分析结果，不代表测试覆盖率或运行时验收。
-- **License**：标识仓库许可证。平台徽章表示产品优先级，不代表发行状态。
+- **CI：**公开 `main` 分支的质量检查。
+- **C++ 单元测试：**standalone Access 测试、Chromium GoogleTest 接线与补丁检查。
+- **Codacy Grade：**上游 `main` 的静态分析，不是测试覆盖率。
+
+这些徽章不代表浏览器运行或发行验收通过。
 
 </details>
