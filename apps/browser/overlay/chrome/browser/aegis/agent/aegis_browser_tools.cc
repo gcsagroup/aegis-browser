@@ -39,7 +39,8 @@
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/navigator/browser_navigator.h"
-#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+// GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"  // nogncheck
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #endif

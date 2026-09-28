@@ -152,6 +152,7 @@ source_set("aegis") {
     "//chrome/browser/devtools",
     "//chrome/browser/preloading/prefetch/no_state_prefetch",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/tab_contents",
     "//chrome/browser/ui/tab_contents:impl",
     "//chrome/common",
     "//chrome/common:mojo_bindings",
@@ -213,7 +214,6 @@ source_set("aegis") {
       "summary_session.h",
     ]
     deps += [
-      "//chrome/browser/ui/tab_contents",
       "//chrome/browser/ui/tabs:tab_strip",
       "//ui/message_center/public/cpp",
     ]
@@ -377,6 +377,7 @@ test("aegis_browser_unittests") {
     ":profile_support",
     "//build:chromeos_buildflags",
     "//chrome/browser/profiles:test_support",
+    "//chrome/common/aegis",
     "//chrome/test:test_support",
     "//chrome/test:test_support_unit",
     "//content/test:test_support",
@@ -403,7 +404,6 @@ test("aegis_browser_unittests") {
       "//chrome/browser/actor/ui:test_support",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/webui/aegis",
-      "//chrome/common/aegis",
       "//components/actor/core",
       "//components/download/public/common:public",
       "//components/undo",
