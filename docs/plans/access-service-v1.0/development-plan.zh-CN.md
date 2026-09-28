@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | W0 质量 | #187 已在记录的配置和选定矩阵下完成有界底座退出，#195 已更新 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)；可接续 W1 | 上游 #26 最终 H/S 的精确 Chromium 补证仍待独立运行；旧配置 PASS 不转作新 SHA 回执，G0 仍未验收 |
 | W1 路由 | [W1b/W1c 准备合同](FEATURE-HANDOFF-W1b-W1c-preparation.zh-CN.md)已交付；本地未合并候选 `3bf39b32bff99376d35cc2e1cc1a60809b5ed520` 的 dispatch 14 项及 full 30 项通过，但同 H 的 `PrefetchUsesSelectedProxy` 仍失败 | 先定位该正向失败，再完成配对安装/finalize、生产 guard 路径、单目标 BLOCK/A96/A97 与完整 Browser 回归；最终候选重跑并由原 reviewer 复审。旧 74 项矩阵的 54 PASS/20 FAIL 不是此 H 的完整结果 |
-| W2 计量 | #196/#197 交付租约账本和两个 loopback relay/origin 进程夹具，#197 本地 81 项通过；#198 交付[单执行点适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md) | 先推进离线运行清单校验与本地实现准备。用户提供的 Linux/REALITY/Vision 候选资源仅供绑定准备；固定 Xray/配置/adapter/origin、鉴权、writer 完成语义、耐久时间合同及有限预算仍待核验。真实 A118、RateLease/PF09、PF04 未完成，WS+TLS 保留开发后回测 |
+| W2 计量 | #196/#197 交付租约账本和两个 loopback relay/origin 进程夹具，#197 本地 81 项通过；#198 交付[单执行点适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)；本增量新增[合成 SM-00 离线清单预检](../../../prototypes/access-metering/README.md) | 继续绑定真实资源、固定调用路径与有限预算，另实现受控负载/观测/看门狗；预检只给 `LOCAL_PREFLIGHT_ONLY`，不代表真实 SM-00。用户提供的 Linux/REALITY/Vision 候选资源仅供绑定准备；固定 Xray/配置/adapter/origin、鉴权、writer 完成语义及耐久时间合同仍待核验。真实 A118、RateLease/PF09、PF04 未完成，WS+TLS 保留开发后回测 |
 | I 集成 | #195–#198 已合并；#198 合并后的实际 push CI 已补齐，与暂停交接的待核状态不同 | 每次接续先刷新精确 develop；后续功能按独立 review、最终 H 本地/托管检查及实际 S push CI 串行交付。上游晋升仍须新 B/D/H/M、适用集成证据及当前授权 |
 
 重型 Chromium 时段优先用于 W1 正向失败定位；#26 历史补证随后串行安排。每次实际使用前仍须核对源树、产物、进程、锁和容量并完成所有权交接；计划表不授予对其他任务 source/out 的并发写权限。机器目录、资源身份和时段回执保存在私有索引。
@@ -83,7 +83,7 @@ W1 新增路由实验见[技术方案第 2、5 节](architecture-review-20260922
 
 W2 执行[计量实验矩阵](architecture-review-20260922.zh-CN.md)，输出明确路径决策：已证明可计量并限额的固定转发路径、需评审的内核适配，或 BLOCKED。保留 Vision；未证明的 splice 不可当作已支持优化，不虚构禁用选项。中心 durable 预留防止重发，实际字节恢复仍需独立证明，不能把预留全额当成已消费流量。
 
-[P3c/A118 单执行点服务端适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)已由 #198 交付，限定为边界、资源/阈值清单和验收方案。下一步是离线运行清单校验和本地准备；没有新增生产 adapter 或真实实验结果。候选 VPS 的存在不替代固定 Linux/Xray 身份、鉴权映射、下行计数点、负责人和预算绑定；同一 VPS 的两条线路不算两个独立故障域。RateLease/PF09 和 PF04 UI 采样分别后续交付，不能由设计或本地计量结果提升 A118 状态。
+[P3c/A118 单执行点服务端适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)已由 #198 交付，限定为边界、资源/阈值清单和验收方案。本增量提供[纯离线合成清单校验器](../../../prototypes/access-metering/sm00_preflight.py)与[运行说明](../../../prototypes/access-metering/README.md)：`PYTHONDONTWRITEBYTECODE=1 python3 prototypes/access-metering/sm00_preflight.py --check-only --manifest prototypes/access-metering/sm00_synthetic_manifest.json`。结果仅为 `LOCAL_PREFLIGHT_ONLY`，没有生产 adapter、受控负载 runner 或真实 SM-00 实验结果。候选 VPS 的存在不替代固定 Linux/Xray 身份、鉴权映射、下行计数点、负责人和预算绑定；同一 VPS 的两条线路不算两个独立故障域。RateLease/PF09 和 PF04 UI 采样分别后续交付，不能由设计或本地计量结果提升 A118 状态。
 
 首阶段单执行节点、集中账本、有限测试账户保留独立凭据、签名配置、过期/吊销、账户和物理上限。自动访客/账户流程、真实备用切换和完整公平约束必须在 G1 前补齐。多节点租约先做 fixture；启用第二真实节点前补真实账本、额度及速率联调，不删最终范围。
 
