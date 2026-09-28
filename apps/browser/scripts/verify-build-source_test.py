@@ -73,6 +73,11 @@ class SourceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             check.verify_source(self.src, self.browser)
 
+    def test_copied_v8_without_git_cannot_borrow_parent_identity(self):
+        (self.src / 'v8/.git').rename(Path(self.temp.name) / 'saved-v8-git')
+        with self.assertRaisesRegex(ValueError, '独立 Git 来源'):
+            check.verify_source(self.src, self.browser)
+
     def test_overlay_mismatch_and_missing_file_are_rejected(self):
         (self.browser / 'overlay/value').write_text('unpublished\n')
         with self.assertRaisesRegex(ValueError, 'overlay'):

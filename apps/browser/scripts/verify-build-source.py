@@ -10,6 +10,9 @@ from ci.candidate import BROWSER, git, verify_tree
 def verify_source(source, browser=BROWSER):
     source = Path(source).resolve(strict=True)
     browser = Path(browser).resolve(strict=True)
+    for repository in (source, source / 'v8'):
+        if Path(git(repository, 'rev-parse', '--show-toplevel')).resolve() != repository:
+            raise ValueError('构建依赖缺少独立 Git 来源，不能借用父仓库身份：' + str(repository))
     base = (browser / 'CHROMIUM_COMMIT').read_text().strip()
     patches = browser / 'patches'
     chromium_tree = verify_tree(source, base, patches)
