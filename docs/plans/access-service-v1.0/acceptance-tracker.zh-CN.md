@@ -30,7 +30,7 @@ Content 6 项包含 `PrefetchBrowserTestBase.HttpMhtmlSubframePrefetchKeepsRestr
 
 每个实验实施后补实际测试名、产品/Chromium/Xray/配置身份、原始日志及 unit/browser/service 的执行结果；新增预期场景不得复用历史 S 项的局部 PASS。
 
-[2026-09-28 单执行点计量适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)提供 SM-00–SM-07 的拟议验收输入，关联 A36/A37、A84 与 A118 的服务端子场景。SM 场景尚无 runner 或真实运行结果；本次不改变这些主行的执行状态。PF04/PF09 的实现与完整验收仍独立待办，设计通过不等于 A118 完成。
+[2026-09-28 单执行点计量适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)提供 SM-00–SM-07 的拟议验收输入，关联 A36/A37、A84 与 A118 的服务端子场景。本增量新增[合成 SM-00 离线清单校验器](../../../prototypes/access-metering/sm00_preflight.py)及[可复现命令](../../../prototypes/access-metering/README.md)：它只检查合成输入并输出 `LOCAL_PREFLIGHT_ONLY`，不属于这些主行的真实服务执行映射。SM 场景仍无受控负载/故障 runner 或真实运行结果；本次不改变 A36/A37、A84、A118 及其他 A/PF 主行的实现、测试映射、执行与结果列。PF04/PF09 的实现与完整验收仍独立待办，预检通过不等于 A118 完成。
 
 ## 状态与证据约定
 

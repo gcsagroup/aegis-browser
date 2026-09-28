@@ -48,4 +48,6 @@
 
 ## 单执行点服务端适配设计输入
 
-[P3c/A118 适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)基于 `develop@93b0deb4c6ecdd8009755cda02fb627d5eff6cea` 盘点已有符号，定义拟议的鉴权归属、双向目标 byte、许可/write/完成边界、缓冲及故障上界、持久重试和 SM-00–SM-07 验收场景。当前仅有设计文档；真实 Xray 代码位置、服务端/账本负责人、受控资源与实验阈值待绑定，尤其下行 writer 的准确目标字节完成语义仍待证明。RateLease/PF09、PF04 UI 采样及真实服务端实现另行交付；A118 整体状态不变。
+[P3c/A118 适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)基于 `develop@93b0deb4c6ecdd8009755cda02fb627d5eff6cea` 盘点已有符号，定义拟议的鉴权归属、双向目标 byte、许可/write/完成边界、缓冲及故障上界、持久重试和 SM-00–SM-07 验收场景。本增量在设计之外新增[合成 SM-00 离线清单校验器](../../../prototypes/access-metering/sm00_preflight.py)；真实 Xray 代码位置、服务端/账本负责人、受控资源与实验阈值待绑定，尤其下行 writer 的准确目标字节完成语义仍待证明。RateLease/PF09、PF04 UI 采样及真实服务端实现另行交付；A118 整体状态不变。
+
+从仓库根目录运行 `PYTHONDONTWRITEBYTECODE=1 python3 prototypes/access-metering/sm00_preflight.py --check-only --manifest prototypes/access-metering/sm00_synthetic_manifest.json`。输入及拒绝规则见[原型说明](../../../prototypes/access-metering/README.md)；输出的 `LOCAL_PREFLIGHT_ONLY` 只确认合成清单格式和字段约束，不核对真实构建 hash、实际 writer 路径、鉴权资源、物理预算或观测有效性。SM-00 的受控健康负载、故障 runner、看门狗及清理回执尚未实现，SM-00–SM-07 没有真实运行结果；WS+TLS 仍是开发完成后的回测 TODO。
