@@ -14,93 +14,87 @@
 
 **A local-first privacy and security browser with a controllable AI Agent. macOS first; iPhone and iPad next.**
 
-[Getting started](#getting-started) · [Platform progress](#platform-progress) · [Roadmap](docs/roadmap.md) · [Browser guide](apps/browser/README.md) · [iOS guide](apps/ios/README.md) · [Documentation](docs/README.md)
+[Getting started](#getting-started) · [Platform progress](#platform-progress) · [Roadmap](docs/roadmap.md) · [Documentation](docs/README.md)
 
----
-
-Aegis is under active development. **Release No-Go:** neither the macOS browser nor the native iOS/iPadOS app has a qualified distributable build.
+Aegis is in development; no release-qualified build is available yet.
 
 ## Core capabilities
 
-| Capability | What it does | Platform and current stage |
-| --- | --- | --- |
-| Privacy browsing | Reduces tracking and risky navigation through link, cookie, phishing and selected fingerprint protections; the native app isolates standard and private profiles. | macOS: in source, runtime acceptance pending. iOS/iPadOS: recorded Simulator baseline; current-source validation pending. |
-| Controllable Agent | Shows plans, keeps actions under browser policy and asks before sensitive operations. | macOS: in source, runtime acceptance pending. iOS/iPadOS: four offline workflows with a recorded Simulator baseline. |
-| Native downloads | Uses Chromium's browser download surfaces and bounded download paths. | macOS: in source, runtime acceptance pending. |
-| Access policy | Routes selected traffic through native proxy components and fails closed when a required route is unavailable. | macOS: in source, integration and real-network acceptance pending. |
+| Capability | Scope |
+| --- | --- |
+| Privacy browsing | macOS link, cookie, phishing and selected fingerprint protections; separate standard/private profiles on iOS. |
+| Controllable Agent | Visible plans, browser-enforced policy and approval for sensitive actions; four offline workflows on iOS. |
+| Native downloads | Chromium download UI with bounded download paths on macOS. |
+| Access policy | Selected-traffic proxy routing on macOS; required routes fail closed when unavailable. |
 
 ## Getting started
 
 ### Prepare the development environment
 
-The repository pins Node.js `22.23.1`, pnpm `9.15.0` and Python `3.11.9` in [`.mise.toml`](.mise.toml). Install Git, [mise](https://mise.jdx.dev/), ripgrep (`rg`) and a C++20 compiler (`clang++` by default). On macOS, install Xcode Command Line Tools with `xcode-select --install`; Homebrew users can install ripgrep with `brew install ripgrep`.
+Install Git, [mise](https://mise.jdx.dev/), ripgrep (`rg`) and a C++20 compiler (`clang++` by default). On macOS: `xcode-select --install` for Command Line Tools and `brew install ripgrep` if using Homebrew. Review [`.mise.toml`](.mise.toml) before trusting its pinned toolchain.
 
 ```bash
 git clone https://github.com/gcsagroup/aegis-browser.git
 cd aegis-browser
+mise trust .mise.toml
 mise install
 mise exec -- pnpm install --frozen-lockfile
 mise exec -- pnpm run quality:fast
 ```
 
-These commands run shared workspace checks. They do not fetch or build Chromium or validate the native iOS app.
+This runs shared workspace checks, without fetching Chromium or building either native app.
 
 ### Build the macOS browser from source
 
-Follow the [Browser engineering guide](apps/browser/README.md) to prepare `depot_tools`, fetch the separate, large pinned Chromium checkout, replay the patch series, and build and run the browser. Chromium also requires additional host dependencies; the guide provides build and verification commands.
+The [Browser guide](apps/browser/README.md) covers host dependencies, `depot_tools`, the separate Chromium checkout, patch replay, builds and verification.
 
 ### Open the iOS project
 
-The native [iOS engineering guide](apps/ios/README.md) covers Xcode and Simulator prerequisites, the checked-in `apps/ios/Aegis.xcodeproj`, and the iPhone/iPad Simulator workflow. XcodeGen is needed only when project regeneration is required.
+Open `apps/ios/Aegis.xcodeproj`; follow the [iOS guide](apps/ios/README.md) for Xcode and iPhone/iPad Simulator setup. XcodeGen is needed only to regenerate the project.
 
 ## Platform progress
 
-| Platform | Priority | Current state |
+| Platform | Priority | Status |
 | --- | --- | --- |
-| macOS | Now | Chromium integration and Access Service work continue; current-source runtime and distribution qualification remain open. |
-| iOS / iPadOS | Next | Native SwiftUI/WKWebView app has a recorded Simulator baseline; current-source, real-device and distribution work remain open. |
-| Windows / Android / Linux | Later | Source and evaluation entry points exist; no near-term release commitment. |
+| macOS | Now | Chromium and Access integration in progress; current-source runtime, real-network and distribution validation pending. |
+| iOS / iPadOS | Next | Recorded Simulator baseline; current-source, real-device and distribution validation pending. |
+| Windows / Android / Linux | Later | Source and evaluation tools retained; no near-term release commitment. |
 
-macOS may qualify independently of iOS. See the [roadmap](docs/roadmap.md) for milestone exit criteria. Full browser builds, real-network scenarios, device acceptance, signing, notarization, installation and upgrades are separate release gates.
+macOS can qualify independently of iOS. See the [roadmap](docs/roadmap.md) for release criteria.
 
 ## Privacy and AI
 
-Page summaries use a bounded snapshot that the browser validates and redacts; sensitive pages fall back to an on-device heuristic. A remote summary request can send bounded, redacted page content to a user-selected compatible model endpoint. Non-loopback use requires explicit destination selection and confirmation. Browser Agent actions remain under browser-owned policy, with separate confirmation for sensitive actions. The iOS Agent workflows are currently offline and have no production remote-model path. These controls do not establish a general data-loss-prevention boundary; see the [architecture and privacy boundaries](docs/architecture.md).
+Remote summaries send bounded, browser-validated and redacted page content to the selected model endpoint; non-loopback destinations require explicit selection and confirmation. Sensitive pages use on-device heuristics. Browser policy constrains Agent actions, with separate approval for sensitive operations. iOS Agent workflows are offline. See [privacy boundaries](docs/architecture.md); these controls are not a general data-loss-prevention system.
 
 ## Architecture
 
 | Directory | Responsibility |
 | --- | --- |
-| [`packages/core`](packages/core) | Shared TypeScript policy logic, generated assets and Agent contracts. |
-| [`apps/browser`](apps/browser) | Chromium integration, native browser services, build scripts and desktop packaging. |
-| [`apps/ios`](apps/ios) | Native SwiftUI/WKWebView app, policy and Agent modules, and embedded extensions. |
-
-The desktop browser is a Chromium fork; iOS is a separate native implementation. See the [architecture](docs/architecture.md) and platform guides for implementation details.
+| [`packages/core`](packages/core) | Shared TypeScript policies, generated assets and Agent contracts. |
+| [`apps/browser`](apps/browser) | Chromium fork, native services, builds and desktop packaging. |
+| [`apps/ios`](apps/ios) | Native SwiftUI/WKWebView app and embedded extensions. |
 
 ## Contributing and documentation
 
 ### Contributing
 
-For a public contribution, fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser), make a focused change, run relevant checks, and open a pull request against upstream `main`. Include the scope, validation evidence and known limitations.
+Fork [`gcsagroup/aegis-browser`](https://github.com/gcsagroup/aegis-browser) and open a focused PR against upstream `main`, with validation results and known limitations.
 
 ### Documentation
 
-- **Project:** [Documentation index](docs/README.md) · [Roadmap](docs/roadmap.md) · [Architecture](docs/architecture.md)
-- **Engineering:** [Browser engineering guide](apps/browser/README.md) · [iOS engineering guide](apps/ios/README.md)
-- **Reference:** [Research and limitations](docs/research-map.md) · [Historical audit records](docs/audit/README.md) · [Changelog](CHANGELOG.md)
+[Documentation index](docs/README.md) · [Architecture](docs/architecture.md) · [Research](docs/research-map.md) · [Historical audits](docs/audit/README.md) · [Changelog](CHANGELOG.md)
 
 ### License and acknowledgements
 
-GCSA-authored source uses [Apache-2.0](LICENSE). Chromium, libtorrent and other third-party components retain their own licenses.
-
-See the [third-party acknowledgements](THIRD_PARTY_NOTICES.md).
+GCSA-authored source uses [Apache-2.0](LICENSE). Third-party components retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
 <details>
 <summary>What the badges show</summary>
 
-- **CI** reports the public `main` quality workflow; it does not prove Chromium runtime or distribution acceptance.
-- **C++ Unit Tests** covers standalone C++20 Access tests and targeted Chromium GoogleTest wiring and patch checks, not full Chromium GoogleTest or browser runtime coverage.
-- **Codacy Grade** reports static analysis for upstream `gcsagroup/aegis-browser` on `main`, not test coverage or runtime acceptance.
-- **License** identifies repository licensing. The platform badge shows product priority, not release status.
+- **CI:** public `main` quality checks.
+- **C++ Unit Tests:** standalone Access tests, Chromium GoogleTest wiring and patch checks.
+- **Codacy Grade:** upstream `main` static analysis, not test coverage.
+
+These badges do not establish browser runtime or release qualification.
 
 </details>
