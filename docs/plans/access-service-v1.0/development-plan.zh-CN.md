@@ -1,6 +1,19 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
-更新日期：2026-09-24 18:16 UTC。#177 已合并到 develop@`43e4e55070d098986585034616029588a75e104d`，该 S 的推送质量与 C++ CI 已通过；main/upstream 同为 `c1399852270c1bbce612dbea1558266d6fc57162`。Q 的最终 #177 B/H/M、原生及浏览器原始回执与未覆盖范围见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。下面旧日期候选保留为历史快照，不作为当前执行指令；G0 与 131 个主行不因 #177 的局部矩阵通过而升级。
+更新日期：2026-09-28。此次回读基线为 `origin/develop@587cc587de6d65e7ca1165b5d80bd29fc44fa025`（#198），上游 `main@dcfd5ac0759184ad757c2a097bb3409e767b8366`。#198 的实际 develop push [run 36344117383 / attempt 1](https://github.com/quinn521/aegis-browser/actions/runs/36344117383) 已回读 GitHub jobs 与 artifact `10940028090`：31 项 PASS，`testedSha` 为该 develop 提交，`sourceStable=true`，`nativeIntegration=NOT_APPLICABLE`。这是设计文档交付的基础 CI，不是 W2 服务端或 Chromium 验收。
+
+## 当前执行板（2026-09-28）
+
+| 工作线 | 已交付及证据边界 | 接续动作与退出条件 |
+| --- | --- | --- |
+| W0 质量 | #187 已在记录的配置和选定矩阵下完成有界底座退出，#195 已更新 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)；可接续 W1 | 上游 #26 最终 H/S 的精确 Chromium 补证仍待独立运行；旧配置 PASS 不转作新 SHA 回执，G0 仍未验收 |
+| W1 路由 | [W1b/W1c 准备合同](FEATURE-HANDOFF-W1b-W1c-preparation.zh-CN.md)已交付；本地未合并候选 `3bf39b32bff99376d35cc2e1cc1a60809b5ed520` 的 dispatch 14 项及 full 30 项通过，但同 H 的 `PrefetchUsesSelectedProxy` 仍失败 | 先定位该正向失败，再完成配对安装/finalize、生产 guard 路径、单目标 BLOCK/A96/A97 与完整 Browser 回归；最终候选重跑并由原 reviewer 复审。旧 74 项矩阵的 54 PASS/20 FAIL 不是此 H 的完整结果 |
+| W2 计量 | #196/#197 交付租约账本和两个 loopback relay/origin 进程夹具，#197 本地 81 项通过；#198 交付[单执行点适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md) | 先推进离线运行清单校验与本地实现准备。用户提供的 Linux/REALITY/Vision 候选资源仅供绑定准备；固定 Xray/配置/adapter/origin、鉴权、writer 完成语义、耐久时间合同及有限预算仍待核验。真实 A118、RateLease/PF09、PF04 未完成，WS+TLS 保留开发后回测 |
+| I 集成 | #195–#198 已合并；#198 合并后的实际 push CI 已补齐，与暂停交接的待核状态不同 | 每次接续先刷新精确 develop；后续功能按独立 review、最终 H 本地/托管检查及实际 S push CI 串行交付。上游晋升仍须新 B/D/H/M、适用集成证据及当前授权 |
+
+重型 Chromium 时段优先用于 W1 正向失败定位；#26 历史补证随后串行安排。每次实际使用前仍须核对源树、产物、进程、锁和容量并完成所有权交接；计划表不授予对其他任务 source/out 的并发写权限。机器目录、资源身份和时段回执保存在私有索引。
+
+**W0 有界底座退出不等于 G0；G0 继续 UNVERIFIED，131 个 A/PF 主行不升级，当前尚不具备对外交付 Alpha 的证据。** W3–W6 的生命周期、性能长跑和安装分发条件保留。下列有日期的旧执行板和候选只用于追溯。
 
 ## 历史：2026-09-22 F 独立 transport scope 准入增量
 
@@ -24,9 +37,9 @@
 
 当前已有普通 DIRECT/PROXY coordinator、候选快照发布、执行 ACK、durable commit、幂等重试以及多个浏览器入口的源码回归。可信 `SetSiteProxy` 用户闭环、身份/节点生产提交、真实 Xray、计量/额度和完整请求矩阵尚未闭合。host 级单 endpoint transport 仍不足以实现全部规则语义；拒绝冲突不能代替不同路由并存。
 
-截至 2026-09-24 本轮回读，#162 已 MERGED，最终 H=`4670c4dd5f24db61f38f102cc60475658e63554a`，S=`ca4e1b24c750746d6e20a83fa58f1d2500791d02`。该 H 三个选定 unit target 共 96 项及三组 browser fixture 的原始报告通过；native 总状态是 `PARTIAL_PASS`。这些历史结果不转用于新的候选。**W0 未闭环，G0 继续 UNVERIFIED，G1–G3 未达到。**
+历史 #162 最终 H=`4670c4dd5f24db61f38f102cc60475658e63554a`、S=`ca4e1b24c750746d6e20a83fa58f1d2500791d02` 的三个选定 unit target 共 96 项及三组 browser fixture 通过，native 总状态是 `PARTIAL_PASS`。它们不转用于新候选。后续 #187 已关闭 QUALITY-HANDOFF 列明的有界 W0 底座欠账；G0 继续 UNVERIFIED，G1–G3 未达到。
 
-## 2026-09-24 18:16 UTC 执行板
+## 历史：2026-09-24 18:16 UTC 执行板
 
 | 顺序 / 负责人 | 当前状态 | 下一动作与完成条件 |
 | --- | --- | --- |
@@ -38,7 +51,7 @@
 | F：W1a 接口/fixture 准备 | 与 Q 独立；#166 模型路由后续工作 DEFERRED | 可并行准备 W1a，不操作 Q source/out/锁；W0 关闭后再推进 W1b/W1c |
 | W2 服务端实验 | 执行资源/负责人未绑定，BLOCKED（实验执行） | 可准备协议；实际部署或付费 API 调用需另有授权 |
 
-Q 的 #177 Chromium candidate、out、验证证据由 Q 保管；已释放唯一重型构建槽，#23 Hc9 的独立重试按交接串行使用。F 的独立文件不由 Q 覆盖。精确目录、原始证据和缺口分类见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
+上述 #177/#23 槽位安排仅为历史记录，不能据此启动构建或认定当前 owner。实际时段按本页当前执行板及实时交接核验；历史精确目录、原始证据和缺口分类见 [QUALITY-HANDOFF](QUALITY-HANDOFF.md)。
 
 ## 实施顺序与依赖
 
@@ -70,7 +83,7 @@ W1 新增路由实验见[技术方案第 2、5 节](architecture-review-20260922
 
 W2 执行[计量实验矩阵](architecture-review-20260922.zh-CN.md)，输出明确路径决策：已证明可计量并限额的固定转发路径、需评审的内核适配，或 BLOCKED。保留 Vision；未证明的 splice 不可当作已支持优化，不虚构禁用选项。中心 durable 预留防止重发，实际字节恢复仍需独立证明，不能把预留全额当成已消费流量。
 
-本地两进程夹具后的下一项准备为 [P3c/A118 单执行点服务端适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)。本阶段只交付基于真实符号的边界、资源/阈值清单和验收方案，经过独立审查后另行安排适配实现。真实 Linux/Xray、鉴权映射、下行计数点及负责人尚未绑定；RateLease/PF09 和 PF04 UI 采样分别后续交付，不能由设计或本地计量结果提升 A118 状态。
+[P3c/A118 单执行点服务端适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)已由 #198 交付，限定为边界、资源/阈值清单和验收方案。下一步是离线运行清单校验和本地准备；没有新增生产 adapter 或真实实验结果。候选 VPS 的存在不替代固定 Linux/Xray 身份、鉴权映射、下行计数点、负责人和预算绑定；同一 VPS 的两条线路不算两个独立故障域。RateLease/PF09 和 PF04 UI 采样分别后续交付，不能由设计或本地计量结果提升 A118 状态。
 
 首阶段单执行节点、集中账本、有限测试账户保留独立凭据、签名配置、过期/吊销、账户和物理上限。自动访客/账户流程、真实备用切换和完整公平约束必须在 G1 前补齐。多节点租约先做 fixture；启用第二真实节点前补真实账本、额度及速率联调，不删最终范围。
 
