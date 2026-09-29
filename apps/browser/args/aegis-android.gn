@@ -33,3 +33,7 @@ disable_fieldtrial_testing_config = true
 
 # 无终端构建也须等待全部静态检查完成，检查失败直接使构建失败。
 android_static_analysis = "on"
+
+# 固定使用 Ninja；不启用仅供测试的 V8 内存修改接口。
+use_siso = false
+v8_enable_memory_corruption_api = false
