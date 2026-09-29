@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
 #define CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
 
+#include "base/functional/callback_forward.h"
 #include "chrome/browser/aegis/metalink_parser.h"
 
 class Profile;
@@ -28,8 +29,11 @@ void SetMetalinkVerificationStatus(download::DownloadItem& item,
 
 // Starts a Browser-native, credential-free mirror download. The verifier owns
 // itself until the file hash matches or all mirrors fail.
-void StartVerifiedMetalinkDownload(Profile* profile,
-                                   MetalinkParseResult result);
+// 仅在下载管理器实际创建任务后返回成功；地址校验失败必须回传错误。
+void StartVerifiedMetalinkDownload(
+    Profile* profile,
+    MetalinkParseResult result,
+    base::OnceCallback<void(bool, std::string)> started_callback);
 
 }  // namespace aegis
 

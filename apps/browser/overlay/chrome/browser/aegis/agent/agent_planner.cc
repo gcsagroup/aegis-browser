@@ -692,6 +692,17 @@ bool AgentGoalRequestsWindowTabMetadata(std::string_view goal) {
   });
 }
 
+bool AgentGoalRequestsWorkspaceRestore(std::string_view goal) {
+  return !BookmarkGoalIsReadOnly(goal) &&
+         !GoalContainsAny(
+             goal, {"不要恢复", "不要还原", "不恢复", "不还原", "不要恢復",
+                    "不要還原", "不恢復", "不還原", "do not restore",
+                    "don't restore", "without restoring", "do not reopen"}) &&
+         GoalContainsAny(goal, {"工作区", "工作區", "workspace"}) &&
+         GoalContainsAny(goal,
+                         {"恢复", "还原", "恢復", "還原", "restore", "reopen"});
+}
+
 bool AgentBrowserGoalNeedsClarification(std::string_view goal,
                                        AgentWorkflowKind workflow) {
   return workflow == AgentWorkflowKind::kBrowserSteward &&

@@ -21,7 +21,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/task/thread_pool.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_observer.h"
 #include "components/download/public/common/download_interrupt_reasons.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_url_parameters.h"
@@ -89,18 +91,29 @@ class MetalinkVerificationData : public base::SupportsUserData::Data {
 const char kMetalinkVerificationDataKey[] =
     "Aegis Metalink verification status";
 
-class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
+class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+                                 public ProfileObserver {
  public:
-  MetalinkDownloadVerifier(Profile* profile, MetalinkParseResult result)
+  MetalinkDownloadVerifier(Profile* profile,
+                           MetalinkParseResult result,
+                           base::OnceCallback<void(bool, std::string)> callback)
       : profile_(profile),
+        started_callback_(std::move(callback)),
         result_(std::move(result)),
         host_resolver_(network::SimpleHostResolver::Create(base::BindRepeating(
             [](Profile* profile) {
               return profile->GetDefaultStoragePartition()->GetNetworkContext();
             },
-            profile))) {}
+            profile))) {
+    profile_->AddObserver(this);
+  }
 
   void Start() { StartNextMirror(); }
+
+  void OnProfileWillBeDestroyed(Profile* profile) override {
+    CompleteStart(false, "Metalink profile closed before download started");
+    delete this;
+  }
 
   void OnDownloadUpdated(download::DownloadItem* item) override {
     if (item != current_item_) {
@@ -144,12 +157,35 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
   }
 
  private:
-  ~MetalinkDownloadVerifier() override { StopObserving(); }
+  ~MetalinkDownloadVerifier() override {
+    StopObserving();
+    profile_->RemoveObserver(this);
+    CompleteStart(false, "Metalink download stopped before task creation");
+  }
+
+  void CompleteStart(bool ok, std::string error) {
+    if (started_callback_) {
+      start_timeout_.Stop();
+      std::move(started_callback_).Run(ok, std::move(error));
+    }
+  }
+
+  void OnStartTimeout() {
+    CompleteStart(false, "Metalink download start timed out");
+    delete this;
+  }
 
   void StartNextMirror() {
     if (next_mirror_ >= result_.mirrors.size()) {
+      CompleteStart(false, "Metalink download has no available public mirror");
       delete this;
       return;
+    }
+    if (started_callback_ && !start_timeout_.IsRunning()) {
+      start_timeout_.Start(
+          FROM_HERE, base::Seconds(30),
+          base::BindOnce(&MetalinkDownloadVerifier::OnStartTimeout,
+                         weak_factory_.GetWeakPtr()));
     }
     const GURL url = result_.mirrors[next_mirror_++].url;
     host_resolver_->ResolveHost(
@@ -199,6 +235,8 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
     parameters->set_callback(
         base::BindOnce(&MetalinkDownloadVerifier::OnDownloadStarted,
                        weak_factory_.GetWeakPtr()));
+    // 下载管理器接手后以它的实际回调为准，不能超时销毁校验器后留下无人校验的任务。
+    start_timeout_.Stop();
     profile_->GetDownloadManager()->DownloadUrl(std::move(parameters));
   }
 
@@ -212,6 +250,8 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
     SetMetalinkVerificationStatus(*current_item_,
                                   MetalinkVerificationStatus::kPending);
     current_item_->AddObserver(this);
+    CompleteStart(true, "");
+    OnDownloadUpdated(current_item_);
   }
 
   void StopObserving() {
@@ -270,6 +310,8 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
   }
 
   raw_ptr<Profile> profile_;
+  base::OnceCallback<void(bool, std::string)> started_callback_;
+  base::OneShotTimer start_timeout_;
   MetalinkParseResult result_;
   std::unique_ptr<network::SimpleHostResolver> host_resolver_;
   size_t next_mirror_ = 0;
@@ -294,12 +336,17 @@ void SetMetalinkVerificationStatus(download::DownloadItem& item,
   item.UpdateObservers();
 }
 
-void StartVerifiedMetalinkDownload(Profile* profile,
-                                   MetalinkParseResult result) {
+void StartVerifiedMetalinkDownload(
+    Profile* profile,
+    MetalinkParseResult result,
+    base::OnceCallback<void(bool, std::string)> started_callback) {
   if (!profile || !result.ok || result.mirrors.empty()) {
+    std::move(started_callback).Run(false, "invalid Metalink download request");
     return;
   }
-  (new MetalinkDownloadVerifier(profile, std::move(result)))->Start();
+  (new MetalinkDownloadVerifier(profile, std::move(result),
+                                std::move(started_callback)))
+      ->Start();
 }
 
 }  // namespace aegis

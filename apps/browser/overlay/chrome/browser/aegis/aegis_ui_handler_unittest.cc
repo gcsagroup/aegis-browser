@@ -10,6 +10,7 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+#include "chrome/browser/aegis/metalink_download_verifier.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -190,6 +191,36 @@ INSTANTIATE_TEST_SUITE_P(AllGroupColors,
                                          tab_groups::TabGroupColorId::kPurple,
                                          tab_groups::TabGroupColorId::kCyan,
                                          tab_groups::TabGroupColorId::kOrange));
+
+TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
+  AddTab(browser(), GURL("https://docs.example/first"));
+  AddTab(browser(), GURL("https://other.example/second"));
+  AddTab(browser(), GURL("chrome://aegis/"));
+  auto* list = TabListInterface::From(browser());
+  const int32_t selected = list->GetTab(0)->GetHandle().raw_value();
+  const auto one =
+      agent::WorkspaceRestoreOrigins(profile(), browser(), selected, false);
+  ASSERT_EQ(one.size(), 1u);
+  EXPECT_EQ(one.front(), url::Origin::Create(list->GetTab(0)->GetURL()));
+  const auto window =
+      agent::WorkspaceRestoreOrigins(profile(), browser(), selected, true);
+  EXPECT_EQ(window.size(), 2u);
+  EXPECT_TRUE(
+      agent::WorkspaceRestoreOrigins(profile(), browser(), -1, false).empty());
+  EXPECT_TRUE(
+      agent::WorkspaceRestoreOrigins(profile()->GetPrimaryOTRProfile(true),
+                                     browser(), selected, true)
+          .empty());
+}
+
+TEST_F(AegisUIHandlerTest, InvalidMetalinkCannotReportTaskCreated) {
+  base::test::TestFuture<bool, std::string> result;
+  MetalinkParseResult invalid;
+  StartVerifiedMetalinkDownload(profile(), std::move(invalid),
+                                result.GetCallback());
+  EXPECT_FALSE(result.Get<0>());
+  EXPECT_FALSE(result.Get<1>().empty());
+}
 
 TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
   AegisUIConfig config;

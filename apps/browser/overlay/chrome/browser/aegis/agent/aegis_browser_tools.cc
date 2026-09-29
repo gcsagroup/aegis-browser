@@ -413,7 +413,9 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
     material.append(std::to_string(browser->GetSessionID().id()));
     material.push_back('\n');
-    material.append(browser->IsActive() ? "active" : "inactive");
+    material.append((browser->GetWindow() && browser->GetWindow()->IsActive())
+                        ? "active"
+                        : "inactive");
     material.push_back('\n');
     TabListInterface* model = TabListInterface::From(browser);
     for (int index = 0; model && index < model->GetTabCount(); ++index) {
@@ -1005,6 +1007,38 @@ struct AegisBrowserTools::UrlCheckBatch {
   ToolResultCallback callback;
 };
 
+std::vector<url::Origin> WorkspaceRestoreOrigins(
+    Profile* profile,
+    BrowserWindowInterface* browser,
+    int32_t selected_tab_id,
+    bool include_window_tabs) {
+  std::vector<url::Origin> origins;
+  if (!profile || !browser || browser->GetProfile() != profile ||
+      browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
+      browser->IsDeleteScheduled()) {
+    return origins;
+  }
+  TabListInterface* list = TabListInterface::From(browser);
+  if (!list) {
+    return origins;
+  }
+  base::flat_set<std::string> seen;
+  for (tabs::TabInterface* tab : list->GetAllTabs()) {
+    const GURL url = tab->GetURL();
+    if (tab->GetProfile() != profile || !url.is_valid() ||
+        !url.SchemeIsHTTPOrHTTPS() ||
+        (!include_window_tabs &&
+         tab->GetHandle().raw_value() != selected_tab_id)) {
+      continue;
+    }
+    const url::Origin origin = url::Origin::Create(url);
+    if (!origin.opaque() && seen.insert(origin.Serialize()).second) {
+      origins.push_back(origin);
+    }
+  }
+  return origins;
+}
+
 AegisBrowserTools::AegisBrowserTools(Profile* profile) : profile_(profile) {
   CHECK(profile_);
 }
@@ -1378,7 +1412,8 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
     for (BrowserWindowInterface* browser : TaskWindows(profile_, *task)) {
       base::DictValue value;
       value.Set("window_id", browser->GetSessionID().id());
-      value.Set("active", browser->IsActive());
+      value.Set("active",
+                (browser->GetWindow() && browser->GetWindow()->IsActive()));
       base::ListValue tab_ids;
       TabListInterface* model = TabListInterface::From(browser);
       for (int index = 0; model && index < model->GetTabCount(); ++index) {
@@ -1543,7 +1578,9 @@ void AegisBrowserTools::VerifyWindowAction(base::WeakPtr<AgentTask> task,
         }
         return true;
       });
-  if (closing ? !observed : (observed && observed->IsActive())) {
+  if (closing ? !observed
+              : (observed && (observed->GetWindow() &&
+                              observed->GetWindow()->IsActive()))) {
     AgentToolResult result = SuccessResult(
         action_id, closing ? "window closed" : "window activated");
     result.value.Set("window_id", window_id);
