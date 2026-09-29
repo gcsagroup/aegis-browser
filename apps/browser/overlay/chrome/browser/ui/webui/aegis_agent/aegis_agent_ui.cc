@@ -880,11 +880,7 @@ bool AegisAgentUIConfig::IsWebUIEnabled(
       !aegis::IsAegisProfileSupported(profile)) {
     return false;
   }
-#if BUILDFLAG(IS_ANDROID)
-  return !profile->IsOffTheRecord();
-#else
   return true;
-#endif
 }
 
 AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)

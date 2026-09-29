@@ -200,6 +200,7 @@ source_set("aegis") {
     "//chrome/browser/notifications",
     "//chrome/browser/tab_list",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/browser_window:create_browser_window",
     "//chrome/browser/undo",
     "//components/actor/core",
     "//components/bookmarks/browser",

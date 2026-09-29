@@ -120,6 +120,12 @@ class AegisBrowserTools : public UndoManagerObserver {
   void ExecuteWindowTool(AgentTask* task,
                          const AgentToolCall& call,
                          ToolResultCallback callback);
+  void VerifyWindowAction(base::WeakPtr<AgentTask> task,
+                          int window_id,
+                          bool closing,
+                          base::TimeTicks deadline,
+                          std::string action_id,
+                          ToolResultCallback callback);
   void ExecuteWorkspaceTool(AgentTask* task,
                             const AgentToolCall& call,
                             ToolResultCallback callback);

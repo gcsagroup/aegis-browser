@@ -10,7 +10,7 @@ const file = process.argv[2] || repo + '/apps/browser/overlay/chrome/browser/res
 const ts = createRequire(repo + '/packages/core/package.json')('typescript');
 const source = readFileSync(file, 'utf8');
 const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-const names = ['humanRisk', 'render', 'withBusy', 'bindActions', 'humanStatus', 'statusTone',
+const names = ['consumeLaunchRequest', 'humanRisk', 'render', 'withBusy', 'bindActions', 'humanStatus', 'statusTone',
   'showCreatedTask', 'scheduledTaskStatus', 'hasPartialResult', 'friendlyError', 'inferWorkflow', 'refersToCurrentPage', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal', 'reviewCurrentDownload'];
 const selected = tree.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
 assert.equal(selected.length, names.length);
@@ -158,3 +158,25 @@ assert.equal(element('approval-card').hidden, false);
 assert.equal(element('approve-button').hidden, true);
 assert.equal(element('approve-button').disabled, true);
 console.log('PASS: 接管与终态撤销旧批准入口，最终接管信息保留');
+
+// 执行真实启动函数：返回/刷新复用已消费的地址，新原生请求仍可启动。
+context.URL = URL;
+let address = 'chrome-untrusted://aegis-agent/?view=task&autostart=1&goal=' + encodeURIComponent('只汇总收藏夹');
+context.window = {location: {get href() {return address;}}, history: {
+  state: {navigation: 7}, replaceState(state, unused, next) {
+    assert.equal(state.navigation, 7); address = next;
+  },
+}};
+assert.equal(context.consumeLaunchRequest().autoStart, true);
+assert.equal(new URL(address).searchParams.has('goal'), false);
+assert.equal(new URL(address).searchParams.get('view'), 'task');
+for (const action of ['返回', '刷新', '进程恢复']) {
+  assert.equal(context.consumeLaunchRequest().autoStart, false, action + '不能重放');
+}
+address += '&autostart=1&goal=another';
+assert.equal(context.consumeLaunchRequest().autoStart, true, '新原生请求仍可启动');
+address += '&autostart=1&goal=manual';
+context.window.history.replaceState = () => {throw new Error('history unavailable');};
+assert.equal(context.consumeLaunchRequest().autoStart, false, '消费失败必须手动启动');
+assert.equal(context.consumeLaunchRequest().goal, 'manual');
+console.log('PASS: 原生启动一次性消费、刷新返回恢复、新请求和消费失败');

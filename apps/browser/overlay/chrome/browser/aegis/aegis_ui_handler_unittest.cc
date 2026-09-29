@@ -6,17 +6,26 @@
 #include <utility>
 #include <vector>
 
+#include "base/test/test_future.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+#include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
+#include "chrome/common/aegis/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/prefs/pref_service.h"
+#include "components/tab_groups/tab_group_color.h"
+#include "components/tab_groups/tab_group_visual_data.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_web_ui.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace aegis {
 namespace {
@@ -35,15 +44,18 @@ TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
   TabStripModel* model = browser()->tab_strip_model();
   content::WebContents* settings = model->GetWebContentsAt(1);
 
-  EXPECT_EQ(model->GetWebContentsAt(0),
-            FindSummarySourceTabInModel(model, settings));
+  EXPECT_EQ(
+      model->GetWebContentsAt(0),
+      FindSummarySourceTabInList(TabListInterface::From(browser()), settings));
 
   NavigateAndCommit(model->GetWebContentsAt(0), GURL("about:blank"));
-  EXPECT_EQ(model->GetWebContentsAt(2),
-            FindSummarySourceTabInModel(model, settings));
+  EXPECT_EQ(
+      model->GetWebContentsAt(2),
+      FindSummarySourceTabInList(TabListInterface::From(browser()), settings));
 
   NavigateAndCommit(model->GetWebContentsAt(2), GURL("about:blank"));
-  EXPECT_EQ(nullptr, FindSummarySourceTabInModel(model, settings));
+  EXPECT_EQ(nullptr, FindSummarySourceTabInList(
+                         TabListInterface::From(browser()), settings));
 }
 
 TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
@@ -52,7 +64,105 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
   auto foreign = content::WebContents::Create(
       content::WebContents::CreateParams(profile()));
 
-  EXPECT_EQ(nullptr, FindSummarySourceTabInModel(model, foreign.get()));
+  EXPECT_EQ(nullptr, FindSummarySourceTabInList(
+                         TabListInterface::From(browser()), foreign.get()));
+}
+
+TEST_F(AegisUIHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+  using namespace aegis::agent;
+  AddTab(browser(), GURL("https://workspace.example/first"));
+  AddTab(browser(), GURL("https://workspace.example/second"));
+  TabListInterface* list = TabListInterface::From(browser());
+  ASSERT_TRUE(list);
+  tabs::TabInterface* first = list->GetTab(0);
+  tabs::TabInterface* second = list->GetTab(1);
+  const auto group =
+      list->CreateTabGroup({first->GetHandle(), second->GetHandle()});
+  ASSERT_TRUE(group);
+  list->SetTabGroupVisualData(
+      *group, tab_groups::TabGroupVisualData(
+                  u"研究集合", tab_groups::TabGroupColorId::kBlue));
+  AgentTaskScope scope;
+  scope.allowed_origins = {
+      url::Origin::Create(GURL("https://workspace.example/"))};
+  scope.allowed_tab_ids = {first->GetHandle().raw_value(),
+                           second->GetHandle().raw_value()};
+  scope.allowed_tools = {"tab.list", "workspace.save", "workspace.restore"};
+  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  scope.model_destination.provider = "aegis-local";
+  scope.model_destination.model = "fixture";
+  scope.budgets.max_tabs = 8;
+  AgentTask task("workspace-round-trip", "保存并恢复研究集合", AgentMode::kAct,
+                 scope);
+  AegisBrowserTools tools(profile());
+  ASSERT_TRUE(tools.CanHandle("workspace.save"));
+  ASSERT_TRUE(tools.CanHandle("workspace.restore"));
+  auto execute = [&](std::string name, base::DictValue arguments) {
+    AgentToolCall call;
+    call.action_id = name;
+    call.tool_name = name;
+    call.arguments = std::move(arguments);
+    base::test::TestFuture<AgentToolResult> future;
+    tools.Execute(&task, call, future.GetCallback());
+    return future.Take();
+  };
+  auto listed = execute("tab.list", {});
+  ASSERT_TRUE(listed.ok);
+  auto saved =
+      execute("workspace.save",
+              base::DictValue()
+                  .Set("name", "研究集合")
+                  .Set("revision", *listed.value.FindString("revision")));
+  ASSERT_TRUE(saved.ok) << saved.message;
+  const std::string id = *saved.value.FindString("workspace_id");
+  const std::string revision = *saved.value.FindString("workspace_revision");
+  const auto* entry =
+      profile()->GetPrefs()->GetDict(prefs::kAgentWorkspaces).FindDict(id);
+  ASSERT_TRUE(entry);
+  ASSERT_EQ(entry->FindList("tabs")->size(), 2u);
+  EXPECT_EQ(
+      *entry->FindList("tabs")->front().GetDict().FindString("group_title"),
+      "研究集合");
+  const auto stale =
+      execute("workspace.restore", base::DictValue()
+                                       .Set("workspace_id", id)
+                                       .Set("workspace_revision", "stale"));
+  EXPECT_FALSE(stale.ok);
+  EXPECT_EQ(list->GetTabCount(), 2);
+  auto restored =
+      execute("workspace.restore", base::DictValue()
+                                       .Set("workspace_id", id)
+                                       .Set("workspace_revision", revision));
+  ASSERT_TRUE(restored.ok) << restored.message;
+  ASSERT_EQ(list->GetTabCount(), 4);
+  const auto* restored_ids = restored.value.FindList("tab_ids");
+  ASSERT_TRUE(restored_ids);
+  ASSERT_EQ(restored_ids->size(), 2u);
+  auto* restored_first = tabs::TabHandle((*restored_ids)[0].GetInt()).Get();
+  auto* restored_second = tabs::TabHandle((*restored_ids)[1].GetInt()).Get();
+  ASSERT_TRUE(restored_first && restored_second);
+  ASSERT_TRUE(restored_first->GetGroup());
+  EXPECT_EQ(restored_first->GetGroup(), restored_second->GetGroup());
+  EXPECT_NE(restored_first->GetGroup(), group);
+  auto visual = list->GetTabGroupVisualData(*restored_first->GetGroup());
+  ASSERT_TRUE(visual);
+  EXPECT_EQ(visual->title(), u"研究集合");
+  EXPECT_EQ(visual->color(), tab_groups::TabGroupColorId::kBlue);
+  EXPECT_TRUE(
+      task.owned_tab_ids().contains(restored_first->GetHandle().raw_value()));
+
+  scope.allowed_origins = {url::Origin::Create(GURL("https://other.example/"))};
+  AgentTask foreign_task("workspace-other-origin", "恢复另一个来源",
+                         AgentMode::kAct, scope);
+  AgentToolCall forbidden;
+  forbidden.action_id = "restore-foreign";
+  forbidden.tool_name = "workspace.restore";
+  forbidden.arguments.Set("workspace_id", id);
+  forbidden.arguments.Set("workspace_revision", revision);
+  base::test::TestFuture<AgentToolResult> rejected;
+  tools.Execute(&foreign_task, forbidden, rejected.GetCallback());
+  EXPECT_FALSE(rejected.Take().ok);
+  EXPECT_EQ(list->GetTabCount(), 4);
 }
 
 TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
@@ -62,11 +172,7 @@ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
   Profile* primary_otr =
       profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
   ASSERT_TRUE(primary_otr);
-#if BUILDFLAG(IS_ANDROID)
-  EXPECT_FALSE(config.IsWebUIEnabled(primary_otr));
-#else
   EXPECT_TRUE(config.IsWebUIEnabled(primary_otr));
-#endif
 
   Profile* auxiliary_otr = profile()->GetOffTheRecordProfile(
       Profile::OTRProfileID::CreateUniqueForTesting(),
