@@ -293,6 +293,12 @@ function formatMeta(status: AegisStatus): string {
 }
 
 function formatPrivacyMeta(status: AegisStatus): string {
+  if (status.isAndroid) {
+    const lang = localeCode();
+    return lang === 'zh-CN' ? 'Android 保护中心暂不支持直接总结其他标签页。请在目标网页菜单中选择“使用 Aegis 处理此页面”。' :
+        lang === 'zh-TW' ? 'Android 防護中心暫不支援直接總結其他分頁。請在目標網頁選單中選擇「使用 Aegis 處理此頁面」。' :
+        'Direct summaries from this protection page are not available on Android. Open the target page menu and choose Use Aegis on this page.';
+  }
   const lang = document.documentElement.lang || 'zh-CN';
   const zh = lang.startsWith('zh');
   if (!status.privacyAi) {
@@ -704,7 +710,7 @@ function applyStatus(status: AegisStatus) {
   fillActivityLog(status.recentEvents || []);
   actionButton('filter-update').disabled = status.filterListUpdating;
   actionButton('summarize').disabled =
-      summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
+      android || summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
   if (status.profileAvailable === false) {
     document
         .querySelectorAll<HTMLInputElement|HTMLButtonElement|
@@ -1518,7 +1524,7 @@ async function init() {
     getRequiredElement('filter-meta').textContent = formatMeta(next);
     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
     actionButton('summarize').disabled =
-        summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
+        !!next.isAndroid || summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
   });
 }
 
