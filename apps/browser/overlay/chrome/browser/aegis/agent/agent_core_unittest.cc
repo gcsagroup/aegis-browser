@@ -655,7 +655,8 @@ TEST(AegisAgentMonitorObservationTest, InputsAndStoredResultsAreBounded) {
     excessive.Append(base::DictValue().Set("text", "$99"));
   }
   EXPECT_FALSE(ReadAgentMonitorObservation(kind, excessive));
-  EXPECT_FALSE(MonitorObservation(kind, {std::string("\xff", 1)}));
+  // 非法 UTF-8 在序列化输入边界验证，不能先构造不满足 Value 契约的字符串。
+  EXPECT_FALSE(IsValidAgentMonitorObservation(kind, std::string("\xff", 1)));
   EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, "not json", "{}"));
   EXPECT_FALSE(DidAgentMonitorConditionMatch(kind,
       R"({"version":1,"kind":0,"currency":"USD","amount":"100"})",

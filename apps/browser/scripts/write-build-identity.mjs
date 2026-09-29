@@ -487,7 +487,10 @@ function collectSourceSnapshot(outDir) {
   const v8Base = run('git', ['rev-parse', `${chromiumBase}:v8`], chromiumSrc);
   assert(/^[0-9a-f]{40}$/u.test(v8Base), 'pinned Chromium commit has no V8 gitlink');
   const gnPath = gnToolPath(chromiumSrc);
-  const releaseArgsPath = join(browserRoot, 'args', 'aegis-release.gn');
+  const identityTarget = process.env.AEGIS_IDENTITY_TARGET || 'desktop';
+  assert(['desktop', 'android'].includes(identityTarget), 'unsupported identity target');
+  const releaseArgsPath = join(browserRoot, 'args',
+      identityTarget === 'android' ? 'aegis-android.gn' : 'aegis-release.gn');
   const releaseArgs = readFileSync(releaseArgsPath, 'utf8');
   const expectedGnArgs = normalizedGnArgs(gnPath, releaseArgs);
   const overlayRepository = treeEvidence(join(browserRoot, 'overlay'));
@@ -523,7 +526,7 @@ function collectSourceSnapshot(outDir) {
     buildDrivers: buildDriverEvidence(),
   };
   const build = {
-    target: 'chrome',
+    target: identityTarget === 'android' ? 'chrome_public_apk' : 'chrome',
     outDir: relative(chromiumSrc, resolvedOutDir).split(sep).join('/'),
     expectedGnArgsSha256: sha256Buffer(expectedGnArgs),
     host: {
@@ -574,7 +577,7 @@ function collectBuildGraphSnapshot(outDir) {
   const normalizedSha256 = sha256Buffer(normalized);
   assert(
     normalizedSha256 === input.build.expectedGnArgsSha256,
-    'generated args.gn does not semantically match aegis-release.gn',
+    'generated args.gn does not semantically match the selected target template',
   );
   const graph = {
     gnArgsSha256: sha256Buffer(gnArgs),

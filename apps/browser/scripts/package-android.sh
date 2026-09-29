@@ -154,7 +154,7 @@ identity_args=(
 if [[ "${AEGIS_ALLOW_DIRTY_IDENTITY:-0}" == "1" ]]; then
   identity_args+=(--allow-dirty)
 fi
-node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_args[@]}"
+AEGIS_IDENTITY_TARGET=android node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_args[@]}"
 
 STAGED_OUTPUTS=(
   "$STAGED_APK"
