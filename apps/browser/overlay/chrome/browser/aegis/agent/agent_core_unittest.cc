@@ -1126,6 +1126,46 @@ TEST(AegisAgentToolRegistryTest, ExposesOnlyScopedFixedSchemas) {
   EXPECT_EQ(error, "tool argument contains an unknown field");
 }
 
+TEST(AegisAgentToolRegistryTest, NativeIdsUseFullPositiveInt32Range) {
+  AgentToolRegistry registry;
+  AgentTaskScope scope = TestScope();
+  scope.allowed_tools = {"tab.activate", "tab.close", "tab.group",
+                         "window.activate", "window.close"};
+  const auto tools = registry.ModelToolsForScope(scope);
+  ASSERT_EQ(tools.size(), 5u);
+  for (const auto& tool : tools) {
+    SCOPED_TRACE(tool.name);
+    const bool array = tool.name == "tab.close" || tool.name == "tab.group";
+    const char* key =
+        array ? "tab_ids"
+              : (tool.name.starts_with("window.") ? "window_id" : "tab_id");
+    base::DictValue arguments;
+    if (array || tool.name == "window.close") {
+      arguments.Set("revision", "native-revision");
+    }
+    if (tool.name == "tab.group") {
+      arguments.Set("title", "边界验收");
+      arguments.Set("color", "pink");
+    }
+    // 使用真实工具协议验证边界，不以测试用小 ID 掩盖生产会话 ID。
+    for (double id :
+         {1.0, 1000001.0, 2147483647.0, 0.0, -1.0, 2147483648.0, 1.5}) {
+      const bool valid = id == 1.0 || id == 1000001.0 || id == 2147483647.0;
+      base::Value value = (valid || id == 0.0 || id == -1.0)
+                              ? base::Value(static_cast<int>(id))
+                              : base::Value(id);
+      if (array) {
+        arguments.Set(key, base::ListValue().Append(std::move(value)));
+      } else {
+        arguments.Set(key, std::move(value));
+      }
+      std::string error;
+      EXPECT_EQ(ValidateAgentToolArguments(tool, arguments, &error), valid)
+          << "id=" << id << ": " << error;
+    }
+  }
+}
+
 TEST(AegisAgentPolicyTest, BookmarkCheckRequiresExactlyOneSelection) {
   AgentToolRegistry registry;
   AgentPolicyBroker broker(&registry);
