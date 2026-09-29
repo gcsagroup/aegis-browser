@@ -678,17 +678,61 @@ summary {
 }
 
 /* 触控界面使用移动端字号与点击面积；桌面侧栏保持紧凑。 */
+
 @media (pointer: coarse) {
-  body { font-size: 16px; }
-  button, .monitor-actions button, input:not([type='checkbox']), select { min-height: 48px; }
-  button, input, select, textarea { font-size: 16px; }
-  .help, .hero p, .notice, .research-source small, .status { font-size: 14px; }
-  .research-source { min-height: 48px; align-items: center; }
-  .research-source input { width: 24px; height: 24px; margin: 8px; }
-  main { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  body {
+    font-size: 16px;
+  }
+
+  button,
+  .monitor-actions button,
+  input:not([type='checkbox']),
+  select {
+    min-height: 48px;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .help,
+  .hero p,
+  .notice,
+  .research-source small,
+  .status {
+    font-size: 14px;
+  }
+
+  .research-source {
+    min-height: 48px;
+    align-items: center;
+  }
+
+  .research-source input {
+    width: 24px;
+    height: 24px;
+    margin: 8px;
+  }
+
+  main {
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
 }
+
 @media (max-width: 600px) and (pointer: coarse) {
-  .scenario-grid { grid-template-columns: 1fr; }
-  .hero { flex-wrap: wrap; }
-  .status { max-width: 100%; white-space: normal; }
+  .scenario-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    flex-wrap: wrap;
+  }
+
+  .status {
+    max-width: 100%;
+    white-space: normal;
+  }
 }

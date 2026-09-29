@@ -24,13 +24,48 @@
 }
 
 /* 长路径和命令行允许换行，窄屏逐项阅读，折叠屏宽窗保留表格。 */
+
 @media (max-width: 600px) {
-  #outer { width: auto; margin: 0; padding: 20px 16px; }
-  #logo { margin: 0 0 20px; }
-  #inner, #inner tbody, #inner tr, #inner td, #inner caption { display: block; width: auto; }
-  #inner tr { margin-bottom: 16px; }
-  #inner td { padding: 2px 0; overflow-wrap: anywhere; white-space: normal; }
-  #inner .label { font-weight: 600; }
-  .version { font-size: 14px; line-height: 1.5; }
-  .copy-button { min-width: 48px; min-height: 48px; }
+  #outer {
+    width: auto;
+    margin: 0;
+    padding: 20px 16px;
+  }
+
+  #logo {
+    margin: 0 0 20px;
+  }
+
+  #inner,
+  #inner tbody,
+  #inner tr,
+  #inner td,
+  #inner caption {
+    display: block;
+    width: auto;
+  }
+
+  #inner tr {
+    margin-bottom: 16px;
+  }
+
+  #inner td {
+    padding: 2px 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  #inner .label {
+    font-weight: 600;
+  }
+
+  .version {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .copy-button {
+    min-width: 48px;
+    min-height: 48px;
+  }
 }

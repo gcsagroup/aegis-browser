@@ -137,5 +137,16 @@ html[webui-rounded-icons] #copy-to-clipboard-icon {
 }
 
 /* 产品名和产品版本优先展示，内核与诊断信息保留原值。 */
-.aegis-logo { width: 96px; height: 96px; object-fit: contain; }
-caption { text-align: start; font-size: 1.35rem; font-weight: 600; padding-block: 0 1rem; }
+
+.aegis-logo {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+}
+
+caption {
+  text-align: start;
+  font-size: 1.35rem;
+  font-weight: 600;
+  padding-block: 0 1rem;
+}
