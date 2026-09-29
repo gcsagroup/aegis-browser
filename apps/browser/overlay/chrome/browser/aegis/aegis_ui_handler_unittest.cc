@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
 #include "chrome/common/aegis/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/prefs/pref_service.h"
 #include "components/tab_groups/tab_group_color.h"
@@ -31,6 +32,19 @@ namespace aegis {
 namespace {
 
 class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
+
+// 工作区恢复需要可编辑的标签栏；基础测试窗口默认禁止编辑。
+class WorkspaceTestWindow : public TestBrowserWindow {
+ public:
+  bool IsTabStripEditable() const override { return true; }
+};
+
+class AegisWorkspaceHandlerTest : public AegisUIHandlerTest {
+ protected:
+  std::unique_ptr<BrowserWindow> CreateBrowserWindow() override {
+    return std::make_unique<WorkspaceTestWindow>();
+  }
+};
 
 class TestAegisUIHandler : public AegisUIHandler {
  public:
@@ -67,7 +81,7 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
                          TabListInterface::From(browser()), foreign.get()));
 }
 
-TEST_F(AegisUIHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
   using namespace aegis::agent;
   AddTab(browser(), GURL("https://workspace.example/first"));
   AddTab(browser(), GURL("https://workspace.example/second"));
