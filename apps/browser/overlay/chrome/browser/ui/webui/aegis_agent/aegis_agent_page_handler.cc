@@ -19,6 +19,7 @@
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+#include "chrome/browser/aegis/agent/aegis_browser_tools.h"
 #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
 #include "chrome/browser/aegis/agent/agent_observation.h"
 #include "chrome/browser/aegis/agent/agent_policy_broker.h"
@@ -839,6 +840,13 @@ void AegisAgentPageHandler::CreateResolvedTask(
     origins = AutomaticTaskOrigins(task_url);
   } else if (browser_only) {
     origins.emplace();
+    if (tab && aegis::agent::AgentGoalRequestsWorkspaceRestore(goal)) {
+      // 恢复会重新导航；范围来自浏览器已有标签，不接受模型发明来源。
+      *origins = aegis::agent::WorkspaceRestoreOrigins(
+          profile_, browser_, tab->GetHandle().raw_value(),
+          aegis::agent::AgentGoalRequestsWindowTabMetadata(goal) &&
+              !profile_->IsOffTheRecord());
+    }
   } else {
     const bool use_approved_current_page =
         tab && requested_origins &&

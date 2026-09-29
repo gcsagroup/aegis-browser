@@ -15,6 +15,18 @@
 namespace aegis::agent {
 namespace {
 
+TEST(AgentPlannerTest, WorkspaceRestoreRequiresExplicitWriteIntent) {
+  for (const char* goal : {"保存并恢复当前工作区中的研究标签页",
+                           "還原目前工作區", "Restore my workspace"}) {
+    EXPECT_TRUE(AgentGoalRequestsWorkspaceRestore(goal)) << goal;
+  }
+  for (const char* goal : {"仅保存工作区，不恢复", "不要還原工作區",
+                           "Save workspace without restoring it", "查看工作区",
+                           "整理收藏夹", "恢复当前页面"}) {
+    EXPECT_FALSE(AgentGoalRequestsWorkspaceRestore(goal)) << goal;
+  }
+}
+
 AgentTaskScope MaximumScope() {
   AgentTaskScope scope;
   scope.allowed_origins = {

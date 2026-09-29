@@ -92,6 +92,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
                       bool ok,
                       std::string error,
                       std::vector<std::string> models);
+  void OnMetalinkStarted(std::string callback_id, bool ok, std::string error);
   void OnMetalinkParsed(std::string callback_id,
                         aegis::MetalinkParseResult result);
 #if BUILDFLAG(IS_MAC)

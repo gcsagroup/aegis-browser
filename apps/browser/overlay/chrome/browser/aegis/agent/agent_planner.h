@@ -70,6 +70,9 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal);
 // 本任务限定优先于窗口元数据入口，冲突目标取较小范围。
 bool AgentGoalRequestsWindowTabMetadata(std::string_view goal);
 
+// 只有原始目标明确要求恢复工作区，才允许申请现有标签来源的导航范围。
+bool AgentGoalRequestsWorkspaceRestore(std::string_view goal);
+
 // 关闭只接受明确的标签操作请求；描述未关闭状态或询问不能成为写入授权。
 bool AgentGoalRequestsTabClose(std::string_view goal);
 bool AgentBrowserGoalNeedsClarification(std::string_view goal,

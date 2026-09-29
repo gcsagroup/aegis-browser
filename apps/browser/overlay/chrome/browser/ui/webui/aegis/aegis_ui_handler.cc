@@ -1128,11 +1128,22 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
     ResolveJavascriptCallback(callback_id, response);
     return;
   }
-  aegis::StartVerifiedMetalinkDownload(Profile::FromWebUI(web_ui()),
-                                       std::move(pending.result));
-  response.Set("ok", true);
-  response.Set("error", "");
-  ResolveJavascriptCallback(callback_id, response);
+  aegis::StartVerifiedMetalinkDownload(
+      Profile::FromWebUI(web_ui()), std::move(pending.result),
+      base::BindOnce(&AegisUIHandler::OnMetalinkStarted,
+                     weak_factory_.GetWeakPtr(), callback_id.GetString()));
+}
+
+void AegisUIHandler::OnMetalinkStarted(std::string callback_id,
+                                       bool ok,
+                                       std::string error) {
+  if (!IsJavascriptAllowed()) {
+    return;
+  }
+  base::DictValue response;
+  response.Set("ok", ok);
+  response.Set("error", std::move(error));
+  ResolveJavascriptCallback(base::Value(callback_id), response);
 }
 
 #if BUILDFLAG(IS_MAC)

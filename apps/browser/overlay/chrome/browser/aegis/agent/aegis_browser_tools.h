@@ -22,6 +22,7 @@
 #include "components/undo/undo_manager_observer.h"
 
 class Profile;
+class BrowserWindowInterface;
 
 template <class T>
 class scoped_refptr;
@@ -46,6 +47,13 @@ class QueryResults;
 }
 
 namespace aegis::agent {
+
+// 仅从同资料、同窗口的现有标签取精确来源，不添加兄弟域名或跨窗口来源。
+std::vector<url::Origin> WorkspaceRestoreOrigins(
+    Profile* profile,
+    BrowserWindowInterface* browser,
+    int32_t selected_tab_id,
+    bool include_window_tabs);
 
 bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
                                           const GURL& selected_bookmark_url,

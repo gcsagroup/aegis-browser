@@ -202,6 +202,14 @@ export class AegisDownloadPanelElement extends CrLitElement {
       return detail;
     }
     const tw = /^zh-(?:TW|HK|Hant)/i.test(locale);
+    if (detail.includes('Metalink download has no available public mirror')) {
+      return tw ? '沒有可用的公開鏡像地址，下載未開始。請檢查網路或更換描述檔案。' :
+                  '没有可用的公开镜像地址，下载未开始。请检查网络或更换描述文件。';
+    }
+    if (detail.includes('Metalink download start timed out')) {
+      return tw ? '建立下載工作逾時，請檢查網路後重試。' :
+                  '创建下载任务超时，请检查网络后重试。';
+    }
     if (detail.includes('magnet link is invalid or too large')) {
       return tw ? '磁力連結無效或過長，請檢查後重試。' :
                   '磁力链接无效或过长，请检查后重试。';
