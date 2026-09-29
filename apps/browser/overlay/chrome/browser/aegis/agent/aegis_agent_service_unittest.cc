@@ -2210,6 +2210,8 @@ TEST_F(AegisAgentServiceTest,
     original.Shutdown();
     FlushTaskStore(&original);
   }
+  // 等待旧实例异步关闭数据库，避免新实例与旧连接争用。
+  DrainTaskRunners();
 
   AegisAgentService recovered(profile_);
   FlushTaskStore(&recovered);

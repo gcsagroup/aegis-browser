@@ -97,7 +97,7 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
         try {
             PackageInfo product = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             if (product.versionName != null) {
-                version = product.versionName + " · Chromium " + version;
+                version = product.versionName + " · Chromium " + VersionInfo.getProductVersion();
             }
         } catch (NameNotFoundException ignored) {
             // 保留原内核信息，避免关于页因包信息异常崩溃。
