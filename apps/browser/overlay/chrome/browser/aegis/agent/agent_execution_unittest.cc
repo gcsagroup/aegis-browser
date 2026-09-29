@@ -1686,6 +1686,37 @@ TEST(AegisAgentExecutionTest,
   EXPECT_EQ(SelectBrowserBoundExecutionTab(41, 42, two_live_tabs), 41);
 }
 
+TEST(AegisAgentExecutionTest, WindowReferenceSurvivesInterveningListResult) {
+  AgentTask task("window-ref", "创建并关闭验收窗口", AgentMode::kAct,
+                 ExecutionScope());
+  AgentTaskPlan plan;
+  plan.scope = ExecutionScope();
+  AgentToolResult created;
+  created.action_id = "created";
+  created.ok = true;
+  created.value.Set("window_id", 73);
+  AgentToolResult listed;
+  listed.action_id = "listed";
+  listed.ok = true;
+  listed.value.Set("revision", "native-window-revision");
+  std::vector<AgentExecutionEvidence> evidence;
+  evidence.push_back(
+      {.tool_name = "window.create", .result = std::move(created)});
+  evidence.push_back({.tool_name = "window.list", .result = std::move(listed)});
+  auto parsed = base::JSONReader::Read(
+      BuildAgentExecutionPrompt(task, plan, 0, 1, &evidence.back().result,
+                                evidence),
+      base::JSON_PARSE_RFC);
+  ASSERT_TRUE(parsed && parsed->is_dict());
+  const auto* prior =
+      parsed->GetDict().FindList("prior_verified_evidence_untrusted");
+  ASSERT_TRUE(prior);
+  ASSERT_EQ(prior->size(), 2u);
+  EXPECT_EQ((*prior)[0].GetDict().FindInt("window_id"), 73);
+  EXPECT_EQ(*(*prior)[1].GetDict().FindString("revision"),
+            "native-window-revision");
+}
+
 TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
   AgentTask task("task-exec", "Compare the approved fixture", AgentMode::kAsk,
                  ExecutionScope());

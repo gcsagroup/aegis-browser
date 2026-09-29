@@ -289,6 +289,12 @@ CompactExecutionEvidence(const AgentExecutionEvidence &evidence) {
       item.Set(key, *found);
     }
   }
+  // 窗口后续操作必须引用原生创建的标识，不能因中间步骤而丢失后让模型猜测。
+  if (evidence.tool_name.starts_with("window.")) {
+    if (const std::optional<int> window_id = value.FindInt("window_id")) {
+      item.Set("window_id", *window_id);
+    }
+  }
   if (const std::optional<int> tab_id = value.FindInt("tab_id")) {
     item.Set("tab_id", *tab_id);
   }

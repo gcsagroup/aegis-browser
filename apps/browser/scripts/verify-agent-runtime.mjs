@@ -10,7 +10,7 @@ import {readinessCatalog, readinessLinks, renderReadinessForm} from './acceptanc
 
 const SOURCE_COUNT = 10;
 const BOOKMARK_COUNT = 500;
-const FIXTURE_VERSION = 7;
+const FIXTURE_VERSION = 8;
 const DOWNLOAD_BYTES = Object.freeze({
   'macos-arm64': Buffer.from(
       'Aegis Browser Agent fixture macOS arm64 v1\n'.repeat(4096)),
@@ -303,6 +303,15 @@ function plannedSteps(goal, availableTools) {
       steps.push(['workspace-restore', '恢复刚保存的工作区', 'workspace.restore']);
     }
     return steps;
+  }
+  if (goal.includes('窗口闭环验收') &&
+      ['window.create', 'window.activate', 'window.list', 'window.close'].every(has)) {
+    return [
+      ['window-create', '创建验收窗口', 'window.create'],
+      ['window-activate', '激活刚创建的窗口', 'window.activate'],
+      ['window-list', '回读窗口版本', 'window.list'],
+      ['window-close', '仅关闭本任务创建的窗口', 'window.close'],
+    ];
   }
   const bookmarkGoal = lower.includes('bookmark') || goal.includes('收藏');
   const bookmarkUrlCheck = lower.includes('url') || lower.includes('dead') ||
@@ -648,6 +657,16 @@ function executionArguments(name, prompt, serverOrigin) {
       name === 'window.list' || name === 'download.list' ||
       name === 'monitor.list') {
     return {};
+  }
+  if (name === 'window.create') {
+    return {url: `${origin}/research/source-01`};
+  }
+  if (name === 'window.activate' || name === 'window.close') {
+    const created = latestEvidence(prompt, 'window.create');
+    const listed = latestEvidence(prompt, 'window.list');
+    const windowId = created?.window_id || previous?.value?.window_id;
+    return name === 'window.activate' ? {window_id: windowId} :
+        {window_id: windowId, revision: listed?.revision || previous?.value?.revision};
   }
   if (name === 'workspace.save') {
     const listed = latestEvidence(prompt, 'tab.list');
@@ -1537,6 +1556,22 @@ async function runSelfTest(reportPath = null) {
       });
       const restored = JSON.parse((await response.json()).output[0].arguments);
       assert(restored.workspace_id === 'native-id' && restored.workspace_revision === 'native-revision', '恢复必须绑定原生工作区');
+    });
+    await check('窗口验收只引用本任务新建窗口和原生版本', async () => {
+      const maximum_tools = ['window.create', 'window.activate', 'window.list', 'window.close'];
+      const planned = await providerCall(origin, 'agent.submit_plan', {
+        user_goal: '窗口闭环验收', maximum_tools,
+      });
+      const plan = JSON.parse((await planned.json()).output[0].arguments);
+      assert(JSON.stringify(plan.steps.map(step => step.tool)) === JSON.stringify(maximum_tools), '窗口计划不一致');
+      const response = await providerCall(origin, 'window.close', {
+        prior_verified_evidence_untrusted: [
+          {tool: 'window.create', ok: true, window_id: 73},
+          {tool: 'window.list', ok: true, revision: 'native-revision'},
+        ],
+      });
+      const closed = JSON.parse((await response.json()).output[0].arguments);
+      assert(closed.window_id === 73 && closed.revision === 'native-revision', '关闭必须引用原生创建窗口');
     });
     await check('A3 URL status and bounded fallback semantics', async () => {
       assert((await fetch(`${origin}/status/live`, {method: 'HEAD'})).status === 200,
