@@ -93,6 +93,9 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
   scope.allowed_tab_ids = {list->GetTab(0)->GetHandle().raw_value()};
   scope.allowed_tools = {"window.list"};
   scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
+  scope.model_destination.provider = "aegis-local";
+  scope.model_destination.model = "fixture";
+  ASSERT_TRUE(scope.IsValid());
   AgentTask task("window-focus", "核对窗口审批期间的结构", AgentMode::kAct,
                  scope);
   AegisBrowserTools tools(profile());
