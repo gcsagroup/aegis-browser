@@ -138,4 +138,18 @@ env PATH="$FAKE_BIN:$PATH" \
   fail "合法路径未发布完整 APK 与 identity"
 [[ ! -e "$SUCCESS_CASE/.aegis-android-package.lock" ]] || fail "合法路径残留了 lock"
 
+# 容器挂载不必叫 src，但仍执行相同的目录与产物安全检查。
+MOUNT_SRC="$TEST_ROOT/mounted-checkout"
+mkdir -p "$MOUNT_SRC/out/AegisAndroid/apks" "$TEST_ROOT/mounted-case"
+printf 'mounted-apk\n' > "$MOUNT_SRC/out/AegisAndroid/apks/ChromePublic.apk"
+env PATH="$FAKE_BIN:$PATH" CHROMIUM_ROOT="$TEST_ROOT/absent" \
+  CHROMIUM_SRC="$MOUNT_SRC" DIST_DIR="$TEST_ROOT/mounted-case/dist" \
+  FAKE_NODE_REACHED="$TEST_ROOT/mounted-case/node-reached" FAKE_NODE_MODE=success \
+  bash "$SCRIPT_DIR/package-android.sh" >/dev/null
+[[ "$(cat "$TEST_ROOT/mounted-case/dist/GCSA-aegis.apk")" == "mounted-apk" ]] || \
+  fail "容器挂载目录没有被实际采用"
+ln -s "$MOUNT_SRC" "$TEST_ROOT/mounted-link"
+expect_failure "CHROMIUM_SRC 绕过了符号链接保护" "Chromium source must be a real directory" \
+  env CHROMIUM_SRC="$TEST_ROOT/mounted-link" bash "$SCRIPT_DIR/package-android.sh"
+
 printf 'PASS: Android package path and publish guards\n'

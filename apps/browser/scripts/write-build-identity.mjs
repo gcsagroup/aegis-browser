@@ -68,7 +68,7 @@ function run(command, args, cwd) {
   if (result.status !== 0) {
     fail(
       `${command} ${args.join(' ')} failed: ${
-        result.stderr.trim() || result.error?.message || result.status
+        result.stderr?.trim() || result.error?.message || result.status
       }`,
     );
   }
@@ -86,7 +86,7 @@ function runWithInput(command, args, cwd, input) {
   if (result.status !== 0) {
     fail(
       `${command} ${args.join(' ')} failed: ${
-        result.stderr.trim() || result.error?.message || result.status
+        result.stderr?.trim() || result.error?.message || result.status
       }`,
     );
   }
@@ -297,7 +297,7 @@ function configuredChromiumSource() {
     process.env.CHROMIUM_ROOT?.trim() ||
     (existsSync(marker) ? readFileSync(marker, 'utf8').trim() : '') ||
     join(homedir(), 'Projects/GCSA-aegis-build/macos');
-  return realpathSync(join(configuredRoot, 'src'));
+  return realpathSync(process.env.CHROMIUM_SRC?.trim() || join(configuredRoot, 'src'));
 }
 
 function stablePatchId(value, cwd) {
