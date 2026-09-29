@@ -6,17 +6,19 @@
  * #css_wrapper_metadata_end */
 
 :host {
-  --aegis-card-width: clamp(550px, 80%, 680px);
+  --aegis-card-width: min(100%, 680px);
   display: block;
-  margin: 20px auto 0;
+  margin: 16px auto 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   width: var(--aegis-card-width);
 }
 
 .card {
-  background: var(--cr-card-background-color);
+  background: var(--cr-card-background-color, var(--bg, #fff));
   border-radius: 12px;
   box-shadow: var(--cr-card-shadow);
-  color: var(--cr-primary-text-color);
+  color: var(--cr-primary-text-color, var(--fg, #202124));
   overflow: hidden;
 }
 
@@ -36,14 +38,14 @@
 
 .subtitle,
 .hint {
-  color: var(--cr-secondary-text-color);
+  color: var(--cr-secondary-text-color, var(--muted, #5f6368));
   font-size: 12px;
   line-height: 18px;
 }
 
 .composer,
 .task {
-  border-top: 1px solid var(--cr-separator-color);
+  border-top: 1px solid var(--cr-separator-color, var(--line, #dadce0));
   padding: 16px 20px 20px;
 }
 
@@ -64,9 +66,9 @@ textarea {
 textarea,
 input[type='number'] {
   background: transparent;
-  border: 1px solid var(--cr-separator-color);
+  border: 1px solid var(--cr-separator-color, var(--line, #dadce0));
   border-radius: 8px;
-  color: var(--cr-primary-text-color);
+  color: var(--cr-primary-text-color, var(--fg, #202124));
   padding: 9px 11px;
 }
 
@@ -90,7 +92,7 @@ input[type='number'] {
 }
 
 .preview {
-  background: var(--cr-fallback-color-surface-variant);
+  background: var(--cr-fallback-color-surface-variant, var(--bg, #f1f3f4));
   border-radius: 8px;
   line-height: 20px;
   margin: 14px 0 0;
@@ -129,9 +131,9 @@ input[type='number'] {
 }
 
 .protocol-badge {
-  background: var(--google-blue-50);
+  background: var(--google-blue-50, #e8f0fe);
   border-radius: 12px;
-  color: var(--google-blue-700);
+  color: var(--google-blue-700, #1967d2);
   font-size: 11px;
   font-weight: 600;
   padding: 3px 8px;
@@ -140,7 +142,7 @@ input[type='number'] {
 @media (prefers-color-scheme: dark) {
   .protocol-badge {
     background: rgba(138, 180, 248, .16);
-    color: var(--google-blue-300);
+    color: var(--google-blue-300, #8ab4f8);
   }
 }
 
@@ -158,9 +160,9 @@ progress {
 
 button {
   background: transparent;
-  border: 1px solid var(--cr-separator-color);
+  border: 1px solid var(--cr-separator-color, var(--line, #dadce0));
   border-radius: 18px;
-  color: var(--cr-link-color);
+  color: var(--cr-link-color, var(--accent, #1967d2));
   cursor: pointer;
   font: inherit;
   min-height: 34px;
@@ -168,9 +170,9 @@ button {
 }
 
 button.primary {
-  background: var(--cr-button-background-color);
+  background: var(--cr-button-background-color, var(--accent, #1967d2));
   border-color: transparent;
-  color: var(--cr-button-text-color);
+  color: var(--cr-button-text-color, #fff);
 }
 
 button:disabled {
@@ -180,6 +182,45 @@ button:disabled {
 
 @media (max-width: 700px) {
   :host {
-    --aegis-card-width: calc(100% - 32px);
+    --aegis-card-width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .composer,
+  .task {
+    padding: 16px;
+  }
+
+  .subtitle,
+  .hint {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  input[type='number'],
+  input[type='file'] {
+    min-height: 44px;
+  }
+
+  input,
+  textarea {
+    font-size: 16px;
+  }
+
+  .files label,
+  .toggle,
+  .disclosure {
+    min-height: 44px;
   }
 }

@@ -376,8 +376,8 @@ export class AegisDownloadPanelElement extends CrLitElement {
           await sendWithPromise('startMetalinkDownload', requestId);
       this.previewText_ = result.ok ?
           (zh ?
-               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已新增到下方原生下載列表；完成後自動校驗雜湊並在需要時切換映象。' : '已添加到下方原生下载列表；完成后自动校验散列并在需要时切换镜像。') :
-               'Added to the native download list below. Integrity and mirror failover are automatic.') :
+               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已新增到瀏覽器下載列表；完成後自動校驗雜湊並在需要時切換映象。' : '已添加到浏览器下载列表；完成后自动校验散列并在需要时切换镜像。') :
+               'Added to the browser download list. Integrity and mirror failover are automatic.') :
           this.formatPreviewError_(result.error || 'download start failed');
     } catch (error) {
       this.previewText_ = this.formatPreviewError_(error);

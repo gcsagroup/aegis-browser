@@ -60,7 +60,6 @@ TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
 
 TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
   AddTab(browser(), GURL("https://source.example/"));
-  TabStripModel* model = browser()->tab_strip_model();
   auto foreign = content::WebContents::Create(
       content::WebContents::CreateParams(profile()));
 

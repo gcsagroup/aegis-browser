@@ -12,8 +12,8 @@ export function getHtml(this: AegisDownloadPanelElement) {
     <div>
       <div class="title">${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載中心' : '下载中心') : 'Aegis downloads'}</div>
       <div class="subtitle">${this.isZh_() ?
-          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '普通下載、映象、種子與磁力連結' : '普通下载、镜像、种子与磁力链接') :
-          'HTTP downloads, mirrors, torrents and magnet links'}</div>
+          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? (this.torrentSupported_ ? '映象、種子與磁力連結' : '可校驗的映象下載') : (this.torrentSupported_ ? '镜像、种子与磁力链接' : '可校验的镜像下载')) :
+          (this.torrentSupported_ ? 'Mirrors, torrents and magnet links' : 'Verified mirror downloads')}</div>
     </div>
     <button ?disabled="${!this.profileAvailable_}"
         @click="${this.onToggleClick_}">
@@ -31,7 +31,7 @@ export function getHtml(this: AegisDownloadPanelElement) {
                (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '選擇 .meta4 或 .metalink。預覽並確認後開始下載。' : '选择 .meta4 或 .metalink。预览并确认后开始下载。') :
                'Choose a .meta4 or .metalink file. Nothing starts before inspection.')}</div>
       <label class="field">
-        <span>${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '種子或下載描述檔案' : '种子或下载描述文件') : 'Torrent or download description file'}</span>
+        <span>${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載描述檔案' : '下载描述文件') : 'Download description file'}</span>
         <input id="descriptor" type="file"
             accept="${this.torrentSupported_ ?
                 '.meta4,.metalink,.torrent,application/metalink4+xml,application/x-bittorrent' :
