@@ -2119,6 +2119,32 @@ TEST(AegisAgentExecutionTest, PromptRestoresBodyWhenFullPreviousExceedsBudget) {
   EXPECT_NE(text->find(std::string(4000, 'x')), std::string::npos);
 }
 
+TEST(AegisAgentExecutionTest, PromptKeepsBrowserIssuedWorkspaceReference) {
+  AgentTask task("workspace-reference", "保存工作区并恢复", AgentMode::kAct,
+                 ExecutionScope());
+  AgentTaskPlan plan;
+  AgentToolResult saved;
+  saved.action_id = "workspace-save";
+  saved.ok = true;
+  saved.message = "workspace saved";
+  saved.value.Set("workspace_id", "browser-workspace");
+  saved.value.Set("workspace_revision", "browser-revision");
+  std::vector<AgentExecutionEvidence> history;
+  history.push_back(
+      {.tool_name = "workspace.save", .result = std::move(saved)});
+  const auto prompt = base::JSONReader::Read(
+      BuildAgentExecutionPrompt(task, plan, 0, 1, nullptr, history),
+      base::JSON_PARSE_RFC);
+  ASSERT_TRUE(prompt && prompt->is_dict());
+  const auto* items =
+      prompt->GetDict().FindList("prior_verified_evidence_untrusted");
+  ASSERT_TRUE(items && items->size() == 1u);
+  EXPECT_EQ(*items->front().GetDict().FindString("workspace_id"),
+            "browser-workspace");
+  EXPECT_EQ(*items->front().GetDict().FindString("workspace_revision"),
+            "browser-revision");
+}
+
 TEST(AegisAgentExecutionTest, PromptKeepsFinalTranslationRepresentation) {
   AgentTask task("prompt-translation", "将页面完整翻译成英文", AgentMode::kAsk,
                  ExecutionScope());

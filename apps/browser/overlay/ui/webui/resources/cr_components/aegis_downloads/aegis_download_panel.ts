@@ -1,8 +1,7 @@
 // Copyright 2026 GCSA
 
-import {sendWithPromise} from 'chrome://resources/js/cr.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
-import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import {loadTimeData} from '//resources/js/load_time_data.js';
+import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 
 import {getCss} from './aegis_download_panel.css.js';
 import {getHtml} from './aegis_download_panel.html.js';
@@ -97,6 +96,8 @@ function fileAsBase64(file: File): Promise<string> {
   });
 }
 
+type DownloadRequest = <T>(message: string, ...args: unknown[]) => Promise<T>;
+
 export class AegisDownloadPanelElement extends CrLitElement {
   static get is() {
     return 'aegis-download-panel';
@@ -154,6 +155,19 @@ export class AegisDownloadPanelElement extends CrLitElement {
   protected accessor torrentUploadLimitDefault_ =
       loadTimeData.getInteger('aegisTorrentUploadLimitKibDefault');
 
+  // 共享面板只处理界面；宿主页面提供资料受限的浏览器通信入口。
+  private requestReady_ = false;
+  private request_: DownloadRequest = () =>
+      Promise.reject(new Error('download page is not connected'));
+
+  setRequestHandler(handler: DownloadRequest) {
+    this.request_ = handler;
+    this.requestReady_ = true;
+    if (this.isConnected) {
+      void this.restoreTask_();
+    }
+  }
+
   private selectedFiles_ = new Set<number>();
   private pollTimer_ = 0;
   private readonly visibilityListener_ = () => {
@@ -166,7 +180,9 @@ export class AegisDownloadPanelElement extends CrLitElement {
   override connectedCallback() {
     super.connectedCallback();
     document.addEventListener('visibilitychange', this.visibilityListener_);
-    void this.restoreTask_();
+    if (this.requestReady_) {
+      void this.restoreTask_();
+    }
   }
 
   override disconnectedCallback() {
@@ -263,7 +279,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
                               'Torrent and magnet downloads are unavailable on this platform.');
         }
         const preview: TorrentPreview =
-            await sendWithPromise('parseMagnet', magnet);
+            await this.request_('parseMagnet', magnet);
         this.setTorrentPreview_(preview, zh);
       } else if (file) {
         const name = file.name.toLowerCase();
@@ -278,7 +294,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
                      'Torrent metadata exceeds 4 MiB.');
           }
           const preview: TorrentPreview =
-              await sendWithPromise('parseTorrent', await fileAsBase64(file));
+              await this.request_('parseTorrent', await fileAsBase64(file));
           this.setTorrentPreview_(preview, zh);
         } else if (name.endsWith('.meta4') || name.endsWith('.metalink')) {
           if (file.size > 1024 * 1024) {
@@ -286,7 +302,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
                 zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Metalink 檔案超過 1 MiB。' : 'Metalink 文件超过 1 MiB。') : 'Metalink exceeds 1 MiB.');
           }
           const preview: MetalinkPreview =
-              await sendWithPromise('parseMetalink', await file.text());
+              await this.request_('parseMetalink', await file.text());
           this.setMetalinkPreview_(preview, zh);
         } else {
           throw new Error(
@@ -373,7 +389,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
     this.requestId_ = '';
     try {
       const result: {ok: boolean, error?: string} =
-          await sendWithPromise('startMetalinkDownload', requestId);
+          await this.request_('startMetalinkDownload', requestId);
       this.previewText_ = result.ok ?
           (zh ?
                (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已新增到瀏覽器下載列表；完成後自動校驗雜湊並在需要時切換映象。' : '已添加到浏览器下载列表；完成后自动校验散列并在需要时切换镜像。') :
@@ -423,7 +439,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
     const requestId = this.requestId_;
     this.requestId_ = '';
     try {
-      const result: TorrentStartResult = await sendWithPromise(
+      const result: TorrentStartResult = await this.request_(
           'startTorrent', requestId, [...this.selectedFiles_], {
             enableDht: this.shadowRoot.querySelector<HTMLInputElement>('#dht')
                            ?.checked === true,
@@ -450,7 +466,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
 
   private async restoreTask_() {
     try {
-      const status: AegisStatus = await sendWithPromise('getStatus');
+      const status: AegisStatus = await this.request_('getStatus');
       this.profileAvailable_ = status.profileAvailable === true;
       this.torrentSupported_ =
           this.profileAvailable_ && status.torrentSupported === true;
@@ -485,7 +501,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
     const requestedId = this.taskId_;
     try {
       const status: TorrentStatus =
-          await sendWithPromise('getTorrentStatus', requestedId);
+          await this.request_('getTorrentStatus', requestedId);
       if (requestedId !== this.taskId_) {
         return;
       }
@@ -506,7 +522,7 @@ export class AegisDownloadPanelElement extends CrLitElement {
     window.clearTimeout(this.pollTimer_);
     try {
       const result: {ok: boolean} =
-          await sendWithPromise('controlTorrent', this.taskId_, action);
+          await this.request_('controlTorrent', this.taskId_, action);
       if (result.ok && action === 'cancel') {
         this.taskId_ = '';
         this.taskStatus_ = null;
