@@ -37,3 +37,7 @@ android_static_analysis = "on"
 # 固定使用 Ninja；不启用仅供测试的 V8 内存修改接口。
 use_siso = false
 v8_enable_memory_corruption_api = false
+
+# 产品版本独立于 Chromium 内核版本；版本码高于既有 151 内测包并逐次递增。
+android_override_version_name = "Ver 2.0 (070)"
+android_override_version_code = "2000000070"
