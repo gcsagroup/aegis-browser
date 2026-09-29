@@ -410,12 +410,14 @@ AgentToolResult SearchOffTheRecordSessionHistory(Profile* profile,
 
 std::string WindowRevision(Profile* profile, const AgentTask& task) {
   std::string material;
-  for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
+  auto windows = TaskWindows(profile, task);
+  std::ranges::sort(windows, {}, [](BrowserWindowInterface* window) {
+    return window->GetSessionID().id();
+  });
+  // 用户必须切回助手窗口批准关闭；焦点及激活顺序不改变待关闭内容。
+  // 版本只描述窗口和标签结构，关闭时仍检查归属、固定与未保存内容。
+  for (BrowserWindowInterface* browser : windows) {
     material.append(std::to_string(browser->GetSessionID().id()));
-    material.push_back('\n');
-    material.append((browser->GetWindow() && browser->GetWindow()->IsActive())
-                        ? "active"
-                        : "inactive");
     material.push_back('\n');
     TabListInterface* model = TabListInterface::From(browser);
     for (int index = 0; model && index < model->GetTabCount(); ++index) {
