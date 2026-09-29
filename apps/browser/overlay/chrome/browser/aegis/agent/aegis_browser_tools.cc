@@ -480,32 +480,59 @@ std::string TabRevision(Profile* profile, const AgentTask& task) {
   return Hash(material);
 }
 
-tab_groups::TabGroupColorId ParseGroupColor(const std::string* color) {
-  if (!color || *color == "grey") {
-    return tab_groups::TabGroupColorId::kGrey;
+// 工作区持久化使用固定小写值，不依赖上游调试输出或界面语言。
+std::string GroupColorName(tab_groups::TabGroupColorId color) {
+  switch (color) {
+    case tab_groups::TabGroupColorId::kGrey:
+      return "grey";
+    case tab_groups::TabGroupColorId::kBlue:
+      return "blue";
+    case tab_groups::TabGroupColorId::kRed:
+      return "red";
+    case tab_groups::TabGroupColorId::kYellow:
+      return "yellow";
+    case tab_groups::TabGroupColorId::kGreen:
+      return "green";
+    case tab_groups::TabGroupColorId::kPink:
+      return "pink";
+    case tab_groups::TabGroupColorId::kPurple:
+      return "purple";
+    case tab_groups::TabGroupColorId::kCyan:
+      return "cyan";
+    case tab_groups::TabGroupColorId::kOrange:
+      return "orange";
+    case tab_groups::TabGroupColorId::kNumEntries:
+      return "grey";
   }
-  if (*color == "blue") {
+}
+
+tab_groups::TabGroupColorId ParseGroupColor(const std::string* color) {
+  const std::string normalized = color ? base::ToLowerASCII(*color) : "grey";
+  if (normalized == "blue") {
     return tab_groups::TabGroupColorId::kBlue;
   }
-  if (*color == "red") {
+  if (normalized == "red") {
     return tab_groups::TabGroupColorId::kRed;
   }
-  if (*color == "yellow") {
+  if (normalized == "yellow") {
     return tab_groups::TabGroupColorId::kYellow;
   }
-  if (*color == "green") {
+  if (normalized == "green") {
     return tab_groups::TabGroupColorId::kGreen;
   }
-  if (*color == "pink") {
+  if (normalized == "pink") {
     return tab_groups::TabGroupColorId::kPink;
   }
-  if (*color == "purple") {
+  if (normalized == "purple") {
     return tab_groups::TabGroupColorId::kPurple;
   }
-  if (*color == "cyan") {
+  if (normalized == "cyan") {
     return tab_groups::TabGroupColorId::kCyan;
   }
-  return tab_groups::TabGroupColorId::kOrange;
+  if (normalized == "orange") {
+    return tab_groups::TabGroupColorId::kOrange;
+  }
+  return tab_groups::TabGroupColorId::kGrey;
 }
 
 void AppendBookmarkSnapshot(const bookmarks::BookmarkNode* node,
@@ -1562,8 +1589,7 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
         if (visual) {
           value.Set("group_key", group_id->ToString());
           value.Set("group_title", base::UTF16ToUTF8(visual->title()));
-          value.Set("group_color",
-                    tab_groups::TabGroupColorToString(visual->color()));
+          value.Set("group_color", GroupColorName(visual->color()));
         }
       }
       tabs.Append(std::move(value));
