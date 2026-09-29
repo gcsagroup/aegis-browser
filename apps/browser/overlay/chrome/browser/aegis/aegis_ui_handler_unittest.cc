@@ -39,7 +39,9 @@ class WorkspaceTestWindow : public TestBrowserWindow {
   bool IsTabStripEditable() const override { return true; }
 };
 
-class AegisWorkspaceHandlerTest : public AegisUIHandlerTest {
+class AegisWorkspaceHandlerTest
+    : public AegisUIHandlerTest,
+      public testing::WithParamInterface<tab_groups::TabGroupColorId> {
  protected:
   std::unique_ptr<BrowserWindow> CreateBrowserWindow() override {
     return std::make_unique<WorkspaceTestWindow>();
@@ -81,7 +83,7 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
                          TabListInterface::From(browser()), foreign.get()));
 }
 
-TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+TEST_P(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
   using namespace aegis::agent;
   AddTab(browser(), GURL("https://workspace.example/first"));
   AddTab(browser(), GURL("https://workspace.example/second"));
@@ -93,8 +95,7 @@ TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
       list->CreateTabGroup({first->GetHandle(), second->GetHandle()});
   ASSERT_TRUE(group);
   list->SetTabGroupVisualData(
-      *group, tab_groups::TabGroupVisualData(
-                  u"研究集合", tab_groups::TabGroupColorId::kBlue));
+      *group, tab_groups::TabGroupVisualData(u"研究集合", GetParam()));
   AgentTaskScope scope;
   scope.allowed_origins = {
       url::Origin::Create(GURL("https://workspace.example/"))};
@@ -160,7 +161,7 @@ TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
   auto visual = list->GetTabGroupVisualData(*restored_first->GetGroup());
   ASSERT_TRUE(visual);
   EXPECT_EQ(visual->title(), u"研究集合");
-  EXPECT_EQ(visual->color(), tab_groups::TabGroupColorId::kBlue);
+  EXPECT_EQ(visual->color(), GetParam());
   EXPECT_TRUE(
       task.owned_tab_ids().contains(restored_first->GetHandle().raw_value()));
 
@@ -177,6 +178,18 @@ TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
   EXPECT_FALSE(rejected.Take().ok);
   EXPECT_EQ(list->GetTabCount(), 4);
 }
+
+INSTANTIATE_TEST_SUITE_P(AllGroupColors,
+                         AegisWorkspaceHandlerTest,
+                         testing::Values(tab_groups::TabGroupColorId::kGrey,
+                                         tab_groups::TabGroupColorId::kBlue,
+                                         tab_groups::TabGroupColorId::kRed,
+                                         tab_groups::TabGroupColorId::kYellow,
+                                         tab_groups::TabGroupColorId::kGreen,
+                                         tab_groups::TabGroupColorId::kPink,
+                                         tab_groups::TabGroupColorId::kPurple,
+                                         tab_groups::TabGroupColorId::kCyan,
+                                         tab_groups::TabGroupColorId::kOrange));
 
 TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
   AegisUIConfig config;
