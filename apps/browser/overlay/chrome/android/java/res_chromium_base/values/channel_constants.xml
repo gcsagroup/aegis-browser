@@ -6,8 +6,8 @@ Play / 侧载显示名。不要写成 Chrome。
 -->
 
 <resources xmlns:android="http://schemas.android.com/apk/res/android">
-    <string name="app_name" translatable="false">GCSA-aegis</string>
-    <string name="bookmark_widget_title" translatable="false">GCSA-aegis bookmarks</string>
-    <string name="search_widget_title" translatable="false">GCSA-aegis search</string>
-    <string name="quick_action_search_widget_title" translatable="false">GCSA-aegis quick action search</string>
+    <string name="app_name" translatable="false">GCSA Aegis</string>
+    <string name="bookmark_widget_title" translatable="false">GCSA Aegis bookmarks</string>
+    <string name="search_widget_title" translatable="false">GCSA Aegis search</string>
+    <string name="quick_action_search_widget_title" translatable="false">GCSA Aegis quick action search</string>
 </resources>

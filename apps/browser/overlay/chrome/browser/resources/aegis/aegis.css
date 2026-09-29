@@ -480,3 +480,38 @@ button.primary {
     grid-template-columns: 1fr;
   }
 }
+
+/* 同一保护能力按可用宽度排版，手机无需缩放页面即可阅读和操作。 */
+.page { overflow-wrap: anywhere; }
+.page-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+.page-header .subtitle { margin-bottom: 0; }
+.brand-mark { width: 3.5rem; height: 3.5rem; flex: none; }
+.health-dot { flex: none; }
+button, summary { min-height: 44px; }
+summary { align-content: center; cursor: pointer; }
+button:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input, select, textarea { min-width: 0; }
+.result, .log li { overflow-wrap: anywhere; }
+dialog { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+@media (max-width: 600px) {
+  body { font-size: 16px; }
+  .page { padding: max(1.25rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
+  h1 { font-size: 1.65rem; }
+  .page-header { gap: .65rem; margin-bottom: 1.25rem; }
+  .brand-mark { width: 2.75rem; height: 2.75rem; }
+  .overview { padding: 1rem; }
+  .hint, .metric-label, .scope-note, .field-hint { font-size: .875rem; }
+  .metrics { gap: .4rem; }
+  .metric { padding: .6rem .4rem; }
+  .metric-value { font-size: 1.3rem; }
+  .row { align-items: center; gap: .75rem; }
+  .row input[type='checkbox'] { width: 24px; height: 24px; margin: 10px; }
+  .actions > button { flex: 1 1 9rem; }
+  .torrent-options { grid-template-columns: 1fr; }
+  .field input, .field select, .field textarea { font-size: 16px; min-height: 48px; }
+}
+@media (pointer: coarse) {
+  button, summary { min-height: 48px; }
+  .row { min-height: 64px; }
+}

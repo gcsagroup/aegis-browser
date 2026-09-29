@@ -1,0 +1,36 @@
+/* Copyright 2012 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* Apply mobile-specific overrides only on smaller screens to allow large
+ * screens (e.g. tablets or foldables in desktop mode) to use the desktop
+ * layout from about_version.css. */
+@media (width < 800px) {
+  #outer {
+    min-width: 0;  /* Wrap content to screen on mobile. */
+    text-align: left;
+    width: 90%;
+  }
+
+  #inner {
+    width: auto;
+  }
+
+  #logo {
+    float: none;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* 长路径和命令行允许换行，窄屏逐项阅读，折叠屏宽窗保留表格。 */
+@media (max-width: 600px) {
+  #outer { width: auto; margin: 0; padding: 20px 16px; }
+  #logo { margin: 0 0 20px; }
+  #inner, #inner tbody, #inner tr, #inner td, #inner caption { display: block; width: auto; }
+  #inner tr { margin-bottom: 16px; }
+  #inner td { padding: 2px 0; overflow-wrap: anywhere; white-space: normal; }
+  #inner .label { font-weight: 600; }
+  .version { font-size: 14px; line-height: 1.5; }
+  .copy-button { min-width: 48px; min-height: 48px; }
+}
