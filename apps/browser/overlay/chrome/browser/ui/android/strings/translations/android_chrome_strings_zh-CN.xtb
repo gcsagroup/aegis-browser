@@ -2129,4 +2129,17 @@
 <translation id="760705049427473785">欢迎使用 GCSA Aegis</translation>
 <translation id="238675389546312674">登录你的 Google 账号</translation>
 <translation id="7491982752760169795">GCSA Aegis 通知</translation>
+<translation id="1688340566136927032">使用 Google 账号</translation>
+<translation id="5134364026107972146">使用 Google 账号</translation>
+<translation id="8150962133588269870">允许 Google 账号登录</translation>
+<translation id="3105187476208202780">显示受支持的 Google 账号服务登录提示</translation>
+<translation id="2680512323557135137">已打开 Google 账号登录。</translation>
+<translation id="318367508751485602">已关闭 Google 账号登录。</translation>
+<translation id="1359657460482033355">账号服务由 Google 提供，是否可用取决于设备服务和当前浏览器版本。</translation>
+<translation id="5611682697265820958">发送标签页需要两台设备均支持 Google 账号和标签同步服务。</translation>
+<translation id="4930473423104209036">使用 GCSA Aegis 浏览网页。可选的 Google 账号服务需要设备和浏览器支持。</translation>
+<translation id="8751752083951272406">你的组织要求使用受支持的 Google 账号登录此浏览器。</translation>
+<translation id="2010249988484453277">此设备上的 Google 密码服务不可用</translation>
+<translation id="2958045851801017868">Google 密码服务不可用</translation>
+<translation id="5354352846738712842">Google 密码管理工具需要兼容的 Google Play 服务和浏览器支持，当前版本无法使用该服务。</translation>
 </translationbundle>
