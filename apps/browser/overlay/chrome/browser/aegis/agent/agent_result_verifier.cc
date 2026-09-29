@@ -202,6 +202,11 @@ AgentToolCall AgentResultVerifier::RetainVerificationContext(
     if (const auto* ids = call.arguments.FindList("tab_ids")) {
       context.arguments.Set("tab_ids", ids->Clone());
     }
+  } else if (call.tool_name == "window.activate" ||
+             call.tool_name == "window.close") {
+    if (const auto id = call.arguments.FindInt("window_id")) {
+      context.arguments.Set("window_id", *id);
+    }
   } else if (call.tool_name == "download.find_official") {
     context.document = call.document;
     context.committed_url = call.committed_url;
@@ -372,15 +377,19 @@ AgentVerificationDecision AgentResultVerifier::Verify(
                : Reject("created window was not adopted by the task");
   }
   if (call.tool_name == "window.activate") {
-    return value.FindInt("window_id").has_value() &&
+    return call.arguments.FindInt("window_id").has_value() &&
+                   value.FindInt("window_id") ==
+                       call.arguments.FindInt("window_id") &&
                    value.FindBool("active") == true
                ? Accept(true, "window activation was acknowledged")
                : Reject("window activation lacks browser state");
   }
   if (call.tool_name == "window.close") {
-    return value.FindInt("window_id").has_value() &&
-                   value.FindBool("close_requested") == true
-               ? Accept(true, "safe window close was requested")
+    return call.arguments.FindInt("window_id").has_value() &&
+                   value.FindInt("window_id") ==
+                       call.arguments.FindInt("window_id") &&
+                   value.FindBool("closed") == true
+               ? Accept(true, "window closure was observed")
                : Reject("window close lacks browser acknowledgement");
   }
   if (call.tool_name == "workspace.save") {

@@ -30,11 +30,13 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/tab_list/tab_list_interface.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/common/aegis/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 // GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"  // nogncheck
@@ -74,11 +76,7 @@ constexpr char kProfileUnavailableError[] =
     "Aegis is unavailable for this profile";
 
 bool IsAegisWebUIProfileSupported(const Profile* profile) {
-#if BUILDFLAG(IS_ANDROID)
-  return profile && profile->IsRegularProfile();
-#else
   return aegis::IsAegisProfileSupported(profile);
-#endif
 }
 
 std::optional<int> ReadInteger(const base::DictValue& dict, const char* key) {
@@ -157,30 +155,34 @@ std::optional<aegis::PreparedSummary> ParsePreparedSummary(
 
 namespace aegis {
 
-content::WebContents* FindSummarySourceTabInModel(
-    TabStripModel* model,
+content::WebContents* FindSummarySourceTabInList(
+    TabListInterface* list,
     content::WebContents* settings_tab) {
-#if BUILDFLAG(IS_ANDROID)
-  (void)model;
-  (void)settings_tab;
-  return nullptr;
-#else
-  if (!model || !settings_tab) {
+  if (!list || !settings_tab) {
     return nullptr;
   }
-  const int settings_index = model->GetIndexOfWebContents(settings_tab);
-  if (settings_index == TabStripModel::kNoTab) {
+  int settings_index = -1;
+  for (int index = 0; index < list->GetTabCount(); ++index) {
+    tabs::TabInterface* tab = list->GetTab(index);
+    if (tab && tab->GetContents() == settings_tab) {
+      settings_index = index;
+      break;
+    }
+  }
+  if (settings_index < 0) {
     return nullptr;
   }
-  auto candidate_at = [model, settings_tab](int index) {
-    content::WebContents* contents = model->GetWebContentsAt(index);
-    if (!contents || contents == settings_tab) {
+  auto candidate_at = [list, settings_tab](int index) {
+    tabs::TabInterface* tab = list->GetTab(index);
+    content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+    if (!contents || contents == settings_tab ||
+        contents->GetBrowserContext() != settings_tab->GetBrowserContext()) {
       return static_cast<content::WebContents*>(nullptr);
     }
-    const GURL& url = contents->GetLastCommittedURL();
-    return url.SchemeIsHTTPOrHTTPS() ? contents : nullptr;
+    return contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() ? contents
+                                                                 : nullptr;
   };
-  for (int distance = 1; distance < model->count(); ++distance) {
+  for (int distance = 1; distance < list->GetTabCount(); ++distance) {
     const int left = settings_index - distance;
     if (left >= 0) {
       if (content::WebContents* candidate = candidate_at(left)) {
@@ -188,14 +190,13 @@ content::WebContents* FindSummarySourceTabInModel(
       }
     }
     const int right = settings_index + distance;
-    if (right < model->count()) {
+    if (right < list->GetTabCount()) {
       if (content::WebContents* candidate = candidate_at(right)) {
         return candidate;
       }
     }
   }
   return nullptr;
-#endif
 }
 
 }  // namespace aegis
@@ -203,32 +204,22 @@ content::WebContents* FindSummarySourceTabInModel(
 namespace {
 
 content::WebContents* FindHttpTab(content::WebContents* skip) {
-#if BUILDFLAG(IS_ANDROID)
-  // Android 没有桌面 TabStrip。摘要/截图先只用当前 WebUI 页；设置页本身不是
-  // http。
-  (void)skip;
-  return nullptr;
-#else
-  content::WebContents* found = nullptr;
-  GlobalBrowserCollection* collection = GlobalBrowserCollection::GetInstance();
-  if (!collection) {
+  if (!skip) {
     return nullptr;
   }
-  collection->ForEach(
+  Profile* profile = Profile::FromBrowserContext(skip->GetBrowserContext());
+  content::WebContents* found = nullptr;
+  ProfileBrowserCollection::GetForProfile(profile)->ForEach(
       [&](BrowserWindowInterface* browser) {
-        TabStripModel* model = browser->GetTabStripModel();
-        if (!model) {
+        if (!browser || browser->GetProfile() != profile ||
+            browser->IsDeleteScheduled()) {
           return true;
         }
-        if (model->GetIndexOfWebContents(skip) == TabStripModel::kNoTab) {
-          return true;
-        }
-        found = aegis::FindSummarySourceTabInModel(model, skip);
-        return false;
-      },
-      BrowserCollection::Order::kActivation);
+        found = aegis::FindSummarySourceTabInList(
+            TabListInterface::From(browser), skip);
+        return !found;
+      });
   return found;
-#endif
 }
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -487,11 +478,7 @@ base::DictValue AegisUIHandler::BuildStatus() {
   status.Set("privacyAi", service && service->IsPrivacyAiEnabled());
   status.Set("isAndroid", BUILDFLAG(IS_ANDROID));
   const bool browser_agent_available =
-#if BUILDFLAG(IS_ANDROID)
-      profile && profile->IsRegularProfile() &&
-#else
       supported_profile &&
-#endif
       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
   status.Set("browserAgentAvailable", browser_agent_available);
   status.Set("browserAgentEnabled",
@@ -627,12 +614,8 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
     service->SetAiControlEnabled(enabled);
   } else if (module == "browserAgent") {
     Profile* profile = Profile::FromWebUI(web_ui());
-#if BUILDFLAG(IS_ANDROID)
-    const bool agent_profile_supported = profile && profile->IsRegularProfile();
-#else
     const bool agent_profile_supported =
         aegis::IsAegisProfileSupported(profile);
-#endif
     if (!agent_profile_supported ||
         !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
       base::DictValue status = BuildStatus();
@@ -666,7 +649,7 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
   base::DictValue status = BuildStatus();
 #if BUILDFLAG(IS_ANDROID)
   Profile* profile = Profile::FromWebUI(web_ui());
-  if (!profile || !profile->IsRegularProfile() ||
+  if (!aegis::IsAegisProfileSupported(profile) ||
       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
     status.Set("ok", false);

@@ -27,7 +27,6 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/uuid.h"
-#include "build/build_config.h"
 #include "chrome/browser/aegis/agent/agent_planner.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -35,15 +34,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
-#if !BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/ui/navigator/browser_navigator.h"
-// GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
-#include "chrome/browser/ui/navigator/browser_navigator_params.h"  // nogncheck
-#include "chrome/browser/ui/tabs/tab_group_model.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
-#endif
 #include "chrome/common/aegis/pref_names.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_node.h"
@@ -60,7 +53,6 @@
 #include "components/tab_groups/tab_group_color.h"
 #include "components/tab_groups/tab_group_info.h"
 #include "components/tab_groups/tab_group_visual_data.h"
-#include "components/tabs/public/tab_group.h"
 #include "components/tabs/public/tab_handle_factory.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/undo/bookmark_undo_service.h"
@@ -90,10 +82,6 @@
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "ui/base/base_window.h"
-#include "ui/base/page_transition_types.h"
-#if !BUILDFLAG(IS_ANDROID)
-#include "ui/base/window_open_disposition.h"
-#endif
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -260,7 +248,6 @@ std::optional<WindowTabMetadata> ReadWindowTabMetadata(Profile* profile,
   return result;
 }
 
-#if !BUILDFLAG(IS_ANDROID)
 std::vector<BrowserWindowInterface*> TaskWindows(Profile* profile,
                                                  const AgentTask& task) {
   std::vector<BrowserWindowInterface*> windows;
@@ -310,7 +297,6 @@ size_t NormalWindowCount(Profile* profile) {
       });
   return count;
 }
-#endif
 
 struct OffTheRecordHistoryResult {
   GURL url;
@@ -422,7 +408,6 @@ AgentToolResult SearchOffTheRecordSessionHistory(Profile* profile,
   return result;
 }
 
-#if !BUILDFLAG(IS_ANDROID)
 std::string WindowRevision(Profile* profile, const AgentTask& task) {
   std::string material;
   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
@@ -430,9 +415,9 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
     material.push_back('\n');
     material.append(browser->IsActive() ? "active" : "inactive");
     material.push_back('\n');
-    TabStripModel* model = browser->GetTabStripModel();
-    for (int index = 0; model && index < model->count(); ++index) {
-      tabs::TabInterface* tab = model->GetTabAtIndex(index);
+    TabListInterface* model = TabListInterface::From(browser);
+    for (int index = 0; model && index < model->GetTabCount(); ++index) {
+      tabs::TabInterface* tab = model->GetTab(index);
       if (!tab || !task.AllowsTab(tab->GetHandle().raw_value())) {
         continue;
       }
@@ -440,7 +425,7 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
       material.push_back(':');
       material.append(tab->GetURL().spec());
       material.push_back(':');
-      material.append(model->IsTabPinned(index) ? "pinned" : "unpinned");
+      material.append(tab->IsPinned() ? "pinned" : "unpinned");
       material.push_back('\n');
     }
   }
@@ -458,7 +443,6 @@ bool HasActiveDownload(Profile* profile) {
     return item && item->GetState() == download::DownloadItem::IN_PROGRESS;
   });
 }
-#endif
 
 const char* ContentSettingString(ContentSetting setting) {
   switch (setting) {
@@ -1004,10 +988,8 @@ AegisBrowserTools::~AegisBrowserTools() {
 
 bool AegisBrowserTools::CanHandle(std::string_view tool_name) const {
   return base::StartsWith(tool_name, "tab.") ||
-#if !BUILDFLAG(IS_ANDROID)
          base::StartsWith(tool_name, "window.") ||
          base::StartsWith(tool_name, "workspace.") ||
-#endif
          base::StartsWith(tool_name, "bookmark.") ||
          base::StartsWith(tool_name, "download.") ||
          tool_name == "history.search" || tool_name == "permissions.inspect";
@@ -1363,12 +1345,6 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
 void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
                                           const AgentToolCall& call,
                                           ToolResultCallback callback) {
-#if BUILDFLAG(IS_ANDROID)
-  std::move(callback).Run(
-      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
-                  "window tools are unavailable on Android"));
-  return;
-#else
   if (call.tool_name == "window.list") {
     AgentToolResult result = SuccessResult(call.action_id, "windows listed");
     base::ListValue windows;
@@ -1377,9 +1353,9 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
       value.Set("window_id", browser->GetSessionID().id());
       value.Set("active", browser->IsActive());
       base::ListValue tab_ids;
-      TabStripModel* model = browser->GetTabStripModel();
-      for (int index = 0; model && index < model->count(); ++index) {
-        tabs::TabInterface* tab = model->GetTabAtIndex(index);
+      TabListInterface* model = TabListInterface::From(browser);
+      for (int index = 0; model && index < model->GetTabCount(); ++index) {
+        tabs::TabInterface* tab = model->GetTab(index);
         if (tab && task->AllowsTab(tab->GetHandle().raw_value())) {
           tab_ids.Append(tab->GetHandle().raw_value());
         }
@@ -1405,31 +1381,60 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
                       "approved URL or source window is unavailable"));
       return;
     }
-    NavigateParams params(source, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
-    params.disposition = WindowOpenDisposition::NEW_WINDOW;
-    Navigate(&params);
-    tabs::TabInterface* tab = params.navigated_or_inserted_contents
-                                  ? tabs::TabInterface::GetFromContents(
-                                        params.navigated_or_inserted_contents)
-                                  : nullptr;
-    BrowserWindowInterface* created =
-        tab ? tab->GetBrowserWindowInterface() : nullptr;
-    const int32_t tab_id = tab ? tab->GetHandle().raw_value() : 0;
-    if (!tab || !created || created->GetProfile() != profile_ ||
-        !task->AdoptOwnedTab(tab_id)) {
-      if (tab && tab->GetProfile() == profile_) {
-        tab->Close();
-      }
+    if (GetBrowserWindowCreationStatusForProfile(*profile_) !=
+        BrowserWindowInterface::CreationStatus::kOk) {
       std::move(callback).Run(
-          ErrorResult(call.action_id, AgentErrorCode::kBudgetExhausted,
-                      "new window tab could not be adopted"));
+          ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+                      "the system cannot create another browser window"));
       return;
     }
-    AgentToolResult result = SuccessResult(call.action_id, "window created");
-    result.value.Set("window_id", created->GetSessionID().id());
-    result.value.Set("tab_id", tab_id);
-    result.value.Set("revision", WindowRevision(profile_, *task));
-    std::move(callback).Run(std::move(result));
+    CreateBrowserWindow(
+        BrowserWindowCreateParams(profile_, /*from_user_gesture=*/true),
+        base::BindOnce(
+            [](base::WeakPtr<AegisBrowserTools> self,
+               base::WeakPtr<AgentTask> current_task, GURL target,
+               std::string action_id, ToolResultCallback done,
+               BrowserWindowInterface* created) {
+              TabListInterface* list =
+                  created ? TabListInterface::From(created) : nullptr;
+              // 窗口建立是异步操作；任务已取消或资料已关闭时不能补做导航。
+              if (!self || !current_task ||
+                  current_task->state() != AgentTaskState::kRunning ||
+                  current_task->HasExpired(base::Time::Now()) || !list ||
+                  created->GetProfile() != self->profile_) {
+                if (list && list->GetTabCount() == 0) {
+                  created->GetWindow()->Close();
+                }
+                std::move(done).Run(
+                    ErrorResult(action_id, AgentErrorCode::kToolUnavailable,
+                                "window creation cancelled or unavailable"));
+                return;
+              }
+              tabs::TabInterface* tab = list->OpenTab(
+                  target, list->GetTabCount(), /*foreground=*/true);
+              const int32_t id = tab ? tab->GetHandle().raw_value() : 0;
+              if (!tab || tab->GetProfile() != self->profile_ ||
+                  !current_task->AdoptOwnedTab(id)) {
+                if (tab && tab->GetProfile() == self->profile_) {
+                  tab->Close();
+                }
+                std::move(done).Run(
+                    ErrorResult(action_id, AgentErrorCode::kBudgetExhausted,
+                                "new window tab could not be adopted"));
+                return;
+              }
+              created->GetWindow()->Show();
+              AgentToolResult result =
+                  SuccessResult(action_id, "window created");
+              result.value.Set("window_id", created->GetSessionID().id());
+              result.value.Set("tab_id", id);
+              result.value.Set("revision",
+                               WindowRevision(self->profile_, *current_task));
+              std::move(done).Run(std::move(result));
+            },
+            weak_ptr_factory_.GetWeakPtr(), task->GetWeakPtr(), url,
+            call.action_id, std::move(callback)));
+
     return;
   }
 
@@ -1444,15 +1449,14 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
   }
   if (call.tool_name == "window.activate") {
     browser->GetWindow()->Activate();
-    AgentToolResult result = SuccessResult(call.action_id, "window activated");
-    result.value.Set("window_id", *window_id);
-    result.value.Set("active", true);
-    std::move(callback).Run(std::move(result));
+    VerifyWindowAction(task->GetWeakPtr(), *window_id, /*closing=*/false,
+                       base::TimeTicks::Now() + base::Seconds(3),
+                       call.action_id, std::move(callback));
     return;
   }
   if (call.tool_name == "window.close") {
     const std::string* revision = call.arguments.FindString("revision");
-    TabStripModel* model = browser->GetTabStripModel();
+    TabListInterface* model = TabListInterface::From(browser);
     if (!revision || *revision != WindowRevision(profile_, *task) || !model) {
       std::move(callback).Run(ErrorResult(call.action_id,
                                           AgentErrorCode::kStaleDocument,
@@ -1465,12 +1469,12 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
                       "last window or active download prevents close"));
       return;
     }
-    for (int index = 0; index < model->count(); ++index) {
-      tabs::TabInterface* tab = model->GetTabAtIndex(index);
+    for (int index = 0; index < model->GetTabCount(); ++index) {
+      tabs::TabInterface* tab = model->GetTab(index);
       content::WebContents* contents = tab ? tab->GetContents() : nullptr;
       if (!tab ||
           !task->owned_tab_ids().contains(tab->GetHandle().raw_value()) ||
-          model->IsTabPinned(index) ||
+          tab->IsPinned() ||
           (contents && contents->NeedToFireBeforeUnloadOrUnloadEvents())) {
         std::move(callback).Run(
             ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
@@ -1479,28 +1483,65 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
       }
     }
     browser->GetWindow()->Close();
-    AgentToolResult result =
-        SuccessResult(call.action_id, "safe window close requested");
-    result.value.Set("window_id", *window_id);
-    result.value.Set("close_requested", true);
-    std::move(callback).Run(std::move(result));
+    VerifyWindowAction(task->GetWeakPtr(), *window_id, /*closing=*/true,
+                       base::TimeTicks::Now() + base::Seconds(3),
+                       call.action_id, std::move(callback));
     return;
   }
   std::move(callback).Run(ErrorResult(call.action_id,
                                       AgentErrorCode::kToolUnavailable,
                                       "window tool is not implemented"));
-#endif
+}
+
+void AegisBrowserTools::VerifyWindowAction(base::WeakPtr<AgentTask> task,
+                                           int window_id,
+                                           bool closing,
+                                           base::TimeTicks deadline,
+                                           std::string action_id,
+                                           ToolResultCallback callback) {
+  if (!task || task->HasExpired(base::Time::Now())) {
+    std::move(callback).Run(
+        ErrorResult(action_id, AgentErrorCode::kVerificationFailed,
+                    "window action could not be verified after task ended"));
+    return;
+  }
+  // 系统窗口操作可能异步生效；回读资料下的真实窗口，不以发出请求代替完成。
+  BrowserWindowInterface* observed = nullptr;
+  ProfileBrowserCollection::GetForProfile(profile_)->ForEach(
+      [&](BrowserWindowInterface* candidate) {
+        if (candidate->GetProfile() == profile_ &&
+            candidate->GetSessionID().id() == window_id) {
+          observed = candidate;
+          return false;
+        }
+        return true;
+      });
+  if (closing ? !observed : (observed && observed->IsActive())) {
+    AgentToolResult result = SuccessResult(
+        action_id, closing ? "window closed" : "window activated");
+    result.value.Set("window_id", window_id);
+    result.value.Set(closing ? "closed" : "active", true);
+    std::move(callback).Run(std::move(result));
+    return;
+  }
+  if (base::TimeTicks::Now() >= deadline) {
+    std::move(callback).Run(
+        ErrorResult(action_id, AgentErrorCode::kVerificationFailed,
+                    closing ? "the system has not closed the window"
+                            : "the system has not activated the window"));
+    return;
+  }
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AegisBrowserTools::VerifyWindowAction,
+                     weak_ptr_factory_.GetWeakPtr(), task, window_id, closing,
+                     deadline, std::move(action_id), std::move(callback)),
+      base::Milliseconds(100));
 }
 
 void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
                                              const AgentToolCall& call,
                                              ToolResultCallback callback) {
-#if BUILDFLAG(IS_ANDROID)
-  std::move(callback).Run(
-      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
-                  "workspace tools are unavailable on Android"));
-  return;
-#else
   if (call.tool_name == "workspace.save") {
     const std::string* name = call.arguments.FindString("name");
     const std::string* revision = call.arguments.FindString("revision");
@@ -1517,15 +1558,12 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
       value.Set("pinned", located.tab->IsPinned());
       if (std::optional<tab_groups::TabGroupId> group_id =
               located.tab->GetGroup()) {
-        TabStripModel* model = located.browser->GetTabStripModel();
-        TabGroup* group =
-            model ? model->group_model()->GetTabGroup(*group_id) : nullptr;
-        if (group && group->visual_data()) {
+        const auto visual = located.tab_list->GetTabGroupVisualData(*group_id);
+        if (visual) {
           value.Set("group_key", group_id->ToString());
-          value.Set("group_title",
-                    base::UTF16ToUTF8(group->visual_data()->title()));
-          value.Set("group_color", tab_groups::TabGroupColorToString(
-                                       group->visual_data()->color()));
+          value.Set("group_title", base::UTF16ToUTF8(visual->title()));
+          value.Set("group_color",
+                    tab_groups::TabGroupColorToString(visual->color()));
         }
       }
       tabs.Append(std::move(value));
@@ -1588,14 +1626,19 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
     }
     BrowserWindowInterface* browser =
         ProfileBrowserCollection::GetForProfile(profile_)->FindTabbedBrowser();
-    if (!browser || browser->GetProfile() != profile_) {
+    TabListInterface* tab_list = browser && browser->GetProfile() == profile_
+                                     ? TabListInterface::From(browser)
+                                     : nullptr;
+    if (!tab_list || !TabListInterface::CanEditTabList(*profile_)) {
       std::move(callback).Run(
           ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
                       "normal browser window is unavailable"));
       return;
     }
     for (const base::Value& value : *tabs) {
-      const std::string* url_value = value.GetDict().FindString("url");
+      const base::DictValue* saved_tab = value.GetIfDict();
+      const std::string* url_value =
+          saved_tab ? saved_tab->FindString("url") : nullptr;
       if (!url_value || !task->scope().AllowsOrigin(GURL(*url_value))) {
         std::move(callback).Run(
             ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
@@ -1605,25 +1648,25 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
     }
 
     std::vector<tabs::TabInterface*> created_tabs;
+    // 任何一步未生效都撤销本次新建标签，避免把部分恢复报告为完成。
+    const auto rollback = [&]() {
+      for (tabs::TabInterface* created : created_tabs) {
+        task->ReleaseOwnedTab(created->GetHandle().raw_value());
+        created->Close();
+      }
+    };
     std::map<std::string, std::vector<tabs::TabInterface*>> group_tabs;
     std::map<std::string, std::pair<std::string, std::string>> group_visuals;
     for (const base::Value& value : *tabs) {
       const base::DictValue& tab_value = value.GetDict();
-      NavigateParams params(browser, GURL(*tab_value.FindString("url")),
-                            ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
-      params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
-      Navigate(&params);
-      tabs::TabInterface* tab = params.navigated_or_inserted_contents
-                                    ? tabs::TabInterface::GetFromContents(
-                                          params.navigated_or_inserted_contents)
-                                    : nullptr;
+      tabs::TabInterface* tab = tab_list->OpenTab(
+          GURL(*tab_value.FindString("url")), tab_list->GetTabCount(),
+          /*foreground=*/false);
       const int32_t tab_id = tab ? tab->GetHandle().raw_value() : 0;
-      if (!tab || !task->AdoptOwnedTab(tab_id)) {
-        for (tabs::TabInterface* created : created_tabs) {
-          task->ReleaseOwnedTab(created->GetHandle().raw_value());
-          created->Close();
-        }
-        if (tab) {
+      if (!tab || tab->GetProfile() != profile_ ||
+          !task->AdoptOwnedTab(tab_id)) {
+        rollback();
+        if (tab && tab->GetProfile() == profile_) {
           tab->Close();
         }
         std::move(callback).Run(
@@ -1632,10 +1675,15 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
         return;
       }
       created_tabs.push_back(tab);
-      TabStripModel* model = browser->GetTabStripModel();
-      const int index = model->GetIndexOfTab(tab);
       if (tab_value.FindBool("pinned").value_or(false)) {
-        model->SetTabPinned(index, true);
+        tab_list->PinTab(tab->GetHandle());
+        if (!tab->IsPinned()) {
+          rollback();
+          std::move(callback).Run(
+              ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+                          "workspace restore rolled back after pin failure"));
+          return;
+        }
       }
       if (const std::string* group_key = tab_value.FindString("group_key")) {
         group_tabs[*group_key].push_back(tab);
@@ -1647,25 +1695,36 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
                                          : std::string("grey")};
       }
     }
-    TabStripModel* model = browser->GetTabStripModel();
     for (auto& [group_key, tabs_in_group] : group_tabs) {
-      std::vector<int> indices;
+      std::vector<tabs::TabHandle> handles;
       for (tabs::TabInterface* tab : tabs_in_group) {
-        const int index = model->GetIndexOfTab(tab);
-        if (index != TabStripModel::kNoTab) {
-          indices.push_back(index);
-        }
+        handles.push_back(tab->GetHandle());
       }
-      if (indices.empty()) {
-        continue;
+      const auto group_id = tab_list->CreateTabGroup(handles);
+      if (!group_id) {
+        rollback();
+        std::move(callback).Run(
+            ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
+                        "workspace restore rolled back after group failure"));
+        return;
       }
-      std::ranges::sort(indices);
-      const tab_groups::TabGroupId group_id = model->AddToNewGroup(indices);
       const auto& visual = group_visuals[group_key];
-      model->ChangeTabGroupVisuals(group_id,
-                                   tab_groups::TabGroupVisualData(
-                                       base::UTF8ToUTF16(visual.first),
-                                       ParseGroupColor(&visual.second), false));
+      const tab_groups::TabGroupVisualData expected_visual(
+          base::UTF8ToUTF16(visual.first), ParseGroupColor(&visual.second),
+          false);
+      tab_list->SetTabGroupVisualData(*group_id, expected_visual);
+      const auto actual_visual = tab_list->GetTabGroupVisualData(*group_id);
+      if (!actual_visual || actual_visual->title() != expected_visual.title() ||
+          actual_visual->color() != expected_visual.color() ||
+          !std::ranges::all_of(tabs_in_group, [&](tabs::TabInterface* tab) {
+            return tab->GetGroup() == group_id;
+          })) {
+        rollback();
+        std::move(callback).Run(ErrorResult(
+            call.action_id, AgentErrorCode::kVerificationFailed,
+            "workspace restore rolled back after group verification"));
+        return;
+      }
     }
     AgentToolResult result =
         SuccessResult(call.action_id, "workspace restored");
@@ -1682,7 +1741,6 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
   std::move(callback).Run(ErrorResult(call.action_id,
                                       AgentErrorCode::kToolUnavailable,
                                       "workspace tool is not implemented"));
-#endif
 }
 
 void AegisBrowserTools::ExecuteHistoryTool(AgentTask* task,

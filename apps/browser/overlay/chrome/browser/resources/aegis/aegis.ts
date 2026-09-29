@@ -158,7 +158,6 @@ let modelListRequestSerial = 0;
 let modelSettingsRequestSerial = 0;
 let lastModelStatusSignature = '';
 let modelControlsEnabled = false;
-let modelControlsAndroid = false;
 let summaryRequestRunning = false;
 
 function checkbox(id: string): HTMLInputElement {
@@ -293,12 +292,6 @@ function formatMeta(status: AegisStatus): string {
 }
 
 function formatPrivacyMeta(status: AegisStatus): string {
-  if (status.isAndroid) {
-    const lang = localeCode();
-    return lang === 'zh-CN' ? 'Android 保护中心暂不支持直接总结其他标签页。请在目标网页菜单中选择“使用 Aegis 处理此页面”。' :
-        lang === 'zh-TW' ? 'Android 防護中心暫不支援直接總結其他分頁。請在目標網頁選單中選擇「使用 Aegis 處理此頁面」。' :
-        'Direct summaries from this protection page are not available on Android. Open the target page menu and choose Use Aegis on this page.';
-  }
   const lang = document.documentElement.lang || 'zh-CN';
   const zh = lang.startsWith('zh');
   if (!status.privacyAi) {
@@ -554,7 +547,7 @@ function updateModelFormatPresentation() {
   endpoint.readOnly = false;
   endpoint.placeholder = MODEL_ENDPOINTS[activeModelFormat];
   getRequiredElement('model-api-key-field').hidden = false;
-  actionButton('model-key-clear').hidden = modelControlsAndroid;
+  actionButton('model-key-clear').hidden = false;
   const note = getRequiredElement('model-data-note');
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   note.textContent = local ?
@@ -573,7 +566,7 @@ function updateModelFormatPresentation() {
 }
 
 function updateModelControlAvailability() {
-  const available = modelControlsEnabled && !modelControlsAndroid;
+  const available = modelControlsEnabled;
   selectField('model-provider').disabled = !available;
   textField('model-endpoint').disabled = !available;
   textField('model-api-key').disabled = !available;
@@ -684,18 +677,17 @@ function applyStatus(status: AegisStatus) {
   checkbox('privacy-ai').checked = status.privacyAi;
   const android = !!status.isAndroid;
   modelControlsEnabled = status.privacyAi;
-  modelControlsAndroid = android;
   const modelFields = document.getElementById('model-fields');
   if (modelFields instanceof HTMLElement) {
-    modelFields.hidden = android;
+    modelFields.hidden = false;
   }
   const aiSection = document.getElementById('ai-control-section');
   if (aiSection instanceof HTMLElement) {
     aiSection.hidden = android;
   }
-  actionButton('model-load').hidden = android;
-  actionButton('model-save').hidden = android;
-  actionButton('model-key-clear').hidden = android;
+  actionButton('model-load').hidden = false;
+  actionButton('model-save').hidden = false;
+  actionButton('model-key-clear').hidden = false;
   applyModelStatus(status);
   updateModelFormatPresentation();
   updateModelControlAvailability();
@@ -710,7 +702,7 @@ function applyStatus(status: AegisStatus) {
   fillActivityLog(status.recentEvents || []);
   actionButton('filter-update').disabled = status.filterListUpdating;
   actionButton('summarize').disabled =
-      android || summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
+      summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
   if (status.profileAvailable === false) {
     document
         .querySelectorAll<HTMLInputElement|HTMLButtonElement|
@@ -1373,9 +1365,6 @@ function bindModelControls() {
 }
 
 async function loadModels() {
-  if (modelControlsAndroid) {
-    return;
-  }
   const snapshot = captureModelFormSnapshot();
   const apiKey = textField('model-api-key').value.trim();
   const serial = ++modelListRequestSerial;
@@ -1421,9 +1410,6 @@ async function loadModels() {
 }
 
 async function saveModelSettings(clearKey: boolean) {
-  if (modelControlsAndroid) {
-    return;
-  }
   const snapshot = captureModelFormSnapshot();
   const apiKey = clearKey ? '' : textField('model-api-key').value.trim();
   const serial = ++modelSettingsRequestSerial;
@@ -1524,7 +1510,7 @@ async function init() {
     getRequiredElement('filter-meta').textContent = formatMeta(next);
     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
     actionButton('summarize').disabled =
-        !!next.isAndroid || summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
+        summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
   });
 }
 

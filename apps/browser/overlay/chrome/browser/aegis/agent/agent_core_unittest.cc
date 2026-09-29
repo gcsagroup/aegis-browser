@@ -1415,6 +1415,39 @@ TEST(AegisAgentResultVerifierTest, VerifiesDynamicTabAndWorkspaceOwnership) {
           .accepted);
 }
 
+TEST(AegisAgentResultVerifierTest, WindowCloseRequiresObservedClosure) {
+  AgentToolRegistry registry;
+  AgentResultVerifier verifier;
+  AgentTask task("window-close", "关闭已批准的窗口", AgentMode::kAct,
+                 TestScope());
+  AgentToolCall call;
+  call.action_id = "close-window";
+  call.tool_name = "window.close";
+  call.arguments.Set("window_id", 3);
+  call = AgentResultVerifier::RetainVerificationContext(call);
+  AgentToolResult result;
+  result.action_id = call.action_id;
+  result.ok = true;
+  result.message = "window operation";
+  result.value.Set("window_id", 3);
+  result.value.Set("close_requested", true);
+  EXPECT_FALSE(
+      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
+          .accepted);
+  result.value.Set("closed", false);
+  EXPECT_FALSE(
+      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
+          .accepted);
+  result.value.Set("closed", true);
+  EXPECT_TRUE(
+      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
+          .accepted);
+  result.value.Set("window_id", 4);
+  EXPECT_FALSE(
+      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
+          .accepted);
+}
+
 TEST(AegisAgentResultVerifierTest, GroupVerificationSurvivesAsyncMinimization) {
   AgentToolRegistry registry;
   AgentResultVerifier verifier;

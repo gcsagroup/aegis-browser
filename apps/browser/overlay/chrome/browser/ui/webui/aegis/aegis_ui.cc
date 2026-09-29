@@ -549,11 +549,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
 
 bool AegisUIConfig::IsWebUIEnabled(content::BrowserContext* browser_context) {
   Profile* profile = Profile::FromBrowserContext(browser_context);
-#if BUILDFLAG(IS_ANDROID)
-  return profile && profile->IsRegularProfile();
-#else
   return aegis::IsAegisProfileSupported(profile);
-#endif
 }
 
 AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {

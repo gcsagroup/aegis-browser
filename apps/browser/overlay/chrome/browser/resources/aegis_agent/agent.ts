@@ -32,9 +32,28 @@ let activeView: 'task'|'automation'|'research' = 'task';
 let researchTabs: ResearchTab[] = [];
 const selectedResearchTabs = new Set<number>();
 const launchParameters = new URLSearchParams(window.location.search);
-const launchGoal = (launchParameters.get('goal') || '').trim().slice(0, 4096);
-const launchAutoStart =
-    launchParameters.get('autostart') === '1' && launchGoal.length > 0;
+const launchRequest = consumeLaunchRequest();
+const launchGoal = launchRequest.goal;
+const launchAutoStart = launchRequest.autoStart;
+
+function consumeLaunchRequest(): {goal: string, autoStart: boolean} {
+  const url = new URL(window.location.href);
+  const goal = (url.searchParams.get('goal') || '').trim().slice(0, 4096);
+  const autoStart = url.searchParams.get('autostart') === '1' && goal.length > 0;
+  // 原生入口只提交一次请求。先消费历史记录中的参数，再开始异步规划，
+  // 使返回、刷新和进程恢复都只能查看已有任务，不能重放启动动作。
+  if (url.searchParams.has('autostart') || url.searchParams.has('goal')) {
+    url.searchParams.delete('autostart');
+    url.searchParams.delete('goal');
+    try {
+      window.history.replaceState(window.history.state, '', url.href);
+    } catch {
+      // 无法消费启动参数时仅填入目标，由用户手动开始。
+      return {goal, autoStart: false};
+    }
+  }
+  return {goal, autoStart};
+}
 
 function element<T extends HTMLElement>(id: string): T {
   const value = document.getElementById(id);
@@ -1632,8 +1651,7 @@ try {
   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
     render(initial);
     proxy.handler.showUI();
-    // A launcher invocation always represents a new user request. Do not let a
-    // completed (or otherwise retained) previous task silently suppress it.
+    // 只有已消费的一次性原生启动请求才创建新任务。
     if (launchAutoStart && initial.modelConfigured) {
       element<HTMLButtonElement>('plan-button').click();
     }
