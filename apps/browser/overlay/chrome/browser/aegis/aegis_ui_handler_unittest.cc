@@ -194,14 +194,14 @@ INSTANTIATE_TEST_SUITE_P(AllGroupColors,
 
 TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
   AddTab(browser(), GURL("https://docs.example/first"));
-  AddTab(browser(), GURL("https://other.example/second"));
-  AddTab(browser(), GURL("chrome://aegis/"));
   auto* list = TabListInterface::From(browser());
   const int32_t selected = list->GetTab(0)->GetHandle().raw_value();
+  AddTab(browser(), GURL("https://other.example/second"));
+  AddTab(browser(), GURL("chrome://aegis/"));
   const auto one =
       agent::WorkspaceRestoreOrigins(profile(), browser(), selected, false);
   ASSERT_EQ(one.size(), 1u);
-  EXPECT_EQ(one.front(), url::Origin::Create(list->GetTab(0)->GetURL()));
+  EXPECT_EQ(one.front(), url::Origin::Create(GURL("https://docs.example/")));
   const auto window =
       agent::WorkspaceRestoreOrigins(profile(), browser(), selected, true);
   EXPECT_EQ(window.size(), 2u);

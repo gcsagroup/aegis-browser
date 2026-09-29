@@ -10,7 +10,7 @@ export function getHtml(this: AegisDownloadPanelElement) {
 <div class="card">
   <div class="header">
     <div>
-      <div class="title">${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載中心' : '下载中心') : 'Aegis downloads'}</div>
+      <div class="title">${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載工具' : '下载工具') : 'Download tools'}</div>
       <div class="subtitle">${this.isZh_() ?
           (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? (this.torrentSupported_ ? '映象、種子與磁力連結' : '可校驗的映象下載') : (this.torrentSupported_ ? '镜像、种子与磁力链接' : '可校验的镜像下载')) :
           (this.torrentSupported_ ? 'Mirrors, torrents and magnet links' : 'Verified mirror downloads')}</div>

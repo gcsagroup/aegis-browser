@@ -46,6 +46,7 @@ struct AegisStrings {
   const char* filter_list_update_now;
   const char* filter_list_meta;
   const char* downloads_title;
+  const char* downloads_history;
   const char* downloads_meta;
   const char* metalink_file_label;
   const char* metalink_inspect;
@@ -155,6 +156,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .filter_list_meta =
             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
         .downloads_title = "下載中心",
+        .downloads_history = "查看下載紀錄",
         .downloads_meta = "管理普通下載、映象下載、種子和磁力連結下載。",
         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
         .metalink_inspect = "檢查文件",
@@ -289,6 +291,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .filter_list_meta =
             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
         .downloads_title = "下载中心",
+        .downloads_history = "查看下载记录",
         .downloads_meta = "管理普通下载、镜像下载、种子和磁力链接下载。",
         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
         .metalink_inspect = "检查文件",
@@ -427,6 +430,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
           "No compiled filter list yet. Update to compile EasyList / "
           "EasyPrivacy.",
       .downloads_title = "Downloads",
+      .downloads_history = "View download history",
       .downloads_meta = "Manage regular, mirror, torrent and magnet downloads.",
       .metalink_file_label = "Metalink file (.meta4 / .metalink)",
       .metalink_inspect = "Inspect file",
@@ -597,6 +601,7 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->AddString("filterListUpdateNow", strings.filter_list_update_now);
   source->AddString("filterListMeta", strings.filter_list_meta);
   source->AddString("downloadsTitle", strings.downloads_title);
+  source->AddString("downloadsHistory", strings.downloads_history);
   source->AddString("downloadsMeta", strings.downloads_meta);
   source->AddString("metalinkFileLabel", strings.metalink_file_label);
   source->AddString("metalinkInspect", strings.metalink_inspect);

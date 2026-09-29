@@ -395,6 +395,11 @@ export class AegisDownloadPanelElement extends CrLitElement {
     this.working_ = true;
     const requestId = this.requestId_;
     this.requestId_ = '';
+    this.errorDetails_ = '';
+    this.previewText_ = zh ?
+        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ?
+             '正在檢查鏡像並建立下載工作…' : '正在检查镜像并创建下载任务…') :
+        'Checking mirrors and creating the download task…';
     try {
       const result: {ok: boolean, error?: string} =
           await this.request_('startMetalinkDownload', requestId);
