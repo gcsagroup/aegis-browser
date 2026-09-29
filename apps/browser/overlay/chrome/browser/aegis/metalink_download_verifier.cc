@@ -264,6 +264,12 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
   void RetryAfterDeleting() {
     download::DownloadItem* failed = current_item_;
     StopObserving();
+    // HTTP 错误可能发生在创建临时文件之前，此时没有文件需要清理。
+    // DownloadItem::DeleteFile 会返回 false，不能因此阻止备用镜像。
+    if (failed->GetFullPath().empty()) {
+      StartNextMirror();
+      return;
+    }
     failed->DeleteFile(base::BindOnce(
         [](base::WeakPtr<MetalinkDownloadVerifier> self, bool deleted) {
           if (!self) {
