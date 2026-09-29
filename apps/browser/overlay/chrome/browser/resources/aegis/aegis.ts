@@ -4,6 +4,8 @@ import '/strings.m.js';
 import './policy_worker.js';
 import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
 
+import type {AegisDownloadPanelElement} from 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+
 import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
 
@@ -1517,5 +1519,7 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
+      ?.setRequestHandler(sendWithPromise);
   void init();
 });

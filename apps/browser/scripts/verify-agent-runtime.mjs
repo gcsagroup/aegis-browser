@@ -293,6 +293,17 @@ function plannedSteps(goal, availableTools) {
       ['automation-create', '创建浏览器定时检查', 'monitor.create'],
     ];
   }
+  if (/工作区|工作區|workspace/iu.test(goal) && /保存|儲存|save/iu.test(goal) &&
+      ['tab.list', 'workspace.save'].every(has)) {
+    const steps = [
+      ['workspace-tabs', '读取工作区标签快照', 'tab.list'],
+      ['workspace-save', '保存批准范围内的工作区', 'workspace.save'],
+    ];
+    if (/恢复|還原|restore/iu.test(goal) && has('workspace.restore')) {
+      steps.push(['workspace-restore', '恢复刚保存的工作区', 'workspace.restore']);
+    }
+    return steps;
+  }
   const bookmarkGoal = lower.includes('bookmark') || goal.includes('收藏');
   const bookmarkUrlCheck = lower.includes('url') || lower.includes('dead') ||
       lower.includes('invalid') || goal.includes('失效') || goal.includes('链接检查');
@@ -637,6 +648,16 @@ function executionArguments(name, prompt, serverOrigin) {
       name === 'window.list' || name === 'download.list' ||
       name === 'monitor.list') {
     return {};
+  }
+  if (name === 'workspace.save') {
+    const listed = latestEvidence(prompt, 'tab.list');
+    return {name: '跨端验收工作区',
+      revision: previous?.value?.revision || listed?.revision || 'missing-revision'};
+  }
+  if (name === 'workspace.restore') {
+    const saved = latestEvidence(prompt, 'workspace.save');
+    return {workspace_id: previous?.value?.workspace_id || saved?.workspace_id || 'missing-workspace',
+      workspace_revision: previous?.value?.workspace_revision || saved?.workspace_revision || 'missing-revision'};
   }
   if (name === 'bookmark.plan') {
     return {strategy: 'topic'};
@@ -1499,6 +1520,23 @@ async function runSelfTest(reportPath = null) {
       assert(apply.plan_id === 'fixture-plan' &&
                  apply.snapshot_hash === 'fixture-snapshot',
              'bookmark apply did not bind browser-issued plan evidence');
+    });
+    await check('跨端工作区夹具仅引用浏览器标识，不暗加恢复动作', async () => {
+      const maximum_tools = ['tab.list', 'workspace.save', 'workspace.restore'];
+      for (const [user_goal, expected] of [
+        ['保存工作区', ['tab.list', 'workspace.save']],
+        ['保存工作区并恢复', maximum_tools],
+      ]) {
+        const response = await providerCall(origin, 'agent.submit_plan', {user_goal, maximum_tools});
+        const plan = JSON.parse((await response.json()).output[0].arguments);
+        assert(JSON.stringify(plan.steps.map(step => step.tool)) === JSON.stringify(expected), '工作区计划超出请求');
+      }
+      const response = await providerCall(origin, 'workspace.restore', {
+        prior_verified_evidence_untrusted: [{tool: 'workspace.save', ok: true,
+          workspace_id: 'native-id', workspace_revision: 'native-revision'}],
+      });
+      const restored = JSON.parse((await response.json()).output[0].arguments);
+      assert(restored.workspace_id === 'native-id' && restored.workspace_revision === 'native-revision', '恢复必须绑定原生工作区');
     });
     await check('A3 URL status and bounded fallback semantics', async () => {
       assert((await fetch(`${origin}/status/live`, {method: 'HEAD'})).status === 200,

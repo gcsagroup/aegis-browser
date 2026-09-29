@@ -272,6 +272,15 @@ CompactExecutionEvidence(const AgentExecutionEvidence &evidence) {
     }
     return item;
   }
+  // 后续恢复仅引用浏览器生成的工作区标识和版本，不让模型猜测本地状态。
+  if (evidence.tool_name == "workspace.save" ||
+      evidence.tool_name == "workspace.restore") {
+    for (std::string_view key : {"workspace_id", "workspace_revision"}) {
+      if (const auto* found = value.FindString(key)) {
+        item.Set(key, *found);
+      }
+    }
+  }
   for (std::string_view key :
        {"url", "title", "revision", "snapshot_hash", "plan_id", "download_id",
         "state", "frame_token", "document_token", "observation_fingerprint",
