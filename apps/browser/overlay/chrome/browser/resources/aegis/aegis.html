@@ -2,13 +2,17 @@
 <html dir="$i18n{textdirection}" lang="$i18n{aegisLocale}">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>$i18n{title}</title>
     <link rel="stylesheet" href="aegis.css">
   </head>
   <body>
     <main class="page">
-      <h1>$i18n{title}</h1>
-      <p class="subtitle">$i18n{subtitle}</p>
+      <header class="page-header">
+        <img class="brand-mark" src="product_logo.svg" alt="">
+        <div><h1>$i18n{title}</h1>
+          <p class="subtitle">$i18n{subtitle}</p></div>
+      </header>
       <section class="overview" aria-labelledby="overview-title">
         <div class="health">
           <span class="health-dot" id="health-dot" aria-hidden="true"></span>

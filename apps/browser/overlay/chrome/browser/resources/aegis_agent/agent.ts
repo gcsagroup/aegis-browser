@@ -1210,6 +1210,7 @@ async function withBusy(
 }
 
 function initializeLabels() {
+  element('platform-note').hidden = !loadTimeData.getBoolean('isAndroid');
   text('title', 'title');
   text('subtitle', 'subtitle');
   text('task-view-button', 'taskCenter');

@@ -8,6 +8,7 @@ build_webui("build") {
   static_files = [
     "aegis.css",
     "aegis.html",
+    "product_logo.svg",
   ]
   ts_files = [
     "aegis.ts",

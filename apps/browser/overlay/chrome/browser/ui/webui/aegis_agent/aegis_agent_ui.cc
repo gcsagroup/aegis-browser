@@ -847,6 +847,10 @@ void AddStrings(content::WebUIDataSource *source) {
       "Aegis "
       "已重新讀取結帳資訊，並在最終購買前停止。請核對目前頁面後自行完成或取消"
       "。");
+  add("androidPlatformNote",
+      "Android uses a separate task page. Window management, workspace restore and BitTorrent downloads are not available yet. Scheduled checks require the browser to be running.",
+      "Android 使用独立任务页。窗口管理、工作区恢复和 BT 下载暂不可用；定时检查需要浏览器保持运行。",
+      "Android 使用獨立任務頁。視窗管理、工作區還原和 BT 下載暫不可用；定時檢查需要瀏覽器保持執行。" );
   add("merchant", "Merchant", "商家", "商家");
   add("product", "Product", "商品", "商品");
   add("quantity", "Quantity", "数量", "數量");
@@ -891,6 +895,7 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
   webui::SetupWebUIDataSource(source, kAegisAgentResources,
                               IDR_AEGIS_AGENT_AGENT_HTML);
   AddStrings(source);
+  source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
       "script-src 'self' chrome-untrusted://resources;");
