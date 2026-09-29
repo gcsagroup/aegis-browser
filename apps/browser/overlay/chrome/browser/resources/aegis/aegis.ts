@@ -1,6 +1,8 @@
 // Copyright 2026 GCSA
 
+import '/strings.m.js';
 import './policy_worker.js';
+import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
 
 import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';

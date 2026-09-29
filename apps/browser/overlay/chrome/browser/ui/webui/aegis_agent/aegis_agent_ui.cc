@@ -848,9 +848,15 @@ void AddStrings(content::WebUIDataSource *source) {
       "已重新讀取結帳資訊，並在最終購買前停止。請核對目前頁面後自行完成或取消"
       "。");
   add("androidPlatformNote",
-      "Android uses a separate task page. Window management, workspace restore and BitTorrent downloads are not available yet. Scheduled checks require the browser to be running.",
-      "Android 使用独立任务页。窗口管理、工作区恢复和 BT 下载暂不可用；定时检查需要浏览器保持运行。",
-      "Android 使用獨立任務頁。視窗管理、工作區還原和 BT 下載暫不可用；定時檢查需要瀏覽器保持執行。" );
+      "Android uses a separate task page. Workspaces can be saved and "
+      "restored; window actions depend on device support. BitTorrent is not "
+      "available yet. Scheduled checks require the browser to be running.",
+      "Android "
+      "使用独立任务页，支持工作区保存与恢复；窗口操作取决于设备支持。BT "
+      "下载暂不可用；定时检查需要浏览器保持运行。",
+      "Android "
+      "使用獨立任務頁，支援工作區儲存與還原；視窗操作取決於裝置支援。BT "
+      "下載暫不可用；定時檢查需要瀏覽器保持執行。");
   add("merchant", "Merchant", "商家", "商家");
   add("product", "Product", "商品", "商品");
   add("quantity", "Quantity", "数量", "數量");

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_download_prefs.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -556,6 +557,15 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       profile, chrome::kChromeUIAegisHost);
+  const aegis::DownloadSettings downloads =
+      aegis::ReadDownloadSettings(*g_browser_process->local_state());
+  source->AddBoolean("aegisTorrentDhtDefault", downloads.torrent_dht_enabled);
+  source->AddBoolean("aegisTorrentPexDefault", downloads.torrent_pex_enabled);
+  source->AddInteger("aegisTorrentDownloadLimitKibDefault",
+                     downloads.torrent_download_limit_kib);
+  source->AddInteger("aegisTorrentUploadLimitKibDefault",
+                     downloads.torrent_upload_limit_kib);
+
   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
   source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
 
