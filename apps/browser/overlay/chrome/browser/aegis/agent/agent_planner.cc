@@ -424,8 +424,11 @@ bool GoalRequestsSafeDownload(std::string_view goal) {
 bool GoalRequestsBrowserData(std::string_view goal) {
   const std::string lower = base::ToLowerASCII(goal);
   constexpr std::string_view kLocalizedBrowserData[] = {
-      "收藏夹", "书签", "标签页", "浏览器标签", "浏览器窗口", "工作区",
-      "收藏夾", "書籤", "標籤頁", "瀏覽器標籤", "瀏覽器視窗", "工作區"};
+      "收藏夹",     "书签",     "标签页",   "浏览器标签", "浏览器窗口",
+      "工作区",     "新建窗口", "创建窗口", "关闭窗口",   "激活窗口",
+      "当前窗口",   "新建視窗", "建立視窗", "關閉視窗",   "啟用視窗",
+      "目前視窗",   "收藏夾",   "書籤",     "標籤頁",     "瀏覽器標籤",
+      "瀏覽器視窗", "工作區"};
   if (std::ranges::any_of(kLocalizedBrowserData,
                           [&goal](std::string_view phrase) {
                             return goal.find(phrase) != std::string_view::npos;
@@ -986,6 +989,17 @@ AgentWorkflowKind ConstrainWorkflowToUserIntent(std::string_view user_goal,
   if (workflow == AgentWorkflowKind::kResearch &&
       GoalRequestsCurrentPageClick(user_goal)) {
     return AgentWorkflowKind::kPageInteraction;
+  }
+  // 显式 URL 不经过路由模型，也要识别原生窗口等操作；网址只限定导航来源。
+  // 说明性问题和需要页面正文的任务继续使用研究流程。
+  if (workflow == AgentWorkflowKind::kResearch &&
+      GoalContainsAny(requested, {"http://", "https://"}) &&
+      GoalRequestsBrowserData(requested) &&
+      !AgentGoalRequiresPageEvidence(user_goal) &&
+      !GoalContainsAny(requested,
+                       {"如何", "怎么", "怎麼", "解释", "解釋", "how to",
+                        "explain", "研究", "調研", "调研"})) {
+    return AgentWorkflowKind::kBrowserSteward;
   }
   // 被否定的浏览器数据词不能支持前端管家提示。保留原始禁止范围，
   // 让模型读取原文规划；当前页入口仍由浏览器绑定并验证实际观察。
