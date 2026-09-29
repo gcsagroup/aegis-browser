@@ -803,6 +803,29 @@ TEST(AegisAgentPlannerTest, NegatedWorkflowPhrasesKeepPageEntryRoutes) {
   }
 }
 
+TEST(AegisAgentPlannerTest, ExplicitUrlKeepsNativeWindowIntent) {
+  for (std::string_view goal :
+       {"新建窗口打开 https://fixture.example/ ，激活窗口后仅关闭新建窗口。",
+        "建立視窗開啟 https://fixture.example/ ，之後關閉視窗。",
+        "Create a new browser window for https://fixture.example/ then close "
+        "the window."}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
+              AgentWorkflowKind::kBrowserSteward)
+        << goal;
+    EXPECT_FALSE(AgentBrowserGoalNeedsClarification(
+        goal, AgentWorkflowKind::kBrowserSteward));
+  }
+  for (std::string_view goal :
+       {"不要新建窗口，只总结 https://fixture.example/ 的页面内容。",
+        "解释如何创建窗口，参考 https://fixture.example/ 。",
+        "Explain how to create a new window using https://fixture.example/ .",
+        "总结 https://fixture.example/ 的正文，不要关闭窗口。"}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
+              AgentWorkflowKind::kResearch)
+        << goal;
+  }
+}
+
 TEST(AegisAgentPlannerTest, PageIntentOverridesNegatedWorkflowHints) {
   const std::string_view goal =
       "打开 http://127.0.0.1:52861/slow 并总结页面内容。只允许读取这个"
