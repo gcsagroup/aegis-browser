@@ -16,10 +16,12 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -84,10 +86,23 @@ bool AllAddressesArePublic(const net::AddressList& addresses) {
 
 class MetalinkVerificationData : public base::SupportsUserData::Data {
  public:
-  explicit MetalinkVerificationData(MetalinkVerificationStatus status)
-      : status(status) {}
+  MetalinkVerificationData(download::DownloadItem& item,
+                           MetalinkVerificationStatus status)
+      : status(status), item_(&item) {
+    // 完成通知期间可能开始哈希校验，不能同步嵌套通知观察者。
+    // 状态替换或下载项销毁时，旧数据的弱引用会撤销待发通知。
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&MetalinkVerificationData::Notify,
+                                  weak_factory_.GetWeakPtr()));
+  }
 
   MetalinkVerificationStatus status;
+
+ private:
+  void Notify() { item_->UpdateObservers(); }
+
+  raw_ptr<download::DownloadItem> item_;
+  base::WeakPtrFactory<MetalinkVerificationData> weak_factory_{this};
 };
 
 const char kMetalinkVerificationDataKey[] =
@@ -351,8 +366,7 @@ MetalinkVerificationStatus GetMetalinkVerificationStatus(
 void SetMetalinkVerificationStatus(download::DownloadItem& item,
                                    MetalinkVerificationStatus status) {
   item.SetUserData(kMetalinkVerificationDataKey,
-                   std::make_unique<MetalinkVerificationData>(status));
-  item.UpdateObservers();
+                   std::make_unique<MetalinkVerificationData>(item, status));
 }
 
 void StartVerifiedMetalinkDownload(

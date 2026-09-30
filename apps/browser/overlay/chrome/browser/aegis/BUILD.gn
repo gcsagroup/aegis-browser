@@ -407,6 +407,7 @@ test("aegis_browser_unittests") {
       "//chrome/browser/ui/webui/aegis",
       "//components/actor/core",
       "//components/download/public/common:public",
+      "//components/download/public/common:test_support",
       "//components/undo",
       "//content/test:test_support",
     ]
