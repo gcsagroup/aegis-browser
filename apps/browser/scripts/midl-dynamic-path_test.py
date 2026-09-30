@@ -2,11 +2,14 @@
 from pathlib import Path
 import importlib.util
 import tempfile
+import sys
 import unittest
 
 path = Path(__file__).resolve().parents[1] / 'overlay/build/toolchain/win/midl.py'
 spec = importlib.util.spec_from_file_location('aegis_midl', path)
 midl = importlib.util.module_from_spec(spec)
+# 防止测试在发布用覆盖目录生成缓存文件。
+sys.dont_write_bytecode = True
 spec.loader.exec_module(midl)
 
 
