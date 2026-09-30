@@ -13,7 +13,6 @@
 #include "base/containers/span.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -71,10 +70,6 @@ std::optional<std::string> HashFile(const base::FilePath& path,
   std::vector<uint8_t> digest(hash->GetHashLength());
   hash->Finish(digest);
   return base::ToLowerASCII(base::HexEncode(digest));
-}
-
-bool DeleteDownloadedFile(const base::FilePath& path) {
-  return base::DeleteFile(path);
 }
 
 bool AllAddressesArePublic(const net::AddressList& addresses) {
@@ -153,7 +148,7 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
             FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
             base::BindOnce(&HashFile, path, result_.hash_algorithm),
             base::BindOnce(&MetalinkDownloadVerifier::OnHashReady,
-                           weak_factory_.GetWeakPtr(), path));
+                           weak_factory_.GetWeakPtr()));
         return;
       }
       case download::DownloadItem::CANCELLED:
@@ -311,8 +306,7 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
         weak_factory_.GetWeakPtr()));
   }
 
-  void OnHashReady(const base::FilePath& path,
-                   std::optional<std::string> actual_hash) {
+  void OnHashReady(std::optional<std::string> actual_hash) {
     if (actual_hash && *actual_hash == result_.hash_hex) {
       if (current_item_) {
         SetMetalinkVerificationStatus(*current_item_,
@@ -321,14 +315,16 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
       delete this;
       return;
     }
-    if (current_item_) {
-      SetMetalinkVerificationStatus(*current_item_,
-                                    MetalinkVerificationStatus::kFailed);
+    if (!current_item_) {
+      delete this;
+      return;
     }
+    SetMetalinkVerificationStatus(*current_item_,
+                                  MetalinkVerificationStatus::kFailed);
+    download::DownloadItem* failed = current_item_;
     StopObserving();
-    base::ThreadPool::PostTaskAndReplyWithResult(
-        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-        base::BindOnce(&DeleteDownloadedFile, path),
+    // 原生删除接口同时标记文件已移除，避免下载列表继续显示为可用文件。
+    failed->DeleteFile(
         base::BindOnce(&MetalinkDownloadVerifier::OnHashMismatchFileDeleted,
                        weak_factory_.GetWeakPtr()));
   }
