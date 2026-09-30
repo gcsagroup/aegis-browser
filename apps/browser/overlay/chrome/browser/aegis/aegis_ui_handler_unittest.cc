@@ -19,6 +19,7 @@
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/download/public/common/mock_download_item.h"
 #include "components/prefs/pref_service.h"
 #include "components/tab_groups/tab_group_color.h"
 #include "components/tab_groups/tab_group_visual_data.h"
@@ -295,6 +296,45 @@ TEST_F(AegisUIHandlerTest, MetalinkRequiresSourceInSameProfile) {
     EXPECT_FALSE(result.Get<0>());
     EXPECT_FALSE(result.Get<1>().empty());
   }
+}
+
+TEST_F(AegisUIHandlerTest, MetalinkStatusDoesNotNestObserverUpdates) {
+  testing::StrictMock<download::MockDownloadItem> item;
+  bool updating = false;
+  int updates = 0;
+  EXPECT_CALL(item, UpdateObservers()).WillRepeatedly([&] {
+    EXPECT_FALSE(updating);
+    updating = true;
+    if (++updates == 1) {
+      SetMetalinkVerificationStatus(item,
+                                    MetalinkVerificationStatus::kVerifying);
+      EXPECT_EQ(MetalinkVerificationStatus::kVerifying,
+                GetMetalinkVerificationStatus(item));
+      EXPECT_EQ(1, updates);
+    }
+    updating = false;
+  });
+  item.UpdateObservers();
+  EXPECT_EQ(1, updates);
+  task_environment()->RunUntilIdle();
+  EXPECT_EQ(2, updates);
+}
+
+TEST_F(AegisUIHandlerTest, MetalinkStatusNotifiesOnlyLatestLiveItem) {
+  auto item =
+      std::make_unique<testing::StrictMock<download::MockDownloadItem>>();
+  SetMetalinkVerificationStatus(*item, MetalinkVerificationStatus::kPending);
+  SetMetalinkVerificationStatus(*item, MetalinkVerificationStatus::kVerified);
+  EXPECT_CALL(*item, UpdateObservers()).WillOnce([&] {
+    EXPECT_EQ(MetalinkVerificationStatus::kVerified,
+              GetMetalinkVerificationStatus(*item));
+  });
+  task_environment()->RunUntilIdle();
+  testing::Mock::VerifyAndClearExpectations(item.get());
+  EXPECT_CALL(*item, UpdateObservers()).Times(0);
+  SetMetalinkVerificationStatus(*item, MetalinkVerificationStatus::kFailed);
+  item.reset();
+  task_environment()->RunUntilIdle();
 }
 
 TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {

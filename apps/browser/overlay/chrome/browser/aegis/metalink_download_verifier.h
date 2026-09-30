@@ -28,6 +28,7 @@ enum class MetalinkVerificationStatus {
 
 MetalinkVerificationStatus GetMetalinkVerificationStatus(
     const download::DownloadItem& item);
+// 状态立即可读；观察者在当前回调结束后收到通知，销毁时撤销通知。
 void SetMetalinkVerificationStatus(download::DownloadItem& item,
                                    MetalinkVerificationStatus status);
 
