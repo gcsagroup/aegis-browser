@@ -445,7 +445,7 @@ TEST_P(InstallStaticUtilTest, GetRegistryPath) {
   // The registry path strings for the brand's install modes; parallel to
   // kInstallModes.
   static constexpr const wchar_t* kRegistryPaths[] = {
-      L"Software\\Chromium",
+      L"Software\\GCSA Aegis",
   };
 #endif
   static_assert(std::size(kRegistryPaths) == NUM_INSTALL_MODES,
@@ -478,7 +478,7 @@ TEST_P(InstallStaticUtilTest, GetUninstallRegistryPath) {
   // The registry path strings for the brand's install modes; parallel to
   // kInstallModes.
   static constexpr const wchar_t* kUninstallRegistryPaths[] = {
-      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Chromium",
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\GCSA Aegis",
   };
 #endif
   static_assert(std::size(kUninstallRegistryPaths) == NUM_INSTALL_MODES,
@@ -587,15 +587,15 @@ TEST_P(InstallStaticUtilTest, GetToastActivatorClsid) {
   // The toast activator CLSIDs for the brand's install modes; parallel to
   // kInstallModes.
   static constexpr CLSID kToastActivatorClsids[] = {
-      {0x635EFA6F,
-       0x08D6,
-       0x4EC9,
-       {0xBD, 0x14, 0x8A, 0x0F, 0xDE, 0x97, 0x51, 0x59}}  // Chromium.
+      {0xFF8EF761,
+       0xF35A,
+       0x5216,
+       {0xAB, 0x8D, 0x6A, 0xC4, 0xDD, 0x06, 0x0F, 0xA6}}  // Aegis 固定身份。
   };
 
   // The string representation of the CLSIDs above.
   static constexpr const wchar_t* kToastActivatorClsidsString[] = {
-      L"{635EFA6F-08D6-4EC9-BD14-8A0FDE975159}"  // Chromium.
+      L"{FF8EF761-F35A-5216-AB8D-6AC4DD060FA6}"  // Aegis 固定身份。
   };
 #endif
   static_assert(std::size(kToastActivatorClsids) == NUM_INSTALL_MODES,
@@ -657,15 +657,15 @@ TEST_P(InstallStaticUtilTest, GetElevatorClsid) {
 #else
   // The Elevator CLSIDs, one for each of the kInstallModes.
   static constexpr CLSID kElevatorClsids[] = {
-      {0xD133B120,
-       0x6DB4,
-       0x4D6B,
-       {0x8B, 0xFE, 0x83, 0xBF, 0x8C, 0xA1, 0xB1, 0xB0}},  // Chromium.
+      {0x1A5BB399,
+       0x46A8,
+       0x5B7C,
+       {0xA3, 0x2F, 0x89, 0x53, 0x30, 0x13, 0xFB, 0x7C}},  // Aegis 固定身份。
   };
 
   // The string representation of the CLSIDs above.
   static constexpr const wchar_t* kElevatorClsidsString[] = {
-      L"{D133B120-6DB4-4D6B-8BFE-83BF8CA1B1B0}",  // Chromium.
+      L"{1A5BB399-46A8-5B7C-A32F-89533013FB7C}",  // Aegis 固定身份。
   };
 #endif
   static_assert(std::size(kElevatorClsids) == NUM_INSTALL_MODES,
@@ -740,16 +740,15 @@ TEST_P(InstallStaticUtilTest, GetElevatorIid) {
   // The Elevator IIDs, one for each of the kInstallModes.
   static constexpr IID kElevatorIids[] = {
       {0xbb19a0e5,
-       0xc6,
-       0x4966,
-       {0x94, 0xb2, 0x5a, 0xfe, 0xc6, 0xfe, 0xd9,
-        0x3a}},  // IElevator IID and TypeLib
-                 // {BB19A0E5-00C6-4966-94B2-5AFEC6FED93A} for Chromium.
+       0x3c2f,
+       0x5d8d,
+       {0xa3, 0x76, 0xb9, 0xef, 0xfd, 0xd7, 0x7f,
+        0xfe}},  // Aegis 提权接口与类型库的固定身份。
   };
 
   // The string representation of the IIDs above.
   static constexpr const wchar_t* kElevatorIidsString[] = {
-      L"{BB19A0E5-00C6-4966-94B2-5AFEC6FED93A}",  // Chromium.
+      L"{BB19A0E5-3C2F-5D8D-A376-B9EFFDD77FFE}",  // Aegis 固定身份。
   };
 #endif
   static_assert(std::size(kElevatorIids) == NUM_INSTALL_MODES,
@@ -858,8 +857,8 @@ TEST_P(InstallStaticUtilTest, GetSandboxSidPrefix) {
   };
 #else
   static constexpr const wchar_t* kSandBoxSids[] = {
-      L"S-1-15-2-3251537155-1984446955-2931258699-841473695-1938553385-"
-      L"924012148-",  // Chromium.
+      L"S-1-15-2-2952258977-4202009782-3179178386-2292280855-2728581886-"
+      L"284722248-",  // Aegis 沙箱固定身份。
   };
 #endif
   EXPECT_STREQ(GetSandboxSidPrefix(),
