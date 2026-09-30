@@ -1,6 +1,6 @@
-# 三端收敛进度与验收记录（Android 091 / Windows 089 跟进）
+# 三端收敛进度与验收记录（Android 092 / Windows 089 跟进）
 
-整体尚未完成，不能宣称三端功能一致。macOS 087 已安装并通过本批实际窗口闭环；Android 090 已完成合成模型摘要与来源引用的实机闭环，091 正在修复工作区任务授权遗漏；Windows 089 正在构建。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
+整体尚未完成，不能宣称三端功能一致。macOS 087 已安装并通过本批实际窗口闭环；Android 090 已完成合成模型摘要与来源引用的实机闭环，091 已完成工作区实机闭环；共享下载实际失败，092 正在补齐发起页面关联；Windows 089 正在构建。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
 
 ## 本批完成的代码
 
@@ -32,9 +32,11 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 
 20:01 同路径重跑摘要完成，界面显示来源标题与正确引用；退出后回读数据库，`page.observe`、`page.extract` 均成功且任务进入完成状态，原崩溃未再出现。期间修复合成模型夹具缺失的 `agent.review_summary` 回调并通过 14 项协议自测。这个结果验证原生管线、显示和引用，不评价真实模型摘要质量。
 
-工作区任务仍失败：界面显示完成，但数据库只有 `bookmark.list`。确认 Android 工作流仍排除 `workspace.*`，091 删除这条过时过滤规则并在原生范围测试补断言；桌面窗口平台限制保留。091 构建及工作区实机重跑尚待完成，共享下载面板仍待验证。
+工作区任务仍失败：界面显示完成，但数据库只有 `bookmark.list`。确认 Android 工作流仍排除 `workspace.*`，091 删除这条过时过滤规则并在原生范围测试补断言；桌面窗口平台限制保留。091 APK 安装、签名和安装摘要核对通过，271 项真机原生测试通过。20:24 从实际来源页面发起工作区任务，界面完成并新增恢复标签；数据库确认 `tab.list → workspace.save → workspace.restore` 全部成功。重启后的旧任务页没有来源时，恢复被拒绝；此失败记录也已保留。
 
-087c、090 测试资料与失败证据分别归档；原用户资料、命令行和调试设置已恢复，关键资料哈希一致，端口转发已清除。鼠标转发不稳定不能写成触控矩阵通过。首次启动页 Chromium 图标遗漏继续保留。
+共享下载面板、系统文件选择和公开镜像预览通过，回环地址描述被正确拒绝。但正式添加后没有完成下载：历史记录显示首镜像内容错误（33），备用镜像取消（40），文件未落盘。092 为下载请求绑定同一用户资料的发起页面，页面关闭或跨资料调用拒绝，并保留系统确认与匿名请求；已补回归测试，尚待新包实机验证。不能用创建回执替代下载完成。
+
+087c、090、091 测试资料与失败证据分别归档；原用户资料、命令行和调试设置已恢复，关键资料哈希一致，端口转发已清除。鼠标转发不稳定不能写成触控矩阵通过。首次启动页 Chromium 图标遗漏继续保留。
 
 087 APK：`GCSA-aegis-2.0.0.87-chromium-153.0.8010.53-android-arm64.apk`，522014032 字节，SHA-256 `d680f8e99fe39eb7c59afb76e3427aa44219fe6291acf4d7c7c7cbf2e655e12a`。
 
@@ -44,7 +46,7 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 
 088 补齐缺失头文件后，通过全源码校验，但在 `gn gen --check` 阶段失败：版本页新增的更新状态接口缺少对应构建依赖。该版本尚未进入编译，失败日志和源码恢复分支已保留。
 
-089 补齐版本页对 `help:aegis_github_update` 的桌面依赖，产品提交 `2e2dad8b64f015d74193dd8472709012cbe4384b`。Android/ChromeOS 保留平台条件。版本合同、源码校验测试 6 项及打包路径夹具通过；远端 1184 个暂存文件与 380 个覆盖文件校验一致，源码树为 `77ba12d5d28a1ae77d14cb45657ce91184c052d5`，`gn gen --check` 已通过，20:07 实查编译推进到 907/4914；尚未完成构建。
+089 补齐版本页对 `help:aegis_github_update` 的桌面依赖，产品提交 `2e2dad8b64f015d74193dd8472709012cbe4384b`。Android/ChromeOS 保留平台条件。版本合同、源码校验测试 6 项及打包路径夹具通过；远端 1184 个暂存文件与 380 个覆盖文件校验一致，源码树为 `77ba12d5d28a1ae77d14cb45657ce91184c052d5`，`gn gen --check` 已通过，20:37 实查编译推进到 2133/4654；尚未完成构建。
 
 070 的失败日志、源码恢复分支及 100 个程序、符号、参数和构建日志文件，共 2,567,893,881 字节，已经逐文件校验 SHA-256 并保全。089 继续复用固定 `C:\a\src\out\AegisRelease` 输出目录；Android 090 修复不会覆盖正在运行的 Windows 089 构建。
 
@@ -62,14 +64,14 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 
 1. **P2：已完成任务仍显示“需要你确认”。** 原因是计划风险标签与实时状态混用。真实操作和结果验证已完成；应在终态隐藏待确认标签，并把该卡片明确为执行计划。证据为 `macos-window-completed-087.png`。
 2. **P2：Android 首次启动页仍使用 Chromium 图标。** 087b 在真机上确认，标题和服务提示已是 GCSA Aegis，首次启动图标仍待修复并重新验收。
-3. **已修复：Android 页面摘要原生崩溃。** 090 同路径实机重跑及数据库回读通过。新发现的工作区授权遗漏由 091 修复，仍待实机闭环。
+3. **已修复：Android 页面摘要原生崩溃。** 090 同路径实机重跑及数据库回读通过。工作区授权遗漏也已由 091 修复并完成实机闭环。共享下载的取消问题由 092 跟进，尚未关闭。
 4. **兼容项：旧资料名称保留“您的 Chromium”。** 已核对为验收资料中保存的默认旧名，而不是版本页品牌未更新。不得直接覆盖用户自定义资料名；默认旧名迁移须按兼容条件处理。
 
 ## 仍未完成的功能与验收
 
 1. **Windows/Android BT 后端尚未实现。** 当前 libtorrent 构建和目录授权仍限定 macOS。Android 的隔离进程不能直接套用桌面文件和网络访问；需要受限文件/网络代理、可移植依赖和真实合成传输验收。没有删平台保护、关闭沙箱或把引擎搬进浏览器进程来冒充支持。
 2. **Android 桌面窗口工具没有等价闭环。** 共用工作区和标签组接口已补，但桌面窗口创建/激活/关闭仍不能写成手机已支持；需要决定移动端等价操作并完成真机验证。历史工作区发现与任意新来源恢复也未关闭。
-3. **三端同批安装和 UI 尚未齐全。** Windows 尚无本批新包；Android 入口、模型配置及合成摘要已通过，工作区和其他业务 UI 尚未完成。Google 登录/密码同步只修正了真实提示，未宣称服务资格或自有同步已接通。
+3. **三端同批安装和 UI 尚未齐全。** Windows 尚无本批新包；Android 入口、模型配置、合成摘要及工作区代表性流程已通过，共享下载和其他业务 UI 尚未完成。Google 登录/密码同步只修正了真实提示，未宣称服务资格或自有同步已接通。
 4. **完整验收矩阵未完成。** 三语、深浅色、横屏/折叠屏、字体放大、VoiceOver/TalkBack、90 任务/100 安全及性能对照仍需按同批包执行。合成模型夹具不能代表真实模型稳定性。
 5. **用户已明确后置的条件继续后置。** 500 条公网链接只准备夹具；正式签名、公证及公开发行等待条件；远端模块以同事代码同步为主，真实服务验证单独记账。
 
@@ -83,4 +85,4 @@ V8 补丁树：`6ee9fe26bc09a83e2257ea80c60b57ed1848b60a`。
 
 Mac 内测 ZIP：`GCSA-aegis-2.0.0.87-mac-arm64.zip`，182303914 字节，SHA-256 `084c143fa63defb31a9a33c3470ed3b2153537fdd3b4916239ea16db189484e8`。包与固定路径开发签名安装分别记录，不表示 Developer ID 公证或正式发行。
 
-私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-087.json`、`windows-return-087.json`。本轮补充 `android-ui-087b.json`、`android-ui-087c.json`、`android-ui-isolation-087c.json`、`android-ui-crash-087c.log`、`android-ui-crash-symbols-087c.txt`、`android-build-090.json`、`android-ui-090.json`、`android-task-store-ui-090.json`、`android-ui-isolation-090.json`、`windows-failed-070-build.log`、`windows-prior-070-preserved.json`、`windows-gn-failure-088.log` 和 `windows-return-089.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
+私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-087.json`、`windows-return-087.json`。本轮补充 `android-ui-087b.json`、`android-ui-087c.json`、`android-ui-isolation-087c.json`、`android-ui-crash-087c.log`、`android-ui-crash-symbols-087c.txt`、`android-build-090.json`、`android-ui-090.json`、`android-task-store-ui-090.json`、`android-ui-isolation-090.json`、`android-ui-091.json`、`android-task-store-ui-091.json`、`android-history-ui-091.sqlite`、`android-runtime-091.log`、`windows-failed-070-build.log`、`windows-prior-070-preserved.json`、`windows-gn-failure-088.log` 和 `windows-return-089.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
