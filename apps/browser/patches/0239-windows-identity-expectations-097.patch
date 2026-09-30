@@ -1,0 +1,130 @@
+From 4d3a80cf08a4e394e7f642ac10859c1787af529b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Thu, 1 Oct 2026 00:22:38 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Windows=20=E5=9B=BA?=
+ =?UTF-8?q?=E5=AE=9A=E5=AE=89=E8=A3=85=E8=BA=AB=E4=BB=BD=E5=9B=9E=E5=BD=92?=
+ =?UTF-8?q?=20097?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ .../install_static/install_util_unittest.cc   | 39 +++++++++----------
+ 2 files changed, 21 insertions(+), 22 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 129120ba49..55213a3dfd 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.96";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (096)";
++inline constexpr char kProductVersion[] = "2.0.0.97";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (097)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/install_static/install_util_unittest.cc b/chrome/install_static/install_util_unittest.cc
+index 39d675f843..5276676ca6 100644
+--- a/chrome/install_static/install_util_unittest.cc
++++ b/chrome/install_static/install_util_unittest.cc
+@@ -445,7 +445,7 @@ TEST_P(InstallStaticUtilTest, GetRegistryPath) {
+   // The registry path strings for the brand's install modes; parallel to
+   // kInstallModes.
+   static constexpr const wchar_t* kRegistryPaths[] = {
+-      L"Software\\Chromium",
++      L"Software\\GCSA Aegis",
+   };
+ #endif
+   static_assert(std::size(kRegistryPaths) == NUM_INSTALL_MODES,
+@@ -478,7 +478,7 @@ TEST_P(InstallStaticUtilTest, GetUninstallRegistryPath) {
+   // The registry path strings for the brand's install modes; parallel to
+   // kInstallModes.
+   static constexpr const wchar_t* kUninstallRegistryPaths[] = {
+-      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Chromium",
++      L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\GCSA Aegis",
+   };
+ #endif
+   static_assert(std::size(kUninstallRegistryPaths) == NUM_INSTALL_MODES,
+@@ -587,15 +587,15 @@ TEST_P(InstallStaticUtilTest, GetToastActivatorClsid) {
+   // The toast activator CLSIDs for the brand's install modes; parallel to
+   // kInstallModes.
+   static constexpr CLSID kToastActivatorClsids[] = {
+-      {0x635EFA6F,
+-       0x08D6,
+-       0x4EC9,
+-       {0xBD, 0x14, 0x8A, 0x0F, 0xDE, 0x97, 0x51, 0x59}}  // Chromium.
++      {0xFF8EF761,
++       0xF35A,
++       0x5216,
++       {0xAB, 0x8D, 0x6A, 0xC4, 0xDD, 0x06, 0x0F, 0xA6}}  // Aegis 固定身份。
+   };
+ 
+   // The string representation of the CLSIDs above.
+   static constexpr const wchar_t* kToastActivatorClsidsString[] = {
+-      L"{635EFA6F-08D6-4EC9-BD14-8A0FDE975159}"  // Chromium.
++      L"{FF8EF761-F35A-5216-AB8D-6AC4DD060FA6}"  // Aegis 固定身份。
+   };
+ #endif
+   static_assert(std::size(kToastActivatorClsids) == NUM_INSTALL_MODES,
+@@ -657,15 +657,15 @@ TEST_P(InstallStaticUtilTest, GetElevatorClsid) {
+ #else
+   // The Elevator CLSIDs, one for each of the kInstallModes.
+   static constexpr CLSID kElevatorClsids[] = {
+-      {0xD133B120,
+-       0x6DB4,
+-       0x4D6B,
+-       {0x8B, 0xFE, 0x83, 0xBF, 0x8C, 0xA1, 0xB1, 0xB0}},  // Chromium.
++      {0x1A5BB399,
++       0x46A8,
++       0x5B7C,
++       {0xA3, 0x2F, 0x89, 0x53, 0x30, 0x13, 0xFB, 0x7C}},  // Aegis 固定身份。
+   };
+ 
+   // The string representation of the CLSIDs above.
+   static constexpr const wchar_t* kElevatorClsidsString[] = {
+-      L"{D133B120-6DB4-4D6B-8BFE-83BF8CA1B1B0}",  // Chromium.
++      L"{1A5BB399-46A8-5B7C-A32F-89533013FB7C}",  // Aegis 固定身份。
+   };
+ #endif
+   static_assert(std::size(kElevatorClsids) == NUM_INSTALL_MODES,
+@@ -740,16 +740,15 @@ TEST_P(InstallStaticUtilTest, GetElevatorIid) {
+   // The Elevator IIDs, one for each of the kInstallModes.
+   static constexpr IID kElevatorIids[] = {
+       {0xbb19a0e5,
+-       0xc6,
+-       0x4966,
+-       {0x94, 0xb2, 0x5a, 0xfe, 0xc6, 0xfe, 0xd9,
+-        0x3a}},  // IElevator IID and TypeLib
+-                 // {BB19A0E5-00C6-4966-94B2-5AFEC6FED93A} for Chromium.
++       0x3c2f,
++       0x5d8d,
++       {0xa3, 0x76, 0xb9, 0xef, 0xfd, 0xd7, 0x7f,
++        0xfe}},  // Aegis 提权接口与类型库的固定身份。
+   };
+ 
+   // The string representation of the IIDs above.
+   static constexpr const wchar_t* kElevatorIidsString[] = {
+-      L"{BB19A0E5-00C6-4966-94B2-5AFEC6FED93A}",  // Chromium.
++      L"{BB19A0E5-3C2F-5D8D-A376-B9EFFDD77FFE}",  // Aegis 固定身份。
+   };
+ #endif
+   static_assert(std::size(kElevatorIids) == NUM_INSTALL_MODES,
+@@ -858,8 +857,8 @@ TEST_P(InstallStaticUtilTest, GetSandboxSidPrefix) {
+   };
+ #else
+   static constexpr const wchar_t* kSandBoxSids[] = {
+-      L"S-1-15-2-3251537155-1984446955-2931258699-841473695-1938553385-"
+-      L"924012148-",  // Chromium.
++      L"S-1-15-2-2952258977-4202009782-3179178386-2292280855-2728581886-"
++      L"284722248-",  // Aegis 沙箱固定身份。
+   };
+ #endif
+   EXPECT_STREQ(GetSandboxSidPrefix(),
+-- 
+2.52.0
+
