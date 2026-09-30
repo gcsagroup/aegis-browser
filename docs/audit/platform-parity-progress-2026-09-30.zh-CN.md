@@ -1,6 +1,6 @@
-# 三端收敛进度与验收记录（087）
+# 三端收敛进度与验收记录（087 / Windows 088 修复）
 
-整体尚未完成，不能宣称三端功能一致。087 的 macOS 包已安装并通过本批实际窗口闭环；Android 同批包已安装并通过原生测试，但手机锁屏导致 UI 待验收；Windows 尚在首轮编译。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
+整体尚未完成，不能宣称三端功能一致。087 的 macOS 包已安装并通过本批实际窗口闭环；Android 同批包已安装并通过原生测试，手机已解锁且镜像恢复，但隔离资料的首次启动条款仍待用户确认；Windows 070 编译失败，已保全现场并启动 088 最小修复构建。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
 
 ## 本批完成的代码
 
@@ -26,17 +26,23 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 
 087 APK 已安装到 Pixel 9 Pro Fold（Android 17），真机原生测试 271 项全部通过。新旧 APK 签名一致，已安装 APK 的 SHA-256 与交付文件一致；保留数据升级没有卸载主应用。
 
-手机仍锁屏，087 的模型入口、摘要、工作区、共享下载面板和完整 UI 矩阵未实际操作，状态明确为待验收。原用户资料、原命令行与调试设置已恢复，关键资料哈希一致；移除本轮端口转发和临时原生测试 APK，保留主应用 087。
+17:13 已通过 Computer Use 看见解锁后的手机和真实 App 首次启动页。Google 服务可用性提示已显示；该页面仍使用 Chromium 图标，记录为品牌遗漏。页面明确要求继续即接受服务条款，因此已请求用户在该操作点确认，未自动接受。模型入口、摘要、工作区、共享下载面板及完整 UI 矩阵仍未实际操作。
+
+本次 087b 独立验收资料已归档；原用户资料、原命令行与调试设置已恢复，关键资料哈希一致，端口转发已移除，主应用仍为 087。087b 是证据批次名，不是新 APK 版本。
 
 087 APK：`GCSA-aegis-2.0.0.87-chromium-153.0.8010.53-android-arm64.apk`，522014032 字节，SHA-256 `d680f8e99fe39eb7c59afb76e3427aa44219fe6291acf4d7c7c7cbf2e655e12a`。
 
 ### Windows
 
-远端构建/验收环境为 Windows 11 x64（10.0.26200）。070 首轮构建仍运行，087 最终产品快照已在独立暂存目录逐文件校验，共 1180 个文件，未覆盖活跃的 070 源码。
+远端构建/验收环境为 Windows 11 x64（10.0.26200）。实查确认 070 于 2026-09-30 15:44（北京时间）编译失败；报错位于更新模块调用任务执行器处，缺少 `base/task/single_thread_task_runner.h`。087 接续按旧保护规则停止，未覆盖活跃源码。旧本地回执曾停留在早上，现已回读真实失败状态并保留原回执。
 
-接续流程已启动并回读到等待状态：070 构建成功 → 本机收到安装包并验证双端 SHA-256 → 收齐 070 原生测试及安装回执 → 保全旧产物 → 应用至 087 同源补丁 → 增量构建 → 运行核心、更新、浏览器、安装身份四组原生测试 → 安装并校验旧 Chromium 未改变 → 回传 087 安装包及日志。任一前置失败均保留现场，不继续覆盖。
+088 仅补齐缺失头文件并递增版本号，产品提交 `b68b63dd6639e2602765583cbe9edc6b3295f482`。版本合同、源码校验测试 6 项及打包路径夹具通过；这不等于 Windows 原生编译已经通过。
 
-原生安装脚本不再调用旧界面自动化脚本，终态明确为 `native_passed_ui_pending`。Windows 的实际 UI 仍需 CUA 验收；远程桌面证书确认需要用户接管，不能由工具绕过。编译动作数不等于计划完成率，也不能据此线性估计剩余时间。
+确认旧构建进程全部退出后，已保全 070 的失败日志、源码恢复分支，以及 100 个程序、符号、参数和构建日志文件，共 2,567,893,881 字节，逐文件校验 SHA-256。088 暂存快照 1182 个文件通过摘要校验；远端已应用 071–088 补丁并通过全源码校验，379 个覆盖文件一致，源码树为 `f83d50da84400ea9fc23ce467e8996b389a2365c`；正在生成增量构建，复用固定 `C:\a\src\out\AegisRelease` 输出目录。
+
+088 的构建、原生验收接续及本机回传进程已启动。后续依次验证核心、更新、浏览器、安装身份四组原生测试，再安装到独立 GCSA Aegis 目录、核对旧 Chromium 未改变，并回传安装包及双端摘要。任一步失败保留现场；当前没有宣称新 Windows 安装包或测试通过。
+
+原生安装脚本不调用旧界面自动化脚本，终态明确为 `native_passed_ui_pending`。Windows 实际 UI 仍需 CUA 验收；远程桌面证书确认需要用户接管，不能由工具绕过。编译动作数不等于计划完成率，也不能据此线性估计剩余时间。
 
 ### 共用检查
 
@@ -47,7 +53,8 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 ## 本批发现并保留的问题
 
 1. **P2：已完成任务仍显示“需要你确认”。** 原因是计划风险标签与实时状态混用。真实操作和结果验证已完成；应在终态隐藏待确认标签，并把该卡片明确为执行计划。证据为 `macos-window-completed-087.png`。
-2. **兼容项：旧资料名称保留“您的 Chromium”。** 已核对为验收资料中保存的默认旧名，而不是版本页品牌未更新。不得直接覆盖用户自定义资料名；默认旧名迁移须按兼容条件处理。
+2. **P2：Android 首次启动页仍使用 Chromium 图标。** 087b 在真机上确认，标题和服务提示已是 GCSA Aegis，首次启动图标仍待修复并重新验收。
+3. **兼容项：旧资料名称保留“您的 Chromium”。** 已核对为验收资料中保存的默认旧名，而不是版本页品牌未更新。不得直接覆盖用户自定义资料名；默认旧名迁移须按兼容条件处理。
 
 ## 仍未完成的功能与验收
 
@@ -67,4 +74,4 @@ V8 补丁树：`6ee9fe26bc09a83e2257ea80c60b57ed1848b60a`。
 
 Mac 内测 ZIP：`GCSA-aegis-2.0.0.87-mac-arm64.zip`，182303914 字节，SHA-256 `084c143fa63defb31a9a33c3470ed3b2153537fdd3b4916239ea16db189484e8`。包与固定路径开发签名安装分别记录，不表示 Developer ID 公证或正式发行。
 
-私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-087.json`、`windows-return-087.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
+私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-087.json`、`windows-return-087.json`。本轮补充 `android-ui-087b.json`、`android-ui-isolation-087b.json`、`windows-failed-070-build.log`、`windows-prior-070-preserved.json` 和 `windows-return-088.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
