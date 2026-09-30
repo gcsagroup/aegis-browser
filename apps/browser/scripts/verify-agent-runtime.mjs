@@ -760,6 +760,12 @@ function executionArguments(name, prompt, serverOrigin) {
           previous?.value?.observation_fingerprint || 'missing-fingerprint',
     };
   }
+  if (name === 'agent.review_summary') {
+    // 合成夹具只原样回传浏览器提供的草稿，不改写事实或模拟模型校对质量。
+    const draft = prompt.draft_untrusted;
+    return {summary: typeof draft === 'string' ? draft : '',
+      approved: typeof draft === 'string' && draft.length > 0};
+  }
   if (name === 'agent.complete') {
     const a1 = String(prompt.user_goal || '').toLowerCase().includes('a1');
     const verifiedUrls = verifiedEvidenceUrls(prompt);
@@ -1647,6 +1653,21 @@ async function runSelfTest(reportPath = null) {
       assert(JSON.stringify(selectionArguments) ===
                  '{"selection_ref":"fixture-selection-500"}',
              '全量检查必须使用精确引用，不能退回编号样本');
+    });
+    await check('摘要校对保留草稿并拒绝缺失输入', async () => {
+      const draft = '来源指标为 42；人人可复核，网址 https://example.test/42。';
+      const response = await providerCall(origin, 'agent.review_summary',
+          {draft_untrusted: draft});
+      const args = JSON.parse((await response.json()).output[0].arguments);
+      assert(args.approved === true && args.summary === draft,
+             '校对夹具改变了浏览器提供的草稿');
+      for (const invalid of [undefined, null, '', 42]) {
+        const rejected = await providerCall(origin, 'agent.review_summary',
+            {draft_untrusted: invalid});
+        const value = JSON.parse((await rejected.json()).output[0].arguments);
+        assert(value.approved === false && value.summary === '',
+               '校对夹具不能批准缺失或无效草稿');
+      }
     });
     await check('A4 architecture and SHA-256 download evidence', async () => {
       const macosArm64 = Buffer.from(await (await fetch(
