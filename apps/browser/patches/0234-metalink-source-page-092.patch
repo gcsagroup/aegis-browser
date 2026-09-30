@@ -1,0 +1,197 @@
+From b3cffa8f3b368e39565c27d589280740ca77cec7 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 20:35:21 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=85=B3=E8=81=94=E9=95=9C=E5=83=8F=E4=B8=8B?=
+ =?UTF-8?q?=E8=BD=BD=E7=9A=84=E5=8F=91=E8=B5=B7=E9=A1=B5=E9=9D=A2=E5=92=8C?=
+ =?UTF-8?q?=E5=8E=9F=E7=94=9F=E7=A1=AE=E8=AE=A4=20092?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/aegis_ui_handler_unittest.cc        | 24 +++++++++++++++++--
+ .../aegis/metalink_download_verifier.cc       | 21 +++++++++++++---
+ .../aegis/metalink_download_verifier.h        |  9 +++++--
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  3 ++-
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 5 files changed, 51 insertions(+), 10 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 9229d6ea73..0fafe408aa 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -269,14 +269,34 @@ TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
+ }
+ 
+ TEST_F(AegisUIHandlerTest, InvalidMetalinkCannotReportTaskCreated) {
++  AddTab(browser(), GURL("chrome://aegis/"));
+   base::test::TestFuture<bool, std::string> result;
+   MetalinkParseResult invalid;
+-  StartVerifiedMetalinkDownload(profile(), std::move(invalid),
+-                                result.GetCallback());
++  StartVerifiedMetalinkDownload(
++      profile(), browser()->tab_strip_model()->GetWebContentsAt(0),
++      std::move(invalid), result.GetCallback());
+   EXPECT_FALSE(result.Get<0>());
+   EXPECT_FALSE(result.Get<1>().empty());
+ }
+ 
++TEST_F(AegisUIHandlerTest, MetalinkRequiresSourceInSameProfile) {
++  AddTab(browser(), GURL("chrome://aegis/"));
++  auto* source = browser()->tab_strip_model()->GetWebContentsAt(0);
++  for (Profile* request_profile : {static_cast<Profile*>(profile()),
++                                   profile()->GetPrimaryOTRProfile(true)}) {
++    base::test::TestFuture<bool, std::string> result;
++    MetalinkParseResult parsed;
++    parsed.ok = true;
++    parsed.mirrors.push_back({GURL("https://downloads.example/file.txt"), 1});
++    // 缺少页面或跨资料的调用必须在发起网络请求前失败。
++    StartVerifiedMetalinkDownload(
++        request_profile, request_profile == profile() ? nullptr : source,
++        std::move(parsed), result.GetCallback());
++    EXPECT_FALSE(result.Get<0>());
++    EXPECT_FALSE(result.Get<1>().empty());
++  }
++}
++
+ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
+   AegisUIConfig config;
+   EXPECT_TRUE(config.IsWebUIEnabled(profile()));
+diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
+index 9e6bf3cafe..13fe4b9dd8 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.cc
++++ b/chrome/browser/aegis/metalink_download_verifier.cc
+@@ -28,7 +28,9 @@
+ #include "components/download/public/common/download_item.h"
+ #include "components/download/public/common/download_url_parameters.h"
+ #include "content/public/browser/download_manager.h"
++#include "content/public/browser/download_request_utils.h"
+ #include "content/public/browser/storage_partition.h"
++#include "content/public/browser/web_contents.h"
+ #include "crypto/secure_hash.h"
+ #include "net/base/address_list.h"
+ #include "net/base/host_port_pair.h"
+@@ -95,9 +97,11 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+                                  public ProfileObserver {
+  public:
+   MetalinkDownloadVerifier(Profile* profile,
++                           content::WebContents* source,
+                            MetalinkParseResult result,
+                            base::OnceCallback<void(bool, std::string)> callback)
+       : profile_(profile),
++        source_(source->GetWeakPtr()),
+         started_callback_(std::move(callback)),
+         result_(std::move(result)),
+         host_resolver_(network::SimpleHostResolver::Create(base::BindRepeating(
+@@ -202,6 +206,12 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+       const net::ResolveErrorInfo& /*resolve_error_info*/,
+       const net::AddressList& resolved_addresses,
+       const net::HostResolverEndpointResults& /*alternative_endpoints*/) {
++    if (!source_) {
++      CompleteStart(false,
++                    "Metalink source page closed before download started");
++      delete this;
++      return;
++    }
+     if (result != net::OK || !AllAddressesArePublic(resolved_addresses)) {
+       StartNextMirror();
+       return;
+@@ -225,7 +235,9 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+             policy_exception_justification: "Not implemented."
+           })");
+     auto parameters =
+-        std::make_unique<download::DownloadUrlParameters>(url, annotation);
++        content::DownloadRequestUtils::CreateDownloadForWebContentsMainFrame(
++            source_.get(), url, annotation);
++    parameters->set_has_user_gesture(true);
+     parameters->set_credentials_mode(network::mojom::CredentialsMode::kOmit);
+     parameters->set_cross_origin_redirects(
+         network::mojom::RedirectMode::kError);
+@@ -316,6 +328,7 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+   }
+ 
+   raw_ptr<Profile> profile_;
++  base::WeakPtr<content::WebContents> source_;
+   base::OnceCallback<void(bool, std::string)> started_callback_;
+   base::OneShotTimer start_timeout_;
+   MetalinkParseResult result_;
+@@ -344,13 +357,15 @@ void SetMetalinkVerificationStatus(download::DownloadItem& item,
+ 
+ void StartVerifiedMetalinkDownload(
+     Profile* profile,
++    content::WebContents* source,
+     MetalinkParseResult result,
+     base::OnceCallback<void(bool, std::string)> started_callback) {
+-  if (!profile || !result.ok || result.mirrors.empty()) {
++  if (!profile || !source || source->GetBrowserContext() != profile ||
++      !result.ok || result.mirrors.empty()) {
+     std::move(started_callback).Run(false, "invalid Metalink download request");
+     return;
+   }
+-  (new MetalinkDownloadVerifier(profile, std::move(result),
++  (new MetalinkDownloadVerifier(profile, source, std::move(result),
+                                 std::move(started_callback)))
+       ->Start();
+ }
+diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
+index 9da24db872..b2c0301277 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.h
++++ b/chrome/browser/aegis/metalink_download_verifier.h
+@@ -8,6 +8,10 @@
+ 
+ class Profile;
+ 
++namespace content {
++class WebContents;
++}
++
+ namespace download {
+ class DownloadItem;
+ }
+@@ -27,11 +31,12 @@ MetalinkVerificationStatus GetMetalinkVerificationStatus(
+ void SetMetalinkVerificationStatus(download::DownloadItem& item,
+                                    MetalinkVerificationStatus status);
+ 
+-// Starts a Browser-native, credential-free mirror download. The verifier owns
+-// itself until the file hash matches or all mirrors fail.
++// 以发起页面关联原生匿名下载，供系统显示目录、重名及安全确认。
++// 校验器持有自身，直到文件哈希匹配或镜像全部失败。
+ // 仅在下载管理器实际创建任务后返回成功；地址校验失败必须回传错误。
+ void StartVerifiedMetalinkDownload(
+     Profile* profile,
++    content::WebContents* source,
+     MetalinkParseResult result,
+     base::OnceCallback<void(bool, std::string)> started_callback);
+ 
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 1271e41dc5..a98992dcaf 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -1129,7 +1129,8 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
+     return;
+   }
+   aegis::StartVerifiedMetalinkDownload(
+-      Profile::FromWebUI(web_ui()), std::move(pending.result),
++      Profile::FromWebUI(web_ui()), web_ui()->GetWebContents(),
++      std::move(pending.result),
+       base::BindOnce(&AegisUIHandler::OnMetalinkStarted,
+                      weak_factory_.GetWeakPtr(), callback_id.GetString()));
+ }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index e4b22650d9..98b98f36e5 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.91";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (091)";
++inline constexpr char kProductVersion[] = "2.0.0.92";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (092)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

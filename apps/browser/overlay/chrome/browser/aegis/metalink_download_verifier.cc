@@ -28,7 +28,9 @@
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_url_parameters.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/web_contents.h"
 #include "crypto/secure_hash.h"
 #include "net/base/address_list.h"
 #include "net/base/host_port_pair.h"
@@ -95,9 +97,11 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
                                  public ProfileObserver {
  public:
   MetalinkDownloadVerifier(Profile* profile,
+                           content::WebContents* source,
                            MetalinkParseResult result,
                            base::OnceCallback<void(bool, std::string)> callback)
       : profile_(profile),
+        source_(source->GetWeakPtr()),
         started_callback_(std::move(callback)),
         result_(std::move(result)),
         host_resolver_(network::SimpleHostResolver::Create(base::BindRepeating(
@@ -202,6 +206,12 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
       const net::ResolveErrorInfo& /*resolve_error_info*/,
       const net::AddressList& resolved_addresses,
       const net::HostResolverEndpointResults& /*alternative_endpoints*/) {
+    if (!source_) {
+      CompleteStart(false,
+                    "Metalink source page closed before download started");
+      delete this;
+      return;
+    }
     if (result != net::OK || !AllAddressesArePublic(resolved_addresses)) {
       StartNextMirror();
       return;
@@ -225,7 +235,9 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
             policy_exception_justification: "Not implemented."
           })");
     auto parameters =
-        std::make_unique<download::DownloadUrlParameters>(url, annotation);
+        content::DownloadRequestUtils::CreateDownloadForWebContentsMainFrame(
+            source_.get(), url, annotation);
+    parameters->set_has_user_gesture(true);
     parameters->set_credentials_mode(network::mojom::CredentialsMode::kOmit);
     parameters->set_cross_origin_redirects(
         network::mojom::RedirectMode::kError);
@@ -316,6 +328,7 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
   }
 
   raw_ptr<Profile> profile_;
+  base::WeakPtr<content::WebContents> source_;
   base::OnceCallback<void(bool, std::string)> started_callback_;
   base::OneShotTimer start_timeout_;
   MetalinkParseResult result_;
@@ -344,13 +357,15 @@ void SetMetalinkVerificationStatus(download::DownloadItem& item,
 
 void StartVerifiedMetalinkDownload(
     Profile* profile,
+    content::WebContents* source,
     MetalinkParseResult result,
     base::OnceCallback<void(bool, std::string)> started_callback) {
-  if (!profile || !result.ok || result.mirrors.empty()) {
+  if (!profile || !source || source->GetBrowserContext() != profile ||
+      !result.ok || result.mirrors.empty()) {
     std::move(started_callback).Run(false, "invalid Metalink download request");
     return;
   }
-  (new MetalinkDownloadVerifier(profile, std::move(result),
+  (new MetalinkDownloadVerifier(profile, source, std::move(result),
                                 std::move(started_callback)))
       ->Start();
 }
