@@ -1,6 +1,6 @@
-# 三端收敛进度与验收记录（Android 094 / Windows 095 接续）
+# 三端收敛进度与验收记录（Android 094 / Windows 096 接续）
 
-整体尚未完成，不能宣称三端功能一致。macOS 087 已安装并通过本批实际窗口闭环；Android 090 已完成合成模型摘要与来源引用的实机闭环，091 已完成工作区实机闭环；Android 094 已完成镜像切换、正常落盘和错误哈希删除及列表同步的实机闭环；Windows 089 编译已有两处 MIDL 失败，095 修复已部署并等待其结束后接续。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
+整体尚未完成，不能宣称三端功能一致。macOS 087 已安装并通过本批实际窗口闭环；Android 090 已完成合成模型摘要与来源引用的实机闭环，091 已完成工作区实机闭环；Android 094 已完成镜像切换、正常落盘和错误哈希删除及列表同步的实机闭环；Windows 089、095 的 MIDL 失败均已定位；096 修复通过五种真实生成场景，正在保全旧产物后接续完整构建。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
 
 ## 本批完成的代码
 
@@ -50,11 +50,13 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 
 070 的失败日志、源码恢复分支及 100 个程序、符号、参数和构建日志文件，共 2,567,893,881 字节，已经逐文件校验 SHA-256 并保全。089 继续复用固定 `C:\a\src\out\AegisRelease` 输出目录；Android 090 修复不会覆盖正在运行的 Windows 089 构建。
 
-095 只归一化动态 GUID 暂存 IDL 引入的编译器路径注释，保留接口、代理与类型库的严格字节比较。4 项本地回归通过；远端对两个服务的 10 个真实生成文件做副本验证，归一化后均与基准一致，原产物未改变。22:03 的 089 日志为 4082/4646，仍继续处理未受阻的编译目标。095 的 1,193 个暂存文件已校验，22:04 已确认后台构建任务处于 `waiting_for_089`，驱动 PID 10696；原生验收任务也已独立启动等待。接续前须确认 089 失败终态、无编译进程，逐文件保存程序、符号和两组 MIDL 失败原件，保留源码分支，再复用同一输出目录。
+095 只归一化动态 GUID 暂存 IDL 引入的编译器路径注释，保留两个服务的接口、代理与类型库严格比较。4 项本地回归和远端 10 个生成文件副本验证通过。089 于 22:08 后自然结束，126 个程序、符号、参数及 MIDL 原件共 2,679,699,890 字节已逐文件保全。095 全源码校验与 `gn gen --check` 通过；但完整构建暴露三个更新器 `.template` 输入兼容问题，22:29 失败结束，不能记为完整通过。
 
-089 的构建、原生验收接续及本机回传进程已启动。后续验证核心、更新、浏览器、安装身份四组原生测试，再安装到独立 GCSA Aegis 目录、核对旧 Chromium 未改变，并回传安装包及双端摘要。当前没有新 Windows 安装包或测试通过的结论。
+096 将注释归一化限制为源 `.idl` 输入，保留更新器生成模板的既有路径行为。5 项本地回归、382 个覆盖文件校验通过；两个服务和三个更新器均在 Windows 独立目录实际运行 MIDL 成功。更新器原有 `ignore_proxy_stub` 参数保持不变，不能宣称它的代理文件也做了严格比较。1,194 个产品暂存文件校验一致，22:32 后台任务开始保全 095 程序、符号和三组失败原件，再应用增量。仅 MIDL 脚本与版本头改变、构建定义和参数未变时，复用 095 成功的 GN 依赖检查。
 
-原生安装脚本不调用旧界面自动化脚本，终态明确为 `native_passed_ui_pending`。Windows 实际 UI 仍需 CUA 验收；远程桌面证书确认需要用户接管，不能由工具绕过。编译动作数不等于计划完成率，也不能据此线性估计剩余时间。
+096 后续仍需完成六个构建目标、核心/更新/浏览器/安装身份四组原生测试，以及独立 GCSA Aegis 安装与旧 Chromium 共存校验。当前没有新 Windows 安装包或全部测试通过的结论。
+
+原生安装脚本不调用旧界面自动化脚本，终态明确为 `native_passed_ui_pending`。Windows 实际 UI 仍需 CUA 验收；当前远程桌面因未及时提供凭据而超时（0x1f07），等待用户登录；若随后出现证书警告，仍由用户接管。编译动作数不等于计划完成率，也不能据此线性估计剩余时间。
 
 ### 共用检查
 
@@ -87,4 +89,4 @@ V8 补丁树：`6ee9fe26bc09a83e2257ea80c60b57ed1848b60a`。
 
 Mac 内测 ZIP：`GCSA-aegis-2.0.0.87-mac-arm64.zip`，182303914 字节，SHA-256 `084c143fa63defb31a9a33c3470ed3b2153537fdd3b4916239ea16db189484e8`。包与固定路径开发签名安装分别记录，不表示 Developer ID 公证或正式发行。
 
-私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-095.json`、`windows-midl-path-check-095.json`、`android-ui-094.json`、`android-history-ui-094.sqlite`、`android-download-history-094.json`、`android-ui-isolation-094.json`、`windows-queue-087.json`、`windows-return-087.json`。本轮补充 `android-ui-087b.json`、`android-ui-087c.json`、`android-ui-isolation-087c.json`、`android-ui-crash-087c.log`、`android-ui-crash-symbols-087c.txt`、`android-build-090.json`、`android-ui-090.json`、`android-task-store-ui-090.json`、`android-ui-isolation-090.json`、`android-ui-091.json`、`android-task-store-ui-091.json`、`android-history-ui-091.sqlite`、`android-runtime-091.log`、`android-ui-092.json`、`android-ui-crash-092.log`、`android-ui-crash-symbols-092.txt`、`android-ui-isolation-092.json`、`android-ui-093.json`、`android-download-history-093.json`、`android-runtime-093.log`、`android-ui-isolation-093.json`、`windows-failed-070-build.log`、`windows-prior-070-preserved.json`、`windows-gn-failure-088.log` 和 `windows-return-089.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
+私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-095.json`、`windows-midl-smoke-096.json`、`windows-midl-smoke-096-all-updaters.json`、`windows-failed-095-build.log`、`windows-midl-path-check-095.json`、`android-ui-094.json`、`android-history-ui-094.sqlite`、`android-download-history-094.json`、`android-ui-isolation-094.json`、`windows-queue-087.json`、`windows-return-087.json`。本轮补充 `android-ui-087b.json`、`android-ui-087c.json`、`android-ui-isolation-087c.json`、`android-ui-crash-087c.log`、`android-ui-crash-symbols-087c.txt`、`android-build-090.json`、`android-ui-090.json`、`android-task-store-ui-090.json`、`android-ui-isolation-090.json`、`android-ui-091.json`、`android-task-store-ui-091.json`、`android-history-ui-091.sqlite`、`android-runtime-091.log`、`android-ui-092.json`、`android-ui-crash-092.log`、`android-ui-crash-symbols-092.txt`、`android-ui-isolation-092.json`、`android-ui-093.json`、`android-download-history-093.json`、`android-runtime-093.log`、`android-ui-isolation-093.json`、`windows-failed-070-build.log`、`windows-prior-070-preserved.json`、`windows-gn-failure-088.log` 和 `windows-return-089.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
