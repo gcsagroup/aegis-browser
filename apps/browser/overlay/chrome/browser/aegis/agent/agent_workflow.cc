@@ -12,8 +12,7 @@ namespace {
 
 bool IsToolSupportedOnCurrentPlatform(std::string_view tool) {
 #if BUILDFLAG(IS_ANDROID)
-  return !base::StartsWith(tool, "window.") &&
-         !base::StartsWith(tool, "workspace.");
+  return !base::StartsWith(tool, "window.");
 #else
   return true;
 #endif

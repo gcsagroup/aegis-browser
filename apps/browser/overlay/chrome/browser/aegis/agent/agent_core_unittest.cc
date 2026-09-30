@@ -396,6 +396,8 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
   EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.list"));
   EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.plan"));
   EXPECT_TRUE(browser_only->allowed_tools.contains("tab.list"));
+  EXPECT_TRUE(browser_only->allowed_tools.contains("workspace.save"));
+  EXPECT_TRUE(browser_only->allowed_tools.contains("workspace.restore"));
   EXPECT_FALSE(browser_only->allowed_tools.contains("tab.create"));
   EXPECT_FALSE(browser_only->allowed_tools.contains("window.create"));
 }
