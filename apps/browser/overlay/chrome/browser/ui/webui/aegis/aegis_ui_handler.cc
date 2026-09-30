@@ -1129,7 +1129,8 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
     return;
   }
   aegis::StartVerifiedMetalinkDownload(
-      Profile::FromWebUI(web_ui()), std::move(pending.result),
+      Profile::FromWebUI(web_ui()), web_ui()->GetWebContents(),
+      std::move(pending.result),
       base::BindOnce(&AegisUIHandler::OnMetalinkStarted,
                      weak_factory_.GetWeakPtr(), callback_id.GetString()));
 }

@@ -269,12 +269,32 @@ TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
 }
 
 TEST_F(AegisUIHandlerTest, InvalidMetalinkCannotReportTaskCreated) {
+  AddTab(browser(), GURL("chrome://aegis/"));
   base::test::TestFuture<bool, std::string> result;
   MetalinkParseResult invalid;
-  StartVerifiedMetalinkDownload(profile(), std::move(invalid),
-                                result.GetCallback());
+  StartVerifiedMetalinkDownload(
+      profile(), browser()->tab_strip_model()->GetWebContentsAt(0),
+      std::move(invalid), result.GetCallback());
   EXPECT_FALSE(result.Get<0>());
   EXPECT_FALSE(result.Get<1>().empty());
+}
+
+TEST_F(AegisUIHandlerTest, MetalinkRequiresSourceInSameProfile) {
+  AddTab(browser(), GURL("chrome://aegis/"));
+  auto* source = browser()->tab_strip_model()->GetWebContentsAt(0);
+  for (Profile* request_profile : {static_cast<Profile*>(profile()),
+                                   profile()->GetPrimaryOTRProfile(true)}) {
+    base::test::TestFuture<bool, std::string> result;
+    MetalinkParseResult parsed;
+    parsed.ok = true;
+    parsed.mirrors.push_back({GURL("https://downloads.example/file.txt"), 1});
+    // 缺少页面或跨资料的调用必须在发起网络请求前失败。
+    StartVerifiedMetalinkDownload(
+        request_profile, request_profile == profile() ? nullptr : source,
+        std::move(parsed), result.GetCallback());
+    EXPECT_FALSE(result.Get<0>());
+    EXPECT_FALSE(result.Get<1>().empty());
+  }
 }
 
 TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {

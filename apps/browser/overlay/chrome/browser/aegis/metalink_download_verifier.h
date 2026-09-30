@@ -8,6 +8,10 @@
 
 class Profile;
 
+namespace content {
+class WebContents;
+}
+
 namespace download {
 class DownloadItem;
 }
@@ -27,11 +31,12 @@ MetalinkVerificationStatus GetMetalinkVerificationStatus(
 void SetMetalinkVerificationStatus(download::DownloadItem& item,
                                    MetalinkVerificationStatus status);
 
-// Starts a Browser-native, credential-free mirror download. The verifier owns
-// itself until the file hash matches or all mirrors fail.
+// 以发起页面关联原生匿名下载，供系统显示目录、重名及安全确认。
+// 校验器持有自身，直到文件哈希匹配或镜像全部失败。
 // 仅在下载管理器实际创建任务后返回成功；地址校验失败必须回传错误。
 void StartVerifiedMetalinkDownload(
     Profile* profile,
+    content::WebContents* source,
     MetalinkParseResult result,
     base::OnceCallback<void(bool, std::string)> started_callback);
 
