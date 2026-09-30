@@ -30,6 +30,12 @@ class DynamicIdlCommentTest(unittest.TestCase):
                 suffix = b':' + newline + b'    Oicf, W1' + newline + b'IID body unchanged'
                 self.assertEqual(self.normalize(prefix + generated.encode() + suffix, generated, original), prefix + original.encode() + suffix)
 
+    def test_generated_template_keeps_idl_comment(self):
+        generated = 'gen/chrome/updater/app/server/win/updater_legacy_idl.idl'
+        original = 'gen/chrome/updater/app/server/win/updater_legacy_idl.template'
+        content = b'/* Compiler settings for ' + generated.encode() + b':\r\nIID unchanged'
+        self.assertEqual(self.normalize(content, generated, original), content)
+
     def test_other_paths_still_differ(self):
         content = b'/* Compiler settings for gen/chrome/other.idl:\nIID changed'
         self.assertEqual(self.normalize(content), content)

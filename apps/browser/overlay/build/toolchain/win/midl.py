@@ -345,6 +345,9 @@ def uuid5_substitutions(dynamic_guids):
 
 def normalize_dynamic_idl_comment(path, generated_idl, original_idl):
     """只还原动态 GUID 暂存路径的编译器注释，保留接口和代理正文。"""
+    # 生成型 .template 的基准已使用暂存 .idl 路径，保持上游比较行为。
+    if not original_idl.endswith('.idl'):
+        return
     with open(path, 'rb') as f:
         contents = f.read()
     prefix = b'/* Compiler settings for '
