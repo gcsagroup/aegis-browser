@@ -98,5 +98,17 @@
     "extracted_keys": 353,
     "missing": 0,
     "translation_errors": 0
+  },
+  "post_build_script_maintenance": {
+    "scope": "034 编译后只修正验收脚本的静态检查问题，App 源码与构建号不变；原始编译和模拟器输入清单保留。",
+    "changed_files": [
+      "apps/ios/scripts/generate-tracker-rules.mjs",
+      "apps/ios/scripts/run-simulator-tests.sh",
+      "apps/ios/scripts/simulator-fixture-server.py"
+    ],
+    "fixture_self_test": "4 项通过，普通与 -O 模式均执行",
+    "tracker_rules": "检查和生成通过，规则输出字节不变",
+    "simulator_runner": "语法检查与 dry-run 通过",
+    "hash_manifest": "script-fixes-sha256.txt"
   }
 }
