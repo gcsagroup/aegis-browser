@@ -4,7 +4,22 @@
 
 本文件記錄專案的重要變更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，專案計畫採用[語意化版本](https://semver.org/lang/zh-TW/)。
 
-軟體套件版本仍為 `0.1.0`，但尚未發布 `0.1.0` Release、Git tag 或二進位分發物。以下內容全部仍屬**未發布**。
+軟體套件版本仍為 `0.1.0`；iOS 產品線獨立使用 `2.2`。以下新增 iOS 原始碼預發布記錄，簽章及商店發布驗收尚未完成。
+
+## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
+
+### 新增
+
+- 原生 iPhone/iPad 網頁助手：有界頁面讀取、脫敏預覽、模型目的地確認、來源引用、加密任務復原與結果儲存；支援 OpenAI 相容、Anthropic 及 Gemini 介面。
+- HTTP(S) 背景下載、暫停與續傳、鏡像重試、Metalink、SHA-256/SHA-512 校驗及系統檔案匯出。
+- EasyList/EasyPrivacy 內建規則、手動更新、元素隱藏及網站例外；書籤連結檢查與工作區匯入匯出。
+- 分頁分組與重啟復原、iPad 獨立視窗與視窗復原；移除常駐側邊欄，網頁使用完整視窗。
+
+### 修復與驗證
+
+- 修復視窗初始化期間發布共用狀態的 SwiftUI 警告；私密頁面及分組不寫入視窗記錄。
+- 保留上游 Swift 覆蓋率及輸入雜湊檢查；版本遞增及專案產生後凍結輸入，獨立工作樹可沿用固定建置目錄。
+- 三語介面、隱私清單與模擬器驗證見[發布說明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。GitHub 提供原始碼預發布，尚無可安裝的簽章 IPA；實機、VoiceOver 全流程、TestFlight 及 App Store 驗收仍待完成。
 
 ## [未發布]
 

@@ -57,7 +57,7 @@ Node-only AST analysis, bounded behavior/provenance functions, local federated s
 
 - Chromium API credentials are optional, stored through operating-system encryption, separated by API format and normalized endpoint, and not echoed in the UI.
 - Remote summary text is bounded and redacted, but a complete Chromium egress, telemetry, update, crash-reporting, and error-path audit is still pending.
-- The current iOS Agent workflows are offline and do not establish a production remote-model path. Safari access is read-only and gesture/lease-bound; the Share inbox is URL-only, bounded, expiring, and single-consumption.
+- The iOS page assistant supports confirmed requests to user-configured models with bounded, redacted page content. Models return text and cannot invoke browser action tools. Synthetic-model tests do not establish external service quality. Safari access is read-only and gesture/lease-bound; the Share inbox is URL-only, bounded, expiring, and single-consumption.
 - Local or Simulator signing and structural checks are not equivalent to product identity, distribution signing, notarization, provisioning, Archive, TestFlight, or installed-device acceptance.
 - Chromium Android remains blocked on a qualified x86-64 Linux build, a current-source package, and real-device acceptance.
 - iOS real-device validation is `NOT_RUN`; default-browser entitlement is `PENDING`; formal signing, Archive, TestFlight, and App Store delivery are `NOT_RUN`.

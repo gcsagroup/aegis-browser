@@ -16,7 +16,7 @@ final class ShareViewController: UIViewController {
         let mark = UIImageView(image: UIImage(systemName: "shield.lefthalf.filled"))
         mark.tintColor = .systemGreen
         mark.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 34, weight: .semibold)
-        statusLabel.text = "正在验证分享链接…"
+        statusLabel.text = String(localized: "正在验证分享链接…")
         statusLabel.font = .preferredFont(forTextStyle: .headline)
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
@@ -80,7 +80,7 @@ final class ShareViewController: UIViewController {
             let inbox = try ShareInbox()
             let envelope = try inbox.makeEnvelope(from: value)
             try inbox.store(envelope)
-            statusLabel.text = "已安全交给 Aegis\n60 秒内打开 App 即可接收"
+            statusLabel.text = String(localized: "已安全交给 Aegis\n60 秒内打开 App 即可接收")
             activity.stopAnimating()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
                 self?.extensionContext?.completeRequest(returningItems: nil)
