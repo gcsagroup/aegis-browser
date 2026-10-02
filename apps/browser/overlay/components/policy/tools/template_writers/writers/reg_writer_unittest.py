@@ -29,7 +29,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     Raises:
       AssertionError: if the two strings are not equivalent.
     '''
-    self.assertEquals(output.strip(), expected_output.strip())
+    self.assertEqual(output.strip(), expected_output.strip())
 
   def testEmpty(self):
     # Test the handling of an empty policy list.
@@ -244,7 +244,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
               "type": "list",
               "caption": "",
               "desc": "",
-              "supported_on": ["chrome.linux:8-"],
+              "supported_on": ["chrome.win:8-"],
               "example_value": ["foo", "bar"]
             },
           ],
@@ -258,6 +258,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
         '"1"="foo"', '"2"="bar"'
     ])
+    self.CompareOutputs(output, expected_output)
 
   def testStringEnumListPolicy(self):
     # Tests a policy group with a single policy of type 'string-enum-list'.
@@ -273,7 +274,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
                 {"name": "ProxyServerDisabled", "value": "foo", "caption": ""},
                 {"name": "ProxyServerAutoDetect", "value": "bar","caption": ""},
               ],
-              "supported_on": ["chrome.linux:8-"],
+              "supported_on": ["chrome.win:8-"],
               "example_value": ["foo", "bar"]
             },
           ],
@@ -287,6 +288,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
         '"1"="foo"', '"2"="bar"'
     ])
+    self.CompareOutputs(output, expected_output)
 
   def testDictionaryPolicy(self):
     # Tests a policy group with a single policy of type 'dict'.

@@ -45,6 +45,8 @@ import {navigateTo} from './test_util.js';
 
     setup(function() {
       window.history.replaceState({}, '', '/');
+      // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+      // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
       document.body.innerHTML = window.trustedTypes!.emptyHTML;
       CrRouter.resetForTesting();
       const clustersHandler =
@@ -301,6 +303,8 @@ suite(`routing-test-with-history-clusters-pref-set`, () => {
 
   setup(function() {
     window.history.replaceState({}, '', '/');
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
     document.body.innerHTML = window.trustedTypes!.emptyHTML;
     CrRouter.resetForTesting();
     testProxy = new TestHistoryBrowserProxy();
@@ -363,6 +367,8 @@ suite(`routing-test-with-history-embeddings-enabled`, () => {
 
   setup(() => {
     window.history.replaceState({}, '', '/');
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
     document.body.innerHTML = window.trustedTypes!.emptyHTML;
     CrRouter.resetForTesting();
 

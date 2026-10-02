@@ -100,7 +100,7 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
   AgentTask task("window-focus", "核对窗口审批期间的结构", AgentMode::kAct,
                  scope);
   AegisBrowserTools tools(profile());
-  auto read = [&]() {
+  auto read_state = [&]() {
     AgentToolCall call;
     call.action_id = "window-list";
     call.tool_name = "window.list";
@@ -108,12 +108,12 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
     tools.Execute(&task, call, future.GetCallback());
     return future.Take();
   };
-  auto before = read();
+  auto before = read_state();
   ASSERT_TRUE(before.ok);
   ASSERT_TRUE(before.value.FindString("revision"));
   auto* test_window = static_cast<TestBrowserWindow*>(window());
   test_window->set_is_active(true);
-  auto focused = read();
+  auto focused = read_state();
   ASSERT_TRUE(focused.ok);
   const auto* windows = focused.value.FindList("windows");
   ASSERT_TRUE(windows);
@@ -122,19 +122,19 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
   EXPECT_EQ(*before.value.FindString("revision"),
             *focused.value.FindString("revision"));
   test_window->set_is_active(false);
-  auto unfocused = read();
+  auto unfocused = read_state();
   ASSERT_TRUE(unfocused.ok);
   EXPECT_EQ(*before.value.FindString("revision"),
             *unfocused.value.FindString("revision"));
   // URL 或固定状态变化仍使旧审批版本失效。
   NavigateAndCommit(list->GetTab(0)->GetContents(),
                     GURL("https://workspace.example/changed"));
-  auto navigated = read();
+  auto navigated = read_state();
   ASSERT_TRUE(navigated.ok);
   EXPECT_NE(*before.value.FindString("revision"),
             *navigated.value.FindString("revision"));
   browser()->tab_strip_model()->SetTabPinned(0, true);
-  auto pinned = read();
+  auto pinned = read_state();
   ASSERT_TRUE(pinned.ok);
   EXPECT_NE(*navigated.value.FindString("revision"),
             *pinned.value.FindString("revision"));

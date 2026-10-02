@@ -888,22 +888,22 @@ std::optional<std::vector<StoredAgentResearch>> AgentTaskStore::LoadResearch() {
   if (!initialized_) {
     return std::nullopt;
   }
-  sql::Statement read(database_.GetCachedStatement(
+  sql::Statement research_query(database_.GetCachedStatement(
       SQL_FROM_HERE,
       "SELECT id,ciphertext,saved_us FROM agent_saved_research ORDER BY "
       "saved_us DESC LIMIT 20"));
-  while (read.Step()) {
-    auto id = read.ColumnString(0);
-    auto ciphertext = read.ColumnBlobAsString(1);
+  while (research_query.Step()) {
+    auto id = research_query.ColumnString(0);
+    auto ciphertext = research_query.ColumnBlobAsString(1);
     if (id.empty() || id.size() > 64u || ciphertext.empty() ||
         ciphertext.size() > 69632u) {
       return std::nullopt;
     }
     result.push_back({.id = std::move(id),
                       .ciphertext = std::move(ciphertext),
-                      .saved_at = DeserializeTime(read.ColumnInt64(2))});
+                      .saved_at = DeserializeTime(research_query.ColumnInt64(2))});
   }
-  if (!read.Succeeded()) {
+  if (!research_query.Succeeded()) {
     return std::nullopt;
   }
   return result;

@@ -1457,7 +1457,7 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
         base::BindOnce(
             [](base::WeakPtr<AegisBrowserTools> self,
                base::WeakPtr<AgentTask> current_task, GURL target,
-               std::string action_id, ToolResultCallback done,
+               const std::string& action_id, ToolResultCallback done,
                BrowserWindowInterface* created) {
               TabListInterface* list =
                   created ? TabListInterface::From(created) : nullptr;
