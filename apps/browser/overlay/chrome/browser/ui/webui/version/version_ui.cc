@@ -220,6 +220,8 @@ int VersionUI::VersionProcessorVariation() {
 #elif defined(ARCH_CPU_32_BITS)
   return IDS_VERSION_UI_32BIT;
 #else
+// 编译时仍须拒绝未知架构；静态扫描没有 GN 提供的架构宏。
+// cppcheck-suppress preprocessorErrorDirective
 #error Update for a processor that is neither 32-bit nor 64-bit.
 #endif
 #elif defined(ARCH_CPU_64_BITS)
@@ -227,6 +229,8 @@ int VersionUI::VersionProcessorVariation() {
 #elif defined(ARCH_CPU_32_BITS)
   return IDS_VERSION_UI_32BIT;
 #else
+// 编译时仍须拒绝未知架构；静态扫描没有 GN 提供的架构宏。
+// cppcheck-suppress preprocessorErrorDirective
 #error Update for a processor that is neither 32-bit nor 64-bit.
 #endif
 }

@@ -1,7 +1,8 @@
 """真实小型 Git 仓库验证源码门禁，不启动 Chromium 编译。"""
 import importlib.util
 from pathlib import Path
-import subprocess
+import shutil
+import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
 import tempfile
 import unittest
 
@@ -38,7 +39,12 @@ class SourceTests(unittest.TestCase):
         (self.browser / 'overlay/value').write_text('current\n')
 
     def git(self, src, *args):
-        return subprocess.check_output(['git', '-C', str(src), *args], text=True, stderr=subprocess.DEVNULL).strip()
+        executable = shutil.which('git')
+        if not executable:
+            self.fail('Git 测试需要 git 可执行文件')
+        # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        return subprocess.check_output([executable, '-C', str(src), *args], text=True, stderr=subprocess.DEVNULL).strip()  # nosec B603
 
     def init(self, src):
         self.git(src, 'init', '-q')

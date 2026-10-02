@@ -2001,6 +2001,8 @@ async function main() {
     origin,
     model_base_url: `${origin}/provider/v1`,
     model_name: 'aegis-fixture-model',
+    // 每次启动由 randomUUID 生成，仅用于回环测试服务；不是硬编码凭据。
+    // nosemgrep: codacy.yaml.security.hard-coded-tokens
     integration_control_token: server.integrationControlToken,
     download_hashes: DOWNLOAD_HASHES,
     bookmarks_url: `${origin}/fixtures/bookmarks-500.json`,

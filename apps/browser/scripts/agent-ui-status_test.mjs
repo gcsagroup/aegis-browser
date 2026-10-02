@@ -104,7 +104,8 @@ class TestElement {
   constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
-  addEventListener() {}
+  addEventListener(name, callback) { (this.listeners ??= new Map()).set(name, callback); }
+  setAttribute(name, value) { this[name] = value; }
   set innerHTML(_) { assert.fail('模型摘要不能通过 HTML 解析'); }
 }
 const elements = new Map();
@@ -158,6 +159,34 @@ rendererContext.busy = false;
 assert.equal(context.friendlyError('monitor immediate check unavailable', true),
     'checkMonitorNowUnavailable');
 console.log('PASS: 立即检查入口及暂停/忙碌/失败状态 5/5');
+
+// 执行真实 withBusy 和按钮回调，拒绝响应后列表重绘仍须显示错误。
+const withBusyFunction = tree.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === 'withBusy');
+vm.runInContext(ts.transpileModule(withBusyFunction.getText(tree), {
+  compilerOptions: {target: ts.ScriptTarget.ES2022},
+}).outputText, rendererContext);
+rendererContext.snapshot = {monitors: [monitorInput]};
+rendererContext.render = next => rendererContext.renderMonitors(next.monitors);
+rendererContext.document.getElementById = id => {
+  const find = node => node.id === id ? node : node.children.map(find).find(Boolean);
+  return find(element('monitors'));
+};
+for (const [action, handler] of [['check', 'checkMonitorNow'],
+  ['toggle', 'setMonitorPaused'], ['delete', 'deleteMonitor']]) {
+  rendererContext.proxy.handler[handler] = async () => { throw new Error('合成连接中断'); };
+  rendererContext.render(rendererContext.snapshot);
+  const oldRow = element('monitors').children[0];
+  const actions = oldRow.children.find(child => child.className === 'monitor-actions');
+  actions.children.find(child => child.dataset.monitorAction === action).listeners.get('click')();
+  await new Promise(resolve => setImmediate(resolve));
+  const current = rendererContext.document.getElementById('monitor-action-test-task-test-monitor');
+  assert.notEqual(element('monitors').children[0], oldRow, '验证确实经过重绘');
+  assert.equal(current.textContent, 'planningGenericError', action);
+  assert.equal(rendererContext.busy, false, '失败后恢复操作');
+}
+console.log('PASS: 检查、暂停及删除监控失败均显示当前可见错误 3/3');
+
 
 
 // 模型配置使用真实产品函数和有界异步响应；不把 DOM 测试等同于键盘或实机操作。
@@ -460,7 +489,8 @@ for (const goal of automationGoals) {
 }
 for (const [goal, workflow] of [['下载官方安装包', 2], ['购买商品', 3], ['整理收藏夹', 1]]) {
   actionField('goal').value = goal;
-  await actionField('plan-button').listeners.get('click')();
+  actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
   assert.equal(actionCalls.at(-1)[1], 1);
   assert.equal(actionCalls.at(-1)[2], workflow, '普通任务工作流不能被自动化修正改变');
 }
@@ -469,7 +499,8 @@ console.log('PASS: 自动化入口及普通任务对照 9/9（真实按钮绑定
 for (const [goal, interval] of [['每小时检查网页变化', '60'], ['每2小时检查网页变化', '']]) {
   const before = actionCalls.length;
   actionField('goal').value = goal;
-  await actionField('plan-button').listeners.get('click')();
+  actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
   assert.equal(actionCalls.length, before, '引导不能直接创建任务');
   assert.equal(actionField('automation-goal').value, goal);
   assert.equal(actionField('automation-schedule').value, interval);
@@ -646,14 +677,16 @@ console.log('PASS: 新增时间线状态与详情本地化 7/7');
 const createCountBeforeReview = actionCalls.length;
 actionContext.snapshot = null;
 actionField('goal').value = '核对刚下载的文件是否已经安装。';
-await actionField('plan-button').listeners.get('click')();
+actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(actionCalls.length, createCountBeforeReview);
 assert.equal(actionField('download-review-status').textContent, 'downloadReviewUnassociated');
 assert.equal(actionField('download-evidence-card').open, true);
 let reviewedId = '';
 actionContext.snapshot = {taskId: 'download-task', state: 'completed', downloadEvidence: [{name: 'download_id', value: 'native-guid'}]};
 actionContext.proxy.handler.reviewDownload = async id => { reviewedId = id; return {status: 'match', sha256: 'fixture-hash'}; };
-await actionField('plan-button').listeners.get('click')();
+actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(reviewedId, 'download-task');
 assert.equal(actionCalls.length, createCountBeforeReview);
 assert.equal(actionField('download-review-status').textContent, 'downloadReviewMatch\nSHA-256: fixture-hash');
