@@ -911,23 +911,28 @@ function renderMonitors(monitors: MonitorSummary[]) {
         }
       });
     };
-    toggle.addEventListener('click', () => runMonitorAction(() =>
-      proxy.handler.setMonitorPaused(
-          monitor.taskId, monitor.monitorId, !monitor.paused)));
+    toggle.addEventListener('click', () => {
+      runMonitorAction(() => proxy.handler.setMonitorPaused(
+          monitor.taskId, monitor.monitorId, !monitor.paused));
+    });
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.dataset['monitorAction'] = 'delete';
     remove.textContent = loadTimeData.getString('deleteMonitor');
     remove.disabled = busy;
-    remove.addEventListener('click', () => runMonitorAction(() =>
-      proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
+    remove.addEventListener('click', () => {
+      runMonitorAction(() =>
+          proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId));
+    });
     const check = document.createElement('button');
     check.type = 'button';
     check.dataset['monitorAction'] = 'check';
     check.textContent = loadTimeData.getString('checkMonitorNow');
     check.disabled = busy || monitor.paused;
-    check.addEventListener('click', () => runMonitorAction(() =>
-      proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId)));
+    check.addEventListener('click', () => {
+      runMonitorAction(() =>
+          proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId));
+    });
     actions.append(check, toggle, remove, actionStatus);
     li.append(title, origin, retention, nextRun, outcome, summary, failures, actions);
     list.append(li);
@@ -1840,7 +1845,6 @@ function bindActions() {
     }, true);
   });
   element('plan-button').addEventListener('click', () => {
-
     const goal = element<HTMLTextAreaElement>('goal').value.trim();
     if (isDownloadedFileReviewGoal(goal)) {
       void reviewCurrentDownload();
@@ -1868,7 +1872,6 @@ function bindActions() {
       autoRunTaskId = created.snapshot.taskId;
       return proxy.handler.requestPlan(created.snapshot.taskId);
     }, true);
-
   });
   element('review-download').addEventListener('click', () => {
     void reviewCurrentDownload();
