@@ -30,6 +30,14 @@ def git_blob_hash(data):
 
 
 class MergedMainPatchTests(unittest.TestCase):
+    def test_active_patches_exclude_generated_bytecode(self):
+        for name in entries((PATCHES / 'series').read_text()):
+            patch = (PATCHES / name).read_text()
+            paths = re.findall(r'^diff --git a/[^\n]+ b/([^\n]+)', patch, re.M)
+            for path in paths:
+                self.assertNotIn('__pycache__', Path(path).parts, name)
+                self.assertNotIn(Path(path).suffix, {'.pyc', '.pyo'}, name)
+
     def test_archive_identity_and_active_overlay(self):
         manifest = json.loads((ARCHIVE / 'manifest.json').read_text())
         archived = entries((ARCHIVE / 'series').read_text())
