@@ -17,6 +17,8 @@ The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS 
 
 ### Fixed and verified
 
+- Hardened validation scripts with fixed file paths, loopback-only HTTP self-tests, and checks that remain active under Python optimization; generated rules remain byte-identical.
+
 - Moved initial window persistence out of view construction to remove SwiftUI runtime warnings. Private pages and groups stay out of window records.
 - Preserved upstream Swift coverage and input hash checks; freeze inputs after version updates and project generation, and reuse the fixed build directory from isolated worktrees.
 - See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for localization, privacy manifests and simulator evidence. This GitHub source prerelease has no installable signed IPA. Device, full VoiceOver, TestFlight and App Store acceptance remain open.
