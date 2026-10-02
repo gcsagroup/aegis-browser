@@ -30,6 +30,8 @@ GitHub Release 提供该标签的源码归档。按 [iOS 工程指南](../../app
 - 三语资源 386 个词条、353 个提取键，缺失和翻译占位符错误均为 0。
 - 两台系统“文件”导出的下载均读回 44,032 字节及正确 SHA-256，工作区 JSON 保留名称和网址；iPad 两个窗口的不同 ID 和各自页面读回一致。
 
+发布前修正了 3 个验收脚本的静态检查问题：生成器使用固定仓库路径，自测仅访问本机 HTTP 服务并用显式检查替代 `assert`，重试变量标记为有意忽略。普通及 Python `-O` 模式下 4 项自测均通过，规则重新生成后字节不变，模拟器脚本语法及 dry-run 通过。此后未重新编译 App；下列 033/034 清单保留原始测试与编译输入，最终脚本另见[修正后哈希](ios-2.2.0-preview.1/script-fixes-sha256.txt)。
+
 公开证据：[验证摘要](ios-2.2.0-preview.1/validation-summary.json)、[033 测试输入哈希](ios-2.2.0-preview.1/simulator-source-sha256.txt)、[034 发布源码哈希](ios-2.2.0-preview.1/release-source-sha256.txt)。完整日志与 xcresult 保留在本地证据目录。
 
 界面实测：[iPad 无侧栏页面](ios-2.2.0-preview.1/ipad-full-width.png)、[窗口管理](ios-2.2.0-preview.1/ipad-windows.png)、[关闭后恢复](ios-2.2.0-preview.1/ipad-window-restored.png)、[iPhone 标签分组](ios-2.2.0-preview.1/iphone-groups.png)。截图使用合成测试资料。
