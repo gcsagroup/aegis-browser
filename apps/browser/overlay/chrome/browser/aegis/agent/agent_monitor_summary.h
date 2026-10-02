@@ -30,6 +30,13 @@ std::string BuildAgentMonitorSummaryPrompt(
     const AgentMonitorSummaryInput& input,
     std::string_view locale);
 
+// 仅一对完整纯数字片段时直接陈述增删，不让模型猜测字段含义。
+std::optional<std::string> BuildAgentMonitorNumericSummary(
+    std::string_view current,
+    const AgentMonitorSummaryInput& input,
+    std::string_view locale,
+    base::Time now);
+
 // 只接受唯一的原生摘要工具调用及有效证据引用。结果仍需走既有系统加密持久化。
 std::optional<std::string> AttachAgentMonitorSummary(
     std::string_view current,

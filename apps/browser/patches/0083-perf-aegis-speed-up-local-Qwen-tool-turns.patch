@@ -1,7 +1,7 @@
-From 50279e7c14752df17189eadd76843fe51cb2f555 Mon Sep 17 00:00:00 2001
+From 4cfee3bf3e8613f60fe4c94b4c7a464f91e49fd5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:21:49 +0800
-Subject: [PATCH 83/90] perf(aegis): speed up local Qwen tool turns
+Subject: [PATCH] perf(aegis): speed up local Qwen tool turns
 
 ---
  .../aegis/agent/aegis_agent_service.cc        | 15 +++++++++++++

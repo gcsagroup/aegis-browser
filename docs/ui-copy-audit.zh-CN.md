@@ -127,8 +127,8 @@
 - [AI 助手文案](../apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc)
 - [防护中心中文文案](../apps/browser/overlay/chrome/browser/ui/webui/aegis/aegis_ui.cc)
 - 隐私设置入口说明（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc`
-- [下载中心文案](../apps/browser/overlay/chrome/browser/resources/downloads/aegis_download_panel.html.ts)
-- [下载中心语言分流](../apps/browser/overlay/chrome/browser/resources/downloads/aegis_download_panel.ts)
+- [下载中心文案](../apps/browser/overlay/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts)
+- [下载中心语言分流](../apps/browser/overlay/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts)
 - [工具栏语言分流](../apps/browser/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc)
 - 重置反馈条件（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/ui/webui/settings/reset_settings_handler.cc`
 - 重置报告目标地址（当前构建树）：`${LOCAL_WORKSPACE_ROOT}/GCSA-aegis-build/macos/src/chrome/browser/profile_resetter/reset_report_uploader.cc`

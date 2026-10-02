@@ -1,0 +1,112 @@
+From f865da05eb9ab9e73231ad379ed374767be90cc1 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 04:57:13 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=95=9C=E5=83=8F=E5=9C=A8?=
+ =?UTF-8?q?=E5=88=9B=E5=BB=BA=E4=B8=B4=E6=97=B6=E6=96=87=E4=BB=B6=E5=89=8D?=
+ =?UTF-8?q?=E5=A4=B1=E8=B4=A5=E6=97=B6=E4=B8=8D=E5=88=87=E6=8D=A2=E7=9A=84?=
+ =?UTF-8?q?=E9=97=AE=E9=A2=98=20082?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_execution.cc |  6 ++++
+ .../aegis/agent/agent_execution_unittest.cc   | 31 +++++++++++++++++++
+ .../aegis/metalink_download_verifier.cc       |  6 ++++
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ 4 files changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 648574e83b..73711dd9de 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -289,6 +289,12 @@ CompactExecutionEvidence(const AgentExecutionEvidence &evidence) {
+       item.Set(key, *found);
+     }
+   }
++  // 窗口后续操作必须引用原生创建的标识，不能因中间步骤而丢失后让模型猜测。
++  if (evidence.tool_name.starts_with("window.")) {
++    if (const std::optional<int> window_id = value.FindInt("window_id")) {
++      item.Set("window_id", *window_id);
++    }
++  }
+   if (const std::optional<int> tab_id = value.FindInt("tab_id")) {
+     item.Set("tab_id", *tab_id);
+   }
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 69f266045c..3a1129a293 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1686,6 +1686,37 @@ TEST(AegisAgentExecutionTest,
+   EXPECT_EQ(SelectBrowserBoundExecutionTab(41, 42, two_live_tabs), 41);
+ }
+ 
++TEST(AegisAgentExecutionTest, WindowReferenceSurvivesInterveningListResult) {
++  AgentTask task("window-ref", "创建并关闭验收窗口", AgentMode::kAct,
++                 ExecutionScope());
++  AgentTaskPlan plan;
++  plan.scope = ExecutionScope();
++  AgentToolResult created;
++  created.action_id = "created";
++  created.ok = true;
++  created.value.Set("window_id", 73);
++  AgentToolResult listed;
++  listed.action_id = "listed";
++  listed.ok = true;
++  listed.value.Set("revision", "native-window-revision");
++  std::vector<AgentExecutionEvidence> evidence;
++  evidence.push_back(
++      {.tool_name = "window.create", .result = std::move(created)});
++  evidence.push_back({.tool_name = "window.list", .result = std::move(listed)});
++  auto parsed = base::JSONReader::Read(
++      BuildAgentExecutionPrompt(task, plan, 0, 1, &evidence.back().result,
++                                evidence),
++      base::JSON_PARSE_RFC);
++  ASSERT_TRUE(parsed && parsed->is_dict());
++  const auto* prior =
++      parsed->GetDict().FindList("prior_verified_evidence_untrusted");
++  ASSERT_TRUE(prior);
++  ASSERT_EQ(prior->size(), 2u);
++  EXPECT_EQ((*prior)[0].GetDict().FindInt("window_id"), 73);
++  EXPECT_EQ(*(*prior)[1].GetDict().FindString("revision"),
++            "native-window-revision");
++}
++
+ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
+   AgentTask task("task-exec", "Compare the approved fixture", AgentMode::kAsk,
+                  ExecutionScope());
+diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
+index db764f3915..9e6bf3cafe 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.cc
++++ b/chrome/browser/aegis/metalink_download_verifier.cc
+@@ -264,6 +264,12 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+   void RetryAfterDeleting() {
+     download::DownloadItem* failed = current_item_;
+     StopObserving();
++    // HTTP 错误可能发生在创建临时文件之前，此时没有文件需要清理。
++    // DownloadItem::DeleteFile 会返回 false，不能因此阻止备用镜像。
++    if (failed->GetFullPath().empty()) {
++      StartNextMirror();
++      return;
++    }
+     failed->DeleteFile(base::BindOnce(
+         [](base::WeakPtr<MetalinkDownloadVerifier> self, bool deleted) {
+           if (!self) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ca38f77cc0..d03cdfb823 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.81";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (081)";
++inline constexpr char kProductVersion[] = "2.0.0.82";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (082)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

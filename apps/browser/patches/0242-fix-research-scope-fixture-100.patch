@@ -1,0 +1,52 @@
+From e68d2a8a940d6d14561ca5e4675e751a098a188d Mon Sep 17 00:00:00 2001
+From: Aegis integration <aegis-integration@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 04:35:54 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E7=A0=94=E7=A9=B6=E8=8C=83?=
+ =?UTF-8?q?=E5=9B=B4=E6=8C=81=E4=B9=85=E5=8C=96=E6=B5=8B=E8=AF=95=E5=A4=B9?=
+ =?UTF-8?q?=E5=85=B7=EF=BC=8C=E5=80=99=E9=80=89=20100?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_task_store_unittest.cc | 4 ++++
+ chrome/browser/ui/webui/help/aegis_github_update.h      | 4 ++--
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+index 917315f992495dc6d3a74457114c6de10b5d0487..774b9424eb5c8f0f8d2c3ef206d2bf858625076e 100644
+--- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+@@ -777,10 +777,14 @@ TEST(AegisAgentTaskStoreTest, RoundTripsResearchScopeWithFrozenModelRouting) {
+   ASSERT_TRUE(store.Initialize());
+   auto scope = StoreTestScope();
+   scope.selected_pages_research = true;
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.allowed_tools = {"page.observe"};
++  scope.budgets.max_tabs = 3;
+   scope.model_selection_mode = AgentModelSelectionMode::kQuality;
+   scope.model_catalog_revision = 12;
+   scope.model_generation_profile = {"low", 4096};
+   scope.model_token_prices = {.input = 100, .cached_input = 20, .output = 500};
++  ASSERT_TRUE(scope.IsValid());
+   AgentTask task("merged-scope", "比较所选文章", AgentMode::kAsk, scope);
+   ASSERT_TRUE(store.SaveTask(task, "比较所选文章", false));
+   const auto tasks = store.LoadUnfinishedTasks();
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 4f1bd8132ff56a302a34523730a3527969b306a1..768cfa92c419ba35e18c4c63794b4068ab3390eb 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.99";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (099)";
++inline constexpr char kProductVersion[] = "2.0.0.100";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (100)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

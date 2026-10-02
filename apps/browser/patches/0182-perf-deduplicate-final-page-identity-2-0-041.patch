@@ -1,0 +1,264 @@
+From 1f7f05ad895154884dbc3f425a290e42b3bb7864 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Thu, 17 Sep 2026 05:53:55 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=8E=BB=E9=99=A4=E5=8F=AA=E8=AF=BB=E5=AE=8C?=
+ =?UTF-8?q?=E6=88=90=E8=AF=B7=E6=B1=82=E4=B8=AD=E7=9A=84=E9=87=8D=E5=A4=8D?=
+ =?UTF-8?q?=E8=BA=AB=E4=BB=BD=E5=85=83=E6=95=B0=E6=8D=AE=202.0.041?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_execution.cc |  57 ++++++++--
+ .../aegis/agent/agent_execution_unittest.cc   | 107 ++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 3 files changed, 156 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index ddb8871d2c..9fa12cdeba 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -28,6 +28,20 @@ bool RequiresDownloadEvidence(std::string_view goal,
+               AgentWorkflowKind::kSafeDownload);
+ }
+ 
++// 只有完整的纯只读页面计划才可使用紧凑完成上下文。
++bool IsReadOnlyPageTool(std::string_view name) {
++  return name == "page.observe" || name == "page.extract" ||
++         name == "page.scroll" || name == "page.wait";
++}
++
++bool IsReadOnlyPagePlan(const AgentTaskPlan& plan) {
++  return !plan.steps.empty() &&
++         std::ranges::all_of(plan.steps, [](const AgentPlanStep& step) {
++           return IsReadOnlyPageTool(step.tool_name) &&
++                  step.risk == AgentRiskLevel::kR0ReadOnly;
++         });
++}
++
+ constexpr size_t kMaxExecutionPromptBytes = 60 * 1024;
+ constexpr size_t kMaxPriorResultBytes = 12 * 1024;
+ constexpr size_t kMaxEvidenceHistoryBytes = 42 * 1024;
+@@ -839,17 +853,9 @@ std::string BuildAgentExecutionSystemContractForTask(
+     const AgentTask& task,
+     const AgentTaskPlan& plan,
+     std::string_view tool_name) {
+-  const auto page_read = [](std::string_view name) {
+-    return name == "page.observe" || name == "page.extract" ||
+-           name == "page.scroll" || name == "page.wait";
+-  };
+   // 翻译、监控、收藏及含写入步骤的任务继续保留各自完整约束。
+-  if (plan.steps.empty() || AgentGoalRequestsTranslation(task.goal()) ||
+-      (tool_name != "agent.complete" && !page_read(tool_name)) ||
+-      !std::ranges::all_of(plan.steps, [&](const AgentPlanStep& step) {
+-        return page_read(step.tool_name) &&
+-               step.risk == AgentRiskLevel::kR0ReadOnly;
+-      })) {
++  if (!IsReadOnlyPagePlan(plan) || AgentGoalRequestsTranslation(task.goal()) ||
++      (tool_name != "agent.complete" && !IsReadOnlyPageTool(tool_name))) {
+     return BuildAgentExecutionSystemContract();
+   }
+   return std::string(
+@@ -1111,6 +1117,7 @@ std::string BuildAgentExecutionPrompt(
+       evidence_history.back().tool_name == "bookmark.plan" &&
+       evidence_history.back().result.action_id == previous_result->action_id;
+   bool previous_page_result_is_complete = false;
++  std::optional<base::DictValue> final_page_result;
+   if (previous_is_bookmark_preview) {
+     // 预览已在紧凑证据中，避免重复的 12K 原始 JSON 挤掉可信分类计数。
+     envelope.Set("previous_browser_result_in_verified_evidence", true);
+@@ -1147,6 +1154,10 @@ std::string BuildAgentExecutionPrompt(
+           latest.result.value == previous_result->value &&
+           latest.result.evidence == previous_result->evidence) {
+         previous_page_result_is_complete = true;
++        if (next_step >= plan.steps.size() && IsReadOnlyPagePlan(plan) &&
++            previous_result->ok) {
++          final_page_result = result.Clone();
++        }
+       }
+     }
+   }
+@@ -1174,6 +1185,31 @@ std::string BuildAgentExecutionPrompt(
+          item.contains("extraction_untrusted_json") ||
+          item.contains("browser_value_untrusted_json"))) {
+       latest_before_deduplication = item.Clone();
++      if (final_page_result) {
++        // 完成工具不再请求页面能力；相等的身份只在最新证据中保留一次。
++        // 不改原生回执，不裁剪正文、节点、提取结构或核验条目。
++        auto remove_duplicate = [&](base::DictValue& from,
++                                    std::string_view key) {
++          const auto* original = from.Find(key);
++          const auto* verified = item.Find(key);
++          if (original && verified && *original == *verified) {
++            from.Remove(key);
++          }
++        };
++        for (std::string_view key : {"action_id", "ok", "message"}) {
++          remove_duplicate(*final_page_result, key);
++        }
++        auto& value = *final_page_result->FindDict("value");
++        for (std::string_view key :
++             {"url", "title", "frame_token", "document_token",
++              "observation_fingerprint", "tab_id"}) {
++          remove_duplicate(value, key);
++        }
++        envelope.Set("previous_browser_result_untrusted_json",
++                     BoundedJson(*final_page_result, kMaxPriorResultBytes));
++        envelope.Set("previous_browser_result_identity_in_verified_evidence",
++                     true);
++      }
+       item.Remove("visible_text_untrusted");
+       item.Remove("extraction_untrusted_json");
+       item.Remove("browser_value_untrusted_json");
+@@ -1204,6 +1240,7 @@ std::string BuildAgentExecutionPrompt(
+       prompt.size() > kMaxExecutionPromptBytes) {
+     envelope.Remove("previous_browser_result_untrusted_json");
+     envelope.Set("previous_browser_result_omitted", true);
++    envelope.Remove("previous_browser_result_identity_in_verified_evidence");
+     if (latest_before_deduplication) {
+       // 总预算回退会移除原回执，必须恢复正文，不能留下悬空引用。
+       envelope.FindList("prior_verified_evidence_untrusted")->back() =
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index c4275e158f..1da2b2d02c 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1358,7 +1358,34 @@ TEST(AegisAgentExecutionTest, PromptDeduplicatesOnlyCompleteLatestPageBody) {
+           base::JSONReader::Read(*previous_json, base::JSON_PARSE_RFC);
+       ASSERT_TRUE(complete && complete->is_dict());
+       ASSERT_TRUE(complete->GetDict().FindDict("value"));
++      if (next_step == 1u) {
++        EXPECT_EQ(envelope.FindBool(
++                      "previous_browser_result_identity_in_verified_evidence"),
++                  true);
++        const auto& identity =
++            envelope.FindList("prior_verified_evidence_untrusted")
++                ->back()
++                .GetDict();
++        for (std::string_view key :
++             {"url", "title", "frame_token", "document_token",
++              "observation_fingerprint", "tab_id"}) {
++          if (const auto* original = prior.value.Find(key)) {
++            ASSERT_TRUE(identity.Find(key));
++            EXPECT_EQ(*identity.Find(key), *original);
++            EXPECT_FALSE(complete->GetDict().FindDict("value")->contains(key));
++            complete->GetDict().FindDict("value")->Set(key, original->Clone());
++          }
++        }
++        for (std::string_view key : {"action_id", "ok", "message"}) {
++          EXPECT_FALSE(complete->GetDict().contains(key));
++          ASSERT_TRUE(identity.Find(key));
++          complete->GetDict().Set(key, identity.Find(key)->Clone());
++        }
++      }
+       EXPECT_EQ(*complete->GetDict().FindDict("value"), prior.value);
++      EXPECT_EQ(*complete->GetDict().FindString("action_id"), prior.action_id);
++      EXPECT_EQ(complete->GetDict().FindBool("ok"), prior.ok);
++      EXPECT_EQ(*complete->GetDict().FindString("message"), prior.message);
+       ASSERT_TRUE(complete->GetDict().FindList("evidence"));
+       EXPECT_EQ(*complete->GetDict().FindList("evidence"), prior.evidence);
+       EXPECT_EQ(complete->GetDict().FindBool("untrusted"), true);
+@@ -1388,6 +1415,86 @@ TEST(AegisAgentExecutionTest, PromptDeduplicatesOnlyCompleteLatestPageBody) {
+   }
+ }
+ 
++TEST(AegisAgentExecutionTest, FinalPageIdentityCompactionKeepsExecutionBoundaries) {
++  for (int variant = 0; variant < 8; ++variant) {
++    SCOPED_TRACE(variant);
++    AgentTask task("final-identity",
++                   variant == 2 ? "将页面完整翻译成英文" : "总结页面",
++                   AgentMode::kAsk, ExecutionScope());
++    AgentTaskPlan plan;
++    plan.steps.push_back({.step_id = "read",
++                          .title = "读取页面",
++                          .tool_name = "page.observe",
++                          .risk = AgentRiskLevel::kR0ReadOnly});
++    if (variant == 3) {
++      plan.steps.back().tool_name = "page.click";
++      plan.steps.back().risk = AgentRiskLevel::kR1Reversible;
++    }
++    if (variant == 4) {
++      plan.steps.clear();
++    }
++    auto prior = CheckoutObservation("fingerprint", "113.00");
++    prior.value.Set("url", "https://fixture.example/path");
++    prior.value.Set("frame_token", "frame-7");
++    prior.value.Set("title", "保留标题");
++    prior.value.Set("truncated", false);
++    prior.evidence.Append("原生核验条目不可丢失");
++    if (variant == 5) {
++      prior.ok = false;
++      prior.error = AgentErrorCode::kInvalidRequest;
++    }
++    if (variant == 6) {
++      prior.value.Set("padding", std::string(16000, 'x'));
++    }
++    auto duplicate = CheckoutObservation("fingerprint", "unused");
++    duplicate.ok = prior.ok;
++    duplicate.error = prior.error;
++    duplicate.value = prior.value.Clone();
++    duplicate.evidence = prior.evidence.Clone();
++    if (variant == 7) {
++      duplicate.value.Set("document_token", "different-document");
++    }
++    std::vector<AgentExecutionEvidence> history;
++    history.push_back({.tool_name = "page.observe",
++                       .result = std::move(duplicate)});
++    auto parsed = base::JSONReader::Read(
++        BuildAgentExecutionPrompt(task, plan, variant == 1 ? 0 : plan.steps.size(),
++                                  0, &prior, history),
++        base::JSON_PARSE_RFC);
++    ASSERT_TRUE(parsed && parsed->is_dict());
++    const auto& envelope = parsed->GetDict();
++    EXPECT_EQ(envelope.FindBool(
++                  "previous_browser_result_identity_in_verified_evidence")
++                  .value_or(false),
++              variant == 0);
++    if (variant == 6) {
++      EXPECT_EQ(envelope.FindBool("previous_browser_result_truncated"), true);
++      continue;
++    }
++    const auto* raw =
++        envelope.FindString("previous_browser_result_untrusted_json");
++    ASSERT_TRUE(raw);
++    auto result = base::JSONReader::Read(*raw, base::JSON_PARSE_RFC);
++    ASSERT_TRUE(result && result->is_dict());
++    const auto* value = result->GetDict().FindDict("value");
++    ASSERT_TRUE(value);
++    EXPECT_EQ(*value->FindList("nodes"), *prior.value.FindList("nodes"));
++    EXPECT_EQ(*result->GetDict().FindList("evidence"), prior.evidence);
++    if (variant != 0) {
++      EXPECT_EQ(*value, prior.value);
++    } else {
++      EXPECT_FALSE(value->contains("document_token"));
++      const auto& identity =
++          envelope.FindList("prior_verified_evidence_untrusted")
++              ->back()
++              .GetDict();
++      EXPECT_EQ(*identity.FindString("document_token"), "document-7");
++      EXPECT_EQ(*identity.FindString("url"), "https://fixture.example/path");
++      EXPECT_EQ(identity.FindBool("body_in_previous_browser_result"), true);
++    }
++  }
++}
++
+ TEST(AegisAgentExecutionTest, PromptDoesNotDeduplicateDifferentOrTruncatedPage) {
+   AgentTask task("prompt-boundary", "总结页面", AgentMode::kAsk,
+                  ExecutionScope());
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 2b0427c02e..57a2e90933 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.40";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (040)";
++inline constexpr char kProductVersion[] = "2.0.0.41";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (041)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

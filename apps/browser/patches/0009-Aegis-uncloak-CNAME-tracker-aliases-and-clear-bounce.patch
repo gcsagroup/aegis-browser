@@ -1,4 +1,4 @@
-From 9c3cf71836a4c867ef2f6106e148c5b45f08c851 Mon Sep 17 00:00:00 2001
+From 614cd4e62c1f4e9a15d0b72db6fe429689747dfb Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:16:20 +0800
 Subject: [PATCH] Aegis: uncloak CNAME tracker aliases and clear bounce-tracker
@@ -328,7 +328,7 @@ index bcc72edff8..ebecb7d954 100644
  
    // Host-rule match against builtin seed + compiled EasyList. Callers should
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 1085e9aee9..b915ad9e27 100644
+index dc877373dc..0bf98e6627 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -4,6 +4,7 @@
@@ -339,7 +339,7 @@ index 1085e9aee9..b915ad9e27 100644
  
  #include <algorithm>
  #include <iterator>
-@@ -6048,7 +6049,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -5967,7 +5968,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kTrackerBlockingEnabled),
            profile->GetPrefs()->GetBoolean(
@@ -350,7 +350,7 @@ index 1085e9aee9..b915ad9e27 100644
    return std::make_unique<GoogleURLLoaderThrottle>(
  #if BUILDFLAG(IS_ANDROID)
        client_data_header,
-@@ -6155,8 +6158,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+@@ -6074,8 +6077,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
  
    const bool aegis_tracker_blocking =
        profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
@@ -363,7 +363,7 @@ index 1085e9aee9..b915ad9e27 100644
        aegis_throttle) {
      result.push_back(std::move(aegis_throttle));
    }
-@@ -9212,6 +9217,9 @@ void ChromeContentBrowserClient::OnBtmServiceCreated(
+@@ -9192,6 +9197,9 @@ void ChromeContentBrowserClient::OnBtmServiceCreated(
    // Create BtmBrowserSigninDetector.
    CHECK(BtmBrowserSigninDetector::Get(browser_context));
    btm::StatefulBounceCounter::CreateFor(btm_service);
@@ -958,10 +958,10 @@ index 3f33b331d0..cecaf01ebb 100644
  
  // The renderer configuration parameters are set during the process lock update
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 05787cbd78..ed0897db8a 100644
+index 8b183c88cd..36daa816af 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
-@@ -251,13 +251,15 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+@@ -264,13 +264,15 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
  
  
    bool aegis_tracker_blocking = true;
@@ -980,5 +980,5 @@ index 05787cbd78..ed0897db8a 100644
      throttles.emplace_back(std::move(aegis_throttle));
    }
 -- 
-2.50.1 (Apple Git-155)
+2.52.0
 

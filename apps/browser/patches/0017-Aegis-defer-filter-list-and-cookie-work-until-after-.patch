@@ -1,4 +1,4 @@
-From 9f699d4c09ac312ee27a39a973f3acf398f6788b Mon Sep 17 00:00:00 2001
+From 65aea83430e3d8b7f42b437f58515c1bf52af799 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 19:58:49 +0800
 Subject: [PATCH] Aegis: defer filter-list and cookie work until after startup
@@ -208,10 +208,10 @@ index a66e8f96cd..1d92d45069 100644
    void ApplyList(CompiledFilterList list);
    void Persist(const CompiledFilterList& list);
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 1565069ff7..5e726f47b0 100644
+index 8dd9857db0..0fa40351db 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -973,6 +973,15 @@ DLLEXPORT void __cdecl RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
+@@ -1001,6 +1001,15 @@ DLLEXPORT void __cdecl RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
  
  int ChromeBrowserMainParts::PreEarlyInitialization() {
    TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreEarlyInitialization");

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "chrome/browser/aegis/agent/agent_types.h"
@@ -58,6 +59,8 @@ class AgentTask {
       int model_calls_used,
       int network_requests_used,
       base::Time created_at);
+
+  base::WeakPtr<AgentTask> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
   const std::string& id() const { return task_id_; }
   const std::string& goal() const { return goal_; }
@@ -129,6 +132,7 @@ class AgentTask {
   const base::Time created_at_;
   std::vector<AgentTaskEvent> events_;
   base::ObserverList<AgentTaskObserver> observers_;
+  base::WeakPtrFactory<AgentTask> weak_factory_{this};
 };
 
 }  // namespace aegis::agent

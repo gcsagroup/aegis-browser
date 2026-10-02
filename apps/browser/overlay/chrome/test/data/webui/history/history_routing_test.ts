@@ -45,7 +45,9 @@ import {navigateTo} from './test_util.js';
 
     setup(function() {
       window.history.replaceState({}, '', '/');
-      document.body.replaceChildren();
+      // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+      // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+      document.body.innerHTML = window.trustedTypes!.emptyHTML;
       CrRouter.resetForTesting();
       const clustersHandler =
           TestMock.fromClass(HistoryClustersPageHandlerRemote);
@@ -124,6 +126,7 @@ import {navigateTo} from './test_util.js';
           sidebar.$.history.getAttribute('path'));
     });
 
+    // 同步标签入口仅在对应品牌构建中存在；保留其点击与键盘专项测试。
     // <if expr="_google_chrome or _is_chrome_for_testing">
     test('route updates from tabs and sidebar menu items', async function() {
       assertEquals('history', sidebar.$.menu.selected);
@@ -200,6 +203,8 @@ import {navigateTo} from './test_util.js';
     });
     // </if>
 
+    // </if>
+
     test('search updates from route', async function() {
       assertEquals('chrome://history/', window.location.href);
       const searchTerm = 'Mei';
@@ -258,6 +263,15 @@ import {navigateTo} from './test_util.js';
         });
     // </if>
 
+    // </if>
+
+    // 非品牌构建不显示同步入口，但仍保留下面的直接路由回归。
+    // <if expr="not (_google_chrome or _is_chrome_for_testing)">
+    test('sync entry is absent in unbranded sidebar', () => {
+      assertEquals(null, sidebar.shadowRoot.querySelector('#syncedTabs'));
+    });
+    // </if>
+
     test(
         'routing to chrome://history/syncedTabs works correctly',
         async function() {
@@ -289,7 +303,9 @@ suite(`routing-test-with-history-clusters-pref-set`, () => {
 
   setup(function() {
     window.history.replaceState({}, '', '/');
-    document.body.replaceChildren();
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     CrRouter.resetForTesting();
     testProxy = new TestHistoryBrowserProxy();
     BrowserProxyImpl.setInstance(testProxy);
@@ -351,7 +367,9 @@ suite(`routing-test-with-history-embeddings-enabled`, () => {
 
   setup(() => {
     window.history.replaceState({}, '', '/');
-    document.body.replaceChildren();
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     CrRouter.resetForTesting();
 
     // Some extra setup of mocking proxies to get the history-app to work.
