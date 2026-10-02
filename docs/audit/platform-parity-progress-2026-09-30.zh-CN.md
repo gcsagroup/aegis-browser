@@ -1,6 +1,6 @@
-# 三端收敛进度与验收记录（Android 094 / Windows 097 验收修复）
+# 三端收敛进度与验收记录（Android 094 / Windows 097 安装与版本核对）
 
-整体尚未完成，不能宣称三端功能一致。macOS 087 已安装并通过本批实际窗口闭环；Android 090 已完成合成模型摘要与来源引用的实机闭环，091 已完成工作区实机闭环；Android 094 已完成镜像切换、正常落盘和错误哈希删除及列表同步的实机闭环；Windows 096 六个构建目标已完成，核心、更新、浏览器共 541 项原生测试通过；安装身份测试存在旧预期，097 已补齐并接续验证。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
+整体尚未完成，不能宣称三端功能一致。macOS 087 已安装并通过本批实际窗口闭环；Android 090 已完成合成模型摘要与来源引用的实机闭环，091 已完成工作区实机闭环；Android 094 已完成镜像切换、正常落盘和错误哈希删除及列表同步的实机闭环；Windows 097 六个构建目标和独立安装已完成，四组共 617 项原生测试通过，版本页实际显示 `Ver 2.0 (097)`；完整业务界面验收仍未完成。这个结论不包含正式发行、完整任务/安全矩阵或真实远端模型验收。
 
 ## 本批完成的代码
 
@@ -8,7 +8,7 @@
 
 窗口修复有两个独立原因：Chromium 的窗口/标签 ID 可超过原来的 100 万上限；另外，用户切回助手批准关闭时，焦点变化曾错误地使窗口结构版本过期。现在 ID 使用完整正 int32 范围，结构版本忽略焦点和激活排序，但仍跟踪标签、网址、固定状态等结构变化。窗口所有权、资料隔离、最后窗口、未保存页面及下载保护继续保留。
 
-Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略已独立命名。详见 `docs/windows-product-identity.zh-CN.md`。这部分完成了代码和生成器检查，尚需 Windows 原生安装、共存和服务验收。
+Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略已独立命名。详见 `docs/windows-product-identity.zh-CN.md`。这部分完成了代码、生成器检查及 097 原生安装身份测试；旧 Chromium 共存和服务验收仍需补证。
 
 ## 已验证的结果
 
@@ -56,15 +56,21 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 
 096 于 9 月 30 日 23:34 完成六个构建目标，安装包 214,449,664 字节，SHA-256 `ade4c2e12673bc306840a3a91b6e0dd637d6bded55a4cc7b631aff6775c61c46`。首次计划任务默认优先级 7，测试被 Chromium 初始化检查拒绝：核心 1 项失败、270 项未执行；失败证据保留。10 月 1 日 00:20 改为正常优先级后，同一二进制的核心 271、更新 18、浏览器 252 项全部通过。安装身份组 76 项中 64 项通过、12 项失败，原因是注册表、通知/提权身份和沙箱 SID 断言仍期待原 Chromium 值，实际返回已固定的 Aegis 身份。
 
-097 仅补齐这些身份断言并更新候选版本，运行时产品身份保持 086 已定值。源码校验测试 6 项、冻结产品合同及 1,195 文件增量暂存回放通过。主工作区合同检查受并行 iOS 文档的未就绪链接影响，未擅自修改该工作；冻结版本链接检查使用原有私有证据后通过。097 先保全 096 安装包、程序、符号及失败测试，再接续六目标构建、四组原生测试和独立安装。尚无安装完成或 UI 通过结论。
+097 仅补齐这些身份断言并更新候选版本，运行时产品身份保持 086 已定值。源码校验测试 6 项、冻结产品合同及 1,195 文件增量暂存回放通过。主工作区合同检查受并行 iOS 文档的未就绪链接影响，未擅自修改该工作；冻结版本链接检查使用原有私有证据后通过。097 先保全 096 安装包、程序、符号及失败测试，再接续六目标构建、四组原生测试和独立安装。后续结果已于 10 月 3 日回读，见下文。
 
-10 月 1 日 00:26–00:27 已确认 097 后台构建进入 `preserving_completed_096`，原生验收进入 `waiting_for_build`，启动优先级为 Normal。本地完整源码核对通过 382 个覆盖文件。随后连接被关闭，两次只读请求均被服务器拒绝凭据；已请求用户确认是否更改密码或登录设置，未读取或转存凭据。097 最新构建、测试及安装结果目前未知，不能将已启动任务写成完成。
+10 月 1 日 00:26–00:27 后台构建和验收已启动，但随后 WinRM 拒绝认证，旧回执因此保留为结果未知。10 月 3 日用户连接远程桌面后，通过 CUA 在同一 Windows 主机实际回读结果：
 
-原生安装脚本不调用旧界面自动化脚本，终态明确为 `native_passed_ui_pending`。Windows 实际 UI 仍需 CUA 验收；当前远程桌面因未及时提供凭据而超时（0x1f07），等待用户登录；若随后出现证书警告，仍由用户接管。编译动作数不等于计划完成率，也不能据此线性估计剩余时间。
+- 构建于 10 月 1 日 00:42 完成，六个目标全部生成；产品提交 `480cc75ae9a2429af12c472c66fb2090d48780af`，源码树 `d66ddbb91862496fded1c810ed72c651ae4b2be7`，382 个覆盖文件核验通过。
+- 四组测试日志末尾均为 `SUCCESS: all tests passed`：核心 271、更新 18、浏览器 252、安装身份 76，共 617 项。验收脚本关闭自动重试，四组退出码均为 0。
+- 安装于 10 月 1 日 00:43 完成，退出码 0，目录为 `C:\Users\Administrator\AppData\Local\GCSA Aegis\Application`。验收脚本在写入安装成功前核对了已安装程序与构建回执的 SHA-256。`legacyHashBefore` 为空，因此 `legacyUnchanged=true` 不能证明实际存在旧 Chromium 的共存验收。
+- 10 月 3 日 03:21 实际点击菜单进入版本页，显示 GCSA Aegis、`Ver 2.0 (097)`、`Chromium 153.0.8010.53（64 位）`。这是版本与基础界面检查，尚未完成模型、工作区、窗口和下载业务闭环。
+- 安装包回执为 214,449,664 字节，SHA-256 `d036e8c42b98fb5bd911c6561056288d72b473c366259ff8d02f590079ed17fc`。安装包和原始测试文件尚未下载到本地；当前本地证据为未经修改的 CUA 截图、可见字段转录及摘要清单。
+
+WinRM 使用用户此前提供的凭据仍拒绝认证；当前远程桌面可用，但未发现可用文件映射，剪贴板传输未成功。临时读取脚本被现有执行策略拒绝，未更改该策略，随后使用交互式只读命令完成日志核对。原生验收终态仍保留为 `native_passed_ui_pending`，不把版本页检查写成完整业务 UI 通过。
 
 ### 共用检查
 
-- 仓库质量检查、构建合同与版本一致性检查通过。
+- 冻结候选的仓库质量检查、构建合同与版本一致性检查通过。10 月 3 日当前工作区复查时，仓库合同检查报告并行 iOS 文档中 9 处旧 016 安装包、回执和截图链接缺失，尚未通过；未修改该工作。
 - Windows 策略源码生成器 14 项、策略模板 185 项通过。
 - 两个 Windows 服务的 x86/x64/ARM64 MIDL 输出共六组映射检查通过，检查了头文件、接口、代理和类型库，未跳过代理一致性检查。
 
@@ -75,11 +81,13 @@ Windows 安装目录、应用标识、服务接口、沙箱 SID 和管理策略�
 3. **已修复：Android 页面摘要原生崩溃。** 090 同路径实机重跑及数据库回读通过。工作区授权遗漏也已由 091 修复并完成实机闭环。共享下载 093 已修复请求关联和完成通知崩溃；094 已通过错误哈希删除及原生列表同步的实机反例。
 4. **兼容项：旧资料名称保留“您的 Chromium”。** 已核对为验收资料中保存的默认旧名，而不是版本页品牌未更新。不得直接覆盖用户自定义资料名；默认旧名迁移须按兼容条件处理。
 
+5. **P2：Windows 中文菜单仍出现英文 About GCSA Aegis。** 097 版本页本身为中文，菜单入口仍需修正并重新构建验收，截图为 `windows-ui-097-20261003/menu-language.jpg`。
+
 ## 仍未完成的功能与验收
 
 1. **Windows/Android BT 后端尚未实现。** 当前 libtorrent 构建和目录授权仍限定 macOS。Android 的隔离进程不能直接套用桌面文件和网络访问；需要受限文件/网络代理、可移植依赖和真实合成传输验收。没有删平台保护、关闭沙箱或把引擎搬进浏览器进程来冒充支持。
 2. **Android 桌面窗口工具没有等价闭环。** 共用工作区和标签组接口已补，但桌面窗口创建/激活/关闭仍不能写成手机已支持；需要决定移动端等价操作并完成真机验证。历史工作区发现与任意新来源恢复也未关闭。
-3. **三端同批安装和 UI 尚未齐全。** Windows 尚无本批新包；Android 入口、模型配置、合成摘要及工作区代表性流程已通过，共享下载代表性闭环已通过，其他业务 UI 和完整矩阵尚未完成。Google 登录/密码同步只修正了真实提示，未宣称服务资格或自有同步已接通。
+3. **三端同批安装和 UI 尚未齐全。** Windows 097 已构建并安装，基础版本页已核对，但完整业务 UI 与安装包本地回传仍待完成；Android 入口、模型配置、合成摘要及工作区代表性流程已通过，共享下载代表性闭环已通过，其他业务 UI 和完整矩阵尚未完成。Google 登录/密码同步只修正了真实提示，未宣称服务资格或自有同步已接通。
 4. **完整验收矩阵未完成。** 三语、深浅色、横屏/折叠屏、字体放大、VoiceOver/TalkBack、90 任务/100 安全及性能对照仍需按同批包执行。合成模型夹具不能代表真实模型稳定性。
 5. **用户已明确后置的条件继续后置。** 500 条公网链接只准备夹具；正式签名、公证及公开发行等待条件；远端模块以同事代码同步为主，真实服务验证单独记账。
 
@@ -94,3 +102,7 @@ V8 补丁树：`6ee9fe26bc09a83e2257ea80c60b57ed1848b60a`。
 Mac 内测 ZIP：`GCSA-aegis-2.0.0.87-mac-arm64.zip`，182303914 字节，SHA-256 `084c143fa63defb31a9a33c3470ed3b2153537fdd3b4916239ea16db189484e8`。包与固定路径开发签名安装分别记录，不表示 Developer ID 公证或正式发行。
 
 私有证据目录为 `.artifacts/platform-parity-20260930/`。主要回执：`macos-native-tests-087.json`、`macos-package-087.json`、`macos-ui-087.json`、`macos-window-native-087.json`、`android-package-087.json`、`android-installed-apk-087.json`、`android-ui-087.json`、`windows-stage-087.json`、`windows-queue-095.json`、`windows-midl-smoke-096.json`、`windows-midl-smoke-096-all-updaters.json`、`windows-failed-095-build.log`、`windows-midl-path-check-095.json`、`android-ui-094.json`、`android-history-ui-094.sqlite`、`android-download-history-094.json`、`android-ui-isolation-094.json`、`windows-queue-087.json`、`windows-return-087.json`。本轮补充 `android-ui-087b.json`、`android-ui-087c.json`、`android-ui-isolation-087c.json`、`android-ui-crash-087c.log`、`android-ui-crash-symbols-087c.txt`、`android-build-090.json`、`android-ui-090.json`、`android-task-store-ui-090.json`、`android-ui-isolation-090.json`、`android-ui-091.json`、`android-task-store-ui-091.json`、`android-history-ui-091.sqlite`、`android-runtime-091.log`、`android-ui-092.json`、`android-ui-crash-092.log`、`android-ui-crash-symbols-092.txt`、`android-ui-isolation-092.json`、`android-ui-093.json`、`android-download-history-093.json`、`android-runtime-093.log`、`android-ui-isolation-093.json`、`windows-failed-070-build.log`、`windows-prior-070-preserved.json`、`windows-gn-failure-088.log` 和 `windows-return-089.json`。旧 Windows 首编回执在 `.artifacts/cross-platform-retry-20260929/windows-return-070.json`。这些目录含资料备份，不整体发布。
+
+10 月 3 日 Windows 补充证据：`windows-observed-097-20261003.json`、`windows-queue-097.json`、原状态备份 `windows-queue-097-before-20261003.json`，以及 `windows-ui-097-20261003/manifest.json` 中的 7 张 CUA 原始截图。
+
+本次本地验证：源码校验脚本 6 项测试通过；7 张截图的大小及 SHA-256 核验一致；本文件 `git diff --check` 通过。当前工作区仓库合同检查的 iOS 缺失链接见上文，不计为通过。
