@@ -777,10 +777,14 @@ TEST(AegisAgentTaskStoreTest, RoundTripsResearchScopeWithFrozenModelRouting) {
   ASSERT_TRUE(store.Initialize());
   auto scope = StoreTestScope();
   scope.selected_pages_research = true;
+  scope.allowed_tab_ids = {7, 8, 9};
+  scope.allowed_tools = {"page.observe"};
+  scope.budgets.max_tabs = 3;
   scope.model_selection_mode = AgentModelSelectionMode::kQuality;
   scope.model_catalog_revision = 12;
   scope.model_generation_profile = {"low", 4096};
   scope.model_token_prices = {.input = 100, .cached_input = 20, .output = 500};
+  ASSERT_TRUE(scope.IsValid());
   AgentTask task("merged-scope", "比较所选文章", AgentMode::kAsk, scope);
   ASSERT_TRUE(store.SaveTask(task, "比较所选文章", false));
   const auto tasks = store.LoadUnfinishedTasks();
