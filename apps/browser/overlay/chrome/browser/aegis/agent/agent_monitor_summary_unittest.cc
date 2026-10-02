@@ -117,6 +117,63 @@ TEST(AegisAgentMonitorSummaryTest, AttachesCitedSummaryAndRejectsStalePage) {
   EXPECT_TRUE(ReadAgentMonitorSummary(*base::WriteJson(*saved)).empty());
 }
 
+TEST(AegisAgentMonitorSummaryTest, NumericFragmentsKeepOnlyObservedMeaning) {
+  const std::string current = Observation({"稳定指标", "47"});
+  auto input = BuildAgentMonitorSummaryInput(
+      Observation({"稳定指标", "42"}), current);
+  ASSERT_TRUE(input);
+  const auto now = base::Time::Now();
+  for (const auto locale : {"zh-CN", "zh-TW", "en"}) {
+    auto summary = BuildAgentMonitorNumericSummary(current, *input, locale, now);
+    ASSERT_TRUE(summary) << locale;
+    EXPECT_TRUE(HasMeaningfulAgentMonitorSummary(*summary));
+    EXPECT_FALSE(IsPartialAgentMonitorSummary(*summary));
+    const auto text = ReadAgentMonitorSummary(*summary);
+    EXPECT_NE(text.find("42"), std::string::npos);
+    EXPECT_NE(text.find("47"), std::string::npos);
+    EXPECT_EQ(text.find("页码"), std::string::npos);
+    EXPECT_EQ(text.find("稳定指标"), std::string::npos);
+    EXPECT_NE(text.find(locale == std::string_view("en") ? "not been determined"
+                                                        : "尚未判定"),
+              std::string::npos);
+    auto stored = base::JSONReader::ReadDict(*summary, base::JSON_PARSE_RFC);
+    ASSERT_TRUE(stored);
+    EXPECT_EQ(*stored->FindDict("change_summary")->FindList("quotes"),
+              input->changes);
+    EXPECT_EQ(ReadAgentMonitorSummary(
+                  PreserveUnchangedAgentMonitorSummary(*summary, current)),
+              text);
+  }
+  EXPECT_FALSE(BuildAgentMonitorNumericSummary(
+      Observation({"稳定指标", "48"}), *input, "zh-CN", now));
+  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en",
+                                               base::Time()));
+  input->truncated = true;
+  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
+}
+
+TEST(AegisAgentMonitorSummaryTest, NumericSummaryDoesNotGuessMixedChanges) {
+  const auto now = base::Time::Now();
+  for (const auto text : {"价格47", "47.5", "-47", "47°C", "47x"}) {
+    const std::string current = Observation({text});
+    auto input = BuildAgentMonitorSummaryInput(Observation({"42"}), current);
+    ASSERT_TRUE(input);
+    EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
+  }
+  const std::string current = Observation({"47", "新增说明"});
+  auto input = BuildAgentMonitorSummaryInput(Observation({"42"}), current);
+  ASSERT_TRUE(input);
+  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
+  input = BuildAgentMonitorSummaryInput(current, current);
+  ASSERT_TRUE(input);
+  EXPECT_FALSE(BuildAgentMonitorNumericSummary(current, *input, "en", now));
+  input = BuildAgentMonitorSummaryInput(Observation({"42"}), Observation({"47"}));
+  ASSERT_TRUE(input);
+  input->changes[1].GetDict().Set("kind", "removed");
+  EXPECT_FALSE(BuildAgentMonitorNumericSummary(Observation({"47"}), *input,
+                                               "en", now));
+}
+
 TEST(AegisAgentMonitorSummaryTest, RejectsMissingInventedAndDuplicateEvidence) {
   const std::string current = Observation({"续航24小时"});
   auto input =

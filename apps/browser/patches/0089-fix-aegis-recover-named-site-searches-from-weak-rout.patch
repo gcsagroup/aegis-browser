@@ -1,8 +1,7 @@
-From 310b3d0adffaec6aaf2cb7065f1f3e53721614c8 Mon Sep 17 00:00:00 2001
+From 27488b109ae14ff7d4c0f5fd441bc092afc91ca1 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:46:40 +0800
-Subject: [PATCH 89/90] fix(aegis): recover named-site searches from weak
- routing
+Subject: [PATCH] fix(aegis): recover named-site searches from weak routing
 
 ---
  chrome/browser/aegis/agent/agent_planner.cc          | 12 +++++++++---

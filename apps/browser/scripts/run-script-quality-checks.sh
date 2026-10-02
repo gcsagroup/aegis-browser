@@ -11,6 +11,19 @@ run_check() {
   "$@"
 }
 
+run_check '构建源码来源' python3 -B ./scripts/verify-build-source_test.py
+run_check 'Windows MIDL 路径' python3 -B ./scripts/midl-dynamic-path_test.py
+run_check '构建容量' python3 -B ./scripts/build_capacity_test.py
+run_check '构建进程' python3 -B ./scripts/build_processes_test.py
+run_check 'Chromium 上游监测' python3 -B ./scripts/check-chromium-upstream_test.py
+run_check '候选编排' python3 -B -m unittest discover -s ./scripts/ci -p "*_test.py"
+run_check '进程测量' python3 -B ./scripts/measure-browser-processes_test.py
+run_check 'workspace-paths' node --test ./scripts/workspace-paths_test.mjs
+run_check 'public-link-fixture' node --test ./scripts/public-link-fixture_test.mjs
+run_check 'integration-benchmark-fixtures' node --test ./scripts/integration-benchmark-fixtures_test.mjs
+run_check 'integration-evidence-report' node --test ./scripts/integration-evidence-report_test.mjs
+run_check 'update-metadata-prototype' node --test ./scripts/update-metadata-prototype_test.mjs
+
 run_check 'patch series formats' bash ./scripts/patch-series-format_test.sh
 run_check 'patch series regression fixtures' bash ./scripts/patch-series-format-regression_test.sh
 run_check 'Access native unit tests' bash ./scripts/test-aegis-access-native.sh

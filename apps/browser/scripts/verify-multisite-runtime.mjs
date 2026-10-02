@@ -83,7 +83,7 @@ function resolveDefaultChromiumRoot() {
   } catch {
     // 与 scripts/common.sh 保持相同的可选 marker 语义。
   }
-  return join(homedir(), 'Projects', 'GCSA-aegis-chromium');
+  return join(homedir(), 'Projects', 'GCSA-aegis-build', 'macos');
 }
 
 const DEFAULT_RELEASE_APP = join(

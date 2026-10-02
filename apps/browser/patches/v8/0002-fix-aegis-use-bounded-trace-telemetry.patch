@@ -1,7 +1,12 @@
-From 9c0b1f276ba116e8b25a55466207e6586b44be16 Mon Sep 17 00:00:00 2001
-From: MacBook Pro <lazy@MacBook-Pro.local>
-Date: Thu, 27 Aug 2026 16:21:19 +0800
-Subject: [PATCH] fix(aegis): use bounded trace telemetry
+From 87f5cfd0cc7a8de9d596de51b518c407de4b6fd8 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 00:50:59 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D153.0.8010.53=E5=AE=89?=
+ =?UTF-8?q?=E5=85=A8=E5=80=99=E9=80=89=EF=BC=9A0002-fix-aegis-use-bounded-?=
+ =?UTF-8?q?trace-telemetry.patch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 ---
  src/interpreter/aegis-bytecode-shadow.cc | 20 +++++++++++++-------

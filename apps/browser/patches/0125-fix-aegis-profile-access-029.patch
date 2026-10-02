@@ -1,0 +1,84 @@
+From 2bd22c150d1cff85802cad2f853bd72104e23c5f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 04:02:53 +0800
+Subject: [PATCH] fix(aegis): migrate profile access in menu and toolbar (029)
+
+---
+ chrome/browser/ui/toolbar/app_menu_model.cc             | 2 +-
+ chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc | 8 ++++----
+ chrome/browser/ui/webui/help/aegis_github_update.h      | 6 +++---
+ 3 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
+index 4a6890f7fe..c5d72c569c 100644
+--- a/chrome/browser/ui/toolbar/app_menu_model.cc
++++ b/chrome/browser/ui/toolbar/app_menu_model.cc
+@@ -2488,7 +2488,7 @@ void AppMenuModel::Build() {
+   AddItemWithStringIdAndVectorIcon(
+       this, IDC_OPTIONS, IDS_SETTINGS,
+       features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
+-  if (IsAegisProfileSupported(browser_->profile())) {
++  if (IsAegisProfileSupported(browser_->GetProfile())) {
+     AddItemWithStringIdAndVectorIcon(
+         this, IDC_SHOW_AEGIS, IDS_AEGIS_SETTINGS_MENU,
+         features::IsRoundedIconsEnabled() ? kSettingsIcon
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index db42189a64..7fb8ff71cb 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -54,7 +54,7 @@ aegis::AegisService* ServiceForBrowser(Browser* browser) {
+   if (!browser) {
+     return nullptr;
+   }
+-  return aegis::AegisServiceFactory::GetForProfile(browser->profile());
++  return aegis::AegisServiceFactory::GetForProfile(browser->GetProfile());
+ }
+ 
+ aegis::AegisService* ServiceForWebContents(Browser* browser,
+@@ -65,7 +65,7 @@ aegis::AegisService* ServiceForWebContents(Browser* browser,
+   }
+   Profile* source_profile =
+       Profile::FromBrowserContext(web_contents->GetBrowserContext());
+-  return source_profile == browser->profile() &&
++  return source_profile == browser->GetProfile() &&
+                  service->IsInitializedForProfile(source_profile)
+              ? service
+              : nullptr;
+@@ -601,7 +601,7 @@ void AegisToolbarButton::OnAegisStateChanged() {
+ }
+ 
+ void AegisToolbarButton::OnPressed() {
+-  if (!aegis::IsAegisProfileSupported(browser_->profile())) {
++  if (!aegis::IsAegisProfileSupported(browser_->GetProfile())) {
+     return;
+   }
+   if (bubble_tracker_.view() && bubble_tracker_.view()->GetWidget()) {
+@@ -627,7 +627,7 @@ void AegisToolbarButton::OnPressed() {
+ 
+ void AegisToolbarButton::Refresh() {
+   const bool profile_supported =
+-      aegis::IsAegisProfileSupported(browser_->profile());
++      aegis::IsAegisProfileSupported(browser_->GetProfile());
+   SetVisible(profile_supported);
+   SetEnabled(profile_supported);
+   if (!profile_supported) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ce14883c5b..89f68e35de 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.28。
+-inline constexpr char kProductVersion[] = "1.1.0.28";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (028)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.29。
++inline constexpr char kProductVersion[] = "1.1.0.29";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (029)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,0 +1,42 @@
+From a73a461952fb24f755eaa94fd49d7a6e2b116411 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 02:02:45 +0800
+Subject: [PATCH] fix(reading): classify Aegis side-panel trigger on M153
+
+---
+ chrome/browser/ui/read_anything/read_anything_enums.h | 1 +
+ chrome/browser/ui/webui/help/aegis_github_update.h    | 6 +++---
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/read_anything/read_anything_enums.h b/chrome/browser/ui/read_anything/read_anything_enums.h
+index 1738dd9f81..d71d5dcc10 100644
+--- a/chrome/browser/ui/read_anything/read_anything_enums.h
++++ b/chrome/browser/ui/read_anything/read_anything_enums.h
+@@ -114,6 +114,7 @@ inline ReadAnythingOpenTrigger SidePanelToReadAnythingOpenTrigger(
+ #endif
+     case SidePanelOpenTrigger::kGlicOpened:
+     case SidePanelOpenTrigger::kContextualTasks:
++    case SidePanelOpenTrigger::kAegisAgent:
+     case SidePanelOpenTrigger::kUnknown:
+       return ReadAnythingOpenTrigger::kUnknown;
+   }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9de2279062..82e958224f 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.26。
+-inline constexpr char kProductVersion[] = "1.1.0.26";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (026)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.27。
++inline constexpr char kProductVersion[] = "1.1.0.27";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (027)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

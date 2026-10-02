@@ -1,7 +1,7 @@
-From ce440f339329d655738d4334657425c8a308dc82 Mon Sep 17 00:00:00 2001
+From 7dc08ff60a2ba4bc8e4d2c0f5ea56bb8142aade5 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 29 Aug 2026 17:20:12 +0800
-Subject: [PATCH 66/67] feat(aegis): tailor settings and update status
+Subject: [PATCH] feat(aegis): tailor settings and update status
 
 ---
  .../resources/generated_resources_zh-CN.xtb   |   5 +-
@@ -9,9 +9,15 @@ Subject: [PATCH 66/67] feat(aegis): tailor settings and update status
  .../resources/generated_resources_zh-TW.xtb   |   5 +-
  chrome/app/settings_strings.grdp              |   9 ++
  .../settings/about_page/about_page.css        |   7 +
- .../settings/about_page/about_page.html.ts    |  22 ++-
+ .../settings/about_page/about_page.html.ts    |  22 +++-
  .../settings/about_page/about_page.ts         |   8 +-
- .../settings/people_page/people_page.html     | 127 ++++++++++--------
+ .../settings/autofill_page/autofill_page.html |  45 ++++---
+ .../settings/autofill_page/autofill_page.ts   |  13 +-
+ .../autofill_page/autofill_page_index.ts      |   3 +-
+ .../autofill_page/identity_docs_page.ts       |   3 +-
+ .../settings/autofill_page/shopping_page.ts   |   3 +-
+ .../settings/autofill_page/travel_page.ts     |   3 +-
+ .../settings/people_page/people_page.html     | 123 ++++++++++--------
  .../settings/people_page/people_page.ts       |  33 +++--
  .../people_page/people_page_index.html        |  47 ++++---
  .../settings/people_page/people_page_index.ts |   6 +
@@ -19,21 +25,18 @@ Subject: [PATCH 66/67] feat(aegis): tailor settings and update status
  chrome/browser/resources/settings/route.ts    |  27 ++--
  .../settings/settings_menu/settings_menu.html |   9 +-
  .../settings/settings_menu/settings_menu.ts   |  11 ++
- .../identity_docs_page.ts                     |   3 +-
- .../your_saved_info_page/shopping_page.ts     |   3 +-
- .../your_saved_info_page/travel_page.ts       |   3 +-
- .../your_saved_info_page.html                 |  45 ++++---
- .../your_saved_info_page.ts                   |  13 +-
- .../your_saved_info_page_index.ts             |   3 +-
  .../ui/views/profiles/profile_menu_view.cc    |  21 +--
  .../profiles/profile_menu_view_browsertest.cc |  64 +++++++++
- chrome/browser/ui/webui/help/BUILD.gn         |  29 ++--
+ chrome/browser/ui/webui/help/BUILD.gn         |  29 +++--
  .../ui/webui/help/version_updater_basic.cc    |  18 ++-
- .../settings_localized_strings_provider.cc    |  29 +++-
- .../browser/ui/webui/settings/settings_ui.cc  |  47 ++++++-
+ .../settings_localized_strings_provider.cc    |  29 ++++-
+ .../browser/ui/webui/settings/settings_ui.cc  |  45 ++++++-
  .../webui/settings/settings_ui_browsertest.cc |  31 +++++
  .../data/webui/settings/about_page_test.ts    |  40 +++++-
  .../data/webui/settings/account_page_test.ts  |   1 +
+ .../webui/settings/autofill_account_test.ts   |   3 +
+ .../settings/autofill_page_index_test.ts      |  21 +++
+ .../data/webui/settings/autofill_page_test.ts |  31 ++++-
  .../settings/google_services_page_test.ts     |   5 +-
  .../webui/settings/identity_docs_page_test.ts |  14 ++
  .../webui/settings/people_page_index_test.ts  |  32 +++++
@@ -44,38 +47,35 @@ Subject: [PATCH 66/67] feat(aegis): tailor settings and update status
  .../webui/settings/privacy_page_index_test.ts |  16 ++-
  chrome/test/data/webui/settings/route_test.ts |  54 +++++++-
  .../settings/settings_main_plugins_test.ts    |  10 +-
- .../settings_menu_interactive_ui_test.ts      |  10 +-
+ .../settings_menu_interactive_ui_test.ts      |   1 +
  .../data/webui/settings/settings_menu_test.ts |   9 ++
  .../data/webui/settings/shopping_page_test.ts |  14 ++
  .../settings/sync_account_control_test.ts     |   5 +-
  .../data/webui/settings/travel_page_test.ts   |  14 ++
- .../settings/your_saved_info_account_test.ts  |   3 +
- .../your_saved_info_page_index_test.ts        |  31 +++++
- .../settings/your_saved_info_page_test.ts     |  31 ++++-
  tools/grit/grit_args.gni                      |   1 +
- 49 files changed, 824 insertions(+), 200 deletions(-)
+ 49 files changed, 804 insertions(+), 195 deletions(-)
 
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index aac3d71dd8..38508e721f 100644
+index 9b44f0f3bd..0cb1fa7e55 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
-@@ -1208,6 +1208,7 @@
- <translation id="1895658205118569222">关机</translation>
+@@ -1162,6 +1162,7 @@
+ <translation id="1896353439080510710">对话内容会经过人工审核，并用于改进 Google AI。Gemini 是一款 AI 工具，可能会出错。您可以<ph name="BEGIN_LINK_MANAGE_ACTIVITY" />管理活动记录<ph name="END_LINK_MANAGE_ACTIVITY" />，包括您的位置信息。<ph name="BEGIN_LINK_LEARN_MORE" />详细了解您有哪些选择<ph name="END_LINK_LEARN_MORE" /></translation>
  <translation id="1897120393475391208">使用安全系数高的密码</translation>
  <translation id="1897860317037652061">扫描失败</translation>
 +<translation id="1898779803408102033">关于 GCSA-aegis</translation>
  <translation id="1898804291554630487">询问与此页面有关的问题</translation>
  <translation id="1899172684246105747">使用主题和深色模式等选项，定制专属于您的浏览器。</translation>
  <translation id="1900305421498694955">Google Play 中的应用可能需要获得完整的文件系统访问权限，才能在外部存储设备上读取和写入文件。任何使用外部驱动器的人员都能看到在此设备上创建的文件和文件夹。<ph name="LINK_BEGIN" />了解详情<ph name="LINK_END" /></translation>
-@@ -5300,6 +5301,7 @@
+@@ -5118,6 +5119,7 @@
  <translation id="4913209098186576320">这可能是个危险文件<ph name="LINE_BREAK" />此项检查的用时比平时长…</translation>
  <translation id="4913573660390710463">访问功能更强大的封装版 Web 应用。<ph name="BEGIN_LINK_LEARN_MORE" />了解详情<ph name="END_LINK_LEARN_MORE" /></translation>
  <translation id="4913695564084524048">找不到应用数据</translation>
 +<translation id="4915859253175465204">GCSA-aegis 尚未配置可信发布通道，当前版本无法自动检查或安装更新。</translation>
  <translation id="4915961947098019832">允许显示图片</translation>
+ <translation id="4916140032692201190">翻译所选内容(&amp;T)</translation>
  <translation id="491779113051926205">ChromeOS 流量计数器</translation>
- <translation id="4918021164741308375"><ph name="ORIGIN" /> 希望与“<ph name="EXTENSION_NAME" />”扩展程序通信</translation>
-@@ -9291,6 +9293,7 @@
+@@ -8978,6 +8980,7 @@
  <translation id="7947964080535614577">网站通常会显示广告，以便能够免费提供内容或服务。但是，我们已知某些网站会展示侵扰性或误导性广告。</translation>
  <translation id="7948407723851303488"><ph name="DOMAIN_NAME" /> 的所有网页</translation>
  <translation id="7948579849190819732">当前标签页</translation>
@@ -83,7 +83,7 @@ index aac3d71dd8..38508e721f 100644
  <translation id="7949038991703929816">未能加载历史记录。请确保文件包含有效的更新程序日志。</translation>
  <translation id="7950629216186736592">原因：LBS 仅支持 http://、https:// 和 file:// 网址。</translation>
  <translation id="7950814699499457511">已开启 • 此扩展程序尚未发布隐私权规范，例如如何收集和使用数据</translation>
-@@ -11127,4 +11130,4 @@
+@@ -10735,4 +10738,4 @@
  <translation id="998347228911661591">同步标签页分组</translation>
  <translation id="998747458861718449">检查(&amp;N)</translation>
  <translation id="998852291477823323">配置的政策不允许执行此操作。</translation>
@@ -91,26 +91,26 @@ index aac3d71dd8..38508e721f 100644
 \ No newline at end of file
 +</translationbundle>
 diff --git a/chrome/app/resources/generated_resources_zh-HK.xtb b/chrome/app/resources/generated_resources_zh-HK.xtb
-index fd11f8c6e4..67e510f3b4 100644
+index fb11df25b0..cb6488d341 100644
 --- a/chrome/app/resources/generated_resources_zh-HK.xtb
 +++ b/chrome/app/resources/generated_resources_zh-HK.xtb
-@@ -1217,6 +1217,7 @@
- <translation id="1895658205118569222">關閉</translation>
+@@ -1171,6 +1171,7 @@
+ <translation id="1896353439080510710">我們會檢查並使用對話內容來改善 Google AI。Gemini 是 AI，可能會出錯。你可以<ph name="BEGIN_LINK_MANAGE_ACTIVITY" />管理活動<ph name="END_LINK_MANAGE_ACTIVITY" />，包括位置資訊。<ph name="BEGIN_LINK_LEARN_MORE" />進一步瞭解你的選項<ph name="END_LINK_LEARN_MORE" /></translation>
  <translation id="1897120393475391208">使用安全性強的密碼</translation>
  <translation id="1897860317037652061">掃瞄失敗</translation>
 +<translation id="1898779803408102033">關於 GCSA-aegis</translation>
  <translation id="1898804291554630487">提出關於此頁的問題</translation>
  <translation id="1899172684246105747">透過主題和深色模式等選項自訂瀏覽器。</translation>
  <translation id="1900305421498694955">Google Play 應用程式可能會要求取得檔案系統的完整存取權，以讀取和寫入外部儲存裝置上的檔案。外置磁碟的任何使用者都能見到在此裝置上建立的檔案和資料夾。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
-@@ -5313,6 +5314,7 @@
+@@ -5131,6 +5132,7 @@
  <translation id="4913209098186576320">此檔案可能不安全<ph name="LINE_BREAK" />此檢查所需時間比一般長…</translation>
  <translation id="4913573660390710463">使用具備進階功能的套裝網絡軟件。<ph name="BEGIN_LINK_LEARN_MORE" />瞭解詳情<ph name="END_LINK_LEARN_MORE" /></translation>
  <translation id="4913695564084524048">無法尋找應用程式資料</translation>
 +<translation id="4915859253175465204">GCSA-aegis 尚未設定可信任的發佈渠道，目前版本無法自動檢查或安裝更新。</translation>
  <translation id="4915961947098019832">已允許顯示圖片</translation>
+ <translation id="4916140032692201190">翻譯所選內容(&amp;T)</translation>
  <translation id="491779113051926205">ChromeOS 流量計數器</translation>
- <translation id="4918021164741308375"><ph name="ORIGIN" /> 想與「<ph name="EXTENSION_NAME" />」擴充功能保持通訊</translation>
-@@ -9301,6 +9303,7 @@
+@@ -8988,6 +8990,7 @@
  <translation id="7947964080535614577">網站通常要顯示廣告，才能免費提供內容或服務。不過，部分網站會顯示滋擾性或誤導廣告。</translation>
  <translation id="7948407723851303488"><ph name="DOMAIN_NAME" /> 的所有頁面</translation>
  <translation id="7948579849190819732">目前分頁</translation>
@@ -118,7 +118,7 @@ index fd11f8c6e4..67e510f3b4 100644
  <translation id="7949038991703929816">無法載入記錄，請確保檔案包含有效的更新工具記錄。</translation>
  <translation id="7950629216186736592">原因：LBS 只支援 http://、https:// 和 file:// 網址。</translation>
  <translation id="7950814699499457511">已開啟 • 此擴充程式尚未發佈私隱守則，例如擴充程式如何收集和使用資料</translation>
-@@ -11133,4 +11136,4 @@
+@@ -10743,4 +10746,4 @@
  <translation id="998347228911661591">同步分頁群組</translation>
  <translation id="998747458861718449">檢查(&amp;N)</translation>
  <translation id="998852291477823323">所設定的政策不允許此操作。</translation>
@@ -126,26 +126,26 @@ index fd11f8c6e4..67e510f3b4 100644
 \ No newline at end of file
 +</translationbundle>
 diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
-index 58e50cb7e8..417466915f 100644
+index 62ed403f85..1a583c68a9 100644
 --- a/chrome/app/resources/generated_resources_zh-TW.xtb
 +++ b/chrome/app/resources/generated_resources_zh-TW.xtb
-@@ -1208,6 +1208,7 @@
- <translation id="1895658205118569222">關閉</translation>
+@@ -1162,6 +1162,7 @@
+ <translation id="1896353439080510710">我們會查看及使用對話內容來改良 Google AI。Gemini 是 AI，可能會出錯。你可以<ph name="BEGIN_LINK_MANAGE_ACTIVITY" />管理活動記錄<ph name="END_LINK_MANAGE_ACTIVITY" />，包括位置資訊。<ph name="BEGIN_LINK_LEARN_MORE" />進一步瞭解可用選項<ph name="END_LINK_LEARN_MORE" /></translation>
  <translation id="1897120393475391208">使用高強度密碼</translation>
  <translation id="1897860317037652061">掃描失敗</translation>
 +<translation id="1898779803408102033">關於 GCSA-aegis</translation>
  <translation id="1898804291554630487">詢問這個網頁的內容</translation>
  <translation id="1899172684246105747">使用主題和深色模式等選項自訂瀏覽器。</translation>
  <translation id="1900305421498694955">透過 Google Play 下載的應用程式可能會要求取得檔案系統的完整存取權，以讀取和寫入外部儲存裝置上的檔案。外接式磁碟的任何使用者都能看見在此裝置上建立的檔案和資料夾。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
-@@ -5297,6 +5298,7 @@
+@@ -5114,6 +5115,7 @@
  <translation id="4913209098186576320">這個檔案可能含有危險內容<ph name="LINE_BREAK" />這項檢查超出正常所需時間...</translation>
  <translation id="4913573660390710463">存取具備進階功能的封裝網頁應用程式。<ph name="BEGIN_LINK_LEARN_MORE" />瞭解詳情<ph name="END_LINK_LEARN_MORE" /></translation>
  <translation id="4913695564084524048">找不到應用程式資料</translation>
 +<translation id="4915859253175465204">GCSA-aegis 尚未設定可信任的發佈管道，目前版本無法自動檢查或安裝更新。</translation>
  <translation id="4915961947098019832">可以顯示圖片</translation>
+ <translation id="4916140032692201190">翻譯所選內容(&amp;T)</translation>
  <translation id="491779113051926205">ChromeOS 流量計數器</translation>
- <translation id="4918021164741308375"><ph name="ORIGIN" /> 要求與「<ph name="EXTENSION_NAME" />」擴充功能通訊</translation>
-@@ -9286,6 +9288,7 @@
+@@ -8973,6 +8975,7 @@
  <translation id="7947964080535614577">為了提供免付費的內容或服務，網站通常會放送廣告。不過，某些網站會放送干擾性或誤導性的廣告。</translation>
  <translation id="7948407723851303488"><ph name="DOMAIN_NAME" /> 的所有頁面</translation>
  <translation id="7948579849190819732">目前分頁</translation>
@@ -153,7 +153,7 @@ index 58e50cb7e8..417466915f 100644
  <translation id="7949038991703929816">記錄無法載入，請確認檔案內含有效的更新工具記錄。</translation>
  <translation id="7950629216186736592">原因：LBS 只支援 http://、https:// 和 file:// 網址。</translation>
  <translation id="7950814699499457511">已開啟 • 這項擴充功能尚未發布隱私權實務規範，例如擴充功能如何收集和使用資料</translation>
-@@ -11122,4 +11125,4 @@
+@@ -10730,4 +10733,4 @@
  <translation id="998347228911661591">同步處理分頁群組</translation>
  <translation id="998747458861718449">檢查(&amp;N)</translation>
  <translation id="998852291477823323">已設定的政策禁止執行這項動作。</translation>
@@ -161,10 +161,10 @@ index 58e50cb7e8..417466915f 100644
 \ No newline at end of file
 +</translationbundle>
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index f426eab758..76fb139153 100644
+index 1ac2c48ec8..f260a13c80 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -1351,6 +1351,15 @@
+@@ -1363,6 +1363,15 @@
      <message name="IDS_AEGIS_SETTINGS_ROW_SUBLABEL" desc="Sublabel of the row on the Privacy and security settings page that opens chrome://aegis.">
        Tracker blocking, fingerprint guard, and Privacy AI
      </message>
@@ -181,7 +181,7 @@ index f426eab758..76fb139153 100644
        Privacy and security
      </message>
 diff --git a/chrome/browser/resources/settings/about_page/about_page.css b/chrome/browser/resources/settings/about_page/about_page.css
-index 2eb4882df9..4abe988968 100644
+index 2987e61a89..88fe05c1ae 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.css
 +++ b/chrome/browser/resources/settings/about_page/about_page.css
 @@ -28,8 +28,15 @@
@@ -275,7 +275,7 @@ index b9ac4e634f..41c3308183 100644
    <cr-link-row class="hr" id="reportIssue" @click="${this.onReportIssueClick_}"
        ?hidden="${!this.feedbackAllowedPref_?.value}"
 diff --git a/chrome/browser/resources/settings/about_page/about_page.ts b/chrome/browser/resources/settings/about_page/about_page.ts
-index dd9d93e518..b47077e9a3 100644
+index aaaf8c6e7e..2f474183de 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page.ts
 @@ -11,6 +11,7 @@ import '/shared/settings/prefs/prefs.js';
@@ -312,13 +312,173 @@ index dd9d93e518..b47077e9a3 100644
 +      case UpdateStatus.DISABLED:
 +        return this.currentUpdateStatusEvent_!.message ? 'cr:info-outline' : '';
        case UpdateStatus.FAILED:
-         return 'cr:error';
+         return 'cr:error-filled';
        case UpdateStatus.UPDATED:
+diff --git a/chrome/browser/resources/settings/autofill_page/autofill_page.html b/chrome/browser/resources/settings/autofill_page/autofill_page.html
+index 63e782f8f3..ce7ae0e045 100644
+--- a/chrome/browser/resources/settings/autofill_page/autofill_page.html
++++ b/chrome/browser/resources/settings/autofill_page/autofill_page.html
+@@ -65,15 +65,18 @@
+ 
+ <h1 id="title">$i18n{autofillPageTitle}</h1>
+ <div id="subtitle" class="secondary">$i18n{yourSavedInfoPageDescription}</div>
+-<settings-account-card prefs="{{prefs}}">
+-</settings-account-card>
++<template is="dom-if" if="[[showGoogleServicesSettings_]]">
++  <settings-account-card prefs="{{prefs}}">
++  </settings-account-card>
++</template>
+ 
+ <h2 id="autofillPageTitle" class="section-header">
+   $i18n{autofillPageTitle}
+ </h2>
+ <div class="card-container" on-data-category-click="onDataCategoryClick_"
+     on-data-chip-click="onDataChipClick_">
+-  <category-reference-card card-title="$i18n{localPasswordManager}"
++  <category-reference-card id="passwordManagerCard"
++      card-title="$i18n{localPasswordManager}"
+       is-external
+       category-id="[[hierarchy_.passwordManager.id]]"
+       chips="[[getVisibleChips_(hierarchy_.passwordManager.chips)]]">
+@@ -125,19 +128,23 @@
+   </collapsible-autofill-settings-card>
+ </settings-section>
+ 
+-<settings-section page-title="$i18n{yourSavedInfoRelatedServicesTitle}">
+-  <div route-path="default">
+-    <cr-link-row id="passwordManagerButton" label="$i18n{localPasswordManager}"
+-        on-click="onPasswordManagerRelatedServiceClick_"
+-        start-icon="cr20:password-manager" external>
+-    </cr-link-row>
+-    <cr-link-row id="googleWalletButton" label="$i18n{googleWalletTitle}"
+-        on-click="onGoogleWalletRelatedServiceClick_"
+-        start-icon="settings20:wallet" external>
+-    </cr-link-row>
+-    <cr-link-row id="googleAccountButton" label="$i18n{googleAccount}"
+-        on-click="onGoogleAccountRelatedServiceClick_"
+-        start-icon="settings20:google" external>
+-    </cr-link-row>
+-  </div>
+-</settings-section>
++<template is="dom-if" if="[[showGoogleServicesSettings_]]">
++  <settings-section id="relatedServicesSection"
++      page-title="$i18n{yourSavedInfoRelatedServicesTitle}">
++    <div route-path="default">
++      <cr-link-row id="passwordManagerButton"
++          label="$i18n{localPasswordManager}"
++          on-click="onPasswordManagerRelatedServiceClick_"
++          start-icon="cr20:password-manager" external>
++      </cr-link-row>
++      <cr-link-row id="googleWalletButton" label="$i18n{googleWalletTitle}"
++          on-click="onGoogleWalletRelatedServiceClick_"
++          start-icon="settings20:wallet" external>
++      </cr-link-row>
++      <cr-link-row id="googleAccountButton" label="$i18n{googleAccount}"
++          on-click="onGoogleAccountRelatedServiceClick_"
++          start-icon="settings20:google" external>
++      </cr-link-row>
++    </div>
++  </settings-section>
++</template>
+diff --git a/chrome/browser/resources/settings/autofill_page/autofill_page.ts b/chrome/browser/resources/settings/autofill_page/autofill_page.ts
+index 94bd98e7d1..ce92e98953 100644
+--- a/chrome/browser/resources/settings/autofill_page/autofill_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/autofill_page.ts
+@@ -119,7 +119,15 @@ export class SettingsAutofillPageElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++        },
++      },
++
++      showGoogleServicesSettings_: {
++        type: Boolean,
++        value() {
++          return loadTimeData.getBoolean('showGoogleServicesSettings');
+         },
+       },
+       spark_: {
+@@ -142,6 +150,7 @@ export class SettingsAutofillPageElement extends
+   declare private hierarchy_: DataTypeHierarchy;
+   declare private isShoppingEnabled_: boolean;
+   declare private showSuggestionsFromGeminiSettings_: boolean;
++  declare private showGoogleServicesSettings_: boolean;
+ 
+   private dataChipIdToChip_: Map<YourSavedInfoDataChip, DataChip> = new Map();
+   private dataChipIdToCategory_: Map<YourSavedInfoDataChip, DataCategory> =
+@@ -487,7 +496,7 @@ export class SettingsAutofillPageElement extends
+         break;
+       // <if expr="is_win or is_macosx">
+       case 'passkeys':
+-        triggerId = 'passwordManagerButton';
++        triggerId = 'passwordManagerCard';
+         break;
+       // </if>
+       case 'payments':
+diff --git a/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts b/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts
+index b685362a05..5579660832 100644
+--- a/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts
++++ b/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts
+@@ -60,7 +60,8 @@ export class SettingsAutofillPageIndexElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/autofill_page/identity_docs_page.ts b/chrome/browser/resources/settings/autofill_page/identity_docs_page.ts
+index 2b219d0462..ea1e5c3726 100644
+--- a/chrome/browser/resources/settings/autofill_page/identity_docs_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/identity_docs_page.ts
+@@ -106,7 +106,8 @@ export class SettingsIdentityDocsPageElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/autofill_page/shopping_page.ts b/chrome/browser/resources/settings/autofill_page/shopping_page.ts
+index f636feeda7..b894255f82 100644
+--- a/chrome/browser/resources/settings/autofill_page/shopping_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/shopping_page.ts
+@@ -101,7 +101,8 @@ export class SettingsShoppingPageElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/autofill_page/travel_page.ts b/chrome/browser/resources/settings/autofill_page/travel_page.ts
+index e948018c88..408771aeb0 100644
+--- a/chrome/browser/resources/settings/autofill_page/travel_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/travel_page.ts
+@@ -103,7 +103,8 @@ export class SettingsTravelPageElement extends SettingsTravelPageElementBase {
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
 diff --git a/chrome/browser/resources/settings/people_page/people_page.html b/chrome/browser/resources/settings/people_page/people_page.html
-index 43d3787472..944a0e7dc7 100644
+index b76edfc2ac..ed7e1b6859 100644
 --- a/chrome/browser/resources/settings/people_page/people_page.html
 +++ b/chrome/browser/resources/settings/people_page/people_page.html
-@@ -69,19 +69,22 @@
+@@ -74,18 +74,21 @@
        <div>
  
  <if expr="not is_chromeos">
@@ -326,7 +486,6 @@ index 43d3787472..944a0e7dc7 100644
 -            syncStatus.syncSystemEnabled, syncStatus.signedInStatus)]]" restamp>
 -          <settings-sync-account-control
 -              sync-status="[[syncStatus]]"
--              prefs="{{prefs}}"
 -              promo-label-with-account="$i18n{peopleSignInPrompt}"
 -              promo-label-with-no-account="$i18n{peopleSignInPrompt}"
 -              promo-secondary-label-with-account=
@@ -341,7 +500,6 @@ index 43d3787472..944a0e7dc7 100644
 +              restamp>
 +            <settings-sync-account-control
 +                sync-status="[[syncStatus]]"
-+                prefs="{{prefs}}"
 +                promo-label-with-account="$i18n{peopleSignInPrompt}"
 +                promo-label-with-no-account="$i18n{peopleSignInPrompt}"
 +                promo-secondary-label-with-account=
@@ -354,40 +512,22 @@ index 43d3787472..944a0e7dc7 100644
          </template>
  
          <template is="dom-if" if="[[shouldLinkToProfileRow_(
-@@ -135,46 +138,57 @@
+@@ -139,43 +142,54 @@
          </template>
  </if>
  
 -        <!-- Shared Elements -->
--        <cr-link-row id="account-subpage-row" on-click="onAccountClick_"
+-        <cr-link-row id="account-subpage-row" class="cr-row first"
+-            on-click="onAccountClick_"
+-            label="[[primaryAccountName_]]"
+-            sub-label="[[getAccountRowSubtitle_(primaryAccountEmail_, syncStatus)]]"
+-            role-description="$i18n{subpageArrowRoleDescription}"
+-            button-aria-description="$i18n{accountPageTitle}"
 -            hidden="[[!shouldLinkToAccountSettingsPage_(
 -              syncStatus.signedInState)]]">
 -          <div id="profile-icon"
 -              style="background-image: [[getIconImageSet_(
 -                  primaryAccountIconUrl_)]]">
--          </div>
--          <div class="cr-row-gap cr-padded-text flex no-min-width">
--            <div id="account-name" class="text-elide">
--              [[primaryAccountName_]]
-+        <!-- Google account and sync controls are not part of GCSA-aegis. -->
-+        <template is="dom-if" if="[[showGoogleServicesSettings_]]" restamp>
-+          <cr-link-row id="account-subpage-row" on-click="onAccountClick_"
-+              hidden="[[!shouldLinkToAccountSettingsPage_(
-+                syncStatus.signedInState)]]">
-+            <div id="profile-icon"
-+                style="background-image: [[getIconImageSet_(
-+                    primaryAccountIconUrl_)]]">
-             </div>
--            <div id="account-subtitle" class="secondary">
--              [[getAccountRowSubtitle_(primaryAccountEmail_, syncStatus)]]
-+            <div class="cr-row-gap cr-padded-text flex no-min-width">
-+              <div id="account-name" class="text-elide">
-+                [[primaryAccountName_]]
-+              </div>
-+              <div id="account-subtitle" class="secondary">
-+                [[getAccountRowSubtitle_(primaryAccountEmail_, syncStatus)]]
-+              </div>
-             </div>
 -          </div>
 -        </cr-link-row>
 -
@@ -405,6 +545,20 @@ index 43d3787472..944a0e7dc7 100644
 -            role-description="$i18n{subpageArrowRoleDescription}"
 -            hidden="[[!shouldHideSyncSetupLinkRow_(syncStatus)]]">
 -        </cr-link-row>
++        <template is="dom-if" if="[[showGoogleServicesSettings_]]" restamp>
++          <!-- Shared Elements -->
++          <cr-link-row id="account-subpage-row" class="cr-row first"
++              on-click="onAccountClick_"
++              label="[[primaryAccountName_]]"
++              sub-label="[[getAccountRowSubtitle_(primaryAccountEmail_, syncStatus)]]"
++              role-description="$i18n{subpageArrowRoleDescription}"
++              button-aria-description="$i18n{accountPageTitle}"
++              hidden="[[!shouldLinkToAccountSettingsPage_(
++                syncStatus.signedInState)]]">
++            <div id="profile-icon"
++                style="background-image: [[getIconImageSet_(
++                    primaryAccountIconUrl_)]]">
++            </div>
 +          </cr-link-row>
 +
 +          <cr-link-row id="sync-setup"
@@ -447,19 +601,19 @@ index 43d3787472..944a0e7dc7 100644
            <cr-link-row id="edit-profile"
                label="$i18n{profileNameAndPicture}"
                on-click="onProfileClick_" ></cr-link-row>
-@@ -184,13 +198,15 @@
+@@ -185,13 +199,15 @@
              label="$i18n{importTitle}"
              on-click="onImportDataClick_"></cr-link-row>
  
 -        <template is="dom-if" if="[[isDasherlessProfile_]]">
 -          <div id="sync-not-allowed" class="cr-row continuation">
--            <cr-icon id="info-icon" icon="cr:info-outline"></cr-icon>
+-            <cr-icon id="info-icon" icon="cr:info"></cr-icon>
 -            <div id="sync-not-allowed-text" class="flex cr-padded-text">
 -              $i18n{syncUnavailableForNonGoogleAccount}
 +        <template is="dom-if" if="[[showGoogleServicesSettings_]]" restamp>
 +          <template is="dom-if" if="[[isDasherlessProfile_]]">
 +            <div id="sync-not-allowed" class="cr-row continuation">
-+              <cr-icon id="info-icon" icon="cr:info-outline"></cr-icon>
++              <cr-icon id="info-icon" icon="cr:info"></cr-icon>
 +              <div id="sync-not-allowed-text" class="flex cr-padded-text">
 +                $i18n{syncUnavailableForNonGoogleAccount}
 +              </div>
@@ -469,7 +623,7 @@ index 43d3787472..944a0e7dc7 100644
          </template>
  </if>
  
-@@ -210,6 +226,7 @@
+@@ -211,6 +227,7 @@
        </settings-import-data-dialog>
      </template>
  </if>
@@ -479,10 +633,10 @@ index 43d3787472..944a0e7dc7 100644
        <span>$i18n{syncSettingsSavedToast}</span>
      </cr-toast>
 diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
-index cfffab21e2..c7b00af3aa 100644
+index 190c905367..ebe08144e0 100644
 --- a/chrome/browser/resources/settings/people_page/people_page.ts
 +++ b/chrome/browser/resources/settings/people_page/people_page.ts
-@@ -173,13 +173,19 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -166,13 +166,19 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
              loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos'),
        },
  
@@ -503,7 +657,7 @@ index cfffab21e2..c7b00af3aa 100644
        },
  
        showImportDataDialog_: {
-@@ -207,6 +213,7 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -199,6 +205,7 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
    declare private isProfileActionable_: boolean;
    declare private profileName_: string;
    declare private replaceSyncPromosWithSignInPromos_: boolean;
@@ -511,7 +665,7 @@ index cfffab21e2..c7b00af3aa 100644
    declare private primaryAccountName_: string;
    declare private primaryAccountEmail_: string;
    declare private primaryAccountIconUrl_: string;
-@@ -253,9 +260,11 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -245,9 +252,11 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
      this.addWebUiListener(
          'stored-accounts-updated', this.handleStoredAccounts_.bind(this));
  
@@ -526,7 +680,7 @@ index cfffab21e2..c7b00af3aa 100644
      // </if>
    }
  
-@@ -330,7 +339,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -322,7 +331,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
      // |this.syncStatus| is set.
      // With `ReplaceSyncPromosWithSignInPromos`, this is not a sign in promo, so
      // we should not record.
@@ -536,7 +690,7 @@ index cfffab21e2..c7b00af3aa 100644
          this.signinAllowed_ && !this.isSyncing_() &&
          !this.replaceSyncPromosWithSignInPromos_;
  
-@@ -345,6 +355,9 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -337,6 +347,9 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
  
    // <if expr="not is_chromeos">
    private computeShouldShowGoogleAccount_(): boolean {
@@ -546,7 +700,7 @@ index cfffab21e2..c7b00af3aa 100644
      if (this.storedAccounts === undefined || this.syncStatus === undefined) {
        return false;
      }
-@@ -399,7 +412,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -391,7 +404,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
    }
  
    private shouldLinkToAccountSettingsPage_(): boolean {
@@ -556,7 +710,7 @@ index cfffab21e2..c7b00af3aa 100644
          this.syncStatus.signedInState === SignedInState.SIGNED_IN;
    }
  
-@@ -414,12 +428,13 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+@@ -406,12 +420,13 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
    }
  
    private shouldLinkToProfileRow_(): boolean {
@@ -574,7 +728,7 @@ index cfffab21e2..c7b00af3aa 100644
      }
      return !!this.syncStatus!.syncSystemEnabled && this.signinAllowed_ &&
 diff --git a/chrome/browser/resources/settings/people_page/people_page_index.html b/chrome/browser/resources/settings/people_page/people_page_index.html
-index bc0082eb64..0dfc4f312f 100644
+index 7d92ef82f1..b3b0c3f88b 100644
 --- a/chrome/browser/resources/settings/people_page/people_page_index.html
 +++ b/chrome/browser/resources/settings/people_page/people_page_index.html
 @@ -11,14 +11,17 @@
@@ -582,12 +736,12 @@ index bc0082eb64..0dfc4f312f 100644
    </settings-people-page>
  
 -  <settings-sync-page slot="view" id="sync"
--      data-parent-view-id="parent" prefs="{{prefs}}"
+-      data-parent-view-id="parent"
 -      route-path$="[[routes_.SYNC.path]]">
 -  </settings-sync-page>
 +  <template is="dom-if" if="[[showGoogleServicesSettings_]]" restamp>
 +    <settings-sync-page slot="view" id="sync"
-+        data-parent-view-id="parent" prefs="{{prefs}}"
++        data-parent-view-id="parent"
 +        route-path$="[[routes_.SYNC.path]]">
 +    </settings-sync-page>
  
@@ -609,7 +763,7 @@ index bc0082eb64..0dfc4f312f 100644
 -   <template is="dom-if" if="[[replaceSyncPromosWithSignInPromos_]]"
 -      restamp>
 -     <settings-account-page slot="view" id="account"
--         data-parent-view-id="parent" prefs="{{prefs}}"
+-         data-parent-view-id="parent"
 -         route-path$="[[routes_.ACCOUNT.path]]">
 -     </settings-account-page>
 -   </template>
@@ -617,7 +771,7 @@ index bc0082eb64..0dfc4f312f 100644
 +    <template is="dom-if" if="[[replaceSyncPromosWithSignInPromos_]]"
 +        restamp>
 +      <settings-account-page slot="view" id="account"
-+          data-parent-view-id="parent" prefs="{{prefs}}"
++          data-parent-view-id="parent"
 +          route-path$="[[routes_.ACCOUNT.path]]">
 +      </settings-account-page>
 +    </template>
@@ -625,24 +779,24 @@ index bc0082eb64..0dfc4f312f 100644
 -   <template is="dom-if" if="[[replaceSyncPromosWithSignInPromos_]]"
 -      restamp>
 -     <settings-google-services-page slot="view" id="googleServices"
--         data-parent-view-id="parent" prefs="{{prefs}}"
+-         data-parent-view-id="parent"
 -         route-path$="[[routes_.GOOGLE_SERVICES.path]]">
 -     </settings-google-services-page>
 -   </template>
 +    <template is="dom-if" if="[[replaceSyncPromosWithSignInPromos_]]"
 +        restamp>
 +      <settings-google-services-page slot="view" id="googleServices"
-+          data-parent-view-id="parent" prefs="{{prefs}}"
++          data-parent-view-id="parent"
 +          route-path$="[[routes_.GOOGLE_SERVICES.path]]">
 +      </settings-google-services-page>
 +    </template>
 +  </template>
  </cr-view-manager>
 diff --git a/chrome/browser/resources/settings/people_page/people_page_index.ts b/chrome/browser/resources/settings/people_page/people_page_index.ts
-index 24885c2abf..270d187bd4 100644
+index 32f783d1fd..d51392e71e 100644
 --- a/chrome/browser/resources/settings/people_page/people_page_index.ts
 +++ b/chrome/browser/resources/settings/people_page/people_page_index.ts
-@@ -54,6 +54,11 @@ export class SettingsPeoplePageIndexElement extends
+@@ -51,12 +51,18 @@ export class SettingsPeoplePageIndexElement extends
          value: () =>
              loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos'),
        },
@@ -654,7 +808,6 @@ index 24885c2abf..270d187bd4 100644
      };
    }
  
-@@ -61,6 +66,7 @@ export class SettingsPeoplePageIndexElement extends
    declare private routes_: SettingsRoutes;
  
    declare private replaceSyncPromosWithSignInPromos_: boolean;
@@ -663,7 +816,7 @@ index 24885c2abf..270d187bd4 100644
    override currentRouteChanged(newRoute: Route, oldRoute?: Route) {
      super.currentRouteChanged(newRoute, oldRoute);
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts b/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts
-index 30e6533823..e4f12f7d97 100644
+index 9d895e784e..b108d464be 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts
 @@ -19,7 +19,7 @@ import {beforeNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/
@@ -689,7 +842,7 @@ index 30e6533823..e4f12f7d97 100644
  export interface SettingsPrivacyPageIndexElement {
    $: {
      viewManager: CrViewManagerElement,
-@@ -261,13 +254,11 @@ export class SettingsPrivacyPageIndexElement extends
+@@ -244,13 +237,11 @@ export class SettingsPrivacyPageIndexElement extends
        case routes.PRIVACY:
          return this.getDefaultViews_();
        case routes.BASIC:
@@ -705,7 +858,7 @@ index 30e6533823..e4f12f7d97 100644
  
          // Display the default views if in search mode, since they could be part
          // of search results.
-@@ -296,7 +287,9 @@ export class SettingsPrivacyPageIndexElement extends
+@@ -279,7 +270,9 @@ export class SettingsPrivacyPageIndexElement extends
    override currentRouteChanged(newRoute: Route, oldRoute?: Route) {
      super.currentRouteChanged(newRoute, oldRoute);
  
@@ -716,7 +869,7 @@ index 30e6533823..e4f12f7d97 100644
        this.updatePrivacyGuidePromoVisibility_();
      }
  
-@@ -351,19 +344,19 @@ export class SettingsPrivacyPageIndexElement extends
+@@ -334,19 +327,19 @@ export class SettingsPrivacyPageIndexElement extends
    }
  
    private renderView_(route: Route): boolean {
@@ -742,7 +895,7 @@ index 30e6533823..e4f12f7d97 100644
  
      return this.inSearchMode ||
          (!!this.currentRoute &&
-@@ -376,7 +369,9 @@ export class SettingsPrivacyPageIndexElement extends
+@@ -359,7 +352,9 @@ export class SettingsPrivacyPageIndexElement extends
          this.getPref('privacy_guide.viewed').value ||
          this.privacyGuideBrowserProxy_.getPromoImpressionCount() >=
              MAX_PRIVACY_GUIDE_PROMO_IMPRESSION ||
@@ -754,10 +907,10 @@ index 30e6533823..e4f12f7d97 100644
        return;
      }
 diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
-index 7770eeb7d2..44fba6513f 100644
+index 2aaa938c7e..aff0d534fd 100644
 --- a/chrome/browser/resources/settings/route.ts
 +++ b/chrome/browser/resources/settings/route.ts
-@@ -175,20 +175,27 @@ function createRoutes(): SettingsRoutes {
+@@ -158,20 +158,27 @@ function createRoutes(): SettingsRoutes {
    if (visibility.people !== false) {
      r.PEOPLE = r.BASIC.createSection(
          '/people', 'people', loadTimeData.getString('peoplePageTitle'));
@@ -790,17 +943,17 @@ index 7770eeb7d2..44fba6513f 100644
    }
  
    if (visibility.ai !== false && loadTimeData.getBoolean('showAiPage')) {
-@@ -239,7 +246,8 @@ function createRoutes(): SettingsRoutes {
-       if (loadTimeData.getBoolean('enableYourSavedInfoShoppingPage')) {
-         r.YOUR_SAVED_INFO_SHOPPING = r.YOUR_SAVED_INFO.createChild('/shopping');
-       }
--      if (loadTimeData.getBoolean('showSuggestionsFromGeminiSettings')) {
-+      if (loadTimeData.getBoolean('showGoogleServicesSettings') &&
-+          loadTimeData.getBoolean('showSuggestionsFromGeminiSettings')) {
-         r.SUGGESTIONS_FROM_GEMINI =
-             r.YOUR_SAVED_INFO.createChild('/autofill/suggestionsFromGemini');
-       }
-@@ -364,11 +372,14 @@ export let routes: SettingsRoutes = Router.getInstance().getRoutes();
+@@ -227,7 +234,8 @@ function createRoutes(): SettingsRoutes {
+     if (loadTimeData.getBoolean('shoppingIntegrationEnabled')) {
+       r.SHOPPING = r.AUTOFILL.createChild('/shopping');
+     }
+-    if (loadTimeData.getBoolean('showSuggestionsFromGeminiSettings')) {
++    if (loadTimeData.getBoolean('showGoogleServicesSettings') &&
++        loadTimeData.getBoolean('showSuggestionsFromGeminiSettings')) {
+       r.SUGGESTIONS_FROM_GEMINI =
+           r.AUTOFILL.createChild('/enhancedAutofill');
+     }
+@@ -338,11 +346,14 @@ export let routes: SettingsRoutes = Router.getInstance().getRoutes();
  
  // Returns the "effective" route when at chrome://settings/.
  export function getTopLevelRoute(): Route {
@@ -818,7 +971,7 @@ index 7770eeb7d2..44fba6513f 100644
    guestTopLevelRoute = routes.PRIVACY;
    // </if>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index a635753b6c..5d9b26c619 100644
+index efde1c73df..076bcc4139 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
 @@ -46,7 +46,9 @@
@@ -832,7 +985,7 @@ index a635753b6c..5d9b26c619 100644
              class="cr-nav-menu-item">
  <if expr="not _google_chrome">
            <cr-icon icon="settings:person"></cr-icon>
-@@ -167,7 +169,12 @@
+@@ -164,7 +166,12 @@
          </a>
          <a role="menuitem" id="about-menu" href="/help"
              class="cr-nav-menu-item">
@@ -846,30 +999,28 @@ index a635753b6c..5d9b26c619 100644
            <cr-ripple></cr-ripple>
          </a>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.ts b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
-index eb319ae059..65adc3c9aa 100644
+index 564554a675..fe7a43eb35 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.ts
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
-@@ -70,6 +70,11 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+@@ -87,11 +87,17 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+         type: Boolean,
          value: () => loadTimeData.getBoolean('showAiPage'),
        },
- 
++
 +      showPeopleSettings_: {
 +        type: Boolean,
 +        value: () => loadTimeData.getBoolean('showPeopleSettings'),
 +      },
-+
-       enableYourSavedInfoSettingsPage_: {
-         type: Boolean,
-         value: () => {
-@@ -81,6 +86,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+     };
+   }
  
    declare private pageVisibility_?: PageVisibility;
    declare private showAiPage_: boolean;
 +  declare private showPeopleSettings_: boolean;
-   declare private enableYourSavedInfoSettingsPage_: boolean;
    private metricsBrowserProxy_: MetricsBrowserProxy =
        MetricsBrowserProxyImpl.getInstance();
-@@ -90,6 +96,11 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+ 
+@@ -100,6 +106,11 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
          (!this.pageVisibility_ || this.pageVisibility_.ai !== false);
    }
  
@@ -878,174 +1029,14 @@ index eb319ae059..65adc3c9aa 100644
 +        (!this.pageVisibility_ || this.pageVisibility_.people !== false);
 +  }
 +
-   private showAutofillMenuItem_(): boolean {
-     const showYourSavedInfo = this.enableYourSavedInfoSettingsPage_ &&
-         this.pageVisibility_?.yourSavedInfo !== false;
-diff --git a/chrome/browser/resources/settings/your_saved_info_page/identity_docs_page.ts b/chrome/browser/resources/settings/your_saved_info_page/identity_docs_page.ts
-index 7d93ccf938..162b4aba54 100644
---- a/chrome/browser/resources/settings/your_saved_info_page/identity_docs_page.ts
-+++ b/chrome/browser/resources/settings/your_saved_info_page/identity_docs_page.ts
-@@ -140,7 +140,8 @@ export class SettingsIdentityDocsPageElement extends
-       showSuggestionsFromGeminiSettings_: {
-         type: Boolean,
-         value() {
--          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-+          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
-+              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-         },
-       },
-     };
-diff --git a/chrome/browser/resources/settings/your_saved_info_page/shopping_page.ts b/chrome/browser/resources/settings/your_saved_info_page/shopping_page.ts
-index 74cce65bfd..3e998f3b41 100644
---- a/chrome/browser/resources/settings/your_saved_info_page/shopping_page.ts
-+++ b/chrome/browser/resources/settings/your_saved_info_page/shopping_page.ts
-@@ -130,7 +130,8 @@ export class SettingsShoppingPageElement extends
-       showSuggestionsFromGeminiSettings_: {
-         type: Boolean,
-         value() {
--          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-+          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
-+              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-         },
-       },
-     };
-diff --git a/chrome/browser/resources/settings/your_saved_info_page/travel_page.ts b/chrome/browser/resources/settings/your_saved_info_page/travel_page.ts
-index 74d896b282..c58bc2be0c 100644
---- a/chrome/browser/resources/settings/your_saved_info_page/travel_page.ts
-+++ b/chrome/browser/resources/settings/your_saved_info_page/travel_page.ts
-@@ -139,7 +139,8 @@ export class SettingsTravelPageElement extends SettingsTravelPageElementBase {
-       showSuggestionsFromGeminiSettings_: {
-         type: Boolean,
-         value() {
--          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-+          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
-+              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-         },
-       },
-     };
-diff --git a/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.html b/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.html
-index 79bdf9e485..938c918ab7 100644
---- a/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.html
-+++ b/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.html
-@@ -58,15 +58,18 @@
- 
- <h1 id="title">$i18n{autofillPageTitle}</h1>
- <div id="subtitle" class="secondary">$i18n{yourSavedInfoPageDescription}</div>
--<settings-account-card prefs="{{prefs}}">
--</settings-account-card>
-+<template is="dom-if" if="[[showGoogleServicesSettings_]]">
-+  <settings-account-card prefs="{{prefs}}">
-+  </settings-account-card>
-+</template>
- 
- <h2 id="yourSavedInfoPageTitle" class="section-header">
-   $i18n{autofillPageTitle}
- </h2>
- <div class="card-container" on-data-category-click="onDataCategoryClick_"
-     on-data-chip-click="onDataChipClick_">
--  <category-reference-card card-title="$i18n{localPasswordManager}"
-+  <category-reference-card id="passwordManagerCard"
-+      card-title="$i18n{localPasswordManager}"
-       is-external
-       category-id="[[hierarchy_.passwordManager.id]]"
-       chips="[[getVisibleChips_(hierarchy_.passwordManager.chips)]]">
-@@ -118,19 +121,23 @@
-   </collapsible-autofill-settings-card>
- </settings-section>
- 
--<settings-section page-title="$i18n{yourSavedInfoRelatedServicesTitle}">
--  <div route-path="default">
--    <cr-link-row id="passwordManagerButton" label="$i18n{localPasswordManager}"
--        on-click="onPasswordManagerRelatedServiceClick_"
--        start-icon="cr20:password" external>
--    </cr-link-row>
--    <cr-link-row id="googleWalletButton" label="$i18n{googleWalletTitle}"
--        on-click="onGoogleWalletRelatedServiceClick_"
--        start-icon="settings20:wallet" external>
--    </cr-link-row>
--    <cr-link-row id="googleAccountButton" label="$i18n{googleAccount}"
--        on-click="onGoogleAccountRelatedServiceClick_"
--        start-icon="settings20:googleg" external>
--    </cr-link-row>
--  </div>
--</settings-section>
-+<template is="dom-if" if="[[showGoogleServicesSettings_]]">
-+  <settings-section id="relatedServicesSection"
-+      page-title="$i18n{yourSavedInfoRelatedServicesTitle}">
-+    <div route-path="default">
-+      <cr-link-row id="passwordManagerButton"
-+          label="$i18n{localPasswordManager}"
-+          on-click="onPasswordManagerRelatedServiceClick_"
-+          start-icon="cr20:password" external>
-+      </cr-link-row>
-+      <cr-link-row id="googleWalletButton" label="$i18n{googleWalletTitle}"
-+          on-click="onGoogleWalletRelatedServiceClick_"
-+          start-icon="settings20:wallet" external>
-+      </cr-link-row>
-+      <cr-link-row id="googleAccountButton" label="$i18n{googleAccount}"
-+          on-click="onGoogleAccountRelatedServiceClick_"
-+          start-icon="settings20:googleg" external>
-+      </cr-link-row>
-+    </div>
-+  </settings-section>
-+</template>
-diff --git a/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.ts b/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.ts
-index 63f30d2c99..cb931a782a 100644
---- a/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.ts
-+++ b/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page.ts
-@@ -112,7 +112,15 @@ export class SettingsYourSavedInfoPageElement extends
-       showSuggestionsFromGeminiSettings_: {
-         type: Boolean,
-         value() {
--          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-+          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
-+              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-+        },
-+      },
-+
-+      showGoogleServicesSettings_: {
-+        type: Boolean,
-+        value() {
-+          return loadTimeData.getBoolean('showGoogleServicesSettings');
-         },
-       },
-     };
-@@ -122,6 +130,7 @@ export class SettingsYourSavedInfoPageElement extends
-   declare private hierarchy_: DataTypeHierarchy;
-   declare private enableYourSavedInfoShoppingPage_: boolean;
-   declare private showSuggestionsFromGeminiSettings_: boolean;
-+  declare private showGoogleServicesSettings_: boolean;
- 
-   private dataChipIdToChip_: Map<YourSavedInfoDataChip, DataChip> = new Map();
-   private dataChipIdToCategory_: Map<YourSavedInfoDataChip, DataCategory> =
-@@ -460,7 +469,7 @@ export class SettingsYourSavedInfoPageElement extends
-         break;
-       // <if expr="is_win or is_macosx">
-       case 'passkeys':
--        triggerId = 'passwordManagerButton';
-+        triggerId = 'passwordManagerCard';
-         break;
-       // </if>
-       case 'payments':
-diff --git a/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page_index.ts b/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page_index.ts
-index 6e432c8abf..fceeb15537 100644
---- a/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page_index.ts
-+++ b/chrome/browser/resources/settings/your_saved_info_page/your_saved_info_page_index.ts
-@@ -60,7 +60,8 @@ export class SettingsYourSavedInfoPageIndexElement extends
-       showSuggestionsFromGeminiSettings_: {
-         type: Boolean,
-         value() {
--          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-+          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
-+              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
-         },
-       },
-     };
+   override currentRouteChanged(newRoute: Route) {
+     // Focus the initially selected path.
+     const anchors = this.shadowRoot!.querySelectorAll('a');
 diff --git a/chrome/browser/ui/views/profiles/profile_menu_view.cc b/chrome/browser/ui/views/profiles/profile_menu_view.cc
-index d0f61863c6..a0de2104fe 100644
+index 5d1a5026e7..8d4338d325 100644
 --- a/chrome/browser/ui/views/profiles/profile_menu_view.cc
 +++ b/chrome/browser/ui/views/profiles/profile_menu_view.cc
-@@ -1220,20 +1220,23 @@ void ProfileMenuView::BuildFeatureButtons() {
+@@ -1255,20 +1255,23 @@ void ProfileMenuView::BuildFeatureButtons() {
  #if BUILDFLAG(ENABLE_DICE_SUPPORT)
    MaybeBuildCrossDeviceSigninButton();
  #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
@@ -1079,7 +1070,7 @@ index d0f61863c6..a0de2104fe 100644
    MaybeBuildCloseBrowsersButton();
    MaybeBuildSignoutButton();
 diff --git a/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc b/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc
-index 4f66c15305..fad61b77a2 100644
+index 8d50638ddc..6608f3cab8 100644
 --- a/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc
 +++ b/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc
 @@ -28,6 +28,7 @@
@@ -1090,7 +1081,7 @@ index 4f66c15305..fad61b77a2 100644
  #include "build/build_config.h"
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/browser_process.h"
-@@ -1443,7 +1444,10 @@ constexpr std::array kActionableItems_SingleProfileWithCrossDevicePromo = {
+@@ -1575,7 +1576,10 @@ constexpr std::array kActionableItems_SingleProfileWithCrossDevicePromo = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1101,7 +1092,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kSignoutButton,
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -1562,7 +1566,10 @@ constexpr std::array kActionableItems_WebOnly_ReplaceSyncPromosDisabled = {
+@@ -1699,7 +1703,10 @@ constexpr std::array kActionableItems_WebOnly_ReplaceSyncPromosDisabled = {
      ProfileMenuViewBase::ActionableItem::kSigninAccountButton,
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1112,7 +1103,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
      ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1600,7 +1607,10 @@ constexpr std::array kActionableItems_SyncEnabled = {
+@@ -1737,7 +1744,10 @@ constexpr std::array kActionableItems_SyncEnabled = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1123,7 +1114,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
      ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1622,7 +1632,10 @@ constexpr std::array kActionableItems_SyncError = {
+@@ -1759,7 +1769,10 @@ constexpr std::array kActionableItems_SyncError = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1134,7 +1125,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
      ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1655,7 +1668,10 @@ constexpr std::array kActionableItems_SyncPaused = {
+@@ -1784,7 +1797,10 @@ constexpr std::array kActionableItems_SyncPaused = {
      ProfileMenuViewBase::ActionableItem::kSyncErrorButton,
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1145,7 +1136,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
      ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1683,7 +1699,10 @@ constexpr std::array
+@@ -1812,7 +1828,10 @@ constexpr std::array
      kActionableItems_SigninDisallowed_ReplaceSyncPromosEnabled = {
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1156,7 +1147,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
          ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1717,7 +1736,10 @@ constexpr std::array
+@@ -1846,7 +1865,10 @@ constexpr std::array
      kActionableItems_SigninDisallowed_ReplaceSyncPromosDisabled = {
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1167,7 +1158,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
          ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1814,7 +1836,10 @@ constexpr std::array
+@@ -1943,7 +1965,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kSigninButton,
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1178,7 +1169,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
          ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -1948,7 +1973,10 @@ constexpr std::array
+@@ -2077,7 +2102,10 @@ constexpr std::array
              ProfileMenuViewBase::ActionableItem::kSigninAccountButton,
              ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
              ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1189,7 +1180,7 @@ index 4f66c15305..fad61b77a2 100644
              ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
              ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
              ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
-@@ -2020,7 +2048,10 @@ constexpr std::array kActionableItems_SignedIn_ReplaceSyncPromosEnabled = {
+@@ -2149,7 +2177,10 @@ constexpr std::array kActionableItems_SignedIn_ReplaceSyncPromosEnabled = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1200,7 +1191,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kSignoutButton,
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2052,7 +2083,10 @@ constexpr std::array
+@@ -2175,7 +2206,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1211,7 +1202,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kSignoutButton,
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2087,7 +2121,10 @@ constexpr std::array kActionableItems_WithBatchUploadPromoButton = {
+@@ -2204,7 +2238,10 @@ constexpr std::array kActionableItems_WithBatchUploadPromoButton = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1222,7 +1213,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kSignoutButton,
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2126,7 +2163,10 @@ constexpr std::array kActionableItems_WithBatchUploadPrimaryPromoButton = {
+@@ -2237,7 +2274,10 @@ constexpr std::array kActionableItems_WithBatchUploadPrimaryPromoButton = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1233,7 +1224,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kSignoutButton,
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2167,7 +2207,10 @@ constexpr std::array
+@@ -2272,7 +2312,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1244,7 +1235,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kSignoutButton,
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2209,7 +2252,10 @@ constexpr std::array
+@@ -2308,7 +2351,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1255,7 +1246,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kSignoutButton,
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2255,7 +2301,10 @@ constexpr std::array
+@@ -2346,7 +2392,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kSigninReauthButton,
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1266,7 +1257,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kSignoutButton,
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2294,7 +2343,10 @@ constexpr std::array
+@@ -2375,7 +2424,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kSigninReauthButton,
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1277,7 +1268,7 @@ index 4f66c15305..fad61b77a2 100644
          ProfileMenuViewBase::ActionableItem::kSignoutButton,
          ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
          ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2337,7 +2389,10 @@ constexpr std::array
+@@ -2408,7 +2460,10 @@ constexpr std::array
              ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
              ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
              ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1288,7 +1279,7 @@ index 4f66c15305..fad61b77a2 100644
              ProfileMenuViewBase::ActionableItem::kSignoutButton,
              ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
              // The kGuestProfileButton entry is not present.
-@@ -2378,7 +2433,10 @@ constexpr std::array
+@@ -2445,7 +2500,10 @@ constexpr std::array
              ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
              ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
              ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1299,7 +1290,7 @@ index 4f66c15305..fad61b77a2 100644
              ProfileMenuViewBase::ActionableItem::kSignoutButton,
              ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
              // The kGuestProfileButton entry is not present.
-@@ -2489,7 +2547,10 @@ constexpr std::array kActionableItems_PasskeyUnlockError = {
+@@ -2552,7 +2610,10 @@ constexpr std::array kActionableItems_PasskeyUnlockError = {
      ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
      ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
      ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1310,7 +1301,7 @@ index 4f66c15305..fad61b77a2 100644
      ProfileMenuViewBase::ActionableItem::kSignoutButton,
      ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
      ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
-@@ -2526,7 +2587,10 @@ constexpr std::array
+@@ -2589,7 +2650,10 @@ constexpr std::array
          ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
          ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
          ProfileMenuViewBase::ActionableItem::kEditProfileButton,
@@ -1413,7 +1404,7 @@ index ebcef5637b..891cc395c2 100644
  
  }  // namespace
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index ca5677d858..3a0826bc4a 100644
+index d4053dafe6..51b00b4f98 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -12,6 +12,7 @@
@@ -1424,15 +1415,15 @@ index ca5677d858..3a0826bc4a 100644
  #include "base/strings/string_number_conversions.h"
  #include "base/strings/utf_string_conversions.h"
  #include "build/branding_buildflags.h"
-@@ -117,6 +118,7 @@
- #include "components/sync/service/sync_service.h"
+@@ -115,6 +116,7 @@
  #include "components/sync/service/sync_service_utils.h"
  #include "components/sync/service/sync_user_settings.h"
+ #include "components/translate/core/common/translate_features.h"
 +#include "components/version_info/version_info.h"
  #include "components/wallet/core/browser/walletable_permission_utils.h"
  #include "components/wallet/core/common/wallet_features.h"
  #include "components/zoom/page_zoom_constants.h"
-@@ -320,8 +322,15 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -319,8 +321,15 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
        {"aboutUpgradeUpdating", IDS_SETTINGS_UPGRADE_UPDATING},
        {"aboutUpgradeUpdatingPercent", IDS_SETTINGS_UPGRADE_UPDATING_PERCENT},
        {"aboutGetHelpUsingChrome", IDS_SETTINGS_GET_HELP_USING_CHROME},
@@ -1448,7 +1439,7 @@ index ca5677d858..3a0826bc4a 100644
        {"aboutLearnMoreUpdatingErrors",
         IDS_SETTINGS_ABOUT_PAGE_LEARN_MORE_UPDATE_ERRORS},
        {"aboutLearnMoreSystemRequirements",
-@@ -342,7 +351,15 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -341,7 +350,15 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
        l10n_util::GetStringUTF16(IDS_SETTINGS_UPGRADE_UP_TO_DATE));
  #endif
  
@@ -1465,7 +1456,7 @@ index ca5677d858..3a0826bc4a 100644
  
    html_source->AddString("aboutBrowserVersion", browser_version);
    html_source->AddString(
-@@ -2235,11 +2252,21 @@ void AddSyncControlsStrings(content::WebUIDataSource* html_source) {
+@@ -2370,11 +2387,21 @@ void AddSyncControlsStrings(content::WebUIDataSource* html_source) {
  void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
    static constexpr webui::LocalizedString kLocalizedStrings[] = {
        // Top level people strings:
@@ -1488,10 +1479,10 @@ index ca5677d858..3a0826bc4a 100644
         IDS_SYNC_UNAVAILABLE_FOR_NON_GOOGLE_ACCOUNT},
        {"accountPageTitle", IDS_SETTINGS_ACCOUNT_PAGE_TITLE},
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index d5c37bda84..791a0e16ec 100644
+index 42854fe444..681a54b89b 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -310,6 +310,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -311,6 +311,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddBoolean("signinAllowed", !profile->IsGuestSession() &&
                                                 profile->GetPrefs()->GetBoolean(
                                                     prefs::kSigninAllowed));
@@ -1502,9 +1493,9 @@ index d5c37bda84..791a0e16ec 100644
 +                          BUILDFLAG(GOOGLE_CHROME_BRANDING) ||
 +                              BUILDFLAG(CHROME_FOR_TESTING));
  
-   html_source->AddBoolean(
-       "shouldUseMetricsConsentRestructure",
-@@ -594,6 +600,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   html_source->AddBoolean("shouldUseMetricsConsentRestructure",
+                           metrics::MetricsReportingChoiceService::
+@@ -562,6 +568,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    bool show_glic_section = false;
    bool glic_disallowed_by_admin = false;
  
@@ -1513,7 +1504,7 @@ index d5c37bda84..791a0e16ec 100644
    auto glic_enablement = glic::GlicEnabling::EnablementForProfile(profile);
    show_glic_section = glic_enablement.ShouldShowSettingsPage();
    glic_disallowed_by_admin = glic_enablement.DisallowedByAdmin();
-@@ -611,6 +619,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -579,6 +587,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
              base::BindRepeating(&SettingsUI::UpdateShowGlicState,
                                  base::Unretained(this)));
    }
@@ -1521,7 +1512,7 @@ index d5c37bda84..791a0e16ec 100644
  
    html_source->AddBoolean("showGlicSettings", show_glic_section);
    html_source->AddBoolean("glicDisallowedByAdmin", glic_disallowed_by_admin);
-@@ -665,14 +674,25 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -652,14 +661,25 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    // Within the AI subpage are separate sections for Glic and for all other AI
    // features, the visibility of these are separately controlled but we want to
    // show the subpage if any of the AI features or Glic are enabled.
@@ -1550,31 +1541,29 @@ index d5c37bda84..791a0e16ec 100644
 +  html_source->AddBoolean("replaceSyncPromosWithSignInPromos", false);
 +#endif
  
- #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)
-   // On Device AI setting.
-@@ -692,7 +712,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
-       "searchSettingsUpdate",
-       base::FeatureList::IsEnabled(switches::kSearchSettingsUpdate));
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+   html_source->AddBoolean("unoPhase2FollowUp", base::FeatureList::IsEnabled(
+@@ -676,6 +696,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+           ? "settings-refresh-2026"
+           : "");
  
--  personal_context::PersonalContextEnablementService* enablement_service =
 +#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || BUILDFLAG(CHROME_FOR_TESTING)
-+  auto* enablement_service =
-       PersonalContextEnablementServiceFactory::GetForProfile(profile);
+   personal_context::PersonalContextEligibilityService* eligibility_service =
+       PersonalContextEligibilityServiceFactory::GetForProfile(profile);
    html_source->AddBoolean("showSuggestionsFromGeminiSettings",
-                           autofill::ShouldShowPersonalContextAutofillSetting(
-@@ -710,6 +731,11 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
-       enablement_service &&
-           enablement_service->GetEnablementState() ==
-               personal_context::PersonalContextEnablementState::kEnabled);
+@@ -691,6 +712,11 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+       autofill::MayPerformAtMemoryAction(
+           autofill::AtMemoryAction::kAllowCustomizeAtMemoryShortcut,
+           autofill_client));
 +#else
 +  html_source->AddBoolean("showSuggestionsFromGeminiSettings", false);
 +  html_source->AddBoolean("isAtMemoryEnabled", false);
-+  html_source->AddBoolean("showPersonalContextSettingsLink", false);
++  html_source->AddBoolean("isAtMemoryTriggerCustomizationAllowed", false);
 +#endif
-   html_source->AddLocalizedString("personalContextSettingsTitle",
-                                   IDS_PERSONAL_CONTEXT_SETTINGS_TITLE);
-   html_source->AddLocalizedString(
-@@ -895,16 +921,23 @@ void SettingsUI::UpdateShowGlicState() {
+ 
+   html_source->AddString(
+       "webuiRefresh2026",
+@@ -888,16 +914,23 @@ void SettingsUI::UpdateShowGlicState() {
    // The visibility of the Glic page can change based on the user accepting the
    // FRE. Propagate this state to the WebUI value used to display the settings
    // page.
@@ -1600,7 +1589,7 @@ index d5c37bda84..791a0e16ec 100644
    content::WebUIDataSource::Update(
        web_ui()->GetWebContents()->GetBrowserContext(),
 diff --git a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
-index 823f990ed7..1169da424d 100644
+index fb4fdf1c69..3b203fd6b6 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
 @@ -6,7 +6,9 @@
@@ -1650,7 +1639,7 @@ index 823f990ed7..1169da424d 100644
  // with PrefMember calling Init again after Destroy.
  IN_PROC_BROWSER_TEST_F(SettingsUITest, ToggleJavaScript) {
 diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
-index 6dafd1c60c..f1c22ba04e 100644
+index 72633b9e55..6bd195aaec 100644
 --- a/chrome/test/data/webui/settings/about_page_test.ts
 +++ b/chrome/test/data/webui/settings/about_page_test.ts
 @@ -5,6 +5,7 @@
@@ -1748,10 +1737,10 @@ index 6dafd1c60c..f1c22ba04e 100644
    test('searchContents', async function() {
      let result = await page.searchContents('foo');
 diff --git a/chrome/test/data/webui/settings/account_page_test.ts b/chrome/test/data/webui/settings/account_page_test.ts
-index dbd51e0950..f625ae6fad 100644
+index 79734d1a12..95ad9e2c73 100644
 --- a/chrome/test/data/webui/settings/account_page_test.ts
 +++ b/chrome/test/data/webui/settings/account_page_test.ts
-@@ -29,6 +29,7 @@ suite('AccountPage', function() {
+@@ -27,6 +27,7 @@ suite('AccountPage', function() {
      loadTimeData.overrideValues({
        replaceSyncPromosWithSignInPromos: true,
        isEeaChoiceCountry: false,
@@ -1759,6 +1748,136 @@ index dbd51e0950..f625ae6fad 100644
        // <if expr="is_chromeos">
        osSettingsAccountsPageUrl: 'chrome://os-settings/osPeople',
        // </if>
+diff --git a/chrome/test/data/webui/settings/autofill_account_test.ts b/chrome/test/data/webui/settings/autofill_account_test.ts
+index e8c67c4cbb..45392cfc8f 100644
+--- a/chrome/test/data/webui/settings/autofill_account_test.ts
++++ b/chrome/test/data/webui/settings/autofill_account_test.ts
+@@ -32,6 +32,9 @@ suite('AutofillAccount', function() {
+   let syncBrowserProxy: TestSyncBrowserProxy;
+ 
+   setup(async function() {
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
++    resetRouterForTesting();
++
+     profileInfoBrowserProxy = new TestProfileInfoBrowserProxy();
+     ProfileInfoBrowserProxyImpl.setInstance(profileInfoBrowserProxy);
+ 
+diff --git a/chrome/test/data/webui/settings/autofill_page_index_test.ts b/chrome/test/data/webui/settings/autofill_page_index_test.ts
+index b24a8409b1..45125dad25 100644
+--- a/chrome/test/data/webui/settings/autofill_page_index_test.ts
++++ b/chrome/test/data/webui/settings/autofill_page_index_test.ts
+@@ -26,6 +26,7 @@ suite('AutofillPageIndex', function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+ 
+     loadTimeData.overrideValues({
++      showGoogleServicesSettings: true,
+       showSuggestionsFromGeminiSettings: true,
+       shoppingIntegrationEnabled: true,
+     });
+@@ -90,6 +91,7 @@ suite('AutofillPageIndex', function() {
+   test('GeminiRouteDisabled', async function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     loadTimeData.overrideValues({
++      showGoogleServicesSettings: true,
+       showSuggestionsFromGeminiSettings: false,
+     });
+     resetRouterForTesting();
+@@ -104,6 +106,25 @@ suite('AutofillPageIndex', function() {
+     assertFalse(!!subpage);
+   });
+ 
++  test('GeminiViewDisabledWhenGoogleServicesHidden', async function() {
++    document.body.innerHTML = window.trustedTypes!.emptyHTML;
++    loadTimeData.overrideValues({
++      showGoogleServicesSettings: false,
++      showSuggestionsFromGeminiSettings: true,
++    });
++    resetRouterForTesting();
++    index = document.createElement('settings-autofill-page-index');
++    index.prefs = settingsPrefs.prefs!;
++    document.body.appendChild(index);
++    await flushTasks();
++    assertEquals(undefined, routes.SUGGESTIONS_FROM_GEMINI);
++    assertEquals(null, Router.getInstance().getRouteForPath('/enhancedAutofill'));
++    assertFalse(!!index.$.viewManager.querySelector('#suggestionsFromGemini'));
++    const result = await index.searchContents('Passkeys');
++    assertGT(result.matchCount, 0);
++    assertFalse(result.canceled);
++  });
++
+   test('ShoppingRouteDisabled', async function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     loadTimeData.overrideValues({
+diff --git a/chrome/test/data/webui/settings/autofill_page_test.ts b/chrome/test/data/webui/settings/autofill_page_test.ts
+index 28e48b1f16..a208401ccb 100644
+--- a/chrome/test/data/webui/settings/autofill_page_test.ts
++++ b/chrome/test/data/webui/settings/autofill_page_test.ts
+@@ -58,6 +58,7 @@ suite('AutofillPage', function() {
+       showIbansSettings: true,
+       shouldShowPayOverTimeSettings: true,
+       shoppingIntegrationEnabled: true,
++      showGoogleServicesSettings: true,
+       showSuggestionsFromGeminiSettings: true,
+     });
+   });
+@@ -292,6 +293,28 @@ suite('AutofillPage', function() {
+     assertFalse(!!geminiCard);
+   });
+ 
++  test('AegisHidesGoogleServices', async function() {
++    await setupPage({
++      showGoogleServicesSettings: false,
++      showSuggestionsFromGeminiSettings: true,
++    });
++
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        'settings-account-card'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#googleWalletButton'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#googleAccountButton'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#suggestionsFromGeminiCard'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#passwordManagerButton'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#relatedServicesSection'));
++    assertTrue(!!autofillPage.shadowRoot!.querySelector(
++        '#passwordManagerCard'));
++  });
++
+   test('SuggestionsFromGeminiCardNavigates', async function() {
+     const geminiCard = autofillPage.shadowRoot!.querySelector<HTMLElement>(
+         '#suggestionsFromGeminiCard');
+@@ -577,7 +600,8 @@ suite('RelatedServices', function() {
+     return CrSettingsPrefs.initialized;
+   });
+ 
+-  setup(function() {
++  setup(async function() {
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
+     resetRouterForTesting();
+ 
+     openWindowProxy = new TestOpenWindowProxy();
+@@ -594,6 +618,7 @@ suite('RelatedServices', function() {
+     setDefaultPrefs(settingsPrefs);
+     autofillPage.prefs = settingsPrefs.prefs!;
+     document.body.appendChild(autofillPage);
++    await flushTasks();
+   });
+ 
+   teardown(function() {
+@@ -612,9 +637,7 @@ suite('RelatedServices', function() {
+   test('CardRendersCorrectly', function() {
+     const relatedServicesCard =
+         autofillPage.shadowRoot!.querySelector<HTMLElement>(
+-            `settings-section[page-title="${
+-                loadTimeData.getString(
+-                    'yourSavedInfoRelatedServicesTitle')}"]`);
++            '#relatedServicesSection');
+     assertTrue(!!relatedServicesCard);
+ 
+     assertTrue(
 diff --git a/chrome/test/data/webui/settings/google_services_page_test.ts b/chrome/test/data/webui/settings/google_services_page_test.ts
 index 49e1c7c953..321338297f 100644
 --- a/chrome/test/data/webui/settings/google_services_page_test.ts
@@ -1776,18 +1895,18 @@ index 49e1c7c953..321338297f 100644
  
      testSyncBrowserProxy = new TestSyncBrowserProxy();
 diff --git a/chrome/test/data/webui/settings/identity_docs_page_test.ts b/chrome/test/data/webui/settings/identity_docs_page_test.ts
-index ade09a5864..22ff05d1ee 100644
+index bb839e31a3..48d8e7fbce 100644
 --- a/chrome/test/data/webui/settings/identity_docs_page_test.ts
 +++ b/chrome/test/data/webui/settings/identity_docs_page_test.ts
-@@ -355,6 +355,7 @@ suite('IdentityDocsPage', function() {
-   suite('SuggestionsFromGemini', function() {
-     setup(function() {
+@@ -291,6 +291,7 @@ suite('IdentityDocsPage', function() {
+       metricsBrowserProxy = new TestMetricsBrowserProxy();
+       MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
        loadTimeData.overrideValues({
 +        showGoogleServicesSettings: true,
          showSuggestionsFromGeminiSettings: false,
        });
        resetRouterForTesting();
-@@ -397,5 +398,18 @@ suite('IdentityDocsPage', function() {
+@@ -335,5 +336,18 @@ suite('IdentityDocsPage', function() {
            '#suggestionsFromGeminiLinkRow');
        assertFalse(!!button);
      });
@@ -1807,10 +1926,10 @@ index ade09a5864..22ff05d1ee 100644
    });
  });
 diff --git a/chrome/test/data/webui/settings/people_page_index_test.ts b/chrome/test/data/webui/settings/people_page_index_test.ts
-index 51441f266e..9f2f5dbedf 100644
+index 9db86c47a4..5179e2fd79 100644
 --- a/chrome/test/data/webui/settings/people_page_index_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_index_test.ts
-@@ -33,6 +33,7 @@ suite('PeoplePageIndex', function() {
+@@ -95,6 +95,7 @@ suite('PeoplePageIndex', function() {
    setup(function() {
      loadTimeData.overrideValues({
        replaceSyncPromosWithSignInPromos: false,
@@ -1818,7 +1937,7 @@ index 51441f266e..9f2f5dbedf 100644
      });
      resetRouterForTesting();
  
-@@ -157,6 +158,37 @@ suite('PeoplePageIndex', function() {
+@@ -219,6 +220,37 @@ suite('PeoplePageIndex', function() {
      assertFalse(result.wasClearSearch);
    });
  
@@ -1857,10 +1976,10 @@ index 51441f266e..9f2f5dbedf 100644
    test(
        'SearchUnavailablePageReplaceSyncPromosWithSigninPromos',
 diff --git a/chrome/test/data/webui/settings/people_page_sync_controls_test.ts b/chrome/test/data/webui/settings/people_page_sync_controls_test.ts
-index d93c0d52a5..7a7348bd56 100644
+index 73e6d22ce2..5b7b7c6c46 100644
 --- a/chrome/test/data/webui/settings/people_page_sync_controls_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_sync_controls_test.ts
-@@ -252,7 +252,10 @@ suite('SyncControlsSubpageTest', function() {
+@@ -256,7 +256,10 @@ suite('SyncControlsSubpageTest', function() {
      browserProxy = new TestSyncBrowserProxy();
      SyncBrowserProxyImpl.setInstance(browserProxy);
  
@@ -1872,9 +1991,9 @@ index d93c0d52a5..7a7348bd56 100644
      resetRouterForTesting();
  
      document.body.innerHTML = window.trustedTypes!.emptyHTML;
-@@ -343,7 +346,10 @@ suite('SyncControlsAccountSettingsTest', function() {
+@@ -350,7 +353,10 @@ suite('SyncControlsAccountSettingsTest', function() {
      pluralStringProxy = new TestPluralStringProxy();
-     SettingsPluralStringProxyImpl.setInstance(pluralStringProxy);
+     PluralStringProxyImpl.setInstance(pluralStringProxy);
  
 -    loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: true});
 +    loadTimeData.overrideValues({
@@ -1885,18 +2004,18 @@ index d93c0d52a5..7a7348bd56 100644
      loadTimeData.overrideValues({unoPhase2FollowUp: true});
      // </if>
 diff --git a/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts b/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts
-index c84328f5d4..033ec8a60c 100644
+index 23fc774ad5..3ba928189d 100644
 --- a/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts
-@@ -8,7 +8,7 @@ import 'chrome://settings/lazy_load.js';
+@@ -7,7 +7,7 @@ import 'chrome://settings/lazy_load.js';
+ 
  import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
- import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
  import type {CrInputElement, SettingsSyncPageElement} from 'chrome://settings/lazy_load.js';
 -import {Router, SignedInState, StatusAction, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
 +import {loadTimeData, resetRouterForTesting, Router, SignedInState, StatusAction, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
  import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+ import {microtasksFinished} from 'chrome://webui-test/test_util.js';
  
- import {TestSyncBrowserProxy} from './test_sync_browser_proxy.js';
 @@ -19,6 +19,9 @@ suite('sync-page-test', function() {
    let syncPage: SettingsSyncPageElement;
  
@@ -1908,10 +2027,10 @@ index c84328f5d4..033ec8a60c 100644
      SyncBrowserProxyImpl.setInstance(new TestSyncBrowserProxy());
      const router = Router.getInstance();
 diff --git a/chrome/test/data/webui/settings/people_page_sync_page_test.ts b/chrome/test/data/webui/settings/people_page_sync_page_test.ts
-index 415e7dd677..6f3d5230e3 100644
+index 2f5a6edf06..86e8b7c331 100644
 --- a/chrome/test/data/webui/settings/people_page_sync_page_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_sync_page_test.ts
-@@ -84,7 +84,11 @@ suite('SyncSettings', function() {
+@@ -110,7 +110,11 @@ suite('SyncSettings', function() {
    }
  
    suiteSetup(function() {
@@ -1924,7 +2043,7 @@ index 415e7dd677..6f3d5230e3 100644
    });
  
    setup(async function() {
-@@ -784,6 +788,7 @@ suite('SyncSettingsWithReplaceSyncPromosWithSignInPromos', function() {
+@@ -822,6 +826,7 @@ suite('SyncSettingsWithReplaceSyncPromosWithSignInPromos', function() {
    suiteSetup(function() {
      loadTimeData.overrideValues({
        replaceSyncPromosWithSignInPromos: true,
@@ -1932,16 +2051,16 @@ index 415e7dd677..6f3d5230e3 100644
      });
      resetRouterForTesting();
    });
-@@ -892,4 +897,3 @@ suite('EEAChoiceCountry', function() {
+@@ -940,4 +945,3 @@ suite('EEAChoiceCountry', function() {
      assertEquals(loadTimeData.getString('linkedServicesUrl'), url);
    });
  });
 -
 diff --git a/chrome/test/data/webui/settings/people_page_test.ts b/chrome/test/data/webui/settings/people_page_test.ts
-index 904bb590b8..585e35b2a1 100644
+index cde2c9221f..913c153c4d 100644
 --- a/chrome/test/data/webui/settings/people_page_test.ts
 +++ b/chrome/test/data/webui/settings/people_page_test.ts
-@@ -69,11 +69,15 @@ let peoplePage: SettingsPeoplePageElement;
+@@ -71,11 +71,15 @@ let peoplePage: SettingsPeoplePageElement;
  let profileInfoBrowserProxy: TestProfileInfoBrowserProxy;
  let syncBrowserProxy: TestSyncBrowserProxy;
  
@@ -1957,7 +2076,7 @@ index 904bb590b8..585e35b2a1 100644
    });
    resetRouterForTesting();
    Router.getInstance().navigateTo(routes.BASIC);
-@@ -490,6 +494,48 @@ suite('SyncSettings', function() {
+@@ -550,6 +554,48 @@ suite('SyncSettings', function() {
    });
  });
  
@@ -2007,10 +2126,10 @@ index 904bb590b8..585e35b2a1 100644
    setup(function() {
      loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: true});
 diff --git a/chrome/test/data/webui/settings/privacy_page_index_test.ts b/chrome/test/data/webui/settings/privacy_page_index_test.ts
-index f7ea1a36ee..83aa271242 100644
+index af655f7fa0..43dfba84e3 100644
 --- a/chrome/test/data/webui/settings/privacy_page_index_test.ts
 +++ b/chrome/test/data/webui/settings/privacy_page_index_test.ts
-@@ -128,7 +128,21 @@ suite('PrivacyPageIndex', function() {
+@@ -126,7 +126,21 @@ suite('PrivacyPageIndex', function() {
        assertEquals(routes.BASIC, Router.getInstance().getCurrentRoute());
        await flushTasks();
        await waitBeforeNextRender(index);
@@ -2034,7 +2153,7 @@ index f7ea1a36ee..83aa271242 100644
      });
  
 diff --git a/chrome/test/data/webui/settings/route_test.ts b/chrome/test/data/webui/settings/route_test.ts
-index 3ac1277255..e182360145 100644
+index 1736ddcc04..0ea4e60990 100644
 --- a/chrome/test/data/webui/settings/route_test.ts
 +++ b/chrome/test/data/webui/settings/route_test.ts
 @@ -10,6 +10,9 @@ import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
@@ -2085,7 +2204,7 @@ index 3ac1277255..e182360145 100644
      assertTrue(routes.IMPORT_DATA.isNavigableDialog);
      assertTrue(routes.IMPORT_DATA.parent === routes.PEOPLE);
      // </if>
-@@ -428,25 +440,55 @@ suite('Basic', function() {
+@@ -337,25 +349,55 @@ suite('Basic', function() {
    test('account route existence', function() {
      resetPageVisibilityForTesting({people: true});
  
@@ -2144,10 +2263,10 @@ index 3ac1277255..e182360145 100644
    // </if>
  
 diff --git a/chrome/test/data/webui/settings/settings_main_plugins_test.ts b/chrome/test/data/webui/settings/settings_main_plugins_test.ts
-index 905cbf0013..44589d37be 100644
+index 00150f9244..0c1dd84873 100644
 --- a/chrome/test/data/webui/settings/settings_main_plugins_test.ts
 +++ b/chrome/test/data/webui/settings/settings_main_plugins_test.ts
-@@ -61,9 +61,13 @@ suite('SettingsMain', function() {
+@@ -60,9 +60,13 @@ suite('SettingsMain', function() {
            `.active[slot=view] > :not(${pluginTag}, dom-if)`));
      }
  
@@ -2160,9 +2279,9 @@ index 905cbf0013..44589d37be 100644
 -      {route: routes.BASIC, pluginTag: 'settings-people-page-index'},
 +      {route: routes.BASIC, pluginTag: topLevelPluginTag},
        {route: routes.PRIVACY, pluginTag: 'settings-privacy-page-index'},
-       {route: routes.AUTOFILL, pluginTag: 'settings-autofill-page-index'},
-       {route: routes.PERFORMANCE, pluginTag: 'settings-performance-page-index'},
-@@ -178,7 +182,9 @@ suite('SettingsMain', function() {
+       {
+         route: routes.AUTOFILL,
+@@ -183,7 +187,9 @@ suite('SettingsMain', function() {
      let active = settingsMain.$.switcher.querySelector<HTMLElement>(
          '.active[slot=view]');
      assertTrue(!!active);
@@ -2174,35 +2293,19 @@ index 905cbf0013..44589d37be 100644
      // Case2: Guest mode.
      createSettingsMain({isGuest: true});
 diff --git a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
-index bfaf43e31a..db6cce27e6 100644
+index ac7c1713fb..f06e4eb92c 100644
 --- a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
 +++ b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
-@@ -21,7 +21,10 @@ suite('SettingsMenuInteractiveUITest', () => {
-       autofill: true,
-     });
- 
--    loadTimeData.overrideValues({enableYourSavedInfoSettingsPage: false});
-+    loadTimeData.overrideValues({
-+      enableYourSavedInfoSettingsPage: false,
-+      showPeopleSettings: true,
-+    });
-     createMenu();
-     settingsMenu.focusFirstItem();
-     assertEquals(settingsMenu.$.people, settingsMenu.shadowRoot!.activeElement);
-@@ -43,7 +46,10 @@ suite('SettingsMenuInteractiveUITest', () => {
+@@ -21,6 +21,7 @@ suite('SettingsMenuInteractiveUITest', () => {
        yourSavedInfo: true,
      });
  
--    loadTimeData.overrideValues({enableYourSavedInfoSettingsPage: true});
-+    loadTimeData.overrideValues({
-+      enableYourSavedInfoSettingsPage: true,
-+      showPeopleSettings: true,
-+    });
++    loadTimeData.overrideValues({showPeopleSettings: true});
      createMenu();
      settingsMenu.focusFirstItem();
      assertEquals(settingsMenu.$.people, settingsMenu.shadowRoot!.activeElement);
 diff --git a/chrome/test/data/webui/settings/settings_menu_test.ts b/chrome/test/data/webui/settings/settings_menu_test.ts
-index aca2a5d5ae..78d0d0051a 100644
+index 390355c8d8..748afe2deb 100644
 --- a/chrome/test/data/webui/settings/settings_menu_test.ts
 +++ b/chrome/test/data/webui/settings/settings_menu_test.ts
 @@ -31,6 +31,7 @@ suite('SettingsMenu', function() {
@@ -2229,18 +2332,18 @@ index aca2a5d5ae..78d0d0051a 100644
      loadTimeData.overrideValues({showAiPage: true});
      resetRouterForTesting();
 diff --git a/chrome/test/data/webui/settings/shopping_page_test.ts b/chrome/test/data/webui/settings/shopping_page_test.ts
-index 2de1705d7e..857a0afa3f 100644
+index 666cbac092..ff2eddadc3 100644
 --- a/chrome/test/data/webui/settings/shopping_page_test.ts
 +++ b/chrome/test/data/webui/settings/shopping_page_test.ts
-@@ -355,6 +355,7 @@ suite('ShoppingPage', function() {
-   suite('SuggestionsFromGemini', function() {
-     setup(function() {
+@@ -291,6 +291,7 @@ suite('ShoppingPage', function() {
+       metricsBrowserProxy = new TestMetricsBrowserProxy();
+       MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
        loadTimeData.overrideValues({
 +        showGoogleServicesSettings: true,
          showSuggestionsFromGeminiSettings: false,
        });
        resetRouterForTesting();
-@@ -397,5 +398,18 @@ suite('ShoppingPage', function() {
+@@ -334,5 +335,18 @@ suite('ShoppingPage', function() {
            '#suggestionsFromGeminiLinkRow');
        assertFalse(!!button);
      });
@@ -2260,13 +2363,13 @@ index 2de1705d7e..857a0afa3f 100644
    });
  });
 diff --git a/chrome/test/data/webui/settings/sync_account_control_test.ts b/chrome/test/data/webui/settings/sync_account_control_test.ts
-index 4713b85b34..7ece2ea021 100644
+index e21c34d0d4..9ed36c2a1b 100644
 --- a/chrome/test/data/webui/settings/sync_account_control_test.ts
 +++ b/chrome/test/data/webui/settings/sync_account_control_test.ts
-@@ -27,7 +27,10 @@ suite('SyncAccountControl', function() {
-   let testElement: SettingsSyncAccountControlElement;
+@@ -40,7 +40,10 @@ suite('SyncAccountControl', function() {
+     PrefService.resetInstanceForTesting();
+     await PrefService.getInstance().whenInitialized();
  
-   setup(async function() {
 -    loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: false});
 +    loadTimeData.overrideValues({
 +      replaceSyncPromosWithSignInPromos: false,
@@ -2276,18 +2379,18 @@ index 4713b85b34..7ece2ea021 100644
  
      browserProxy = new TestSyncBrowserProxy();
 diff --git a/chrome/test/data/webui/settings/travel_page_test.ts b/chrome/test/data/webui/settings/travel_page_test.ts
-index 820edb8817..08a1127d8f 100644
+index 3fdb62bf0a..ea590a9346 100644
 --- a/chrome/test/data/webui/settings/travel_page_test.ts
 +++ b/chrome/test/data/webui/settings/travel_page_test.ts
-@@ -352,6 +352,7 @@ suite('TravelPage', function() {
-   suite('SuggestionsFromGemini', function() {
-     setup(function() {
+@@ -289,6 +289,7 @@ suite('TravelPage', function() {
+       metricsBrowserProxy = new TestMetricsBrowserProxy();
+       MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
        loadTimeData.overrideValues({
 +        showGoogleServicesSettings: true,
          showSuggestionsFromGeminiSettings: false,
        });
        resetRouterForTesting();
-@@ -394,5 +395,18 @@ suite('TravelPage', function() {
+@@ -332,5 +333,18 @@ suite('TravelPage', function() {
            '#suggestionsFromGeminiLinkRow');
        assertFalse(!!button);
      });
@@ -2306,146 +2409,6 @@ index 820edb8817..08a1127d8f 100644
 +    });
    });
  });
-diff --git a/chrome/test/data/webui/settings/your_saved_info_account_test.ts b/chrome/test/data/webui/settings/your_saved_info_account_test.ts
-index 216b7ecbd9..eb4448dc1a 100644
---- a/chrome/test/data/webui/settings/your_saved_info_account_test.ts
-+++ b/chrome/test/data/webui/settings/your_saved_info_account_test.ts
-@@ -32,6 +32,9 @@ suite('YourSavedInfoAccount', function() {
-   let syncBrowserProxy: TestSyncBrowserProxy;
- 
-   setup(async function() {
-+    loadTimeData.overrideValues({showGoogleServicesSettings: true});
-+    resetRouterForTesting();
-+
-     profileInfoBrowserProxy = new TestProfileInfoBrowserProxy();
-     ProfileInfoBrowserProxyImpl.setInstance(profileInfoBrowserProxy);
- 
-diff --git a/chrome/test/data/webui/settings/your_saved_info_page_index_test.ts b/chrome/test/data/webui/settings/your_saved_info_page_index_test.ts
-index bd3dbc1ed6..b36140435b 100644
---- a/chrome/test/data/webui/settings/your_saved_info_page_index_test.ts
-+++ b/chrome/test/data/webui/settings/your_saved_info_page_index_test.ts
-@@ -29,6 +29,7 @@ suite('YourSavedInfoPageIndex', function() {
-     // is false
-     loadTimeData.overrideValues({
-       enableYourSavedInfoSettingsPage: true,
-+      showGoogleServicesSettings: true,
-       showSuggestionsFromGeminiSettings: true,
-     });
-     resetRouterForTesting();
-@@ -89,6 +90,7 @@ suite('YourSavedInfoPageIndex', function() {
-     document.body.innerHTML = window.trustedTypes!.emptyHTML;
-     loadTimeData.overrideValues({
-       enableYourSavedInfoSettingsPage: true,
-+      showGoogleServicesSettings: true,
-       showSuggestionsFromGeminiSettings: false,
-     });
-     resetRouterForTesting();
-@@ -103,6 +105,35 @@ suite('YourSavedInfoPageIndex', function() {
-     assertFalse(!!subpage);
-   });
- 
-+  test('GeminiViewDisabledWhenGoogleServicesHidden', async function() {
-+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
-+    loadTimeData.overrideValues({
-+      enableYourSavedInfoSettingsPage: true,
-+      showGoogleServicesSettings: false,
-+      showSuggestionsFromGeminiSettings: true,
-+    });
-+    resetRouterForTesting();
-+
-+    index = document.createElement('settings-your-saved-info-page-index');
-+    index.prefs = settingsPrefs.prefs!;
-+    document.body.appendChild(index);
-+    await flushTasks();
-+
-+    assertEquals(undefined, routes.SUGGESTIONS_FROM_GEMINI);
-+    assertEquals(
-+        null,
-+        Router.getInstance().getRouteForPath(
-+            '/autofill/suggestionsFromGemini'));
-+    const subpage = index.$.viewManager.querySelector('#suggestionsFromGemini');
-+    assertFalse(!!subpage);
-+
-+    // Passkeys remains searchable through the always-present Password Manager
-+    // card when the Google-related services section is absent.
-+    const result = await index.searchContents('Passkeys');
-+    assertGT(result.matchCount, 0);
-+    assertFalse(result.canceled);
-+  });
-+
-   // Minimal (non-exhaustive) tests to ensure SearchableViewContainerMixin is
-   // inherited correctly.
-   test('Search', async function() {
-diff --git a/chrome/test/data/webui/settings/your_saved_info_page_test.ts b/chrome/test/data/webui/settings/your_saved_info_page_test.ts
-index 2fd344d3a5..d3e3e40ef7 100644
---- a/chrome/test/data/webui/settings/your_saved_info_page_test.ts
-+++ b/chrome/test/data/webui/settings/your_saved_info_page_test.ts
-@@ -57,6 +57,7 @@ suite('YourSavedInfoPage', function() {
-       showIbansSettings: true,
-       shouldShowPayOverTimeSettings: true,
-       enableYourSavedInfoShoppingPage: true,
-+      showGoogleServicesSettings: true,
-       showSuggestionsFromGeminiSettings: true,
-     });
-   });
-@@ -268,6 +269,28 @@ suite('YourSavedInfoPage', function() {
-     assertFalse(!!geminiCard);
-   });
- 
-+  test('AegisHidesGoogleServices', async function() {
-+    await setupPage({
-+      showGoogleServicesSettings: false,
-+      showSuggestionsFromGeminiSettings: true,
-+    });
-+
-+    assertFalse(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        'settings-account-card'));
-+    assertFalse(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        '#googleWalletButton'));
-+    assertFalse(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        '#googleAccountButton'));
-+    assertFalse(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        '#suggestionsFromGeminiCard'));
-+    assertFalse(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        '#passwordManagerButton'));
-+    assertFalse(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        '#relatedServicesSection'));
-+    assertTrue(!!yourSavedInfoPage.shadowRoot!.querySelector(
-+        '#passwordManagerCard'));
-+  });
-+
-   test('SuggestionsFromGeminiCardNavigates', function() {
-     const geminiCard = yourSavedInfoPage.shadowRoot!.querySelector<HTMLElement>(
-         '#suggestionsFromGeminiCard');
-@@ -514,7 +537,8 @@ suite('RelatedServices', function() {
-     return CrSettingsPrefs.initialized;
-   });
- 
--  setup(function() {
-+  setup(async function() {
-+    loadTimeData.overrideValues({showGoogleServicesSettings: true});
-     resetRouterForTesting();
- 
-     openWindowProxy = new TestOpenWindowProxy();
-@@ -531,6 +555,7 @@ suite('RelatedServices', function() {
-     setDefaultPrefs(settingsPrefs);
-     yourSavedInfoPage.prefs = settingsPrefs.prefs!;
-     document.body.appendChild(yourSavedInfoPage);
-+    await flushTasks();
-   });
- 
-   teardown(function() {
-@@ -549,9 +574,7 @@ suite('RelatedServices', function() {
-   test('CardRendersCorrectly', function() {
-     const relatedServicesCard =
-         yourSavedInfoPage.shadowRoot!.querySelector<HTMLElement>(
--            `settings-section[page-title="${
--                loadTimeData.getString(
--                    'yourSavedInfoRelatedServicesTitle')}"]`);
-+            '#relatedServicesSection');
-     assertTrue(!!relatedServicesCard);
- 
-     assertTrue(
 diff --git a/tools/grit/grit_args.gni b/tools/grit/grit_args.gni
 index cd2b6b9337..5e32bd5ba1 100644
 --- a/tools/grit/grit_args.gni

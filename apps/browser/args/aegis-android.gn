@@ -1,5 +1,5 @@
 # GCSA-aegis Android（侧载 APK + Play 预留包名）。
-# 必须在 Linux 上 gn gen / autoninja。Chromium 151 不支持 macOS 编 Android。
+# 必须在 Linux 上 gn gen / autoninja。Chromium 153 不支持 macOS 编 Android。
 #
 #   gn gen out/AegisAndroid --args="$(cat apps/browser/args/aegis-android.gn)"
 #   autoninja -C out/AegisAndroid chrome_public_apk
@@ -30,3 +30,14 @@ android_channel = "default"
 
 # Android 与桌面保持一致，不加载 Chromium 的测试 Field Trial 配置。
 disable_fieldtrial_testing_config = true
+
+# 无终端构建也须等待全部静态检查完成，检查失败直接使构建失败。
+android_static_analysis = "on"
+
+# 固定使用 Ninja；不启用仅供测试的 V8 内存修改接口。
+use_siso = false
+v8_enable_memory_corruption_api = false
+
+# 产品版本独立于 Chromium 内核版本；版本码高于既有 151 内测包并逐次递增。
+android_override_version_name = "Ver 2.0 (099)"
+android_override_version_code = "2000000099"

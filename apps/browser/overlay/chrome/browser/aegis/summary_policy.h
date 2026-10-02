@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace aegis {
@@ -35,6 +36,9 @@ struct ModelPrompt {
   std::string system;
   std::string user;
 };
+
+// 摘要与Agent观察共享可识别秘密的清理规则；不声称识别任意私人文本。
+std::string SanitizeModelContextText(std::string_view text);
 
 // browser 进程在调用任意兼容模型 API 前执行的强制策略。本机 loopback
 // 也不能绕过敏感页的启发式摘要边界。拒绝时 reason 包含可展示的原因。

@@ -1,0 +1,113 @@
+From 0ece54b43dbc61bf0678c2b9c6f21baa70f12472 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 16:20:45 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E4=B8=8B=E8=BD=BD?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=E5=89=8D=E7=BD=AE=E6=AD=A5=E9=AA=A4=E4=B8=8E?=
+ =?UTF-8?q?=E6=88=AA=E6=96=AD=E7=A0=94=E7=A9=B6=E8=AF=81=E6=8D=AE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_agent_service.cc |  6 ++++++
+ .../agent/aegis_agent_service_unittest.cc      | 18 ++++++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc  |  5 +++--
+ .../aegis/agent/agent_execution_unittest.cc    |  6 ++++++
+ 4 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 2b7884ff0d..c4113257e5 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2495,6 +2495,12 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
+   }
+ 
+   if (result.ok) {
++    if (task->scope().selected_pages_research &&
++        attempted_call.tool_name == "page.observe" &&
++        !AgentResearchContentHash(result)) {
++      runtime.selected_read_failed = true;
++    }
++
+     runtime.evidence_history.push_back({.tool_name = attempted_call.tool_name,
+                                         .result = CloneToolResult(result)});
+     if (runtime.evidence_history.size() > kMaxRuntimeEvidenceItems) {
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index e874db7794..9f67ca57a3 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -350,6 +350,8 @@ class AegisAgentServiceTest : public testing::Test {
+     scope.allowed_tools.insert(second_tool);
+     if (second_tool.starts_with("download.")) {
+       scope.allowed_data_classes.insert(AgentDataClass::kDownloads);
++      scope.allowed_tools.insert("download.find_official");
++      scope.allowed_tools.insert("download.start");
+     }
+     scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
+     scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
+@@ -372,6 +374,18 @@ class AegisAgentServiceTest : public testing::Test {
+                                                 .Set("id", "page")
+                                                 .Set("title", "页面操作")
+                                                 .Set("tool", second_tool)));
++    if (second_tool == "download.verify") {
++      // 下载核验必须先有来源检查和原生下载，不绕过产品的计划依赖校验。
++      base::ListValue steps;
++      for (const auto* tool : {"tab.list", "download.find_official",
++                               "download.start", "download.verify"}) {
++        steps.Append(base::DictValue()
++                         .Set("id", tool)
++                         .Set("title", tool)
++                         .Set("tool", tool));
++      }
++      plan.arguments.Set("steps", std::move(steps));
++    }
+     std::string error;
+     if (!service->AcceptModelPlan(task->id(), plan, &error) ||
+         !service->GrantTaskConsent(task->id())) {
+@@ -1532,6 +1546,10 @@ TEST_F(AegisAgentServiceTest, FailedDownloadRetainsActualEvidenceAfterRetries) {
+   const std::string id = task->id();
+   AegisAgentServiceTestPeer::DeliverRuntimeResult(service, id, "tab.list",
+                                                   true);
++  AegisAgentServiceTestPeer::DeliverRuntimeResult(
++      service, id, "download.find_official", true);
++  AegisAgentServiceTestPeer::DeliverRuntimeResult(service, id, "download.start",
++                                                  true);
+   for (int attempt = 0; attempt < 3; ++attempt) {
+     base::DictValue value;
+     value.Set("download_id", "fixture-download");
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index ade8740a71..2fb45b3070 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1339,8 +1339,9 @@ bool AgentCompletionHasRequiredPageEvidence(
+   for (const auto& evidence : evidence_history) {
+     const auto tab_id = evidence.result.value.FindInt("tab_id");
+     const auto* url = evidence.result.value.FindString("url");
+-    if (has_content(evidence) && tab_id && scope.AllowsTab(*tab_id) && url &&
+-        scope.AllowsOrigin(GURL(*url))) {
++    if (has_content(evidence) &&
++        evidence.result.value.FindBool("truncated") != true && tab_id &&
++        scope.AllowsTab(*tab_id) && url && scope.AllowsOrigin(GURL(*url))) {
+       observed_tabs.insert(*tab_id);
+     }
+   }
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 090751bd07..aabc99beb1 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1571,6 +1571,12 @@ TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {
+   EXPECT_FALSE(
+       AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+   evidence.back().result.value.Set("tab_id", 9);
++  EXPECT_TRUE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++  evidence.back().result.value.Set("truncated", true);
++  EXPECT_FALSE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++  evidence.back().result.value.Set("truncated", false);
+   EXPECT_TRUE(
+       AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+   evidence.back().result.value.Set("url", "https://outside.example/");
+-- 
+2.52.0
+

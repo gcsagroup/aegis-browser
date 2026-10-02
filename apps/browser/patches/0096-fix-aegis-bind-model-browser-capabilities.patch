@@ -1,4 +1,4 @@
-From f8dff6e3a5dd02527c093b57cde78fc4b0dcb34f Mon Sep 17 00:00:00 2001
+From 6ffe23d340dcce571a387e615d455a5e3bff4b3d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 12:43:06 +0800
 Subject: [PATCH] aegis: bind model browser capabilities to live task context

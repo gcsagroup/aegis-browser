@@ -1,7 +1,7 @@
-From de7bccbc83f94adca5a78cdb279308022aa78e6e Mon Sep 17 00:00:00 2001
+From 05036c24887c5e68901cf13ebedee1273bf29d39 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 02:05:36 +0800
-Subject: [PATCH 91/91] fix(aegis): tolerate redundant browser-only targets
+Subject: [PATCH] fix(aegis): tolerate redundant browser-only targets
 
 ---
  chrome/browser/aegis/agent/agent_planner.cc          | 9 +++++----

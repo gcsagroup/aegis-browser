@@ -1,4 +1,4 @@
-From 8f7c01d58fb12ea2c9c95a37774ed14cc2c42bdc Mon Sep 17 00:00:00 2001
+From 358edb411bbf1cc0d34781d188473e10d4396161 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 04:36:41 +0800
 Subject: [PATCH] Aegis: add EasyList compiler and runtime filter-list updater
@@ -1620,5 +1620,5 @@ index 27ea501d28..5555470acf 100644
  
  Do not hand-edit generated `.inc` files — edit TypeScript under `packages/core` instead.
 -- 
-2.50.1 (Apple Git-155)
+2.52.0
 

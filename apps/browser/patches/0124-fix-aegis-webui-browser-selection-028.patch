@@ -1,0 +1,44 @@
+From 252b9180bdc2e25cbcc172af4b8297ace02b6ef5 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 03:03:22 +0800
+Subject: [PATCH] fix(aegis): migrate WebUI browser selection for Chromium 153
+ (028)
+
+---
+ chrome/browser/ui/browser_command_controller.cc    | 2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index ca6fbd41f8..9538a69a85 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -1298,7 +1298,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+       break;
+     case IDC_SHOW_AEGIS:
+       if (IsAegisProfileSupported(profile())) {
+-        ShowAegisPage(browser_->GetBrowserForOpeningWebUi());
++        ShowAegisPage(webui::GetBrowserForOpeningWebUi(browser_));
+       }
+       break;
+     case IDC_SHOW_AEGIS_AGENT:
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 82e958224f..ce14883c5b 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.27。
+-inline constexpr char kProductVersion[] = "1.1.0.27";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (027)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.28。
++inline constexpr char kProductVersion[] = "1.1.0.28";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (028)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

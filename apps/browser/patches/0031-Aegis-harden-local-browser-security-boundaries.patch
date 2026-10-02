@@ -1,7 +1,7 @@
-From 3ad64f76ef781ecc6eb42e23def736052321eecf Mon Sep 17 00:00:00 2001
+From db8a87057e3d3c33fa8f8a83ec06edfd59a3a7eb Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Mon, 24 Aug 2026 19:28:03 +0800
-Subject: [PATCH 31/38] Aegis: harden local browser security boundaries
+Subject: [PATCH] Aegis: harden local browser security boundaries
 
 ---
  chrome/browser/aegis/BUILD.gn                 |  45 +-

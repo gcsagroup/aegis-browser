@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCSA Aegis · 整合工作区预览</title>
+<style>
+  * { box-sizing: border-box; }
+  :root { color-scheme: light; font: 15px/1.6 system-ui, sans-serif; color: #17273b; background: #eef1f5; }
+  body { margin: 0; padding: 36px 16px; }
+  button, select { font: inherit; }
+  button { cursor: pointer; border: 1px solid #d9e0e7; border-radius: 9px; padding: 9px 13px; background: white; color: inherit; }
+  button:hover { background: #f2f6fc; }
+  button:disabled { cursor: default; opacity: .45; }
+  :focus-visible { outline: 3px solid #315bd4; outline-offset: 3px; }
+  select { max-width: 140px; border: 1px solid #d9e0e7; background: white; border-radius: 8px; padding: 7px; }
+  .shell { max-width: 790px; margin: auto; background: white; border: 1px solid #dfe5ec; border-radius: 18px; overflow: hidden; box-shadow: 0 12px 40px #1b305a0c; }
+  header { padding: 22px 24px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .brand { font-weight: 750; letter-spacing: .01em; }
+  .brand small { font-size: 11px; font-weight: 500; display: block; color: #657389; letter-spacing: .14em; }
+  .notice { margin: 0; padding: 10px 24px; background: #f7f1df; color: #745a16; font-size: 12px; }
+  nav { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #e3e8ee; padding: 8px 12px 0; gap: 4px; }
+  nav button { border: 0; border-radius: 7px 7px 0 0; padding: 12px 4px; font-size: 14px; }
+  nav button[aria-current="page"] { color: #274fbc; background: #f0f4ff; box-shadow: inset 0 -3px #315bd4; font-weight: 650; }
+  main { padding: 24px; }
+  h1 { font-size: 24px; line-height: 1.3; margin: 0 0 8px; font-weight: 650; }
+  h2 { font-size: 16px; margin: 0 0 10px; font-weight: 650; }
+  p { margin: 6px 0 16px; }
+  .muted { color: #657389; font-size: 13px; }
+  .site { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 13px 16px; background: #f7f9fc; border-radius: 11px; margin: 20px 0; overflow-wrap: anywhere; }
+  .tag { font-size: 12px; border: 1px solid #dae1ea; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+  .good { color: #1e6a50; background: #eef8f1; border-color: #cde8d7; }
+  .uncertain { color: #88611b; background: #fff6e6; border-color: #ead8b7; }
+  .card { border: 1px solid #dfe5ec; border-radius: 12px; padding: 17px; margin: 12px 0; }
+  .row { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+  .row > :first-child { min-width: 0; }
+  .evidence { margin-top: 8px; font-size: 13px; color: #53637a; }
+  .actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 16px; }
+  .primary { color: white; background: #315bd4; border-color: #315bd4; }
+  .primary:hover { background: #2448b4; }
+  .source { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; padding: 12px 0; border-bottom: 1px solid #edf0f4; }
+  input[type="checkbox"] { margin-top: 7px; width: 17px; height: 17px; accent-color: #315bd4; flex-shrink: 0; }
+  .source small { display: block; color: #657389; }
+  .compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
+  .fact { background: #f7f9fc; border-radius: 9px; padding: 12px 8px; text-align: center; }
+  .fact strong { font-size: 30px; display: block; font-weight: 650; }
+  .fact button { border: 0; background: none; color: #315bd4; padding: 2px; }
+  details { margin-top: 12px; font-size: 13px; }
+  summary { cursor: pointer; color: #315bd4; padding: 4px 0; }
+  dl { margin: 10px 0 0; display: grid; grid-template-columns: 100px 1fr; gap: 8px; }
+  dt { color: #657389; } dd { margin: 0; overflow-wrap: anywhere; }
+  .status { padding: 0 24px 16px; font-size: 13px; color: #315bd4; min-height: 28px; }
+  dialog { max-width: min(500px, calc(100vw - 32px)); border: 1px solid #dfe5ec; border-radius: 14px; padding: 24px; color: inherit; }
+  dialog::backdrop { background: #12213b55; }
+  footer { padding: 0 24px 18px; color: #657389; font-size: 12px; }
+  @media (max-width: 430px) { body { padding: 0; } .shell { border-radius: 0; border: 0; min-height: 100vh; } header, main { padding: 18px; } h1 { font-size: 21px; } nav button { font-size: 12px; } .row { align-items: flex-start; } .tag { white-space: normal; } .notice { padding: 10px 18px; } dl { grid-template-columns: 82px 1fr; } }
+</style>
+<div class="shell">
+  <header><div class="brand">GCSA Aegis<small>YOUR BROWSER, YOUR CONTROL</small></div><select id="language" aria-label="语言 / Language"><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="en">English</option></select></header>
+  <p class="notice" id="notice"></p><nav id="navigation"></nav><main id="main"></main>
+  <div class="status" id="status" role="status" aria-live="polite"></div><footer id="footer"></footer>
+</div>
+<dialog id="dialog" aria-labelledby="dialog-title"><h2 id="dialog-title"></h2><div id="dialog-body"></div><form method="dialog"><button id="close"></button></form></dialog>
+<script>
+// 所有数据均为写死的示例；无网络请求、持久化、模型调用或浏览器权限修改。
+const words = {
+  'zh-CN': {
+    notice:'交互预览 · 全部为示例数据，不执行浏览器操作', nav:['页面保护','研究工作台','任务中心'],
+    footer:'预览只用于检查流程、窄侧栏与语言。刷新即恢复示例状态。', close:'关闭',
+    protect:'看清当前页面发生了什么', protectSub:'确定的处理结果与需要留意的信号分别展示。', current:'当前页面 · 示例', normal:'保护开启',
+    tracking:'已阻止追踪请求', trackingSub:'同一请求只计一次，已合并规则重复命中。', confirmed:'已确认 · 3 次',
+    signal:'下载来源需要核对', signalSub:'这个镜像链接尚未找到官网关联证据。', uncertain:'待核对',
+    fingerprint:'指纹保护', fingerprintSub:'已对跨站标识采取隔离措施；不表示无法被识别。', active:'已启用',
+    detail:'查看证据', exception:'预览本站例外', exceptionTitle:'只查看本站例外范围',
+    exceptionBody:'如果之后由你启用例外，只作用于当前站点的指定规则。预览不会关闭任何保护；Agent 不能代替你修改。',
+    research:'比较网页，保留出处', researchSub:'选择 3–10 个页面。示例提供 3 个来源，包含相互冲突的数据。',
+    source:'来源', sourceMeta:'合成研究页面 · 2026-09-15', compare:'生成示例对比', selectMore:'请选满 3 个来源',
+    conflict:'三个来源存在分歧', conflictSub:'来源 1、5、8 分别为 42、43、41。保留各自结论，没有足够证据合并成一个值。',
+    save:'保存示例研究', monitor:'添加示例监控', saved:'示例研究已保存在本次预览中。', monitoring:'示例监控已添加；不会实际访问页面或通知。',
+    quote:'原文引用 · 示例', quoteBody:'该来源报告稳定指标为', quoteTail:'。这段文字是预览内的合成原文。真实产品将定位原网页；原文变化时须提示引用已失效。',
+    tasks:'知道任务做到哪一步', tasksSub:'每个任务显示实际停在的阶段，结果与证据一起查看。',
+    errorTask:'读取文章并总结', failed:'未完成', errorReason:'来源返回 HTTP 410，文章不可读取。错误页不能作为文章总结。',
+    stopped:'停止原因', sourceUnavailable:'来源不可用', retry:'重试示例', retryNote:'示例重试仍遇到 HTTP 410，任务保持未完成。',
+    download:'浏览器更新包', downloaded:'完整性通过', downloadSub:'示例文件已下载并通过摘要核对，平台签名尚未核验，尚未安装。',
+    phase:'当前阶段', fileCheck:'文件大小与摘要通过', signature:'平台签名', notChecked:'未核验', installed:'安装状态', notInstalled:'未安装',
+    taskMonitor:'研究来源变化监控', scheduled:'示例待检查', paused:'示例已暂停', pause:'暂停示例', resume:'恢复示例', cancel:'取消示例',
+    monitorSub:'浏览器运行时每小时检查；休眠期间不会伪报检查成功。', emptyMonitor:'尚未添加监控示例。可从研究工作台添加。', cancelled:'示例监控已取消。',
+    ruleDetail:'示例证据：请求 tracker.example/pixel；由两条规则同时命中，展示为一次阻止事件。',
+  },
+  'zh-TW': {
+    notice:'互動預覽 · 全部為範例資料，不執行瀏覽器操作', nav:['頁面防護','研究工作臺','任務中心'],
+    footer:'預覽僅用於檢查流程、窄側欄與語言。重新整理即恢復範例狀態。', close:'關閉',
+    protect:'看清目前頁面發生了什麼', protectSub:'確定的處理結果與需要留意的訊號分別展示。', current:'目前頁面 · 範例', normal:'防護開啟',
+    tracking:'已阻擋追蹤請求', trackingSub:'同一請求只計一次，已合併規則重複命中。', confirmed:'已確認 · 3 次',
+    signal:'下載來源需要核對', signalSub:'這個鏡像連結尚未找到官網關聯證據。', uncertain:'待核對',
+    fingerprint:'指紋防護', fingerprintSub:'已對跨站識別採取隔離措施；不表示無法被識別。', active:'已啟用',
+    detail:'查看證據', exception:'預覽本站例外', exceptionTitle:'僅查看本站例外範圍',
+    exceptionBody:'如果之後由你啟用例外，僅作用於目前網站的指定規則。預覽不會關閉任何防護；Agent 不能代替你修改。',
+    research:'比較網頁，保留出處', researchSub:'選擇 3–10 個頁面。範例提供 3 個來源，包含互相衝突的資料。',
+    source:'來源', sourceMeta:'合成研究頁面 · 2026-09-15', compare:'產生範例對比', selectMore:'請選滿 3 個來源',
+    conflict:'三個來源存在分歧', conflictSub:'來源 1、5、8 分別為 42、43、41。保留各自結論，沒有足夠證據合併成一個值。',
+    save:'儲存範例研究', monitor:'新增範例監控', saved:'範例研究已儲存在本次預覽中。', monitoring:'範例監控已新增；不會實際存取頁面或通知。',
+    quote:'原文引用 · 範例', quoteBody:'該來源報告穩定指標為', quoteTail:'。這段文字是預覽內的合成原文。真實產品將定位原網頁；原文變更時須提示引用已失效。',
+    tasks:'知道任務做到哪一步', tasksSub:'每個任務顯示實際停留的階段，結果與證據一起查看。',
+    errorTask:'讀取文章並總結', failed:'未完成', errorReason:'來源回傳 HTTP 410，文章無法讀取。錯誤頁不能作為文章總結。',
+    stopped:'停止原因', sourceUnavailable:'來源無法使用', retry:'重試範例', retryNote:'範例重試仍遇到 HTTP 410，任務維持未完成。',
+    download:'瀏覽器更新套件', downloaded:'完整性通過', downloadSub:'範例檔案已下載並通過摘要核對，平台簽章尚未核驗，尚未安裝。',
+    phase:'目前階段', fileCheck:'檔案大小與摘要通過', signature:'平台簽章', notChecked:'未核驗', installed:'安裝狀態', notInstalled:'未安裝',
+    taskMonitor:'研究來源變化監控', scheduled:'範例待檢查', paused:'範例已暫停', pause:'暫停範例', resume:'恢復範例', cancel:'取消範例',
+    monitorSub:'瀏覽器執行時每小時檢查；休眠期間不會偽報檢查成功。', emptyMonitor:'尚未新增監控範例。可從研究工作臺新增。', cancelled:'範例監控已取消。',
+    ruleDetail:'範例證據：請求 tracker.example/pixel；由兩條規則同時命中，展示為一次阻擋事件。',
+  },
+  en: {
+    notice:'Interactive preview · Sample data only; no browser actions are performed', nav:['Page protection','Research','Tasks'],
+    footer:'Preview for workflow, narrow panels and language checks. Reload to reset sample state.', close:'Close',
+    protect:'Understand this page', protectSub:'Confirmed actions and signals that need review are shown separately.', current:'Current page · Sample', normal:'Protection on',
+    tracking:'Tracking requests blocked', trackingSub:'Each request is counted once, even when several rules match.', confirmed:'Confirmed · 3',
+    signal:'Check the download source', signalSub:'No evidence yet connects this mirror to the official website.', uncertain:'Needs review',
+    fingerprint:'Fingerprint protection', fingerprintSub:'Cross-site identifiers are isolated. This does not guarantee anonymity.', active:'Enabled',
+    detail:'View evidence', exception:'Preview site exception', exceptionTitle:'Review the scope of an exception',
+    exceptionBody:'A future exception would apply only to selected rules on this site. This preview changes no protection. The Agent cannot approve it for you.',
+    research:'Compare pages, keep sources', researchSub:'Select 3–10 pages. This preview includes 3 sample sources with conflicting findings.',
+    source:'Source', sourceMeta:'Synthetic research page · 2026-09-15', compare:'Compare sample sources', selectMore:'Select all 3 sample sources',
+    conflict:'The sources disagree', conflictSub:'Sources 1, 5 and 8 report 42, 43 and 41. Keep their separate findings; the evidence does not justify one combined value.',
+    save:'Save sample research', monitor:'Add sample monitor', saved:'Sample research saved for this preview session.', monitoring:'Sample monitor added. No page checks or notifications will run.',
+    quote:'Source quotation · Sample', quoteBody:'This source reports a stable metric of', quoteTail:'. This is synthetic source text inside the preview. The product will link to the original page and flag quotations invalidated by changes.',
+    tasks:'See where each task stands', tasksSub:'Show the stage actually reached, together with the evidence behind the result.',
+    errorTask:'Read and summarize an article', failed:'Incomplete', errorReason:'The source returned HTTP 410. The article is unavailable; an error page is not an article summary.',
+    stopped:'Stopped because', sourceUnavailable:'Source unavailable', retry:'Retry sample', retryNote:'The sample retry still returned HTTP 410. The task remains incomplete.',
+    download:'Browser update package', downloaded:'Integrity checked', downloadSub:'The sample file is downloaded and its digest matches. Platform signature is unchecked. It is not installed.',
+    phase:'Current stage', fileCheck:'Size and digest match', signature:'Platform signature', notChecked:'Not checked', installed:'Installation', notInstalled:'Not installed',
+    taskMonitor:'Research source monitor', scheduled:'Sample awaiting check', paused:'Sample paused', pause:'Pause sample', resume:'Resume sample', cancel:'Cancel sample',
+    monitorSub:'Check hourly while the browser runs. Sleep periods must not be reported as successful checks.', emptyMonitor:'No sample monitor yet. Add one from Research.', cancelled:'Sample monitor cancelled.',
+    ruleDetail:'Sample evidence: tracker.example/pixel matched two rules, but is shown as one blocked request.',
+  }
+};
+let locale='zh-CN', view=0, compared=false, saved=false, monitor=false, paused=false;
+const chosen=new Set([1,5,8]), metrics={1:42,5:43,8:41};
+const $=id=>document.getElementById(id);
+function message(text){$('status').textContent=text;}
+function dialog(title,body){$('dialog-title').textContent=title;$('dialog-body').textContent=body;$('dialog').showModal();}
+function render(focusId){
+  const t=words[locale];document.documentElement.lang=locale;
+  $('notice').textContent=t.notice;$('footer').textContent=t.footer;$('close').textContent=t.close;
+  $('navigation').innerHTML=t.nav.map((name,i)=>`<button id="nav-${i}" data-view="${i}" ${view===i?'aria-current="page"':''}>${name}</button>`).join('');
+  if(view===0){$('main').innerHTML=`<h1>${t.protect}</h1><p class="muted">${t.protectSub}</p><div class="site"><div><small>${t.current}</small><br>research.example</div><span class="tag good">${t.normal}</span></div><section class="card"><div class="row"><h2>${t.tracking}</h2><span class="tag good">${t.confirmed}</span></div><p class="evidence">${t.trackingSub}</p><button data-action="evidence">${t.detail}</button></section><section class="card"><div class="row"><h2>${t.signal}</h2><span class="tag uncertain">${t.uncertain}</span></div><p class="evidence">${t.signalSub}</p></section><section class="card"><div class="row"><h2>${t.fingerprint}</h2><span class="tag">${t.active}</span></div><p class="evidence">${t.fingerprintSub}</p></section><div class="actions"><button data-action="exception">${t.exception}</button></div>`;}
+  if(view===1){$('main').innerHTML=`<h1>${t.research}</h1><p class="muted">${t.researchSub}</p>${[1,5,8].map(id=>`<label class="source"><input type="checkbox" data-source="${id}" ${chosen.has(id)?'checked':''}><span>${t.source} ${id}<small>${t.sourceMeta}</small></span></label>`).join('')}<div class="actions"><button class="primary" data-action="compare" ${chosen.size<3?'disabled':''}>${t.compare}</button></div>${chosen.size<3?`<p class="muted">${t.selectMore}</p>`:''}${compared?`<section class="card"><h2 id="comparison-title" tabindex="-1">${t.conflict}</h2><div class="compare">${[1,5,8].map(id=>`<div class="fact"><strong>${metrics[id]}</strong><button data-quote="${id}">${t.source} ${id} ↗</button></div>`).join('')}</div><p>${t.conflictSub}</p><div class="actions"><button data-action="save" ${saved?'disabled':''}>${saved?t.saved:t.save}</button><button data-action="monitor" ${(!saved||monitor)?'disabled':''}>${t.monitor}</button></div></section>`:''}`;}
+  if(view===2){$('main').innerHTML=`<h1>${t.tasks}</h1><p class="muted">${t.tasksSub}</p><section class="card"><div class="row"><h2>${t.errorTask}</h2><span class="tag uncertain">${t.failed}</span></div><p>${t.errorReason}</p><details><summary>${t.detail}</summary><dl><dt>${t.stopped}</dt><dd>${t.sourceUnavailable} · HTTP 410</dd></dl></details><div class="actions"><button data-action="retry">${t.retry}</button></div></section><section class="card"><div class="row"><h2>${t.download}</h2><span class="tag">${t.downloaded}</span></div><p>${t.downloadSub}</p><details><summary>${t.detail}</summary><dl><dt>${t.phase}</dt><dd>${t.fileCheck}</dd><dt>${t.signature}</dt><dd>${t.notChecked}</dd><dt>${t.installed}</dt><dd>${t.notInstalled}</dd></dl></details></section>${monitor?`<section class="card"><div class="row"><h2>${t.taskMonitor}</h2><span class="tag">${paused?t.paused:t.scheduled}</span></div><p>${t.monitorSub}</p><div class="actions"><button data-action="pause">${paused?t.resume:t.pause}</button><button data-action="cancel">${t.cancel}</button></div></section>`:`<p class="muted">${t.emptyMonitor}</p>`}`;}
+  if(focusId) $(focusId)?.focus();
+}
+$('language').addEventListener('change',e=>{locale=e.target.value;message('');render();});
+$('navigation').addEventListener('click',e=>{if(!e.target.dataset.view)return;view=Number(e.target.dataset.view);message('');render(`nav-${view}`);});
+$('main').addEventListener('change',e=>{const id=Number(e.target.dataset.source);if(![1,5,8].includes(id))return;e.target.checked?chosen.add(id):chosen.delete(id);compared=false;render();$('main').querySelector(`[data-source="${id}"]`)?.focus();});
+$('main').addEventListener('click',e=>{
+  const t=words[locale],action=e.target.dataset.action,id=Number(e.target.dataset.quote);
+  if([1,5,8].includes(id)){dialog(`${t.quote} ${id}`,`${t.quoteBody} ${metrics[id]}${t.quoteTail}`);return;}
+  if(action==='evidence')dialog(t.detail,t.ruleDetail);
+  if(action==='exception')dialog(t.exceptionTitle,t.exceptionBody);
+  if(action==='compare'&&chosen.size===3){compared=true;render('comparison-title');}
+  if(action==='save'){saved=true;render();$('main').querySelector('[data-action=monitor]')?.focus();message(t.saved);}
+  if(action==='monitor'){monitor=true;paused=false;view=2;render('nav-2');message(t.monitoring);}
+  if(action==='retry')message(t.retryNote);
+  if(action==='pause'){paused=!paused;render();$('main').querySelector('[data-action=pause]')?.focus();message(paused?t.paused:t.scheduled);}
+  if(action==='cancel'){monitor=false;paused=false;render('nav-2');message(t.cancelled);}
+});
+render();
+</script>
+</html>

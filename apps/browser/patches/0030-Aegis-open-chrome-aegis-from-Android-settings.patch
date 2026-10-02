@@ -1,4 +1,4 @@
-From ed749044b0e0afb27293e34380e0d751a2d8d7ab Mon Sep 17 00:00:00 2001
+From 7c669288382f84fd3514e9786fe1c5239d0906de Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Mon, 17 Aug 2026 16:21:36 +0800
 Subject: [PATCH] Aegis: open chrome://aegis from Android settings
@@ -15,7 +15,7 @@ on Android, and keep heuristic summarize available on the phone.
  6 files changed, 72 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
-index 1f4c79ab79..e8240e0303 100644
+index b121452ff5..089e343f0a 100644
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
 @@ -10,6 +10,10 @@ found in the LICENSE file.
@@ -30,7 +30,7 @@ index 1f4c79ab79..e8240e0303 100644
          android:key="clear_browsing_data"
          android:title="@string/clear_browsing_data_title"
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-index 7105205ab3..9d9c468d9b 100644
+index 3aae34cd07..e925baba21 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 @@ -9,6 +9,7 @@ import static org.chromium.components.content_settings.PrefNames.COOKIE_CONTROLS
@@ -49,7 +49,7 @@ index 7105205ab3..9d9c468d9b 100644
  import org.chromium.chrome.browser.enterprise.util.ManagedBrowserUtils;
  import org.chromium.chrome.browser.flags.ChromeFeatureList;
  import org.chromium.chrome.browser.incognito.reauth.IncognitoReauthSettingSwitchPreference;
-@@ -89,6 +91,7 @@ import java.util.function.Consumer;
+@@ -86,6 +88,7 @@ import java.util.function.Consumer;
  public class PrivacySettings extends ChromeBaseSettingsFragment
          implements Preference.OnPreferenceChangeListener {
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
@@ -57,7 +57,7 @@ index 7105205ab3..9d9c468d9b 100644
      private static final String PREF_PRELOAD_PAGES = "preload_pages";
      private static final String PREF_HTTPS_FIRST_MODE = "https_first_mode";
      // TODO(crbug.com/349860796): Remove once new settings are fully rolled out.
-@@ -145,6 +148,24 @@ public class PrivacySettings extends ChromeBaseSettingsFragment
+@@ -141,6 +144,24 @@ public class PrivacySettings extends ChromeBaseSettingsFragment
  
          SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
  
@@ -79,9 +79,9 @@ index 7105205ab3..9d9c468d9b 100644
 +                    });
 +        }
 +
-         Preference sandboxPreference = findPreference(PREF_PRIVACY_SANDBOX);
-         // Overwrite the click listener to pass a correct referrer to the fragment.
-         sandboxPreference.setOnPreferenceClickListener(
+         Preference privacyGuidePreference = findPreference(PREF_PRIVACY_GUIDE);
+         // Record the launch of PG from the S&P link-row entry point
+         privacyGuidePreference.setOnPreferenceClickListener(
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 index 0f0b0db49a..ec586b2993 100644
 --- a/chrome/browser/aegis/aegis_service.cc

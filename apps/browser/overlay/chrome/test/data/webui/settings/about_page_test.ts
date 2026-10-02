@@ -67,7 +67,7 @@ suite('AllBuilds', function() {
   async function initNewPage(): Promise<void> {
     aboutBrowserProxy.reset();
     lifetimeBrowserProxy.reset();
-    document.body.replaceChildren();
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
     document.body.appendChild(page);
@@ -147,7 +147,7 @@ suite('AllBuilds', function() {
     fireStatusChanged(UpdateStatus.FAILED);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertEquals(0, statusMessageEl.textContent.trim().length);
 
     fireStatusChanged(UpdateStatus.DISABLED);
@@ -291,21 +291,21 @@ suite('AllBuilds', function() {
     fireStatusChanged(UpdateStatus.CHECKING);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertFalse(page.$.deprecationWarning.hidden);
     assertTrue(page.$.updateStatusMessage.hidden);
 
     fireStatusChanged(UpdateStatus.FAILED);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertFalse(page.$.deprecationWarning.hidden);
     assertTrue(page.$.updateStatusMessage.hidden);
 
     fireStatusChanged(UpdateStatus.UPDATED);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertFalse(page.$.deprecationWarning.hidden);
     assertTrue(page.$.updateStatusMessage.hidden);
   });
@@ -414,7 +414,7 @@ suite('OfficialBuild', function() {
     AboutPageBrowserProxyImpl.setInstance(browserProxy);
     openWindowProxy = new TestOpenWindowProxy();
     OpenWindowProxyImpl.setInstance(openWindowProxy);
-    document.body.replaceChildren();
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
     document.body.appendChild(page);

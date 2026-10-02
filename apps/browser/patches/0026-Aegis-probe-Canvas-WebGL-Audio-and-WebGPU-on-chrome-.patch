@@ -1,4 +1,4 @@
-From e67abdb14aad5d40b1c42108124d7bc01921f67b Mon Sep 17 00:00:00 2001
+From 90d978da7b9a544ea13954028de114868cc8a680 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 17:47:47 +0800
 Subject: [PATCH] Aegis: probe Canvas, WebGL, Audio, and WebGPU on

@@ -1,0 +1,314 @@
+From cb4cc396449d363fabb1eae0a5ce7758f107556c Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 03:44:20 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=A0=94=E7=A9=B6?=
+ =?UTF-8?q?=E4=BF=9D=E5=AD=98=E7=94=B1=E5=8E=9F=E7=94=9F=E5=AD=98=E5=82=A8?=
+ =?UTF-8?q?=E5=9B=9E=E6=89=A7=E7=A1=AE=E8=AE=A4=202.0.044?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 23 +++++++
+ .../agent/aegis_agent_service_unittest.cc     | 40 ++++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 61 +++++++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.h  |  6 ++
+ .../aegis/agent/agent_execution_unittest.cc   | 43 +++++++++++++
+ chrome/browser/resources/aegis_agent/agent.ts |  9 +++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 7 files changed, 184 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index b48d861543..a885cd3370 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2233,6 +2233,13 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+   if (expected_tool == "agent.complete") {
+     std::optional<AgentCompletionSummary> completion = ParseCompletionSummary(
+         *event, &validation_error, AgentGoalRequestsTranslation(task->goal()));
++    if (completion && task->scope().selected_pages_research &&
++        AgentResearchCompletionClaimsSave(*completion)) {
++      validation_error =
++          "研究尚未保存。只返回来源比较内容，不声称保存、存档或持久化；"
++          "保存状态由浏览器在用户点击后单独确认。";
++      completion.reset();
++    }
+     if (completion && !AgentCompletionHasRequiredPageEvidence(
+                           task->goal(), task->scope(), runtime.evidence_history)) {
+       validation_error =
+@@ -2971,6 +2978,9 @@ void AegisAgentService::FinishRuntime(
+     }
+   }
+   if (ok && completion) {
++    if (const auto* task = GetTask(task_id)) {
++      UpdateAgentResearchSaveCompletion(&*completion, *task, false);
++    }
+     completion_summaries_[task_id] = *completion;
+   } else {
+     completion_summaries_.erase(task_id);
+@@ -3120,6 +3130,19 @@ void AegisAgentService::SaveResearch(const std::string& task_id,
+     std::move(callback).Run("research_unavailable");
+     return;
+   }
++  callback = base::BindOnce(
++      [](base::WeakPtr<AegisAgentService> service, const std::string& id,
++         ResearchWriteCallback done, std::string error) {
++        if (error.empty() && service) {
++          auto completion = service->completion_summaries_.find(id);
++          const auto* task = service->GetTask(id);
++          if (task && completion != service->completion_summaries_.end()) {
++            UpdateAgentResearchSaveCompletion(&completion->second, *task, true);
++          }
++        }
++        std::move(done).Run(std::move(error));
++      },
++      weak_ptr_factory_.GetWeakPtr(), task_id, std::move(callback));
+   if (profile_->IsOffTheRecord()) {
+     if (saved_research_.size() >= 20u && !saved_research_.contains(task_id)) {
+       std::move(callback).Run("capacity_reached");
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index aec0288de3..b6df6098aa 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -90,6 +90,13 @@ class AegisAgentServiceTestPeer {
+     record.Set("sources", std::move(sources));
+     service->research_results_.insert_or_assign(id, std::move(record));
+   }
++  static void SeedPendingResearchCompletion(AegisAgentService* service,
++                                             const AgentTask& task) {
++    AgentCompletionSummary completion{.outcome = "completed",
++                                      .summary = "三个来源的比较结果。"};
++    UpdateAgentResearchSaveCompletion(&completion, task, false);
++    service->completion_summaries_[task.id()] = std::move(completion);
++  }
+   static void WriteResearchCiphertext(AegisAgentService* service,
+                                       StoredAgentResearch record,
+                                       base::OnceCallback<void(bool)> callback) {
+@@ -434,6 +441,39 @@ class AegisAgentServiceTest : public testing::Test {
+   TestingProfileManager profile_manager_;
+ };
+ 
++TEST_F(AegisAgentServiceTest, ResearchCompletionWaitsForStorageSuccess) {
++  AegisAgentService service(profile_);
++  FlushTaskStore(&service);
++  auto scope = ServiceTestScope();
++  scope.selected_pages_research = true;
++  auto* task = service.CreateTask("比较来源并保存研究", AgentMode::kAct, scope);
++  ASSERT_TRUE(task);
++  const std::string id = task->id();
++  AegisAgentServiceTestPeer::SeedResearch(&service, id);
++  AegisAgentServiceTestPeer::SeedPendingResearchCompletion(&service, *task);
++  ASSERT_TRUE(service.GetCompletionSummary(id));
++  EXPECT_EQ(service.GetCompletionSummary(id)->outcome, "partial");
++  profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, false);
++  base::test::TestFuture<std::string> rejected;
++  service.SaveResearch(id, rejected.GetCallback());
++  EXPECT_EQ(rejected.Get(), "research_unavailable");
++  profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, true);
++  EXPECT_EQ(service.GetCompletionSummary(id)->outcome, "partial");
++  base::test::TestFuture<std::string> saved;
++  service.SaveResearch(id, saved.GetCallback());
++  EXPECT_EQ(service.GetCompletionSummary(id)->outcome, "partial");
++  ASSERT_EQ(saved.Get(), "");
++  EXPECT_EQ(service.GetCompletionSummary(id)->outcome, "completed");
++  EXPECT_TRUE(service.GetCompletionSummary(id)->unfinished_items.empty());
++  base::test::TestFuture<base::ListValue, std::string> loaded;
++  service.LoadSavedResearch(loaded.GetCallback());
++  EXPECT_EQ(loaded.Get<1>(), "");
++  ASSERT_EQ(loaded.Get<0>().size(), 1u);
++  EXPECT_EQ(*loaded.Get<0>()[0].GetDict().FindString("id"), id);
++  service.Shutdown();
++  FlushTaskStore(&service);
++}
++
+ TEST_F(AegisAgentServiceTest, EncryptsResearchAndRestoresAfterRestart) {
+   {
+     AegisAgentService service(profile_);
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index f8ef6896a4..c769aa4761 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1065,6 +1065,13 @@ std::string BuildAgentExecutionPrompt(
+     envelope.Set("selected_translation_source_ids", std::move(selected_ids));
+   }
+   envelope.Set("user_goal", task.goal());
++  if (task.scope().selected_pages_research) {
++    envelope.Set("research_storage_status", "not_saved");
++    envelope.Set("research_storage_contract",
++                 "只交付所选来源的比较内容，不声称已保存、存档或持久化。"
++                 "研究结果只有用户点击保存且浏览器存储成功后才算保存；"
++                 "浏览器会单独显示待保存及保存结果，无须在summary中代述。");
++  }
+   envelope.Set("plan_summary", plan.summary);
+   envelope.Set("next_step_index", static_cast<int>(next_step));
+   envelope.Set("attempt", attempt);
+@@ -1535,6 +1542,60 @@ base::DictValue BuildAgentDownloadEvidence(
+   return fields;
+ }
+ 
++bool AgentResearchCompletionClaimsSave(
++    const AgentCompletionSummary& completion) {
++  const auto text = base::ToLowerASCII(completion.summary);
++  constexpr std::string_view claims[] =
++      {"已保存", "已经保存", "已經保存", "保存成功", "完成保存", "已儲存",
++       "已存储", "已存檔", "已存档", "have saved", "has saved", "i saved",
++       "been saved", "successfully saved", "saved to", "saved in",
++       "saved the", "saved research", "已持久化", "been persisted"};
++  return std::ranges::any_of(claims,
++      [&](std::string_view claim) { return text.contains(claim); });
++}
++
++void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
++                                      const AgentTask& task,
++                                      bool saved) {
++  if (!completion || !task.scope().selected_pages_research) {
++    return;
++  }
++  constexpr std::string_view pending =
++      "研究结果尚未保存；请点击“加密保存研究”，等待浏览器确认。";
++  if (saved) {
++    const auto item = std::ranges::find(completion->unfinished_items, pending);
++    if (item != completion->unfinished_items.end()) {
++      completion->unfinished_items.erase(item);
++      if (completion->outcome == "partial" &&
++          completion->unfinished_items.empty()) {
++        completion->outcome = "completed";
++      }
++    }
++    return;
++  }
++  const auto goal = base::ToLowerASCII(task.goal());
++  constexpr std::string_view no_save_phrases[] =
++      {"不要保存", "无需保存", "不必保存", "不要儲存", "無需儲存",
++       "do not save", "don't save", "without saving"};
++  if (std::ranges::any_of(no_save_phrases, [&](std::string_view phrase) {
++        return goal.contains(phrase);
++      })) {
++    return;
++  }
++  constexpr std::string_view save_words[] =
++      {"保存", "儲存", "存档", "存檔", "save", "persist"};
++  if (completion->outcome == "completed" &&
++      std::ranges::any_of(save_words,
++                          [&](std::string_view word) {
++                            return goal.contains(word);
++                          })) {
++    completion->outcome = "partial";
++    if (!std::ranges::contains(completion->unfinished_items, pending)) {
++      completion->unfinished_items.emplace_back(pending);
++    }
++  }
++}
++
+ void NormalizeAgentDownloadCompletion(
+     AgentCompletionSummary* completion,
+     std::string_view user_goal,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index ced85694eb..ceea3f37aa 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -34,6 +34,12 @@ struct AgentExecutionEvidence {
+   AgentToolResult result;
+ };
+ 
++// 研究模型没有保存权限；保存状态只能由用户操作后的原生存储回执确认。
++bool AgentResearchCompletionClaimsSave(const AgentCompletionSummary& completion);
++void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
++                                      const AgentTask& task,
++                                      bool saved);
++
+ // 原生下载回执投影给界面的有限字段，不包含路径、凭据或模型身份判断。
+ base::DictValue BuildAgentDownloadEvidence(
+     base::span<const AgentExecutionEvidence> history);
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 8302e56a7e..e0a2db62a9 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -260,6 +260,49 @@ TEST(AegisAgentExecutionTest,
+                                            *tool));
+ }
+ 
++TEST(AegisAgentExecutionTest, ResearchSaveRequiresNativeReceipt) {
++  auto scope = ExecutionScope();
++  scope.selected_pages_research = true;
++  AgentTask task("research", "比较来源并保存研究", AgentMode::kAct, scope);
++  AgentCompletionSummary completion{.outcome = "completed",
++                                    .summary = "来源指标分别为42、43、41。"};
++  EXPECT_FALSE(AgentResearchCompletionClaimsSave(completion));
++  for (const auto* text : {"研究项目已保存来源1、5、8的比较结果。",
++                           "結果已儲存。", "I have saved the comparison.",
++                           "The research has been saved to the project."}) {
++    auto claim = completion;
++    claim.summary = text;
++    EXPECT_TRUE(AgentResearchCompletionClaimsSave(claim));
++  }
++  UpdateAgentResearchSaveCompletion(&completion, task, false);
++  EXPECT_EQ(completion.outcome, "partial");
++  ASSERT_EQ(completion.unfinished_items.size(), 1u);
++  UpdateAgentResearchSaveCompletion(&completion, task, false);
++  EXPECT_EQ(completion.unfinished_items.size(), 1u);
++  UpdateAgentResearchSaveCompletion(&completion, task, true);
++  EXPECT_EQ(completion.outcome, "completed");
++  EXPECT_TRUE(completion.unfinished_items.empty());
++
++  completion.outcome = "partial";
++  completion.unfinished_items = {"第三个来源不可读。"};
++  UpdateAgentResearchSaveCompletion(&completion, task, false);
++  UpdateAgentResearchSaveCompletion(&completion, task, true);
++  EXPECT_EQ(completion.outcome, "partial");
++  EXPECT_EQ(completion.unfinished_items.size(), 1u);
++  completion.outcome = "completed";
++  completion.unfinished_items.clear();
++  AgentTask compare("compare", "比较来源并保留分歧", AgentMode::kAct, scope);
++  UpdateAgentResearchSaveCompletion(&completion, compare, false);
++  EXPECT_EQ(completion.outcome, "completed");
++  AgentTask no_save("no-save", "比较来源，不要保存", AgentMode::kAct, scope);
++  UpdateAgentResearchSaveCompletion(&completion, no_save, false);
++  EXPECT_EQ(completion.outcome, "completed");
++  scope.selected_pages_research = false;
++  AgentTask unrelated("other", "保存收藏", AgentMode::kAct, scope);
++  UpdateAgentResearchSaveCompletion(&completion, unrelated, false);
++  EXPECT_EQ(completion.outcome, "completed");
++}
++
+ TEST(AegisAgentExecutionTest,
+      DownloadEvidenceKeepsUnknownIdentityAndExcludesSecrets) {
+   AgentToolResult result;
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 7e1b1aba27..258d59b70c 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -1080,6 +1080,15 @@ function initializeLabels() {
+     save.disabled = true;
+     try {
+       const result = await proxy.handler.saveResearch(taskId);
++      if (!result.error) {
++        const response = await proxy.handler.getSnapshot();
++        if (snapshot?.taskId === taskId) {
++          render(response.snapshot);
++        }
++      }
++      if (snapshot?.taskId !== taskId) {
++        return;
++      }
+       element('save-research-status').textContent = result.error ?
+           researchMessage(result.error) : loadTimeData.getString('researchSaved');
+     } catch {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 6d76bbb485..144c936a1e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.43";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (043)";
++inline constexpr char kProductVersion[] = "2.0.0.44";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (044)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

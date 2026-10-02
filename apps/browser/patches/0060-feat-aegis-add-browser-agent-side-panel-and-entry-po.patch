@@ -1,8 +1,7 @@
-From 98344d6b78b8a94f2c36cdc7bf442180d0845ad7 Mon Sep 17 00:00:00 2001
+From c0c41e5af135075460232789c2de30fa28ac2085 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 18:30:48 +0800
-Subject: [PATCH 60/61] feat(aegis): add browser agent side panel and entry
- points
+Subject: [PATCH] feat(aegis): add browser agent side panel and entry points
 
 ---
  chrome/app/chrome_command_ids.h               |   2 +
@@ -20,7 +19,7 @@ Subject: [PATCH 60/61] feat(aegis): add browser agent side panel and entry
  .../resources/aegis_agent/browser_proxy.ts    |  25 +
  chrome/browser/ui/BUILD.gn                    |   6 +
  chrome/browser/ui/actions/chrome_action_id.h  |   1 +
- chrome/browser/ui/browser_actions.cc          |  23 +-
+ chrome/browser/ui/browser_actions.cc          |  18 +
  .../browser/ui/browser_command_controller.cc  |  15 +-
  chrome/browser/ui/cocoa/accelerators_cocoa.mm |   3 +-
  .../ui/side_panel/side_panel_entry_id.h       |   1 +
@@ -51,7 +50,7 @@ Subject: [PATCH 60/61] feat(aegis): add browser agent side panel and entry
  .../histograms/metadata/sql/histograms.xml    |   1 +
  .../metrics/histograms/metadata/ui/enums.xml  |   2 +
  .../histograms/metadata/ui/histograms.xml     |   1 +
- 46 files changed, 2691 insertions(+), 81 deletions(-)
+ 46 files changed, 2689 insertions(+), 78 deletions(-)
  create mode 100644 chrome/browser/resources/aegis_agent/BUILD.gn
  create mode 100644 chrome/browser/resources/aegis_agent/agent.css
  create mode 100644 chrome/browser/resources/aegis_agent/agent.html
@@ -67,33 +66,33 @@ Subject: [PATCH 60/61] feat(aegis): add browser agent side panel and entry
  create mode 100644 chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
-index 9025614e45..1a2819bc6c 100644
+index 7d5c28b148..2c50bc2c13 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
-@@ -314,6 +314,7 @@
+@@ -293,6 +293,7 @@
  #define IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL 40304
  #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
  #define IDC_SHOW_AEGIS                  40310
 +#define IDC_SHOW_AEGIS_AGENT            40311
  
  // Spell-check
- // Insert any additional suggestions before _LAST; these have to be consecutive.
-@@ -452,6 +453,7 @@
+ #define IDC_SPELLCHECK_SUGGESTION_0     41000
+@@ -402,6 +403,7 @@
  #define IDC_CONTENT_CONTEXT_USE_PASSKEY_FROM_ANOTHER_DEVICE 50194
  // Listen to this page context menu.
  #define IDC_CONTENT_CONTEXT_LISTEN_TO_THIS_PAGE 50195
 +#define IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT 50196
  // Open with items.
  #define IDC_CONTENT_CONTEXT_OPEN_WITH1 50200
- #define IDC_CONTENT_CONTEXT_OPEN_WITH2 50201
+ // Context menu items that provide fast access to input methods.
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index f4fe5d8bf9..8944aec454 100644
+index d280743c44..80cddbbc21 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -399,10 +399,10 @@ source_set("startup_data") {
- source_set("chrome_browser_main") {
+@@ -405,10 +405,10 @@ source_set("chrome_browser_main") {
    public = [ "chrome_browser_main.h" ]
    deps = [
+     ":after_startup_task_utils",
 -    "//chrome/browser/aegis",
      ":buildflags",
      "//base",
@@ -102,7 +101,7 @@ index f4fe5d8bf9..8944aec454 100644
      "//chrome/browser/first_run",
      "//chrome/browser/lifetime",
      "//chrome/browser/ui/startup",
-@@ -920,10 +920,10 @@ source_set("core") {
+@@ -927,10 +927,10 @@ source_set("core") {
      ":universal_web_contents_observers",
      "//base/allocator:buildflags",
      "//build/config/linux/dbus:buildflags",
@@ -114,15 +113,15 @@ index f4fe5d8bf9..8944aec454 100644
      "//chrome/browser/ai",
      "//chrome/browser/app_mode",
      "//chrome/browser/autocomplete:aim_eligibility_service",
-@@ -3249,6 +3249,7 @@ source_set("browser") {
+@@ -2869,6 +2869,7 @@ source_set("browser") {
+       "//chrome/browser/ui/waap:window_metrics_manager",
        "//chrome/browser/ui/web_applications:impl",
        "//chrome/browser/ui/webui:webui_util",
-       "//chrome/browser/ui/webui/access_code_cast",
 +      "//chrome/browser/ui/webui/aegis_agent",
        "//chrome/browser/ui/webui/app_service_internals",
        "//chrome/browser/ui/webui/autofill_ml_internals",
        "//chrome/browser/ui/webui/color_pipeline_internals",
-@@ -4833,6 +4834,7 @@ group("browser_generated_files") {
+@@ -4105,6 +4106,7 @@ group("browser_generated_files") {
        "//chrome/browser/ui:webui_name_variants",
        "//chrome/browser/ui/views/drive_picker_host:mojo_bindings",
        "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
@@ -131,7 +130,7 @@ index f4fe5d8bf9..8944aec454 100644
        "//chrome/browser/ui/webui/customize_buttons:mojo_bindings",
        "//chrome/browser/ui/webui/data_sharing:mojo_bindings",
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
-index 51f5cdba60..e3877f108c 100644
+index 8a0281a596..d69c7a6792 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_desktop.cc
 @@ -28,6 +28,8 @@
@@ -143,7 +142,7 @@ index 51f5cdba60..e3877f108c 100644
  #include "chrome/browser/ui/webui/ai_overlay_dialog/ai_overlay_dialog.mojom.h"
  #include "chrome/browser/ui/webui/ai_overlay_dialog/ai_overlay_dialog_untrusted_ui.h"
  #include "chrome/browser/ui/webui/app_service_internals/app_service_internals.mojom.h"
-@@ -150,7 +152,7 @@
+@@ -147,7 +149,7 @@
  #include "chrome/browser/ui/webui/app_settings/web_app_settings_ui.h"
  // The intro mojom targets exist on ChromeOS but these headers are only
  // compiled on Win/Mac/Linux; gn check is static, so suppress it on ChromeOS.
@@ -152,7 +151,7 @@ index 51f5cdba60..e3877f108c 100644
  #include "chrome/browser/ui/webui/intro/intro.mojom.h"  // nogncheck
  #include "chrome/browser/ui/webui/intro/intro_ui.h"
  #include "chrome/browser/ui/webui/intro/sign_in_celebration.mojom.h"  // nogncheck
-@@ -714,6 +716,8 @@ void PopulateChromeWebUIFrameInterfaceBrokersTrustedPartsDesktop(
+@@ -711,6 +713,8 @@ void PopulateChromeWebUIFrameInterfaceBrokersTrustedPartsDesktop(
  
  void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsDesktop(
      content::WebUIBrowserInterfaceBrokerRegistry& registry) {
@@ -162,7 +161,7 @@ index 51f5cdba60..e3877f108c 100644
      registry.ForWebUI<lens::LensSidePanelUntrustedUI>()
          .Add<lens::mojom::LensSidePanelPageHandlerFactory>()
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index 400fd3134f..4ea60eebd1 100644
+index 835dd9a5fc..1feb7b7b89 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 @@ -10,6 +10,7 @@
@@ -173,7 +172,7 @@ index 400fd3134f..4ea60eebd1 100644
  #include <set>
  #include <string>
  #include <utility>
-@@ -36,6 +37,8 @@
+@@ -39,6 +40,8 @@
  #include "build/build_config.h"
  #include "chrome/app/chrome_command_ids.h"
  #include "chrome/app/vector_icons/vector_icons.h"
@@ -182,7 +181,7 @@ index 400fd3134f..4ea60eebd1 100644
  #include "chrome/browser/app_mode/app_mode_utils.h"
  #include "chrome/browser/apps/app_service/app_service_proxy.h"
  #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-@@ -128,6 +131,8 @@
+@@ -127,6 +130,8 @@
  #include "chrome/browser/ui/read_anything/read_anything_side_panel_controller_utils.h"
  #include "chrome/browser/ui/send_tab_to_self/send_tab_to_self_bubble.h"
  #include "chrome/browser/ui/send_tab_to_self/send_tab_to_self_context_menu_delegate.h"
@@ -190,17 +189,17 @@ index 400fd3134f..4ea60eebd1 100644
 +#include "chrome/browser/ui/side_panel/side_panel_ui.h"
  #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
  #include "chrome/browser/ui/tabs/features.h"
- #include "chrome/browser/ui/tabs/public/tab_features.h"
-@@ -148,6 +153,8 @@
- #include "chrome/browser/web_applications/web_app_icon_manager.h"
+ #include "chrome/browser/ui/tabs/page_context_eligibility_helper.h"
+@@ -149,6 +154,8 @@
  #include "chrome/browser/web_applications/web_app_provider.h"
  #include "chrome/browser/web_applications/web_app_registrar.h"
+ #include "chrome/common/channel_info.h"
 +#include "chrome/common/aegis/features.h"
 +#include "chrome/common/aegis/pref_names.h"
  #include "chrome/common/chrome_constants.h"
  #include "chrome/common/chrome_features.h"
  #include "chrome/common/chrome_render_frame.mojom.h"
-@@ -209,6 +216,7 @@
+@@ -212,6 +219,7 @@
  #include "components/strings/grit/components_strings.h"
  #include "components/supervised_user/core/browser/supervised_user_preferences.h"
  #include "components/supervised_user/core/browser/supervised_user_url_filtering_service.h"
@@ -208,7 +207,7 @@ index 400fd3134f..4ea60eebd1 100644
  #include "components/translate/core/browser/translate_download_manager.h"
  #include "components/translate/core/browser/translate_manager.h"
  #include "components/translate/core/browser/translate_prefs.h"
-@@ -401,6 +409,37 @@ namespace {
+@@ -424,6 +432,37 @@ constexpr int IDC_SPELLCHECK_LANGUAGES_LAST =
  
  constexpr int kTabMenuIconSize = 16;
  
@@ -246,39 +245,39 @@ index 400fd3134f..4ea60eebd1 100644
  base::OnceCallback<void(RenderViewContextMenu*)>* GetMenuShownCallback() {
    static base::NoDestructor<base::OnceCallback<void(RenderViewContextMenu*)>>
        callback;
-@@ -624,13 +663,14 @@ const std::map<int, int>& GetIdcToUmaMap(UmaEnumIdLookupType type) {
-        {IDC_CONTENT_CONTEXT_ADD_LINK_TO_READING_LIST, 166},
+@@ -651,13 +690,14 @@ int UmaEnumForCommand(int key, UmaEnumIdLookupType type) {
         {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 167},
         {IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS, 168},
-+       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 169},
+        {IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED, 169},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 170},
         // To add new items:
         //   - Add one more line above this comment block, using the UMA value
         //     from the line below this comment block.
         //   - Increment the UMA value in that latter line.
         //   - Add the new item to the RenderViewContextMenuItem enum in
         //     tools/metrics/histograms/metadata/ui/enums.xml.
--       {0, 169}});
-+       {0, 170}});
+-       {kUmaMaxValueKey, 170}});
++       {kUmaMaxValueKey, 171}});
    // LINT.ThenChange(//tools/metrics/histograms/metadata/ui/enums.xml:RenderViewContextMenuItem)
  
    // LINT.IfChange(ContextMenuOptionDesktop)
-@@ -670,13 +710,14 @@ const std::map<int, int>& GetIdcToUmaMap(UmaEnumIdLookupType type) {
-        {IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW, 31},
+@@ -698,13 +738,14 @@ int UmaEnumForCommand(int key, UmaEnumIdLookupType type) {
         {IDC_CONTENT_CONTEXT_GLICSHAREIMAGE, 32},
         {IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY, 33},
-+       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 34},
+        {IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED, 34},
++       {IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT, 35},
         // To add new items:
         //   - Add one more line above this comment block, using the UMA value
         //     from the line below this comment block.
         //   - Increment the UMA value in that latter line.
         //   - Add the new item to the ContextMenuOptionDesktop enum in
         //     tools/metrics/histograms/metadata/ui/enums.xml.
--       {0, 33}});
-+       {0, 34}});
+-       {kUmaMaxValueKey, 35}});
++       {kUmaMaxValueKey, 36}});
    // LINT.ThenChange(//tools/metrics/histograms/metadata/ui/enums.xml:ContextMenuOptionDesktop)
  
-   return *(type == UmaEnumIdLookupType::GeneralEnumId ? kGeneralMap
-@@ -1437,6 +1478,8 @@ void RenderViewContextMenu::InitMenu() {
+   switch (type) {
+@@ -1488,6 +1529,8 @@ void RenderViewContextMenu::InitMenu() {
      AppendCurrentExtensionItems();
    }
  
@@ -287,7 +286,7 @@ index 400fd3134f..4ea60eebd1 100644
    // Accessibility label items are appended to all menus (with the exception of
    // within the dev tools and PDF Viewer) when a screen reader is enabled. It
    // can be difficult to open a specific context menu with a screen reader, so
-@@ -2772,6 +2815,101 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
+@@ -2872,6 +2915,101 @@ void RenderViewContextMenu::AppendSaveToMemoryBanksItem() {
    }
  }
  
@@ -389,9 +388,9 @@ index 400fd3134f..4ea60eebd1 100644
  void RenderViewContextMenu::AppendGlicItems() {
    if (IsGlicWindow(this, browser_context_)) {
      menu_model_.AddItemWithStringId(IDC_CONTENT_CONTEXT_RELOAD_GLIC,
-@@ -3310,6 +3448,13 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
-   }
- #endif
+@@ -3405,6 +3543,13 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
+           *GetProfile()->GetPrefs(), chrome::GetChannel());
+ 
    switch (id) {
 +    case IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT:
 +      return GetProfile() && GetProfile()->IsRegularProfile() && GetBrowser() &&
@@ -403,7 +402,7 @@ index 400fd3134f..4ea60eebd1 100644
      case IDC_BACK:
        return embedder_web_contents_->GetController().CanGoBack();
  
-@@ -3616,6 +3761,9 @@ ui::ImageModel RenderViewContextMenu::GetIconForCommandId(
+@@ -3716,6 +3861,9 @@ ui::ImageModel RenderViewContextMenu::GetIconForCommandId(
  }
  
  bool RenderViewContextMenu::IsCommandIdVisible(int id) const {
@@ -413,7 +412,7 @@ index 400fd3134f..4ea60eebd1 100644
    if (ContextMenuMatcher::IsExtensionsCustomCommandId(id)) {
      return extension_items_.IsCommandIdVisible(id);
    }
-@@ -3666,6 +3814,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
+@@ -3766,6 +3914,10 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
    }
  
    switch (id) {
@@ -425,10 +424,10 @@ index 400fd3134f..4ea60eebd1 100644
        WindowOpenDisposition new_tab_disposition =
            WindowOpenDisposition::NEW_BACKGROUND_TAB;
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.h b/chrome/browser/renderer_context_menu/render_view_context_menu.h
-index 86b862fc8b..ed7a246d21 100644
+index 0daa02b832..b86c5e542b 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
-@@ -323,6 +323,7 @@ class RenderViewContextMenu
+@@ -322,6 +322,7 @@ class RenderViewContextMenu
    void AppendMediaItems();
    void AppendPluginItems();
    void AppendPageItems();
@@ -436,7 +435,7 @@ index 86b862fc8b..ed7a246d21 100644
    void AppendExitFullscreenItem();
    void AppendCopyItem();
    void AppendLinkToTextItems();
-@@ -333,6 +334,7 @@ class RenderViewContextMenu
+@@ -332,6 +333,7 @@ class RenderViewContextMenu
    void AppendReadAnythingItem();
    void AppendSaveToMemoryBanksItem();
    void AppendGlicItems();
@@ -445,7 +444,7 @@ index 86b862fc8b..ed7a246d21 100644
    void AppendSpellingAndSearchSuggestionItems();
    void AppendOtherEditableItems();
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index dfcbf3d751..968372b0f3 100644
+index 358f4de064..aeb0abcc44 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
 @@ -52,6 +52,7 @@ group("resources") {
@@ -456,38 +455,38 @@ index dfcbf3d751..968372b0f3 100644
        "app_service_internals:resources",
        "autofill_ml_internals:resources",
        "bookmarks:resources",
-@@ -323,6 +324,7 @@ if (!is_android) {
+@@ -408,6 +409,7 @@ if (!is_android) {
  group("dev_ui_resources") {
    public_deps = [
      "accessibility:resources",
 +    "aegis:resources",
      "bluetooth_internals:resources",
-     "browsing_topics:resources",
      "chrome_finds_internals:resources",
-@@ -340,7 +342,6 @@ group("dev_ui_resources") {
-     "predictors:resources",
+     "components:resources",
+@@ -426,7 +428,6 @@ group("dev_ui_resources") {
      "subresource_filter:resources",
+     "suggest_internals:resources",
      "usb_internals:resources",
 -    "aegis:resources",
      "//components/actor/core/internals/resources",
+     "//components/autofill/core/browser/autofill_and_password_manager_internals:resources",
      "//components/commerce/core/internals/resources",
-     "//components/data_sharing/data_sharing_internals/resources",
-@@ -405,6 +406,7 @@ repack("dev_ui_paks") {
+@@ -500,6 +501,7 @@ repack("dev_ui_paks") {
  
    sources = [
      "$root_gen_dir/chrome/accessibility_resources.pak",
 +    "$root_gen_dir/chrome/aegis_resources.pak",
      "$root_gen_dir/chrome/bluetooth_internals_resources.pak",
-     "$root_gen_dir/chrome/browsing_topics_internals_resources.pak",
      "$root_gen_dir/chrome/chrome_finds_internals_resources.pak",
-@@ -422,7 +424,6 @@ repack("dev_ui_paks") {
-     "$root_gen_dir/chrome/predictors_resources.pak",
+     "$root_gen_dir/chrome/components_resources.pak",
+@@ -518,7 +520,6 @@ repack("dev_ui_paks") {
      "$root_gen_dir/chrome/subresource_filter_internals_resources.pak",
+     "$root_gen_dir/chrome/suggest_internals_resources.pak",
      "$root_gen_dir/chrome/usb_internals_resources.pak",
 -    "$root_gen_dir/chrome/aegis_resources.pak",
      "$root_gen_dir/components/actor_internals_resources.pak",
+     "$root_gen_dir/components/autofill_and_password_manager_internals_resources.pak",
      "$root_gen_dir/components/commerce_internals_resources.pak",
-     "$root_gen_dir/components/data_sharing_internals_resources.pak",
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
 index 6c9fa93cb9..ae4fa36ff0 100644
 --- a/chrome/browser/resources/aegis/aegis.html
@@ -1808,44 +1807,44 @@ index 0000000000..5a7838098e
 +
 +let instance: BrowserProxy|null = null;
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 017a8c3ff7..12828c7e55 100644
+index 2e7510e36d..07b58ab356 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -482,6 +482,7 @@ static_library("ui") {
-     "//chrome/browser:icon_manager",
+@@ -594,6 +594,7 @@ static_library("ui") {
+     "//chrome/browser:font_pref",
      "//chrome/browser:renderer_preferences_util",
      "//chrome/browser:resources_util",
 +    "//chrome/browser/aegis",
      "//chrome/browser/affiliations",
      "//chrome/browser/ai",
      "//chrome/browser/autocomplete",
-@@ -701,6 +702,7 @@ static_library("ui") {
+@@ -768,6 +769,7 @@ static_library("ui") {
+     "//chrome/browser/webauthn",
      "//chrome/browser/webauthn:impl",
-     "//chrome/browser/webnn",
      "//chrome/common",
 +    "//chrome/common/aegis",
-     "//chrome/common/net",
-     "//chrome/common/search:mojo_bindings",
-     "//chrome/installer/util:with_no_strings",
-@@ -1085,6 +1087,7 @@ static_library("ui") {
-       # data_sharing:impl includes headers from //chrome/browser/ui (e.g.
-       # data_sharing_utils.h) that can't be split out yet.
-       "//chrome/browser/ui/webui/data_sharing:impl",
+     "//components/affiliations/core/browser:affiliations",
+     "//components/autofill/content/browser",
+     "//components/autofill/core/common:credit_card_number_validation",
+@@ -972,6 +974,7 @@ static_library("ui") {
+       # target (browser_element_identifiers.h and
+       # views/frame/browser_view.h) that can't be split out yet.
+       "//chrome/browser/ui/views/data_sharing:impl",
 +      "//chrome/browser/ui/webui/aegis_agent:impl",
  
        # downloads includes headers from //chrome/browser/ui (e.g.
-       # browser_window.h, chrome_pages.h) that can't be split out yet.
-@@ -1678,6 +1681,8 @@ static_library("ui") {
+       # browser_window.h) that can't be split out yet.
+@@ -1410,6 +1413,8 @@ static_library("ui") {
+       "//chrome/browser/ui/web_applications:launch_utils",
        "//chrome/browser/ui/webui/access_code_cast",
        "//chrome/browser/ui/webui/access_code_cast:impl",
-       "//chrome/browser/ui/webui/access_code_cast:mojo_bindings",
 +      "//chrome/browser/ui/webui/aegis_agent:impl",
 +      "//chrome/browser/ui/webui/aegis_agent:mojo_bindings",
        "//chrome/browser/ui/webui/ai_overlay_dialog",
-       "//chrome/browser/ui/webui/ai_overlay_dialog:mojo_bindings",
-       "//chrome/browser/ui/webui/app_service_internals:mojo_bindings",
-@@ -1993,6 +1998,7 @@ static_library("ui") {
-       "//chrome/browser/ui/tabs:tab_enums",
+       "//chrome/browser/ui/webui/bookmarks",
+       "//chrome/browser/ui/webui/data_sharing:impl",
+@@ -1587,6 +1592,7 @@ static_library("ui") {
+       "//chrome/browser/ui/read_anything",
        "//chrome/browser/ui/views/side_panel",
        "//chrome/browser/ui/waap:manager",
 +      "//chrome/browser/ui/webui/aegis_agent",
@@ -1853,10 +1852,10 @@ index 017a8c3ff7..12828c7e55 100644
        "//chrome/browser/ui/webui/feedback",
        "//chrome/browser/ui/webui/feedback:impl",
 diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
-index 1a6acad48b..baa2e0a591 100644
+index 637e84f591..7d11175864 100644
 --- a/chrome/browser/ui/actions/chrome_action_id.h
 +++ b/chrome/browser/ui/actions/chrome_action_id.h
-@@ -554,6 +554,7 @@
+@@ -479,6 +479,7 @@
    /* Side Panel items */ \
    E(kActionSidePanelShowAboutThisSite) \
    E(kActionSidePanelShowAssistant) \
@@ -1865,18 +1864,18 @@ index 1a6acad48b..baa2e0a591 100644
    E(kActionSidePanelShowComments, IDC_SHOW_COMMENTS_SIDE_PANEL) \
    E(kActionSidePanelShowCustomizeChrome, IDC_SHOW_CUSTOMIZE_CHROME_SIDE_PANEL) \
 diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
-index 812961aed2..93fdcdb926 100644
+index a899f322a7..1aa58fc746 100644
 --- a/chrome/browser/ui/browser_actions.cc
 +++ b/chrome/browser/ui/browser_actions.cc
-@@ -40,6 +40,7 @@
- #include "chrome/browser/sharing_hub/sharing_hub_features.h"
- #include "chrome/browser/ui/accelerator_table.h"
+@@ -47,6 +47,7 @@
+ #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt_manager.h"
+ #include "chrome/browser/ui/startup/default_browser_prompt/default_browser_prompt_prefs.h"
  #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
 +#include "chrome/common/aegis/features.h"
  #include "chrome/common/webui_url_constants.h"
  #include "components/search_engines/ai_mode_button_config.h"
  #include "components/search_engines/ai_mode_button_service.h"
-@@ -333,6 +334,23 @@ void BrowserActions::InitializeSidePanelActions() {
+@@ -382,6 +383,23 @@ void BrowserActions::InitializeSidePanelActions() {
    Profile* const profile = base::to_address(profile_);
    BrowserWindowInterface* const bwi = base::to_address(bwi_);
  
@@ -1900,31 +1899,19 @@ index 812961aed2..93fdcdb926 100644
    root_action_item_->AddChild(
        SidePanelAction(SidePanelEntryId::kBookmarks, IDS_BOOKMARK_MANAGER_TITLE,
                        IDS_BOOKMARK_MANAGER_TITLE,
-@@ -3540,9 +3558,8 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
-               [](BrowserWindowInterface* bwi, actions::ActionItem* item,
-                  actions::ActionInvocationContext context) {
-                 PrefService* pref_service = bwi->GetProfile()->GetPrefs();
--                const char* pref_name =
--                    media_router::prefs::
--                        kMediaRouterShowCastSessionsStartedByOtherDevices;
-+                const char* pref_name = media_router::prefs::
-+                    kMediaRouterShowCastSessionsStartedByOtherDevices;
-                 pref_service->SetBoolean(pref_name,
-                                          !pref_service->GetBoolean(pref_name));
-               },
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 45a19a87c2..5699db240b 100644
+index 206c641112..e18cda2b78 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -103,6 +103,7 @@
- #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
+@@ -104,6 +104,7 @@
  #include "chrome/browser/web_applications/web_app_install_params.h"
  #include "chrome/browser/web_applications/web_app_utils.h"
+ #include "chrome/common/channel_info.h"
 +#include "chrome/common/aegis/features.h"
  #include "chrome/common/chrome_features.h"
  #include "chrome/common/content_restriction.h"
  #include "chrome/common/pref_names.h"
-@@ -541,7 +542,6 @@ void BrowserCommandController::GlicActiveInstanceChanged(
+@@ -564,7 +565,6 @@ void BrowserCommandController::GlicActiveInstanceChanged(
    UpdateGlicState();
  }
  
@@ -1932,7 +1919,7 @@ index 45a19a87c2..5699db240b 100644
  void BrowserCommandController::FindBarVisibilityChanged() {
    // Block find command updates in locked fullscreen mode unless the instance is
    // locked for OnTask (only relevant for non-web browser scenarios).
-@@ -1250,6 +1250,10 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1287,6 +1287,10 @@ void BrowserCommandController::HandleCommandWithDisposition(
      case IDC_SHOW_AEGIS:
        ShowAegisPage(browser_->GetBrowserForOpeningWebUi());
        break;
@@ -1941,9 +1928,9 @@ index 45a19a87c2..5699db240b 100644
 +          SidePanelEntryId::kAegisAgent, SidePanelOpenTrigger::kAegisAgent);
 +      break;
      case IDC_EDIT_SEARCH_ENGINES:
-       ShowSearchEngineSettings(browser_->GetBrowserForOpeningWebUi());
+       ShowSearchEngineSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
-@@ -1822,6 +1826,10 @@ void BrowserCommandController::InitCommandState() {
+@@ -1858,6 +1862,10 @@ void BrowserCommandController::InitCommandState() {
        TabsFromOtherDevicesSidePanelCoordinator::IsSupported(profile()));
    command_updater_->UpdateCommandEnabled(IDC_SHOW_DOWNLOADS, true);
    command_updater_->UpdateCommandEnabled(IDC_SHOW_COMMENTS_SIDE_PANEL, true);
@@ -1951,10 +1938,10 @@ index 45a19a87c2..5699db240b 100644
 +      IDC_SHOW_AEGIS_AGENT,
 +      base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
 +          profile()->IsRegularProfile());
-   command_updater_->UpdateCommandEnabled(IDC_FIND_AND_EDIT_MENU, true);
-   command_updater_->UpdateCommandEnabled(IDC_SAVE_AND_SHARE_MENU, true);
+   command_updater_->UpdateCommandEnabled(kFindAndEditMenuId, true);
+   command_updater_->UpdateCommandEnabled(kSaveAndShareMenuId, true);
    command_updater_->UpdateCommandEnabled(IDC_SHOW_READING_MODE_SIDE_PANEL,
-@@ -2349,6 +2357,11 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2420,6 +2428,11 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_SHOW_AEGIS, show_main_ui);
@@ -1967,7 +1954,7 @@ index 45a19a87c2..5699db240b 100644
    command_updater_->UpdateCommandEnabled(IDC_CHROME_TIPS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_CHROME_WHATS_NEW, show_main_ui);
 diff --git a/chrome/browser/ui/cocoa/accelerators_cocoa.mm b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
-index ac3e3353cc..0eb21495e9 100644
+index 12d6be60e2..f22a1d1327 100644
 --- a/chrome/browser/ui/cocoa/accelerators_cocoa.mm
 +++ b/chrome/browser/ui/cocoa/accelerators_cocoa.mm
 @@ -113,7 +113,8 @@ const struct AcceleratorMapping {
@@ -1977,11 +1964,11 @@ index ac3e3353cc..0eb21495e9 100644
 -    {IDC_TAB_SEARCH, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN, ui::VKEY_A},
 +    // Aegis Browser reserves Cmd+Shift+A as its primary Agent entry point.
 +    {IDC_SHOW_AEGIS_AGENT, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN, ui::VKEY_A},
-     {IDC_CREATE_NEW_TAB_GROUP, ui::EF_CONTROL_DOWN | ui::EF_COMMAND_DOWN,
-      ui::VKEY_P},
      {IDC_TOGGLE_VERTICAL_TABS_COLLAPSE, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN,
+      ui::VKEY_L},
+     {IDC_NEW_SPLIT_TAB, ui::EF_COMMAND_DOWN | ui::EF_ALT_DOWN, ui::VKEY_N},
 diff --git a/chrome/browser/ui/side_panel/side_panel_entry_id.h b/chrome/browser/ui/side_panel/side_panel_entry_id.h
-index f77bd9c8db..295132dff3 100644
+index 3e9dc27c0b..0a2a81ed4c 100644
 --- a/chrome/browser/ui/side_panel/side_panel_entry_id.h
 +++ b/chrome/browser/ui/side_panel/side_panel_entry_id.h
 @@ -26,6 +26,7 @@
@@ -1993,20 +1980,20 @@ index f77bd9c8db..295132dff3 100644
    V(kSideSearch, kActionSidePanelShowSideSearch, "SideSearch")                \
    V(kLens, kActionSidePanelShowLens, "Lens")                                  \
 diff --git a/chrome/browser/ui/side_panel/side_panel_enums.h b/chrome/browser/ui/side_panel/side_panel_enums.h
-index d4a58de364..73d189952c 100644
+index cac027e417..47c3f9cc29 100644
 --- a/chrome/browser/ui/side_panel/side_panel_enums.h
 +++ b/chrome/browser/ui/side_panel/side_panel_enums.h
-@@ -46,7 +46,8 @@ enum class SidePanelOpenTrigger {
- #endif
-   kGlicOpened = 28,
-   kContextualTasks = 29,
--  kMaxValue = kContextualTasks,
-+  kAegisAgent = 30,
+@@ -49,7 +49,8 @@ enum class SidePanelOpenTrigger {
+   kReadAnythingListenToThisPageContextMenu = 30,
+   kReadAnythingUnknown = 31,
+   kUnknown = 32,
+-  kMaxValue = kUnknown,
++  kAegisAgent = 33,
 +  kMaxValue = kAegisAgent,
  };
  // LINT.ThenChange(//tools/metrics/histograms/enums.xml:SidePanelOpenTrigger)
  
-@@ -80,7 +81,6 @@ enum class SidePanelEntryHideReason {
+@@ -83,7 +84,6 @@ enum class SidePanelEntryHideReason {
  #endif
  };
  
@@ -2015,13 +2002,13 @@ index d4a58de364..73d189952c 100644
    kMinValue,
    // Panel aligned with the web contents.
 diff --git a/chrome/browser/ui/side_panel/side_panel_enums_utils.h b/chrome/browser/ui/side_panel/side_panel_enums_utils.h
-index f4dc6b548d..31fa32a06d 100644
+index cce90817b3..b939db5f41 100644
 --- a/chrome/browser/ui/side_panel/side_panel_enums_utils.h
 +++ b/chrome/browser/ui/side_panel/side_panel_enums_utils.h
-@@ -70,6 +70,8 @@ inline std::string ToString(SidePanelOpenTrigger trigger) {
-       return "GlicOpened";
-     case SidePanelOpenTrigger::kContextualTasks:
-       return "ContextualTasks";
+@@ -76,6 +76,8 @@ inline std::string ToString(SidePanelOpenTrigger trigger) {
+       return "ReadAnythingUnknown";
+     case SidePanelOpenTrigger::kUnknown:
+       return "Unknown";
 +    case SidePanelOpenTrigger::kAegisAgent:
 +      return "AegisAgent";
    }
@@ -2058,7 +2045,7 @@ index d93b933b81..9286469922 100644
            features::kTabsFromOtherDevicesSidePanelPinnedByDefault)) {
      const std::optional<std::string>& tabs_from_other_devices_action =
 diff --git a/chrome/browser/ui/views/side_panel/BUILD.gn b/chrome/browser/ui/views/side_panel/BUILD.gn
-index 7fcad1f062..922e5678ef 100644
+index f090138eb7..a03283184a 100644
 --- a/chrome/browser/ui/views/side_panel/BUILD.gn
 +++ b/chrome/browser/ui/views/side_panel/BUILD.gn
 @@ -9,6 +9,8 @@ import("//extensions/buildflags/buildflags.gni")
@@ -2070,15 +2057,15 @@ index 7fcad1f062..922e5678ef 100644
      "bookmarks/bookmarks_side_panel_coordinator.cc",
      "bookmarks/bookmarks_side_panel_coordinator.h",
      "comments/comments_side_panel_coordinator.cc",
-@@ -134,6 +136,7 @@ source_set("side_panel") {
-     "//chrome/browser/ui/views/interaction",
-     "//chrome/browser/ui/views/toolbar",
+@@ -131,6 +133,7 @@ source_set("side_panel") {
      "//chrome/browser/ui/webui:webui_util",
+     "//chrome/browser/ui/webui/side_panel/bookmarks",
+     "//chrome/browser/ui/webui/side_panel/comments",
 +    "//chrome/browser/ui/webui/aegis_agent",
      "//chrome/browser/ui/webui/side_panel/history",
      "//chrome/browser/ui/webui/side_panel/history_clusters",
      "//chrome/browser/ui/webui/side_panel/tabs_from_other_devices",
-@@ -141,6 +144,7 @@ source_set("side_panel") {
+@@ -138,6 +141,7 @@ source_set("side_panel") {
      "//chrome/browser/ui/webui_browser:headers",
      "//chrome/common",
      "//chrome/common:constants",
@@ -2210,10 +2197,10 @@ index 414f120c64..eaf1f657fc 100644
      // TODO(webium): Consider supporting additional side panels beyond reading
      // list and bookmarks.
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 1c5c10b380..f6532d65b1 100644
+index d8b1cdff4b..f6df8015da 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -61,8 +61,8 @@ source_set("configs") {
+@@ -62,8 +62,8 @@ source_set("configs") {
      "//chrome/browser/ui",
      "//chrome/browser/ui/webui/about",
      "//chrome/browser/ui/webui/accessibility",
@@ -2221,9 +2208,9 @@ index 1c5c10b380..f6532d65b1 100644
      "//chrome/browser/ui/webui/actor_internals",
 +    "//chrome/browser/ui/webui/aegis",
      "//chrome/browser/ui/webui/autofill_and_password_manager_internals",
-     "//chrome/browser/ui/webui/browsing_topics",
+     "//chrome/browser/ui/webui/bluetooth_internals",
      "//chrome/browser/ui/webui/chrome_urls",
-@@ -120,6 +120,7 @@ source_set("configs") {
+@@ -125,6 +125,7 @@ source_set("configs") {
        "//chrome/browser/contextual_cueing/internals",
        "//chrome/browser/glic/selection",
        "//chrome/browser/ui/webui/access_code_cast",
@@ -3769,7 +3756,7 @@ index 0000000000..6a978fe03a
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_UI_H_
 diff --git a/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
-index d14048efd8..2593af3f7c 100644
+index e684c362cd..1c32598b51 100644
 --- a/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.cc
 @@ -10,6 +10,7 @@
@@ -3780,8 +3767,8 @@ index d14048efd8..2593af3f7c 100644
  #include "chrome/browser/ui/webui/data_sharing/data_sharing_ui.h"
  #include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_ui.h"
  #include "components/compose/buildflags.h"
-@@ -47,6 +48,7 @@ void RegisterChromeUntrustedWebUIConfigs() {
- #endif  // defined(TOOLKIT_VIEWS) || BUILDFLAG(ENABLE_PRINT_PREVIEW)
+@@ -53,6 +54,7 @@ void RegisterChromeUntrustedWebUIConfigs() {
+         // BUILDFLAG(IS_ANDROID)
  
  #if defined(TOOLKIT_VIEWS)
 +  map.AddUntrustedWebUIConfig(std::make_unique<AegisAgentUIConfig>());
@@ -3789,10 +3776,10 @@ index d14048efd8..2593af3f7c 100644
        std::make_unique<lens::LensOverlayUntrustedUIConfig>());
    map.AddUntrustedWebUIConfig(
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
-index d82c74a6ac..ae061b1f53 100644
+index 1fbcb08421..3c02e05b4f 100644
 --- a/chrome/common/webui_url_constants.h
 +++ b/chrome/common/webui_url_constants.h
-@@ -356,6 +356,9 @@ inline constexpr char kChromeUITranslateInternalsHost[] = "translate-internals";
+@@ -338,6 +338,9 @@ inline constexpr char kChromeUITranslateInternalsHost[] = "translate-internals";
  inline constexpr char kChromeUIUntrustedComposeHost[] = "compose";
  inline constexpr char kChromeUIUntrustedComposeUrl[] =
      "chrome-untrusted://compose/";
@@ -3803,30 +3790,30 @@ index d82c74a6ac..ae061b1f53 100644
  inline constexpr char kChromeUIUntrustedDataSharingURL[] =
      "chrome-untrusted://data-sharing/";
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
-index 9e2dc91334..f309ed1081 100644
+index 62e11c5a7a..743b77b7fe 100644
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
-@@ -2263,6 +2263,7 @@ if (!is_android) {
+@@ -1928,6 +1928,7 @@ if (!is_android) {
        "//chrome/browser/actor:browser_tests",
        "//chrome/browser/actor:test_support",
        "//chrome/browser/actor/ui:browser_tests",
 +      "//chrome/browser/aegis:browser_tests",
        "//chrome/browser/affiliations",
        "//chrome/browser/ai",
-       "//chrome/browser/apps/app_service",
-@@ -9733,6 +9734,7 @@ if (!is_android && !is_chromeos_device) {
-       "//chrome/browser/actor:test_support",
+       "//chrome/browser/ai:browser_tests",
+@@ -8519,6 +8520,7 @@ if (!is_android && !is_chromeos_device) {
        "//chrome/browser/actor/ui:interactive_ui_tests",
        "//chrome/browser/actor/ui/task_list_bubble:interactive_ui_tests",
+       "//chrome/browser/ai:interactive_ui_tests",
 +      "//chrome/browser/aegis:interactive_ui_tests",
        "//chrome/browser/apps/app_service",
        "//chrome/browser/apps/app_service:app_registry_cache_waiter",
        "//chrome/browser/apps/app_service/app_icon",
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 5e9d0920e5..f890f77cfd 100644
+index 41d41d5568..ff1a20c504 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -872,6 +872,10 @@
+@@ -876,6 +876,10 @@
      "META": {"sizes": {"includes": [10]}},
      "includes": [5170],
    },
@@ -3838,22 +3825,22 @@ index 5e9d0920e5..f890f77cfd 100644
      "META": {"sizes": {"includes": [10]}},
      "includes": [5200],
 diff --git a/tools/metrics/histograms/enums.xml b/tools/metrics/histograms/enums.xml
-index d1ad1660dd..ac9ac58de9 100644
+index e0c7c34d9c..3bce20c5e3 100644
 --- a/tools/metrics/histograms/enums.xml
 +++ b/tools/metrics/histograms/enums.xml
-@@ -25904,6 +25904,7 @@ Called by update_net_error_codes.py.-->
-   <int value="27" label="Opened from window getting larger"/>
-   <int value="28" label="Opened from Glic"/>
-   <int value="29" label="Opened from Contextual Tasks"/>
-+  <int value="30" label="Opened from Aegis Browser Agent entry point"/>
+@@ -26157,6 +26157,7 @@ Called by update_net_error_codes.py.-->
+   <int value="30" label="Opened from context menu Listen to this page option"/>
+   <int value="31" label="Opened from an unknown Read Anything trigger"/>
+   <int value="32" label="Opened from an unknown trigger"/>
++  <int value="33" label="Opened from Aegis Browser Agent entry point"/>
  </enum>
  
  <!-- LINT.ThenChange(//chrome/browser/ui/side_panel/side_panel_enums.h:SidePanelOpenTrigger) -->
 diff --git a/tools/metrics/histograms/metadata/page/histograms.xml b/tools/metrics/histograms/metadata/page/histograms.xml
-index 74ad88f57c..85efb7ef1d 100644
+index 7e8cb88ba8..4c6d8208c8 100644
 --- a/tools/metrics/histograms/metadata/page/histograms.xml
 +++ b/tools/metrics/histograms/metadata/page/histograms.xml
-@@ -615,6 +615,7 @@ chromium-metrics-reviews@google.com.
+@@ -632,6 +632,7 @@ chromium-metrics-reviews@google.com.
  
  <variants name="WebUIName">
    <variant name=""/>
@@ -3862,7 +3849,7 @@ index 74ad88f57c..85efb7ef1d 100644
    <variant name=".CommentsSidePanel"/>
    <variant name=".Compose"/>
 diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
-index ace4b6a1ce..a5bb0e939d 100644
+index 858751870a..9f08f20649 100644
 --- a/tools/metrics/histograms/metadata/sql/histograms.xml
 +++ b/tools/metrics/histograms/metadata/sql/histograms.xml
 @@ -32,6 +32,7 @@ chromium-metrics-reviews@google.com.
@@ -3871,33 +3858,33 @@ index ace4b6a1ce..a5bb0e939d 100644
    <variant name="Activity" summary="Activity"/>
 +  <variant name="AegisAgent" summary="Aegis Browser Agent task storage"/>
    <variant name="Affiliation" summary="Affiliation"/>
-   <variant name="AggregationService" summary="AggregationService"/>
    <variant name="AnnotationStorage" summary="AnnotationStorage"/>
+   <variant name="ArcContentUrlDatabase" summary="ArcContentUrlDatabase"/>
 diff --git a/tools/metrics/histograms/metadata/ui/enums.xml b/tools/metrics/histograms/metadata/ui/enums.xml
-index f61c472519..8e79f7b44f 100644
+index f1067d02c1..2b37aa0b0b 100644
 --- a/tools/metrics/histograms/metadata/ui/enums.xml
 +++ b/tools/metrics/histograms/metadata/ui/enums.xml
-@@ -79,6 +79,7 @@ chromium-metrics-reviews@google.com.
-   <int value="31" label="Open link in split view"/>
+@@ -80,6 +80,7 @@ chromium-metrics-reviews@google.com.
    <int value="32" label="Create image with Gemini in Chrome"/>
    <int value="33" label="Remove from dictionary"/>
-+  <int value="34" label="Send page context to Aegis Agent"/>
+   <int value="34" label="Open link in isolated window"/>
++  <int value="35" label="Send page context to Aegis Agent"/>
  </enum>
  
  <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:ContextMenuOptionDesktop) -->
-@@ -371,6 +372,7 @@ chromium-metrics-reviews@google.com.
-   <int value="166" label="IDC_CONTENT_CONTEXT_ADD_LINK_TO_READING_LIST"/>
+@@ -404,6 +405,7 @@ chromium-metrics-reviews@google.com.
    <int value="167" label="IDC_SPELLCHECK_REMOVE_FROM_DICTIONARY"/>
    <int value="168" label="IDC_CONTENT_CONTEXT_SAVE_TO_MEMORY_BANKS"/>
-+  <int value="169" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
+   <int value="169" label="IDC_CONTENT_CONTEXT_OPENLINK_ISOLATED"/>
++  <int value="170" label="IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT"/>
  </enum>
  
  <!-- LINT.ThenChange(//chrome/browser/renderer_context_menu/render_view_context_menu.cc:RenderViewContextMenuItem) -->
 diff --git a/tools/metrics/histograms/metadata/ui/histograms.xml b/tools/metrics/histograms/metadata/ui/histograms.xml
-index 611b1d2222..342413fb06 100644
+index 2b7513a5f4..57e7a2c6e6 100644
 --- a/tools/metrics/histograms/metadata/ui/histograms.xml
 +++ b/tools/metrics/histograms/metadata/ui/histograms.xml
-@@ -130,6 +130,7 @@ chromium-metrics-reviews@google.com.
+@@ -134,6 +134,7 @@ chromium-metrics-reviews@google.com.
  
  <variants name="TopChromeWebUIName">
    <variant name=""/>

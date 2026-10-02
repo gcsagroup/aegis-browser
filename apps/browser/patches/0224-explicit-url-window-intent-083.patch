@@ -1,0 +1,104 @@
+From cd4db70c78ab11d7b01458abc81fe18178e8f654 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 05:13:19 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=B8=A6=E6=98=BE=E5=BC=8F?=
+ =?UTF-8?q?=E7=BD=91=E5=9D=80=E7=9A=84=E5=8E=9F=E7=94=9F=E7=AA=97=E5=8F=A3?=
+ =?UTF-8?q?=E4=BB=BB=E5=8A=A1=E5=88=86=E7=B1=BB=20083?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_planner.cc   | 18 +++++++++++++--
+ .../aegis/agent/agent_planner_unittest.cc     | 23 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 3 files changed, 41 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 07ddf0d540..5461b84359 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -424,8 +424,11 @@ bool GoalRequestsSafeDownload(std::string_view goal) {
+ bool GoalRequestsBrowserData(std::string_view goal) {
+   const std::string lower = base::ToLowerASCII(goal);
+   constexpr std::string_view kLocalizedBrowserData[] = {
+-      "收藏夹", "书签", "标签页", "浏览器标签", "浏览器窗口", "工作区",
+-      "收藏夾", "書籤", "標籤頁", "瀏覽器標籤", "瀏覽器視窗", "工作區"};
++      "收藏夹",     "书签",     "标签页",   "浏览器标签", "浏览器窗口",
++      "工作区",     "新建窗口", "创建窗口", "关闭窗口",   "激活窗口",
++      "当前窗口",   "新建視窗", "建立視窗", "關閉視窗",   "啟用視窗",
++      "目前視窗",   "收藏夾",   "書籤",     "標籤頁",     "瀏覽器標籤",
++      "瀏覽器視窗", "工作區"};
+   if (std::ranges::any_of(kLocalizedBrowserData,
+                           [&goal](std::string_view phrase) {
+                             return goal.find(phrase) != std::string_view::npos;
+@@ -987,6 +990,17 @@ AgentWorkflowKind ConstrainWorkflowToUserIntent(std::string_view user_goal,
+       GoalRequestsCurrentPageClick(user_goal)) {
+     return AgentWorkflowKind::kPageInteraction;
+   }
++  // 显式 URL 不经过路由模型，也要识别原生窗口等操作；网址只限定导航来源。
++  // 说明性问题和需要页面正文的任务继续使用研究流程。
++  if (workflow == AgentWorkflowKind::kResearch &&
++      GoalContainsAny(requested, {"http://", "https://"}) &&
++      GoalRequestsBrowserData(requested) &&
++      !AgentGoalRequiresPageEvidence(user_goal) &&
++      !GoalContainsAny(requested,
++                       {"如何", "怎么", "怎麼", "解释", "解釋", "how to",
++                        "explain", "研究", "調研", "调研"})) {
++    return AgentWorkflowKind::kBrowserSteward;
++  }
+   // 被否定的浏览器数据词不能支持前端管家提示。保留原始禁止范围，
+   // 让模型读取原文规划；当前页入口仍由浏览器绑定并验证实际观察。
+   if (workflow == AgentWorkflowKind::kBrowserSteward &&
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index bd37c5b02f..8d4900b319 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -803,6 +803,29 @@ TEST(AegisAgentPlannerTest, NegatedWorkflowPhrasesKeepPageEntryRoutes) {
+   }
+ }
+ 
++TEST(AegisAgentPlannerTest, ExplicitUrlKeepsNativeWindowIntent) {
++  for (std::string_view goal :
++       {"新建窗口打开 https://fixture.example/ ，激活窗口后仅关闭新建窗口。",
++        "建立視窗開啟 https://fixture.example/ ，之後關閉視窗。",
++        "Create a new browser window for https://fixture.example/ then close "
++        "the window."}) {
++    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
++              AgentWorkflowKind::kBrowserSteward)
++        << goal;
++    EXPECT_FALSE(AgentBrowserGoalNeedsClarification(
++        goal, AgentWorkflowKind::kBrowserSteward));
++  }
++  for (std::string_view goal :
++       {"不要新建窗口，只总结 https://fixture.example/ 的页面内容。",
++        "解释如何创建窗口，参考 https://fixture.example/ 。",
++        "Explain how to create a new window using https://fixture.example/ .",
++        "总结 https://fixture.example/ 的正文，不要关闭窗口。"}) {
++    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
++              AgentWorkflowKind::kResearch)
++        << goal;
++  }
++}
++
+ TEST(AegisAgentPlannerTest, PageIntentOverridesNegatedWorkflowHints) {
+   const std::string_view goal =
+       "打开 http://127.0.0.1:52861/slow 并总结页面内容。只允许读取这个"
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d03cdfb823..85a0124f08 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.82";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (082)";
++inline constexpr char kProductVersion[] = "2.0.0.83";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (083)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
