@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+const flushEvents = () => new Promise(resolve => setImmediate(resolve));
 const repo = fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, '');
 const file = process.argv[2] || repo + '/apps/browser/overlay/chrome/browser/resources/aegis_agent/agent.ts';
 const ts = createRequire(repo + '/packages/core/package.json')('typescript');
@@ -47,13 +48,13 @@ const capture = (label, expected) => observations.push({label, expected,
   passed: expected(context, element)});
 // 报告只保留中文预期，不序列化断言函数。
 context.render(a);
-const pending = element('plan-button').events.click();
+element('plan-button').events.click();
 capture('新任务创建等待时清除旧完成状态', (c,e) => e('status').textContent === 'statusUnderstanding' && c.snapshot.resultSummary === '' && c.snapshot.timeline.length === 0);
 resolveCreate({snapshot: b});
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(typeof resolvePlan, 'function', '必须已进入真实规划调用');
 capture('创建成功后立即显示新任务', c => c.snapshot.taskId === 'B' && c.snapshot.resultSummary === '');
-resolvePlan({snapshot: b}); await pending;
+resolvePlan({snapshot: b}); await flushEvents();
 context.render(a);
 capture('迟到旧任务快照不覆盖新任务', c => c.snapshot.taskId === 'B');
 // 对照：已有任务暂停期间仍保留任务，不应由未来修复一律清空。
@@ -62,10 +63,13 @@ let finishPause;
 const pause = context.withBusy(() => new Promise(resolve => {finishPause = resolve;}));
 capture('普通暂停操作保留当前任务', c => c.snapshot.taskId === 'B');
 finishPause({snapshot: {...b, state: 'paused_by_user'}}); await pause;
-const failed = element('plan-button').events.click();
-rejectCreate(new Error('synthetic-create-disconnect'));
 let rejected = false;
-try {await failed;} catch {rejected = true;}
+const recordUnhandled = () => { rejected = true; };
+process.once('unhandledRejection', recordUnhandled);
+assert.equal(element('plan-button').events.click(), undefined, 'DOM 回调同步返回');
+rejectCreate(new Error('synthetic-create-disconnect'));
+await flushEvents();
+process.removeListener('unhandledRejection', recordUnhandled);
 capture('创建失败显示可读错误', (c,e) => e('error').textContent === 'planningGenericError');
 const receipt = {observedAt: new Date().toISOString(), source: file,
   sourceSha256: createHash('sha256').update(source).digest('hex'),
@@ -104,9 +108,9 @@ for (const button of ['plan-button', 'create-automation-button']) {
     context.render(a);
     let planCalls = 0;
     context.proxy.handler.requestPlan = async () => {++planCalls; return {snapshot: b};};
-    const pending = element(button).events.click();
+    element(button).events.click();
     resolveCreate({snapshot: refused});
-    await pending;
+    await flushEvents();
     assert.equal(context.snapshot.taskId, '');
     assert.equal(element('status').textContent, 'statusFailed');
     assert.equal(element('status').dataset.tone, 'danger');
