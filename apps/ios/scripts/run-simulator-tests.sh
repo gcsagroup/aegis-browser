@@ -471,7 +471,7 @@ PYTHON
 if ! fixture_ready; then
   python3 "${SCRIPT_DIR}/simulator-fixture-server.py" --port 8768 > "${OUTPUT_DIR}/fixture.log" 2>&1 &
   fixture_pid=$!
-  for attempt in 1 2 3 4 5; do
+  for _attempt in 1 2 3 4 5; do
     fixture_ready && break
     kill -0 "$fixture_pid" 2>/dev/null || die "验收服务启动失败，检查 8768 端口和 fixture.log"
     sleep 1

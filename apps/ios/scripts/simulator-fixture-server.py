@@ -7,7 +7,7 @@ import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.request import Request, urlopen
+from http.client import HTTPConnection
 
 PAYLOAD = b"GCSA Aegis simulator download verification\n" * 1024
 ARTICLE = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -101,14 +101,30 @@ def self_test():
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    # 仅连接刚启动的本机服务，不接受 URL，也不自动跟随重定向。
+    def request(method, path, body=None):
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        try:
+            connection.request(method, path, body=body, headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            data = response.read()
+            if response.status != 200:
+                raise RuntimeError(f"验收请求失败：{path} HTTP {response.status}")
+            return data
+        finally:
+            connection.close()
+
     try:
-        assert "城市绿地观察" in urlopen(base + "/article").read().decode()
-        assert urlopen(base + "/download.bin").read() == PAYLOAD
-        assert json.load(urlopen(base + "/v1/models"))["data"][0]["id"] == "aegis-simulator-fixture"
+        if "城市绿地观察" not in request("GET", "/article").decode():
+            raise RuntimeError("文章内容不匹配")
+        if request("GET", "/download.bin") != PAYLOAD:
+            raise RuntimeError("下载内容不匹配")
+        if json.loads(request("GET", "/v1/models"))["data"][0]["id"] != "aegis-simulator-fixture":
+            raise RuntimeError("模型列表不匹配")
         payload = {"model": "aegis-simulator-fixture", "messages": [{"role": "user", "content": "城市绿地观察 来源 [2]"}]}
-        request = Request(base + "/v1/chat/completions", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-        assert "[2]" in json.load(urlopen(request))["choices"][0]["message"]["content"]
+        result = json.loads(request("POST", "/v1/chat/completions", json.dumps(payload).encode()))
+        if "[2]" not in result["choices"][0]["message"]["content"]:
+            raise RuntimeError("模型响应缺少第二篇来源")
         print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=4")
     finally:
         server.shutdown()
