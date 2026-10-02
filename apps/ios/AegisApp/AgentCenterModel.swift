@@ -33,9 +33,9 @@ final class AgentCenterModel: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .nativeCommitRequiresRecovery:
-                "收藏数据已经写入，但任务完成提交遇到竞态；已停止发布结果，请从认证日志恢复。"
+                String(localized: "收藏已更新，但结果确认失败。请重启 App 查看恢复提示。")
             case .receiptVerificationFailed:
-                "收藏事务回执或当前树摘要核对失败；已停止发布结果。"
+                String(localized: "无法核对收藏整理结果，已停止后续操作。")
             }
         }
     }
@@ -84,7 +84,7 @@ final class AgentCenterModel: ObservableObject {
             forKey: "aegis.incompleteTask"
         )
         if !isPrivateProfile, hasInjectedRecovery || hasPersistentRecovery {
-            recoveryNotice = "发现已中断任务。已进入 Recovering，写操作不会自动恢复。"
+            recoveryNotice = String(localized: "发现中断任务。操作不会自动恢复，请重新确认。")
             wireState = .recovering
             recoveryMustRemainPersistent = hasPersistentRecovery
         }
@@ -115,7 +115,7 @@ final class AgentCenterModel: ObservableObject {
             guard let self else { return }
             do {
                 let draft = try await activeBroker.makeLocalConsentDraft(
-                    goal: "撤销上次已完成的收藏夹整理",
+                    goal: String(localized: "撤销上次已完成的收藏夹整理"),
                     origins: ["aegis://native"],
                     tools: ["bookmarks.undo"],
                     dataClasses: ["bookmark_metadata"],
@@ -491,7 +491,7 @@ final class AgentCenterModel: ObservableObject {
             guard let self else { return }
             do {
                 let draft = try await activeBroker.makeLocalConsentDraft(
-                    goal: "撤销刚才的收藏夹离线事务",
+                    goal: String(localized: "撤销刚才的收藏夹离线事务"),
                     origins: ["aegis://native"],
                     tools: ["bookmarks.undo"],
                     dataClasses: ["bookmark_metadata"],
@@ -725,7 +725,7 @@ final class AgentCenterModel: ObservableObject {
             bookmarkJournalNotice = nil
         } catch {
             recoveredUndoReceipt = nil
-            bookmarkJournalNotice = "收藏撤销日志不可用：\(error.localizedDescription)"
+            bookmarkJournalNotice = String(localized: "无法读取收藏撤销记录：\(error.localizedDescription)")
         }
     }
 
@@ -793,7 +793,7 @@ final class AgentCenterModel: ObservableObject {
         }
         clearPendingAction()
         refreshRecoveredUndo()
-        recoveryNotice = "本地收藏写入进入恢复状态；不会自动重放，重启后将按认证日志核对。"
+        recoveryNotice = String(localized: "收藏更新需要恢复，重启 App 后会核对记录，不会自动重复操作。")
         errorMessage = error.localizedDescription
         screen = fallback
         operationTask = nil
@@ -822,7 +822,7 @@ final class AgentCenterModel: ObservableObject {
         switch kind {
         case .research:
             WorkflowScope(
-                goal: "读取受控来源并生成可核对引用",
+                goal: String(localized: "读取受控来源并生成可核对引用"),
                 tools: ["page.observe", "page.extract"],
                 dataClasses: ["visible_text", "page_metadata"],
                 risk: .readOnly,
@@ -830,7 +830,7 @@ final class AgentCenterModel: ObservableObject {
             )
         case .browserManager:
             WorkflowScope(
-                goal: "预览并整理 Aegis 收藏夹",
+                goal: String(localized: "预览并整理 Aegis 收藏夹"),
                 tools: ["bookmarks.list", "bookmarks.plan", "bookmarks.apply"],
                 dataClasses: ["bookmark_metadata"],
                 risk: .localReversible,
@@ -838,7 +838,7 @@ final class AgentCenterModel: ObservableObject {
             )
         case .safeDownload:
             WorkflowScope(
-                goal: "检查官方候选并核对下载证据",
+                goal: String(localized: "检查官方候选并核对下载证据"),
                 tools: ["downloads.verify"],
                 dataClasses: ["download_metadata"],
                 risk: .readOnly,
@@ -846,7 +846,7 @@ final class AgentCenterModel: ObservableObject {
             )
         case .shopping:
             WorkflowScope(
-                goal: "比较报价并停在最终提交前",
+                goal: String(localized: "比较报价并停在最终提交前"),
                 tools: ["page.observe", "page.extract"],
                 dataClasses: ["product", "price", "shipping"],
                 risk: .readOnly,

@@ -4,7 +4,24 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The package version remains `0.1.0`, but no `0.1.0` release, Git tag, or binary distribution has been published. Everything below remains **Unreleased**.
+The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+
+## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
+
+### Added
+
+- Native iPhone/iPad page assistant with bounded page reads, redaction preview, destination confirmation, source citations, encrypted task recovery and saved results; OpenAI-compatible, Anthropic and Gemini interfaces.
+- HTTP(S) background downloads, pause/resume, mirror retries, Metalink, SHA-256/SHA-512 checks and export to Files.
+- Bundled EasyList/EasyPrivacy rules, manual updates, cosmetic filtering and site exceptions; bookmark checks and workspace import/export.
+- Persistent tab groups and independent iPad windows with restore; removed the permanent iPad sidebar.
+
+### Fixed and verified
+
+- Hardened validation scripts with fixed file paths, loopback-only HTTP self-tests, and checks that remain active under Python optimization; generated rules remain byte-identical.
+
+- Moved initial window persistence out of view construction to remove SwiftUI runtime warnings. Private pages and groups stay out of window records.
+- Preserved upstream Swift coverage and input hash checks; freeze inputs after version updates and project generation, and reuse the fixed build directory from isolated worktrees.
+- See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for localization, privacy manifests and simulator evidence. This GitHub source prerelease has no installable signed IPA. Device, full VoiceOver, TestFlight and App Store acceptance remain open.
 
 ## [Unreleased]
 

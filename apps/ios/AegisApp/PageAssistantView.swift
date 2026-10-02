@@ -1,0 +1,258 @@
+import AegisPolicyKit
+import AgentKit
+import BrowserKit
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct TextReportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText] }
+    var text: String
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws { text = String(data: configuration.file.regularFileContents ?? Data(), encoding: .utf8) ?? "" }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: Data(text.utf8)) }
+}
+
+struct PageAssistantView: View {
+    @EnvironmentObject private var browser: BrowserSession
+    @EnvironmentObject private var settings: BrowserSettings
+    @EnvironmentObject private var tasks: AssistantTaskStore
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var selected: Set<UUID> = []
+    @State private var goal = String(localized: "总结主要内容，并给出来源引用。")
+    @State private var snapshots: [PageSnapshot] = []
+    @State private var output = ""
+    @State private var status = String(localized: "准备中")
+    @State private var error: String?
+    @State private var busy = false
+    @State private var operation: Task<Void, Never>?
+    @State private var generation = UUID()
+    @State private var showingBookmarks = false
+    @State private var showingSendConfirmation = false
+    @State private var export = false
+    @State private var pendingConfiguration: ModelConfiguration?
+    @State private var pendingGoal = ""
+    @State private var taskID: UUID?
+    @State private var showingHistory = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Label(status, systemImage: busy ? "hourglass" : "sparkles")
+                        .font(.headline).accessibilityIdentifier("assistant-status")
+                    Text("用当前页面或选中的标签页完成摘要、翻译、研究和商品比较。")
+                        .foregroundStyle(.secondary)
+                    Button("任务记录与继续", systemImage: "clock.arrow.circlepath") { showingHistory = true }
+                        .accessibilityIdentifier("assistant-history")
+                    if let storageError = tasks.storageError { Text(storageError).foregroundStyle(.red) }
+                    presets
+                    TextField("你想了解什么？", text: $goal, axis: .vertical)
+                        .lineLimit(3...6).textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("assistant-goal")
+                    sourceSelection
+                    Button("读取所选页面") { readPages() }
+                        .buttonStyle(.borderedProminent).disabled(busy || selected.isEmpty || !browser.agentIsAvailable)
+                        .accessibilityIdentifier("read-pages")
+                    Text("只读取所选页面的正文，不读取输入框、密码或 Cookie。此步骤不联系模型服务。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if !snapshots.isEmpty { preview }
+                    if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("assistant-error") }
+                    if busy { Button("取消任务", role: .cancel) { cancel() }.accessibilityIdentifier("cancel-assistant") }
+                    if !output.isEmpty { result }
+                    Divider()
+                    Button { showingBookmarks = true } label: { Label("整理收藏与撤销", systemImage: "books.vertical") }
+                        .accessibilityIdentifier("bookmark-organizer")
+                    NavigationLink { ModelSettingsView() } label: { Label("模型服务设置", systemImage: "slider.horizontal.3") }
+                }
+                .padding(20)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+            .navigationTitle("AI 助手")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { cancel(); dismiss() } } }
+            .sheet(isPresented: $showingHistory) {
+                AssistantHistoryView { record in
+                    cancel(); goal = record.goal; snapshots = []; output = ""; selected = []
+                    for url in record.sources.prefix(5) {
+                        if let tab = browser.standardTabs.first(where: { $0.url == url }) { selected.insert(tab.id) }
+                        else if browser.standardTabs.count < 50 {
+                            let tab = browser.newTab(); tab.load(url); selected.insert(tab.id)
+                        }
+                    }
+                    status = String(localized: "任务已恢复，请重新读取页面并确认发送。")
+                    showingHistory = false
+                }
+            }
+            .sheet(isPresented: $showingBookmarks) {
+                AgentCenterView(currentURL: browser.activeTab?.url, profileID: browser.activeProfileID,
+                                isPrivateProfile: browser.profile.isPrivate, dataStore: browser.dataStore)
+            }
+            .sheet(isPresented: $showingSendConfirmation) {
+                NavigationStack {
+                    Form {
+                        Section("模型服务") {
+                            Text(pendingConfiguration?.endpoint ?? "")
+                            Text(pendingConfiguration?.model ?? "")
+                        }
+                        Section("资料范围（最多 5 个页面）") {
+                            ForEach(snapshots) { Text($0.title) }
+                            Text(pendingGoal)
+                        }
+                        Section {
+                            Text("所选页面的标题和脱敏正文将发送到 \(pendingConfiguration?.endpoint ?? "")，使用模型 \(pendingConfiguration?.model ?? "")。服务可能按用量收费。")
+                            Button("确认发送") { showingSendConfirmation = false; send() }
+                                .buttonStyle(.borderedProminent).accessibilityIdentifier("confirm-model-send")
+                        }
+                    }
+                    .navigationTitle("将资料发送给模型？")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { showingSendConfirmation = false; pendingConfiguration = nil }
+                    } }
+                }
+            }
+            .fileExporter(isPresented: $export, document: TextReportDocument(text: report), contentType: .plainText,
+                          defaultFilename: "Aegis 研究结果") { result in
+                if case let .failure(failure) = result { error = failure.localizedDescription }
+            }
+        }
+        .onAppear { if let id = browser.activeTab?.id { selected = [id] } }
+        .onDisappear { cancel() }
+        .onChange(of: browser.profile) { _, profile in if profile.isPrivate { cancel(); snapshots = []; output = ""; dismiss() } }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { cancel() } }
+    }
+
+    private var presets: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack { presetButtons }
+            VStack(alignment: .leading) { presetButtons }
+        }
+    }
+    @ViewBuilder private var presetButtons: some View {
+        Button("摘要") { goal = String(localized: "总结主要内容，并给出来源引用。") }
+        Button("翻译") { goal = String(localized: "将正文完整翻译为简体中文；如果篇幅过长，请明确标注未完成的范围。") }
+        Button("研究比较") { goal = String(localized: "比较所选来源的观点、证据和分歧，逐项引用，说明资料不足之处。") }
+        Button("商品比较") { goal = String(localized: "比较所选页面的商品、价格和规格，列出来源；说明未知的运费、库存和时效。") }
+    }
+    private var sourceSelection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("资料范围（最多 5 个页面）").font(.headline)
+            ForEach(browser.standardTabs) { tab in
+                Toggle(isOn: Binding(get: { selected.contains(tab.id) }, set: { value in
+                    if value && selected.count < 5 { selected.insert(tab.id) } else { selected.remove(tab.id) }
+                    snapshots = []; output = ""
+                })) {
+                    VStack(alignment: .leading) {
+                        Text(tab.title).lineLimit(2)
+                        Text(tab.url?.host ?? "起始页").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(busy)
+            }
+        }
+    }
+    private var preview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("发送前预览").font(.headline)
+            ForEach(snapshots) { source in
+                DisclosureGroup(source.title) {
+                    if source.truncated { Text("此页面正文较长，仅使用前 24,000 个字符。").font(.caption).foregroundStyle(.orange) }
+                    Text(PIIScanner.scan(source.text).redacted).font(.callout).textSelection(.enabled)
+                }
+            }
+            Text("检测到的个人信息会脱敏；发现密钥或登录令牌会停止发送。请仍检查预览内容。")
+                .font(.footnote).foregroundStyle(.secondary)
+            Button("使用模型分析") {
+                pendingConfiguration = settings.model
+                pendingGoal = goal
+                showingSendConfirmation = true
+            }.buttonStyle(.borderedProminent).disabled(busy).accessibilityIdentifier("analyze-pages")
+        }
+    }
+    private var result: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("分析结果").font(.headline)
+            Text(output).textSelection(.enabled).accessibilityIdentifier("assistant-output")
+            Text("AI 生成内容，请结合下方原文核对。").font(.footnote).foregroundStyle(.secondary)
+            ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, source in
+                Button {
+                    browser.navigate(address: source.url.absoluteString)
+                    dismiss()
+                } label: { Label("[\(index + 1)] \(source.title)", systemImage: "link") }
+            }
+            if let taskID {
+                Button("加密保存研究结果") {
+                    do { try tasks.saveReport(report, for: taskID); status = String(localized: "研究结果已加密保存。") }
+                    catch { self.error = error.localizedDescription }
+                }.accessibilityIdentifier("save-assistant-report")
+            }
+            Button("导出结果与来源") { export = true }
+        }
+    }
+    private var report: String {
+        output + "\n\n" + snapshots.enumerated().map { "[\($0.offset + 1)] \($0.element.title)\n\($0.element.url.absoluteString)\n\($0.element.capturedAt.formatted())" }.joined(separator: "\n\n")
+    }
+
+    private func readPages() {
+        cancel()
+        error = nil; output = ""; snapshots = []; busy = true; status = String(localized: "正在读取页面")
+        let current = generation
+        let tabs = browser.standardTabs.filter { selected.contains($0.id) }
+        let approved = tabs.map { ($0.id, $0.url, $0.navigationEpoch) }
+        operation = Task { @MainActor in
+            do {
+                var values: [PageSnapshot] = []
+                for (index, tab) in tabs.enumerated() {
+                    try Task.checkCancellation()
+                    guard generation == current, browser.agentIsAvailable,
+                          tab.url == approved[index].1, tab.navigationEpoch == approved[index].2 else { throw PageSnapshotError.changed }
+                    values.append(try await tab.snapshot())
+                }
+                guard generation == current else { return }
+                snapshots = values; busy = false; status = String(localized: "等待确认发送")
+            } catch {
+                guard generation == current else { return }
+                self.error = error.localizedDescription; busy = false; status = String(localized: "读取失败")
+            }
+        }
+    }
+
+    private func send() {
+        guard let config = pendingConfiguration, !snapshots.isEmpty, browser.agentIsAvailable else { return }
+        let sources = snapshots
+        // 请求发送前重新核对页面身份。用户确认的是这些页面，不是之后的新导航。
+        guard sources.allSatisfy({ source in browser.standardTabs.contains {
+            $0.id == source.id && $0.url == source.url && $0.navigationEpoch == source.navigationEpoch && !$0.isLoading
+        } }) else { error = PageSnapshotError.changed.localizedDescription; return }
+        do { taskID = try tasks.begin(goal: pendingGoal, sources: sources.map(\.url)) }
+        catch { self.error = error.localizedDescription; return }
+        let recordID = taskID!
+        busy = true; error = nil; output = ""; status = String(localized: "正在分析")
+        let current = generation
+        let client = ModelClient(configuration: config, key: ModelCredentialStore.read(for: config))
+        let requestedGoal = pendingGoal
+        pendingConfiguration = nil
+        operation = Task { @MainActor in
+            do {
+                let sourceTexts = sources.enumerated().map { "来源 [\($0.offset + 1)]：\($0.element.title)\n\($0.element.text)" }
+                let text = try await client.complete(goal: requestedGoal, sources: sourceTexts, language: Locale.preferredLanguages.first ?? "zh-Hans")
+                try Task.checkCancellation()
+                guard generation == current, browser.agentIsAvailable else { return }
+                try tasks.finish(recordID, state: .completed)
+                output = text; busy = false; status = String(localized: "已完成")
+            } catch {
+                guard generation == current else { return }
+                try? tasks.finish(recordID, state: .failed)
+                self.error = error.localizedDescription; busy = false; status = String(localized: "分析失败")
+            }
+        }
+    }
+
+    private func cancel() {
+        operation?.cancel(); operation = nil; generation = UUID()
+        if busy, let taskID { try? tasks.finish(taskID, state: .interrupted) }
+        taskID = nil
+        if busy { status = String(localized: "已暂停，可重新运行") }
+        busy = false; pendingConfiguration = nil
+    }
+}
