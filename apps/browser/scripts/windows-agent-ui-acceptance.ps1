@@ -13,6 +13,8 @@
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^[0-9a-f]{40}$')]
   [string]$ExpectedChromiumTree,
+  [ValidatePattern('^[0-9a-f]{40}$')]
+  [string]$ExpectedV8Tree,
   [int]$FixturePort = 18765,
   [int]$TimeoutSeconds = 90
 )
@@ -436,6 +438,17 @@ $allowedNonBuildChanges = @(
   'third_party/rust/chromium_crates_io/vendor/strsim-v0_11/Cargo.toml.orig',
   'tools/gn/README.md'
 )
+# V8 补丁单独提交；只有完整树和工作区均匹配时才接受该子仓差异。
+if ($ExpectedV8Tree) {
+  $v8Root = Join-Path $SourceRoot 'v8'
+  $actualV8Tree = (& git.exe -C $v8Root rev-parse 'HEAD^{tree}').Trim()
+  Assert-Condition ($LASTEXITCODE -eq 0 -and $actualV8Tree -eq $ExpectedV8Tree) `
+      'V8 source tree does not match the build receipt'
+  $v8Changes = @(& git.exe -C $v8Root status --porcelain=v1 --untracked-files=no)
+  Assert-Condition ($LASTEXITCODE -eq 0 -and $v8Changes.Count -eq 0) `
+      'V8 contains unrecorded source changes'
+  $allowedNonBuildChanges += 'v8'
+}
 $unexpectedTrackedChanges = @($sourceTrackedChanges | ForEach-Object {
     if ($_.Length -ge 4) { $_.Substring(3).Replace('\', '/') }
   } | Where-Object {

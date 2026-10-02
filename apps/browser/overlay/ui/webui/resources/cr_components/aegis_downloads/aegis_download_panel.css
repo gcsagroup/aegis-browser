@@ -1,0 +1,226 @@
+/* Copyright 2026 GCSA */
+
+/* #css_wrapper_metadata_start
+ * #type=style-lit
+ * #scheme=relative
+ * #css_wrapper_metadata_end */
+
+:host {
+  --aegis-card-width: min(100%, 680px);
+  display: block;
+  margin: 16px auto 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  width: var(--aegis-card-width);
+}
+
+.card {
+  background: var(--cr-card-background-color, var(--bg, #fff));
+  border-radius: 12px;
+  box-shadow: var(--cr-card-shadow);
+  color: var(--cr-primary-text-color, var(--fg, #202124));
+  overflow: hidden;
+}
+
+.header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 0 20px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.subtitle,
+.hint {
+  color: var(--cr-secondary-text-color, var(--muted, #5f6368));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.composer,
+.task {
+  border-top: 1px solid var(--cr-separator-color, var(--line, #dadce0));
+  padding: 16px 20px 20px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+input[type='file'],
+input[type='number'],
+textarea {
+  box-sizing: border-box;
+  font: inherit;
+  width: 100%;
+}
+
+textarea,
+input[type='number'] {
+  background: transparent;
+  border: 1px solid var(--cr-separator-color, var(--line, #dadce0));
+  border-radius: 8px;
+  color: var(--cr-primary-text-color, var(--fg, #202124));
+  padding: 9px 11px;
+}
+
+.actions,
+.options {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.options label {
+  flex: 1 1 180px;
+}
+
+.toggle {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+}
+
+.preview {
+  background: var(--cr-fallback-color-surface-variant, var(--bg, #f1f3f4));
+  border-radius: 8px;
+  line-height: 20px;
+  margin: 14px 0 0;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.files {
+  list-style: none;
+  margin: 10px 0 0;
+  max-height: 190px;
+  overflow: auto;
+  padding: 0;
+}
+
+.files label {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  padding: 5px 2px;
+}
+
+.disclosure {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  line-height: 18px;
+  margin-top: 14px;
+}
+
+.task-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.protocol-badge {
+  background: var(--google-blue-50, #e8f0fe);
+  border-radius: 12px;
+  color: var(--google-blue-700, #1967d2);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .protocol-badge {
+    background: rgba(138, 180, 248, .16);
+    color: var(--google-blue-300, #8ab4f8);
+  }
+}
+
+progress {
+  height: 4px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.task-status {
+  line-height: 20px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+}
+
+button {
+  background: transparent;
+  border: 1px solid var(--cr-separator-color, var(--line, #dadce0));
+  border-radius: 18px;
+  color: var(--cr-link-color, var(--accent, #1967d2));
+  cursor: pointer;
+  font: inherit;
+  min-height: 34px;
+  padding: 0 14px;
+}
+
+button.primary {
+  background: var(--cr-button-background-color, var(--accent, #1967d2));
+  border-color: transparent;
+  color: var(--cr-button-text-color, #fff);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+@media (max-width: 700px) {
+  :host {
+    --aegis-card-width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .composer,
+  .task {
+    padding: 16px;
+  }
+
+  .subtitle,
+  .hint {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  input[type='number'],
+  input[type='file'] {
+    min-height: 44px;
+  }
+
+  input,
+  textarea {
+    font-size: 16px;
+  }
+
+  .files label,
+  .toggle,
+  .disclosure {
+    min-height: 44px;
+  }
+}

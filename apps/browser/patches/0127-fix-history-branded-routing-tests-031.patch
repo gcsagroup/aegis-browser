@@ -1,0 +1,81 @@
+From 4be41c913b1d17d980ecc1876e3ca43861451af3 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 05:04:14 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=86=E5=8F=B2=E9=A1=B5?=
+ =?UTF-8?q?=E5=93=81=E7=89=8C=E6=9D=A1=E4=BB=B6=E6=B5=8B=E8=AF=95=E5=B9=B6?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E5=80=99=E9=80=89=E7=89=88=E6=9C=AC031?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h |  6 +++---
+ .../data/webui/history/history_routing_test.ts     | 14 ++++++++++++++
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index a537285c47..5041b16867 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.30。
+-inline constexpr char kProductVersion[] = "1.1.0.30";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (030)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.31。
++inline constexpr char kProductVersion[] = "1.1.0.31";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (031)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
+index 367f1a4736..dab64f8d85 100644
+--- a/chrome/test/data/webui/history/history_routing_test.ts
++++ b/chrome/test/data/webui/history/history_routing_test.ts
+@@ -111,6 +111,8 @@ import {navigateTo} from './test_util.js';
+           sidebar.$.history.getAttribute('path'));
+     });
+ 
++    // 同步标签入口仅在对应品牌构建中存在；保留其点击与键盘专项测试。
++    // <if expr="_google_chrome or _is_chrome_for_testing">
+     test('route updates from tabs and sidebar menu items', async function() {
+       assertEquals('history', sidebar.$.menu.selected);
+       assertEquals('chrome://history/', window.location.href);
+@@ -158,6 +160,8 @@ import {navigateTo} from './test_util.js';
+       }
+     });
+ 
++    // </if>
++
+     test('search updates from route', async function() {
+       assertEquals('chrome://history/', window.location.href);
+       const searchTerm = 'Mei';
+@@ -177,6 +181,7 @@ import {navigateTo} from './test_util.js';
+       assertEquals('chrome://history/?q=' + searchTerm, window.location.href);
+     });
+ 
++    // <if expr="_google_chrome or _is_chrome_for_testing">
+     test(
+         'search is preserved across tabs and sidebar menu items',
+         async function() {
+@@ -214,6 +219,15 @@ import {navigateTo} from './test_util.js';
+           }
+         });
+ 
++    // </if>
++
++    // 非品牌构建不显示同步入口，但仍保留下面的直接路由回归。
++    // <if expr="not (_google_chrome or _is_chrome_for_testing)">
++    test('sync entry is absent in unbranded sidebar', () => {
++      assertEquals(null, sidebar.shadowRoot.querySelector('#syncedTabs'));
++    });
++    // </if>
++
+     test(
+         'routing to chrome://history/syncedTabs works correctly',
+         async function() {
+-- 
+2.52.0
+

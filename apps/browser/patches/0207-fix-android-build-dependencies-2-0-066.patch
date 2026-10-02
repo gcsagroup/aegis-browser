@@ -1,0 +1,125 @@
+From 86e4e4ee2c1203e57a4fc754d253824d45e8ad5f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 29 Sep 2026 04:34:35 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Android=20=E6=9E=84?=
+ =?UTF-8?q?=E5=BB=BA=E4=BE=9D=E8=B5=96=EF=BC=8C=E5=86=85=E9=83=A8=E7=89=88?=
+ =?UTF-8?q?=E6=9C=AC=202.0.066?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/BUILD.gn                            | 1 +
+ chrome/browser/aegis/BUILD.gn                      | 4 ++--
+ chrome/browser/aegis/agent/aegis_browser_tools.cc  | 3 ++-
+ chrome/browser/policy/BUILD.gn                     | 1 +
+ chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  | 3 ++-
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 6 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 12bcc7d245..1ac092bf33 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1669,6 +1669,7 @@ source_set("core") {
+       "//chrome/browser/prefetch/android",
+       "//chrome/browser/preloading/android",
+       "//chrome/browser/ui/page_info",
++      "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/feed_internals",
+       "//chrome/browser/ui/webui/notifications_internals",
+       "//chrome/browser/util:jni_headers",
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 97472fb47e..bd333bf58d 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -152,6 +152,7 @@ source_set("aegis") {
+     "//chrome/browser/devtools",
+     "//chrome/browser/preloading/prefetch/no_state_prefetch",
+     "//chrome/browser/profiles:profile",
++    "//chrome/browser/ui/tab_contents",
+     "//chrome/browser/ui/tab_contents:impl",
+     "//chrome/common",
+     "//chrome/common:mojo_bindings",
+@@ -213,7 +214,6 @@ source_set("aegis") {
+       "summary_session.h",
+     ]
+     deps += [
+-      "//chrome/browser/ui/tab_contents",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//ui/message_center/public/cpp",
+     ]
+@@ -377,6 +377,7 @@ test("aegis_browser_unittests") {
+     ":profile_support",
+     "//build:chromeos_buildflags",
+     "//chrome/browser/profiles:test_support",
++    "//chrome/common/aegis",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+@@ -403,7 +404,6 @@ test("aegis_browser_unittests") {
+       "//chrome/browser/actor/ui:test_support",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/browser/ui/webui/aegis",
+-      "//chrome/common/aegis",
+       "//components/actor/core",
+       "//components/download/public/common:public",
+       "//components/undo",
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 04e77a74a0..fdc7986171 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -39,7 +39,8 @@
+ #include "chrome/browser/undo/bookmark_undo_service_factory.h"
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
+-#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++// GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"  // nogncheck
+ #include "chrome/browser/ui/tabs/tab_group_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #endif
+diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
+index de3687e2ec..80b712a837 100644
+--- a/chrome/browser/policy/BUILD.gn
++++ b/chrome/browser/policy/BUILD.gn
+@@ -828,6 +828,7 @@ source_set("unit_tests") {
+     "//chrome/test:test_support",
+     "//components/account_id:test_support",
+     "//components/enterprise:test_support",
++    "//components/invalidation:legacy_topics_cleanup",
+     "//components/invalidation:test_support",
+     "//components/policy/core/browser:test_support",
+     "//components/policy/core/common:test_support",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 333d5473c4..ae0340b4a0 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -36,7 +36,8 @@
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+-#include "chrome/browser/ui/side_panel/side_panel_entry.h"
++// GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
++#include "chrome/browser/ui/side_panel/side_panel_entry.h"  // nogncheck
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #endif
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 4a0e8967b4..442e37c0dc 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.65";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (065)";
++inline constexpr char kProductVersion[] = "2.0.0.66";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (066)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,7 +1,7 @@
-From 8c79166db8e0370c5a465b3940b558a2848fa094 Mon Sep 17 00:00:00 2001
+From 857278ff2f8593fc1c8f41172a566b7107ceeb50 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:15:26 +0800
-Subject: [PATCH 12/13] Aegis: run packages/core in a JS policy worker
+Subject: [PATCH] Aegis: run packages/core in a JS policy worker
 
 Bundle core TypeScript into a jitless gin isolate so Privacy AI can
 summarize the current tab locally, with an optional loopback Ollama

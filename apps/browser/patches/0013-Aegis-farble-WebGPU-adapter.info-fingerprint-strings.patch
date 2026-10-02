@@ -1,7 +1,7 @@
-From 39ce095f9ab7e0900cfa434c2a91bc62168d8258 Mon Sep 17 00:00:00 2001
+From 3ae4c469d9704c6c9ac676924e2be8c55b02cae4 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:15:38 +0800
-Subject: [PATCH 13/13] Aegis: farble WebGPU adapter.info fingerprint strings
+Subject: [PATCH] Aegis: farble WebGPU adapter.info fingerprint strings
 
 Stabilize GPUAdapter vendor/architecture/device/driver per eTLD+1 so
 WebGPU cannot undo FingerprintGuard the way canvas and WebGL already
@@ -76,7 +76,7 @@ index b50851081f..3bf4619784 100644
  }  // namespace blink
  
 diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
-index 44527d0a7b..ee707ce4f1 100644
+index 5d35a355c7..6533e0dbcd 100644
 --- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 @@ -10,6 +10,7 @@
@@ -87,7 +87,7 @@ index 44527d0a7b..ee707ce4f1 100644
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/webgpu/dawn_enum_conversions.h"
-@@ -125,13 +126,24 @@ GPUAdapter::GPUAdapter(
+@@ -126,13 +127,24 @@ GPUAdapter::GPUAdapter(
  GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
    bool is_fallback_adapter = adapter_type_ == wgpu::AdapterType::CPU;
  
@@ -114,7 +114,7 @@ index 44527d0a7b..ee707ce4f1 100644
          FromDawnEnum(backend_type_), FromDawnEnum(adapter_type_),
          d3d_shader_model_, vk_driver_version_, FromDawnEnum(power_preference_));
  
-@@ -144,7 +156,7 @@ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
+@@ -145,7 +157,7 @@ GPUAdapterInfo* GPUAdapter::CreateAdapterInfoForAdapter() {
      }
    } else {
      info = MakeGarbageCollected<GPUAdapterInfo>(

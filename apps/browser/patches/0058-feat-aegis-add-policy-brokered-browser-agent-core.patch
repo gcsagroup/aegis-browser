@@ -1,7 +1,7 @@
-From bf4501567ebd20e712d40cc000c02b207fd17f8c Mon Sep 17 00:00:00 2001
+From 7111f5b5d7d08dbf811a5ad728c578c9f36e0766 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 18:30:22 +0800
-Subject: [PATCH 58/61] feat(aegis): add policy-brokered browser agent core
+Subject: [PATCH] feat(aegis): add policy-brokered browser agent core
 
 ---
  chrome/browser/aegis/BUILD.gn                 |  214 +-

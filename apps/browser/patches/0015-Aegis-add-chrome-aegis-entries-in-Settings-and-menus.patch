@@ -1,4 +1,4 @@
-From 1e66f7fee2706a299fe549b4a210f2a63b7ebfb3 Mon Sep 17 00:00:00 2001
+From 29324b5301fe1e7ebb0537312b1c7609996cf2de Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 17:34:58 +0800
 Subject: [PATCH] Aegis: add chrome://aegis entries in Settings and menus
@@ -19,22 +19,22 @@ macOS Chromium menu so users do not have to type the URL.
  10 files changed, 60 insertions(+)
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
-index 3bdb2131ef..9025614e45 100644
+index 65b9ce9bc4..7d5c28b148 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
-@@ -313,6 +313,7 @@
+@@ -292,6 +292,7 @@
  #define IDC_SHOW_READING_MODE_KEYBOARD 40303
  #define IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL 40304
  #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
 +#define IDC_SHOW_AEGIS                  40310
  
  // Spell-check
- // Insert any additional suggestions before _LAST; these have to be consecutive.
+ #define IDC_SPELLCHECK_SUGGESTION_0     41000
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index 763bba112d..f426eab758 100644
+index 63c989a76d..1ac2c48ec8 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -1342,6 +1342,15 @@
+@@ -1354,6 +1354,15 @@
      </message>
  
      <!-- Privacy Page -->
@@ -51,7 +51,7 @@ index 763bba112d..f426eab758 100644
        Privacy and security
      </message>
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-index 0a2bb60427..7ab802e496 100644
+index e7b77860d8..fb9ddc575b 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
 @@ -1,5 +1,11 @@
@@ -75,7 +75,7 @@ index 0a2bb60427..7ab802e496 100644
          label="$i18n{clearBrowsingData}"
          sub-label="$i18n{clearBrowsingDataDescription}"
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
-index 729e80634b..512a52cb1b 100644
+index 22c524fdba..3b47dae0e2 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
 @@ -24,6 +24,7 @@ import type {CrToastElement} from 'chrome://resources/cr_elements/cr_toast/cr_to
@@ -85,8 +85,8 @@ index 729e80634b..512a52cb1b 100644
 +import {OpenWindowProxyImpl} from 'chrome://resources/js/open_window_proxy.js';
  import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
  
- import {loadTimeData} from '../i18n_setup.js';
-@@ -122,6 +123,11 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+ import type {MetricsBrowserProxy} from '../metrics_browser_proxy.js';
+@@ -102,6 +103,11 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
      Router.getInstance().navigateTo(routes.CLEAR_BROWSER_DATA);
    }
  
@@ -99,20 +99,20 @@ index 729e80634b..512a52cb1b 100644
      this.interactedWithPage_();
  
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index a457075948..45a19a87c2 100644
+index 3f62ffd338..206c641112 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1247,6 +1247,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1284,6 +1284,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
      case IDC_OPTIONS:
-       ShowSettings(browser_->GetBrowserForOpeningWebUi());
+       ShowSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
 +    case IDC_SHOW_AEGIS:
 +      ShowAegisPage(browser_->GetBrowserForOpeningWebUi());
 +      break;
      case IDC_EDIT_SEARCH_ENGINES:
-       ShowSearchEngineSettings(browser_->GetBrowserForOpeningWebUi());
+       ShowSearchEngineSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
-@@ -2031,6 +2034,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+@@ -2080,6 +2083,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                          !forced_incognito && !is_guest);
    command_updater->UpdateCommandEnabled(IDC_OPTIONS,
                                          !forced_incognito || is_guest);
@@ -121,7 +121,7 @@ index a457075948..45a19a87c2 100644
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
                                          !forced_incognito && !is_guest);
  }
-@@ -2343,6 +2348,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2414,6 +2419,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_EDIT_SEARCH_ENGINES, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
@@ -130,10 +130,10 @@ index a457075948..45a19a87c2 100644
    command_updater_->UpdateCommandEnabled(IDC_CHROME_TIPS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_CHROME_WHATS_NEW, show_main_ui);
 diff --git a/chrome/browser/ui/chrome_pages.cc b/chrome/browser/ui/chrome_pages.cc
-index a97f162b78..d34062bbce 100644
+index b1897340ac..d5a4d2961a 100644
 --- a/chrome/browser/ui/chrome_pages.cc
 +++ b/chrome/browser/ui/chrome_pages.cc
-@@ -461,6 +461,11 @@ void ShowSettings(BrowserWindowInterface* browser) {
+@@ -466,6 +466,11 @@ void ShowSettings(BrowserWindowInterface* browser) {
    ShowSettingsSubPage(browser, std::string());
  }
  
@@ -146,10 +146,10 @@ index a97f162b78..d34062bbce 100644
                           std::string_view sub_page) {
  #if BUILDFLAG(IS_CHROMEOS)
 diff --git a/chrome/browser/ui/chrome_pages.h b/chrome/browser/ui/chrome_pages.h
-index e77d63d3e9..9da72e7ece 100644
+index e736f58a09..d10b796b77 100644
 --- a/chrome/browser/ui/chrome_pages.h
 +++ b/chrome/browser/ui/chrome_pages.h
-@@ -107,6 +107,7 @@ bool IsTrustedPopupWindowWithScheme(const BrowserWindowInterface* browser,
+@@ -105,6 +105,7 @@ bool IsTrustedPopupWindowWithScheme(const BrowserWindowInterface* browser,
  // Various things that open in a settings UI.
  // NOTE: For Chrome OS settings, use SettingsWindowManager::ShowOSSettings().
  void ShowSettings(BrowserWindowInterface* browser);
@@ -158,10 +158,10 @@ index e77d63d3e9..9da72e7ece 100644
                           std::string_view sub_page);
  void ShowSettingsSubPageForProfile(Profile* profile, std::string_view sub_page);
 diff --git a/chrome/browser/ui/cocoa/main_menu_builder.mm b/chrome/browser/ui/cocoa/main_menu_builder.mm
-index bb808ed76d..387b5f6b67 100644
+index 1d8c774ed5..cf0e4fafa4 100644
 --- a/chrome/browser/ui/cocoa/main_menu_builder.mm
 +++ b/chrome/browser/ui/cocoa/main_menu_builder.mm
-@@ -67,6 +67,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
+@@ -75,6 +75,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
                    .target(app_delegate)
                    .action(@selector(showPreferences:))
                    .remove_if(is_pwa),
@@ -172,10 +172,10 @@ index bb808ed76d..387b5f6b67 100644
                    .command_id(IDC_WEB_APP_SETTINGS)
                    .remove_if(!is_pwa),
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index fb1db8e036..9e84076195 100644
+index 7c3624d660..d1d1bfe235 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2322,6 +2322,9 @@ void AppMenuModel::Build() {
+@@ -2471,6 +2471,9 @@ void AppMenuModel::Build() {
    AddItemWithStringIdAndVectorIcon(
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
@@ -186,10 +186,10 @@ index fb1db8e036..9e84076195 100644
    if (browser_defaults::kShowExitMenuItem) {
      AddItemWithStringIdAndVectorIcon(
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 3ec69ce500..ca5677d858 100644
+index 4a53cfbc0e..d4053dafe6 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2665,6 +2665,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2800,6 +2800,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
         IDS_SETTINGS_SECURITY_JAVASCRIPT_GUARDRAILS_MANAGE_SITE_EXCEPTIONS_DESCRIPTION}};
    html_source->AddLocalizedStrings(kLocalizedStrings);
  

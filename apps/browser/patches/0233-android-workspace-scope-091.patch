@@ -1,0 +1,61 @@
+From aa8ee1f4a7a736b702658beabd2f4386ca93a16d Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 20:06:41 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E5=B7=A5?=
+ =?UTF-8?q?=E4=BD=9C=E5=8C=BA=E4=BB=BB=E5=8A=A1=E6=8E=88=E6=9D=83=E8=8C=83?=
+ =?UTF-8?q?=E5=9B=B4=20091?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_core_unittest.cc  | 2 ++
+ chrome/browser/aegis/agent/agent_workflow.cc       | 3 +--
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index da413f7494..cc16f0fbca 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -396,6 +396,8 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
+   EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.list"));
+   EXPECT_TRUE(browser_only->allowed_tools.contains("bookmark.plan"));
+   EXPECT_TRUE(browser_only->allowed_tools.contains("tab.list"));
++  EXPECT_TRUE(browser_only->allowed_tools.contains("workspace.save"));
++  EXPECT_TRUE(browser_only->allowed_tools.contains("workspace.restore"));
+   EXPECT_FALSE(browser_only->allowed_tools.contains("tab.create"));
+   EXPECT_FALSE(browser_only->allowed_tools.contains("window.create"));
+ }
+diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
+index 74cd63f067..b0229eac00 100644
+--- a/chrome/browser/aegis/agent/agent_workflow.cc
++++ b/chrome/browser/aegis/agent/agent_workflow.cc
+@@ -12,8 +12,7 @@ namespace {
+ 
+ bool IsToolSupportedOnCurrentPlatform(std::string_view tool) {
+ #if BUILDFLAG(IS_ANDROID)
+-  return !base::StartsWith(tool, "window.") &&
+-         !base::StartsWith(tool, "workspace.");
++  return !base::StartsWith(tool, "window.");
+ #else
+   return true;
+ #endif
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9e9728714c..e4b22650d9 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.90";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (090)";
++inline constexpr char kProductVersion[] = "2.0.0.91";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (091)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

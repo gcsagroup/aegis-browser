@@ -1,4 +1,4 @@
-From 6098d6e9e85236aea8c2e6aa124181a14954302e Mon Sep 17 00:00:00 2001
+From 8e063fdf98c2cb94faea984eab147166ee5de1da Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 18:23:06 +0800
 Subject: [PATCH] Aegis: bundle packages/core policy snapshot into the tree
