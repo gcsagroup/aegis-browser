@@ -108,7 +108,7 @@ function inferWorkflow(goal: string): Workflow {
 }
 
 function refersToCurrentPage(goal: string): boolean {
-  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
+  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|page\s+content/iu
       .test(goal);
 }
 
@@ -123,7 +123,7 @@ function inferAutomationSchedule(goal: string): string|null {
   }
   const schedules: Array<[RegExp, string]> = [
     [/每(?:隔)?\s*15\s*分钟|每(?:隔)?\s*15\s*分鐘|every\s+15\s+minutes?/iu, '15'],
-    [/每(?:隔)?\s*(?:1\s*|一)?小时|每(?:隔)?\s*(?:1\s*|一)?小時|hourly|every\s+(?:1\s+|one\s+)?hour\b/iu, '60'],
+    [/每\s*小时|每\s*小時|每隔\s*小时|每隔\s*小時|每\s*1\s*小时|每\s*1\s*小時|每隔\s*1\s*小时|每隔\s*1\s*小時|每\s*一小时|每\s*一小時|每隔\s*一小时|每隔\s*一小時|hourly|every\s+hour\b|every\s+1\s+hour\b|every\s+one\s+hour\b/iu, '60'],
     [/每(?:隔)?\s*6\s*小时|每(?:隔)?\s*6\s*小時|every\s+6\s+hours?/iu, '360'],
     [/每天|每日|daily|every\s+day/iu, '1440'],
     [/每周|每週|weekly|every\s+week/iu, '10080'],
@@ -264,33 +264,37 @@ function renderSavedResearch(records: SavedResearch[]) {
       }
       const open = document.createElement('button');
       open.textContent = loadTimeData.getString('researchOpenSource');
-      open.addEventListener('click', async () => {
-        try {
-          const result = await proxy.handler.openResearchSource(record.id, index);
-          status.textContent = loadTimeData.getString(result.ok ?
+      open.addEventListener('click', () => {
+        void (async () => {
+          try {
+            const result = await proxy.handler.openResearchSource(record.id, index);
+            status.textContent = loadTimeData.getString(result.ok ?
               'researchSourceOpened' : 'researchSourceUnavailable');
-        } catch {
-          status.textContent = loadTimeData.getString('researchSourceUnavailable');
-        }
+          } catch {
+            status.textContent = loadTimeData.getString('researchSourceUnavailable');
+          }
+        })();
       });
       const check = document.createElement('button');
       check.textContent = loadTimeData.getString('researchCheckSource');
       check.disabled = !source.available;
-      check.addEventListener('click', async () => {
-        check.disabled = true;
-        status.textContent = loadTimeData.getString('researchChecking');
-        try {
-          const result = await proxy.handler.reviewResearchSource(record.id, index);
-          const key = result.status === 'matched' ? 'researchSourceMatched' :
+      check.addEventListener('click', () => {
+        void (async () => {
+          check.disabled = true;
+          status.textContent = loadTimeData.getString('researchChecking');
+          try {
+            const result = await proxy.handler.reviewResearchSource(record.id, index);
+            const key = result.status === 'matched' ? 'researchSourceMatched' :
               result.status === 'changed' ? 'researchSourceChanged' :
-              result.status === 'position_unavailable' ? 'researchPositionUnavailable' :
-              'researchSourceUnavailable';
-          status.textContent = loadTimeData.getString(key);
-        } catch {
-          status.textContent = loadTimeData.getString('researchSourceUnavailable');
-        } finally {
-          check.disabled = !source.available;
-        }
+                result.status === 'position_unavailable' ? 'researchPositionUnavailable' :
+                  'researchSourceUnavailable';
+            status.textContent = loadTimeData.getString(key);
+          } catch {
+            status.textContent = loadTimeData.getString('researchSourceUnavailable');
+          } finally {
+            check.disabled = !source.available;
+          }
+        })();
       });
       const monitor = document.createElement('button');
       monitor.textContent = loadTimeData.getString('researchMonitorSource');
@@ -309,20 +313,22 @@ function renderSavedResearch(records: SavedResearch[]) {
     }
     const remove = document.createElement('button');
     remove.textContent = loadTimeData.getString('researchDelete');
-    remove.addEventListener('click', async () => {
-      remove.disabled = true;
-      try {
-        const result = await proxy.handler.deleteSavedResearch(record.id);
-        if (result.error) {
-          element('saved-research-status').textContent = researchMessage(result.error);
-        } else {
-          await refreshSavedResearch();
+    remove.addEventListener('click', () => {
+      void (async () => {
+        remove.disabled = true;
+        try {
+          const result = await proxy.handler.deleteSavedResearch(record.id);
+          if (result.error) {
+            element('saved-research-status').textContent = researchMessage(result.error);
+          } else {
+            await refreshSavedResearch();
+          }
+        } catch {
+          element('saved-research-status').textContent = researchMessage('failed');
+        } finally {
+          remove.disabled = false;
         }
-      } catch {
-        element('saved-research-status').textContent = researchMessage('failed');
-      } finally {
-        remove.disabled = false;
-      }
+      })();
     });
     details.append(remove);
     list.append(details);
@@ -581,7 +587,7 @@ function renderResult(next: TaskSnapshot) {
       if (listId === 'result-sources') {
         const button = document.createElement('button');
         button.className = 'source-link';
-        const title = next.resultSourceTitles?.[index];
+        const title = next.resultSourceTitles?.at(index);
         button.textContent = title ? `${title} · ${item}` : item;
         button.addEventListener('click', () => {
           void proxy.handler.openVerifiedSource(next.taskId, index);
@@ -659,7 +665,7 @@ function isDownloadedFileReviewGoal(goal: string): boolean {
     return false;
   }
   const permittedReview = text.replace(
-      /(?:不要|别|別)\s*(?:执行|執行|运行|運行|安装|安裝|下载|下載)|(?:do not|don't)\s*(?:run|execute|install|download)(?:\s+(?:it|this|the file))?/g, '');
+      /(?:不要|别|別)\s*(?:执行|執行|运行|運行|安装|安裝|下载|下載)|(?:do not|don't)\s*(?:run|execute|install|download)/g, '');
   const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)/.test(permittedReview);
   return reference && question && state && !command;
 }
@@ -891,7 +897,21 @@ function renderMonitors(monitors: MonitorSummary[]) {
     toggle.textContent = loadTimeData.getString(
         monitor.paused ? 'resumeMonitor' : 'pauseMonitor');
     toggle.disabled = busy;
-    toggle.addEventListener('click', () => withBusy(() =>
+    const actionStatus = document.createElement('p');
+    const statusId = `monitor-action-${monitor.taskId}-${monitor.monitorId}`;
+    actionStatus.id = statusId;
+    actionStatus.setAttribute('role', 'status');
+    const runMonitorAction = (action: () => Promise<{snapshot: TaskSnapshot}>) => {
+      actionStatus.textContent = '';
+      void withBusy(action).catch(() => {
+        // withBusy 会重绘列表，失败提示必须写入当前可见的状态节点。
+        const currentStatus = document.getElementById(statusId);
+        if (currentStatus) {
+          currentStatus.textContent = loadTimeData.getString('planningGenericError');
+        }
+      });
+    };
+    toggle.addEventListener('click', () => runMonitorAction(() =>
       proxy.handler.setMonitorPaused(
           monitor.taskId, monitor.monitorId, !monitor.paused)));
     const remove = document.createElement('button');
@@ -899,16 +919,16 @@ function renderMonitors(monitors: MonitorSummary[]) {
     remove.dataset['monitorAction'] = 'delete';
     remove.textContent = loadTimeData.getString('deleteMonitor');
     remove.disabled = busy;
-    remove.addEventListener('click', () => withBusy(() =>
+    remove.addEventListener('click', () => runMonitorAction(() =>
       proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
     const check = document.createElement('button');
     check.type = 'button';
     check.dataset['monitorAction'] = 'check';
     check.textContent = loadTimeData.getString('checkMonitorNow');
     check.disabled = busy || monitor.paused;
-    check.addEventListener('click', () => withBusy(() =>
+    check.addEventListener('click', () => runMonitorAction(() =>
       proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId)));
-    actions.append(check, toggle, remove);
+    actions.append(check, toggle, remove, actionStatus);
     li.append(title, origin, retention, nextRun, outcome, summary, failures, actions);
     list.append(li);
   }
@@ -962,7 +982,7 @@ function renderModel(next: TaskSnapshot) {
     remove.disabled = modelRoutingBusy;
     remove.addEventListener('click', () => {
       void saveModelRouting(
-          next.modelPool.filter(candidate => candidate.id !== entry.id));
+        next.modelPool.filter(candidate => candidate.id !== entry.id));
     });
     item.append(label, detail, remove);
     pool.append(item);
@@ -1340,31 +1360,33 @@ function initializeLabels() {
   element('saved-research-refresh').addEventListener('click', () => {
     void refreshSavedResearch();
   });
-  element('save-research').addEventListener('click', async () => {
-    if (!snapshot?.researchSaveAvailable) {
-      return;
-    }
-    const taskId = snapshot.taskId;
-    const save = element<HTMLButtonElement>('save-research');
-    save.disabled = true;
-    try {
-      const result = await proxy.handler.saveResearch(taskId);
-      if (!result.error) {
-        const response = await proxy.handler.getSnapshot();
-        if (snapshot?.taskId === taskId) {
-          render(response.snapshot);
-        }
-      }
-      if (snapshot?.taskId !== taskId) {
+  element('save-research').addEventListener('click', () => {
+    void (async () => {
+      if (!snapshot?.researchSaveAvailable) {
         return;
       }
-      element('save-research-status').textContent = result.error ?
+      const taskId = snapshot.taskId;
+      const save = element<HTMLButtonElement>('save-research');
+      save.disabled = true;
+      try {
+        const result = await proxy.handler.saveResearch(taskId);
+        if (!result.error) {
+          const response = await proxy.handler.getSnapshot();
+          if (snapshot?.taskId === taskId) {
+            render(response.snapshot);
+          }
+        }
+        if (snapshot?.taskId !== taskId) {
+          return;
+        }
+        element('save-research-status').textContent = result.error ?
           researchMessage(result.error) : loadTimeData.getString('researchSaved');
-    } catch {
-      element('save-research-status').textContent = researchMessage('failed');
-    } finally {
-      save.disabled = false;
-    }
+      } catch {
+        element('save-research-status').textContent = researchMessage('failed');
+      } finally {
+        save.disabled = false;
+      }
+    })();
   });
   element<HTMLTextAreaElement>('research-goal').value =
       loadTimeData.getString('researchDefaultGoal');
@@ -1794,29 +1816,35 @@ function bindActions() {
   element('research-refresh').addEventListener('click', () => {
     void refreshResearchTabs();
   });
-  element('research-start').addEventListener('click', () => withBusy(async () => {
-    const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
-    const created = await proxy.handler.createResearchTask(
+  element('research-start').addEventListener('click', () => {
+    void withBusy(async () => {
+      const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
+      const created = await proxy.handler.createResearchTask(
         goal, [...selectedResearchTabs]);
-    activeView = 'task';
-    showCreatedTask(created.snapshot);
-    autoRunTaskId = created.snapshot.taskId;
-    return created;
-  }, true));
-  element('research-group').addEventListener('click', () => withBusy(async () => {
-    const goal = loadTimeData.getStringF(
+      activeView = 'task';
+      showCreatedTask(created.snapshot);
+      autoRunTaskId = created.snapshot.taskId;
+      return created;
+    }, true);
+  });
+  element('research-group').addEventListener('click', () => {
+    void withBusy(async () => {
+      const goal = loadTimeData.getStringF(
         'researchGroupGoal', String(selectedResearchTabs.size));
-    const created = await proxy.handler.createTabGroupTask(
+      const created = await proxy.handler.createTabGroupTask(
         goal, [...selectedResearchTabs]);
-    activeView = 'task';
-    showCreatedTask(created.snapshot);
-    autoRunTaskId = created.snapshot.taskId;
-    return created;
-  }, true));
+      activeView = 'task';
+      showCreatedTask(created.snapshot);
+      autoRunTaskId = created.snapshot.taskId;
+      return created;
+    }, true);
+  });
   element('plan-button').addEventListener('click', () => {
+
     const goal = element<HTMLTextAreaElement>('goal').value.trim();
     if (isDownloadedFileReviewGoal(goal)) {
-      return reviewCurrentDownload();
+      void reviewCurrentDownload();
+      return;
     }
     const schedule = inferAutomationSchedule(goal);
     if (schedule !== null) {
@@ -1829,10 +1857,10 @@ function bindActions() {
       element<HTMLSelectElement>('automation-schedule').focus();
       return;
     }
-    return withBusy(async () => {
+    void withBusy(async () => {
       const workflow = selectedWorkflow ?? inferWorkflow(goal);
       const created = await proxy.handler.createTask(
-          goal, AgentMode.kAct, workflow, [], 0);
+        goal, AgentMode.kAct, workflow, [], 0);
       showCreatedTask(created.snapshot);
       if (!created.snapshot.taskId) {
         return created;
@@ -1840,25 +1868,30 @@ function bindActions() {
       autoRunTaskId = created.snapshot.taskId;
       return proxy.handler.requestPlan(created.snapshot.taskId);
     }, true);
+
   });
-  element('review-download').addEventListener('click', reviewCurrentDownload);
+  element('review-download').addEventListener('click', () => {
+    void reviewCurrentDownload();
+  });
   element('create-automation-button').addEventListener(
-      'click', () => withBusy(async () => {
+    'click', () => {
+      void withBusy(async () => {
         const goal =
-            element<HTMLTextAreaElement>('automation-goal').value.trim();
+          element<HTMLTextAreaElement>('automation-goal').value.trim();
         const interval =
-            Number(element<HTMLSelectElement>('automation-schedule').value);
+          Number(element<HTMLSelectElement>('automation-schedule').value);
         // 自动化从读取目标开始；禁止下载、购物等语句不能选择一次性操作模板。
         // 缺少明确来源时仍由模型理解目标，最终权限由原生自动化范围约束。
         const created = await proxy.handler.createTask(
-            goal, AgentMode.kAutomate, Workflow.kResearch, [], interval);
+          goal, AgentMode.kAutomate, Workflow.kResearch, [], interval);
         showCreatedTask(created.snapshot);
         if (!created.snapshot.taskId) {
           return created;
         }
         autoRunTaskId = created.snapshot.taskId;
         return proxy.handler.requestPlan(created.snapshot.taskId);
-      }, true));
+      }, true);
+    });
   element('detect-models-button').addEventListener('click', detectModels);
   element('model-options').addEventListener('change', selectDetectedModel);
   element('model-name').addEventListener('input', syncDetectedModel);

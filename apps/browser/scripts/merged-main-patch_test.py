@@ -23,7 +23,10 @@ def validate_series(active, archived, replacement):
 
 
 def git_blob_hash(data):
-    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+    # Git 对象地址兼容校验；不将 SHA1 用于安全签名或抗篡改。
+    # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data,
+                        usedforsecurity=False).hexdigest()
 
 
 class MergedMainPatchTests(unittest.TestCase):

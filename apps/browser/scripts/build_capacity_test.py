@@ -1,7 +1,7 @@
 """容量门禁的边界、系统查询失败与恢复测试。"""
 from pathlib import Path
 import tempfile
-import subprocess
+import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
 import unittest
 from unittest.mock import patch
 import build_capacity as m
@@ -9,7 +9,11 @@ import build_capacity as m
 
 class CapacityTest(unittest.TestCase):
     def test_temporary_file_disappears_and_recovers(self):
+        # CompletedProcess 仅构造模拟返回值，不启动任何进程。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         missing = subprocess.CompletedProcess([], 1, '10\t/tmp/work\n', 'du: /tmp/work/temp: No such file or directory\n')
+        # CompletedProcess 仅构造模拟返回值，不启动任何进程。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         good = subprocess.CompletedProcess([], 0, '12\t/tmp/work\n', '')
         with tempfile.TemporaryDirectory() as path, patch.object(m.subprocess, 'run', side_effect=[missing, good]) as run:
             self.assertEqual(m.allocated_bytes(path), 12 * 1024)
@@ -17,6 +21,8 @@ class CapacityTest(unittest.TestCase):
 
     def test_directory_errors_are_not_accepted_as_partial_totals(self):
         for error, calls in [('Permission denied', 1), ('No such file or directory', 3)]:
+            # CompletedProcess 仅构造模拟返回值，不启动任何进程。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
             result = subprocess.CompletedProcess([], 1, '1\t/tmp/work\n', 'du: /tmp/work/temp: ' + error + '\n')
             with tempfile.TemporaryDirectory() as path, patch.object(m.subprocess, 'run', return_value=result) as run:
                 with self.assertRaises(OSError):

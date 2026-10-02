@@ -12,12 +12,16 @@ test('构建路径遵守环境变量、标记、统一默认目录的优先级',
   const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'aegis-workspace-paths-'));
   try {
     const scriptDir=path.join(fixture,'apps/browser/scripts');
+    // 路径仅来自本测试的随机临时目录或固定脚本白名单。
+    // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     fs.mkdirSync(scriptDir,{recursive:true});
     fs.copyFileSync(path.join(scripts,'common.sh'),path.join(scriptDir,'common.sh'));
     const env={...process.env};delete env.CHROMIUM_ROOT;
     const resolve=(overrides={})=>execFileSync('bash',['-c','source "$1"; printf "%s" "$CHROMIUM_ROOT"','aegis-path-test',path.join(scriptDir,'common.sh')],{env:{...env,...overrides},encoding:'utf8'});
     assert.equal(resolve(),path.join(os.homedir(),'Projects/GCSA-aegis-build/macos'));
     const marker=path.join(fixture,'apps/browser/.chromium-root');
+    // 路径仅来自本测试的随机临时目录或固定脚本白名单。
+    // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     fs.writeFileSync(marker,'/fixture/build/macos\n');
     assert.equal(resolve(),'/fixture/build/macos');
     assert.equal(resolve({CHROMIUM_ROOT:'/fixture/build/android'}),'/fixture/build/android');
@@ -28,6 +32,8 @@ test('构建路径遵守环境变量、标记、统一默认目录的优先级',
 });
 
 test('libtorrent准备使用同一源码入口，不回退到已撤下的旧目录',()=>{
+  // 路径仅来自本测试的随机临时目录或固定脚本白名单。
+  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   const source=fs.readFileSync(path.join(scripts,'bootstrap-libtorrent.sh'),'utf8');
   assert.match(source,/source "\$script_dir\/common\.sh"/);
   assert.match(source,/chromium_src="\$\{GCSA_CHROMIUM_SRC:-\$CHROMIUM_ROOT\/src\}"/);
@@ -38,6 +44,8 @@ test('原生运行检查与产物身份脚本的默认路径均已收敛',()=>{
   for(const file of ['verify-download-runtime.mjs','verify-cdp-runtime.mjs',
     'verify-fingerprint-runtime.mjs','write-build-identity.mjs',
     'verify-multisite-runtime.mjs','verify-miner-runtime.mjs']) {
+    // 路径仅来自本测试的随机临时目录或固定脚本白名单。
+    // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
     const source=fs.readFileSync(path.join(scripts,file),'utf8');
     assert.doesNotMatch(source,/GCSA-aegis-chromium/,file);
     assert.match(source,/GCSA-aegis-build/,file);

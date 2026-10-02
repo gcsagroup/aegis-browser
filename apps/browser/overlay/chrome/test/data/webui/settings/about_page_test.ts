@@ -67,6 +67,8 @@ suite('AllBuilds', function() {
   async function initNewPage(): Promise<void> {
     aboutBrowserProxy.reset();
     lifetimeBrowserProxy.reset();
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
     document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
@@ -414,6 +416,8 @@ suite('OfficialBuild', function() {
     AboutPageBrowserProxyImpl.setInstance(browserProxy);
     openWindowProxy = new TestOpenWindowProxy();
     OpenWindowProxyImpl.setInstance(openWindowProxy);
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
     document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);

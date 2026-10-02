@@ -124,7 +124,7 @@ TEST(ProductInstallDetailsTest, GetInstallSuffix) {
   };
   for (const auto& data : kData) {
     const std::wstring path =
-        base::StrCat({data.path_prefix, kProductPathName, data.path_suffix});
+        std::wstring(data.path_prefix) + kProductPathName + data.path_suffix;
     EXPECT_EQ(data.install_suffix, GetInstallSuffix(path)) << path;
   }
 }
