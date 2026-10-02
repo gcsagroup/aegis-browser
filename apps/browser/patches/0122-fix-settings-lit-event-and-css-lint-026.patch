@@ -1,0 +1,154 @@
+From 7cd5eca82e15b20f9b06b539dbffe9b21b2cb77b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 01:03:28 +0800
+Subject: [PATCH] fix(settings): align Lit event handlers and CSS with M153
+ lint
+
+---
+ .../settings/downloads_page/downloads_page.css     |  4 ++++
+ .../settings/downloads_page/downloads_page.html.ts | 14 +++++++-------
+ .../settings/downloads_page/downloads_page.ts      |  6 +++---
+ chrome/browser/ui/webui/help/aegis_github_update.h |  6 +++---
+ 4 files changed, 17 insertions(+), 13 deletions(-)
+
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.css b/chrome/browser/resources/settings/downloads_page/downloads_page.css
+index e43d63ce4f..3d28124729 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.css
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.css
+@@ -19,9 +19,11 @@
+   line-height: 18px;
+   margin-top: 4px;
+ }
++
+ .aegis-heading {
+   font-weight: 500;
+ }
++
+ .aegis-select {
+   background: var(--cr-card-background-color);
+   border: 1px solid var(--cr-separator-color);
+@@ -30,6 +32,7 @@
+   min-height: 36px;
+   padding: 0 12px;
+ }
++
+ .aegis-rate-row {
+   align-items: end;
+   display: grid;
+@@ -37,6 +40,7 @@
+   grid-template-columns: 1fr 1fr;
+   padding: 12px 20px;
+ }
++
+ .aegis-fixed {
+   color: var(--cr-secondary-text-color);
+   padding: 12px 20px;
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+index 1bb0d41c0e..b6978b3e18 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+@@ -67,7 +67,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+     <div class="cr-row">
+       <div class="flex cr-padded-text">${this.aegisStrings_.mode}</div>
+       <select aria-label="${this.aegisStrings_.mode}" class="aegis-select" .value="${String(this.aegisParallelMode_)}"
+-          @change="${this.onAegisParallelModeChanged_}">
++          @change="${this.onAegisParallelModeChange_}">
+         <option value="0">${this.aegisStrings_.smart}</option>
+         <option value="1">${this.aegisStrings_.single}</option>
+         <option value="3">${this.aegisStrings_.three}</option>
+@@ -78,14 +78,14 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+       <div class="flex cr-padded-text">${this.aegisStrings_.metered}</div>
+       <cr-toggle id="aegisReduceOnMetered" aria-label="${this.aegisStrings_.metered}"
+           .checked="${this.aegisReduceOnMetered_}"
+-          @change="${this.onAegisToggleChanged_}">
++          @change="${this.onAegisToggleChange_}">
+       </cr-toggle>
+     </div>
+     <div class="cr-row">
+       <div class="flex cr-padded-text">${this.aegisStrings_.battery}</div>
+       <cr-toggle id="aegisReduceOnBattery" aria-label="${this.aegisStrings_.battery}"
+           .checked="${this.aegisReduceOnBattery_}"
+-          @change="${this.onAegisToggleChanged_}">
++          @change="${this.onAegisToggleChange_}">
+       </cr-toggle>
+     </div>
+     <div class="aegis-fixed">${this.aegisStrings_.thermal}</div>
+@@ -100,26 +100,26 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+       <div class="flex cr-padded-text">${this.aegisStrings_.dht}</div>
+       <cr-toggle id="aegisTorrentDhtEnabled" aria-label="${this.aegisStrings_.dht}"
+           .checked="${this.aegisTorrentDhtEnabled_}"
+-          @change="${this.onAegisToggleChanged_}">
++          @change="${this.onAegisToggleChange_}">
+       </cr-toggle>
+     </div>
+     <div class="cr-row">
+       <div class="flex cr-padded-text">${this.aegisStrings_.pex}</div>
+       <cr-toggle id="aegisTorrentPexEnabled" aria-label="${this.aegisStrings_.pex}"
+           .checked="${this.aegisTorrentPexEnabled_}"
+-          @change="${this.onAegisToggleChanged_}">
++          @change="${this.onAegisToggleChange_}">
+       </cr-toggle>
+     </div>
+     <div class="aegis-rate-row">
+       <cr-input id="aegisTorrentDownloadLimit" type="number" min="0"
+           max="1000000" .value="${String(this.aegisTorrentDownloadLimitKib_)}"
+           label="${this.aegisStrings_.downloadLimit}"
+-          @change="${this.onAegisLimitChanged_}">
++          @change="${this.onAegisLimitChange_}">
+       </cr-input>
+       <cr-input id="aegisTorrentUploadLimit" type="number" min="0"
+           max="1000000" .value="${String(this.aegisTorrentUploadLimitKib_)}"
+           label="${this.aegisStrings_.uploadLimit}"
+-          @change="${this.onAegisLimitChanged_}">
++          @change="${this.onAegisLimitChange_}">
+       </cr-input>
+     </div>
+     <div class="aegis-fixed">
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index 14f919fefa..a1b4080519 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -261,12 +261,12 @@ export class SettingsDownloadsPageElement extends
+                                 .catch(() => this.loadAegisDownloadSettings_());
+   }
+ 
+-  protected onAegisParallelModeChanged_(event: Event) {
++  protected onAegisParallelModeChange_(event: Event) {
+     this.aegisParallelMode_ = Number((event.target as HTMLSelectElement).value);
+     this.saveAegisDownloadSettings_();
+   }
+ 
+-  protected onAegisToggleChanged_(event: Event) {
++  protected onAegisToggleChange_(event: Event) {
+     const toggle = event.currentTarget as CrToggleElement;
+     switch (toggle.id) {
+       case 'aegisReduceOnMetered':
+@@ -287,7 +287,7 @@ export class SettingsDownloadsPageElement extends
+     this.saveAegisDownloadSettings_();
+   }
+ 
+-  protected onAegisLimitChanged_(event: Event) {
++  protected onAegisLimitChange_(event: Event) {
+     const input = event.currentTarget as CrInputElement;
+     const value = Math.min(1000000, Math.max(0, Number(input.value) || 0));
+     if (input.id === 'aegisTorrentDownloadLimit') {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 4c5965f2f1..9de2279062 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.25。
+-inline constexpr char kProductVersion[] = "1.1.0.25";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (025)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.26。
++inline constexpr char kProductVersion[] = "1.1.0.26";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (026)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

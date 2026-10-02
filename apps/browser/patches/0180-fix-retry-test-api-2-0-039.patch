@@ -1,0 +1,48 @@
+From 213ccc8b520b6dc4725dd3cc9e24fcba9c023a21 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Thu, 17 Sep 2026 02:55:24 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=87=8D=E8=AF=95=E5=AE=A1?=
+ =?UTF-8?q?=E6=89=B9=E6=B5=8B=E8=AF=95=E7=9A=84=E5=85=AC=E5=BC=80=E7=8A=B6?=
+ =?UTF-8?q?=E6=80=81=E6=8E=A5=E5=8F=A3=202.0.039?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_service_unittest.cc | 2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h         | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index fb189eb969..aec0288de3 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -1757,7 +1757,7 @@ TEST_F(AegisAgentServiceTest,
+   std::string error;
+   ASSERT_TRUE(service->AcceptModelPlan(task->id(), event, &error)) << error;
+   ASSERT_TRUE(service->GrantTaskConsent(task->id()));
+-  ASSERT_TRUE(service->Transition(task->id(), AgentTaskState::kReflecting,
++  ASSERT_TRUE(task->TransitionTo(AgentTaskState::kReflecting,
+                                   "绑定失败后的重试"));
+   AgentToolCall call;
+   call.action_id = "url-call";
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d3f6278bcd..0c0f76967e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.38。
+-inline constexpr char kProductVersion[] = "2.0.0.38";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (038)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.39。
++inline constexpr char kProductVersion[] = "2.0.0.39";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (039)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

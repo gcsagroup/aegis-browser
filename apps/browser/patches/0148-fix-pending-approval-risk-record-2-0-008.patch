@@ -1,0 +1,48 @@
+From 8c829947ee057c19faaad3ced0e7ad05f383785e Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 03:47:03 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E5=AE=A1=E6=89=B9=E7=AD=89=E5=BE=85?=
+ =?UTF-8?q?=E6=97=B6=E8=AE=B0=E5=BD=95=E5=AE=9E=E9=99=85=E9=A3=8E=E9=99=A9?=
+ =?UTF-8?q?=202.0.008?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_service.cc  | 2 ++
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 9551f82cb7..b0d93b846d 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2692,6 +2692,8 @@ void AegisAgentService::ExecuteTool(
+     if (decision.disposition ==
+         AgentPolicyDisposition::kRequireActionApproval) {
+       if (task && task->state() == AgentTaskState::kRunning) {
++        // 等待审批即记录实际风险；不消费预算，也不授予执行权限。
++        action_risks_[task_id][call.action_id] = decision.risk;
+         Transition(task_id, AgentTaskState::kAwaitingActionApproval,
+                    "exact action approval required");
+       }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 578b15309e..a7b48f251d 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.7。
+-inline constexpr char kProductVersion[] = "2.0.0.7";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (007)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.8。
++inline constexpr char kProductVersion[] = "2.0.0.8";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (008)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

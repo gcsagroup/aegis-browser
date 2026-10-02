@@ -3,13 +3,18 @@
 #include "chrome/browser/aegis/agent/agent_tool_registry.h"
 
 #include <array>
+#include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <string>
 #include <utility>
 
 namespace aegis::agent {
 
 namespace {
+
+// 窗口会话 ID 可随机初始化到整个正 int32 范围，不能按标签数量限为一百万。
+constexpr int kMaxNativeId = std::numeric_limits<int32_t>::max();
 
 constexpr std::array<AgentToolDescriptor, 49> kTools = {{
     {"page.observe", AgentRiskLevel::kR0ReadOnly, AgentDataClass::kPublicPage,
@@ -83,7 +88,7 @@ constexpr std::array<AgentToolDescriptor, 49> kTools = {{
     {"history.search", AgentRiskLevel::kR0ReadOnly, AgentDataClass::kHistory,
      false, false, false, false},
     {"download.find_official", AgentRiskLevel::kR0ReadOnly,
-     AgentDataClass::kPublicPage, true, false, false, false},
+     AgentDataClass::kPublicPage, true, true, false, false},
     {"download.start", AgentRiskLevel::kR2ExternalSideEffect,
      AgentDataClass::kDownloads, true, true, true, false},
     {"download.pause", AgentRiskLevel::kR1Reversible,
@@ -181,33 +186,39 @@ base::DictValue EmptySchema() {
 base::DictValue ToolSchema(std::string_view name) {
   base::DictValue properties;
   if (name == "page.observe") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("query", StringSchema(512));
     return StrictObject(std::move(properties), {"tab_id"});
   }
   if (name == "page.navigate" || name == "tab.create") {
     properties.Set("url", StringSchema(4096));
     if (name == "page.navigate") {
-      properties.Set("tab_id", IntegerSchema(1, 1000000));
+      properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
       return StrictObject(std::move(properties), {"tab_id", "url"});
     }
     return StrictObject(std::move(properties), {"url"});
   }
   if (name == "page.extract") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("kind", EnumSchema({"article", "list", "table", "product"}));
-    properties.Set("fields", StringArraySchema(128, 64));
+    auto fields = StringArraySchema(128, 64);
+    fields.Set(
+        "description",
+        "省略时读取title和summary。title是文档标题，summary/content是正文原文。"
+        "其他字段必须是已观察到的真实章节标题；不得自造事实键名。"
+        "稳定指标、方法、要点等由agent.complete根据原文整理。");
+    properties.Set("fields", std::move(fields));
     return StrictObject(std::move(properties),
                         {"tab_id", "document_token", "kind"});
   }
   if (name == "page.webmcp.list") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     return StrictObject(std::move(properties), {"tab_id", "document_token"});
   }
   if (name == "page.webmcp.invoke") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("name", StringSchema(128));
     properties.Set("tool_revision", StringSchema(128));
@@ -217,7 +228,7 @@ base::DictValue ToolSchema(std::string_view name) {
         {"tab_id", "document_token", "name", "tool_revision", "input_json"});
   }
   if (name == "page.click") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("node_id", IntegerSchema(1, 1000000000));
     properties.Set("document_token", StringSchema(256));
     properties.Set("button", EnumSchema({"left", "right"}));
@@ -225,7 +236,7 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"tab_id", "node_id", "document_token"});
   }
   if (name == "page.type") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("node_id", IntegerSchema(1, 1000000000));
     properties.Set("document_token", StringSchema(256));
     properties.Set("text", StringSchema(4096));
@@ -234,7 +245,7 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"tab_id", "node_id", "document_token", "text"});
   }
   if (name == "page.select") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("node_id", IntegerSchema(1, 1000000000));
     properties.Set("document_token", StringSchema(256));
     properties.Set("value", StringSchema(1024));
@@ -242,7 +253,7 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"tab_id", "node_id", "document_token", "value"});
   }
   if (name == "page.scroll") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("direction", EnumSchema({"up", "down", "left", "right"}));
     properties.Set("amount", IntegerSchema(1, 10000));
@@ -250,7 +261,7 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"tab_id", "document_token", "direction", "amount"});
   }
   if (name == "page.drag") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("from_node_id", IntegerSchema(1, 1000000000));
     properties.Set("to_node_id", IntegerSchema(1, 1000000000));
@@ -258,7 +269,7 @@ base::DictValue ToolSchema(std::string_view name) {
                                                 "from_node_id", "to_node_id"});
   }
   if (name == "page.wait") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("condition", EnumSchema({"delay"}));
     properties.Set("timeout_ms", IntegerSchema(100, 30000));
@@ -266,14 +277,14 @@ base::DictValue ToolSchema(std::string_view name) {
                                                 "condition", "timeout_ms"});
   }
   if (name == "page.history") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("direction", EnumSchema({"back", "forward"}));
     return StrictObject(std::move(properties),
                         {"tab_id", "document_token", "direction"});
   }
   if (name == "page.media") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("action", EnumSchema({"play", "pause", "seek"}));
     properties.Set("position_ms", IntegerSchema(0, 86400000));
@@ -281,7 +292,7 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"tab_id", "document_token", "action"});
   }
   if (name == "page.save_pdf" || name == "file.upload") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     if (name == "file.upload") {
       properties.Set("node_id", IntegerSchema(1, 1000000000));
@@ -291,14 +302,14 @@ base::DictValue ToolSchema(std::string_view name) {
     return StrictObject(std::move(properties), {"tab_id", "document_token"});
   }
   if (name == "auth.attempt_login") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("password_button_node_id", IntegerSchema(1, 1000000000));
     return StrictObject(std::move(properties), {"tab_id", "document_token",
                                                 "password_button_node_id"});
   }
   if (name == "auth.fill_otp") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("field_node_ids", IntegerArraySchema(1, 1000000000, 8));
     properties.Set("for_signin", BooleanSchema());
@@ -307,7 +318,7 @@ base::DictValue ToolSchema(std::string_view name) {
         {"tab_id", "document_token", "field_node_ids", "for_signin"});
   }
   if (name == "form.fill") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set(
         "requested_data",
@@ -323,16 +334,16 @@ base::DictValue ToolSchema(std::string_view name) {
     return EmptySchema();
   }
   if (name == "tab.activate") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     return StrictObject(std::move(properties), {"tab_id"});
   }
   if (name == "tab.close") {
-    properties.Set("tab_ids", IntegerArraySchema(1, 1000000, 20));
+    properties.Set("tab_ids", IntegerArraySchema(1, kMaxNativeId, 20));
     properties.Set("revision", StringSchema(256));
     return StrictObject(std::move(properties), {"tab_ids", "revision"});
   }
   if (name == "tab.group") {
-    properties.Set("tab_ids", IntegerArraySchema(1, 1000000, 20));
+    properties.Set("tab_ids", IntegerArraySchema(1, kMaxNativeId, 20));
     properties.Set("title", StringSchema(256));
     properties.Set("color",
                    EnumSchema({"grey", "blue", "red", "yellow", "green", "pink",
@@ -348,11 +359,11 @@ base::DictValue ToolSchema(std::string_view name) {
     return StrictObject(std::move(properties), {"url"});
   }
   if (name == "window.activate") {
-    properties.Set("window_id", IntegerSchema(1, 1000000));
+    properties.Set("window_id", IntegerSchema(1, kMaxNativeId));
     return StrictObject(std::move(properties), {"window_id"});
   }
   if (name == "window.close") {
-    properties.Set("window_id", IntegerSchema(1, 1000000));
+    properties.Set("window_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("revision", StringSchema(128));
     return StrictObject(std::move(properties), {"window_id", "revision"});
   }
@@ -395,17 +406,19 @@ base::DictValue ToolSchema(std::string_view name) {
                         {"query", "days", "max_results"});
   }
   if (name == "download.find_official") {
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
+    properties.Set("document_token", StringSchema(256));
     properties.Set("product", StringSchema(512));
     properties.Set("platform", StringSchema(64));
     properties.Set("architecture", StringSchema(64));
     properties.Set("candidate_url", StringSchema(4096));
-    return StrictObject(
-        std::move(properties),
-        {"product", "platform", "architecture", "candidate_url"});
+    return StrictObject(std::move(properties),
+                        {"tab_id", "document_token", "product", "platform",
+                         "architecture", "candidate_url"});
   }
   if (name == "download.start") {
     properties.Set("url", StringSchema(4096));
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("expected_sha256", StringSchema(64));
     return StrictObject(std::move(properties),
@@ -421,12 +434,12 @@ base::DictValue ToolSchema(std::string_view name) {
     return StrictObject(std::move(properties), {"download_id"});
   }
   if (name == "permissions.inspect") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     return StrictObject(std::move(properties), {"tab_id", "document_token"});
   }
   if (name == "monitor.create") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("kind", EnumSchema({"price", "inventory", "page_change",
                                        "url_status"}));
@@ -447,7 +460,7 @@ base::DictValue ToolSchema(std::string_view name) {
     return StrictObject(std::move(properties), {"monitor_id"});
   }
   if (name == "shopping.prepare_checkout") {
-    properties.Set("tab_id", IntegerSchema(1, 1000000));
+    properties.Set("tab_id", IntegerSchema(1, kMaxNativeId));
     properties.Set("document_token", StringSchema(256));
     properties.Set("merchant", StringSchema(512));
     properties.Set("product", StringSchema(1024));
@@ -478,7 +491,10 @@ std::string_view ToolDescription(std::string_view name) {
     return "Read a bounded view of an approved page.";
   }
   if (name == "page.extract") {
-    return "Extract bounded fields with source nodes from an observed page.";
+    return "提取带来源节点的原文。总结任务使用title及content或summary，"
+           "不要把stable_metric、measurement_method、key_"
+           "points等推导概念当作字段。"
+           "其他字段须匹配页面已有章节；未解析不代表目标完成。";
   }
   if (name == "page.webmcp.list") {
     return "List strict same-document WebMCP tools as untrusted page data.";
@@ -490,7 +506,8 @@ std::string_view ToolDescription(std::string_view name) {
     return "Navigate an approved tab to an approved URL.";
   }
   if (name == "page.click") {
-    return "Click a document-bound semantic node.";
+    return "点击当前文档的控件。观察中的click_target_node_id表示文字所属的"
+           "真实按钮；优先使用该编号，不根据相同文字猜测其他控件。";
   }
   if (name == "page.type") {
     return "Type non-secret text into an approved field.";

@@ -6,10 +6,13 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
+#include "base/containers/flat_set.h"
 #include "base/time/time.h"
 #include "chrome/browser/aegis/agent/agent_task.h"
 #include "chrome/browser/aegis/agent/agent_tool_registry.h"
+#include "url/gurl.h"
 
 namespace aegis::agent {
 
@@ -57,6 +60,12 @@ class AgentPolicyBroker {
       base::Time now = base::Time::Now());
 
   void RevokeTaskApprovals(const std::string& task_id);
+  // 仅由浏览器绑定用户创建任务时选中的完整地址；模型和读取结果不能追加。
+  bool BindSelectedReadUrls(const AgentTask& task,
+                            const std::vector<GURL>& urls);
+  bool IsSelectedReadUrl(const AgentTask& task, const GURL& url) const;
+  AgentRiskLevel EffectiveRisk(const AgentTask& task,
+                               const AgentToolCall& call) const;
   // Stable fingerprint shown to the user and consumed by the one-use approval
   // receipt. It covers the exact action, arguments, origin, and document.
   static std::string ActionHash(const AgentToolCall& call);
@@ -71,6 +80,7 @@ class AgentPolicyBroker {
 
   const raw_ptr<const AgentToolRegistry> registry_;
   std::map<std::string, AgentApprovalReceipt> approvals_;
+  std::map<std::string, base::flat_set<GURL>> selected_read_urls_;
 };
 
 }  // namespace aegis::agent

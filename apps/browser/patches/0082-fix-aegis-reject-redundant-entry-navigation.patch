@@ -1,7 +1,7 @@
-From 86cdff055f8d45e468f3645c445ed618e699239b Mon Sep 17 00:00:00 2001
+From 46181407b1cfedd2288d6cd903f9e0ef0a1cfd8d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 21:40:45 +0800
-Subject: [PATCH 82/90] fix(aegis): reject redundant entry navigation
+Subject: [PATCH] fix(aegis): reject redundant entry navigation
 
 ---
  chrome/browser/aegis/agent/agent_planner.cc   | 16 ++++++++

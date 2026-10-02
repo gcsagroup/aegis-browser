@@ -1,7 +1,12 @@
-From f55766cb79f8e29d5c2c4201579b515cc710b6e5 Mon Sep 17 00:00:00 2001
-From: MacBook Pro <lazy@MacBook-Pro.local>
-Date: Thu, 27 Aug 2026 06:33:53 +0800
-Subject: [PATCH] feat(aegis): add bytecode shadow observation
+From 9eeb92a6c3482cc3c4837ec60c7b442738d944b7 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 00:50:59 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D153.0.8010.53=E5=AE=89?=
+ =?UTF-8?q?=E5=85=A8=E5=80=99=E9=80=89=EF=BC=9A0001-feat-aegis-add-bytecod?=
+ =?UTF-8?q?e-shadow-observation.patch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 ---
  BUILD.gn                                      |   2 +
@@ -17,10 +22,10 @@ Subject: [PATCH] feat(aegis): add bytecode shadow observation
  create mode 100644 test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
 
 diff --git a/BUILD.gn b/BUILD.gn
-index 03938a26b4d..49c27b6246c 100644
+index 0c48f1e9b27..bdc3132056b 100644
 --- a/BUILD.gn
 +++ b/BUILD.gn
-@@ -4250,6 +4250,7 @@ v8_header_set("v8_internal_headers") {
+@@ -4304,6 +4304,7 @@ v8_header_set("v8_internal_headers") {
      "src/init/setup-isolate.h",
      "src/init/startup-data-util.h",
      "src/init/v8.h",
@@ -28,7 +33,7 @@ index 03938a26b4d..49c27b6246c 100644
      "src/interpreter/block-coverage-builder.h",
      "src/interpreter/bytecode-array-builder.h",
      "src/interpreter/bytecode-array-iterator.h",
-@@ -6116,6 +6117,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
+@@ -6173,6 +6174,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
      "src/init/isolate-group.cc",
      "src/init/startup-data-util.cc",
      "src/init/v8.cc",
@@ -37,10 +42,10 @@ index 03938a26b4d..49c27b6246c 100644
      "src/interpreter/bytecode-array-iterator.cc",
      "src/interpreter/bytecode-array-random-iterator.cc",
 diff --git a/src/flags/flag-definitions.h b/src/flags/flag-definitions.h
-index bf210a58890..fe5ab2ae871 100644
+index 070772ee86d..6c30e3f2dbf 100644
 --- a/src/flags/flag-definitions.h
 +++ b/src/flags/flag-definitions.h
-@@ -1240,6 +1240,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
+@@ -1259,6 +1259,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
  DEFINE_BOOL(stress_ic, false, "exercise interesting paths in ICs more often")
  
  // Flags for Ignition.
@@ -240,10 +245,10 @@ index 0278e8f05d6..f58cdc8c92c 100644
      StdoutStream os;
      std::unique_ptr<char[]> name =
 diff --git a/test/unittests/BUILD.gn b/test/unittests/BUILD.gn
-index 9db527db1c5..8bff1964cc5 100644
+index 652ed91d16d..542e69faf10 100644
 --- a/test/unittests/BUILD.gn
 +++ b/test/unittests/BUILD.gn
-@@ -417,6 +417,7 @@ v8_cluster_source_set("v8_unittests_sources") {
+@@ -418,6 +418,7 @@ v8_cluster_source_set("v8_unittests_sources") {
      "heap/spaces-unittest.cc",
      "heap/strong-root-allocator-unittest.cc",
      "heap/write-barrier-unittest.cc",

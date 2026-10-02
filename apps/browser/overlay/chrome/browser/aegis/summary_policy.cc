@@ -553,6 +553,10 @@ bool ValidatePromptFields(const ModelPrompt& prompt, std::string* error) {
 
 }  // namespace
 
+std::string SanitizeModelContextText(std::string_view text) {
+  return RedactRecognizableValues(NormalizeSecurityText(text).text);
+}
+
 bool IsModelSummaryAllowed(const PageSnapshot& snapshot, std::string* reason) {
   if (reason) {
     reason->clear();

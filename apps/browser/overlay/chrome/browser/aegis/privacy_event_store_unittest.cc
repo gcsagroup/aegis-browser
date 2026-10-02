@@ -54,6 +54,21 @@ TEST(PrivacyEventStoreTest, FiltersDocumentAndSiteScopedEvents) {
   EXPECT_EQ("block", page[1].kind);
 }
 
+TEST(PrivacyEventStoreTest, SeparatesCurrentPageFromUnattributedSiteHistory) {
+  PrivacyEventStore store;
+  store.Record(Event("current", "same.test", "block", "tracker.test", 10));
+  store.Record(Event("other-page", "same.test", "param", "same.test", 10));
+  store.Record(Event("", "same.test", "phish", "same.test", 10));
+  store.Record(Event("", "other.test", "phish", "other.test", 10));
+  const auto page = store.ForDocumentAndSite("current", "");
+  const auto history = store.ForDocumentAndSite("", "same.test");
+  ASSERT_EQ(page.size(), 1u);
+  EXPECT_EQ(page[0].kind, "block");
+  ASSERT_EQ(history.size(), 1u);
+  EXPECT_EQ(history[0].kind, "phish");
+  EXPECT_TRUE(history[0].document_id.empty());
+}
+
 TEST(PrivacyEventStoreTest, BoundsDetailsAndEvents) {
   PrivacyEventStore store;
   for (size_t i = 0; i < PrivacyEventStore::kMaxEventsPerDocument + 5; ++i) {

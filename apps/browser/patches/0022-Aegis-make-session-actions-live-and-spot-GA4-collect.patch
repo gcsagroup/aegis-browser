@@ -1,4 +1,4 @@
-From c7a06623ee788756d8c5eda30817bbe59cf96aa0 Mon Sep 17 00:00:00 2001
+From f976570a2c2f415c45587dc8eefd78d82f343ed9 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:09:16 +0800
 Subject: [PATCH] Aegis: make session actions live and spot GA4 collect

@@ -1,0 +1,1088 @@
+From 43584528a5c580b99edad33a633eab4ce16d63a7 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 06:04:55 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=88=86=E7=A6=BB=20Windows=20=E5=AE=89?=
+ =?UTF-8?q?=E8=A3=85=E4=B8=8E=E6=9C=8D=E5=8A=A1=E8=BA=AB=E4=BB=BD=20086?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/elevation_service/BUILD.gn             |   7 +
+ .../install_static/chromium_install_modes.h   |  85 ++++++------
+ .../install_static/install_util_unittest.cc   |   6 +-
+ .../product_install_details_unittest.cc       |   5 +-
+ .../user_data_dir_win_unittest.cc             |   4 +-
+ .../elevated_tracing_service/BUILD.gn         |   7 +
+ .../policy/tools/generate_policy_source.py    |   2 +-
+ .../tools/generate_policy_source_test_data.py |   2 +-
+ .../template_writers/writer_configuration.py  |  14 +-
+ .../writers/adm_writer_unittest.py            | 124 +++++++++---------
+ .../writers/plist_strings_writer_unittest.py  |  30 ++---
+ .../writers/plist_writer_unittest.py          |  26 ++--
+ .../writers/reg_writer_unittest.py            |  16 +--
+ 13 files changed, 166 insertions(+), 162 deletions(-)
+
+diff --git a/chrome/elevation_service/BUILD.gn b/chrome/elevation_service/BUILD.gn
+index 0ce72b243f..b3d9f4e447 100644
+--- a/chrome/elevation_service/BUILD.gn
++++ b/chrome/elevation_service/BUILD.gn
+@@ -12,6 +12,13 @@ import("//testing/test.gni")
+ midl("elevation_service_idl") {
+   sources = [ "elevation_service_idl.idl" ]
+ 
++  # Aegis 使用上游 MIDL 固定 GUID
++  # 映射，同时更新头文件、代理及 TypeLib。
++  # 不跳过代理桩比较；IID 首字段顺序保持不变。
++  if (!is_chrome_branded && !is_chrome_for_testing_branded) {
++    dynamic_guids = "BB19A0E5-00C6-4966-94B2-5AFEC6FED93A=BB19A0E5-3C2F-5D8D-A376-B9EFFDD77FFE"
++  }
++
+   writes_tlb = true
+ }
+ 
+diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
+index a6d969df56..01ad783e7a 100644
+--- a/chrome/install_static/chromium_install_modes.h
++++ b/chrome/install_static/chromium_install_modes.h
+@@ -2,7 +2,7 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+-// Brand-specific types and constants for Chromium.
++// Aegis 使用独立且固定的 Windows 安装身份；内部 Chromium 类型名保留兼容。
+ 
+ #ifndef CHROME_INSTALL_STATIC_CHROMIUM_INSTALL_MODES_H_
+ #define CHROME_INSTALL_STATIC_CHROMIUM_INSTALL_MODES_H_
+@@ -21,7 +21,7 @@ inline constexpr wchar_t kCompanyPathName[] = L"";
+ 
+ // The brand-specific product name to be included as a component of the install
+ // and user data directory paths.
+-inline constexpr wchar_t kProductPathName[] = L"Chromium";
++inline constexpr wchar_t kProductPathName[] = L"GCSA Aegis";
+ 
+ // The brand-specific safe browsing client name.
+ inline constexpr char kSafeBrowsingName[] = "chromium";
+@@ -33,15 +33,6 @@ enum InstallConstantIndex {
+   NUM_INSTALL_MODES,
+ };
+ 
+-inline constexpr auto kOldTracingServiceIids = std::to_array<IID>({
+-    // Replaced in 2026-09. Delete after 2028-09.
+-    // {A3FD580A-FFD4-4075-9174-75D0B199D3CB}
+-    {0xa3fd580a,
+-     0xffd4,
+-     0x4075,
+-     {0x91, 0x74, 0x75, 0xd0, 0xb1, 0x99, 0xd3, 0xcb}},
+-});
+-
+ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
+     // The primary (and only) install mode for Chromium.
+     {
+@@ -54,47 +45,48 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
+         .logo_suffix = L"",  // No logo suffix for the primary install mode.
+         .app_guid =
+             L"",  // Empty app_guid since no integration with Google Update.
+-        .base_app_name = L"Chromium",              // A distinct base_app_name.
+-        .base_app_id = L"Chromium",                // A distinct base_app_id.
+-        .browser_prog_id_prefix = L"ChromiumHTM",  // Browser ProgID prefix.
++        .base_app_name = L"GCSA Aegis",         // A distinct base_app_name.
++        .base_app_id = L"app.gcsa.aegis",       // A distinct base_app_id.
++        .browser_prog_id_prefix = L"AegisHTM",  // Browser ProgID prefix.
+         .browser_prog_id_description =
+-            L"Chromium HTML Document",  // Browser ProgID description.
+-        .direct_launch_url_scheme = "chromium",
+-        .pdf_prog_id_prefix = L"ChromiumPDF",  // PDF ProgID prefix.
++            L"GCSA Aegis HTML Document",  // Browser ProgID description.
++        .direct_launch_url_scheme = "aegis",
++        .pdf_prog_id_prefix = L"AegisPDF",  // PDF ProgID prefix.
+         .pdf_prog_id_description =
+-            L"Chromium PDF Document",  // PDF ProgID description.
++            L"GCSA Aegis PDF Document",  // PDF ProgID description.
+         .active_setup_guid =
+-            L"{7D2B3E1D-D096-4594-9D8F-A6667F12E0AC}",  // Active Setup
++            L"{43A39D18-33E1-5306-B967-2CE20EC76C03}",  // Active Setup
+                                                         // GUID.
+-        .toast_activator_clsid = {0x635EFA6F,
+-                                  0x08D6,
+-                                  0x4EC9,
+-                                  {0xBD, 0x14, 0x8A, 0x0F, 0xDE, 0x97, 0x51,
+-                                   0x59}},  // Toast Activator CLSID.
+-        .elevator_clsid = {0xD133B120,
+-                           0x6DB4,
+-                           0x4D6B,
+-                           {0x8B, 0xFE, 0x83, 0xBF, 0x8C, 0xA1, 0xB1,
+-                            0xB0}},  // Elevator CLSID.
++        .toast_activator_clsid = {0xff8ef761,
++                                  0xf35a,
++                                  0x5216,
++                                  {0xab, 0x8d, 0x6a, 0xc4, 0xdd, 0x06, 0x0f,
++                                   0xa6}},  // Toast Activator CLSID.
++        .elevator_clsid = {0x1a5bb399,
++                           0x46a8,
++                           0x5b7c,
++                           {0xa3, 0x2f, 0x89, 0x53, 0x30, 0x13, 0xfb,
++                            0x7c}},  // Elevator CLSID.
+         .elevator_iid = {0xbb19a0e5,
+-                         0xc6,
+-                         0x4966,
+-                         {0x94, 0xb2, 0x5a, 0xfe, 0xc6, 0xfe, 0xd9,
+-                          0x3a}},  // IElevator IID and TypeLib
+-        // {BB19A0E5-00C6-4966-94B2-5AFEC6FED93A}.
++                         0x3c2f,
++                         0x5d8d,
++                         {0xa3, 0x76, 0xb9, 0xef, 0xfd, 0xd7, 0x7f,
++                          0xfe}},  // IElevator IID and TypeLib
++        // 与 GN 中的固定 Aegis IID 映射一致。
+         .old_elevator_iids = {},
+-        .tracing_service_clsid = {0x83f69367,
+-                                  0x442d,
+-                                  0x447f,
+-                                  {0x8b, 0xcc, 0x0e, 0x3f, 0x97, 0xbe, 0x9c,
+-                                   0xf2}},  // SystemTraceSession CLSID.
++        .tracing_service_clsid = {0x7ef1162a,
++                                  0xe1e3,
++                                  0x53b9,
++                                  {0xad, 0xfd, 0xc3, 0xf6, 0x1a, 0x33, 0xcf,
++                                   0xc4}},  // SystemTraceSession CLSID.
+         .tracing_service_iid = {0xe0b03e2d,
+-                                0x7682,
+-                                0x4d83,
+-                                {0xb9, 0xff, 0x45, 0x74, 0xaf, 0x72, 0x05,
+-                                 0x00}},  // ISystemTraceSessionChromium IID and
++                                0xa44c,
++                                0x5c6a,
++                                {0xa6, 0x6a, 0x13, 0xb3, 0x9a, 0xf8, 0x83,
++                                 0xe5}},  // ISystemTraceSessionChromium IID and
+                                           // TypeLib
+-        .old_tracing_service_iids = kOldTracingServiceIids,
++        // 不清理原版 Chromium 的历史 COM 注册。
++        .old_tracing_service_iids = {},
+         .default_channel_name =
+             L"",  // Empty default channel name since no update integration.
+         .channel_strategy = ChannelStrategy::UNSUPPORTED,
+@@ -109,9 +101,8 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
+         .pdf_doc_icon_resource_index =
+             icon_resources::kPDFDocIndex,  // PDF doc icon resource index.
+         .sandbox_sid_prefix =
+-            L"S-1-15-2-3251537155-1984446955-2931258699-841473695-"
+-            L"1938553385-"
+-            L"924012148-",  // App container sid prefix for sandbox.
++            L"S-1-15-2-2952258977-4202009782-3179178386-2292280855-2728581886-"
++            L"284722248-",  // App container sid prefix for sandbox.
+     },
+ });
+ 
+diff --git a/chrome/install_static/install_util_unittest.cc b/chrome/install_static/install_util_unittest.cc
+index 6c68b239c4..39d675f843 100644
+--- a/chrome/install_static/install_util_unittest.cc
++++ b/chrome/install_static/install_util_unittest.cc
+@@ -361,7 +361,7 @@ class InstallStaticUtilTest
+     static constexpr wchar_t kPolicyKey[] =
+         L"Software\\Policies\\Google\\Chrome";
+ #else
+-    static constexpr wchar_t kPolicyKey[] = L"Software\\Policies\\Chromium";
++    static constexpr wchar_t kPolicyKey[] = L"Software\\Policies\\GCSA Aegis";
+ #endif
+ 
+     ASSERT_EQ(ERROR_SUCCESS,
+@@ -416,7 +416,7 @@ TEST_P(InstallStaticUtilTest, GetChromeInstallSubDirectory) {
+   // The directory strings for the brand's install modes; parallel to
+   // kInstallModes.
+   static constexpr const wchar_t* kInstallDirs[] = {
+-      L"Chromium",
++      L"GCSA Aegis",
+   };
+ #endif
+   static_assert(std::size(kInstallDirs) == NUM_INSTALL_MODES,
+@@ -527,7 +527,7 @@ TEST_P(InstallStaticUtilTest, GetBaseAppId) {
+ #else
+   // The base app ids for the brand's install modes; parallel to kInstallModes.
+   static constexpr const wchar_t* kBaseAppIds[] = {
+-      L"Chromium",
++      L"app.gcsa.aegis",
+   };
+ #endif
+   static_assert(std::size(kBaseAppIds) == NUM_INSTALL_MODES,
+diff --git a/chrome/install_static/product_install_details_unittest.cc b/chrome/install_static/product_install_details_unittest.cc
+index 2e5b799d34..524806957c 100644
+--- a/chrome/install_static/product_install_details_unittest.cc
++++ b/chrome/install_static/product_install_details_unittest.cc
+@@ -2,7 +2,6 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+-
+ #include "chrome/install_static/product_install_details.h"
+ 
+ #include <string_view>
+@@ -207,13 +206,13 @@ constexpr TestData kTestData[] = {
+ #else   // BUILDFLAG(GOOGLE_CHROME_BRANDING)
+ constexpr TestData kTestData[] = {
+     {
+-        L"C:\\Program Files (x86)\\Chromium\\Application\\chrome.exe",
++        L"C:\\Program Files (x86)\\GCSA Aegis\\Application\\chrome.exe",
+         CHROMIUM_INDEX,
+         true,
+         L"",
+     },
+     {
+-        L"C:\\Users\\user\\AppData\\Local\\Chromium\\Application\\chrome.exe",
++        L"C:\\Users\\user\\AppData\\Local\\GCSA Aegis\\Application\\chrome.exe",
+         CHROMIUM_INDEX,
+         false,
+         L"",
+diff --git a/chrome/install_static/user_data_dir_win_unittest.cc b/chrome/install_static/user_data_dir_win_unittest.cc
+index efa4cbb99e..0410d6b5ca 100644
+--- a/chrome/install_static/user_data_dir_win_unittest.cc
++++ b/chrome/install_static/user_data_dir_win_unittest.cc
+@@ -30,8 +30,8 @@ const wchar_t kPolicyRegistryKey[] = L"SOFTWARE\\Policies\\Chromium";
+ const wchar_t kUserDataDirNameSuffix[] =
+     L"\\Google\\Chrome for Testing\\User Data";
+ #else
+-const wchar_t kPolicyRegistryKey[] = L"SOFTWARE\\Policies\\Chromium";
+-const wchar_t kUserDataDirNameSuffix[] = L"\\Chromium\\User Data";
++const wchar_t kPolicyRegistryKey[] = L"SOFTWARE\\Policies\\GCSA Aegis";
++const wchar_t kUserDataDirNameSuffix[] = L"\\GCSA Aegis\\User Data";
+ #endif
+ 
+ const wchar_t kUserDataDirRegistryKey[] = L"UserDataDir";
+diff --git a/chrome/windows_services/elevated_tracing_service/BUILD.gn b/chrome/windows_services/elevated_tracing_service/BUILD.gn
+index be389aaf7f..5dce8de0ea 100644
+--- a/chrome/windows_services/elevated_tracing_service/BUILD.gn
++++ b/chrome/windows_services/elevated_tracing_service/BUILD.gn
+@@ -10,6 +10,13 @@ import("//testing/test.gni")
+ midl("tracing_service_idl") {
+   sources = [ "tracing_service_idl.idl" ]
+ 
++  # Aegis 使用上游 MIDL 固定 GUID
++  # 映射，同时更新头文件、代理及 TypeLib。
++  # 不跳过代理桩比较；IID 首字段顺序保持不变。
++  if (!is_chrome_branded && !is_chrome_for_testing_branded) {
++    dynamic_guids = "E0B03E2D-7682-4D83-B9FF-4574AF720500=E0B03E2D-A44C-5C6A-A66A-13B39AF883E5"
++  }
++
+   writes_tlb = true
+ }
+ 
+diff --git a/components/policy/tools/generate_policy_source.py b/components/policy/tools/generate_policy_source.py
+index 040c3e2a6d..e899b4f969 100755
+--- a/components/policy/tools/generate_policy_source.py
++++ b/components/policy/tools/generate_policy_source.py
+@@ -28,7 +28,7 @@ from xml.sax.saxutils import escape as xml_escape
+ 
+ CHROME_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome'
+ CHROME_FOR_TESTING_POLICY_KEY = CHROME_POLICY_KEY + ' for Testing'
+-CHROMIUM_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\Chromium'
++CHROMIUM_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\GCSA Aegis'
+ PLATFORM_STRINGS = {
+     'chrome_frame': ['win'],
+     'chrome_os': ['chrome_os'],
+diff --git a/components/policy/tools/generate_policy_source_test_data.py b/components/policy/tools/generate_policy_source_test_data.py
+index afbee74272..4bd85601c2 100644
+--- a/components/policy/tools/generate_policy_source_test_data.py
++++ b/components/policy/tools/generate_policy_source_test_data.py
+@@ -1788,7 +1788,7 @@ const wchar_t kRegistryChromePolicyKey[] = L"SOFTWARE\\\\Policies\\\\Google\\\\C
+ #elif BUILDFLAG(GOOGLE_CHROME_FOR_TESTING_BRANDING)
+ const wchar_t kRegistryChromePolicyKey[] = L"SOFTWARE\\\\Policies\\\\Google\\\\Chrome for Testing";
+ #else
+-const wchar_t kRegistryChromePolicyKey[] = L"SOFTWARE\\\\Policies\\\\Chromium";
++const wchar_t kRegistryChromePolicyKey[] = L"SOFTWARE\\\\Policies\\\\GCSA Aegis";
+ #endif
+ '''
+ 
+diff --git a/components/policy/tools/template_writers/writer_configuration.py b/components/policy/tools/template_writers/writer_configuration.py
+index 283ea725c5..48541df6ad 100755
+--- a/components/policy/tools/template_writers/writer_configuration.py
++++ b/components/policy/tools/template_writers/writer_configuration.py
+@@ -27,23 +27,23 @@ def GetConfigurationForBuild(defines):
+   if '_chromium' in defines:
+     config = {
+         'build': 'chromium',
+-        'app_name': 'Chromium',
++        'app_name': 'GCSA Aegis',
+         'doc_url': 'https://chromeenterprise.google/policies/',
+         'frame_name': 'Chromium Frame',
+         'os_name': 'ChromiumOS',
+         'webview_name': 'Chromium WebView',
+         'win_config': {
+             'win': {
+-                'reg_mandatory_key_name': 'Software\\Policies\\Chromium',
++                'reg_mandatory_key_name': 'Software\\Policies\\GCSA Aegis',
+                 'reg_recommended_key_name':
+-                'Software\\Policies\\Chromium\\Recommended',
++                'Software\\Policies\\GCSA Aegis\\Recommended',
+                 'mandatory_category_path': ['chromium'],
+                 'recommended_category_path': ['chromium_recommended'],
+                 'category_path_strings': {
+-                    'chromium': 'Chromium',
+-                    'chromium_recommended': 'Chromium - {doc_recommended}',
++                    'chromium': 'GCSA Aegis',
++                    'chromium_recommended': 'GCSA Aegis - {doc_recommended}',
+                 },
+-                'namespace': 'Chromium.Policies.Chromium',
++                'namespace': 'GCSA.Policies.Aegis',
+             },
+             'chrome_os': {
+                 'reg_mandatory_key_name': 'Software\\Policies\\ChromiumOS',
+@@ -60,7 +60,7 @@ def GetConfigurationForBuild(defines):
+         },
+         'admx_prefix': 'chromium',
+         'linux_policy_path': '/etc/chromium/policies/',
+-        'bundle_id': 'org.chromium',
++        'bundle_id': 'app.gcsa.aegis',
+     }
+   elif '_google_chrome' in defines or '_is_chrome_for_testing_branded' in defines:
+     if '_google_chrome' in defines:
+diff --git a/components/policy/tools/template_writers/writers/adm_writer_unittest.py b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
+index 569c8733f3..14ac76d212 100755
+--- a/components/policy/tools/template_writers/writers/adm_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
+@@ -91,12 +91,12 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     }, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+   END CATEGORY
+ 
+@@ -104,8 +104,8 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"''')
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"''')
+     self.CompareOutputs(output, expected_output)
+ 
+   def testVersionAnnotation(self):
+@@ -124,12 +124,12 @@ chromium_recommended="Chromium - Recommended"''')
+     expected_output = '; chromium version: 39.0.0.0\n' + \
+         self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+   END CATEGORY
+ 
+@@ -137,8 +137,8 @@ chromium_recommended="Chromium - Recommended"''')
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"''')
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"''')
+     self.CompareOutputs(output, expected_output)
+ 
+   def testMainPolicy(self):
+@@ -290,7 +290,7 @@ With a newline.""",
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!StringPolicy_Policy
+       #if version >= 4
+@@ -307,7 +307,7 @@ With a newline.""",
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!StringPolicy_Policy
+       #if version >= 4
+@@ -327,8 +327,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ StringPolicy_Policy="Caption of policy."
+ StringPolicy_Explain="Description of group.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -358,7 +358,7 @@ StringPolicy_Part="Caption of policy."
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!IntPolicy_Policy
+       #if version >= 4
+@@ -375,7 +375,7 @@ StringPolicy_Part="Caption of policy."
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!IntPolicy_Policy
+       #if version >= 4
+@@ -395,8 +395,8 @@ StringPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -427,7 +427,7 @@ IntPolicy_Part="Caption of policy."
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!IntPolicy_Policy
+       #if version >= 4
+@@ -444,7 +444,7 @@ IntPolicy_Part="Caption of policy."
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!IntPolicy_Policy
+       #if version >= 4
+@@ -464,8 +464,8 @@ IntPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -497,7 +497,7 @@ IntPolicy_Part="Caption of policy."
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!IntPolicy_Policy
+       #if version >= 4
+@@ -514,7 +514,7 @@ IntPolicy_Part="Caption of policy."
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!IntPolicy_Policy
+       #if version >= 4
+@@ -534,8 +534,8 @@ IntPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ IntPolicy_Policy="Caption of policy."
+ IntPolicy_Explain="Description of policy.\\n\\n\
+ Reference: \
+@@ -747,7 +747,7 @@ With a newline.""",
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!ListPolicy_Policy
+       #if version >= 4
+@@ -756,7 +756,7 @@ With a newline.""",
+       EXPLAIN !!ListPolicy_Explain
+ 
+       PART !!ListPolicy_Part  LISTBOX
+-        KEYNAME "Software\\Policies\\Chromium\\ListPolicy"
++        KEYNAME "Software\\Policies\\GCSA Aegis\\ListPolicy"
+         VALUEPREFIX ""
+       END PART
+     END POLICY
+@@ -764,7 +764,7 @@ With a newline.""",
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!ListPolicy_Policy
+       #if version >= 4
+@@ -773,7 +773,7 @@ With a newline.""",
+       EXPLAIN !!ListPolicy_Explain
+ 
+       PART !!ListPolicy_Part  LISTBOX
+-        KEYNAME "Software\\Policies\\Chromium\\Recommended\\ListPolicy"
++        KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended\\ListPolicy"
+         VALUEPREFIX ""
+       END PART
+     END POLICY
+@@ -784,8 +784,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ ListPolicy_Policy="Caption of list policy."
+ ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -823,7 +823,7 @@ With a newline.""",
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!ListPolicy_Policy
+       #if version >= 4
+@@ -832,7 +832,7 @@ With a newline.""",
+       EXPLAIN !!ListPolicy_Explain
+ 
+       PART !!ListPolicy_Part  LISTBOX
+-        KEYNAME "Software\\Policies\\Chromium\\ListPolicy"
++        KEYNAME "Software\\Policies\\GCSA Aegis\\ListPolicy"
+         VALUEPREFIX ""
+       END PART
+     END POLICY
+@@ -840,7 +840,7 @@ With a newline.""",
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!ListPolicy_Policy
+       #if version >= 4
+@@ -849,7 +849,7 @@ With a newline.""",
+       EXPLAIN !!ListPolicy_Explain
+ 
+       PART !!ListPolicy_Part  LISTBOX
+-        KEYNAME "Software\\Policies\\Chromium\\Recommended\\ListPolicy"
++        KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended\\ListPolicy"
+         VALUEPREFIX ""
+       END PART
+     END POLICY
+@@ -860,8 +860,8 @@ With a newline.""",
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ ListPolicy_Policy="Caption of list policy."
+ ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
+ Reference: \
+@@ -891,7 +891,7 @@ ListPolicy_Part="Label of list policy."
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!DictionaryPolicy_Policy
+       #if version >= 4
+@@ -908,7 +908,7 @@ ListPolicy_Part="Label of list policy."
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!DictionaryPolicy_Policy
+       #if version >= 4
+@@ -928,8 +928,8 @@ ListPolicy_Part="Label of list policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ DictionaryPolicy_Policy="Caption of policy."
+ DictionaryPolicy_Explain="Description of group.\\n\\n\
+ Reference: \
+@@ -959,7 +959,7 @@ DictionaryPolicy_Part="Caption of policy."
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     POLICY !!ExternalPolicy_Policy
+       #if version >= 4
+@@ -976,7 +976,7 @@ DictionaryPolicy_Part="Caption of policy."
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     POLICY !!ExternalPolicy_Policy
+       #if version >= 4
+@@ -996,8 +996,8 @@ DictionaryPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ ExternalPolicy_Policy="Caption of policy."
+ ExternalPolicy_Explain="Description of group.\\n\\n\
+ Reference: \
+@@ -1034,12 +1034,12 @@ ExternalPolicy_Part="Caption of policy."
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+   END CATEGORY
+ 
+@@ -1047,8 +1047,8 @@ ExternalPolicy_Part="Caption of policy."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ ''')
+     self.CompareOutputs(output, expected_output)
+ 
+@@ -1145,7 +1145,7 @@ With a newline."""
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     CATEGORY !!Group1_Category
+       POLICY !!Policy1_Policy
+@@ -1155,7 +1155,7 @@ With a newline."""
+         EXPLAIN !!Policy1_Explain
+ 
+         PART !!Policy1_Part  LISTBOX
+-          KEYNAME "Software\\Policies\\Chromium\\Policy1"
++          KEYNAME "Software\\Policies\\GCSA Aegis\\Policy1"
+           VALUEPREFIX ""
+         END PART
+       END POLICY
+@@ -1177,7 +1177,7 @@ With a newline."""
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     CATEGORY !!Group1_Category
+       POLICY !!Policy1_Policy
+@@ -1187,7 +1187,7 @@ With a newline."""
+         EXPLAIN !!Policy1_Explain
+ 
+         PART !!Policy1_Part  LISTBOX
+-          KEYNAME "Software\\Policies\\Chromium\\Recommended\\Policy1"
++          KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended\\Policy1"
+           VALUEPREFIX ""
+         END PART
+       END POLICY
+@@ -1200,8 +1200,8 @@ With a newline."""
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ Group1_Category="Caption of group."
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="Description of policy1.\\nWith a newline.\\n\\n\
+@@ -1336,7 +1336,7 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     CATEGORY !!DeprecatedPolicies_Category
+       POLICY !!Policy1_Policy
+@@ -1356,7 +1356,7 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     CATEGORY !!DeprecatedPolicies_Category
+       POLICY !!Policy1_Policy
+@@ -1379,8 +1379,8 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ DeprecatedPolicies_Category="Deprecated policies"
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="This policy is deprecated. blah blah blah\\n\\n"
+@@ -1412,7 +1412,7 @@ Policy1_Part="Caption of policy1."
+                                           'major_version': 84}, 'adm')
+     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
+   CATEGORY !!chromium
+-    KEYNAME "Software\\Policies\\Chromium"
++    KEYNAME "Software\\Policies\\GCSA Aegis"
+ 
+     CATEGORY !!RemovedPolicies_Category
+       POLICY !!Policy1_Policy
+@@ -1432,7 +1432,7 @@ Policy1_Part="Caption of policy1."
+   END CATEGORY
+ 
+   CATEGORY !!chromium_recommended
+-    KEYNAME "Software\\Policies\\Chromium\\Recommended"
++    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+ 
+     CATEGORY !!RemovedPolicies_Category
+       POLICY !!Policy1_Policy
+@@ -1455,8 +1455,8 @@ Policy1_Part="Caption of policy1."
+ ''', '''[Strings]
+ SUPPORTED_WIN7="Microsoft Windows 7 or later"
+ SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
+-chromium="Chromium"
+-chromium_recommended="Chromium - Recommended"
++chromium="GCSA Aegis"
++chromium_recommended="GCSA Aegis - Recommended"
+ RemovedPolicies_Category="Removed policies"
+ Policy1_Policy="Caption of policy1."
+ Policy1_Explain="This policy is removed. blah blah blah\\n\\n"
+diff --git a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
+index acaf611bb5..01faff6fd3 100755
+--- a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
+@@ -26,7 +26,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Chromium preferen"ces',
++            'text': 'GCSA Aegis preferen"ces',
+             'desc': 'blah'
+           }
+         }
+@@ -35,8 +35,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('Chromium.pfm_title = "Chromium";\n'
+-                       'Chromium.pfm_description = "Chromium preferen\\"ces";')
++    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
++                       'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+   def testEmptyVersion(self):
+@@ -48,7 +48,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Chromium preferen"ces',
++            'text': 'GCSA Aegis preferen"ces',
+             'desc': 'blah'
+           }
+         }
+@@ -60,8 +60,8 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+             'version': '39.0.0.0'
+         }, 'plist_strings')
+     expected_output = ('/* chromium version: 39.0.0.0 */\n'
+-                       'Chromium.pfm_title = "Chromium";\n'
+-                       'Chromium.pfm_description = "Chromium preferen\\"ces";')
++                       'GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
++                       'GCSA_Aegis.pfm_description = "GCSA Aegis preferen\\"ces";')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+   def testMainPolicy(self):
+@@ -131,7 +131,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of Chromium',
++            'text': 'Preferences of GCSA Aegis',
+             'desc': 'blah'
+           }
+         }
+@@ -140,8 +140,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('Chromium.pfm_title = "Chromium";\n'
+-                       'Chromium.pfm_description = "Preferences of Chromium";\n'
++    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
++                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
+                        'StringPolicy.pfm_title = "Caption of policy.";\n'
+                        'StringPolicy.pfm_description = '
+                        '"Description of policy.\\nWith a newline.";')
+@@ -176,7 +176,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of Chromium',
++            'text': 'Preferences of GCSA Aegis',
+             'desc': 'blah'
+           }
+         }
+@@ -185,8 +185,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('Chromium.pfm_title = "Chromium";\n'
+-                       'Chromium.pfm_description = "Preferences of Chromium";\n'
++    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
++                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
+                        'ListPolicy.pfm_title = "Caption of policy.";\n'
+                        'ListPolicy.pfm_description = '
+                        '"Description of policy.\\nWith a newline.";')
+@@ -233,7 +233,7 @@ With a newline.""",
+         'placeholders': [],
+         'messages': {
+           'mac_chrome_preferences': {
+-            'text': 'Preferences of Chromium',
++            'text': 'Preferences of GCSA Aegis',
+             'desc': 'blah'
+           }
+         }
+@@ -242,8 +242,8 @@ With a newline.""",
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist_strings')
+-    expected_output = ('Chromium.pfm_title = "Chromium";\n'
+-                       'Chromium.pfm_description = "Preferences of Chromium";\n'
++    expected_output = ('GCSA_Aegis.pfm_title = "GCSA Aegis";\n'
++                       'GCSA_Aegis.pfm_description = "Preferences of GCSA Aegis";\n'
+                        'EnumPolicy.pfm_title = "Caption of policy.";\n'
+                        'EnumPolicy.pfm_description = '
+                        '"one - Option1\\ntwo - Option2\\n'
+diff --git a/components/policy/tools/template_writers/writers/plist_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
+index c9e6a32c2e..a3f0626c5d 100755
+--- a/components/policy/tools/template_writers/writers/plist_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
+@@ -23,7 +23,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     of PListWriter.
+ 
+     Args:
+-      product_name: The name of the product, normally Chromium or Google Chrome.
++      product_name: The name of the product, normally GCSA Aegis or Google Chrome.
+       bundle_id: The mac bundle id of the product.
+       policies: The list of policies.
+ 
+@@ -57,7 +57,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     of PListWriter.
+ 
+     Args:
+-      product_name: The name of the product, normally Chromium or Google Chrome.
++      product_name: The name of the product, normally GCSA Aegis or Google Chrome.
+       bundle_id: The mac bundle id of the product.
+       policies: The list of policies.
+ 
+@@ -99,7 +99,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '_chromium': '1',
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+-    expected_output = self._GetExpectedOutputs('Chromium', 'com.example.Test',
++    expected_output = self._GetExpectedOutputs('GCSA_Aegis', 'com.example.Test',
+                                                '<array/>')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+@@ -120,7 +120,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+             'version': '39.0.0.0'
+         }, 'plist')
+     expected_output = self._GetExpectedOutputsWithVersion(
+-        'Chromium', 'com.example.Test', '<array/>',
++        'GCSA_Aegis', 'com.example.Test', '<array/>',
+         'chromium version: 39.0.0.0')
+     self.assertEquals(output.strip(), expected_output.strip())
+ 
+@@ -153,7 +153,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -203,7 +203,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -255,7 +255,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>MainPolicy</string>
+@@ -302,7 +302,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>StringPolicy</string>
+@@ -353,7 +353,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ListPolicy</string>
+@@ -416,7 +416,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ListPolicy</string>
+@@ -470,7 +470,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>IntPolicy</string>
+@@ -629,7 +629,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>DictionaryPolicy</string>
+@@ -676,7 +676,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         'mac_bundle_id': 'com.example.Test'
+     }, 'plist')
+     expected_output = self._GetExpectedOutputs(
+-        'Chromium', 'com.example.Test', '''<array>
++        'GCSA_Aegis', 'com.example.Test', '''<array>
+       <dict>
+         <key>pfm_name</key>
+         <string>ExternalPolicy</string>
+diff --git a/components/policy/tools/template_writers/writers/reg_writer_unittest.py b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
+index d8ee3a9a5d..d1cc9c6a12 100755
+--- a/components/policy/tools/template_writers/writers/reg_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
+@@ -143,7 +143,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
+         '"StringPolicy"="hello, world! \\\" \\\\"'
+     ])
+     self.CompareOutputs(output, expected_output)
+@@ -169,7 +169,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
+         '"IntPolicy"=dword:0000001a'
+     ])
+     self.CompareOutputs(output, expected_output)
+@@ -255,7 +255,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium\\ListPolicy]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
+         '"1"="foo"', '"2"="bar"'
+     ])
+ 
+@@ -284,7 +284,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium\\ListPolicy]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
+         '"1"="foo"', '"2"="bar"'
+     ])
+ 
+@@ -319,7 +319,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
+         '"DictionaryPolicy"="{\\"bool\\": true, '
+         '\\"dict\\": {\\"a\\": 1, \\"b\\": 2}, \\"int\\": 10, '
+         '\\"list\\": [1, 2, 3], \\"string\\": \\"abc\\"}"'
+@@ -351,7 +351,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]',
+         '"ExternalPolicy"="{\\"hash\\": \\"deadbeef\\", '
+         '\\"url\\": \\"https://example.com/avatar.jpg\\"}"'
+     ])
+@@ -417,8 +417,8 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'reg')
+     expected_output = self.NEWLINE.join([
+         'Windows Registry Editor Version 5.00', '',
+-        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium]', '"Policy2"="c"',
+-        '', '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Chromium\\Policy1]',
++        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis]', '"Policy2"="c"',
++        '', '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\Policy1]',
+         '"1"="a"', '"2"="b"'
+     ])
+     self.CompareOutputs(output, expected_output)
+-- 
+2.52.0
+

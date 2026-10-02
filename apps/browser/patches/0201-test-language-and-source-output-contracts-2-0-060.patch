@@ -1,0 +1,72 @@
+From 98318a536192cb10cd5258d0d84b69fafc59a560 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 22 Sep 2026 17:49:02 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
+ =?UTF-8?q?=E8=AF=BB=E5=8F=96=E3=80=81=E4=B8=8B=E8=BD=BD=E5=9B=9E=E8=AF=BB?=
+ =?UTF-8?q?=E4=B8=8E=E8=AF=AD=E8=A8=80=E6=9D=A5=E6=BA=90=E6=98=BE=E7=A4=BA?=
+ =?UTF-8?q?=202.0.060?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_execution_unittest.cc | 9 +++++----
+ chrome/browser/aegis/agent/agent_planner_unittest.cc   | 4 +++-
+ chrome/browser/ui/webui/help/aegis_github_update.h     | 4 ++--
+ 3 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 22e1163efa..47bba12b74 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1361,12 +1361,13 @@ TEST(AegisAgentExecutionTest, FinalOutputRequirementsPreserveOriginalGoal) {
+       EXPECT_EQ(*done->FindString("required_step"), "agent.complete");
+       const auto* requirements = done->FindList("final_output_requirements");
+       ASSERT_TRUE(requirements);
+-      ASSERT_EQ(requirements->size(), 3u);
+-      EXPECT_NE((*requirements)[0].GetString().find("明确指定的输出或翻译语言优先"),
++      ASSERT_EQ(requirements->size(), 4u);
++      EXPECT_TRUE((*requirements)[0].GetString().contains("上传入口名称不能当作来源标题"));
++      EXPECT_NE((*requirements)[1].GetString().find("明确指定的输出或翻译语言优先"),
+                 std::string::npos);
+-      EXPECT_NE((*requirements)[1].GetString().find("未要求列表时不强加"),
++      EXPECT_NE((*requirements)[2].GetString().find("未要求列表时不强加"),
+                 std::string::npos);
+-      EXPECT_NE((*requirements)[2].GetString().find("不能用要点摘要替代完整译文"),
++      EXPECT_NE((*requirements)[3].GetString().find("不能用要点摘要替代完整译文"),
+                 std::string::npos);
+     }
+   }
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index c09f090af8..1727d537a3 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -149,7 +149,9 @@ TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
+     event.tool_call_id = "plan";
+     event.tool_name = "agent.submit_plan";
+     event.arguments.Set("schema_version", kAgentSchemaVersion);
+-    event.arguments.Set("summary", "核对页面读取范围");
++    event.arguments.Set("summary", std::string_view(goal).starts_with("Do not")
++                                       ? "Check the page reading scope"
++                                       : "核对页面读取范围");
+     base::ListValue steps;
+     steps.Append(base::DictValue()
+                      .Set("id", "read")
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 6797eb79b6..e70a1f5558 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.59";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (059)";
++inline constexpr char kProductVersion[] = "2.0.0.60";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (060)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

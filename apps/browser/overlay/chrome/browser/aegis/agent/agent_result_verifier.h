@@ -26,6 +26,9 @@ class AgentResultVerifier {
   AgentResultVerifier& operator=(const AgentResultVerifier&) = delete;
   ~AgentResultVerifier();
 
+  // 为异步回读保留必要的请求依据，不复制表单正文或无关参数。
+  static AgentToolCall RetainVerificationContext(const AgentToolCall& call);
+
   AgentVerificationDecision Verify(const AgentTask& task,
                                    const AgentToolCall& call,
                                    const AgentToolDescriptor& descriptor,

@@ -14,7 +14,10 @@ source_set("aegis") {
     "//chrome/browser/aegis:agent_core",
     "//chrome/browser/download",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/tab_list",
+    "//chrome/browser/ui/browser_window",
     "//chrome/browser/resources/aegis:resources",
+    "//chrome/browser/ui/side_panel",
     "//chrome/common",
     "//chrome/common/aegis",
     "//chrome/services/aegis_torrent/public/mojom",
@@ -26,7 +29,6 @@ source_set("aegis") {
   ]
   if (!is_android) {
     deps += [
-      "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
       "//chrome/browser/ui/tabs:tab_strip",
     ]

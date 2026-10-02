@@ -182,5 +182,67 @@ class UpstreamTests(unittest.TestCase):
             self.assertEqual(unknown["unresolvedExploited"], first["unresolvedExploited"])
 
 
+    def test_shared_tag_is_fetched_once_per_check(self):
+        calls = []
+        def fetch(url):
+            if "googlesource" in url:
+                calls.append(url)
+            return self.fixture_fetch(url)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                upstream, "local_identity", return_value={"pinnedVersion": "151.0.7922.77", "artifacts": []}), patch.object(
+                upstream, "fetch_json", side_effect=fetch):
+            for _ in range(2):
+                report = upstream.check(Path(directory), Path(directory))
+                self.assertEqual(report["status"], "checked")
+            self.assertEqual(len(calls), 4)  # 每轮桌面一次、Android 一次，不跨轮复用。
+
+
+    def test_cached_tag_still_checks_each_platform_commit(self):
+        with patch.object(upstream, "fetch_json", return_value={"commit": "a" * 40}) as fetch:
+            cache = {}
+            upstream.verified_tag("153.0.8010.37", "a" * 40, cache)
+            with self.assertRaisesRegex(ValueError, "提交不一致"):
+                upstream.verified_tag("153.0.8010.37", "b" * 40, cache)
+            self.assertEqual(fetch.call_count, 1)
+
+
+    def test_tag_transport_fallback_preserves_actual_source_and_error(self):
+        with patch.object(upstream, "fetch_json", side_effect=[RuntimeError("HTTP 503"), {"commit": "a" * 40}]) as fetch:
+            evidence = upstream.verified_tag("153.0.8010.37", "a" * 40, {})
+            self.assertIn("/+/153.0.8010.37?", evidence["url"])
+            self.assertIn("HTTP 503", evidence["failedAttempts"][0]["message"])
+            self.assertEqual(fetch.call_count, 2)
+        with patch.object(upstream, "fetch_json", side_effect=[RuntimeError("HTTP 503"), {"commit": "b" * 40}]):
+            with self.assertRaisesRegex(ValueError, "提交不一致"):
+                upstream.verified_tag("153.0.8010.37", "a" * 40, {})
+
+
+    def test_bad_tag_content_does_not_trigger_fallback(self):
+        for response in [{"commit": "b" * 40}, ValueError("JSON损坏")]:
+            with patch.object(upstream, "fetch_json", side_effect=[response]) as fetch:
+                with self.assertRaises(ValueError):
+                    upstream.verified_tag("153.0.8010.37", "a" * 40, {})
+                self.assertEqual(fetch.call_count, 1)
+
+
+    def test_both_tag_paths_failing_preserves_last_success(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                upstream, "local_identity", return_value={"pinnedVersion": "151.0.7922.77", "artifacts": []}):
+            out = Path(directory)
+            with patch.object(upstream, "fetch_json", side_effect=self.fixture_fetch):
+                upstream.check(out, out)
+            success = (out / "last-success.json").read_bytes()
+            def unavailable(url):
+                if "googlesource" in url:
+                    raise RuntimeError("HTTP 503")
+                return self.fixture_fetch(url)
+            with patch.object(upstream, "fetch_json", side_effect=unavailable):
+                report = upstream.check(out, out)
+            self.assertEqual(report["status"], "incomplete")
+            self.assertEqual(report["candidates"], {})
+            self.assertEqual((out / "last-success.json").read_bytes(), success)
+            self.assertTrue(all("官方备用路径失败" in x["message"] for x in report["errors"]))
+
+
 if __name__ == "__main__":
     unittest.main()

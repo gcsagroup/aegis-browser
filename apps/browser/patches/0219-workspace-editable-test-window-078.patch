@@ -1,0 +1,74 @@
+From e55d1455a463785162830bd0cd793c1d8b247659 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 03:56:07 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E5=B7=A5=E4=BD=9C=E5=8C=BA?=
+ =?UTF-8?q?=E6=81=A2=E5=A4=8D=E6=B5=8B=E8=AF=95=E7=AA=97=E5=8F=A3=E5=8F=AF?=
+ =?UTF-8?q?=E7=BC=96=E8=BE=91=E6=9D=A1=E4=BB=B6=20078?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/aegis_ui_handler_unittest.cc   | 16 +++++++++++++++-
+ .../browser/ui/webui/help/aegis_github_update.h  |  4 ++--
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index b68e3318d4..d5925a93ec 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -16,6 +16,7 @@
+ #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "chrome/test/base/browser_with_test_window_test.h"
++#include "chrome/test/base/test_browser_window.h"
+ #include "chrome/test/base/testing_profile_manager.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/tab_groups/tab_group_color.h"
+@@ -32,6 +33,19 @@ namespace {
+ 
+ class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
+ 
++// 工作区恢复需要可编辑的标签栏；基础测试窗口默认禁止编辑。
++class WorkspaceTestWindow : public TestBrowserWindow {
++ public:
++  bool IsTabStripEditable() const override { return true; }
++};
++
++class AegisWorkspaceHandlerTest : public AegisUIHandlerTest {
++ protected:
++  std::unique_ptr<BrowserWindow> CreateBrowserWindow() override {
++    return std::make_unique<WorkspaceTestWindow>();
++  }
++};
++
+ class TestAegisUIHandler : public AegisUIHandler {
+  public:
+   using content::WebUIMessageHandler::set_web_ui;
+@@ -67,7 +81,7 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
+                          TabListInterface::From(browser()), foreign.get()));
+ }
+ 
+-TEST_F(AegisUIHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
++TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+   using namespace aegis::agent;
+   AddTab(browser(), GURL("https://workspace.example/first"));
+   AddTab(browser(), GURL("https://workspace.example/second"));
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7b324111c4..28c21890cb 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.77";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (077)";
++inline constexpr char kProductVersion[] = "2.0.0.78";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (078)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

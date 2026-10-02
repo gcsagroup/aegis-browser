@@ -46,7 +46,7 @@ function defaultChromium() {
     try {
       chromiumRoot = readFileSync(MARKER, 'utf8').trim();
     } catch {
-      chromiumRoot = join(homedir(), 'Projects', 'GCSA-aegis-chromium');
+      chromiumRoot = join(homedir(), 'Projects', 'GCSA-aegis-build', 'macos');
     }
   }
   return join(

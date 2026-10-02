@@ -45,25 +45,23 @@ UiLanguage CurrentLanguage() {
                                         : UiLanguage::kEnglish;
 }
 
-const char* Localized(UiLanguage language,
-                      const char* english,
-                      const char* simplified,
-                      const char* traditional) {
+const char *Localized(UiLanguage language, const char *english,
+                      const char *simplified, const char *traditional) {
   switch (language) {
-    case UiLanguage::kEnglish:
-      return english;
-    case UiLanguage::kSimplifiedChinese:
-      return simplified;
-    case UiLanguage::kTraditionalChinese:
-      return traditional;
+  case UiLanguage::kEnglish:
+    return english;
+  case UiLanguage::kSimplifiedChinese:
+    return simplified;
+  case UiLanguage::kTraditionalChinese:
+    return traditional;
   }
 }
 
-void AddStrings(content::WebUIDataSource* source) {
+void AddStrings(content::WebUIDataSource *source) {
   const UiLanguage language = CurrentLanguage();
   source->AddString("language", g_browser_process->GetApplicationLocale());
-  auto add = [&](const char* key, const char* en, const char* zh_cn,
-                 const char* zh_tw) {
+  auto add = [&](const char *key, const char *en, const char *zh_cn,
+                 const char *zh_tw) {
     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
   };
   add("title", "GCSA Aegis AI Assistant", "GCSA Aegis AI 助手",
@@ -71,6 +69,209 @@ void AddStrings(content::WebUIDataSource* source) {
   add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
       "说出目标，Aegis 会先理解、制定计划，再操作浏览器。",
       "說出目標，Aegis 會先理解、制定計畫，再操作瀏覽器。");
+  add("taskCenter", "Task center", "任务中心", "任務中心");
+  add("protectionWorkspace", "Protection", "页面保护", "頁面防護");
+  add("researchWorkspace", "Research", "研究工作台", "研究工作台");
+  add("researchHelp",
+      "Choose 3–10 open pages from this window. Only selected pages are read; "
+      "page instructions cannot expand access.",
+      "选择当前窗口的3–10个网页。仅读取勾选来源，网页内的指令不能扩大访问范围"
+      "。",
+      "選擇目前視窗的3–10個網頁。僅讀取勾選來源，網頁內的指令不能擴大存取範圍"
+      "。");
+  add("researchRefresh", "Refresh sources", "刷新来源列表", "重新整理來源清單");
+  add("researchSelectRange", "Compare 3–10 pages or group 1–10 tabs",
+      "比较需选3–10个网页；分组可选1–10个标签",
+      "比較需選3–10個網頁；分組可選1–10個標籤");
+  add("researchGoal", "Task goal", "任务目标", "任務目標");
+  add("researchStart", "Read selected pages and compare", "读取所选网页并比较",
+      "讀取所選網頁並比較");
+  add("researchGroup", "Put selected tabs in one group", "将所选标签放入一个组",
+      "將所選標籤放入一個群組");
+  add("researchGroupGoal", "Put all $1 selected tabs in one group.",
+      "将所选的全部$1个标签放入一个组。", "將所選的全部$1個標籤放入一個群組。");
+  add("researchDefaultGoal",
+      "Compare the selected sources, preserve conflicting facts, include dates "
+      "when present, and cite every source. Do not invent missing information.",
+      "比较所选来源的事实，保留分歧，列出原文提供的日期并引用每个来源。缺失信息"
+      "不要猜测。",
+      "比較所選來源的事實，保留分歧，列出原文提供的日期並引用每個來源。缺失資訊"
+      "不要猜測。");
+  add("researchRefreshFailed", "Sources could not be refreshed. Try again.",
+      "无法刷新来源，请重试。", "無法重新整理來源，請重試。");
+  add("researchSavedTitle", "Saved research", "已保存的研究", "已儲存的研究");
+  add("researchSavedHelp",
+      "Save results explicitly. Up to 20 items. Open a source, wait for "
+      "loading, then check it. A text highlight may be unavailable.",
+      "只有点击保存才会保留结果，最多20项。打开原文并等待加载完成后，可核对正文"
+      "；原文不一定支持摘录高亮。",
+      "只有點擊儲存才會保留結果，最多20項。開啟原文並等待載入完成後，可核對正文"
+      "；原文不一定支援摘錄醒目提示。");
+  add("researchLoadSaved", "Load saved research", "读取已保存研究",
+      "讀取已儲存研究");
+  add("researchSave", "Save encrypted research", "加密保存研究",
+      "加密儲存研究");
+  add("researchSaveSession", "Keep for this private session",
+      "仅在本次无痕会话保留", "僅在本次無痕工作階段保留");
+  add("researchSaved", "Saved. Find it in Research → Load saved research.",
+      "已保存，可在研究工作台点击“读取已保存研究”查看。",
+      "已儲存，可在研究工作台點擊「讀取已儲存研究」查看。");
+  add("researchEncrypted", "Encrypted on this device", "已在本机加密保存",
+      "已在本機加密儲存");
+  add("researchSessionOnly",
+      "Private session only; cleared when the session ends",
+      "仅本次无痕会话保留，结束后清除", "僅本次無痕工作階段保留，結束後清除");
+  add("researchStorageFailed",
+      "Could not read or save research. Check device storage and secure "
+      "storage access.",
+      "研究读取或保存失败，请检查磁盘及系统加密存储是否可用。",
+      "研究讀取或儲存失敗，請檢查磁碟及系統加密儲存是否可用。");
+  add("researchStorageFull",
+      "Save failed or the 20-item limit was reached. Delete an old item and "
+      "retry.",
+      "保存失败或已达到20项上限，请删除旧项目后重试。",
+      "儲存失敗或已達到20項上限，請刪除舊項目後重試。");
+  add("researchOpenSource", "Open source excerpt", "打开原文摘录",
+      "開啟原文摘錄");
+  add("researchSourceOpened",
+      "Source opened. After loading, check the current source below.",
+      "已打开原文。加载完成后，点击“核对当前原文”。",
+      "已開啟原文。載入完成後，點擊「核對目前原文」。");
+  add("researchCheckSource", "Check current source", "核对当前原文",
+      "核對目前原文");
+  add("researchChecking", "Checking page text locally…", "正在本机核对正文…",
+      "正在本機核對正文…");
+  add("researchSourceMatched",
+      "The observed text matches the saved source. Check the excerpt highlight "
+      "on the page.",
+      "当前观察到的正文与保存时一致，请在原文中核对摘录高亮。",
+      "目前觀察到的正文與儲存時一致，請在原文中核對摘錄醒目提示。");
+  add("researchSourceChanged",
+      "The source changed. The old citation position is no longer verified.",
+      "原文已变化，旧引用位置已失效，需要重新研究。",
+      "原文已變更，舊引用位置已失效，需要重新研究。");
+  add("researchPositionUnavailable",
+      "Text matches, but no reliable excerpt position is available.",
+      "正文一致，但无法提供可靠的摘录位置。",
+      "正文一致，但無法提供可靠的摘錄位置。");
+  add("researchSourceUnavailable",
+      "Could not verify. Open the exact source, wait for loading, and retry. "
+      "Blocked or incomplete pages cannot be verified.",
+      "无法核对。请打开对应原文，加载完成后重试；拦截页或不完整正文不能通过核对"
+      "。",
+      "無法核對。請開啟對應原文，載入完成後重試；攔截頁或不完整正文不能通過核對"
+      "。");
+  add("researchMonitorSource", "Monitor this source…", "监控此来源…",
+      "監控此來源…");
+  add("researchMonitorGoal",
+      "Monitor content changes on $1 and summarize actual changes.",
+      "监控 $1 的网页正文变化，并总结实际变化。",
+      "監控 $1 的網頁正文變更，並總結實際變更。");
+  add("researchDelete", "Delete saved research", "删除已保存研究",
+      "刪除已儲存研究");
+  add("researchLoading", "Loading saved research…", "正在读取已保存研究…",
+      "正在讀取已儲存研究…");
+  add("downloadEvidenceTitle", "Download evidence", "下载来源与实际结果",
+      "下載來源與實際結果");
+  add("reviewDownload", "Recheck this downloaded file", "继续核对这次下载",
+      "繼續核對這次下載");
+  add("downloadReviewUnassociated",
+      "No completed download receipt is associated with this task. Open the "
+      "original download task to recheck its file. Installation is not "
+      "verified.",
+      "当前任务没有关联的已完成下载回执。请回到原下载任务核对文件；安装状态未核"
+      "验。",
+      "目前任務沒有關聯的已完成下載回執。請回到原下載任務核對檔案；安裝狀態未核"
+      "驗。");
+  add("downloadReviewPending", "Reading this file locally…",
+      "正在本机重新读取这次下载的文件…", "正在本機重新讀取這次下載的檔案…");
+  add("downloadReviewMatch",
+      "The file matches its download-time hash. Publisher, signature and "
+      "installation are not verified.",
+      "文件与下载时摘要一致。发布者、签名和安装状态仍未核验。",
+      "檔案與下載時摘要一致。發佈者、簽章和安裝狀態仍未核驗。");
+  add("downloadReviewChanged",
+      "The file has changed since download. Do not treat it as the verified "
+      "download.",
+      "文件已不同于下载时的内容，不能沿用原下载核验结果。",
+      "檔案已不同於下載時的內容，不能沿用原下載核驗結果。");
+  add("downloadReviewMissing",
+      "The downloaded file is missing or cannot be read.",
+      "下载文件已不存在或无法读取。", "下載檔案已不存在或無法讀取。");
+  add("downloadReviewTooLarge",
+      "This recheck supports files up to 1 GiB. Verify larger files manually.",
+      "本次核对支持不超过1 GiB的文件；更大的文件请手动核验。",
+      "本次核對支援不超過1 GiB的檔案；更大的檔案請手動核驗。");
+  add("downloadReviewUnavailable",
+      "This download cannot be rechecked now. Check its current state in "
+      "Downloads.",
+      "这次下载当前无法核对，请在下载管理中查看其状态。",
+      "這次下載目前無法核對，請在下載管理中查看其狀態。");
+  add("resultSourceHelp",
+      "Summaries may contain model-generated text. Citation titles come from "
+      "browser page metadata; open the source to verify.",
+      "摘要可能包含模型生成文字。下方引用名称取自浏览器页面标题，可打开原文核对"
+      "。",
+      "摘要可能包含模型生成文字。下方引用名稱取自瀏覽器頁面標題，可開啟原文核對"
+      "。");
+  add("scheduleChoose", "Choose a supported interval", "请选择支持的频率",
+      "請選擇支援的頻率");
+  add("automationTargetReview",
+      "Current page: $1. Confirm the source in your goal and the interval "
+      "before creating a monitor.",
+      "当前页面：$1。请确认目标中的来源和频率，再创建监控。",
+      "目前頁面：$1。請確認目標中的來源和頻率，再建立監控。");
+  add("downloadEvidenceHelp",
+      "Evidence comes from browser download records. Same-site links do not "
+      "establish official identity; a downloaded file is not an installed app.",
+      "以下来自浏览器下载记录。同注册域不等于官网确认，文件下载完成不等于已经安"
+      "装。",
+      "以下來自瀏覽器下載紀錄。同註冊網域不等於官網確認，檔案下載完成不等於已經"
+      "安裝。");
+  add("downloadEvidenceSource", "Source page or original URL",
+      "来源页或初始地址", "來源頁或初始位址");
+  add("downloadEvidenceCandidate", "Candidate URL", "候选下载地址",
+      "候選下載位址");
+  add("downloadEvidenceFinal", "Final URL", "最终下载地址", "最終下載位址");
+  add("downloadEvidenceFile", "File name", "文件名", "檔案名稱");
+  add("downloadEvidenceReceived", "Received bytes", "已接收字节",
+      "已接收位元組");
+  add("downloadEvidenceTotal", "Expected bytes", "总字节数", "總位元組數");
+  add("downloadEvidenceHash", "SHA-256", "SHA-256 摘要", "SHA-256 摘要");
+  add("downloadEvidenceHttps", "Candidate uses HTTPS", "候选地址使用 HTTPS",
+      "候選位址使用 HTTPS");
+  add("downloadEvidenceSameSite", "Same registered domain as source",
+      "与来源页同注册域", "與來源頁同註冊網域");
+  add("downloadEvidenceVerified", "Download verification passed",
+      "下载核验通过", "下載核驗通過");
+  add("downloadEvidenceComplete",
+      "Complete file retained without browser danger flag",
+      "完整文件仍在且无浏览器危险标记", "完整檔案仍在且無瀏覽器危險標記");
+  add("downloadEvidenceTimeout", "Verification timed out", "核验已超时",
+      "核驗已逾時");
+  add("downloadEvidenceState", "Download state", "下载状态", "下載狀態");
+  add("downloadEvidenceIntegrity", "Expected hash comparison", "预期摘要比对",
+      "預期摘要比對");
+  add("downloadEvidencePublisher", "Publisher identity", "发布者身份",
+      "發佈者身分");
+  add("downloadEvidenceRepository", "Repository ownership", "仓库归属",
+      "儲存庫歸屬");
+  add("downloadEvidenceVersion", "Version", "版本", "版本");
+  add("downloadEvidenceSignature", "Signature", "签名", "簽章");
+  add("downloadEvidenceYes", "Yes", "是", "是");
+  add("downloadEvidenceNo", "No", "否", "否");
+  add("downloadEvidenceUnknown", "Not independently verified", "未独立核验",
+      "未獨立核驗");
+  add("downloadEvidenceProgress", "Downloading", "下载中", "下載中");
+  add("downloadEvidenceFinished", "Downloaded", "下载完成", "下載完成");
+  add("downloadEvidenceCancelled", "Cancelled", "已取消", "已取消");
+  add("downloadEvidenceInterrupted", "Interrupted", "已中断", "已中斷");
+  add("downloadEvidenceMatch", "Matches the supplied hash",
+      "与提供的预期摘要一致", "與提供的預期摘要一致");
+  add("downloadEvidenceMismatch", "Does not match or hash is unavailable",
+      "不一致或无法取得摘要", "不一致或無法取得摘要");
+  add("downloadEvidenceNoExpectedHash", "No expected hash supplied",
+      "没有提供预期摘要", "沒有提供預期摘要");
   add("taskWorkspace", "Common tasks", "常用任务", "常用任務");
   add("automationWorkspace", "Automations", "自动化", "自動化");
   add("target", "Where Aegis will work", "Aegis 将在哪里操作",
@@ -88,6 +289,12 @@ void AddStrings(content::WebUIDataSource* source) {
   add("start", "Approve and start", "同意并开始", "同意並開始");
   add("scope", "What Aegis is doing", "Aegis 正在做什么", "Aegis 正在做什麼");
   add("timeline", "Timeline", "执行时间线", "執行時間軸");
+  add("checkMonitorNow", "Check now", "立即检查", "立即檢查");
+  add("checkMonitorNowUnavailable",
+      "Cannot check now. Check whether the monitor is paused, running, or "
+      "waiting for consent, then try again shortly.",
+      "暂时无法检查。请确认监控未暂停、没有正在检查或等待确认，稍后重试。",
+      "暫時無法檢查。請確認監控未暫停、沒有正在檢查或等待確認，稍後重試。");
   add("pauseMonitor", "Pause monitor", "暂停监控", "暫停監控");
   add("resumeMonitor", "Resume monitor", "恢复监控", "恢復監控");
   add("deleteMonitor", "Delete monitor", "删除监控", "刪除監控");
@@ -406,8 +613,7 @@ void AddStrings(content::WebUIDataSource* source) {
       "previous record is retained for retry.",
       "已读取页面，但 AI 变化摘要未生成；已保留上次记录，稍后重试。",
       "已讀取頁面，但 AI 變化摘要未產生；已保留上次記錄，稍後重試。");
-  add("automationChangeSummary", "AI change summary", "AI 变化摘要",
-      "AI 變化摘要");
+  add("automationChangeSummary", "Change summary", "变化摘要", "變化摘要");
   add("automationChangeSummaryPartial",
       "Only the observed excerpts are summarized; more changes may exist.",
       "仅总结已读取的变化片段，可能还有其他更新。",
@@ -449,6 +655,11 @@ void AddStrings(content::WebUIDataSource* source) {
       "Execution ended; no complete result is available yet",
       "执行已结束，尚无完整结果", "執行已結束，尚無完整結果");
   add("statusFailed", "Needs attention", "遇到问题", "遇到問題");
+  add("pendingActionPageChanged",
+      "The page changed or closed, so the pending action expired. Start a new "
+      "task on the target page and review the action.",
+      "页面已变化或关闭，原操作已失效。请在目标页面重新发起任务并核对操作。",
+      "頁面已變更或關閉，原操作已失效。請在目標頁面重新發起任務並核對操作。");
   add("pageContextUnavailableError",
       "The task page was still loading, was closed, or left the approved "
       "site. Aegis stopped without reading other pages. Wait for the page "
@@ -459,6 +670,10 @@ void AddStrings(content::WebUIDataSource* source) {
       "沒有讀取其他網頁。請等待頁面載入或檢查網路後重試本任務。");
   add("planFailed", "The task did not start. Edit the goal and try again.",
       "任务未开始，可以修改目标后重试。", "任務未開始，可以修改目標後重試。");
+  add("browserGoalClarification",
+      "Please name what to check or change, such as listing tabs or closing a specific tab. Nothing has been changed.",
+      "请说明要检查或修改的对象，例如列出标签页，或关闭指定标签页。目前没有做任何修改。",
+      "請說明要檢查或修改的對象，例如列出標籤頁，或關閉指定標籤頁。目前沒有做任何修改。");
   add("taskInputError",
       "The task or schedule is invalid. Edit it and try again.",
       "任务内容或定时设置无效，请修改后重试。",
@@ -559,6 +774,90 @@ void AddStrings(content::WebUIDataSource* source) {
       "AI "
       "沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試"
       "。");
+  add("timelineDetail1", "Actor execution service unavailable",
+      "执行引擎暂不可用，请重启浏览器后重试",
+      "執行引擎暫不可用，請重新啟動瀏覽器後重試");
+  add("timelineDetail2", "Actor execution service unavailable after recovery",
+      "恢复后执行引擎仍不可用，请重启浏览器",
+      "恢復後執行引擎仍不可用，請重新啟動瀏覽器");
+  add("timelineDetail3", "Action result is uncertain; automatic replay refused",
+      "操作结果无法确认，已停止自动重试", "操作結果無法確認，已停止自動重試");
+  add("timelineDetail4", "Browser action requires user control",
+      "此操作需要你接管浏览器", "此操作需要你接管瀏覽器");
+  add("timelineDetail5", "Checkout document disappeared after revalidation",
+      "结账页面已不可用，请重新核对", "結帳頁面已不可用，請重新核對");
+  add("timelineDetail6", "Checkout facts changed; old summary invalidated",
+      "结账内容已变化，旧摘要已失效", "結帳內容已變化，舊摘要已失效");
+  add("timelineDetail7", "Checkout facts could not be re-read before takeover",
+      "接管前无法重新读取结账内容", "接管前無法重新讀取結帳內容");
+  add("timelineDetail8", "Checkout revalidation cursor could not be persisted",
+      "无法保存结账核对进度，任务已停止", "無法儲存結帳核對進度，任務已停止");
+  add("timelineDetail9", "Checkout summary failed browser source validation",
+      "结账摘要与页面证据不符，已停止", "結帳摘要與頁面證據不符，已停止");
+  add("timelineDetail10", "Execution cursor could not be persisted",
+      "无法保存执行进度，任务已停止", "無法儲存執行進度，任務已停止");
+  add("timelineDetail11", "Execution model budget exhausted",
+      "已达到本次 AI 请求上限，任务已停止",
+      "已達到本次 AI 請求上限，任務已停止");
+  add("timelineDetail12", "Execution model request could not be started",
+      "无法发起 AI 请求，请检查模型配置", "無法發起 AI 請求，請檢查模型設定");
+  add("timelineDetail13", "Failed action cursor could not be persisted",
+      "无法保存失败操作的进度，已停止", "無法儲存失敗操作的進度，已停止");
+  add("timelineDetail14", "Final action completed under user control",
+      "最终操作已由你接管完成", "最終操作已由你接管完成");
+  add("timelineDetail15", "Fresh browser observation was rejected",
+      "最新页面内容未通过检查，任务已停止",
+      "最新頁面內容未通過檢查，任務已停止");
+  add("timelineDetail16", "Fresh observation tab disappeared",
+      "读取页面时标签页已关闭", "讀取頁面時分頁已關閉");
+  add("timelineDetail17",
+      "Fresh recovery consent granted; observation required",
+      "已确认恢复，将重新读取页面", "已確認恢復，將重新讀取頁面");
+  add("timelineDetail18", "Model requested an action after the plan ended",
+      "AI 请求了计划外操作，已阻止执行", "AI 請求了計畫外操作，已阻止執行");
+  add("timelineDetail19",
+      "No live scoped tab was available for a fresh observation",
+      "授权范围内没有可读取的标签页", "授權範圍內沒有可讀取的分頁");
+  add("timelineDetail20", "Overlapping model request rejected",
+      "已有 AI 请求正在处理，未重复发送", "已有 AI 請求正在處理，未重複傳送");
+  add("timelineDetail21", "Paused by user", "你已暂停任务", "你已暫停任務");
+  add("timelineDetail22", "Recovered task expired before consent",
+      "恢复的任务已过期，请创建新任务", "恢復的任務已過期，請建立新任務");
+  add("timelineDetail23", "Resumed after fresh observation",
+      "已重新读取页面并恢复任务", "已重新讀取頁面並恢復任務");
+  add("timelineDetail24", "Tool context changed before execution",
+      "操作前页面环境已变化，已停止执行", "操作前頁面環境已變化，已停止執行");
+  add("timelineDetail25", "Tool context could not be rebound",
+      "无法重新关联操作页面，任务已停止", "無法重新關聯操作頁面，任務已停止");
+  add("timelineDetail26", "Unsupported execution model provider",
+      "当前模型服务不支持此执行方式", "目前模型服務不支援此執行方式");
+  add("timelineDetail27", "User interacted with a controlled tab",
+      "你正在操作任务页面，自动执行已暂停",
+      "你正在操作任務頁面，自動執行已暫停");
+  add("timelineDetail28", "User takeover ended; fresh consent required",
+      "接管已结束，继续任务前需要重新确认",
+      "接管已結束，繼續任務前需要重新確認");
+  add("timelineDetail29", "User takeover required", "此步骤需要你接管操作",
+      "此步驟需要你接管操作");
+  add("timelineDetail30", "Verified action cursor could not be persisted",
+      "无法保存已核对的操作进度，任务已停止",
+      "無法儲存已核對的操作進度，任務已停止");
+  add("riskLevel0", "Read only", "只读取信息", "僅讀取資訊");
+  add("riskLevel1", "Reversible change", "可撤销的修改", "可復原的修改");
+  add("riskLevel2", "Your approval required", "需要你确认", "需要你確認");
+  add("riskLevel3", "Your control required", "需要你接管", "需要你接管");
+  add("timelineVerifiedFallback",
+      "Browser actions were checked; native results were retained",
+      "浏览器操作已核对，已保留原生结果", "瀏覽器操作已核對，已保留原生結果");
+  add("timelineActionApprovalRequired", "Waiting for approval of this action",
+      "正在等待你确认这一个操作", "正在等待你確認這一個操作");
+  add("timelineActionApprovalConsumed", "This action was approved and started",
+      "已按你的确认开始执行这一个操作", "已按你的確認開始執行這一個操作");
+  add("timelineCancelledByUser", "You cancelled the task", "你已取消任务",
+      "你已取消任務");
+  add("timelineExecutionModelFailed",
+      "The AI request failed twice; the task stopped",
+      "AI 请求连续两次失败，任务已停止", "AI 請求連續兩次失敗，任務已停止");
   add("timelinePlanning", "Understanding the task", "正在理解任务",
       "正在理解任務");
   add("timelinePlanningDetail", "Identifying the target and planning steps",
@@ -633,6 +932,11 @@ void AddStrings(content::WebUIDataSource* source) {
   add("exactArguments", "Exact action parameters", "本次操作的精确参数",
       "本次操作的精確參數");
   add("actionFingerprint", "Action fingerprint", "操作指纹", "操作指紋");
+  add("dataTransferApproval",
+      "This action may send task content. Review the recipient and complete "
+      "address or text below. Previously read sources:",
+      "此操作可能发送任务内容。请核对接收方及下方完整地址或文字。已读取来源：",
+      "此操作可能傳送任務內容。請核對接收方及下方完整地址或文字。已讀取來源：");
   add("takeoverReady", "Final step is yours", "最终步骤由你完成",
       "最終步驟由你完成");
   add("takeoverNotice",
@@ -644,6 +948,16 @@ void AddStrings(content::WebUIDataSource* source) {
       "Aegis "
       "已重新讀取結帳資訊，並在最終購買前停止。請核對目前頁面後自行完成或取消"
       "。");
+  add("androidPlatformNote",
+      "Android uses a separate task page. Workspaces can be saved and "
+      "restored; window actions depend on device support. BitTorrent is not "
+      "available yet. Scheduled checks require the browser to be running.",
+      "Android "
+      "使用独立任务页，支持工作区保存与恢复；窗口操作取决于设备支持。BT "
+      "下载暂不可用；定时检查需要浏览器保持运行。",
+      "Android "
+      "使用獨立任務頁，支援工作區儲存與還原；視窗操作取決於裝置支援。BT "
+      "下載暫不可用；定時檢查需要瀏覽器保持執行。");
   add("merchant", "Merchant", "商家", "商家");
   add("product", "Product", "商品", "商品");
   add("quantity", "Quantity", "数量", "數量");
@@ -657,7 +971,7 @@ void AddStrings(content::WebUIDataSource* source) {
   add("sources", "Browser sources", "浏览器来源", "瀏覽器來源");
 }
 
-}  // namespace
+} // namespace
 
 AegisAgentUIConfig::AegisAgentUIConfig()
     : AegisAgentUIConfigBase(content::kChromeUIUntrustedScheme,
@@ -666,28 +980,25 @@ AegisAgentUIConfig::AegisAgentUIConfig()
 AegisAgentUIConfig::~AegisAgentUIConfig() = default;
 
 bool AegisAgentUIConfig::IsWebUIEnabled(
-    content::BrowserContext* browser_context) {
-  Profile* profile =
+    content::BrowserContext *browser_context) {
+  Profile *profile =
       browser_context ? Profile::FromBrowserContext(browser_context) : nullptr;
   if (!base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
       !aegis::IsAegisProfileSupported(profile)) {
     return false;
   }
-#if BUILDFLAG(IS_ANDROID)
-  return !profile->IsOffTheRecord();
-#else
   return true;
-#endif
 }
 
-AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
+AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
     : AegisAgentUIControllerBase(web_ui) {
-  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+  content::WebUIDataSource *source = content::WebUIDataSource::CreateAndAdd(
       web_ui->GetWebContents()->GetBrowserContext(),
       chrome::kChromeUIUntrustedAegisAgentURL);
   webui::SetupWebUIDataSource(source, kAegisAgentResources,
                               IDR_AEGIS_AGENT_AGENT_HTML);
   AddStrings(source);
+  source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
       "script-src 'self' chrome-untrusted://resources;");
@@ -705,7 +1016,7 @@ AegisAgentUI::AegisAgentUI(content::WebUI* web_ui)
       "trusted-types static-types;");
 
 #if !BUILDFLAG(IS_ANDROID)
-  Profile* profile = Profile::FromWebUI(web_ui);
+  Profile *profile = Profile::FromWebUI(web_ui);
   content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(
                                            profile, /*serve_untrusted=*/true));
 #endif

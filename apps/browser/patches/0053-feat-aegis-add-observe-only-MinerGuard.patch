@@ -1,7 +1,7 @@
-From fb283ec560ec507b5877da8ef61dc1a75073cd78 Mon Sep 17 00:00:00 2001
+From 3bc32b0136c333831f8928b787099bbadf1fd7be Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 04:49:03 +0800
-Subject: [PATCH 53/53] feat(aegis): add observe-only MinerGuard
+Subject: [PATCH] feat(aegis): add observe-only MinerGuard
 
 ---
  chrome/browser/aegis/BUILD.gn                 |   9 +-
@@ -14,7 +14,7 @@ Subject: [PATCH 53/53] feat(aegis): add observe-only MinerGuard
  chrome/browser/page_load_metrics/BUILD.gn     |   5 +
  ..._miner_guard_page_load_metrics_observer.cc | 309 ++++++++++++++++++
  ...s_miner_guard_page_load_metrics_observer.h |  79 +++++
- .../page_load_metrics_initialize.cc           |   4 +
+ .../page_load_metrics_initialize.cc           |   3 +
  chrome/browser/resources/aegis/aegis.html     |   7 +
  chrome/browser/resources/aegis/aegis.ts       |  15 +
  .../ui/views/toolbar/aegis_toolbar_button.cc  |  11 +
@@ -34,7 +34,7 @@ Subject: [PATCH 53/53] feat(aegis): add observe-only MinerGuard
  .../websockets/websocket_connector_impl.cc    |   3 +-
  .../public/browser/content_browser_client.cc  |   3 +
  .../public/browser/content_browser_client.h   |   5 +
- 30 files changed, 1377 insertions(+), 8 deletions(-)
+ 30 files changed, 1376 insertions(+), 8 deletions(-)
  create mode 100644 chrome/browser/aegis/aegis_service_unittest.cc
  create mode 100644 chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc
  create mode 100644 chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h
@@ -421,7 +421,7 @@ index 0000000000..7f7542b237
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 70cfead103..a3c8da77f2 100644
+index 7a37d6cb62..c89b2c3771 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -48,6 +48,7 @@
@@ -432,7 +432,7 @@ index 70cfead103..a3c8da77f2 100644
  #include "base/types/expected.h"
  #include "base/types/expected_macros.h"
  #include "base/values.h"
-@@ -206,7 +207,10 @@
+@@ -209,7 +210,10 @@
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
  #include "chrome/common/aegis/aegis_net_throttle.h"
  #include "chrome/common/aegis/features.h"
@@ -443,7 +443,7 @@ index 70cfead103..a3c8da77f2 100644
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
  #include "chrome/common/chrome_constants.h"
-@@ -6900,6 +6904,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
+@@ -6824,6 +6828,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
  #endif
  }
  
@@ -487,12 +487,12 @@ index 70cfead103..a3c8da77f2 100644
  ChromeContentBrowserClient::GetWebSocketOptions(
      content::RenderFrameHost* frame) {
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index e21e743a9f..6dd52c36db 100644
+index 34b4e978e8..7f6b6ed51e 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -743,6 +743,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
-       content::FrameTreeNodeId frame_tree_node_id,
-       const network::ResourceRequest& resource_request) override;
+@@ -711,6 +711,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+       scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner)
+       override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
 +  void OnWebSocketConnectionInitiated(content::RenderFrameHost* frame,
 +                                      const GURL& url) override;
@@ -500,19 +500,19 @@ index e21e743a9f..6dd52c36db 100644
        content::RenderFrameHost* frame) override;
    void CreateWebSocket(
 diff --git a/chrome/browser/page_load_metrics/BUILD.gn b/chrome/browser/page_load_metrics/BUILD.gn
-index fa68b9ab17..9334316557 100644
+index 950bd912cf..83f0e6c20a 100644
 --- a/chrome/browser/page_load_metrics/BUILD.gn
 +++ b/chrome/browser/page_load_metrics/BUILD.gn
-@@ -90,6 +90,8 @@ source_set("page_load_metrics") {
- 
+@@ -92,6 +92,8 @@ source_set("page_load_metrics") {
  source_set("impl") {
    sources = [
+     "chrome_initiator_location.cc",
 +    "observers/aegis_miner_guard_page_load_metrics_observer.cc",
 +    "observers/aegis_miner_guard_page_load_metrics_observer.h",
      "observers/bookmark_bar_page_load_metrics_observer.cc",
      "observers/captcha_metrics_observer.cc",
      "observers/captcha_provider_manager.cc",
-@@ -150,8 +152,11 @@ source_set("impl") {
+@@ -153,8 +155,11 @@ source_set("impl") {
      "//chrome/browser/translate",
      "//chrome/browser/ui/browser_window",
      "//chrome/common",
@@ -925,26 +925,18 @@ index 0000000000..97f1d23b4e
 +
 +#endif  // CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_AEGIS_MINER_GUARD_PAGE_LOAD_METRICS_OBSERVER_H_
 diff --git a/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc b/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
-index ccbc498901..058379fe5a 100644
+index 49d112c063..77dcc9d7bc 100644
 --- a/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
 +++ b/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
-@@ -14,6 +14,7 @@
- #include "chrome/browser/browser_process.h"
+@@ -25,6 +25,7 @@
+ #endif
  #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
  #include "chrome/browser/history/history_service_factory.h"
 +#include "chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h"
  #include "chrome/browser/page_load_metrics/observers/bookmark_bar_page_load_metrics_observer.h"
  #include "chrome/browser/page_load_metrics/observers/captcha_metrics_observer.h"
  #include "chrome/browser/page_load_metrics/observers/chrome_gws_abandoned_page_load_metrics_observer.h"
-@@ -137,6 +138,7 @@ class PageLoadMetricsEmbedder
-   bool IsNonTabWebUI(const GURL& url) override;
-   bool IsInternalWebUI(const GURL& url) override;
-   bool ShouldObserveScheme(std::string_view scheme) override;
-+
-  protected:
-   // page_load_metrics::PageLoadMetricsEmbedderBase:
-   void RegisterObservers(page_load_metrics::PageLoadTracker* tracker,
-@@ -201,6 +203,8 @@ void PageLoadMetricsEmbedder::RegisterObservers(
+@@ -216,6 +217,8 @@ void PageLoadMetricsEmbedder::RegisterObservers(
  
    // Observers for regular web pages.
    RegisterCommonObservers(tracker);
@@ -1978,7 +1970,7 @@ index ada93350b4..e402c6b71d 100644
      "aegis.fingerprint_farbling_secret";
  inline constexpr char kFilterListAutoUpdateEnabled[] =
 diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
-index 83caf245b4..382fdf613f 100644
+index c1becd05ae..200a73bccd 100644
 --- a/content/browser/websockets/websocket_connector_impl.cc
 +++ b/content/browser/websockets/websocket_connector_impl.cc
 @@ -64,7 +64,7 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
@@ -1990,7 +1982,7 @@ index 83caf245b4..382fdf613f 100644
  
  WebSocketConnectorImpl::WebSocketConnectorImpl(
      const content::GlobalRenderFrameHostId& frame_id,
-@@ -104,6 +104,7 @@ void WebSocketConnectorImpl::Connect(
+@@ -121,6 +121,7 @@ void WebSocketConnectorImpl::Connect(
    }
  
    RenderFrameHost* frame = RenderFrameHost::FromID(frame_id_);
@@ -1999,10 +1991,10 @@ index 83caf245b4..382fdf613f 100644
        GetContentClient()->browser()->GetWebSocketOptions(frame);
  
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 5785aaf2b9..07712ca7ee 100644
+index 20bf75c79b..df995fdda8 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1164,6 +1164,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1093,6 +1093,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -2013,10 +2005,10 @@ index 5785aaf2b9..07712ca7ee 100644
  ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
  ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index d8075263d1..5c939a5959 100644
+index 0db044d5ba..40a90ff9f0 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
-@@ -2138,6 +2138,11 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1971,6 +1971,11 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  

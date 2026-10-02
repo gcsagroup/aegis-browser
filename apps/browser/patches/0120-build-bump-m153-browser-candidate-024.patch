@@ -1,0 +1,29 @@
+From e2bde341d2c231f0e06469db73b646d56000c894 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 14 Sep 2026 21:24:46 +0800
+Subject: [PATCH] build: bump M153 browser candidate to 024 after Rollup hook
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index f1c39ce3bc..017f17f4da 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.23。
+-inline constexpr char kProductVersion[] = "1.1.0.23";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (023)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.24。
++inline constexpr char kProductVersion[] = "1.1.0.24";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (024)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

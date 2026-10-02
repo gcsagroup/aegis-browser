@@ -1,0 +1,1131 @@
+From 23bb317453bc76e87094d1e6b3655b099e6c5646 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 14:38:50 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=8A=9F=E8=83=BD=EF=BC=9A=E9=99=90=E5=AE=9A?=
+ =?UTF-8?q?=E5=A4=9A=E9=A1=B5=E7=A0=94=E7=A9=B6=E5=B9=B6=E4=BF=9D=E7=95=99?=
+ =?UTF-8?q?=E6=96=87=E7=AB=A0=E6=9D=A5=E6=BA=90=E4=BF=A1=E6=81=AF=EF=BC=8C?=
+ =?UTF-8?q?=E6=9E=84=E5=BB=BA016?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc |  37 +++--
+ .../aegis/agent/aegis_agent_service.cc        | 140 ++++++++++++++++--
+ .../browser/aegis/agent/aegis_agent_service.h |   4 +
+ .../aegis/agent/agent_core_unittest.cc        |  27 ++++
+ chrome/browser/aegis/agent/agent_execution.cc |  21 ++-
+ .../aegis/agent/agent_execution_unittest.cc   |  40 +++++
+ .../browser/aegis/agent/agent_observation.cc  |  14 +-
+ .../aegis/agent/agent_observation_unittest.cc |  37 +++++
+ chrome/browser/aegis/agent/agent_planner.cc   |   1 +
+ .../browser/aegis/agent/agent_task_store.cc   |  11 +-
+ .../aegis/agent/agent_task_store_unittest.cc  |  24 +++
+ chrome/browser/aegis/agent/agent_types.cc     |   7 +-
+ chrome/browser/aegis/agent/agent_types.h      |   2 +
+ .../browser/resources/aegis_agent/agent.css   |  12 +-
+ .../browser/resources/aegis_agent/agent.html  |  18 ++-
+ chrome/browser/resources/aegis_agent/agent.ts | 111 +++++++++++++-
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |  11 ++
+ .../aegis_agent/aegis_agent_page_handler.cc   |  95 ++++++++++++
+ .../aegis_agent/aegis_agent_page_handler.h    |  10 ++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  26 ++++
+ .../ui/webui/help/aegis_github_update.h       |   6 +-
+ 21 files changed, 608 insertions(+), 46 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 244dc9b7f4..06e95a511d 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -624,13 +624,19 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+ 
+ class AegisActorPolicyChecker final : public actor::EnterprisePolicyChecker {
+  public:
+-  AegisActorPolicyChecker(AgentTaskScope scope,
+-                          std::optional<GURL> selected_url)
+-      : scope_(std::move(scope)), selected_url_(std::move(selected_url)) {}
++  AegisActorPolicyChecker(AgentTaskScope scope, std::vector<GURL> selected_urls)
++      : scope_(std::move(scope)), selected_urls_(std::move(selected_urls)) {}
+   ~AegisActorPolicyChecker() override = default;
+ 
+   UrlBlockReason Evaluate(const GURL& url) const override {
+-    return scope_.AllowsPageDestination(url, selected_url_)
++    return ((!scope_.restrict_to_current_page &&
++             !scope_.selected_pages_research)
++                ? scope_.AllowsPageDestination(url, std::nullopt)
++                : std::ranges::any_of(selected_urls_,
++                                      [&](const GURL& selected) {
++                                        return scope_.AllowsPageDestination(
++                                            url, selected);
++                                      }))
+                ? UrlBlockReason::kNotBlocked
+                : UrlBlockReason::kExplicitlyBlocked;
+   }
+@@ -650,7 +656,7 @@ class AegisActorPolicyChecker final : public actor::EnterprisePolicyChecker {
+ 
+  private:
+   const AgentTaskScope scope_;
+-  const std::optional<GURL> selected_url_;
++  const std::vector<GURL> selected_urls_;
+ };
+ 
+ }  // namespace
+@@ -693,23 +699,24 @@ std::optional<actor::TaskId> AegisActorBridge::StartTask(
+       actor_tasks_.contains(agent_task_id)) {
+     return std::nullopt;
+   }
+-  std::optional<GURL> selected_url;
+-  if (scope.restrict_to_current_page) {
+-    tabs::TabInterface* selected =
+-        tabs::TabHandle(*scope.allowed_tab_ids.begin()).Get();
+-    if (!selected || selected->GetProfile() != profile_ ||
+-        !scope.AllowsOrigin(selected->GetURL())) {
+-      return std::nullopt;
++  std::vector<GURL> selected_urls;
++  if (scope.restrict_to_current_page || scope.selected_pages_research) {
++    for (int32_t tab_id : scope.allowed_tab_ids) {
++      tabs::TabInterface* selected = tabs::TabHandle(tab_id).Get();
++      if (!selected || selected->GetProfile() != profile_ ||
++          !scope.AllowsOrigin(selected->GetURL())) {
++        return std::nullopt;
++      }
++      // 完整地址冻结，后续服务器重定向也不能扩展该集合。
++      selected_urls.push_back(selected->GetURL());
+     }
+-    // 在任务开始时冻结完整地址，重定向也要经过相同的Actor策略检查。
+-    selected_url = selected->GetURL();
+   }
+   actor::TaskId actor_task_id =
+       actor_service_->CreateTaskWithOwnedPolicyChecker(
+           actor::TaskSourceInfo(actor::TaskSourceInfo::Client::kAegis,
+                                 agent_task_id),
+           std::make_unique<AegisActorPolicyChecker>(scope,
+-                                                    std::move(selected_url)),
++                                                    std::move(selected_urls)),
+           nullptr, nullptr);
+   if (actor_task_id.is_null()) {
+     return std::nullopt;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index df3a1af1d2..40eb2790ca 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -3,6 +3,7 @@
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ 
+ #include <algorithm>
++#include <iterator>
+ #include <optional>
+ #include <string_view>
+ #include <utility>
+@@ -684,6 +685,75 @@ void AegisAgentService::FlushTaskStoreForTesting(
+       .Then(std::move(callback));
+ }
+ 
++AgentTask* AegisAgentService::CreateSelectedResearchTask(
++    std::string goal,
++    const std::vector<int32_t>& tab_ids) {
++  const auto destination = ConfiguredModelDestination();
++  base::flat_set<int32_t> selected(tab_ids.begin(), tab_ids.end());
++  if (!destination || tab_ids.size() < 3u || tab_ids.size() > 10u ||
++      selected.size() != tab_ids.size()) {
++    return nullptr;
++  }
++  std::vector<url::Origin> origins;
++  base::flat_set<std::string> urls;
++  for (int32_t id : selected) {
++    auto* tab = tabs::TabHandle(id).Get();
++    if (!tab || tab->GetProfile() != profile_ ||
++        !tab->GetURL().SchemeIsHTTPOrHTTPS() || tab->GetURL().has_username() ||
++        tab->GetURL().has_password() ||
++        !urls.insert(tab->GetURL().spec()).second) {
++      return nullptr;
++    }
++    auto origin = url::Origin::Create(tab->GetURL());
++    if (!std::ranges::contains(origins, origin)) {
++      origins.push_back(origin);
++    }
++  }
++  auto scope = BuildAgentWorkflowScope(
++      AgentWorkflowKind::kResearch, std::move(origins), selected, *destination);
++  if (!scope) {
++    return nullptr;
++  }
++  scope->allowed_tools = {"page.observe"};
++  scope->selected_pages_research = true;
++  scope->allowed_data_classes = {AgentDataClass::kPublicPage};
++  scope->budgets.max_tabs = static_cast<int>(selected.size());
++  scope->budgets.max_tool_calls = 32;
++  scope->budgets.max_model_calls = 4;
++  scope->budgets.max_network_requests = 24;
++  scope->budgets.max_duration = base::Minutes(10);
++  auto* task = CreateTask(std::move(goal), AgentMode::kAct, std::move(*scope));
++  if (!task) {
++    return nullptr;
++  }
++  for (int32_t id : selected) {
++    research_selections_[task->id()][id] = tabs::TabHandle(id).Get()->GetURL();
++  }
++  if (!BeginPlanning(task->id())) {
++    return nullptr;
++  }
++  AgentModelEvent plan;
++  plan.type = AgentModelEventType::kToolCall;
++  plan.tool_name = "agent.submit_plan";
++  plan.arguments.Set("schema_version", kAgentSchemaVersion);
++  plan.arguments.Set("summary", task->goal());
++  base::ListValue steps;
++  for (int32_t id : selected) {
++    base::DictValue step;
++    step.Set("id", "selected-page-" + base::NumberToString(id));
++    step.Set("title", "读取所选网页 " + base::NumberToString(id));
++    step.Set("tool", "page.observe");
++    steps.Append(std::move(step));
++  }
++  plan.arguments.Set("steps", std::move(steps));
++  std::string error;
++  if (!AcceptModelPlan(task->id(), plan, &error)) {
++    Transition(task->id(), AgentTaskState::kFailed, std::move(error));
++    return nullptr;
++  }
++  return task;
++}
++
+ AgentTask* AegisAgentService::GetTask(const std::string& task_id) {
+   auto it = tasks_.find(task_id);
+   return it == tasks_.end() ? nullptr : it->second.get();
+@@ -1109,16 +1179,25 @@ const AgentTaskPlan* AegisAgentService::GetPlan(
+ 
+ bool AegisAgentService::CurrentPageMatchesSelection(
+     const AgentTask& task) const {
+-  if (!task.scope().restrict_to_current_page) {
++  if (!task.scope().restrict_to_current_page &&
++      !task.scope().selected_pages_research) {
+     return true;
+   }
+-  if (task.scope().allowed_tab_ids.size() != 1u) {
+-    return false;
+-  }
+-  tabs::TabInterface* tab =
+-      tabs::TabHandle(*task.scope().allowed_tab_ids.begin()).Get();
+-  return tab && tab->GetProfile() == profile_ &&
+-         policy_broker_.IsSelectedReadUrl(task, tab->GetURL());
++  return !task.scope().allowed_tab_ids.empty() &&
++         std::ranges::all_of(task.scope().allowed_tab_ids, [&](int32_t id) {
++           auto* tab = tabs::TabHandle(id).Get();
++           if (!tab || tab->GetProfile() != profile_ ||
++               !policy_broker_.IsSelectedReadUrl(task, tab->GetURL())) {
++             return false;
++           }
++           if (!task.scope().selected_pages_research) {
++             return true;
++           }
++           const auto selection = research_selections_.find(task.id());
++           return selection != research_selections_.end() &&
++                  selection->second.contains(id) &&
++                  selection->second.at(id) == tab->GetURL();
++         });
+ }
+ 
+ bool AegisAgentService::GrantTaskConsent(const std::string& task_id) {
+@@ -1457,6 +1536,35 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+   if (runtime.pending_action || runtime.final_user_takeover) {
+     return;
+   }
++  // 用户已经明确选择网页；浏览器逐页只读取证，不让模型选择额外标签。
++  if (task->scope().selected_pages_research &&
++      runtime.next_step < plan->steps.size()) {
++    if (!CurrentPageMatchesSelection(*task) ||
++        plan->steps.size() != task->scope().allowed_tab_ids.size() ||
++        plan->steps[runtime.next_step].tool_name != "page.observe") {
++      Transition(task_id, AgentTaskState::kFailed,
++                 "所选网页已改变，请重新选择来源");
++      FinishRuntime(task_id, false, "所选网页绑定失效", std::nullopt);
++      return;
++    }
++    const int32_t id =
++        *std::next(task->scope().allowed_tab_ids.begin(), runtime.next_step);
++    AgentModelEvent observation;
++    observation.type = AgentModelEventType::kToolCall;
++    observation.tool_name = "page.observe";
++    observation.arguments.Set("tab_id", id);
++    std::string error;
++    auto call = BindExecutionToolCall(*task, plan->steps[runtime.next_step], id,
++                                      runtime.attempt, observation, &error);
++    if (!call) {
++      Transition(task_id, AgentTaskState::kFailed, error);
++      FinishRuntime(task_id, false, std::move(error), std::nullopt);
++      return;
++    }
++    runtime.last_tab_id = id;
++    ExecuteRuntimeTool(task_id, std::move(*call), std::nullopt);
++    return;
++  }
+   std::optional<std::string> selection_prompt;
+   // 首步读取已由计划决定，page.observe 的原生实现只需要标签页编号。
+   // 仅在整个授权范围唯一、没有旧回执或重试时由浏览器填入该能力；
+@@ -1932,6 +2040,19 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
+       validation_error = "completion source is outside task scope";
+       completion.reset();
+     }
++    if (completion && task->scope().selected_pages_research &&
++        completion->outcome == "completed") {
++      for (const auto& evidence : runtime.evidence_history) {
++        const auto* url = evidence.result.value.FindString("url");
++        if (evidence.result.ok && evidence.tool_name == "page.observe" && url &&
++            !std::ranges::contains(completion->source_urls, *url)) {
++          validation_error =
++              "research completion must cite every selected source";
++          completion.reset();
++          break;
++        }
++      }
++    }
+     if (completion && AgentGoalRequestsTranslation(task->goal()) &&
+         completion->outcome == "partial" &&
+         completion->unfinished_items.empty() && runtime.translation_selection &&
+@@ -2474,7 +2595,8 @@ bool AegisAgentService::FinishWithBrowserVerifiedFallback(
+     completion.outcome = "monitoring";
+     completion.summary =
+         "计划步骤已完成；浏览器会在运行期间按已同意的计划继续监控。";
+-  } else if (AgentTaskRequiresPageEvidence(task->goal(), task->scope())) {
++  } else if (task->scope().selected_pages_research ||
++             AgentTaskRequiresPageEvidence(task->goal(), task->scope())) {
+     // 读到正文只证明浏览器操作成功，不证明模型已交付用户要求的内容结果。
+     completion.outcome = "partial";
+     completion.summary = model_budget_exhausted
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index e30a4011e9..208a4b32a9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -80,6 +80,8 @@ class AegisAgentService : public KeyedService {
+   std::optional<AgentModelDestination> ConfiguredModelDestination() const;
+ 
+   AgentTask* CreateTask(std::string goal, AgentMode mode, AgentTaskScope scope);
++  AgentTask* CreateSelectedResearchTask(std::string goal,
++                                        const std::vector<int32_t>& tab_ids);
+   AgentTask* GetTask(const std::string& task_id);
+   const AgentTask* GetTask(const std::string& task_id) const;
+   AgentTask* MostRecentTask();
+@@ -368,6 +370,8 @@ class AegisAgentService : public KeyedService {
+   std::map<std::string, std::unique_ptr<AgentTask>> tasks_;
+   std::map<std::string, AgentTaskPlan> plans_;
+   std::map<std::string, AgentCompletionSummary> completion_summaries_;
++  // 浏览器持有逐标签的完整地址，不能用另一个已选地址替换原来源。
++  std::map<std::string, std::map<int32_t, GURL>> research_selections_;
+   std::map<std::string, std::pair<size_t, int>> plan_progress_;
+   std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
+   std::map<std::string, std::string> model_request_ids_;
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index ab63bc1fac..b9a1159f05 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -139,6 +139,33 @@ TEST(AegisAgentTypesTest, CurrentPageScopePinsUrlAndCannotBeBroadened) {
+                                          base.model_destination));
+ }
+ 
++TEST(AegisAgentTypesTest, SelectedResearchIsBoundedAndCannotGainActions) {
++  auto scope = TestScope();
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.allowed_tools = {"page.observe"};
++  scope.budgets.max_tabs = 10;
++  scope.selected_pages_research = true;
++  ASSERT_TRUE(scope.IsValid());
++  const GURL selected("https://shop.example/read?edition=1");
++  EXPECT_TRUE(scope.AllowsPageDestination(selected, selected));
++  EXPECT_FALSE(scope.AllowsPageDestination(selected, std::nullopt));
++  EXPECT_FALSE(scope.AllowsPageDestination(
++      GURL("https://shop.example/read?edition=2"), selected));
++  auto changed = scope;
++  changed.selected_pages_research = false;
++  EXPECT_FALSE(changed.IsNoBroaderThan(scope));
++  changed = scope;
++  changed.allowed_tools.insert("page.click");
++  EXPECT_FALSE(changed.IsValid());
++  changed = scope;
++  changed.allowed_tab_ids.erase(9);
++  EXPECT_FALSE(changed.IsValid());
++  changed = scope;
++  changed.allowed_tab_ids = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
++  changed.budgets.max_tabs = 20;
++  EXPECT_FALSE(changed.IsValid());
++}
++
+ TEST(AegisAgentPolicyTest, CurrentPageClickRequiresSingleActionApproval) {
+   AgentToolRegistry registry;
+   AgentPolicyBroker broker(&registry);
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 22f0519187..0573cde538 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1223,10 +1223,11 @@ bool AgentCompletionHasRequiredPageEvidence(
+     std::string_view user_goal,
+     const AgentTaskScope& scope,
+     base::span<const AgentExecutionEvidence> evidence_history) {
+-  if (!AgentTaskRequiresPageEvidence(user_goal, scope)) {
++  if (!scope.selected_pages_research &&
++      !AgentTaskRequiresPageEvidence(user_goal, scope)) {
+     return true;
+   }
+-  return std::ranges::any_of(evidence_history, [](const auto& evidence) {
++  const auto has_content = [](const auto& evidence) {
+     if (!evidence.result.ok ||
+         (evidence.tool_name != "page.observe" &&
+          evidence.tool_name != "page.extract")) {
+@@ -1239,7 +1240,21 @@ bool AgentCompletionHasRequiredPageEvidence(
+     return document && !document->empty() && fingerprint &&
+            !fingerprint->empty() && nodes && !nodes->empty() &&
+            value.FindBool("untrusted") == true;
+-  });
++  };
++  if (!scope.selected_pages_research) {
++    return std::ranges::any_of(evidence_history, has_content);
++  }
++  // 每个授权标签都必须有真实正文；重复读取同一标签不能填补缺失来源。
++  base::flat_set<int32_t> observed_tabs;
++  for (const auto& evidence : evidence_history) {
++    const auto tab_id = evidence.result.value.FindInt("tab_id");
++    const auto* url = evidence.result.value.FindString("url");
++    if (has_content(evidence) && tab_id && scope.AllowsTab(*tab_id) && url &&
++        scope.AllowsOrigin(GURL(*url))) {
++      observed_tabs.insert(*tab_id);
++    }
++  }
++  return observed_tabs == scope.allowed_tab_ids && observed_tabs.size() >= 3u;
+ }
+ 
+ bool NormalizeAgentCompletionSourcesForEvidence(
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index c53e877210..5ccf6478a4 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1477,6 +1477,46 @@ TEST(AegisAgentExecutionTest, PageCompletionRequiresActualReadEvidence) {
+       ambiguous_goal, scope, evidence));
+ }
+ 
++TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {
++  AgentTaskScope scope;
++  scope.selected_pages_research = true;
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.allowed_origins = {
++      url::Origin::Create(GURL("https://fixture.example/"))};
++  std::vector<AgentExecutionEvidence> evidence;
++  for (int id : {7, 8, 8}) {
++    AgentToolResult result;
++    result.ok = true;
++    result.value.Set("tab_id", id);
++    result.value.Set("url",
++                     "https://fixture.example/" + base::NumberToString(id));
++    result.value.Set("document_token", "browser-document");
++    result.value.Set("observation_fingerprint", "browser-fingerprint");
++    result.value.Set("untrusted", true);
++    base::ListValue nodes;
++    nodes.Append(base::DictValue().Set("text", "实际文章内容"));
++    result.value.Set("nodes", std::move(nodes));
++    evidence.push_back(
++        {.tool_name = "page.observe", .result = std::move(result)});
++  }
++  EXPECT_FALSE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++  evidence.back().result.value.Set("tab_id", 9);
++  EXPECT_TRUE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++  evidence.back().result.value.Set("url", "https://outside.example/");
++  EXPECT_FALSE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++  evidence.back().result.value.Set("url", "https://fixture.example/9");
++  evidence.back().result.ok = false;
++  EXPECT_FALSE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++  evidence.back().result.ok = true;
++  evidence.back().result.value.Set("nodes", base::ListValue());
++  EXPECT_FALSE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
++}
++
+ TEST(AegisAgentExecutionTest,
+      BookmarkCheckUsesVerifiedCountsAndPartialOutcome) {
+   for (int scenario = 0; scenario < 3; ++scenario) {
+diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
+index afa708a929..648dc365f6 100644
+--- a/chrome/browser/aegis/agent/agent_observation.cc
++++ b/chrome/browser/aegis/agent/agent_observation.cc
+@@ -31,7 +31,8 @@ void AppendMainFrameNodes(
+     size_t* used_bytes,
+     bool* truncated,
+     int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT,
+-    int click_target_node_id = 0) {
++    int click_target_node_id = 0,
++    bool in_article = false) {
+   if (*used_bytes >= kMaxObservationBytes ||
+       nodes->size() >= kMaxObservationNodes) {
+     *truncated = true;
+@@ -50,14 +51,19 @@ void AppendMainFrameNodes(
+           attributes.annotated_roles().end()) {
+     return;
+   }
++  in_article |=
++      std::ranges::find(attributes.annotated_roles(),
++                        optimization_guide::proto::ANNOTATED_ROLE_ARTICLE) !=
++      attributes.annotated_roles().end();
+   if (!interactive) {
+     if (attributes.has_form_control_data() || attributes.has_form_data()) {
+       return;
+     }
+     for (auto role : attributes.annotated_roles()) {
+       if (role == optimization_guide::proto::ANNOTATED_ROLE_NAV ||
+-          role == optimization_guide::proto::ANNOTATED_ROLE_HEADER ||
+-          role == optimization_guide::proto::ANNOTATED_ROLE_FOOTER ||
++          (!in_article &&
++           (role == optimization_guide::proto::ANNOTATED_ROLE_HEADER ||
++            role == optimization_guide::proto::ANNOTATED_ROLE_FOOTER)) ||
+           role == optimization_guide::proto::ANNOTATED_ROLE_ASIDE ||
+           role == optimization_guide::proto::ANNOTATED_ROLE_SEARCH) {
+         return;
+@@ -188,7 +194,7 @@ void AppendMainFrameNodes(
+ 
+   for (const auto& child : node.children_nodes()) {
+     AppendMainFrameNodes(child, interactive, nodes, used_bytes, truncated,
+-                         text_block_kind, click_target_node_id);
++                         text_block_kind, click_target_node_id, in_article);
+     if (*truncated) {
+       return;
+     }
+diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+index 039fb048c3..5cb6baaa48 100644
+--- a/chrome/browser/aegis/agent/agent_observation_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+@@ -100,6 +100,43 @@ TEST(AgentObservationTest, ButtonTextRetainsItsActualControlTarget) {
+   EXPECT_EQ(read_only.nodes[0].GetDict().FindInt("node_id"), 99);
+ }
+ 
++TEST(AgentObservationTest, PreservesArticleMetadataWithoutSiteChromeOrSecrets) {
++  proto::ContentNode root;
++  auto* site = root.add_children_nodes();
++  site->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_HEADER);
++  AddText(site, 1, "站点菜单");
++  auto* article = root.add_children_nodes();
++  article->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_ARTICLE);
++  auto* header = article->add_children_nodes();
++  header->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_HEADER);
++  AddText(header, 2, "作者：测试作者；日期：2026-09-16");
++  AddText(article, 3, "指标42");
++  auto* footer = article->add_children_nodes();
++  footer->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_FOOTER);
++  AddText(footer, 4, "方法注脚：三次测量取中位数");
++  auto* form = footer->add_children_nodes();
++  form->mutable_content_attributes()
++      ->mutable_form_control_data()
++      ->set_form_control_type(proto::FORM_CONTROL_TYPE_INPUT_PASSWORD);
++  AddText(form, 5, "合成密码不能保留");
++  auto* aside = article->add_children_nodes();
++  aside->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_ASIDE);
++  AddText(aside, 6, "推广旁注");
++  const auto text = Serialize(BuildAgentObservationNodes(root, false));
++  EXPECT_NE(text.find("测试作者"), std::string::npos);
++  EXPECT_NE(text.find("2026-09-16"), std::string::npos);
++  EXPECT_NE(text.find("三次测量取中位数"), std::string::npos);
++  EXPECT_NE(text.find("指标42"), std::string::npos);
++  EXPECT_EQ(text.find("站点菜单"), std::string::npos);
++  EXPECT_EQ(text.find("合成密码"), std::string::npos);
++  EXPECT_EQ(text.find("推广旁注"), std::string::npos);
++}
++
+ TEST(AgentObservationTest, KeepsTextWhenThePageHasNoMainRole) {
+   proto::ContentNode root;
+   AddText(&root, 1, "没有main角色的普通正文");
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 18aa9937b2..70ba8cb753 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -987,6 +987,7 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+   plan.scope.budgets = maximum_scope.budgets;
+   plan.scope.model_destination = maximum_scope.model_destination;
+   plan.scope.restrict_to_current_page = maximum_scope.restrict_to_current_page;
++  plan.scope.selected_pages_research = maximum_scope.selected_pages_research;
+ 
+   base::flat_set<std::string> step_ids;
+   for (const base::Value& value : *steps) {
+diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
+index b93fdc06a3..5aceda6451 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.cc
++++ b/chrome/browser/aegis/agent/agent_task_store.cc
+@@ -594,9 +594,12 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
+   const base::DictValue* destination = value.FindDict("model_destination");
+   const base::Value* metadata_window = value.Find("tab_metadata_window_id");
+   const base::Value* current_page = value.Find("restrict_to_current_page");
+-  if (value.size() !=
+-          6u + (metadata_window ? 1u : 0u) + (current_page ? 1u : 0u) ||
++  const base::Value* selected_pages = value.Find("selected_pages_research");
++  if (value.size() != 6u + (metadata_window ? 1u : 0u) +
++                          (current_page ? 1u : 0u) +
++                          (selected_pages ? 1u : 0u) ||
+       (current_page && !current_page->is_bool()) ||
++      (selected_pages && !selected_pages->is_bool()) ||
+       (metadata_window && !metadata_window->is_int()) || !origins || !tab_ids ||
+       !tools || !data_classes || !budgets || !destination ||
+       budgets->size() != 5u || destination->size() != 4u ||
+@@ -609,6 +612,7 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
+   scope.tab_metadata_window_id =
+       metadata_window ? metadata_window->GetInt() : 0;
+   scope.restrict_to_current_page = current_page && current_page->GetBool();
++  scope.selected_pages_research = selected_pages && selected_pages->GetBool();
+   for (const base::Value& item : *origins) {
+     if (!item.is_string()) {
+       return std::nullopt;
+@@ -801,6 +805,9 @@ std::string AgentTaskStore::SerializeScope(const AgentTaskScope& scope) {
+     tab_ids.Append(tab_id);
+   }
+   value.Set("allowed_tab_ids", std::move(tab_ids));
++  if (scope.selected_pages_research) {
++    value.Set("selected_pages_research", true);
++  }
+   if (scope.restrict_to_current_page) {
+     value.Set("restrict_to_current_page", true);
+   }
+diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+index e5fa9d77a5..d4debae825 100644
+--- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+@@ -169,6 +169,30 @@ TEST(AegisAgentTaskStoreTest, RoundTripsCurrentPageScopeAndRejectsInvalidFlag) {
+   EXPECT_FALSE(AgentTaskStore::DeserializeScope(malformed));
+ }
+ 
++TEST(AegisAgentTaskStoreTest, RoundTripsSelectedResearchAndRejectsFlagType) {
++  AgentTaskStore store(base::FilePath(), true);
++  ASSERT_TRUE(store.Initialize());
++  auto scope = StoreTestScope();
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.allowed_tools = {"page.observe"};
++  scope.budgets.max_tabs = 3;
++  scope.selected_pages_research = true;
++  AgentTask task("research", "比较所选文章", AgentMode::kAct, scope);
++  ASSERT_TRUE(store.SaveTask(task, "比较所选文章", false));
++  const auto tasks = store.LoadUnfinishedTasks();
++  ASSERT_EQ(tasks.size(), 1u);
++  auto restored = AgentTaskStore::DeserializeScope(tasks[0].scope_json);
++  ASSERT_TRUE(restored);
++  EXPECT_TRUE(restored->selected_pages_research);
++  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
++  std::string malformed = tasks[0].scope_json;
++  const std::string flag = "\"selected_pages_research\":true";
++  const auto offset = malformed.find(flag);
++  ASSERT_NE(offset, std::string::npos);
++  malformed.replace(offset, flag.size(), "\"selected_pages_research\":1");
++  EXPECT_FALSE(AgentTaskStore::DeserializeScope(malformed));
++}
++
+ TEST(AegisAgentTaskStoreTest, RejectsBroadenedOrMalformedStoredScope) {
+   EXPECT_FALSE(AgentTaskStore::DeserializeScope("not-json"));
+   EXPECT_FALSE(AgentTaskStore::DeserializeScope(R"({})"));
+diff --git a/chrome/browser/aegis/agent/agent_types.cc b/chrome/browser/aegis/agent/agent_types.cc
+index dfffa2522f..54c2e5da3a 100644
+--- a/chrome/browser/aegis/agent/agent_types.cc
++++ b/chrome/browser/aegis/agent/agent_types.cc
+@@ -69,6 +69,10 @@ bool AgentTaskScope::IsValid() const {
+                           [](int32_t tab_id) { return tab_id <= 0; }) ||
+       allowed_tab_ids.size() > static_cast<size_t>(budgets.max_tabs) ||
+       tab_metadata_window_id < 0 ||
++      (selected_pages_research &&
++       (restrict_to_current_page || allowed_tab_ids.size() < 3u ||
++        allowed_tab_ids.size() > 10u ||
++        allowed_tools != base::flat_set<std::string>{"page.observe"})) ||
+       (restrict_to_current_page &&
+        (allowed_tab_ids.size() != 1u || budgets.max_tabs != 1)) ||
+       (tab_metadata_window_id > 0 &&
+@@ -100,7 +104,7 @@ bool AgentTaskScope::AllowsPageDestination(
+     const GURL& url,
+     const std::optional<GURL>& selected_url) const {
+   return AllowsOrigin(url) &&
+-         (!restrict_to_current_page ||
++         (!(restrict_to_current_page || selected_pages_research) ||
+           (selected_url && selected_url->is_valid() && url == *selected_url));
+ }
+ 
+@@ -117,6 +121,7 @@ bool AgentTaskScope::IsNoBroaderThan(const AgentTaskScope& other) const {
+   if (!budgets.IsNoBroaderThan(other.budgets) ||
+       model_destination != other.model_destination ||
+       (other.restrict_to_current_page && !restrict_to_current_page) ||
++      (other.selected_pages_research && !selected_pages_research) ||
+       !IsSubset(allowed_tab_ids, other.allowed_tab_ids) ||
+       (tab_metadata_window_id != 0 &&
+        tab_metadata_window_id != other.tab_metadata_window_id) ||
+diff --git a/chrome/browser/aegis/agent/agent_types.h b/chrome/browser/aegis/agent/agent_types.h
+index 52435af401..b7ccc80449 100644
+--- a/chrome/browser/aegis/agent/agent_types.h
++++ b/chrome/browser/aegis/agent/agent_types.h
+@@ -107,6 +107,8 @@ struct AgentTaskScope {
+   int32_t tab_metadata_window_id = 0;
+   // 浏览器指定的当前页操作：不允许移除该限制或自动跳转到其他地址。
+   bool restrict_to_current_page = false;
++  // 浏览器所有的多页只读范围；地址只能来自用户选择的标签。
++  bool selected_pages_research = false;
+   base::flat_set<std::string> allowed_tools;
+   base::flat_set<AgentDataClass> allowed_data_classes;
+   AgentBudgets budgets;
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 81940f356c..605dcd3ce0 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -278,7 +278,7 @@ button:disabled {
+   border-radius: 12px;
+   display: grid;
+   gap: 4px;
+-  grid-template-columns: repeat(2, 1fr);
++  grid-template-columns: repeat(3, minmax(0, 1fr));
+   padding: 4px;
+ }
+ 
+@@ -604,3 +604,13 @@ summary {
+     transition: border-color 120ms ease, background 120ms ease;
+   }
+ }
++
++/* 来源名称与地址来自浏览器，窄侧栏中允许完整换行。 */
++.research-sources { display: grid; gap: 8px; max-height: 320px; overflow: auto; margin-block: 12px; }
++.research-source { display: flex; align-items: start; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
++.research-source input { width: auto; flex: none; margin-top: 3px; }
++.research-source span { min-width: 0; }
++.research-source strong, .research-source small { display: block; overflow-wrap: anywhere; }
++.research-source small { color: var(--muted); margin-top: 4px; }
++.workspace-tools { margin-block: 8px; }
++.source-link { text-align: start; overflow-wrap: anywhere; width: 100%; }
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index bdb2430e9e..597f11e679 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -21,9 +21,25 @@
+       <section id="disabled-banner" class="notice" hidden></section>
+ 
+       <nav class="workspace-tabs" aria-label="$i18n{workspaceLabel}">
++        <button id="protection-view-button" type="button"></button>
++        <button id="research-view-button" type="button" aria-selected="false"></button>
+         <button id="task-view-button" type="button" aria-selected="true"></button>
+-        <button id="automation-view-button" type="button" aria-selected="false"></button>
+       </nav>
++      <div class="workspace-tools">
++        <button id="automation-view-button" type="button" aria-selected="false"></button>
++      </div>
++
++      <section id="research-view" class="card" hidden aria-labelledby="research-title">
++        <h2 id="research-title"></h2>
++        <p id="research-help" class="help"></p>
++        <button id="research-refresh" type="button"></button>
++        <div id="research-sources" class="research-sources"></div>
++        <p id="research-selection" role="status"></p>
++        <label id="research-goal-label" for="research-goal"></label>
++        <textarea id="research-goal" rows="4" maxlength="4096"></textarea>
++        <button id="research-start" class="primary" type="button" disabled></button>
++        <p id="research-error" class="notice" role="status" hidden></p>
++      </section>
+ 
+       <section id="task-view">
+         <section class="composer" aria-labelledby="goal-label">
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 69847c4012..e971b87698 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -8,6 +8,7 @@ import type {
+   CheckoutSummary,
+   MonitorSummary,
+   PlanSummary,
++  ResearchTab,
+   TaskSnapshot,
+ } from './aegis_agent.mojom-webui.js';
+ import {AgentMode, Workflow} from './aegis_agent.mojom-webui.js';
+@@ -26,7 +27,9 @@ let goalUserEdited = false;
+ let modelFormInitialized = false;
+ let autoRunTaskId = '';
+ let autoRunInFlight = false;
+-let activeView: 'task'|'automation' = 'task';
++let activeView: 'task'|'automation'|'research' = 'task';
++let researchTabs: ResearchTab[] = [];
++const selectedResearchTabs = new Set<number>();
+ const launchParameters = new URLSearchParams(window.location.search);
+ const launchGoal = (launchParameters.get('goal') || '').trim().slice(0, 4096);
+ const launchAutoStart =
+@@ -156,14 +159,67 @@ function renderView() {
+       element<HTMLButtonElement>('automation-view-button');
+   const taskSelected = activeView === 'task';
+   taskView.hidden = !taskSelected;
+-  automationView.hidden = taskSelected;
+-  taskButton.setAttribute('aria-selected', String(taskSelected));
+-  automationButton.setAttribute('aria-selected', String(!taskSelected));
++  automationView.hidden = activeView !== 'automation';
++  element('research-view').hidden = activeView !== 'research';
++  element('research-view-button').setAttribute(
++      'aria-selected', String(activeView === 'research'));
++  taskButton.setAttribute(
++      'aria-selected', String(taskSelected || activeView === 'automation'));
++  automationButton.setAttribute(
++      'aria-selected', String(activeView === 'automation'));
+   taskButton.disabled = busy;
+   automationButton.disabled = busy;
+   element('target-card').hidden = !taskSelected;
+ }
+ 
++function updateResearchSelection() {
++  element('research-selection').textContent =
++      `${selectedResearchTabs.size} / 10 · ` + loadTimeData.getString('researchSelectRange');
++  element<HTMLButtonElement>('research-start').disabled = busy ||
++      selectedResearchTabs.size < 3 || selectedResearchTabs.size > 10 ||
++      !element<HTMLTextAreaElement>('research-goal').value.trim();
++}
++
++async function refreshResearchTabs() {
++  const error = element('research-error');
++  error.hidden = true;
++  try {
++    const result = await proxy.handler.listResearchTabs();
++    researchTabs = result.tabs;
++    selectedResearchTabs.clear();
++    const list = element('research-sources');
++    list.replaceChildren();
++    for (const tab of researchTabs) {
++      const label = document.createElement('label');
++      label.className = 'research-source';
++      const check = document.createElement('input');
++      check.type = 'checkbox';
++      check.addEventListener('change', () => {
++        if (check.checked) {
++          selectedResearchTabs.add(tab.tabId);
++        } else {
++          selectedResearchTabs.delete(tab.tabId);
++        }
++        updateResearchSelection();
++      });
++      const description = document.createElement('span');
++      const title = document.createElement('strong');
++      title.textContent = tab.title || tab.url;
++      const url = document.createElement('small');
++      url.textContent = tab.url;
++      description.append(title, url);
++      label.append(check, description);
++      list.append(label);
++    }
++    error.textContent = result.error;
++    error.hidden = !result.error;
++    updateResearchSelection();
++  } catch {
++    error.textContent = loadTimeData.getString('researchRefreshFailed');
++    error.hidden = false;
++  }
++}
++
+ function addDefinition(
+     list: HTMLElement, term: string, value: string, total = false) {
+   const dt = document.createElement('dt');
+@@ -297,9 +353,19 @@ function renderResult(next: TaskSnapshot) {
+     const list = element(listId);
+     group.hidden = items.length === 0;
+     list.replaceChildren();
+-    for (const item of items) {
++    for (const [index, item] of items.entries()) {
+       const li = document.createElement('li');
+-      li.textContent = item;
++      if (listId === 'result-sources') {
++        const button = document.createElement('button');
++        button.className = 'source-link';
++        button.textContent = item;
++        button.addEventListener('click', () => {
++          void proxy.handler.openVerifiedSource(next.taskId, index);
++        });
++        li.append(button);
++      } else {
++        li.textContent = item;
++      }
+       list.append(li);
+     }
+   };
+@@ -786,7 +852,18 @@ async function withBusy(
+ function initializeLabels() {
+   text('title', 'title');
+   text('subtitle', 'subtitle');
+-  text('task-view-button', 'taskWorkspace');
++  text('task-view-button', 'taskCenter');
++  text('protection-view-button', 'protectionWorkspace');
++  text('research-view-button', 'researchWorkspace');
++  text('research-title', 'researchWorkspace');
++  text('research-help', 'researchHelp');
++  text('research-refresh', 'researchRefresh');
++  text('research-goal-label', 'researchGoal');
++  text('research-start', 'researchStart');
++  element<HTMLTextAreaElement>('research-goal').value =
++      loadTimeData.getString('researchDefaultGoal');
++  element('research-goal').addEventListener('input', updateResearchSelection);
++  updateResearchSelection();
+   text('automation-view-button', 'automationWorkspace');
+   text('target-label', 'target');
+   text('goal-label', 'goal');
+@@ -1033,6 +1110,26 @@ async function saveModel() {
+ }
+ 
+ function bindActions() {
++  element('protection-view-button').addEventListener('click', () => {
++    void proxy.handler.showProtection();
++  });
++  element('research-view-button').addEventListener('click', () => {
++    activeView = 'research';
++    renderView();
++    void refreshResearchTabs();
++  });
++  element('research-refresh').addEventListener('click', () => {
++    void refreshResearchTabs();
++  });
++  element('research-start').addEventListener('click', () => withBusy(async () => {
++    const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
++    const created = await proxy.handler.createResearchTask(
++        goal, [...selectedResearchTabs]);
++    activeView = 'task';
++    showCreatedTask(created.snapshot);
++    autoRunTaskId = created.snapshot.taskId;
++    return created;
++  }, true));
+   element('plan-button').addEventListener('click', () => withBusy(async () => {
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+     const workflow = selectedWorkflow ?? inferWorkflow(goal);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index c605cf08f1..6651a945c8 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -94,6 +94,12 @@ struct MonitorSummary {
+   bool change_summary_partial;
+ };
+ 
++struct ResearchTab {
++  int32 tab_id;
++  string title;
++  string url;
++};
++
+ struct TaskSnapshot {
+   bool feature_enabled;
+   bool agent_enabled;
+@@ -129,6 +135,11 @@ interface PageHandler {
+   ShowUI();
+ 
+   GetSnapshot() => (TaskSnapshot snapshot);
++  ListResearchTabs() => (array<ResearchTab> tabs, string error);
++  CreateResearchTask(string goal, array<int32> tab_ids) => (TaskSnapshot snapshot);
++  ShowProtection();
++  OpenVerifiedSource(string task_id, uint32 source_index) => (bool opened);
++
+ 
+   ConfigureModel(string provider,
+                  string base_url,
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index ddeae6ae7a..6396de24ea 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -19,6 +19,7 @@
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
++#include "chrome/browser/aegis/agent/agent_observation.h"
+ #include "chrome/browser/aegis/agent/agent_policy_broker.h"
+ #include "chrome/browser/aegis/agent/agent_workflow.h"
+ #include "chrome/browser/aegis/model_provider_policy.h"
+@@ -32,6 +33,7 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/web_contents.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+@@ -444,6 +446,99 @@ void AegisAgentPageHandler::OnActiveTabDidChange(
+   }
+ }
+ 
++void AegisAgentPageHandler::ListResearchTabs(
++    ListResearchTabsCallback callback) {
++  std::vector<aegis_agent::mojom::ResearchTabPtr> result;
++  research_selection_urls_.clear();
++  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  if (!list || browser_->GetProfile() != profile_) {
++    std::move(callback).Run(std::move(result), "当前窗口不可用");
++    return;
++  }
++  for (auto* tab : list->GetAllTabs()) {
++    if (result.size() >= 100u) {
++      break;
++    }
++    const GURL& url = tab->GetURL();
++    if (tab->GetProfile() != profile_ || !url.SchemeIsHTTPOrHTTPS() ||
++        url.has_username() || url.has_password()) {
++      continue;
++    }
++    auto item = aegis_agent::mojom::ResearchTab::New();
++    item->tab_id = tab->GetHandle().raw_value();
++    item->url = url.spec();
++    item->title = aegis::agent::BoundedAgentObservationText(
++        base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 256);
++    research_selection_urls_[item->tab_id] = url;
++    result.push_back(std::move(item));
++  }
++  std::move(callback).Run(std::move(result), std::string());
++}
++
++void AegisAgentPageHandler::CreateResearchTask(
++    const std::string& goal,
++    const std::vector<int32_t>& tab_ids,
++    CreateResearchTaskCallback callback) {
++  last_error_.clear();
++  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  if (!list || browser_->GetProfile() != profile_ || tab_ids.size() < 3u ||
++      tab_ids.size() > 10u) {
++    last_error_ = "请选择当前窗口的3–10个网页";
++  } else {
++    for (int32_t id : tab_ids) {
++      auto* tab = tabs::TabHandle(id).Get();
++      auto selected = research_selection_urls_.find(id);
++      if (!tab || selected == research_selection_urls_.end() ||
++          list->GetIndexOfTab(tab->GetHandle()) < 0 ||
++          tab->GetProfile() != profile_ || tab->GetURL() != selected->second) {
++        last_error_ = "所选网页已改变，请刷新来源列表后重新选择";
++        break;
++      }
++    }
++    if (last_error_.empty()) {
++      profile_->GetPrefs()->SetBoolean(aegis::prefs::kAgentEnabled, true);
++      service_ =
++          aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_);
++      ObserveService(service_);
++      auto* task = service_
++                       ? service_->CreateSelectedResearchTask(goal, tab_ids)
++                       : nullptr;
++      if (!task) {
++        last_error_ = "无法创建研究任务，请核对网页、目标及模型配置";
++      } else {
++        active_task_id_ = task->id();
++        ObserveTask(task);
++      }
++    }
++  }
++  std::move(callback).Run(BuildSnapshot());
++}
++
++void AegisAgentPageHandler::ShowProtection() {
++  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  if (list && browser_->GetProfile() == profile_) {
++    list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
++  }
++}
++
++void AegisAgentPageHandler::OpenVerifiedSource(
++    const std::string& task_id,
++    uint32_t source_index,
++    OpenVerifiedSourceCallback callback) {
++  const auto* result =
++      service_ ? service_->GetCompletionSummary(task_id) : nullptr;
++  const auto* task = service_ ? service_->GetTask(task_id) : nullptr;
++  if (!result || !task || source_index >= result->source_urls.size() ||
++      !browser_ || browser_->GetProfile() != profile_) {
++    std::move(callback).Run(false);
++    return;
++  }
++  const GURL url(result->source_urls[source_index]);
++  const bool allowed = url.SchemeIsHTTPOrHTTPS() && !url.has_username() &&
++                       !url.has_password() && task->scope().AllowsOrigin(url);
++  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
++}
++
+ void AegisAgentPageHandler::GetSnapshot(GetSnapshotCallback callback) {
+   std::move(callback).Run(BuildSnapshot());
+ }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index 205f1a5117..c5b908603f 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -3,6 +3,7 @@
+ #ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
+ #define CHROME_BROWSER_UI_WEBUI_AEGIS_AGENT_AEGIS_AGENT_PAGE_HANDLER_H_
+ 
++#include <map>
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -46,6 +47,14 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+ 
+   void ShowUI() override;
+   void GetSnapshot(GetSnapshotCallback callback) override;
++  void ListResearchTabs(ListResearchTabsCallback callback) override;
++  void CreateResearchTask(const std::string& goal,
++                          const std::vector<int32_t>& tab_ids,
++                          CreateResearchTaskCallback callback) override;
++  void ShowProtection() override;
++  void OpenVerifiedSource(const std::string& task_id,
++                          uint32_t source_index,
++                          OpenVerifiedSourceCallback callback) override;
+   void ConfigureModel(const std::string& provider,
+                       const std::string& base_url,
+                       const std::string& model,
+@@ -134,6 +143,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+   raw_ptr<BrowserWindowInterface> browser_ = nullptr;
+   raw_ptr<AegisAgentUI> ui_ = nullptr;
+   raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
++  std::map<int32_t, GURL> research_selection_urls_;
+   std::string active_task_id_;
+   std::string last_error_;
+   mojo::Remote<aegis_agent::mojom::Page> page_;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index a44acbe537..17e80d8cbe 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -71,6 +71,32 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
+       "说出目标，Aegis 会先理解、制定计划，再操作浏览器。",
+       "說出目標，Aegis 會先理解、制定計畫，再操作瀏覽器。");
++  add("taskCenter", "Task center", "任务中心", "任務中心");
++  add("protectionWorkspace", "Protection", "页面保护", "頁面防護");
++  add("researchWorkspace", "Research", "研究工作台", "研究工作台");
++  add("researchHelp",
++      "Choose 3–10 open pages from this window. Only selected pages are read; "
++      "page instructions cannot expand access.",
++      "选择当前窗口的3–10个网页。仅读取勾选来源，网页内的指令不能扩大访问范围"
++      "。",
++      "選擇目前視窗的3–10個網頁。僅讀取勾選來源，網頁內的指令不能擴大存取範圍"
++      "。");
++  add("researchRefresh", "Refresh sources", "刷新来源列表", "重新整理來源清單");
++  add("researchSelectRange", "Select 3–10 pages", "请选择3–10个网页",
++      "請選擇3–10個網頁");
++  add("researchGoal", "What should be compared?", "希望比较什么？",
++      "希望比較什麼？");
++  add("researchStart", "Read selected pages and compare", "读取所选网页并比较",
++      "讀取所選網頁並比較");
++  add("researchDefaultGoal",
++      "Compare the selected sources, preserve conflicting facts, include dates "
++      "when present, and cite every source. Do not invent missing information.",
++      "比较所选来源的事实，保留分歧，列出原文提供的日期并引用每个来源。缺失信息"
++      "不要猜测。",
++      "比較所選來源的事實，保留分歧，列出原文提供的日期並引用每個來源。缺失資訊"
++      "不要猜測。");
++  add("researchRefreshFailed", "Sources could not be refreshed. Try again.",
++      "无法刷新来源，请重试。", "無法重新整理來源，請重試。");
+   add("taskWorkspace", "Common tasks", "常用任务", "常用任務");
+   add("automationWorkspace", "Automations", "自动化", "自動化");
+   add("target", "Where Aegis will work", "Aegis 将在哪里操作",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 2d895b29b4..cf731afa0f 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.15。
+-inline constexpr char kProductVersion[] = "2.0.0.15";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (015)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.16。
++inline constexpr char kProductVersion[] = "2.0.0.16";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (016)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From cfe7a6cab0a157b8cd2cc443e5fefbef407e70ce Mon Sep 17 00:00:00 2001
+From e0f3cb4d5fe5b502a0c29aa1bb794fbc111a809d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 22:05:44 +0800
 Subject: [PATCH] feat(aegis): simplify browser agent v2 onboarding
@@ -109,10 +109,10 @@ index 19cbe8423a..490d0a6259 100644
    TaskId CreateTaskWithDurationForTesting(
        actor::webui::mojom::TaskDuration duration);
 diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
-index 211969c90f..d76dc7898e 100644
+index 2309fad3c1..ef28c49d58 100644
 --- a/chrome/browser/actor/actor_task.cc
 +++ b/chrome/browser/actor/actor_task.cc
-@@ -478,7 +478,8 @@ void ActorTask::Stop(StoppedReason stop_reason) {
+@@ -500,7 +500,8 @@ void ActorTask::Stop(StoppedReason stop_reason) {
        .title = title_,
        .last_acted_on_tab_handle = last_tab_handle,
        .duration = duration_,
@@ -123,10 +123,10 @@ index 211969c90f..d76dc7898e 100644
  
  void ActorTask::Pause(bool from_actor, bool cancel_existing_action) {
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index b76d49261b..7fa116158b 100644
+index 7e64496a20..b7294385bb 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-@@ -156,19 +156,37 @@ ActorTask::TaskDuration ActorUiStateManager::GetDuration(
+@@ -163,19 +163,37 @@ ActorTask::TaskDuration ActorUiStateManager::GetDuration(
    return ActorTask::TaskDuration::kDefault;
  }
  
@@ -168,7 +168,7 @@ index b76d49261b..7fa116158b 100644
  }
  
  UiTabState ActorUiStateManager::GetActorControlledUiTabState(
-@@ -252,10 +270,12 @@ void ActorUiStateManager::OnActorTaskStateChange(
+@@ -259,10 +277,12 @@ void ActorUiStateManager::OnActorTaskStateChange(
      }
    }
  
@@ -185,7 +185,7 @@ index b76d49261b..7fa116158b 100644
  }
  
  std::vector<tabs::TabInterface*> ActorUiStateManager::GetTabs(TaskId id) {
-@@ -328,6 +348,10 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
+@@ -336,6 +356,10 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
    std::visit(
        absl::Overload{
            [this](const StartTask& e) {
@@ -196,7 +196,7 @@ index b76d49261b..7fa116158b 100644
              notify_actor_task_state_change_debounce_timer_.Start(
                  FROM_HERE, kProfileScopedUiUpdateDebounceDelay,
                  base::BindOnce(&ActorUiStateManager::NotifyActorTaskStateChange,
-@@ -338,6 +362,17 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
+@@ -346,6 +370,17 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
            },
            [this](const StopTask& e) {
              transient_task_timers_.erase(e.task_id);
@@ -214,7 +214,7 @@ index b76d49261b..7fa116158b 100644
              // Cancelled tasks are intentionally not stored.
              if (e.final_state == ActorTask::State::kCancelled) {
                NotifyActorTaskStopped(e.task_id);
-@@ -427,6 +462,7 @@ base::CallbackListSubscription ActorUiStateManager::RegisterActorTaskStopped(
+@@ -435,6 +470,7 @@ base::CallbackListSubscription ActorUiStateManager::RegisterActorTaskStopped(
  }
  
  void ActorUiStateManager::ActorTaskRemoved(TaskId task_id) {
@@ -223,7 +223,7 @@ index b76d49261b..7fa116158b 100644
    actor_task_removed_callback_list_.Notify(task_id);
  }
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.h b/chrome/browser/actor/ui/actor_ui_state_manager.h
-index 3b9e0e4ff4..e909292ca3 100644
+index 4da2c48f4c..7b6b98fb01 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.h
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.h
 @@ -10,6 +10,7 @@
@@ -234,7 +234,7 @@ index 3b9e0e4ff4..e909292ca3 100644
  
  namespace tabs {
  class TabInterface;
-@@ -63,6 +64,7 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
+@@ -70,6 +71,7 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
    void StopTimer(TaskId task_id);
  
    ActorTask::TaskDuration GetDuration(const tabs::TabInterface* tab);
@@ -242,7 +242,7 @@ index 3b9e0e4ff4..e909292ca3 100644
    // Notify profile scoped ui components about actor task state changes.
    void NotifyActorTaskStateChange(TaskId task_id);
    // Called whenever an actor task state changes.
-@@ -85,6 +87,11 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
+@@ -92,6 +94,11 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
    absl::flat_hash_map<TaskId, std::unique_ptr<base::OneShotTimer>>
        transient_task_timers_;
  
@@ -253,9 +253,9 @@ index 3b9e0e4ff4..e909292ca3 100644
 +
    base::OneShotTimer notify_actor_task_state_change_debounce_timer_;
  
-   const raw_ref<ActorKeyedService> actor_service_;
+   // Tracks tabs currently in a pending actuation state prior to an ActorTask
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
-index ecd415b0a5..8e06dd9f19 100644
+index 4b25025b3b..4d3f046556 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
 @@ -203,6 +203,46 @@ TEST_F(ActorUiStateManagerTest, SingleTask_RapidTaskStateChanges_Debounced) {
@@ -327,10 +327,10 @@ index ecd415b0a5..8e06dd9f19 100644
         OnStoppedActingOnTab_UpdatesUiCorrectly) {
    UiTabState expected_ui_tab_state{
 diff --git a/chrome/browser/actor/ui/event_dispatcher.cc b/chrome/browser/actor/ui/event_dispatcher.cc
-index f11f3e9294..b9b89675b1 100644
+index 1df1e161ba..03d2d081c7 100644
 --- a/chrome/browser/actor/ui/event_dispatcher.cc
 +++ b/chrome/browser/actor/ui/event_dispatcher.cc
-@@ -151,7 +151,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
+@@ -155,7 +155,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
      [](const UiEventDispatcher::StopTask& c) {
        return EventSequence<SyncUiEvent>{
            StopTask(c.task_id, c.final_state, c.title,

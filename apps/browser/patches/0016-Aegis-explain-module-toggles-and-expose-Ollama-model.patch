@@ -1,4 +1,4 @@
-From 53fe5a21f929c0f8374205c2206be01fbee3d842 Mon Sep 17 00:00:00 2001
+From 84091373b06bb6aeef11d477aa02658e55393d28 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 18:46:02 +0800
 Subject: [PATCH] Aegis: explain module toggles and expose Ollama model

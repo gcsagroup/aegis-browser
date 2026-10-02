@@ -1,0 +1,426 @@
+From dcf7c95944f7d0b5fac7d27f74d0c816346e92bf Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Tue, 29 Sep 2026 19:34:05 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A7=84=E8=8C=83=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
+ =?UTF-8?q?=E6=A0=B7=E5=BC=8F=E5=B9=B6=E8=AF=B4=E6=98=8E=E6=91=98=E8=A6=81?=
+ =?UTF-8?q?=E5=85=A5=E5=8F=A3=E9=99=90=E5=88=B6=20072?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/resources/aegis/aegis.css      | 161 ++++++++++++++----
+ chrome/browser/resources/aegis/aegis.ts       |  10 +-
+ .../browser/resources/aegis_agent/agent.css   |  64 +++++--
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ .../webui/version/resources/about_version.css |  15 +-
+ .../resources/about_version_mobile.css        |  51 +++++-
+ 6 files changed, 252 insertions(+), 53 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index d65e019ed4..19cfdbb252 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -31,6 +31,7 @@ body {
+ }
+ 
+ .page {
++  overflow-wrap: anywhere;
+   max-width: 42rem;
+   margin: 0 auto;
+   padding: 3rem 1.5rem 4rem;
+@@ -77,6 +78,7 @@ h1 {
+ }
+ 
+ .health-dot {
++  flex: none;
+   width: 0.8rem;
+   height: 0.8rem;
+   border-radius: 50%;
+@@ -408,6 +410,8 @@ button:disabled {
+ }
+ 
+ dialog {
++  max-height: calc(100dvh - 2rem);
++  overflow-y: auto;
+   width: min(34rem, calc(100vw - 2rem));
+   padding: 1.25rem;
+   border: 1px solid var(--line);
+@@ -482,36 +486,135 @@ button.primary {
+ }
+ 
+ /* 同一保护能力按可用宽度排版，手机无需缩放页面即可阅读和操作。 */
+-.page { overflow-wrap: anywhere; }
+-.page-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+-.page-header .subtitle { margin-bottom: 0; }
+-.brand-mark { width: 3.5rem; height: 3.5rem; flex: none; }
+-.health-dot { flex: none; }
+-button, summary { min-height: 44px; }
+-summary { align-content: center; cursor: pointer; }
+-button:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visible,
+-select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+-input, select, textarea { min-width: 0; }
+-.result, .log li { overflow-wrap: anywhere; }
+-dialog { max-height: calc(100dvh - 2rem); overflow-y: auto; }
++
++.page-header {
++  display: flex;
++  align-items: center;
++  gap: 1rem;
++  margin-bottom: 2rem;
++}
++
++.page-header .subtitle {
++  margin-bottom: 0;
++}
++
++.brand-mark {
++  width: 3.5rem;
++  height: 3.5rem;
++  flex: none;
++}
++
++button,
++summary {
++  min-height: 44px;
++}
++
++summary {
++  align-content: center;
++  cursor: pointer;
++}
++
++button:focus-visible,
++summary:focus-visible,
++a:focus-visible,
++input:focus-visible,
++select:focus-visible,
++textarea:focus-visible {
++  outline: 2px solid var(--accent);
++  outline-offset: 3px;
++}
++
++input,
++select,
++textarea {
++  min-width: 0;
++}
++
++.result,
++.log li {
++  overflow-wrap: anywhere;
++}
++
+ @media (max-width: 600px) {
+-  body { font-size: 16px; }
+-  .page { padding: max(1.25rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
+-  h1 { font-size: 1.65rem; }
+-  .page-header { gap: .65rem; margin-bottom: 1.25rem; }
+-  .brand-mark { width: 2.75rem; height: 2.75rem; }
+-  .overview { padding: 1rem; }
+-  .hint, .metric-label, .scope-note, .field-hint { font-size: .875rem; }
+-  .metrics { gap: .4rem; }
+-  .metric { padding: .6rem .4rem; }
+-  .metric-value { font-size: 1.3rem; }
+-  .row { align-items: center; gap: .75rem; }
+-  .row input[type='checkbox'] { width: 24px; height: 24px; margin: 10px; }
+-  .actions > button { flex: 1 1 9rem; }
+-  .torrent-options { grid-template-columns: 1fr; }
+-  .field input, .field select, .field textarea { font-size: 16px; min-height: 48px; }
++  body {
++    font-size: 16px;
++  }
++
++  .page {
++    padding: max(1.25rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
++  }
++
++  h1 {
++    font-size: 1.65rem;
++  }
++
++  .page-header {
++    gap: .65rem;
++    margin-bottom: 1.25rem;
++  }
++
++  .brand-mark {
++    width: 2.75rem;
++    height: 2.75rem;
++  }
++
++  .overview {
++    padding: 1rem;
++  }
++
++  .hint,
++  .metric-label,
++  .scope-note,
++  .field-hint {
++    font-size: .875rem;
++  }
++
++  .metrics {
++    gap: .4rem;
++  }
++
++  .metric {
++    padding: .6rem .4rem;
++  }
++
++  .metric-value {
++    font-size: 1.3rem;
++  }
++
++  .row {
++    align-items: center;
++    gap: .75rem;
++  }
++
++  .row input[type='checkbox'] {
++    width: 24px;
++    height: 24px;
++    margin: 10px;
++  }
++
++  .actions > button {
++    flex: 1 1 9rem;
++  }
++
++  .torrent-options {
++    grid-template-columns: 1fr;
++  }
++
++  .field input,
++  .field select,
++  .field textarea {
++    font-size: 16px;
++    min-height: 48px;
++  }
+ }
++
+ @media (pointer: coarse) {
+-  button, summary { min-height: 48px; }
+-  .row { min-height: 64px; }
++  button,
++  summary {
++    min-height: 48px;
++  }
++
++  .row {
++    min-height: 64px;
++  }
+ }
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index b93a7b8164..2cd71f64e7 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -293,6 +293,12 @@ function formatMeta(status: AegisStatus): string {
+ }
+ 
+ function formatPrivacyMeta(status: AegisStatus): string {
++  if (status.isAndroid) {
++    const lang = localeCode();
++    return lang === 'zh-CN' ? 'Android 保护中心暂不支持直接总结其他标签页。请在目标网页菜单中选择“使用 Aegis 处理此页面”。' :
++        lang === 'zh-TW' ? 'Android 防護中心暫不支援直接總結其他分頁。請在目標網頁選單中選擇「使用 Aegis 處理此頁面」。' :
++        'Direct summaries from this protection page are not available on Android. Open the target page menu and choose Use Aegis on this page.';
++  }
+   const lang = document.documentElement.lang || 'zh-CN';
+   const zh = lang.startsWith('zh');
+   if (!status.privacyAi) {
+@@ -704,7 +710,7 @@ function applyStatus(status: AegisStatus) {
+   fillActivityLog(status.recentEvents || []);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+   actionButton('summarize').disabled =
+-      summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
++      android || summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
+   if (status.profileAvailable === false) {
+     document
+         .querySelectorAll<HTMLInputElement|HTMLButtonElement|
+@@ -1518,7 +1524,7 @@ async function init() {
+     getRequiredElement('filter-meta').textContent = formatMeta(next);
+     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
+     actionButton('summarize').disabled =
+-        summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
++        !!next.isAndroid || summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
+   });
+ }
+ 
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index a430626be1..cd4dfa5a51 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -678,17 +678,61 @@ summary {
+ }
+ 
+ /* 触控界面使用移动端字号与点击面积；桌面侧栏保持紧凑。 */
++
+ @media (pointer: coarse) {
+-  body { font-size: 16px; }
+-  button, .monitor-actions button, input:not([type='checkbox']), select { min-height: 48px; }
+-  button, input, select, textarea { font-size: 16px; }
+-  .help, .hero p, .notice, .research-source small, .status { font-size: 14px; }
+-  .research-source { min-height: 48px; align-items: center; }
+-  .research-source input { width: 24px; height: 24px; margin: 8px; }
+-  main { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
++  body {
++    font-size: 16px;
++  }
++
++  button,
++  .monitor-actions button,
++  input:not([type='checkbox']),
++  select {
++    min-height: 48px;
++  }
++
++  button,
++  input,
++  select,
++  textarea {
++    font-size: 16px;
++  }
++
++  .help,
++  .hero p,
++  .notice,
++  .research-source small,
++  .status {
++    font-size: 14px;
++  }
++
++  .research-source {
++    min-height: 48px;
++    align-items: center;
++  }
++
++  .research-source input {
++    width: 24px;
++    height: 24px;
++    margin: 8px;
++  }
++
++  main {
++    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
++  }
+ }
++
+ @media (max-width: 600px) and (pointer: coarse) {
+-  .scenario-grid { grid-template-columns: 1fr; }
+-  .hero { flex-wrap: wrap; }
+-  .status { max-width: 100%; white-space: normal; }
++  .scenario-grid {
++    grid-template-columns: 1fr;
++  }
++
++  .hero {
++    flex-wrap: wrap;
++  }
++
++  .status {
++    max-width: 100%;
++    white-space: normal;
++  }
+ }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 77ace210fa..9ec2c354b1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.71";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (071)";
++inline constexpr char kProductVersion[] = "2.0.0.72";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (072)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/components/webui/version/resources/about_version.css b/components/webui/version/resources/about_version.css
+index 8f222c3964..1d356ed319 100644
+--- a/components/webui/version/resources/about_version.css
++++ b/components/webui/version/resources/about_version.css
+@@ -137,5 +137,16 @@ html[webui-rounded-icons] #copy-to-clipboard-icon {
+ }
+ 
+ /* 产品名和产品版本优先展示，内核与诊断信息保留原值。 */
+-.aegis-logo { width: 96px; height: 96px; object-fit: contain; }
+-caption { text-align: start; font-size: 1.35rem; font-weight: 600; padding-block: 0 1rem; }
++
++.aegis-logo {
++  width: 96px;
++  height: 96px;
++  object-fit: contain;
++}
++
++caption {
++  text-align: start;
++  font-size: 1.35rem;
++  font-weight: 600;
++  padding-block: 0 1rem;
++}
+diff --git a/components/webui/version/resources/about_version_mobile.css b/components/webui/version/resources/about_version_mobile.css
+index 0c2611de14..4711b2b46c 100644
+--- a/components/webui/version/resources/about_version_mobile.css
++++ b/components/webui/version/resources/about_version_mobile.css
+@@ -24,13 +24,48 @@
+ }
+ 
+ /* 长路径和命令行允许换行，窄屏逐项阅读，折叠屏宽窗保留表格。 */
++
+ @media (max-width: 600px) {
+-  #outer { width: auto; margin: 0; padding: 20px 16px; }
+-  #logo { margin: 0 0 20px; }
+-  #inner, #inner tbody, #inner tr, #inner td, #inner caption { display: block; width: auto; }
+-  #inner tr { margin-bottom: 16px; }
+-  #inner td { padding: 2px 0; overflow-wrap: anywhere; white-space: normal; }
+-  #inner .label { font-weight: 600; }
+-  .version { font-size: 14px; line-height: 1.5; }
+-  .copy-button { min-width: 48px; min-height: 48px; }
++  #outer {
++    width: auto;
++    margin: 0;
++    padding: 20px 16px;
++  }
++
++  #logo {
++    margin: 0 0 20px;
++  }
++
++  #inner,
++  #inner tbody,
++  #inner tr,
++  #inner td,
++  #inner caption {
++    display: block;
++    width: auto;
++  }
++
++  #inner tr {
++    margin-bottom: 16px;
++  }
++
++  #inner td {
++    padding: 2px 0;
++    overflow-wrap: anywhere;
++    white-space: normal;
++  }
++
++  #inner .label {
++    font-weight: 600;
++  }
++
++  .version {
++    font-size: 14px;
++    line-height: 1.5;
++  }
++
++  .copy-button {
++    min-width: 48px;
++    min-height: 48px;
++  }
+ }
+-- 
+2.52.0
+

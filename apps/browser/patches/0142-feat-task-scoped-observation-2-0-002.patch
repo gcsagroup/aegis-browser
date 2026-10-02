@@ -1,0 +1,816 @@
+From d72019543be4981f5c270919fe7905a1c423aef6 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 01:49:48 +0800
+Subject: [PATCH] =?UTF-8?q?feat:=20=E6=8C=89=E4=BB=BB=E5=8A=A1=E8=A3=81?=
+ =?UTF-8?q?=E5=89=AA=E8=A7=82=E5=AF=9F=E5=B9=B6=E4=BF=AE=E5=A4=8D=E5=88=9B?=
+ =?UTF-8?q?=E5=BB=BA=E5=A4=B1=E8=B4=A5=20Ver=202.0=20(002)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 160 +++-----------
+ .../browser/aegis/agent/agent_observation.cc  | 196 ++++++++++++++++++
+ .../browser/aegis/agent/agent_observation.h   |  25 +++
+ .../aegis/agent/agent_observation_unittest.cc | 169 +++++++++++++++
+ chrome/browser/aegis/summary_policy.cc        |   4 +
+ chrome/browser/aegis/summary_policy.h         |   4 +
+ chrome/browser/resources/aegis_agent/agent.ts |  10 +-
+ .../ui/webui/help/aegis_github_update.h       |   6 +-
+ .../help/aegis_github_update_unittest.cc      |  16 +-
+ 10 files changed, 456 insertions(+), 137 deletions(-)
+ create mode 100644 chrome/browser/aegis/agent/agent_observation.cc
+ create mode 100644 chrome/browser/aegis/agent/agent_observation.h
+ create mode 100644 chrome/browser/aegis/agent/agent_observation_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index c4475d01cf..d53733123f 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -184,6 +184,8 @@ source_set("aegis") {
+     "agent/aegis_agent_service_factory.h",
+     "agent/aegis_browser_tools.cc",
+     "agent/aegis_browser_tools.h",
++    "agent/agent_observation.cc",
++    "agent/agent_observation.h",
+   ]
+   deps += [
+     ":agent_core",
+@@ -388,6 +390,7 @@ test("aegis_browser_unittests") {
+       "aegis_ui_handler_unittest.cc",
+       "agent/aegis_agent_service_unittest.cc",
+       "agent/agent_core_unittest.cc",
++      "agent/agent_observation_unittest.cc",
+       "agent/agent_task_store_unittest.cc",
+       "summary_session_unittest.cc",
+     ]
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 7a49030cc9..5f39475ce3 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -11,6 +11,7 @@
+ #include <vector>
+ 
+ #include "base/check_deref.h"
++#include "base/containers/flat_set.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
+@@ -41,12 +42,12 @@
+ #include "chrome/browser/actor/tools/wait_tool_request.h"
+ #include "chrome/browser/aegis/agent/agent_execution.h"
+ #include "chrome/browser/aegis/agent/agent_model_protocol.h"
++#include "chrome/browser/aegis/agent/agent_observation.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/actor.mojom.h"
+ #include "chrome/common/actor/action_result.h"
+ #include "chrome/common/actor/actor_constants.h"
+ #include "chrome/common/aegis/features.h"
+-#include "chrome/common/aegis/security_text.h"
+ #include "components/actor/core/task_source_info.h"
+ #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
+ #include "components/tabs/public/tab_handle_factory.h"
+@@ -64,8 +65,6 @@ namespace aegis::agent {
+ 
+ namespace {
+ 
+-constexpr size_t kMaxObservationBytes = 128 * 1024;
+-constexpr size_t kMaxObservationNodes = 512;
+ constexpr size_t kMaxNodeTextBytes = 2048;
+ constexpr size_t kMaxWebMcpSchemaBytes = 32 * 1024;
+ constexpr size_t kMaxWebMcpResultBytes = 8 * 1024;
+@@ -367,6 +366,21 @@ void FinishPageExtraction(std::string kind,
+   extraction.Set("fields", std::move(fields));
+   extraction.Set("method", "bounded_semantic_nodes");
+   extraction.Set("untrusted", true);
++  // 指定字段提取只携带实际引用节点，不把无关章节再附给模型。
++  base::flat_set<int> referenced_nodes;
++  for (const auto& field : *extraction.FindList("fields")) {
++    if (const auto* ids = field.GetDict().FindList("source_node_ids")) {
++      for (const auto& id : *ids)
++        referenced_nodes.insert(id.GetInt());
++    }
++  }
++  base::ListValue selected_nodes;
++  for (const auto& node : *nodes) {
++    const auto id = node.GetDict().FindInt("node_id");
++    if (id && referenced_nodes.contains(*id))
++      selected_nodes.Append(node.Clone());
++  }
++  result.value.Set("nodes", std::move(selected_nodes));
+   result.value.Set("extraction", std::move(extraction));
+   result.message = "bounded page fields extracted with source nodes";
+   std::move(callback).Run(std::move(result));
+@@ -399,11 +413,7 @@ bool IsErrorPage(content::WebContents* contents) {
+ }
+ 
+ std::string BoundedText(std::string_view value, size_t remaining) {
+-  // 先保持原有读取上限，再清理副本，不能为去混淆扫描整个超长 DOM 节点。
+-  return NormalizeSecurityText(
+-             base::TruncateUTF8ToByteSize(
+-                 value, std::min(remaining, kMaxNodeTextBytes)))
+-      .text;
++  return BoundedAgentObservationText(value, remaining);
+ }
+ 
+ std::string SafeObservationUrl(std::string_view value) {
+@@ -419,125 +429,6 @@ std::string SafeObservationUrl(std::string_view value) {
+   return url.ReplaceComponents(replacements).spec();
+ }
+ 
+-void AppendMainFrameNodes(
+-    const optimization_guide::proto::ContentNode& node,
+-    base::ListValue* nodes,
+-    size_t* used_bytes,
+-    bool* truncated,
+-    int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT) {
+-  if (*used_bytes >= kMaxObservationBytes ||
+-      nodes->size() >= kMaxObservationNodes) {
+-    *truncated = true;
+-    return;
+-  }
+-
+-  const auto& attributes = node.content_attributes();
+-  if (attributes.attribute_type() ==
+-          optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING ||
+-      attributes.attribute_type() ==
+-          optimization_guide::proto::CONTENT_ATTRIBUTE_PARAGRAPH) {
+-    text_block_kind = attributes.attribute_type();
+-  }
+-  if (attributes.redaction_decision() ==
+-      optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY) {
+-    base::DictValue item;
+-    if (attributes.common_ancestor_dom_node_id() > 0) {
+-      item.Set("node_id", attributes.common_ancestor_dom_node_id());
+-    }
+-    item.Set("kind", static_cast<int>(attributes.attribute_type()));
+-
+-    const size_t remaining = kMaxObservationBytes - *used_bytes;
+-    std::string text;
+-    if (attributes.has_text_data()) {
+-      text = BoundedText(attributes.text_data().text_content(), remaining);
+-    } else if (attributes.has_anchor_data()) {
+-      text = BoundedText(SafeObservationUrl(attributes.anchor_data().url()),
+-                         remaining);
+-    } else if (attributes.has_form_control_data()) {
+-      text =
+-          BoundedText(attributes.form_control_data().placeholder(), remaining);
+-    }
+-    if (!text.empty()) {
+-      *used_bytes += text.size();
+-      item.Set("text", std::move(text));
+-      if (attributes.has_text_data()) {
+-        item.Set("text_block_kind", text_block_kind);
+-        item.Set("text_is_heading",
+-                 text_block_kind ==
+-                     optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING);
+-        // 只保留已授权、已脱敏 APC 的相对字号，不冒充 HTML 标题等级。
+-        if (attributes.text_data().has_text_style() &&
+-            attributes.text_data().text_style().has_text_size()) {
+-          const char* size = nullptr;
+-          switch (attributes.text_data().text_style().text_size()) {
+-            case optimization_guide::proto::TEXT_SIZE_XS:
+-              size = "XS";
+-              break;
+-            case optimization_guide::proto::TEXT_SIZE_S:
+-              size = "S";
+-              break;
+-            case optimization_guide::proto::TEXT_SIZE_M_DEFAULT:
+-              size = "M";
+-              break;
+-            case optimization_guide::proto::TEXT_SIZE_L:
+-              size = "L";
+-              break;
+-            case optimization_guide::proto::TEXT_SIZE_XL:
+-              size = "XL";
+-              break;
+-            default:
+-              break;
+-          }
+-          if (size) {
+-            item.Set("text_size", size);
+-          }
+-        }
+-      }
+-    }
+-
+-    std::string label =
+-        BoundedText(attributes.label(), kMaxObservationBytes - *used_bytes);
+-    if (!label.empty()) {
+-      *used_bytes += label.size();
+-      item.Set("label", std::move(label));
+-    }
+-    if (attributes.has_form_control_data()) {
+-      const auto& form_control = attributes.form_control_data();
+-      item.Set("form_control_type",
+-               static_cast<int>(form_control.form_control_type()));
+-      bool is_sensitive_control =
+-          form_control.form_control_type() ==
+-          optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_PASSWORD;
+-      for (const auto coarse_type : form_control.coarse_autofill_field_type()) {
+-        is_sensitive_control |=
+-            coarse_type == optimization_guide::proto::
+-                               COARSE_AUTOFILL_FIELD_TYPE_CREDIT_CARD ||
+-            coarse_type ==
+-                optimization_guide::proto::COARSE_AUTOFILL_FIELD_TYPE_OTP;
+-      }
+-      if (is_sensitive_control) {
+-        item.Set("is_sensitive_control", true);
+-      }
+-    }
+-    if (item.size() > 1u) {
+-      nodes->Append(std::move(item));
+-    }
+-  }
+-
+-  // Cross-frame content is deliberately omitted from the v1 model context.
+-  // A separately approved frame observation can be added later without
+-  // changing the main-document action contract.
+-  if (attributes.has_iframe_data()) {
+-    return;
+-  }
+-  for (const auto& child : node.children_nodes()) {
+-    AppendMainFrameNodes(child, nodes, used_bytes, truncated, text_block_kind);
+-    if (*truncated) {
+-      return;
+-    }
+-  }
+-}
+-
+ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     tabs::TabInterface& tab,
+     const AgentToolCall& call) {
+@@ -1255,10 +1146,17 @@ void AegisActorBridge::OnObservation(
+                             .committed_url = observed_url};
+   last_documents_[agent_task_id][tab_id] = document;
+ 
+-  base::ListValue nodes;
+-  size_t used_bytes = 0;
+-  bool truncated = false;
+-  AppendMainFrameNodes(page.root_node(), &nodes, &used_bytes, &truncated);
++  // 以已批准工具范围决定是否保留交互控件；研究与监控只读取正文。
++  const bool interactive = std::ranges::any_of(
++      scope_it->second.allowed_tools, [](const std::string& tool) {
++        return tool == "page.click" || tool == "page.type" ||
++               tool == "page.select" || tool == "page.drag" ||
++               tool == "form.fill" || base::StartsWith(tool, "auth.") ||
++               tool == "page.webmcp.invoke";
++      });
++  auto bounded = BuildAgentObservationNodes(page.root_node(), interactive);
++  base::ListValue nodes = std::move(bounded.nodes);
++  const bool truncated = bounded.truncated;
+   std::string serialized_nodes;
+   if (!base::JSONWriter::Write(nodes, &serialized_nodes)) {
+     std::move(callback).Run(
+diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
+new file mode 100644
+index 0000000000..d7242b3ef7
+--- /dev/null
++++ b/chrome/browser/aegis/agent/agent_observation.cc
+@@ -0,0 +1,196 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/agent/agent_observation.h"
++#include <algorithm>
++#include <utility>
++#include "base/strings/string_util.h"
++#include "chrome/browser/aegis/summary_policy.h"
++#include "components/optimization_guide/proto/features/common_quality_data.pb.h"
++#include "url/gurl.h"
++namespace aegis::agent {
++namespace {
++constexpr size_t kMaxObservationBytes = 128 * 1024;
++constexpr size_t kMaxObservationNodes = 512;
++constexpr size_t kMaxNodeTextBytes = 2048;
++std::string SafeObservationUrl(std::string_view value) {
++  const GURL url(value);
++  if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS()) {
++    return {};
++  }
++  GURL::Replacements replacements;
++  replacements.ClearUsername();
++  replacements.ClearPassword();
++  replacements.ClearQuery();
++  replacements.ClearRef();
++  return url.ReplaceComponents(replacements).spec();
++}
++
++void AppendMainFrameNodes(
++    const optimization_guide::proto::ContentNode& node,
++    bool interactive,
++    base::ListValue* nodes,
++    size_t* used_bytes,
++    bool* truncated,
++    int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT) {
++  if (*used_bytes >= kMaxObservationBytes ||
++      nodes->size() >= kMaxObservationNodes) {
++    *truncated = true;
++    return;
++  }
++
++  const auto& attributes = node.content_attributes();
++  // 跨框架、隐藏节点及已判定需遮挡的整个子树都不进入模型上下文。
++  if (attributes.has_iframe_data() ||
++      attributes.redaction_decision() !=
++          optimization_guide::proto::
++              REDACTION_DECISION_NO_REDACTION_NECESSARY ||
++      std::ranges::find(
++          attributes.annotated_roles(),
++          optimization_guide::proto::ANNOTATED_ROLE_CONTENT_HIDDEN) !=
++          attributes.annotated_roles().end()) {
++    return;
++  }
++  if (!interactive) {
++    if (attributes.has_form_control_data() || attributes.has_form_data()) {
++      return;
++    }
++    for (auto role : attributes.annotated_roles()) {
++      if (role == optimization_guide::proto::ANNOTATED_ROLE_NAV ||
++          role == optimization_guide::proto::ANNOTATED_ROLE_HEADER ||
++          role == optimization_guide::proto::ANNOTATED_ROLE_FOOTER ||
++          role == optimization_guide::proto::ANNOTATED_ROLE_ASIDE ||
++          role == optimization_guide::proto::ANNOTATED_ROLE_SEARCH) {
++        return;
++      }
++    }
++  }
++  if (attributes.has_form_control_data()) {
++    const auto& control = attributes.form_control_data();
++    bool sensitive =
++        control.form_control_type() ==
++        optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_PASSWORD;
++    for (auto type : control.coarse_autofill_field_type()) {
++      sensitive |=
++          type == optimization_guide::proto::COARSE_AUTOFILL_FIELD_TYPE_OTP ||
++          type ==
++              optimization_guide::proto::COARSE_AUTOFILL_FIELD_TYPE_CREDIT_CARD;
++    }
++    if (sensitive) {
++      base::DictValue item;
++      if (attributes.common_ancestor_dom_node_id() > 0) {
++        item.Set("node_id", attributes.common_ancestor_dom_node_id());
++      }
++      item.Set("kind", static_cast<int>(attributes.attribute_type()));
++      item.Set("form_control_type",
++               static_cast<int>(control.form_control_type()));
++      item.Set("is_sensitive_control", true);
++      nodes->Append(std::move(item));
++      return;
++    }
++  }
++  if (attributes.attribute_type() ==
++          optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING ||
++      attributes.attribute_type() ==
++          optimization_guide::proto::CONTENT_ATTRIBUTE_PARAGRAPH) {
++    text_block_kind = attributes.attribute_type();
++  }
++  if (attributes.redaction_decision() ==
++      optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY) {
++    base::DictValue item;
++    if (attributes.common_ancestor_dom_node_id() > 0) {
++      item.Set("node_id", attributes.common_ancestor_dom_node_id());
++    }
++    item.Set("kind", static_cast<int>(attributes.attribute_type()));
++
++    const size_t remaining = kMaxObservationBytes - *used_bytes;
++    std::string text;
++    if (attributes.has_text_data()) {
++      text = BoundedAgentObservationText(attributes.text_data().text_content(),
++                                         remaining);
++    } else if (attributes.has_anchor_data()) {
++      text = BoundedAgentObservationText(
++          SafeObservationUrl(attributes.anchor_data().url()), remaining);
++    } else if (attributes.has_form_control_data()) {
++      text = BoundedAgentObservationText(
++          attributes.form_control_data().placeholder(), remaining);
++    }
++    if (!text.empty()) {
++      *used_bytes += text.size();
++      item.Set("text", std::move(text));
++      if (attributes.has_text_data()) {
++        item.Set("text_block_kind", text_block_kind);
++        item.Set("text_is_heading",
++                 text_block_kind ==
++                     optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING);
++        // 只保留已授权、已脱敏 APC 的相对字号，不冒充 HTML 标题等级。
++        if (attributes.text_data().has_text_style() &&
++            attributes.text_data().text_style().has_text_size()) {
++          const char* size = nullptr;
++          switch (attributes.text_data().text_style().text_size()) {
++            case optimization_guide::proto::TEXT_SIZE_XS:
++              size = "XS";
++              break;
++            case optimization_guide::proto::TEXT_SIZE_S:
++              size = "S";
++              break;
++            case optimization_guide::proto::TEXT_SIZE_M_DEFAULT:
++              size = "M";
++              break;
++            case optimization_guide::proto::TEXT_SIZE_L:
++              size = "L";
++              break;
++            case optimization_guide::proto::TEXT_SIZE_XL:
++              size = "XL";
++              break;
++            default:
++              break;
++          }
++          if (size) {
++            item.Set("text_size", size);
++          }
++        }
++      }
++    }
++
++    std::string label = BoundedAgentObservationText(
++        attributes.label(), kMaxObservationBytes - *used_bytes);
++    if (!label.empty()) {
++      *used_bytes += label.size();
++      item.Set("label", std::move(label));
++    }
++    if (attributes.has_form_control_data()) {
++      const auto& form_control = attributes.form_control_data();
++      item.Set("form_control_type",
++               static_cast<int>(form_control.form_control_type()));
++    }
++    if (item.size() > 1u) {
++      nodes->Append(std::move(item));
++    }
++  }
++
++  for (const auto& child : node.children_nodes()) {
++    AppendMainFrameNodes(child, interactive, nodes, used_bytes, truncated,
++                         text_block_kind);
++    if (*truncated) {
++      return;
++    }
++  }
++}
++
++}  // namespace
++std::string BoundedAgentObservationText(std::string_view text,
++                                        size_t remaining) {
++  const size_t limit = std::min(remaining, kMaxNodeTextBytes);
++  return std::string(base::TruncateUTF8ToByteSize(
++      SanitizeModelContextText(base::TruncateUTF8ToByteSize(text, limit)),
++      limit));
++}
++AgentObservationNodes BuildAgentObservationNodes(
++    const optimization_guide::proto::ContentNode& root,
++    bool interactive) {
++  AgentObservationNodes result;
++  size_t used_bytes = 0;
++  AppendMainFrameNodes(root, interactive, &result.nodes, &used_bytes,
++                       &result.truncated);
++  return result;
++}
++}  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_observation.h b/chrome/browser/aegis/agent/agent_observation.h
+new file mode 100644
+index 0000000000..a745068cd8
+--- /dev/null
++++ b/chrome/browser/aegis/agent/agent_observation.h
+@@ -0,0 +1,25 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_AGENT_AGENT_OBSERVATION_H_
++#define CHROME_BROWSER_AEGIS_AGENT_AGENT_OBSERVATION_H_
++
++#include <cstddef>
++#include <string>
++#include <string_view>
++#include "base/values.h"
++namespace optimization_guide::proto {
++class ContentNode;
++}
++namespace aegis::agent {
++struct AgentObservationNodes {
++  base::ListValue nodes;
++  bool truncated = false;
++};
++// 原生授权范围决定是否需要交互控件；只读任务保留正文、表格与来源节点。
++AgentObservationNodes BuildAgentObservationNodes(
++    const optimization_guide::proto::ContentNode& root,
++    bool interactive);
++// 对有界副本复用摘要脱敏，最终结果仍受UTF-8字节上限约束。
++std::string BoundedAgentObservationText(std::string_view text,
++                                        size_t remaining);
++}  // namespace aegis::agent
++#endif
+diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+new file mode 100644
+index 0000000000..f990d00ffe
+--- /dev/null
++++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
+@@ -0,0 +1,169 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/agent/agent_observation.h"
++
++#include <string>
++
++#include "base/json/json_writer.h"
++#include "base/strings/string_util.h"
++#include "components/optimization_guide/proto/features/common_quality_data.pb.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::agent {
++namespace {
++namespace proto = optimization_guide::proto;
++
++proto::ContentNode* AddText(proto::ContentNode* parent,
++                            int id,
++                            const std::string& text) {
++  auto* node = parent->add_children_nodes();
++  auto* attributes = node->mutable_content_attributes();
++  attributes->set_attribute_type(proto::CONTENT_ATTRIBUTE_TEXT);
++  attributes->set_common_ancestor_dom_node_id(id);
++  attributes->mutable_text_data()->set_text_content(text);
++  return node;
++}
++
++std::string Serialize(const AgentObservationNodes& observation) {
++  return base::WriteJson(observation.nodes).value();
++}
++
++TEST(AgentObservationTest, ReadOnlyKeepsBodyAndTableWithoutNavigationOrForms) {
++  proto::ContentNode root;
++  root.mutable_content_attributes()->set_attribute_type(
++      proto::CONTENT_ATTRIBUTE_ROOT);
++  auto* article = root.add_children_nodes();
++  article->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_ARTICLE);
++  AddText(article, 1, "正文指标42");
++  auto* table = article->add_children_nodes();
++  table->mutable_content_attributes()->set_attribute_type(
++      proto::CONTENT_ATTRIBUTE_TABLE);
++  AddText(table, 2, "实验数据：42");
++  for (auto role : {proto::ANNOTATED_ROLE_NAV, proto::ANNOTATED_ROLE_HEADER,
++                    proto::ANNOTATED_ROLE_FOOTER, proto::ANNOTATED_ROLE_ASIDE,
++                    proto::ANNOTATED_ROLE_SEARCH}) {
++    auto* extra = root.add_children_nodes();
++    extra->mutable_content_attributes()->add_annotated_roles(role);
++    AddText(extra, 100 + static_cast<int>(role),
++            "无关导航" + std::string(300, 'x'));
++  }
++  auto* form = root.add_children_nodes();
++  form->mutable_content_attributes()->mutable_form_data();
++  AddText(form, 90, "表单标签不属于正文");
++  const auto read_only = BuildAgentObservationNodes(root, false);
++  const auto interactive = BuildAgentObservationNodes(root, true);
++  const auto text = Serialize(read_only);
++  EXPECT_NE(text.find("正文指标42"), std::string::npos);
++  EXPECT_NE(text.find("实验数据：42"), std::string::npos);
++  EXPECT_EQ(text.find("无关导航"), std::string::npos);
++  EXPECT_EQ(text.find("表单标签"), std::string::npos);
++  EXPECT_FALSE(read_only.truncated);
++  // 合成同页对照仅验证裁剪实际发生，不代替完整任务集的输入收益指标。
++  EXPECT_LT(text.size() * 10, Serialize(interactive).size() * 7);
++}
++
++TEST(AgentObservationTest, KeepsTextWhenThePageHasNoMainRole) {
++  proto::ContentNode root;
++  AddText(&root, 1, "没有main角色的普通正文");
++  auto result = BuildAgentObservationNodes(root, false);
++  ASSERT_EQ(result.nodes.size(), 1u);
++  EXPECT_EQ(*result.nodes[0].GetDict().FindString("text"),
++            "没有main角色的普通正文");
++}
++
++TEST(AgentObservationTest, SensitiveControlsRetainOnlyBlockingMetadata) {
++  for (int scenario = 0; scenario < 3; ++scenario) {
++    SCOPED_TRACE(scenario);
++    proto::ContentNode root;
++    auto* node = root.add_children_nodes();
++    auto* attributes = node->mutable_content_attributes();
++    attributes->set_attribute_type(proto::CONTENT_ATTRIBUTE_FORM_CONTROL);
++    attributes->set_common_ancestor_dom_node_id(7);
++    attributes->set_label("秘密标签canary-label");
++    auto* control = attributes->mutable_form_control_data();
++    control->set_placeholder("秘密占位canary-placeholder");
++    control->set_form_control_type(scenario == 0
++                                       ? proto::FORM_CONTROL_TYPE_INPUT_PASSWORD
++                                       : proto::FORM_CONTROL_TYPE_INPUT_TEXT);
++    if (scenario > 0) {
++      control->add_coarse_autofill_field_type(
++          scenario == 1 ? proto::COARSE_AUTOFILL_FIELD_TYPE_OTP
++                        : proto::COARSE_AUTOFILL_FIELD_TYPE_CREDIT_CARD);
++    }
++    AddText(node, 8, "子树秘密canary-child");
++    auto interactive = BuildAgentObservationNodes(root, true);
++    ASSERT_EQ(interactive.nodes.size(), 1u);
++    const auto& metadata = interactive.nodes[0].GetDict();
++    EXPECT_EQ(metadata.FindInt("node_id"), 7);
++    EXPECT_EQ(metadata.FindBool("is_sensitive_control"), true);
++    EXPECT_FALSE(metadata.Find("text"));
++    EXPECT_FALSE(metadata.Find("label"));
++    EXPECT_EQ(Serialize(interactive).find("canary"), std::string::npos);
++    EXPECT_TRUE(BuildAgentObservationNodes(root, false).nodes.empty());
++  }
++}
++
++TEST(AgentObservationTest, OmitsFramesHiddenAndRedactedSubtrees) {
++  proto::ContentNode root;
++  auto* frame = root.add_children_nodes();
++  frame->mutable_content_attributes()->mutable_iframe_data();
++  AddText(frame, 1, "其他框架秘密");
++  auto* hidden = root.add_children_nodes();
++  hidden->mutable_content_attributes()->add_annotated_roles(
++      proto::ANNOTATED_ROLE_CONTENT_HIDDEN);
++  AddText(hidden, 2, "隐藏秘密");
++  auto* redacted = root.add_children_nodes();
++  redacted->mutable_content_attributes()->set_redaction_decision(
++      proto::REDACTION_DECISION_REDACTED_IS_OTP);
++  AddText(redacted, 3, "遮挡子树秘密");
++  AddText(&root, 4, "可见正文");
++  for (bool interactive : {false, true}) {
++    auto result = BuildAgentObservationNodes(root, interactive);
++    ASSERT_EQ(result.nodes.size(), 1u);
++    EXPECT_EQ(Serialize(result).find("秘密"), std::string::npos);
++    EXPECT_NE(Serialize(result).find("可见正文"), std::string::npos);
++  }
++}
++
++TEST(AgentObservationTest, ReusesSecretRedactionAndPreservesByteLimits) {
++  const std::string secret = "api_key=fixture-canary-secret123";
++  auto text = BoundedAgentObservationText(secret, 2048);
++  EXPECT_EQ(text.find("fixture-canary-secret123"), std::string::npos);
++  EXPECT_NE(text.find("[REDACTED]"), std::string::npos);
++  proto::ContentNode root;
++  auto* node = AddText(&root, 1, secret);
++  node->mutable_content_attributes()->set_label(secret);
++  EXPECT_EQ(Serialize(BuildAgentObservationNodes(root, true))
++                .find("fixture-canary-secret123"),
++            std::string::npos);
++  for (size_t remaining : {0u, 1u, 5u, 9u, 2048u}) {
++    auto bounded = BoundedAgentObservationText(
++        "中文内容" + std::string(3000, 'x'), remaining);
++    EXPECT_LE(bounded.size(), remaining);
++    EXPECT_TRUE(base::IsStringUTF8(bounded));
++  }
++}
++
++TEST(AgentObservationTest, StopsAtNodeAndTextBudgets) {
++  proto::ContentNode root;
++  for (int i = 1; i <= 600; ++i)
++    AddText(&root, i, "正文");
++  auto result = BuildAgentObservationNodes(root, false);
++  EXPECT_EQ(result.nodes.size(), 512u);
++  EXPECT_TRUE(result.truncated);
++  root.clear_children_nodes();
++  for (int i = 1; i <= 100; ++i)
++    AddText(&root, i, std::string(3000, 'x'));
++  result = BuildAgentObservationNodes(root, false);
++  EXPECT_TRUE(result.truncated);
++  size_t bytes = 0;
++  for (const auto& node : result.nodes) {
++    const auto* text = node.GetDict().FindString("text");
++    ASSERT_TRUE(text);
++    EXPECT_LE(text->size(), 2048u);
++    bytes += text->size();
++  }
++  EXPECT_LE(bytes, 128u * 1024u);
++}
++}  // namespace
++}  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
+index 096e527eaa..670f307621 100644
+--- a/chrome/browser/aegis/summary_policy.cc
++++ b/chrome/browser/aegis/summary_policy.cc
+@@ -553,6 +553,10 @@ bool ValidatePromptFields(const ModelPrompt& prompt, std::string* error) {
+ 
+ }  // namespace
+ 
++std::string SanitizeModelContextText(std::string_view text) {
++  return RedactRecognizableValues(NormalizeSecurityText(text).text);
++}
++
+ bool IsModelSummaryAllowed(const PageSnapshot& snapshot, std::string* reason) {
+   if (reason) {
+     reason->clear();
+diff --git a/chrome/browser/aegis/summary_policy.h b/chrome/browser/aegis/summary_policy.h
+index bad367adc4..98be85721e 100644
+--- a/chrome/browser/aegis/summary_policy.h
++++ b/chrome/browser/aegis/summary_policy.h
+@@ -6,6 +6,7 @@
+ 
+ #include <optional>
+ #include <string>
++#include <string_view>
+ #include <vector>
+ 
+ namespace aegis {
+@@ -36,6 +37,9 @@ struct ModelPrompt {
+   std::string user;
+ };
+ 
++// 摘要与Agent观察共享可识别秘密的清理规则；不声称识别任意私人文本。
++std::string SanitizeModelContextText(std::string_view text);
++
+ // browser 进程在调用任意兼容模型 API 前执行的强制策略。本机 loopback
+ // 也不能绕过敏感页的启发式摘要边界。拒绝时 reason 包含可展示的原因。
+ bool IsModelSummaryAllowed(const PageSnapshot& snapshot, std::string* reason);
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 62f96823a4..fd302f48cb 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -18,6 +18,7 @@ let snapshot: TaskSnapshot|null = null;
+ let selectedWorkflow: Workflow|null = null;
+ let busy = false;
+ let creatingTask = false;
++let creatingTaskPreviousId = '';
+ let selectedTaskId: string|null = null;
+ let taskCreationError = '';
+ let modelBusy = false;
+@@ -720,6 +721,11 @@ function render(next: TaskSnapshot) {
+ }
+ 
+ function showCreatedTask(next: TaskSnapshot) {
++  if (!next.taskId || next.taskId === creatingTaskPreviousId || next.lastError) {
++    taskCreationError = friendlyError(next.lastError, false) ||
++        loadTimeData.getString('planningGenericError');
++    throw new Error('Task creation did not return a new task');
++  }
+   creatingTask = false;
+   selectedTaskId = next.taskId;
+   render(next);
+@@ -732,6 +738,7 @@ async function withBusy(
+   }
+   busy = true;
+   if (createsTask) {
++    creatingTaskPreviousId = snapshot?.taskId || '';
+     creatingTask = true;
+     selectedTaskId = '';
+     autoRunTaskId = '';
+@@ -747,10 +754,11 @@ async function withBusy(
+     if (!createsTask) {
+       throw error;
+     }
+-    taskCreationError = loadTimeData.getString('planningGenericError');
++    taskCreationError ||= loadTimeData.getString('planningGenericError');
+   } finally {
+     if (createsTask) {
+       creatingTask = false;
++      creatingTaskPreviousId = '';
+     }
+     busy = false;
+     if (snapshot) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1fda803b65..681cca94d9 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.1。
+-inline constexpr char kProductVersion[] = "2.0.0.1";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (001)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.2。
++inline constexpr char kProductVersion[] = "2.0.0.2";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (002)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
+index edb92f0af0..eed6c5e07f 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
++++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
+@@ -11,6 +11,7 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/test/task_environment.h"
+ #include "base/values.h"
++#include "base/version.h"
+ #include "crypto/hash.h"
+ #include "mojo/core/embedder/embedder.h"
+ #include "net/http/http_status_code.h"
+@@ -23,7 +24,14 @@ namespace {
+ constexpr char kPlatform[] = "mac-arm64.dmg";
+ constexpr char kPayload[] = "representative update package";
+ 
+-base::DictValue Release(std::string version = "1.1.0.999") {
++// 下载回归始终构造当前产品的下一主版本，避免换代后意外只覆盖防降级分支。
++std::string FutureVersion() {
++  return base::NumberToString(base::Version(kProductVersion).components()[0] +
++                              1) +
++         ".0.0.1";
++}
++
++base::DictValue Release(std::string version = FutureVersion()) {
+   base::DictValue asset;
+   const std::string name = "GCSA-aegis-" + version + "-" + kPlatform;
+   asset.Set("name", name);
+@@ -52,7 +60,11 @@ ReleaseResult Parse(const base::DictValue& value) {
+ 
+ TEST(GitHubReleaseTest, NumericVersionsAndNoDowngrade) {
+   EXPECT_EQ(Parse(Release()).state, ReleaseState::kAvailable);
+-  EXPECT_EQ(Parse(Release("1.1.0.9999")).state, ReleaseState::kAvailable);
++  for (const char* newer : {"1.1.0.999", "1.1.0.9999", "2.0.0.1"}) {
++    EXPECT_EQ(
++        ParseGitHubRelease(JSON(Release(newer)), "1.1.0.100", kPlatform).state,
++        ReleaseState::kAvailable);
++  }
+   EXPECT_EQ(Parse(Release("1.1.0.1")).state, ReleaseState::kLocalNewer);
+   EXPECT_EQ(Parse(Release("1.0.0.999")).state, ReleaseState::kLocalNewer);
+   EXPECT_EQ(Parse(Release("151.0.7922")).state, ReleaseState::kInvalid);
+-- 
+2.52.0
+

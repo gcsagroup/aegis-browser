@@ -1,4 +1,4 @@
-From 30c5166a2fd399173236063f20b2e7db0f323bb0 Mon Sep 17 00:00:00 2001
+From faf5fba1179b094d8a09db1773a8cca54338d304 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 10 Sep 2026 19:59:36 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=90=8C=E6=AD=A5=E5=BD=93=E5=89=8D=20Agent=20?=
@@ -69,7 +69,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/common/aegis/security_text.h
 
 diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
-index 24e913d6ae..98985be135 100644
+index b5cfce84a2..b67d1d945c 100644
 --- a/chrome/browser/actor/actor_navigation_throttle.cc
 +++ b/chrome/browser/actor/actor_navigation_throttle.cc
 @@ -46,11 +46,8 @@ bool IsDangerousMimeType(std::string_view mime_type) {
@@ -87,10 +87,10 @@ index 24e913d6ae..98985be135 100644
    content::NavigationHandle& navigation_handle = registry.GetNavigationHandle();
  
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 90b1c40546..0b2e7d1c6b 100644
+index 368585db72..ef3d2c5640 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-@@ -329,6 +329,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
+@@ -337,6 +337,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
                &ActorUiTabControllerInterface::OnUiTabStateChange,
                tab_controller->GetWeakPtr(), update.ui_tab_state,
                base::BindOnce(&OnUiChangeComplete, std::move(callback))));
@@ -14894,3 +14894,6 @@ index 0000000000..7b3da751d2
 +}  // namespace aegis
 +
 +#endif  // CHROME_COMMON_AEGIS_SECURITY_TEXT_H_
+-- 
+2.52.0
+

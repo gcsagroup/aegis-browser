@@ -1,0 +1,235 @@
+From 0738fc33dfb1ec9534c3e0c90d0f8a27c61ba546 Mon Sep 17 00:00:00 2001
+From: Aegis integration <aegis-integration@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 04:26:57 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E6=89=80=E9=80=89=E4=BB=BB?=
+ =?UTF-8?q?=E5=8A=A1=E8=87=AA=E5=8A=A8=E6=A8=A1=E5=9E=8B=E8=B7=AF=E7=94=B1?=
+ =?UTF-8?q?=E5=8F=8A=E5=90=88=E5=B9=B6=E5=9B=9E=E5=BD=92=EF=BC=8C=E5=80=99?=
+ =?UTF-8?q?=E9=80=89=20099?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  2 +
+ .../aegis/agent/aegis_agent_service.cc        | 48 ++++++++++++---
+ .../agent/aegis_agent_service_unittest.cc     | 58 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 4 files changed, 102 insertions(+), 10 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 10c1e2c7b4dd894a2f7dcbf23bb9e1635275ec13..c853991eba4a7bb36092d144253e4731c82aa7dd 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -458,6 +458,7 @@ test("aegis_browser_unittests") {
+       "//chrome/browser/actor",
+       "//chrome/browser/actor/ui:event_dispatcher",
+       "//chrome/browser/actor/ui:test_support",
++      "//chrome/browser/ui:test_support",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/browser/ui/webui/aegis",
+       "//chrome/browser/ui/webui/aegis_agent",
+@@ -466,6 +467,7 @@ test("aegis_browser_unittests") {
+       "//components/actor/core",
+       "//components/download/public/common:public",
+       "//components/download/public/common:test_support",
++      "//components/tabs:test_support",
+       "//components/undo",
+       "//content/test:test_support",
+     ]
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 13a0833d6928000c6ac70be25517e3162060cb3c..4d626e165725547df534338bc3225fe1ebef9ed0 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -902,9 +902,11 @@ void AegisAgentService::FlushTaskStoreForTesting(
+ AgentTask* AegisAgentService::CreateSelectedResearchTask(
+     std::string goal,
+     const std::vector<int32_t>& tab_ids) {
+-  const auto destination = ConfiguredModelDestination();
++  const auto model_route =
++      SelectModelRoute(DefaultModelRequirements(AgentWorkflowKind::kResearch),
++                       nullptr);
+   base::flat_set<int32_t> selected(tab_ids.begin(), tab_ids.end());
+-  if (!destination || tab_ids.size() < 3u || tab_ids.size() > 10u ||
++  if (!model_route || tab_ids.size() < 3u || tab_ids.size() > 10u ||
+       selected.size() != tab_ids.size()) {
+     return nullptr;
+   }
+@@ -924,7 +926,7 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
+     }
+   }
+   auto scope = BuildAgentWorkflowScope(
+-      AgentWorkflowKind::kResearch, std::move(origins), selected, *destination);
++      AgentWorkflowKind::kResearch, std::move(origins), selected, model_route->primary);
+   if (!scope) {
+     return nullptr;
+   }
+@@ -936,7 +938,21 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
+   scope->budgets.max_model_calls = 4;
+   scope->budgets.max_network_requests = 24;
+   scope->budgets.max_duration = base::Minutes(10);
+-  auto* task = CreateTask(std::move(goal), AgentMode::kAct, std::move(*scope));
++  // 创建时冻结模型、备用模型及计费快照，后续设置变化不扩大已有任务授权。
++  scope->model_fallback_destination = model_route->fallback;
++  scope->model_selection_mode = model_route->mode;
++  scope->model_catalog_revision = model_route->catalog_revision;
++  scope->model_generation_profile = model_route->primary_profile;
++  scope->fallback_generation_profile = model_route->fallback_profile;
++  scope->model_token_prices = model_route->primary_token_prices;
++  scope->fallback_token_prices = model_route->fallback_token_prices;
++  auto routing_metrics = CurrentGoalRoutingMetrics(false);
++  routing_metrics.primary_model_cost_microusd_per_million_tokens =
++      model_route->primary_cost_microusd_per_million_tokens;
++  routing_metrics.fallback_model_cost_microusd_per_million_tokens =
++      model_route->fallback_cost_microusd_per_million_tokens;
++  auto* task = CreateTask(std::move(goal), AgentMode::kAct, std::move(*scope),
++                          std::move(routing_metrics));
+   if (!task) {
+     return nullptr;
+   }
+@@ -971,9 +987,11 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
+ AgentTask* AegisAgentService::CreateSelectedTabGroupTask(
+     std::string goal,
+     const std::vector<int32_t>& tab_ids) {
+-  const auto destination = ConfiguredModelDestination();
++  const auto model_route =
++      SelectModelRoute(DefaultModelRequirements(AgentWorkflowKind::kBrowserSteward),
++                       nullptr);
+   base::flat_set<int32_t> selected(tab_ids.begin(), tab_ids.end());
+-  if (!destination || selected.empty() || selected.size() > 10u ||
++  if (!model_route || selected.empty() || selected.size() > 10u ||
+       selected.size() != tab_ids.size()) {
+     return nullptr;
+   }
+@@ -994,7 +1012,7 @@ AgentTask* AegisAgentService::CreateSelectedTabGroupTask(
+   }
+   // 勾选授权仅涵盖这批标签的元数据与分组，不读取正文或授予窗口全量访问。
+   auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kBrowserSteward, {},
+-                                       selected, *destination);
++                                       selected, model_route->primary);
+   if (!scope) {
+     return nullptr;
+   }
+@@ -1006,7 +1024,21 @@ AgentTask* AegisAgentService::CreateSelectedTabGroupTask(
+   scope->budgets.max_model_calls = 6;
+   scope->budgets.max_network_requests = 6;
+   scope->budgets.max_duration = base::Minutes(5);
+-  auto* task = CreateTask(std::move(goal), AgentMode::kAct, std::move(*scope));
++  // 创建时冻结模型、备用模型及计费快照，后续设置变化不扩大已有任务授权。
++  scope->model_fallback_destination = model_route->fallback;
++  scope->model_selection_mode = model_route->mode;
++  scope->model_catalog_revision = model_route->catalog_revision;
++  scope->model_generation_profile = model_route->primary_profile;
++  scope->fallback_generation_profile = model_route->fallback_profile;
++  scope->model_token_prices = model_route->primary_token_prices;
++  scope->fallback_token_prices = model_route->fallback_token_prices;
++  auto routing_metrics = CurrentGoalRoutingMetrics(false);
++  routing_metrics.primary_model_cost_microusd_per_million_tokens =
++      model_route->primary_cost_microusd_per_million_tokens;
++  routing_metrics.fallback_model_cost_microusd_per_million_tokens =
++      model_route->fallback_cost_microusd_per_million_tokens;
++  auto* task = CreateTask(std::move(goal), AgentMode::kAct, std::move(*scope),
++                          std::move(routing_metrics));
+   if (!task || !BeginPlanning(task->id())) {
+     return nullptr;
+   }
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 5605abc15ce2be3dc66df8b1a7cdca21b05fef11..6d4636b196fd68a0608d72aff951114161016d13 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -31,6 +31,7 @@
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h"
++#include "chrome/browser/ui/browser_window/test/mock_browser_window_interface.h"
+ #include "chrome/common/actor/action_result.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -41,6 +42,7 @@
+ #include "components/os_crypt/async/browser/os_crypt_async.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/undo/undo_manager.h"
++#include "components/tabs/public/mock_tab_interface.h"
+ #include "content/public/test/browser_task_environment.h"
+ #include "crypto/sha2.h"
+ #include "net/http/http_status_code.h"
+@@ -517,6 +519,62 @@ class AegisAgentServiceTest : public testing::Test {
+   TestingProfileManager profile_manager_;
+ };
+ 
++TEST_F(AegisAgentServiceTest, SelectedTasksFreezeAutomaticModelPoolRoute) {
++  auto* settings = AegisServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(settings);
++  std::vector<AgentModelCatalogEntry> catalog = {
++      ServiceModelEntry("primary", "http://127.0.0.1:8771/v1", "primary", 20),
++      ServiceModelEntry("fallback", "http://127.0.0.1:8772/v1", "fallback", 10)};
++  catalog[0].cost_microusd_per_million_tokens = 123;
++  catalog[1].cost_microusd_per_million_tokens = 456;
++  std::string error;
++  ASSERT_TRUE(settings->SetAgentModelRoutingSettings(
++      AgentModelSelectionMode::kBalanced, catalog, &error)) << error;
++  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
++  ASSERT_TRUE(service);
++  ASSERT_FALSE(service->ConfiguredModelDestination());
++  const int revision = settings->AgentModelCatalogRevision();
++  testing::NiceMock<MockBrowserWindowInterface> window;
++  ON_CALL(window, GetType()).WillByDefault(
++      testing::Return(BrowserWindowInterface::TYPE_NORMAL));
++  std::vector<std::unique_ptr<tabs::MockTabInterface>> tabs;
++  std::vector<int32_t> ids;
++  for (int index = 0; index < 3; ++index) {
++    auto tab = std::make_unique<tabs::MockTabInterface>();
++    ON_CALL(*tab, GetProfile()).WillByDefault(testing::Return(profile_.get()));
++    ON_CALL(*tab, GetURL()).WillByDefault(testing::Return(
++        GURL("https://fixture.example/" + base::NumberToString(index))));
++    ON_CALL(*tab, GetBrowserWindowInterface()).WillByDefault(
++        testing::Return(&window));
++    ids.push_back(tab->GetHandle().raw_value());
++    tabs.push_back(std::move(tab));
++  }
++  auto* research = service->CreateSelectedResearchTask("比较所选页面", ids);
++  auto* grouping = service->CreateSelectedTabGroupTask("分组所选标签", ids);
++  ASSERT_TRUE(research);
++  ASSERT_TRUE(grouping);
++  catalog[0].destination.model = "new-primary";
++  ASSERT_TRUE(settings->SetAgentModelRoutingSettings(
++      AgentModelSelectionMode::kBalanced, catalog, &error)) << error;
++  for (auto* task : {research, grouping}) {
++    EXPECT_EQ(task->scope().model_destination.model, "primary");
++    ASSERT_TRUE(task->scope().model_fallback_destination);
++    EXPECT_EQ(task->scope().model_fallback_destination->model, "fallback");
++    EXPECT_EQ(task->scope().model_selection_mode,
++              AgentModelSelectionMode::kBalanced);
++    EXPECT_EQ(task->scope().model_catalog_revision, revision);
++    EXPECT_EQ(task->model_routing_metrics()
++                  .primary_model_cost_microusd_per_million_tokens, 123);
++    EXPECT_EQ(task->model_routing_metrics()
++                  .fallback_model_cost_microusd_per_million_tokens, 456);
++    EXPECT_EQ(task->scope().allowed_tab_ids.size(), 3u);
++    EXPECT_EQ(task->state(), AgentTaskState::kAwaitingTaskConsent);
++  }
++  EXPECT_TRUE(research->scope().selected_pages_research);
++  EXPECT_TRUE(grouping->scope().selected_tab_group);
++  EXPECT_FALSE(grouping->scope().AllowsTool("page.observe"));
++}
++
+ TEST_F(AegisAgentServiceTest, ResearchCompletionWaitsForStorageSuccess) {
+   AegisAgentService service(profile_);
+   FlushTaskStore(&service);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9a3761e33276d836ca7d81447c83fa5700fc0ab2..4f1bd8132ff56a302a34523730a3527969b306a1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.98";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (098)";
++inline constexpr char kProductVersion[] = "2.0.0.99";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (099)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

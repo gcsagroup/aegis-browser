@@ -1,0 +1,183 @@
+From 0098fd9568ecc07cef35915030acbe171a7ed066 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 07:08:20 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BB=8E=E7=BB=9F=E4=B8=80=E4=BA=A7=E5=93=81?=
+ =?UTF-8?q?=E7=89=88=E6=9C=AC=E7=94=9F=E6=88=90App=E5=85=83=E6=95=B0?=
+ =?UTF-8?q?=E6=8D=AE=E5=B9=B6=E9=80=92=E5=A2=9E037?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/BUILD.gn                               | 20 ++++++++-
+ chrome/app/app-Info.plist                     |  6 +--
+ .../ui/webui/help/aegis_github_update.h       |  6 +--
+ chrome/tools/build/aegis_product_plist.py     | 42 +++++++++++++++++++
+ .../tools/build/aegis_product_plist_test.py   | 40 ++++++++++++++++++
+ 5 files changed, 105 insertions(+), 9 deletions(-)
+ create mode 100644 chrome/tools/build/aegis_product_plist.py
+ create mode 100644 chrome/tools/build/aegis_product_plist_test.py
+
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index c5d7469ead..4afe7dc5a7 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -529,8 +529,26 @@ if (is_win) {
+     }
+   }
+ 
++  action("aegis_product_app_plist") {
++    script = "tools/build/aegis_product_plist.py"
++    inputs = [
++      "app/app-Info.plist",
++      "browser/ui/webui/help/aegis_github_update.h",
++    ]
++    outputs = [ "$target_gen_dir/aegis_app-Info.plist" ]
++    args = [
++      "--template",
++      rebase_path(inputs[0], root_build_dir),
++      "--version-header",
++      rebase_path(inputs[1], root_build_dir),
++      "--output",
++      rebase_path(outputs[0], root_build_dir),
++    ]
++  }
++
+   tweak_info_plist("chrome_app_plist") {
+-    info_plist = "app/app-Info.plist"
++    info_plist = "$target_gen_dir/aegis_app-Info.plist"
++    deps = [ ":aegis_product_app_plist" ]
+     args = [
+       "--breakpad=0",
+       "--scm=1",
+diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
+index 77fcd36f3a..b46a88ce58 100644
+--- a/chrome/app/app-Info.plist
++++ b/chrome/app/app-Info.plist
+@@ -2,11 +2,7 @@
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ <plist version="1.0">
+ <dict>
+-  <!-- 产品更新版本独立于 Chromium 的框架定位版本。 -->
+-  <key>AegisProductVersion</key>
+-  <string>1.1.0.3</string>
+-  <key>AegisProductVersionLabel</key>
+-  <string>Ver 1.1 (003)</string>
++  <!-- 产品版本由更新器统一常量在构建时生成。 -->
+ 	<key>CFBundleDevelopmentRegion</key>
+ 	<string>en</string>
+ 	<key>CFBundleDisplayName</key>
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index a60236d17b..f818303294 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.36。
+-inline constexpr char kProductVersion[] = "1.1.0.36";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (036)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.37。
++inline constexpr char kProductVersion[] = "1.1.0.37";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (037)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/tools/build/aegis_product_plist.py b/chrome/tools/build/aegis_product_plist.py
+new file mode 100644
+index 0000000000..0e445c5231
+--- /dev/null
++++ b/chrome/tools/build/aegis_product_plist.py
+@@ -0,0 +1,42 @@
++#!/usr/bin/env python3
++"""从更新器统一版本常量生成App元数据，拒绝缺失、重复或不一致的版本。"""
++import argparse
++from pathlib import Path
++import plistlib
++import re
++
++
++def product_version(header):
++    versions = re.findall(r'^inline constexpr char kProductVersion\[\] = "([^"]+)";$', header, re.M)
++    labels = re.findall(r'^inline constexpr char kProductVersionLabel\[\] = "([^"]+)";$', header, re.M)
++    if len(versions) != 1 or len(labels) != 1:
++        raise ValueError('产品版本常量必须各自唯一存在')
++    version = versions[0]
++    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
++        raise ValueError('产品版本必须是四段规范十进制数')
++    major, minor, patch, build = map(int, version.split('.'))
++    if any(part > 65535 for part in (major, minor, patch, build)):
++        raise ValueError('产品版本分量超出上限')
++    label = f'Ver {major}.{minor} ({build:03d})'
++    if labels[0] != label:
++        raise ValueError('产品版本和显示标签不一致')
++    return version, label
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--template', type=Path, required=True)
++    parser.add_argument('--version-header', type=Path, required=True)
++    parser.add_argument('--output', type=Path, required=True)
++    args = parser.parse_args()
++    version, label = product_version(args.version_header.read_text())
++    value = plistlib.loads(args.template.read_bytes())
++    if not isinstance(value, dict):
++        raise ValueError('App元数据模板必须是字典')
++    value['AegisProductVersion'] = version
++    value['AegisProductVersionLabel'] = label
++    args.output.write_bytes(plistlib.dumps(value, sort_keys=False))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/chrome/tools/build/aegis_product_plist_test.py b/chrome/tools/build/aegis_product_plist_test.py
+new file mode 100644
+index 0000000000..11b6d3c6a5
+--- /dev/null
++++ b/chrome/tools/build/aegis_product_plist_test.py
+@@ -0,0 +1,40 @@
++"""核对版本生成的正常输入、拒绝输入及失败后的恢复。"""
++import plistlib
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import unittest
++from aegis_product_plist import product_version
++
++
++def header(version='1.1.0.37', label='Ver 1.1 (037)'):
++    return f'inline constexpr char kProductVersion[] = "{version}";\ninline constexpr char kProductVersionLabel[] = "{label}";\n'
++
++
++class ProductVersionTest(unittest.TestCase):
++    def test_shared_version(self):
++        self.assertEqual(product_version(header()), ('1.1.0.37', 'Ver 1.1 (037)'))
++        self.assertEqual(product_version(header('2.0.0.1001', 'Ver 2.0 (1001)')), ('2.0.0.1001', 'Ver 2.0 (1001)'))
++
++    def test_reject_invalid_and_ambiguous(self):
++        for text in ['', header() + header(), header(label='Ver 1.1 (003)'),
++                     header('1.1.0.037'), header('1.1.0.-1'), header('1.1.0.65536'), header('1.1.37')]:
++            with self.subTest(text=text), self.assertRaises(ValueError):
++                product_version(text)
++
++    def test_cli_failure_preserves_output_and_recovery(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root = Path(folder); template = root / 'template.plist'; source = root / 'version.h'; output = root / 'result.plist'
++            template.write_bytes(plistlib.dumps({'CFBundleExecutable': '${EXECUTABLE_NAME}', 'CFBundleVersion': '${CHROMIUM_VERSION}', 'Nested': {'Keep': True}, 'AegisProductVersion': '1.1.0.3'}))
++            command = [sys.executable, str(Path(__file__).with_name('aegis_product_plist.py')), '--template', str(template), '--version-header', str(source), '--output', str(output)]
++            source.write_text(header()); subprocess.run(command, check=True, capture_output=True)
++            value = plistlib.loads(output.read_bytes()); self.assertEqual(value['AegisProductVersion'], '1.1.0.37'); self.assertEqual(value['CFBundleExecutable'], '${EXECUTABLE_NAME}'); self.assertEqual(value['Nested'], {'Keep': True})
++            original = output.read_bytes(); source.write_text(header(label='Ver 1.1 (003)'))
++            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0); self.assertEqual(output.read_bytes(), original)
++            source.write_text(header('2.0.0.1', 'Ver 2.0 (001)')); subprocess.run(command, check=True, capture_output=True)
++            self.assertEqual(plistlib.loads(output.read_bytes())['AegisProductVersionLabel'], 'Ver 2.0 (001)')
++
++
++if __name__ == '__main__':
++    unittest.main()
+-- 
+2.52.0
+
