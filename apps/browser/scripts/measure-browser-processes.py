@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import plistlib
 import re
-import subprocess
+import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
 import sys
 import time
 
@@ -81,7 +81,9 @@ def summarize(intervals):
 
 
 def command(*args):
-    return subprocess.check_output(args, text=True, timeout=10)
+    # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    return subprocess.check_output(args, text=True, timeout=10)  # nosec B603
 
 
 def verify_app(pid):

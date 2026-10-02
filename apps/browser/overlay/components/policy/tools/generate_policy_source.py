@@ -17,14 +17,17 @@ from collections import namedtuple
 from collections import OrderedDict
 from functools import cmp_to_key
 from functools import partial
-import ast
 import json
-import os
 import re
 import sys
 import textwrap
 
-from xml.sax.saxutils import escape as xml_escape
+from html import escape
+
+
+def xml_escape(value):
+  """只转义 XML 文本的 &、<、>，不解析 XML，也不改写引号。"""
+  return escape(value, quote=False)
 
 CHROME_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome'
 CHROME_FOR_TESTING_POLICY_KEY = CHROME_POLICY_KEY + ' for Testing'
@@ -358,29 +361,31 @@ def main():
       policy_atomic_groups, key=lambda group: group.name)
 
 
-  def GenerateFile(path, writer, sorted=False, xml=False, mutable=False):
+  def GenerateFile(path, writer, sort_by_name=False, xml=False, mutable=False):
     if path:
       with open(path, 'w', encoding='utf-8') as f:
         _OutputGeneratedWarningHeader(f, template_file_name, xml)
-        writer(sorted and sorted_policy_details or policy_details,
-               sorted and sorted_policy_atomic_groups or policy_atomic_groups,
+        writer(sort_by_name and sorted_policy_details or policy_details,
+               sort_by_name and sorted_policy_atomic_groups or policy_atomic_groups,
                target_platform, f, risk_tags, args.chunking, mutable)
 
   if args.header_path:
-    GenerateFile(args.header_path, _WritePolicyConstantHeader, sorted=True)
+    GenerateFile(args.header_path, _WritePolicyConstantHeader, sort_by_name=True)
     # Also write a version of the header with get_proto_mutable() functions.
-    assert args.header_path.endswith('.h')
+    if not (args.header_path.endswith('.h')):
+      raise AssertionError("政策定义不满足生成约束")
     GenerateFile(args.header_path.replace('.h', '_mutable.h'),
                  _WritePolicyConstantHeader,
-                 sorted=True,
+                 sort_by_name=True,
                  mutable=True)
   if args.source_path:
-    GenerateFile(args.source_path, _WritePolicyConstantSource, sorted=True)
+    GenerateFile(args.source_path, _WritePolicyConstantSource, sort_by_name=True)
     # Also write a version of the source with get_proto_mutable() functions.
-    assert args.source_path.endswith('.cc')
+    if not (args.source_path.endswith('.cc')):
+      raise AssertionError("政策定义不满足生成约束")
     GenerateFile(args.source_path.replace('.cc', '_mutable.cc'),
                  _WritePolicyConstantSource,
-                 sorted=True,
+                 sort_by_name=True,
                  mutable=True)
   if args.risk_header_path:
     GenerateFile(args.risk_header_path, _WritePolicyRiskTagHeader)
@@ -389,7 +394,7 @@ def main():
   if args.chrome_settings_proto_path:
     GenerateFile(args.chrome_settings_proto_path,
                  _WriteChromeSettingsProtobuf,
-                 sorted=True)
+                 sort_by_name=True)
 
   if target_platform == 'android' and args.app_restrictions_path:
     GenerateFile(args.app_restrictions_path, _WriteAppRestrictions, xml=True)
@@ -723,7 +728,8 @@ class SchemaNodesGenerator:
         sortedSeq[i] + 1 == sortedSeq[i + 1] for i in range(len(sortedSeq) - 1))
 
   def GetEnumIntegerType(self, schema, is_sensitive_value, name):
-    assert all(type(x) == int for x in schema['enum'])
+    if not (all(type(x) == int for x in schema['enum'])):
+      raise AssertionError("政策定义不满足生成约束")
     possible_values = schema['enum']
     if self.IsConsecutiveInterval(possible_values):
       index = self.AppendRestriction(max(possible_values), min(possible_values))
@@ -739,7 +745,8 @@ class SchemaNodesGenerator:
                              'integer with enumeration restriction: %s' % name)
 
   def GetEnumStringType(self, schema, is_sensitive_value, name):
-    assert all(type(x) == str for x in schema['enum'])
+    if not (all(type(x) == str for x in schema['enum'])):
+      raise AssertionError("政策定义不满足生成约束")
     offset_begin = len(self.string_enums)
     self.string_enums += schema['enum']
     offset_end = len(self.string_enums)
@@ -803,7 +810,8 @@ class SchemaNodesGenerator:
       return schema['$ref']
 
     is_sensitive_value = schema.get('sensitiveValue', False)
-    assert type(is_sensitive_value) is bool
+    if not (type(is_sensitive_value) is bool):
+      raise AssertionError("政策定义不满足生成约束")
 
     if schema['type'] in SIMPLE_SCHEMA_NAME_MAP:
       if not self.SchemaHaveRestriction(schema):
@@ -870,15 +878,18 @@ class SchemaNodesGenerator:
 
       required_begin = len(self.required_properties)
       required_properties = schema.get('required', [])
-      assert type(required_properties) is list
-      assert all(type(x) == str for x in required_properties)
+      if not (type(required_properties) is list):
+        raise AssertionError("政策定义不满足生成约束")
+      if not (all(type(x) == str for x in required_properties)):
+        raise AssertionError("政策定义不满足生成约束")
       self.required_properties += required_properties
       required_end = len(self.required_properties)
 
       # Check that each string in |required_properties| is in |properties|.
       properties = schema.get('properties', {})
       for name in required_properties:
-        assert name in properties
+        if not (name in properties):
+          raise AssertionError("政策定义不满足生成约束")
 
       case_insensitive_lookup_begin = len(self.case_insensitive_lookup)
       indices = list(range(begin, end))
@@ -897,7 +908,8 @@ class SchemaNodesGenerator:
       self.schema_nodes[index] = self.schema_nodes[index]._replace(extra=extra)
       return index
     else:
-      assert False
+      if not (False):
+        raise AssertionError("政策定义不满足生成约束")
 
   def GenerateAndCollectID(self, schema, name):
     """A wrapper of Generate(), will take the return value, check and add 'id'
@@ -921,7 +933,8 @@ class SchemaNodesGenerator:
             '//  Type' + ' ' * 27 +
             'Extra  IsSensitiveValue HasSensitiveChildren\n')
     for schema_node in self.schema_nodes:
-      assert schema_node.extra >= MIN_INDEX and schema_node.extra <= MAX_INDEX
+      if not (schema_node.extra >= MIN_INDEX and schema_node.extra <= MAX_INDEX):
+        raise AssertionError("政策定义不满足生成约束")
       comment = ('\n' + ' ' * 69 + '// ').join(sorted(schema_node.comments))
       f.write('  { base::Value::%-19s %4s %-16s %-5s },  // %s\n' %
               (schema_node.schema_type + ',', str(schema_node.extra) + ',',
@@ -944,8 +957,9 @@ class SchemaNodesGenerator:
           '  Additional CaseInsensitiveLookupBegin CaseInsensitiveLookupEnd\n')
       for properties_node in self.properties_nodes:
         for i in range(0, len(properties_node) - 1):
-          assert (properties_node[i] >= MIN_INDEX and
-                  properties_node[i] <= MAX_INDEX)
+          if not (properties_node[i] >= MIN_INDEX and
+                  properties_node[i] <= MAX_INDEX):
+            raise AssertionError("政策定义不满足生成约束")
         f.write('  { %5d, %5d, %5d, %5d, %10d, %5d, %5d, %5d },  // %s\n' %
                 properties_node)
       f.write('};\n\n')
@@ -1159,9 +1173,11 @@ namespace {namespace} {{
 ''')
   for policy in policies:
     if policy.is_supported:
-      assert policy.id >= MIN_POLICY_ID and policy.id <= MAX_POLICY_ID
-      assert (policy.max_size >= MIN_EXTERNAL_DATA_SIZE and
-              policy.max_size <= MAX_EXTERNAL_DATA_SIZE)
+      if not (policy.id >= MIN_POLICY_ID and policy.id <= MAX_POLICY_ID):
+        raise AssertionError("政策定义不满足生成约束")
+      if not (policy.max_size >= MIN_EXTERNAL_DATA_SIZE and
+              policy.max_size <= MAX_EXTERNAL_DATA_SIZE):
+        raise AssertionError("政策定义不满足生成约束")
       f.write('  // %s\n' % policy.name)
       source_restriction = 'kSourceRestrictionNone'
       if policy.cloud_only:
@@ -1722,7 +1738,8 @@ def _GetProtobufTypes():
 #------------------ app restrictions -------------------------------#
 
 
-ENROLLMENT_TOKEN_POLICY_NAME = 'CloudManagementEnrollmentToken'
+# 政策标识符，不含注册凭据的值。
+ENROLLMENT_TOKEN_POLICY_NAME = 'CloudManagementEnrollmentToken'  # nosec B105
 
 
 def _FormatDefaultValue(default_value):

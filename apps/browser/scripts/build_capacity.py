@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
+import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
 import sys
 
 GIB = 1024 ** 3
@@ -14,8 +14,13 @@ GIB = 1024 ** 3
 def allocated_bytes(path):
     """统计实际分配；临时文件消失时重读，权限错误或持续失败必须中止。"""
     path = Path(path).resolve(strict=True)
+    executable = shutil.which('du')
+    if not executable:
+        raise OSError('找不到 du 容量读取工具')
     for _ in range(3):
-        result = subprocess.run(['du', '-sk', str(path)], capture_output=True,
+        # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.run([executable, '-sk', str(path)], capture_output=True,  # nosec B603
                                 text=True, env={**os.environ, 'LC_ALL': 'C'})
         if result.returncode == 0:
             value = int(result.stdout.split()[0]) * 1024

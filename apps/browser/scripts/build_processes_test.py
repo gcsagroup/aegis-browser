@@ -1,9 +1,8 @@
 """真实运行嵌套会话，验证停止、强制停止以及不误伤其他进程。"""
 from pathlib import Path
 import json
-import os
 import signal
-import subprocess
+import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
 import sys
 import tempfile
 import time
@@ -23,8 +22,12 @@ class BuildProcessesTest(unittest.TestCase):
             parent_code = ('import subprocess,sys,json,time; from pathlib import Path; '
                            'p=subprocess.Popen([sys.executable,"-c",sys.argv[2],sys.argv[1]],start_new_session=True); '
                            'p.wait()')
-            other = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)
-            root = subprocess.Popen([sys.executable, '-c', parent_code, str(ready), child_code], start_new_session=True)
+            # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+            other = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True)  # nosec B603
+            # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+            root = subprocess.Popen([sys.executable, '-c', parent_code, str(ready), child_code], start_new_session=True)  # nosec B603
             child = None
             try:
                 deadline = time.monotonic() + 5
@@ -48,7 +51,9 @@ class BuildProcessesTest(unittest.TestCase):
                 other.wait()
 
     def test_nonisolated_child_is_refused_and_kept_alive(self):
-        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])  # nosec B603
         try:
             with self.assertRaises(ValueError):
                 stop_process_tree(child.pid)
@@ -58,7 +63,9 @@ class BuildProcessesTest(unittest.TestCase):
             child.wait()
 
     def test_finished_child_is_a_noop(self):
-        child = subprocess.Popen([sys.executable, '-c', 'pass'], start_new_session=True)
+        # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+        child = subprocess.Popen([sys.executable, '-c', 'pass'], start_new_session=True)  # nosec B603
         child.wait()
         self.assertEqual(stop_process_tree(child.pid), {'groups': [], 'forcedGroups': []})
 

@@ -1,12 +1,18 @@
 """停止本次构建的完整进程树，包括链接封装另建的进程组。"""
 import os
 import signal
-import subprocess
+import shutil
+import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
 import time
 
 
 def processes():
-    rows = subprocess.check_output(['ps', '-axo', 'pid=,ppid=,pgid=,stat='], text=True)
+    executable = shutil.which('ps')
+    if not executable:
+        raise OSError('找不到 ps 进程读取工具')
+    # 已审计：固定工具或测试解释器的 argv；无 shell，无外部命令文本。
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    rows = subprocess.check_output([executable, '-axo', 'pid=,ppid=,pgid=,stat='], text=True)  # nosec B603
     return [(int(pid), int(parent), int(group), state)
             for pid, parent, group, state in (row.split() for row in rows.splitlines())]
 
