@@ -902,9 +902,10 @@ void AegisAgentService::FlushTaskStoreForTesting(
 AgentTask* AegisAgentService::CreateSelectedResearchTask(
     std::string goal,
     const std::vector<int32_t>& tab_ids) {
+  std::string route_error;
   const auto model_route =
       SelectModelRoute(DefaultModelRequirements(AgentWorkflowKind::kResearch),
-                       nullptr);
+                       &route_error);
   base::flat_set<int32_t> selected(tab_ids.begin(), tab_ids.end());
   if (!model_route || tab_ids.size() < 3u || tab_ids.size() > 10u ||
       selected.size() != tab_ids.size()) {
@@ -987,9 +988,10 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
 AgentTask* AegisAgentService::CreateSelectedTabGroupTask(
     std::string goal,
     const std::vector<int32_t>& tab_ids) {
+  std::string route_error;
   const auto model_route =
       SelectModelRoute(DefaultModelRequirements(AgentWorkflowKind::kBrowserSteward),
-                       nullptr);
+                       &route_error);
   base::flat_set<int32_t> selected(tab_ids.begin(), tab_ids.end());
   if (!model_route || selected.empty() || selected.size() > 10u ||
       selected.size() != tab_ids.size()) {
