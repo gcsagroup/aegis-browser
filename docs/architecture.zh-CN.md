@@ -57,7 +57,7 @@ Node-only AST 分析、有界行为/来源函数、本地联邦模拟和 V8 Igni
 
 - Chromium API 凭据是可选项，通过操作系统加密存储，并按 API 格式和规范化端点隔离，界面不回显。
 - 远程摘要文本有界且经过脱敏，但完整 Chromium 出站、遥测、更新、崩溃报告和错误路径审计仍待完成。
-- 当前 iOS Agent 工作流离线运行，不构成生产远程模型路径。Safari 访问只读并受手势/租约约束；Share inbox 仅接收 URL，具有大小限制、过期和单次消费约束。
+- iOS 网页助手支持预览脱敏内容并确认后请求用户配置的模型；模型返回文字，不能调用浏览器操作工具。合成模型测试不代表外部服务质量。Safari 访问只读并受手势/租约约束；Share inbox 仅接收 URL，具有大小限制、过期和单次消费约束。
 - 本地或 Simulator 签名与结构检查不等于产品身份、分发签名、公证、provisioning、Archive、TestFlight 或已安装真机验收。
 - Chromium Android 仍受阻于合格 x86-64 Linux 构建、当前源码产物和真机验收。
 - iOS 真机验证为 `NOT_RUN`；默认浏览器 entitlement 为 `PENDING`；正式签名、Archive、TestFlight 和 App Store 交付均为 `NOT_RUN`。

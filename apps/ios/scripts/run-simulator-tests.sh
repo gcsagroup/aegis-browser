@@ -5,11 +5,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 IOS_ROOT="$(cd -P -- "${SCRIPT_DIR}/.." && pwd)"
 
+REPO_ROOT="$(cd -P -- "${IOS_ROOT}/../.." && pwd)"
+DERIVED_DATA="${AEGIS_IOS_DERIVED_DATA:-$(dirname "$REPO_ROOT")/GCSA-aegis-build/ios/DerivedData}"
 MODE="dry-run"
 PROJECT_PATH=""
 WORKSPACE_PATH=""
 SCHEME="${AEGIS_IOS_SCHEME:-Aegis}"
 TEST_PLAN="${AEGIS_IOS_TEST_PLAN:-}"
+ONLY_TESTING=()
 RUNTIME_ID="${AEGIS_IOS_RUNTIME_ID:-}"
 OUTPUT_DIR="${AEGIS_IOS_OUTPUT_DIR:-/tmp/aegis-ios-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 
@@ -33,6 +36,7 @@ usage() {
   --workspace PATH       指定 .xcworkspace
   --scheme NAME          Scheme，默认 Aegis
   --test-plan NAME       可选 Test Plan；未指定时运行 Scheme 中全部测试
+  --only-testing PATH    只运行指定测试，可重复（例如 AegisTests/ContentFilterTests）
   --runtime IDENTIFIER   Simulator runtime ID；默认选择最新可用 iOS runtime
   --output-dir PATH      必须是不存在的 /tmp/aegis-ios-* 绝对路径
   -h, --help             显示帮助
@@ -84,6 +88,12 @@ while [[ $# -gt 0 ]]; do
       TEST_PLAN="$2"
       shift 2
       ;;
+    --only-testing)
+      [[ $# -ge 2 ]] || die "--only-testing 缺少测试路径"
+      [[ "$2" =~ ^(AegisTests|AegisUITests)(/[A-Za-z0-9_]+){0,2}$ ]] || die "测试路径格式无效"
+      ONLY_TESTING+=("-only-testing:$2")
+      shift 2
+      ;;
     --runtime)
       [[ $# -ge 2 ]] || die "--runtime 缺少 identifier"
       RUNTIME_ID="$2"
@@ -115,11 +125,13 @@ case "$OUTPUT_DIR" in
   *'/../'*|*'/..') die "输出目录不能包含父目录跳转" ;;
 esac
 
-for required_tool in git node shasum xcodebuild xcrun; do
+for required_tool in git node python3 shasum xcodegen xcodebuild xcrun; do
   command -v "$required_tool" >/dev/null 2>&1 || die "缺少工具：$required_tool"
 done
 
 node "${SCRIPT_DIR}/verify-fixtures.mjs"
+node "${SCRIPT_DIR}/generate-tracker-rules.mjs" --check
+python3 "${SCRIPT_DIR}/simulator-fixture-server.py" --self-test
 node "${IOS_ROOT}/Tests/SharedWebExtension/SafariNavigationIdentityTests.mjs"
 node --test "${SCRIPT_DIR}/test-summarize-xccov.mjs"
 
@@ -287,16 +299,23 @@ printf '  Test Plan：%s\n' "${TEST_PLAN:-<Scheme 全部测试>}"
 printf '  Runtime：%s\n' "$RUNTIME_ID"
 printf '  输出：%s\n' "$OUTPUT_DIR"
 
-PHONE_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test
+PHONE_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test-without-building
   -destination "$PHONE_XCODE_DESTINATION"
-  -derivedDataPath "${OUTPUT_DIR}/DerivedData-iPhone"
-  -resultBundlePath "${OUTPUT_DIR}/iPhone.xcresult")
-TABLET_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test
+  -derivedDataPath "$DERIVED_DATA"
+  -parallel-testing-enabled NO -collect-test-diagnostics never
+  -resultBundlePath "${OUTPUT_DIR}/iPhone.xcresult" ${ONLY_TESTING[@]+"${ONLY_TESTING[@]}"})
+TABLET_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test-without-building
   -destination "$TABLET_XCODE_DESTINATION"
-  -derivedDataPath "${OUTPUT_DIR}/DerivedData-iPad"
-  -resultBundlePath "${OUTPUT_DIR}/iPad.xcresult")
+  -derivedDataPath "$DERIVED_DATA"
+  -parallel-testing-enabled NO -collect-test-diagnostics never
+  -resultBundlePath "${OUTPUT_DIR}/iPad.xcresult" ${ONLY_TESTING[@]+"${ONLY_TESTING[@]}"})
+
+BUILD_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" build-for-testing
+  -destination "$PHONE_XCODE_DESTINATION" -derivedDataPath "$DERIVED_DATA")
 
 if [[ "$MODE" == "dry-run" ]]; then
+  printf '构建时递增 project.yml 构建号，并在固定路径 %s 生成一次测试包。\n' "$DERIVED_DATA"
+  print_command "${BUILD_COMMAND[@]}"
   printf '\n将执行：\n'
   print_command "${PHONE_COMMAND[@]}"
   print_command "${TABLET_COMMAND[@]}"
@@ -329,8 +348,7 @@ write_input_manifest() {
   ) > "$destination"
 }
 
-write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt"
-INPUT_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-before.txt" | awk '{print $1}')"
+
 xcrun simctl list runtimes -j \
   | env AEGIS_RUNTIME_ID="$RUNTIME_ID" node -e '
       const fs = require("node:fs");
@@ -345,10 +363,10 @@ xcrun simctl list runtimes -j \
   printf 'project_or_workspace=%s\n' "$CONTAINER_LABEL"
   printf 'scheme=%s\n' "$SCHEME"
   printf 'test_plan=%s\n' "${TEST_PLAN:-<scheme-default>}"
+  printf 'test_filter=%s\n' "${ONLY_TESTING[*]:-<all>}"
   printf 'runtime=%s\n' "$RUNTIME_ID"
   printf 'git_sha=%s\n' "$GIT_SHA"
   printf 'git_tree_state=%s\n' "$GIT_TREE_STATE"
-  printf 'input_manifest_sha256=%s\n' "$INPUT_MANIFEST_SHA256"
   printf 'host_os=%s\n' "$(sw_vers -productName) $(sw_vers -productVersion) $(sw_vers -buildVersion)"
   printf 'host_arch=%s\n' "$(uname -m)"
   printf 'developer_dir=%s\n' "$(xcode-select -p)"
@@ -427,6 +445,52 @@ run_test() {
   fi
   return "$coverage_status"
 }
+
+# 固定产物目录只允许一个构建者。证据仍按每次运行独立保存。
+mkdir -p "$(dirname "$DERIVED_DATA")"
+LOCK_DIR="${DERIVED_DATA}.runner-lock"
+mkdir "$LOCK_DIR" 2>/dev/null || die "固定构建目录已有运行者：$LOCK_DIR"
+fixture_pid=""
+cleanup() {
+  if [[ -n "$fixture_pid" ]]; then kill "$fixture_pid" 2>/dev/null || true; fi
+  rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+fixture_ready() {
+  python3 - <<'PYTHON'
+import json, urllib.request
+try:
+    with urllib.request.urlopen('http://127.0.0.1:8768/v1/models', timeout=2) as response:
+        value = json.load(response)
+    assert value['data'][0]['id'] == 'aegis-simulator-fixture'
+except Exception:
+    raise SystemExit(1)
+PYTHON
+}
+if ! fixture_ready; then
+  python3 "${SCRIPT_DIR}/simulator-fixture-server.py" --port 8768 > "${OUTPUT_DIR}/fixture.log" 2>&1 &
+  fixture_pid=$!
+  for _attempt in 1 2 3 4 5; do
+    fixture_ready && break
+    kill -0 "$fixture_pid" 2>/dev/null || die "验收服务启动失败，检查 8768 端口和 fixture.log"
+    sleep 1
+  done
+  fixture_ready || die "验收服务尚未就绪"
+fi
+python3 - "$IOS_ROOT/project.yml" <<'PYTHON'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+text, count = re.subn(r'CURRENT_PROJECT_VERSION: (\d+)', lambda m: f'CURRENT_PROJECT_VERSION: {int(m[1]) + 1}', text)
+assert count == 1
+path.write_text(text)
+PYTHON
+xcodegen generate --spec "${IOS_ROOT}/project.yml"
+write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt"
+INPUT_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-before.txt" | awk '{print $1}')"
+printf 'input_manifest_sha256=%s\n' "$INPUT_MANIFEST_SHA256" >> "${OUTPUT_DIR}/run-metadata.txt"
+"${BUILD_COMMAND[@]}" > "${OUTPUT_DIR}/build.log" 2>&1 || die "构建失败，见 ${OUTPUT_DIR}/build.log"
 
 phone_status=0
 tablet_status=0

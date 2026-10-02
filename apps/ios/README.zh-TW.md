@@ -1,107 +1,59 @@
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [**繁體中文**](./README.zh-TW.md)
 
-# Aegis 原生 iOS 專案
+# GCSA Aegis · iPhone 與 iPad
 
-本目錄是 GCSA-aegis 的原生 iOS 產品線，不是 Chromium 的 WebKit 包裝層，也不是獨立擴充功能產品。目前原始碼包含 SwiftUI/WKWebView 瀏覽器、一般/私密隔離、內嵌 Safari/Share extensions、Agent Broker、共用 Agent Contract v1，以及四個離線確定性工作流程。
+採用 SwiftUI 與系統 WebKit 的原生瀏覽器，最低系統版本為 iOS 18.4。以符合全球 App Store（含中國大陸）的上架技術要求為開發目標。先完成功能與測試，提審資料由使用者後續提供；模擬器通過不代表正式發行資格。
 
-> **證據狀態 — 2026-08-28：`SIMULATOR_QUALIFIED_HARDENED`。** 此狀態只涵蓋目前具名的 iPhone/iPad Simulator 路徑，並綁定最新本機強化證據。實機驗證為 `NOT_RUN`；預設瀏覽器 entitlement 為 `PENDING`；正式簽署、Archive、TestFlight 與 App Store 交付皆為 `NOT_RUN`。專案整體仍是 **release No-Go**。
+## 目前功能
 
-## 環境與專案產生
+- 分頁與視窗：分組、重新命名、移動分頁及取消分組並保留頁面；一般分組可在重啟後復原，私密分組只留在記憶體。iPad 視窗分別儲存分頁和分組，共用書籤、下載與設定；網頁使用完整視窗，沒有常駐側邊欄。
 
-專案宣告 iOS 18.4 deployment target、Swift 6 嚴格並行、iPhone/iPad device family 與 Xcode 26。需要 Xcode 26 系列、可用的 iOS Simulator runtime、Node.js 和 XcodeGen。
+- 瀏覽與資料：搜尋、標籤、普通工作階段恢復、私密瀏覽、收藏與歷史、頁內尋找、系統分享與列印、工作區儲存、追加恢復、重新命名、刪除、匯入預覽及 JSON 匯出。
+- 網頁助手：明確選擇最多 5 個頁面，讀取可見正文，預覽去識別內容，再確認模型目的地。支援摘要、翻譯、問答、來源比較和商品比較，可回到原文並匯出報告。任務資料加密儲存，研究結果僅在主動選擇儲存後保留；恢復任務需重新讀取頁面及確認。
+- 模型服務：OpenAI 相容介面、Anthropic、Gemini；模型偵測及手動輸入。金鑰依服務及介面類型隔離儲存於 Keychain，模型請求不跟隨重新導向。
+- 收藏管理：預覽、確認、整理重複項目、撤銷與重新啟動後恢復；手動檢查連結，不自動刪除收藏。
+- 下載：HTTP(S)、進度、暫停、可用時續傳、取消、重試、系統背景傳輸、最多 16 個備用鏡像、Metalink 匯入確認、SHA-256／SHA-512 與大小校驗，以及分享到「檔案」。單一檔案上限為 1 GB。支援 HTTPS 與本機 HTTP；遠端明文 HTTP 仍受系統傳輸原則限制。
+- 保護：內建 EasyList／EasyPrivacy、手動更新、網路攔截、元素隱藏、網站例外、網址參數清理、風險網址檢查，以及歷史與網站資料清除。私密瀏覽停用助手、資料管理和持久下載。
+- 介面：簡體中文、繁體中文與英文；iPhone 底列及 iPad 完整視窗瀏覽、淺深色、大字體與橫向配置。
+- 擴充功能：分享擴充只交接短期有效的 HTTP(S) 連結；Safari 擴充保留有限的唯讀授權，交接網址後由主 App 再確認開啟。
 
-XcodeGen 沒有唯讀產生模式。先檢查工具與已提交專案；只有在明確需要重新產生時才執行第三個命令，並複核產生的差異：
+## 固定路徑建置與測試
 
-```bash
-xcodegen --version
-xcodebuild -list -project apps/ios/Aegis.xcodeproj
-xcodegen --spec apps/ios/project.yml
-```
-
-無正式簽署的 Simulator Debug 建置範例：
-
-```bash
-xcodebuild \
-  -project apps/ios/Aegis.xcodeproj \
-  -scheme Aegis \
-  -configuration Debug \
-  -sdk iphonesimulator \
-  -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath /tmp/aegis-ios-build-NEW-ID \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-```
-
-`/tmp/aegis-ios-build-NEW-ID` 應替換為新的暫存路徑。此命令只會產生本機 Simulator 建置證據，不等同於 Archive、正式簽署或可散布套件。
-
-## Simulator 測試
-
-先單獨驗證離線 fixture，再執行預設 dry-run：
+需要 Xcode、可用的 iOS Simulator runtime、XcodeGen、Node.js 和 Python 3。本輪使用 Xcode 27.0 / iOS Simulator 26.5。請保留模擬器預設臨時簽章；停用簽章可能導致 Keychain 測試失敗。
 
 ```bash
-node apps/ios/scripts/verify-fixtures.mjs
+bash apps/ios/scripts/run-simulator-tests.sh --dry-run
 bash apps/ios/scripts/run-simulator-tests.sh \
-  --dry-run \
-  --output-dir /tmp/aegis-ios-NEW-ID
+  --execute --output-dir /tmp/aegis-ios-YOUR-UNIQUE-RUN
 ```
 
-dry-run 會驗證 fixture 與 Safari 文件身分 Node harness、讀取 Simulator runtime/device type，並列印計畫命令；不會建立裝置、啟動測試或建立輸出目錄。
+腳本自動遞增 `project.yml` 的建置編號並產生工程，建置一次後，在兩部具名模擬器測試相同產物。建置目錄固定為倉庫同層的 `GCSA-aegis-build/ios/DerivedData`，App 固定於其下 `Build/Products/Debug-iphonesimulator/Aegis.app`。每次證據使用新的目錄，不清除既有模擬器或覆寫舊證據。
 
-明確需要執行 iPhone/iPad 測試時，請使用一個尚不存在的 `/tmp/aegis-ios-*` 目錄：
+驗收服務僅監聽 `127.0.0.1:8768`。網頁、檔案和模型回答皆為合成資料，透過真實 HTTP、WebKit 和檔案操作驗證流程；這不代表外部模型品質通過。腳本只管理自己啟動的服務程序，已有的相同服務會重用。
 
-```bash
-bash apps/ios/scripts/run-simulator-tests.sh \
-  --execute \
-  --output-dir /tmp/aegis-ios-NEW-ID-EXECUTE
-```
+手動體驗時，執行 `python3 apps/ios/scripts/simulator-fixture-server.py --port 8768`，瀏覽 `http://127.0.0.1:8768/article`，將相容介面設為 `http://127.0.0.1:8768/v1`，選取 `aegis-simulator-fixture` 模型。
 
-執行模式預設選擇最新可用的 iOS runtime，依序使用專用的 `Aegis QA iPhone 17` 與 `Aegis QA iPad Air 11-inch (M4)` Simulator，必要時只建立缺少的裝置。腳本不會 erase、delete、shutdown、uninstall 或清理任何 Simulator，也不會覆寫既有輸出；結果儲存在具名 log、metadata、summary 與 `.xcresult` 中。
+## 功能邊界
 
-可用參數包含 `--project`、`--workspace`、`--scheme`、`--test-plan`、`--runtime` 與 `--output-dir`。預設 scheme 是 `Aegis`；儲存庫也宣告 `Aegis-Debug` 與 `Aegis-Release`。原生 iOS 專案不屬於 pnpm workspace，不應把 `pnpm run quality:fast` 當成 Xcode 測試的替代品。
+每頁最多使用 24,000 個字元，超出會提示。不讀取跨來源框架、輸入值、密碼或 Cookie；偵測到敏感表單或秘密時停止傳送。模型只能回傳文字，不能付款、登入、修改網頁或呼叫操作工具。引用編號會檢查範圍，結論仍需核對原文。
 
-## 模組結構
+助手關閉或切到背景後停止，重新執行需要再次讀取與確認。下載排程由 iOS 管理，強制結束、系統終止、網路和伺服器行為可能阻止續傳。下載不使用網頁登入 Cookie；App 檢查起始與最終網址，背景傳輸的中間重新導向由系統處理。
 
-- `AegisApp`：SwiftUI App、iPhone/iPad 配置、瀏覽器與 Agent 任務中心，以及 Share inbox 取用入口。
-- `BrowserKit`：WKWebView 分頁、導覽、一般/私密設定、歷史記錄、書籤與 WebExtension 資源載入。
-- `AegisPolicyKit`：連結清理、PII 掃描、網路釣魚評分與策略快照解析。
-- `AgentKit`：Agent Contract v1 codec、授權與租約、資源登記、一次性動作能力、Broker，以及四個離線工作流程。
-- `SafariWebExtension` 與 `SharedWebExtension`：受使用者手勢和短租約約束的唯讀頁面觀察路徑。
-- `ShareExtension` 與 `Shared/ShareInbox.swift`：受限 HTTP(S) URL 的專用 App Group 交接。
-- `Tests` 與 `scripts`：單元/UI 測試原始碼、離線 fixture 驗證，以及 iPhone/iPad Simulator 執行入口。
-- `project.yml` 與 `Aegis.xcodeproj`：XcodeGen 唯一真源和目前產生的專案。
+BT/磁力、多連線加速、跨裝置同步、自動全網研究、Chromium 核心保護及任意網站自動操作尚未實作。Safari 宿主交接、外部模型品質、長時間背景與重新啟動，以及 VoiceOver 完整流程仍需個別驗收。
 
-## Agent 與安全邊界
+上一輪（2026-09-30）詳見[模擬器報告](../../docs/audit/ios-simulator-implementation-2026-09-30.zh-CN.md)。歷史證據僅適用於當時版本。
 
-- 一般與私密設定使用不同的 WKWebsiteDataStore、WKUserContentController 和擴充功能狀態；私密設定不會持久化，並停用歷史記錄、書籤與 Agent。
-- AgentKit 以不可變任務授權、文件租約、不可重複使用的資源 ID 登記和一次性 capability 約束動作；使用者同意前只允許本機確定性工作。
-- R1/R2 受保護動作需要獨立於任務授權的第二次確認；核准物件使用隨機 ID、最長 60 秒 TTL 和完整動作範圍摘要，復原與簽發都必須精確相符。進入簽發後，無論成功或拒絕都會先銷毀該核准，不能重播。
-- 四個工作流程維持離線受控：瀏覽器管家會在獨立 R1 動作確認後，對目前 Aegis 本機書籤執行移除追蹤參數、精確去重和穩定排序。交易使用 before/after 樹雜湊、Keychain 金鑰支援的 AES-GCM journal、File Protection、當機轉換判定與狀態漂移保護；App 重新啟動後只會復原「可復原」入口，仍需新的任務授權和獨立 R1 動作確認，絕不自動寫入。深度研究仍不讀取真實網站，安全下載不發起真實下載，購物助手不付款或下單；目前沒有生產遠端模型路徑。
-- Safari 路徑目前只觀察有界頁面資訊，受 profile、tab、frame、origin、route、worker instance、gesture nonce、isolated-world document token、navigation epoch 和短租約綁定。授權前不讀取 DOM/location；授權後的單次腳本任務會先核對完整 URL 與文件身分，再固定快照；導覽變更會安全拒絕或主動燒毀租約。結果尚未形成進入主 App/Agent 的完整產品管線，真實 Safari native messaging、Private Browsing 與 worker 生命週期也尚未跑通。
-- Share inbox 只接受無 credentials 的 HTTP(S) URL，並限制大小、有效期和取用次數；主 App 目前在取用後導覽，尚未在此路徑前接入完整 PolicyKit 掃描。
-- BrowserSession 主框架導覽已在網路載入前接入 AegisPolicyKit 的 LinkSanitizer 與 PhishingScorer，並在清除追蹤參數或阻擋高風險 URL 時顯示提示；PII Scanner 仍未接入真實出站/模型網路鏈。目前的 delegate 與 UI 測試不等同於網路層零請求儀器，也未涵蓋真實重新導向逐跳矩陣。
-- 共用合約 Schema 與 Golden Vectors 位於 [`packages/core/src/agent/contracts/v1`](../../packages/core/src/agent/contracts/v1/agent-contract-v1.schema.json)，Swift 測試讀取同一組向量；這證明合約相容範圍。書籤交易另有真實本機 Store 測試，但這些證據都不等於實機或發布安全證明。
+## Ver 2.2 功能對齊
 
-## 目前驗收證據
+- 內建 EasyList 與 EasyPrivacy，手動更新、網路攔截、元素隱藏、總開關和網站例外。未支援語法會跳過並顯示數量，不宣稱完整相容所有進階規則。
+- 最多 16 個下載鏡像依序重試、Metalink 匯入確認、SHA-256／SHA-512 和大小校驗，以及暫停下載恢復。
+- 任務目標與來源加密保存，主動恢復後重新讀取和確認；研究結果僅在使用者選擇保存後加密保留。
+- 工作區重新命名、刪除、JSON 匯入預覽和匯出。
 
-2026-08-28 的目前本機工作樹建置使用 Xcode 26.6、iOS Simulator 26.5：iPhone 17 共 113 項，112 通過、0 失敗、1 項依設計跳過（僅 iPad 分欄）；iPad Air 11-inch (M4) 共 113 項，113 通過、0 失敗。安全定向單元/整合測試 70/70、關鍵 UI 測試 4/4 通過；Safari Node 文件身分測試與 Release 測試入口隔離檢查也通過。
+詳見[驗證記錄](../../docs/audit/ios-feature-parity-2026-10-01.zh-CN.md)。規則資料保留上游來源和授權說明。
 
-Computer Use 可見驗收實際完成高風險導覽阻擋、追蹤參數清理、書籤整理跨重啟復原撤銷，以及再次重啟不重播。完整範圍、結果套件路徑、截圖與剩餘風險請參閱[《iOS Simulator 強化驗收記錄》](../../docs/audit/ios-simulator-hardening-2026-08-28.md)。舊[資格驗收記錄](../../docs/audit/ios-simulator-qualification-2026-08-28.md)保留為歷史基準；目前結果仍綁定 dirty 本機工作樹，不是乾淨提交、簽署成品或發布候選證據。
+本輪分頁分組、多視窗及 iPad 介面調整詳見[驗收記錄](../../docs/audit/ios-windows-and-tab-groups-2026-10-01.zh-CN.md)。
 
-## 已知發布門檻
+## 版本發布
 
-- 凍結並提交精確的 iOS 原始碼身分，複核 XcodeGen 重新產生差異。
-- 完成 Debug/Release 建置、最低系統與多 runtime、真實網站、生命週期、效能、無障礙和隱私矩陣。
-- 完成實機安裝，以及 Safari 權限、Share App Group、一般/私密隔離和 Agent 安全邊界的端對端驗收。
-- 擴充並驗證 PolicyKit 的 PII 出站執行路徑；若擴充到真實 DOM、真實下載或遠端模型，另做權限、同意、DLP、復原和出站驗收。主框架 URL 導覽策略與書籤跨重啟撤銷 journal 已納入 Simulator 範圍，但仍需真實網站和實機矩陣。
-- 準備並取得預設瀏覽器 entitlement；補齊 Privacy Manifest、隱私標籤、第三方聲明和出口合規資料。
-- 設定 Development Team/provisioning，完成正式簽署、Archive、TestFlight、App Store、安裝/升級/回復和散布授權。
-
-## 相關文件
-
-- [iOS Simulator 資格驗收記錄](../../docs/audit/ios-simulator-qualification-2026-08-28.md)
-- [iOS Simulator 強化驗收記錄](../../docs/audit/ios-simulator-hardening-2026-08-28.md)
-- [產品架構與 Agent 整合方案](../../docs/ios-product-architecture-and-agent-integration-2026-08-28.md)
-- [iOS 專案執行計畫](../../docs/ios-project-execution-plan-2026-08-28.md)
-- [Aegis Browser Agent v1 實作方案](../../docs/aegis-browser-agent-v1-implementation-plan-2026-08-28.md)
-- [Aegis Browser Agent v1 開發執行計畫](../../docs/aegis-browser-agent-v1-development-execution-plan-2026-08-28.md)
-- [儲存庫架構](../../docs/architecture.zh-TW.md)與[路線圖](../../docs/roadmap.zh-TW.md)
+[iOS 2.2.0 預發布版](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) 提供原始碼與驗證摘要；尚無簽章 IPA，無法直接安裝或提交 App Store。版本記錄見[變更日誌](../../CHANGELOG.zh-TW.md)。獨立工作樹可透過 `AEGIS_IOS_DERIVED_DATA` 沿用固定建置目錄；測試同時輸出 Swift 覆蓋率及輸入穩定性記錄。
