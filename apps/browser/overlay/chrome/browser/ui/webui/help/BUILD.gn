@@ -172,6 +172,7 @@ if (!is_android && !is_chromeos) {
       ":aegis_github_update",
       "//base/test:run_all_unittests",
       "//base/test:test_support",
+      "//build:branding_buildflags",
       "//chrome/browser/profile_resetter:profile_reset_report_proto",
       "//components/keyed_service/core",
       "//crypto",

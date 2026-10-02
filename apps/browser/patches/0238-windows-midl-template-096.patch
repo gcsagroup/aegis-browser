@@ -1,0 +1,47 @@
+From 50ae4fa69d7ca10454232d75742fa82363daeed7 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 22:25:26 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99=E6=9B=B4=E6=96=B0=E5=99=A8?=
+ =?UTF-8?q?=E7=94=9F=E6=88=90=E6=A8=A1=E6=9D=BF=E7=9A=84=E5=8E=9F=E6=9C=89?=
+ =?UTF-8?q?=E8=B7=AF=E5=BE=84=E6=AF=94=E8=BE=83=20096?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ build/toolchain/win/midl.py                        | 3 +++
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/build/toolchain/win/midl.py b/build/toolchain/win/midl.py
+index 8a53225c09..3ac4c5e25c 100644
+--- a/build/toolchain/win/midl.py
++++ b/build/toolchain/win/midl.py
+@@ -345,6 +345,9 @@ def uuid5_substitutions(dynamic_guids):
+ 
+ def normalize_dynamic_idl_comment(path, generated_idl, original_idl):
+     """只还原动态 GUID 暂存路径的编译器注释，保留接口和代理正文。"""
++    # 生成型 .template 的基准已使用暂存 .idl 路径，保持上游比较行为。
++    if not original_idl.endswith('.idl'):
++        return
+     with open(path, 'rb') as f:
+         contents = f.read()
+     prefix = b'/* Compiler settings for '
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 540158361a..129120ba49 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.95";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (095)";
++inline constexpr char kProductVersion[] = "2.0.0.96";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (096)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,0 +1,187 @@
+From 3bc448529ef4edc657016056eb5f6af4c157c087 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Thu, 17 Sep 2026 03:20:22 +0800
+Subject: [PATCH] =?UTF-8?q?=E7=94=B1=E5=8E=9F=E7=94=9F=E6=89=A7=E8=A1=8C?=
+ =?UTF-8?q?=E6=A0=87=E9=A2=98=E9=A1=B5=E7=9A=84=E6=9C=89=E7=95=8C=E5=8F=AA?=
+ =?UTF-8?q?=E8=AF=BB=E6=8F=90=E5=8F=96=202.0.040?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        | 16 +++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 35 ++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.h  |  8 ++++
+ .../aegis/agent/agent_execution_unittest.cc   | 46 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  6 +--
+ 5 files changed, 108 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index db638c4bdb..0629662d7d 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1781,6 +1781,22 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+       }
+     }
+   }
++  if (tool && expected_tool == "page.extract" && runtime.last_tab_id &&
++      runtime.next_step < plan->steps.size()) {
++    const auto document =
++        actor_bridge_.LastDocument(task_id, *runtime.last_tab_id);
++    if (document && actor_bridge_.IsObservedDocumentCurrent(
++                        task_id, *runtime.last_tab_id,
++                        document->document_token)) {
++      auto call = BuildTitleOnlyExtractionCall(
++          *task, plan->steps[runtime.next_step], runtime.attempt, *document, *tool);
++      if (call) {
++        // 保留正常工具授权、预算、提取和结果校验，不伪造模型响应或正文。
++        ExecuteRuntimeTool(task_id, std::move(*call), std::nullopt);
++        return;
++      }
++    }
++  }
+   std::string config_error;
+   std::optional<AgentModelClientConfig> config = ResolveModelConfig(
+       profile_, task->scope().model_destination, &config_error);
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index d64dc09bbb..ddb8871d2c 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -967,6 +967,41 @@ void ConstrainObservedExtractionTool(AgentModelToolDefinition* tool,
+   }
+ }
+ 
++std::optional<AgentToolCall> BuildTitleOnlyExtractionCall(
++    const AgentTask& task,
++    const AgentPlanStep& step,
++    int attempt,
++    const AgentDocumentRef& document,
++    const AgentModelToolDefinition& constrained_tool) {
++  const auto* fields = constrained_tool.input_schema.FindListByDottedPath(
++      "properties.fields.items.enum");
++  if (constrained_tool.name != "page.extract" ||
++      step.tool_name != "page.extract" ||
++      step.risk != AgentRiskLevel::kR0ReadOnly || !fields ||
++      fields->size() != 1u || !fields->contains("title") ||
++      attempt < 0 || attempt >= 3 || document.document_token.empty() ||
++      document.frame_token.empty() ||
++      !task.scope().AllowsTool("page.extract") ||
++      !task.AllowsTab(document.tab_id) ||
++      !task.scope().AllowsOrigin(document.committed_url)) {
++    return std::nullopt;
++  }
++  AgentToolCall call;
++  call.action_id = task.id() + ":" + step.step_id + ":" +
++                   std::to_string(attempt + 1);
++  if (call.action_id.size() > 128u) {
++    return std::nullopt;
++  }
++  call.tool_name = "page.extract";
++  call.document = document;
++  call.committed_url = document.committed_url;
++  call.arguments.Set("tab_id", document.tab_id);
++  call.arguments.Set("document_token", document.document_token);
++  call.arguments.Set("kind", "article");
++  call.arguments.Set("fields", base::ListValue().Append("title"));
++  return call;
++}
++
+ std::string BuildAgentExecutionPrompt(
+     const AgentTask& task,
+     const AgentTaskPlan& plan,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index 732c68a584..a4416ea655 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -71,6 +71,14 @@ void ConstrainDownloadIntegrityTool(AgentModelToolDefinition* tool,
+ void ConstrainObservedExtractionTool(AgentModelToolDefinition* tool,
+                                     const AgentToolResult* observation);
+ 
++// 当原生观察只允许标题时，直接执行该只读提取，不让模型反复猜不存在的正文。
++std::optional<AgentToolCall> BuildTitleOnlyExtractionCall(
++    const AgentTask& task,
++    const AgentPlanStep& step,
++    int attempt,
++    const AgentDocumentRef& document,
++    const AgentModelToolDefinition& constrained_tool);
++
+ AgentModelToolDefinition BuildSelectTranslationToolDefinition();
+ std::string BuildAgentTranslationSelectionSystemContract();
+ std::optional<std::string> BuildAgentTranslationSelectionPrompt(
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index d0d3804f7f..c4275e158f 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -114,6 +114,52 @@ TEST(AegisAgentExecutionTest, RequestedDownloadIntegrityRequiresExpectedHash) {
+   EXPECT_FALSE(AgentGoalRequestsDownloadIntegrity("取消下载"));
+ }
+ 
++TEST(AegisAgentExecutionTest, NativeTitleExtractionStaysWithinReadScope) {
++  auto scope = ExecutionScope();
++  scope.allowed_tools.insert("page.extract");
++  AgentTask task("title-only", "核对页面来源", AgentMode::kAsk, scope);
++  AgentPlanStep step{.step_id = "extract",
++                     .title = "提取原文",
++                     .tool_name = "page.extract",
++                     .risk = AgentRiskLevel::kR0ReadOnly};
++  AgentDocumentRef document{.tab_id = 7,
++                            .frame_token = "frame",
++                            .document_token = "current-document",
++                            .committed_url = GURL("https://fixture.example/path")};
++  AgentToolRegistry registry;
++  auto tool = registry.ModelToolForName("page.extract");
++  ASSERT_TRUE(tool);
++  AgentToolResult observed;
++  observed.ok = true;
++  observed.value.Set("title", "只有标题");
++  observed.value.Set("nodes", base::ListValue().Append(
++      base::DictValue().Set("text", "标题").Set("text_is_heading", true)));
++  ConstrainObservedExtractionTool(&*tool, &observed);
++  auto call = BuildTitleOnlyExtractionCall(task, step, 0, document, *tool);
++  ASSERT_TRUE(call);
++  EXPECT_EQ(call->tool_name, "page.extract");
++  EXPECT_EQ(call->arguments.FindInt("tab_id"), 7);
++  ASSERT_TRUE(call->arguments.FindList("fields"));
++  EXPECT_EQ(*call->arguments.FindList("fields"),
++            base::ListValue().Append("title"));
++  EXPECT_EQ(*call->arguments.FindString("document_token"), "current-document");
++  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 3, document, *tool));
++  document.tab_id = 8;
++  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
++  document.tab_id = 7;
++  document.committed_url = GURL("https://outside.example/path");
++  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
++  document.committed_url = GURL("https://fixture.example/path");
++  step.risk = AgentRiskLevel::kR2ExternalSideEffect;
++  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
++  step.risk = AgentRiskLevel::kR0ReadOnly;
++  // 有正文时仍按正常提取路径处理，不能降为只读取标题。
++  observed.value.FindList("nodes")->Append(
++      base::DictValue().Set("text", "实际正文").Set("text_is_heading", false));
++  ConstrainObservedExtractionTool(&*tool, &observed);
++  EXPECT_FALSE(BuildTitleOnlyExtractionCall(task, step, 0, document, *tool));
++}
++
+ AgentModelEvent ToolEvent(std::string name) {
+   AgentModelEvent event;
+   event.type = AgentModelEventType::kToolCall;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 0c0f76967e..2b0427c02e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.39。
+-inline constexpr char kProductVersion[] = "2.0.0.39";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (039)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
++inline constexpr char kProductVersion[] = "2.0.0.40";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (040)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

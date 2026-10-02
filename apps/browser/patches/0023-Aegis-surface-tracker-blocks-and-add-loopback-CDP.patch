@@ -1,4 +1,4 @@
-From f031c1ed5800c36fe342e0757cc2fc31fcc17f63 Mon Sep 17 00:00:00 2001
+From d3830d4c06888a3beacde6ac08e321fd599d2d5c Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:34:08 +0800
 Subject: [PATCH] Aegis: surface tracker blocks and add loopback CDP
@@ -673,7 +673,7 @@ index 0afc1143a1..8a64464ded 100644
                            std::string locale,
                            base::OnceCallback<void(SummarizeResult)> done,
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index b915ad9e27..002791e725 100644
+index 0bf98e6627..c2361e4b9c 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -5,6 +5,7 @@
@@ -684,7 +684,7 @@ index b915ad9e27..002791e725 100644
  
  #include <algorithm>
  #include <iterator>
-@@ -397,6 +398,7 @@
+@@ -402,6 +403,7 @@
  #include "media/media_buildflags.h"
  #include "media/mojo/buildflags.h"
  #include "media/mojo/mojom/speech_recognizer.mojom.h"
@@ -692,7 +692,7 @@ index b915ad9e27..002791e725 100644
  #include "mojo/public/cpp/bindings/remote.h"
  #include "net/base/data_url.h"
  #include "net/base/url_util.h"
-@@ -1850,6 +1852,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+@@ -1880,6 +1882,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
    if (RendererUpdater* service =
            RendererUpdaterFactory::GetForProfile(profile)) {
      service->InitializeRenderer(host);
@@ -703,7 +703,7 @@ index b915ad9e27..002791e725 100644
    }
  
    for (auto& part : extra_parts_) {
-@@ -6051,7 +6057,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -5970,7 +5976,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kFingerprintGuardEnabled),
            profile->GetPrefs()->GetBoolean(
@@ -714,7 +714,7 @@ index b915ad9e27..002791e725 100644
    return std::make_unique<GoogleURLLoaderThrottle>(
  #if BUILDFLAG(IS_ANDROID)
        client_data_header,
-@@ -6160,8 +6168,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+@@ -6079,8 +6087,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
        profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
    const bool aegis_cname_uncloak =
        profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled);
@@ -2114,10 +2114,10 @@ index cb3e12ef92..0ece297556 100644
    chrome::mojom::DynamicParamsPtr dynamic_params_
        GUARDED_BY(dynamic_params_lock_);
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index ed0897db8a..5794cea294 100644
+index 36daa816af..f6bdcbd759 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
-@@ -252,14 +252,16 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+@@ -265,14 +265,16 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
  
    bool aegis_tracker_blocking = true;
    bool aegis_cname_uncloak = true;
