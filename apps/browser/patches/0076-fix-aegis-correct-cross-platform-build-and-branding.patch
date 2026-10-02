@@ -1,4 +1,4 @@
-From f754de276b36427ac971fe347f46a0c80b7e2877 Mon Sep 17 00:00:00 2001
+From fefbfcb4d612e05ff379f476bee68205cc1087d3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 1 Sep 2026 21:42:39 +0800
 Subject: [PATCH] fix(aegis): correct cross-platform build and branding

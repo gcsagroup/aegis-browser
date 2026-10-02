@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BROWSER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 STORE_DIR="$BROWSER_DIR/overlay/chrome/browser/aegis/access"
 ARGS_FILE="$BROWSER_DIR/args/aegis.gn"
-PATCH_FILE="$BROWSER_DIR/patches/0116-feat-aegis-add-access-rule-store-recovery.patch"
-SERIES_FILE="$BROWSER_DIR/patches/series"
+PATCH_FILE="$BROWSER_DIR/patches/archive/main-151/0116-feat-aegis-add-access-rule-store-recovery.patch"
+SERIES_FILE="$BROWSER_DIR/patches/archive/main-151/series"
 TARGET="//chrome/browser/aegis/access:access_rule_store_unittests"
 
 fail() {

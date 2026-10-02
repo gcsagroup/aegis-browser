@@ -3,7 +3,7 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
-SRC="$CHROMIUM_ROOT/src"
+SRC="${CHROMIUM_SRC:-$CHROMIUM_ROOT/src}"
 OUT="${OUT_DIR:-$SRC/out/AegisAndroid}"
 VERSION="$(read_pinned_value "$VERSION_FILE" 2>/dev/null || echo "0.0.0")"
 APP_VERSION="${AEGIS_PACKAGE_VERSION:-0.1.0}"
@@ -154,7 +154,7 @@ identity_args=(
 if [[ "${AEGIS_ALLOW_DIRTY_IDENTITY:-0}" == "1" ]]; then
   identity_args+=(--allow-dirty)
 fi
-node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_args[@]}"
+AEGIS_IDENTITY_TARGET=android node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_args[@]}"
 
 STAGED_OUTPUTS=(
   "$STAGED_APK"

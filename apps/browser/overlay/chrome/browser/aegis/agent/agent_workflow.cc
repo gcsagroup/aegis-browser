@@ -12,8 +12,7 @@ namespace {
 
 bool IsToolSupportedOnCurrentPlatform(std::string_view tool) {
 #if BUILDFLAG(IS_ANDROID)
-  return !base::StartsWith(tool, "window.") &&
-         !base::StartsWith(tool, "workspace.");
+  return !base::StartsWith(tool, "window.");
 #else
   return true;
 #endif
@@ -39,6 +38,24 @@ AgentWorkflowTemplate ResearchTemplate() {
   value.budgets.max_network_requests = 160;
   value.budgets.max_duration = base::Minutes(30);
   value.supports_monitoring = true;
+  return value;
+}
+
+AgentWorkflowTemplate PageInteractionTemplate() {
+  AgentWorkflowTemplate value;
+  value.kind = AgentWorkflowKind::kPageInteraction;
+  value.id = "page_interaction";
+  value.title = "当前页面操作";
+  value.purpose = "逐次确认当前页面的按钮操作并回读结果，不自动跳转";
+  value.tools = {"page.observe", "page.extract", "page.click", "page.scroll",
+                 "page.wait"};
+  value.data_classes = {AgentDataClass::kPublicPage,
+                        AgentDataClass::kBrowserMetadata};
+  value.budgets.max_tabs = 1;
+  value.budgets.max_tool_calls = 16;
+  value.budgets.max_model_calls = 12;
+  value.budgets.max_network_requests = 24;
+  value.budgets.max_duration = base::Minutes(10);
   return value;
 }
 
@@ -130,9 +147,13 @@ const AgentWorkflowTemplate& GetAgentWorkflowTemplate(AgentWorkflowKind kind) {
       SafeDownloadTemplate());
   static const base::NoDestructor<AgentWorkflowTemplate> shopping(
       ShoppingTemplate());
+  static const base::NoDestructor<AgentWorkflowTemplate> page_interaction(
+      PageInteractionTemplate());
   switch (kind) {
     case AgentWorkflowKind::kResearch:
       return *research;
+    case AgentWorkflowKind::kPageInteraction:
+      return *page_interaction;
     case AgentWorkflowKind::kBrowserSteward:
       return *browser_steward;
     case AgentWorkflowKind::kSafeDownload:
@@ -169,6 +190,7 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
   }
   scope.allowed_data_classes = workflow.data_classes;
   scope.budgets = workflow.budgets;
+  scope.restrict_to_current_page = kind == AgentWorkflowKind::kPageInteraction;
   scope.model_destination = std::move(destination);
   return scope.IsValid() ? std::make_optional(std::move(scope)) : std::nullopt;
 }
@@ -178,6 +200,9 @@ std::optional<AgentTaskScope> BuildAgentAutomationScope(
     std::vector<url::Origin> origins,
     base::flat_set<int32_t> tab_ids,
     AgentModelDestination destination) {
+  if (kind == AgentWorkflowKind::kPageInteraction) {
+    return std::nullopt;
+  }
   std::optional<AgentTaskScope> scope = BuildAgentWorkflowScope(
       kind, std::move(origins), std::move(tab_ids), std::move(destination));
   if (!scope) {

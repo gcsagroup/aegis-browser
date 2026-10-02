@@ -1,4 +1,4 @@
-From 583cd38ab586ee30e948f0599bb79537dc1632e1 Mon Sep 17 00:00:00 2001
+From 1ced47ffffdc0a3de40a2f10fdabc9b07d7c75dd Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 04:13:24 +0800
 Subject: [PATCH] fix(aegis): validate bookmark goal coverage
