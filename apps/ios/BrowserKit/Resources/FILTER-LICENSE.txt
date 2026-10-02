@@ -1,0 +1,12 @@
+过滤规则来源与许可
+
+EasyList 与 EasyPrivacy 来自 The EasyList authors (https://easylist.to/)。
+本项目选择其 Creative Commons Attribution-ShareAlike 3.0 Unported 许可使用这些数据。
+许可全文：https://creativecommons.org/licenses/by-sa/3.0/legalcode
+原始许可说明：https://easylist.to/pages/licence.html
+源文件：https://easylist.to/easylist/easylist.txt
+源文件：https://easylist.to/easylist/easyprivacy.txt
+
+随包文本保留上游原文与版本头。本 App 将能够准确表达的网络和元素隐藏规则转换为 WebKit JSON；
+不支持的语法会跳过，并在界面展示数量。转换后的规则数据继续适用相同许可。
+许可适用于规则数据，不表示上游作者认可或担保本 App。

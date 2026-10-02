@@ -1,0 +1,102 @@
+{
+  "version": "2.2",
+  "simulator_build": "33",
+  "validation_date": "2026-10-03",
+  "scope": "iOS Simulator 完整回归；不代表真机、签名或商店资格",
+  "devices": {
+    "iPhone": {
+      "result": "Passed",
+      "passedTests": 148,
+      "failedTests": 0,
+      "skippedTests": 2,
+      "totalTestCount": 150,
+      "runtimeWarnings": 0,
+      "swiftCoverage": {
+        "productSwiftFileCount": 45,
+        "measuredFileCount": 45,
+        "coveredFileCount": 42,
+        "uncoveredFileCount": 3,
+        "notMeasuredFileCount": 0,
+        "coveredLines": 10906,
+        "executableLines": 12756,
+        "measuredLineCoverage": 0.8549702100972092
+      },
+      "installed_version": "2.2",
+      "installed_build": "33",
+      "exported_files": [
+        {
+          "bytes": 44032,
+          "sha256": "e05bc4162ba70780d59dc6831e0981cf70e317c6ee9825afa5c6915e3a77126c",
+          "kind": "download"
+        },
+        {
+          "bytes": 140,
+          "sha256": "786678539fdcef1a14be0f5cd7c21c4e241520f5d6fd77f64acb3bd4d8b63924",
+          "kind": "workspace"
+        }
+      ]
+    },
+    "iPad": {
+      "result": "Passed",
+      "passedTests": 150,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "totalTestCount": 150,
+      "runtimeWarnings": 0,
+      "swiftCoverage": {
+        "productSwiftFileCount": 45,
+        "measuredFileCount": 45,
+        "coveredFileCount": 42,
+        "uncoveredFileCount": 3,
+        "notMeasuredFileCount": 0,
+        "coveredLines": 11146,
+        "executableLines": 12756,
+        "measuredLineCoverage": 0.8737848855440576
+      },
+      "installed_version": "2.2",
+      "installed_build": "33",
+      "exported_files": [
+        {
+          "bytes": 140,
+          "sha256": "3625a84fabfc9ddc0355879092b5d9b7069f06cb047c0ff633a31bad8e10df33",
+          "kind": "workspace"
+        },
+        {
+          "bytes": 44032,
+          "sha256": "e05bc4162ba70780d59dc6831e0981cf70e317c6ee9825afa5c6915e3a77126c",
+          "kind": "download"
+        }
+      ],
+      "saved_windows": {
+        "count": 2,
+        "distinct_ids": true,
+        "restored_urls_match": true,
+        "sha256": "611b6c36e3b14bc3a866277d0809828798c793404d44d41a7a8226377f275683"
+      }
+    }
+  },
+  "source_input_manifest_sha256": "17e77bf4c9ab707213fe1ec6bd5dd33d3d87075a8cce436b4d8bb65011d170b0",
+  "input_stability": true,
+  "release": {
+    "version": "2.2",
+    "build": "34",
+    "architecture": "arm64",
+    "signed": false,
+    "privacy_manifest_count": 6,
+    "app_icon_checked": true,
+    "multiple_scenes_enabled": true,
+    "changes_since_simulator_033": [
+      "apps/ios/Aegis.xcodeproj/project.pbxproj",
+      "apps/ios/project.yml"
+    ],
+    "binary_sha256": "00836b5bedc9068bd91f3e5e0101739428e848085040b0cee89b29b564fd4893"
+  },
+  "quality_fast": "passed",
+  "core_tests_passed": 193,
+  "localization": {
+    "catalog_keys": 386,
+    "extracted_keys": 353,
+    "missing": 0,
+    "translation_errors": 0
+  }
+}

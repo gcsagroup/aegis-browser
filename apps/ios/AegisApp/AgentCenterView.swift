@@ -46,11 +46,11 @@ struct AgentCenterView: View {
                 .padding(20)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("Aegis Agent")
+            .navigationTitle("整理收藏")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Label("本地确定性", systemImage: "network.slash")
+                    Label("仅在本机处理", systemImage: "network.slash")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -79,10 +79,10 @@ struct AgentCenterView: View {
     private var stateBadge: some View {
         HStack {
             Circle().fill(stateColor).frame(width: 8, height: 8)
-            Text("状态 · \(model.wireState.rawValue)")
+            Text(LocalizedStringKey(stateTitle))
                 .font(.caption.weight(.bold).monospaced())
             Spacer()
-            Text("远程请求 0")
+            Text("不会发送给模型")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
@@ -93,15 +93,15 @@ struct AgentCenterView: View {
 
     private var catalog: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("选择一个工作流")
+            Text("整理收藏，保留撤销")
                 .font(.title2.bold())
-            Text("Agent 先在本地生成范围草案。你确认 Origin、工具、数据和预算后，Broker 才允许页面读取或动作。")
+            Text("先检查收藏并预览变更。只有再次确认后才会应用整理，你也可以撤销最近一次整理。")
                 .foregroundStyle(.secondary)
-            if let receipt = model.recoveredUndoReceipt {
+            if model.recoveredUndoReceipt != nil {
                 VStack(alignment: .leading, spacing: 9) {
                     Label("发现可撤销的上次整理", systemImage: "arrow.uturn.backward.circle.fill")
                         .font(.headline)
-                    Text("事务 \(receipt.transactionID.uuidString.lowercased())")
+                    Text("可恢复到整理前的收藏")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -119,7 +119,7 @@ struct AgentCenterView: View {
                     .foregroundStyle(.red)
                     .accessibilityIdentifier("bookmark-journal-error")
             }
-            ForEach(AgentWorkflowKind.allCases) { kind in
+            ForEach([AgentWorkflowKind.browserManager]) { kind in
                 Button { model.prepare(kind, currentURL: currentURL) } label: {
                     HStack(spacing: 14) {
                         Image(systemName: kind.symbol)
@@ -148,11 +148,9 @@ struct AgentCenterView: View {
                 .font(.title2.bold())
             if let consent = model.consent {
                 consentRow("目标", consent.goal)
-                consentRow("Origin", consent.origins.joined(separator: "\n"))
-                consentRow("工具", consent.tools.joined(separator: "\n"))
-                consentRow("数据", consent.dataClasses.joined(separator: "、"))
-                consentRow("风险", "R\(consent.risk.rawValue)")
-                consentRow("预算", "最多 \(consent.maxSteps) 步 · \(consent.timeBudgetSeconds) 秒 · 64 KiB")
+                consentRow("范围", "本机 Aegis 收藏")
+                consentRow("操作", "检查、预览整理或撤销")
+                consentRow("确认", "应用变更前会再次询问")
             }
             Text("确认前：页面读取 0 · 模型调用 0 · 网络请求 0")
                 .font(.callout.weight(.semibold))
@@ -174,8 +172,8 @@ struct AgentCenterView: View {
     private var runningView: some View {
         VStack(spacing: 18) {
             ProgressView().controlSize(.large)
-            Text("Broker 正在验证计划与证据").font(.headline)
-            Text("所有动作都受 task grant、页面 lease 和一次性 capability 约束。")
+            Text("正在检查整理结果").font(.headline)
+            Text("取消任务或页面变化后，会停止尚未执行的操作。")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
         }
@@ -200,37 +198,22 @@ struct AgentCenterView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
-                consentRow("风险", "R\(approval.risk.rawValue)")
-                consentRow("工具", approval.tool)
-                if case let .native(target) = approval.target {
-                    consentRow("Plan target", target.resourceID.uuidString.lowercased())
-                    consentRow("Registry", String(target.registryRevision))
-                }
+                consentRow("操作", approval.tool == "bookmarks.undo" ? "恢复整理前的收藏" : "清理链接、去重并排序")
                 if let plan = model.pendingBookmarkPlan {
-                    consentRow("树根", plan.rootID.uuidString.lowercased())
                     consentRow(
                         "变更",
                         "当前 \(plan.beforeCount) 条 → \(plan.afterCount) 条；变更 \(plan.changedCount) 条，去重 \(plan.removedDuplicateCount) 条"
                     )
-                } else if let lineage = model.undoLineage {
-                    consentRow("树根", lineage.rootID.uuidString.lowercased())
-                    consentRow("原任务", lineage.originalTaskID.uuidString.lowercased())
-                    consentRow("原授权", lineage.originalGrantID.uuidString.lowercased())
-                } else if let receipt = model.recoveredUndoReceipt,
-                          approval.tool == "bookmarks.undo" {
-                    consentRow("来源", "跨重启认证日志")
-                    consentRow("树根", receipt.rootID.uuidString.lowercased())
-                    consentRow("事务", receipt.transactionID.uuidString.lowercased())
+                } else if approval.tool == "bookmarks.undo" {
+                    consentRow("来源", "最近一次已保存的收藏整理")
                 }
-                if let before = model.pendingTreeBeforeDigest {
-                    digestRow("Tree before", before)
+                DisclosureGroup("查看核验详情") {
+                    if let before = model.pendingTreeBeforeDigest { digestRow("整理前摘要", before) }
+                    if let after = model.pendingTreeAfterDigest { digestRow("整理后摘要", after) }
+                    digestRow("确认摘要", approval.confirmationDigest)
+                        .accessibilityIdentifier("action-confirmation-digest")
+                    digestRow("操作参数", approval.normalizedParameters)
                 }
-                if let after = model.pendingTreeAfterDigest {
-                    digestRow("Tree after", after)
-                }
-                digestRow("确认摘要", approval.confirmationDigest)
-                    .accessibilityIdentifier("action-confirmation-digest")
-                digestRow("规范参数", approval.normalizedParameters)
 
                 HStack {
                     Button("取消", role: .cancel) { model.cancelPendingAction() }
@@ -297,14 +280,14 @@ struct AgentCenterView: View {
                         .accessibilityIdentifier("user-handoff")
                 }
                 if result.undoAvailable {
-                    Button(model.undoWasApplied ? "已撤销，逻辑树哈希一致" : "撤销本次整理") {
+                    Button(model.undoWasApplied ? "已恢复整理前的收藏" : "撤销本次整理") {
                         model.applyUndo()
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.undoWasApplied)
                     .accessibilityIdentifier("undo-workflow-button")
                 }
-                Button("运行其他工作流") { model.startAnother() }
+                Button("返回收藏整理") { model.startAnother() }
                     .buttonStyle(.bordered)
             }
             .accessibilityIdentifier("workflow-result-\(result.kind.rawValue)")
@@ -326,15 +309,15 @@ struct AgentCenterView: View {
 
     private func consentRow(_ title: String, _ value: String) -> some View {
         HStack(alignment: .top) {
-            Text(title).font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 60, alignment: .leading)
-            Text(value).font(.callout.monospaced()).textSelection(.enabled)
+            Text(LocalizedStringKey(title)).font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(width: 60, alignment: .leading)
+            Text(LocalizedStringKey(value)).font(.callout).textSelection(.enabled)
             Spacer(minLength: 0)
         }
     }
 
     private func digestRow(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.caption.weight(.bold)).foregroundStyle(.secondary)
+            Text(LocalizedStringKey(title)).font(.caption.weight(.bold)).foregroundStyle(.secondary)
             Text(value)
                 .font(.caption.monospaced())
                 .textSelection(.enabled)
@@ -345,7 +328,7 @@ struct AgentCenterView: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.caption.weight(.bold)).foregroundStyle(.secondary)
+            Text(LocalizedStringKey(title)).font(.caption.weight(.bold)).foregroundStyle(.secondary)
             content()
         }
         .padding(16)
@@ -355,10 +338,10 @@ struct AgentCenterView: View {
 
     private func subtitle(for kind: AgentWorkflowKind) -> String {
         switch kind {
-        case .research: "多来源比较与可核对引用"
-        case .browserManager: "标签、收藏差异与一键撤销"
-        case .safeDownload: "官方来源、MIME 与哈希证据"
-        case .shopping: "比价、结算预览与最终接管"
+        case .research: String(localized: "多来源比较与可核对引用")
+        case .browserManager: String(localized: "标签、收藏差异与一键撤销")
+        case .safeDownload: String(localized: "官方来源、MIME 与哈希证据")
+        case .shopping: String(localized: "比价、结算预览与最终接管")
         }
     }
 
@@ -368,6 +351,21 @@ struct AgentCenterView: View {
         case .userTakeover, .recovering: .orange
         case .failed, .cancelled, .expired: .red
         default: .blue
+        }
+    }
+
+    private var stateTitle: String {
+        switch model.wireState {
+        case .draft, .planning: String(localized: "准备中")
+        case .awaitingTaskConsent, .awaitingActionApproval: String(localized: "等待确认")
+        case .running, .reflecting, .verifying: String(localized: "正在处理")
+        case .pausedByUser: String(localized: "已暂停")
+        case .userTakeover: String(localized: "需要你操作")
+        case .recovering: String(localized: "发现中断任务")
+        case .completed: String(localized: "已完成")
+        case .failed: String(localized: "处理失败")
+        case .cancelled: String(localized: "已取消")
+        case .expired: String(localized: "确认已过期，请重试")
         }
     }
 }
