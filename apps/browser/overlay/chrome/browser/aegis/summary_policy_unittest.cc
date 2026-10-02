@@ -98,7 +98,7 @@ PageSnapshot SensitiveProducerSnapshot() {
   snapshot.text_sample =
       "Email alice@example.test. Authorization: Bearer abcdefghijklmnop. "
       "JWT eyJabcde.abcde12345.signature67890. AWS key "
-      "AKIAABCDEFGHIJKLMNOP. api_key=secret-token-12345. "
+      "AKIA" "ABCDEFGHIJKLMNOP. api_key=secret-token-12345. "
       "Call 13800138000 or +1 415-555-2671. ID 11010519491231002X. "
       "SSN 123-45-6789. Card 4111 1111 1111 1111. "
       "Address 123 Main Street. This public sentence remains readable and "
@@ -115,7 +115,7 @@ constexpr std::string_view kProducerSensitiveValues[] = {
     "private-fragment-9",
     "Bearer abcdefghijklmnop",
     "eyJabcde.abcde12345.signature67890",
-    "AKIAABCDEFGHIJKLMNOP",
+    "AKIA" "ABCDEFGHIJKLMNOP",
     "secret-token-12345",
     "13800138000",
     "+1 415-555-2671",

@@ -1,0 +1,402 @@
+From b4f5f0df2e0181b5ac0e1449607e67283c1ef35c Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 15:42:52 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E5=80=99=E9=80=89=E6=A3=80=E6=9F=A5=EF=BC=8C?=
+ =?UTF-8?q?=E6=9E=84=E5=BB=BA020?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/aegis_service.cc         |  5 ++-
+ chrome/browser/aegis/aegis_service.h          |  3 ++
+ .../browser/aegis/aegis_service_unittest.cc   | 25 +++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 11 ++++-
+ .../aegis/agent/agent_execution_unittest.cc   |  5 +++
+ chrome/browser/aegis/agent/agent_research.cc  |  2 +-
+ .../aegis/agent/agent_research_unittest.cc    |  3 ++
+ .../aegis/agent/agent_task_store_unittest.cc  | 33 +++++++++++++++
+ .../aegis/privacy_event_store_unittest.cc     | 15 +++++++
+ chrome/browser/resources/aegis/aegis.ts       | 23 +++++------
+ .../ui/views/toolbar/aegis_toolbar_button.cc  | 41 ++++++++++++++++---
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 16 +++++---
+ .../ui/webui/help/aegis_github_update.h       |  6 +--
+ 13 files changed, 157 insertions(+), 31 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 36f242ed25..4a4be8518a 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -882,7 +882,10 @@ PagePrivacySummary AegisService::GetPageSummary(
+       SiteKeyForHost(std::string(web_contents->GetLastCommittedURL().host()));
+   summary.paused = IsSitePaused(summary.site_key);
+   summary.events = privacy_events_.ForDocumentAndSite(
+-      DocumentIdForWebContents(web_contents), summary.site_key);
++      DocumentIdForWebContents(web_contents), std::string());
++  summary.site_history =
++      privacy_events_.ForDocumentAndSite(std::string(), summary.site_key);
++  summary.fingerprint_configured = IsFingerprintGuardEnabled();
+   for (const PrivacyEvent& event : summary.events) {
+     if (event.kind == "miner") {
+       summary.miner_alerts += event.count;
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index f8af292326..4d470fa588 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -86,6 +86,9 @@ struct PagePrivacySummary {
+   int miner_alerts = 0;
+   bool paused = false;
+   std::vector<PrivacyEvent> events;
++  // 没有文档身份的站点记录单列，不纳入当前页面的计数。
++  std::vector<PrivacyEvent> site_history;
++  bool fingerprint_configured = false;
+ };
+ 
+ class AegisServiceObserver : public base::CheckedObserver {
+diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
+index bae516a800..6f7207f354 100644
+--- a/chrome/browser/aegis/aegis_service_unittest.cc
++++ b/chrome/browser/aegis/aegis_service_unittest.cc
+@@ -95,6 +95,31 @@ class CountingAegisServiceObserver : public AegisServiceObserver {
+   int change_count_ = 0;
+ };
+ 
++TEST_F(AegisServiceModelSettingsTest,
++       PageSummaryDoesNotCountOtherPageSiteHistory) {
++  NavigateAndCommit(GURL("https://same.test/current"));
++  auto* current = service();
++  const auto document = AegisService::DocumentIdForWebContents(web_contents());
++  current->RecordBlockedRequest(GURL("https://tracker.test/pixel"), "easylist",
++                                "", document, "same.test");
++  current->RecordPhishBlock("same.test", "url_risk", "");
++  current->RecordBlockedRequest(GURL("https://tracker.test/other"), "easylist",
++                                "", "another-document", "same.test");
++  auto summary = current->GetPageSummary(web_contents());
++  EXPECT_EQ(summary.total, 1);
++  EXPECT_EQ(summary.blocked, 1);
++  EXPECT_EQ(summary.phishing, 0);
++  ASSERT_EQ(summary.events.size(), 1u);
++  EXPECT_EQ(summary.events[0].document_id, document);
++  ASSERT_EQ(summary.site_history.size(), 1u);
++  EXPECT_EQ(summary.site_history[0].kind, "phish");
++  NavigateAndCommit(GURL("https://same.test/next"));
++  summary = current->GetPageSummary(web_contents());
++  EXPECT_EQ(summary.total, 0);
++  EXPECT_TRUE(summary.events.empty());
++  EXPECT_EQ(summary.site_history.size(), 1u);
++}
++
+ TEST_F(AegisServiceModelSettingsTest,
+        NewProfileDefaultsToOpenAIWithoutMigration) {
+   AegisService* service = this->service();
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 0573cde538..c9dc993ce1 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1238,7 +1238,16 @@ bool AgentCompletionHasRequiredPageEvidence(
+     const auto* fingerprint = value.FindString("observation_fingerprint");
+     const auto* nodes = value.FindList("nodes");
+     return document && !document->empty() && fingerprint &&
+-           !fingerprint->empty() && nodes && !nodes->empty() &&
++           !fingerprint->empty() && nodes &&
++           std::ranges::any_of(*nodes,
++                               [](const base::Value& node) {
++                                 const auto* item = node.GetIfDict();
++                                 const auto* text =
++                                     item ? item->FindString("text") : nullptr;
++                                 return text && !base::TrimWhitespaceASCII(
++                                                     *text, base::TRIM_ALL)
++                                                     .empty();
++                               }) &&
+            value.FindBool("untrusted") == true;
+   };
+   if (!scope.selected_pages_research) {
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 439a5b222e..351befa8cf 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1513,6 +1513,11 @@ TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {
+   EXPECT_FALSE(
+       AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+   evidence.back().result.ok = true;
++  evidence.back().result.value.Set(
++      "nodes", base::ListValue().Append(
++                   base::DictValue().Set("node_id", 7).Set("text", " ")));
++  EXPECT_FALSE(
++      AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+   evidence.back().result.value.Set("nodes", base::ListValue());
+   EXPECT_FALSE(
+       AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
+index 810944d23a..453f737c3c 100644
+--- a/chrome/browser/aegis/agent/agent_research.cc
++++ b/chrome/browser/aegis/agent/agent_research.cc
+@@ -39,7 +39,7 @@ std::optional<std::string> AgentResearchContentHash(
+     if (!text) {
+       continue;
+     }
+-    const auto normalized = base::CollapseWhitespaceASCII(*text, true);
++    const auto normalized = base::CollapseWhitespaceASCII(*text, false);
+     if (!normalized.empty()) {
+       content += normalized;
+       content += '\n';
+diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
+index 729c62990e..6914910189 100644
+--- a/chrome/browser/aegis/agent/agent_research_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
+@@ -29,6 +29,9 @@ std::optional<base::DictValue> Record(bool partial = false) {
+   scope.allowed_origins = {
+       url::Origin::Create(GURL("https://fixture.example/"))};
+   scope.allowed_tools = {"page.observe"};
++  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
++  scope.model_destination.provider = "aegis-local";
++  scope.model_destination.model = "fixture";
+   std::map<int32_t, GURL> urls;
+   std::vector<AgentExecutionEvidence> evidence;
+   for (int id : scope.allowed_tab_ids) {
+diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+index c5d6522e46..ec77a874d8 100644
+--- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+@@ -449,6 +449,39 @@ TEST(AegisAgentTaskStoreTest, MigratesVersionSixWithoutInventingBaseline) {
+   EXPECT_TRUE(monitors[0].last_observation_ciphertext.empty());
+ }
+ 
++TEST(AegisAgentTaskStoreTest, MigratesVersionEightAndCreatesResearchTable) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("version-eight.sqlite");
++  {
++    AgentTaskStore store(path);
++    ASSERT_TRUE(store.Initialize());
++    AgentTask task("retained-task", "保留旧任务", AgentMode::kAsk,
++                   StoreTestScope());
++    ASSERT_TRUE(store.SaveTask(task, task.goal(), false));
++  }
++  {
++    sql::Database legacy("AegisAgent");
++    ASSERT_TRUE(legacy.Open(path));
++    ASSERT_TRUE(legacy.Execute("DROP TABLE agent_saved_research"));
++    sql::MetaTable meta;
++    ASSERT_TRUE(meta.Init(&legacy, 8, 8));
++    ASSERT_TRUE(meta.SetVersionNumber(8));
++    ASSERT_TRUE(meta.SetCompatibleVersionNumber(8));
++  }
++  for (int reopen = 0; reopen < 2; ++reopen) {
++    AgentTaskStore migrated(path);
++    ASSERT_TRUE(migrated.Initialize());
++    ASSERT_EQ(migrated.LoadUnfinishedTasks().size(), 1u);
++    EXPECT_EQ(migrated.LoadUnfinishedTasks()[0].task_id, "retained-task");
++    ASSERT_TRUE(migrated.SaveResearch({.id = "research",
++                                       .ciphertext = "合成密文",
++                                       .saved_at = base::Time::Now()}));
++    ASSERT_TRUE(migrated.LoadResearch());
++    EXPECT_EQ(migrated.LoadResearch()->size(), 1u);
++  }
++}
++
+ TEST(AegisAgentTaskStoreTest, MigratesVersionSevenWithoutLosingMonitorState) {
+   base::ScopedTempDir temp_dir;
+   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+diff --git a/chrome/browser/aegis/privacy_event_store_unittest.cc b/chrome/browser/aegis/privacy_event_store_unittest.cc
+index cf5b441dcf..ad87bc4b92 100644
+--- a/chrome/browser/aegis/privacy_event_store_unittest.cc
++++ b/chrome/browser/aegis/privacy_event_store_unittest.cc
+@@ -54,6 +54,21 @@ TEST(PrivacyEventStoreTest, FiltersDocumentAndSiteScopedEvents) {
+   EXPECT_EQ("block", page[1].kind);
+ }
+ 
++TEST(PrivacyEventStoreTest, SeparatesCurrentPageFromUnattributedSiteHistory) {
++  PrivacyEventStore store;
++  store.Record(Event("current", "same.test", "block", "tracker.test", 10));
++  store.Record(Event("other-page", "same.test", "param", "same.test", 10));
++  store.Record(Event("", "same.test", "phish", "same.test", 10));
++  store.Record(Event("", "other.test", "phish", "other.test", 10));
++  const auto page = store.ForDocumentAndSite("current", "");
++  const auto history = store.ForDocumentAndSite("", "same.test");
++  ASSERT_EQ(page.size(), 1u);
++  EXPECT_EQ(page[0].kind, "block");
++  ASSERT_EQ(history.size(), 1u);
++  EXPECT_EQ(history[0].kind, "phish");
++  EXPECT_TRUE(history[0].document_id.empty());
++}
++
+ TEST(PrivacyEventStoreTest, BoundsDetailsAndEvents) {
+   PrivacyEventStore store;
+   for (size_t i = 0; i < PrivacyEventStore::kMaxEventsPerDocument + 5; ++i) {
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 5f795ce5a5..b93a7b8164 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1196,8 +1196,8 @@ async function probeFingerprint() {
+     if (on) {
+       lines.push(
+           zh ?
+-              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Fingerprint Guard 開著：讀數按站點穩定化。關開後請重新整理本頁再測。' : 'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。') :
+-              'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
++              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '指紋防護設定已開啟。以下是目前頁面的 API 讀數，不能單獨證明跨站隔離。' : '指纹防护配置已开启。以下是当前页面的 API 读数，不能单独证明跨站隔离。') :
++              'Fingerprint protection is configured on. These page API readings alone do not prove cross-site isolation.');
+     } else {
+       lines.push(
+           zh ?
+@@ -1216,8 +1216,8 @@ async function probeFingerprint() {
+         note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（同一緩衝讀兩次不一致）' : '（同一缓冲读两次不一致）') :
+                     ' (same buffer changed on second read)';
+       } else if (lastAudioHash && lastAudioHash === audio.hash) {
+-        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與上次相同，已按站點穩定）' : '（与上次相同，已按站点稳定）') :
+-                    ' (same as last probe; stable per site)';
++        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與本頁上次測量相同）' : '（与本页上次测量相同）') :
++                    ' (same as the previous probe on this page)';
+       }
+       lastAudioHash = audio.hash;
+       lines.push(
+@@ -1226,15 +1226,12 @@ async function probeFingerprint() {
+     if (webgpu.line) {
+       lines.push(webgpu.line);
+     }
+-    if (on && (webgl.marked || webgpu.marked)) {
+-      lines.push(
+-          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'WebGL / WebGPU 已換成帶 Aegis 的穩定化字串。' : 'WebGL / WebGPU 已换成带 Aegis 的稳定化字符串。') :
+-               'WebGL / WebGPU strings are replaced with Aegis-stable values.');
+-    } else if (on && (webgl.line || webgpu.line)) {
+-      lines.push(
+-          zh ?
+-              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未看到 Aegis 標記。關掉再開啟防護後，請重新整理本頁再測。' : '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。') :
+-              'No Aegis marker yet. Toggle the guard, reload, then probe again.');
++    if (on && (webgl.line || webgpu.line)) {
++      lines.push(zh ?
++          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ?
++              '硬體識別欄位可能為空；是否含有品牌字串不能用來判斷防護效果。' :
++              '硬件识别字段可能为空；是否包含品牌字符串不能用来判断防护效果。') :
++          'Hardware identity fields may be empty. Brand strings do not establish protection effectiveness.');
+     }
+     result.textContent = lines.filter(Boolean).join('\n');
+   } catch (err) {
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 7fb8ff71cb..8980d063f5 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -101,7 +101,8 @@ std::u16string EventKind(const std::string& kind) {
+     return Copy(u"跳转清理", u"Cleared bounce tracking", u"跳轉清理");
+   }
+   if (kind == "phish") {
+-    return Copy(u"钓鱼拦截", u"Blocked phishing", u"釣魚攔截");
++    return Copy(u"疑似钓鱼（已拦截）", u"Suspected phishing (blocked)",
++                u"疑似釣魚（已攔截）");
+   }
+   if (kind == "miner") {
+     return Copy(u"挖矿风险（仅观察）", u"Mining risk (observe-only)",
+@@ -232,6 +233,31 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+                   u"挖礦風險提醒（僅觀察）：") +
+                  base::NumberToString16(summary_.miner_alerts));
+ 
++    AddLabel(protection_panel_,
++             summary_.fingerprint_configured
++                 ? Copy(u"指纹防护配置：已开启",
++                        u"Fingerprint protection configured: on",
++                        u"指紋防護設定：已開啟")
++                 : Copy(u"指纹防护配置：未开启",
++                        u"Fingerprint protection configured: off",
++                        u"指紋防護設定：未開啟"));
++    if (!summary_.site_history.empty()) {
++      AddLabel(protection_panel_,
++               Copy(u"本站历史（未归属到当前页面）",
++                    u"Site history (not attributed to this page)",
++                    u"本站歷史（未歸屬到目前頁面）"),
++               views::style::CONTEXT_DIALOG_TITLE);
++      for (size_t index = 0;
++           index < std::min<size_t>(3, summary_.site_history.size()); ++index) {
++        const auto& event = summary_.site_history[index];
++        AddLabel(
++            protection_panel_,
++            u"• " + EventKind(event.kind) + u" · " +
++                base::UTF8ToUTF16(event.display_domain) +
++                (event.count > 1 ? u" ×" + base::NumberToString16(event.count)
++                                 : std::u16string()));
++      }
++    }
+     if (!summary_.events.empty()) {
+       AddLabel(protection_panel_,
+                Copy(u"最近发生了什么", u"Recent actions", u"最近發生了什麼"),
+@@ -672,11 +698,14 @@ void AegisToolbarButton::Refresh() {
+           ? Copy(u"Aegis：本页有挖矿风险历史提醒（仅观察，未阻断）",
+                  u"Aegis: prior mining-risk alert (observe-only)",
+                  u"Aegis：本頁有挖礦風險歷史提醒（僅觀察，未阻斷）")
+-      : summary.total > 0
+-          ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ",
+-                 u"Aegis：本頁已處理 ") +
+-                base::NumberToString16(summary.total) +
+-                Copy(u" 项", u" items on this page", u" 項")
++      : summary.total > 0 ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ",
++                                 u"Aegis：本頁已處理 ") +
++                                base::NumberToString16(summary.total) +
++                                Copy(u" 项", u" items on this page", u" 項")
++      : !summary.site_history.empty()
++          ? Copy(u"Aegis：本站有保护历史，未计入本页",
++                 u"Aegis: site history is separate from this page",
++                 u"Aegis：本站有防護歷史，未計入本頁")
+           : Copy(u"Aegis：防护正常", u"Aegis: protection active",
+                  u"Aegis：防護正常");
+   SetTooltipText(status);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index ee9c74ddb0..85780a4d97 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -137,8 +137,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指紋防護",
+         .fingerprint_hint = "減少網站透過裝置特徵跨站識別您的機會。",
+         .fingerprint_details =
+-            "對 Canvas、WebGL、Audio、WebGPU 做穩定化。檢測兩次時，同頁 Audio "
+-            "讀數應相同；WebGPU 的 maxBufferSize 會隨開關變化。",
++            "讀取目前頁面的 Canvas、WebGL、Audio 和 "
++            "WebGPU。重複讀數可檢查穩定性；"
++            "單一頁面不能證明跨站隔離，數值不同也不等同於已阻止追蹤。",
+         .technical_details = "技術詳情",
+         .fingerprint_probe = "檢測本頁指紋",
+         .miner_guard_label = "挖礦腳本偵測（僅觀察）",
+@@ -270,8 +271,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .fingerprint_label = "指纹防护",
+         .fingerprint_hint = "减少网站通过设备特征跨站识别您的机会。",
+         .fingerprint_details =
+-            "对 Canvas、WebGL、Audio、WebGPU 做稳定化。检测两次时，同页 Audio "
+-            "读数应相同；WebGPU 的 maxBufferSize 会随开关变化。",
++            "读取当前页面的 Canvas、WebGL、Audio 和 "
++            "WebGPU。重复读数可检查稳定性；"
++            "单个页面不能证明跨站隔离，数值不同也不等同于已阻止跟踪。",
+         .technical_details = "技术详情",
+         .fingerprint_probe = "检测本页指纹",
+         .miner_guard_label = "挖矿脚本检测（仅观察）",
+@@ -405,8 +407,10 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .fingerprint_hint =
+           "Reduce cross-site identification through device characteristics.",
+       .fingerprint_details =
+-          "Canvas, WebGL, Audio and WebGPU stabilization. Audio should remain "
+-          "stable on repeated probes; maxBufferSize changes with protection.",
++          "Read this page’s Canvas, WebGL, Audio and WebGPU APIs. Repeated "
++          "readings "
++          "can check stability; one page cannot establish cross-site isolation "
++          "or prove that tracking was blocked.",
+       .technical_details = "Technical details",
+       .fingerprint_probe = "Probe this page fingerprints",
+       .miner_guard_label = "Mining script detection (observe-only)",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 2a5a890cfe..296b849bd0 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.19。
+-inline constexpr char kProductVersion[] = "2.0.0.19";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (019)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.20。
++inline constexpr char kProductVersion[] = "2.0.0.20";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (020)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

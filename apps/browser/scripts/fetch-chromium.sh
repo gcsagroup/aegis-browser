@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch or sync Chromium at the pinned commit.
-# Checkout lives OUTSIDE the GCSA-aegis git repo by default (~ /Projects/GCSA-aegis-chromium).
+# 源码位于主仓库之外；读取统一构建资料区配置，不另建旧名称的同级目录。
 #
 # Bootstraps src from GitHub (not googlesource) to avoid 100MB+ refs/changes ads.
 # Uses a shallow tag fetch + retries — full partial clones often drop mid-transfer via proxy.

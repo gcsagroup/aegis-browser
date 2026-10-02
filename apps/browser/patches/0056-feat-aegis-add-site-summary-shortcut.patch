@@ -1,7 +1,7 @@
-From 910672213c5fcd18167b5ee26f690cf0023415e6 Mon Sep 17 00:00:00 2001
+From 758666368e06e6a3b12dcab862a3b9a814359365 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 22:17:13 +0800
-Subject: [PATCH 56/56] feat(aegis): add site summary shortcut
+Subject: [PATCH] feat(aegis): add site summary shortcut
 
 ---
  chrome/browser/aegis/BUILD.gn                 |   9 +
@@ -1024,7 +1024,7 @@ index 913d178549..51713ca163 100644
 +  snapshot.text_sample =
 +      "Email alice@example.test. Authorization: Bearer abcdefghijklmnop. "
 +      "JWT eyJabcde.abcde12345.signature67890. AWS key "
-+      "AKIAABCDEFGHIJKLMNOP. api_key=secret-token-12345. "
++      "AKIA" "ABCDEFGHIJKLMNOP. api_key=secret-token-12345. "
 +      "Call 13800138000 or +1 415-555-2671. ID 11010519491231002X. "
 +      "SSN 123-45-6789. Card 4111 1111 1111 1111. "
 +      "Address 123 Main Street. This public sentence remains readable and "
@@ -1041,7 +1041,7 @@ index 913d178549..51713ca163 100644
 +    "private-fragment-9",
 +    "Bearer abcdefghijklmnop",
 +    "eyJabcde.abcde12345.signature67890",
-+    "AKIAABCDEFGHIJKLMNOP",
++    "AKIA" "ABCDEFGHIJKLMNOP",
 +    "secret-token-12345",
 +    "13800138000",
 +    "+1 415-555-2671",

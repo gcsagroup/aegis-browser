@@ -15,6 +15,18 @@
 namespace aegis::agent {
 namespace {
 
+TEST(AgentPlannerTest, WorkspaceRestoreRequiresExplicitWriteIntent) {
+  for (const char* goal : {"保存并恢复当前工作区中的研究标签页",
+                           "還原目前工作區", "Restore my workspace"}) {
+    EXPECT_TRUE(AgentGoalRequestsWorkspaceRestore(goal)) << goal;
+  }
+  for (const char* goal : {"仅保存工作区，不恢复", "不要還原工作區",
+                           "Save workspace without restoring it", "查看工作区",
+                           "整理收藏夹", "恢复当前页面"}) {
+    EXPECT_FALSE(AgentGoalRequestsWorkspaceRestore(goal)) << goal;
+  }
+}
+
 AgentTaskScope MaximumScope() {
   AgentTaskScope scope;
   scope.allowed_origins = {
@@ -53,8 +65,7 @@ AgentModelEvent ValidPlanEvent() {
   return event;
 }
 
-AgentModelEvent GoalRouteEvent(std::string workflow,
-                               std::string entry_kind,
+AgentModelEvent GoalRouteEvent(std::string workflow, std::string entry_kind,
                                std::string target) {
   AgentModelEvent event;
   event.type = AgentModelEventType::kToolCall;
@@ -68,8 +79,38 @@ AgentModelEvent GoalRouteEvent(std::string workflow,
   return event;
 }
 
+TEST(AegisAgentPlannerTest, EnglishGoalRejectsClearlyWrongDefaultLanguage) {
+  EXPECT_TRUE(AgentTextHasWrongDefaultLanguage("总结页面并列出来源。",
+                                               "Summarize this page."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("Summarize the page.",
+                                                "Summarize this page."));
+  EXPECT_FALSE(
+      AgentTextHasWrongDefaultLanguage("总结页面。", "总结当前页面。"));
+  EXPECT_FALSE(
+      AgentTextHasWrongDefaultLanguage("总结页面。", "Summarize in Chinese."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage(
+      "翻译文本", "Translate this page into Chinese."));
+  EXPECT_FALSE(AgentTextHasWrongDefaultLanguage("42", "Read the metric."));
+}
+
+TEST(AegisAgentPlannerTest, TaskTabGoalCannotExpandToWindowMetadata) {
+  for (const char *goal :
+       {"列出这个任务打开的标签页。", "列出本任务的标签页",
+        "列出本任務開啟的標籤頁", "List open tabs for this task.",
+        "列出当前窗口中本任务的标签页", "总结当前页面"}) {
+    SCOPED_TRACE(goal);
+    EXPECT_FALSE(AgentGoalRequestsWindowTabMetadata(goal));
+  }
+  for (const char *goal :
+       {"统计当前窗口有几个标签", "列出所有标签页", "列出目前視窗的標籤頁",
+        "List my tabs", "List open tabs"}) {
+    SCOPED_TRACE(goal);
+    EXPECT_TRUE(AgentGoalRequestsWindowTabMetadata(goal));
+  }
+}
+
 TEST(AegisAgentGoalRegressionTest, NativeTitlesKeepMetadataOnlyPlans) {
-  for (const auto& [goal, tool] : {
+  for (const auto &[goal, tool] : {
            std::pair{"列出所有标签页的页面标题", "tab.list"},
            std::pair{"列出所有標籤頁的頁面標題", "tab.list"},
            std::pair{"List all tab page titles", "tab.list"},
@@ -99,14 +140,14 @@ TEST(AegisAgentGoalRegressionTest, NativeTitlesKeepMetadataOnlyPlans) {
 }
 
 TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
-  for (const char* goal : {
+  for (const char *goal : {
            "不要整理书签，总结当前页。",
            "不要整理書籤，總結 https://example.com/ 。",
            "Do not organize bookmarks, summarize this page.",
        }) {
     SCOPED_TRACE(goal);
-    const auto workflow = ConstrainWorkflowToUserIntent(
-        goal, AgentWorkflowKind::kBrowserSteward);
+    const auto workflow =
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kBrowserSteward);
     EXPECT_EQ(workflow, AgentWorkflowKind::kResearch);
     AgentTaskScope initial = MaximumScope();
     const auto scope = BuildAgentWorkflowScope(
@@ -124,7 +165,9 @@ TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
     event.tool_call_id = "plan";
     event.tool_name = "agent.submit_plan";
     event.arguments.Set("schema_version", kAgentSchemaVersion);
-    event.arguments.Set("summary", "核对页面读取范围");
+    event.arguments.Set("summary", std::string_view(goal).starts_with("Do not")
+                                       ? "Check the page reading scope"
+                                       : "核对页面读取范围");
     base::ListValue steps;
     steps.Append(base::DictValue()
                      .Set("id", "read")
@@ -142,7 +185,7 @@ TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
                                    .risk = AgentRiskLevel::kR0ReadOnly});
     EXPECT_FALSE(ValidateTaskPlanForGoal(metadata_only, goal, &error));
     event.arguments.FindList("steps")->front().GetDict().Set("tool",
-                                                            "page.observe");
+                                                             "page.observe");
     const auto plan = ParseAndValidateTaskPlan(event, *scope, registry, &error);
     ASSERT_TRUE(plan) << error;
     EXPECT_TRUE(AgentTaskRequiresPageEvidence(goal, plan->scope));
@@ -180,7 +223,8 @@ TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
   EXPECT_TRUE(AgentTaskRequiresPageEvidence(goal, scope));
   const auto recovery = BuildBrowserReadOnlyRecoveryPlan(goal, scope, registry);
   ASSERT_TRUE(recovery);
-  const auto plan = ParseAndValidateTaskPlan(*recovery, scope, registry, &error);
+  const auto plan =
+      ParseAndValidateTaskPlan(*recovery, scope, registry, &error);
   ASSERT_TRUE(plan) << error;
   EXPECT_EQ(plan->steps.front().tool_name, "page.observe");
   EXPECT_TRUE(AgentTaskRequiresPageEvidence(goal, plan->scope));
@@ -189,8 +233,8 @@ TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
   // 原生任务即使持有公共来源，也不会仅因数据类别包含 public_page 被升级。
   scope.allowed_tools = {"tab.list", "bookmark.list"};
   scope.allowed_data_classes.insert(AgentDataClass::kBookmarks);
-  EXPECT_FALSE(AgentTaskRequiresPageEvidence(
-      "列出所有标签页的页面标题", scope));
+  EXPECT_FALSE(
+      AgentTaskRequiresPageEvidence("列出所有标签页的页面标题", scope));
   EXPECT_FALSE(AgentTaskRequiresPageEvidence(
       "读取收藏夹中 https://example.com/ 的书签标题", scope));
   EXPECT_FALSE(AgentTaskRequiresPageEvidence(
@@ -199,16 +243,16 @@ TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
 }
 
 TEST(AegisAgentGoalRegressionTest, DeniedListsDoNotCreateNativeRequirements) {
-  for (const char* goal : {
+  for (const char *goal : {
            "只统计标签页，不要读取页面内容、下载、整理书签。",
            "只統計標籤頁，不要讀取頁面內容、下載、整理書籤。",
            "List tabs. Do not read page content, download, organize bookmarks.",
        }) {
     SCOPED_TRACE(goal);
     EXPECT_FALSE(AgentGoalRequiresPageEvidence(goal));
-    EXPECT_EQ(ConstrainWorkflowToUserIntent(
-                  goal, AgentWorkflowKind::kBrowserSteward),
-              AgentWorkflowKind::kBrowserSteward);
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kBrowserSteward),
+        AgentWorkflowKind::kBrowserSteward);
     AgentTaskPlan plan;
     plan.steps.push_back({.step_id = "list",
                           .title = "统计标签页",
@@ -217,13 +261,16 @@ TEST(AegisAgentGoalRegressionTest, DeniedListsDoNotCreateNativeRequirements) {
     std::string error;
     EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
   }
-  for (const char* goal : {
-           "总结当前页；不要下载、整理书签、提交或购买。",
-           "總結目前網頁；不要下載、整理書籤、提交或購買。",
-           "Summarize this page. Do not download, organize bookmarks, or buy.",
-           "不要官方下载、整理书签、提交或购买。",
-           "不要官方下载，整理书签。",
-           "Do not download official installers, organize bookmarks, or buy.",
+  for (const auto &[goal, current_page] :
+       std::initializer_list<std::pair<const char *, bool>>{
+           {"总结当前页；不要下载、整理书签、提交或购买。", true},
+           {"總結目前網頁；不要下載、整理書籤、提交或購買。", true},
+           {"Summarize this page. Do not download, organize bookmarks, or buy.",
+            true},
+           {"不要官方下载、整理书签、提交或购买。", false},
+           {"不要官方下载，整理书签。", false},
+           {"Do not download official installers, organize bookmarks, or buy.",
+            false},
        }) {
     SCOPED_TRACE(goal);
     AgentGoalRoute route;
@@ -232,13 +279,15 @@ TEST(AegisAgentGoalRegressionTest, DeniedListsDoNotCreateNativeRequirements) {
     route.target = "https://example.com/";
     route = ConstrainGoalRouteToUserIntent(goal, std::move(route));
     EXPECT_EQ(route.workflow, AgentWorkflowKind::kResearch);
-    EXPECT_EQ(route.entry_kind, AgentGoalEntryKind::kOpenUrl);
-    EXPECT_EQ(route.target, "https://example.com/");
+    // 否定清单仍不能增加原生操作；当前页任务同时禁止保留猜测的网址。
+    EXPECT_EQ(route.entry_kind, current_page ? AgentGoalEntryKind::kBrowserOnly
+                                             : AgentGoalEntryKind::kOpenUrl);
+    EXPECT_EQ(route.target, current_page ? "" : "https://example.com/");
   }
 }
 
 TEST(AegisAgentGoalRegressionTest, PageObjectsRequireEvidenceWithoutVerbList) {
-  for (const char* goal : {
+  for (const char *goal : {
            "翻译当前页，不要整理书签。",
            "翻譯目前網頁；不要整理書籤。",
            "Translate this page. Do not organize bookmarks.",
@@ -247,9 +296,9 @@ TEST(AegisAgentGoalRegressionTest, PageObjectsRequireEvidenceWithoutVerbList) {
        }) {
     SCOPED_TRACE(goal);
     EXPECT_TRUE(AgentGoalRequiresPageEvidence(goal));
-    EXPECT_EQ(ConstrainWorkflowToUserIntent(
-                  goal, AgentWorkflowKind::kBrowserSteward),
-              AgentWorkflowKind::kResearch);
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kBrowserSteward),
+        AgentWorkflowKind::kResearch);
     AgentTaskPlan plan;
     plan.steps.push_back({.step_id = "list",
                           .title = "读取标签页",
@@ -261,26 +310,42 @@ TEST(AegisAgentGoalRegressionTest, PageObjectsRequireEvidenceWithoutVerbList) {
 }
 
 TEST(AegisAgentGoalRegressionTest, NativeTitlesDoNotHideSeparatePageContent) {
-  for (const char* goal : {
+  for (const char *goal : {
            "列出书签标题，并总结当前页面内容",
            "列出标签页的页面标题，并读取当前网页",
            "读取收藏夹中 https://example.com/ 的正文",
        }) {
     EXPECT_TRUE(AgentGoalRequiresPageEvidence(goal)) << goal;
   }
-  for (const char* goal : {"保存当前页到书签", "List workspace titles"}) {
+  for (const char *goal : {"保存当前页到书签", "List workspace titles"}) {
     EXPECT_FALSE(AgentGoalRequiresPageEvidence(goal)) << goal;
   }
 }
 
+TEST(AegisAgentGoalRegressionTest, CheckoutReviewCannotUseTabMetadataOnly) {
+  for (const char *goal :
+       {"准备核对订单，最终购买由我操作。", "準備核對訂單，最後購買由我操作。",
+        "Review this order; I will make the final purchase."}) {
+    SCOPED_TRACE(goal);
+    EXPECT_TRUE(AgentGoalRequiresPageEvidence(goal));
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kBrowserSteward),
+        AgentWorkflowKind::kResearch);
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kShopping),
+              AgentWorkflowKind::kResearch);
+  }
+}
+
 TEST(AegisAgentGoalRegressionTest, TraditionalWorkflowsKeepNativeCapabilities) {
-  for (const char* goal : {
+  for (const char *goal : {
            "讀取 https://example.com/ 並核對官方下載地址。",
            "读取 https://example.com/ 并核对官方下载地址。",
        }) {
     SCOPED_TRACE(goal);
-    EXPECT_EQ(ConstrainWorkflowToUserIntent(
-                  goal, AgentWorkflowKind::kSafeDownload),
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kSafeDownload),
+        AgentWorkflowKind::kSafeDownload);
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
               AgentWorkflowKind::kSafeDownload);
     AgentGoalRoute route;
     route.workflow = AgentWorkflowKind::kResearch;
@@ -289,13 +354,13 @@ TEST(AegisAgentGoalRegressionTest, TraditionalWorkflowsKeepNativeCapabilities) {
     EXPECT_EQ(ConstrainGoalRouteToUserIntent(goal, std::move(route)).workflow,
               AgentWorkflowKind::kSafeDownload);
   }
-  for (const char* goal : {
+  for (const char *goal : {
            "在 https://example.com/ 幫我準備結帳；不要付款。",
            "在 https://example.com/ 帮我准备结账；不要付款。",
        }) {
     SCOPED_TRACE(goal);
-    const auto workflow = ConstrainWorkflowToUserIntent(
-        goal, AgentWorkflowKind::kShopping);
+    const auto workflow =
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kShopping);
     EXPECT_EQ(workflow, AgentWorkflowKind::kShopping);
     AgentTaskScope initial = MaximumScope();
     const auto scope = BuildAgentWorkflowScope(
@@ -306,15 +371,145 @@ TEST(AegisAgentGoalRegressionTest, TraditionalWorkflowsKeepNativeCapabilities) {
     EXPECT_TRUE(GetAgentWorkflowTemplate(workflow)
                     .always_user_takeover_for_final_action);
   }
-  for (const char* goal : {"閱讀網頁並給出購買建議；不要結帳或付款。",
+  for (const char *goal : {"閱讀網頁並給出購買建議；不要結帳或付款。",
                            "讀取網頁；不要官方下載、整理書籤或購買。"}) {
     SCOPED_TRACE(goal);
-    EXPECT_EQ(ConstrainWorkflowToUserIntent(
-                  goal, AgentWorkflowKind::kShopping),
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kShopping),
               AgentWorkflowKind::kResearch);
-    EXPECT_EQ(ConstrainWorkflowToUserIntent(
-                  goal, AgentWorkflowKind::kSafeDownload),
-              AgentWorkflowKind::kResearch);
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kSafeDownload),
+        AgentWorkflowKind::kResearch);
+  }
+}
+
+TEST(AegisAgentGoalRegressionTest,
+     DownloadSourcePlanCannotOmitNativeAssessment) {
+  AgentTaskPlan plan;
+  plan.steps.push_back({.step_id = "observe",
+                        .title = "读取当前页面",
+                        .tool_name = "page.observe",
+                        .risk = AgentRiskLevel::kR0ReadOnly});
+  plan.steps.push_back({.step_id = "extract",
+                        .title = "提取页面内容",
+                        .tool_name = "page.extract",
+                        .risk = AgentRiskLevel::kR0ReadOnly});
+  std::string error;
+  for (const char *goal :
+       {"在当前页面找到 macOS ARM64 的官方下载，先不要下载。",
+        "在目前網頁核對官方下載地址。",
+        "Find the official download link on this page."}) {
+    EXPECT_FALSE(ValidateTaskPlanForGoal(plan, goal, &error)) << goal;
+    EXPECT_NE(error.find("download.find_official"), std::string::npos);
+  }
+  for (const char *goal : {"总结当前网页。", "把官方下载页翻译成英文。",
+                           "核对刚下载的文件是否已经安装。"}) {
+    EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
+  }
+  plan.steps.push_back({.step_id = "source",
+                        .title = "核验下载来源",
+                        .tool_name = "download.find_official",
+                        .risk = AgentRiskLevel::kR0ReadOnly});
+  EXPECT_TRUE(ValidateTaskPlanForGoal(
+      plan, "在当前页面找到 macOS ARM64 的官方下载，先不要下载。", &error))
+      << error;
+}
+
+TEST(AegisAgentGoalRegressionTest, ExplicitCheckoutPreparationKeepsShopping) {
+  for (const char *goal : {"核对订单并准备结账，最终购买由我操作。",
+                           "核對訂單並準備結帳，最後購買由我操作。",
+                           "Review this order and prepare checkout."}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kShopping),
+              AgentWorkflowKind::kShopping)
+        << goal;
+  }
+}
+
+TEST(AegisAgentGoalRegressionTest, ExplicitPageDownloadKeepsDownloadWorkflow) {
+  for (const char *goal : {
+           "下载当前页面提供的 macOS ARM64 测试文件，并核对页面提供的 SHA-256 "
+           "完整性；不要运行或安装文件。",
+           "请帮我下载所选文件；不要运行。",
+           "开始页面中的慢速测试下载后取消。",
+           "開始頁面中的慢速測試下載後取消。",
+           "Start the download on this page, then cancel it.",
+           "請下載目前頁面的測試檔案；不要安裝。",
+           "Please download the file on this page; do not run it.",
+       }) {
+    SCOPED_TRACE(goal);
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kSafeDownload),
+        AgentWorkflowKind::kSafeDownload);
+  }
+}
+
+TEST(AegisAgentGoalRegressionTest, DownloadDiscussionAndDenialRemainReadOnly) {
+  for (const char *goal : {
+           "总结当前页面；不要下载当前页面文件。",
+           "解释如何下载当前页面的文件，不要操作。",
+           "总结当前页面下载量和下载速度。",
+           "解释开始页面中的慢速测试下载的作用。",
+           "开始页面中的视频；不要下载文件。",
+           "Summarize this page; do not download the file.",
+       }) {
+    SCOPED_TRACE(goal);
+    EXPECT_EQ(
+        ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kSafeDownload),
+        AgentWorkflowKind::kResearch);
+  }
+}
+
+TEST(AegisAgentGoalRegressionTest, CurrentPageDownloadRouteKeepsNativeTools) {
+  EXPECT_EQ(ConstrainWorkflowToUserIntent(
+                "在当前页面找到 macOS ARM64 的官方下载，先不要下载。",
+                AgentWorkflowKind::kResearch),
+            AgentWorkflowKind::kSafeDownload);
+  EXPECT_EQ(ConstrainWorkflowToUserIntent("核对刚下载的文件是否已经安装。",
+                                          AgentWorkflowKind::kBrowserSteward),
+            AgentWorkflowKind::kSafeDownload);
+  EXPECT_FALSE(
+      AgentGoalRequestsDownloadTransfer("核对刚下载的文件是否已经安装。"));
+  AgentGoalRoute route;
+  route.workflow = AgentWorkflowKind::kResearch;
+  route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
+  auto result = ConstrainGoalRouteToUserIntent(
+      "开始页面中的慢速测试下载后取消。", std::move(route));
+  EXPECT_EQ(result.workflow, AgentWorkflowKind::kSafeDownload);
+  EXPECT_EQ(result.entry_kind, AgentGoalEntryKind::kBrowserOnly);
+  EXPECT_TRUE(
+      AgentGoalRequestsDownloadTransfer("开始页面中的慢速测试下载后取消。"));
+  EXPECT_FALSE(AgentGoalRequestsDownloadTransfer("找到官方下载，先不要下载。"));
+}
+
+TEST(AegisAgentGoalRegressionTest, DownloadRequestsAcceptOrdinaryPhrasing) {
+  for (const char *goal :
+       {"从当前官方合成发布页下载适合本机的安装包，只下载，不打开。",
+        "找官方下载并实际下载当前网页的macOS arm64测试包。",
+        "实际下载当前页面中适合macOS arm64的合成测试包。",
+        "请帮我从这个网页下载文件并核对SHA-256。",
+        "先找到链接，然后下载所选文件。",
+        "請從目前網頁下載適合本機的檔案，不執行。",
+        "Please find the official link and actually download the file.",
+        "Please help me download the selected file."}) {
+    SCOPED_TRACE(goal);
+    EXPECT_TRUE(AgentGoalRequestsDownloadTransfer(goal));
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
+              AgentWorkflowKind::kSafeDownload);
+  }
+}
+
+TEST(AegisAgentGoalRegressionTest,
+     DownloadRequestsDoNotExpandDiscussionOrDenial) {
+  for (const char *goal :
+       {"找到官方下载，先不要下载。", "下载当前文件，但不要下载。",
+        "不下载文件，只查看说明。", "只找官方下载链接。",
+        "请解释如何查找链接，然后下载文件。", "介绍下载文件的方法。",
+        "下载量是多少？", "下载速度为什么很慢？", "下载地址在哪里？",
+        "下载的文件是否已经安装？", "核对刚下载的文件。",
+        "总结“下载当前文件”的操作说明。", "不要下载、不要执行文件。",
+        "Please explain how to find and download the file.",
+        "Find the link and do not download the file.",
+        "Do not download this file.", "請勿下載這個檔案。"}) {
+    EXPECT_FALSE(AgentGoalRequestsDownloadTransfer(goal)) << goal;
   }
 }
 
@@ -342,6 +537,63 @@ TEST(AegisAgentPlannerTest, WindowMetadataBindingComesOnlyFromBrowserScope) {
   plan = ParseAndValidateTaskPlan(event, scope, registry, &error);
   ASSERT_TRUE(plan) << error;
   EXPECT_EQ(plan->scope.tab_metadata_window_id, 0);
+}
+
+TEST(AegisAgentPlannerTest, CurrentPageModifiersCannotRouteToAnotherSite) {
+  for (const auto *goal :
+       {"总结这篇文章，附上来源。", "總結這篇文章", "Summarize this article.",
+        "从当前官方合成发布页下载适合本机 macOS arm64 "
+        "的测试安装包，核验页面公布的 "
+        "SHA-256。只下载，不打开、不执行、不安装。",
+        "从当前官方发布页下载测试安装包", "从当前官方下载页下载",
+        "总结当前产品详情页面", "打开当前官方发布页中的下载链接",
+        "Open the current release page download link",
+        "Download from the current official download page",
+        "从这个软件的官方发布页下载", "总结目前正在浏览的网页",
+        "從當前官方合成發佈頁下載測試檔案", "總結這個產品詳情頁", "总结本页",
+        "Download from the current official release page",
+        "Summarize this official product page", "Read the currently open tab",
+        "Summarize the active product page", "帮我总结下页面内容"}) {
+    SCOPED_TRACE(goal);
+    EXPECT_TRUE(AgentGoalRefersToCurrentPage(goal));
+    for (const auto entry :
+         {AgentGoalEntryKind::kOpenUrl, AgentGoalEntryKind::kWebSearch}) {
+      AgentGoalRoute route;
+      route.workflow = AgentWorkflowKind::kResearch;
+      route.entry_kind = entry;
+      route.target = "https://www.electronjs.org/latest";
+      const auto constrained = ConstrainGoalRouteToUserIntent(goal, route);
+      EXPECT_EQ(constrained.entry_kind, AgentGoalEntryKind::kBrowserOnly);
+      EXPECT_TRUE(constrained.target.empty());
+    }
+  }
+}
+
+TEST(AegisAgentPlannerTest, CurrentPageBindingPreservesExplicitOtherTargets) {
+  for (const auto *goal :
+       {"打开 https://example.com/releases 并总结当前页面",
+        "从 www.example.com 下载并核对当前页面", "去 GitHub 搜索当前官方发布页",
+        "在京东搜索当前产品页面", "上网搜索当前官方发布页", "搜索这篇文章的其他来源",
+        "Find this article on the web", "不要总结这篇文章，请搜索新资料",
+        "打开另一个网站再总结当前页面", "访问 Mozilla 并总结当前页面",
+        "不要读取当前官方发布页；请搜索浏览器论文",
+        "当前版本的官方发布页是什么", "当前时间是多少，搜索官方发布页",
+        "总结当前之前打开的页面", "总结过去打开的发布页",
+        "Search for the current official release page",
+        "Visit GitHub and summarize this page",
+        "Read the current previous page",
+        "Find the current version on the release page",
+        "Summarize this wallpaper", "列出当前窗口的标签页标题"}) {
+    SCOPED_TRACE(goal);
+    EXPECT_FALSE(AgentGoalRefersToCurrentPage(goal));
+  }
+  AgentGoalRoute route;
+  route.entry_kind = AgentGoalEntryKind::kOpenUrl;
+  route.target = "https://example.com/releases";
+  EXPECT_EQ(ConstrainGoalRouteToUserIntent(
+                "打开 https://example.com/releases 并总结当前页面", route)
+                .target,
+            route.target);
 }
 
 TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {
@@ -551,20 +803,41 @@ TEST(AegisAgentPlannerTest, NegatedWorkflowPhrasesKeepPageEntryRoutes) {
   }
 }
 
+TEST(AegisAgentPlannerTest, ExplicitUrlKeepsNativeWindowIntent) {
+  for (std::string_view goal :
+       {"新建窗口打开 https://fixture.example/ ，激活窗口后仅关闭新建窗口。",
+        "建立視窗開啟 https://fixture.example/ ，之後關閉視窗。",
+        "Create a new browser window for https://fixture.example/ then close "
+        "the window."}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
+              AgentWorkflowKind::kBrowserSteward)
+        << goal;
+    EXPECT_FALSE(AgentBrowserGoalNeedsClarification(
+        goal, AgentWorkflowKind::kBrowserSteward));
+  }
+  for (std::string_view goal :
+       {"不要新建窗口，只总结 https://fixture.example/ 的页面内容。",
+        "解释如何创建窗口，参考 https://fixture.example/ 。",
+        "Explain how to create a new window using https://fixture.example/ .",
+        "总结 https://fixture.example/ 的正文，不要关闭窗口。"}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
+              AgentWorkflowKind::kResearch)
+        << goal;
+  }
+}
+
 TEST(AegisAgentPlannerTest, PageIntentOverridesNegatedWorkflowHints) {
   const std::string_view goal =
       "打开 http://127.0.0.1:52861/slow 并总结页面内容。只允许读取这个"
       "本地公开测试来源；不要下载、整理书签、提交或购买。";
-  for (AgentWorkflowKind hint : {AgentWorkflowKind::kResearch,
-                                AgentWorkflowKind::kBrowserSteward,
-                                AgentWorkflowKind::kSafeDownload,
-                                AgentWorkflowKind::kShopping}) {
+  for (AgentWorkflowKind hint :
+       {AgentWorkflowKind::kResearch, AgentWorkflowKind::kBrowserSteward,
+        AgentWorkflowKind::kSafeDownload, AgentWorkflowKind::kShopping}) {
     EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, hint),
               AgentWorkflowKind::kResearch);
   }
-  EXPECT_EQ(ConstrainWorkflowToUserIntent(
-                "整理收藏夹；不要下载或购买。",
-                AgentWorkflowKind::kBrowserSteward),
+  EXPECT_EQ(ConstrainWorkflowToUserIntent("整理收藏夹；不要下载或购买。",
+                                          AgentWorkflowKind::kBrowserSteward),
             AgentWorkflowKind::kBrowserSteward);
   EXPECT_EQ(ConstrainWorkflowToUserIntent(
                 "读取页面并核对官方下载地址；不要整理书签。",
@@ -577,13 +850,14 @@ TEST(AegisAgentPlannerTest, PageIntentOverridesNegatedWorkflowHints) {
 }
 
 TEST(AegisAgentPlannerTest, PageEvidenceRequirementKeepsNegationAndReminders) {
-  for (std::string_view goal : {"总结当前页", "讀取目前網頁", "不要忘记总结页面内容",
-                                "Read https://research.example/ and summarize it"}) {
+  for (std::string_view goal :
+       {"总结当前页", "讀取目前網頁", "不要忘记总结页面内容",
+        "Read https://research.example/ and summarize it"}) {
     EXPECT_TRUE(AgentGoalRequiresPageEvidence(goal)) << goal;
   }
-  for (std::string_view goal : {"只统计标签页，不要读取页面内容。",
-                                "整理收藏夹；不要总结网页。",
-                                "List tabs. Do not summarize page content."}) {
+  for (std::string_view goal :
+       {"只统计标签页，不要读取页面内容。", "整理收藏夹；不要总结网页。",
+        "List tabs. Do not summarize page content."}) {
     EXPECT_FALSE(AgentGoalRequiresPageEvidence(goal)) << goal;
   }
 }
@@ -715,9 +989,8 @@ TEST(AegisAgentPlannerTest,
   premature_navigation.arguments.FindList("steps")->Append(std::move(navigate));
   EXPECT_FALSE(
       ParseAndValidateTaskPlan(premature_navigation, scope, registry, &error));
-  EXPECT_EQ(error,
-            "single preopened entry page must be extracted before any "
-            "follow-up navigation");
+  EXPECT_EQ(error, "single preopened entry page must be extracted before any "
+                   "follow-up navigation");
 
   AgentModelEvent evidence_first = ValidPlanEvent();
   base::DictValue extract;
@@ -732,6 +1005,52 @@ TEST(AegisAgentPlannerTest,
   evidence_first.arguments.FindList("steps")->Append(std::move(followup));
   EXPECT_TRUE(ParseAndValidateTaskPlan(evidence_first, scope, registry, &error))
       << error;
+}
+
+TEST(AegisAgentPlannerTest,
+     ExplicitDownloadCancellationUsesCheckedNativeSequence) {
+  AgentToolRegistry registry;
+  auto scope = MaximumScope();
+  scope.allowed_tools = {"page.observe", "download.find_official",
+                         "download.start", "download.cancel"};
+  scope.allowed_data_classes.insert(AgentDataClass::kDownloads);
+  for (const auto *goal :
+       {"开始页面中的慢速测试下载后取消。", "開始頁面中的慢速測試下載後取消。",
+        "Start the download on this page, then cancel it."}) {
+    auto event = BuildBrowserDownloadCancellationPlan(goal, scope, registry);
+    ASSERT_TRUE(event) << goal;
+    std::string error;
+    auto plan = ParseAndValidateTaskPlan(*event, scope, registry, &error);
+    ASSERT_TRUE(plan) << error;
+    ASSERT_EQ(plan->steps.size(), 4u);
+    EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
+    EXPECT_EQ(plan->steps[1].tool_name, "download.find_official");
+    EXPECT_EQ(plan->steps[2].tool_name, "download.start");
+    EXPECT_EQ(plan->steps[2].risk, AgentRiskLevel::kR2ExternalSideEffect);
+    EXPECT_EQ(plan->steps[3].tool_name, "download.cancel");
+  }
+}
+
+TEST(AegisAgentPlannerTest,
+     DownloadCancellationTemplateNeverExpandsScopeOrIntent) {
+  AgentToolRegistry registry;
+  auto scope = MaximumScope();
+  scope.allowed_tools = {"page.observe", "download.find_official",
+                         "download.start", "download.cancel"};
+  scope.allowed_data_classes.insert(AgentDataClass::kDownloads);
+  for (const auto *goal :
+       {"解释开始页面中的慢速测试下载后取消。",
+        "不要开始页面中的慢速测试下载后取消。", "下载当前文件但不要取消。",
+        "下载当前文件，然后取消订阅。"}) {
+    EXPECT_FALSE(BuildBrowserDownloadCancellationPlan(goal, scope, registry))
+        << goal;
+  }
+  const std::string goal = "开始页面中的慢速测试下载后取消。";
+  scope.allowed_tools.erase("download.start");
+  EXPECT_FALSE(BuildBrowserDownloadCancellationPlan(goal, scope, registry));
+  scope.allowed_tools.insert("download.start");
+  scope.allowed_tab_ids.clear();
+  EXPECT_FALSE(BuildBrowserDownloadCancellationPlan(goal, scope, registry));
 }
 
 TEST(AegisAgentPlannerTest, BrowserResultDependenciesAreOrdered) {
@@ -762,8 +1081,15 @@ TEST(AegisAgentPlannerTest, BrowserResultDependenciesAreOrdered) {
   premature_verify.arguments.FindList("steps")->Append(std::move(verify));
   EXPECT_FALSE(
       ParseAndValidateTaskPlan(premature_verify, downloads, registry, &error));
+  EXPECT_EQ(error, "download.verify requires an earlier download.start step. "
+                   "page.click cannot replace either native download step.");
+  premature_verify.arguments.FindList("steps")->back().GetDict().Set(
+      "tool", "download.start");
+  EXPECT_FALSE(
+      ParseAndValidateTaskPlan(premature_verify, downloads, registry, &error));
   EXPECT_EQ(error,
-            "task plan uses a browser result before the step that creates it");
+            "download.start requires an earlier download.find_official step. "
+            "page.click cannot replace either native download step.");
 }
 
 TEST(AegisAgentPlannerTest, ShoppingPlanMustEndInOneUserTakeover) {
@@ -814,7 +1140,7 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
   EXPECT_TRUE(contract.contains("Never put interval_minutes"));
 
   const AgentModelToolDefinition tool = BuildSubmitPlanToolDefinition();
-  const base::DictValue* properties = tool.input_schema.FindDict("properties");
+  const base::DictValue *properties = tool.input_schema.FindDict("properties");
   ASSERT_TRUE(properties);
   EXPECT_FALSE(properties->contains("origins"));
   EXPECT_FALSE(properties->contains("tools"));
@@ -838,11 +1164,36 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
   EXPECT_EQ(*parsed->GetDict().FindString("required_first_tool"),
             "page.observe");
   EXPECT_EQ(parsed->GetDict().FindBool("entry_navigation_complete"), true);
-  EXPECT_EQ(parsed->GetDict().FindList("plan_dependency_rules")->size(), 7u);
-  const base::ListValue* catalog = parsed->GetDict().FindList("tool_catalog");
+  EXPECT_EQ(parsed->GetDict().FindList("plan_dependency_rules")->size(), 1u);
+  const base::ListValue *catalog = parsed->GetDict().FindList("tool_catalog");
   ASSERT_TRUE(catalog);
   ASSERT_EQ(catalog->size(), 3u);
   EXPECT_TRUE((*catalog)[0].GetDict().FindString("purpose"));
+}
+
+TEST(AegisAgentPlannerTest,
+     DependenciesFollowAuthorizedToolsWithoutExpandingScope) {
+  AgentToolRegistry registry;
+  auto scope = MaximumScope();
+  scope.allowed_tools.insert("bookmark.list");
+  scope.allowed_tools.insert("bookmark.check_urls");
+  scope.allowed_tools.insert("download.start");
+  scope.allowed_tools.insert("download.verify");
+  scope.allowed_tools.insert("monitor.create");
+  auto prompt = BuildAgentPlanningPrompt("核对授权来源", scope, registry);
+  ASSERT_TRUE(prompt);
+  auto parsed = base::JSONReader::Read(*prompt, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(parsed);
+  const auto *rules = parsed->GetDict().FindList("plan_dependency_rules");
+  ASSERT_TRUE(rules);
+  EXPECT_EQ(rules->size(), 5u);
+  EXPECT_NE(prompt->find("bookmark.check_urls requires"), std::string::npos);
+  EXPECT_EQ(prompt->find("bookmark.apply requires"), std::string::npos);
+  EXPECT_NE(prompt->find("download.start requires"), std::string::npos);
+  EXPECT_NE(prompt->find("download pause, resume"), std::string::npos);
+  EXPECT_NE(prompt->find("one-shot tasks must not"), std::string::npos);
+  EXPECT_EQ(parsed->GetDict().FindList("maximum_tools")->size(),
+            scope.allowed_tools.size());
 }
 
 TEST(AegisAgentPlannerTest,
@@ -862,7 +1213,7 @@ TEST(AegisAgentPlannerTest,
   EXPECT_EQ(plan->steps[0].tool_name, "page.observe");
   EXPECT_EQ(plan->steps[1].tool_name, "page.extract");
   EXPECT_TRUE(plan->scope.IsNoBroaderThan(scope));
-  for (const AgentPlanStep& step : plan->steps) {
+  for (const AgentPlanStep &step : plan->steps) {
     EXPECT_EQ(step.risk, AgentRiskLevel::kR0ReadOnly);
   }
 }
@@ -972,8 +1323,9 @@ TEST(AegisAgentPlannerTest, PageReadingGoalRejectsMetadataOnlyPlan) {
     EXPECT_EQ(error, "page-reading goal omitted required page.observe step");
   }
   std::string error;
-  EXPECT_TRUE(ValidateTaskPlanForGoal(
-      plan, "只统计标签页，不要读取页面内容。", &error)) << error;
+  EXPECT_TRUE(
+      ValidateTaskPlanForGoal(plan, "只统计标签页，不要读取页面内容。", &error))
+      << error;
 }
 
 TEST(AegisAgentPlannerTest, PageReadingRecoveryCannotUseOnlyTabMetadata) {
@@ -1056,9 +1408,8 @@ TEST(AegisAgentPlannerTest, NegatedBookmarkSubtasksDoNotBecomeRequirements) {
 
 TEST(AegisAgentPlannerTest, ReadOnlyBookmarkConstraintStillRejectsWrites) {
   AgentTaskPlan plan;
-  for (std::string_view tool :
-       {"bookmark.list", "bookmark.check_urls", "bookmark.plan",
-        "bookmark.apply"}) {
+  for (std::string_view tool : {"bookmark.list", "bookmark.check_urls",
+                                "bookmark.plan", "bookmark.apply"}) {
     plan.steps.push_back({.step_id = std::string(tool),
                           .title = std::string(tool),
                           .tool_name = std::string(tool),
@@ -1087,9 +1438,8 @@ TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
   EXPECT_TRUE(ValidateTaskPlanForMode(one_shot, AgentMode::kAct, &error))
       << error;
   EXPECT_FALSE(ValidateTaskPlanForMode(one_shot, AgentMode::kAutomate, &error));
-  EXPECT_EQ(error,
-            "scheduled automation plan must end with exactly one "
-            "monitor.create step");
+  EXPECT_EQ(error, "scheduled automation plan must end with exactly one "
+                   "monitor.create step");
 
   AgentTaskPlan scheduled = one_shot;
   scheduled.steps.push_back({.step_id = "step-2",
@@ -1106,5 +1456,122 @@ TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
       ValidateTaskPlanForMode(scheduled, AgentMode::kAutomate, &error));
 }
 
-}  // namespace
-}  // namespace aegis::agent
+TEST(AegisAgentPlannerTest, CurrentPageClickRoutingKeepsNegativeConstraints) {
+  for (const auto *goal : {"点击当前页面的按钮", "點擊當前頁面的按鈕",
+                           "Click the button on the current page"}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
+              AgentWorkflowKind::kPageInteraction)
+        << goal;
+    AgentGoalRoute route;
+    route.workflow = AgentWorkflowKind::kPageInteraction;
+    route.entry_kind = AgentGoalEntryKind::kWebSearch;
+    route.target = "不得继承模型提出的其他入口";
+    const auto constrained = ConstrainGoalRouteToUserIntent(goal, route);
+    EXPECT_EQ(constrained.entry_kind, AgentGoalEntryKind::kBrowserOnly);
+    EXPECT_TRUE(constrained.target.empty());
+  }
+  for (const auto *goal :
+       {"不要点击当前页面的按钮，只总结页面", "解释如何点击当前页面的按钮",
+        "Do not click the button on the current page"}) {
+    EXPECT_EQ(ConstrainWorkflowToUserIntent(
+                  goal, AgentWorkflowKind::kPageInteraction),
+              AgentWorkflowKind::kResearch)
+        << goal;
+  }
+}
+
+TEST(AegisAgentPlannerTest, CurrentPagePlanRetainsScopeAndApprovalRisk) {
+  const auto base = MaximumScope();
+  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kPageInteraction,
+                                       base.allowed_origins, {17},
+                                       base.model_destination);
+  ASSERT_TRUE(scope);
+  auto event = ValidPlanEvent();
+  event.arguments.FindList("steps")->Append(base::DictValue()
+                                                .Set("id", "click")
+                                                .Set("title", "点击按钮")
+                                                .Set("tool", "page.click"));
+  event.arguments.FindList("steps")->Append(base::DictValue()
+                                                .Set("id", "verify")
+                                                .Set("title", "回读结果")
+                                                .Set("tool", "page.extract"));
+  AgentToolRegistry registry;
+  std::string error;
+  const auto plan = ParseAndValidateTaskPlan(event, *scope, registry, &error);
+  ASSERT_TRUE(plan) << error;
+  EXPECT_TRUE(plan->scope.restrict_to_current_page);
+  EXPECT_EQ(plan->steps[1].risk, AgentRiskLevel::kR2ExternalSideEffect);
+  constexpr std::string_view goal = "点击当前页面的按钮并核对结果";
+  EXPECT_TRUE(ValidateTaskPlanForGoal(*plan, goal, &error)) << error;
+  auto incomplete = *plan;
+  incomplete.steps.pop_back();
+  EXPECT_FALSE(ValidateTaskPlanForGoal(incomplete, goal, &error));
+  incomplete.steps.pop_back();
+  EXPECT_FALSE(ValidateTaskPlanForGoal(incomplete, goal, &error));
+  auto unverified_last_click = *plan;
+  unverified_last_click.steps.push_back(plan->steps[1]);
+  EXPECT_FALSE(ValidateTaskPlanForGoal(unverified_last_click, goal, &error));
+  auto escaped = plan->scope;
+  escaped.restrict_to_current_page = false;
+  EXPECT_FALSE(escaped.IsNoBroaderThan(*scope));
+}
+
+TEST(AegisAgentPlannerTest, InstallerSourceGoalRequiresNativeCandidateCheck) {
+  for (const char *goal :
+       {"从当前官方发布页找适合 macOS arm64 的安装包来源，只给链接，不要下载。",
+        "從目前官方發佈頁找 macOS arm64 安裝包來源，只給連結，不要下載。",
+        "Find the official installer source on this page; do not download."}) {
+    SCOPED_TRACE(goal);
+    AgentTaskPlan plan;
+    plan.steps.push_back(
+        {.step_id = "observe", .title = "读取", .tool_name = "page.observe"});
+    std::string error;
+    EXPECT_FALSE(ValidateTaskPlanForGoal(plan, goal, &error));
+    EXPECT_TRUE(error.contains("download.find_official"));
+    plan.steps.push_back({.step_id = "source",
+                          .title = "核对候选",
+                          .tool_name = "download.find_official"});
+    EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
+  }
+}
+
+
+TEST(AegisAgentPlannerTest, CloseRequiresExplicitActionNotStatusOrQuestion) {
+  for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",
+       "不要关闭标签页", "把未关闭的标签页列出", "如何关闭标签页", "如果有重复就关闭标签页",
+       "List tabs that are not closed", "Should I close this tab?", "Do not close tabs",
+       "Explain \"close tabs\"", "关闭标签页之前先列出", "close tabs?",
+       "关闭标签页，但不要实际关闭", "Close tabs without actually closing them",
+       "Close tabs. Do not close any tabs.", "关闭标签页，只预览方案不要修改"}) {
+    EXPECT_FALSE(AgentGoalRequestsTabClose(goal)) << goal;
+  }
+  for (const char* goal : {"关闭本任务标签页", "请把当前标签页关掉", "請關閉指定標籤頁",
+       "Please close this task's tabs.", "List tabs and close selected tabs."}) {
+    EXPECT_TRUE(AgentGoalRequestsTabClose(goal)) << goal;
+  }
+  EXPECT_TRUE(AgentBrowserGoalNeedsClarification("其他尚未关闭的条件",
+                                               AgentWorkflowKind::kBrowserSteward));
+  EXPECT_FALSE(AgentBrowserGoalNeedsClarification("列出标签页",
+                                                AgentWorkflowKind::kBrowserSteward));
+}
+
+TEST(AegisAgentPlannerTest, ClosePlanMustDiscloseActionAndRefreshList) {
+  AgentTaskPlan plan;
+  plan.summary = "关闭指定标签页";
+  plan.steps = {{.step_id="list", .title="列出标签页", .tool_name="tab.list"},
+                {.step_id="close", .title="关闭指定标签页", .tool_name="tab.close"}};
+  std::string error;
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "列出未关闭的标签页", &error));
+  EXPECT_TRUE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+  plan.summary = "检查并列出尚未关闭的标签页";
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+  plan.summary = "关闭指定标签页";
+  plan.steps.back().title = "列出标签页";
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+  plan.steps.back().title = "关闭指定标签页";
+  plan.steps.erase(plan.steps.begin());
+  EXPECT_FALSE(ValidateTaskPlanForGoal(plan, "关闭指定标签页", &error));
+}
+
+} // namespace
+} // namespace aegis::agent

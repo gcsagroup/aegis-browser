@@ -1,0 +1,710 @@
+From 4fb50c9ee74cb40412f1f401db047ce1c0040a00 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 21:29:19 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E5=80=99=E9=80=89=E6=A3=80=E6=9F=A5=EF=BC=8C?=
+ =?UTF-8?q?=E6=9E=84=E5=BB=BA030?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 158 ++++++++++++++++++
+ .../aegis/agent/aegis_agent_service.cc        |  66 ++++++++
+ .../browser/aegis/agent/aegis_agent_service.h |   2 +
+ .../aegis/agent/aegis_browser_tools.cc        |  11 ++
+ chrome/browser/aegis/agent/agent_execution.cc |  66 ++++++++
+ chrome/browser/aegis/agent/agent_execution.h  |   6 +
+ .../aegis/agent/agent_execution_unittest.cc   |  61 +++++++
+ .../aegis/agent/agent_result_verifier.cc      |  20 ++-
+ .../browser/resources/aegis_agent/agent.html  |   1 +
+ chrome/browser/resources/aegis_agent/agent.ts |  12 ++
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |   1 +
+ .../aegis_agent/aegis_agent_page_handler.cc   |  42 ++++-
+ .../aegis_agent/aegis_agent_page_handler.h    |   7 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   5 +-
+ .../ui/webui/help/aegis_github_update.h       |   6 +-
+ 15 files changed, 452 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 217eabb6de..6ceba21f11 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -3087,6 +3087,164 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   }));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       SelectedTabGroupBindsOnlyExplicitCurrentWindowTabs) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ConfigureAgentModel(browser()->profile());
++  const GURL page = embedded_test_server()->GetURL("/title1.html");
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page));
++  for (int index = 0; index < 3; ++index) {
++    chrome::AddTabAt(browser(), page, -1, false);
++    ASSERT_TRUE(content::WaitForLoadStop(
++        browser()->tab_strip_model()->GetWebContentsAt(index + 1)));
++  }
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  const std::string id = content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const handler = BrowserProxy.getInstance().handler;
++      const {tabs} = await handler.listResearchTabs();
++      const ids = tabs.slice(0, 3).map(tab => tab.tabId);
++      const bad = await handler.createTabGroupTask('分组', [ids[0], ids[0], ids[1]]);
++      if (!bad.snapshot.lastError) return 'ERROR:duplicate accepted';
++      const result = await handler.createTabGroupTask(
++          '把本任务的三个研究标签放入一个组。', ids);
++      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++    })()
++  )JS")
++                             .ExtractString();
++  ASSERT_FALSE(id.starts_with("ERROR:")) << id;
++  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  AgentTask* task = service->GetTask(id);
++  ASSERT_TRUE(task);
++  EXPECT_EQ(task->scope().allowed_tab_ids.size(), 3u);
++  EXPECT_EQ(task->scope().tab_metadata_window_id, 0);
++  EXPECT_TRUE(task->scope().allowed_origins.empty());
++  EXPECT_FALSE(task->scope().AllowsTool("page.observe"));
++  EXPECT_FALSE(task->scope().AllowsTool("tab.close"));
++  EXPECT_FALSE(task->scope().AllowsTool("bookmark.apply"));
++  AegisBrowserTools tools(browser()->profile());
++  AgentToolCall call;
++  call.action_id = "selected-list";
++  call.tool_name = "tab.list";
++  base::test::TestFuture<AgentToolResult> listed;
++  tools.Execute(task, call, listed.GetCallback());
++  ASSERT_TRUE(listed.Get().ok);
++  EXPECT_EQ(listed.Get().value.FindInt("tab_count"), 3);
++  call.action_id = "selected-group";
++  call.tool_name = "tab.group";
++  base::ListValue ids;
++  for (int32_t tab_id : task->scope().allowed_tab_ids) {
++    ids.Append(tab_id);
++  }
++  call.arguments.Set("tab_ids", std::move(ids));
++  call.arguments.Set("revision", *listed.Get().value.FindString("revision"));
++  base::test::TestFuture<AgentToolResult> grouped;
++  tools.Execute(task, call, grouped.GetCallback());
++  ASSERT_TRUE(grouped.Get().ok) << grouped.Get().message;
++  ASSERT_TRUE(grouped.Get().value.FindList("tab_ids"));
++  EXPECT_EQ(grouped.Get().value.FindList("tab_ids")->size(), 3u);
++  const auto* group_id = grouped.Get().value.FindString("group_id");
++  ASSERT_TRUE(group_id);
++  auto* tabs = TabListInterface::From(browser());
++  for (auto* tab : tabs->GetAllTabs()) {
++    const auto group = tab->GetGroup();
++    if (task->AllowsTab(tab->GetHandle().raw_value())) {
++      ASSERT_TRUE(group);
++      EXPECT_EQ(group->ToString(), *group_id);
++    } else {
++      EXPECT_FALSE(group);
++    }
++  }
++  AgentResultVerifier verifier;
++  AgentToolRegistry registry;
++  EXPECT_TRUE(
++      verifier.Verify(*task, call, *registry.Find("tab.group"), grouped.Get())
++          .accepted);
++  AgentToolResult incomplete;
++  incomplete.action_id = grouped.Get().action_id;
++  incomplete.ok = true;
++  incomplete.value = grouped.Get().value.Clone();
++  incomplete.value.Remove("tab_ids");
++  EXPECT_FALSE(
++      verifier.Verify(*task, call, *registry.Find("tab.group"), incomplete)
++          .accepted);
++  incomplete.value = grouped.Get().value.Clone();
++  incomplete.value.Set("tab_ids", base::ListValue().Append(
++                                      *task->scope().allowed_tab_ids.begin()));
++  EXPECT_FALSE(
++      verifier.Verify(*task, call, *registry.Find("tab.group"), incomplete)
++          .accepted);
++  // 列表展示后导航，旧选择不能授权新的网页或其他窗口。
++  const size_t before = service->task_count_for_testing();
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title2.html")));
++  EXPECT_TRUE(content::EvalJs(panel, content::JsReplace(
++                                         R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      const handler = BrowserProxy.getInstance().handler;
++      const result = await handler.createTabGroupTask('分组', $1);
++      return Boolean(result.snapshot.lastError);
++    })()
++  )JS",
++                                         *call.arguments.FindList("tab_ids")))
++                  .ExtractBool());
++  EXPECT_EQ(service->task_count_for_testing(), before);
++}
++
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       TaskTabGoalDoesNotGrantWindowMetadata) {
++  ConfigureAgentModel(browser()->profile());
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  const int32_t active_id =
++      browser()->GetActiveTabInterface()->GetHandle().raw_value();
++  chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
++  content::WebContents* panel = ShowAgentPanel(browser());
++  ASSERT_TRUE(panel);
++  auto* service = AegisAgentServiceFactory::GetForProfile(browser()->profile());
++  ASSERT_TRUE(service);
++  AegisBrowserTools tools(browser()->profile());
++  for (const char* goal :
++       {"列出这个任务打开的标签页。", "列出本任務開啟的標籤頁。",
++        "List open tabs for this task.", "列出当前窗口中本任务的标签页。"}) {
++    SCOPED_TRACE(goal);
++    AgentGoalRoute route;
++    route.workflow = AgentWorkflowKind::kBrowserSteward;
++    route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
++    route.summary = "列出任务标签";
++    service->SetGoalRouteForTesting(route);
++    const std::string id = content::EvalJs(panel, content::JsReplace(R"JS(
++      (async () => {
++        const {BrowserProxy} = await import('./browser_proxy.js');
++        const result = await BrowserProxy.getInstance().handler
++            .createTask($1, 0, 0, [], 0);
++        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      })()
++    )JS",
++                                                                     goal))
++                               .ExtractString();
++    ASSERT_FALSE(id.starts_with("ERROR:")) << id;
++    AgentTask* task = service->GetTask(id);
++    ASSERT_TRUE(task);
++    EXPECT_EQ(task->scope().tab_metadata_window_id, 0);
++    AgentToolCall call;
++    call.action_id = "list-task-tabs";
++    call.tool_name = "tab.list";
++    base::test::TestFuture<AgentToolResult> future;
++    tools.Execute(task, call, future.GetCallback());
++    const AgentToolResult& result = future.Get();
++    ASSERT_TRUE(result.ok) << result.message;
++    EXPECT_EQ(result.value.FindInt("tab_count"), 1);
++    EXPECT_EQ(*result.value.FindString("count_scope"), "task_tabs");
++    const base::ListValue* listed = result.value.FindList("tabs");
++    ASSERT_TRUE(listed);
++    ASSERT_EQ(listed->size(), 1u);
++    EXPECT_EQ((*listed)[0].GetDict().FindInt("tab_id"), active_id);
++  }
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        CurrentWindowMetadataCountsAllTabsWithoutActionAccess) {
+   ConfigureAgentModel(browser()->profile());
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 5d55042128..01e53e3ef9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -758,6 +758,70 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
+   return task;
+ }
+ 
++AgentTask* AegisAgentService::CreateSelectedTabGroupTask(
++    std::string goal,
++    const std::vector<int32_t>& tab_ids) {
++  const auto destination = ConfiguredModelDestination();
++  base::flat_set<int32_t> selected(tab_ids.begin(), tab_ids.end());
++  if (!destination || selected.size() < 3u || selected.size() > 10u ||
++      selected.size() != tab_ids.size()) {
++    return nullptr;
++  }
++  BrowserWindowInterface* window = nullptr;
++  for (int32_t id : selected) {
++    auto* tab = tabs::TabHandle(id).Get();
++    if (!tab || tab->GetProfile() != profile_ ||
++        !tab->GetURL().SchemeIsHTTPOrHTTPS() || tab->GetURL().has_username() ||
++        tab->GetURL().has_password() ||
++        (window && window != tab->GetBrowserWindowInterface())) {
++      return nullptr;
++    }
++    window = tab->GetBrowserWindowInterface();
++  }
++  if (!window || window->IsDeleteScheduled() ||
++      window->GetType() != BrowserWindowInterface::TYPE_NORMAL) {
++    return nullptr;
++  }
++  // 勾选授权仅涵盖这批标签的元数据与分组，不读取正文或授予窗口全量访问。
++  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kBrowserSteward, {},
++                                       selected, *destination);
++  if (!scope) {
++    return nullptr;
++  }
++  scope->allowed_tools = {"tab.list", "tab.group"};
++  scope->allowed_data_classes = {AgentDataClass::kBrowserMetadata};
++  scope->budgets.max_tabs = static_cast<int>(selected.size());
++  scope->budgets.max_tool_calls = 4;
++  scope->budgets.max_model_calls = 6;
++  scope->budgets.max_network_requests = 6;
++  scope->budgets.max_duration = base::Minutes(5);
++  auto* task = CreateTask(std::move(goal), AgentMode::kAct, std::move(*scope));
++  if (!task || !BeginPlanning(task->id())) {
++    return nullptr;
++  }
++  AgentModelEvent plan;
++  plan.type = AgentModelEventType::kToolCall;
++  plan.tool_name = "agent.submit_plan";
++  plan.arguments.Set("schema_version", kAgentSchemaVersion);
++  plan.arguments.Set("summary", task->goal());
++  base::ListValue steps;
++  steps.Append(base::DictValue()
++                   .Set("id", "selected-tab-list")
++                   .Set("title", "核对所选标签")
++                   .Set("tool", "tab.list"));
++  steps.Append(base::DictValue()
++                   .Set("id", "selected-tab-group")
++                   .Set("title", "将所选标签放入一个组")
++                   .Set("tool", "tab.group"));
++  plan.arguments.Set("steps", std::move(steps));
++  std::string error;
++  if (!AcceptModelPlan(task->id(), plan, &error)) {
++    Transition(task->id(), AgentTaskState::kFailed, std::move(error));
++    return nullptr;
++  }
++  return task;
++}
++
+ AgentTask* AegisAgentService::GetTask(const std::string& task_id) {
+   auto it = tasks_.find(task_id);
+   return it == tasks_.end() ? nullptr : it->second.get();
+@@ -2739,6 +2803,8 @@ void AegisAgentService::FinishRuntime(
+                                           it->second->evidence_history,
+                                           it->second->translation_review_passed);
+     if (const auto* task = GetTask(task_id)) {
++      NormalizeAgentTabGroupCompletion(&*completion, *task,
++                                       it->second->evidence_history);
+       NormalizeAgentDownloadCompletion(&*completion, task->goal(),
+                                        task->scope(),
+                                        it->second->download_history);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 9355177d3d..deeb0805e1 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -82,6 +82,8 @@ class AegisAgentService : public KeyedService {
+   AgentTask* CreateTask(std::string goal, AgentMode mode, AgentTaskScope scope);
+   AgentTask* CreateSelectedResearchTask(std::string goal,
+                                         const std::vector<int32_t>& tab_ids);
++  AgentTask* CreateSelectedTabGroupTask(std::string goal,
++                                        const std::vector<int32_t>& tab_ids);
+   AgentTask* GetTask(const std::string& task_id);
+   const AgentTask* GetTask(const std::string& task_id) const;
+   AgentTask* MostRecentTask();
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 0eba891c09..b7f5de32b4 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -1196,6 +1196,17 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+             title ? base::UTF8ToUTF16(*title) : std::u16string(),
+             ParseGroupColor(call.arguments.FindString("color")), false));
+     AgentToolResult result = SuccessResult(call.action_id, "tabs grouped");
++    base::ListValue grouped_ids;
++    for (const LocatedTab& located : located_tabs) {
++      if (located.tab->GetGroup() != group_id) {
++        std::move(callback).Run(
++            ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
++                        "标签分组后回读不一致，请检查实际标签组"));
++        return;
++      }
++      grouped_ids.Append(located.tab->GetHandle().raw_value());
++    }
++    result.value.Set("tab_ids", std::move(grouped_ids));
+     result.value.Set("group_id", group_id->ToString());
+     result.value.Set("revision", TabRevision(profile_, *task));
+     std::move(callback).Run(std::move(result));
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 1282f65adf..14f6bdcad2 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1446,6 +1446,72 @@ bool NormalizeAgentCompletionSourcesForEvidence(
+   return AgentCompletionSourcesMatchEvidence(*completion, evidence_history);
+ }
+ 
++void NormalizeAgentTabGroupCompletion(
++    AgentCompletionSummary* completion,
++    const AgentTask& task,
++    base::span<const AgentExecutionEvidence> history) {
++  const auto& scope = task.scope();
++  if (!completion || !scope.AllowsTool("tab.group")) {
++    return;
++  }
++  const base::ListValue* grouped = nullptr;
++  for (const auto& evidence : history) {
++    if (evidence.tool_name == "tab.group") {
++      grouped = evidence.result.ok ? evidence.result.value.FindList("tab_ids")
++                                   : nullptr;
++    }
++  }
++  base::flat_set<int> ids;
++  bool valid = grouped && !grouped->empty();
++  if (grouped) {
++    for (const auto& id : *grouped) {
++      if (!id.is_int() || !task.AllowsTab(id.GetInt()) ||
++          !ids.insert(id.GetInt()).second) {
++        valid = false;
++        break;
++      }
++    }
++  }
++  // 只识别明确的标签数量短语，不从模型计划或网页文字推断需求。
++  const std::string lower = base::ToLowerASCII(task.goal());
++  constexpr std::string_view chinese[] = {"一", "二", "三", "四", "五",
++                                          "六", "七", "八", "九", "十"};
++  constexpr std::string_view english[] = {"one",  "two", "three", "four",
++                                          "five", "six", "seven", "eight",
++                                          "nine", "ten"};
++  auto allowed = scope.allowed_tab_ids;
++  allowed.insert(task.owned_tab_ids().begin(), task.owned_tab_ids().end());
++  size_t expected = allowed.size();
++  for (size_t index = 0; index < std::size(chinese); ++index) {
++    const std::string digit = base::NumberToString(index + 1);
++    for (std::string_view suffix :
++         {"个标签", "个研究标签", "個標籤", "個研究標籤"}) {
++      if (lower.find(digit + std::string(suffix)) != std::string::npos ||
++          lower.find(std::string(chinese[index]) + std::string(suffix)) !=
++              std::string::npos) {
++        expected = index + 1;
++      }
++    }
++    for (std::string_view suffix : {" tabs", " research tabs"}) {
++      if (lower.find(digit + std::string(suffix)) != std::string::npos ||
++          lower.find(std::string(english[index]) + std::string(suffix)) !=
++              std::string::npos) {
++        expected = index + 1;
++      }
++    }
++  }
++  completion->summary = valid ? "浏览器已回读确认：将 " +
++                                    base::NumberToString(ids.size()) +
++                                    " 个已授权标签放入了一个组。"
++                              : "浏览器尚未取得完整的标签分组回执。";
++  if (!valid || ids.size() != expected) {
++    completion->outcome = "partial";
++    completion->unfinished_items.push_back(
++        "尚未确认覆盖目标中的全部标签。请在研究工作台勾选要分组的网页，再点击分"
++        "组。");
++  }
++}
++
+ void NormalizeAgentBookmarkCheckCompletion(
+     AgentCompletionSummary* completion,
+     base::span<const AgentExecutionEvidence> evidence_history,
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index e462dfde28..91f3d21f1a 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -45,6 +45,12 @@ void NormalizeAgentDownloadCompletion(
+     const AgentTaskScope& scope,
+     base::span<const AgentExecutionEvidence> history);
+ 
++// 分组的数量来自原生回读；模型声称“三个”不能替代实际只分组一个的结果。
++void NormalizeAgentTabGroupCompletion(
++    AgentCompletionSummary* completion,
++    const AgentTask& task,
++    base::span<const AgentExecutionEvidence> history);
++
+ // 原文范围在生成译文前独立确定，并绑定完整的目标、文档身份和原文。
+ struct AgentTranslationSelection {
+   std::string source_prompt;
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 5ce20f2052..9597665fc1 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -1698,6 +1698,67 @@ TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {
+       AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
+ }
+ 
++TEST(AegisAgentExecutionTest,
++     TabGroupSummaryUsesNativeMembershipAndRetainsIncompleteGoal) {
++  auto scope = ExecutionScope();
++  scope.allowed_tools = {"tab.list", "tab.group"};
++  scope.allowed_tab_ids = {1, 2, 3};
++  for (const char* goal :
++       {"把本任务的三个研究标签放入一个组。",
++        "將本任務的3個研究標籤放入一個群組。", "Group three research tabs."}) {
++    SCOPED_TRACE(goal);
++    AgentTask task("group", goal, AgentMode::kAct, scope);
++    for (int count : {0, 1, 3}) {
++      SCOPED_TRACE(count);
++      base::ListValue ids;
++      for (int id = 1; id <= count; ++id) {
++        ids.Append(id);
++      }
++      AgentToolResult result;
++      result.ok = true;
++      result.value.Set("tab_ids", std::move(ids));
++      std::vector<AgentExecutionEvidence> history;
++      history.push_back(
++          {.tool_name = "tab.group", .result = std::move(result)});
++      AgentCompletionSummary completion{.outcome = "completed",
++                                        .summary = "三个标签全部完成"};
++      NormalizeAgentTabGroupCompletion(&completion, task, history);
++      EXPECT_EQ(completion.outcome, count == 3 ? "completed" : "partial");
++      EXPECT_EQ(completion.summary.find("三个标签全部完成"), std::string::npos);
++      EXPECT_EQ(completion.unfinished_items.empty(), count == 3);
++      if (count != 0) {
++        EXPECT_NE(completion.summary.find(base::NumberToString(count) + " 个"),
++                  std::string::npos);
++      }
++    }
++  }
++}
++
++TEST(AegisAgentExecutionTest,
++     TabGroupSummaryRejectsMissingDuplicateAndForeignMembership) {
++  auto scope = ExecutionScope();
++  scope.allowed_tools = {"tab.group"};
++  scope.allowed_tab_ids = {1, 2, 3};
++  AgentTask task("group", "把三个标签放入一个组", AgentMode::kAct, scope);
++  for (int scenario : {0, 1, 2, 3}) {
++    AgentToolResult result;
++    result.ok = scenario != 3;
++    if (scenario != 0) {
++      result.value.Set("tab_ids", base::ListValue().Append(1).Append(2).Append(
++                                      scenario == 1   ? 2
++                                      : scenario == 2 ? 99
++                                                      : 3));
++    }
++    std::vector<AgentExecutionEvidence> history;
++    history.push_back({.tool_name = "tab.group", .result = std::move(result)});
++    AgentCompletionSummary completion{.outcome = "completed",
++                                      .summary = "成功"};
++    NormalizeAgentTabGroupCompletion(&completion, task, history);
++    EXPECT_EQ(completion.outcome, "partial");
++    EXPECT_NE(completion.summary.find("尚未取得"), std::string::npos);
++  }
++}
++
+ TEST(AegisAgentExecutionTest,
+      BookmarkCheckUsesVerifiedCountsAndPartialOutcome) {
+   for (int scenario = 0; scenario < 3; ++scenario) {
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index 1a7e99ba3f..60646ec552 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -294,7 +294,25 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+                ? Accept(true, "activated tab remains in task scope")
+                : Reject("activated tab is outside task scope");
+   }
+-  if (call.tool_name == "tab.close" || call.tool_name == "tab.group") {
++  if (call.tool_name == "tab.group") {
++    const auto* requested = call.arguments.FindList("tab_ids");
++    const auto* grouped = value.FindList("tab_ids");
++    if (!requested || requested->empty() || !grouped ||
++        requested->size() != grouped->size() || !HasString(value, "group_id") ||
++        !HasString(value, "revision")) {
++      return Reject("标签分组缺少完整回读");
++    }
++    base::flat_set<int> seen;
++    for (const auto& id : *grouped) {
++      if (!id.is_int() || !task.AllowsTab(id.GetInt()) ||
++          !seen.insert(id.GetInt()).second ||
++          !std::ranges::contains(*requested, id)) {
++        return Reject("标签分组回读与请求不一致");
++      }
++    }
++    return Accept(true, "标签组与请求的标签集合一致");
++  }
++  if (call.tool_name == "tab.close") {
+     return HasString(value, "revision")
+                ? Accept(true, "post-action tab revision is present")
+                : Reject("tab mutation lacks a post-action revision");
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index 1ea26f851b..34a08d87a4 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -38,6 +38,7 @@
+         <label id="research-goal-label" for="research-goal"></label>
+         <textarea id="research-goal" rows="4" maxlength="4096"></textarea>
+         <button id="research-start" class="primary" type="button" disabled></button>
++        <button id="research-group" type="button" disabled></button>
+         <p id="research-error" class="notice" role="status" hidden></p>
+         <h3 id="saved-research-title"></h3>
+         <p id="saved-research-help" class="help"></p>
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 5c80f6f08c..d3d63cf1bf 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -312,6 +312,8 @@ function updateResearchSelection() {
+   element<HTMLButtonElement>('research-start').disabled = busy ||
+       selectedResearchTabs.size < 3 || selectedResearchTabs.size > 10 ||
+       !element<HTMLTextAreaElement>('research-goal').value.trim();
++  element<HTMLButtonElement>('research-group').disabled =
++      element<HTMLButtonElement>('research-start').disabled;
+ }
+ 
+ async function refreshResearchTabs() {
+@@ -1047,6 +1049,7 @@ function initializeLabels() {
+   text('research-refresh', 'researchRefresh');
+   text('research-goal-label', 'researchGoal');
+   text('research-start', 'researchStart');
++  text('research-group', 'researchGroup');
+   text('saved-research-title', 'researchSavedTitle');
+   text('saved-research-help', 'researchSavedHelp');
+   text('saved-research-refresh', 'researchLoadSaved');
+@@ -1342,6 +1345,15 @@ function bindActions() {
+     autoRunTaskId = created.snapshot.taskId;
+     return created;
+   }, true));
++  element('research-group').addEventListener('click', () => withBusy(async () => {
++    const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
++    const created = await proxy.handler.createTabGroupTask(
++        goal, [...selectedResearchTabs]);
++    activeView = 'task';
++    showCreatedTask(created.snapshot);
++    autoRunTaskId = created.snapshot.taskId;
++    return created;
++  }, true));
+   element('plan-button').addEventListener('click', () => withBusy(async () => {
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+     const workflow = selectedWorkflow ?? inferWorkflow(goal);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index 34ff326e6b..f8bca804ef 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -163,6 +163,7 @@ interface PageHandler {
+   GetSnapshot() => (TaskSnapshot snapshot);
+   ListResearchTabs() => (array<ResearchTab> tabs, string error);
+   CreateResearchTask(string goal, array<int32> tab_ids) => (TaskSnapshot snapshot);
++  CreateTabGroupTask(string goal, array<int32> tab_ids) => (TaskSnapshot snapshot);
+   ShowProtection();
+   OpenResearchSource(string id, uint32 source_index) => (bool ok);
+   ReviewResearchSource(string id, uint32 source_index) => (string status);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 13f106f495..50d76a98b8 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -185,13 +185,27 @@ bool IsValidSchedule(AgentMode mode, int schedule_interval_minutes) {
+ 
+ bool GoalRequestsWindowTabMetadata(std::string_view goal) {
+   const std::string lower = base::ToLowerASCII(goal);
++  // 用户限定“本任务”时，保留已有任务标签范围；不能因“标签页”三个字
++  // 自动授予整个窗口的元数据读取能力。冲突或含糊目标取较小范围。
++  constexpr std::string_view task_references[] = {
++      "本任务",       "这个任务", "当前任务",   "该任务",      "本任務",
++      "這個任務",     "目前任務", "當前任務",   "該任務",      "this task",
++      "current task", "the task", "task-owned", "task scoped", "task-scoped"};
++  if (std::ranges::any_of(task_references,
++                          [&lower](std::string_view reference) {
++                            return lower.find(reference) != std::string::npos;
++                          })) {
++    return false;
++  }
+   if (lower.find("标签") == std::string::npos &&
++      lower.find("標籤") == std::string::npos &&
+       lower.find("tab") == std::string::npos) {
+     return false;
+   }
+   constexpr std::string_view references[] = {
+-      "当前窗口",       "这个窗口",    "本窗口",  "标签页",    "浏览器标签",
+-      "current window", "this window", "my tabs", "open tabs", "browser tabs"};
++      "当前窗口",    "这个窗口", "本窗口",    "标签页",      "浏览器标签",
++      "目前視窗",    "這個視窗", "標籤頁",    "瀏覽器標籤",  "current window",
++      "this window", "my tabs",  "open tabs", "browser tabs"};
+   return std::ranges::any_of(references, [&lower](std::string_view reference) {
+     return lower.find(reference) != std::string::npos;
+   });
+@@ -480,6 +494,21 @@ void AegisAgentPageHandler::CreateResearchTask(
+     const std::string& goal,
+     const std::vector<int32_t>& tab_ids,
+     CreateResearchTaskCallback callback) {
++  CreateSelectedTask(goal, tab_ids, false, std::move(callback));
++}
++
++void AegisAgentPageHandler::CreateTabGroupTask(
++    const std::string& goal,
++    const std::vector<int32_t>& tab_ids,
++    CreateTabGroupTaskCallback callback) {
++  CreateSelectedTask(goal, tab_ids, true, std::move(callback));
++}
++
++void AegisAgentPageHandler::CreateSelectedTask(
++    const std::string& goal,
++    const std::vector<int32_t>& tab_ids,
++    bool group_tabs,
++    CreateResearchTaskCallback callback) {
+   last_error_.clear();
+   auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+   if (!list || browser_->GetProfile() != profile_ || tab_ids.size() < 3u ||
+@@ -501,11 +530,12 @@ void AegisAgentPageHandler::CreateResearchTask(
+       service_ =
+           aegis::agent::AegisAgentServiceFactory::GetForProfile(profile_);
+       ObserveService(service_);
+-      auto* task = service_
+-                       ? service_->CreateSelectedResearchTask(goal, tab_ids)
+-                       : nullptr;
++      auto* task = !service_ ? nullptr
++                   : group_tabs
++                       ? service_->CreateSelectedTabGroupTask(goal, tab_ids)
++                       : service_->CreateSelectedResearchTask(goal, tab_ids);
+       if (!task) {
+-        last_error_ = "无法创建研究任务，请核对网页、目标及模型配置";
++        last_error_ = "无法创建所选标签任务，请核对网页、目标及模型配置";
+       } else {
+         active_task_id_ = task->id();
+         ObserveTask(task);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index e6e94ff85a..4abaa6eba4 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -52,6 +52,9 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+                           const std::vector<int32_t>& tab_ids,
+                           CreateResearchTaskCallback callback) override;
+   void ShowProtection() override;
++  void CreateTabGroupTask(const std::string& goal,
++                          const std::vector<int32_t>& tab_ids,
++                          CreateTabGroupTaskCallback callback) override;
+   void OpenResearchSource(const std::string& id,
+                           uint32_t source_index,
+                           OpenResearchSourceCallback callback) override;
+@@ -111,6 +114,10 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+   void OnAgentServiceSnapshotChanged() override;
+ 
+  private:
++  void CreateSelectedTask(const std::string& goal,
++                          const std::vector<int32_t>& tab_ids,
++                          bool group_tabs,
++                          CreateResearchTaskCallback callback);
+   aegis_agent::mojom::TaskSnapshotPtr BuildSnapshot();
+   void ObserveTask(aegis::agent::AgentTask* task);
+   void ObserveService(aegis::agent::AegisAgentService* service);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index b100ad63de..ca7733e310 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -84,10 +84,11 @@ void AddStrings(content::WebUIDataSource* source) {
+   add("researchRefresh", "Refresh sources", "刷新来源列表", "重新整理來源清單");
+   add("researchSelectRange", "Select 3–10 pages", "请选择3–10个网页",
+       "請選擇3–10個網頁");
+-  add("researchGoal", "What should be compared?", "希望比较什么？",
+-      "希望比較什麼？");
++  add("researchGoal", "Task goal", "任务目标", "任務目標");
+   add("researchStart", "Read selected pages and compare", "读取所选网页并比较",
+       "讀取所選網頁並比較");
++  add("researchGroup", "Put selected tabs in one group", "将所选标签放入一个组",
++      "將所選標籤放入一個群組");
+   add("researchDefaultGoal",
+       "Compare the selected sources, preserve conflicting facts, include dates "
+       "when present, and cite every source. Do not invent missing information.",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ee66808bc8..c66ce86b1b 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.29。
+-inline constexpr char kProductVersion[] = "2.0.0.29";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (029)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.30。
++inline constexpr char kProductVersion[] = "2.0.0.30";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (030)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

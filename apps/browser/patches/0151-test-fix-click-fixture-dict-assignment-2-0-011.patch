@@ -1,0 +1,47 @@
+From 8f00273cc430ac4d7ddc22d10be69ab9d3e7a4af Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 04:53:11 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E4=BF=AE=E6=AD=A3=E7=82=B9=E5=87=BB?=
+ =?UTF-8?q?=E7=BB=91=E5=AE=9A=E5=A4=B9=E5=85=B7=E7=9A=84=E5=AD=97=E5=85=B8?=
+ =?UTF-8?q?=E8=B5=8B=E5=80=BC=20Ver=202.0=20(011)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_service_unittest.cc | 3 ++-
+ chrome/browser/ui/webui/help/aegis_github_update.h         | 4 ++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index 236c3245f6..ed00df842f 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -353,7 +353,8 @@ TEST_F(AegisAgentServiceTest, ClickTargetUsesObservedAncestryAndDocument) {
+   AegisAgentServiceTestPeer::SeedClickObservation(&bridge, document);
+   AgentToolCall call;
+   call.tool_name = "page.click";
+-  call.arguments.Set("tab_id", 7).Set("node_id", 3);
++  call.arguments.Set("tab_id", 7);
++  call.arguments.Set("node_id", 3);
+   call.document = document;
+   EXPECT_EQ(bridge.ResolveObservedClickTarget("click-fixture", call), 15);
+   EXPECT_EQ(bridge.DescribeObservedClickTarget("click-fixture", call),
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 54987f0eb2..c652b8326a 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.8。
+-inline constexpr char kProductVersion[] = "2.0.0.10";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (010)";
++inline constexpr char kProductVersion[] = "2.0.0.11";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (011)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

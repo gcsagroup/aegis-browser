@@ -1,0 +1,86 @@
+From 80054eb4df74cd2734e3c2d131aef89488dbf64b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 23 Sep 2026 05:21:25 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99=E5=85=B3=E9=97=AD=E5=8A=A8?=
+ =?UTF-8?q?=E4=BD=9C=E5=8E=9F=E5=A7=8B=E5=90=A6=E5=AE=9A=E7=BA=A6=E6=9D=9F?=
+ =?UTF-8?q?=E5=B9=B6=E8=A1=A5=E9=BD=90=E5=9B=9E=E8=AF=BB=E7=94=A8=E4=BE=8B?=
+ =?UTF-8?q?=202.0.064?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_core_unittest.cc    |  1 +
+ chrome/browser/aegis/agent/agent_planner.cc          | 12 ++++++++++++
+ chrome/browser/aegis/agent/agent_planner_unittest.cc |  4 +++-
+ chrome/browser/ui/webui/help/aegis_github_update.h   |  4 ++--
+ 4 files changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index f95de81505..aae8961692 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -1755,6 +1755,7 @@ TEST(AegisAgentResultVerifierTest, CloseRequiresExactPostActionReadback) {
+   AgentToolResult result;
+   result.action_id = call.action_id;
+   result.ok = true;
++  result.message = "标签关闭回读";
+   result.value.Set("revision", "after");
+   const auto* descriptor = registry.Find("tab.close");
+   ASSERT_TRUE(descriptor);
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 9c43249c14..231345b8c8 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -703,6 +703,18 @@ bool AgentBrowserGoalNeedsClarification(std::string_view goal,
+ }
+ 
+ bool AgentGoalRequestsTabClose(std::string_view goal) {
++  // 肯定关键词筛选不能消除原始写入限制；冲突目标要求用户重新明确。
++  if (BookmarkGoalIsReadOnly(goal) ||
++      GoalContainsAny(goal, {"不要关闭", "不要關閉", "不关闭", "不關閉",
++          "别关闭", "別關閉", "别关掉", "別關掉", "不要关掉", "不要關掉",
++          "请勿关闭", "請勿關閉", "不要实际关闭", "不要實際關閉",
++          "不要真正关闭", "不要真正關閉", "不要执行", "不要執行",
++          "不执行", "不執行", "do not close", "don't close", "don’t close",
++          "never close", "without closing", "without actually closing",
++          "do not execute", "don't execute", "do not actually close",
++          "preview", "预览", "預覽"})) {
++    return false;
++  }
+   std::string requested = RequestedGoalText(goal);
+   for (std::string_view separator :
+        {"。", "；", "，", ";", ",", "然后", "然後", "并且", "並且", "并", "並",
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index c4afa7caa9..a995e40d9a 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -1503,7 +1503,9 @@ TEST(AegisAgentPlannerTest, CloseRequiresExplicitActionNotStatusOrQuestion) {
+   for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",
+        "不要关闭标签页", "把未关闭的标签页列出", "如何关闭标签页", "如果有重复就关闭标签页",
+        "List tabs that are not closed", "Should I close this tab?", "Do not close tabs",
+-       "Explain \"close tabs\"", "关闭标签页之前先列出", "close tabs?"}) {
++       "Explain \"close tabs\"", "关闭标签页之前先列出", "close tabs?",
++       "关闭标签页，但不要实际关闭", "Close tabs without actually closing them",
++       "Close tabs. Do not close any tabs.", "关闭标签页，只预览方案不要修改"}) {
+     EXPECT_FALSE(AgentGoalRequestsTabClose(goal)) << goal;
+   }
+   for (const char* goal : {"关闭本任务标签页", "请把当前标签页关掉", "請關閉指定標籤頁",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 2b33199f4b..ec8db1914a 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.63";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (063)";
++inline constexpr char kProductVersion[] = "2.0.0.64";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (064)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
