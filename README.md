@@ -20,12 +20,14 @@
 
 Aegis is under active development. **Release No-Go:** neither the macOS browser nor the native iOS/iPadOS app has a qualified distributable build.
 
+> **2026-10-03 · iOS 2.2.0 source prerelease:** page assistance, filtering, downloads, workspaces, tab groups and independent iPad windows are integrated. See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for validation and usage. No installable signed IPA is available.
+
 ## Core capabilities
 
 | Capability | What it does | Platform and current stage |
 | --- | --- | --- |
-| Privacy browsing | Reduces tracking and risky navigation through link, cookie, phishing and selected fingerprint protections; the native app isolates standard and private profiles. | macOS: in source, runtime acceptance pending. iOS/iPadOS: recorded Simulator baseline; current-source validation pending. |
-| Controllable Agent | Shows plans, keeps actions under browser policy and asks before sensitive operations. | macOS: in source, runtime acceptance pending. iOS/iPadOS: four offline workflows with a recorded Simulator baseline. |
+| Privacy browsing | Reduces tracking and risky navigation through link, cookie, phishing and selected fingerprint protections; the native app isolates standard and private profiles. | macOS: in source, runtime acceptance pending. iOS/iPadOS: see the 2.2 simulator validation and prerelease notes above. |
+| Controllable Agent | Shows plans, keeps actions under browser policy and asks before sensitive operations. | macOS: in source, runtime acceptance pending. iOS/iPadOS: confirmed page-to-model requests; browser action tools remain unavailable. |
 | Native downloads | Uses Chromium's browser download surfaces and bounded download paths. | macOS: in source, runtime acceptance pending. |
 | Access policy | Routes selected traffic through native proxy components and fails closed when a required route is unavailable. | macOS: in source, integration and real-network acceptance pending. |
 
@@ -58,14 +60,14 @@ The native [iOS engineering guide](apps/ios/README.md) covers Xcode and Simulato
 | Platform | Priority | Current state |
 | --- | --- | --- |
 | macOS | Now | Chromium integration and Access Service work continue; current-source runtime and distribution qualification remain open. |
-| iOS / iPadOS | Next | Native SwiftUI/WKWebView app has a recorded Simulator baseline; current-source, real-device and distribution work remain open. |
+| iOS / iPadOS | Next | Native SwiftUI/WKWebView 2.2 source prerelease with simulator validation; device and distribution acceptance remain open. |
 | Windows / Android / Linux | Later | Source and evaluation entry points exist; no near-term release commitment. |
 
 macOS may qualify independently of iOS. See the [roadmap](docs/roadmap.md) for milestone exit criteria. Full browser builds, real-network scenarios, device acceptance, signing, notarization, installation and upgrades are separate release gates.
 
 ## Privacy and AI
 
-Page summaries use a bounded snapshot that the browser validates and redacts; sensitive pages fall back to an on-device heuristic. A remote summary request can send bounded, redacted page content to a user-selected compatible model endpoint. Non-loopback use requires explicit destination selection and confirmation. Browser Agent actions remain under browser-owned policy, with separate confirmation for sensitive actions. The iOS Agent workflows are currently offline and have no production remote-model path. These controls do not establish a general data-loss-prevention boundary; see the [architecture and privacy boundaries](docs/architecture.md).
+Page summaries use a bounded snapshot that the browser validates and redacts; sensitive pages fall back to an on-device heuristic. A remote summary request can send bounded, redacted page content to a user-selected compatible model endpoint. Non-loopback use requires explicit destination selection and confirmation. Browser Agent actions remain under browser-owned policy, with separate confirmation for sensitive actions. The iOS page assistant can request user-configured models after redaction preview and destination confirmation. Synthetic-model tests do not establish external service quality; the model cannot invoke browser action tools. These controls do not establish a general data-loss-prevention boundary; see the [architecture and privacy boundaries](docs/architecture.md).
 
 ## Architecture
 

@@ -17,12 +17,13 @@ configs:
 settings:
   base:
     CLANG_ENABLE_MODULES: YES
-    CURRENT_PROJECT_VERSION: 1
+    CURRENT_PROJECT_VERSION: 34
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     IPHONEOS_DEPLOYMENT_TARGET: "18.4"
-    MARKETING_VERSION: 0.1.0
+    MARKETING_VERSION: 2.2
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_VERSION: "6.0"
+    SWIFT_EMIT_LOC_STRINGS: YES
     TARGETED_DEVICE_FAMILY: "1,2"
   configs:
     Debug:
@@ -43,6 +44,7 @@ targets:
           - Aegis.entitlements
           - Info.plist
       - path: Shared/ShareInbox.swift
+      - path: Shared/ExternalPageLink.swift
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
         buildPhase: resources
@@ -63,6 +65,7 @@ targets:
         INFOPLIST_FILE: AegisApp/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app
         PRODUCT_NAME: Aegis
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
 
   BrowserKit:
@@ -139,6 +142,7 @@ targets:
     type: app-extension
     platform: iOS
     sources:
+      - path: AegisApp/Localizable.xcstrings
       - path: ShareExtension
         excludes:
           - Info.plist
