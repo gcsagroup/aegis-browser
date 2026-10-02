@@ -18,6 +18,7 @@ enum class AgentWorkflowKind {
   kBrowserSteward = 1,
   kSafeDownload = 2,
   kShopping = 3,
+  kPageInteraction = 4,
 };
 
 struct AgentWorkflowTemplate {

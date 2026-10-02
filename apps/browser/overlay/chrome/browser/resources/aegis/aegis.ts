@@ -1,6 +1,10 @@
 // Copyright 2026 GCSA
 
+import '/strings.m.js';
 import './policy_worker.js';
+import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+
+import type {AegisDownloadPanelElement} from 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
 
 import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
@@ -158,7 +162,6 @@ let modelListRequestSerial = 0;
 let modelSettingsRequestSerial = 0;
 let lastModelStatusSignature = '';
 let modelControlsEnabled = false;
-let modelControlsAndroid = false;
 let summaryRequestRunning = false;
 
 function checkbox(id: string): HTMLInputElement {
@@ -548,7 +551,7 @@ function updateModelFormatPresentation() {
   endpoint.readOnly = false;
   endpoint.placeholder = MODEL_ENDPOINTS[activeModelFormat];
   getRequiredElement('model-api-key-field').hidden = false;
-  actionButton('model-key-clear').hidden = modelControlsAndroid;
+  actionButton('model-key-clear').hidden = false;
   const note = getRequiredElement('model-data-note');
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
   note.textContent = local ?
@@ -567,7 +570,7 @@ function updateModelFormatPresentation() {
 }
 
 function updateModelControlAvailability() {
-  const available = modelControlsEnabled && !modelControlsAndroid;
+  const available = modelControlsEnabled;
   selectField('model-provider').disabled = !available;
   textField('model-endpoint').disabled = !available;
   textField('model-api-key').disabled = !available;
@@ -678,18 +681,17 @@ function applyStatus(status: AegisStatus) {
   checkbox('privacy-ai').checked = status.privacyAi;
   const android = !!status.isAndroid;
   modelControlsEnabled = status.privacyAi;
-  modelControlsAndroid = android;
   const modelFields = document.getElementById('model-fields');
   if (modelFields instanceof HTMLElement) {
-    modelFields.hidden = android;
+    modelFields.hidden = false;
   }
   const aiSection = document.getElementById('ai-control-section');
   if (aiSection instanceof HTMLElement) {
     aiSection.hidden = android;
   }
-  actionButton('model-load').hidden = android;
-  actionButton('model-save').hidden = android;
-  actionButton('model-key-clear').hidden = android;
+  actionButton('model-load').hidden = false;
+  actionButton('model-save').hidden = false;
+  actionButton('model-key-clear').hidden = false;
   applyModelStatus(status);
   updateModelFormatPresentation();
   updateModelControlAvailability();
@@ -1196,8 +1198,8 @@ async function probeFingerprint() {
     if (on) {
       lines.push(
           zh ?
-              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'Fingerprint Guard 開著：讀數按站點穩定化。關開後請重新整理本頁再測。' : 'Fingerprint Guard 开着：读数按站点稳定化。关开后请刷新本页再测。') :
-              'Fingerprint Guard is on: readings are stabilized per site. Toggle, reload, then probe again.');
+              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '指紋防護設定已開啟。以下是目前頁面的 API 讀數，不能單獨證明跨站隔離。' : '指纹防护配置已开启。以下是当前页面的 API 读数，不能单独证明跨站隔离。') :
+              'Fingerprint protection is configured on. These page API readings alone do not prove cross-site isolation.');
     } else {
       lines.push(
           zh ?
@@ -1216,8 +1218,8 @@ async function probeFingerprint() {
         note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（同一緩衝讀兩次不一致）' : '（同一缓冲读两次不一致）') :
                     ' (same buffer changed on second read)';
       } else if (lastAudioHash && lastAudioHash === audio.hash) {
-        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與上次相同，已按站點穩定）' : '（与上次相同，已按站点稳定）') :
-                    ' (same as last probe; stable per site)';
+        note = zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '（與本頁上次測量相同）' : '（与本页上次测量相同）') :
+                    ' (same as the previous probe on this page)';
       }
       lastAudioHash = audio.hash;
       lines.push(
@@ -1226,15 +1228,12 @@ async function probeFingerprint() {
     if (webgpu.line) {
       lines.push(webgpu.line);
     }
-    if (on && (webgl.marked || webgpu.marked)) {
-      lines.push(
-          zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'WebGL / WebGPU 已換成帶 Aegis 的穩定化字串。' : 'WebGL / WebGPU 已换成带 Aegis 的稳定化字符串。') :
-               'WebGL / WebGPU strings are replaced with Aegis-stable values.');
-    } else if (on && (webgl.line || webgpu.line)) {
-      lines.push(
-          zh ?
-              (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '未看到 Aegis 標記。關掉再開啟防護後，請重新整理本頁再測。' : '未看到 Aegis 标记。关掉再打开防护后，请刷新本页再测。') :
-              'No Aegis marker yet. Toggle the guard, reload, then probe again.');
+    if (on && (webgl.line || webgpu.line)) {
+      lines.push(zh ?
+          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ?
+              '硬體識別欄位可能為空；是否含有品牌字串不能用來判斷防護效果。' :
+              '硬件识别字段可能为空；是否包含品牌字符串不能用来判断防护效果。') :
+          'Hardware identity fields may be empty. Brand strings do not establish protection effectiveness.');
     }
     result.textContent = lines.filter(Boolean).join('\n');
   } catch (err) {
@@ -1370,9 +1369,6 @@ function bindModelControls() {
 }
 
 async function loadModels() {
-  if (modelControlsAndroid) {
-    return;
-  }
   const snapshot = captureModelFormSnapshot();
   const apiKey = textField('model-api-key').value.trim();
   const serial = ++modelListRequestSerial;
@@ -1418,9 +1414,6 @@ async function loadModels() {
 }
 
 async function saveModelSettings(clearKey: boolean) {
-  if (modelControlsAndroid) {
-    return;
-  }
   const snapshot = captureModelFormSnapshot();
   const apiKey = clearKey ? '' : textField('model-api-key').value.trim();
   const serial = ++modelSettingsRequestSerial;
@@ -1526,5 +1519,7 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
+      ?.setRequestHandler(sendWithPromise);
   void init();
 });

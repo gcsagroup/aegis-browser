@@ -1,4 +1,4 @@
-From 3a66687e2bfd98475e2038d007ffc9a07081850a Mon Sep 17 00:00:00 2001
+From a255cffeb7ab72039877cf8be680297583b91cdf Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 09:10:23 +0800
 Subject: [PATCH] fix(aegis): require model tools and route named sites

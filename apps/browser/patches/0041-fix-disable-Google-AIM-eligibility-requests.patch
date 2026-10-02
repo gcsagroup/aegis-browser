@@ -1,4 +1,4 @@
-From 83715b1a0e38bfc7b1527428e0aa2b6693fb0343 Mon Sep 17 00:00:00 2001
+From 8901fc957502633924bc329d88ec124fab6a7a05 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 00:59:03 +0800
 Subject: [PATCH] fix: disable Google AIM eligibility requests
@@ -12,7 +12,7 @@ Subject: [PATCH] fix: disable Google AIM eligibility requests
  5 files changed, 56 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
-index 066e7ab9c1..f99fc27099 100644
+index 6433ed2d46..477a1a7be8 100644
 --- a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
 +++ b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
 @@ -24,9 +24,11 @@
@@ -25,7 +25,7 @@ index 066e7ab9c1..f99fc27099 100644
    AimEligibilityService::Configuration config;
    config.is_off_the_record = is_off_the_record;
 +  config.allow_server_requests = allow_server_requests;
-   if (!base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks)) {
+   if (!contextual_tasks::IsContextualTasksUIEnabled()) {
      return config;
    }
 @@ -40,6 +42,7 @@ AimEligibilityService::Configuration CreateConfiguration(
@@ -82,10 +82,10 @@ index 3d0a0989c8..1582e867ad 100644
  
    AimEligibilityServiceFactory(const AimEligibilityServiceFactory&) = delete;
 diff --git a/components/omnibox/browser/aim_eligibility_service.cc b/components/omnibox/browser/aim_eligibility_service.cc
-index de465ad4e7..a283a8d5f2 100644
+index 5e1a8533f2..433190c44e 100644
 --- a/components/omnibox/browser/aim_eligibility_service.cc
 +++ b/components/omnibox/browser/aim_eligibility_service.cc
-@@ -340,6 +340,10 @@ AimEligibilityService::AimEligibilityService(
+@@ -350,6 +350,10 @@ AimEligibilityService::AimEligibilityService(
  
    LoadMostRecentResponse();
  
@@ -93,10 +93,10 @@ index de465ad4e7..a283a8d5f2 100644
 +    return;
 +  }
 +
-   bool startup_request_enabled =
-       base::FeatureList::IsEnabled(omnibox::kAimServerRequestOnStartupEnabled);
-   bool startup_request_delayed_until_network_available_enabled =
-@@ -1040,6 +1044,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
+   if (IsManualOverrideActive()) {
+     base::Time override_time =
+         pref_service_->GetTime(kManualOverrideTimestampPrefName);
+@@ -1091,6 +1095,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
  void AimEligibilityService::StartServerEligibilityRequest(
      RequestSource request_source,
      const std::string& locale) {
@@ -104,11 +104,11 @@ index de465ad4e7..a283a8d5f2 100644
 +    return;
 +  }
 +
-   // Cancel pending requests.
-   active_loader_.reset();
- 
+   if (IsManualOverrideActive() && request_source != RequestSource::kUser) {
+     return;
+   }
 diff --git a/components/omnibox/browser/aim_eligibility_service.h b/components/omnibox/browser/aim_eligibility_service.h
-index 9db0433919..fca0383790 100644
+index 62ce20d505..c3673e572e 100644
 --- a/components/omnibox/browser/aim_eligibility_service.h
 +++ b/components/omnibox/browser/aim_eligibility_service.h
 @@ -116,6 +116,10 @@ class AimEligibilityService
@@ -123,10 +123,10 @@ index 9db0433919..fca0383790 100644
  
    // Returns the current server eligibility request mode based on the feature
 diff --git a/components/omnibox/browser/aim_eligibility_service_unittest.cc b/components/omnibox/browser/aim_eligibility_service_unittest.cc
-index 9b4e083c2c..0755be67e5 100644
+index dd1dc30533..6fe12a0c13 100644
 --- a/components/omnibox/browser/aim_eligibility_service_unittest.cc
 +++ b/components/omnibox/browser/aim_eligibility_service_unittest.cc
-@@ -53,6 +53,10 @@ class AimEligibilityServiceFriend {
+@@ -54,6 +54,10 @@ class AimEligibilityServiceFriend {
    static bool IsIetfBcp47(const std::string& locale) {
      return AimEligibilityService::IsIetfBcp47(locale);
    }
@@ -137,7 +137,7 @@ index 9b4e083c2c..0755be67e5 100644
  };
  
  namespace {
-@@ -102,7 +106,9 @@ class AimEligibilityServiceTest : public testing::Test {
+@@ -103,7 +107,9 @@ class AimEligibilityServiceTest : public testing::Test {
    void SetUp() override {
      AimEligibilityService::RegisterProfilePrefs(
          search_engines_test_environment_.pref_service().registry());
@@ -148,7 +148,7 @@ index 9b4e083c2c..0755be67e5 100644
    }
  
    void CreateService(
-@@ -338,6 +344,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
+@@ -376,6 +382,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
    EXPECT_EQ(value, "es-419");
  }
  
@@ -176,7 +176,7 @@ index 9b4e083c2c..0755be67e5 100644
  TEST_F(AimEligibilityServiceTest, ClientCountryParam_Enabled) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(
-@@ -569,6 +596,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
+@@ -700,6 +727,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
        omnibox::kAimServerEligibilitySendFullVersionListEnabled);
  
    AimEligibilityService::Configuration config;
@@ -184,7 +184,7 @@ index 9b4e083c2c..0755be67e5 100644
    config.full_version_list = "Test Brand List";
    CreateService(config);
  
-@@ -592,6 +620,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
+@@ -723,6 +751,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
        omnibox::kAimServerEligibilitySendFullVersionListEnabled);
  
    AimEligibilityService::Configuration config;
@@ -192,7 +192,7 @@ index 9b4e083c2c..0755be67e5 100644
    config.full_version_list = "Test Brand List";
    CreateService(config);
  
-@@ -612,6 +641,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
+@@ -743,6 +772,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
        omnibox::kAimServerEligibilitySendCoBrowseUserAgentSuffixEnabled);
  
    AimEligibilityService::Configuration config;

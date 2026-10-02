@@ -1,0 +1,379 @@
+From acaac55790740f6d3e931e6fc22aec495d81f08a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 14 Sep 2026 06:15:10 +0800
+Subject: [PATCH] =?UTF-8?q?fix(build):=20=E8=A1=A5=E9=BD=90=20M153=20?=
+ =?UTF-8?q?=E5=8E=9F=E7=94=9F=E7=9B=AE=E6=A0=87=E4=BE=9D=E8=B5=96=E5=B9=B6?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E5=80=99=E9=80=89=E6=9E=84=E5=BB=BA=E5=8F=B7?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/actor/BUILD.gn                 |  1 +
+ chrome/browser/aegis/BUILD.gn                 | 22 ++++++++++++++++---
+ chrome/browser/devtools/BUILD.gn              |  1 +
+ chrome/browser/download/BUILD.gn              |  1 +
+ chrome/browser/download/download_ui_model.cc  |  2 +-
+ chrome/browser/policy/BUILD.gn                |  1 +
+ chrome/browser/prefs/BUILD.gn                 |  1 +
+ .../profile_resetter/reset_report_uploader.cc |  2 --
+ chrome/browser/profiles/BUILD.gn              |  3 +++
+ chrome/browser/ui/toolbar/BUILD.gn            |  1 +
+ .../ui/toolbar/pinned_toolbar/BUILD.gn        |  1 +
+ chrome/browser/ui/webui/aegis/BUILD.gn        |  1 +
+ chrome/browser/ui/webui/downloads/BUILD.gn    |  2 ++
+ .../webui/downloads/downloads_list_tracker.cc |  2 +-
+ chrome/browser/ui/webui/help/BUILD.gn         |  9 ++++----
+ .../ui/webui/help/aegis_github_update.h       |  6 ++---
+ chrome/browser/ui/webui/settings/BUILD.gn     |  2 ++
+ .../internal/common/parallel_download_utils.h |  4 +---
+ .../public/common/download_features.h         |  4 ++++
+ 19 files changed, 49 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
+index 1ae0127aea..36cb979369 100644
+--- a/chrome/browser/actor/BUILD.gn
++++ b/chrome/browser/actor/BUILD.gn
+@@ -383,6 +383,7 @@ source_set("unit_tests") {
+     "//chrome/browser/critical_actions",
+     "//chrome/browser/optimization_guide",
+     "//chrome/browser/optimization_guide:test_support",
++    "//chrome/common/aegis",
+     "//chrome/test:test_support",
+     "//components/actor/core:journal",
+     "//components/affiliations/core/browser:test_support",
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 0a6c89102a..f870d8c223 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -85,6 +85,20 @@ source_set("profile_support") {
+   }
+ }
+ 
++# 下载模块只依赖首选项定义，避免引入整个浏览器代理实现。
++source_set("download_prefs") {
++  sources = [
++    "aegis_download_prefs.cc",
++    "aegis_download_prefs.h",
++  ]
++  deps = [
++    "//base",
++    "//components/download/public/common:public",
++    "//components/pref_registry",
++    "//components/prefs",
++  ]
++}
++
+ source_set("aegis") {
+   sources = [
+     "aegis_ai_control.cc",
+@@ -93,8 +107,6 @@ source_set("aegis") {
+     "aegis_bounce_observer.h",
+     "aegis_cookie_janitor.cc",
+     "aegis_cookie_janitor.h",
+-    "aegis_download_prefs.cc",
+-    "aegis_download_prefs.h",
+     "aegis_link_sanitize_navigation_throttle.cc",
+     "aegis_link_sanitize_navigation_throttle.h",
+     "aegis_phish_blocking_page.cc",
+@@ -126,7 +138,10 @@ source_set("aegis") {
+     "threat_feed_updater.cc",
+     "threat_feed_updater.h",
+   ]
+-  public_deps = [ ":profile_support" ]
++  public_deps = [
++    ":download_prefs",
++    ":profile_support",
++  ]
+   deps = [
+     ":model_provider_policy",
+     "//base",
+@@ -302,6 +317,7 @@ test("aegis_agent_core_unittests") {
+     ":agent_core",
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
++    "//sql",
+     "//testing/gtest",
+     "//url",
+   ]
+diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
+index c437c80bf2..eb4cdcf06d 100644
+--- a/chrome/browser/devtools/BUILD.gn
++++ b/chrome/browser/devtools/BUILD.gn
+@@ -646,6 +646,7 @@ if (enable_devtools_frontend) {
+       "//chrome/browser/search_engines",
+       "//chrome/browser/sync/test/integration:sync_integration_test_support",
+       "//chrome/browser/ui/autofill",
++      "//chrome/common/aegis",
+       "//chrome/test:test_support",
+       "//components/autofill/content/browser:test_support",
+       "//components/autofill/core/browser:test_support",
+diff --git a/chrome/browser/download/BUILD.gn b/chrome/browser/download/BUILD.gn
+index 9d33c6e927..54f3f78439 100644
+--- a/chrome/browser/download/BUILD.gn
++++ b/chrome/browser/download/BUILD.gn
+@@ -190,6 +190,7 @@ source_set("impl") {
+     "//chrome/browser:browser_process",
+     "//chrome/browser:primitives",
+     "//chrome/browser/actor",
++    "//chrome/browser/aegis:download_prefs",
+     "//chrome/browser/content_settings",
+     "//chrome/browser/content_settings:content_settings_factory",
+     "//chrome/browser/content_settings:content_settings_util",
+diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
+index f106de8a01..4a897b9c81 100644
+--- a/chrome/browser/download/download_ui_model.cc
++++ b/chrome/browser/download/download_ui_model.cc
+@@ -31,7 +31,7 @@
+ #include "chrome/common/url_constants.h"
+ #include "chrome/grit/branded_strings.h"
+ #include "chrome/grit/generated_resources.h"
+-#include "components/download/internal/common/parallel_download_utils.h"
++#include "components/download/public/common/download_features.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/enterprise/common/proto/connectors.pb.h"
+ #include "components/google/core/common/google_util.h"
+diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
+index 323fe316ef..de3687e2ec 100644
+--- a/chrome/browser/policy/BUILD.gn
++++ b/chrome/browser/policy/BUILD.gn
+@@ -822,6 +822,7 @@ source_set("unit_tests") {
+   deps = [
+     ":impl",
+     ":test_support",
++    "//chrome/browser/invalidation",
+     "//chrome/browser/policy:test_support",
+     "//chrome/browser/prefs",
+     "//chrome/test:test_support",
+diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
+index 3b46ea7613..2f122ba8c7 100644
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -66,6 +66,7 @@ source_set("impl") {
+     "//chrome/browser:defaults",
+     "//chrome/browser:flags",
+     "//chrome/browser/accessibility",
++    "//chrome/browser/aegis",
+     "//chrome/browser/autocomplete:aim_eligibility_service",
+     "//chrome/browser/background/glic",
+     "//chrome/browser/component_updater",
+diff --git a/chrome/browser/profile_resetter/reset_report_uploader.cc b/chrome/browser/profile_resetter/reset_report_uploader.cc
+index 89614bd06e..9c591b1fa9 100644
+--- a/chrome/browser/profile_resetter/reset_report_uploader.cc
++++ b/chrome/browser/profile_resetter/reset_report_uploader.cc
+@@ -12,8 +12,6 @@
+ #include "base/strings/escape.h"
+ #include "build/branding_buildflags.h"
+ #include "chrome/browser/profile_resetter/profile_reset_report.pb.h"
+-#include "content/public/browser/browser_context.h"
+-#include "content/public/browser/storage_partition.h"
+ #include "google_apis/google_api_keys.h"
+ #include "net/base/load_flags.h"
+ #include "net/http/http_response_headers.h"
+diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
+index c84305d8c0..f22d097651 100644
+--- a/chrome/browser/profiles/BUILD.gn
++++ b/chrome/browser/profiles/BUILD.gn
+@@ -359,6 +359,7 @@ source_set("renderer_updater") {
+     "//chrome/browser/content_settings:content_settings_factory",
+     "//chrome/browser/signin",
+     "//chrome/common:constants",
++    "//chrome/common/aegis",
+     "//components/content_settings/common:mojom",
+     "//components/content_settings/core/common",
+     "//components/keyed_service/content",
+@@ -718,6 +719,7 @@ source_set("profiles_extra_parts_impl") {
+     "//chrome/browser/accessibility",
+     "//chrome/browser/accessibility_annotator",
+     "//chrome/browser/account_settings",
++    "//chrome/browser/aegis",
+     "//chrome/browser/affiliations",
+     "//chrome/browser/ai",
+     "//chrome/browser/autocomplete",
+@@ -1118,6 +1120,7 @@ source_set("unit_tests") {
+     ":profile_downloader",
+     ":profile_manager",
+     ":profile_util",
++    ":renderer_updater",
+     ":test_support",
+     "//base",
+     "//base/test:test_support",
+diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
+index aa82136522..36b5d5720f 100644
+--- a/chrome/browser/ui/toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/BUILD.gn
+@@ -23,6 +23,7 @@ source_set("toolbar") {
+     "//chrome/browser/ui/login",
+     "//chrome/common",
+     "//chrome/common:constants",
++    "//chrome/common/aegis",
+     "//components/contextual_tasks/public:feature_list",
+     "//components/google/core/common",
+     "//components/offline_pages/buildflags",
+diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+index 449a04e3e9..51deaf97ad 100644
+--- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
++++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
+@@ -50,6 +50,7 @@ source_set("impl") {
+       "//chrome/browser/ui/views/contextual_tasks",
+       "//chrome/browser/ui/views/page_action",
+       "//chrome/browser/ui/views/toolbar",
++      "//chrome/common/aegis",
+     ]
+     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+   }
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 64781b003b..b7c19fea59 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -15,6 +15,7 @@ source_set("aegis") {
+     "//chrome/browser/download",
+     "//chrome/browser/profiles:profile",
+     "//chrome/browser/resources/aegis:resources",
++    "//chrome/browser/ui/side_panel",
+     "//chrome/common",
+     "//chrome/common/aegis",
+     "//chrome/services/aegis_torrent/public/mojom",
+diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
+index af4a787b5c..f601717eb3 100644
+--- a/chrome/browser/ui/webui/downloads/BUILD.gn
++++ b/chrome/browser/ui/webui/downloads/BUILD.gn
+@@ -33,6 +33,7 @@ source_set("downloads") {
+     "//base",
+     "//chrome/browser:defaults",
+     "//chrome/browser:primitives",
++    "//chrome/browser/aegis",
+     "//chrome/browser/download",
+     "//chrome/browser/download:impl",
+     "//chrome/browser/enterprise",
+@@ -94,6 +95,7 @@ source_set("unit_tests") {
+     "//base",
+     "//base/test:test_support",
+     "//chrome/browser",
++    "//chrome/browser/aegis",
+     "//chrome/browser/download",
+     "//chrome/browser/download:impl",
+     "//chrome/browser/ui/hats:test_support",
+diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
+index c9f2ccc0af..260465b662 100644
+--- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
++++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
+@@ -35,7 +35,7 @@
+ #include "chrome/browser/extensions/api/downloads/downloads_api.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
+-#include "components/download/internal/common/parallel_download_utils.h"
++#include "components/download/public/common/download_features.h"
+ #include "components/download/public/common/download_danger_type.h"
+ #include "components/download/public/common/download_item.h"
+ #include "components/download/public/common/download_item_rename_handler.h"
+diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
+index d2cf914fe4..8ee09a646a 100644
+--- a/chrome/browser/ui/webui/help/BUILD.gn
++++ b/chrome/browser/ui/webui/help/BUILD.gn
+@@ -159,7 +159,6 @@ if (!is_android && !is_chromeos) {
+     # 只链接 HTTP 夹具，避免更新模块测试引入整个
+     # network_service。
+     sources = [
+-      "aegis_settings_safety_unittest.cc",
+       "//chrome/browser/profile_resetter/reset_report_uploader.cc",
+       "//chrome/browser/profile_resetter/reset_report_uploader.h",
+       "//services/network/test/test_url_loader_factory.cc",
+@@ -167,15 +166,17 @@ if (!is_android && !is_chromeos) {
+       "//services/network/test/test_utils.cc",
+       "//services/network/test/test_utils.h",
+       "aegis_github_update_unittest.cc",
++      "aegis_settings_safety_unittest.cc",
+     ]
+     deps = [
+-      "//chrome/browser/profile_resetter:profile_reset_report_proto",
+-      "//components/keyed_service/core",
+-      "//google_apis",
+       ":aegis_github_update",
+       "//base/test:run_all_unittests",
+       "//base/test:test_support",
++      "//build:branding_buildflags",
++      "//chrome/browser/profile_resetter:profile_reset_report_proto",
++      "//components/keyed_service/core",
+       "//crypto",
++      "//google_apis",
+       "//mojo/core/embedder",
+       "//mojo/public/cpp/bindings",
+       "//net",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d28415e7be..1ae65720cd 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.18。
+-inline constexpr char kProductVersion[] = "1.1.0.18";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (018)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.19。
++inline constexpr char kProductVersion[] = "1.1.0.19";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (019)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
+index fc817a0be4..669e204697 100644
+--- a/chrome/browser/ui/webui/settings/BUILD.gn
++++ b/chrome/browser/ui/webui/settings/BUILD.gn
+@@ -189,6 +189,7 @@ source_set("impl") {
+     "//chrome/browser:primitives",
+     "//chrome/browser/accessibility",
+     "//chrome/browser/actor",
++    "//chrome/browser/aegis:download_prefs",
+     "//chrome/browser/affiliations",
+     "//chrome/browser/apps/app_service",
+     "//chrome/browser/autocomplete:aim_eligibility_service",
+@@ -524,6 +525,7 @@ if (!is_android) {
+       "//base/test:test_support",
+       "//chrome/browser:defaults",
+       "//chrome/browser:global_features",
++      "//chrome/browser/aegis:download_prefs",
+       "//chrome/browser/affiliations",
+       "//chrome/browser/apps/app_service",
+       "//chrome/browser/autofill",
+diff --git a/components/download/internal/common/parallel_download_utils.h b/components/download/internal/common/parallel_download_utils.h
+index c7d10302b4..bf755f7218 100644
+--- a/components/download/internal/common/parallel_download_utils.h
++++ b/components/download/internal/common/parallel_download_utils.h
+@@ -8,6 +8,7 @@
+ #include <vector>
+ 
+ #include "components/download/public/common/download_export.h"
++#include "components/download/public/common/download_features.h"
+ #include "components/download/public/common/download_file_impl.h"
+ #include "components/download/public/common/download_item.h"
+ 
+@@ -51,9 +52,6 @@ FindSlicesForRemainingContent(int64_t current_offset,
+ // than the minimum size.
+ COMPONENTS_DOWNLOAD_EXPORT int64_t GetMinSliceSizeConfig();
+ 
+-// Get the request count for parallel download from finch configuration.
+-COMPONENTS_DOWNLOAD_EXPORT int GetParallelRequestCountConfig();
+-
+ // Get the time delay to send parallel requests after the response of original
+ // request is handled.
+ COMPONENTS_DOWNLOAD_EXPORT base::TimeDelta GetParallelRequestDelayConfig();
+diff --git a/components/download/public/common/download_features.h b/components/download/public/common/download_features.h
+index 6c8a135050..2f87822a46 100644
+--- a/components/download/public/common/download_features.h
++++ b/components/download/public/common/download_features.h
+@@ -10,6 +10,10 @@
+ #include "components/download/public/common/download_export.h"
+ 
+ namespace download {
++
++// 供浏览器展示当前下载策略的并行连接上限。
++COMPONENTS_DOWNLOAD_EXPORT int GetParallelRequestCountConfig();
++
+ namespace features {
+ // Whether a download can be handled by parallel jobs.
+ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kParallelDownloading);
+-- 
+2.52.0
+

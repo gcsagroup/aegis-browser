@@ -9,6 +9,8 @@ import type {
   ModelPoolEntry,
   MonitorSummary,
   PlanSummary,
+  ResearchTab,
+  SavedResearch,
   TaskSnapshot,
 } from './aegis_agent.mojom-webui.js';
 import {
@@ -23,6 +25,10 @@ let proxy: BrowserProxy;
 let snapshot: TaskSnapshot|null = null;
 let selectedWorkflow: Workflow|null = null;
 let busy = false;
+let creatingTask = false;
+let creatingTaskPreviousId = '';
+let selectedTaskId: string|null = null;
+let taskCreationError = '';
 let modelBusy = false;
 let modelRoutingBusy = false;
 let typesafeBusy = false;
@@ -31,11 +37,32 @@ let modelFormInitialized = false;
 let typesafeEnabledDirty = false;
 let autoRunTaskId = '';
 let autoRunInFlight = false;
-let activeView: 'task'|'automation' = 'task';
+let activeView: 'task'|'automation'|'research' = 'task';
+let researchTabs: ResearchTab[] = [];
+const selectedResearchTabs = new Set<number>();
 const launchParameters = new URLSearchParams(window.location.search);
-const launchGoal = (launchParameters.get('goal') || '').trim().slice(0, 4096);
-const launchAutoStart =
-    launchParameters.get('autostart') === '1' && launchGoal.length > 0;
+const launchRequest = consumeLaunchRequest();
+const launchGoal = launchRequest.goal;
+const launchAutoStart = launchRequest.autoStart;
+
+function consumeLaunchRequest(): {goal: string, autoStart: boolean} {
+  const url = new URL(window.location.href);
+  const goal = (url.searchParams.get('goal') || '').trim().slice(0, 4096);
+  const autoStart = url.searchParams.get('autostart') === '1' && goal.length > 0;
+  // 原生入口只提交一次请求。先消费历史记录中的参数，再开始异步规划，
+  // 使返回、刷新和进程恢复都只能查看已有任务，不能重放启动动作。
+  if (url.searchParams.has('autostart') || url.searchParams.has('goal')) {
+    url.searchParams.delete('autostart');
+    url.searchParams.delete('goal');
+    try {
+      window.history.replaceState(window.history.state, '', url.href);
+    } catch {
+      // 无法消费启动参数时仅填入目标，由用户手动开始。
+      return {goal, autoStart: false};
+    }
+  }
+  return {goal, autoStart};
+}
 
 function element<T extends HTMLElement>(id: string): T {
   const value = document.getElementById(id);
@@ -81,8 +108,27 @@ function inferWorkflow(goal: string): Workflow {
 }
 
 function refersToCurrentPage(goal: string): boolean {
-  return /当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
+  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
       .test(goal);
+}
+
+function inferAutomationSchedule(goal: string): string|null {
+  // 这里只引导用户确认，不据此创建监控或授予新的访问范围。
+  if (/(?:不要|无需|無需|不必|别|別|停止|取消).{0,8}(?:监控|監控|定时|定時|检查|檢查)|(?:do not|don't|stop|cancel).{0,18}(?:monitor|check|watch|track)|仅一次|僅一次|只检查一次|只檢查一次|only once|one[- ]off/iu.test(goal) ||
+      !/检查|檢查|监控|監控|跟踪|追蹤|通知|monitor|check|watch|track/iu.test(goal)) {
+    return null;
+  }
+  if (!/每|定期|定时|定時|持续|持續|hourly|daily|weekly|every\s|periodically|regularly|continuously/iu.test(goal)) {
+    return null;
+  }
+  const schedules: Array<[RegExp, string]> = [
+    [/每(?:隔)?\s*15\s*分钟|每(?:隔)?\s*15\s*分鐘|every\s+15\s+minutes?/iu, '15'],
+    [/每(?:隔)?\s*(?:1\s*|一)?小时|每(?:隔)?\s*(?:1\s*|一)?小時|hourly|every\s+(?:1\s+|one\s+)?hour\b/iu, '60'],
+    [/每(?:隔)?\s*6\s*小时|每(?:隔)?\s*6\s*小時|every\s+6\s+hours?/iu, '360'],
+    [/每天|每日|daily|every\s+day/iu, '1440'],
+    [/每周|每週|weekly|every\s+week/iu, '10080'],
+  ];
+  return schedules.find(([pattern]) => pattern.test(goal))?.[1] ?? '';
 }
 
 function scheduledTaskStatus(next: TaskSnapshot): string {
@@ -161,12 +207,204 @@ function renderView() {
       element<HTMLButtonElement>('automation-view-button');
   const taskSelected = activeView === 'task';
   taskView.hidden = !taskSelected;
-  automationView.hidden = taskSelected;
-  taskButton.setAttribute('aria-selected', String(taskSelected));
-  automationButton.setAttribute('aria-selected', String(!taskSelected));
+  automationView.hidden = activeView !== 'automation';
+  element('research-view').hidden = activeView !== 'research';
+  element('research-view-button').setAttribute(
+      'aria-selected', String(activeView === 'research'));
+  taskButton.setAttribute(
+      'aria-selected', String(taskSelected || activeView === 'automation'));
+  automationButton.setAttribute(
+      'aria-selected', String(activeView === 'automation'));
   taskButton.disabled = busy;
   automationButton.disabled = busy;
   element('target-card').hidden = !taskSelected;
+}
+
+function researchMessage(error: string): string {
+  return loadTimeData.getString(error === 'capacity_reached' ||
+      error === 'storage_write_failed_or_full' ? 'researchStorageFull' : 'researchStorageFailed');
+}
+
+function renderSavedResearch(records: SavedResearch[]) {
+  const list = element('saved-research-list');
+  list.replaceChildren();
+  for (const record of records) {
+    const details = document.createElement('details');
+    details.className = 'saved-research';
+    const title = document.createElement('summary');
+    title.textContent = record.goal;
+    const body = document.createElement('p');
+    body.className = 'saved-research-summary';
+    body.textContent = record.summary;
+    const date = document.createElement('small');
+    date.textContent = new Date(Number(record.createdMs)).toLocaleString();
+    const notice = document.createElement('p');
+    notice.textContent = record.outcome === 'partial' ?
+        loadTimeData.getString('resultPartialHelp') : '';
+    const unfinished = document.createElement('ul');
+    for (const item of record.unfinished) {
+      const row = document.createElement('li');
+      row.textContent = item;
+      unfinished.append(row);
+    }
+    details.append(title, date, body, notice, unfinished);
+    for (const [index, source] of record.sources.entries()) {
+      const section = document.createElement('div');
+      section.className = 'saved-research-source';
+      const heading = document.createElement('strong');
+      heading.textContent = source.title || source.url;
+      const url = document.createElement('small');
+      url.textContent = source.url;
+      const excerpt = document.createElement('blockquote');
+      excerpt.textContent = source.excerpt;
+      const status = document.createElement('p');
+      status.setAttribute('role', 'status');
+      if (!source.available) {
+        status.textContent = loadTimeData.getString('researchSourceUnavailable');
+      }
+      const open = document.createElement('button');
+      open.textContent = loadTimeData.getString('researchOpenSource');
+      open.addEventListener('click', async () => {
+        try {
+          const result = await proxy.handler.openResearchSource(record.id, index);
+          status.textContent = loadTimeData.getString(result.ok ?
+              'researchSourceOpened' : 'researchSourceUnavailable');
+        } catch {
+          status.textContent = loadTimeData.getString('researchSourceUnavailable');
+        }
+      });
+      const check = document.createElement('button');
+      check.textContent = loadTimeData.getString('researchCheckSource');
+      check.disabled = !source.available;
+      check.addEventListener('click', async () => {
+        check.disabled = true;
+        status.textContent = loadTimeData.getString('researchChecking');
+        try {
+          const result = await proxy.handler.reviewResearchSource(record.id, index);
+          const key = result.status === 'matched' ? 'researchSourceMatched' :
+              result.status === 'changed' ? 'researchSourceChanged' :
+              result.status === 'position_unavailable' ? 'researchPositionUnavailable' :
+              'researchSourceUnavailable';
+          status.textContent = loadTimeData.getString(key);
+        } catch {
+          status.textContent = loadTimeData.getString('researchSourceUnavailable');
+        } finally {
+          check.disabled = !source.available;
+        }
+      });
+      const monitor = document.createElement('button');
+      monitor.textContent = loadTimeData.getString('researchMonitorSource');
+      monitor.addEventListener('click', () => {
+        element<HTMLTextAreaElement>('automation-goal').value =
+            loadTimeData.getString('researchMonitorGoal').replace('$1', source.url);
+        activeView = 'automation';
+        renderView();
+        if (snapshot) {
+          render(snapshot);
+        }
+        element('automation-goal').focus();
+      });
+      section.append(heading, url, excerpt, open, check, monitor, status);
+      details.append(section);
+    }
+    const remove = document.createElement('button');
+    remove.textContent = loadTimeData.getString('researchDelete');
+    remove.addEventListener('click', async () => {
+      remove.disabled = true;
+      try {
+        const result = await proxy.handler.deleteSavedResearch(record.id);
+        if (result.error) {
+          element('saved-research-status').textContent = researchMessage(result.error);
+        } else {
+          await refreshSavedResearch();
+        }
+      } catch {
+        element('saved-research-status').textContent = researchMessage('failed');
+      } finally {
+        remove.disabled = false;
+      }
+    });
+    details.append(remove);
+    list.append(details);
+  }
+}
+
+async function refreshSavedResearch() {
+  const refresh = element<HTMLButtonElement>('saved-research-refresh');
+  if (refresh.disabled) {
+    return;
+  }
+  refresh.disabled = true;
+  element('saved-research-list').replaceChildren();
+  const status = element('saved-research-status');
+  status.textContent = loadTimeData.getString('researchLoading');
+  try {
+    const result = await proxy.handler.listSavedResearch();
+    status.textContent = result.error ? researchMessage(result.error) :
+        loadTimeData.getString(result.sessionOnly ? 'researchSessionOnly' : 'researchEncrypted') +
+        ` · ${result.records.length} / 20`;
+    if (!result.error) {
+      renderSavedResearch(result.records);
+    }
+  } catch {
+    status.textContent = researchMessage('failed');
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
+function updateResearchSelection() {
+  element('research-selection').textContent =
+      `${selectedResearchTabs.size} / 10 · ` + loadTimeData.getString('researchSelectRange');
+  element<HTMLButtonElement>('research-start').disabled = busy ||
+      selectedResearchTabs.size < 3 || selectedResearchTabs.size > 10 ||
+      !element<HTMLTextAreaElement>('research-goal').value.trim();
+  element<HTMLButtonElement>('research-group').disabled =
+      busy || selectedResearchTabs.size < 1 || selectedResearchTabs.size > 10;
+}
+
+async function refreshResearchTabs() {
+  const error = element('research-error');
+  error.hidden = true;
+  researchTabs = [];
+  selectedResearchTabs.clear();
+  element('research-sources').replaceChildren();
+  updateResearchSelection();
+  try {
+    const result = await proxy.handler.listResearchTabs();
+    researchTabs = result.tabs;
+    selectedResearchTabs.clear();
+    const list = element('research-sources');
+    list.replaceChildren();
+    for (const tab of researchTabs) {
+      const label = document.createElement('label');
+      label.className = 'research-source';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.addEventListener('change', () => {
+        if (check.checked) {
+          selectedResearchTabs.add(tab.tabId);
+        } else {
+          selectedResearchTabs.delete(tab.tabId);
+        }
+        updateResearchSelection();
+      });
+      const description = document.createElement('span');
+      const title = document.createElement('strong');
+      title.textContent = tab.title || tab.url;
+      const url = document.createElement('small');
+      url.textContent = tab.url;
+      description.append(title, url);
+      label.append(check, description);
+      list.append(label);
+    }
+    error.textContent = result.error;
+    error.hidden = !result.error;
+    updateResearchSelection();
+  } catch {
+    error.textContent = loadTimeData.getString('researchRefreshFailed');
+    error.hidden = false;
+  }
 }
 
 function addDefinition(
@@ -225,6 +463,12 @@ function renderCheckoutSummary(checkout: CheckoutSummary|null) {
           `${checkout.observationFingerprint.slice(0, 16)}…`);
 }
 
+// 风险等级来自浏览器；只翻译展示，不改变审批规则。
+function humanRisk(value: string): string {
+  const level = value.match(/^R([0-3])(?:\b|\s|$)/)?.[1];
+  return level ? loadTimeData.getString('riskLevel' + level) : value;
+}
+
 function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
   const card = element('plan-card');
   card.hidden = !hasTask;
@@ -247,7 +491,7 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
     return;
   }
   risk.hidden = false;
-  risk.textContent = plan.maxRisk;
+  risk.textContent = humanRisk(plan.maxRisk);
   element('plan-summary').textContent = plan.summary;
   if (details) {
     details.hidden = false;
@@ -282,7 +526,7 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
       `${plan.estimatedModelCostMicrousd} µUSD · ` +
           loadTimeData.getString(plan.estimatedCostComplete ? 'costComplete' : 'costPartial') :
       loadTimeData.getString('runtimeCostUnknown'));
-  addDefinition(scope, loadTimeData.getString('risk'), plan.maxRisk);
+  addDefinition(scope, loadTimeData.getString('risk'), humanRisk(plan.maxRisk));
   addDefinition(
       scope, loadTimeData.getString('origins'), plan.origins.join(', '));
   addDefinition(
@@ -299,7 +543,7 @@ function renderPlan(plan: PlanSummary|null, hasTask: boolean, state: string) {
     const li = document.createElement('li');
     li.textContent = step.title;
     const detail = document.createElement('small');
-    detail.textContent = `${step.toolName} · ${step.risk}`;
+    detail.textContent = `${step.toolName} · ${humanRisk(step.risk)}`;
     li.append(detail);
     steps.append(li);
   }
@@ -322,20 +566,142 @@ function renderResult(next: TaskSnapshot) {
   note.hidden = !partial;
   note.textContent = partial ? loadTimeData.getString('resultPartialHelp') : '';
   element('result-summary').textContent = summary;
+  const save = element<HTMLButtonElement>('save-research');
+  save.hidden = !next.researchSaveAvailable;
+  save.disabled = busy;
+  save.textContent = loadTimeData.getString(
+      next.researchSessionOnly ? 'researchSaveSession' : 'researchSave');
   const renderItems = (groupId: string, listId: string, items: string[]) => {
     const group = element(groupId);
     const list = element(listId);
     group.hidden = items.length === 0;
     list.replaceChildren();
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
       const li = document.createElement('li');
-      li.textContent = item;
+      if (listId === 'result-sources') {
+        const button = document.createElement('button');
+        button.className = 'source-link';
+        const title = next.resultSourceTitles?.[index];
+        button.textContent = title ? `${title} · ${item}` : item;
+        button.addEventListener('click', () => {
+          void proxy.handler.openVerifiedSource(next.taskId, index);
+        });
+        li.append(button);
+      } else {
+        li.textContent = item;
+      }
       list.append(li);
     }
   };
   renderItems(
       'result-sources-group', 'result-sources', next.resultSources);
   renderItems('unfinished-group', 'unfinished-items', next.unfinishedItems);
+  element('result-source-help').hidden = next.resultSources.length === 0;
+}
+
+function renderDownloadEvidence(next: TaskSnapshot) {
+  const evidence = next.downloadEvidence || [];
+  const goal = next.goal || '';
+  const identityQuestion = /官方|official/i.test(goal) &&
+      /是否|属于|屬於|证明.{0,8}官方|證明.{0,8}官方|is this|is it|verify.{0,16}official/i.test(goal) &&
+      !evidence.some(field => field.name === 'download_id');
+  // 身份问答保留来源证据，不把筛选器的占位地址显示为待下载文件。
+  const fields = identityQuestion ?
+      evidence.filter(field => field.name !== 'candidate_url') : evidence;
+  const list = element('download-evidence');
+  list.replaceChildren();
+  const labels: {[key: string]: string} = {
+    source_url: 'downloadEvidenceSource', candidate_url: 'downloadEvidenceCandidate',
+    final_url: 'downloadEvidenceFinal', file_name: 'downloadEvidenceFile',
+    received_bytes: 'downloadEvidenceReceived', total_bytes: 'downloadEvidenceTotal',
+    sha256: 'downloadEvidenceHash', https: 'downloadEvidenceHttps',
+    same_registrable_domain: 'downloadEvidenceSameSite', verified: 'downloadEvidenceVerified',
+    safe_and_complete: 'downloadEvidenceComplete', wait_timed_out: 'downloadEvidenceTimeout',
+    state: 'downloadEvidenceState', integrity: 'downloadEvidenceIntegrity',
+    publisher: 'downloadEvidencePublisher', repository: 'downloadEvidenceRepository',
+    version: 'downloadEvidenceVersion', signature: 'downloadEvidenceSignature',
+  };
+  const values: {[key: string]: string} = {
+    yes: 'downloadEvidenceYes', no: 'downloadEvidenceNo', not_verified: 'downloadEvidenceUnknown',
+    in_progress: 'downloadEvidenceProgress', complete: 'downloadEvidenceFinished',
+    cancelled: 'downloadEvidenceCancelled', interrupted: 'downloadEvidenceInterrupted',
+    match: 'downloadEvidenceMatch', not_matched: 'downloadEvidenceMismatch',
+    not_provided: 'downloadEvidenceNoExpectedHash',
+  };
+  for (const field of fields) {
+    const key = labels[field.name];
+    if (!key) {
+      continue;
+    }
+    const label = document.createElement('dt');
+    label.textContent = loadTimeData.getString(key);
+    const value = document.createElement('dd');
+    const literal = ['source_url', 'candidate_url', 'final_url', 'file_name',
+      'received_bytes', 'total_bytes', 'sha256'].includes(field.name);
+    const valueKey = literal ? undefined : values[field.value];
+    value.textContent = valueKey ? loadTimeData.getString(valueKey) : field.value;
+    list.append(label, value);
+  }
+  element('download-evidence-card').hidden = list.childElementCount === 0;
+  const review = element<HTMLButtonElement>('review-download');
+  review.hidden = !fields.some(field => field.name === 'download_id');
+  review.disabled = busy || next.state !== 'completed';
+}
+
+// 仅将已下载文件的状态问答送入原生回读；下载或安装命令仍走正常授权流程。
+function isDownloadedFileReviewGoal(goal: string): boolean {
+  const text = goal.trim().toLowerCase();
+  const reference = /(?:刚|剛|已|这次|這次|刚才|剛才).{0,4}(?:下载|下載)|downloaded|this download/.test(text);
+  const question = /核对|核對|检查|檢查|是否|有没有|有沒有|check|verify|is |has |was /.test(text);
+  const state = /安装|安裝|摘要|哈希|完整|变更|變更|存在|install|hash|integrity|changed|exist/.test(text);
+  // “不要安装”限定副作用，不是否定“核对”；明确否定核对时不劫持入口。
+  if (/(?:不要|别|別|do not|don't)\s*(?:核对|核對|检查|檢查|check|verify)/.test(text)) {
+    return false;
+  }
+  const permittedReview = text.replace(
+      /(?:不要|别|別)\s*(?:执行|執行|运行|運行|安装|安裝|下载|下載)|(?:do not|don't)\s*(?:run|execute|install|download)(?:\s+(?:it|this|the file))?/g, '');
+  const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)/.test(permittedReview);
+  return reference && question && state && !command;
+}
+
+async function reviewCurrentDownload() {
+  const card = element<HTMLDetailsElement>('download-evidence-card');
+  card.hidden = false;
+  card.open = true;
+  if (!snapshot?.taskId || snapshot.state !== 'completed' ||
+      !snapshot.downloadEvidence.some(field => field.name === 'download_id')) {
+    element('download-evidence-card').hidden = false;
+    element('download-review-status').textContent =
+        loadTimeData.getString('downloadReviewUnassociated');
+    return;
+  }
+  const taskId = snapshot.taskId;
+  const button = element<HTMLButtonElement>('review-download');
+  button.disabled = true;
+  element('download-review-status').textContent =
+      loadTimeData.getString('downloadReviewPending');
+  try {
+    const result = await proxy.handler.reviewDownload(taskId);
+    if (snapshot?.taskId !== taskId) {
+      return;
+    }
+    const keys: {[key: string]: string} = {
+      match: 'downloadReviewMatch', changed: 'downloadReviewChanged',
+      missing: 'downloadReviewMissing', too_large: 'downloadReviewTooLarge',
+    };
+    element('download-review-status').textContent =
+        loadTimeData.getString(keys[result.status] || 'downloadReviewUnavailable') +
+        (result.sha256 ? `\nSHA-256: ${result.sha256}` : '');
+  } catch {
+    if (snapshot?.taskId === taskId) {
+      element('download-review-status').textContent =
+          loadTimeData.getString('downloadReviewUnavailable');
+    }
+  } finally {
+    if (snapshot?.taskId === taskId) {
+      button.disabled = busy || snapshot.state !== 'completed';
+    }
+  }
 }
 
 function renderTimeline(next: TaskSnapshot) {
@@ -349,8 +715,16 @@ function renderTimeline(next: TaskSnapshot) {
       scheduled === 'paused' ? 'automationPausedHelp' :
       scheduled ? 'automationScheduledHelp' : 'noTask');
   const list = element('timeline');
+  const signature = JSON.stringify([events, partial, finished, scheduled]);
+  if (list.dataset['snapshot'] === signature) {
+    return;
+  }
+  list.dataset['snapshot'] = signature;
   list.replaceChildren();
   const friendlyTimelineText = (value: string): string => {
+    if (value.includes('原操作已失效')) {
+      return loadTimeData.getString('pendingActionPageChanged');
+    }
     if (value.startsWith(
             'execution model did not produce required tool ')) {
       const match = value.match(/required tool ([a-z0-9._-]+)/i);
@@ -358,6 +732,46 @@ function renderTimeline(next: TaskSnapshot) {
           .replace('$1', match?.[1] || 'browser action');
     }
     const keyByValue: {[key: string]: string} = {
+      'Actor execution service unavailable': 'timelineDetail1',
+      'Actor execution service unavailable after recovery': 'timelineDetail2',
+      'action result is uncertain; automatic replay refused': 'timelineDetail3',
+      'browser action requires user control': 'timelineDetail4',
+      'checkout document disappeared after revalidation': 'timelineDetail5',
+      'checkout facts changed; old summary invalidated': 'timelineDetail6',
+      'checkout facts could not be re-read before takeover': 'timelineDetail7',
+      'checkout revalidation cursor could not be persisted': 'timelineDetail8',
+      'checkout summary failed browser source validation': 'timelineDetail9',
+      'execution cursor could not be persisted': 'timelineDetail10',
+      'execution model budget exhausted': 'timelineDetail11',
+      'execution model request could not be started': 'timelineDetail12',
+      'failed action cursor could not be persisted': 'timelineDetail13',
+      'final action completed under user control': 'timelineDetail14',
+      'fresh browser observation was rejected': 'timelineDetail15',
+      'fresh observation tab disappeared': 'timelineDetail16',
+      'fresh recovery consent granted; observation required': 'timelineDetail17',
+      'model requested an action after the plan ended': 'timelineDetail18',
+      'no live scoped tab was available for a fresh observation': 'timelineDetail19',
+      'overlapping model request rejected': 'timelineDetail20',
+      'paused by user': 'timelineDetail21',
+      'recovered task expired before consent': 'timelineDetail22',
+      'resumed after fresh observation': 'timelineDetail23',
+      'tool context changed before execution': 'timelineDetail24',
+      'tool context could not be rebound': 'timelineDetail25',
+      'unsupported execution model provider': 'timelineDetail26',
+      'user interacted with a controlled tab': 'timelineDetail27',
+      'user takeover ended; fresh consent required': 'timelineDetail28',
+      'user takeover required': 'timelineDetail29',
+      'verified action cursor could not be persisted': 'timelineDetail30',
+      'browser verified all actions; model summary fallback used':
+          'timelineVerifiedFallback',
+      'reflecting': 'timelineVerifying',
+      'awaiting_action_approval': 'statusApproval',
+      'user_takeover': 'statusTakeover',
+      'exact action approval required': 'timelineActionApprovalRequired',
+      'exact action approval consumed': 'timelineActionApprovalConsumed',
+      'cancelled by user': 'timelineCancelledByUser',
+      'task cancelled by user': 'timelineCancelledByUser',
+      'execution model failed twice': 'timelineExecutionModelFailed',
       'planning': 'timelinePlanning',
       'planning started': 'timelinePlanningDetail',
       'planning repair': 'timelinePlanningRepair',
@@ -487,7 +901,14 @@ function renderMonitors(monitors: MonitorSummary[]) {
     remove.disabled = busy;
     remove.addEventListener('click', () => withBusy(() =>
       proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
-    actions.append(toggle, remove);
+    const check = document.createElement('button');
+    check.type = 'button';
+    check.dataset['monitorAction'] = 'check';
+    check.textContent = loadTimeData.getString('checkMonitorNow');
+    check.disabled = busy || monitor.paused;
+    check.addEventListener('click', () => withBusy(() =>
+      proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId)));
+    actions.append(check, toggle, remove);
     li.append(title, origin, retention, nextRun, outcome, summary, failures, actions);
     list.append(li);
   }
@@ -567,6 +988,15 @@ function renderTypeSafe(next: TaskSnapshot) {
 }
 
 function friendlyError(error: string, hasPlan: boolean): string {
+  if (error.includes('browser goal needs an explicit target')) {
+    return loadTimeData.getString('browserGoalClarification');
+  }
+  if (error.includes('原操作已失效')) {
+    return loadTimeData.getString('pendingActionPageChanged');
+  }
+  if (error.includes('monitor immediate check unavailable')) {
+    return loadTimeData.getString('checkMonitorNowUnavailable');
+  }
   if (!error) {
     return '';
   }
@@ -691,11 +1121,40 @@ function renderRoutingObservations(next: TaskSnapshot) {
 }
 
 function render(next: TaskSnapshot) {
+  if (creatingTask) {
+    // 新请求有自己的等待态；旧任务事件不能带回旧结果或时间线。
+    next = {...next, taskId: '', state: '', plan: null, resultSummary: '',
+      researchSaveAvailable: false, downloadEvidence: [],
+      resultOutcome: '', resultSources: [], unfinishedItems: [], timeline: [],
+      pendingApproval: null, undoAvailable: false, lastError: ''};
+  } else if (selectedTaskId !== null && next.taskId !== selectedTaskId) {
+    // 监控列表属于整个工作区；旧任务结果仍隔离，但删除旧监控也必须更新列表。
+    renderMonitors(next.monitors);
+    if (snapshot) {
+      snapshot = {...snapshot, monitors: next.monitors};
+    }
+    return;
+  } else {
+    selectedTaskId = next.taskId;
+    if (next.taskId && next.state !== 'planning') {
+      taskCreationError = '';
+    }
+  }
+  if (snapshot?.taskId !== next.taskId) {
+    element('save-research-status').textContent = '';
+    element('download-review-status').textContent = '';
+  }
   snapshot = next;
-  element('status').dataset['tone'] = statusTone(next);
-  element('status').textContent = busy && !next.taskId ?
+  element('status').dataset['tone'] = taskCreationError && !next.taskId ?
+      'danger' : statusTone(next);
+  const statusText = taskCreationError && !next.taskId ?
+      loadTimeData.getString('statusFailed') : busy && !next.taskId ?
       loadTimeData.getString('statusUnderstanding') :
       humanStatus(next);
+  // 相同状态不重复修改 live region，也不抢正在编辑的焦点。
+  if (element('status').textContent !== statusText) {
+    element('status').textContent = statusText;
+  }
   const goal = element<HTMLTextAreaElement>('goal');
   element('target-value').textContent =
       refersToCurrentPage(goal.value) && next.activeOrigin ?
@@ -719,17 +1178,23 @@ function render(next: TaskSnapshot) {
   element<HTMLButtonElement>('plan-button').disabled =
       busy || !next.modelConfigured || !goal.value.trim();
   element<HTMLButtonElement>('create-automation-button').disabled =
-      busy || !next.modelConfigured || !automationGoal.value.trim();
+      busy || !next.modelConfigured || !automationGoal.value.trim() ||
+      !element<HTMLSelectElement>('automation-schedule').value;
+  element('automation-target').textContent = loadTimeData.getString(
+      'automationTargetReview').replace('$1', next.activeOrigin ||
+          loadTimeData.getString('noTarget'));
   renderView();
   renderModel(next);
   renderTypeSafe(next);
   renderPlan(next.plan || null, Boolean(next.taskId), next.state);
   renderRoutingObservations(next);
   renderResult(next);
+  renderDownloadEvidence(next);
   renderTimeline(next);
   renderMonitors(next.monitors);
   const error = element('error');
-  error.textContent = friendlyError(next.lastError, Boolean(next.plan));
+  error.textContent = taskCreationError ||
+      friendlyError(next.lastError, Boolean(next.plan));
   error.hidden = !error.textContent;
   const technicalErrorGroup = element('technical-error-group');
   element('technical-error-label').textContent =
@@ -738,22 +1203,36 @@ function render(next: TaskSnapshot) {
   technicalErrorGroup.hidden = !next.lastError || !next.plan;
 
   const approval = element('approval-card');
-  approval.hidden = !next.pendingApproval;
+  const pendingApproval =
+      next.state === 'awaiting_action_approval' ||
+          (next.state === 'user_takeover' &&
+           next.pendingApproval?.requiresUserTakeover) ?
+      next.pendingApproval : null;
+  approval.hidden = !pendingApproval;
   const approveButton = element<HTMLButtonElement>('approve-button');
   const takeoverNotice = element('takeover-notice');
-  if (next.pendingApproval) {
-    const takeover = next.pendingApproval.requiresUserTakeover;
+  if (pendingApproval) {
+    const takeover = pendingApproval.requiresUserTakeover;
     element('approval-title').textContent = loadTimeData.getString(
         takeover ? 'takeoverReady' : 'waitingApproval');
     element('approval-detail').textContent =
-        `${next.pendingApproval.toolName} · ${next.pendingApproval.origin} · ` +
-        next.pendingApproval.risk;
-    element('approval-id').textContent = next.pendingApproval.actionId;
+        `${pendingApproval.toolName} · ${pendingApproval.origin} · ` +
+        humanRisk(pendingApproval.risk);
+    const transfer = pendingApproval.isDataTransfer;
+    element('approval-data-flow').hidden = !transfer;
+    element('approval-data-flow').textContent = transfer ?
+        loadTimeData.getString('dataTransferApproval') + ' ' +
+        (pendingApproval.dataSourceOrigins || []).join(', ') : '';
+    const target = pendingApproval.targetDescription ||
+        pendingApproval.targetUrl || '';
+    element('approval-target-url').hidden = !transfer || !target;
+    element('approval-target-url').textContent = transfer ? target : '';
+    element('approval-id').textContent = pendingApproval.actionId;
     element('approval-arguments').textContent =
-        next.pendingApproval.argumentSummary;
+        pendingApproval.argumentSummary;
     element('approval-fingerprint').textContent =
-        next.pendingApproval.actionFingerprint;
-    renderCheckoutSummary(next.pendingApproval.checkout || null);
+        pendingApproval.actionFingerprint;
+    renderCheckoutSummary(pendingApproval.checkout || null);
     takeoverNotice.hidden = !takeover;
     takeoverNotice.textContent = takeover ?
         loadTimeData.getString('takeoverNotice') :
@@ -781,8 +1260,8 @@ function render(next: TaskSnapshot) {
   element<HTMLButtonElement>('finish-takeover-button').disabled =
       busy || state !== 'user_takeover';
   approveButton.disabled =
-      busy || !next.pendingApproval ||
-      next.pendingApproval.requiresUserTakeover;
+      busy || !pendingApproval ||
+      pendingApproval.requiresUserTakeover;
   element<HTMLButtonElement>('undo-button').disabled =
       busy || !next.undoAvailable;
   element<HTMLButtonElement>('stop-button').disabled =
@@ -794,18 +1273,47 @@ function render(next: TaskSnapshot) {
   maybeAutoRun(next);
 }
 
-async function withBusy(action: () => Promise<{snapshot: TaskSnapshot}>) {
+function showCreatedTask(next: TaskSnapshot) {
+  if (!next.taskId || next.taskId === creatingTaskPreviousId || next.lastError) {
+    taskCreationError = friendlyError(next.lastError, false) ||
+        loadTimeData.getString('planningGenericError');
+    render(next);
+    throw new Error('Task creation did not return a new task');
+  }
+  creatingTask = false;
+  selectedTaskId = next.taskId;
+  render(next);
+}
+
+async function withBusy(
+    action: () => Promise<{snapshot: TaskSnapshot}>, createsTask = false) {
   if (busy) {
     return;
   }
   busy = true;
+  if (createsTask) {
+    creatingTaskPreviousId = snapshot?.taskId || '';
+    creatingTask = true;
+    selectedTaskId = '';
+    autoRunTaskId = '';
+    taskCreationError = '';
+  }
   if (snapshot) {
     render(snapshot);
   }
   try {
     const response = await action();
     render(response.snapshot);
+  } catch (error) {
+    if (!createsTask) {
+      throw error;
+    }
+    taskCreationError ||= loadTimeData.getString('planningGenericError');
   } finally {
+    if (createsTask) {
+      creatingTask = false;
+      creatingTaskPreviousId = '';
+    }
     busy = false;
     if (snapshot) {
       render(snapshot);
@@ -814,9 +1322,54 @@ async function withBusy(action: () => Promise<{snapshot: TaskSnapshot}>) {
 }
 
 function initializeLabels() {
+  element('platform-note').hidden = !loadTimeData.getBoolean('isAndroid');
   text('title', 'title');
   text('subtitle', 'subtitle');
-  text('task-view-button', 'taskWorkspace');
+  text('task-view-button', 'taskCenter');
+  text('protection-view-button', 'protectionWorkspace');
+  text('research-view-button', 'researchWorkspace');
+  text('research-title', 'researchWorkspace');
+  text('research-help', 'researchHelp');
+  text('research-refresh', 'researchRefresh');
+  text('research-goal-label', 'researchGoal');
+  text('research-start', 'researchStart');
+  text('research-group', 'researchGroup');
+  text('saved-research-title', 'researchSavedTitle');
+  text('saved-research-help', 'researchSavedHelp');
+  text('saved-research-refresh', 'researchLoadSaved');
+  element('saved-research-refresh').addEventListener('click', () => {
+    void refreshSavedResearch();
+  });
+  element('save-research').addEventListener('click', async () => {
+    if (!snapshot?.researchSaveAvailable) {
+      return;
+    }
+    const taskId = snapshot.taskId;
+    const save = element<HTMLButtonElement>('save-research');
+    save.disabled = true;
+    try {
+      const result = await proxy.handler.saveResearch(taskId);
+      if (!result.error) {
+        const response = await proxy.handler.getSnapshot();
+        if (snapshot?.taskId === taskId) {
+          render(response.snapshot);
+        }
+      }
+      if (snapshot?.taskId !== taskId) {
+        return;
+      }
+      element('save-research-status').textContent = result.error ?
+          researchMessage(result.error) : loadTimeData.getString('researchSaved');
+    } catch {
+      element('save-research-status').textContent = researchMessage('failed');
+    } finally {
+      save.disabled = false;
+    }
+  });
+  element<HTMLTextAreaElement>('research-goal').value =
+      loadTimeData.getString('researchDefaultGoal');
+  element('research-goal').addEventListener('input', updateResearchSelection);
+  updateResearchSelection();
   text('automation-view-button', 'automationWorkspace');
   text('target-label', 'target');
   text('goal-label', 'goal');
@@ -834,6 +1387,10 @@ function initializeLabels() {
   text('details-label', 'details');
   text('result-title', 'resultTitle');
   text('result-sources-label', 'resultSources');
+  text('download-evidence-title', 'downloadEvidenceTitle');
+  text('download-evidence-help', 'downloadEvidenceHelp');
+  text('review-download', 'reviewDownload');
+  text('result-source-help', 'resultSourceHelp');
   text('unfinished-label', 'unfinishedItems');
   text('start-button', 'start');
   text('model-settings-label', 'modelSettings');
@@ -942,12 +1499,18 @@ function initializeLabels() {
 
   const schedule = element<HTMLSelectElement>('automation-schedule');
   schedule.append(
+      option('', loadTimeData.getString('scheduleChoose')),
       option('15', loadTimeData.getString('schedule15Minutes')),
       option('60', loadTimeData.getString('scheduleHourly')),
       option('360', loadTimeData.getString('schedule6Hours')),
       option('1440', loadTimeData.getString('scheduleDaily')),
       option('10080', loadTimeData.getString('scheduleWeekly')));
   schedule.value = '60';
+  schedule.addEventListener('change', () => {
+    if (snapshot) {
+      render(snapshot);
+    }
+  });
 
   element('task-view-button').addEventListener('click', () => {
     activeView = 'task';
@@ -1220,17 +1783,65 @@ async function saveTypeSafe(clearApiKey = false) {
 }
 
 function bindActions() {
-  element('plan-button').addEventListener('click', () => withBusy(async () => {
-    const goal = element<HTMLTextAreaElement>('goal').value.trim();
-    const workflow = selectedWorkflow ?? inferWorkflow(goal);
-    const created = await proxy.handler.createTask(
-        goal, AgentMode.kAct, workflow, [], 0);
-    if (!created.snapshot.taskId) {
-      return created;
-    }
+  element('protection-view-button').addEventListener('click', () => {
+    void proxy.handler.showProtection();
+  });
+  element('research-view-button').addEventListener('click', () => {
+    activeView = 'research';
+    renderView();
+    void refreshResearchTabs();
+  });
+  element('research-refresh').addEventListener('click', () => {
+    void refreshResearchTabs();
+  });
+  element('research-start').addEventListener('click', () => withBusy(async () => {
+    const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
+    const created = await proxy.handler.createResearchTask(
+        goal, [...selectedResearchTabs]);
+    activeView = 'task';
+    showCreatedTask(created.snapshot);
     autoRunTaskId = created.snapshot.taskId;
-    return proxy.handler.requestPlan(created.snapshot.taskId);
-  }));
+    return created;
+  }, true));
+  element('research-group').addEventListener('click', () => withBusy(async () => {
+    const goal = loadTimeData.getStringF(
+        'researchGroupGoal', String(selectedResearchTabs.size));
+    const created = await proxy.handler.createTabGroupTask(
+        goal, [...selectedResearchTabs]);
+    activeView = 'task';
+    showCreatedTask(created.snapshot);
+    autoRunTaskId = created.snapshot.taskId;
+    return created;
+  }, true));
+  element('plan-button').addEventListener('click', () => {
+    const goal = element<HTMLTextAreaElement>('goal').value.trim();
+    if (isDownloadedFileReviewGoal(goal)) {
+      return reviewCurrentDownload();
+    }
+    const schedule = inferAutomationSchedule(goal);
+    if (schedule !== null) {
+      element<HTMLTextAreaElement>('automation-goal').value = goal;
+      element<HTMLSelectElement>('automation-schedule').value = schedule;
+      activeView = 'automation';
+      if (snapshot) {
+        render(snapshot);
+      }
+      element<HTMLSelectElement>('automation-schedule').focus();
+      return;
+    }
+    return withBusy(async () => {
+      const workflow = selectedWorkflow ?? inferWorkflow(goal);
+      const created = await proxy.handler.createTask(
+          goal, AgentMode.kAct, workflow, [], 0);
+      showCreatedTask(created.snapshot);
+      if (!created.snapshot.taskId) {
+        return created;
+      }
+      autoRunTaskId = created.snapshot.taskId;
+      return proxy.handler.requestPlan(created.snapshot.taskId);
+    }, true);
+  });
+  element('review-download').addEventListener('click', reviewCurrentDownload);
   element('create-automation-button').addEventListener(
       'click', () => withBusy(async () => {
         const goal =
@@ -1241,12 +1852,13 @@ function bindActions() {
         // 缺少明确来源时仍由模型理解目标，最终权限由原生自动化范围约束。
         const created = await proxy.handler.createTask(
             goal, AgentMode.kAutomate, Workflow.kResearch, [], interval);
+        showCreatedTask(created.snapshot);
         if (!created.snapshot.taskId) {
           return created;
         }
         autoRunTaskId = created.snapshot.taskId;
         return proxy.handler.requestPlan(created.snapshot.taskId);
-      }));
+      }, true));
   element('detect-models-button').addEventListener('click', detectModels);
   element('model-options').addEventListener('change', selectDetectedModel);
   element('model-name').addEventListener('input', syncDetectedModel);
@@ -1303,8 +1915,7 @@ try {
   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
     render(initial);
     proxy.handler.showUI();
-    // A launcher invocation always represents a new user request. Do not let a
-    // completed (or otherwise retained) previous task silently suppress it.
+    // 只有已消费的一次性原生启动请求才创建新任务。
     if (launchAutoStart && initial.modelConfigured) {
       element<HTMLButtonElement>('plan-button').click();
     }
