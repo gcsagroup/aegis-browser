@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,8 @@ SECOND = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="wid
 
 
 class Handler(BaseHTTPRequestHandler):
+    dropped_paths = set()
+    drop_lock = threading.Lock()
     def log_message(self, *_):
         pass
 
@@ -43,13 +46,20 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/article":
             return self.respond(200, ARTICLE, "text/html; charset=utf-8")
+        if path == "/long-article":
+            return self.respond(200, ARTICLE.replace("</main>", "<p>合成长页面滚动验收。</p>" * 150 + "</main>"), "text/html; charset=utf-8")
+        if path == "/test.txt":
+            return self.respond(200, "这是文件预览验收资料。", "text/plain; charset=utf-8")
         if path == "/article-two":
             return self.respond(200, SECOND, "text/html; charset=utf-8")
         if path == "/sensitive":
             return self.respond(200, "<main>测试登录页</main><input type=password value='private'>", "text/html; charset=utf-8")
         if path == "/download.bin":
             return self.respond(200, PAYLOAD, "application/octet-stream", {"Content-Disposition": f'attachment; filename="aegis-test-{time.time_ns()}.bin"', "Accept-Ranges": "bytes"})
-        if path == "/slow.bin":
+        if path in ("/slow.bin", "/drop.bin"):
+            with self.drop_lock:
+                drop = path == "/drop.bin" and self.path not in self.dropped_paths
+                self.dropped_paths.add(self.path)
             data = PAYLOAD * 32
             start = 0
             match = re.fullmatch(r"bytes=(\d+)-", self.headers.get("Range", ""))
@@ -68,6 +78,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(data[offset:offset + 16384])
                     self.wfile.flush()
                     time.sleep(0.05)
+                    if drop:
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                        self.connection.close()
+                        return
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
@@ -78,20 +92,64 @@ class Handler(BaseHTTPRequestHandler):
         return self.respond(404, {"error": "合成服务未提供此路径"})
 
     def do_POST(self):
-        if self.path != "/v1/chat/completions":
+        path = self.path.split("?", 1)[0]
+        if path not in ("/v1/chat/completions", "/v1/messages", "/v1/models/aegis-simulator-fixture:streamGenerateContent"):
             return self.respond(404, {"error": "未知接口"})
+        if path == "/v1/models/aegis-simulator-fixture:streamGenerateContent":
+            provider = "gemini"
+        else:
+            provider = "anthropic" if path == "/v1/messages" else "compatible"
         length = int(self.headers.get("Content-Length", "0"))
         if length > 200_000:
             return self.respond(413, {"error": "输入过大"})
         try:
             value = json.loads(self.rfile.read(length))
-            messages = value["messages"]
-            content = messages[-1]["content"]
-            if value["model"] != "aegis-simulator-fixture" or "城市绿地观察" not in content:
+            model = value.get("model", "aegis-simulator-fixture")
+            if model in ("error-401", "error-429", "error-503"):
+                return self.respond(int(model[-3:]), {"error": "合成错误"}, headers={"Retry-After": "3"})
+            if provider == "gemini":
+                content = value["contents"][-1]["parts"][0]["text"]
+            else:
+                content = value["messages"][-1]["content"]
+            if model not in ("aegis-simulator-fixture", "stream-slow", "stream-cut", "json-fallback") or "城市绿地观察" not in content:
                 return self.respond(400, {"error": "没有收到预期的真实页面正文"})
             result = "合成模型验收结果：青林公园面积为 12 公顷，每天 06:00 至 21:00 开放，步道长 3 公里。[1]\n改造计划增加 40 棵乔木和两个饮水点；资料未提供预算。[1]"
             if "来源 [2]" in content:
                 result += "\n第二篇来源还说明施工期间部分步道临时关闭，未提供具体日期。[2]"
+            if (value.get("stream") or provider == "gemini") and model != "json-fallback":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                def event(value):
+                    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+                    self.wfile.write(("data: " + text + "\n\n").encode())
+                    self.wfile.flush()
+                try:
+                    if provider == "anthropic":
+                        event({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+                    for offset in range(0, len(result), 8):
+                        part = result[offset:offset+8]
+                        if provider == "compatible":
+                            event({"choices": [{"index": 0, "delta": {"content": part}, "finish_reason": None}]})
+                        elif provider == "anthropic":
+                            event({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": part}})
+                        else:
+                            event({"candidates": [{"index": 0, "content": {"parts": [{"text": part}]}}]})
+                        # 为原生界面的取消操作保留窗口，避免响应在滚动或动画中结束。
+                        time.sleep(1.0 if model == "stream-slow" else 0.07)
+                        if model == "stream-cut":
+                            return
+                    if provider == "compatible":
+                        event({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+                        event("[DONE]")
+                    elif provider == "anthropic":
+                        event({"type": "message_delta", "delta": {"stop_reason": "end_turn"}})
+                        event({"type": "message_stop"})
+                    else:
+                        event({"candidates": [{"index": 0, "finishReason": "STOP", "content": {"parts": []}}]})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             return self.respond(200, {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": result}}]})
         except (KeyError, ValueError, TypeError):
             return self.respond(400, {"error": "请求格式不正确"})
@@ -125,7 +183,18 @@ def self_test():
         result = json.loads(request("POST", "/v1/chat/completions", json.dumps(payload).encode()))
         if "[2]" not in result["choices"][0]["message"]["content"]:
             raise RuntimeError("模型响应缺少第二篇来源")
-        print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=4")
+        payload["stream"] = True
+        stream = request("POST", "/v1/chat/completions", json.dumps(payload).encode()).decode()
+        if "[DONE]" not in stream or "delta" not in stream:
+            raise RuntimeError("流式响应缺少结束标记")
+        stream = request("POST", "/v1/messages", json.dumps(payload).encode()).decode()
+        if "message_stop" not in stream:
+            raise RuntimeError("Anthropic 流未结束")
+        payload = {"contents": [{"parts": [{"text": "城市绿地观察"}]}]}
+        stream = request("POST", "/v1/models/aegis-simulator-fixture:streamGenerateContent?alt=sse", json.dumps(payload).encode()).decode()
+        if "STOP" not in stream:
+            raise RuntimeError("Gemini 流未结束")
+        print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=7")
     finally:
         server.shutdown()
         server.server_close()
