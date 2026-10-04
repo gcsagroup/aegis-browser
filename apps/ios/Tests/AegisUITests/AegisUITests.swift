@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import Vision
 
 @MainActor
 final class AegisUITests: XCTestCase {
@@ -100,6 +101,8 @@ final class AegisUITests: XCTestCase {
         app.buttons["confirm-model-send"].tap()
         let output = app.staticTexts["assistant-output"]
         XCTAssertTrue(output.waitForExistence(timeout: 15))
+        let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "已完成"), object: app.staticTexts["assistant-status"])
+        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 15), .completed)
         XCTAssertTrue(output.label.contains("12 公顷"))
         XCTAssertTrue(output.label.contains("[1]"))
         XCTAssertFalse(output.label.contains("10 个来源已交叉核对"))
@@ -261,8 +264,8 @@ final class AegisUITests: XCTestCase {
         let hash = app.textFields["download-hash"]
         hash.tap(); hash.clearAndType("e05bc4162ba70780d59dc6831e0981cf70e317c6ee9825afa5c6915e3a77126c")
         app.buttons["start-download"].tap()
-        XCTAssertTrue(app.staticTexts["与预期 SHA-256 一致。"].waitForExistence(timeout: 20))
         XCTAssertTrue(scrollUntilVisible(app.buttons["save-download-file"].firstMatch, in: app))
+        XCTAssertTrue(app.staticTexts["与预期 SHA-256 一致。"].waitForExistence(timeout: 20))
         attachScreenshot("真实下载与文件校验", app)
         app.buttons["save-download-file"].firstMatch.tap()
         let confirm = app.buttons.matching(NSPredicate(format: "label == '保存' OR label == '存储' OR label == 'Save' OR label == '儲存'")).firstMatch
@@ -282,6 +285,38 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 8))
         XCTAssertTrue(error.label.contains("登录或支付表单"))
         XCTAssertFalse(app.buttons["analyze-pages"].exists)
+    }
+
+    func testDamagedRecordsShowErrorsAndKeepBrowsingAvailable() {
+        let app = launchApp(extraArguments: ["--ui-testing-damaged-records"])
+        navigate(app, to: "http://127.0.0.1:8768/article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
+        app.buttons["data-button"].tap()
+        app.segmentedControls.buttons["工作区"].tap()
+        let workspaceError = app.staticTexts["workspace-storage-error"]
+        XCTAssertTrue(workspaceError.waitForExistence(timeout: 5))
+        XCTAssertTrue(workspaceError.label.contains("原文件已保留"))
+        app.buttons["save-workspace"].tap()
+        app.alerts.textFields.firstMatch.tap()
+        app.alerts.textFields.firstMatch.typeText("不应覆盖")
+        app.alerts.buttons["保存"].tap()
+        XCTAssertTrue(workspaceError.label.contains("无法保存更改"))
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", workspaceError.label)).count, 1)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS '不应覆盖'")).firstMatch.exists)
+        attachScreenshot("工作区损坏记录保留与错误提示", app)
+        app.buttons["完成"].tap()
+        app.buttons["browser-more"].tap(); app.buttons["下载"].tap()
+        let downloadError = app.staticTexts["download-storage-error"]
+        XCTAssertTrue(downloadError.waitForExistence(timeout: 5))
+        XCTAssertTrue(downloadError.label.contains("原文件已保留"))
+        let address = app.textFields["download-url"]
+        address.tap(); address.typeText("http://127.0.0.1:8768/download.bin")
+        app.buttons["start-download"].tap()
+        XCTAssertFalse(app.staticTexts["正在下载"].exists)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", downloadError.label)).count, 1)
+        attachScreenshot("下载损坏记录保留与错误提示", app)
+        app.buttons["完成"].tap()
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].exists)
     }
 
     func testWorkspaceSaveRestoreAndUndo() {
@@ -505,6 +540,7 @@ final class AegisUITests: XCTestCase {
         // 合成服务器故意分块发送，覆盖真实离开前台的传输窗口。
         Thread.sleep(forTimeInterval: 5)
         app.activate()
+        XCTAssertTrue(scrollUntilVisible(app.staticTexts["slow.bin"].firstMatch, in: app))
         XCTAssertTrue(app.buttons["save-download-file"].waitForExistence(timeout: 20))
         XCTAssertTrue(scrollUntilVisible(app.buttons["save-download-file"], in: app))
         attachScreenshot("后台传输完成", app)
@@ -527,9 +563,156 @@ final class AegisUITests: XCTestCase {
         attachScreenshot("外部链接经明确确认后打开", app)
     }
 
-    private func launchApp() -> XCUIApplication {
+    func testRecoverDamagedWorkspaceAndDownloadRecordsInApp() {
+        let app = launchApp(extraArguments: ["--ui-testing-damaged-records"])
+        navigate(app, to: "http://127.0.0.1:8768/article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
+        app.buttons["data-button"].tap()
+        app.segmentedControls.buttons["工作区"].tap()
+        app.buttons["workspace-recovery"].tap()
+        app.buttons["reset-records"].tap()
+        app.buttons["确认备份并重置"].tap()
+        XCTAssertTrue(app.staticTexts["记录已更新，可以继续使用。"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'restore-record-backup-' ")).firstMatch.exists)
+        attachScreenshot("工作区原件备份与恢复入口", app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["save-workspace"].tap()
+        app.alerts.textFields.firstMatch.tap(); app.alerts.textFields.firstMatch.typeText("恢复后保存")
+        app.alerts.buttons["保存"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '恢复后保存'")).firstMatch.waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
+        app.buttons["browser-more"].tap(); app.buttons["下载"].tap()
+        XCTAssertTrue(scrollUntilVisible(app.buttons["下载设置与存储"], in: app))
+        app.buttons["下载设置与存储"].tap()
+        XCTAssertTrue(scrollUntilVisible(app.buttons["download-recovery"], in: app))
+        app.buttons["download-recovery"].tap()
+        app.buttons["reset-records"].tap(); app.buttons["确认备份并重置"].tap()
+        XCTAssertTrue(app.staticTexts["记录已更新，可以继续使用。"].waitForExistence(timeout: 5))
+        attachScreenshot("下载记录恢复完成", app)
+    }
+
+    func testRecoveryControlsAccessibility() throws {
+        let app = launchApp(extraArguments: ["--ui-testing-damaged-records"])
+        app.buttons["data-button"].tap()
+        app.segmentedControls.buttons["工作区"].tap()
+        app.buttons["workspace-recovery"].tap()
+        try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription, .trait])
+        attachScreenshot("恢复界面辅助功能检查", app)
+    }
+
+    func testLibrarySearchAndDownloadPreview() throws {
+        let app = launchApp()
+        app.buttons["data-button"].tap()
+        app.swipeDown()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("does-not-exist")
+        XCTAssertTrue(app.staticTexts["没有匹配的资料"].waitForExistence(timeout: 5))
+        if app.buttons["关闭"].exists { app.buttons["关闭"].tap() }
+        else if app.buttons["取消"].exists { app.buttons["取消"].tap() }
+        app.buttons["完成"].tap()
+        app.buttons["browser-more"].tap(); app.buttons["下载"].tap()
+        let url = app.textFields["download-url"]
+        XCTAssertTrue(url.waitForExistence(timeout: 5)); url.tap(); url.typeText("http://127.0.0.1:8768/test.txt")
+        app.buttons["start-download"].tap()
+        let preview = app.buttons["preview-download-file"].firstMatch
+        XCTAssertTrue(scrollUntilVisible(preview, in: app))
+        preview.tap()
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
+        // Quick Look 正文由系统视图绘制，使用截图识别核对实际展示的合成文件内容。
+        let image = try XCTUnwrap(XCUIScreen.main.screenshot().image.cgImage)
+        let recognition = VNRecognizeTextRequest()
+        recognition.recognitionLanguages = ["zh-Hans", "en-US"]
+        try VNImageRequestHandler(cgImage: image).perform([recognition])
+        let visibleText = recognition.results?.compactMap { $0.topCandidates(1).first?.string }.joined() ?? ""
+        XCTAssertTrue(visibleText.contains("文件预览验收资料"))
+        attachScreenshot("系统文件预览", app)
+    }
+
+    func testStreamingDraftCannotBeSavedAfterCancellation() {
+        let app = launchApp()
+        navigate(app, to: "http://127.0.0.1:8768/article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["模型服务"].tap()
+        let endpoint = app.textFields["model-endpoint"]
+        endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
+        let model = app.textFields["model-name"]
+        model.tap(); model.clearAndType("stream-slow")
+        app.buttons["save-model"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        app.buttons["agent-button"].tap(); app.buttons["read-pages"].tap()
+        XCTAssertTrue(app.staticTexts["等待确认发送"].waitForExistence(timeout: 8))
+        let analyze = app.buttons["analyze-pages"]
+        XCTAssertTrue(scrollUntilVisible(analyze, in: app)); analyze.tap()
+        app.buttons["confirm-model-send"].tap()
+        let draft = app.staticTexts["assistant-output"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["save-assistant-report"].exists)
+        let cancel = app.buttons["cancel-assistant"]
+        XCTAssertTrue(scrollUntilVisible(cancel, in: app)); cancel.tap()
+        XCTAssertFalse(app.buttons["save-assistant-report"].exists)
+        XCTAssertTrue(app.staticTexts["尚未完成的回答"].exists)
+        XCTAssertFalse(app.buttons["导出结果与来源"].isEnabled)
+        attachScreenshot("流式草稿取消后禁止保存与导出", app)
+    }
+
+    func testIPadKeyboardShortcutsNavigateAndManageTabs() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("仅 iPad 键盘验收") }
+        let app = launchApp()
+        XCTAssertTrue(app.textFields["address-field"].waitForExistence(timeout: 8))
+        app.typeKey("t", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["标签 2"].waitForExistence(timeout: 5))
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["标签 1"].waitForExistence(timeout: 5))
+        app.typeKey("l", modifierFlags: .command)
+        app.textFields["address-field"].typeText("http://127.0.0.1:8768/article\n")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        app.typeKey("f", modifierFlags: .command)
+        let find = app.textFields["find-text"]
+        let present = find.waitForExistence(timeout: 5)
+        if !present { add(XCTAttachment(string: app.debugDescription)) }
+        XCTAssertTrue(present)
+        find.typeText("12")
+        XCTAssertEqual(find.value as? String, "12")
+        attachScreenshot("iPad 键盘新建关闭地址与查找", app)
+    }
+
+    func testDownloadBatchRemovalKeepsFilesRecoverable() {
+        let app = launchApp()
+        app.buttons["browser-more"].tap(); app.buttons["下载"].tap()
+        let url = app.textFields["download-url"]
+        XCTAssertTrue(url.waitForExistence(timeout: 5)); url.tap(); url.typeText("http://127.0.0.1:8768/test.txt")
+        app.buttons["start-download"].tap(); app.buttons["start-download"].tap()
+        XCTAssertTrue(scrollUntilVisible(app.staticTexts["test.txt"].firstMatch, in: app))
+        app.buttons["edit-downloads"].tap()
+        app.staticTexts["test.txt"].firstMatch.tap()
+        let manage = app.buttons["manage-selected-downloads"]
+        XCTAssertTrue(manage.waitForExistence(timeout: 5))
+        app.buttons["全选筛选结果"].tap()
+        XCTAssertTrue(manage.label.contains("2")); manage.tap()
+        app.buttons["仅移除记录，保留文件"].tap()
+        XCTAssertTrue(scrollUntilVisible(app.staticTexts["暂无下载"], in: app))
+        app.buttons["edit-downloads"].tap()
+        for _ in 0..<4 {
+            if app.buttons["下载设置与存储"].isHittable { break }
+            app.swipeDown()
+        }
+        app.buttons["下载设置与存储"].tap()
+        XCTAssertTrue(scrollUntilVisible(app.buttons["recover-download-files"], in: app))
+        app.buttons["recover-download-files"].tap()
+        let result = app.staticTexts["download-export-result"]
+        for _ in 0..<6 {
+            if result.exists && result.isHittable { break }
+            app.swipeDown()
+        }
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        XCTAssertTrue(result.label.contains("已恢复 2 个文件"))
+        attachScreenshot("两项下载批量移除后重新找回文件", app)
+    }
+
+    private func launchApp(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += extraArguments
         app.launch()
         return app
     }

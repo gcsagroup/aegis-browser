@@ -8,6 +8,7 @@ struct TabSwitcher: View {
     @State private var editingID: UUID?
     @State private var name = ""
     @State private var error: String?
+    @State private var releaseMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -35,6 +36,17 @@ struct TabSwitcher: View {
                         Text("私密标签组仅保留在当前窗口内存中，关闭窗口或退出 App 后不会恢复。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
+                    if !browser.profile.isPrivate {
+                        Button("释放闲置页面内存", systemImage: "leaf") {
+                            Task { @MainActor in
+                                let count = await browser.releaseInactiveTabs()
+                                releaseMessage = String(localized: "已休眠 \(count) 个标签，切换时会重新加载。")
+                            }
+                        }.accessibilityIdentifier("release-idle-tabs")
+                        Text("已编辑表单、媒体播放、含框架或有浏览历史的页面会保留。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let releaseMessage { Text(releaseMessage).accessibilityIdentifier("tab-release-result") }
                 }
                 Section("标签页") {
                     ForEach(browser.displayedTabs) { tab in
@@ -63,7 +75,7 @@ struct TabSwitcher: View {
                 if let error = browser.sessionError { Text(error).foregroundStyle(.red) }
             }
             .navigationTitle("标签与分组")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() }.keyboardShortcut(.escape, modifiers: []) } }
             .alert(editingID == nil ? "新建标签组" : "重命名标签组", isPresented: $naming) {
                 TextField("名称", text: $name)
                 Button("保存") {

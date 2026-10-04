@@ -4,7 +4,11 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+The workspace package remains `0.1.0`; the current iOS development candidate uses `3.0` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+
+## iOS 3.0 — 2026-10-04
+
+iOS Ver 3.0 development candidate: record backup and recovery, lazy tab loading and memory release, download and library management, streaming for three model protocols, and keyboard controls. Unreleased; see the [Ver 3.0 validation record](docs/audit/ios-3-0-2026-10-04.zh-CN.md).
 
 ## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
 
@@ -24,6 +28,13 @@ The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS 
 - See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for localization, privacy manifests and simulator evidence. This GitHub source prerelease has no installable signed IPA. Device, full VoiceOver, TestFlight and App Store acceptance remain open.
 
 ## [Unreleased]
+
+### 2026-10-04 iOS storage reliability
+
+- Preserve unreadable, oversized, or duplicate-ID workspace/download records and show a visible error instead of overwriting them.
+- Reject a 101st workspace or an oversized write without dropping earlier saved workspaces.
+- Keep download state and recovery data when retry metadata cannot be saved; report metadata failures after a file finishes downloading.
+- Add regression tests using real loopback HTTP, disk write failures, and iPhone/iPad UI interactions, with three-language error messages. This development update is separate from the published source preview.
 
 ### 2026-09-14 source update: UI corrections and browser updates
 
