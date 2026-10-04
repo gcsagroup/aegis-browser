@@ -4,6 +4,16 @@
 
 A native SwiftUI and system WebKit browser for iOS 18.4 and later, developed for worldwide App Store technical requirements, including mainland China. Functionality and testing come first; submission materials will be supplied later. Simulator results do not establish release qualification.
 
+## Ver 3.0 development candidate
+
+- Recover download and workspace records by exporting originals, reloading, restoring a backup, or backing up before reset. Completed files have separate receipts and checksum recovery. Local backups are retained.
+- Restore only the selected tab initially. Idle ordinary pages can release memory; edited forms, playing media, frames, navigation history and assistant sources stay loaded. Repeated content-process failures stop automatic reload.
+- Search and sort bookmarks, history and workspaces. Downloads add search, filters, sorting, batch management, system preview, storage usage, 1–4 concurrent tasks, low-storage errors and recoverable trash.
+- Stream all three model protocols with draft and validated-result states. Cancelled, truncated, incomplete or invalidly cited output cannot be saved as a completed result. Connection, quota, permission and service errors have separate messages.
+- Large-text layouts and iPad shortcuts: Command-L/T/W/F/R, Command-[/], and Escape. Background transfers are system-scheduled; force quitting stops them, and reopening allows review and resume.
+
+See the [Ver 3.0 validation record](../../docs/audit/ios-3-0-2026-10-04.zh-CN.md) for implementation and test results. Simulator fixtures establish protocol and interaction behavior only. Real model, physical-device lock-screen transfer, energy use and Safari-host acceptance require separate evidence.
+
 ## Features
 
 - Tabs and windows: create, rename, move and ungroup tabs while keeping pages open. Regular groups persist; private groups stay in memory. iPad windows save their own tabs and groups, sharing bookmarks, downloads and settings. Pages use the full window with no permanent sidebar.
@@ -43,6 +53,8 @@ For a manual demonstration, run `python3 apps/ios/scripts/simulator-fixture-serv
 See the [verification record](../../docs/audit/ios-feature-parity-2026-10-01.zh-CN.md). Filter data retains upstream attribution and licensing.
 
 ## Boundaries
+
+Unreadable download or workspace records are preserved, with a visible error and further writes blocked. Workspaces are limited to 100 entries and manifests to 2 MB; rejected saves preserve existing data. A failed save during download recovery retains the previous state and resume data. A failed manifest write after file completion is also reported. See the [storage reliability report](../../docs/audit/ios-stability-2026-10-04.zh-CN.md).
 
 Pages are limited to 24,000 characters with an explicit truncation notice. Cross-origin frames, input values, passwords and cookies are excluded. Detected sensitive forms or secrets stop model submission. Models return text only; they cannot purchase, sign in, modify pages or invoke tools. Citation numbers are range-checked; conclusions still need source review.
 

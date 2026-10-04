@@ -21,6 +21,47 @@ struct BrowserLibraryView: View {
     @State private var confirmImport = false
     @State private var exporting = false
     @State private var exportDocument = WorkspaceDocument(data: Data())
+    @State private var query = ""
+    @State private var sort: LibrarySort = .newest
+
+    private enum LibrarySort: String, CaseIterable {
+        case newest, title, site
+        var title: String {
+            switch self {
+            case .newest: String(localized: "最新优先")
+            case .title: String(localized: "按名称")
+            case .site: String(localized: "按网站")
+            }
+        }
+    }
+
+    private func matches(_ text: String) -> Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.localizedStandardContains(query)
+    }
+
+    private func precedes(_ a: (String, String, Date), _ b: (String, String, Date)) -> Bool {
+        switch sort {
+        case .newest: a.2 > b.2
+        case .title: a.0.localizedStandardCompare(b.0) == .orderedAscending
+        case .site: (URL(string: a.1)?.host ?? a.1).localizedStandardCompare(URL(string: b.1)?.host ?? b.1) == .orderedAscending
+        }
+    }
+
+    private var bookmarks: [BrowserBookmark] {
+        dataStore.bookmarks.filter { matches($0.title + " " + $0.url) }.sorted {
+            precedes(($0.title, $0.url, $0.createdAt), ($1.title, $1.url, $1.createdAt))
+        }
+    }
+    private var history: [BrowserHistoryEntry] {
+        dataStore.history.filter { matches($0.title + " " + $0.url) }.sorted {
+            precedes(($0.title, $0.url, $0.visitedAt), ($1.title, $1.url, $1.visitedAt))
+        }
+    }
+    private var savedWorkspaces: [SavedWorkspace] {
+        workspaces.workspaces.filter { matches($0.name + " " + $0.urls.map(\.absoluteString).joined(separator: " ")) }.sorted {
+            precedes(($0.name, $0.urls.first?.absoluteString ?? "", $0.savedAt), ($1.name, $1.urls.first?.absoluteString ?? "", $1.savedAt))
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -28,10 +69,13 @@ struct BrowserLibraryView: View {
                 Picker("浏览资料", selection: $section) {
                     Text("收藏").tag(0); Text("历史").tag(1); Text("工作区").tag(2)
                 }.pickerStyle(.segmented)
+                if let error = workspaces.storageError {
+                    Text(error).foregroundStyle(.red).accessibilityIdentifier("workspace-storage-error")
+                }
                 if section == 0 {
                     NavigationLink("检查收藏链接") { BookmarkLinkCheckerView(bookmarks: dataStore.bookmarks) }
-                    if dataStore.bookmarks.isEmpty { ContentUnavailableView("暂无收藏", systemImage: "star") }
-                    ForEach(dataStore.bookmarks) { item in
+                    if bookmarks.isEmpty { ContentUnavailableView(query.isEmpty ? "暂无收藏" : "没有匹配的资料", systemImage: "star") }
+                    ForEach(bookmarks) { item in
                         Button { open(item.url) } label: { pageRow(item.title, url: item.url) }
                             .swipeActions {
                                 Button("移除收藏", role: .destructive) {
@@ -41,11 +85,20 @@ struct BrowserLibraryView: View {
                             }
                     }
                 } else if section == 1 {
-                    if dataStore.history.isEmpty { ContentUnavailableView("暂无历史", systemImage: "clock") }
-                    ForEach(dataStore.history) { item in
+                    if history.isEmpty { ContentUnavailableView(query.isEmpty ? "暂无历史" : "没有匹配的资料", systemImage: "clock") }
+                    ForEach(history) { item in
                         Button { open(item.url) } label: { pageRow(item.title, url: item.url) }
                     }
                 } else {
+                    if workspaces.recordFileURL != nil {
+                        NavigationLink("备份与恢复") {
+                            RecordRecoveryView(fileURL: workspaces.recordFileURL,
+                                availableBackups: { workspaces.backups },
+                                reload: { try workspaces.reloadRecords() },
+                                restore: { try workspaces.restoreBackup($0) },
+                                reset: { try workspaces.resetRecords() })
+                        }.accessibilityIdentifier("workspace-recovery")
+                    }
                     Button("保存当前标签为工作区") { savePrompt = true }.accessibilityIdentifier("save-workspace")
                     HStack {
                         Button("导入工作区") { importing = true }.accessibilityIdentifier("import-workspaces")
@@ -56,7 +109,8 @@ struct BrowserLibraryView: View {
                     }
                     Text("保存普通标签的网址，并移除检测到的敏感参数。恢复时会追加标签，不会关闭现有页面。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    ForEach(workspaces.workspaces) { workspace in
+                    if !query.isEmpty, savedWorkspaces.isEmpty { Text("没有匹配的资料") }
+                    ForEach(savedWorkspaces) { workspace in
                         Button {
                             pendingRestore = workspace; showRestore = true
                         } label: {
@@ -79,10 +133,23 @@ struct BrowserLibraryView: View {
                         }
                     }
                 }
-                if let message { Text(message).font(.callout).accessibilityIdentifier("library-message") }
+                if let message, message != workspaces.storageError {
+                    Text(message).font(.callout).accessibilityIdentifier("library-message")
+                }
             }
             .navigationTitle("浏览资料")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .searchable(text: $query, prompt: "搜索标题或网址")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.keyboardShortcut(.escape, modifiers: []) }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("排序", selection: $sort) {
+                            ForEach(LibrarySort.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                    } label: { Label("排序", systemImage: "arrow.up.arrow.down") }
+                    .accessibilityIdentifier("library-sort")
+                }
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
                 do {
                     let url = try result.get()

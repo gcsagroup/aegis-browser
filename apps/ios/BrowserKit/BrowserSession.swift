@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 import WebKit
 
 public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
@@ -14,9 +15,30 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     public let id: UUID
-    public let webView: WKWebView
+    private let configuration: WKWebViewConfiguration
+    private var loadedWebView: WKWebView?
+    /// 只有显式加载或访问当前页面时才创建 WebView；标签列表不得通过此属性读取状态。
+    public var webView: WKWebView {
+        if let loadedWebView { return loadedWebView }
+        let view = BrowserContentWebView(frame: .zero, configuration: configuration)
+        view.navigationDelegate = self; view.uiDelegate = self
+        view.allowsBackForwardNavigationGestures = true
+        view.scrollView.keyboardDismissMode = .onDrag
+        loadedWebView = view
+        return view
+    }
+    public var isResident: Bool { loadedWebView != nil }
+    @Published public private(set) var isSuspended = false
+    public private(set) var lastActivatedAt = Date.distantPast
+    private var isActive = false
+    private var savedScrollOffset = CGPoint.zero
+    private var restoresScrollOffset = false
+    private var recentTerminations: [Date] = []
+    var snapshotReaders = 0
+    var assistantPinned = false
+    public var scrollOffset: Double { Double(isActive && !restoresScrollOffset ? (loadedWebView?.scrollView.contentOffset.y ?? savedScrollOffset.y) : savedScrollOffset.y) }
     public let profile: BrowserProfile
-    @Published public private(set) var title = "新标签页"
+    @Published public private(set) var title = String(localized: "新标签页")
     @Published public private(set) var url: URL?
     @Published public private(set) var isLoading = false
     @Published public private(set) var canGoBack = false
@@ -39,16 +61,71 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     init(id: UUID = UUID(), profile: BrowserProfile, configuration: WKWebViewConfiguration) {
         self.id = id
         self.profile = profile
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        self.configuration = configuration
         super.init()
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        webView.scrollView.keyboardDismissMode = .onDrag
-        load(URL(string: "aegis://start")!)
+        configuration.userContentController.addUserScript(WKUserScript(source: """
+        globalThis.__aegisHasEdits = false;
+        document.addEventListener('input', () => { globalThis.__aegisHasEdits = true; }, true);
+        document.addEventListener('change', () => { globalThis.__aegisHasEdits = true; }, true);
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient))
+    }
+
+    func prepareForRestore(url: URL?, title: String? = nil, scrollOffset: Double? = nil) {
+        self.url = url; requestedURL = url
+        self.title = title ?? url?.host ?? String(localized: "新标签页")
+        savedScrollOffset = CGPoint(x: 0, y: max(0, scrollOffset ?? 0))
+        isSuspended = true
+    }
+
+    func setActive(_ value: Bool) {
+        // 切换时先记录位置；WebView 离开窗口后，系统可能重设其滚动偏移。
+        if isActive, !value, !restoresScrollOffset, let view = loadedWebView { savedScrollOffset = view.scrollView.contentOffset }
+        isActive = value
+        guard value else { return }
+        lastActivatedAt = Date()
+        if loadedWebView == nil {
+            load(requestedURL ?? url ?? URL(string: "aegis://start")!, preservingScroll: true)
+        }
+    }
+
+    /// 不读取或保存表单值；只判断是否编辑过表单、是否正在播放媒体。
+    @discardableResult
+    func suspendIfSafe() async -> Bool {
+        guard !profile.isPrivate, !isActive, !isLoading, snapshotReaders == 0, !assistantPinned, let view = loadedWebView,
+              view.backForwardList.backList.allSatisfy({ $0.url.scheme == "aegis" }),
+              view.backForwardList.forwardList.isEmpty else { return false }
+        let epoch = navigationEpoch
+        let script = """
+        return Boolean(globalThis.__aegisHasEdits)
+            || [...document.querySelectorAll('video,audio')].some(media => !media.paused && !media.ended)
+            || document.querySelector('iframe,frame') !== null;
+        """
+        guard let protected = try? await view.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .defaultClient),
+              let protected = protected as? Bool, !protected,
+              !isActive, !isLoading, snapshotReaders == 0, !assistantPinned, epoch == navigationEpoch, !Task.isCancelled else { return false }
+        releaseWebView()
+        return true
+    }
+
+    private func releaseWebView() {
+        navigationEpoch &+= 1
+        loadGeneration = UUID(); loadTask?.cancel()
+        loadedWebView?.stopLoading()
+        loadedWebView?.navigationDelegate = nil; loadedWebView?.uiDelegate = nil
+        loadedWebView = nil; pendingNavigation = nil
+        isLoading = false; isSuspended = true
+        canGoBack = false; canGoForward = false
     }
 
     public func load(_ url: URL) {
+        load(url, preservingScroll: false)
+    }
+
+    private func load(_ url: URL, preservingScroll: Bool) {
+        if !preservingScroll { savedScrollOffset = .zero }
+        restoresScrollOffset = preservingScroll
+        isSuspended = false
+        if url != requestedURL { recentTerminations = [] }
         lastPolicyIntervention = nil
         loadingError = nil
         // 立即让旧页面授权失效，不等网络回调到来。
@@ -66,6 +143,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if decision.kind == .sanitized { lastPolicyIntervention = decision }
         let url = URL(string: decision.effectiveURL) ?? url
         requestedURL = url
+        isLoading = true
         if ["http", "https"].contains(url.scheme ?? ""), contentRuleList == nil {
             isLoading = true
             loadTask = Task { [weak self] in
@@ -80,7 +158,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 } catch {
                     guard generation == loadGeneration else { return }
                     isLoading = false
-                    loadingError = "跟踪保护初始化失败，请重试。"
+                    loadingError = String(localized: "跟踪保护初始化失败，请重试。")
                 }
             }
         } else {
@@ -108,14 +186,27 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func reload() {
-        if let url { load(url) }
+        recentTerminations = []
+        if let url = requestedURL ?? url { load(url) }
+    }
+
+    func prepareForReading() async throws {
+        if loadedWebView == nil {
+            load(requestedURL ?? url ?? URL(string: "aegis://start")!, preservingScroll: true)
+        }
+        let deadline = Date().addingTimeInterval(30)
+        while isLoading, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        try Task.checkCancellation()
+        guard !isLoading, loadingError == nil else { throw PageSnapshotError.unavailable }
     }
 
     public func stop() {
         navigationEpoch &+= 1
         loadGeneration = UUID()
         loadTask?.cancel()
-        webView.stopLoading()
+        loadedWebView?.stopLoading()
         isLoading = false
     }
 
@@ -197,17 +288,31 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        guard isCurrent(navigation) else { return }
+        guard webView === loadedWebView, isCurrent(navigation) else { return }
         isLoading = true
         navigationEpoch &+= 1
         refreshState()
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard isCurrent(navigation) else { return }
+        guard webView === loadedWebView, isCurrent(navigation) else { return }
         pendingNavigation = nil
         isLoading = false
         refreshState()
+        if restoresScrollOffset {
+            let offset = savedScrollOffset
+            let epoch = navigationEpoch
+            // didFinish 时 UIKit 的 contentSize 可能尚未更新；在网页布局中恢复位置。
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, webView === loadedWebView, epoch == navigationEpoch,
+                      let expectedURL = url else { return }
+                defer { if epoch == navigationEpoch { restoresScrollOffset = false } }
+                let y = max(0, offset.y + webView.scrollView.adjustedContentInset.top)
+                _ = try? await webView.callAsyncJavaScript(
+                    "if (location.href === expectedURL) { window.scrollTo(0, y); }",
+                    arguments: ["expectedURL": expectedURL.absoluteString, "y": y], in: nil, contentWorld: .defaultClient)
+            }
+        }
         onNavigation?(self)
     }
 
@@ -216,7 +321,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
-        guard isCurrent(navigation) else { return }
+        guard webView === loadedWebView, isCurrent(navigation) else { return }
         pendingNavigation = nil
         isLoading = false
         if (error as NSError).code != NSURLErrorCancelled { loadingError = error.localizedDescription }
@@ -244,7 +349,17 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === loadedWebView else { return }
         navigationEpoch &+= 1
+        let now = Date()
+        recentTerminations = recentTerminations.filter { now.timeIntervalSince($0) < 60 } + [now]
+        guard isActive else { releaseWebView(); return }
+        guard recentTerminations.count <= 1 else {
+            loadTask?.cancel(); loadGeneration = UUID(); pendingNavigation = nil; isLoading = false
+            loadingError = String(localized: "页面连续停止运行，已暂停自动重载。请手动重试或关闭此标签。")
+            return
+        }
+        isLoading = true
         pendingNavigation = webView.reload()
     }
 
@@ -254,7 +369,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func refreshState() {
-        title = webView.title?.isEmpty == false ? webView.title! : (webView.url?.host ?? "新标签页")
+        title = webView.title?.isEmpty == false ? webView.title! : (webView.url?.host ?? String(localized: "新标签页"))
         url = webView.url
         if let url { requestedURL = url }
         canGoBack = webView.canGoBack
@@ -278,6 +393,9 @@ public final class BrowserSession: ObservableObject {
     @Published private var privateGroupID: UUID?
     private var standardActiveID: UUID?
     private var bookmarkChanges: AnyCancellable?
+    private var memoryWarnings: AnyCancellable?
+    private var evictionTask: Task<Void, Never>?
+    public var residentTabCount: Int { (standardTabs + privateTabs).filter(\.isResident).count }
     public let windowID: UUID
     private let windowStore: BrowserWindowStore?
 
@@ -311,18 +429,23 @@ public final class BrowserSession: ObservableObject {
             standardTabs = restored.map { value in
                 let tab = makeTab(profile: .standard, id: value.id)
                 tab.groupID = value.groupID
-                if let url = value.url { tab.load(url) }
+                tab.prepareForRestore(url: value.url, title: value.title, scrollOffset: value.scrollOffset)
                 return tab
             }
             activeTabID = snapshot?.activeTabID ?? standardTabs.first?.id
         }
         standardActiveID = activeTabID
+        updateActiveTab()
         bookmarkChanges = dataStore.$bookmarks.sink { [weak self] bookmarks in
             guard let self else { return }
             bookmarkIsActive = !profile.isPrivate && bookmarks.contains { $0.url == activeTab?.url?.absoluteString }
         }
         // 窗口会话由视图出现后首次保存，避免构造视图时发布共享存储变更。
         if windowStore == nil { persistSession() }
+        memoryWarnings = NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in _ = await self?.releaseInactiveTabs(keeping: 1) }
+            }
         Task { await loadWebExtensions() }
     }
 
@@ -452,16 +575,20 @@ public final class BrowserSession: ObservableObject {
         guard !profile.isPrivate else { return [] }
         var created: [UUID] = []
         for url in workspace.urls.prefix(max(0, 50 - standardTabs.count)) {
-            let tab = newTab()
-            tab.load(url)
+            let tab = makeTab(profile: .standard)
+            tab.groupID = selectedGroupID
+            tab.prepareForRestore(url: url)
+            standardTabs.append(tab)
             created.append(tab.id)
         }
+        if let id = created.last { activeTabID = id }
+        refreshBookmarkState(); persistSession()
         return created
     }
 
     public func saveWorkspace(name: String) throws -> SavedWorkspace {
         guard !profile.isPrivate else { throw WorkspaceError.noPages }
-        return try workspaceStore.save(name: name, urls: standardTabs.compactMap(\.url))
+        return try workspaceStore.save(name: name, urls: standardTabs.compactMap { $0.requestedURL ?? $0.url })
     }
 
     public func clearWebsiteData() async {
@@ -479,10 +606,11 @@ public final class BrowserSession: ObservableObject {
         do {
             if let windowStore {
                 if profile == .standard { standardActiveID = activeTabID }
-                let tabs = standardTabs.map { SavedBrowserTab(id: $0.id, url: $0.requestedURL ?? $0.url, groupID: $0.groupID) }
+                let tabs = standardTabs.map { SavedBrowserTab(id: $0.id, url: $0.requestedURL ?? $0.url, groupID: $0.groupID,
+                                                              title: $0.title, scrollOffset: $0.scrollOffset) }
                 try windowStore.save(BrowserWindowSnapshot(id: windowID, name: windowStore.snapshot(windowID)?.name ?? "",
                     tabs: tabs, groups: standardGroups, selectedGroupID: standardGroupID, activeTabID: standardActiveID))
-            } else { try workspaceStore.saveSession(urls: standardTabs.compactMap(\.url)) }
+            } else { try workspaceStore.saveSession(urls: standardTabs.compactMap { $0.requestedURL ?? $0.url }) }
             sessionError = nil
         }
         catch { sessionError = "普通标签保存失败：\(error.localizedDescription)" }
@@ -542,6 +670,7 @@ public final class BrowserSession: ObservableObject {
     }
 
     private func refreshBookmarkState() {
+        updateActiveTab()
         guard !profile.isPrivate else {
             bookmarkIsActive = false
             return
@@ -551,6 +680,28 @@ public final class BrowserSession: ObservableObject {
             return
         }
         bookmarkIsActive = dataStore.bookmarks.contains { $0.url == url.absoluteString }
+    }
+
+    private func updateActiveTab() {
+        let activeID = activeTab?.id
+        for tab in standardTabs + privateTabs { tab.setActive(tab.id == activeID) }
+        evictionTask?.cancel()
+        evictionTask = Task { @MainActor [weak self] in _ = await self?.releaseInactiveTabs(keeping: 4) }
+    }
+
+    /// 只卸载可安全重新加载的普通页面；表单、媒体及含框架的页面保留。
+    @discardableResult
+    public func releaseInactiveTabs(keeping limit: Int = 1) async -> Int {
+        var released = 0
+        for tab in standardTabs.sorted(by: { $0.lastActivatedAt < $1.lastActivatedAt }) {
+            guard !Task.isCancelled, residentTabCount > max(1, limit) else { break }
+            if await tab.suspendIfSafe() { released += 1 }
+        }
+        return released
+    }
+
+    public func protectAssistantTabs(_ ids: Set<UUID>) {
+        for tab in standardTabs { tab.assistantPinned = ids.contains(tab.id) }
     }
 
     private func loadWebExtensions() async {

@@ -42,7 +42,7 @@ struct AegisRootView: View {
         .sheet(isPresented: $showsFind) {
             NavigationStack {
                 Form {
-                    TextField("查找文字", text: $findText).accessibilityIdentifier("find-text")
+                    FindQueryField(text: $findText)
                     Button("查找下一个") {
                         Task { @MainActor in
                             do {
@@ -53,7 +53,7 @@ struct AegisRootView: View {
                     }.disabled(findText.isEmpty)
                     Text(findMessage)
                 }.navigationTitle("在页面中查找")
-                    .toolbar { Button("完成") { showsFind = false } }
+                    .toolbar { Button("完成") { showsFind = false }.keyboardShortcut(.escape, modifiers: []) }
             }.presentationDetents([.medium])
         }
         .onChange(of: browser.pendingDownloadURL) { _, url in if url != nil { showsDownloads = true } }
@@ -115,6 +115,8 @@ private struct BrowserPane: View {
     @Binding var showsSettings: Bool
     @Binding var showsDownloads: Bool
     @Binding var showsFind: Bool
+    @FocusState private var addressFocused: Bool
+    @State private var addressSelection: TextSelection?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,7 +126,7 @@ private struct BrowserPane: View {
                 privateBanner
             }
             if let tab = browser.activeTab {
-                ActiveTabView(tab: tab, address: $address)
+                ActiveTabView(tab: tab, address: $address, addressIsEditing: addressFocused, onFind: { showsFind = true })
                     .id(tab.id)
             } else {
                 ContentUnavailableView("没有标签页", systemImage: "rectangle.stack")
@@ -132,10 +134,26 @@ private struct BrowserPane: View {
             bottomBar
         }
         .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .focusedSceneValue(\.browserKeyboardActions, keyboardActions)
         .sheet(isPresented: $managesWindows) { BrowserWindowsView() }
         .alert("无法新建窗口", isPresented: Binding(get: { windowError != nil }, set: { if !$0 { windowError = nil } })) {
             Button("完成") { windowError = nil }
         } message: { Text(windowError ?? "") }
+    }
+
+    private var keyboardActions: BrowserKeyboardActions? {
+        guard !showsTabs, !showsAgent, !showsData, !showsSettings, !showsDownloads, !showsFind, !managesWindows else { return nil }
+        return BrowserKeyboardActions(
+            newTab: { _ = browser.newTab() },
+            closeTab: { if let id = browser.activeTab?.id { browser.close(id) } },
+            editAddress: {
+                addressFocused = true
+                addressSelection = TextSelection(range: address.startIndex..<address.endIndex)
+            },
+            find: { showsFind = true },
+            reload: { browser.activeTab?.reload() },
+            back: { browser.activeTab?.goBack() },
+            forward: { browser.activeTab?.goForward() })
     }
 
     private var topBar: some View {
@@ -143,14 +161,14 @@ private struct BrowserPane: View {
             HStack(spacing: 10) {
                 Button { browser.activeTab?.goBack() } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 20)).frame(width: 36, height: 44)
+                        .font(.system(size: 20)).frame(width: 44, height: 44)
                 }
                 .disabled(browser.activeTab?.canGoBack != true)
                 .accessibilityLabel("后退")
 
                 Button { browser.activeTab?.goForward() } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 20)).frame(width: 36, height: 44)
+                        .font(.system(size: 20)).frame(width: 44, height: 44)
                 }
                 .disabled(browser.activeTab?.canGoForward != true)
                 .accessibilityLabel("前进")
@@ -159,18 +177,26 @@ private struct BrowserPane: View {
                     Image(systemName: browser.profile.isPrivate ? "eye.slash.fill" : (browser.activeTab?.url?.scheme == "https" ? "lock.fill" : "globe"))
                         .font(.system(size: 18))
                         .foregroundStyle(browser.profile.isPrivate ? .purple : .secondary)
-                    TextField("搜索或输入网址", text: $address)
+                    TextField("搜索或输入网址", text: $address, selection: $addressSelection)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .submitLabel(.go)
                         .frame(minWidth: 0, maxWidth: .infinity)
-                        .onSubmit { browser.navigate(address: address) }
+                        .onSubmit {
+                            addressFocused = false
+                            browser.navigate(address: address)
+                            browser.activeTab?.webView.becomeFirstResponder()
+                        }
                         .accessibilityIdentifier("address-field")
+                        .focused($addressFocused)
+                        .onChange(of: addressFocused) { _, focused in
+                            if focused { addressSelection = TextSelection(range: address.startIndex..<address.endIndex) }
+                        }
                     if browser.activeTab?.isLoading == true {
-                        Button { browser.activeTab?.stop() } label: { Image(systemName: "xmark").font(.system(size: 18)) }
+                        Button { browser.activeTab?.stop() } label: { Image(systemName: "xmark").font(.system(size: 18)).frame(width: 44, height: 44) }
                             .accessibilityLabel("停止加载")
                     } else {
-                        Button { browser.activeTab?.reload() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 18)) }
+                        Button { browser.activeTab?.reload() } label: { Image(systemName: "arrow.clockwise").font(.system(size: 18)).frame(width: 44, height: 44) }
                             .accessibilityLabel("刷新")
                     }
                 }
@@ -180,7 +206,7 @@ private struct BrowserPane: View {
 
                 Button { browser.toggleBookmark() } label: {
                     Image(systemName: browser.bookmarkIsActive ? "star.fill" : "star")
-                        .font(.system(size: 20)).frame(width: 36, height: 44)
+                        .font(.system(size: 20)).frame(width: 44, height: 44)
                 }
                 .disabled(browser.profile.isPrivate)
                 .accessibilityLabel(browser.bookmarkIsActive ? "移除收藏" : "添加收藏")
@@ -223,12 +249,12 @@ private struct BrowserPane: View {
     private var bottomBar: some View {
         HStack(spacing: 8) {
             Button { showsTabs = true } label: {
-                Label("标签", systemImage: "square.on.square").frame(minWidth: 40, minHeight: 44)
+                Label("标签", systemImage: "square.on.square").frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityIdentifier("tabs-button")
 
             Button { _ = browser.newTab() } label: {
-                Label("新建", systemImage: "plus").frame(minWidth: 40, minHeight: 44)
+                Label("新建", systemImage: "plus").frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityIdentifier("new-tab-button")
 
@@ -241,18 +267,25 @@ private struct BrowserPane: View {
                     }
                 }
             } label: {
-                Label(browser.profile.title, systemImage: browser.profile.isPrivate ? "eye.slash" : "person.crop.circle").frame(minWidth: 40, minHeight: 44)
+                Label(browser.profile.title, systemImage: browser.profile.isPrivate ? "eye.slash" : "person.crop.circle").frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityIdentifier("profile-menu")
 
             Button { showsData = true } label: {
-                Label("资料", systemImage: "books.vertical").frame(minWidth: 40, minHeight: 44)
+                Label("资料", systemImage: "books.vertical").frame(minWidth: 44, minHeight: 44)
             }
             .disabled(browser.profile.isPrivate)
             .accessibilityIdentifier("data-button")
             .accessibilityHint(browser.profile.isPrivate ? "私密模式不显示普通浏览资料" : "打开收藏和历史")
 
             Menu {
+                Button("编辑网址", systemImage: "text.cursor") {
+                    addressFocused = true
+                    addressSelection = TextSelection(range: address.startIndex..<address.endIndex)
+                }
+                Button("关闭当前标签", systemImage: "xmark") {
+                    if let id = browser.activeTab?.id { browser.close(id) }
+                }
                 Button("下载", systemImage: "arrow.down.circle") { showsDownloads = true }.disabled(browser.profile.isPrivate)
                 Button("在页面中查找", systemImage: "doc.text.magnifyingglass") { showsFind = true }
                 if let url = browser.activeTab?.url, ["http", "https"].contains(url.scheme ?? "") {
@@ -266,7 +299,7 @@ private struct BrowserPane: View {
                 }
                 BrowserWindowActions(managesWindows: $managesWindows, error: $windowError)
                 Button("设置", systemImage: "gearshape") { showsSettings = true }
-            } label: { Label("更多", systemImage: "ellipsis.circle").frame(minWidth: 40, minHeight: 44) }
+            } label: { Label("更多", systemImage: "ellipsis.circle").frame(minWidth: 44, minHeight: 44) }
             .accessibilityIdentifier("browser-more")
 
             Spacer()
@@ -291,21 +324,23 @@ private struct BrowserPane: View {
 private struct ActiveTabView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var address: String
+    let addressIsEditing: Bool
+    let onFind: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             if let error = tab.loadingError {
-                HStack {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("页面加载失败：\(error)").font(.caption)
                     Button("重试") { tab.reload() }
-                }.padding(12).foregroundStyle(.red)
+                }.padding(12).foregroundStyle(.red).accessibilityIdentifier("page-load-error")
             }
             if let decision = tab.lastPolicyIntervention {
                 NavigationPolicyBanner(decision: decision) {
                     tab.dismissPolicyIntervention()
                 }
             }
-            BrowserWebView(webView: tab.webView)
+            BrowserWebView(webView: tab.webView, onFind: onFind)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
@@ -313,7 +348,7 @@ private struct ActiveTabView: View {
                 .accessibilityIdentifier("browser-webview")
         }
         .onChange(of: tab.url) { _, url in
-            address = url?.absoluteString ?? address
+            if !addressIsEditing { address = url?.absoluteString ?? address }
         }
     }
 }
@@ -393,8 +428,9 @@ struct TabRow: View {
             HStack {
                 Image(systemName: tab.profile.isPrivate ? "eye.slash" : "globe")
                 VStack(alignment: .leading) {
-                    Text(tab.title).lineLimit(1)
+                    Text(tab.title).lineLimit(2)
                     Text(tab.url?.host ?? "起始页").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if tab.isSuspended { Text("已休眠，切换时加载").font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
             }
