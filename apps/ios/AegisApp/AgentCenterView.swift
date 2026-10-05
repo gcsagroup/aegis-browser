@@ -63,8 +63,7 @@ struct AgentCenterView: View {
             }
         }
         .accessibilityIdentifier("agent-center")
-        .onChange(of: browser.profile) { _, profile in
-            guard profile.isPrivate else { return }
+        .onChange(of: browser.profile) { _, _ in
             model.cancelForLifecycle()
             dismiss()
         }

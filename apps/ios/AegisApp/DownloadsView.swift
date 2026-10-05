@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DownloadsView: View {
     @EnvironmentObject private var downloads: DownloadManager
+    @EnvironmentObject private var browser: BrowserSession
     @Environment(\.dismiss) private var dismiss
     var initialURL: URL?
     @State private var address = ""
@@ -24,6 +25,8 @@ struct DownloadsView: View {
     @State private var confirmsEmpty = false
     @State private var previewURL: URL?
     @State private var recoveringFiles = false
+    @State private var privateDownloadPlan: DownloadPlan?
+    @State private var confirmsPrivateDownload = false
     private enum Field { case address, hash, mirrors }
     @FocusState private var editing: Field?
 
@@ -114,6 +117,16 @@ struct DownloadsView: View {
                     }
                 }
             }
+            .alert("保存私密浏览中的下载？", isPresented: $confirmsPrivateDownload) {
+                Button("确认下载并保留记录") {
+                    if let privateDownloadPlan { start(privateDownloadPlan) }
+                    privateDownloadPlan = nil
+                }
+                Button("取消", role: .cancel) { privateDownloadPlan = nil }
+            } message: {
+                Text(String(localized: "文件、下载链接和下载记录会保留在设备上，退出私密浏览后不会自动删除。")
+                     + "\n\n" + (privateDownloadPlan?.urls.map(\.absoluteString).joined(separator: "\n") ?? ""))
+            }
             .confirmationDialog("如何移除下载？", isPresented: $confirmsRemoval, titleVisibility: .visible) {
                 Button("仅移除记录，保留文件") { remove(includingFiles: false) }
                 Button("记录和文件移入回收站", role: .destructive) { remove(includingFiles: true) }
@@ -165,7 +178,7 @@ struct DownloadsView: View {
                 do {
                     let inputs = [address] + mirrorAddresses.split(whereSeparator: \.isNewline).map(String.init)
                     let urls = try inputs.map { try DownloadManager.validatedURL($0) }
-                    _ = try downloads.start(DownloadPlan(urls: urls, sha256: expectedHash)); error = nil
+                    requestDownload(DownloadPlan(urls: urls, sha256: expectedHash))
                 } catch { self.error = error.localizedDescription }
             } label: { Text("开始下载").frame(maxWidth: .infinity) }
             .buttonStyle(.borderedProminent).disabled(address.isEmpty).accessibilityIdentifier("start-download")
@@ -181,11 +194,23 @@ struct DownloadsView: View {
             ForEach(Array(plan.urls.enumerated()), id: \.offset) { _, url in Text(url.absoluteString).font(.caption) }
             Text(plan.sha256 != nil ? "包含 SHA-256 校验值" : "包含 SHA-512 校验值").font(.caption)
             Button("确认并开始下载") {
-                do { _ = try downloads.start(plan); importedPlan = nil; error = nil }
-                catch { self.error = error.localizedDescription }
+                requestDownload(plan)
             }.accessibilityIdentifier("confirm-metalink")
             Button("取消", role: .cancel) { importedPlan = nil }
         }
+    }
+
+    private func requestDownload(_ plan: DownloadPlan) {
+        error = nil
+        if browser.profile.isPrivate {
+            privateDownloadPlan = plan
+            confirmsPrivateDownload = true
+        } else { start(plan) }
+    }
+
+    private func start(_ plan: DownloadPlan) {
+        do { _ = try downloads.start(plan); importedPlan = nil; error = nil }
+        catch { self.error = error.localizedDescription }
     }
 
     private var storageSection: some View {

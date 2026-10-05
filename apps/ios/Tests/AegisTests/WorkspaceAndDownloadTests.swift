@@ -30,6 +30,46 @@ final class WorkspaceAndDownloadTests: XCTestCase {
         tab.stop()
     }
 
+    func testPrivateReadAndBookmarkRequireConsentWithoutHistoryOrSessionLeak() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let dataFile = folder.appendingPathComponent("data.json")
+        let windowFile = folder.appendingPathComponent("windows.json")
+        let store = BrowserDataStore(persistenceURL: dataFile)
+        let windows = BrowserWindowStore(persistenceURL: windowFile)
+        let browser = BrowserSession(dataStore: store, windowStore: windows)
+        browser.switchProfile(to: .privateMode)
+        let tab = try XCTUnwrap(browser.activeTab)
+        let url = URL(string: "http://127.0.0.1:8768/article?case=private-consent-test")!
+        tab.load(url)
+        try await waitUntil { tab.url == url && !tab.isLoading }
+        do { _ = try await tab.snapshot(); XCTFail("未经明确读取不应访问私密正文") }
+        catch { XCTAssertTrue(error is PageSnapshotError) }
+        let snapshot = try await tab.snapshot(privateReadConfirmed: true)
+        XCTAssertTrue(snapshot.text.contains("12 公顷"))
+        XCTAssertFalse(snapshot.text.contains("private form text"))
+        browser.toggleBookmark()
+        XCTAssertTrue(store.bookmarks.isEmpty)
+        browser.persistSession()
+        XCTAssertTrue(store.history.isEmpty)
+        let before = try Data(contentsOf: windowFile)
+        XCTAssertNil(before.range(of: Data("private-consent-test".utf8)))
+        browser.toggleBookmark(privateSaveConfirmed: true)
+        XCTAssertEqual(BrowserDataStore(persistenceURL: dataFile).bookmarks.first?.url, url.absoluteString)
+        XCTAssertTrue(BrowserDataStore(persistenceURL: dataFile).history.isEmpty)
+        browser.persistSession()
+        XCTAssertNil(try Data(contentsOf: windowFile).range(of: Data("private-consent-test".utf8)))
+        let restored = BrowserSession(dataStore: store, windowID: browser.windowID,
+                                      windowStore: BrowserWindowStore(persistenceURL: windowFile))
+        XCTAssertTrue(restored.privateTabs.isEmpty)
+        XCTAssertEqual(restored.profile, .standard)
+        tab.load(URL(string: "http://127.0.0.1:8768/sensitive")!)
+        try await waitUntil { tab.url?.path == "/sensitive" && !tab.isLoading }
+        do { _ = try await tab.snapshot(privateReadConfirmed: true); XCTFail("私密授权不能跳过敏感表单保护") }
+        catch { XCTAssertEqual(error.localizedDescription, PageSnapshotError.sensitive.localizedDescription) }
+        tab.stop()
+    }
+
     func testBookmarkLinkCheckUsesActualHTTPStatus() async throws {
         let good = await BookmarkLinkChecker.check(id: UUID(), title: "有效", url: URL(string: "http://127.0.0.1:8768/article")!)
         let missing = await BookmarkLinkChecker.check(id: UUID(), title: "失效", url: URL(string: "http://127.0.0.1:8768/missing")!)
@@ -96,7 +136,7 @@ final class WorkspaceAndDownloadTests: XCTestCase {
         XCTAssertThrowsError(try WorkspaceStore.previewImport(Data("[]".utf8)))
     }
 
-    func testPrivateWorkspaceIsRejectedAndRestorePreservesExistingTabs() throws {
+    func testPrivateWorkspaceRequiresSaveConfirmationAndRestoresIntoPrivateTabs() throws {
         let workspaces = WorkspaceStore()
         let saved = try workspaces.save(name: "测试", urls: [URL(string: "https://example.com")!])
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), workspaceStore: workspaces)
@@ -106,7 +146,13 @@ final class WorkspaceAndDownloadTests: XCTestCase {
         XCTAssertTrue(browser.standardTabs.contains { $0.id == first })
         browser.switchProfile(to: .privateMode)
         XCTAssertThrowsError(try browser.saveWorkspace(name: "私密"))
-        XCTAssertTrue(browser.restoreWorkspace(saved).isEmpty)
+        let regularCount = browser.standardTabs.count
+        let restored = browser.restoreWorkspace(saved)
+        XCTAssertEqual(restored.count, 1)
+        XCTAssertEqual(browser.standardTabs.count, regularCount)
+        XCTAssertEqual(browser.activeTab?.profile, .privateMode)
+        let privateSaved = try browser.saveWorkspace(name: "主动保存私密标签", privateSaveConfirmed: true)
+        XCTAssertEqual(privateSaved.urls, saved.urls)
     }
 
     func testDownloadValidationRejectsDangerousTargetsAndNormalizesFilename() throws {
