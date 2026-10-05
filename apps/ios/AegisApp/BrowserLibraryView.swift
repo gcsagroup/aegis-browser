@@ -23,6 +23,8 @@ struct BrowserLibraryView: View {
     @State private var exportDocument = WorkspaceDocument(data: Data())
     @State private var query = ""
     @State private var sort: LibrarySort = .newest
+    @State private var bookmarkToRemove: BrowserBookmark?
+    @State private var confirmsPrivateBookmarkRemoval = false
 
     private enum LibrarySort: String, CaseIterable {
         case newest, title, site
@@ -69,6 +71,10 @@ struct BrowserLibraryView: View {
                 Picker("浏览资料", selection: $section) {
                     Text("收藏").tag(0); Text("历史").tag(1); Text("工作区").tag(2)
                 }.pickerStyle(.segmented)
+                if browser.profile.isPrivate {
+                    Text("这里显示已保存的资料。私密浏览不会新增历史；主动修改收藏或保存工作区后，资料会继续保留。打开的页面仍使用私密标签。")
+                        .font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("private-library-notice")
+                }
                 if let error = workspaces.storageError {
                     Text(error).foregroundStyle(.red).accessibilityIdentifier("workspace-storage-error")
                 }
@@ -79,8 +85,9 @@ struct BrowserLibraryView: View {
                         Button { open(item.url) } label: { pageRow(item.title, url: item.url) }
                             .swipeActions {
                                 Button("移除收藏", role: .destructive) {
-                                    guard let url = URL(string: item.url), !browser.profile.isPrivate else { return }
-                                    _ = dataStore.toggleBookmark(title: item.title, url: url, isPrivate: false)
+                                    if browser.profile.isPrivate {
+                                        bookmarkToRemove = item; confirmsPrivateBookmarkRemoval = true
+                                    } else { removeBookmark(item) }
                                 }
                             }
                     }
@@ -107,7 +114,7 @@ struct BrowserLibraryView: View {
                             catch { message = error.localizedDescription }
                         }.disabled(workspaces.workspaces.isEmpty).accessibilityIdentifier("export-workspaces")
                     }
-                    Text("保存普通标签的网址，并移除检测到的敏感参数。恢复时会追加标签，不会关闭现有页面。")
+                    Text("保存当前浏览模式下标签的网址，并移除检测到的敏感参数。恢复时会追加标签，不会关闭现有页面。")
                         .font(.footnote).foregroundStyle(.secondary)
                     if !query.isEmpty, savedWorkspaces.isEmpty { Text("没有匹配的资料") }
                     ForEach(savedWorkspaces) { workspace in
@@ -165,6 +172,13 @@ struct BrowserLibraryView: View {
                 case let .failure(error): message = error.localizedDescription
                 }
             }
+            .alert("移除已保存的收藏？", isPresented: $confirmsPrivateBookmarkRemoval) {
+                Button("确认移除", role: .destructive) {
+                    if let bookmarkToRemove { removeBookmark(bookmarkToRemove) }
+                    bookmarkToRemove = nil
+                }
+                Button("取消", role: .cancel) { bookmarkToRemove = nil }
+            } message: { Text(bookmarkToRemove?.url ?? "") }
             .alert("重命名工作区", isPresented: $renamePrompt) {
                 TextField("工作区名称", text: $name)
                 Button("保存") {
@@ -185,11 +199,15 @@ struct BrowserLibraryView: View {
                 TextField("工作区名称", text: $name)
                 Button("保存") {
                     do {
-                        let value = try browser.saveWorkspace(name: name)
+                        let value = try browser.saveWorkspace(name: name, privateSaveConfirmed: browser.profile.isPrivate)
                         message = String(localized: "已保存 \(value.urls.count) 个页面。"); name = ""
                     } catch { message = error.localizedDescription }
                 }
                 Button("取消", role: .cancel) { }
+            } message: {
+                if browser.profile.isPrivate {
+                    Text("当前私密标签的网址会保存到工作区，退出私密浏览后仍然保留。浏览历史和会话不会自动保存。")
+                }
             }
             .confirmationDialog("恢复工作区？", isPresented: $showRestore, titleVisibility: .visible) {
                 Button("追加打开这些页面") {
@@ -202,6 +220,10 @@ struct BrowserLibraryView: View {
                 Text(pendingRestore?.urls.map { $0.host ?? "" }.joined(separator: "、") ?? "")
             }
         }
+    }
+    private func removeBookmark(_ item: BrowserBookmark) {
+        guard dataStore.bookmarks.contains(where: { $0.id == item.id }), let url = URL(string: item.url) else { return }
+        _ = dataStore.toggleBookmark(title: item.title, url: url, isPrivate: false)
     }
     private func open(_ address: String) { browser.navigate(address: address); dismiss() }
     private func pageRow(_ title: String, url: String) -> some View {

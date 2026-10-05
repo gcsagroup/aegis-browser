@@ -17,6 +17,7 @@
 		160A6A7262204A8BDA6C708D /* DownloadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 614955B474654A3F4433E4DA /* DownloadPlan.swift */; };
 		1C90C244D6A96357698C760C /* read-only.js in Resources */ = {isa = PBXBuildFile; fileRef = B97844B59A1122231CA84A1B /* read-only.js */; };
 		1C9E9AECD3F7D1E3899C3BC6 /* ModelClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39907B98F33240EE9A70059 /* ModelClient.swift */; };
+		1DBD301CB48570186ADF3C79 /* BrowserAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BCE2D43B44108274CD01AA6 /* BrowserAddressField.swift */; };
 		24D8A94B087B3826B8E7D306 /* AgentKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		27CB8C7428169E6709C047EC /* PageAssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA54385A92D3EFA9692EF7C8 /* PageAssistantView.swift */; };
 		29739518D29D84A07EAD73CE /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = C1007077C6F4B017DC7EE5E3 /* Fixtures */; };
@@ -320,6 +321,7 @@
 		929074D962010764650D38AB /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		954CDAA1B3557195DAC2099D /* BookmarkLinkCheckerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkLinkCheckerView.swift; sourceTree = "<group>"; };
 		97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariReadOnlyGate.swift; sourceTree = "<group>"; };
+		9BCE2D43B44108274CD01AA6 /* BrowserAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserAddressField.swift; sourceTree = "<group>"; };
 		9C803F99BFCEF9620B7B294D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		9FBABA36F4D98A942FD63987 /* ContentFilterCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFilterCompiler.swift; sourceTree = "<group>"; };
 		A066F1C80823C272439700C0 /* BrowserKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = BrowserKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -646,6 +648,7 @@
 				AF72AD752242D6C76AE0CBF1 /* Assets.xcassets */,
 				ED1414A7ABDC4A40635C0CBA /* AssistantHistoryView.swift */,
 				954CDAA1B3557195DAC2099D /* BookmarkLinkCheckerView.swift */,
+				9BCE2D43B44108274CD01AA6 /* BrowserAddressField.swift */,
 				795BEBE2720FB095AF6002BF /* BrowserKeyboardCommands.swift */,
 				377FD9FAC5FA036BC6F4BA0D /* BrowserLibraryView.swift */,
 				B953D0FA16C857B4161F1341 /* BrowserSettings.swift */,
@@ -1062,6 +1065,7 @@
 				A221FA759498782B5C07292B /* AgentCenterView.swift in Sources */,
 				428923ACD8511BF728294463 /* AssistantHistoryView.swift in Sources */,
 				6A2403C3C4722E2DF3A1E04E /* BookmarkLinkCheckerView.swift in Sources */,
+				1DBD301CB48570186ADF3C79 /* BrowserAddressField.swift in Sources */,
 				451B05D3BA55EC58863E3E68 /* BrowserKeyboardCommands.swift in Sources */,
 				5DF62DBA94A18602DE5C64AA /* BrowserLibraryView.swift in Sources */,
 				58050E252DB5F6270E949D4F /* BrowserSettings.swift in Sources */,
@@ -1283,7 +1287,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 63;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1297,7 +1301,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.2;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1345,7 +1349,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 63;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -1365,7 +1369,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.2;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

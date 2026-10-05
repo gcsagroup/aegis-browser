@@ -53,7 +53,7 @@ final class FixtureSchemeHandler: NSObject, WKURLSchemeHandler {
             content = """
             <p class="eyebrow">GCSA AEGIS</p>
             <h1>\(String(localized: "安心浏览，清楚掌控。"))</h1>
-            <p>\(String(localized: "在地址栏搜索或输入网址。需要整理信息时，打开下方的 AI 助手。"))</p>
+            <p>\(String(localized: "在地址栏搜索或输入网址。需要整理信息时，从更多菜单打开 AI 助手。"))</p>
             <div class="grid">
               <div class="card"><strong>\(String(localized: "网页摘要与研究"))</strong><span>\(String(localized: "选择页面，确认范围，再查看分析和原文引用。"))</span></div>
               <div class="card"><strong>\(String(localized: "收藏与工作区"))</strong><span>\(String(localized: "把相关页面保存到一起，下次继续。"))</span></div>

@@ -9,6 +9,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.client import HTTPConnection
+from urllib.parse import parse_qs, urlsplit
 
 PAYLOAD = b"GCSA Aegis simulator download verification\n" * 1024
 ARTICLE = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -25,6 +26,18 @@ SECOND = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="wid
 class Handler(BaseHTTPRequestHandler):
     dropped_paths = set()
     drop_lock = threading.Lock()
+    request_counts = {}
+    request_lock = threading.Lock()
+
+    @classmethod
+    def count_request(cls, marker, kind):
+        # 只保存合成验收标记及次数，不记录模型输入或页面正文。
+        if not re.fullmatch(r"AEGISPRIVATE_[A-F0-9-]+", marker):
+            return
+        with cls.request_lock:
+            counts = cls.request_counts.setdefault(marker, {"model": 0, "download": 0})
+            counts[kind] += 1
+
     def log_message(self, *_):
         pass
 
@@ -44,6 +57,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        query = parse_qs(urlsplit(self.path).query)
+        if path == "/test-request-counts":
+            marker = query.get("case", [""])[0]
+            with self.request_lock:
+                counts = dict(self.request_counts.get(marker, {"model": 0, "download": 0}))
+            return self.respond(200, counts)
         if path == "/article":
             return self.respond(200, ARTICLE, "text/html; charset=utf-8")
         if path == "/long-article":
@@ -55,6 +74,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/sensitive":
             return self.respond(200, "<main>测试登录页</main><input type=password value='private'>", "text/html; charset=utf-8")
         if path == "/download.bin":
+            self.count_request(query.get("case", [""])[0], "download")
             return self.respond(200, PAYLOAD, "application/octet-stream", {"Content-Disposition": f'attachment; filename="aegis-test-{time.time_ns()}.bin"', "Accept-Ranges": "bytes"})
         if path in ("/slow.bin", "/drop.bin"):
             with self.drop_lock:
@@ -104,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(413, {"error": "输入过大"})
         try:
             value = json.loads(self.rfile.read(length))
+            for marker in set(re.findall(r"AEGISPRIVATE_[A-F0-9-]+", json.dumps(value))):
+                self.count_request(marker, "model")
             model = value.get("model", "aegis-simulator-fixture")
             if model in ("error-401", "error-429", "error-503"):
                 return self.respond(int(model[-3:]), {"error": "合成错误"}, headers={"Retry-After": "3"})
@@ -194,7 +216,17 @@ def self_test():
         stream = request("POST", "/v1/models/aegis-simulator-fixture:streamGenerateContent?alt=sse", json.dumps(payload).encode()).decode()
         if "STOP" not in stream:
             raise RuntimeError("Gemini 流未结束")
-        print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=7")
+        marker = "AEGISPRIVATE_00000000-0000-4000-8000-000000000001"
+        if json.loads(request("GET", "/test-request-counts?case=" + marker)) != {"model": 0, "download": 0}:
+            raise RuntimeError("确认前计数不是零")
+        payload = {"model": "aegis-simulator-fixture", "messages": [{"role": "user", "content": "城市绿地观察 " + marker}]}
+        request("POST", "/v1/chat/completions", json.dumps(payload).encode())
+        if json.loads(request("GET", "/test-request-counts?case=" + marker)) != {"model": 1, "download": 0}:
+            raise RuntimeError("模型请求计数不匹配")
+        request("GET", "/download.bin?case=" + marker)
+        if json.loads(request("GET", "/test-request-counts?case=" + marker)) != {"model": 1, "download": 1}:
+            raise RuntimeError("下载请求计数不匹配")
+        print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=10")
     finally:
         server.shutdown()
         server.server_close()
