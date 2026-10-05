@@ -4,7 +4,17 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The workspace package remains `0.1.0`; the current iOS development candidate uses `3.0` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+The workspace package remains `0.1.0`; the current iOS development candidate uses `3.2` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+
+## iOS 3.2 — 2026-10-05
+
+Private browsing now supports the library, bookmarks, workspaces, downloads and AI. History, private sessions and tasks are not saved automatically. Explicit persistent saves explain what remains stored and require confirmation. Private AI sends only after confirmation; closing the assistant discards unsaved analysis.
+
+Bookmark and download confirmations show the full URL and retention notice. Ver 3.2 (63) has completed simulator checks on both devices and manual UI verification; see [private browsing validation](docs/audit/ios-private-mode-2026-10-05.zh-CN.md).
+
+## iOS 3.1 — 2026-10-05
+
+A single bottom address bar on iPhone and a single top toolbar on wide iPad windows. Pages use the available width, the shield opens ad filtering directly, and other actions move into the menu. Scrolling long pages reduces auxiliary controls; accessibility text sizes and VoiceOver keep them expanded. See the [interface validation record](docs/audit/ios-compact-ui-2026-10-05.zh-CN.md).
 
 ## iOS 3.0 — 2026-10-04
 
