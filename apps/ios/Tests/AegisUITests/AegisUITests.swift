@@ -11,8 +11,8 @@ final class AegisUITests: XCTestCase {
     func testBrowserStartsAndNavigatesOfflineFixture() {
         let app = launchApp()
         XCTAssertTrue(app.textFields["address-field"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["agent-button"].exists)
-        XCTAssertTrue(app.staticTexts["webextension-status"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["page-protection"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["webextension-status"].exists)
 
         let address = app.textFields["address-field"]
         address.tap()
@@ -65,15 +65,145 @@ final class AegisUITests: XCTestCase {
         waitForExpectations(timeout: 8)
     }
 
-    func testPrivateProfileIsIsolatedAndAgentDisabled() {
+    func testPrivateProfileKeepsFeaturesAvailable() {
         let app = launchApp()
-        let menu = app.buttons["profile-menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 8))
-        menu.tap()
+        tapBrowserButton("profile-menu", in: app)
         app.buttons["私密"].tap()
-        XCTAssertTrue(app.staticTexts["私密浏览：不记录历史，AI 助手已关闭"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["agent-button"].isEnabled)
-        XCTAssertFalse(app.buttons["data-button"].isEnabled)
+        XCTAssertEqual(app.buttons["page-protection"].value as? String, "私密浏览：不记录历史，保存和发送资料前需确认")
+        app.buttons["browser-more"].tap()
+        XCTAssertTrue(app.buttons["agent-button"].exists)
+        XCTAssertTrue(app.buttons["agent-button"].isEnabled)
+        XCTAssertTrue(app.buttons["data-button"].isEnabled)
+    }
+
+    func testPrivateBookmarkOrganizerUsesSavedBookmarksAndRequiresApproval() {
+        let app = launchApp()
+        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        openAgent(app)
+        app.buttons["workflow-browserManager"].tap()
+        XCTAssertTrue(app.staticTexts["pre-consent-zero-io"].waitForExistence(timeout: 5))
+        app.buttons["approve-task-button"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["action-approval-screen"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["收藏夹整理已应用"].exists)
+        let apply = app.buttons["confirm-bookmark-action"]
+        XCTAssertTrue(scrollUntilVisible(apply, in: app)); apply.tap()
+        XCTAssertTrue(app.staticTexts["收藏夹整理已应用"].waitForExistence(timeout: 8))
+        attachScreenshot("私密模式整理已保存收藏仍需两次确认", app)
+    }
+
+    func testPrivateSaveAndDownloadRequireConfirmation() async throws {
+        let app = launchApp()
+        let marker = "AEGISPRIVATE_" + UUID().uuidString
+        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        tapBrowserButton("page-actions", in: app); app.buttons["toggle-bookmark"].tap()
+        XCTAssertTrue(app.alerts["修改已保存的收藏？"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "http://127.0.0.1:8768/article?case=" + marker)).firstMatch.exists)
+        app.alerts.buttons["取消"].tap()
+        tapBrowserButton("page-actions", in: app)
+        XCTAssertEqual(app.buttons["toggle-bookmark"].label, "添加收藏")
+        app.buttons["toggle-bookmark"].tap(); app.alerts["修改已保存的收藏？"].buttons["确认修改"].firstMatch.tap()
+        tapBrowserButton("data-button", in: app)
+        XCTAssertTrue(app.staticTexts["private-library-notice"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch.waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["历史"].tap()
+        XCTAssertTrue(app.staticTexts["暂无历史"].exists)
+        app.segmentedControls.buttons["工作区"].tap(); app.buttons["save-workspace"].tap()
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS '当前私密标签的网址'")).firstMatch.exists)
+        app.alerts.buttons["取消"].tap()
+        app.buttons["save-workspace"].tap()
+        app.alerts.textFields.firstMatch.tap(); app.alerts.textFields.firstMatch.typeText("主动保存私密工作区")
+        app.alerts.buttons["保存"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS '主动保存私密工作区'")).firstMatch.waitForExistence(timeout: 5))
+        attachScreenshot("私密收藏与工作区由用户确认保存", app)
+        app.buttons["完成"].tap()
+        tapBrowserButton("downloads-button", in: app)
+        let address = app.textFields["download-url"]
+        address.tap(); address.typeText("http://127.0.0.1:8768/download.bin?case=" + marker)
+        app.buttons["start-download"].tap()
+        XCTAssertTrue(app.alerts["保存私密浏览中的下载？"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "http://127.0.0.1:8768/download.bin?case=" + marker)).firstMatch.exists)
+        try await assertFixtureRequests(marker, model: 0, download: 0)
+        app.alerts.buttons["取消"].tap()
+        try await assertFixtureRequests(marker, model: 0, download: 0)
+        XCTAssertTrue(scrollUntilVisible(app.staticTexts["暂无下载"], in: app))
+        for _ in 0..<6 {
+            if app.buttons["start-download"].isHittable { break }
+            app.swipeDown()
+        }
+        app.buttons["start-download"].tap(); app.alerts["保存私密浏览中的下载？"].buttons["确认下载并保留记录"].firstMatch.tap()
+        XCTAssertTrue(scrollUntilVisible(app.staticTexts["已完成"].firstMatch, in: app))
+        try await assertFixtureRequests(marker, model: 0, download: 1)
+        attachScreenshot("私密下载确认后完成并保留记录", app)
+        app.buttons["完成"].tap()
+        tapBrowserButton("profile-menu", in: app); app.buttons["普通"].tap()
+        tapBrowserButton("downloads-button", in: app)
+        XCTAssertTrue(scrollUntilVisible(app.staticTexts["已完成"].firstMatch, in: app))
+    }
+
+    func testPrivateAssistantSendsOnlyAfterConsentAndSavesOnlyOnRequest() async throws {
+        let app = launchApp()
+        let marker = "AEGISPRIVATE_" + UUID().uuidString
+        navigate(app, to: "http://127.0.0.1:8768/article-two")
+        XCTAssertTrue(app.webViews.staticTexts["绿地改造补充说明"].waitForExistence(timeout: 12))
+        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["模型服务"].tap()
+        let endpoint = app.textFields["model-endpoint"]
+        endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
+        let model = app.textFields["model-name"]
+        model.tap(); model.clearAndType("aegis-simulator-fixture")
+        app.buttons["save-model"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        tapBrowserButton("agent-button", in: app)
+        XCTAssertTrue(app.staticTexts["private-assistant-notice"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches.matching(NSPredicate(format: "label CONTAINS '第二篇合成来源'")).firstMatch.exists)
+        let goal = app.textFields["assistant-goal"].exists ? app.textFields["assistant-goal"] : app.textViews["assistant-goal"]
+        goal.tap(); goal.clearAndType("总结主要内容并引用来源 " + marker)
+        let read = app.buttons["read-pages"]
+        XCTAssertTrue(scrollUntilVisible(read, in: app)); read.tap()
+        XCTAssertTrue(app.staticTexts["等待确认发送"].waitForExistence(timeout: 8))
+        try await assertFixtureRequests(marker, model: 0, download: 0)
+        let analyze = app.buttons["analyze-pages"]
+        XCTAssertTrue(scrollUntilVisible(analyze, in: app)); analyze.tap()
+        XCTAssertTrue(app.staticTexts["private-model-send-notice"].waitForExistence(timeout: 5))
+        try await assertFixtureRequests(marker, model: 0, download: 0)
+        app.navigationBars.buttons["取消"].tap()
+        try await assertFixtureRequests(marker, model: 0, download: 0)
+        XCTAssertTrue(scrollUntilVisible(analyze, in: app)); analyze.tap()
+        let confirm = app.buttons["confirm-model-send"]
+        XCTAssertTrue(scrollUntilVisible(confirm, in: app)); confirm.tap()
+        let done = expectation(for: NSPredicate(format: "label == %@", "已完成"), evaluatedWith: app.staticTexts["assistant-status"])
+        await fulfillment(of: [done], timeout: 20)
+        try await assertFixtureRequests(marker, model: 1, download: 0)
+        let history = app.buttons["assistant-history"]
+        revealAssistantHistory(in: app)
+        history.tap()
+        XCTAssertTrue(app.staticTexts["暂无任务记录"].waitForExistence(timeout: 5))
+        attachScreenshot("私密分析完成但不自动建立任务记录", app)
+        app.navigationBars["任务记录"].buttons["完成"].tap()
+        let save = app.buttons["save-assistant-report"]
+        XCTAssertTrue(scrollUntilVisible(save, in: app)); save.tap()
+        XCTAssertTrue(app.alerts["保存私密分析结果？"].waitForExistence(timeout: 5))
+        app.alerts.buttons["取消"].tap()
+        revealAssistantHistory(in: app)
+        history.tap(); XCTAssertTrue(app.staticTexts["暂无任务记录"].waitForExistence(timeout: 5))
+        app.navigationBars["任务记录"].buttons["完成"].tap()
+        XCTAssertTrue(scrollUntilVisible(save, in: app)); save.tap()
+        app.alerts["保存私密分析结果？"].buttons["确认保存"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["研究结果已加密保存。"].waitForExistence(timeout: 5))
+        attachScreenshot("私密分析经明确确认后保存", app)
+        app.terminate(); app.launchArguments += ["--ui-testing-assistant-history-keep", "--ui-testing-windows-keep"]; app.launch()
+        XCTAssertTrue(app.buttons["page-protection"].waitForExistence(timeout: 8))
+        XCTAssertFalse((app.buttons["page-protection"].value as? String ?? "").contains("私密浏览"))
+        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        XCTAssertEqual(app.textFields["address-field"].value as? String, "aegis://start")
+        tapBrowserButton("agent-button", in: app); app.buttons["assistant-history"].tap()
+        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+        XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
+        XCTAssertTrue(app.staticTexts["saved-assistant-report"].waitForExistence(timeout: 5))
     }
 
     func testRealPageModelAndCitation() {
@@ -92,7 +222,7 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["模型设置已保存。"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["完成"].tap()
-        app.buttons["agent-button"].tap()
+        tapBrowserButton("agent-button", in: app)
         XCTAssertTrue(app.buttons["read-pages"].waitForExistence(timeout: 5))
         app.buttons["read-pages"].tap()
         XCTAssertTrue(app.staticTexts["等待确认发送"].waitForExistence(timeout: 8))
@@ -111,7 +241,7 @@ final class AegisUITests: XCTestCase {
         let save = app.buttons["save-assistant-report"]
         XCTAssertTrue(scrollUntilVisible(save, in: app)); save.tap()
         app.terminate(); app.launchArguments.append("--ui-testing-assistant-history-keep"); app.launch()
-        app.buttons["agent-button"].tap()
+        tapBrowserButton("agent-button", in: app)
         app.buttons["assistant-history"].tap()
         let record = app.buttons.matching(NSPredicate(format: "label CONTAINS '总结主要内容'")).firstMatch
         XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
@@ -279,7 +409,7 @@ final class AegisUITests: XCTestCase {
         let app = launchApp()
         navigate(app, to: "http://127.0.0.1:8768/sensitive")
         XCTAssertTrue(app.webViews.secureTextFields.firstMatch.waitForExistence(timeout: 10))
-        app.buttons["agent-button"].tap()
+        tapBrowserButton("agent-button", in: app)
         app.buttons["read-pages"].tap()
         let error = app.staticTexts["assistant-error"]
         XCTAssertTrue(error.waitForExistence(timeout: 8))
@@ -291,7 +421,7 @@ final class AegisUITests: XCTestCase {
         let app = launchApp(extraArguments: ["--ui-testing-damaged-records"])
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
-        app.buttons["data-button"].tap()
+        tapBrowserButton("data-button", in: app)
         app.segmentedControls.buttons["工作区"].tap()
         let workspaceError = app.staticTexts["workspace-storage-error"]
         XCTAssertTrue(workspaceError.waitForExistence(timeout: 5))
@@ -323,7 +453,7 @@ final class AegisUITests: XCTestCase {
         let app = launchApp()
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
-        app.buttons["data-button"].tap()
+        tapBrowserButton("data-button", in: app)
         app.segmentedControls.buttons["工作区"].tap()
         app.buttons["save-workspace"].tap()
         app.alerts.textFields.firstMatch.tap()
@@ -375,7 +505,7 @@ final class AegisUITests: XCTestCase {
         app.activate()
 
         XCTAssertTrue(app.otherElements["agent-center"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["agent-button"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 5))
     }
 
     func testIPadUsesFullWindowForWebPage() throws {
@@ -390,7 +520,7 @@ final class AegisUITests: XCTestCase {
 
     func testTabGroupsRenameRestoreAndUngroup() {
         let app = launchApp()
-        app.buttons["tabs-button"].tap()
+        tapBrowserButton("tabs-button", in: app)
         app.buttons["tab-group-selector"].tap(); app.buttons["新建标签组"].tap()
         app.alerts.textFields.firstMatch.tap(); app.alerts.textFields.firstMatch.typeText("研究资料")
         app.alerts.buttons["保存"].tap()
@@ -398,14 +528,14 @@ final class AegisUITests: XCTestCase {
         app.buttons["完成"].tap()
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 15))
-        app.buttons["tabs-button"].tap(); app.buttons["tab-group-selector"].tap()
+        tapBrowserButton("tabs-button", in: app); app.buttons["tab-group-selector"].tap()
         app.buttons["重命名标签组"].tap()
         app.alerts.textFields.firstMatch.tap(); app.alerts.textFields.firstMatch.clearAndType("公园资料")
         app.alerts.buttons["保存"].tap()
         attachScreenshot("标签分组与重命名", app)
         app.terminate(); app.launchArguments.append("--ui-testing-windows-keep"); app.launch()
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 15))
-        app.buttons["tabs-button"].tap()
+        tapBrowserButton("tabs-button", in: app)
         XCTAssertTrue(app.buttons["tab-group-selector"].label.contains("公园资料"))
         app.buttons["tab-group-selector"].tap(); app.buttons["取消分组（保留标签）"].tap()
         XCTAssertTrue(app.buttons["tab-group-selector"].label.contains("所有标签"))
@@ -493,8 +623,8 @@ final class AegisUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--ui-testing-dark", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(app.buttons["agent-button"].waitForExistence(timeout: 8))
-        app.buttons["agent-button"].tap()
+        XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 8))
+        tapBrowserButton("agent-button", in: app)
         XCTAssertTrue(app.buttons["read-pages"].waitForExistence(timeout: 5))
         attachScreenshot("深色与大字体助手", app)
         app.buttons["完成"].tap()
@@ -504,7 +634,7 @@ final class AegisUITests: XCTestCase {
             app.frame.width > app.frame.height
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [landscapeReady], timeout: 8), .completed)
-        for element in [app.buttons["browser-more"], app.buttons["agent-button"], app.textFields["address-field"]] {
+        for element in [app.buttons["browser-more"], app.buttons["page-protection"], app.textFields["address-field"]] {
             XCTAssertTrue(element.isHittable)
             XCTAssertTrue(app.frame.contains(element.frame), "横屏控件应完整位于可用界面内：\(element.identifier)")
         }
@@ -517,6 +647,7 @@ final class AegisUITests: XCTestCase {
         navigate(app, to: "https://www.apple.com/legal/")
         XCTAssertTrue(app.buttons["刷新"].waitForExistence(timeout: 30))
         app.buttons["browser-more"].tap()
+        app.buttons["page-actions"].tap()
         app.buttons["在页面中查找"].tap()
         let field = app.textFields["find-text"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -548,17 +679,18 @@ final class AegisUITests: XCTestCase {
 
     func testExternalLinkKeepsPrivateModeUntilExplicitConfirmation() {
         let app = launchApp()
-        app.buttons["profile-menu"].tap(); app.buttons["私密"].tap()
+        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
         let link = URL(string: "gcsa-aegis://open?url=http%3A%2F%2F127.0.0.1%3A8768%2Farticle")!
         XCUIDevice.shared.system.open(link)
         XCTAssertTrue(app.alerts["在普通浏览中打开分享页面？"].waitForExistence(timeout: 8))
-        XCTAssertFalse(app.buttons["agent-button"].isEnabled)
         app.alerts.buttons["取消"].tap()
-        XCTAssertTrue(app.staticTexts["私密浏览：不记录历史，AI 助手已关闭"].exists)
+        XCTAssertEqual(app.buttons["page-protection"].value as? String, "私密浏览：不记录历史，保存和发送资料前需确认")
         XCUIDevice.shared.system.open(link)
         XCTAssertTrue(app.alerts.buttons["用普通标签打开"].waitForExistence(timeout: 8))
         app.alerts.buttons["用普通标签打开"].tap()
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        app.buttons["browser-more"].tap()
+        XCTAssertTrue(app.buttons["agent-button"].exists)
         XCTAssertTrue(app.buttons["agent-button"].isEnabled)
         attachScreenshot("外部链接经明确确认后打开", app)
     }
@@ -567,7 +699,7 @@ final class AegisUITests: XCTestCase {
         let app = launchApp(extraArguments: ["--ui-testing-damaged-records"])
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
-        app.buttons["data-button"].tap()
+        tapBrowserButton("data-button", in: app)
         app.segmentedControls.buttons["工作区"].tap()
         app.buttons["workspace-recovery"].tap()
         app.buttons["reset-records"].tap()
@@ -593,7 +725,7 @@ final class AegisUITests: XCTestCase {
 
     func testRecoveryControlsAccessibility() throws {
         let app = launchApp(extraArguments: ["--ui-testing-damaged-records"])
-        app.buttons["data-button"].tap()
+        tapBrowserButton("data-button", in: app)
         app.segmentedControls.buttons["工作区"].tap()
         app.buttons["workspace-recovery"].tap()
         try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription, .trait])
@@ -602,7 +734,7 @@ final class AegisUITests: XCTestCase {
 
     func testLibrarySearchAndDownloadPreview() throws {
         let app = launchApp()
-        app.buttons["data-button"].tap()
+        tapBrowserButton("data-button", in: app)
         app.swipeDown()
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("does-not-exist")
@@ -639,7 +771,7 @@ final class AegisUITests: XCTestCase {
         model.tap(); model.clearAndType("stream-slow")
         app.buttons["save-model"].tap()
         app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
-        app.buttons["agent-button"].tap(); app.buttons["read-pages"].tap()
+        tapBrowserButton("agent-button", in: app); app.buttons["read-pages"].tap()
         XCTAssertTrue(app.staticTexts["等待确认发送"].waitForExistence(timeout: 8))
         let analyze = app.buttons["analyze-pages"]
         XCTAssertTrue(scrollUntilVisible(analyze, in: app)); analyze.tap()
@@ -660,9 +792,11 @@ final class AegisUITests: XCTestCase {
         let app = launchApp()
         XCTAssertTrue(app.textFields["address-field"].waitForExistence(timeout: 8))
         app.typeKey("t", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["标签 2"].waitForExistence(timeout: 5))
+        let twoTabs = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "标签 2"), object: app.buttons["browser-more"])
+        XCTAssertEqual(XCTWaiter.wait(for: [twoTabs], timeout: 5), .completed)
         app.typeKey("w", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["标签 1"].waitForExistence(timeout: 5))
+        let oneTab = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "标签 1"), object: app.buttons["browser-more"])
+        XCTAssertEqual(XCTWaiter.wait(for: [oneTab], timeout: 5), .completed)
         app.typeKey("l", modifierFlags: .command)
         app.textFields["address-field"].typeText("http://127.0.0.1:8768/article\n")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
@@ -709,6 +843,93 @@ final class AegisUITests: XCTestCase {
         attachScreenshot("两项下载批量移除后重新找回文件", app)
     }
 
+    func testCompactToolbarLeavesPageSpaceAndRestoresAfterScrolling() {
+        let app = launchApp()
+        navigate(app, to: "http://127.0.0.1:8768/long-article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        let page = app.webViews.firstMatch
+        XCTAssertGreaterThan(page.frame.width, app.frame.width * 0.98)
+        XCTAssertGreaterThan(page.frame.height, app.frame.height * 0.80)
+        XCTAssertFalse(app.staticTexts["webextension-status"].exists)
+        let metrics = XCTAttachment(string: "窗口：\(app.frame)，网页：\(page.frame)，地址栏：\(app.textFields["address-field"].frame)")
+        metrics.name = "紧凑布局可视面积"; metrics.lifetime = .keepAlways; add(metrics)
+        attachScreenshot("单行工具栏与完整网页", app)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            page.swipeUp()
+            XCTAssertTrue(app.otherElements["browser-toolbar-collapsed"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["browser-more"].isHittable)
+            attachScreenshot("向下浏览收起工具", app)
+            page.swipeDown()
+            XCTAssertTrue(app.otherElements["browser-toolbar-expanded"].waitForExistence(timeout: 5))
+            page.swipeUp()
+            XCTAssertTrue(app.otherElements["browser-toolbar-collapsed"].waitForExistence(timeout: 5))
+            navigate(app, to: "http://127.0.0.1:8768/article-two")
+            XCTAssertTrue(app.webViews.staticTexts["绿地改造补充说明"].waitForExistence(timeout: 12))
+            XCTAssertTrue(app.buttons["page-protection"].isHittable)
+        }
+    }
+
+    func testCompactToolbarProtectionAndMenuAccessibility() throws {
+        let app = launchApp()
+        XCTAssertTrue(app.buttons["page-protection"].waitForExistence(timeout: 8))
+        // 本用例检查浏览器控件；网页自身的静态文本不是工具栏点击区域。
+        let pageFrame = app.webViews.firstMatch.frame
+        try app.performAccessibilityAudit(for: [.hitRegion, .sufficientElementDescription, .trait]) { issue in
+            guard let element = issue.element else { return false }
+            return pageFrame.contains(element.frame)
+        }
+        for id in ["page-protection", "browser-more"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].frame.height, 44)
+            XCTAssertGreaterThanOrEqual(app.buttons[id].frame.width, 44)
+        }
+        XCTAssertGreaterThanOrEqual(app.textFields["address-field"].frame.height, 44)
+        app.buttons["page-protection"].tap()
+        XCTAssertTrue(app.switches["content-filter-toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["filter-network-count"].exists)
+        attachScreenshot("地址栏直接打开广告过滤", app)
+        app.buttons["完成"].tap()
+        app.buttons["browser-more"].tap()
+        for id in ["tabs-button", "new-tab-button", "profile-menu", "data-button", "agent-button"] {
+            XCTAssertTrue(app.buttons[id].exists, "菜单入口应保留：\(id)")
+        }
+        attachScreenshot("集中浏览器操作菜单", app)
+    }
+
+    private func tapBrowserButton(_ identifier: String, in app: XCUIApplication) {
+        let button = app.buttons[identifier]
+        if !button.exists || !button.isHittable {
+            let more = app.buttons["browser-more"]
+            XCTAssertTrue(more.waitForExistence(timeout: 8))
+            more.tap()
+        }
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+    }
+
+    private func revealAssistantHistory(in app: XCUIApplication) {
+        let history = app.buttons["assistant-history"]
+        let navigation = app.navigationBars["AI 助手"]
+        let scroll = app.scrollViews["assistant-scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        for _ in 0..<8 {
+            if history.isHittable, history.frame.minY >= navigation.frame.maxY { return }
+            scroll.swipeDown()
+        }
+        XCTAssertTrue(history.isHittable && history.frame.minY >= navigation.frame.maxY)
+    }
+
+    private func assertFixtureRequests(_ marker: String, model: Int, download: Int) async throws {
+        let url = URL(string: "http://127.0.0.1:8768/test-request-counts?case=" + marker)!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let counts = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Int])
+        XCTAssertEqual(counts["model"], model)
+        XCTAssertEqual(counts["download"], download)
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = "确认与取消后的实际请求计数"
+        attachment.lifetime = .keepAlways; add(attachment)
+    }
+
     private func launchApp(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
@@ -718,9 +939,7 @@ final class AegisUITests: XCTestCase {
     }
 
     private func openAgent(_ app: XCUIApplication) {
-        let button = app.buttons["agent-button"]
-        XCTAssertTrue(button.waitForExistence(timeout: 8))
-        button.tap()
+        tapBrowserButton("agent-button", in: app)
         let organizer = app.buttons["bookmark-organizer"]
         XCTAssertTrue(scrollUntilVisible(organizer, in: app))
         organizer.tap()

@@ -17,7 +17,7 @@ final class BrowserKitTests: XCTestCase {
         )
     }
 
-    func testPrivateProfileUsesNonPersistentStoreAndDisablesAgent() {
+    func testPrivateProfileUsesNonPersistentStoreAndAllowsExplicitAssistant() {
         let store = BrowserDataStore(persistenceURL: nil)
         let session = BrowserSession(dataStore: store)
         XCTAssertEqual(session.activeProfileID, session.standardProfileID)
@@ -26,7 +26,7 @@ final class BrowserKitTests: XCTestCase {
         session.switchProfile(to: .privateMode)
         XCTAssertEqual(session.activeProfileID, session.privateProfileID)
         XCTAssertNotEqual(session.activeProfileID, session.standardProfileID)
-        XCTAssertFalse(session.agentIsAvailable)
+        XCTAssertTrue(session.agentIsAvailable)
         XCTAssertTrue(session.activeTab?.webView.configuration.websiteDataStore.isPersistent == false)
         XCTAssertNotEqual(session.standardTabs.first?.id, session.privateTabs.first?.id)
 

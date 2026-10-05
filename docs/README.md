@@ -22,6 +22,8 @@ This directory contains the public product architecture, roadmap, research bound
 - [Trilingual product page](product.html)
 - [Browser build and verification guide](../apps/browser/README.md)
 - [Native iOS engineering guide](../apps/ios/README.md)
+- [iOS 3.2 private browsing validation](audit/ios-private-mode-2026-10-05.zh-CN.md)
+- [iOS 3.1 compact interface validation](audit/ios-compact-ui-2026-10-05.zh-CN.md)
 - [Browser Agent v2 user guide](aegis-browser-agent-v2-user-guide.md)
 - [Browser Agent v1 historical user guide](aegis-browser-agent-v1-user-guide.md)
 - [Browser Agent architecture](aegis-browser-agent-v1-architecture.md)

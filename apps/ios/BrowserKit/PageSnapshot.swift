@@ -24,8 +24,8 @@ public enum PageSnapshotError: LocalizedError {
 
 extension BrowserTab {
     /// 调用方必须先取得明确授权。固定标签、完整 URL 和导航版本，读取后再次核对。
-    public func snapshot() async throws -> PageSnapshot {
-        guard !profile.isPrivate, let expectedURL = requestedURL ?? url,
+    public func snapshot(privateReadConfirmed: Bool = false) async throws -> PageSnapshot {
+        guard (!profile.isPrivate || privateReadConfirmed), let expectedURL = requestedURL ?? url,
               ["http", "https"].contains(expectedURL.scheme ?? "") else { throw PageSnapshotError.unavailable }
         snapshotReaders += 1
         defer { snapshotReaders -= 1 }

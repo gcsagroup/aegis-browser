@@ -438,7 +438,7 @@ public final class BrowserSession: ObservableObject {
         updateActiveTab()
         bookmarkChanges = dataStore.$bookmarks.sink { [weak self] bookmarks in
             guard let self else { return }
-            bookmarkIsActive = !profile.isPrivate && bookmarks.contains { $0.url == activeTab?.url?.absoluteString }
+            bookmarkIsActive = bookmarks.contains { $0.url == activeTab?.url?.absoluteString }
         }
         // 窗口会话由视图出现后首次保存，避免构造视图时发布共享存储变更。
         if windowStore == nil { persistSession() }
@@ -519,7 +519,7 @@ public final class BrowserSession: ObservableObject {
         profile == .standard ? standardProfileID : privateProfileID
     }
 
-    public var agentIsAvailable: Bool { profile == .standard }
+    public var agentIsAvailable: Bool { activeTab != nil }
 
     public func switchProfile(to newProfile: BrowserProfile) {
         guard profile != newProfile else { return }
@@ -572,13 +572,12 @@ public final class BrowserSession: ObservableObject {
     /// 恢复时追加新标签，保留用户当前打开的页面。
     @discardableResult
     public func restoreWorkspace(_ workspace: SavedWorkspace) -> [UUID] {
-        guard !profile.isPrivate else { return [] }
         var created: [UUID] = []
-        for url in workspace.urls.prefix(max(0, 50 - standardTabs.count)) {
-            let tab = makeTab(profile: .standard)
+        for url in workspace.urls.prefix(max(0, 50 - visibleTabs.count)) {
+            let tab = makeTab(profile: profile)
             tab.groupID = selectedGroupID
             tab.prepareForRestore(url: url)
-            standardTabs.append(tab)
+            if profile.isPrivate { privateTabs.append(tab) } else { standardTabs.append(tab) }
             created.append(tab.id)
         }
         if let id = created.last { activeTabID = id }
@@ -586,9 +585,9 @@ public final class BrowserSession: ObservableObject {
         return created
     }
 
-    public func saveWorkspace(name: String) throws -> SavedWorkspace {
-        guard !profile.isPrivate else { throw WorkspaceError.noPages }
-        return try workspaceStore.save(name: name, urls: standardTabs.compactMap { $0.requestedURL ?? $0.url })
+    public func saveWorkspace(name: String, privateSaveConfirmed: Bool = false) throws -> SavedWorkspace {
+        guard !profile.isPrivate || privateSaveConfirmed else { throw WorkspaceError.noPages }
+        return try workspaceStore.save(name: name, urls: visibleTabs.compactMap { $0.requestedURL ?? $0.url })
     }
 
     public func clearWebsiteData() async {
@@ -621,12 +620,13 @@ public final class BrowserSession: ObservableObject {
         tab.load(url)
     }
 
-    public func toggleBookmark() {
-        guard let tab = activeTab, let url = tab.url else { return }
+    public func toggleBookmark(privateSaveConfirmed: Bool = false) {
+        guard !profile.isPrivate || privateSaveConfirmed,
+              let tab = activeTab, let url = tab.url else { return }
         bookmarkIsActive = dataStore.toggleBookmark(
             title: tab.title,
             url: url,
-            isPrivate: profile.isPrivate
+            isPrivate: false // 私密页面只允许在上方明确确认后写入收藏。
         )
     }
 
@@ -663,7 +663,7 @@ public final class BrowserSession: ObservableObject {
             self.newTab().load(url)
         }
         tab.onDownload = { [weak self] url in
-            guard let self, self.profile == profile, !profile.isPrivate else { return }
+            guard let self, self.profile == profile else { return }
             self.pendingDownloadURL = url
         }
         return tab
@@ -671,10 +671,6 @@ public final class BrowserSession: ObservableObject {
 
     private func refreshBookmarkState() {
         updateActiveTab()
-        guard !profile.isPrivate else {
-            bookmarkIsActive = false
-            return
-        }
         guard let url = activeTab?.url else {
             bookmarkIsActive = false
             return
@@ -701,7 +697,7 @@ public final class BrowserSession: ObservableObject {
     }
 
     public func protectAssistantTabs(_ ids: Set<UUID>) {
-        for tab in standardTabs { tab.assistantPinned = ids.contains(tab.id) }
+        for tab in standardTabs + privateTabs { tab.assistantPinned = ids.contains(tab.id) }
     }
 
     private func loadWebExtensions() async {
