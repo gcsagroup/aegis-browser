@@ -8,7 +8,7 @@ GCSA-aegis Browser 將隱私與安全能力直接整合到 Chromium 瀏覽器及
 
 策略邏輯以 `packages/core` 為來源，透過產生的規則快照、內嵌 policy worker、Chromium browser service，以及 Blink/V8 接入點落地。
 
-> **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
+> **歷史證據（2026-09-22）：** macOS Ver 2.0 (061) 的 539 項原生迴歸等結果，僅屬於[原稽核記錄](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)綁定的候選，不代表目前原始碼已通過驗收。
 
 目前聚焦 macOS，執行、真實網路與散布驗收仍待完成。其他平台按[路線圖](../../docs/roadmap.zh-TW.md)推進。
 
