@@ -4,19 +4,15 @@
 
 [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml)
 
-GCSA-aegis Browser 是把隐私与安全能力直接集成到浏览器层和引擎层的 Chromium fork。它不是 Electron 壳，也不把扩展当成产品本体。
+GCSA-aegis Browser 将隐私与安全能力直接集成到 Chromium 浏览器及其引擎。
 
 策略逻辑以 `packages/core` 为来源，通过生成的规则快照、内嵌 policy worker、Chromium browser service 以及 Blink/V8 接入点落地。
 
 > **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
 
-> 历史 057 验收记录：当前候选为 Ver 2.0 (057)，Chromium 153.0.8010.53，198 个 Chromium 补丁及 3 个 V8 补丁；固定 macOS App 已安装核验。535 项原生回归通过，集中任务验收为 75/90（另有 2 失败、9 前置阻塞、4 证据不足），未达到 90% 门槛。安全 100 场景、输入与性能、三语及发行限制分别记录，不能合称整体通过。见[四组收尾与统一验收](../../docs/audit/integration-final-batch-2026-09-22.zh-CN.md)。
+当前聚焦 macOS，运行、真实网络与分发验收仍待完成。其他平台按[路线图](../../docs/roadmap.zh-CN.md)推进。
 
-## 历史基线（2026-09-16）
-
-Ver 1.1 (044)的已验收基线为153.0.8010.37，包含140个Chromium补丁与3个V8补丁。完整重放树为`6f6294dfabbb9bfcf69a5a612bad3b2c41334ce5`。Ver 1.1 (044)在固定macOS测试App完成211项原生回归及版本、设置、摘要、Agent、原生下载、无痕和冷重启验收。
-
-[044本地验收](../../docs/audit/m1-local-acceptance-044-2026-09-16.zh-CN.md)列明源码、清单、签名、恢复与限制；[9月10日记录](../../docs/audit/main-consolidation-2026-09-10.md)只保留为历史。当时完整90/100评测及M2/M3尚未完成；最新候选状态见上文。Android/Windows当前版本实机和公开发行仍未验收。
+[2026-09-10 审计](../../docs/audit/main-consolidation-2026-09-10.md)保留历史补丁重放和测试结果，不代表当前源码已通过验收。
 
 ## Chromium 固定基线
 
@@ -36,8 +32,6 @@ Ver 1.1 (044)的已验收基线为153.0.8010.37，包含140个Chromium补丁与3
 - [Overlay 同步规则](./docs/overlay.zh-CN.md)
 - [Chromium 目录布局](./docs/tree-layout.zh-CN.md)
 - [补丁维护说明](./patches/README.zh-CN.md)
-
-实际操作以 `patches/series`、`patches/v8/series` 和 `scripts/` 下的脚本为准。历史状态记录不能替代当前重放、构建或运行验证。
 
 ## 仓库布局
 
@@ -64,7 +58,7 @@ export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-build/macos"
 
 ## 本地流程
 
-以下命令从仓库根目录执行。Bootstrap、fetch、sync 和依赖下载会访问网络。
+先完成[工作区配置](../../README.zh-CN.md#开始参与)。以下命令从仓库根目录执行，并使用 mise 工具链（需要时加 `mise exec -- <command>` 前缀）。Bootstrap、fetch、sync 和依赖下载会访问网络。
 
 ```bash
 # 准备 depot_tools。
@@ -81,7 +75,7 @@ pnpm --filter @gcsa-aegis/browser bootstrap:libtorrent
 
 # 构建并运行 component 开发版。
 pnpm --filter @gcsa-aegis/browser build
-pnpm --filter @gcsa-aegis/browser run
+pnpm run browser:run
 
 # 生成 non-component Release build-tree 输入。
 pnpm --filter @gcsa-aegis/browser build:release
@@ -116,16 +110,9 @@ Windows 界面验收使用共享的 [验收脚本](./scripts/windows-agent-ui-ac
 
 ## 补丁与 Overlay 模型
 
-`overlay/` 保存期望的 Aegis 集成源码。它既不是独立产品，也不是已应用源码的唯一事实来源。改动必须导出到有序补丁序列，并在精确固定的 Chromium 基线上重新重放。
+`overlay/` 保存期望的集成源码。改动须导出到有序的 [Chromium](./patches/series) 和 [V8](./patches/v8/series) 补丁列表，再在固定基线上重放。当前清单以这两份文件为准；历史数量与源码树哈希见[审计记录](../../docs/audit/README.zh-CN.md)。
 
-当前源码口径：
-
-- 列入 Chromium 序列的 152 个顶层补丁（含尚待验收的M2候选）。
-- 3 个应用在嵌套 V8 checkout 中的补丁。
-- 57、65、67、95 和 97 补丁身份属于历史记录，不覆盖当前 v2 候选。
-- 补丁 0079–0095 已在先前验证的 78 补丁源码树上通过隔离索引精确重放；补丁 0096 独立生成精确的 96 补丁源码树；补丁 0097 生成精确的 97 补丁源码树；补丁 0098 生成精确的 98 补丁源码树 `7069e2b065466bbab3e3007e5866a3790e85ed47`；补丁 0099 生成精确的 99 补丁源码树 `915676bbfbd340b8b8feb15aecacc70dfd53861b`；补丁 0100 生成精确的 100 补丁源码树 `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`；补丁 0101 生成精确的 101 补丁源码树 `451b3148d12fc2cff2df293cb0f1bb0d6242a908`；补丁 0102 生成精确的 102 补丁源码树 `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`。产物身份和运行资格仍按平台分别判定。
-
-“已列入 series”只表示补丁文件存在，不证明重放、可复现构建、平台验收、签名、打包或发布已经完成。
+列入补丁列表不代表重放、构建或运行验证通过。
 
 ## 产品边界
 
@@ -159,8 +146,6 @@ Windows 界面验收使用共享的 [验收脚本](./scripts/windows-agent-ui-ac
 4. 产品身份、签名、公证与打包；
 5. 代表系统上的全新安装和升级验收；以及
 6. 明确的发布决定。
-
-044本地候选的140/3补丁重放、211项原生回归及关键实机验收已通过；这不替代完整任务/安全评测、跨平台实机、正式发行签名、公证和发布决定。
 
 ## Android
 
