@@ -8,7 +8,7 @@ GCSA-aegis Browser integrates privacy and security controls into Chromium and it
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
-> **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
+> **Historical evidence (2026-09-22):** The macOS Ver 2.0 (061) results, including 539 native regressions, belong only to the candidate identified in the [audit record](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md). They do not establish acceptance of the current source.
 
 macOS is the current focus; runtime, real-network and distribution validation remain open. Other platforms follow the [roadmap](../../docs/roadmap.md).
 
