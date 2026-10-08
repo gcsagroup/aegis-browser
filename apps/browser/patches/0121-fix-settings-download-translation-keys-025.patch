@@ -1,0 +1,44 @@
+From 3850fa8bfbb11d50cade941edaf5a4320444c9e4 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 00:02:06 +0800
+Subject: [PATCH] fix(settings): preserve concrete download translation keys on
+ M153
+
+---
+ .../resources/settings/downloads_page/downloads_page.ts     | 2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h          | 6 +++---
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index 32bfd343bb..14f919fefa 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -120,7 +120,7 @@ export class SettingsDownloadsPageElement extends
+   protected accessor downloadBubblePartialViewControlledByPref_: boolean =
+       loadTimeData.getBoolean('downloadBubblePartialViewControlledByPref');
+ 
+-  protected accessor aegisStrings_: Record<string, string> = (() => {
++  protected accessor aegisStrings_ = (() => {
+     const zh = document.documentElement.lang.startsWith('zh');
+     return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? {
+       title: '下載加速',
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 017f17f4da..4c5965f2f1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.24。
+-inline constexpr char kProductVersion[] = "1.1.0.24";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (024)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.25。
++inline constexpr char kProductVersion[] = "1.1.0.25";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (025)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

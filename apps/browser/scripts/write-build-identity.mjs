@@ -68,7 +68,7 @@ function run(command, args, cwd) {
   if (result.status !== 0) {
     fail(
       `${command} ${args.join(' ')} failed: ${
-        result.stderr.trim() || result.error?.message || result.status
+        result.stderr?.trim() || result.error?.message || result.status
       }`,
     );
   }
@@ -86,7 +86,7 @@ function runWithInput(command, args, cwd, input) {
   if (result.status !== 0) {
     fail(
       `${command} ${args.join(' ')} failed: ${
-        result.stderr.trim() || result.error?.message || result.status
+        result.stderr?.trim() || result.error?.message || result.status
       }`,
     );
   }
@@ -267,11 +267,28 @@ function gitIdentity(path, detailed = false, excludedPaths = []) {
 function toolIdentity(name, path, versionArgs = ['--version']) {
   assert(existsSync(path), `missing ${name} tool: ${path}`);
   const resolvedPath = realpathSync(path);
-  const version = run(resolvedPath, versionArgs, repoRoot)
+  // 多用途工具按调用名选择行为；哈希核对真实文件，执行保留入口名。
+  const version = run(path, versionArgs, repoRoot)
     .replace(/^InstalledDir:.*$/gmu, '')
     .replace(/\n{2,}/gu, '\n')
     .trim();
   return {version, sha256: sha256File(resolvedPath)};
+}
+
+function linkerIdentity(llvmRoot) {
+  const executable = process.platform === 'darwin' ? 'ld64.lld' :
+    process.platform === 'win32' ? 'lld-link.exe' : 'ld.lld';
+  const identity = toolIdentity('Chromium LLD', join(llvmRoot, 'bin', executable));
+  const provenance = join(llvmRoot, 'aegis-lld-backport.json');
+  if (existsSync(provenance)) {
+    const record = JSON.parse(readFileSync(provenance, 'utf8'));
+    assert(record.schemaVersion === 1 && record.binarySha256 === identity.sha256,
+      'LLD backport identity does not match the installed linker');
+    assert(record.compilerSha256 === sha256File(join(llvmRoot, 'bin', 'clang')),
+      'LLD backport compiler baseline changed');
+    identity.backport = fileEvidence(provenance);
+  }
+  return identity;
 }
 
 function configuredChromiumSource() {
@@ -279,8 +296,8 @@ function configuredChromiumSource() {
   const configuredRoot =
     process.env.CHROMIUM_ROOT?.trim() ||
     (existsSync(marker) ? readFileSync(marker, 'utf8').trim() : '') ||
-    join(homedir(), 'Projects/GCSA-aegis-chromium');
-  return realpathSync(join(configuredRoot, 'src'));
+    join(homedir(), 'Projects/GCSA-aegis-build/macos');
+  return realpathSync(process.env.CHROMIUM_SRC?.trim() || join(configuredRoot, 'src'));
 }
 
 function stablePatchId(value, cwd) {
@@ -470,7 +487,10 @@ function collectSourceSnapshot(outDir) {
   const v8Base = run('git', ['rev-parse', `${chromiumBase}:v8`], chromiumSrc);
   assert(/^[0-9a-f]{40}$/u.test(v8Base), 'pinned Chromium commit has no V8 gitlink');
   const gnPath = gnToolPath(chromiumSrc);
-  const releaseArgsPath = join(browserRoot, 'args', 'aegis-release.gn');
+  const identityTarget = process.env.AEGIS_IDENTITY_TARGET || 'desktop';
+  assert(['desktop', 'android'].includes(identityTarget), 'unsupported identity target');
+  const releaseArgsPath = join(browserRoot, 'args',
+      identityTarget === 'android' ? 'aegis-android.gn' : 'aegis-release.gn');
   const releaseArgs = readFileSync(releaseArgsPath, 'utf8');
   const expectedGnArgs = normalizedGnArgs(gnPath, releaseArgs);
   const overlayRepository = treeEvidence(join(browserRoot, 'overlay'));
@@ -506,7 +526,7 @@ function collectSourceSnapshot(outDir) {
     buildDrivers: buildDriverEvidence(),
   };
   const build = {
-    target: 'chrome',
+    target: identityTarget === 'android' ? 'chrome_public_apk' : 'chrome',
     outDir: relative(chromiumSrc, resolvedOutDir).split(sep).join('/'),
     expectedGnArgsSha256: sha256Buffer(expectedGnArgs),
     host: {
@@ -521,6 +541,7 @@ function collectSourceSnapshot(outDir) {
         'Chromium clang',
         join(chromiumSrc, 'third_party/llvm-build/Release+Asserts/bin/clang'),
       ),
+      lld: linkerIdentity(join(chromiumSrc, 'third_party/llvm-build/Release+Asserts')),
       gn: toolIdentity(
         'Chromium GN',
         gnPath,
@@ -556,7 +577,7 @@ function collectBuildGraphSnapshot(outDir) {
   const normalizedSha256 = sha256Buffer(normalized);
   assert(
     normalizedSha256 === input.build.expectedGnArgsSha256,
-    'generated args.gn does not semantically match aegis-release.gn',
+    'generated args.gn does not semantically match the selected target template',
   );
   const graph = {
     gnArgsSha256: sha256Buffer(gnArgs),
@@ -1164,6 +1185,40 @@ function runSelfTest() {
     }
   };
   try {
+    record('链接器入口名保留，真实二进制变化可被检测', () => {
+      const directory = join(root, 'linker');
+      mkdirSync(join(directory, 'bin'), {recursive: true});
+      const executable = process.platform === 'darwin' ? 'ld64.lld' :
+        process.platform === 'win32' ? 'lld-link.exe' : 'ld.lld';
+      const binary = join(directory, 'bin', 'lld');
+      const source = `#!/bin/sh\ncase "$0" in *${executable}) echo 'LLD test';; *) exit 2;; esac\n`;
+      writeFileSync(binary, source, {mode: 0o755});
+      symlinkSync('lld', join(directory, 'bin', executable));
+      const before = linkerIdentity(directory);
+      writeFileSync(binary, source + '# 测试内容变化\n');
+      assert(linkerIdentity(directory).sha256 !== before.sha256, 'linker tamper missed');
+      writeFileSync(binary, source);
+      assert(linkerIdentity(directory).sha256 === before.sha256, 'linker recovery failed');
+    });
+    record('链接器回补记录必须匹配链接器和编译器', () => {
+      const directory = join(root, 'linker');
+      const compiler = join(directory, 'bin', 'clang');
+      writeFileSync(compiler, '合成编译器');
+      const provenance = join(directory, 'aegis-lld-backport.json');
+      const entry = {schemaVersion: 1, binarySha256: linkerIdentity(directory).sha256,
+        compilerSha256: sha256File(compiler)};
+      writeFileSync(provenance, JSON.stringify({...entry, binarySha256: 'wrong'}));
+      let rejected = false;
+      try { linkerIdentity(directory); } catch (error) { rejected = error instanceof IdentityError; }
+      assert(rejected, 'wrong linker was accepted');
+      writeFileSync(provenance, JSON.stringify({...entry, compilerSha256: 'wrong'}));
+      rejected = false;
+      try { linkerIdentity(directory); } catch (error) { rejected = error instanceof IdentityError; }
+      assert(rejected, 'wrong compiler was accepted');
+      writeFileSync(provenance, JSON.stringify(entry));
+      assert(linkerIdentity(directory).backport.sha256 === sha256File(provenance),
+        'backport recovery failed');
+    });
     const tree = join(root, 'tree');
     mkdirSync(join(tree, 'nested'), {recursive: true});
     writeFileSync(join(tree, 'nested', 'value.txt'), 'alpha');

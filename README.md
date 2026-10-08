@@ -18,14 +18,16 @@
 
 Aegis is in development; no release-qualified build is available yet.
 
+> **2026-10-03 · iOS 2.2.0 source prerelease:** page assistance, filtering, downloads, workspaces, tab groups and independent iPad windows are integrated. See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for validation and usage. No installable signed IPA is available.
+
 ## Core capabilities
 
-| Capability | Scope |
-| --- | --- |
-| Privacy browsing | macOS link, cookie, phishing and selected fingerprint protections; separate standard/private profiles on iOS. |
-| Controllable Agent | Visible plans, browser-enforced policy and approval for sensitive actions; four offline workflows on iOS. |
-| Native downloads | Chromium download UI with bounded download paths on macOS. |
-| Access policy | Selected-traffic proxy routing on macOS; required routes fail closed when unavailable. |
+| Capability | What it does | Platform and current stage |
+| --- | --- | --- |
+| Privacy browsing | Reduces tracking and risky navigation through link, cookie, phishing and selected fingerprint protections; the native app isolates standard and private profiles. | macOS: in source, runtime acceptance pending. iOS/iPadOS: see the 2.2 simulator validation and prerelease notes above. |
+| Controllable Agent | Shows plans, keeps actions under browser policy and asks before sensitive operations. | macOS: in source, runtime acceptance pending. iOS/iPadOS: confirmed page-to-model requests; browser action tools remain unavailable. |
+| Native downloads | Uses Chromium's browser download surfaces and bounded download paths. | macOS: in source, runtime acceptance pending. |
+| Access policy | Routes selected traffic through native proxy components and fails closed when a required route is unavailable. | macOS: in source, integration and real-network acceptance pending. |
 
 ## Getting started
 
@@ -56,15 +58,15 @@ Open `apps/ios/Aegis.xcodeproj`; follow the [iOS guide](apps/ios/README.md) for 
 
 | Platform | Priority | Status |
 | --- | --- | --- |
-| macOS | Now | Chromium and Access integration in progress; current-source runtime, real-network and distribution validation pending. |
-| iOS / iPadOS | Next | Recorded Simulator baseline; current-source, real-device and distribution validation pending. |
-| Windows / Android / Linux | Later | Source and evaluation tools retained; no near-term release commitment. |
+| macOS | Now | Chromium integration and Access Service work continue; current-source runtime and distribution qualification remain open. |
+| iOS / iPadOS | Next | Native SwiftUI/WKWebView 2.2 source prerelease with simulator validation; device and distribution acceptance remain open. |
+| Windows / Android / Linux | Later | Source and evaluation entry points exist; no near-term release commitment. |
 
 macOS can qualify independently of iOS. See the [roadmap](docs/roadmap.md) for release criteria.
 
 ## Privacy and AI
 
-Remote summaries send bounded, browser-validated and redacted page content to the selected model endpoint; non-loopback destinations require explicit selection and confirmation. Sensitive pages use on-device heuristics. Browser policy constrains Agent actions, with separate approval for sensitive operations. iOS Agent workflows are offline. See [privacy boundaries](docs/architecture.md); these controls are not a general data-loss-prevention system.
+Page summaries use a bounded snapshot that the browser validates and redacts; sensitive pages fall back to an on-device heuristic. A remote summary request can send bounded, redacted page content to a user-selected compatible model endpoint. Non-loopback use requires explicit destination selection and confirmation. Browser Agent actions remain under browser-owned policy, with separate confirmation for sensitive actions. The iOS page assistant can request user-configured models after redaction preview and destination confirmation. Synthetic-model tests do not establish external service quality; the model cannot invoke browser action tools. These controls do not establish a general data-loss-prevention boundary; see the [architecture and privacy boundaries](docs/architecture.md).
 
 ## Architecture
 

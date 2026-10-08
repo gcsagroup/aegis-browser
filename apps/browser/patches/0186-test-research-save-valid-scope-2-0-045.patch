@@ -1,0 +1,64 @@
+From 1841261fb9475302c0035993b9fdf763f086652e Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 03:54:12 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=B5=8B=E8=AF=95=EF=BC=9A=E7=A0=94=E7=A9=B6?=
+ =?UTF-8?q?=E4=BF=9D=E5=AD=98=E5=A4=B9=E5=85=B7=E4=BD=BF=E7=94=A8=E6=9C=89?=
+ =?UTF-8?q?=E6=95=88=E7=9A=84=E4=B8=89=E6=9D=A5=E6=BA=90=E6=8E=88=E6=9D=83?=
+ =?UTF-8?q?=202.0.045?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_service_unittest.cc | 4 ++++
+ chrome/browser/aegis/agent/agent_execution_unittest.cc     | 3 +++
+ chrome/browser/ui/webui/help/aegis_github_update.h         | 4 ++--
+ 3 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+index b6df6098aa..9257cc0fa3 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
+@@ -446,6 +446,10 @@ TEST_F(AegisAgentServiceTest, ResearchCompletionWaitsForStorageSuccess) {
+   FlushTaskStore(&service);
+   auto scope = ServiceTestScope();
+   scope.selected_pages_research = true;
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.allowed_tools = {"page.observe"};
++  scope.budgets.max_tabs = 3;
++  ASSERT_TRUE(scope.IsValid());
+   auto* task = service.CreateTask("比较来源并保存研究", AgentMode::kAct, scope);
+   ASSERT_TRUE(task);
+   const std::string id = task->id();
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index e0a2db62a9..c0346459ce 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -263,6 +263,9 @@ TEST(AegisAgentExecutionTest,
+ TEST(AegisAgentExecutionTest, ResearchSaveRequiresNativeReceipt) {
+   auto scope = ExecutionScope();
+   scope.selected_pages_research = true;
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.budgets.max_tabs = 3;
++  ASSERT_TRUE(scope.IsValid());
+   AgentTask task("research", "比较来源并保存研究", AgentMode::kAct, scope);
+   AgentCompletionSummary completion{.outcome = "completed",
+                                     .summary = "来源指标分别为42、43、41。"};
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 144c936a1e..8862b13869 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.44";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (044)";
++inline constexpr char kProductVersion[] = "2.0.0.45";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (045)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

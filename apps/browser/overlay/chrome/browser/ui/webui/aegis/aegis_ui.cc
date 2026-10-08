@@ -6,6 +6,7 @@
 #include <string>
 
 #include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_download_prefs.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -45,6 +46,7 @@ struct AegisStrings {
   const char* filter_list_update_now;
   const char* filter_list_meta;
   const char* downloads_title;
+  const char* downloads_history;
   const char* downloads_meta;
   const char* metalink_file_label;
   const char* metalink_inspect;
@@ -137,8 +139,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .fingerprint_label = "指紋防護",
         .fingerprint_hint = "減少網站透過裝置特徵跨站識別您的機會。",
         .fingerprint_details =
-            "對 Canvas、WebGL、Audio、WebGPU 做穩定化。檢測兩次時，同頁 Audio "
-            "讀數應相同；WebGPU 的 maxBufferSize 會隨開關變化。",
+            "讀取目前頁面的 Canvas、WebGL、Audio 和 "
+            "WebGPU。重複讀數可檢查穩定性；"
+            "單一頁面不能證明跨站隔離，數值不同也不等同於已阻止追蹤。",
         .technical_details = "技術詳情",
         .fingerprint_probe = "檢測本頁指紋",
         .miner_guard_label = "挖礦腳本偵測（僅觀察）",
@@ -153,6 +156,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .filter_list_meta =
             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
         .downloads_title = "下載中心",
+        .downloads_history = "查看下載紀錄",
         .downloads_meta = "管理普通下載、映象下載、種子和磁力連結下載。",
         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
         .metalink_inspect = "檢查文件",
@@ -270,8 +274,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .fingerprint_label = "指纹防护",
         .fingerprint_hint = "减少网站通过设备特征跨站识别您的机会。",
         .fingerprint_details =
-            "对 Canvas、WebGL、Audio、WebGPU 做稳定化。检测两次时，同页 Audio "
-            "读数应相同；WebGPU 的 maxBufferSize 会随开关变化。",
+            "读取当前页面的 Canvas、WebGL、Audio 和 "
+            "WebGPU。重复读数可检查稳定性；"
+            "单个页面不能证明跨站隔离，数值不同也不等同于已阻止跟踪。",
         .technical_details = "技术详情",
         .fingerprint_probe = "检测本页指纹",
         .miner_guard_label = "挖矿脚本检测（仅观察）",
@@ -286,6 +291,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .filter_list_meta =
             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
         .downloads_title = "下载中心",
+        .downloads_history = "查看下载记录",
         .downloads_meta = "管理普通下载、镜像下载、种子和磁力链接下载。",
         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
         .metalink_inspect = "检查文件",
@@ -405,8 +411,10 @@ AegisStrings StringsForLocale(const std::string& locale) {
       .fingerprint_hint =
           "Reduce cross-site identification through device characteristics.",
       .fingerprint_details =
-          "Canvas, WebGL, Audio and WebGPU stabilization. Audio should remain "
-          "stable on repeated probes; maxBufferSize changes with protection.",
+          "Read this page’s Canvas, WebGL, Audio and WebGPU APIs. Repeated "
+          "readings "
+          "can check stability; one page cannot establish cross-site isolation "
+          "or prove that tracking was blocked.",
       .technical_details = "Technical details",
       .fingerprint_probe = "Probe this page fingerprints",
       .miner_guard_label = "Mining script detection (observe-only)",
@@ -422,6 +430,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
           "No compiled filter list yet. Update to compile EasyList / "
           "EasyPrivacy.",
       .downloads_title = "Downloads",
+      .downloads_history = "View download history",
       .downloads_meta = "Manage regular, mirror, torrent and magnet downloads.",
       .metalink_file_label = "Metalink file (.meta4 / .metalink)",
       .metalink_inspect = "Inspect file",
@@ -545,17 +554,22 @@ AegisStrings StringsForLocale(const std::string& locale) {
 
 bool AegisUIConfig::IsWebUIEnabled(content::BrowserContext* browser_context) {
   Profile* profile = Profile::FromBrowserContext(browser_context);
-#if BUILDFLAG(IS_ANDROID)
-  return profile && profile->IsRegularProfile();
-#else
   return aegis::IsAegisProfileSupported(profile);
-#endif
 }
 
 AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       profile, chrome::kChromeUIAegisHost);
+  const aegis::DownloadSettings downloads =
+      aegis::ReadDownloadSettings(*g_browser_process->local_state());
+  source->AddBoolean("aegisTorrentDhtDefault", downloads.torrent_dht_enabled);
+  source->AddBoolean("aegisTorrentPexDefault", downloads.torrent_pex_enabled);
+  source->AddInteger("aegisTorrentDownloadLimitKibDefault",
+                     downloads.torrent_download_limit_kib);
+  source->AddInteger("aegisTorrentUploadLimitKibDefault",
+                     downloads.torrent_upload_limit_kib);
+
   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
   source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
 
@@ -587,6 +601,7 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->AddString("filterListUpdateNow", strings.filter_list_update_now);
   source->AddString("filterListMeta", strings.filter_list_meta);
   source->AddString("downloadsTitle", strings.downloads_title);
+  source->AddString("downloadsHistory", strings.downloads_history);
   source->AddString("downloadsMeta", strings.downloads_meta);
   source->AddString("metalinkFileLabel", strings.metalink_file_label);
   source->AddString("metalinkInspect", strings.metalink_inspect);

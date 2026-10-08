@@ -1,4 +1,4 @@
-From fb44c5950299377f52a6140352deeb692eddd71c Mon Sep 17 00:00:00 2001
+From 312b2e3458ba66a8fa704dfc08c1123c9c46b42d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 00:59:48 +0800
 Subject: [PATCH] Aegis: add stub service and feature flags
@@ -23,13 +23,13 @@ browser-process service once the startup Profile is ready.
  create mode 100644 chrome/common/aegis/features.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index bfc8555485..a8eeef8ec5 100644
+index eaa7929a31..e7d5317c6b 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -399,6 +399,7 @@ source_set("startup_data") {
- source_set("chrome_browser_main") {
+@@ -405,6 +405,7 @@ source_set("chrome_browser_main") {
    public = [ "chrome_browser_main.h" ]
    deps = [
+     ":after_startup_task_utils",
 +    "//chrome/browser/aegis",
      ":buildflags",
      "//base",
@@ -137,7 +137,7 @@ index 0000000000..fb76c457df
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index a32949ed04..1565069ff7 100644
+index 86f985f073..8dd9857db0 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -3,6 +3,7 @@
@@ -148,7 +148,7 @@ index a32949ed04..1565069ff7 100644
  
  #include <memory>
  #include <string>
-@@ -1906,6 +1907,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1943,6 +1944,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
    // Call `PostProfileInit()`and set it up for profiles created later.
    profile_init_manager_ = std::make_unique<ProfileInitManager>(this, profile);
  

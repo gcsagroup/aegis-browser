@@ -1,0 +1,261 @@
+From 41ebf6d24b0b19e42e19aabfa9f17881db7469d5 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 20 Sep 2026 04:32:07 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=A0=94=E7=A9=B6?=
+ =?UTF-8?q?=E5=AD=98=E5=82=A8=E5=BE=85=E5=8A=9E=E5=92=8C=E7=8B=AC=E7=AB=8B?=
+ =?UTF-8?q?=E7=8A=B6=E6=80=81=E8=A1=8C=E4=BA=A4=E7=94=B1=E7=9C=9F=E5=AE=9E?=
+ =?UTF-8?q?=E5=9B=9E=E6=89=A7=E6=9B=B4=E6=96=B0=202.0.047?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  1 +
+ chrome/browser/aegis/agent/agent_execution.cc | 94 +++++++++++++++----
+ chrome/browser/aegis/agent/agent_execution.h  |  3 +
+ .../aegis/agent/agent_execution_unittest.cc   | 61 ++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 5 files changed, 144 insertions(+), 19 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index 0037507b5e..2734a44062 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2917,6 +2917,7 @@ void AegisAgentService::FinishRuntime(
+                                           it->second->evidence_history,
+                                           it->second->translation_review_passed);
+     if (const auto* task = GetTask(task_id)) {
++      NormalizeAgentResearchSaveContent(&*completion, *task);
+       NormalizeAgentTabGroupCompletion(&*completion, *task,
+                                        it->second->evidence_history);
+       NormalizeAgentDownloadCompletion(&*completion, task->goal(),
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index c769aa4761..3e26fba923 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -34,6 +34,26 @@ bool IsReadOnlyPageTool(std::string_view name) {
+          name == "page.scroll" || name == "page.wait";
+ }
+ 
++bool RequestsResearchSave(const AgentTask& task) {
++  if (!task.scope().selected_pages_research) {
++    return false;
++  }
++  const auto goal = base::ToLowerASCII(task.goal());
++  constexpr std::string_view no_save_phrases[] =
++      {"不要保存", "无需保存", "不必保存", "不要儲存", "無需儲存",
++       "do not save", "don't save", "without saving"};
++  if (std::ranges::any_of(no_save_phrases, [&](std::string_view phrase) {
++        return goal.contains(phrase);
++      })) {
++    return false;
++  }
++  constexpr std::string_view save_words[] =
++      {"保存", "儲存", "存档", "存檔", "save", "persist"};
++  return std::ranges::any_of(save_words, [&](std::string_view word) {
++    return goal.contains(word);
++  });
++}
++
+ bool IsReadOnlyPagePlan(const AgentTaskPlan& plan) {
+   return !plan.steps.empty() &&
+          std::ranges::all_of(plan.steps, [](const AgentPlanStep& step) {
+@@ -1070,7 +1090,9 @@ std::string BuildAgentExecutionPrompt(
+     envelope.Set("research_storage_contract",
+                  "只交付所选来源的比较内容，不声称已保存、存档或持久化。"
+                  "研究结果只有用户点击保存且浏览器存储成功后才算保存；"
+-                 "浏览器会单独显示待保存及保存结果，无须在summary中代述。");
++                 "浏览器会单独显示待保存及保存结果，无须在summary中代述。"
++                 "outcome和unfinished_items只判断来源读取与比较是否完成，"
++                 "不要把保存列为未完成事项，也不要附加保存状态行。");
+   }
+   envelope.Set("plan_summary", plan.summary);
+   envelope.Set("next_step_index", static_cast<int>(next_step));
+@@ -1554,6 +1576,59 @@ bool AgentResearchCompletionClaimsSave(
+       [&](std::string_view claim) { return text.contains(claim); });
+ }
+ 
++void NormalizeAgentResearchSaveContent(AgentCompletionSummary* completion,
++                                      const AgentTask& task) {
++  if (!completion || !RequestsResearchSave(task)) {
++    return;
++  }
++  constexpr std::string_view status_lines[] = {
++      "保存状态：未保存。", "保存状态：未保存", "保存状态：尚未保存。",
++      "儲存狀態：尚未儲存。", "儲存狀態：未儲存。", "save status: not saved.",
++      "save status: not saved"};
++  const auto lines = base::SplitString(completion->summary, "\n",
++                                      base::TRIM_WHITESPACE,
++                                      base::SPLIT_WANT_ALL);
++  std::vector<std::string> content;
++  bool removed_status = false;
++  for (const auto& line : lines) {
++    if (std::ranges::contains(status_lines, base::ToLowerASCII(line))) {
++      removed_status = true;
++    } else {
++      content.push_back(line);
++    }
++  }
++  const auto summary = base::JoinString(content, "\n");
++  if (base::TrimWhitespaceASCII(summary, base::TRIM_ALL).empty()) {
++    // 只有状态、没有比较内容时，不能靠清理文字把任务升级成已完成。
++    return;
++  }
++  if (removed_status) {
++    completion->summary = summary;
++  }
++  constexpr std::string_view storage_items[] = {
++      "把结果和引用保存到研究项目", "将结果和引用保存到研究项目",
++      "保存结果到研究项目", "保存到研究项目", "保存研究结果",
++      "將結果和引用儲存到研究專案", "儲存研究結果",
++      "save results and citations to the research project",
++      "save the research results"};
++  const size_t before = completion->unfinished_items.size();
++  std::erase_if(completion->unfinished_items, [&](const std::string& item) {
++    auto value = std::string(base::TrimWhitespaceASCII(item, base::TRIM_ALL));
++    if (value.ends_with("。")) {
++      value.resize(value.size() - std::string_view("。").size());
++    } else if (value.ends_with('.')) {
++      value.pop_back();
++    }
++    return std::ranges::contains(storage_items, base::ToLowerASCII(value));
++  });
++  if (completion->outcome == "partial" &&
++      completion->unfinished_items.size() < before &&
++      completion->unfinished_items.empty()) {
++    // 此处只代表比较内容就绪；呈现前仍由Update(..., false)补原生待保存项。
++    completion->outcome = "completed";
++  }
++}
++
+ void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
+                                       const AgentTask& task,
+                                       bool saved) {
+@@ -1573,22 +1648,7 @@ void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
+     }
+     return;
+   }
+-  const auto goal = base::ToLowerASCII(task.goal());
+-  constexpr std::string_view no_save_phrases[] =
+-      {"不要保存", "无需保存", "不必保存", "不要儲存", "無需儲存",
+-       "do not save", "don't save", "without saving"};
+-  if (std::ranges::any_of(no_save_phrases, [&](std::string_view phrase) {
+-        return goal.contains(phrase);
+-      })) {
+-    return;
+-  }
+-  constexpr std::string_view save_words[] =
+-      {"保存", "儲存", "存档", "存檔", "save", "persist"};
+-  if (completion->outcome == "completed" &&
+-      std::ranges::any_of(save_words,
+-                          [&](std::string_view word) {
+-                            return goal.contains(word);
+-                          })) {
++  if (completion->outcome == "completed" && RequestsResearchSave(task)) {
+     completion->outcome = "partial";
+     if (!std::ranges::contains(completion->unfinished_items, pending)) {
+       completion->unfinished_items.emplace_back(pending);
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index ceea3f37aa..e3e984757f 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -36,6 +36,9 @@ struct AgentExecutionEvidence {
+ 
+ // 研究模型没有保存权限；保存状态只能由用户操作后的原生存储回执确认。
+ bool AgentResearchCompletionClaimsSave(const AgentCompletionSummary& completion);
++// 只规范已知的存储待办和独立状态行；未知或内容未完成事项保持不变。
++void NormalizeAgentResearchSaveContent(AgentCompletionSummary* completion,
++                                      const AgentTask& task);
+ void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
+                                       const AgentTask& task,
+                                       bool saved);
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index c0346459ce..f39c1bce68 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -306,6 +306,67 @@ TEST(AegisAgentExecutionTest, ResearchSaveRequiresNativeReceipt) {
+   EXPECT_EQ(completion.outcome, "completed");
+ }
+ 
++TEST(AegisAgentExecutionTest,
++     ResearchStorageTodoWaitsForReceiptWithoutStaleSummary) {
++  auto scope = ExecutionScope();
++  scope.selected_pages_research = true;
++  scope.allowed_tab_ids = {7, 8, 9};
++  scope.budgets.max_tabs = 3;
++  ASSERT_TRUE(scope.IsValid());
++  AgentTask task("research", "比较来源并保存研究", AgentMode::kAct, scope);
++  for (const auto* item : {"把结果和引用保存到研究项目", "保存结果到研究项目。",
++                           "將結果和引用儲存到研究專案",
++                           "Save the research results."}) {
++    AgentCompletionSummary result{
++        .outcome = "partial",
++        .summary = "来源指标分别为42、43、41。\n保存状态：未保存。",
++        .unfinished_items = {item}};
++    NormalizeAgentResearchSaveContent(&result, task);
++    EXPECT_EQ(result.summary, "来源指标分别为42、43、41。");
++    UpdateAgentResearchSaveCompletion(&result, task, false);
++    EXPECT_EQ(result.outcome, "partial");
++    ASSERT_EQ(result.unfinished_items.size(), 1u);
++    EXPECT_NE(result.unfinished_items[0].find("等待浏览器确认"), std::string::npos);
++    // 保存失败不调用成功分支；重复呈现也不能提前完成。
++    NormalizeAgentResearchSaveContent(&result, task);
++    UpdateAgentResearchSaveCompletion(&result, task, false);
++    EXPECT_EQ(result.outcome, "partial");
++    UpdateAgentResearchSaveCompletion(&result, task, true);
++    EXPECT_EQ(result.outcome, "completed");
++    EXPECT_TRUE(result.unfinished_items.empty());
++  }
++  AgentCompletionSummary incomplete{
++      .outcome = "partial",
++      .summary = "来源指标为42。\n保存状态：未保存。",
++      .unfinished_items = {"把结果和引用保存到研究项目", "第三个来源不可读。"}};
++  NormalizeAgentResearchSaveContent(&incomplete, task);
++  UpdateAgentResearchSaveCompletion(&incomplete, task, false);
++  UpdateAgentResearchSaveCompletion(&incomplete, task, true);
++  EXPECT_EQ(incomplete.outcome, "partial");
++  ASSERT_EQ(incomplete.unfinished_items.size(), 1u);
++  EXPECT_EQ(incomplete.unfinished_items[0], "第三个来源不可读。");
++
++  incomplete.summary = "保存状态：未保存。";
++  incomplete.unfinished_items = {"把结果和引用保存到研究项目"};
++  NormalizeAgentResearchSaveContent(&incomplete, task);
++  EXPECT_EQ(incomplete.summary, "保存状态：未保存。");
++  EXPECT_EQ(incomplete.unfinished_items.size(), 1u);
++  EXPECT_EQ(incomplete.outcome, "partial");
++
++  incomplete.summary = "资料讨论保存状态：未保存。";
++  incomplete.unfinished_items = {"保存结果到研究项目，但缺少第三个来源"};
++  NormalizeAgentResearchSaveContent(&incomplete, task);
++  EXPECT_EQ(incomplete.summary, "资料讨论保存状态：未保存。");
++  EXPECT_EQ(incomplete.unfinished_items.size(), 1u);
++  EXPECT_EQ(incomplete.outcome, "partial");
++  AgentTask no_save("no-save", "比较来源，不要保存", AgentMode::kAct, scope);
++  incomplete.summary = "内容\n保存状态：未保存。";
++  incomplete.unfinished_items = {"把结果和引用保存到研究项目"};
++  NormalizeAgentResearchSaveContent(&incomplete, no_save);
++  EXPECT_EQ(incomplete.summary, "内容\n保存状态：未保存。");
++  EXPECT_EQ(incomplete.unfinished_items.size(), 1u);
++}
++
+ TEST(AegisAgentExecutionTest,
+      DownloadEvidenceKeepsUnknownIdentityAndExcludesSecrets) {
+   AgentToolResult result;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 75a9700439..04d285a853 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.46";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (046)";
++inline constexpr char kProductVersion[] = "2.0.0.47";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (047)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

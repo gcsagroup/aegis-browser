@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/containers/flat_set.h"
+#include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -21,6 +22,7 @@
 #include "components/undo/undo_manager_observer.h"
 
 class Profile;
+class BrowserWindowInterface;
 
 template <class T>
 class scoped_refptr;
@@ -46,11 +48,20 @@ class QueryResults;
 
 namespace aegis::agent {
 
+// 仅从同资料、同窗口的现有标签取精确来源，不添加兄弟域名或跨窗口来源。
+std::vector<url::Origin> WorkspaceRestoreOrigins(
+    Profile* profile,
+    BrowserWindowInterface* browser,
+    int32_t selected_tab_id,
+    bool include_window_tabs);
+
 bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
                                           const GURL& selected_bookmark_url,
                                           const GURL& target,
                                           bool allow_local_fixture = false);
 void CancelAegisOwnedDownloadOnTaskStop(download::DownloadItem* item);
+base::DictValue ReviewAegisDownloadedFile(const base::FilePath& path,
+                                          std::string_view download_sha256);
 
 // Executes browser-owned tools that must not be implemented through renderer
 // script. Every mutating method revalidates an opaque browser snapshot before
@@ -71,6 +82,9 @@ class AegisBrowserTools : public UndoManagerObserver {
   void ForgetTask(const std::string& task_id,
                   bool preserve_bookmark_undo = false,
                   bool cancel_active_downloads = false);
+  void ReviewDownload(const AgentTaskScope& scope,
+                      const base::DictValue& evidence,
+                      base::OnceCallback<void(base::DictValue)> callback);
 
  private:
   friend class AegisBrowserToolsTestPeer;
@@ -114,6 +128,12 @@ class AegisBrowserTools : public UndoManagerObserver {
   void ExecuteWindowTool(AgentTask* task,
                          const AgentToolCall& call,
                          ToolResultCallback callback);
+  void VerifyWindowAction(base::WeakPtr<AgentTask> task,
+                          int window_id,
+                          bool closing,
+                          base::TimeTicks deadline,
+                          std::string action_id,
+                          ToolResultCallback callback);
   void ExecuteWorkspaceTool(AgentTask* task,
                             const AgentToolCall& call,
                             ToolResultCallback callback);
@@ -164,6 +184,7 @@ class AegisBrowserTools : public UndoManagerObserver {
   void OnUndoManagerShutdown() override;
 
   raw_ptr<Profile> profile_;
+  bool download_review_running_ = false;
   std::map<std::string, BookmarkPlan> bookmark_plans_;
   std::map<std::string, BookmarkCheckSelection> bookmark_check_selections_;
   std::map<std::string, BookmarkUndoReceipt> bookmark_undo_receipts_;

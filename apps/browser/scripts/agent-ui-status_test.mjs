@@ -11,7 +11,7 @@ const sourcePath = process.argv[2] || fileURLToPath(new URL(
     '../overlay/chrome/browser/resources/aegis_agent/agent.ts', import.meta.url));
 const source = readFileSync(sourcePath, 'utf8');
 const tree = ts.createSourceFile(sourcePath, source, ts.ScriptTarget.Latest, true);
-const names = ['scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError'];
+const names = ['humanRisk', 'scheduledTaskStatus', 'hasPartialResult', 'statusTone', 'humanStatus', 'friendlyError', 'inferAutomationSchedule', 'isDownloadedFileReviewGoal'];
 const functions = tree.statements.filter(node =>
   ts.isFunctionDeclaration(node) && names.includes(node.name?.text));
 assert.equal(functions.length, names.length, '必须测试真实产品函数，不能跳过缺失函数');
@@ -20,6 +20,26 @@ const compiled = ts.transpileModule(functions.map(node => node.getText(tree)).jo
 }).outputText;
 const context = vm.createContext({loadTimeData: {getString: key => key}});
 vm.runInContext(compiled, context);
+const scheduleCases = [
+  ['每小时检查当前网页变化', '60'],
+  ['每15分钟检查价格', '15'],
+  ['每6小时检查库存', '360'],
+  ['每天检查变化', '1440'],
+  ['每週檢查目前網頁', '10080'],
+  ['Check this page hourly', '60'],
+  ['Watch this page every 6 hours', '360'],
+  ['每2小时检查变化', ''],
+  ['持续监控网页', ''],
+  ['检查当前网页', null],
+  ['只检查一次，不要每小时检查', null],
+  ['不要监控，每天的记录仅总结一次', null],
+  ['Do not monitor this page hourly', null],
+  ['总结这篇关于每小时产量的文章', null],
+];
+for (const [goal, interval] of scheduleCases) {
+  assert.equal(context.inferAutomationSchedule(goal), interval, goal);
+}
+console.log(`PASS: 周期意图及否定请求 ${scheduleCases.length}/${scheduleCases.length}`);
 const task = overrides => ({
   taskId: 'test-task', mode: 'act', state: 'running', resultSummary: '',
   resultOutcome: '', unfinishedItems: [], monitors: [], ...overrides,
@@ -84,7 +104,8 @@ class TestElement {
   constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
-  addEventListener() {}
+  addEventListener(name, callback) { (this.listeners ??= new Map()).set(name, callback); }
+  setAttribute(name, value) { this[name] = value; }
   set innerHTML(_) { assert.fail('模型摘要不能通过 HTML 解析'); }
 }
 const elements = new Map();
@@ -122,6 +143,51 @@ for (const [label, overrides, expectedStatus, hidden] of [
   if (overrides.changeSummaryPartial) assert(summary.textContent.includes('automationChangeSummaryPartial'), label);
 }
 console.log('PASS: 监控变化摘要渲染 6/6（DOM 单元测试，非实机验收）');
+for (const paused of [false, true]) {
+  for (const busy of [false, true]) {
+    rendererContext.busy = busy;
+    rendererContext.renderMonitors([{...monitorInput, paused}]);
+    const row = element('monitors').children[0];
+    const actions = row.children.find(child => child.className === 'monitor-actions');
+    const check = actions.children.find(child => child.dataset.monitorAction === 'check');
+    assert(check, '每条监控都能看到立即检查入口');
+    assert.equal(check.disabled, paused || busy, '暂停或请求处理中不得再次检查');
+    assert.equal(check.textContent, 'checkMonitorNow');
+  }
+}
+rendererContext.busy = false;
+assert.equal(context.friendlyError('monitor immediate check unavailable', true),
+    'checkMonitorNowUnavailable');
+console.log('PASS: 立即检查入口及暂停/忙碌/失败状态 5/5');
+
+// 执行真实 withBusy 和按钮回调，拒绝响应后列表重绘仍须显示错误。
+const withBusyFunction = tree.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === 'withBusy');
+vm.runInContext(ts.transpileModule(withBusyFunction.getText(tree), {
+  compilerOptions: {target: ts.ScriptTarget.ES2022},
+}).outputText, rendererContext);
+rendererContext.snapshot = {monitors: [monitorInput]};
+rendererContext.render = next => rendererContext.renderMonitors(next.monitors);
+rendererContext.document.getElementById = id => {
+  const find = node => node.id === id ? node : node.children.map(find).find(Boolean);
+  return find(element('monitors'));
+};
+for (const [action, handler] of [['check', 'checkMonitorNow'],
+  ['toggle', 'setMonitorPaused'], ['delete', 'deleteMonitor']]) {
+  rendererContext.proxy.handler[handler] = async () => { throw new Error('合成连接中断'); };
+  rendererContext.render(rendererContext.snapshot);
+  const oldRow = element('monitors').children[0];
+  const actions = oldRow.children.find(child => child.className === 'monitor-actions');
+  actions.children.find(child => child.dataset.monitorAction === action).listeners.get('click')();
+  await new Promise(resolve => setImmediate(resolve));
+  const current = rendererContext.document.getElementById('monitor-action-test-task-test-monitor');
+  assert.notEqual(element('monitors').children[0], oldRow, '验证确实经过重绘');
+  assert.equal(current.textContent, 'planningGenericError', action);
+  assert.equal(rendererContext.busy, false, '失败后恢复操作');
+}
+console.log('PASS: 检查、暂停及删除监控失败均显示当前可见错误 3/3');
+
+
 
 // 模型配置使用真实产品函数和有界异步响应；不把 DOM 测试等同于键盘或实机操作。
 const modelFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
@@ -373,30 +439,32 @@ console.log(`PASS: TypeSafe 独立设置 ${typesafeCases.length}/${typesafeCases
 
 // 执行真实按钮绑定，禁止语句不应替自动化选择一次性的高风险工作流。
 const actionFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
-  ['inferWorkflow', 'bindActions'].includes(node.name?.text));
-assert.equal(actionFunctions.length, 2);
+  ['inferWorkflow', 'inferAutomationSchedule', 'bindActions', 'showCreatedTask', 'reviewCurrentDownload', 'isDownloadedFileReviewGoal'].includes(node.name?.text));
+assert.equal(actionFunctions.length, 6);
 const actionCode = ts.transpileModule(actionFunctions.map(node => node.getText(tree)).join('\n'), {
   compilerOptions: {target: ts.ScriptTarget.ES2022},
 }).outputText;
 const actionFields = new Map();
 const actionField = id => {
   if (!actionFields.has(id)) actionFields.set(id, {
-    value: '', listeners: new Map(),
+    value: '', listeners: new Map(), focus() { this.focused = true; },
     addEventListener(event, listener) { this.listeners.set(event, listener); },
   });
   return actionFields.get(id);
 };
 const actionCalls = [];
 const actionContext = vm.createContext({
-  element: actionField, withBusy: callback => callback(),
+  loadTimeData: {getString: key => key}, busy: false,
+  element: actionField, withBusy: callback => callback(), snapshot: null, activeView: 'task',
+  creatingTask: false, creatingTaskPreviousId: '', selectedTaskId: null, render: () => {},
   Workflow: {kResearch: 0, kBrowserSteward: 1, kSafeDownload: 2, kShopping: 3},
   AgentMode: {kAct: 1, kAutomate: 2}, selectedWorkflow: null,
   detectModels: () => {}, saveModel: () => {},
   addCurrentModelToPool: () => {}, saveModelRouting: () => {}, snapshot: null,
   selectDetectedModel: () => {}, syncDetectedModel: () => {}, resetDetectedModels: () => {},
   proxy: {handler: {createTask: async (...args) => {
-    actionCalls.push(args); return {snapshot: {taskId: ''}};
-  }}},
+    actionCalls.push(args); return {snapshot: {taskId: `task-${actionCalls.length}`, lastError: ''}};
+  }, requestPlan: async taskId => ({snapshot: {taskId}})}},
 });
 vm.runInContext(actionCode, actionContext);
 actionContext.bindActions();
@@ -421,12 +489,25 @@ for (const goal of automationGoals) {
 }
 for (const [goal, workflow] of [['下载官方安装包', 2], ['购买商品', 3], ['整理收藏夹', 1]]) {
   actionField('goal').value = goal;
-  await actionField('plan-button').listeners.get('click')();
+  actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
   assert.equal(actionCalls.at(-1)[1], 1);
   assert.equal(actionCalls.at(-1)[2], workflow, '普通任务工作流不能被自动化修正改变');
 }
 assert.equal(actionFailures.length, 0, `自动化错误选择工作流：${actionFailures.join(' | ')}`);
 console.log('PASS: 自动化入口及普通任务对照 9/9（真实按钮绑定单元测试，非实机验收）');
+for (const [goal, interval] of [['每小时检查网页变化', '60'], ['每2小时检查网页变化', '']]) {
+  const before = actionCalls.length;
+  actionField('goal').value = goal;
+  actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
+  assert.equal(actionCalls.length, before, '引导不能直接创建任务');
+  assert.equal(actionField('automation-goal').value, goal);
+  assert.equal(actionField('automation-schedule').value, interval);
+  assert.equal(actionContext.activeView, 'automation');
+}
+console.log('PASS: 普通输入只预填监控确认面板 2/2');
+
 
 const timelineRenderer = tree.statements.find(node =>
   ts.isFunctionDeclaration(node) && node.name?.text === 'renderTimeline');
@@ -537,3 +618,97 @@ for (const [label, input, expected] of [
 assert.equal(restoredUiFailures.length, 0,
     `恢复后的界面状态错误：${restoredUiFailures.join(' | ')}`);
 console.log('PASS: 无计划及空时间线状态 10/10（DOM 单元测试，非实机验收）');
+
+// 来源标题取浏览器字段，模型正文和控件文本不能覆盖引用标题。
+const resultFunctions = ['renderResult', 'hasPartialResult', 'scheduledTaskStatus'];
+vm.runInContext(ts.transpileModule(tree.statements.filter(node =>
+  ts.isFunctionDeclaration(node) && resultFunctions.includes(node.name?.text))
+  .map(node => node.getText(tree)).join('\n'), {
+  compilerOptions: {target: ts.ScriptTarget.ES2022},
+}).outputText, rendererContext);
+const sourceResult = task({state: 'completed', resultOutcome: 'completed',
+  resultSummary: '模型正文中的上传入口', resultSources: ['https://fixture.example/article'],
+  resultSourceTitles: ['浏览器页面标题'], researchSaveAvailable: false});
+rendererContext.renderResult(sourceResult);
+assert.equal(element('result-sources').children[0].children[0].textContent,
+  '浏览器页面标题 · https://fixture.example/article');
+assert.equal(element('result-summary').textContent, sourceResult.resultSummary);
+rendererContext.renderResult({...sourceResult, resultSourceTitles: []});
+assert.equal(element('result-sources').children[0].children[0].textContent,
+  'https://fixture.example/article');
+console.log('PASS: 浏览器来源标题与模型正文隔离 3/3');
+
+const downloadReviewGoals = [
+  ['核对刚下载的文件是否已经安装。', true],
+  ['检查这次下载文件的哈希是否变更', true],
+  ['核對剛下載的檔案是否已安裝', true],
+  ['Check whether the downloaded file has been installed.', true],
+  ['Has this download been installed?', true],
+  ['核对刚下载的文件，然后安装', false],
+  ['下载并安装这个文件', false],
+  ['不要核对刚下载的文件是否安装', false],
+  ['核对刚下载的文件是否安装，不要执行', true],
+  ['核對剛下載的檔案是否安裝，不要安裝', true],
+  ['Check whether the downloaded file has been installed; do not install it.', true],
+  ['Do not check whether the downloaded file is installed.', false],
+  ['Check this download and install it', false],
+  ['Check whether the page offers an installer', false],
+  ['核对当前官方发布页', false],
+];
+for (const [goal, expected] of downloadReviewGoals) {
+  assert.equal(context.isDownloadedFileReviewGoal(goal), expected, goal);
+}
+console.log(`PASS: 下载回读问答与操作命令分离 ${downloadReviewGoals.length}/${downloadReviewGoals.length}`);
+for (const [value, key] of Object.entries({
+  'browser verified all actions; model summary fallback used': 'timelineVerifiedFallback',
+  reflecting: 'timelineVerifying', awaiting_action_approval: 'statusApproval',
+  'exact action approval required': 'timelineActionApprovalRequired',
+  'exact action approval consumed': 'timelineActionApprovalConsumed',
+  'cancelled by user': 'timelineCancelledByUser',
+  'execution model failed twice': 'timelineExecutionModelFailed',
+})) {
+  rendererContext.renderTimeline({...task({}), timeline: [{...timelineEvent, title: value, detail: value}]});
+  const row = element('timeline').children[0];
+  assert.equal(row.textContent, key);
+  assert(row.children[0].textContent.startsWith(key));
+}
+console.log('PASS: 新增时间线状态与详情本地化 7/7');
+
+const createCountBeforeReview = actionCalls.length;
+actionContext.snapshot = null;
+actionField('goal').value = '核对刚下载的文件是否已经安装。';
+actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(actionCalls.length, createCountBeforeReview);
+assert.equal(actionField('download-review-status').textContent, 'downloadReviewUnassociated');
+assert.equal(actionField('download-evidence-card').open, true);
+let reviewedId = '';
+actionContext.snapshot = {taskId: 'download-task', state: 'completed', downloadEvidence: [{name: 'download_id', value: 'native-guid'}]};
+actionContext.proxy.handler.reviewDownload = async id => { reviewedId = id; return {status: 'match', sha256: 'fixture-hash'}; };
+actionField('plan-button').listeners.get('click')();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(reviewedId, 'download-task');
+assert.equal(actionCalls.length, createCountBeforeReview);
+assert.equal(actionField('download-review-status').textContent, 'downloadReviewMatch\nSHA-256: fixture-hash');
+console.log('PASS: 安装问答复用当前任务回执且不创建下载任务 2/2');
+
+// 不变快照保留节点，状态刷新不会把整段历史再次送入旁白。
+const stableTimeline = {...task({}), timeline: [timelineEvent]};
+rendererContext.renderTimeline(stableTimeline);
+const originalRow = element('timeline').children[0];
+rendererContext.renderTimeline(stableTimeline);
+assert.equal(element('timeline').children[0], originalRow);
+rendererContext.renderTimeline({...stableTimeline, timeline: [timelineEvent, {...timelineEvent, title: 'paused by user'}]});
+assert.equal(element('timeline').children.length, 2);
+assert.equal(element('timeline').children[1].textContent, 'timelineDetail21');
+for (const [risk, label] of [['R0 · read only', 'riskLevel0'], ['R1 · reversible', 'riskLevel1'], ['R2 · approval required', 'riskLevel2'], ['R3 · user takeover', 'riskLevel3'], ['R9 unknown', 'R9 unknown']]) {
+  assert.equal(context.humanRisk(risk), label);
+}
+const agentHtml = readFileSync(new URL('../overlay/chrome/browser/resources/aegis_agent/agent.html', import.meta.url), 'utf8');
+assert(!/<ol[^>]*id="timeline"[^>]*aria-live/.test(agentHtml));
+assert(/id="status"[^>]*role="status"[^>]*aria-atomic="true"/.test(agentHtml));
+console.log('PASS: 风险文字、稳定时间线与单一任务状态播报');
+
+assert.equal(context.friendlyError('browser goal needs an explicit target', false),
+    'browserGoalClarification');
+console.log('PASS: 含糊浏览器目标显示可操作的澄清提示');

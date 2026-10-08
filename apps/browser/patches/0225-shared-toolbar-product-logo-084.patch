@@ -1,0 +1,46 @@
+From 4099467ce013948dd3885c30e945b61fbd8b7de4 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 05:22:36 +0800
+Subject: [PATCH] =?UTF-8?q?=E7=BB=9F=E4=B8=80=E5=85=B1=E7=94=A8=E5=B7=A5?=
+ =?UTF-8?q?=E5=85=B7=E6=A0=8F=E6=B7=B1=E6=B5=85=E8=89=B2=E4=BA=A7=E5=93=81?=
+ =?UTF-8?q?=E5=9B=BE=E6=A0=87=20084?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h           | 4 ++--
+ ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts | 2 --
+ 2 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 85a0124f08..0ae4093851 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.83";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (083)";
++inline constexpr char kProductVersion[] = "2.0.0.84";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (084)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts b/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
+index 7eff3e7931..ab15655de6 100644
+--- a/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
++++ b/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
+@@ -19,8 +19,6 @@ export function getHtml(this: CrToolbarElement) {
+       </cr-icon-button>` : ''}
+     <slot name="product-logo">
+       <picture>
+-        <source media="(prefers-color-scheme: dark)"
+-            srcset="//resources/images/chrome_logo_dark.svg">
+         <img id="product-logo"
+             srcset="chrome://theme/current-channel-logo@1x 1x,
+                     chrome://theme/current-channel-logo@2x 2x"
+-- 
+2.52.0
+

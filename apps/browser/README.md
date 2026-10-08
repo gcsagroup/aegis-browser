@@ -8,7 +8,7 @@ GCSA-aegis Browser integrates privacy and security controls into Chromium and it
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
-## Current status
+> **Historical evidence (2026-09-22):** The macOS Ver 2.0 (061) results, including 539 native regressions, belong only to the candidate identified in the [audit record](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md). They do not establish acceptance of the current source.
 
 macOS is the current focus; runtime, real-network and distribution validation remain open. Other platforms follow the [roadmap](../../docs/roadmap.md).
 
@@ -18,7 +18,7 @@ The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) record
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | Pinned Mac Stable version, currently `151.0.7922.77` |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | Pinned Mac Stable version, currently `153.0.8010.53` |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.
@@ -49,10 +49,12 @@ Chromium source is kept outside this repository. A typical local setup is:
 
 ```bash
 export REPO_ROOT="$HOME/Projects/GCSA-aegis"
-export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-chromium"
+export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-build/macos"
 ```
 
 The Chromium root may also be recorded in `apps/browser/.chromium-root`, which is ignored by Git.
+
+Keep platform workspaces under one sibling `GCSA-aegis-build` directory: `macos`, `android`, and `shared/chromium` for an existing shared checkout. The commands below describe initial setup; an existing linked Mac workspace without its own `.gclient` must not be fetched again. Select `shared/chromium` explicitly for shared dependency updates, and `android` for Android work. Preserve the fixed acceptance App path and historical evidence; moving source directories is not a rebuild or a new release.
 
 ## Local workflow
 
