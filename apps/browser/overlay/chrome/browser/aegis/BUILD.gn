@@ -20,14 +20,14 @@ source_set("agent_core") {
   sources = [
     "agent/agent_execution.cc",
     "agent/agent_execution.h",
-    "agent/agent_model_protocol.cc",
-    "agent/agent_model_protocol.h",
-    "agent/agent_model_router.cc",
-    "agent/agent_model_router.h",
     "agent/agent_generation_profile.h",
     "agent/agent_generation_profile_json.h",
     "agent/agent_model_accounting.h",
     "agent/agent_model_accounting_json.h",
+    "agent/agent_model_protocol.cc",
+    "agent/agent_model_protocol.h",
+    "agent/agent_model_router.cc",
+    "agent/agent_model_router.h",
     "agent/agent_monitor_scheduler.cc",
     "agent/agent_monitor_scheduler.h",
     "agent/agent_monitor_summary.cc",
@@ -113,12 +113,35 @@ source_set("download_prefs") {
   ]
 }
 
+source_set("gesture_core") {
+  sources = [
+    "gestures/gesture_recognizer.cc",
+    "gestures/gesture_recognizer.h",
+    "gestures/gesture_settings.cc",
+    "gestures/gesture_settings.h",
+  ]
+  public_deps = [
+    "//base",
+    "//url",
+  ]
+}
+
+test("aegis_gesture_unittests") {
+  sources = [ "gestures/gesture_unittest.cc" ]
+  deps = [
+    ":gesture_core",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
 source_set("prefs") {
   sources = [
     "aegis_prefs.cc",
     "aegis_prefs.h",
   ]
   deps = [
+    ":gesture_core",
     "//chrome/common/aegis",
     "//components/pref_registry",
   ]
@@ -299,9 +322,9 @@ if (!is_android) {
       "//chrome/browser/bookmarks",
       "//chrome/browser/net:impl",
       "//chrome/browser/notifications:test_support",
+      "//chrome/browser/predictors",
       "//chrome/browser/predictors:config",
       "//chrome/browser/predictors:impl",
-      "//chrome/browser/predictors:predictors",
       "//chrome/browser/prefs",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/profiles:profile_manager",
@@ -330,6 +353,7 @@ if (!is_android) {
       "//services/network:test_support",
       "//services/network/public/cpp",
       "//testing/gtest",
+      "//ui/base",
       "//ui/message_center/public/cpp",
       "//url",
     ]
@@ -338,12 +362,19 @@ if (!is_android) {
   source_set("interactive_ui_tests") {
     testonly = true
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
-    sources = [ "agent/aegis_agent_interactive_uitest.cc" ]
+    sources = [
+      "agent/aegis_agent_interactive_uitest.cc",
+      "gestures/gesture_interactive_uitest.cc",
+    ]
     deps = [
       ":aegis",
+      ":gesture_core",
       "//base",
       "//base/test:test_support",
       "//chrome/app:command_ids",
+      "//chrome/browser/pdf:pdf_extension_test_base",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/renderer_context_menu:test_support",
       "//chrome/browser/ui",
       "//chrome/browser/ui:browser_element_identifiers",
       "//chrome/browser/ui/side_panel",
@@ -354,7 +385,11 @@ if (!is_android) {
       "//chrome/test:test_support_ui",
       "//components/prefs",
       "//content/test:test_support",
+      "//net:test_support",
       "//testing/gtest",
+      "//ui/base",
+      "//ui/base:test_support",
+      "//ui/views",
       "//url",
     ]
   }
@@ -364,11 +399,11 @@ test("aegis_agent_core_unittests") {
   sources = [
     "agent/agent_core_unittest.cc",
     "agent/agent_execution_unittest.cc",
-    "agent/agent_research_unittest.cc",
     "agent/agent_model_protocol_unittest.cc",
     "agent/agent_model_router_unittest.cc",
     "agent/agent_monitor_summary_unittest.cc",
     "agent/agent_planner_unittest.cc",
+    "agent/agent_research_unittest.cc",
     "agent/agent_task_store_unittest.cc",
     "agent/v2_runtime_spike_unittest.cc",
   ]
