@@ -1,4 +1,4 @@
-From 09da1a134ed630d4a605a1aafee5fbae0e783631 Mon Sep 17 00:00:00 2001
+From 5fee6b60115fbfb493601df3e728c590841516ca Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 03:02:09 +0800
 Subject: [PATCH] fix(aegis): signal agent side panel readiness
@@ -169,3 +169,6 @@ index 9ad9678911..0da7b17209 100644
 +      webui::GetBrowserWindowInterface(web_ui()->GetWebContents()), this,
        std::move(page), std::move(receiver));
  }
+-- 
+2.52.0
+

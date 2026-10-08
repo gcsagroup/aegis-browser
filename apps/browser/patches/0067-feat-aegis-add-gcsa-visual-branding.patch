@@ -1,7 +1,7 @@
-From 37a6409e41f22b21f4c24031253c488d3c001729 Mon Sep 17 00:00:00 2001
+From 2b358e34018709b96327cd5762c590153a430891 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 29 Aug 2026 17:20:15 +0800
-Subject: [PATCH 67/67] feat(aegis): add GCSA visual branding
+Subject: [PATCH] feat(aegis): add GCSA visual branding
 
 ---
  .../drawable/themed_app_icon.xml              |  81 +++++++++++++-----
@@ -11351,7 +11351,7 @@ zG!=nXw2&abs#xr~fFDF!vq@X7`+qtd5cw$r{cp#9R6!ToGG#p=PkT1k)Wlt8^P%Pg
 W=g!Ha2?pSwIRxeC=1^|uclqCxqvpf_
 
 diff --git a/chrome/app/chrome_dll.rc b/chrome/app/chrome_dll.rc
-index 857c1c6fd1..1c3d976521 100644
+index 02e08e0d49..42c84f485b 100644
 --- a/chrome/app/chrome_dll.rc
 +++ b/chrome/app/chrome_dll.rc
 @@ -174,7 +174,7 @@ IDR_X005_BETA       ICON                        "theme\google_chrome\win\chrome_
@@ -11392,7 +11392,7 @@ index 7d8d4c39f7..48c8529528 100644
  
  
 diff --git a/chrome/app/theme/chrome_unscaled_resources.grd b/chrome/app/theme/chrome_unscaled_resources.grd
-index fe78c61bd8..4f7a3018ae 100644
+index c8fb1b8e88..2cffbfc0e3 100644
 --- a/chrome/app/theme/chrome_unscaled_resources.grd
 +++ b/chrome/app/theme/chrome_unscaled_resources.grd
 @@ -88,10 +88,10 @@
@@ -227211,10 +227211,10 @@ index 41c3308183..41d9a627b0 100644
      <div class="product-heading">
        <div class="product-title">$i18n{aboutProductTitle}</div>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index 5d9b26c619..75709e0db6 100644
+index 076bcc4139..80affc0fbc 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -170,7 +170,7 @@
+@@ -167,7 +167,7 @@
          <a role="menuitem" id="about-menu" href="/help"
              class="cr-nav-menu-item">
  <if expr="not _google_chrome and not _is_chrome_for_testing">

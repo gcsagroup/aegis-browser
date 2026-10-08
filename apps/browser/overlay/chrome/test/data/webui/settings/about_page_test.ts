@@ -67,7 +67,9 @@ suite('AllBuilds', function() {
   async function initNewPage(): Promise<void> {
     aboutBrowserProxy.reset();
     lifetimeBrowserProxy.reset();
-    document.body.replaceChildren();
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
     document.body.appendChild(page);
@@ -147,7 +149,7 @@ suite('AllBuilds', function() {
     fireStatusChanged(UpdateStatus.FAILED);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertEquals(0, statusMessageEl.textContent.trim().length);
 
     fireStatusChanged(UpdateStatus.DISABLED);
@@ -291,21 +293,21 @@ suite('AllBuilds', function() {
     fireStatusChanged(UpdateStatus.CHECKING);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertFalse(page.$.deprecationWarning.hidden);
     assertTrue(page.$.updateStatusMessage.hidden);
 
     fireStatusChanged(UpdateStatus.FAILED);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertFalse(page.$.deprecationWarning.hidden);
     assertTrue(page.$.updateStatusMessage.hidden);
 
     fireStatusChanged(UpdateStatus.UPDATED);
     await microtasksFinished();
     await assertSpinnerVisible(false);
-    assertEquals('cr:error', icon.icon);
+    assertEquals('cr:error-filled', icon.icon);
     assertFalse(page.$.deprecationWarning.hidden);
     assertTrue(page.$.updateStatusMessage.hidden);
   });
@@ -414,7 +416,9 @@ suite('OfficialBuild', function() {
     AboutPageBrowserProxyImpl.setInstance(browserProxy);
     openWindowProxy = new TestOpenWindowProxy();
     OpenWindowProxyImpl.setInstance(openWindowProxy);
-    document.body.replaceChildren();
+    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
+    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-about-page');
     Router.getInstance().navigateTo(routes.ABOUT);
     document.body.appendChild(page);

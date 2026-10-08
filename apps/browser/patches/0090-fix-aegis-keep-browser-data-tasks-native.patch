@@ -1,7 +1,7 @@
-From a17a743ce97fa54c118b80ada0351bf8cbadb1d2 Mon Sep 17 00:00:00 2001
+From 4f1e7877082c153374f17bf1889ff95dd9f241c5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:57:00 +0800
-Subject: [PATCH 90/90] fix(aegis): keep browser data tasks native
+Subject: [PATCH] fix(aegis): keep browser data tasks native
 
 ---
  chrome/browser/aegis/agent/agent_planner.cc   | 28 +++++++++++++++++++

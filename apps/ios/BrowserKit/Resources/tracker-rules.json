@@ -1,0 +1,622 @@
+[
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?doubleclick\\.net[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?googleadservices\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?googlesyndication\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?google-analytics\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?googletagmanager\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?facebook\\.net[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?facebook\\.com/tr([/?].*)?$",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?connect\\.facebook\\.net[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?adservice\\.google\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?adsystem\\.amazon\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?amazon-adsystem\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?adnxs\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?adsrvr\\.org[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?advertising\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?scorecardresearch\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?hotjar\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?clarity\\.ms[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?taboola\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?outbrain\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?criteo\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?pubmatic\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?openx\\.net[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?rubiconproject\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?moatads\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?quantserve\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?chartbeat\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?segment\\.io[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?segment\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?mixpanel\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?amplitude\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": "^https?://([^/]+\\.)?sentry-cdn\\.com[/:]",
+      "resource-type": [
+        "script",
+        "image",
+        "raw",
+        "media",
+        "font",
+        "svg-document",
+        "ping"
+      ],
+      "load-type": [
+        "third-party"
+      ]
+    },
+    "action": {
+      "type": "block"
+    }
+  }
+]

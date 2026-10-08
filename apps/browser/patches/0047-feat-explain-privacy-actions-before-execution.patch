@@ -1,4 +1,4 @@
-From 83c1086158bb42f14d319717b1b0e5d454091db7 Mon Sep 17 00:00:00 2001
+From 0c41c00f833f3ad8b6cef289ec978338e24f8ace Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:28:51 +0800
 Subject: [PATCH] feat(aegis): explain privacy actions before execution

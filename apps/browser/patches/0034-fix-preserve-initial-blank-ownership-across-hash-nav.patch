@@ -1,8 +1,7 @@
-From 081005b53cbf937154ffd59eda97c0b1171834f1 Mon Sep 17 00:00:00 2001
+From 5abe51306db841adce9b419ca8a6672c22c759ff Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 21:11:56 +0800
-Subject: [PATCH 34/38] fix: preserve initial blank ownership across hash
- navigation
+Subject: [PATCH] fix: preserve initial blank ownership across hash navigation
 
 ---
  .../protocol/devtools_protocol_browsertest.cc         | 11 +++++++++++
@@ -11,10 +10,10 @@ Subject: [PATCH 34/38] fix: preserve initial blank ownership across hash
  3 files changed, 13 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index e7401c0efc..ac589fcc92 100644
+index 73a21d6a37..650260705b 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -692,6 +692,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -708,6 +708,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    const std::string* target_id = create_result->FindString("targetId");
    ASSERT_TRUE(target_id);
  
@@ -33,10 +32,10 @@ index e7401c0efc..ac589fcc92 100644
        "Target.attachToTarget",
        base::DictValue().Set("targetId", *target_id).Set("flatten", true));
 diff --git a/content/browser/devtools/devtools_agent_host_impl.cc b/content/browser/devtools/devtools_agent_host_impl.cc
-index 235b7edfbd..b6b0ed2590 100644
+index fd5cbd9a99..f8a34c5276 100644
 --- a/content/browser/devtools/devtools_agent_host_impl.cc
 +++ b/content/browser/devtools/devtools_agent_host_impl.cc
-@@ -429,7 +429,7 @@ bool DevToolsAgentHostImpl::IsRemoteDebuggingTargetOperationAllowed(
+@@ -407,7 +407,7 @@ bool DevToolsAgentHostImpl::IsRemoteDebuggingTargetOperationAllowed(
      }
      const GURL target_url = target->GetURLForRemoteDebugging();
      const bool is_initial_blank_target =
@@ -46,10 +45,10 @@ index 235b7edfbd..b6b0ed2590 100644
           target->GetType() == DevToolsAgentHost::kTypeTab);
      const WeakDocumentPtr target_document =
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index c9d1d70765..5e60f66ac3 100644
+index 050e41f624..450e6a8f33 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -1134,8 +1134,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1192,8 +1192,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
      return true;
    }
    const bool is_initial_blank_target =

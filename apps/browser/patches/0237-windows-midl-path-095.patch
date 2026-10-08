@@ -1,0 +1,70 @@
+From eef1dba8a4bad09bcc45a1b98e23f55ec2cff2e5 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 21:45:22 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=BD=92=E4=B8=80=E5=8C=96=20Windows=20?=
+ =?UTF-8?q?=E5=8A=A8=E6=80=81=E6=8E=A5=E5=8F=A3=E7=94=9F=E6=88=90=E8=B7=AF?=
+ =?UTF-8?q?=E5=BE=84=E6=B3=A8=E9=87=8A=20095?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ build/toolchain/win/midl.py                   | 19 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 2 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/build/toolchain/win/midl.py b/build/toolchain/win/midl.py
+index 370e5addb5..8a53225c09 100644
+--- a/build/toolchain/win/midl.py
++++ b/build/toolchain/win/midl.py
+@@ -343,6 +343,18 @@ def uuid5_substitutions(dynamic_guids):
+             dynamic_guids[key] = str(uuid.uuid5(uuid.UUID(key), name)).upper()
+ 
+ 
++def normalize_dynamic_idl_comment(path, generated_idl, original_idl):
++    """只还原动态 GUID 暂存路径的编译器注释，保留接口和代理正文。"""
++    with open(path, 'rb') as f:
++        contents = f.read()
++    prefix = b'/* Compiler settings for '
++    pattern = rb'(?m)^' + re.escape(prefix + generated_idl.encode('utf-8') + b':')
++    contents = re.sub(pattern, lambda _: prefix + original_idl.encode('utf-8') + b':',
++                      contents, count=1)
++    with open(path, 'wb') as f:
++        f.write(contents)
++
++
+ def main(
+     arch,
+     gendir,
+@@ -500,6 +512,13 @@ def main(
+     if returncode != 0:
+         return returncode
+ 
++    if idl_template:
++        # 暂存 IDL 的路径不是接口变化；类型库及其余字节仍严格比较。
++        for name in (h, iid, proxy):
++            if name:
++                normalize_dynamic_idl_comment(
++                    os.path.join(midl_output_dir, name), idl, idl_template)
++
+     # Now compare the output in midl_output_dir to the copied-over outputs.
+     _, mismatch, errors = filecmp.cmpfiles(
+         midl_output_dir, outdir, common_files
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9f98bcb409..540158361a 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.94";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (094)";
++inline constexpr char kProductVersion[] = "2.0.0.95";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (095)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

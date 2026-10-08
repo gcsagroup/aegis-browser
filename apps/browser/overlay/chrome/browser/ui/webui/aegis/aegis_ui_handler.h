@@ -21,7 +21,7 @@
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_ui_message_handler.h"
 
-class TabStripModel;
+class TabListInterface;
 
 namespace content {
 class WebContents;
@@ -30,9 +30,9 @@ class WebContents;
 namespace aegis {
 
 // 只在设置页所在窗口内选择最近的 HTTP(S) 标签，避免跨窗口、Profile 或
-// 无痕会话读取页面。桌面实现供选择器回归测试直接验证。
-content::WebContents* FindSummarySourceTabInModel(
-    TabStripModel* model,
+// 无痕会话读取页面。三端共用同一选择规则。
+content::WebContents* FindSummarySourceTabInList(
+    TabListInterface* list,
     content::WebContents* settings_tab);
 
 }  // namespace aegis
@@ -92,6 +92,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
                       bool ok,
                       std::string error,
                       std::vector<std::string> models);
+  void OnMetalinkStarted(std::string callback_id, bool ok, std::string error);
   void OnMetalinkParsed(std::string callback_id,
                         aegis::MetalinkParseResult result);
 #if BUILDFLAG(IS_MAC)

@@ -167,6 +167,24 @@ function checkPinnedVersion() {
   }
 }
 
+// 在耗时构建前拒绝桌面产品号与 Android 安装版本漂移。
+function checkProductVersionParity() {
+  const header = read(join(browserRoot,
+    'overlay/chrome/browser/ui/webui/help/aegis_github_update.h'));
+  const args = read(join(browserRoot, 'args/aegis-android.gn'));
+  const label = /kProductVersionLabel\[\] = "([^"]+)"/u.exec(header)?.[1];
+  const version = /kProductVersion\[\] = "([^"]+)"/u.exec(header)?.[1];
+  const androidLabel = /android_override_version_name = "([^"]+)"/u.exec(args)?.[1];
+  const androidCode = /android_override_version_code = "(\d+)"/u.exec(args)?.[1];
+  if (!label || label !== androidLabel) {
+    fail('Android 安装版本名称必须与产品版本标签一致');
+  }
+  // 现有内部包编码末五位用于递增构建号。
+  if (!androidCode || Number(androidCode) % 100000 !== Number(version?.split('.')[3])) {
+    fail('Android 安装版本码的构建号必须与产品版本一致');
+  }
+}
+
 function checkMarkdownLinks() {
   const files = [
     join(repoRoot, 'README.md'),
@@ -232,6 +250,7 @@ function checkDocumentedCommands() {
 checkProductTopology();
 checkPatchSeries();
 checkPinnedVersion();
+checkProductVersionParity();
 checkMarkdownLinks();
 checkDocumentedCommands();
 

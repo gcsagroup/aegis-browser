@@ -159,11 +159,15 @@ try {
   const pythonFiles = [
     'apps/browser/overlay/components/aegis_access/generate_policy_matcher_vectors.py',
     'apps/browser/overlay/components/aegis_access/generate_route_planner_vectors.py',
+    'apps/browser/scripts/build_capacity.py',
+    'apps/browser/scripts/build_processes.py',
     'apps/browser/scripts/check-chromium-upstream.py',
     'apps/browser/scripts/ci/candidate.py',
     'apps/browser/scripts/local-pypi-proxy.py',
+    'apps/browser/scripts/measure-browser-processes.py',
+    'apps/browser/scripts/verify-build-source.py',
   ];
-  if (JSON.stringify(Object.keys(pythonJson.files ?? {}).sort()) !== JSON.stringify(pythonFiles)) fail('Python coverage scope does not match the five production tools');
+  if (JSON.stringify(Object.keys(pythonJson.files ?? {}).sort()) !== JSON.stringify(pythonFiles)) fail('Python coverage scope does not match the nine production tools');
   const pythonLcovPath = join(coverageRoot, 'python/lcov.info');
   const pythonLcov = parseLcov(freshFile(pythonLcovPath, notBefore), repoRoot);
   requireExactFiles(pythonLcov.files, pythonFiles, 'Python LCOV');
@@ -213,7 +217,7 @@ try {
         status: 'MEASURED', scopeKind: 'proxy-vector-and-upstream-tools-production', files: pythonFiles.length,
         reports: {json: repoPath(pythonJsonPath), xml: repoPath(join(coverageRoot, 'python/coverage.xml')), lcov: repoPath(pythonLcovPath)},
         totals: pythonTotals,
-        note: 'Proxy and two vector generators only; prototype workers are not measured',
+        note: 'Proxy, vector generators, upstream and build-source tools only; prototype workers are not measured',
       },
       swift: {status: 'MANUAL_REPORTING_WORKFLOW', totals: null, note: 'Product-only xccov runs in the manual-only iOS Coverage workflow; it is outside the current Mac quality gate and Codacy conversion remains pending'},
       bash: {status: 'MANUAL_REPORTING_WORKFLOW', totals: null, note: 'Behavior tests and syntax checks exist; line coverage is produced by the Linux coverage job'},

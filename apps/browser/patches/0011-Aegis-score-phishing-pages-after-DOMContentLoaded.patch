@@ -1,4 +1,4 @@
-From 1103fc88efbab01427295e896798cff758182733 Mon Sep 17 00:00:00 2001
+From 6d8cdf8941e3686e13f9b8a5ce1a103c15db9627 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:03:12 +0800
 Subject: [PATCH] Aegis: score phishing pages after DOMContentLoaded
@@ -26,7 +26,7 @@ combined score crosses the block threshold.
  create mode 100644 chrome/browser/aegis/aegis_phish_tab_helper.h
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index f1e00d84be..8f0960753f 100644
+index 70f8e10217..86425cf43f 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -159,6 +159,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
@@ -352,7 +352,7 @@ index d7e92c9c73..8c540d59a5 100644
    MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
    MOCK_METHOD(void,
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 229fe0b443..5932777fb1 100644
+index 446351a9d0..d9eecb6358 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
 @@ -15,6 +15,7 @@
@@ -363,7 +363,7 @@ index 229fe0b443..5932777fb1 100644
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
  #include "chrome/browser/browser_process.h"
-@@ -442,6 +443,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents) {
+@@ -455,6 +456,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
        web_contents,
        std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
    CoreTabHelper::CreateForWebContents(web_contents);
@@ -528,10 +528,10 @@ index c5b742e2fe..efaa533860 100644
    // identifier (empty string matches all).
    LoadBlockedPlugins(string identifier);
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index 8055ed9158..9cbb78c72a 100644
+index 1dc2c646c0..ede7068f7b 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
-@@ -64,7 +64,9 @@
+@@ -69,7 +69,9 @@
  #include "third_party/blink/public/web/web_document.h"
  #include "third_party/blink/public/web/web_document_loader.h"
  #include "third_party/blink/public/web/web_element.h"
@@ -541,7 +541,7 @@ index 8055ed9158..9cbb78c72a 100644
  #include "third_party/blink/public/web/web_local_frame.h"
  #include "third_party/blink/public/web/web_local_frame_client.h"
  #include "third_party/blink/public/web/web_node.h"
-@@ -613,6 +615,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+@@ -646,6 +648,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
    std::move(callback).Run(MediaFeeds::GetMediaFeedURL(render_frame()));
  }
  
@@ -586,10 +586,10 @@ index 8055ed9158..9cbb78c72a 100644
      const std::string& identifier) {
    // Record that this plugin is temporarily allowed and notify all placeholders.
 diff --git a/chrome/renderer/chrome_render_frame_observer.h b/chrome/renderer/chrome_render_frame_observer.h
-index 7b68302d1f..a56470f053 100644
+index 80e224f9bc..a829805460 100644
 --- a/chrome/renderer/chrome_render_frame_observer.h
 +++ b/chrome/renderer/chrome_render_frame_observer.h
-@@ -127,6 +127,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
+@@ -131,6 +131,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,
    void SetCCTClientHeader(const std::string& header) override;
  #endif
    void GetMediaFeedURL(GetMediaFeedURLCallback callback) override;

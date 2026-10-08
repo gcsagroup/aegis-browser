@@ -308,7 +308,7 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
     // If this platform has reached the end of the line, display an error icon
     // and ignore UpdateStatus.
     if (this.obsoleteSystemInfo_.endOfLine) {
-      return 'cr:error';
+      return 'cr:error-filled';
     }
 
     switch (this.currentUpdateStatusEvent_!.status) {
@@ -317,7 +317,7 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
       case UpdateStatus.DISABLED:
         return this.currentUpdateStatusEvent_!.message ? 'cr:info-outline' : '';
       case UpdateStatus.FAILED:
-        return 'cr:error';
+        return 'cr:error-filled';
       case UpdateStatus.UPDATED:
       case UpdateStatus.NEARLY_UPDATED:
         return 'cr:check-circle';

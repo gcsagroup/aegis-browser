@@ -1,0 +1,67 @@
+From aa528bac24d82abd4d58d925fe6f4bafdbb3a8ff Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 05:04:38 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=8E=88=E6=9D=83=E5=89=8D=E9=A1=B5?=
+ =?UTF-8?q?=E9=9D=A2=E5=A4=B1=E6=95=88=E8=BF=9B=E5=85=A5=E5=A4=B1=E8=B4=A5?=
+ =?UTF-8?q?=E7=BB=88=E6=80=81=20Ver=202.0=20(012)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_core_unittest.cc  | 9 +++++++++
+ chrome/browser/aegis/agent/agent_task.cc           | 2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 3 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index bc680858fb..ab63bc1fac 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -235,6 +235,15 @@ TEST(AegisAgentTaskTest, EnforcesTransitionsTerminalStateAndBudgets) {
+   EXPECT_TRUE(task.TransitionTo(AgentTaskState::kCompleted, "done"));
+   EXPECT_FALSE(task.TransitionTo(AgentTaskState::kRunning, "reopen"));
+   EXPECT_EQ(task.events().size(), 5u);
++  AgentTask invalidated("invalidated-before-consent", "当前页面操作",
++                        AgentMode::kAct, TestScope());
++  ASSERT_TRUE(invalidated.TransitionTo(AgentTaskState::kPlanning, "制定计划"));
++  ASSERT_TRUE(invalidated.TransitionTo(AgentTaskState::kAwaitingTaskConsent,
++                                       "等待授权"));
++  EXPECT_TRUE(invalidated.TransitionTo(AgentTaskState::kFailed,
++                                       "原页面绑定已失效"));
++  EXPECT_FALSE(invalidated.TransitionTo(AgentTaskState::kRunning,
++                                        "不得重开失败任务"));
+ }
+ 
+ TEST(AegisAgentTaskTest, RecordsTimelineFactWithoutChangingState) {
+diff --git a/chrome/browser/aegis/agent/agent_task.cc b/chrome/browser/aegis/agent/agent_task.cc
+index b50916692b..fe7234c205 100644
+--- a/chrome/browser/aegis/agent/agent_task.cc
++++ b/chrome/browser/aegis/agent/agent_task.cc
+@@ -205,7 +205,7 @@ bool AgentTask::IsAllowedTransition(AgentTaskState from, AgentTaskState to) {
+              to == State::kCancelled;
+     case State::kAwaitingTaskConsent:
+       return to == State::kRunning || to == State::kCancelled ||
+-             to == State::kExpired;
++             to == State::kExpired || to == State::kFailed;
+     case State::kRunning:
+     case State::kReflecting:
+       return to == State::kRunning || to == State::kReflecting ||
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index c652b8326a..2d84b010fb 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.8。
+-inline constexpr char kProductVersion[] = "2.0.0.11";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (011)";
++inline constexpr char kProductVersion[] = "2.0.0.12";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (012)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

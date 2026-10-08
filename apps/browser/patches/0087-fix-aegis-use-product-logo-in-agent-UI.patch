@@ -1,7 +1,7 @@
-From a09cd44337ff1ac1b656418720da9a4313adf242 Mon Sep 17 00:00:00 2001
+From 3b163ac0e3639cedf1e3ecb79c5d0edccc509cfd Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:15:29 +0800
-Subject: [PATCH 87/90] fix(aegis): use product logo in agent UI
+Subject: [PATCH] fix(aegis): use product logo in agent UI
 
 ---
  .../agent/aegis_agent_interactive_uitest.cc   |  4 +++

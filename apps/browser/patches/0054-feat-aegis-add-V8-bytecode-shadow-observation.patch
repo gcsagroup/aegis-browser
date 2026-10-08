@@ -1,4 +1,4 @@
-From 573e044e75fc0529cd28ea2adcba55cfc04dd97b Mon Sep 17 00:00:00 2001
+From b3e073027048ade4090bec42a12044c1f69a8d03 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 06:34:27 +0800
 Subject: [PATCH] feat(aegis): add V8 bytecode shadow observation
@@ -12,10 +12,10 @@ Subject: [PATCH] feat(aegis): add V8 bytecode shadow observation
  5 files changed, 49 insertions(+)
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index a3c8da77f2..faefd7ea02 100644
+index c89b2c3771..d08dfdb4f9 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -2915,6 +2915,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -2960,6 +2960,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
  #endif
  
    if (process_type == switches::kRendererProcess) {
@@ -100,10 +100,10 @@ index f9fa295f44..aca728b64d 100644
  }  // namespace
  }  // namespace aegis::features
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
-index 2a8abef097..bf0cc0d073 100644
+index 0bdd753a19..c79991a592 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -4013,7 +4013,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+@@ -4015,7 +4015,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
        switches::kSchedulerBoostUrgent,
  #endif
    };

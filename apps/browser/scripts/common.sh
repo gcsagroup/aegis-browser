@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Resolve where the Chromium src checkout lives.
-# Default: ~/Projects/GCSA-aegis-chromium (outside the git repo — large)
+# 解析外部 Chromium 源码位置；默认使用统一构建资料区内的 Mac 工作区。
+# Android 和共享依赖操作应明确设置 CHROMIUM_ROOT，不另建同级副本。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
-DEFAULT_CHROMIUM_ROOT="${HOME}/Projects/GCSA-aegis-chromium"
+DEFAULT_CHROMIUM_ROOT="${HOME}/Projects/GCSA-aegis-build/macos"
 MARKER="$ROOT_DIR/.chromium-root"
 
 if [[ -z "${CHROMIUM_ROOT:-}" ]]; then

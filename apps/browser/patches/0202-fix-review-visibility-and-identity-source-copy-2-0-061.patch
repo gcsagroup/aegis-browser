@@ -1,0 +1,128 @@
+From ecf2f365e6becc891f2ab44923ceb2eb01007c1d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 22 Sep 2026 18:03:20 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
+ =?UTF-8?q?=E8=AF=BB=E5=8F=96=E3=80=81=E4=B8=8B=E8=BD=BD=E5=9B=9E=E8=AF=BB?=
+ =?UTF-8?q?=E4=B8=8E=E8=AF=AD=E8=A8=80=E6=9D=A5=E6=BA=90=E6=98=BE=E7=A4=BA?=
+ =?UTF-8?q?=202.0.061?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_execution.cc      |  5 ++++-
+ .../aegis/agent/agent_execution_unittest.cc        |  5 +++++
+ chrome/browser/resources/aegis_agent/agent.ts      | 14 +++++++++++++-
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  2 ++
+ chrome/browser/ui/webui/help/aegis_github_update.h |  4 ++--
+ 5 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 3bb3ca8a4f..9794d37409 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -1875,7 +1875,7 @@ void NormalizeAgentDownloadCompletion(
+     const AgentTaskScope& scope,
+     base::span<const AgentExecutionEvidence> history,
+     base::span<const AgentExecutionEvidence> page_history) {
+-  if (!completion || !RequiresDownloadEvidence(user_goal, scope)) {
++  if (!completion) {
+     return;
+   }
+   const auto fields = BuildAgentDownloadEvidence(history);
+@@ -1901,6 +1901,9 @@ void NormalizeAgentDownloadCompletion(
+     // 是否官方与筛选安装包是不同目标，不把广告页自身当成待下载候选。
+     return;
+   }
++  if (!RequiresDownloadEvidence(user_goal, scope)) {
++    return;
++  }
+   if (!requests_transfer && !fields.contains("candidate_url")) {
+     // 只读降级保留原生观察中的链接；候选文件不冒充已读取的来源页面。
+     base::flat_set<std::string> links;
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 47bba12b74..de1f883a95 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -92,6 +92,11 @@ TEST(AegisAgentExecutionTest, OfficialIdentityQuestionDoesNotOfferAdvertisement)
+     EXPECT_EQ(completion.summary.find("candidate"), std::string::npos);
+     EXPECT_TRUE(completion.summary.contains("不足") ||
+                 completion.summary.contains("insufficient"));
++    auto page_scope = ExecutionScope();
++    completion.summary = "官方候选";
++    NormalizeAgentDownloadCompletion(&completion, goal, page_scope, {});
++    EXPECT_TRUE(completion.summary.contains("不足") ||
++                completion.summary.contains("insufficient"));
+   }
+ }
+ 
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index b46bb9cd7a..6659fbac75 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -541,7 +541,14 @@ function renderResult(next: TaskSnapshot) {
+ }
+ 
+ function renderDownloadEvidence(next: TaskSnapshot) {
+-  const fields = next.downloadEvidence || [];
++  const evidence = next.downloadEvidence || [];
++  const goal = next.goal || '';
++  const identityQuestion = /官方|official/i.test(goal) &&
++      /证据|證據|是否|属于|屬於|evidence|is this/i.test(goal) &&
++      !evidence.some(field => field.name === 'download_id');
++  // 身份问答保留来源证据，不把筛选器的占位地址显示为待下载文件。
++  const fields = identityQuestion ?
++      evidence.filter(field => field.name !== 'candidate_url') : evidence;
+   const list = element('download-evidence');
+   list.replaceChildren();
+   const labels: {[key: string]: string} = {
+@@ -593,6 +600,9 @@ function isDownloadedFileReviewGoal(goal: string): boolean {
+ }
+ 
+ async function reviewCurrentDownload() {
++  const card = element<HTMLDetailsElement>('download-evidence-card');
++  card.hidden = false;
++  card.open = true;
+   if (!snapshot?.taskId || snapshot.state !== 'completed' ||
+       !snapshot.downloadEvidence.some(field => field.name === 'download_id')) {
+     element('download-evidence-card').hidden = false;
+@@ -652,6 +662,8 @@ function renderTimeline(next: TaskSnapshot) {
+           .replace('$1', match?.[1] || 'browser action');
+     }
+     const keyByValue: {[key: string]: string} = {
++      'browser verified all actions; model summary fallback used':
++          'timelineVerifiedFallback',
+       'reflecting': 'timelineVerifying',
+       'awaiting_action_approval': 'statusApproval',
+       'user_takeover': 'statusTakeover',
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index f9dfbbbdc8..5da6535641 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -667,6 +667,8 @@ void AddStrings(content::WebUIDataSource* source) {
+       "AI "
+       "沒有判斷出可靠的瀏覽器入口，本次沒有開啟網頁。請把目標說得更具體後重試"
+       "。");
++  add("timelineVerifiedFallback", "Browser actions were checked; native results were retained",
++      "浏览器操作已核对，已保留原生结果", "瀏覽器操作已核對，已保留原生結果");
+   add("timelineActionApprovalRequired", "Waiting for approval of this action",
+       "正在等待你确认这一个操作", "正在等待你確認這一個操作");
+   add("timelineActionApprovalConsumed", "This action was approved and started",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index e70a1f5558..7887b9e75a 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.60";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (060)";
++inline constexpr char kProductVersion[] = "2.0.0.61";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (061)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

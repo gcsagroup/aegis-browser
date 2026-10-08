@@ -1,0 +1,3 @@
+4d8714bd7103cb31545bcd56cd1c762c08a2fec88d088f081d67ede751ad9857  apps/ios/scripts/generate-tracker-rules.mjs
+bf2bbaa425f53a301afc488849440ed3a6458cf6a1582cd4bc951f1ff54ca677  apps/ios/scripts/run-simulator-tests.sh
+d4c50f04b5e7663939f3cae271cfd867f259af514e52fa5218391a893afbb718  apps/ios/scripts/simulator-fixture-server.py

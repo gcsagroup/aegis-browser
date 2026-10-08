@@ -1,0 +1,819 @@
+From 355cf1a441557d1a2bbd9182f80b34ec19894e1f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 04:29:50 +0800
+Subject: [PATCH] =?UTF-8?q?feat:=20=E9=80=90=E6=AC=A1=E5=AE=A1=E6=89=B9?=
+ =?UTF-8?q?=E5=BD=93=E5=89=8D=E9=A1=B5=E9=9D=A2=E7=82=B9=E5=87=BB=E5=B9=B6?=
+ =?UTF-8?q?=E9=94=81=E5=AE=9A=E5=AF=BC=E8=88=AA=E8=8C=83=E5=9B=B4=20Ver=20?=
+ =?UTF-8?q?2.0=20(009)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_actor_bridge.cc | 55 ++++++++++--
+ .../browser/aegis/agent/aegis_actor_bridge.h  |  3 +
+ .../aegis/agent/aegis_agent_service.cc        | 17 ++++
+ .../browser/aegis/agent/aegis_agent_service.h |  2 +
+ .../aegis/agent/agent_core_unittest.cc        | 58 +++++++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 83 +++++++++++++++++--
+ .../aegis/agent/agent_planner_unittest.cc     | 60 ++++++++++++++
+ .../aegis/agent/agent_policy_broker.cc        |  3 +
+ .../browser/aegis/agent/agent_task_store.cc   | 21 +++--
+ .../aegis/agent/agent_task_store_unittest.cc  | 42 ++++++++++
+ chrome/browser/aegis/agent/agent_types.cc     | 11 +++
+ chrome/browser/aegis/agent/agent_types.h      |  4 +
+ chrome/browser/aegis/agent/agent_workflow.cc  | 26 ++++++
+ chrome/browser/aegis/agent/agent_workflow.h   |  1 +
+ chrome/browser/resources/aegis_agent/agent.ts |  8 +-
+ .../ui/webui/aegis_agent/aegis_agent.mojom    |  1 +
+ .../aegis_agent/aegis_agent_page_handler.cc   | 11 ++-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 18 files changed, 382 insertions(+), 28 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 2203c3f880..6dccd20f88 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -624,13 +624,15 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+ 
+ class AegisActorPolicyChecker final : public actor::EnterprisePolicyChecker {
+  public:
+-  explicit AegisActorPolicyChecker(AgentTaskScope scope)
+-      : scope_(std::move(scope)) {}
++  AegisActorPolicyChecker(AgentTaskScope scope,
++                          std::optional<GURL> selected_url)
++      : scope_(std::move(scope)), selected_url_(std::move(selected_url)) {}
+   ~AegisActorPolicyChecker() override = default;
+ 
+   UrlBlockReason Evaluate(const GURL& url) const override {
+-    return scope_.AllowsOrigin(url) ? UrlBlockReason::kNotBlocked
+-                                    : UrlBlockReason::kExplicitlyBlocked;
++    return scope_.AllowsPageDestination(url, selected_url_)
++               ? UrlBlockReason::kNotBlocked
++               : UrlBlockReason::kExplicitlyBlocked;
+   }
+ 
+   void ValidateContentSentToRenderer(
+@@ -648,6 +650,7 @@ class AegisActorPolicyChecker final : public actor::EnterprisePolicyChecker {
+ 
+  private:
+   const AgentTaskScope scope_;
++  const std::optional<GURL> selected_url_;
+ };
+ 
+ }  // namespace
+@@ -690,11 +693,24 @@ std::optional<actor::TaskId> AegisActorBridge::StartTask(
+       actor_tasks_.contains(agent_task_id)) {
+     return std::nullopt;
+   }
++  std::optional<GURL> selected_url;
++  if (scope.restrict_to_current_page) {
++    tabs::TabInterface* selected =
++        tabs::TabHandle(*scope.allowed_tab_ids.begin()).Get();
++    if (!selected || selected->GetProfile() != profile_ ||
++        !scope.AllowsOrigin(selected->GetURL())) {
++      return std::nullopt;
++    }
++    // 在任务开始时冻结完整地址，重定向也要经过相同的Actor策略检查。
++    selected_url = selected->GetURL();
++  }
+   actor::TaskId actor_task_id =
+       actor_service_->CreateTaskWithOwnedPolicyChecker(
+           actor::TaskSourceInfo(actor::TaskSourceInfo::Client::kAegis,
+                                 agent_task_id),
+-          std::make_unique<AegisActorPolicyChecker>(scope), nullptr, nullptr);
++          std::make_unique<AegisActorPolicyChecker>(scope,
++                                                    std::move(selected_url)),
++          nullptr, nullptr);
+   if (actor_task_id.is_null()) {
+     return std::nullopt;
+   }
+@@ -1060,6 +1076,35 @@ std::optional<AgentDocumentRef> AegisActorBridge::LastDocument(
+              : std::make_optional(document_it->second);
+ }
+ 
++std::string AegisActorBridge::DescribeObservedClickTarget(
++    const std::string& agent_task_id,
++    const AgentToolCall& call) const {
++  const auto tab_id = call.arguments.FindInt("tab_id");
++  const auto node_id = call.arguments.FindInt("node_id");
++  if (call.tool_name != "page.click" || !call.document || !tab_id || !node_id) {
++    return {};
++  }
++  const auto document = LastDocument(agent_task_id, *tab_id);
++  if (!document || !SameDocument(*document, *call.document)) {
++    return {};
++  }
++  const auto task = observed_node_text_.find(agent_task_id);
++  if (task == observed_node_text_.end()) {
++    return {};
++  }
++  const auto tab = task->second.find(*tab_id);
++  if (tab == task->second.end()) {
++    return {};
++  }
++  const auto node = tab->second.find(*node_id);
++  if (node == tab->second.end() || node->second.is_sensitive_control) {
++    return {};
++  }
++  return BoundedText(
++      std::string(base::TrimWhitespaceASCII(node->second.text, base::TRIM_ALL)),
++      512u);
++}
++
+ void AegisActorBridge::ObservePage(const std::string& agent_task_id,
+                                    std::string action_id,
+                                    int32_t tab_id,
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+index b1c1b79041..5e04827de8 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
+@@ -66,6 +66,9 @@ class AegisActorBridge {
+                                                int32_t tab_id) const;
+   size_t active_task_count_for_testing() const { return actor_tasks_.size(); }
+ 
++  std::string DescribeObservedClickTarget(const std::string& agent_task_id,
++                                          const AgentToolCall& call) const;
++
+  private:
+   struct WebMcpToolMetadata {
+     std::string revision;
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index b0d93b846d..bac2973c94 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -2600,6 +2600,12 @@ AgentRiskLevel AegisAgentService::ToolCallRisk(
+               : AgentRiskLevel::kBlocked;
+ }
+ 
++std::string AegisAgentService::DescribeClickTarget(
++    const std::string& task_id,
++    const AgentToolCall& call) const {
++  return actor_bridge_.DescribeObservedClickTarget(task_id, call);
++}
++
+ AgentRiskLevel AegisAgentService::TaskMaxRisk(
+     const std::string& task_id) const {
+   AgentRiskLevel risk = AgentRiskLevel::kR0ReadOnly;
+@@ -2687,6 +2693,17 @@ void AegisAgentService::ExecuteTool(
+     }
+   }
+ 
++  if (task && task->scope().restrict_to_current_page &&
++      call.tool_name == "page.click" &&
++      DescribeClickTarget(task_id, call).empty()) {
++    std::move(callback).Run(AgentToolResult{
++        .action_id = call.action_id,
++        .ok = false,
++        .error = AgentErrorCode::kStaleDocument,
++        .message = "无法从当前页面核对按钮名称，请重新观察或由用户操作"});
++    return;
++  }
++
+   AgentPolicyDecision decision = EvaluateToolCall(task_id, call, approval_id);
+   if (decision.disposition != AgentPolicyDisposition::kAllow) {
+     if (decision.disposition ==
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
+index 79c52d967f..4702df99b8 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.h
++++ b/chrome/browser/aegis/agent/aegis_agent_service.h
+@@ -139,6 +139,8 @@ class AegisAgentService : public KeyedService {
+   AgentRiskLevel ToolCallRisk(const std::string& task_id,
+                               const AgentToolCall& call) const;
+   AgentRiskLevel TaskMaxRisk(const std::string& task_id) const;
++  std::string DescribeClickTarget(const std::string& task_id,
++                                  const AgentToolCall& call) const;
+   std::vector<std::string> ObservedSourceOrigins(
+       const std::string& task_id) const;
+   void ExecuteTool(
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index 0a8c30aba9..07cf1da8d4 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -105,6 +105,64 @@ void ConsentTask(AgentTask* task) {
+   ASSERT_TRUE(task->TransitionTo(AgentTaskState::kRunning, "test"));
+ }
+ 
++TEST(AegisAgentTypesTest, CurrentPageScopePinsUrlAndCannotBeBroadened) {
++  const auto base = TestScope();
++  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kPageInteraction,
++                                       base.allowed_origins, {7},
++                                       base.model_destination);
++  ASSERT_TRUE(scope);
++  EXPECT_TRUE(scope->restrict_to_current_page);
++  EXPECT_TRUE(scope->AllowsTool("page.click"));
++  for (const auto* tool : {"page.navigate", "page.type", "form.fill",
++                           "tab.create", "monitor.create"}) {
++    EXPECT_FALSE(scope->AllowsTool(tool)) << tool;
++  }
++  const GURL selected("https://shop.example/current?edition=1");
++  EXPECT_TRUE(scope->AllowsPageDestination(selected, selected));
++  EXPECT_FALSE(scope->AllowsPageDestination(selected, std::nullopt));
++  for (const auto* target : {"https://shop.example/redirect",
++                             "https://shop.example/current?edition=2",
++                             "https://shop.example/current?edition=1#new",
++                             "https://other.example/current"}) {
++    EXPECT_FALSE(scope->AllowsPageDestination(GURL(target), selected))
++        << target;
++  }
++  auto broader = *scope;
++  broader.restrict_to_current_page = false;
++  EXPECT_FALSE(broader.IsNoBroaderThan(*scope));
++  EXPECT_TRUE(scope->IsNoBroaderThan(broader));
++  broader = *scope;
++  broader.allowed_tab_ids.insert(8);
++  EXPECT_FALSE(broader.IsValid());
++  EXPECT_FALSE(BuildAgentAutomationScope(AgentWorkflowKind::kPageInteraction,
++                                         base.allowed_origins, {7},
++                                         base.model_destination));
++}
++
++TEST(AegisAgentPolicyTest, CurrentPageClickRequiresSingleActionApproval) {
++  AgentToolRegistry registry;
++  AgentPolicyBroker broker(&registry);
++  const auto base = TestScope();
++  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kPageInteraction,
++                                       base.allowed_origins, {7},
++                                       base.model_destination);
++  ASSERT_TRUE(scope);
++  AgentTask task("current-page-click", "点击当前页面的按钮", AgentMode::kAct,
++                 *scope);
++  ConsentTask(&task);
++  const auto call = PageClickCall();
++  auto decision = broker.Evaluate(task, call);
++  EXPECT_EQ(decision.risk, AgentRiskLevel::kR2ExternalSideEffect);
++  EXPECT_EQ(decision.disposition,
++            AgentPolicyDisposition::kRequireActionApproval);
++  auto receipt = broker.IssueApproval(task, call);
++  ASSERT_TRUE(receipt);
++  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
++            AgentPolicyDisposition::kAllow);
++  EXPECT_EQ(broker.Evaluate(task, call, receipt->approval_id).disposition,
++            AgentPolicyDisposition::kRequireActionApproval);
++}
++
+ TEST(AegisAgentTypesTest, ScopeRejectsExpansionAndSecrets) {
+   AgentTaskScope parent = TestScope();
+   ASSERT_TRUE(parent.IsValid());
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 91905f5fa4..18aa9937b2 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -216,6 +216,8 @@ std::string_view WorkflowName(AgentWorkflowKind workflow) {
+       return "safe_download";
+     case AgentWorkflowKind::kShopping:
+       return "shopping";
++    case AgentWorkflowKind::kPageInteraction:
++      return "page_interaction";
+   }
+ }
+ 
+@@ -229,6 +231,9 @@ std::optional<AgentWorkflowKind> ParseWorkflow(std::string_view value) {
+   if (value == "safe_download") {
+     return AgentWorkflowKind::kSafeDownload;
+   }
++  if (value == "page_interaction") {
++    return AgentWorkflowKind::kPageInteraction;
++  }
+   if (value == "shopping") {
+     return AgentWorkflowKind::kShopping;
+   }
+@@ -419,8 +424,9 @@ AgentModelToolDefinition BuildRouteGoalToolDefinition() {
+   base::DictValue properties;
+   properties.Set("schema_version",
+                  IntegerSchema(kAgentSchemaVersion, kAgentSchemaVersion));
+-  properties.Set("workflow", EnumSchema({"research", "browser_steward",
+-                                         "safe_download", "shopping"}));
++  properties.Set("workflow",
++                 EnumSchema({"research", "browser_steward", "safe_download",
++                             "shopping", "page_interaction"}));
+   properties.Set("entry_kind",
+                  EnumSchema({"browser_only", "open_url", "web_search"}));
+   properties.Set("target", StringSchema(4096, 0));
+@@ -439,7 +445,7 @@ Choose open_url only when the user supplied an explicit URL or the exact public
+ Choose web_search only when the task genuinely requires discovery, comparison, multiple sources, or current information and no exact website is sufficient. Do not choose web_search merely because the user omitted a URL.
+ When the user explicitly names a public website, merchant, service, or common alias (for example JD/京东, Amazon, GitHub, or YouTube), that website is unambiguous: choose open_url, never web_search. Prefer a direct HTTPS search or results URL on the named website when the goal includes a query; otherwise use its official homepage. Do not route a named-site task to a general search engine.
+ The target must be empty for browser_only, an absolute HTTP(S) URL for open_url, or a concise search query for web_search.
+-Classify the workflow as research, browser_steward, safe_download, or shopping. The requested workflow is only a UI hint and may be corrected.
++Classify the workflow as research, browser_steward, safe_download, shopping, or page_interaction. Use page_interaction only for an explicit request to click a control on the current page; choose browser_only with an empty target. It does not grant navigation, form filling, purchase, or payment authority. The requested workflow is only a UI hint and may be corrected.
+ Use research for finding, comparing, or recommending products when the user did not ask to purchase, add to cart, fill shopping forms, or prepare checkout. Use shopping only when the user explicitly requests one of those purchase actions.
+ Write the summary in the same primary language as the user's goal. Never request or include secrets, credentials, OTP values, cookies, payment data, file contents, or hidden browser data.
+ The browser independently validates the route, creates tabs, grants scope, and enforces approvals.)";
+@@ -615,10 +621,37 @@ bool AgentTaskRequiresPageEvidence(std::string_view user_goal,
+          HasBoundEntryPage(scope);
+ }
+ 
++namespace {
++
++bool GoalRequestsCurrentPageClick(std::string_view user_goal) {
++  const std::string requested = RequestedGoalText(user_goal);
++  return !GoalContainsAny(requested,
++                          {"如何点击", "如何點擊", "how to click"}) &&
++         GoalContainsAny(requested, {"点击", "點擊", "click "}) &&
++         GoalContainsAny(requested, {"按钮", "按鈕", "button"}) &&
++         GoalContainsAny(requested,
++                         {"当前页", "當前頁", "页面上", "頁面上", "这个页面",
++                          "這個頁面", "current page", "this page"}) &&
++         !GoalRequestsShoppingAuthority(requested) &&
++         !GoalRequestsSafeDownload(requested);
++}
++
++}  // namespace
++
+ AgentWorkflowKind ConstrainWorkflowToUserIntent(
+     std::string_view user_goal,
+     AgentWorkflowKind workflow) {
+   const std::string requested = RequestedGoalText(user_goal);
++  // 只分类用户明确提出的当前页点击；实际动作仍需逐次审批。
++  if (workflow == AgentWorkflowKind::kPageInteraction) {
++    return GoalRequestsCurrentPageClick(user_goal)
++               ? workflow
++               : AgentWorkflowKind::kResearch;
++  }
++  if (workflow == AgentWorkflowKind::kResearch &&
++      GoalRequestsCurrentPageClick(user_goal)) {
++    return AgentWorkflowKind::kPageInteraction;
++  }
+   // 被否定的浏览器数据词不能支持前端管家提示。保留原始禁止范围，
+   // 让模型读取原文规划；当前页入口仍由浏览器绑定并验证实际观察。
+   if (workflow == AgentWorkflowKind::kBrowserSteward &&
+@@ -644,6 +677,11 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
+                                               AgentGoalRoute route) {
+   const std::string requested = RequestedGoalText(user_goal);
+   route.workflow = ConstrainWorkflowToUserIntent(user_goal, route.workflow);
++  if (route.workflow == AgentWorkflowKind::kPageInteraction) {
++    route.entry_kind = AgentGoalEntryKind::kBrowserOnly;
++    route.target.clear();
++    return route;
++  }
+   const bool shopping_authority = GoalRequestsShoppingAuthority(requested);
+   if (GoalRequestsSafeDownload(requested) && !shopping_authority &&
+       route.entry_kind != AgentGoalEntryKind::kBrowserOnly) {
+@@ -765,7 +803,11 @@ std::optional<std::string> BuildAgentPlanningPrompt(
+     base::DictValue item;
+     item.Set("name", tool);
+     item.Set("purpose", definition->description);
+-    item.Set("risk", static_cast<int>(descriptor->risk));
++    item.Set("risk",
++             static_cast<int>(maximum_scope.restrict_to_current_page &&
++                                      tool == "page.click"
++                                  ? AgentRiskLevel::kR2ExternalSideEffect
++                                  : descriptor->risk));
+     item.Set("requires_authorized_origin", descriptor->requires_origin);
+     item.Set("has_external_side_effect", descriptor->has_external_side_effect);
+     tool_catalog.Append(std::move(item));
+@@ -944,6 +986,7 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+   plan.scope.allowed_tab_ids = maximum_scope.allowed_tab_ids;
+   plan.scope.budgets = maximum_scope.budgets;
+   plan.scope.model_destination = maximum_scope.model_destination;
++  plan.scope.restrict_to_current_page = maximum_scope.restrict_to_current_page;
+ 
+   base::flat_set<std::string> step_ids;
+   for (const base::Value& value : *steps) {
+@@ -964,10 +1007,14 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
+     }
+     plan.scope.allowed_tools.insert(*tool_name);
+     plan.scope.allowed_data_classes.insert(descriptor->data_class);
+-    plan.steps.push_back(AgentPlanStep{.step_id = *id,
+-                                       .title = *title,
+-                                       .tool_name = *tool_name,
+-                                       .risk = descriptor->risk});
++    plan.steps.push_back(AgentPlanStep{
++        .step_id = *id,
++        .title = *title,
++        .tool_name = *tool_name,
++        .risk =
++            maximum_scope.restrict_to_current_page && *tool_name == "page.click"
++                ? AgentRiskLevel::kR2ExternalSideEffect
++                : descriptor->risk});
+   }
+   const bool entry_page_already_open = HasBoundEntryPage(maximum_scope);
+   if (entry_page_already_open &&
+@@ -1100,6 +1147,26 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+     *error = "page-reading goal omitted required page.observe step";
+     return false;
+   }
++  if (plan.scope.restrict_to_current_page &&
++      GoalRequestsCurrentPageClick(user_goal)) {
++    bool clicked = false;
++    bool read_after_click = false;
++    for (const auto& step : plan.steps) {
++      if (step.tool_name == "page.click") {
++        clicked = true;
++        read_after_click = false;
++      } else if (clicked && (step.tool_name == "page.observe" ||
++                             step.tool_name == "page.extract")) {
++        read_after_click = true;
++      }
++    }
++    if (!clicked || !read_after_click) {
++      *error =
++          "current-page click goal requires page.click followed by "
++          "page.observe or page.extract";
++      return false;
++    }
++  }
+   if (!IsBookmarkGoal(user_goal)) {
+     return true;
+   }
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index b0c1e16cfb..94187493f6 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -1106,5 +1106,65 @@ TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
+       ValidateTaskPlanForMode(scheduled, AgentMode::kAutomate, &error));
+ }
+ 
++TEST(AegisAgentPlannerTest, CurrentPageClickRoutingKeepsNegativeConstraints) {
++  for (const auto* goal : {"点击当前页面的按钮", "點擊當前頁面的按鈕",
++                           "Click the button on the current page"}) {
++    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch),
++              AgentWorkflowKind::kPageInteraction)
++        << goal;
++    AgentGoalRoute route;
++    route.workflow = AgentWorkflowKind::kPageInteraction;
++    route.entry_kind = AgentGoalEntryKind::kWebSearch;
++    route.target = "不得继承模型提出的其他入口";
++    const auto constrained = ConstrainGoalRouteToUserIntent(goal, route);
++    EXPECT_EQ(constrained.entry_kind, AgentGoalEntryKind::kBrowserOnly);
++    EXPECT_TRUE(constrained.target.empty());
++  }
++  for (const auto* goal :
++       {"不要点击当前页面的按钮，只总结页面", "解释如何点击当前页面的按钮",
++        "Do not click the button on the current page"}) {
++    EXPECT_EQ(ConstrainWorkflowToUserIntent(
++                  goal, AgentWorkflowKind::kPageInteraction),
++              AgentWorkflowKind::kResearch)
++        << goal;
++  }
++}
++
++TEST(AegisAgentPlannerTest, CurrentPagePlanRetainsScopeAndApprovalRisk) {
++  const auto base = MaximumScope();
++  auto scope = BuildAgentWorkflowScope(AgentWorkflowKind::kPageInteraction,
++                                       base.allowed_origins, {17},
++                                       base.model_destination);
++  ASSERT_TRUE(scope);
++  auto event = ValidPlanEvent();
++  event.arguments.FindList("steps")->Append(base::DictValue()
++                                                .Set("id", "click")
++                                                .Set("title", "点击按钮")
++                                                .Set("tool", "page.click"));
++  event.arguments.FindList("steps")->Append(base::DictValue()
++                                                .Set("id", "verify")
++                                                .Set("title", "回读结果")
++                                                .Set("tool", "page.extract"));
++  AgentToolRegistry registry;
++  std::string error;
++  const auto plan = ParseAndValidateTaskPlan(event, *scope, registry, &error);
++  ASSERT_TRUE(plan) << error;
++  EXPECT_TRUE(plan->scope.restrict_to_current_page);
++  EXPECT_EQ(plan->steps[1].risk, AgentRiskLevel::kR2ExternalSideEffect);
++  constexpr std::string_view goal = "点击当前页面的按钮并核对结果";
++  EXPECT_TRUE(ValidateTaskPlanForGoal(*plan, goal, &error)) << error;
++  auto incomplete = *plan;
++  incomplete.steps.pop_back();
++  EXPECT_FALSE(ValidateTaskPlanForGoal(incomplete, goal, &error));
++  incomplete.steps.pop_back();
++  EXPECT_FALSE(ValidateTaskPlanForGoal(incomplete, goal, &error));
++  auto unverified_last_click = *plan;
++  unverified_last_click.steps.push_back(plan->steps[1]);
++  EXPECT_FALSE(ValidateTaskPlanForGoal(unverified_last_click, goal, &error));
++  auto escaped = plan->scope;
++  escaped.restrict_to_current_page = false;
++  EXPECT_FALSE(escaped.IsNoBroaderThan(*scope));
++}
++
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
+index c000baa9f2..31694b6ac1 100644
+--- a/chrome/browser/aegis/agent/agent_policy_broker.cc
++++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
+@@ -285,6 +285,9 @@ AgentRiskLevel AgentPolicyBroker::EffectiveRisk(
+   if (descriptor->risk >= AgentRiskLevel::kR2ExternalSideEffect) {
+     return descriptor->risk;
+   }
++  if (task.scope().restrict_to_current_page && call.tool_name == "page.click") {
++    return AgentRiskLevel::kR2ExternalSideEffect;
++  }
+   // 同源URL的路径、查询串和片段同样能够携带数据，不能只比较origin。
+   // candidate_url只用于本机下载来源比对，不发起网络请求。
+   for (const char* key : {"url"}) {
+diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
+index 6631324425..b93fdc06a3 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.cc
++++ b/chrome/browser/aegis/agent/agent_task_store.cc
+@@ -475,11 +475,13 @@ std::optional<StoredAgentPlan> AgentTaskStore::LoadPlan(
+         !scope.AllowsDataClass(descriptor->data_class)) {
+       return std::nullopt;
+     }
+-    stored.plan.steps.push_back(
+-        AgentPlanStep{.step_id = *id,
+-                      .title = "Recovered validated step",
+-                      .tool_name = *tool_name,
+-                      .risk = descriptor->risk});
++    stored.plan.steps.push_back(AgentPlanStep{
++        .step_id = *id,
++        .title = "Recovered validated step",
++        .tool_name = *tool_name,
++        .risk = scope.restrict_to_current_page && *tool_name == "page.click"
++                    ? AgentRiskLevel::kR2ExternalSideEffect
++                    : descriptor->risk});
+   }
+   stored.next_step = static_cast<size_t>(next_step);
+   stored.attempt = attempt;
+@@ -591,7 +593,10 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
+   const base::DictValue* budgets = value.FindDict("budgets");
+   const base::DictValue* destination = value.FindDict("model_destination");
+   const base::Value* metadata_window = value.Find("tab_metadata_window_id");
+-  if (value.size() != (metadata_window ? 7u : 6u) ||
++  const base::Value* current_page = value.Find("restrict_to_current_page");
++  if (value.size() !=
++          6u + (metadata_window ? 1u : 0u) + (current_page ? 1u : 0u) ||
++      (current_page && !current_page->is_bool()) ||
+       (metadata_window && !metadata_window->is_int()) || !origins || !tab_ids ||
+       !tools || !data_classes || !budgets || !destination ||
+       budgets->size() != 5u || destination->size() != 4u ||
+@@ -603,6 +608,7 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
+   AgentTaskScope scope;
+   scope.tab_metadata_window_id =
+       metadata_window ? metadata_window->GetInt() : 0;
++  scope.restrict_to_current_page = current_page && current_page->GetBool();
+   for (const base::Value& item : *origins) {
+     if (!item.is_string()) {
+       return std::nullopt;
+@@ -795,6 +801,9 @@ std::string AgentTaskStore::SerializeScope(const AgentTaskScope& scope) {
+     tab_ids.Append(tab_id);
+   }
+   value.Set("allowed_tab_ids", std::move(tab_ids));
++  if (scope.restrict_to_current_page) {
++    value.Set("restrict_to_current_page", true);
++  }
+   if (scope.tab_metadata_window_id != 0) {
+     value.Set("tab_metadata_window_id", scope.tab_metadata_window_id);
+   }
+diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+index f1e5687b44..e5fa9d77a5 100644
+--- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
+@@ -127,6 +127,48 @@ TEST(AegisAgentTaskStoreTest, RoundTripsBrowserBoundWindowMetadataScope) {
+   EXPECT_FALSE(restored->AllowsTab(41));
+ }
+ 
++TEST(AegisAgentTaskStoreTest, RoundTripsCurrentPageScopeAndRejectsInvalidFlag) {
++  base::ScopedTempDir temp_dir;
++  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
++  AgentTaskStore store(temp_dir.GetPath().AppendASCII("current-page.sqlite"));
++  ASSERT_TRUE(store.Initialize());
++  auto scope = StoreTestScope();
++  scope.allowed_tab_ids = {7};
++  scope.allowed_tools = {"page.observe", "page.click"};
++  scope.allowed_data_classes = {AgentDataClass::kPublicPage};
++  scope.budgets.max_tabs = 1;
++  scope.restrict_to_current_page = true;
++  AgentTask task("current-page", "当前页面操作", AgentMode::kAct, scope);
++  ASSERT_TRUE(store.SaveTask(task, "当前页面操作", true));
++  const auto tasks = store.LoadUnfinishedTasks();
++  ASSERT_EQ(tasks.size(), 1u);
++  auto restored = AgentTaskStore::DeserializeScope(tasks[0].scope_json);
++  ASSERT_TRUE(restored);
++  EXPECT_TRUE(restored->restrict_to_current_page);
++  EXPECT_TRUE(restored->IsNoBroaderThan(scope));
++  AgentTaskPlan plan;
++  plan.summary = "当前页面操作";
++  plan.scope = scope;
++  plan.steps.push_back({.step_id = "click-1",
++                        .title = "点击按钮",
++                        .tool_name = "page.click",
++                        .risk = AgentRiskLevel::kR2ExternalSideEffect});
++  ASSERT_TRUE(store.SavePlan(task.id(), plan, 0, 1));
++  AgentToolRegistry registry;
++  const auto recovered_plan = store.LoadPlan(task.id(), *restored, registry);
++  ASSERT_TRUE(recovered_plan);
++  ASSERT_EQ(recovered_plan->plan.steps.size(), 1u);
++  EXPECT_EQ(recovered_plan->plan.steps[0].risk,
++            AgentRiskLevel::kR2ExternalSideEffect);
++  std::string malformed = tasks[0].scope_json;
++  const auto flag = malformed.find("\"restrict_to_current_page\":true");
++  ASSERT_NE(flag, std::string::npos);
++  malformed.replace(flag,
++                    std::string("\"restrict_to_current_page\":true").size(),
++                    "\"restrict_to_current_page\":\"true\"");
++  EXPECT_FALSE(AgentTaskStore::DeserializeScope(malformed));
++}
++
+ TEST(AegisAgentTaskStoreTest, RejectsBroadenedOrMalformedStoredScope) {
+   EXPECT_FALSE(AgentTaskStore::DeserializeScope("not-json"));
+   EXPECT_FALSE(AgentTaskStore::DeserializeScope(R"({})"));
+diff --git a/chrome/browser/aegis/agent/agent_types.cc b/chrome/browser/aegis/agent/agent_types.cc
+index c519c331eb..dfffa2522f 100644
+--- a/chrome/browser/aegis/agent/agent_types.cc
++++ b/chrome/browser/aegis/agent/agent_types.cc
+@@ -69,6 +69,8 @@ bool AgentTaskScope::IsValid() const {
+                           [](int32_t tab_id) { return tab_id <= 0; }) ||
+       allowed_tab_ids.size() > static_cast<size_t>(budgets.max_tabs) ||
+       tab_metadata_window_id < 0 ||
++      (restrict_to_current_page &&
++       (allowed_tab_ids.size() != 1u || budgets.max_tabs != 1)) ||
+       (tab_metadata_window_id > 0 &&
+        (!AllowsTool("tab.list") ||
+         !AllowsDataClass(AgentDataClass::kBrowserMetadata)))) {
+@@ -94,6 +96,14 @@ bool AgentTaskScope::AllowsOrigin(const GURL& url) const {
+   return std::ranges::find(allowed_origins, requested) != allowed_origins.end();
+ }
+ 
++bool AgentTaskScope::AllowsPageDestination(
++    const GURL& url,
++    const std::optional<GURL>& selected_url) const {
++  return AllowsOrigin(url) &&
++         (!restrict_to_current_page ||
++          (selected_url && selected_url->is_valid() && url == *selected_url));
++}
++
+ bool AgentTaskScope::AllowsTool(const std::string& tool_name) const {
+   return allowed_tools.contains(tool_name);
+ }
+@@ -106,6 +116,7 @@ bool AgentTaskScope::AllowsDataClass(AgentDataClass data_class) const {
+ bool AgentTaskScope::IsNoBroaderThan(const AgentTaskScope& other) const {
+   if (!budgets.IsNoBroaderThan(other.budgets) ||
+       model_destination != other.model_destination ||
++      (other.restrict_to_current_page && !restrict_to_current_page) ||
+       !IsSubset(allowed_tab_ids, other.allowed_tab_ids) ||
+       (tab_metadata_window_id != 0 &&
+        tab_metadata_window_id != other.tab_metadata_window_id) ||
+diff --git a/chrome/browser/aegis/agent/agent_types.h b/chrome/browser/aegis/agent/agent_types.h
+index 56e532b901..52435af401 100644
+--- a/chrome/browser/aegis/agent/agent_types.h
++++ b/chrome/browser/aegis/agent/agent_types.h
+@@ -105,6 +105,8 @@ struct AgentTaskScope {
+   base::flat_set<int32_t> allowed_tab_ids;
+   // 浏览器绑定的当前窗口，只允许 tab.list 读取元数据，不授予标签操作权限。
+   int32_t tab_metadata_window_id = 0;
++  // 浏览器指定的当前页操作：不允许移除该限制或自动跳转到其他地址。
++  bool restrict_to_current_page = false;
+   base::flat_set<std::string> allowed_tools;
+   base::flat_set<AgentDataClass> allowed_data_classes;
+   AgentBudgets budgets;
+@@ -112,6 +114,8 @@ struct AgentTaskScope {
+ 
+   bool IsValid() const;
+   bool AllowsOrigin(const GURL& url) const;
++  bool AllowsPageDestination(const GURL& url,
++                             const std::optional<GURL>& selected_url) const;
+   bool AllowsTab(int32_t tab_id) const;
+   bool AllowsTool(const std::string& tool_name) const;
+   bool AllowsDataClass(AgentDataClass data_class) const;
+diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
+index 16d8ea3309..74cd63f067 100644
+--- a/chrome/browser/aegis/agent/agent_workflow.cc
++++ b/chrome/browser/aegis/agent/agent_workflow.cc
+@@ -42,6 +42,24 @@ AgentWorkflowTemplate ResearchTemplate() {
+   return value;
+ }
+ 
++AgentWorkflowTemplate PageInteractionTemplate() {
++  AgentWorkflowTemplate value;
++  value.kind = AgentWorkflowKind::kPageInteraction;
++  value.id = "page_interaction";
++  value.title = "当前页面操作";
++  value.purpose = "逐次确认当前页面的按钮操作并回读结果，不自动跳转";
++  value.tools = {"page.observe", "page.extract", "page.click", "page.scroll",
++                 "page.wait"};
++  value.data_classes = {AgentDataClass::kPublicPage,
++                        AgentDataClass::kBrowserMetadata};
++  value.budgets.max_tabs = 1;
++  value.budgets.max_tool_calls = 16;
++  value.budgets.max_model_calls = 12;
++  value.budgets.max_network_requests = 24;
++  value.budgets.max_duration = base::Minutes(10);
++  return value;
++}
++
+ AgentWorkflowTemplate BrowserStewardTemplate() {
+   AgentWorkflowTemplate value;
+   value.kind = AgentWorkflowKind::kBrowserSteward;
+@@ -130,9 +148,13 @@ const AgentWorkflowTemplate& GetAgentWorkflowTemplate(AgentWorkflowKind kind) {
+       SafeDownloadTemplate());
+   static const base::NoDestructor<AgentWorkflowTemplate> shopping(
+       ShoppingTemplate());
++  static const base::NoDestructor<AgentWorkflowTemplate> page_interaction(
++      PageInteractionTemplate());
+   switch (kind) {
+     case AgentWorkflowKind::kResearch:
+       return *research;
++    case AgentWorkflowKind::kPageInteraction:
++      return *page_interaction;
+     case AgentWorkflowKind::kBrowserSteward:
+       return *browser_steward;
+     case AgentWorkflowKind::kSafeDownload:
+@@ -169,6 +191,7 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
+   }
+   scope.allowed_data_classes = workflow.data_classes;
+   scope.budgets = workflow.budgets;
++  scope.restrict_to_current_page = kind == AgentWorkflowKind::kPageInteraction;
+   scope.model_destination = std::move(destination);
+   return scope.IsValid() ? std::make_optional(std::move(scope)) : std::nullopt;
+ }
+@@ -178,6 +201,9 @@ std::optional<AgentTaskScope> BuildAgentAutomationScope(
+     std::vector<url::Origin> origins,
+     base::flat_set<int32_t> tab_ids,
+     AgentModelDestination destination) {
++  if (kind == AgentWorkflowKind::kPageInteraction) {
++    return std::nullopt;
++  }
+   std::optional<AgentTaskScope> scope = BuildAgentWorkflowScope(
+       kind, std::move(origins), std::move(tab_ids), std::move(destination));
+   if (!scope) {
+diff --git a/chrome/browser/aegis/agent/agent_workflow.h b/chrome/browser/aegis/agent/agent_workflow.h
+index ca69105086..22431e5db6 100644
+--- a/chrome/browser/aegis/agent/agent_workflow.h
++++ b/chrome/browser/aegis/agent/agent_workflow.h
+@@ -18,6 +18,7 @@ enum class AgentWorkflowKind {
+   kBrowserSteward = 1,
+   kSafeDownload = 2,
+   kShopping = 3,
++  kPageInteraction = 4,
+ };
+ 
+ struct AgentWorkflowTemplate {
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index a3877a8b7e..706a407156 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -680,10 +680,10 @@ function render(next: TaskSnapshot) {
+     element('approval-data-flow').textContent = transfer ?
+         loadTimeData.getString('dataTransferApproval') + ' ' +
+         (next.pendingApproval.dataSourceOrigins || []).join(', ') : '';
+-    element('approval-target-url').hidden =
+-        !transfer || !next.pendingApproval.targetUrl;
+-    element('approval-target-url').textContent =
+-        transfer ? next.pendingApproval.targetUrl || '' : '';
++    const target = next.pendingApproval.targetDescription ||
++        next.pendingApproval.targetUrl || '';
++    element('approval-target-url').hidden = !transfer || !target;
++    element('approval-target-url').textContent = transfer ? target : '';
+     element('approval-id').textContent = next.pendingApproval.actionId;
+     element('approval-arguments').textContent =
+         next.pendingApproval.argumentSummary;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+index f40df2c653..c605cf08f1 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
+@@ -64,6 +64,7 @@ struct PendingApproval {
+   string action_fingerprint;
+   array<string> data_source_origins;
+   string target_url;
++  string target_description;
+   bool is_data_transfer;
+   bool requires_user_takeover;
+   CheckoutSummary? checkout;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 5a2adfaf9e..ddeae6ae7a 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -529,8 +529,10 @@ void AegisAgentPageHandler::CreateTask(
+         aegis::agent::ConstrainWorkflowToUserIntent(resolved_goal,
+                                                     *converted_workflow);
+     const std::optional<GURL> explicit_url = ExplicitUrlFromGoal(resolved_goal);
+-    const bool use_current_page = !requested_origins && !explicit_url &&
+-                                  GoalRefersToCurrentPage(resolved_goal);
++    const bool use_current_page =
++        !requested_origins && !explicit_url &&
++        (GoalRefersToCurrentPage(resolved_goal) ||
++         resolved_workflow == AgentWorkflowKind::kPageInteraction);
+     const bool browser_only = !requested_origins && !explicit_url &&
+                               !use_current_page &&
+                               !WorkflowNeedsWebTarget(resolved_workflow);
+@@ -1059,9 +1061,12 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+       approval->target_url = GURL(*target).spec();
+       approval->origin = url::Origin::Create(GURL(*target)).Serialize();
+     }
++    approval->target_description =
++        service_->DescribeClickTarget(task->id(), *pending);
+     approval->is_data_transfer =
+         risk == aegis::agent::AgentRiskLevel::kR2ExternalSideEffect &&
+-        (!approval->target_url.empty() || pending->tool_name == "page.type" ||
++        (!approval->target_url.empty() || pending->tool_name == "page.click" ||
++         pending->tool_name == "page.type" ||
+          pending->tool_name == "page.select" ||
+          pending->tool_name == "page.webmcp.invoke" ||
+          pending->tool_name == "form.fill");
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index a7b48f251d..27d131ffca 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.8。
+-inline constexpr char kProductVersion[] = "2.0.0.8";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (008)";
++inline constexpr char kProductVersion[] = "2.0.0.9";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (009)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

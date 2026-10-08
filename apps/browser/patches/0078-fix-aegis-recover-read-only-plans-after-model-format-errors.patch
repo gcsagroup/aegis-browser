@@ -1,4 +1,4 @@
-From 6627949a477277dfd916c275267d0bba886f376c Mon Sep 17 00:00:00 2001
+From 81c72a8379abc26ce36732c6b6846b9921237c92 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 05:12:10 +0800
 Subject: [PATCH] fix(aegis): recover read-only plans after model format errors

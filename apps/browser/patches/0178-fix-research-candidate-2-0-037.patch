@@ -1,0 +1,415 @@
+From dab274f6227301c5a87d1fe118aa20b4971d5085 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 23:56:07 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E5=80=99=E9=80=89=E6=A3=80=E6=9F=A5=EF=BC=8C?=
+ =?UTF-8?q?=E6=9E=84=E5=BB=BA037?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_service.cc        |  2 +-
+ .../aegis/agent/aegis_browser_tools.cc        |  6 ++-
+ .../aegis/agent/agent_core_unittest.cc        | 49 +++++++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc | 18 +++++--
+ chrome/browser/aegis/agent/agent_execution.h  |  3 +-
+ .../aegis/agent/agent_execution_unittest.cc   | 21 ++++++++
+ chrome/browser/aegis/agent/agent_planner.cc   | 18 +++++++
+ .../aegis/agent/agent_planner_unittest.cc     | 44 +++++++++++++++++
+ .../aegis/agent/agent_result_verifier.cc      | 22 +++++++++
+ .../aegis/agent/agent_tool_registry.cc        | 10 ++--
+ .../ui/webui/help/aegis_github_update.h       |  6 +--
+ 11 files changed, 184 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
+index cfab8e29d6..066ee9835f 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_service.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
+@@ -1765,7 +1765,7 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
+   } else if (IsToolAvailable(expected_tool)) {
+     tool = tool_registry_.ModelToolForName(expected_tool);
+     if (tool) {
+-      ConstrainDownloadExtractionTool(&*tool, task->scope());
++      ConstrainDownloadExtractionTool(&*tool, task->scope(), task->goal());
+     }
+   }
+   std::string config_error;
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index b7f5de32b4..68543249b5 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -1997,8 +1997,10 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
+     const std::string* candidate_value =
+         call.arguments.FindString("candidate_url");
+     const GURL candidate(candidate_value ? *candidate_value : std::string());
+-    if (!product || !platform || !architecture || !candidate_value ||
+-        !candidate.is_valid() || !candidate.SchemeIsHTTPOrHTTPS() ||
++    if (!call.document || call.document->committed_url != call.committed_url ||
++        !task->AllowsTab(call.document->tab_id) || !product || !platform ||
++        !architecture || !candidate_value || !candidate.is_valid() ||
++        !candidate.SchemeIsHTTPOrHTTPS() ||
+         !task->scope().AllowsOrigin(candidate) ||
+         !task->scope().AllowsOrigin(call.committed_url)) {
+       std::move(callback).Run(
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index e8dfa80d54..70fc666233 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -1001,6 +1001,12 @@ TEST(AegisAgentPolicyTest, OfflineDownloadAssessmentNeedsNoTransferApproval) {
+   call.action_id = "assess";
+   call.tool_name = "download.find_official";
+   call.committed_url = GURL("https://shop.example/source");
++  call.document = AgentDocumentRef{.tab_id = 7,
++                                   .frame_token = "source-frame",
++                                   .document_token = "source-document",
++                                   .committed_url = call.committed_url};
++  call.arguments.Set("tab_id", 7);
++  call.arguments.Set("document_token", "source-document");
+   call.arguments.Set("product", "fixture");
+   call.arguments.Set("platform", "mac");
+   call.arguments.Set("architecture", "arm64");
+@@ -1008,6 +1014,13 @@ TEST(AegisAgentPolicyTest, OfflineDownloadAssessmentNeedsNoTransferApproval) {
+                      "https://shop.example/fixture-mac-arm64.zip");
+   EXPECT_EQ(broker.Evaluate(task, call).disposition,
+             AgentPolicyDisposition::kAllow);
++  call.arguments.Set("document_token", "other-document");
++  EXPECT_EQ(broker.Evaluate(task, call).disposition,
++            AgentPolicyDisposition::kDeny);
++  call.arguments.Set("document_token", "source-document");
++  call.document.reset();
++  EXPECT_EQ(broker.Evaluate(task, call).disposition,
++            AgentPolicyDisposition::kDeny);
+ }
+ 
+ TEST(AegisAgentPolicyTest, RejectsArgumentScopeAndStateMismatch) {
+@@ -1444,6 +1457,42 @@ TEST(AegisAgentResultVerifierTest, GroupVerificationSurvivesAsyncMinimization) {
+       AgentResultVerifier::RetainVerificationContext(call).arguments.empty());
+ }
+ 
++TEST(AegisAgentResultVerifierTest, DownloadSourceIsBoundToObservedDocument) {
++  AgentToolRegistry registry;
++  AgentResultVerifier verifier;
++  AgentTask task("source-review", "核对官方下载", AgentMode::kAsk, TestScope());
++  AgentToolCall call;
++  call.action_id = "source-check";
++  call.tool_name = "download.find_official";
++  call.committed_url = GURL("https://shop.example/releases?session=private");
++  call.document = AgentDocumentRef{.tab_id = 7,
++                                   .frame_token = "frame",
++                                   .document_token = "document",
++                                   .committed_url = call.committed_url};
++  call.arguments.Set("candidate_url",
++                     "https://shop.example/file.bin?token=private");
++  const auto context = AgentResultVerifier::RetainVerificationContext(call);
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.ok = true;
++  result.message = "已回读来源与候选链接";
++  result.value.Set("source_url", "https://shop.example/releases");
++  result.value.Set("candidate_url", "https://shop.example/file.bin");
++  result.value.Set("requires_user_review", true);
++  result.value.Set("publisher_identity_verified", false);
++  const auto* descriptor = registry.Find(call.tool_name);
++  auto verified = verifier.Verify(task, context, *descriptor, result);
++  EXPECT_TRUE(verified.accepted) << verified.reason;
++  result.value.Set("source_url", "https://shop.example/file.bin");
++  EXPECT_FALSE(verifier.Verify(task, context, *descriptor, result).accepted);
++  result.value.Set("source_url", "https://shop.example/releases");
++  result.value.Set("candidate_url", "https://shop.example/other.bin");
++  EXPECT_FALSE(verifier.Verify(task, context, *descriptor, result).accepted);
++  result.value.Set("candidate_url", "https://shop.example/file.bin");
++  call.document.reset();
++  EXPECT_FALSE(verifier.Verify(task, call, *descriptor, result).accepted);
++}
++
+ TEST(AegisAgentResultVerifierTest, VerifiesScopedMetadataAndDownloadState) {
+   AgentToolRegistry registry;
+   AgentResultVerifier verifier;
+diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
+index 67da20343c..c259eee9c0 100644
+--- a/chrome/browser/aegis/agent/agent_execution.cc
++++ b/chrome/browser/aegis/agent/agent_execution.cc
+@@ -19,6 +19,15 @@
+ namespace aegis::agent {
+ namespace {
+ 
++// 计划可以缩小工具集合，不能因此移除原目标要求的下载证据边界。
++bool RequiresDownloadEvidence(std::string_view goal,
++                              const AgentTaskScope& scope) {
++  return !AgentGoalRequestsTranslation(goal) &&
++         (scope.AllowsTool("download.find_official") ||
++          ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kResearch) ==
++              AgentWorkflowKind::kSafeDownload);
++}
++
+ constexpr size_t kMaxExecutionPromptBytes = 60 * 1024;
+ constexpr size_t kMaxPriorResultBytes = 12 * 1024;
+ constexpr size_t kMaxEvidenceHistoryBytes = 42 * 1024;
+@@ -862,9 +871,10 @@ std::string BuildAgentExecutionSystemContractForTask(
+ }
+ 
+ void ConstrainDownloadExtractionTool(AgentModelToolDefinition* tool,
+-                                     const AgentTaskScope& scope) {
++                                     const AgentTaskScope& scope,
++                                     std::string_view user_goal) {
+   if (tool->name != "page.extract" ||
+-      !scope.AllowsTool("download.find_official")) {
++      !RequiresDownloadEvidence(user_goal, scope)) {
+     return;
+   }
+   auto* items =
+@@ -925,7 +935,7 @@ std::string BuildAgentExecutionPrompt(
+           "不得自造stable_metric、measurement_method、key_points等字段名。"
+           "用户要求的指标、方法和要点留到agent.complete按原文整理。"
+           "如需单独章节，fields只能使用前次观察中实际存在的章节标题。");
+-      if (task.scope().AllowsTool("download.find_official")) {
++      if (RequiresDownloadEvidence(task.goal(), task.scope())) {
+         envelope.Set(
+             "download_extraction_rule",
+             "下载来源核对只提取观察中实际存在的信息。若页面只有标题而没有正文，"
+@@ -1341,7 +1351,7 @@ void NormalizeAgentDownloadCompletion(
+     std::string_view user_goal,
+     const AgentTaskScope& scope,
+     base::span<const AgentExecutionEvidence> history) {
+-  if (!completion || !scope.AllowsTool("download.find_official")) {
++  if (!completion || !RequiresDownloadEvidence(user_goal, scope)) {
+     return;
+   }
+   const auto fields = BuildAgentDownloadEvidence(history);
+diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
+index 91f3d21f1a..8c633f5cb7 100644
+--- a/chrome/browser/aegis/agent/agent_execution.h
++++ b/chrome/browser/aegis/agent/agent_execution.h
+@@ -59,7 +59,8 @@ struct AgentTranslationSelection {
+ 
+ // 下载步骤读取有界正文；链接与摘要由独立下载工具核验，避免自造提取字段。
+ void ConstrainDownloadExtractionTool(AgentModelToolDefinition* tool,
+-                                     const AgentTaskScope& scope);
++                                     const AgentTaskScope& scope,
++                                     std::string_view user_goal = {});
+ 
+ AgentModelToolDefinition BuildSelectTranslationToolDefinition();
+ std::string BuildAgentTranslationSelectionSystemContract();
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index bcd9f8bc09..0cbf559640 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -171,6 +171,27 @@ TEST(AegisAgentExecutionTest, DownloadSummaryPreservesSourceOnlyTask) {
+   EXPECT_EQ(completion.outcome, "partial");
+ }
+ 
++TEST(AegisAgentExecutionTest, DownloadIntentSurvivesReducedPlanScope) {
++  auto scope = ExecutionScope();
++  const char* goal = "在当前页面找到 macOS ARM64 的官方下载，先不要下载。";
++  AgentToolRegistry registry;
++  auto tool = registry.ModelToolForName("page.extract");
++  ASSERT_TRUE(tool);
++  ConstrainDownloadExtractionTool(&*tool, scope, goal);
++  ASSERT_TRUE(
++      tool->input_schema.FindListByDottedPath("properties.fields.items.enum"));
++  AgentCompletionSummary completion{.outcome = "completed",
++                                    .summary = "这是官方文件"};
++  NormalizeAgentDownloadCompletion(&completion, goal, scope, {});
++  EXPECT_EQ(completion.outcome, "partial");
++  EXPECT_NE(completion.summary.find("未独立核验"), std::string::npos);
++  EXPECT_EQ(completion.summary.find("这是官方文件"), std::string::npos);
++  completion.summary = "用户要求的译文";
++  NormalizeAgentDownloadCompletion(&completion, "把下载页翻译成英文。", scope,
++                                   {});
++  EXPECT_EQ(completion.summary, "用户要求的译文");
++}
++
+ TEST(AegisAgentExecutionTest,
+      DownloadSummaryFollowsNativeCompletionAndCancellation) {
+   auto scope = ExecutionScope();
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index ba4cc2ea89..c7d1b1eaeb 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -718,6 +718,15 @@ AgentWorkflowKind ConstrainWorkflowToUserIntent(
+       !GoalRequestsShoppingAuthority(requested)) {
+     return AgentWorkflowKind::kSafeDownload;
+   }
++  // “准备核对”只要求读取订单；提及最终购买不等于授权填写或准备结账。
++  if (GoalContainsAny(requested, {"核对订单", "核對訂單", "review the order",
++                                  "review this order"}) &&
++      !GoalContainsAny(
++          requested,
++          {"填写", "填寫", "填入", "加入购物车", "加入購物車", "准备结账",
++           "準備結帳", "prepare checkout", "add to cart", "fill "})) {
++    return AgentWorkflowKind::kResearch;
++  }
+   // 只分类用户明确提出的当前页点击；实际动作仍需逐次审批。
+   if (workflow == AgentWorkflowKind::kPageInteraction) {
+     return GoalRequestsCurrentPageClick(user_goal)
+@@ -1266,6 +1275,15 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
+       return step.tool_name == tool_name;
+     });
+   };
++  const std::string requested = RequestedGoalText(user_goal);
++  if (GoalRequestsSafeDownload(requested) && !IsBookmarkGoal(requested) &&
++      !AgentGoalRequestsTranslation(user_goal) &&
++      !GoalContainsAny(requested, {"安装", "安裝", "install"}) &&
++      !has_step("download.find_official")) {
++    *error =
++        "download-source goal omitted required download.find_official step";
++    return false;
++  }
+   // 否定子句不能制造必做步骤，也不能使原有的禁止修改约束失效。
+   if (BookmarkGoalIsReadOnly(user_goal) && has_step("bookmark.apply")) {
+     *error = "read-only bookmark goal must not include bookmark.apply";
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 44ac095770..1ffb6bd2ce 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -298,6 +298,8 @@ TEST(AegisAgentGoalRegressionTest, CheckoutReviewCannotUseTabMetadataOnly) {
+     EXPECT_EQ(
+         ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kBrowserSteward),
+         AgentWorkflowKind::kResearch);
++    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kShopping),
++              AgentWorkflowKind::kResearch);
+   }
+ }
+ 
+@@ -348,6 +350,48 @@ TEST(AegisAgentGoalRegressionTest, TraditionalWorkflowsKeepNativeCapabilities) {
+   }
+ }
+ 
++TEST(AegisAgentGoalRegressionTest,
++     DownloadSourcePlanCannotOmitNativeAssessment) {
++  AgentTaskPlan plan;
++  plan.steps.push_back({.step_id = "observe",
++                        .title = "读取当前页面",
++                        .tool_name = "page.observe",
++                        .risk = AgentRiskLevel::kR0ReadOnly});
++  plan.steps.push_back({.step_id = "extract",
++                        .title = "提取页面内容",
++                        .tool_name = "page.extract",
++                        .risk = AgentRiskLevel::kR0ReadOnly});
++  std::string error;
++  for (const char* goal :
++       {"在当前页面找到 macOS ARM64 的官方下载，先不要下载。",
++        "在目前網頁核對官方下載地址。",
++        "Find the official download link on this page."}) {
++    EXPECT_FALSE(ValidateTaskPlanForGoal(plan, goal, &error)) << goal;
++    EXPECT_NE(error.find("download.find_official"), std::string::npos);
++  }
++  for (const char* goal : {"总结当前网页。", "把官方下载页翻译成英文。",
++                           "核对刚下载的文件是否已经安装。"}) {
++    EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
++  }
++  plan.steps.push_back({.step_id = "source",
++                        .title = "核验下载来源",
++                        .tool_name = "download.find_official",
++                        .risk = AgentRiskLevel::kR0ReadOnly});
++  EXPECT_TRUE(ValidateTaskPlanForGoal(
++      plan, "在当前页面找到 macOS ARM64 的官方下载，先不要下载。", &error))
++      << error;
++}
++
++TEST(AegisAgentGoalRegressionTest, ExplicitCheckoutPreparationKeepsShopping) {
++  for (const char* goal : {"核对订单并准备结账，最终购买由我操作。",
++                           "核對訂單並準備結帳，最後購買由我操作。",
++                           "Review this order and prepare checkout."}) {
++    EXPECT_EQ(ConstrainWorkflowToUserIntent(goal, AgentWorkflowKind::kShopping),
++              AgentWorkflowKind::kShopping)
++        << goal;
++  }
++}
++
+ TEST(AegisAgentGoalRegressionTest, ExplicitPageDownloadKeepsDownloadWorkflow) {
+   for (const char* goal : {
+            "下载当前页面提供的 macOS ARM64 测试文件，并核对页面提供的 SHA-256 "
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index 0f26e49bcc..a50439c1d4 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -202,6 +202,12 @@ AgentToolCall AgentResultVerifier::RetainVerificationContext(
+     if (const auto* ids = call.arguments.FindList("tab_ids")) {
+       context.arguments.Set("tab_ids", ids->Clone());
+     }
++  } else if (call.tool_name == "download.find_official") {
++    context.document = call.document;
++    context.committed_url = call.committed_url;
++    if (const auto* candidate = call.arguments.FindString("candidate_url")) {
++      context.arguments.Set("candidate_url", *candidate);
++    }
+   }
+   return context;
+ }
+@@ -495,6 +501,22 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+                : Reject("monitor deletion lacks browser acknowledgement");
+   }
+   if (call.tool_name == "download.find_official") {
++    const auto* source = value.FindString("source_url");
++    const auto* candidate = value.FindString("candidate_url");
++    const auto* requested = call.arguments.FindString("candidate_url");
++    GURL::Replacements redact;
++    redact.ClearUsername();
++    redact.ClearPassword();
++    redact.ClearQuery();
++    redact.ClearRef();
++    if (!call.document || !task.AllowsTab(call.document->tab_id) ||
++        call.document->committed_url != call.committed_url ||
++        !task.scope().AllowsOrigin(call.committed_url) || !source ||
++        *source != call.committed_url.ReplaceComponents(redact).spec() ||
++        !candidate || !requested ||
++        *candidate != GURL(*requested).ReplaceComponents(redact).spec()) {
++      return Reject("下载来源回读没有绑定实际页面及候选链接");
++    }
+     return HasString(value, "candidate_url") &&
+                    value.FindBool("requires_user_review") == true &&
+                    value.FindBool("publisher_identity_verified") == false
+diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
+index b81e460614..d9fe4052a8 100644
+--- a/chrome/browser/aegis/agent/agent_tool_registry.cc
++++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
+@@ -83,7 +83,7 @@ constexpr std::array<AgentToolDescriptor, 49> kTools = {{
+     {"history.search", AgentRiskLevel::kR0ReadOnly, AgentDataClass::kHistory,
+      false, false, false, false},
+     {"download.find_official", AgentRiskLevel::kR0ReadOnly,
+-     AgentDataClass::kPublicPage, true, false, false, false},
++     AgentDataClass::kPublicPage, true, true, false, false},
+     {"download.start", AgentRiskLevel::kR2ExternalSideEffect,
+      AgentDataClass::kDownloads, true, true, true, false},
+     {"download.pause", AgentRiskLevel::kR1Reversible,
+@@ -401,13 +401,15 @@ base::DictValue ToolSchema(std::string_view name) {
+                         {"query", "days", "max_results"});
+   }
+   if (name == "download.find_official") {
++    properties.Set("tab_id", IntegerSchema(1, 1000000));
++    properties.Set("document_token", StringSchema(256));
+     properties.Set("product", StringSchema(512));
+     properties.Set("platform", StringSchema(64));
+     properties.Set("architecture", StringSchema(64));
+     properties.Set("candidate_url", StringSchema(4096));
+-    return StrictObject(
+-        std::move(properties),
+-        {"product", "platform", "architecture", "candidate_url"});
++    return StrictObject(std::move(properties),
++                        {"tab_id", "document_token", "product", "platform",
++                         "architecture", "candidate_url"});
+   }
+   if (name == "download.start") {
+     properties.Set("url", StringSchema(4096));
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1f7da61637..7ba6dd9196 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.36。
+-inline constexpr char kProductVersion[] = "2.0.0.36";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (036)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.37。
++inline constexpr char kProductVersion[] = "2.0.0.37";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (037)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

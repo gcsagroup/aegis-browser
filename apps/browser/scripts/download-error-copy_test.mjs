@@ -5,7 +5,7 @@ import vm from 'node:vm';
 
 // 执行真实错误处理方法；中文普通视图不泄露底层英文，诊断原文仍完整保留。
 const ts = createRequire(new URL('../../../packages/core/package.json', import.meta.url))('typescript');
-const source = readFileSync(new URL('../overlay/chrome/browser/resources/downloads/aegis_download_panel.ts', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../overlay/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts', import.meta.url), 'utf8');
 const tree = ts.createSourceFile('downloads.ts', source, ts.ScriptTarget.Latest, true);
 const product = tree.statements.find(n => ts.isClassDeclaration(n) && n.name?.text === 'AegisDownloadPanelElement');
 const names = ['errorText_', 'formatPreviewError_'];

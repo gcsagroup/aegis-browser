@@ -106,20 +106,20 @@ public struct AgentWorkflowEngine: Sendable {
         removedDuplicateCount: Int,
         undoAvailable: Bool
     ) -> WorkflowResult {
-        let headline = undoAvailable ? "收藏夹整理已应用" : "收藏夹无需变更"
+        let headline = undoAvailable ? String(localized: "收藏夹整理已应用") : String(localized: "收藏夹无需变更")
         let summary = undoAvailable
-            ? "已将当前 \(beforeCount) 条收藏整理为 \(afterCount) 条；认证撤销日志可在 App 重启后恢复。"
-            : "当前共有 \(beforeCount) 条收藏，确定性检查没有产生可应用的变更。"
+            ? String(localized: "已将当前 \(beforeCount) 条收藏整理为 \(afterCount) 条；重启 App 后仍可撤销。")
+            : String(localized: "当前共有 \(beforeCount) 条收藏，检查后无需更改。")
         return WorkflowResult(
             kind: .browserManager,
             headline: headline,
             summary: summary,
-            steps: ["读取当前收藏", "清理追踪参数", "精确去重并稳定排序", "原子应用并登记撤销"],
+            steps: [String(localized: "读取当前收藏"), String(localized: "清理追踪参数"), String(localized: "去除重复项并排序"), String(localized: "应用整理并保存撤销记录")],
             evidence: [
-                "整理前 \(beforeCount) 条",
-                "整理后 \(afterCount) 条",
-                "变更 \(changedCount) 条",
-                "精确去重 \(removedDuplicateCount) 条",
+                String(localized: "整理前 \(beforeCount) 条"),
+                String(localized: "整理后 \(afterCount) 条"),
+                String(localized: "变更 \(changedCount) 条"),
+                String(localized: "精确去重 \(removedDuplicateCount) 条"),
             ],
             citations: [],
             requiresUserHandoff: false,
@@ -135,14 +135,14 @@ public struct AgentWorkflowEngine: Sendable {
     ) -> WorkflowResult {
         WorkflowResult(
             kind: .browserManager,
-            headline: "上次收藏整理已撤销",
-            summary: "已通过新的任务授权和动作确认恢复整理前的 \(restoredCount) 条收藏。",
-            steps: ["读取认证撤销日志", "核对事务与逻辑树", "重新取得用户授权", "原子恢复整理前快照"],
+            headline: String(localized: "上次收藏整理已撤销"),
+            summary: String(localized: "已通过新的任务授权和动作确认恢复整理前的 \(restoredCount) 条收藏。"),
+            steps: [String(localized: "读取已保存的撤销记录"), String(localized: "核对整理记录与当前收藏"), String(localized: "重新取得用户授权"), String(localized: "恢复整理前的收藏")],
             evidence: [
-                "恢复后 \(restoredCount) 条",
-                "事务 \(transactionID.uuidString.lowercased())",
+                String(localized: "恢复后 \(restoredCount) 条"),
+                String(localized: "事务 \(transactionID.uuidString.lowercased())"),
                 "Tree before \(restoredDigest)",
-                "跨重启自动写入 0 次",
+                String(localized: "跨重启自动写入 0 次"),
             ],
             citations: [],
             requiresUserHandoff: false,

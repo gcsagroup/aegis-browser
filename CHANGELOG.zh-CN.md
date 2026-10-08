@@ -4,7 +4,24 @@
 
 本文件记录项目的重要变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，项目计划采用[语义化版本](https://semver.org/lang/zh-CN/)。
 
-软件包版本仍为 `0.1.0`，但尚未发布 `0.1.0` Release、Git tag 或二进制分发物。以下内容全部仍属**未发布**。
+软件包版本仍为 `0.1.0`；iOS 产品线独立使用 `2.2`。以下新增 iOS 源码预发布记录，未完成签名和商店发行验收。
+
+## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
+
+### 新增
+
+- 原生 iPhone/iPad 网页助手：有界页面读取、脱敏预览、模型目的地确认、来源引用、加密任务恢复与结果保存；支持 OpenAI 兼容、Anthropic 和 Gemini 接口。
+- HTTP(S) 后台下载、暂停与续传、镜像重试、Metalink、SHA-256/SHA-512 校验和系统文件导出。
+- EasyList/EasyPrivacy 内置规则、手动更新、元素隐藏与站点例外；收藏链接检查和工作区导入导出。
+- 标签分组与重启恢复、iPad 独立窗口和窗口恢复；移除 iPad 常驻侧栏，网页使用完整窗口。
+
+### 修复与验证
+
+- 验收脚本改用固定文件路径、本机 HTTP 自测和优化模式下仍执行的显式检查；重新生成的规则字节不变。
+
+- 修复窗口初始化期间发布共享状态的 SwiftUI 警告；私密页面和分组不写入窗口记录。
+- 合并远端 Swift 覆盖率导出，保留输入前后哈希检查；版本递增及工程生成后冻结输入，独立工作树可复用固定构建目录。
+- 三语界面、隐私清单与模拟器验证记录见[发布说明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。GitHub 提供源码预发布，无可安装的签名 IPA；真机、VoiceOver 全流程、TestFlight 和 App Store 验收仍待完成。
 
 ## [未发布]
 

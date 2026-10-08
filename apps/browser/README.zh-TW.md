@@ -8,7 +8,7 @@ GCSA-aegis Browser 將隱私與安全能力直接整合到 Chromium 瀏覽器及
 
 策略邏輯以 `packages/core` 為來源，透過產生的規則快照、內嵌 policy worker、Chromium browser service，以及 Blink/V8 接入點落地。
 
-## 目前狀態
+> **歷史證據（2026-09-22）：** macOS Ver 2.0 (061) 的 539 項原生迴歸等結果，僅屬於[原稽核記錄](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)綁定的候選，不代表目前原始碼已通過驗收。
 
 目前聚焦 macOS，執行、真實網路與散布驗收仍待完成。其他平台按[路線圖](../../docs/roadmap.zh-TW.md)推進。
 
@@ -18,7 +18,7 @@ GCSA-aegis Browser 將隱私與安全能力直接整合到 Chromium 瀏覽器及
 
 | 檔案 | 含義 |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 固定的 Mac Stable 版本，目前為 `151.0.7922.77` |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 固定的 Mac Stable 版本，目前為 `153.0.8010.53` |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | 補丁所基於的精確 Chromium commit |
 
 此版本是固定快照，不會自動跟隨更新的 Stable 版本。
@@ -49,10 +49,12 @@ Chromium 原始碼放在本儲存庫之外。典型本機設定為：
 
 ```bash
 export REPO_ROOT="$HOME/Projects/GCSA-aegis"
-export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-chromium"
+export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-build/macos"
 ```
 
 也可把 Chromium 根目錄寫入已被 Git 忽略的 `apps/browser/.chromium-root`。
+
+平台工作區統一放在同級 `GCSA-aegis-build` 中，分別為 `macos`、`android` 和既有共享原始碼的 `shared/chromium`。下列命令描述首次建置環境；既有的 Mac 連結工作樹如果沒有獨立 `.gclient`，不要重新 fetch。共享相依套件更新明確選擇 `shared/chromium`，Android 操作明確選擇 `android`。固定驗收 App 路徑與歷史證據保留，移動原始碼目錄不等於重新建置或發布。
 
 ## 本機流程
 

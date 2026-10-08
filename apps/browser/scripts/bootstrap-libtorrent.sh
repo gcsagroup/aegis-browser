@@ -2,8 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd -- "$script_dir/../../.." && pwd)"
-chromium_src="${GCSA_CHROMIUM_SRC:-$(cd -- "$repo_root/.." && pwd)/GCSA-aegis-chromium/src}"
+source "$script_dir/common.sh"
+chromium_src="${GCSA_CHROMIUM_SRC:-$CHROMIUM_ROOT/src}"
 dependency_root="$chromium_src/third_party/aegis_libtorrent"
 archive_dir="$dependency_root/dist"
 archive_path="$archive_dir/libtorrent-rasterbar-2.1.1.tar.gz"

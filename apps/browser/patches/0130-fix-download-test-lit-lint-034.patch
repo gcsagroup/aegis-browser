@@ -1,0 +1,48 @@
+From ab3aafdafcd2fba95286385cd3571459a723aeca Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 05:26:26 +0800
+Subject: [PATCH] =?UTF-8?q?=E7=A7=BB=E9=99=A4=E4=B8=8B=E8=BD=BD=E9=A1=B5?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=E5=86=97=E4=BD=99=E9=9D=9E=E7=A9=BA=E6=96=AD?=
+ =?UTF-8?q?=E8=A8=80=E5=B9=B6=E9=80=92=E5=A2=9E034?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h     | 6 +++---
+ chrome/test/data/webui/settings/downloads_page_test.ts | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index b75faad465..7848b31bea 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.33。
+-inline constexpr char kProductVersion[] = "1.1.0.33";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (033)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.34。
++inline constexpr char kProductVersion[] = "1.1.0.34";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (034)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/data/webui/settings/downloads_page_test.ts b/chrome/test/data/webui/settings/downloads_page_test.ts
+index 5c6a39bab7..9fce3ecca1 100644
+--- a/chrome/test/data/webui/settings/downloads_page_test.ts
++++ b/chrome/test/data/webui/settings/downloads_page_test.ts
+@@ -166,7 +166,7 @@ suite('DownloadsHandler', function() {
+   test('aegis download settings are shown and saved', async function() {
+     await downloadsBrowserProxy.whenCalled('getAegisDownloadSettings');
+     await microtasksFinished();
+-    const select = downloadsPage.shadowRoot!.querySelector<HTMLSelectElement>(
++    const select = downloadsPage.shadowRoot.querySelector<HTMLSelectElement>(
+         '.aegis-select');
+     assertTrue(!!select);
+     assertTrue(select.value === '0');
+-- 
+2.52.0
+

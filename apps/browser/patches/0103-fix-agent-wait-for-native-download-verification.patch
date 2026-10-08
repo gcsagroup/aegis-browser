@@ -1,4 +1,4 @@
-From 272ccf4589fe8249c292bd53a081e9563688b4aa Mon Sep 17 00:00:00 2001
+From 749479eede44f2cd5f00a1223a880418846bded2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 03:45:16 +0800
 Subject: [PATCH] fix(agent): wait for native download verification

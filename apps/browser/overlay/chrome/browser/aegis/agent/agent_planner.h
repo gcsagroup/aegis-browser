@@ -66,6 +66,23 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
                                               AgentGoalRoute route);
 
 // 前端分类只是提示；显式网址和当前页入口也必须保留原始目标的否定约束。
+// 是否明确要求开始文件传输，不含仅寻找来源或讨论下载的目标。
+bool AgentGoalRequestsDownloadTransfer(std::string_view goal);
+
+// 当前页指代统一用于入口选择及模型返回校验，显式网址优先。
+bool AgentGoalRefersToCurrentPage(std::string_view goal);
+
+// 本任务限定优先于窗口元数据入口，冲突目标取较小范围。
+bool AgentGoalRequestsWindowTabMetadata(std::string_view goal);
+
+// 只有原始目标明确要求恢复工作区，才允许申请现有标签来源的导航范围。
+bool AgentGoalRequestsWorkspaceRestore(std::string_view goal);
+
+// 关闭只接受明确的标签操作请求；描述未关闭状态或询问不能成为写入授权。
+bool AgentGoalRequestsTabClose(std::string_view goal);
+bool AgentBrowserGoalNeedsClarification(std::string_view goal,
+                                       AgentWorkflowKind workflow);
+
 AgentWorkflowKind ConstrainWorkflowToUserIntent(
     std::string_view user_goal,
     AgentWorkflowKind workflow);
@@ -75,6 +92,10 @@ bool AgentGoalRequiresPageEvidence(std::string_view user_goal);
 
 // 从原始目标的肯定请求判断是否需要翻译产物，不接受页面或模型改写目标。
 bool AgentGoalRequestsTranslation(std::string_view user_goal);
+
+// 仅拒绝英文目标下没有英文正文的明显错语结果；明确目标语言及原文另行处理。
+bool AgentTextHasWrongDefaultLanguage(std::string_view text,
+                                      std::string_view goal);
 
 // 网页任务的统一证据门槛：目标文本要求读页，或浏览器已绑定页面读取范围。
 // 与计划解析共用来源、标签页及 page.observe 绑定判断，不增加任何授权。
@@ -87,6 +108,13 @@ AgentModelToolDefinition BuildSubmitPlanToolDefinition();
 // remain quoted untrusted inputs and cannot amend this contract.
 std::string BuildAgentPlannerSystemContract();
 std::optional<std::string> BuildAgentPlanningPrompt(
+    std::string_view user_goal,
+    const AgentTaskScope& maximum_scope,
+    const AgentToolRegistry& registry);
+
+// 明确要求“开始下载后取消”时使用固定依赖顺序；仅限已打开页面和现有授权。
+// 仍通过普通计划校验，download.start仍须逐次批准。
+std::optional<AgentModelEvent> BuildBrowserDownloadCancellationPlan(
     std::string_view user_goal,
     const AgentTaskScope& maximum_scope,
     const AgentToolRegistry& registry);
@@ -118,6 +146,9 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
 bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
                              std::string_view user_goal,
                              std::string* error);
+
+// 复用规划阶段的否定与收藏意图判断；预览不是写入完成的依据。
+bool AgentGoalRequiresBookmarkApply(std::string_view user_goal);
 
 }  // namespace aegis::agent
 

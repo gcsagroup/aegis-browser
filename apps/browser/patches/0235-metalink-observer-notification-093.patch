@@ -1,0 +1,172 @@
+From e67a3f398b794f76fc0856c6b805e931beb328ce Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 21:02:44 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=BB=B6=E5=90=8E=E9=95=9C=E5=83=8F=E4=B8=8B?=
+ =?UTF-8?q?=E8=BD=BD=E7=8A=B6=E6=80=81=E9=80=9A=E7=9F=A5=E4=BB=A5=E9=81=BF?=
+ =?UTF-8?q?=E5=85=8D=E5=8E=9F=E7=94=9F=E5=9B=9E=E8=B0=83=E9=87=8D=E5=85=A5?=
+ =?UTF-8?q?=20093?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  1 +
+ .../aegis/aegis_ui_handler_unittest.cc        | 40 +++++++++++++++++++
+ .../aegis/metalink_download_verifier.cc       | 22 ++++++++--
+ .../aegis/metalink_download_verifier.h        |  1 +
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 5 files changed, 62 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index a39799b17e..6d45095b9c 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -407,6 +407,7 @@ test("aegis_browser_unittests") {
+       "//chrome/browser/ui/webui/aegis",
+       "//components/actor/core",
+       "//components/download/public/common:public",
++      "//components/download/public/common:test_support",
+       "//components/undo",
+       "//content/test:test_support",
+     ]
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 0fafe408aa..f51e80dc24 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -19,6 +19,7 @@
+ #include "chrome/test/base/browser_with_test_window_test.h"
+ #include "chrome/test/base/test_browser_window.h"
+ #include "chrome/test/base/testing_profile_manager.h"
++#include "components/download/public/common/mock_download_item.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/tab_groups/tab_group_color.h"
+ #include "components/tab_groups/tab_group_visual_data.h"
+@@ -297,6 +298,45 @@ TEST_F(AegisUIHandlerTest, MetalinkRequiresSourceInSameProfile) {
+   }
+ }
+ 
++TEST_F(AegisUIHandlerTest, MetalinkStatusDoesNotNestObserverUpdates) {
++  testing::StrictMock<download::MockDownloadItem> item;
++  bool updating = false;
++  int updates = 0;
++  EXPECT_CALL(item, UpdateObservers()).WillRepeatedly([&] {
++    EXPECT_FALSE(updating);
++    updating = true;
++    if (++updates == 1) {
++      SetMetalinkVerificationStatus(item,
++                                    MetalinkVerificationStatus::kVerifying);
++      EXPECT_EQ(MetalinkVerificationStatus::kVerifying,
++                GetMetalinkVerificationStatus(item));
++      EXPECT_EQ(1, updates);
++    }
++    updating = false;
++  });
++  item.UpdateObservers();
++  EXPECT_EQ(1, updates);
++  task_environment()->RunUntilIdle();
++  EXPECT_EQ(2, updates);
++}
++
++TEST_F(AegisUIHandlerTest, MetalinkStatusNotifiesOnlyLatestLiveItem) {
++  auto item =
++      std::make_unique<testing::StrictMock<download::MockDownloadItem>>();
++  SetMetalinkVerificationStatus(*item, MetalinkVerificationStatus::kPending);
++  SetMetalinkVerificationStatus(*item, MetalinkVerificationStatus::kVerified);
++  EXPECT_CALL(*item, UpdateObservers()).WillOnce([&] {
++    EXPECT_EQ(MetalinkVerificationStatus::kVerified,
++              GetMetalinkVerificationStatus(*item));
++  });
++  task_environment()->RunUntilIdle();
++  testing::Mock::VerifyAndClearExpectations(item.get());
++  EXPECT_CALL(*item, UpdateObservers()).Times(0);
++  SetMetalinkVerificationStatus(*item, MetalinkVerificationStatus::kFailed);
++  item.reset();
++  task_environment()->RunUntilIdle();
++}
++
+ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
+   AegisUIConfig config;
+   EXPECT_TRUE(config.IsWebUIEnabled(profile()));
+diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
+index 13fe4b9dd8..6243ef6b12 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.cc
++++ b/chrome/browser/aegis/metalink_download_verifier.cc
+@@ -16,10 +16,12 @@
+ #include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/supports_user_data.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "base/timer/timer.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -84,10 +86,23 @@ bool AllAddressesArePublic(const net::AddressList& addresses) {
+ 
+ class MetalinkVerificationData : public base::SupportsUserData::Data {
+  public:
+-  explicit MetalinkVerificationData(MetalinkVerificationStatus status)
+-      : status(status) {}
++  MetalinkVerificationData(download::DownloadItem& item,
++                           MetalinkVerificationStatus status)
++      : status(status), item_(&item) {
++    // 完成通知期间可能开始哈希校验，不能同步嵌套通知观察者。
++    // 状态替换或下载项销毁时，旧数据的弱引用会撤销待发通知。
++    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&MetalinkVerificationData::Notify,
++                                  weak_factory_.GetWeakPtr()));
++  }
+ 
+   MetalinkVerificationStatus status;
++
++ private:
++  void Notify() { item_->UpdateObservers(); }
++
++  raw_ptr<download::DownloadItem> item_;
++  base::WeakPtrFactory<MetalinkVerificationData> weak_factory_{this};
+ };
+ 
+ const char kMetalinkVerificationDataKey[] =
+@@ -351,8 +366,7 @@ MetalinkVerificationStatus GetMetalinkVerificationStatus(
+ void SetMetalinkVerificationStatus(download::DownloadItem& item,
+                                    MetalinkVerificationStatus status) {
+   item.SetUserData(kMetalinkVerificationDataKey,
+-                   std::make_unique<MetalinkVerificationData>(status));
+-  item.UpdateObservers();
++                   std::make_unique<MetalinkVerificationData>(item, status));
+ }
+ 
+ void StartVerifiedMetalinkDownload(
+diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
+index b2c0301277..26155d35b3 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.h
++++ b/chrome/browser/aegis/metalink_download_verifier.h
+@@ -28,6 +28,7 @@ enum class MetalinkVerificationStatus {
+ 
+ MetalinkVerificationStatus GetMetalinkVerificationStatus(
+     const download::DownloadItem& item);
++// 状态立即可读；观察者在当前回调结束后收到通知，销毁时撤销通知。
+ void SetMetalinkVerificationStatus(download::DownloadItem& item,
+                                    MetalinkVerificationStatus status);
+ 
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 98b98f36e5..5fa057a82c 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.92";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (092)";
++inline constexpr char kProductVersion[] = "2.0.0.93";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (093)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

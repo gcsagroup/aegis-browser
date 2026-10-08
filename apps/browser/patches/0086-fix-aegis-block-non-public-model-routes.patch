@@ -1,7 +1,7 @@
-From 0e50550a20cdcd9b06e72d9bd32da8033309a4e2 Mon Sep 17 00:00:00 2001
+From 87e47f391668cfc57e4ea3530f3134a7bd373479 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:05:18 +0800
-Subject: [PATCH 86/90] fix(aegis): block non-public model routes
+Subject: [PATCH] fix(aegis): block non-public model routes
 
 ---
  chrome/browser/aegis/agent/agent_planner.cc        | 14 ++++----------

@@ -1,7 +1,7 @@
-From e8f7f3cf03a03f9713c88b4a3169b7ad883e52e2 Mon Sep 17 00:00:00 2001
+From 1ee205703dff65424628d0fefdc592b96bbe2966 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 18:46:48 +0800
-Subject: [PATCH 55/55] feat(aegis): support compatible model APIs
+Subject: [PATCH] feat(aegis): support compatible model APIs
 
 ---
  chrome/browser/aegis/BUILD.gn                 |   7 +-

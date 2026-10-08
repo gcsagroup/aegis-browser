@@ -414,6 +414,10 @@ browser.action.onClicked.addListener(async (tab) => {
     });
     const consumption = await consumptionPromise;
     leaseID = undefined;
+    if (consumption?.ok === true) {
+      // 仅交接网页地址；主 App 再确认打开，不交接正文、密钥或操作命令。
+      await browser.tabs.create({url: `gcsa-aegis://open?url=${encodeURIComponent(tabForSnapshot.url)}`});
+    }
     const status = consumption?.ok === true ? "OK" : "!";
     await browser.action.setBadgeText({tabId: tab.id, text: status});
   } catch {

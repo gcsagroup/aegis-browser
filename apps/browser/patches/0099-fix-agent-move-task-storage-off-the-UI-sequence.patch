@@ -1,4 +1,4 @@
-From 54f2d8dcf03ecf53b074b4919769ea652fdf5ab5 Mon Sep 17 00:00:00 2001
+From e9933cc6abf93e3d0e05ecbae5d3664696fa6ec5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 17:44:13 +0800
 Subject: [PATCH] fix(agent): move task storage off the UI sequence
