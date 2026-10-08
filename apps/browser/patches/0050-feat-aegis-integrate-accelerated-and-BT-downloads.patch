@@ -1,4 +1,4 @@
-From 0cf383b209c68414f45bae7244df057d1805a897 Mon Sep 17 00:00:00 2001
+From fdcb95e37b9e09af4b33e06d95d0dad01ea6d981 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 18:00:16 +0800
 Subject: [PATCH] feat(aegis): integrate accelerated and BT downloads
@@ -1041,7 +1041,7 @@ index 0000000000..dd900b5e2a
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
-index 4bc7f513e0..397d5a2436 100644
+index c90c8536e3..f106de8a01 100644
 --- a/chrome/browser/download/download_ui_model.cc
 +++ b/chrome/browser/download/download_ui_model.cc
 @@ -10,6 +10,9 @@
@@ -1663,10 +1663,10 @@ index b81039ee9e..77dd735c1b 100644
          return;
        }
 diff --git a/chrome/browser/resources/downloads/BUILD.gn b/chrome/browser/resources/downloads/BUILD.gn
-index aed48f9d22..f0e48cb54b 100644
+index c6e4405575..b8bd13809e 100644
 --- a/chrome/browser/resources/downloads/BUILD.gn
 +++ b/chrome/browser/resources/downloads/BUILD.gn
-@@ -16,6 +16,8 @@ build_webui("build") {
+@@ -17,6 +17,8 @@ build_webui("build") {
    ]
  
    ts_files = [
@@ -1675,7 +1675,7 @@ index aed48f9d22..f0e48cb54b 100644
      "bypass_warning_confirmation_dialog.html.ts",
      "bypass_warning_confirmation_dialog.ts",
      "data.ts",
-@@ -31,6 +33,7 @@ build_webui("build") {
+@@ -32,6 +34,7 @@ build_webui("build") {
    ]
  
    css_files = [
@@ -2531,7 +2531,7 @@ index 0000000000..808667af3d
 +  }
 +}
 diff --git a/chrome/browser/resources/downloads/item.css b/chrome/browser/resources/downloads/item.css
-index 7e38038946..20ea75119a 100644
+index 71ae0c1a76..bfed41ab5a 100644
 --- a/chrome/browser/resources/downloads/item.css
 +++ b/chrome/browser/resources/downloads/item.css
 @@ -229,6 +229,18 @@ cr-button {
@@ -2554,10 +2554,10 @@ index 7e38038946..20ea75119a 100644
    .description[description-color='grey'] {
      color: var(--google-grey-500);
 diff --git a/chrome/browser/resources/downloads/item.html.ts b/chrome/browser/resources/downloads/item.html.ts
-index 03b09f0363..6782cdebba 100644
+index d07c2cf8f5..7f99fed90e 100644
 --- a/chrome/browser/resources/downloads/item.html.ts
 +++ b/chrome/browser/resources/downloads/item.html.ts
-@@ -50,6 +50,11 @@ export function getHtml(this: DownloadsItemElement) {
+@@ -47,6 +47,11 @@ export function getHtml(this: DownloadsItemElement) {
          </div>
        </div>
  
@@ -2570,20 +2570,20 @@ index 03b09f0363..6782cdebba 100644
            description-color="${this.iconAndDescriptionColor_()}"
            ?hidden="${!this.computeDescriptionVisible_()}">
 diff --git a/chrome/browser/resources/downloads/manager.html.ts b/chrome/browser/resources/downloads/manager.html.ts
-index d52c363174..2487aed96c 100644
+index 56c186f68e..a52d0c12a5 100644
 --- a/chrome/browser/resources/downloads/manager.html.ts
 +++ b/chrome/browser/resources/downloads/manager.html.ts
-@@ -20,6 +20,8 @@ export function getHtml(this: DownloadsManagerElement) {
+@@ -25,6 +25,8 @@ export function getHtml(this: DownloadsManagerElement) {
      @save-dangerous-click="${this.onSaveDangerousClick_}">
    <div class="cr-scrollable-top-shadow"></div>
    <managed-footnote ?hidden="${this.inSearchMode_}"></managed-footnote>
 +  <aegis-download-panel ?hidden="${this.inSearchMode_}">
 +  </aegis-download-panel>
-   <cr-infinite-list id="downloadsList" .items="${this.items_}"
-       role="grid" aria-rowcount="${this.items_.length}"
-       ?hidden="${!this.hasDownloads_}" .scrollTarget="${this.listScrollTarget_}"
+   <cr-infinite-list id="downloadsList" .items="${this.items_}" role="grid"
+       aria-rowcount="${this.items_.length}" ?hidden="${!this.hasDownloads_}"
+       .scrollTarget="${this.listScrollTarget_}"
 diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
-index 12f29a3567..7fff765728 100644
+index 15b017b2c4..f1d280d1bf 100644
 --- a/chrome/browser/resources/downloads/manager.ts
 +++ b/chrome/browser/resources/downloads/manager.ts
 @@ -3,6 +3,7 @@
@@ -3360,10 +3360,10 @@ index 484ddb0c2c..744b0a50d7 100644
        service_observation_{this};
  
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index 6a01cfa614..3c1d6428c2 100644
+index 060bd16ca0..af4a787b5c 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
-@@ -58,6 +58,7 @@ source_set("downloads") {
+@@ -62,6 +62,7 @@ source_set("downloads") {
      "//chrome/browser/ui:ui_features",
      "//chrome/browser/ui/webui",
      "//chrome/browser/ui/webui:webui_load_timer",
@@ -3390,7 +3390,7 @@ index 3ac6fde31b..d72e0449be 100644
    bool is_dangerous;
    [RenamedFrom=is_mixed_content]
 diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
-index d0fbb71c60..3225aa9019 100644
+index 3db0daa4c7..c9f2ccc0af 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
 @@ -18,9 +18,13 @@
@@ -3577,10 +3577,10 @@ index 8ddd0ed3b2..08fdc73b45 100644
    MockDownloadItem* item = CreateNextItem();
    ON_CALL(*item, GetRequestInitiator())
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index 961b2a558a..9e41c572ca 100644
+index a613ecb709..afffe38723 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-@@ -23,6 +23,7 @@
+@@ -22,6 +22,7 @@
  #include "chrome/browser/safe_browsing/advanced_protection_status_manager.h"
  #include "chrome/browser/safe_browsing/advanced_protection_status_manager_factory.h"
  #include "chrome/browser/ui/ui_features.h"
@@ -3588,7 +3588,7 @@ index 961b2a558a..9e41c572ca 100644
  #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
  #include "chrome/browser/ui/webui/downloads/downloads_dom_handler.h"
  #include "chrome/browser/ui/webui/managed_ui_handler.h"
-@@ -275,6 +276,7 @@ DownloadsUI::DownloadsUI(content::WebUI* web_ui)
+@@ -272,6 +273,7 @@ DownloadsUI::DownloadsUI(content::WebUI* web_ui)
                          "Download.WebUi.LoadCompletedInMainFrame") {
    Profile* profile = Profile::FromWebUI(web_ui);
    web_ui->AddMessageHandler(std::make_unique<MetricsHandler>());
@@ -4674,10 +4674,10 @@ index d016d7fbe3..ce27034f94 100644
          byExtName: '',
          dangerType: DangerType.kNoApplicableDangerType,
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index 65a2d58f58..4c9c0fc995 100644
+index 500cbc7ed8..609f4c2ba6 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
-@@ -85,6 +85,7 @@ static_library("utility") {
+@@ -86,6 +86,7 @@ static_library("utility") {
  
    if (is_mac) {
      deps += [
@@ -4686,10 +4686,10 @@ index 65a2d58f58..4c9c0fc995 100644
        "//services/proxy_resolver_mac",
      ]
 diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
-index 56c14be837..f301b9cf00 100644
+index 22b15ea3a1..6cf01d901d 100644
 --- a/chrome/utility/services.cc
 +++ b/chrome/utility/services.cc
-@@ -46,6 +46,7 @@
+@@ -51,6 +51,7 @@
  #endif  // BUILDFLAG(IS_WIN)
  
  #if BUILDFLAG(IS_MAC)
@@ -4697,7 +4697,7 @@ index 56c14be837..f301b9cf00 100644
  #include "chrome/services/mac_notifications/mac_notification_provider_impl.h"
  #include "chrome/services/system_signals/mac/mac_system_signals_service.h"
  #include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
-@@ -194,6 +195,12 @@ auto RunWindowsSystemProxyResolver(
+@@ -205,6 +206,12 @@ auto RunWindowsSystemProxyResolver(
  #endif  // BUILDFLAG(IS_WIN)
  
  #if BUILDFLAG(IS_MAC)
@@ -4710,7 +4710,7 @@ index 56c14be837..f301b9cf00 100644
  auto RunMacNotificationService(
      mojo::PendingReceiver<mac_notifications::mojom::MacNotificationProvider>
          receiver) {
-@@ -480,6 +487,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+@@ -519,6 +526,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  
  #if BUILDFLAG(IS_MAC)
@@ -4827,7 +4827,7 @@ index 4887204625..94128626ef 100644
  // feature.
  TEST_F(ParallelDownloadUtilsTest, FinchConfigDisabled) {
 diff --git a/components/download/public/common/download_features.cc b/components/download/public/common/download_features.cc
-index 7473aedbbc..cd5850b9d2 100644
+index 2f53e3de33..fc444a4e3b 100644
 --- a/components/download/public/common/download_features.cc
 +++ b/components/download/public/common/download_features.cc
 @@ -10,13 +10,7 @@

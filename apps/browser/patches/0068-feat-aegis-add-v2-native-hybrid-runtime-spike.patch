@@ -1,4 +1,4 @@
-From fa2d21078daffd8487abbff327f1494cc7008abf Mon Sep 17 00:00:00 2001
+From 3d26d3daec2d17e719bcc0444d3eb63d5ac40a3d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 12:59:08 +0800
 Subject: [PATCH] feat(aegis): add v2 native hybrid runtime spike

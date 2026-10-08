@@ -8,13 +8,17 @@ build_webui("build") {
   static_files = [
     "aegis.css",
     "aegis.html",
+    "product_logo.svg",
   ]
   ts_files = [
     "aegis.ts",
     "policy_worker.ts",
   ]
 
-  ts_deps = [ "//ui/webui/resources/js:build_ts" ]
+  ts_deps = [
+    "//ui/webui/resources/cr_components/aegis_downloads:build_ts",
+    "//ui/webui/resources/js:build_ts",
+  ]
   ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
   webui_context_type = "trusted"
 }

@@ -1,4 +1,4 @@
-From 327ebda7fe7088c9e7aa9eb355f35837636ba34c Mon Sep 17 00:00:00 2001
+From b655887a127ab1d5ce1eaf2c037453be48c3895d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:30:27 +0800
 Subject: [PATCH] Aegis: farble Audio fingerprints once per buffer and per site

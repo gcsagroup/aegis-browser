@@ -36,6 +36,8 @@ source_set("agent_core") {
     "agent/agent_planner.h",
     "agent/agent_policy_broker.cc",
     "agent/agent_policy_broker.h",
+    "agent/agent_research.cc",
+    "agent/agent_research.h",
     "agent/agent_result_verifier.cc",
     "agent/agent_result_verifier.h",
     "agent/agent_service_observer.h",
@@ -97,6 +99,7 @@ source_set("profile_support") {
   }
 }
 
+# 下载模块只依赖首选项定义，避免引入整个浏览器代理实现。
 source_set("download_prefs") {
   sources = [
     "aegis_download_prefs.cc",
@@ -105,6 +108,7 @@ source_set("download_prefs") {
   deps = [
     "//base",
     "//components/download/public/common:public",
+    "//components/pref_registry",
     "//components/prefs",
   ]
 }
@@ -170,6 +174,7 @@ source_set("aegis") {
     "//chrome/browser/devtools",
     "//chrome/browser/preloading/prefetch/no_state_prefetch",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui/tab_contents",
     "//chrome/browser/ui/tab_contents:impl",
     "//chrome/common",
     "//chrome/common:mojo_bindings",
@@ -204,6 +209,8 @@ source_set("aegis") {
     "agent/aegis_agent_service_factory.h",
     "agent/aegis_browser_tools.cc",
     "agent/aegis_browser_tools.h",
+    "agent/agent_observation.cc",
+    "agent/agent_observation.h",
   ]
   deps += [
     ":agent_core",
@@ -215,6 +222,7 @@ source_set("aegis") {
     "//chrome/browser/notifications",
     "//chrome/browser/tab_list",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/browser_window:create_browser_window",
     "//chrome/browser/undo",
     "//components/actor/core",
     "//components/bookmarks/browser",
@@ -229,7 +237,6 @@ source_set("aegis") {
       "summary_session.h",
     ]
     deps += [
-      "//chrome/browser/ui/tab_contents",
       "//chrome/browser/ui/tabs:tab_strip",
       "//ui/message_center/public/cpp",
     ]
@@ -357,6 +364,7 @@ test("aegis_agent_core_unittests") {
   sources = [
     "agent/agent_core_unittest.cc",
     "agent/agent_execution_unittest.cc",
+    "agent/agent_research_unittest.cc",
     "agent/agent_model_protocol_unittest.cc",
     "agent/agent_model_router_unittest.cc",
     "agent/agent_monitor_summary_unittest.cc",
@@ -368,6 +376,8 @@ test("aegis_agent_core_unittests") {
     ":agent_core",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
+    "//crypto",
+    "//sql",
     "//testing/gtest",
     "//url",
   ]
@@ -423,9 +433,11 @@ test("aegis_browser_unittests") {
     ":profile_support",
     "//build:chromeos_buildflags",
     "//chrome/browser/profiles:test_support",
+    "//chrome/common/aegis",
     "//chrome/test:test_support",
     "//chrome/test:test_support_unit",
     "//content/test:test_support",
+    "//crypto",
     "//net",
     "//services/data_decoder/public/cpp:test_support",
     "//services/network:test_support",
@@ -438,6 +450,7 @@ test("aegis_browser_unittests") {
       "aegis_ui_handler_unittest.cc",
       "agent/aegis_agent_service_unittest.cc",
       "agent/agent_core_unittest.cc",
+      "agent/agent_observation_unittest.cc",
       "agent/agent_task_store_unittest.cc",
       "summary_session_unittest.cc",
     ]
@@ -445,6 +458,7 @@ test("aegis_browser_unittests") {
       "//chrome/browser/actor",
       "//chrome/browser/actor/ui:event_dispatcher",
       "//chrome/browser/actor/ui:test_support",
+      "//chrome/browser/ui:test_support",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/webui/aegis",
       "//chrome/browser/ui/webui/aegis_agent",
@@ -452,6 +466,8 @@ test("aegis_browser_unittests") {
       "//chrome/common/aegis",
       "//components/actor/core",
       "//components/download/public/common:public",
+      "//components/download/public/common:test_support",
+      "//components/tabs:test_support",
       "//components/undo",
       "//content/test:test_support",
     ]

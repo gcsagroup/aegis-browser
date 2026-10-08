@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "base/check_deref.h"
+#include "base/containers/flat_set.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -40,16 +42,20 @@
 #include "chrome/browser/actor/tools/wait_tool_request.h"
 #include "chrome/browser/aegis/agent/agent_execution.h"
 #include "chrome/browser/aegis/agent/agent_model_protocol.h"
+#include "chrome/browser/aegis/agent/agent_observation.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/actor.mojom.h"
 #include "chrome/common/actor/action_result.h"
 #include "chrome/common/actor/actor_constants.h"
-#include "chrome/common/aegis/security_text.h"
+#include "chrome/common/aegis/features.h"
 #include "components/actor/core/task_source_info.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
 #include "components/tabs/public/tab_handle_factory.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "crypto/sha2.h"
 #include "url/gurl.h"
@@ -59,8 +65,6 @@ namespace aegis::agent {
 
 namespace {
 
-constexpr size_t kMaxObservationBytes = 128 * 1024;
-constexpr size_t kMaxObservationNodes = 512;
 constexpr size_t kMaxNodeTextBytes = 2048;
 constexpr size_t kMaxWebMcpSchemaBytes = 32 * 1024;
 constexpr size_t kMaxWebMcpResultBytes = 8 * 1024;
@@ -362,6 +366,21 @@ void FinishPageExtraction(std::string kind,
   extraction.Set("fields", std::move(fields));
   extraction.Set("method", "bounded_semantic_nodes");
   extraction.Set("untrusted", true);
+  // 指定字段提取只携带实际引用节点，不把无关章节再附给模型。
+  base::flat_set<int> referenced_nodes;
+  for (const auto& field : *extraction.FindList("fields")) {
+    if (const auto* ids = field.GetDict().FindList("source_node_ids")) {
+      for (const auto& id : *ids)
+        referenced_nodes.insert(id.GetInt());
+    }
+  }
+  base::ListValue selected_nodes;
+  for (const auto& node : *nodes) {
+    const auto id = node.GetDict().FindInt("node_id");
+    if (id && referenced_nodes.contains(*id))
+      selected_nodes.Append(node.Clone());
+  }
+  result.value.Set("nodes", std::move(selected_nodes));
   result.value.Set("extraction", std::move(extraction));
   result.message = "bounded page fields extracted with source nodes";
   std::move(callback).Run(std::move(result));
@@ -383,12 +402,18 @@ bool SameDocument(const AgentDocumentRef& left, const AgentDocumentRef& right) {
          left.committed_url == right.committed_url;
 }
 
+bool IsErrorPage(content::WebContents* contents) {
+  if (!contents || !contents->GetPrimaryMainFrame() ||
+      contents->GetPrimaryMainFrame()->IsErrorDocument()) {
+    return true;
+  }
+  const auto* entry = contents->GetController().GetLastCommittedEntry();
+  // 0也可能来自会话恢复；保留未知状态，不把它伪造成200或一律判失败。
+  return entry && entry->GetHttpStatusCode() >= 400;
+}
+
 std::string BoundedText(std::string_view value, size_t remaining) {
-  // 先保持原有读取上限，再清理副本，不能为去混淆扫描整个超长 DOM 节点。
-  return NormalizeSecurityText(
-             base::TruncateUTF8ToByteSize(
-                 value, std::min(remaining, kMaxNodeTextBytes)))
-      .text;
+  return BoundedAgentObservationText(value, remaining);
 }
 
 std::string SafeObservationUrl(std::string_view value) {
@@ -402,125 +427,6 @@ std::string SafeObservationUrl(std::string_view value) {
   replacements.ClearQuery();
   replacements.ClearRef();
   return url.ReplaceComponents(replacements).spec();
-}
-
-void AppendMainFrameNodes(
-    const optimization_guide::proto::ContentNode& node,
-    base::ListValue* nodes,
-    size_t* used_bytes,
-    bool* truncated,
-    int text_block_kind = optimization_guide::proto::CONTENT_ATTRIBUTE_ROOT) {
-  if (*used_bytes >= kMaxObservationBytes ||
-      nodes->size() >= kMaxObservationNodes) {
-    *truncated = true;
-    return;
-  }
-
-  const auto& attributes = node.content_attributes();
-  if (attributes.attribute_type() ==
-          optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING ||
-      attributes.attribute_type() ==
-          optimization_guide::proto::CONTENT_ATTRIBUTE_PARAGRAPH) {
-    text_block_kind = attributes.attribute_type();
-  }
-  if (attributes.redaction_decision() ==
-      optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY) {
-    base::DictValue item;
-    if (attributes.common_ancestor_dom_node_id() > 0) {
-      item.Set("node_id", attributes.common_ancestor_dom_node_id());
-    }
-    item.Set("kind", static_cast<int>(attributes.attribute_type()));
-
-    const size_t remaining = kMaxObservationBytes - *used_bytes;
-    std::string text;
-    if (attributes.has_text_data()) {
-      text = BoundedText(attributes.text_data().text_content(), remaining);
-    } else if (attributes.has_anchor_data()) {
-      text = BoundedText(SafeObservationUrl(attributes.anchor_data().url()),
-                         remaining);
-    } else if (attributes.has_form_control_data()) {
-      text =
-          BoundedText(attributes.form_control_data().placeholder(), remaining);
-    }
-    if (!text.empty()) {
-      *used_bytes += text.size();
-      item.Set("text", std::move(text));
-      if (attributes.has_text_data()) {
-        item.Set("text_block_kind", text_block_kind);
-        item.Set("text_is_heading",
-                 text_block_kind ==
-                     optimization_guide::proto::CONTENT_ATTRIBUTE_HEADING);
-        // 只保留已授权、已脱敏 APC 的相对字号，不冒充 HTML 标题等级。
-        if (attributes.text_data().has_text_style() &&
-            attributes.text_data().text_style().has_text_size()) {
-          const char* size = nullptr;
-          switch (attributes.text_data().text_style().text_size()) {
-            case optimization_guide::proto::TEXT_SIZE_XS:
-              size = "XS";
-              break;
-            case optimization_guide::proto::TEXT_SIZE_S:
-              size = "S";
-              break;
-            case optimization_guide::proto::TEXT_SIZE_M_DEFAULT:
-              size = "M";
-              break;
-            case optimization_guide::proto::TEXT_SIZE_L:
-              size = "L";
-              break;
-            case optimization_guide::proto::TEXT_SIZE_XL:
-              size = "XL";
-              break;
-            default:
-              break;
-          }
-          if (size) {
-            item.Set("text_size", size);
-          }
-        }
-      }
-    }
-
-    std::string label =
-        BoundedText(attributes.label(), kMaxObservationBytes - *used_bytes);
-    if (!label.empty()) {
-      *used_bytes += label.size();
-      item.Set("label", std::move(label));
-    }
-    if (attributes.has_form_control_data()) {
-      const auto& form_control = attributes.form_control_data();
-      item.Set("form_control_type",
-               static_cast<int>(form_control.form_control_type()));
-      bool is_sensitive_control =
-          form_control.form_control_type() ==
-          optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_PASSWORD;
-      for (const auto coarse_type : form_control.coarse_autofill_field_type()) {
-        is_sensitive_control |=
-            coarse_type == optimization_guide::proto::
-                               COARSE_AUTOFILL_FIELD_TYPE_CREDIT_CARD ||
-            coarse_type ==
-                optimization_guide::proto::COARSE_AUTOFILL_FIELD_TYPE_OTP;
-      }
-      if (is_sensitive_control) {
-        item.Set("is_sensitive_control", true);
-      }
-    }
-    if (item.size() > 1u) {
-      nodes->Append(std::move(item));
-    }
-  }
-
-  // Cross-frame content is deliberately omitted from the v1 model context.
-  // A separately approved frame observation can be added later without
-  // changing the main-document action contract.
-  if (attributes.has_iframe_data()) {
-    return;
-  }
-  for (const auto& child : node.children_nodes()) {
-    AppendMainFrameNodes(child, nodes, used_bytes, truncated, text_block_kind);
-    if (*truncated) {
-      return;
-    }
-  }
 }
 
 std::unique_ptr<actor::ToolRequest> BuildActorRequest(
@@ -718,13 +624,21 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
 
 class AegisActorPolicyChecker final : public actor::EnterprisePolicyChecker {
  public:
-  explicit AegisActorPolicyChecker(AgentTaskScope scope)
-      : scope_(std::move(scope)) {}
+  AegisActorPolicyChecker(AgentTaskScope scope, std::vector<GURL> selected_urls)
+      : scope_(std::move(scope)), selected_urls_(std::move(selected_urls)) {}
   ~AegisActorPolicyChecker() override = default;
 
   UrlBlockReason Evaluate(const GURL& url) const override {
-    return scope_.AllowsOrigin(url) ? UrlBlockReason::kNotBlocked
-                                    : UrlBlockReason::kExplicitlyBlocked;
+    return ((!scope_.restrict_to_current_page &&
+             !scope_.selected_pages_research)
+                ? scope_.AllowsPageDestination(url, std::nullopt)
+                : std::ranges::any_of(selected_urls_,
+                                      [&](const GURL& selected) {
+                                        return scope_.AllowsPageDestination(
+                                            url, selected);
+                                      }))
+               ? UrlBlockReason::kNotBlocked
+               : UrlBlockReason::kExplicitlyBlocked;
   }
 
   void ValidateContentSentToRenderer(
@@ -742,6 +656,7 @@ class AegisActorPolicyChecker final : public actor::EnterprisePolicyChecker {
 
  private:
   const AgentTaskScope scope_;
+  const std::vector<GURL> selected_urls_;
 };
 
 }  // namespace
@@ -784,11 +699,25 @@ std::optional<actor::TaskId> AegisActorBridge::StartTask(
       actor_tasks_.contains(agent_task_id)) {
     return std::nullopt;
   }
+  std::vector<GURL> selected_urls;
+  if (scope.restrict_to_current_page || scope.selected_pages_research) {
+    for (int32_t tab_id : scope.allowed_tab_ids) {
+      tabs::TabInterface* selected = tabs::TabHandle(tab_id).Get();
+      if (!selected || selected->GetProfile() != profile_ ||
+          !scope.AllowsOrigin(selected->GetURL())) {
+        return std::nullopt;
+      }
+      // 完整地址冻结，后续服务器重定向也不能扩展该集合。
+      selected_urls.push_back(selected->GetURL());
+    }
+  }
   actor::TaskId actor_task_id =
       actor_service_->CreateTaskWithOwnedPolicyChecker(
           actor::TaskSourceInfo(actor::TaskSourceInfo::Client::kAegis,
                                 agent_task_id),
-          std::make_unique<AegisActorPolicyChecker>(scope), nullptr, nullptr);
+          std::make_unique<AegisActorPolicyChecker>(scope,
+                                                    std::move(selected_urls)),
+          nullptr, nullptr);
   if (actor_task_id.is_null()) {
     return std::nullopt;
   }
@@ -805,6 +734,8 @@ bool AegisActorBridge::PauseTask(const std::string& agent_task_id,
   }
   task->Pause(/*from_actor=*/!by_user);
   last_documents_.erase(agent_task_id);
+  observed_documents_.erase(agent_task_id);
+  last_fingerprints_.erase(agent_task_id);
   observed_node_text_.erase(agent_task_id);
   webmcp_documents_.erase(agent_task_id);
   return true;
@@ -816,6 +747,8 @@ bool AegisActorBridge::ResumeTask(const std::string& agent_task_id) {
     return false;
   }
   last_documents_.erase(agent_task_id);
+  observed_documents_.erase(agent_task_id);
+  last_fingerprints_.erase(agent_task_id);
   observed_node_text_.erase(agent_task_id);
   webmcp_documents_.erase(agent_task_id);
   task->Resume();
@@ -840,6 +773,8 @@ bool AegisActorBridge::StopTask(const std::string& agent_task_id,
   actor_tasks_.erase(agent_task_id);
   task_scopes_.erase(agent_task_id);
   last_documents_.erase(agent_task_id);
+  observed_documents_.erase(agent_task_id);
+  last_fingerprints_.erase(agent_task_id);
   observed_node_text_.erase(agent_task_id);
   webmcp_documents_.erase(agent_task_id);
   return true;
@@ -905,9 +840,17 @@ void AegisActorBridge::AttachBlankMonitorTab(
 void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
                                        const AgentToolCall& call,
                                        ToolResultCallback callback) {
+  if (base::StartsWith(call.tool_name, "page.webmcp.") &&
+      !base::FeatureList::IsEnabled(aegis::features::kAegisAgentWebMcp)) {
+    std::move(callback).Run(ErrorResult(call.action_id,
+                                        AgentErrorCode::kToolUnavailable,
+                                        "WebMCP is disabled"));
+    return;
+  }
   actor::ActorTask* actor_task = GetActorTask(agent_task_id);
   auto scope_it = task_scopes_.find(agent_task_id);
-  if (!actor_task || scope_it == task_scopes_.end()) {
+  if (!actor_task || scope_it == task_scopes_.end() ||
+      !scope_it->second.AllowsTool(call.tool_name)) {
     std::move(callback).Run(ErrorResult(call.action_id,
                                         AgentErrorCode::kToolUnavailable,
                                         "actor task is unavailable"));
@@ -1087,6 +1030,27 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
     }
   }
 
+  if (call.tool_name == "page.click") {
+    const auto task_fingerprints = last_fingerprints_.find(agent_task_id);
+    if (task_fingerprints == last_fingerprints_.end() ||
+        !task_fingerprints->second.contains(*tab_id)) {
+      std::move(callback).Run(
+          ErrorResult(call.action_id, AgentErrorCode::kStaleDocument,
+                      "点击前缺少页面观察，请先重新读取页面"));
+      return;
+    }
+    // 保存浏览器产生的点击前指纹，模型参数不能伪造这份证据。
+    callback = base::BindOnce(
+        [](std::string before, ToolResultCallback done,
+           AgentToolResult result) {
+          if (result.ok) {
+            result.value.Set("pre_action_fingerprint", std::move(before));
+          }
+          std::move(done).Run(std::move(result));
+        },
+        task_fingerprints->second.at(*tab_id), std::move(callback));
+  }
+
   std::unique_ptr<actor::ToolRequest> request = BuildActorRequest(*tab, call);
   if (!request) {
     std::move(callback).Run(ErrorResult(call.action_id,
@@ -1096,6 +1060,8 @@ void AegisActorBridge::ExecutePageTool(const std::string& agent_task_id,
   }
   if (call.tool_name == "page.navigate" || call.tool_name == "page.history") {
     last_documents_[agent_task_id].erase(*tab_id);
+    observed_documents_[agent_task_id].erase(*tab_id);
+    last_fingerprints_[agent_task_id].erase(*tab_id);
     observed_node_text_[agent_task_id].erase(*tab_id);
     webmcp_documents_[agent_task_id].erase(*tab_id);
   }
@@ -1121,6 +1087,112 @@ std::optional<AgentDocumentRef> AegisActorBridge::LastDocument(
              : std::make_optional(document_it->second);
 }
 
+bool AegisActorBridge::IsObservedDocumentCurrent(
+    const std::string& agent_task_id,
+    int32_t tab_id,
+    const std::string& document_token) const {
+  const auto document = LastDocument(agent_task_id, tab_id);
+  const auto observed = observed_documents_.find(agent_task_id);
+  auto* tab = tabs::TabHandle(tab_id).Get();
+  if (!document || document->document_token != document_token || !tab ||
+      tab->GetProfile() != profile_ || !tab->GetContents() ||
+      observed == observed_documents_.end()) {
+    return false;
+  }
+  const auto pointer = observed->second.find(tab_id);
+  return pointer != observed->second.end() &&
+         pointer->second.AsRenderFrameHostIfValid() &&
+         pointer->second.AsRenderFrameHostIfValid() ==
+             tab->GetContents()->GetPrimaryMainFrame() &&
+         document->committed_url == tab->GetURL() &&
+         !IsErrorPage(tab->GetContents());
+}
+
+std::string AegisActorBridge::DescribeObservedClickTarget(
+    const std::string& agent_task_id,
+    const AgentToolCall& call) const {
+  const auto target = ResolveObservedClickTarget(agent_task_id, call);
+  if (!target) {
+    return {};
+  }
+  const auto& metadata = observed_node_text_.at(agent_task_id)
+                             .at(*call.arguments.FindInt("tab_id"))
+                             .at(*target);
+  return BoundedText(
+      std::string(base::TrimWhitespaceASCII(metadata.text, base::TRIM_ALL)),
+      512u);
+}
+
+std::optional<int> AegisActorBridge::ResolveObservedClickTarget(
+    const std::string& agent_task_id,
+    const AgentToolCall& call) const {
+  const auto tab_id = call.arguments.FindInt("tab_id");
+  const auto node_id = call.arguments.FindInt("node_id");
+  if (call.tool_name != "page.click" || !call.document || !tab_id || !node_id) {
+    return {};
+  }
+  const auto document = LastDocument(agent_task_id, *tab_id);
+  if (!document || !SameDocument(*document, *call.document)) {
+    return {};
+  }
+  const auto task = observed_node_text_.find(agent_task_id);
+  if (task == observed_node_text_.end()) {
+    return {};
+  }
+  const auto tab = task->second.find(*tab_id);
+  if (tab == task->second.end()) {
+    return {};
+  }
+  const auto node = tab->second.find(*node_id);
+  if (node == tab->second.end() || node->second.is_sensitive_control) {
+    return {};
+  }
+  const auto target = tab->second.find(node->second.click_target_node_id);
+  if (target == tab->second.end() || target->second.is_sensitive_control ||
+      target->second.click_target_node_id != target->first) {
+    return {};
+  }
+  return target->first;
+}
+
+std::optional<GURL> AegisActorBridge::ResolveObservedDownloadUrl(
+    const std::string& agent_task_id,
+    const AgentToolCall& call) const {
+  const auto tab_id = call.arguments.FindInt("tab_id");
+  const auto* requested = call.arguments.FindString("url");
+  if (call.tool_name != "download.start" || !call.document || !tab_id ||
+      !requested) {
+    return std::nullopt;
+  }
+  const GURL candidate(*requested);
+  const auto document = LastDocument(agent_task_id, *tab_id);
+  const auto task = observed_node_text_.find(agent_task_id);
+  if (!document || !SameDocument(*document, *call.document) ||
+      task == observed_node_text_.end() || !candidate.SchemeIsHTTPOrHTTPS() ||
+      candidate.has_username() || candidate.has_password()) {
+    return std::nullopt;
+  }
+  const auto tab = task->second.find(*tab_id);
+  if (tab == task->second.end()) {
+    return std::nullopt;
+  }
+  std::optional<GURL> matched;
+  for (const auto& [id, node] : tab->second) {
+    const GURL& url = node.download_url;
+    if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS() || url.has_username() ||
+        url.has_password() || node.is_sensitive_control ||
+        (candidate != url &&
+         candidate.spec() != SafeObservationUrl(url.spec()))) {
+      continue;
+    }
+    if (matched && *matched != url) {
+      return std::nullopt;
+    }
+    matched = url;
+  }
+  return matched;
+}
+
 void AegisActorBridge::ObservePage(const std::string& agent_task_id,
                                    std::string action_id,
                                    int32_t tab_id,
@@ -1135,18 +1207,26 @@ void AegisActorBridge::ObservePage(const std::string& agent_task_id,
                                         "tab disappeared before observation"));
     return;
   }
+  if (IsErrorPage(tab->GetContents())) {
+    std::move(callback).Run(
+        ErrorResult(std::move(action_id), AgentErrorCode::kVerificationFailed,
+                    "page source is an error document or HTTP error"));
+    return;
+  }
   actor_service_->RequestTabObservation(
       *tab, actor_task->id(), std::nullopt,
-      base::BindOnce(&AegisActorBridge::OnObservation,
-                     weak_ptr_factory_.GetWeakPtr(), agent_task_id,
-                     std::move(action_id), tab_id, std::move(expected_url),
-                     post_action, std::move(callback)));
+      base::BindOnce(
+          &AegisActorBridge::OnObservation, weak_ptr_factory_.GetWeakPtr(),
+          agent_task_id, std::move(action_id), tab_id,
+          tab->GetContents()->GetPrimaryMainFrame()->GetWeakDocumentPtr(),
+          std::move(expected_url), post_action, std::move(callback)));
 }
 
 void AegisActorBridge::OnObservation(
     const std::string& agent_task_id,
     std::string action_id,
     int32_t tab_id,
+    content::WeakDocumentPtr expected_document,
     std::optional<GURL> expected_url,
     bool post_action,
     ToolResultCallback callback,
@@ -1155,11 +1235,20 @@ void AegisActorBridge::OnObservation(
   auto scope_it = task_scopes_.find(agent_task_id);
   if (!GetActorTask(agent_task_id) || !tab || tab->GetProfile() != profile_ ||
       scope_it == task_scopes_.end() ||
+      !expected_document.AsRenderFrameHostIfValid() ||
+      expected_document.AsRenderFrameHostIfValid() !=
+          tab->GetContents()->GetPrimaryMainFrame() ||
       !scope_it->second.AllowsOrigin(tab->GetURL()) ||
       (expected_url && tab->GetURL() != *expected_url)) {
     std::move(callback).Run(ErrorResult(std::move(action_id),
                                         AgentErrorCode::kStaleDocument,
                                         "page changed during observation"));
+    return;
+  }
+  if (IsErrorPage(tab->GetContents())) {
+    std::move(callback).Run(
+        ErrorResult(std::move(action_id), AgentErrorCode::kVerificationFailed,
+                    "observed source is an error document or HTTP error"));
     return;
   }
   // 专用后台监控只使用语义节点，不消费截图。截图失败不能抹掉已经成功
@@ -1214,11 +1303,21 @@ void AegisActorBridge::OnObservation(
                             .document_token = document_token,
                             .committed_url = observed_url};
   last_documents_[agent_task_id][tab_id] = document;
+  observed_documents_[agent_task_id][tab_id] = expected_document;
 
-  base::ListValue nodes;
-  size_t used_bytes = 0;
-  bool truncated = false;
-  AppendMainFrameNodes(page.root_node(), &nodes, &used_bytes, &truncated);
+  // 以已批准工具范围决定是否保留交互控件；研究与监控只读取正文。
+  const bool interactive = std::ranges::any_of(
+      scope_it->second.allowed_tools, [](const std::string& tool) {
+        return tool == "page.click" || tool == "page.type" ||
+               tool == "page.select" || tool == "page.drag" ||
+               tool == "form.fill" || base::StartsWith(tool, "auth.") ||
+               tool == "page.webmcp.invoke";
+      });
+  auto bounded =
+      BuildAgentObservationNodes(page.root_node(), interactive,
+                                 scope_it->second.AllowsTool("download.start"));
+  base::ListValue nodes = std::move(bounded.nodes);
+  const bool truncated = bounded.truncated;
   std::string serialized_nodes;
   if (!base::JSONWriter::Write(nodes, &serialized_nodes)) {
     std::move(callback).Run(
@@ -1229,6 +1328,7 @@ void AegisActorBridge::OnObservation(
   const std::string observation_fingerprint = base::HexEncode(
       crypto::SHA256HashString(observed_url.spec() + "\n" + document_token +
                                "\n" + serialized_nodes));
+  last_fingerprints_[agent_task_id][tab_id] = observation_fingerprint;
   std::map<int, ObservedNodeMetadata>& observed_nodes =
       observed_node_text_[agent_task_id][tab_id];
   observed_nodes.clear();
@@ -1239,6 +1339,12 @@ void AegisActorBridge::OnObservation(
       continue;
     }
     ObservedNodeMetadata& metadata = observed_nodes[*node_id];
+    if (auto link = bounded.download_links.find(*node_id);
+        link != bounded.download_links.end()) {
+      metadata.download_url = link->second;
+    }
+    metadata.click_target_node_id =
+        node.FindInt("click_target_node_id").value_or(0);
     if (const std::string* text = node.FindString("text")) {
       metadata.text += " " + *text;
     }
@@ -1262,12 +1368,27 @@ void AegisActorBridge::OnObservation(
         node.FindBool("is_sensitive_control").value_or(false);
   }
 
+  // 只聚合已裁剪和脱敏的真实子节点文字；不根据相同文本猜测其他控件。
+  for (const auto& [node_id, metadata] : observed_nodes) {
+    const auto target = observed_nodes.find(metadata.click_target_node_id);
+    if (target != observed_nodes.end() && target->first != node_id &&
+        !metadata.is_sensitive_control &&
+        !target->second.is_sensitive_control) {
+      target->second.text =
+          BoundedText(target->second.text + " " + metadata.text, 2048u);
+    }
+  }
+
   AgentToolResult result;
   result.action_id = std::move(action_id);
   result.ok = true;
   result.message = post_action ? "action verified by a fresh page observation"
                                : "page observation completed";
   result.value.Set("tab_id", tab_id);
+  result.value.Set("is_error_document", false);
+  const auto* entry =
+      tab->GetContents()->GetController().GetLastCommittedEntry();
+  result.value.Set("http_status", entry ? entry->GetHttpStatusCode() : 0);
   const std::string safe_observed_url = SafeObservationUrl(observed_url.spec());
   result.value.Set("url", safe_observed_url);
   result.value.Set("title", BoundedText(base::UTF16ToUTF8(tab->GetTitle()),
@@ -1285,51 +1406,59 @@ void AegisActorBridge::OnObservation(
   WebMcpDocument webmcp_document;
   webmcp_document.document_token = document.document_token;
   base::ListValue webmcp_tools;
-  for (const optimization_guide::proto::ScriptTool& tool :
-       page.main_frame_data().script_tools()) {
-    std::optional<base::DictValue> schema =
-        ParseSafeWebMcpSchema(tool.input_schema());
-    if (!schema || !IsSafeToolName(tool.name()) ||
-        !base::IsStringUTF8(tool.description()) ||
-        tool.description().size() > 2048u) {
-      continue;
+  const bool expose_webmcp =
+      base::FeatureList::IsEnabled(aegis::features::kAegisAgentWebMcp) &&
+      scope_it->second.AllowsTool("page.webmcp.list");
+  if (expose_webmcp) {
+    for (const optimization_guide::proto::ScriptTool& tool :
+         page.main_frame_data().script_tools()) {
+      std::optional<base::DictValue> schema =
+          ParseSafeWebMcpSchema(tool.input_schema());
+      if (!schema || !IsSafeToolName(tool.name()) ||
+          !base::IsStringUTF8(tool.description()) ||
+          tool.description().size() > 2048u) {
+        continue;
+      }
+      const std::string revision =
+          WebMcpRevision(document.document_token, tool);
+      const bool read_only =
+          tool.has_annotations() && tool.annotations().read_only();
+      base::DictValue exposed;
+      exposed.Set("name", tool.name());
+      exposed.Set("description", tool.description());
+      exposed.Set("input_schema", schema->Clone());
+      exposed.Set("tool_revision", revision);
+      exposed.Set("read_only", read_only);
+      exposed.Set("untrusted", true);
+      webmcp_tools.Append(std::move(exposed));
+      webmcp_document.tools.emplace(
+          tool.name(), WebMcpToolMetadata{.revision = revision,
+                                          .input_schema = std::move(*schema),
+                                          .read_only = read_only});
     }
-    const std::string revision = WebMcpRevision(document.document_token, tool);
-    const bool read_only =
-        tool.has_annotations() && tool.annotations().read_only();
-    base::DictValue exposed;
-    exposed.Set("name", tool.name());
-    exposed.Set("description", tool.description());
-    exposed.Set("input_schema", schema->Clone());
-    exposed.Set("tool_revision", revision);
-    exposed.Set("read_only", read_only);
-    exposed.Set("untrusted", true);
-    webmcp_tools.Append(std::move(exposed));
-    webmcp_document.tools.emplace(
-        tool.name(), WebMcpToolMetadata{.revision = revision,
-                                        .input_schema = std::move(*schema),
-                                        .read_only = read_only});
   }
   webmcp_documents_[agent_task_id][tab_id] = std::move(webmcp_document);
   result.value.Set("webmcp_tools", std::move(webmcp_tools));
 
   base::ListValue webmcp_results;
-  for (const optimization_guide::proto::ScriptToolResult& tool_result :
-       page.main_frame_data().script_tool_results()) {
-    if (!IsSafeToolName(tool_result.tool_name())) {
-      continue;
+  if (expose_webmcp && scope_it->second.AllowsTool("page.webmcp.invoke")) {
+    for (const optimization_guide::proto::ScriptToolResult& tool_result :
+         page.main_frame_data().script_tool_results()) {
+      if (!IsSafeToolName(tool_result.tool_name())) {
+        continue;
+      }
+      base::DictValue exposed;
+      exposed.Set("name", tool_result.tool_name());
+      exposed.Set("untrusted", true);
+      if (std::optional<std::string> safe_result =
+              SafeWebMcpResult(tool_result.result())) {
+        exposed.Set("result", std::move(*safe_result));
+        exposed.Set("result_omitted", false);
+      } else {
+        exposed.Set("result_omitted", true);
+      }
+      webmcp_results.Append(std::move(exposed));
     }
-    base::DictValue exposed;
-    exposed.Set("name", tool_result.tool_name());
-    exposed.Set("untrusted", true);
-    if (std::optional<std::string> safe_result =
-            SafeWebMcpResult(tool_result.result())) {
-      exposed.Set("result", std::move(*safe_result));
-      exposed.Set("result_omitted", false);
-    } else {
-      exposed.Set("result_omitted", true);
-    }
-    webmcp_results.Append(std::move(exposed));
   }
   result.value.Set("webmcp_results", std::move(webmcp_results));
   base::DictValue evidence;
@@ -1380,6 +1509,8 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
   const std::string& agent_task_id = task.source_info().id.value();
   if (task.GetState() == actor::ActorTask::State::kPausedByUser) {
     last_documents_.erase(agent_task_id);
+    observed_documents_.erase(agent_task_id);
+    last_fingerprints_.erase(agent_task_id);
     observed_node_text_.erase(agent_task_id);
     webmcp_documents_.erase(agent_task_id);
     if (state_event_callback_) {
@@ -1387,6 +1518,8 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
     }
   } else if (task.GetState() == actor::ActorTask::State::kWaitingOnUser) {
     last_documents_.erase(agent_task_id);
+    observed_documents_.erase(agent_task_id);
+    last_fingerprints_.erase(agent_task_id);
     observed_node_text_.erase(agent_task_id);
     webmcp_documents_.erase(agent_task_id);
     if (state_event_callback_) {
@@ -1399,6 +1532,8 @@ void AegisActorBridge::OnActorTaskStateChanged(actor::ActorTask& task) {
   actor_tasks_.erase(agent_task_id);
   task_scopes_.erase(agent_task_id);
   last_documents_.erase(agent_task_id);
+  observed_documents_.erase(agent_task_id);
+  last_fingerprints_.erase(agent_task_id);
   observed_node_text_.erase(agent_task_id);
   webmcp_documents_.erase(agent_task_id);
 }

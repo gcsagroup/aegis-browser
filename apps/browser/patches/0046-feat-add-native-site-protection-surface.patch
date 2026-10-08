@@ -1,4 +1,4 @@
-From 743445819afdaf2d4af686602a4237b7d4e26847 Mon Sep 17 00:00:00 2001
+From 93921f8c92d9dda8787dccf43d758185dedf5091 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:22:12 +0800
 Subject: [PATCH] feat(aegis): add native site protection surface
@@ -14,26 +14,26 @@ Subject: [PATCH] feat(aegis): add native site protection surface
  create mode 100644 chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index f50374fe1c..1edab3916d 100644
+index 0f29e63644..6f9d2fe1b4 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
-@@ -10,6 +10,7 @@ import("//ui/webui/webui_features.gni")
+@@ -9,6 +9,7 @@ import("//ui/webui/webui_features.gni")
+ 
  source_set("toolbar") {
    public = [
-     "action_app_menu.h",
 +    "aegis_toolbar_button.h",
      "ai_overlay_toolbar_button.h",
      "app_menu.h",
      "app_menu_control.h",
-@@ -110,6 +111,7 @@ source_set("toolbar") {
+@@ -117,6 +118,7 @@ source_set("toolbar") {
+ 
  source_set("impl") {
    sources = [
-     "action_app_menu.cc",
 +    "aegis_toolbar_button.cc",
      "ai_overlay_toolbar_button.cc",
      "app_menu.cc",
-     "back_forward_button.cc",
-@@ -169,6 +171,7 @@ source_set("impl") {
+     "app_menu_dynamic_helper.cc",
+@@ -179,6 +181,7 @@ source_set("impl") {
      "//chrome/app/theme:theme_resources_grit",
      "//chrome/app/vector_icons",
      "//chrome/browser:browser_process",
@@ -387,10 +387,10 @@ index 0000000000..5322188f74
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index 5a42610d05..d555138da3 100644
+index ec09e6aae6..01ee8d5806 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-@@ -90,6 +90,7 @@
+@@ -92,6 +92,7 @@
  #include "chrome/browser/ui/views/tabs/glic/glic_and_actor_buttons_container.h"
  #include "chrome/browser/ui/views/tabs/tab_strip.h"
  #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
@@ -398,7 +398,7 @@ index 5a42610d05..d555138da3 100644
  #include "chrome/browser/ui/views/toolbar/app_menu.h"
  #include "chrome/browser/ui/views/toolbar/app_menu_control.h"
  #include "chrome/browser/ui/views/toolbar/avatar_toolbar_button_interface.h"
-@@ -469,6 +470,8 @@ void ToolbarView::Init() {
+@@ -466,6 +467,8 @@ void ToolbarView::Init() {
      location_bar_ = toolbar_webview_->GetLocationBar();
    }
  
@@ -407,7 +407,7 @@ index 5a42610d05..d555138da3 100644
    bool is_glic_left_of_profile =
        features::kGlicToolbarButtonLocationParam.Get() ==
            features::GlicToolbarButtonLocation::kLeftOfProfileChip ||
-@@ -1171,6 +1174,11 @@ void ToolbarView::Update(WebContents* tab) {
+@@ -1174,6 +1177,11 @@ void ToolbarView::Update(WebContents* tab) {
      pinned_toolbar_actions_container_->UpdateAllIcons();
    }
  
@@ -420,26 +420,26 @@ index 5a42610d05..d555138da3 100644
      reload_control->SetDevToolsStatus(
          chrome::IsDebuggerAttachedToCurrentTab(browser_));
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
-index c2d82dc622..93ffd5305b 100644
+index 2b6016a598..693d632aad 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.h
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
-@@ -46,6 +46,7 @@
- #endif  // BUILDFLAG(IS_CHROMEOS)
+@@ -47,6 +47,7 @@
  
+ class ActorTaskListBubble;
  class AvatarToolbarButton;
 +class AegisToolbarButton;
  class AvatarToolbarButtonInterface;
  class BatterySaverButton;
  class BrowserAppMenuButton;
-@@ -184,6 +185,7 @@ class ToolbarView : public views::AccessiblePaneView,
+@@ -188,6 +189,7 @@ class ToolbarView : public views::AccessiblePaneView,
    }
-   MediaToolbarButtonView* media_button() const { return media_button_; }
+   MediaToolbarButton* media_button() const { return media_button_; }
    HomeButton* home_button() const { return home_; }
 +  AegisToolbarButton* aegis_button() const { return aegis_button_; }
  
-   // TODO(crbug.com/513238408): Remove this once toolbar layout/overflow is
-   // fixed.
-@@ -370,6 +372,7 @@ class ToolbarView : public views::AccessiblePaneView,
+   views::LabelButton* GetGlicButton();
+ 
+@@ -377,6 +379,7 @@ class ToolbarView : public views::AccessiblePaneView,
    raw_ptr<WebUIToolbarWebView> toolbar_webview_ = nullptr;
    std::unique_ptr<WebUIToolbarWebView> detached_toolbar_webview_;
    raw_ptr<HomeButton> home_ = nullptr;

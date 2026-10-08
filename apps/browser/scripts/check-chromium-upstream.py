@@ -56,6 +56,33 @@ def fetch_json(url):
     return json.loads(result.stdout.decode().removeprefix(")]}'\n"))
 
 
+def verified_tag(version, commit, cache):
+    # 缓存仅存活于本轮检查；平台仍各自核对公告、版本历史及提交。
+    if version not in cache:
+        version_key(version)
+        primary = f"https://chromium.googlesource.com/chromium/src/+/refs/tags/{version}?format=JSON"
+        url = primary
+        failures = []
+        try:
+            tag = fetch_json(url)
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            failures.append({"url": url, "message": str(exc)})
+            url = f"https://chromium.googlesource.com/chromium/src/+/{version}?format=JSON"
+            try:
+                tag = fetch_json(url)
+            except Exception as fallback_error:
+                raise RuntimeError(f"标签主路径失败：{exc}；官方备用路径失败：{fallback_error}") from fallback_error
+        # 内容损坏或提交不符不使用备用结果掩盖，也不缓存失败。
+        if tag["commit"] != commit:
+            raise ValueError("官方 tag 与 ChromiumDash 提交不一致")
+        cache[version] = (tag, {"url": url, "sha256": digest(tag),
+                                "failedAttempts": failures})
+    tag, evidence = cache[version]
+    if tag["commit"] != commit:
+        raise ValueError("官方 tag 与 ChromiumDash 提交不一致")
+    return evidence
+
+
 def announcements(feed):
     result = []
     for entry in feed.get("feed", {}).get("entry", []):
@@ -201,18 +228,16 @@ def parse_posts(payloads, report):
 
 
 def collect_candidates(report, payloads, posts):
+    tag_cache = {}
     for platform in PLATFORMS:
         try:
             candidate = select_candidate(platform, payloads[platform + "Dash"],
                                          payloads[platform + "History"], posts)
-            url = f"https://chromium.googlesource.com/chromium/src/+/refs/tags/{candidate['version']}?format=JSON"
-            tag = fetch_json(url)
-            if tag["commit"] != candidate["commit"]:
-                raise ValueError("官方 tag 与 ChromiumDash 提交不一致")
-            candidate["tagUrl"] = url
+            evidence = verified_tag(candidate["version"], candidate["commit"], tag_cache)
+            candidate["tagUrl"] = evidence["url"]
             candidate["behind"] = version_key(report["local"]["pinnedVersion"]) < version_key(candidate["version"])
             report["candidates"][platform] = candidate
-            report["sources"][platform + "Tag"] = {"url": url, "sha256": digest(tag)}
+            report["sources"][platform + "Tag"] = evidence
         except Exception as exc:
             report["errors"].append({"source": platform, "message": str(exc)})
 

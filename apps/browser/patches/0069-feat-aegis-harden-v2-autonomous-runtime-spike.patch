@@ -1,4 +1,4 @@
-From bdc1c3e52307a3c474263401497c1d7790a7e205 Mon Sep 17 00:00:00 2001
+From 1f34bffe0058c718a6fb087ad833c6a327153072 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 20:15:21 +0800
 Subject: [PATCH] feat(aegis): harden v2 autonomous runtime spike
