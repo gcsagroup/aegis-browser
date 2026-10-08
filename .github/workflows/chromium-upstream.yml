@@ -8,7 +8,7 @@ on:
       - 'apps/browser/scripts/ci/**'
       - 'apps/browser/CHROMIUM_*'
   schedule:
-    - cron: '17 * * * *'
+    - cron: '17 1 * * *'
   workflow_dispatch:
 permissions:
   contents: read
