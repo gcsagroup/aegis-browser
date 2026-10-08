@@ -1,0 +1,114 @@
+From 5c909ff81908bcd2ffe6b50a971220993cdf0b45 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 7 Oct 2026 06:10:50 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99=E6=B5=8B=E8=AF=95=E7=95=8C?=
+ =?UTF-8?q?=E9=9D=A2=E6=B3=A8=E5=85=A5=E6=8E=A5=E5=8F=A3=E5=B9=B6=E9=80=92?=
+ =?UTF-8?q?=E5=A2=9E=E5=80=99=E9=80=89123?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/actor/actor_keyed_service.cc   |  7 +++++
+ chrome/browser/actor/actor_keyed_service.h    |  4 +++
+ .../actor/actor_keyed_service_unittest.cc     | 28 +++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ 4 files changed, 41 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
+index 228fb638c98a0be8c4abed190f49f240ed58739c..caa9021405d116ad1829f11b0d611de16b373148 100644
+--- a/chrome/browser/actor/actor_keyed_service.cc
++++ b/chrome/browser/actor/actor_keyed_service.cc
+@@ -866,6 +866,13 @@ ActorTask* ActorKeyedService::GetTask(TaskId task_id) {
+   return nullptr;
+ }
+ 
++void ActorKeyedService::SetActorUiStateManagerForTesting(
++    std::unique_ptr<ui::ActorUiStateManagerInterface> manager) {
++  CHECK(manager);
++  CHECK(active_tasks_.empty());
++  actor_ui_state_manager_ = std::move(manager);
++}
++
+ ActorUiStateManagerInterface* ActorKeyedService::GetActorUiStateManager() {
+   return actor_ui_state_manager_.get();
+ }
+diff --git a/chrome/browser/actor/actor_keyed_service.h b/chrome/browser/actor/actor_keyed_service.h
+index 24a66091a134aa2be3759eb1c8803cbfa6506cff..5336d1c7fff565e8f5c0a140f9e36bae345a4a5e 100644
+--- a/chrome/browser/actor/actor_keyed_service.h
++++ b/chrome/browser/actor/actor_keyed_service.h
+@@ -69,6 +69,10 @@ class ActorKeyedService : public KeyedService,
+   // Convenience method, may return nullptr.
+   static ActorKeyedService* Get(content::BrowserContext* context);
+ 
++  // 仅在创建任务前注入测试界面，保留管理器与任务的生命周期关系。
++  void SetActorUiStateManagerForTesting(
++      std::unique_ptr<ui::ActorUiStateManagerInterface> manager);
++
+   const std::map<TaskId, const ActorTask*> GetActiveTasks() const;
+ 
+   size_t GetActiveTasksCount() const;
+diff --git a/chrome/browser/actor/actor_keyed_service_unittest.cc b/chrome/browser/actor/actor_keyed_service_unittest.cc
+index c75037b556a25082400f08533f9b890bc231033a..66ba0f294b4c2f46f42d25bf5d5d2fe5ed532538 100644
+--- a/chrome/browser/actor/actor_keyed_service_unittest.cc
++++ b/chrome/browser/actor/actor_keyed_service_unittest.cc
+@@ -11,6 +11,7 @@
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/test/bind.h"
++#include "base/test/gtest_util.h"
+ #include "base/test/metrics/histogram_tester.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_command_line.h"
+@@ -162,6 +163,33 @@ TEST_F(AegisActorRuntimeTest, CreatesAegisTaskWithoutGlicRuntime) {
+   EXPECT_TRUE(checker_destroyed);
+ }
+ 
++TEST_F(ActorKeyedServiceTest, InjectsUiStateManagerBeforeTaskCreation) {
++  auto* actor_service = ActorKeyedService::Get(profile());
++  auto manager = BuildUiStateManagerMock();
++  auto* manager_ptr = manager.get();
++  actor_service->SetActorUiStateManagerForTesting(std::move(manager));
++  EXPECT_EQ(actor_service->GetActorUiStateManager(), manager_ptr);
++  const TaskId id = actor_service->CreateTask(TestTaskSourceInfo(),
++                                            NoEnterprisePolicyChecker());
++  EXPECT_NE(actor_service->GetTask(id), nullptr);
++}
++
++using ActorKeyedServiceDeathTest = ActorKeyedServiceTest;
++
++TEST_F(ActorKeyedServiceDeathTest, RejectsNullUiStateManager) {
++  EXPECT_CHECK_DEATH(ActorKeyedService::Get(profile())
++                        ->SetActorUiStateManagerForTesting(nullptr));
++}
++
++TEST_F(ActorKeyedServiceDeathTest, RejectsUiStateManagerReplacementWithTask) {
++  auto* actor_service = ActorKeyedService::Get(profile());
++  actor_service->CreateTaskWithOptions(
++      TestTaskSourceInfo(), NoEnterprisePolicyChecker(), /*options=*/nullptr,
++      /*delegate=*/nullptr, ui_state_manager());
++  EXPECT_CHECK_DEATH(actor_service->SetActorUiStateManagerForTesting(
++      BuildUiStateManagerMock()));
++}
++
+ // Adds a task to ActorKeyedService
+ TEST_F(ActorKeyedServiceTest, AddActiveTask) {
+   auto* actor_service = ActorKeyedService::Get(profile());
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 6e2cf344cf2a7d7b48aee76e4af93557407800cc..f2243cbcc17c749ac567d023ff31233cf0f565e3 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.122";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (122)";
++inline constexpr char kProductVersion[] = "2.1.0.123";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (123)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

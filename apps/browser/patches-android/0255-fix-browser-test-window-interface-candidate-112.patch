@@ -1,0 +1,518 @@
+From 353d64616719d24b6aa197327e050d07a68422c4 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 17:34:35 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E6=B5=8F=E8=A7=88?=
+ =?UTF-8?q?=E5=99=A8=E7=AA=97=E5=8F=A3=E6=8E=A5=E5=8F=A3=E5=B9=B6=E9=80=92?=
+ =?UTF-8?q?=E5=A2=9E=E5=80=99=E9=80=89112?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ ...ess_browser_request_adapter_browsertest.cc | 23 ++++----
+ ...proxying_url_loader_factory_browsertest.cc | 54 +++++++++----------
+ .../aegis/agent/aegis_agent_browsertest.cc    | 31 ++++++-----
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 4 files changed, 56 insertions(+), 56 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+index 0318a679f702cbcda7f1122c772fadbb2c92b0f1..72b140b0dee24a4fb6bdf96bba0ebc5f2ca2747b 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+@@ -7,7 +7,8 @@
+ 
+ #include "base/functional/bind.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+-#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+@@ -35,7 +36,7 @@ class AccessBrowserRequestAdapterBrowserTest : public InProcessBrowserTest {
+   void SetUpOnMainThread() override {
+     InProcessBrowserTest::SetUpOnMainThread();
+     ASSERT_TRUE(embedded_test_server()->Start());
+-    ASSERT_NE(AccessNetworkContextTransport::GetOrCreate(browser()->profile()),
++    ASSERT_NE(AccessNetworkContextTransport::GetOrCreate(browser()->GetProfile()),
+               nullptr);
+   }
+ 
+@@ -63,7 +64,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+   ASSERT_TRUE(primary_frame->GetPage().IsPrimary());
+ 
+   AccessBrowserRequestMetadataResult result = BuildBrowserOwnedRequestMetadata(
+-      browser()->profile(), WebContentsGetter(),
++      browser()->GetProfile(), WebContentsGetter(),
+       primary_frame->GetFrameTreeNodeId(), std::nullopt);
+ 
+   EXPECT_EQ(result.status, AccessBrowserRequestMetadataStatus::kOk);
+@@ -83,7 +84,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+   constexpr int64_t kNavigationId = 42;
+   AccessBrowserRequestMetadataResult metadata =
+       BuildBrowserOwnedRequestMetadata(
+-          browser()->profile(), WebContentsGetter(),
++          browser()->GetProfile(), WebContentsGetter(),
+           primary_frame->GetFrameTreeNodeId(), kNavigationId);
+ 
+   ASSERT_EQ(metadata.status, AccessBrowserRequestMetadataStatus::kOk);
+@@ -129,7 +130,7 @@ IN_PROC_BROWSER_TEST_F(
+   constexpr int64_t kNavigationId = 43;
+   AccessBrowserRequestMetadataResult metadata =
+       BuildBrowserOwnedRequestMetadata(
+-          browser()->profile(), WebContentsGetter(),
++          browser()->GetProfile(), WebContentsGetter(),
+           child_frame->GetFrameTreeNodeId(), kNavigationId);
+ 
+   ASSERT_EQ(metadata.status, AccessBrowserRequestMetadataStatus::kOk);
+@@ -178,7 +179,7 @@ IN_PROC_BROWSER_TEST_F(
+ 
+   AccessBrowserRequestMetadataResult metadata =
+       BuildBrowserOwnedRequestMetadata(
+-          browser()->profile(), WebContentsGetter(),
++          browser()->GetProfile(), WebContentsGetter(),
+           child_frame->GetFrameTreeNodeId(), /*navigation_id=*/44);
+ 
+   EXPECT_EQ(metadata.status,
+@@ -200,7 +201,7 @@ IN_PROC_BROWSER_TEST_F(
+ 
+   AccessBrowserRequestMetadataResult result =
+       BuildBrowserOwnedProfileOnlyRequestMetadata(
+-          browser()->profile(), process->GetDeprecatedID());
++          browser()->GetProfile(), process->GetDeprecatedID());
+ 
+   EXPECT_EQ(result.status, AccessBrowserRequestMetadataStatus::kOk);
+   ASSERT_TRUE(result.metadata.has_value());
+@@ -211,7 +212,7 @@ IN_PROC_BROWSER_TEST_F(
+   EXPECT_FALSE(result.metadata->top_frame_site.has_value());
+ 
+   AccessNetworkContextTransport* transport =
+-      AccessNetworkContextTransport::Get(browser()->profile());
++      AccessNetworkContextTransport::Get(browser()->GetProfile());
+   ASSERT_NE(transport, nullptr);
+   EXPECT_TRUE(transport->OwnsConfiguredPartition(result.metadata->owner));
+ 
+@@ -229,7 +230,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                        ProfileOnlyMetadataRejectsUnknownRenderProcess) {
+   AccessBrowserRequestMetadataResult result =
+       BuildBrowserOwnedProfileOnlyRequestMetadata(
+-          browser()->profile(), std::numeric_limits<int>::max());
++          browser()->GetProfile(), std::numeric_limits<int>::max());
+ 
+   EXPECT_EQ(result.status,
+             AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
+@@ -250,7 +251,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+   ASSERT_FALSE(prerender_frame->GetPage().IsPrimary());
+ 
+   AccessBrowserRequestMetadataResult result = BuildBrowserOwnedRequestMetadata(
+-      browser()->profile(), WebContentsGetter(),
++      browser()->GetProfile(), WebContentsGetter(),
+       prerender_frame->GetFrameTreeNodeId(), std::nullopt);
+ 
+   EXPECT_EQ(result.status,
+@@ -260,7 +261,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+   constexpr int64_t kPrerenderNavigationId = 44;
+   AccessBrowserRequestMetadataResult pending_navigation =
+       BuildBrowserOwnedRequestMetadata(
+-          browser()->profile(), WebContentsGetter(),
++          browser()->GetProfile(), WebContentsGetter(),
+           prerender_frame->GetFrameTreeNodeId(), kPrerenderNavigationId);
+   EXPECT_EQ(pending_navigation.status,
+             AccessBrowserRequestMetadataStatus::kInvalidAttribution);
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index d6b4ad8cb03b242ce1c36e914b3be1364af54ee2..13ced5abf1bafe08d9a14edfcd95c2018847ba1c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -40,7 +40,7 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_test_util.h"
+-#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+@@ -497,7 +497,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     ASSERT_TRUE(ui_test_utils::NavigateToURL(
+         browser(), embedded_test_server()->GetURL("/title1.html")));
+ 
+-    transport_ = AccessNetworkContextTransport::Get(browser()->profile());
++    transport_ = AccessNetworkContextTransport::Get(browser()->GetProfile());
+     ASSERT_NE(transport_, nullptr);
+ 
+     owner_ = transport_->OwnerForPartition(
+@@ -563,7 +563,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+       const GURL& url,
+       aegis_access::RequestCancellationSelector* selector) {
+     ASSERT_NE(selector, nullptr);
+-    Profile* profile = browser()->profile();
++    Profile* profile = browser()->GetProfile();
+     content::RenderFrameHost* frame = web_contents()->GetPrimaryMainFrame();
+     ASSERT_NE(frame, nullptr);
+     const content::FrameTreeNodeId frame_tree_node_id =
+@@ -646,7 +646,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+   std::optional<std::string> FetchBrowserProcessPrefetchOnPartition(
+       content::StoragePartition* partition,
+       const GURL& url) {
+-    Profile* profile = browser()->profile();
++    Profile* profile = browser()->GetProfile();
+     EXPECT_NE(partition, nullptr);
+     if (!partition) {
+       return std::nullopt;
+@@ -679,7 +679,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   std::optional<std::string> FetchBrowserProcessPrefetch(const GURL& url) {
+     return FetchBrowserProcessPrefetchOnPartition(
+-        browser()->profile()->GetDefaultStoragePartition(), url);
++        browser()->GetProfile()->GetDefaultStoragePartition(), url);
+   }
+ 
+   std::string RunPrefetch(const GURL& url) {
+@@ -976,7 +976,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   uint64_t CommitIdentityGenerationForProxyPolicy() {
+     auto* identity =
+-        AccessIdentityGenerationSource::GetOrCreate(browser()->profile());
++        AccessIdentityGenerationSource::GetOrCreate(browser()->GetProfile());
+     EXPECT_NE(identity, nullptr);
+     if (!identity) {
+       return 0;
+@@ -992,7 +992,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   uint64_t CommitSelectionGenerationForProxyPolicy() {
+     auto* selection =
+-        AccessProxySelectionGenerationSource::GetOrCreate(browser()->profile());
++        AccessProxySelectionGenerationSource::GetOrCreate(browser()->GetProfile());
+     EXPECT_NE(selection, nullptr);
+     if (!selection) {
+       return 0;
+@@ -1008,7 +1008,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   uint64_t CurrentBaseProxyGeneration() {
+     auto* network_service =
+-        ProfileNetworkContextServiceFactory::GetForContext(browser()->profile());
++        ProfileNetworkContextServiceFactory::GetForContext(browser()->GetProfile());
+     EXPECT_NE(network_service, nullptr);
+     if (!network_service) {
+       return 0;
+@@ -1048,7 +1048,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+     snapshot.independent_rules.push_back(std::move(stored_rule));
+ 
+     auto* runtime =
+-        AccessPublishedRequestRuntime::GetOrCreate(browser()->profile());
++        AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
+     EXPECT_NE(runtime, nullptr);
+     if (!runtime) {
+       return;
+@@ -1093,7 +1093,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+ 
+   std::optional<aegis_access::RequestCancellationSelector> CurrentSiteSelector() {
+     const auto metadata = BuildBrowserOwnedRequestMetadata(
+-        browser()->profile(), base::BindRepeating(
++        browser()->GetProfile(), base::BindRepeating(
+             &AccessProxyingURLLoaderFactoryBrowserTest::web_contents,
+             base::Unretained(this)),
+         web_contents()->GetPrimaryMainFrame()->GetFrameTreeNodeId(), std::nullopt);
+@@ -1462,11 +1462,11 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   // pending. Destroying its WebContents must close queued requests, not run
+   // them through the downstream factory.
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+       std::numeric_limits<int64_t>::max(), builder);
+   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
+       std::move(builder).Finish(
+-          browser()->profile()
++          browser()->GetProfile()
+               ->GetDefaultStoragePartition()
+               ->GetURLLoaderFactoryForBrowserProcess());
+   auto request = std::make_unique<network::ResourceRequest>();
+@@ -1516,11 +1516,11 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+ 
+   network::URLLoaderFactoryBuilder builder;
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->profile(), pending_frame,
++      browser()->GetProfile(), pending_frame,
+       handle->GetNavigationId(), builder);
+   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
+       std::move(builder).Finish(
+-          browser()->profile()
++          browser()->GetProfile()
+               ->GetDefaultStoragePartition()
+               ->GetURLLoaderFactoryForBrowserProcess());
+   mojo::Remote<network::mojom::URLLoaderFactory> clone;
+@@ -1718,7 +1718,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+       CommitSelectionGenerationForProxyPolicy(),
+       transport_->network_epoch(), CurrentBaseProxyGeneration()};
+   PublishSelectedProxyEndpoint(kTargetHost, generations);
+-  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(browser()->profile());
++  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
+   ASSERT_EQ(runtime->PublishPreparedPolicyCandidate(*candidate.value).status,
+             AccessPolicyPublicationStatus::kPublished);
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+@@ -1735,7 +1735,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        ConflictingSiteProxyGroupPreservesNavigationRoute) {
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
+-  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->profile());
++  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->GetProfile());
+   ASSERT_TRUE(runtime);
+   const auto* published = runtime->GetPublishedPolicySnapshot(*owner_);
+   ASSERT_TRUE(published);
+@@ -1756,7 +1756,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   const auto selector = CurrentSiteSelector();
+   ASSERT_TRUE(selector);
+   const auto selection_before = transport_->CurrentSelection(*owner_);
+-  auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->profile());
++  auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->GetProfile());
+   ASSERT_TRUE(coordinator);
+   base::test::TestFuture<AccessMutationTransactionResult> result;
+   coordinator->CommitSiteGroupMutation(std::move(store), request, *selector,
+@@ -1792,7 +1792,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   Profile* second_profile = &profiles::testing::CreateProfileSync(
+       profile_manager, profile_manager->GenerateNextProfileDirectoryPath());
+   ASSERT_NE(second_profile, nullptr);
+-  Browser* second_browser = CreateBrowser(second_profile);
++  BrowserWindowInterface* second_browser = CreateBrowser(second_profile);
+   ASSERT_NE(second_browser, nullptr);
+ 
+   origin_before = origin_requests_.load(std::memory_order_relaxed);
+@@ -1865,7 +1865,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+   auto* dispatch_state =
+-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
++      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
+   // Navigation and automatic page requests can finish after NavigateToURL.
+   // Establish an empty registry before asserting exact relay ownership
+@@ -1880,7 +1880,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+   network::URLLoaderFactoryBuilder builder;
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+       std::nullopt, builder);
+   ASSERT_EQ(builder.num_interceptors(), 1u);
+   scoped_refptr<network::SharedURLLoaderFactory> factory =
+@@ -1981,7 +1981,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+   auto* dispatch_state =
+-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
++      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
+   ASSERT_TRUE(base::test::RunUntil(
+       [&] { return dispatch_state->ownership().size() == 0u; }));
+@@ -1991,7 +1991,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+   network::URLLoaderFactoryBuilder builder;
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+       std::nullopt, builder);
+   ASSERT_EQ(builder.num_interceptors(), 1u);
+   scoped_refptr<network::SharedURLLoaderFactory> factory =
+@@ -2038,7 +2038,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
+   PublishProxyPolicy(/*publish_endpoint=*/true);
+   auto* dispatch_state =
+-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
++      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
+   ASSERT_TRUE(base::test::RunUntil(
+       [&] { return dispatch_state->ownership().size() == 0u; }));
+@@ -2048,7 +2048,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
+   network::URLLoaderFactoryBuilder builder;
+   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
+-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
++      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
+       std::nullopt, builder);
+   ASSERT_EQ(builder.num_interceptors(), 1u);
+   scoped_refptr<network::SharedURLLoaderFactory> factory =
+@@ -2213,7 +2213,7 @@ IN_PROC_BROWSER_TEST_F(
+ IN_PROC_BROWSER_TEST_F(
+     AccessProxyingURLLoaderFactoryBrowserTest,
+     BrowserProcessPrefetchNonDefaultPartitionStaysNative) {
+-  Profile* profile = browser()->profile();
++  Profile* profile = browser()->GetProfile();
+   const content::StoragePartitionConfig config =
+       content::StoragePartitionConfig::Create(
+           profile, "aegis-prefetch-test", "non-default",
+@@ -2555,7 +2555,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+   aegis_access::RequestCancellationSelector selector;
+   BuildCancellationSelector(hanging_url(), &selector);
+   auto* dispatch_state =
+-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
++      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+   ASSERT_NE(dispatch_state, nullptr);
+   const AccessBlockAndCancelResult result =
+       dispatch_state->InstallBlockBarrierAndCancelMatching(
+@@ -2650,7 +2650,7 @@ class AccessLoadingPredictorPrefetchBrowserTest
+     const GURL navigation_url = web_contents()->GetLastCommittedURL();
+     LoadingPredictorPrefetchCompletion completion(navigation_url, resource_url);
+     predictors::PrefetchManager manager(completion.GetDelegateWeakPtr(),
+-                                        browser()->profile());
++                                        browser()->GetProfile());
+     manager.set_observer_for_testing(&completion);
+     manager.Start(navigation_url,
+                   {predictors::PrefetchRequest(
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index b9f0acfebe6d8c36b90e9182027c4dc8a2bf53aa..f6e60b961d5b49bb8970ddcd17c0550f2f32e5e4 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -52,7 +52,6 @@
+ #include "chrome/browser/search_engines/template_url_service_factory.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+-#include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_actions.h"
+ #include "chrome/browser/ui/browser_command_controller.h"
+ #include "chrome/browser/ui/browser_commands.h"
+@@ -128,7 +127,7 @@ void ConfigureAgentModel(Profile* profile) {
+   pref_service->SetString(prefs::kModelName, "gpt-4.1-mini");
+ }
+ 
+-content::WebContents* ShowAgentPanel(Browser* browser) {
++content::WebContents* ShowAgentPanel(BrowserWindowInterface* browser) {
+   SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
+   if (!side_panel) {
+     return nullptr;
+@@ -171,7 +170,7 @@ class ProfileDestructionProbe : public ProfileObserver {
+ };
+ 
+ std::unique_ptr<TestRenderViewContextMenu> CreateAegisContextMenu(
+-    Browser* browser) {
++    BrowserWindowInterface* browser) {
+   content::WebContents* contents =
+       browser->GetTabStripModel()->GetActiveWebContents();
+   content::ContextMenuParams params;
+@@ -2516,7 +2515,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(AgentEntry(browser()));
+   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_SHOW_AEGIS));
+ 
+-  Browser* otr_browser = CreateIncognitoBrowser(regular);
++  BrowserWindowInterface* otr_browser = CreateIncognitoBrowser(regular);
+   ASSERT_TRUE(otr_browser);
+   EXPECT_TRUE(otr_browser->GetProfile()->IsOffTheRecord());
+   EXPECT_TRUE(IsAegisAgentSidePanelSupported(otr_browser->GetProfile()));
+@@ -2537,7 +2536,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   Profile* second = &profiles::testing::CreateProfileSync(
+       profile_manager, profile_manager->GenerateNextProfileDirectoryPath());
+   second->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
+-  Browser* second_browser = CreateBrowser(second);
++  BrowserWindowInterface* second_browser = CreateBrowser(second);
+   ASSERT_TRUE(second_browser);
+   AegisAgentService* second_service =
+       AegisAgentServiceFactory::GetForProfile(second);
+@@ -2581,7 +2580,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_FALSE(regular_service->task_store_is_in_memory_for_testing());
+   const size_t regular_task_count = regular_service->task_count_for_testing();
+ 
+-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
+   ASSERT_TRUE(incognito_browser);
+   Profile* incognito_profile = incognito_browser->GetProfile();
+   ASSERT_TRUE(incognito_profile->IsIncognitoProfile());
+@@ -2642,7 +2641,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(
+       regular_menu->IsItemEnabled(IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT));
+ 
+-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
+   ASSERT_TRUE(incognito_browser);
+   Profile* incognito_profile = incognito_browser->GetProfile();
+   incognito_profile->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
+@@ -3419,8 +3418,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   for (int index = 1; index < 6; ++index) {
+     chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
+   }
+-  Browser* other_window = CreateBrowser(browser()->GetProfile());
+-  Browser* otr_window = CreateIncognitoBrowser(browser()->GetProfile());
++  BrowserWindowInterface* other_window = CreateBrowser(browser()->GetProfile());
++  BrowserWindowInterface* otr_window = CreateIncognitoBrowser(browser()->GetProfile());
+   ASSERT_TRUE(other_window);
+   ASSERT_TRUE(otr_window);
+   content::WebContents* panel = ShowAgentPanel(browser());
+@@ -5246,7 +5245,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   const int32_t regular_tab_id =
+       browser()->GetActiveTabInterface()->GetHandle().raw_value();
+ 
+-  Browser* otr_browser = CreateIncognitoBrowser(browser()->GetProfile());
++  BrowserWindowInterface* otr_browser = CreateIncognitoBrowser(browser()->GetProfile());
+   ASSERT_TRUE(otr_browser);
+   ASSERT_TRUE(otr_browser->GetProfile()->IsOffTheRecord());
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(otr_browser, otr_first_url));
+@@ -5468,7 +5467,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+                        IncognitoNavigationEventsStayInIncognitoService) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+-  Browser* incognito_browser = CreateIncognitoBrowser(browser()->GetProfile());
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(browser()->GetProfile());
+   ASSERT_TRUE(incognito_browser);
+   Profile* incognito_profile = incognito_browser->GetProfile();
+   ASSERT_TRUE(incognito_profile->IsIncognitoProfile());
+@@ -5510,7 +5509,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+   ASSERT_TRUE(base::test::RunUntil(
+       [&]() { return regular_service->AiControlRunning(); }));
+ 
+-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
+   ASSERT_TRUE(incognito_browser);
+   EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
+   EXPECT_FALSE(regular_service->IsAiControlAvailable());
+@@ -5564,7 +5563,7 @@ IN_PROC_BROWSER_TEST_F(
+   )JS")
+                   .ExtractBool());
+ 
+-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
+   ASSERT_TRUE(incognito_browser);
+   Profile* incognito_profile = incognito_browser->GetProfile();
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+@@ -5650,7 +5649,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+   IncognitoModePrefs::SetAvailability(
+       regular_profile->GetPrefs(), policy::IncognitoModeAvailability::kForced);
+ 
+-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
+   ASSERT_TRUE(incognito_browser);
+   ASSERT_TRUE(incognito_browser->GetProfile()->IsPrimaryOTRProfile());
+   EXPECT_TRUE(chrome::IsCommandEnabled(incognito_browser, IDC_SHOW_AEGIS));
+@@ -5672,7 +5671,7 @@ IN_PROC_BROWSER_TEST_F(
+   ASSERT_TRUE(
+       base::test::RunUntil([&]() { return external_control.running(); }));
+ 
+-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
++  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
+   ASSERT_TRUE(incognito_browser);
+   EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
+   EXPECT_FALSE(external_control.running());
+@@ -5743,7 +5742,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+                        ToolbarSurvivesRepeatedBrowserWindowClose) {
+   ASSERT_TRUE(embedded_test_server()->Start());
+   for (int iteration = 0; iteration < 3; ++iteration) {
+-    Browser* extra = CreateBrowser(browser()->GetProfile());
++    BrowserWindowInterface* extra = CreateBrowser(browser()->GetProfile());
+     ASSERT_TRUE(ui_test_utils::NavigateToURL(
+         extra, embedded_test_server()->GetURL("/title1.html")));
+     auto page_lifetime =
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index c1ad5673603e65c68d75fd0c6c4f4b87bfbfbead..7e0a78863146bdc663732608f0edb045c63c1e82 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.111";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (111)";
++inline constexpr char kProductVersion[] = "2.1.0.112";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (112)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From 1ee205703dff65424628d0fefdc592b96bbe2966 Mon Sep 17 00:00:00 2001
+From f4a9387aaeec6a6ffae84ddcd2fefe381724b36d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 18:46:48 +0800
 Subject: [PATCH] feat(aegis): support compatible model APIs
@@ -34,7 +34,7 @@ Subject: [PATCH] feat(aegis): support compatible model APIs
  delete mode 100644 chrome/browser/aegis/ollama_sidecar_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 39fd2d5b44..8f8c5cbee2 100644
+index 39fd2d5b441db464dd56e4b73fff2826cf8ee4d0..8f8c5cbee25d00c87528ada36a2518f528e93c02 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -33,8 +33,8 @@ source_set("aegis") {
@@ -66,7 +66,7 @@ index 39fd2d5b44..8f8c5cbee2 100644
      "summary_policy_unittest.cc",
    ]
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index baad81d6d8..041c51eed8 100644
+index baad81d6d814d7d117059afff92be9eb56b549ab..041c51eed89ebfe237ac8abecc62e5f90aec701d 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -33,6 +33,13 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -84,7 +84,7 @@ index baad81d6d8..041c51eed8 100644
    registry->RegisterStringPref(prefs::kOllamaModel, "llama3.2:3b");
    registry->RegisterBooleanPref(prefs::kAiControlEnabled, false);
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index c58487eb88..65f0bbb738 100644
+index c58487eb88ed3cc88173df3ad15a0876b574a986..65f0bbb738797bbe88b8e5e9c0ce160d1f9e49b0 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -4,7 +4,9 @@
@@ -783,7 +783,7 @@ index c58487eb88..65f0bbb738 100644
  
  void AegisService::UpdateFilterLists(base::OnceCallback<void(bool)> done) {
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 8b8fc01ff3..ac6cba5bb7 100644
+index 8b8fc01ff37ddd5bbae3385727431c15a84eb5fd..ac6cba5bb76bfeef618ee0f9235033d30f2aabfc 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -14,6 +14,7 @@
@@ -925,7 +925,7 @@ index 8b8fc01ff3..ac6cba5bb7 100644
    void NotifyObservers();
    std::string ResolveDocumentContext(const std::string& local_frame_token,
 diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
-index 7f7542b237..84e60603fe 100644
+index 7f7542b2378454b8af07fad8533af7f2e2d174f2..84e60603fe566d84c90bcc74f3193c7bb6e36a47 100644
 --- a/chrome/browser/aegis/aegis_service_unittest.cc
 +++ b/chrome/browser/aegis/aegis_service_unittest.cc
 @@ -2,9 +2,20 @@
@@ -1222,7 +1222,7 @@ index 7f7542b237..84e60603fe 100644
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/model_provider_client.cc b/chrome/browser/aegis/model_provider_client.cc
 new file mode 100644
-index 0000000000..9e930cb875
+index 0000000000000000000000000000000000000000..9e930cb8754b7f008692bee654655bbdb972f9ed
 --- /dev/null
 +++ b/chrome/browser/aegis/model_provider_client.cc
 @@ -0,0 +1,717 @@
@@ -1945,7 +1945,7 @@ index 0000000000..9e930cb875
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/model_provider_client.h b/chrome/browser/aegis/model_provider_client.h
 new file mode 100644
-index 0000000000..a5c3ec19f7
+index 0000000000000000000000000000000000000000..a5c3ec19f7c0cb9395a2dfb7ef77ebdd80f9dcee
 --- /dev/null
 +++ b/chrome/browser/aegis/model_provider_client.h
 @@ -0,0 +1,89 @@
@@ -2040,7 +2040,7 @@ index 0000000000..a5c3ec19f7
 +#endif  // CHROME_BROWSER_AEGIS_MODEL_PROVIDER_CLIENT_H_
 diff --git a/chrome/browser/aegis/model_provider_client_unittest.cc b/chrome/browser/aegis/model_provider_client_unittest.cc
 new file mode 100644
-index 0000000000..b4d6cdfa3c
+index 0000000000000000000000000000000000000000..b4d6cdfa3cb68470b84cffd71414bbca450fb22e
 --- /dev/null
 +++ b/chrome/browser/aegis/model_provider_client_unittest.cc
 @@ -0,0 +1,384 @@
@@ -2430,7 +2430,7 @@ index 0000000000..b4d6cdfa3c
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/ollama_sidecar.cc b/chrome/browser/aegis/ollama_sidecar.cc
 deleted file mode 100644
-index 6d83726752..0000000000
+index 6d83726752a466517b14054da2c72c14a00c1e36..0000000000000000000000000000000000000000
 --- a/chrome/browser/aegis/ollama_sidecar.cc
 +++ /dev/null
 @@ -1,188 +0,0 @@
@@ -2624,7 +2624,7 @@ index 6d83726752..0000000000
 -}  // namespace aegis
 diff --git a/chrome/browser/aegis/ollama_sidecar.h b/chrome/browser/aegis/ollama_sidecar.h
 deleted file mode 100644
-index 6103d8b65d..0000000000
+index 6103d8b65db9f3df134c51e32abcd4ddad01c1a2..0000000000000000000000000000000000000000
 --- a/chrome/browser/aegis/ollama_sidecar.h
 +++ /dev/null
 @@ -1,64 +0,0 @@
@@ -2694,7 +2694,7 @@ index 6103d8b65d..0000000000
 -#endif  // CHROME_BROWSER_AEGIS_OLLAMA_SIDECAR_H_
 diff --git a/chrome/browser/aegis/ollama_sidecar_unittest.cc b/chrome/browser/aegis/ollama_sidecar_unittest.cc
 deleted file mode 100644
-index cf10636fc1..0000000000
+index cf10636fc17c1bb1a8f6af535d220c1fb4e010cc..0000000000000000000000000000000000000000
 --- a/chrome/browser/aegis/ollama_sidecar_unittest.cc
 +++ /dev/null
 @@ -1,108 +0,0 @@
@@ -2807,7 +2807,7 @@ index cf10636fc1..0000000000
 -
 -}  // namespace aegis
 diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
-index 927e64c7a8..b1fd69b4c4 100644
+index 927e64c7a86a906cfdd237d47307008e5fa83db0..b1fd69b4c45721abc806d627baf23e7b9f61e862 100644
 --- a/chrome/browser/aegis/summary_policy.cc
 +++ b/chrome/browser/aegis/summary_policy.cc
 @@ -35,6 +35,10 @@ constexpr size_t kMaxUserPromptBytes = 16 * 1024;
@@ -2954,7 +2954,7 @@ index 927e64c7a8..b1fd69b4c4 100644
      return Reject(error, "outbound prompt differs from fixed template");
    }
 diff --git a/chrome/browser/aegis/summary_policy.h b/chrome/browser/aegis/summary_policy.h
-index 6259c81d9f..7c43f930aa 100644
+index 6259c81d9f117609e3415ef99495e4bc4be2fd58..7c43f930aa7edfe10bae9aca5a644eb3a611e36c 100644
 --- a/chrome/browser/aegis/summary_policy.h
 +++ b/chrome/browser/aegis/summary_policy.h
 @@ -31,29 +31,33 @@ struct PreparedSummary {
@@ -2997,7 +2997,7 @@ index 6259c81d9f..7c43f930aa 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/summary_policy_unittest.cc b/chrome/browser/aegis/summary_policy_unittest.cc
-index 684c91c8b0..913d178549 100644
+index 684c91c8b019b4dfbc568fc4ad5518a4bbf35b50..913d17854997c69a5623cedf1aa3225ec79a22d7 100644
 --- a/chrome/browser/aegis/summary_policy_unittest.cc
 +++ b/chrome/browser/aegis/summary_policy_unittest.cc
 @@ -4,12 +4,13 @@
@@ -3194,7 +3194,7 @@ index 684c91c8b0..913d178549 100644
  
  }  // namespace
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index 4f09c6dfbc..f9e46e3488 100644
+index 4f09c6dfbc0b408e254d6df8a4885dc49485a8d6..f9e46e348845f87edccc59ac8aae5f08add77fc2 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -294,9 +294,12 @@ button:disabled {
@@ -3227,7 +3227,7 @@ index 4f09c6dfbc..f9e46e3488 100644
    width: 100%;
    resize: vertical;
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index f7c8dd2613..6c9fa93cb9 100644
+index f7c8dd261339ab253120e3a1740f86b3456b3be4..6c9fa93cb9aad5ab7b5856d6706f6a4f626487ab 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -139,25 +139,48 @@
@@ -3297,7 +3297,7 @@ index f7c8dd2613..6c9fa93cb9 100644
          </div>
          <pre class="result" id="privacy-result" hidden></pre>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index d7d29b1c3f..fa5d232202 100644
+index d7d29b1c3f2a896659b87d8bf98dcdf311882545..fa5d232202d50dd63238743702426e0c936e04ee 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -16,6 +16,13 @@ interface PrivacyEvent {
@@ -4184,7 +4184,7 @@ index d7d29b1c3f..fa5d232202 100644
    void init();
  });
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 06e2c36225..2b888d78de 100644
+index 06e2c362255f890ca6f847f03837b1b68daa9d80..2b888d78de2f1f0443f6ed6b73373b2eb5f34e33 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -83,12 +83,20 @@ struct AegisStrings {
@@ -4419,7 +4419,7 @@ index 06e2c36225..2b888d78de 100644
    source->AddString("activityHint", strings.activity_hint);
    source->AddString("activityEmpty", strings.activity_empty);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index ec5884fbc4..3604708f74 100644
+index ec5884fbc4e4306d9d8303f26269d67f069b44c8..3604708f74bbd31749233c568ab20b9aa50c5bf5 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -325,12 +325,12 @@ void AegisUIHandler::RegisterMessages() {
@@ -4556,7 +4556,7 @@ index ec5884fbc4..3604708f74 100644
    for (const std::string& name : models) {
      list.Append(name);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index 744b0a50d7..a7eaeed5f7 100644
+index 744b0a50d72a03e7b1d9f3978cd11b4c8ed57741..a7eaeed5f7a9309fbf6ded53963670c3e83c2462 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -56,8 +56,8 @@ class AegisUIHandler : public content::WebUIMessageHandler,
@@ -4585,7 +4585,7 @@ index 744b0a50d7..a7eaeed5f7 100644
                        std::string error,
                        std::vector<std::string> models);
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index e402c6b71d..5a3e39c567 100644
+index e402c6b71d4623d09a241cb5e8b7076095452731..5a3e39c56783ea48cc148953746da1822bfb5820 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -34,6 +34,12 @@ inline constexpr char kBounceTrackingEnabled[] =

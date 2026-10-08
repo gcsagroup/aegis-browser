@@ -20,6 +20,24 @@ bool Text(const base::DictValue& value,
   return text && (allow_empty || !text->empty()) && text->size() <= limit &&
          base::IsStringUTF8(*text);
 }
+std::string DisplayUrl(const GURL& url) {
+  GURL::Replacements safe;
+  safe.ClearUsername();
+  safe.ClearPassword();
+  safe.ClearQuery();
+  safe.ClearRef();
+  return url.ReplaceComponents(safe).spec();
+}
+
+bool BoundToSource(const AgentExecutionEvidence& evidence,
+                   int source_id, int32_t tab, const GURL& url) {
+  return evidence.research_source_id == source_id &&
+         evidence.research_document &&
+         evidence.research_document->tab_id == tab &&
+         evidence.research_document->committed_url == url &&
+         evidence.result.value.FindInt("tab_id") == tab;
+}
+
 std::string Clip(std::string_view value, size_t limit) {
   return std::string(base::TruncateUTF8ToByteSize(value, limit));
 }
@@ -63,25 +81,24 @@ void NormalizeAgentResearchComparison(
     return;
   }
   // 对照只认当前所选页面的最后一次完整观察，失败或换页不能沿用旧值。
-  std::map<std::string, std::string> texts;
-  std::map<std::string, int> source_numbers;
+  std::map<int, std::string> texts;
+  int next_source = 0;
   std::string sources;
   for (const auto& [tab, url] : selected_urls) {
-    const int number = static_cast<int>(source_numbers.size()) + 1;
-    source_numbers.emplace(url.spec(), number);
+    const int number = ++next_source;
     const AgentToolResult* observed = nullptr;
+    const AgentExecutionEvidence* bound = nullptr;
     for (const auto& item : evidence) {
       if (item.tool_name == "page.observe" &&
           item.result.value.FindInt("tab_id") == tab) {
         observed = &item.result;
+        bound = &item;
       }
     }
     std::string text;
     std::string title;
-    const auto* observed_url =
-        observed ? observed->value.FindString("url") : nullptr;
     if (task.scope().AllowsTab(tab) && task.scope().AllowsOrigin(url) &&
-        observed && observed_url && GURL(*observed_url) == url &&
+        observed && bound && BoundToSource(*bound, number, tab, url) &&
         AgentResearchContentHash(*observed)) {
       if (const auto* value = observed->value.FindString("title")) {
         title = Clip(*value, 128);
@@ -94,9 +111,9 @@ void NormalizeAgentResearchComparison(
         }
       }
     }
-    texts.emplace(url.spec(), base::CollapseWhitespaceASCII(text, false));
+    texts.emplace(number, base::CollapseWhitespaceASCII(text, false));
     sources +=
-        "\n[" + base::NumberToString(number) + "] " + title + " " + url.spec();
+        "\n[" + base::NumberToString(number) + "] " + title + " " + DisplayUrl(url);
   }
   auto normalize_anchor = [](std::string_view value) {
     // 保留锚点边缘的空格，避免将“为 42”变成“为42”。
@@ -131,15 +148,15 @@ void NormalizeAgentResearchComparison(
       continue;
     }
     std::map<std::string, std::vector<int>> groups;
-    base::flat_set<std::string> seen;
+    base::flat_set<int> seen;
     std::vector<int> missing;
     for (const auto& cell : dimension.values) {
-      const auto source = texts.find(cell.source_url);
-      if (source == texts.end() || !seen.insert(cell.source_url).second) {
+      const auto source = texts.find(cell.source_id);
+      if (source == texts.end() || !seen.insert(cell.source_id).second) {
         valid = false;
         break;
       }
-      const int number = source_numbers.at(cell.source_url);
+      const int number = cell.source_id;
       const std::string value(base::TrimWhitespaceASCII(
           normalize_anchor(cell.value), base::TRIM_ALL));
       if (value.empty() || source->second.empty()) {
@@ -218,7 +235,7 @@ void NormalizeAgentResearchComparison(
         "尚未得到可按原文核对的比较字段。以下仅保留已读取的原文摘录，分"
         "类和数量尚未核实。";
     for (const auto& [url, text] : texts) {
-      rendered += "\n[" + base::NumberToString(source_numbers.at(url)) + "] " +
+      rendered += "\n[" + base::NumberToString(url) + "] " +
                   (text.empty() ? "来源未完整读取" : Clip(text, 256));
     }
   }
@@ -268,7 +285,7 @@ std::optional<AgentCompletionSummary> BuildPartialResearchCompletion(
   bool missing = false;
   for (const auto& item : *record.FindList("sources")) {
     const auto& source = item.GetDict();
-    const auto& url = *source.FindString("url");
+    const auto url = DisplayUrl(GURL(*source.FindString("url")));
     if (source.FindBool("available") != true ||
         base::CollapseWhitespaceASCII(*source.FindString("excerpt"), false)
             .empty()) {
@@ -373,7 +390,9 @@ std::optional<base::DictValue> BuildAgentResearchRecord(
   }
   record.Set("unfinished", std::move(unfinished));
   base::ListValue sources;
+  int source_id = 0;
   for (const auto& [id, url] : selected_urls) {
+    ++source_id;
     if (!task.scope().AllowsTab(id) || !task.scope().AllowsOrigin(url)) {
       return std::nullopt;
     }
@@ -387,6 +406,14 @@ std::optional<base::DictValue> BuildAgentResearchRecord(
     for (const auto& item : evidence) {
       if (item.tool_name != "page.observe" ||
           item.result.value.FindInt("tab_id") != id) {
+        continue;
+      }
+      source.Set("available", false);
+      source.Set("title", "");
+      source.Set("excerpt", "");
+      source.Set("content_hash", "");
+      source.Set("captured_ms", "");
+      if (!BoundToSource(item, source_id, id, url)) {
         continue;
       }
       auto hash = AgentResearchContentHash(item.result);

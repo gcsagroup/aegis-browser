@@ -1,4 +1,4 @@
-From 15bc2b77d3d06a4ecade0e31a110e05516b10fc7 Mon Sep 17 00:00:00 2001
+From 6210f5c9183f69228d25c525da7b7378c0839402 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 00:17:12 +0800
 Subject: [PATCH] test: verify redacted Ollama request body
@@ -9,7 +9,7 @@ Subject: [PATCH] test: verify redacted Ollama request body
  2 files changed, 103 insertions(+)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 5b0dd4dfe2..055c8dc00d 100644
+index 5b0dd4dfe26eebdf98ec5d03a87f641888573bc8..055c8dc00d15cb50a1c14306831cef221979bd3d 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -73,6 +73,7 @@ test("aegis_browser_unittests") {
@@ -21,7 +21,7 @@ index 5b0dd4dfe2..055c8dc00d 100644
      "//url",
    ]
 diff --git a/chrome/browser/aegis/summary_policy_unittest.cc b/chrome/browser/aegis/summary_policy_unittest.cc
-index 0298f8eae5..684c91c8b0 100644
+index 0298f8eae583445fbb926f7cdd03f8c8e470730d..684c91c8b019b4dfbc568fc4ad5518a4bbf35b50 100644
 --- a/chrome/browser/aegis/summary_policy_unittest.cc
 +++ b/chrome/browser/aegis/summary_policy_unittest.cc
 @@ -5,8 +5,19 @@

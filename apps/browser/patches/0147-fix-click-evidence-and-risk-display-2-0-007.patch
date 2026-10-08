@@ -1,4 +1,4 @@
-From e6a1039cfe5f4e8ef55d60a402caac1b4ff51693 Mon Sep 17 00:00:00 2001
+From c55035b629f83a75771b18ceb119ac91d1a37394 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 03:36:04 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E6=A0=B8=E9=AA=8C=E7=82=B9=E5=87=BB?=
@@ -21,7 +21,7 @@ Content-Transfer-Encoding: 8bit
  9 files changed, 109 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
-index 5f39475ce3..2203c3f880 100644
+index 5f39475ce3a9f8e92a11e1243ad7bb1fe6c6edd9..2203c3f880081838275f8ae555e6da7b9f02a257 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -711,6 +711,7 @@ bool AegisActorBridge::PauseTask(const std::string& agent_task_id,
@@ -117,7 +117,7 @@ index 5f39475ce3..2203c3f880 100644
    webmcp_documents_.erase(agent_task_id);
  }
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
-index 8e0e2f612f..b1c1b79041 100644
+index 8e0e2f612f834cc466207cef190634714447f39d..b1c1b790418ad161e13fb228aebd3ae5d632fc93 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 @@ -114,6 +114,7 @@ class AegisActorBridge {
@@ -129,7 +129,7 @@ index 8e0e2f612f..b1c1b79041 100644
        observed_node_text_;
    std::map<std::string, std::map<int32_t, WebMcpDocument>> webmcp_documents_;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 63c6b1f989..9551f82cb7 100644
+index 63c6b1f98947c7f739d2a62c0a52555cd4f776a0..9551f82cb7b62c8a93a33f3c34dfd4f1ceaf4bf4 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -2600,6 +2600,27 @@ AgentRiskLevel AegisAgentService::ToolCallRisk(
@@ -161,7 +161,7 @@ index 63c6b1f989..9551f82cb7 100644
      const std::string& task_id) const {
    base::flat_set<std::string> origins;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index d84a20918e..79c52d967f 100644
+index d84a20918e83ea5f44067df51dcb4638f61bb2fd..79c52d967ff231be43a64b2b208b0d4595de34ed 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -138,6 +138,7 @@ class AegisAgentService : public KeyedService {
@@ -173,7 +173,7 @@ index d84a20918e..79c52d967f 100644
        const std::string& task_id) const;
    void ExecuteTool(
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 5a7f91665c..934bc9d65e 100644
+index 5a7f91665c8296c6ff19fefa0c18245bb1c817c2..934bc9d65e4ca9922a1cd8c1b0d918e8add496f3 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -1313,12 +1313,16 @@ TEST_F(AegisAgentServiceTest,
@@ -194,7 +194,7 @@ index 5a7f91665c..934bc9d65e 100644
    EXPECT_EQ(service->EvaluateToolCall(task->id(), call, receipt->approval_id)
                  .disposition,
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 9fec58b44c..0a8c30aba9 100644
+index 9fec58b44ce4a792158a34419068e79ea8312624..0a8c30aba9e581b7212db0bca2946dfe771c900d 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -1118,6 +1118,7 @@ TEST(AegisAgentResultVerifierTest, RejectsModelClaimWithoutBrowserEvidence) {
@@ -247,7 +247,7 @@ index 9fec58b44c..0a8c30aba9 100644
    AgentToolRegistry registry;
    AgentResultVerifier verifier;
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
-index b409160b12..1a7e99ba3f 100644
+index b409160b12c5d523c528f27325a0f6c55a91ff89..1a7e99ba3fb8e82f4a7a3b18cea3edc5c8aa65a1 100644
 --- a/chrome/browser/aegis/agent/agent_result_verifier.cc
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
 @@ -236,6 +236,19 @@ AgentVerificationDecision AgentResultVerifier::Verify(
@@ -271,7 +271,7 @@ index b409160b12..1a7e99ba3f 100644
        return VerifyExtraction(call, value);
      }
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 0e1ffefb27..5a2adfaf9e 100644
+index 0e1ffefb27d1d8e6dc6f4e994b4b5b560c71c0d8..5a2adfaf9ec1777e5240c492a45d18595f238306 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -996,7 +996,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
@@ -293,7 +293,7 @@ index 0e1ffefb27..5a2adfaf9e 100644
      }
      approval->is_data_transfer =
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 5befd2391e..578b15309e 100644
+index 5befd2391e5b9ef5e47e20a204ad56beb44ecebb..578b15309e5cee09d2802d728e64b81eb3e8ac9b 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

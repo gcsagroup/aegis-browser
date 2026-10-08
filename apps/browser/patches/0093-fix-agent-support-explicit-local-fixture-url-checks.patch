@@ -1,4 +1,4 @@
-From cb8f985f0fdf5b2e829db185b52e89c4f6952b55 Mon Sep 17 00:00:00 2001
+From ce4744caab59c98f2bf0124070eaef6b7fc590a5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 17:41:40 +0800
 Subject: [PATCH] fix(agent): support explicit local fixture URL checks
@@ -14,7 +14,7 @@ Subject: [PATCH] fix(agent): support explicit local fixture URL checks
  7 files changed, 117 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 4553f860ae..75c6128c6d 100644
+index 4553f860ae8df914b40fe0e6e343956e332cb961..75c6128c6df244bf69acf5b672586b4a6470d3e6 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -671,6 +671,24 @@ TEST_F(AegisAgentServiceTest, BookmarkUrlChecksRejectLocalNetworkTargets) {
@@ -43,7 +43,7 @@ index 4553f860ae..75c6128c6d 100644
    AegisBrowserTools tools(profile_);
    UndoManager undo_manager;
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index 70a0b78343..caf749213e 100644
+index 70a0b783432b1e24dd7a8ea629384940364c575b..caf749213e61f08f3a322db22aba0228da2a04da 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -12,6 +12,7 @@
@@ -177,7 +177,7 @@ index 70a0b78343..caf749213e 100644
                final_allowed
                    ? UrlCheckClassification(net_error, response_code, redirected)
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
-index 42c73c28b3..a7cd386def 100644
+index 42c73c28b367a033cf069816e02ceac91c27f6c1..a7cd386def84cc6abd1484bd523c32202734b827 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.h
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
 @@ -47,7 +47,8 @@ namespace aegis::agent {
@@ -191,7 +191,7 @@ index 42c73c28b3..a7cd386def 100644
  
  // Executes browser-owned tools that must not be implemented through renderer
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index 8178801d27..b4f2a1a701 100644
+index 8178801d276b8f7e1206f2037dc6a5a5f4e5f91e..b4f2a1a7018e99eabadd2dd2f569e1f7a13fca22 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -394,6 +394,24 @@ summary {
@@ -220,7 +220,7 @@ index 8178801d27..b4f2a1a701 100644
    display: grid;
    gap: 8px;
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index b9288ef2e2..4797f0e166 100644
+index b9288ef2e2f5e0bb94540cb87b11bb9566e10837..4797f0e1661364807cfdb3c5e49ace48e6739ea3 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -110,6 +110,10 @@
@@ -235,7 +235,7 @@ index b9288ef2e2..4797f0e166 100644
          <button id="start-button" type="button" hidden disabled></button>
        </section>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 135ac52779..d151e3bc22 100644
+index 135ac52779be917ac3d62ddc4439414a05b20967..d151e3bc2287e583fbca9cb95467f86b9b5260a9 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -381,6 +381,14 @@ function friendlyError(error: string, hasPlan: boolean): string {
@@ -266,7 +266,7 @@ index 135ac52779..d151e3bc22 100644
    const approval = element('approval-card');
    approval.hidden = !next.pendingApproval;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 8a1bb5a17a..8ae6c04086 100644
+index 8a1bb5a17a658807795692d6e344b8a551ef9d40..8ae6c04086f3beaaf9012ad2f8c8e0f3f6a2078b 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -295,6 +295,21 @@ void AddStrings(content::WebUIDataSource* source) {

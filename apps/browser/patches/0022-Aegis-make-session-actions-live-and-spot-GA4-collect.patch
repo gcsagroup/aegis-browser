@@ -1,4 +1,4 @@
-From f976570a2c2f415c45587dc8eefd78d82f343ed9 Mon Sep 17 00:00:00 2001
+From 44437ec4f6bd5591facf2b44493a2f010920a1ab Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:09:16 +0800
 Subject: [PATCH] Aegis: make session actions live and spot GA4 collect
@@ -22,7 +22,7 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  10 files changed, 159 insertions(+), 11 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_bounce_observer.cc b/chrome/browser/aegis/aegis_bounce_observer.cc
-index 08bc56e356..31edfdf865 100644
+index 08bc56e356b43ce1dd57b2cfc9ecf86ec9c6f749..31edfdf865444c7fb03366d4497ec8fb73196aeb 100644
 --- a/chrome/browser/aegis/aegis_bounce_observer.cc
 +++ b/chrome/browser/aegis/aegis_bounce_observer.cc
 @@ -82,6 +82,7 @@ void BounceObserver::OnChainHandled(
@@ -34,7 +34,7 @@ index 08bc56e356..31edfdf865 100644
    }
  }
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 9ac6debafd..bc4e1e05c6 100644
+index 9ac6debafddfd14afdb0107d3258981df96ac8cd..bc4e1e05c69d1e3dfed58e72abea7cff06a242f6 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -781,6 +781,18 @@ void AegisService::RecordDeletedCookie(const std::string& name,
@@ -57,7 +57,7 @@ index 9ac6debafd..bc4e1e05c6 100644
    return {privacy_events_.begin(), privacy_events_.end()};
  }
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index f70862e27c..0afc1143a1 100644
+index f70862e27c1ba4cdd2845ccf16dfa93797e38635..0afc1143a10cbd9d6feb98785c4621ebbe1c2489 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -133,6 +133,7 @@ class AegisService {
@@ -69,7 +69,7 @@ index f70862e27c..0afc1143a1 100644
  
    PrefService* prefs() const { return prefs_; }
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index ebbe4c8159..1422ce2807 100644
+index ebbe4c815957d71f4cbcc4a06e271c667bdc304e..1422ce2807b9371b97db0999ac8a7321ae35b02a 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -135,6 +135,23 @@ h1 {
@@ -97,7 +97,7 @@ index ebbe4c8159..1422ce2807 100644
    margin: 0 0 1rem;
    color: var(--muted);
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 3b4bc1ccf9..1cc7f61d17 100644
+index 3b4bc1ccf91d971d4ffdcba9f5096a204d0ed9e1..1cc7f61d17d4f5c57dfb5f7940f9c773bc0c34d6 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -31,6 +31,11 @@
@@ -113,7 +113,7 @@ index 3b4bc1ccf9..1cc7f61d17 100644
            <span class="copy">
              <span class="name">$i18n{linkSanitizeLabel}</span>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index f53afe98ab..d1ecddad37 100644
+index f53afe98abfee1c526556146ef12f49c679dfd45..d1ecddad37086b1ccd6666f329f36ab538623ccf 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -257,6 +257,19 @@ function formatSummary(result: SummarizeResult): string {
@@ -264,7 +264,7 @@ index f53afe98ab..d1ecddad37 100644
  
  async function probeOllama() {
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 7b11bd3bae..7e992a4712 100644
+index 7b11bd3bae06f524b8516b6d77b4d84d969d68af..7e992a4712bc09afda752369f71aab528c746cdb 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -26,6 +26,7 @@ struct AegisStrings {
@@ -338,7 +338,7 @@ index 7b11bd3bae..7e992a4712 100644
    source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
    source->AddString("filterListAutoUpdateHint",
 diff --git a/chrome/common/aegis/first_party_collect.cc b/chrome/common/aegis/first_party_collect.cc
-index f3eeb289fd..03d4458b67 100644
+index f3eeb289fd8c0b567d9f6854935db2c858f1b0b8..03d4458b6725c7949448184530d170845f80764e 100644
 --- a/chrome/common/aegis/first_party_collect.cc
 +++ b/chrome/common/aegis/first_party_collect.cc
 @@ -6,6 +6,7 @@
@@ -379,7 +379,7 @@ index f3eeb289fd..03d4458b67 100644
    for (std::string_view rule : kFirstPartyCollectPaths) {
      if (PathMatchesCollect(path, rule)) {
 diff --git a/chrome/common/aegis/generated/first_party_collect_paths.inc b/chrome/common/aegis/generated/first_party_collect_paths.inc
-index 31409d2044..1b0c58be02 100644
+index 31409d204483719c8750787f8a584ae38ee83a5c..1b0c58be0275505f017f0d6ad8efbef096c7f4bd 100644
 --- a/chrome/common/aegis/generated/first_party_collect_paths.inc
 +++ b/chrome/common/aegis/generated/first_party_collect_paths.inc
 @@ -12,4 +12,5 @@ constexpr std::string_view kFirstPartyCollectPaths[] = {
@@ -389,7 +389,7 @@ index 31409d2044..1b0c58be02 100644
 +    "/ag/g/c",
  };
 diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
-index 397444673f..797ade05d5 100644
+index 397444673f8857b8d4f34622ac711671f142a634..797ade05d57835ddca6d18abea099fc02c09acf2 100644
 --- a/third_party/aegis_policy/policy_snapshot.json
 +++ b/third_party/aegis_policy/policy_snapshot.json
 @@ -1,6 +1,6 @@

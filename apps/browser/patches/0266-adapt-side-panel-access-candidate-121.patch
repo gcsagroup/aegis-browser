@@ -1,0 +1,227 @@
+From 91de3ccd2e5d721f34b57d1590a6e45dac317135 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 7 Oct 2026 03:58:52 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=BF=81=E7=A7=BB155=E4=BE=A7=E6=A0=8F?=
+ =?UTF-8?q?=E8=8E=B7=E5=8F=96=E6=8E=A5=E5=8F=A3=E5=B9=B6=E9=80=92=E5=A2=9E?=
+ =?UTF-8?q?=E5=80=99=E9=80=89121?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_agent_browsertest.cc  | 13 ++++++-------
+ .../aegis/agent/aegis_agent_interactive_uitest.cc   |  7 +++----
+ .../render_view_context_menu.cc                     |  3 +--
+ chrome/browser/ui/browser_command_controller.cc     |  3 +--
+ .../aegis_agent/aegis_agent_side_panel.cc           |  3 +--
+ chrome/browser/ui/webui/aegis/aegis_ui_handler.cc   |  3 +--
+ chrome/browser/ui/webui/help/aegis_github_update.h  |  4 ++--
+ 7 files changed, 15 insertions(+), 21 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index cc76c9d5721261f26a2c8546d0bec3ce226e6b5b..e30ced6e3f6fd6f429c63145f288de49a3a96dc5 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -57,7 +57,6 @@
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_tabstrip.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/side_panel/side_panel_action_callback.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
+@@ -128,7 +127,7 @@ void ConfigureAgentModel(Profile* profile) {
+ }
+ 
+ content::WebContents* ShowAgentPanel(BrowserWindowInterface* browser) {
+-  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser);
+   if (!side_panel) {
+     return nullptr;
+   }
+@@ -150,7 +149,7 @@ content::WebContents* ShowAgentPanel(BrowserWindowInterface* browser) {
+ void ReopenAgentPanelForTask(BrowserWindowInterface* browser,
+                             content::WebContents*& panel,
+                             const std::string& task_id) {
+-  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser);
+   ASSERT_TRUE(side_panel);
+   side_panel->Close();
+   ASSERT_TRUE(base::test::RunUntil([&]() {
+@@ -275,7 +274,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
+       kActionSidePanelShowAegisAgent,
+       BrowserActions::From(browser())->root_action_item());
+   ASSERT_TRUE(action);
+-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser());
+   ASSERT_TRUE(side_panel);
+   side_panel->DisableAnimationsForTesting();
+ 
+@@ -561,7 +560,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
+   ASSERT_TRUE(profile->IsRegularProfile());
+   ASSERT_FALSE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
+   ASSERT_EQ(AegisAgentServiceFactory::GetForProfileIfExists(profile), nullptr);
+-  ASSERT_FALSE(browser()->GetFeatures().side_panel_ui()->IsSidePanelEntryShowing(
++  ASSERT_FALSE(SidePanelUI::From(browser())->IsSidePanelEntryShowing(
+       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
+ 
+   // 仅 PRE 正文显式启用并创建服务；不通过面板、模型或执行工具准备资料。
+@@ -655,7 +654,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
+   ASSERT_TRUE(browser()->GetProfile()->IsRegularProfile());
+   ASSERT_TRUE(
+       browser()->GetProfile()->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
+-  ASSERT_FALSE(browser()->GetFeatures().side_panel_ui()->IsSidePanelEntryShowing(
++  ASSERT_FALSE(SidePanelUI::From(browser())->IsSidePanelEntryShowing(
+       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
+ 
+   // 只让真实消息循环与时钟前进；允许启动时已过期的原监控自然立即执行。
+@@ -2712,7 +2711,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+ 
+-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser());
+   ASSERT_TRUE(side_panel);
+   side_panel->SetNoDelaysForTesting(true);
+   side_panel->DisableAnimationsForTesting();
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index ba932cbb41eea8a4f5151733752952604c385c68..ea7a9e0b4208633ac8e5642dd1deed29aaeeb3fa 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -13,7 +13,6 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
+@@ -53,7 +52,7 @@ class AegisAgentInteractiveUiTest : public InteractiveBrowserTest {
+   void SetUpOnMainThread() override {
+     InteractiveBrowserTest::SetUpOnMainThread();
+     browser()->GetProfile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
+-    SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++    SidePanelUI* side_panel = SidePanelUI::From(browser());
+     ASSERT_TRUE(side_panel);
+     side_panel->SetNoDelaysForTesting(true);
+     side_panel->DisableAnimationsForTesting();
+@@ -71,7 +70,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+   AegisAgentService* service =
+       AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+   ASSERT_TRUE(service);
+-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser());
+   ASSERT_TRUE(side_panel);
+   const std::string expected_origin = url::Origin::Create(page_url).Serialize();
+   std::string monitor_task_id;
+@@ -234,7 +233,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+                        SettingsEntryOpensAgentSidePanel) {
+   ASSERT_TRUE(
+       ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
+-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser());
+   ASSERT_TRUE(side_panel);
+   ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
+       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
+diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+index d0034ca2d08808e662dc020ac549865d9bcd8f37..918b661efe65eef464fa3173e6cf54105eed6cfa 100644
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -112,7 +112,6 @@
+ #include "chrome/browser/translate/translate_service.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_window.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+@@ -3026,7 +3025,7 @@ void RenderViewContextMenu::ExecuteAegisAgentContext() {
+   if (!service->SetPendingInvocationContext(std::move(context))) {
+     return;
+   }
+-  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser);
+   if (side_panel) {
+     side_panel->Show(SidePanelEntryId::kAegisAgent,
+                      SidePanelOpenTrigger::kAegisAgent);
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index bb0c09a7ba5ea1e26660d2808619c5ab97b1dfec..b6b6d2bc0b5ea9fa1138426afe555d528b7c765f 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -60,7 +60,6 @@
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/browser_select_file_dialog_controller.h"
+ #include "chrome/browser/ui/browser_window.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "chrome/browser/ui/bubble_anchor_util.h"
+@@ -1309,7 +1308,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+       }
+       break;
+     case IDC_SHOW_AEGIS_AGENT:
+-      browser_->GetFeatures().side_panel_ui()->Show(
++      SidePanelUI::From(browser_)->Show(
+           SidePanelEntryId::kAegisAgent, SidePanelOpenTrigger::kAegisAgent);
+       break;
+     case IDC_EDIT_SEARCH_ENGINES:
+diff --git a/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc b/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc
+index ce33c0bae577d590eb05d7e5e371f3aa5ee5a204..49ed9a8cbce3be621fb7107062f24649e9e8df6b 100644
+--- a/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc
++++ b/chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc
+@@ -9,7 +9,6 @@
+ #include "base/functional/callback_helpers.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_registry.h"
+@@ -61,7 +60,7 @@ bool ShowAegisAgentSidePanel(BrowserWindowInterface* browser) {
+   if (!browser || !IsAegisAgentSidePanelSupported(browser->GetProfile())) {
+     return false;
+   }
+-  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  SidePanelUI* side_panel = SidePanelUI::From(browser);
+   if (!side_panel) {
+     return false;
+   }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index a98992dcaf2eb31afa69003ccb0f78c7bacf4028..a5cdd2e4a2aeb45f9b8a4bb6b24f7bcac5005d2f 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -36,7 +36,6 @@
+ #include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/webui_url_constants.h"
+ #if !BUILDFLAG(IS_ANDROID)
+-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ // GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"  // nogncheck
+@@ -665,7 +664,7 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
+   BrowserWindowInterface* browser =
+       FindOwningBrowser(web_ui()->GetWebContents());
+   SidePanelUI* side_panel =
+-      browser ? browser->GetFeatures().side_panel_ui() : nullptr;
++      browser ? SidePanelUI::From(browser) : nullptr;
+   if (!aegis::IsAegisProfileSupported(profile) || !browser || !side_panel ||
+       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
+       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 36023c6fad53448d0eef50cef8c064d518b1c38e..ee3a614d39a677af5719790fa1c894fbc72489fa 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.120";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (120)";
++inline constexpr char kProductVersion[] = "2.1.0.121";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (121)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

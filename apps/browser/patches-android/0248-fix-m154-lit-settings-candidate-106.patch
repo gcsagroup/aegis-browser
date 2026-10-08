@@ -1,0 +1,87 @@
+From a7efce78887742b0aaf4c28722e46a253f44f2e8 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 5 Oct 2026 11:33:40 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20154=20=E7=9A=84?=
+ =?UTF-8?q?=20Lit=20=E8=AE=BE=E7=BD=AE=E9=A1=B5=E5=9B=9E=E5=BD=92=E5=B9=B6?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E5=AE=89=E5=85=A8=E5=80=99=E9=80=89=E8=87=B3?=
+ =?UTF-8?q?=20Ver=202.0=20(106)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../settings/people_page/people_page.ts       |  2 +-
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ .../data/webui/settings/people_page_test.ts   | 21 ++++++++++++++++++-
+ 3 files changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
+index 0d92503179e6ff1f86d99fe2066ee53a670cbeb2..7870a07a1f0286fbd43bf9bcdd0a21f2e5ceb8a4 100644
+--- a/chrome/browser/resources/settings/people_page/people_page.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.ts
+@@ -212,7 +212,7 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+   }
+ 
+   // <if expr="not is_chromeos">
+-  override willUpdate(changedProperties: PropertyValues<this>) {
++  override willUpdate(changedProperties: PropertyValues) {
+     super.willUpdate(changedProperties);
+ 
+     if (changedProperties.has('storedAccounts') ||
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index da6f74662902498e22e1aa34187b5a6619ece20a..c79bee6d936acb493e49a9b9c1c4cd496c4c707f 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.105";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (105)";
++inline constexpr char kProductVersion[] = "2.0.0.106";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (106)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/data/webui/settings/people_page_test.ts b/chrome/test/data/webui/settings/people_page_test.ts
+index f7fceaafb645919f55fd7bd02e3e908bd5fd970d..16e8000188a7ad494179e67d0662dd1efec48de4 100644
+--- a/chrome/test/data/webui/settings/people_page_test.ts
++++ b/chrome/test/data/webui/settings/people_page_test.ts
+@@ -518,7 +518,7 @@ suite('AegisLocalProfileOnly', function() {
+ 
+     await syncBrowserProxy.whenCalled('getSyncStatus');
+     await profileInfoBrowserProxy.whenCalled('getProfileInfo');
+-    flush();
++    await microtasksFinished();
+   });
+ 
+   teardown(function() {
+@@ -537,6 +537,25 @@ suite('AegisLocalProfileOnly', function() {
+       assertFalse(!!peoplePage.shadowRoot!.querySelector(selector), selector);
+     }
+   });
++
++  test('SyncStatusDoesNotExposeGoogleControls', async function() {
++    webUIListenerCallback('sync-status-changed', {
++      signedInState: SignedInState.SYNCING,
++      syncSystemEnabled: true,
++      signedInUsername: 'local-fixture@example.test',
++      statusAction: StatusAction.NO_ACTION,
++    });
++    await microtasksFinished();
++    assertTrue(isChildVisible(peoplePage, '#profile-row'));
++    assertTrue(isChildVisible(peoplePage, '#edit-profile'));
++    assertTrue(isChildVisible(peoplePage, '#importDataDialogTrigger'));
++    for (const selector of [
++           'settings-sync-account-control', '#account-subpage-row',
++           '#sync-setup', '#google-services', '#manage-google-account',
++         ]) {
++      assertFalse(!!peoplePage.shadowRoot.querySelector(selector), selector);
++    }
++  });
+ });
+ // </if>
+ 
+-- 
+2.52.0
+

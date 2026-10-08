@@ -1,0 +1,495 @@
+From 1d31faba5a1a218994bdff187fd7378d165da012 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 19:45:46 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E4=BB=BB=E5=8A=A1=E6=84=8F?=
+ =?UTF-8?q?=E5=9B=BE=E8=8C=83=E5=9B=B4=E4=B8=8E=E5=8E=9F=E7=94=9F=E7=95=8C?=
+ =?UTF-8?q?=E9=9D=A2=E5=A4=B9=E5=85=B7=EF=BC=8C=E5=80=99=E9=80=89=E9=80=92?=
+ =?UTF-8?q?=E5=A2=9E116?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 84 ++++++++++++-------
+ chrome/browser/aegis/agent/agent_planner.cc   | 14 +++-
+ .../aegis/agent/agent_planner_unittest.cc     | 31 +++++++
+ .../protocol/devtools_protocol_browsertest.cc |  7 +-
+ .../ui/webui/help/aegis_github_update.h       |  2 +-
+ .../webui/settings/people_page_index_test.ts  |  5 +-
+ 6 files changed, 106 insertions(+), 37 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index f6e60b961d5b49bb8970ddcd17c0550f2f32e5e4..829c5880e4c4b881425c267100c9b5e6400c6719 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -145,6 +145,19 @@ content::WebContents* ShowAgentPanel(BrowserWindowInterface* browser) {
+   return contents && content::WaitForLoadStop(contents) ? contents : nullptr;
+ }
+ 
++// 直接调用 Mojo 创建任务的夹具需要通过真实重新打开流程选择任务；
++// 不解除界面隔离旧任务事件的保护，也不伪造完成快照。
++void ReopenAgentPanelForTask(content::WebContents* panel,
++                            const std::string& task_id) {
++  ASSERT_TRUE(content::NavigateToURL(panel, panel->GetLastCommittedURL()));
++  ASSERT_EQ(task_id, content::EvalJs(panel, R"JS(
++    (async () => {
++      const {BrowserProxy} = await import('./browser_proxy.js');
++      return (await BrowserProxy.getInstance().handler.getSnapshot()).snapshot.taskId;
++    })()
++  )JS").ExtractString());
++}
++
+ class ProfileDestructionProbe : public ProfileObserver {
+  public:
+   explicit ProfileDestructionProbe(Profile* profile)
+@@ -1064,7 +1077,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
+           return '监控页宽度超出视口：' + root.scrollWidth + '/' + root.clientWidth;
+         }
+         const buttons = [...document.querySelectorAll('.monitor-actions button')];
+-        if (buttons.length !== 2) return '缺少监控操作按钮';
++        if (buttons.length !== 3 ||
++            ['check', 'toggle', 'delete'].some(action =>
++                !buttons.some(button => button.dataset.monitorAction === action))) {
++          return '缺少监控操作按钮';
++        }
+         for (const button of buttons) {
+           button.focus();
+           const bounds = button.getBoundingClientRect();
+@@ -1773,13 +1790,14 @@ IN_PROC_BROWSER_TEST_F(
+         const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
+             '检查我的全部500条书签网址是否可访问，只报告检查结果，不修改书签。',
+             0, 1, [], 0);
+-        return snapshot.taskId || `ERROR:${snapshot.lastError}`;
++        return snapshot.taskId || ('ERROR:' + snapshot.lastError);
+       })()
+     )JS").ExtractString();
+     ASSERT_FALSE(task_id.empty());
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
+     EXPECT_EQ(task->scope().budgets.max_model_calls, 20);
+     EXPECT_EQ(task->scope().budgets.max_network_requests, 520);
+     const int budget = narrowed ? 500 : 520;
+@@ -2458,12 +2476,18 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   base::test::TestFuture<AgentToolResult> extracted;
+   bridge.ExecutePageTool(task->id(), call, extracted.GetCallback());
+   ASSERT_TRUE(extracted.Get().ok) << extracted.Get().message;
++  const auto* observed_nodes = observed.Get().value.FindList("nodes");
++  ASSERT_TRUE(observed_nodes);
+   const auto* extracted_nodes = extracted.Get().value.FindList("nodes");
+-  ASSERT_TRUE(extracted_nodes);
++  ASSERT_TRUE(extracted_nodes && !extracted_nodes->empty());
++  // 标题样式属于原始观察；字段提取仅回传实际引用的正文，防止附带无关章节。
++  for (const auto& node : *extracted_nodes) {
++    EXPECT_NE(node.GetDict().FindBool("text_is_heading"), true);
++  }
+   bool saw_main_heading = false;
+   bool saw_section_heading = false;
+   bool saw_body = false;
+-  for (const auto& node_value : *extracted_nodes) {
++  for (const auto& node_value : *observed_nodes) {
+     const auto& node = node_value.GetDict();
+     const auto* text = node.FindString("text");
+     if (!text)
+@@ -2612,7 +2636,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler.createTask(
+           'organize my bookmarks with a preview', 1, 1, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -2805,7 +2829,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('compare usb hubs', 1, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -2842,7 +2866,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('帮我在 JD 找几款内存', 1, 3, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -2889,7 +2913,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('帮我总结下页面内容', 1, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -2935,7 +2959,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
+           '从当前官方合成发布页下载适合本机 macOS arm64 的测试安装包，核验页面公布的 SHA-256。只下载，不打开、不执行、不安装。',
+           1, 0, [], 0);
+-      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
++      return snapshot.taskId || ('ERROR:' + snapshot.lastError);
+     })()
+   )JS").ExtractString();
+   const auto* task = service->GetTask(id);
+@@ -2962,7 +2986,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler.createTask(
+           '在当前页面找到 macOS ARM64 的官方下载，先不要下载。', 1, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                              .ExtractString();
+@@ -3053,7 +3077,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
+           '总结当前页面内容，并列出重点', 1, 0, [], 0);
+-      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
++      return snapshot.taskId || ('ERROR:' + snapshot.lastError);
+     })()
+   )JS").ExtractString();
+   AgentTask* task = service->GetTask(task_id);
+@@ -3087,7 +3111,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
+           '总结当前页面内容，并列出重点', 1, 0, [], 0);
+-      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
++      return snapshot.taskId || ('ERROR:' + snapshot.lastError);
+     })()
+   )JS").ExtractString();
+   auto* service =
+@@ -3162,13 +3186,14 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('读取当前标签信息，无法读取的部分请说明', 0, 1, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+   AgentTask* task = service->GetTask(task_id);
+   ASSERT_TRUE(task);
++  ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
+   ASSERT_TRUE(service->BeginPlanning(task_id));
+   AgentModelEvent plan;
+   plan.type = AgentModelEventType::kToolCall;
+@@ -3261,7 +3286,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       if (!bad.snapshot.lastError) return 'ERROR:duplicate accepted';
+       const result = await handler.createTabGroupTask(
+           '把本任务的三个研究标签放入一个组。', ids);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                              .ExtractString();
+@@ -3386,7 +3411,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+         const {BrowserProxy} = await import('./browser_proxy.js');
+         const result = await BrowserProxy.getInstance().handler
+             .createTask($1, 0, 0, [], 0);
+-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+       })()
+     )JS",
+                                                                      goal))
+@@ -3437,7 +3462,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('统计当前窗口有几个标签', 0, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -3542,7 +3567,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('帮我概括一下这里讲了什么', 1, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -3572,7 +3597,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler.createTask(
+           '监控当前页面内容变化', 2, 0, [], 60);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -3621,7 +3646,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+         const result = await BrowserProxy.getInstance().handler.createTask(
+             '监控当前网页内容，每15分钟提醒重要变化；不下载、不购买、不填写表单。',
+             2, $1, [], 15);
+-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+       })()
+     )JS", workflow)).ExtractString();
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+@@ -3912,7 +3937,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+         const goal = `打开 ${$1} 并总结页面内容。只允许读取这个本地公开测试来源；不要下载、整理书签、提交或购买。`;
+         const result = await BrowserProxy.getInstance().handler
+             .createTask(goal, 1, $2, [], 0);
+-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+       })()
+     )JS", target.spec(), workflow_hint)).ExtractString();
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+@@ -3944,7 +3969,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const goal = `打开 ${$1} 并总结页面内容；不要下载、整理书签或购买。`;
+       const result = await BrowserProxy.getInstance().handler
+           .createTask(goal, 1, 1, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS", target.spec())).ExtractString();
+   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+@@ -4061,13 +4086,14 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+         const {BrowserProxy} = await import('./browser_proxy.js');
+         const result = await BrowserProxy.getInstance().handler.createTask(
+             $1, 1, 1, [], 0);
+-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+       })()
+     )JS", malformed_kind == 0 ? "不要整理书签，总结当前页。" :
+                                "总结当前页")).ExtractString();
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
+     ASSERT_TRUE(service->BeginPlanning(task_id));
+     AgentModelEvent plan;
+     plan.type = AgentModelEventType::kToolCall;
+@@ -4271,7 +4297,7 @@ IN_PROC_BROWSER_TEST_F(
+         const {BrowserProxy} = await import('./browser_proxy.js');
+         const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
+             $1, 1, 0, $2 ? [$2] : [], 0);
+-        return snapshot.lastError ? `ERROR:${snapshot.lastError}` : snapshot.taskId;
++        return snapshot.lastError ? ('ERROR:' + snapshot.lastError) : snapshot.taskId;
+       })()
+     )JS",
+                                goal,
+@@ -4283,6 +4309,7 @@ IN_PROC_BROWSER_TEST_F(
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
+     EXPECT_EQ(task->goal(), goal);
+     ASSERT_TRUE(service->BeginPlanning(task_id));
+     AgentTaskScope scope = task->scope();
+@@ -4854,12 +4881,13 @@ IN_PROC_BROWSER_TEST_F(
+         const result = await BrowserProxy.getInstance().handler.createTask(
+             '按标题主题分类我的全部500条书签，给出各类数量和真实代表标题，' +
+             '只生成整理预览，不修改书签。', 0, 1, [], 0);
+-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+       })()
+     )JS").ExtractString();
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
+     ASSERT_TRUE(service->BeginPlanning(task_id));
+     AgentModelEvent plan;
+     plan.type = AgentModelEventType::kToolCall;
+@@ -5058,7 +5086,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+           const result = await BrowserProxy.getInstance().handler
+               .createTask(goal, 1, 0, [], 0);
+           return result.snapshot.taskId ||
+-              `ERROR:${result.snapshot.lastError}`;
++              ('ERROR:' + result.snapshot.lastError);
+         })()
+       )JS",
+                                                 target_url.spec()))
+@@ -5083,7 +5111,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler.createTask(
+           '打开www.example.com告诉我最新消息', 1, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -5114,7 +5142,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('organize my bookmarks with a preview', 1, 1, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+@@ -5151,7 +5179,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+       const {BrowserProxy} = await import('./browser_proxy.js');
+       const result = await BrowserProxy.getInstance().handler
+           .createTask('把我的收藏夹按主题分类，先给我看预览', 1, 0, [], 0);
+-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
++      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
+     })()
+   )JS")
+                                   .ExtractString();
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index b679c2f86320939e79dde1102946e54ecf0b915f..67b8b8ba7865f1818f2ae02aed6a2143f376c405 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -107,6 +107,7 @@ std::string RequestedGoalText(std::string_view goal) {
+   std::string requested = lower;
+   bool denied = false;
+   bool clause_start = true;
++  bool enumerated_clause = false;
+   auto prefix_size = [](std::string_view text,
+                         std::initializer_list<std::string_view> prefixes) {
+     size_t length = 0;
+@@ -129,6 +130,7 @@ std::string RequestedGoalText(std::string_view goal) {
+     if (boundary) {
+       denied = false;
+       clause_start = true;
++      enumerated_clause = false;
+       i += boundary;
+       continue;
+     }
+@@ -138,6 +140,7 @@ std::string RequestedGoalText(std::string_view goal) {
+         requested.replace(i, comma, comma, ' ');
+       }
+       clause_start = true;
++      enumerated_clause = remaining.starts_with("、");
+       i += comma;
+       continue;
+     }
+@@ -164,7 +167,10 @@ std::string RequestedGoalText(std::string_view goal) {
+                                  "however ", "instead "}) ||
+          (clause_start &&
+           prefix_size(remaining, {"只", "仅", "僅", "请", "請", "然后", "然後",
+-                                  "再", "only ", "please ", "then "})))) {
++                                  "再", "only ", "please ", "then "})) ||
++         (clause_start && !enumerated_clause &&
++          prefix_size(remaining, {"总结", "總結", "翻译", "翻譯",
++                                  "summarize ", "translate "})))) {
+       denied = false;
+     }
+     if (word_start &&
+@@ -428,7 +434,8 @@ bool GoalRequestsBrowserData(std::string_view goal) {
+       "工作区",     "新建窗口", "创建窗口", "关闭窗口",   "激活窗口",
+       "当前窗口",   "新建視窗", "建立視窗", "關閉視窗",   "啟用視窗",
+       "目前視窗",   "收藏夾",   "書籤",     "標籤頁",     "瀏覽器標籤",
+-      "瀏覽器視窗", "工作區"};
++      "瀏覽器視窗", "工作區",   "当前标签信息", "當前標籤資訊",
++      "目前標籤資訊"};
+   if (std::ranges::any_of(kLocalizedBrowserData,
+                           [&goal](std::string_view phrase) {
+                             return goal.find(phrase) != std::string_view::npos;
+@@ -987,7 +994,8 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
+                  "搜尋",    "查找",   "总结",   "總結",     "翻译",  "翻譯",
+                  "并",      "並",     "然后",   "然後",     "之前",  "以前",
+                  "过去",    "過去",   "上次",   "下次",     "版本",  "时间",
+-                 "時間",    " and ",  " then ", "previous", "last ", "next ",
++                 "時間",    "任务",     "任務",   "task",
++                 " and ",  " then ", "previous", "last ", "next ",
+                  "version", "visit ", "search "})) {
+           return true;
+         }
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index 8d4900b319fcc2ea2bb02fd767d8c70d10e92e16..a8ff29911ae7e97bc02f9ed26e8f73ae5c3ad11c 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -1536,6 +1536,37 @@ TEST(AegisAgentPlannerTest, InstallerSourceGoalRequiresNativeCandidateCheck) {
+ }
+ 
+ 
++TEST(AegisAgentPlannerTest, TaskTabReferencesDoNotBindTheCurrentPage) {
++  for (std::string_view goal :
++       {"列出这个任务打开的标签页。", "列出本任務開啟的標籤頁。",
++        "List open tabs for this task.", "列出当前窗口中本任务的标签页。",
++        "读取当前标签信息，无法读取的部分请说明", "讀取目前標籤資訊"}) {
++    SCOPED_TRACE(goal);
++    EXPECT_FALSE(AgentGoalRefersToCurrentPage(goal));
++    EXPECT_FALSE(AgentGoalRequestsWindowTabMetadata(goal));
++    EXPECT_FALSE(AgentBrowserGoalNeedsClarification(
++        goal, AgentWorkflowKind::kBrowserSteward));
++  }
++}
++
++TEST(AegisAgentPlannerTest, PageRequestAfterNegatedClauseKeepsItsOwnScope) {
++  for (std::string_view goal :
++       {"不要整理书签，总结当前页。", "不要整理書籤，總結目前網頁。",
++        "Do not organize bookmarks, summarize this page."}) {
++    SCOPED_TRACE(goal);
++    EXPECT_TRUE(AgentGoalRefersToCurrentPage(goal));
++    EXPECT_EQ(AgentWorkflowKind::kResearch,
++              ConstrainWorkflowToUserIntent(
++                  goal, AgentWorkflowKind::kBrowserSteward));
++  }
++  for (std::string_view goal :
++       {"不要整理书签、总结当前页。", "不要整理書籤、翻譯目前網頁。",
++        "Do not organize bookmarks or summarize this page."}) {
++    SCOPED_TRACE(goal);
++    EXPECT_FALSE(AgentGoalRefersToCurrentPage(goal));
++  }
++}
++
+ TEST(AegisAgentPlannerTest, CloseRequiresExplicitActionNotStatusOrQuestion) {
+   for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",
+        "不要关闭标签页", "把未关闭的标签页列出", "如何关闭标签页", "如果有重复就关闭标签页",
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index ae3d3cc97e28b2731052f49d73fffd1de0c598fa..813087a6bae36a4723ed479d376b78f68594fa0d 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -616,9 +616,10 @@ IN_PROC_BROWSER_TEST_F(
+                                   base::DictValue().Set("enable", true),
+                                   session_id, true));
+   ASSERT_TRUE(error());
+-  EXPECT_EQ(
+-      "Shared storage tracking is not available to remote debugging clients",
+-      *error()->FindString("message"));
++  // Chromium 154 已移除此协议方法；仍须明确拒绝，不能计作成功启用跟踪。
++  EXPECT_EQ(-32601, error()->FindInt("code"));
++  EXPECT_EQ("'Storage.setSharedStorageTracking' wasn't found",
++            *error()->FindString("message"));
+ 
+   const base::DictValue* history_result = SendSessionCommand(
+       "Page.getNavigationHistory", base::DictValue(), session_id, true);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d436f5cb736949b0d12a75336fe32acc8fc82722..b52d254f01fad01ae768f259e348864de604e1a8 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,7 +21,7 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.115";
++inline constexpr char kProductVersion[] = "2.1.0.116";
+ inline constexpr char kProductVersionLabel[] = "Ver 2.1 (115)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+diff --git a/chrome/test/data/webui/settings/people_page_index_test.ts b/chrome/test/data/webui/settings/people_page_index_test.ts
+index 6fedf2a1ec5b40c5c538955a37d6c245678f6570..d72d6f1c5f7229a850772fedaf2a1b78afa6b4fa 100644
+--- a/chrome/test/data/webui/settings/people_page_index_test.ts
++++ b/chrome/test/data/webui/settings/people_page_index_test.ts
+@@ -91,13 +91,14 @@ suite('PeoplePageIndex', function() {
+   }
+ 
+   setup(async function() {
+-    // <if expr="is_chromeos">
++    // 通用索引测试显式建立 Google 页面前提；Aegis 用例另行验证关闭状态。
++    // 先卸载旧视图，避免下一例重建路由时旧组件仍访问已经移除的入口。
++    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     loadTimeData.overrideValues({
+       replaceSyncPromosWithSignInPromos: false,
+       showGoogleServicesSettings: true,
+     });
+     resetRouterForTesting();
+-    // </if>
+ 
+     // Set SignedInState.SIGNED_IN otherwise navigating to routes.SYNC_ADVANCED
+     // would automatically redirect to routes.SYNC.
+-- 
+2.52.0
+

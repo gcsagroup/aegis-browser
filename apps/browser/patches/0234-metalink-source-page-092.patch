@@ -1,4 +1,4 @@
-From b3cffa8f3b368e39565c27d589280740ca77cec7 Mon Sep 17 00:00:00 2001
+From b33d7cd5e315161d4385156d449226d6661cf1b0 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 20:35:21 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=85=B3=E8=81=94=E9=95=9C=E5=83=8F=E4=B8=8B?=
@@ -17,7 +17,7 @@ Content-Transfer-Encoding: 8bit
  5 files changed, 51 insertions(+), 10 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index 9229d6ea73..0fafe408aa 100644
+index 9229d6ea7309fe4b80cb266c982b9a9a4985f025..0fafe408aa3947b754f880385f0f1c02ad849410 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -269,14 +269,34 @@ TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
@@ -58,7 +58,7 @@ index 9229d6ea73..0fafe408aa 100644
    AegisUIConfig config;
    EXPECT_TRUE(config.IsWebUIEnabled(profile()));
 diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
-index 9e6bf3cafe..13fe4b9dd8 100644
+index 9e6bf3cafed637cd0802183d56a346b16c0c179b..13fe4b9dd8322b4e578ab737f0dd62ca93b0d411 100644
 --- a/chrome/browser/aegis/metalink_download_verifier.cc
 +++ b/chrome/browser/aegis/metalink_download_verifier.cc
 @@ -28,7 +28,9 @@
@@ -134,7 +134,7 @@ index 9e6bf3cafe..13fe4b9dd8 100644
        ->Start();
  }
 diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
-index 9da24db872..b2c0301277 100644
+index 9da24db872a41845c88ac3e25a6c8fd787b6cc07..b2c0301277b3fbd84cf0c13a872c8efea063e019 100644
 --- a/chrome/browser/aegis/metalink_download_verifier.h
 +++ b/chrome/browser/aegis/metalink_download_verifier.h
 @@ -8,6 +8,10 @@
@@ -164,7 +164,7 @@ index 9da24db872..b2c0301277 100644
      base::OnceCallback<void(bool, std::string)> started_callback);
  
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 1271e41dc5..a98992dcaf 100644
+index 1271e41dc5c1d292389129f19d148b343178f969..a98992dcaf2eb31afa69003ccb0f78c7bacf4028 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -1129,7 +1129,8 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
@@ -178,7 +178,7 @@ index 1271e41dc5..a98992dcaf 100644
                       weak_factory_.GetWeakPtr(), callback_id.GetString()));
  }
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index e4b22650d9..98b98f36e5 100644
+index e4b22650d9db52df7be131546f99d93d83d27cb9..98b98f36e51ce28d373737d2cd114dcdd4495cc4 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

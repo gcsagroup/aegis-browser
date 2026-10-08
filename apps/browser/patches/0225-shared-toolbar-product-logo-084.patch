@@ -1,4 +1,4 @@
-From 4099467ce013948dd3885c30e945b61fbd8b7de4 Mon Sep 17 00:00:00 2001
+From 9722b9c3d8d0b959702241c858723f5e37f304aa Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 05:22:36 +0800
 Subject: [PATCH] =?UTF-8?q?=E7=BB=9F=E4=B8=80=E5=85=B1=E7=94=A8=E5=B7=A5?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 2 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 85a0124f08..0ae4093851 100644
+index 85a0124f086764fc772fb7c4279d1cba7631b4b3..0ae40938516dc653b37a3d7a784e1d8b6ded50f2 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -29,11 +29,11 @@ index 85a0124f08..0ae4093851 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts b/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
-index 7eff3e7931..ab15655de6 100644
+index dba2076962e46b44d2a7cd5fde478c1f16208612..763ffa65c439d9a147a02a64abed3f0c09dbef64 100644
 --- a/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
 +++ b/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
 @@ -19,8 +19,6 @@ export function getHtml(this: CrToolbarElement) {
-       </cr-icon-button>` : ''}
+     ` : ''}
      <slot name="product-logo">
        <picture>
 -        <source media="(prefers-color-scheme: dark)"

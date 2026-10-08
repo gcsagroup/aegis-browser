@@ -1,4 +1,4 @@
-From 5fee6b60115fbfb493601df3e728c590841516ca Mon Sep 17 00:00:00 2001
+From 3705a23c7be10226511cb618968b5b313401ebfb Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 03:02:09 +0800
 Subject: [PATCH] fix(aegis): signal agent side panel readiness
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): signal agent side panel readiness
  6 files changed, 46 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 489ba392d2..354f418e54 100644
+index 489ba392d25901238e176a5c16b9c3d729386bad..354f418e54a008319211f38b7b04318e82c4336d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -19,8 +19,10 @@
@@ -59,7 +59,7 @@ index 489ba392d2..354f418e54 100644
   public:
    AegisAgentBrowserTest() {
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index b33475a400..f8f41b70e2 100644
+index b33475a400842ec3dcc544f56d8966584f93a3f5..f8f41b70e2607ac686920aace2466841df9cf93a 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -397,4 +397,7 @@ function bindActions() {
@@ -72,7 +72,7 @@ index b33475a400..f8f41b70e2 100644
 +  proxy.handler.showUI();
 +});
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index 3948b1e753..3c454d22ec 100644
+index 3948b1e753edc72e5a66326f76760a2f82e79134..3c454d22ec3768a9e622b3f6a5986e7f98504f26 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -109,6 +109,8 @@ interface Page {
@@ -85,7 +85,7 @@ index 3948b1e753..3c454d22ec 100644
  
    CreateTask(string goal,
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 7dc07d318c..59d5a0085b 100644
+index 7dc07d318cfc2a381076dc4c09f9a815fbe097be..59d5a0085b664280c2e0f8f59ac9a4772918d6fd 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -17,6 +17,7 @@
@@ -123,7 +123,7 @@ index 7dc07d318c..59d5a0085b 100644
  
  void AegisAgentPageHandler::OnAgentEnabledChanged() {
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
-index bdc5df3bfe..d854755bfb 100644
+index bdc5df3bfe31163e4ddcdf22c3cfd8b63eb79d5f..d854755bfb6b7d47af5f5e51002abd7a8f3254be 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 @@ -20,6 +20,7 @@
@@ -158,7 +158,7 @@ index bdc5df3bfe..d854755bfb 100644
    std::string active_task_id_;
    std::string last_error_;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 9ad9678911..0da7b17209 100644
+index 9ad9678911d8193ad16f16ffd5b175d5473e35b6..0da7b17209cc8f797a49c67a1b9efa451b07b2e0 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -200,6 +200,6 @@ void AegisAgentUI::CreatePageHandler(

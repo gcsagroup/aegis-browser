@@ -3031,15 +3031,121 @@ TEST(AegisAgentExecutionTest, ResearchCompletionRequiresStructuredComparisons) {
               .Set("values",
                    base::ListValue().Append(
                        base::DictValue()
-                           .Set("source_url", "https://example.test/1")
+                           .Set("source_id", 1)
                            .Set("value", "18 ms")))));
   auto parsed = ParseCompletionSummary(event, &error, false, true);
   ASSERT_TRUE(parsed) << error;
   ASSERT_EQ(parsed->research_comparisons.size(), 1u);
   EXPECT_EQ(parsed->research_comparisons[0].values[0].value, "18 ms");
+  EXPECT_EQ(parsed->research_comparisons[0].values[0].source_id, 1);
+  auto& cell = event.arguments.FindList("research_comparisons")->front().GetDict()
+                   .FindList("values")->front().GetDict();
+  cell.Set("source_id", 0);
+  EXPECT_FALSE(ParseCompletionSummary(event, &error, false, true));
+  cell.Remove("source_id");
+  cell.Set("source_url", "https://example.test/1?secret=old-contract");
+  EXPECT_FALSE(ParseCompletionSummary(event, &error, false, true));
   EXPECT_FALSE(ParseCompletionSummary(event, &error));
 }
 
+
+TEST(AegisAgentExecutionTest, ResearchPromptKeepsNativeSourceIdsWithoutQueryIdentity) {
+  auto scope = ExecutionScope();
+  scope.selected_pages_research = true;
+  scope.allowed_tab_ids = {1, 2, 3};
+  AgentTask task("query-twins", "比较所选来源", AgentMode::kAct, scope);
+  AgentTaskPlan plan;
+  std::vector<AgentExecutionEvidence> history;
+  for (int source = 1; source <= 3; ++source) {
+    AgentToolResult result;
+    result.action_id = "observation-" + base::NumberToString(source);
+    result.ok = true;
+    result.value.Set("tab_id", source);
+    result.value.Set("source_id", source);
+    result.value.Set("url", "https://fixture.example/path");
+    result.value.Set("document_token", "document-" + base::NumberToString(source));
+    result.value.Set("untrusted", true);
+    result.value.Set("truncated", false);
+    result.value.Set("nodes", base::ListValue().Append(
+        base::DictValue().Set("node_id", 1).Set("text", "延迟：18 ms。")));
+    history.push_back({.tool_name = "page.observe", .result = std::move(result),
+                       .research_source_id = source,
+                       .research_document = AgentDocumentRef{
+                           .tab_id = source, .frame_token = "frame",
+                           .document_token = "document-" + base::NumberToString(source),
+                           .committed_url = GURL("https://fixture.example/path?private_source=" +
+                                                 base::NumberToString(source))}});
+  }
+  const std::string prompt = BuildAgentExecutionPrompt(
+      task, plan, 0, 0, &history.back().result, history);
+  EXPECT_EQ(prompt.find("private_source"), std::string::npos);
+  auto envelope = base::JSONReader::ReadDict(prompt, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(envelope);
+  const auto* evidence = envelope->FindList("prior_verified_evidence_untrusted");
+  ASSERT_TRUE(evidence);
+  ASSERT_EQ(evidence->size(), 3u);
+  for (size_t source = 0; source < evidence->size(); ++source)
+    EXPECT_EQ((*evidence)[source].GetDict().FindInt("source_id"), static_cast<int>(source + 1));
+  // Latest-result compaction cannot strip its source identity either.
+  const auto* latest = envelope->FindString("previous_browser_result_untrusted_json");
+  if (latest) {
+    auto parsed = base::JSONReader::ReadDict(*latest, base::JSON_PARSE_RFC);
+    ASSERT_TRUE(parsed);
+    ASSERT_TRUE(parsed->FindDict("value"));
+    EXPECT_EQ(parsed->FindDict("value")->FindInt("source_id"), 3);
+  }
+}
+
+TEST(AegisAgentExecutionTest, ResearchRetriesKeepEveryLatestSourceInPrompt) {
+  auto scope = ExecutionScope();
+  scope.selected_pages_research = true;
+  scope.allowed_tab_ids.clear();
+  // 九个所选来源需要显式的九标签页预算，不能沿用默认上限。
+  scope.budgets.max_tabs = 9;
+  std::vector<AgentExecutionEvidence> history;
+  for (int source = 1; source <= 9; ++source) {
+    scope.allowed_tab_ids.insert(source);
+    for (int attempt = 0; attempt < 3; ++attempt) {
+      AgentToolResult result;
+      result.ok = attempt == 2;
+      result.value.Set("tab_id", source);
+      result.value.Set("source_id", source);
+      result.value.Set("untrusted", true);
+      result.value.Set("nodes", base::ListValue().Append(base::DictValue()
+          .Set("node_id", 1).Set("text", "source-text-" + base::NumberToString(source))));
+      RetainLatestAgentResearchObservation(history,
+          {.tool_name = "page.observe", .result = std::move(result),
+           .research_source_id = source});
+    }
+  }
+  ASSERT_EQ(history.size(), 9u);
+  ASSERT_TRUE(scope.IsValid());
+  AgentTask task("research-retries", "比较所选来源", AgentMode::kAct, scope);
+  AgentTaskPlan plan;
+  auto envelope = base::JSONReader::ReadDict(
+      BuildAgentExecutionPrompt(task, plan, 0, 0, nullptr, history),
+      base::JSON_PARSE_RFC);
+  ASSERT_TRUE(envelope);
+  const auto* evidence = envelope->FindList("prior_verified_evidence_untrusted");
+  ASSERT_TRUE(evidence);
+  ASSERT_EQ(evidence->size(), 9u);
+  for (int source = 1; source <= 9; ++source) {
+    EXPECT_EQ((*evidence)[source - 1].GetDict().FindInt("source_id"), source);
+    EXPECT_TRUE(history[source - 1].result.ok);
+  }
+  AgentToolResult late_failure;
+  late_failure.error = AgentErrorCode::kVerificationFailed;
+  RetainLatestAgentResearchObservation(history,
+      {.tool_name = "page.observe", .result = std::move(late_failure),
+       .research_source_id = 1});
+  ASSERT_EQ(history.size(), 9u);
+  EXPECT_EQ(history.back().research_source_id, 1);
+  EXPECT_FALSE(history.back().result.ok);
+  for (size_t i = 0; i + 1 < history.size(); ++i)
+    EXPECT_NE(history[i].research_source_id, 1);
+  EXPECT_EQ(BuildAgentExecutionPrompt(task, plan, 0, 0, nullptr, history)
+                .find("source-text-1"), std::string::npos);
+}
 
 TEST(AegisAgentExecutionTest, CloseSummaryCannotRepeatPreActionOpenState) {
   auto scope = ExecutionScope();

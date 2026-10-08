@@ -1,4 +1,4 @@
-From e55d1455a463785162830bd0cd793c1d8b247659 Mon Sep 17 00:00:00 2001
+From a04f5823826ec5461a7928ae0a5b0f7f7fa50446 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 03:56:07 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=E5=B7=A5=E4=BD=9C=E5=8C=BA?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 17 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index b68e3318d4..d5925a93ec 100644
+index b68e3318d40efc4ded713d9eb2eef4288c7b892f..d5925a93ec7fb0e87a6204fdb44acd9b68566d82 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -16,6 +16,7 @@
@@ -55,7 +55,7 @@ index b68e3318d4..d5925a93ec 100644
    AddTab(browser(), GURL("https://workspace.example/first"));
    AddTab(browser(), GURL("https://workspace.example/second"));
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 7b324111c4..28c21890cb 100644
+index 7b324111c4e83fe41689e9e813556a8dbf519eba..28c21890cba433729e67c1490ed4e1aa3d5423f9 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
