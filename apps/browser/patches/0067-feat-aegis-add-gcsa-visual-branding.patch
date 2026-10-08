@@ -1,4 +1,4 @@
-From 2b358e34018709b96327cd5762c590153a430891 Mon Sep 17 00:00:00 2001
+From a108bc8fbfb60246b8ce7a00a932996d6e4d51f0 Mon Sep 17 00:00:00 2001
 From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
 Date: Sat, 29 Aug 2026 17:20:15 +0800
 Subject: [PATCH] feat(aegis): add GCSA visual branding
@@ -166,7 +166,7 @@ Subject: [PATCH] feat(aegis): add GCSA visual branding
  create mode 100644 components/vector_icons/gcsa_aegis/product_refresh.icon
 
 diff --git a/chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml b/chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml
-index 32a95bc6ee..434cc11544 100644
+index 32a95bc6ee4d53551d84474cfd3ea88911a46620..434cc1154412ebdd9b642bf76530a179ca3a57da 100644
 --- a/chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml
 +++ b/chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml
 @@ -1,29 +1,68 @@
@@ -1770,7 +1770,7 @@ z9~H4s^e|r(u|N^4iXP?%idakZFkck0P!Zb{MJ!Ons-lPafg%=)9_AlE^Yr}#Ro6OZ
 TTIpC400000NkvXXu0mjf^fhiC
 
 diff --git a/chrome/android/java/res_chromium_base/mipmap-nodpi/layered_app_icon_foreground.xml b/chrome/android/java/res_chromium_base/mipmap-nodpi/layered_app_icon_foreground.xml
-index a73d454635..6de153eb8b 100644
+index a73d454635c69f43abdaaab236ea9e7a5c36a231..6de153eb8b9d9f218d575410a9e1098d0949effb 100644
 --- a/chrome/android/java/res_chromium_base/mipmap-nodpi/layered_app_icon_foreground.xml
 +++ b/chrome/android/java/res_chromium_base/mipmap-nodpi/layered_app_icon_foreground.xml
 @@ -1,10 +1,68 @@
@@ -11351,7 +11351,7 @@ zG!=nXw2&abs#xr~fFDF!vq@X7`+qtd5cw$r{cp#9R6!ToGG#p=PkT1k)Wlt8^P%Pg
 W=g!Ha2?pSwIRxeC=1^|uclqCxqvpf_
 
 diff --git a/chrome/app/chrome_dll.rc b/chrome/app/chrome_dll.rc
-index 02e08e0d49..42c84f485b 100644
+index 02e08e0d4904342e50d3af2e6465cbc0f8bc1c6b..42c84f485b1e5c6e7ffb01f1b413fdaae0625c87 100644
 --- a/chrome/app/chrome_dll.rc
 +++ b/chrome/app/chrome_dll.rc
 @@ -174,7 +174,7 @@ IDR_X005_BETA       ICON                        "theme\google_chrome\win\chrome_
@@ -11364,7 +11364,7 @@ index 02e08e0d49..42c84f485b 100644
  
  // We include these resources because all ICON types need to be in the
 diff --git a/chrome/app/chrome_exe.rc b/chrome/app/chrome_exe.rc
-index 7d8d4c39f7..48c8529528 100644
+index 40e0c2736eddf077248c863052ba2b1f4941713c..60e3b0653a946b3d24cc1f7588e198cf3fdd37e3 100644
 --- a/chrome/app/chrome_exe.rc
 +++ b/chrome/app/chrome_exe.rc
 @@ -56,7 +56,7 @@ IDR_SXS                 ICON       "theme\\google_chrome\\win\\chrome_sxs.ico"
@@ -11376,9 +11376,9 @@ index 7d8d4c39f7..48c8529528 100644
  #endif
  
  // Start a naming scheme to keep icons in order. A leading X is used to keep
-@@ -73,10 +73,10 @@ IDR_X005_BETA           ICON       "theme\\google_chrome\\win\\chrome_beta.ico"
- IDR_X006_HTML_DOC       ICON       "theme\\google_chrome\\win\\chrome_doc.ico"
- IDR_X007_PDF_DOC        ICON       "theme\\google_chrome\\win\\chrome_pdf.ico"
+@@ -75,10 +75,10 @@ IDR_X007_PDF_DOC        ICON       "theme\\google_chrome\\win\\chrome_pdf.ico"
+ IDR_X008_ISOLATED       ICON       "theme\\google_chrome\\win\\isolated.ico"
+ IDR_X009_OMNIBOX_EVERYWHERE ICON   "theme\\google_chrome\\win\\omnibox_everywhere.ico"
  #else
 -IDR_X001_APP_LIST       ICON       "theme\\chromium\\win\\app_list.ico"
 -IDR_X003_INCOGNITO      ICON       "theme\\chromium\\win\\incognito.ico"
@@ -11388,11 +11388,11 @@ index 7d8d4c39f7..48c8529528 100644
 +IDR_X003_INCOGNITO      ICON       "theme\\gcsa_aegis\\win\\incognito.ico"
 +IDR_X006_HTML_DOC       ICON       "theme\\gcsa_aegis\\win\\chromium_doc.ico"
 +IDR_X007_PDF_DOC        ICON       "theme\\gcsa_aegis\\win\\chromium_pdf.ico"
+ IDR_X008_ISOLATED       ICON       "theme\\chromium\\win\\isolated.ico"
+ IDR_X009_OMNIBOX_EVERYWHERE ICON   "theme\\chromium\\win\\omnibox_everywhere.ico"
  #endif
- 
- 
 diff --git a/chrome/app/theme/chrome_unscaled_resources.grd b/chrome/app/theme/chrome_unscaled_resources.grd
-index c8fb1b8e88..2cffbfc0e3 100644
+index c8fb1b8e880540852697ff7443acab0c3e4fcc92..2cffbfc0e30d9d085f6a7dcff9c6ecafff0a4a86 100644
 --- a/chrome/app/theme/chrome_unscaled_resources.grd
 +++ b/chrome/app/theme/chrome_unscaled_resources.grd
 @@ -88,10 +88,10 @@
@@ -12826,7 +12826,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
 new file mode 100644
-index 0000000000..f8363d5b29
+index 0000000000000000000000000000000000000000..f8363d5b294fe210ebfdd18374e95b54d6ff5c17
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/BRANDING
 @@ -0,0 +1,10 @@
@@ -14596,7 +14596,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/linux/product_logo_32.xpm b/chrome/app/theme/gcsa_aegis/linux/product_logo_32.xpm
 new file mode 100644
-index 0000000000..be13bdc33d
+index 0000000000000000000000000000000000000000..be13bdc33d42dcf5eb9a18dc96c5af02c5b288a3
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/linux/product_logo_32.xpm
 @@ -0,0 +1,39 @@
@@ -36992,7 +36992,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/icon.json b/chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/icon.json
 new file mode 100644
-index 0000000000..277624e935
+index 0000000000000000000000000000000000000000..277624e9359a18afb65c48cd0b875ed0706e4485
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/icon.json
 @@ -0,0 +1,29 @@
@@ -118103,7 +118103,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/Contents.json b/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/Contents.json
 new file mode 100644
-index 0000000000..c562589ec8
+index 0000000000000000000000000000000000000000..c562589ec89fa1978c9f5a050ee49ce14fb75045
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/Contents.json
 @@ -0,0 +1,18 @@
@@ -149514,7 +149514,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Contents.json b/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Contents.json
 new file mode 100644
-index 0000000000..74d6a722cf
+index 0000000000000000000000000000000000000000..74d6a722cf39b2dd5bef11f166e6ac9b99568a01
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Contents.json
 @@ -0,0 +1,6 @@
@@ -205280,7 +205280,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/product_logo.svg b/chrome/app/theme/gcsa_aegis/product_logo.svg
 new file mode 100644
-index 0000000000..4bb68d7322
+index 0000000000000000000000000000000000000000..4bb68d7322f63c4e274ca3dd8833663f51121a73
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/product_logo.svg
 @@ -0,0 +1,27 @@
@@ -205809,7 +205809,7 @@ HcmV?d00001
 
 diff --git a/chrome/app/theme/gcsa_aegis/product_logo_animation.svg b/chrome/app/theme/gcsa_aegis/product_logo_animation.svg
 new file mode 100644
-index 0000000000..4935acf377
+index 0000000000000000000000000000000000000000..4935acf377890b691b6f62db05847cb74f16421e
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/product_logo_animation.svg
 @@ -0,0 +1,28 @@
@@ -205843,7 +205843,7 @@ index 0000000000..4935acf377
 +</svg>
 diff --git a/chrome/app/theme/gcsa_aegis/product_logo_name.svg b/chrome/app/theme/gcsa_aegis/product_logo_name.svg
 new file mode 100644
-index 0000000000..51dcb8ea03
+index 0000000000000000000000000000000000000000..51dcb8ea037396e3522abc7ba2a42f5601e11400
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/product_logo_name.svg
 @@ -0,0 +1,21 @@
@@ -205870,7 +205870,7 @@ index 0000000000..51dcb8ea03
 +</svg>
 diff --git a/chrome/app/theme/gcsa_aegis/product_logo_name_white.svg b/chrome/app/theme/gcsa_aegis/product_logo_name_white.svg
 new file mode 100644
-index 0000000000..7d4ebfa4f9
+index 0000000000000000000000000000000000000000..7d4ebfa4f9a9d0b36f95593990f420cf2c42fe45
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/product_logo_name_white.svg
 @@ -0,0 +1,14 @@
@@ -205890,7 +205890,7 @@ index 0000000000..7d4ebfa4f9
 +</svg>
 diff --git a/chrome/app/theme/gcsa_aegis/win/README b/chrome/app/theme/gcsa_aegis/win/README
 new file mode 100644
-index 0000000000..e80d67dcaa
+index 0000000000000000000000000000000000000000..e80d67dcaa75acb57a6203821f7adbfa080e8609
 --- /dev/null
 +++ b/chrome/app/theme/gcsa_aegis/win/README
 @@ -0,0 +1,4 @@
@@ -227192,7 +227192,7 @@ literal 0
 HcmV?d00001
 
 diff --git a/chrome/browser/resources/settings/about_page/about_page.html.ts b/chrome/browser/resources/settings/about_page/about_page.html.ts
-index 41c3308183..41d9a627b0 100644
+index 41c3308183b4805bf7fb6f0a3a65b23316d6d1e6..41d9a627b014317aedf17b02b82fd2e49075971c 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.html.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page.html.ts
 @@ -21,9 +21,11 @@ export function getHtml(this: SettingsAboutPageElement) {
@@ -227211,10 +227211,10 @@ index 41c3308183..41d9a627b0 100644
      <div class="product-heading">
        <div class="product-title">$i18n{aboutProductTitle}</div>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index 076bcc4139..80affc0fbc 100644
+index a1fd7102ed08696b076a2cd28bc792939cd22cd0..6db81ec22be55a3fa32fc4611f530903695d8c7f 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -167,7 +167,7 @@
+@@ -197,7 +197,7 @@
          <a role="menuitem" id="about-menu" href="/help"
              class="cr-nav-menu-item">
  <if expr="not _google_chrome and not _is_chrome_for_testing">
@@ -227224,7 +227224,7 @@ index 076bcc4139..80affc0fbc 100644
  <if expr="_google_chrome or _is_chrome_for_testing">
            <cr-icon icon="cr:chrome-product"></cr-icon>
 diff --git a/chrome/updater/branding.gni b/chrome/updater/branding.gni
-index 2b6f9e23b2..d9cca886eb 100644
+index 2b6f9e23b21e320440b34e9d7d31f14b625cccb6..d9cca886eb578a983f2115e6744611dc58a936ed 100644
 --- a/chrome/updater/branding.gni
 +++ b/chrome/updater/branding.gni
 @@ -19,7 +19,8 @@ if (is_chrome_branded) {
@@ -227239,7 +227239,7 @@ index 2b6f9e23b2..d9cca886eb 100644
    updater_company_short_name_lowercase = "chromium"
 diff --git a/components/vector_icons/gcsa_aegis/product.icon b/components/vector_icons/gcsa_aegis/product.icon
 new file mode 100644
-index 0000000000..13878c1c1e
+index 0000000000000000000000000000000000000000..13878c1c1e3cdc07bb854aa61d7e74dc8aa1166d
 --- /dev/null
 +++ b/components/vector_icons/gcsa_aegis/product.icon
 @@ -0,0 +1,28 @@
@@ -227273,7 +227273,7 @@ index 0000000000..13878c1c1e
 +H_LINE_TO, 19
 diff --git a/components/vector_icons/gcsa_aegis/product_refresh.icon b/components/vector_icons/gcsa_aegis/product_refresh.icon
 new file mode 100644
-index 0000000000..c8fb2b9b7b
+index 0000000000000000000000000000000000000000..c8fb2b9b7bfee8a98ad2b4f32758ab8c7fc4f3b9
 --- /dev/null
 +++ b/components/vector_icons/gcsa_aegis/product_refresh.icon
 @@ -0,0 +1,29 @@

@@ -1,0 +1,447 @@
+From 358c0d7db321e49019b1d7a56124c946dec7aebe Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Wed, 12 Aug 2026 12:21:27 +0800
+Subject: [PATCH] Aegis: add net throttle for built-in tracker hosts
+
+Block subresource requests matching packages/core BUILTIN_TRACKER_HOSTS
+via URLLoaderThrottle in both browser and renderer paths.
+---
+ chrome/browser/BUILD.gn                       |  1 +
+ chrome/browser/aegis/BUILD.gn                 |  1 +
+ chrome/browser/aegis/aegis_service.cc         | 20 ++++-
+ chrome/browser/aegis/aegis_service.h          |  8 +-
+ .../browser/chrome_content_browser_client.cc  |  6 ++
+ chrome/common/aegis/BUILD.gn                  | 12 ++-
+ chrome/common/aegis/aegis_net_throttle.cc     | 70 ++++++++++++++++
+ chrome/common/aegis/aegis_net_throttle.h      | 42 ++++++++++
+ chrome/common/aegis/builtin_tracker_hosts.cc  | 80 +++++++++++++++++++
+ chrome/common/aegis/builtin_tracker_hosts.h   | 18 +++++
+ chrome/renderer/BUILD.gn                      |  1 +
+ .../url_loader_throttle_provider_impl.cc      |  8 ++
+ 12 files changed, 263 insertions(+), 4 deletions(-)
+ create mode 100644 chrome/common/aegis/aegis_net_throttle.cc
+ create mode 100644 chrome/common/aegis/aegis_net_throttle.h
+ create mode 100644 chrome/common/aegis/builtin_tracker_hosts.cc
+ create mode 100644 chrome/common/aegis/builtin_tracker_hosts.h
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 34959a155979e60aa3c040f4b8a2cc61e8786052..746a1de232b927f042d6e2d8dc6438191f47a5c8 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -923,6 +923,7 @@ source_set("core") {
+     ":universal_web_contents_observers",
+     "//base/allocator:buildflags",
+     "//build/config/linux/dbus:buildflags",
++    "//chrome/browser/aegis",
+     "//chrome/browser/accessibility",
+     "//chrome/browser/actor",
+     "//chrome/browser/actor:impl",
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index cdc61302baab5e79eff1a8934869a7994c080a9f..7af9ba36640c49a22bc39f73f53cfac7f0860c72 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -9,5 +9,6 @@ source_set("aegis") {
+   deps = [
+     "//base",
+     "//chrome/common/aegis",
++    "//url",
+   ]
+ }
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 6e2ccb30ce4adc445af3f6eda14f0b1ef078e82e..91cf7c4ddf3c1ec6feb64dcaf93b6f0975d658d9 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -5,7 +5,9 @@
+ 
+ #include "base/logging.h"
+ #include "base/memory/singleton.h"
++#include "chrome/common/aegis/builtin_tracker_hosts.h"
+ #include "chrome/common/aegis/features.h"
++#include "url/gurl.h"
+ 
+ namespace aegis {
+ 
+@@ -23,8 +25,10 @@ void AegisService::InitializeForProfile(Profile* profile) {
+     return;
+   }
+   initialized_ = true;
+-  LOG(INFO) << "GCSA-aegis initialized for profile";
+-  // TODO(aegis): register URLLoaderThrottle factory, cookie observer, WebUI.
++  LOG(INFO) << "GCSA-aegis initialized for profile"
++            << (IsTrackerBlockingEnabled() ? " (tracker blocking on)"
++                                           : " (tracker blocking off)");
++  // TODO(aegis): cookie observer, WebUI, phish interstitial.
+   (void)profile;
+ }
+ 
+@@ -32,4 +36,16 @@ bool AegisService::IsEnabled() const {
+   return base::FeatureList::IsEnabled(features::kAegisEnabled);
+ }
+ 
++bool AegisService::IsTrackerBlockingEnabled() const {
++  return IsEnabled() &&
++         base::FeatureList::IsEnabled(features::kAegisTrackerBlocking);
++}
++
++bool AegisService::ShouldBlockUrl(const GURL& url) const {
++  if (!IsTrackerBlockingEnabled()) {
++    return false;
++  }
++  return MatchesBuiltinTrackerRule(url);
++}
++
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
+index fb76c457df3ea6db3ee3447c1ebe149fc9d83ef4..1cb917885cbc483fae2d7c8b3c8b54bc28e95492 100644
+--- a/chrome/browser/aegis/aegis_service.h
++++ b/chrome/browser/aegis/aegis_service.h
+@@ -1,12 +1,13 @@
+ // Copyright 2026 GCSA
+ // Intended path: chrome/browser/aegis/aegis_service.h
+-// Browser-process service that will host NetPolicy / StoragePolicy bridges.
++// Browser-process service that hosts NetPolicy / StoragePolicy bridges.
+ 
+ #ifndef CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ #define CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
+ 
+ #include "base/memory/singleton.h"
+ 
++class GURL;
+ class Profile;
+ 
+ namespace aegis {
+@@ -22,6 +23,11 @@ class AegisService {
+   void InitializeForProfile(Profile* profile);
+ 
+   bool IsEnabled() const;
++  bool IsTrackerBlockingEnabled() const;
++
++  // Host-rule match against the built-in tracker seed. Callers should skip
++  // main-document navigations (RequestDestination::kDocument).
++  bool ShouldBlockUrl(const GURL& url) const;
+ 
+  private:
+   friend struct base::DefaultSingletonTraits<AegisService>;
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 19045777b3d811c15ba6e3f16cff859a05327b88..72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "chrome/browser/chrome_content_browser_client.h"
++#include "chrome/common/aegis/aegis_net_throttle.h"
+ 
+ #include <algorithm>
+ #include <iterator>
+@@ -6111,6 +6112,11 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+     result.push_back(std::move(contextual_tasks_throttle));
+   }
+ 
++  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate();
++      aegis_throttle) {
++    result.push_back(std::move(aegis_throttle));
++  }
++
+   return result;
+ }
+ 
+diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
+index c79bd5331745a8b1179051083aa0cd178d733128..c568ce8ade6caecf0dff4a1a6519a39760fb0320 100644
+--- a/chrome/common/aegis/BUILD.gn
++++ b/chrome/common/aegis/BUILD.gn
+@@ -3,8 +3,18 @@
+ 
+ source_set("aegis") {
+   sources = [
++    "aegis_net_throttle.cc",
++    "aegis_net_throttle.h",
++    "builtin_tracker_hosts.cc",
++    "builtin_tracker_hosts.h",
+     "features.cc",
+     "features.h",
+   ]
+-  deps = [ "//base" ]
++  deps = [
++    "//base",
++    "//net",
++    "//services/network/public/cpp",
++    "//third_party/blink/public/common",
++    "//url",
++  ]
+ }
+diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d910e6fcc09f9b874da034b898813dbcc55887c2
+--- /dev/null
++++ b/chrome/common/aegis/aegis_net_throttle.cc
+@@ -0,0 +1,70 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/aegis_net_throttle.cc
++
++#include "chrome/common/aegis/aegis_net_throttle.h"
++
++#include "base/feature_list.h"
++#include "chrome/common/aegis/builtin_tracker_hosts.h"
++#include "chrome/common/aegis/features.h"
++#include "net/base/net_errors.h"
++#include "net/url_request/redirect_info.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/mojom/fetch_api.mojom-shared.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++constexpr char kCancelReason[] = "AegisNetThrottle";
++
++bool TrackerBlockingEnabled() {
++  return base::FeatureList::IsEnabled(features::kAegisEnabled) &&
++         base::FeatureList::IsEnabled(features::kAegisTrackerBlocking);
++}
++
++// is_outermost_main_frame is true for subresources of the main frame too —
++// only skip actual main-document navigations.
++bool IsMainDocumentRequest(const network::ResourceRequest& request) {
++  return request.destination ==
++         network::mojom::RequestDestination::kDocument;
++}
++
++}  // namespace
++
++// static
++std::unique_ptr<blink::URLLoaderThrottle> AegisNetThrottle::MaybeCreate() {
++  if (!TrackerBlockingEnabled()) {
++    return nullptr;
++  }
++  return std::make_unique<AegisNetThrottle>();
++}
++
++AegisNetThrottle::AegisNetThrottle() = default;
++AegisNetThrottle::~AegisNetThrottle() = default;
++
++void AegisNetThrottle::DetachFromCurrentSequence() {}
++
++void AegisNetThrottle::WillStartRequest(network::ResourceRequest* request,
++                                        bool* /*defer*/) {
++  if (IsMainDocumentRequest(*request)) {
++    return;
++  }
++  MaybeBlock(request->url);
++}
++
++void AegisNetThrottle::WillRedirectRequest(
++    net::RedirectInfo* redirect_info,
++    const network::mojom::URLResponseHead& /*response_head*/,
++    bool* /*defer*/,
++    network::HttpRequestHeadersUpdateParams* /*headers_update_params*/) {
++  MaybeBlock(redirect_info->new_url);
++}
++
++void AegisNetThrottle::MaybeBlock(const GURL& url) {
++  if (!MatchesBuiltinTrackerRule(url)) {
++    return;
++  }
++  delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e663448810943c931d620c1f2debe481312bc8f
+--- /dev/null
++++ b/chrome/common/aegis/aegis_net_throttle.h
+@@ -0,0 +1,42 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/aegis_net_throttle.h
++
++#ifndef CHROME_COMMON_AEGIS_AEGIS_NET_THROTTLE_H_
++#define CHROME_COMMON_AEGIS_AEGIS_NET_THROTTLE_H_
++
++#include <memory>
++
++#include "third_party/blink/public/common/loader/url_loader_throttle.h"
++
++class GURL;
++
++namespace aegis {
++
++// Cancels subresource requests that match the built-in tracker host rules.
++// Registered from both browser and renderer throttle providers.
++class AegisNetThrottle : public blink::URLLoaderThrottle {
++ public:
++  static std::unique_ptr<blink::URLLoaderThrottle> MaybeCreate();
++
++  AegisNetThrottle();
++  AegisNetThrottle(const AegisNetThrottle&) = delete;
++  AegisNetThrottle& operator=(const AegisNetThrottle&) = delete;
++  ~AegisNetThrottle() override;
++
++  // blink::URLLoaderThrottle:
++  void DetachFromCurrentSequence() override;
++  void WillStartRequest(network::ResourceRequest* request,
++                        bool* defer) override;
++  void WillRedirectRequest(
++      net::RedirectInfo* redirect_info,
++      const network::mojom::URLResponseHead& response_head,
++      bool* defer,
++      network::HttpRequestHeadersUpdateParams* headers_update_params) override;
++
++ private:
++  void MaybeBlock(const GURL& url);
++};
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_AEGIS_NET_THROTTLE_H_
+diff --git a/chrome/common/aegis/builtin_tracker_hosts.cc b/chrome/common/aegis/builtin_tracker_hosts.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..8f6c7cc56e3aabaf865432d96c5292f656e6e0cc
+--- /dev/null
++++ b/chrome/common/aegis/builtin_tracker_hosts.cc
+@@ -0,0 +1,80 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/builtin_tracker_hosts.cc
++
++#include "chrome/common/aegis/builtin_tracker_hosts.h"
++
++#include <string_view>
++
++#include "base/strings/string_util.h"
++#include "url/gurl.h"
++
++namespace aegis {
++namespace {
++
++// Keep in sync with packages/core/src/tracker/builtin-rules.ts.
++constexpr std::string_view kBuiltinTrackerRules[] = {
++    "doubleclick.net",
++    "googleadservices.com",
++    "googlesyndication.com",
++    "google-analytics.com",
++    "googletagmanager.com",
++    "facebook.net",
++    "facebook.com/tr",
++    "connect.facebook.net",
++    "adservice.google.com",
++    "adsystem.amazon.com",
++    "amazon-adsystem.com",
++    "adnxs.com",
++    "adsrvr.org",
++    "advertising.com",
++    "scorecardresearch.com",
++    "hotjar.com",
++    "clarity.ms",
++    "taboola.com",
++    "outbrain.com",
++    "criteo.com",
++    "pubmatic.com",
++    "openx.net",
++    "rubiconproject.com",
++    "moatads.com",
++    "quantserve.com",
++    "chartbeat.com",
++    "segment.io",
++    "segment.com",
++    "mixpanel.com",
++    "amplitude.com",
++    "sentry-cdn.com",
++};
++
++bool RuleMatches(std::string_view rule, const GURL& url) {
++  if (!url.is_valid() || !url.has_host()) {
++    return false;
++  }
++
++  const size_t slash = rule.find('/');
++  const std::string_view host =
++      slash == std::string_view::npos ? rule : rule.substr(0, slash);
++  if (host.empty() || !url.DomainIs(host)) {
++    return false;
++  }
++
++  if (slash == std::string_view::npos) {
++    return true;
++  }
++
++  const std::string_view path_suffix = rule.substr(slash);
++  return base::StartsWith(url.path(), path_suffix);
++}
++
++}  // namespace
++
++bool MatchesBuiltinTrackerRule(const GURL& url) {
++  for (std::string_view rule : kBuiltinTrackerRules) {
++    if (RuleMatches(rule, url)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace aegis
+diff --git a/chrome/common/aegis/builtin_tracker_hosts.h b/chrome/common/aegis/builtin_tracker_hosts.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a2c3cca836d03bf236db0b3ab3a0108bddf1e4e
+--- /dev/null
++++ b/chrome/common/aegis/builtin_tracker_hosts.h
+@@ -0,0 +1,18 @@
++// Copyright 2026 GCSA
++// Intended path: chrome/common/aegis/builtin_tracker_hosts.h
++// Mirrored from packages/core/src/tracker/builtin-rules.ts (BUILTIN_TRACKER_HOSTS).
++
++#ifndef CHROME_COMMON_AEGIS_BUILTIN_TRACKER_HOSTS_H_
++#define CHROME_COMMON_AEGIS_BUILTIN_TRACKER_HOSTS_H_
++
++class GURL;
++
++namespace aegis {
++
++// Returns true when |url| matches a built-in tracker rule.
++// Rules are bare hosts ("doubleclick.net") or host/path ("facebook.com/tr").
++bool MatchesBuiltinTrackerRule(const GURL& url);
++
++}  // namespace aegis
++
++#endif  // CHROME_COMMON_AEGIS_BUILTIN_TRACKER_HOSTS_H_
+diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
+index 8ea705840f0ca2fcf23d6249849beb32d12f1da9..d5621de7c799ebd435306ff2758bb493f37caf72 100644
+--- a/chrome/renderer/BUILD.gn
++++ b/chrome/renderer/BUILD.gn
+@@ -132,6 +132,7 @@ static_library("renderer") {
+     "//chrome:resources",
+     "//chrome:strings",
+     "//chrome/common",
++    "//chrome/common/aegis",
+     "//chrome/common:mojo_bindings",
+     "//chrome/common/net",
+     "//chrome/common/request_header_integrity:buildflags",
+diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
+index d49edab182ec86cf8af54b5a297c7b199d430e15..4c42c7c195d6252ef7fc31e25a6c3490ad2ff46a 100644
+--- a/chrome/renderer/url_loader_throttle_provider_impl.cc
++++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
+@@ -15,6 +15,7 @@
+ #include "build/build_config.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/common/google_url_loader_throttle.h"
++#include "chrome/common/aegis/aegis_net_throttle.h"
+ #include "chrome/common/request_header_integrity/buildflags.h"
+ #include "chrome/renderer/chrome_content_renderer_client.h"
+ #include "chrome/renderer/chrome_render_frame_observer.h"
+@@ -262,6 +263,13 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+       chrome_content_renderer_client_->GetChromeObserver()
+           ->GetDynamicParams()));
+ 
++
++  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate();
++      aegis_throttle) {
++    throttles.emplace_back(std::move(aegis_throttle));
++  }
++
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   throttles.emplace_back(std::make_unique<AshMergeSessionLoaderThrottle>(
+       chrome_content_renderer_client_->GetChromeObserver()
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From 50ae4fa69d7ca10454232d75742fa82363daeed7 Mon Sep 17 00:00:00 2001
+From 177cf001518f215d16ed9fa7d7d24653abf6a74d Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 22:25:26 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99=E6=9B=B4=E6=96=B0=E5=99=A8?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 5 insertions(+), 2 deletions(-)
 
 diff --git a/build/toolchain/win/midl.py b/build/toolchain/win/midl.py
-index 8a53225c09..3ac4c5e25c 100644
+index 8a53225c093e231a541f5edab43c1dee237a62b1..3ac4c5e25c4ece5b441a2411ff72b85ec3af286d 100644
 --- a/build/toolchain/win/midl.py
 +++ b/build/toolchain/win/midl.py
 @@ -345,6 +345,9 @@ def uuid5_substitutions(dynamic_guids):
@@ -28,7 +28,7 @@ index 8a53225c09..3ac4c5e25c 100644
          contents = f.read()
      prefix = b'/* Compiler settings for '
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 540158361a..129120ba49 100644
+index 540158361a61840dc91eb9dc084841547c7554ff..129120ba49512585ea1d55c73b23c3250c3d5af0 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

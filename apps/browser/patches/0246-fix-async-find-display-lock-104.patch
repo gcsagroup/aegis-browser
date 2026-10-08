@@ -1,0 +1,122 @@
+From 4c27ec5ebdcfe25fb59450436fa073660a7ebc3b Mon Sep 17 00:00:00 2001
+From: Aegis integration <aegis-integration@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 15:56:40 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=BC=82=E6=AD=A5=E6=96=87?=
+ =?UTF-8?q?=E5=AD=97=E6=9F=A5=E6=89=BE=E9=81=97=E6=BC=8F=E5=BB=B6=E8=BF=9F?=
+ =?UTF-8?q?=E6=B8=B2=E6=9F=93=E5=8C=BA=E5=9F=9F=E7=9A=84=E5=B8=83=E5=B1=80?=
+ =?UTF-8?q?=E6=9B=B4=E6=96=B0=EF=BC=8C=E5=80=99=E9=80=89=20104?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ .../core/editing/finder/async_find_buffer.cc  |  9 +++-
+ .../text_fragment_selector_generator_test.cc  | 44 +++++++++++++++++++
+ 3 files changed, 53 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7e84fbac33f32d339cdd230de87e2789c244c4de..0f4a4b1781ddc97e3af7d80b0413c6d7fb64f629 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.103";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (103)";
++inline constexpr char kProductVersion[] = "2.0.0.104";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (104)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc b/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
+index dedfb3c15e0ed4acaa3c45b87c0d2929ed10c95d..4c794043e97f418c394f8d7049c13d8203681b2e 100644
+--- a/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
++++ b/third_party/blink/renderer/core/editing/finder/async_find_buffer.cc
+@@ -6,6 +6,8 @@
+ #include "base/auto_reset.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "third_party/blink/renderer/core/display_lock/display_lock_document_state.h"
++#include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
+ #include "third_party/blink/renderer/core/editing/finder/find_buffer.h"
+ 
+@@ -49,8 +51,11 @@ void AsyncFindBuffer::Run(RangeInFlatTree* search_range,
+     std::move(completeCallback).Run(EphemeralRangeInFlatTree());
+     return;
+   }
+-  search_range->StartPosition().GetDocument()->UpdateStyleAndLayout(
+-      DocumentUpdateReason::kFindInPage);
++  Document& document = *search_range->StartPosition().GetDocument();
++  // 调用方的强制更新作用域不会跨越异步任务；每次恢复查找都要重新建立。
++  auto forced_activatable_display_locks =
++      document.GetDisplayLockDocumentState().GetScopedForceActivatableLocks();
++  document.UpdateStyleAndLayout(DocumentUpdateReason::kFindInPage);
+ 
+   EphemeralRangeInFlatTree range =
+       FindBuffer::FindMatchInRange(search_range->ToEphemeralRange(),
+diff --git a/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc b/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc
+index a007a78504386b3cf26063a04c31ad6538b23a5e..d78e3b943c114d7267a4ca0623617c555f91625d 100644
+--- a/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc
++++ b/third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator_test.cc
+@@ -17,6 +17,7 @@
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "third_party/blink/public/mojom/link_to_text/link_to_text.mojom-blink.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
++#include "third_party/blink/renderer/core/display_lock/display_lock_context.h"
+ #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
+ #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
+ #include "third_party/blink/renderer/core/fragment_directive/text_fragment_handler.h"
+@@ -1929,4 +1930,47 @@ TEST_F(TextFragmentSelectorGeneratorTest, RemoveLayoutObjectAsync) {
+   EXPECT_TRUE(finished);
+ }
+ 
++// 异步查找恢复时，离屏延迟渲染区域仍可能有尚未处理的样式变更。
++TEST_F(TextFragmentSelectorGeneratorTest, AsyncSearchUpdatesLockedSubtree) {
++  SimRequest request("https://example.com/test.html", "text/html");
++  LoadURL("https://example.com/test.html");
++  request.Complete(R"HTML(
++    <!DOCTYPE html>
++    <p id="target">Selected words for this regression</p>
++    <div style="height: 10000px"></div>
++    <div id="locked" style="content-visibility: auto; contain-intrinsic-size: 100px">
++      <span id="pending">Other searchable words</span>
++    </div>
++  )HTML");
++  Compositor().BeginFrame();
++
++  Element* locked = GetDocument().getElementById(AtomicString("locked"));
++  ASSERT_TRUE(locked->GetDisplayLockContext());
++  ASSERT_TRUE(locked->GetDisplayLockContext()->IsLocked());
++
++  Node* text = GetDocument().getElementById(AtomicString("target"))->firstChild();
++  bool finished = false;
++  String selector;
++  CreateGenerator()->Generate(
++      *MakeGarbageCollected<RangeInFlatTree>(
++          PositionInFlatTree::FirstPositionInNode(*text),
++          PositionInFlatTree::LastPositionInNode(*text)),
++      BindOnce(
++          [](bool& finished, String& selector,
++             const TextFragmentSelector& generated_selector,
++             LinkGenerationError error) {
++            EXPECT_EQ(LinkGenerationError::kNone, error);
++            selector = generated_selector.ToString();
++            finished = true;
++          },
++          std::ref(finished), std::ref(selector)));
++  ASSERT_FALSE(finished);
++
++  GetDocument().getElementById(AtomicString("pending"))->setAttribute(
++      html_names::kStyleAttr, AtomicString("color: red"));
++  base::RunLoop().RunUntilIdle();
++  EXPECT_TRUE(finished);
++  EXPECT_EQ("Selected%20words%20for%20this%20regression", selector);
++}
++
+ }  // namespace blink
+-- 
+2.52.0
+

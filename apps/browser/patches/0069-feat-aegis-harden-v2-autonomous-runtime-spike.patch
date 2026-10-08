@@ -1,4 +1,4 @@
-From 1f34bffe0058c718a6fb087ad833c6a327153072 Mon Sep 17 00:00:00 2001
+From 6c42e2b09d5e87fa2bbc38dfc7a9060be2cfb59b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 20:15:21 +0800
 Subject: [PATCH] feat(aegis): harden v2 autonomous runtime spike
@@ -11,7 +11,7 @@ Subject: [PATCH] feat(aegis): harden v2 autonomous runtime spike
  4 files changed, 167 insertions(+), 19 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index d029138eaf..7935550fdb 100644
+index d029138eaf33535c3a00b5902eb2a8f29fbe69db..7935550fdbb19f8e3cdc1237333394de0d3f6773 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -91,9 +91,8 @@ content::WebContents* ShowAgentPanel(Browser* browser) {
@@ -96,7 +96,7 @@ index d029138eaf..7935550fdb 100644
    ASSERT_TRUE(runtime.CommitDocument(second_document));
    EXPECT_EQ(runtime.Authorize({.action_id = "stale-click",
 diff --git a/chrome/browser/aegis/agent/v2_runtime_spike.cc b/chrome/browser/aegis/agent/v2_runtime_spike.cc
-index 0236484ba2..a3e3f08d98 100644
+index 0236484ba2ea436103a03be41a2c60b7870c7f46..a3e3f08d985af6fa44df3cfab4283f54b38fcba5 100644
 --- a/chrome/browser/aegis/agent/v2_runtime_spike.cc
 +++ b/chrome/browser/aegis/agent/v2_runtime_spike.cc
 @@ -10,7 +10,8 @@ namespace aegis::agent {
@@ -197,7 +197,7 @@ index 0236484ba2..a3e3f08d98 100644
    visual_fallback_documents_.clear();
    return owned_tabs;
 diff --git a/chrome/browser/aegis/agent/v2_runtime_spike.h b/chrome/browser/aegis/agent/v2_runtime_spike.h
-index ced589af30..73bad3294e 100644
+index ced589af30fefeab9b4b7f63208cb11771be8fd9..73bad3294e6c745d06b3bb45aa5ddeef3c158efa 100644
 --- a/chrome/browser/aegis/agent/v2_runtime_spike.h
 +++ b/chrome/browser/aegis/agent/v2_runtime_spike.h
 @@ -24,6 +24,17 @@ enum class V2SpikeTool {
@@ -265,7 +265,7 @@ index ced589af30..73bad3294e 100644
    base::flat_map<int32_t, V2DocumentBinding> visual_fallback_documents_;
    bool stopped_ = false;
 diff --git a/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc b/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
-index 818cb5ab43..8e5b6a1ff2 100644
+index 818cb5ab434a9cc8e3cfeccb1fe8ab986698b025..8e5b6a1ff29f6cdad49fb320b9d8e3fbcc5f7298 100644
 --- a/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
 +++ b/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
 @@ -15,6 +15,7 @@ V2DocumentBinding Binding(const char* document_token = "document-1") {

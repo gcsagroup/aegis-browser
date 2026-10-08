@@ -9,7 +9,6 @@
 #include "base/functional/callback_helpers.h"
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/side_panel/side_panel_registry.h"
@@ -61,7 +60,7 @@ bool ShowAegisAgentSidePanel(BrowserWindowInterface* browser) {
   if (!browser || !IsAegisAgentSidePanelSupported(browser->GetProfile())) {
     return false;
   }
-  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
+  SidePanelUI* side_panel = SidePanelUI::From(browser);
   if (!side_panel) {
     return false;
   }

@@ -1,4 +1,4 @@
-From 84091373b06bb6aeef11d477aa02658e55393d28 Mon Sep 17 00:00:00 2001
+From 01bf422edbfcb7c3abe87a3224b878d5ed683a88 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 18:46:02 +0800
 Subject: [PATCH] Aegis: explain module toggles and expose Ollama model
@@ -18,7 +18,7 @@ the loopback Ollama URL/model, probe installed models, and save prefs.
  8 files changed, 571 insertions(+), 66 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 3836e1bff3..2869561d87 100644
+index 3836e1bff3df9f22a4907e60ff288ec80e4a85b0..2869561d87c586fbd6c2616c004f966ee8b08c14 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -566,6 +566,112 @@ void AegisService::ChatWithOllama(
@@ -135,7 +135,7 @@ index 3836e1bff3..2869561d87 100644
    if (!filter_list_updater_) {
      std::move(done).Run(false);
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 22d8ed9129..0357ea5c4b 100644
+index 22d8ed91291a300e7d93b567549f528758d457e3..0357ea5c4bd40c0a1e87921179889a9e3f80717f 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -94,6 +94,15 @@ class AegisService {
@@ -167,7 +167,7 @@ index 22d8ed9129..0357ea5c4b 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index c0259622d9..b51d859ac0 100644
+index c0259622d91872437792c76f238f270df6f179ca..b51d859ac0270ba779f193e8924d3568604c8722 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -54,16 +54,35 @@ h1 {
@@ -244,7 +244,7 @@ index c0259622d9..b51d859ac0 100644
    margin-top: 1rem;
    padding: 0.9rem 1rem;
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 986b3a6c35..bf46813897 100644
+index 986b3a6c3558d2993ea7279713aff2c19c3d4919..bf46813897e53f80a4a9c5c515336ae57e68dee5 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -11,39 +11,66 @@
@@ -362,7 +362,7 @@ index 986b3a6c35..bf46813897 100644
        </section>
        <p class="note">$i18n{note}</p>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 4bcb943b2e..98fd69f668 100644
+index 4bcb943b2e3659e87a49c65a5ffd5504ad9580ac..98fd69f6685e4970f1a46f0f01aad0e94cdaf2ff 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -22,7 +22,10 @@ interface AegisStatus {
@@ -516,7 +516,7 @@ index 4bcb943b2e..98fd69f668 100644
  
  document.addEventListener('DOMContentLoaded', () => {
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index c3d63e1f5b..692f3c1a5e 100644
+index c3d63e1f5b9a2255c69f6183c33324285daaf724..692f3c1a5ed9357bb049d95ecd44cafc9bf7fd74 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -21,86 +21,198 @@ struct AegisStrings {
@@ -809,7 +809,7 @@ index c3d63e1f5b..692f3c1a5e 100644
  
    webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index d44565668c..1b404d276f 100644
+index d44565668c04441bbde6d989af01a99e133b418d..1b404d276fa3ce3a7d894140f1f7446d4a5a8e41 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -107,6 +107,14 @@ void AegisUIHandler::RegisterMessages() {
@@ -889,7 +889,7 @@ index d44565668c..1b404d276f 100644
 +
  
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index a18deb434d..a9668fbb2a 100644
+index a18deb434dc573ad3dd49bb92dc441772354124b..a9668fbb2a85f46b1cb9a6c5cb04e6fe87b45b9e 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -6,6 +6,7 @@

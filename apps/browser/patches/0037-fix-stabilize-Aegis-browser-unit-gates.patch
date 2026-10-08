@@ -1,4 +1,4 @@
-From 3ff66b63eea6dbccbf12f57a625611093e6f06d9 Mon Sep 17 00:00:00 2001
+From 2b30937eddabbd82a1f0262f63da28b5d1acba4f Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 23:35:13 +0800
 Subject: [PATCH] fix: stabilize Aegis browser unit gates
@@ -10,7 +10,7 @@ Subject: [PATCH] fix: stabilize Aegis browser unit gates
  3 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 2c9dc6910b..5b0dd4dfe2 100644
+index 2c9dc6910bc001839a04fc3c93915efb555305d9..5b0dd4dfe26eebdf98ec5d03a87f641888573bc8 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -69,8 +69,8 @@ test("aegis_browser_unittests") {
@@ -24,7 +24,7 @@ index 2c9dc6910b..5b0dd4dfe2 100644
      "//net",
      "//testing/gtest",
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc b/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
-index c57ba29c93..ae0c3bf664 100644
+index c57ba29c9378cc00be5129fb64300bd91e371ec8..ae0c3bf6641631408c54d2eb2599a44a9d29b421 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
 @@ -58,7 +58,10 @@ TEST_F(AegisPhishBlockingPageTest, ShowsEnglishReasonsOnFirstScreen) {
@@ -40,7 +40,7 @@ index c57ba29c93..ae0c3bf664 100644
    const std::string* explanation =
        load_time_data.FindString("explanationParagraph");
 diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
-index 786c048184..927e64c7a8 100644
+index 786c048184db2bc04114b89b635fbff38adef6a4..927e64c7a86a906cfdd237d47307008e5fa83db0 100644
 --- a/chrome/browser/aegis/summary_policy.cc
 +++ b/chrome/browser/aegis/summary_policy.cc
 @@ -74,7 +74,7 @@ const re2::RE2& EmailPattern() {

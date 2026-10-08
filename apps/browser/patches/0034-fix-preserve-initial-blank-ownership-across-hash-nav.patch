@@ -1,4 +1,4 @@
-From 5abe51306db841adce9b419ca8a6672c22c759ff Mon Sep 17 00:00:00 2001
+From 584d8adf9ca03a0fc8d5f88dc52d19f5b4dd9dd3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 24 Aug 2026 21:11:56 +0800
 Subject: [PATCH] fix: preserve initial blank ownership across hash navigation
@@ -10,10 +10,10 @@ Subject: [PATCH] fix: preserve initial blank ownership across hash navigation
  3 files changed, 13 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 73a21d6a37..650260705b 100644
+index 81da5856e4d426af3404410a3573e37ca8fd20fd..1a4889291a6e143a0f2bb7e6e1469c3bb26bf71b 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-@@ -708,6 +708,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+@@ -784,6 +784,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
    const std::string* target_id = create_result->FindString("targetId");
    ASSERT_TRUE(target_id);
  
@@ -32,7 +32,7 @@ index 73a21d6a37..650260705b 100644
        "Target.attachToTarget",
        base::DictValue().Set("targetId", *target_id).Set("flatten", true));
 diff --git a/content/browser/devtools/devtools_agent_host_impl.cc b/content/browser/devtools/devtools_agent_host_impl.cc
-index fd5cbd9a99..f8a34c5276 100644
+index fd5cbd9a9987dc44771a68b1d8d4559fe73ef9ea..f8a34c5276c328609f798834f1b20320a3880ead 100644
 --- a/content/browser/devtools/devtools_agent_host_impl.cc
 +++ b/content/browser/devtools/devtools_agent_host_impl.cc
 @@ -407,7 +407,7 @@ bool DevToolsAgentHostImpl::IsRemoteDebuggingTargetOperationAllowed(
@@ -45,10 +45,10 @@ index fd5cbd9a99..f8a34c5276 100644
           target->GetType() == DevToolsAgentHost::kTypeTab);
      const WeakDocumentPtr target_document =
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 050e41f624..450e6a8f33 100644
+index 6ead35ff839ad76f01c0ed5342b47e7c8f9dd2f8..130fe6c2401ec711081530ee1cc7ebe45fa898a6 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
-@@ -1192,8 +1192,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
+@@ -1191,8 +1191,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
      return true;
    }
    const bool is_initial_blank_target =

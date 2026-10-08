@@ -1,4 +1,4 @@
-From 65aea83430e3d8b7f42b437f58515c1bf52af799 Mon Sep 17 00:00:00 2001
+From e1fed0da0398852e57b4c125da911ac27f86e2e5 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 19:58:49 +0800
 Subject: [PATCH] Aegis: defer filter-list and cookie work until after startup
@@ -15,7 +15,7 @@ appear without waiting on those jobs.
  5 files changed, 74 insertions(+), 23 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 71db5f64f8..01eaeed6bf 100644
+index 71db5f64f8474732ce9358438a33e4b510df9c9c..01eaeed6bff7e4c10ced7215c18bbbdacd54527a 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -30,6 +30,7 @@ source_set("aegis") {
@@ -27,7 +27,7 @@ index 71db5f64f8..01eaeed6bf 100644
      "//chrome/browser/preloading/prefetch/no_state_prefetch",
      "//chrome/browser/profiles:profile",
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
-index ede6325bcd..8a964067ed 100644
+index ede6325bcd93942f48268498e9c54d85854abff4..8a964067ed6f90ffceca9ab689ea65d919aa08cb 100644
 --- a/chrome/browser/aegis/aegis_cookie_janitor.cc
 +++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
 @@ -8,7 +8,9 @@
@@ -53,7 +53,7 @@ index ede6325bcd..8a964067ed 100644
  
  void CookieJanitor::Stop() {
 diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
-index 266884ca7a..12d45c372d 100644
+index 266884ca7a7159cb9a7de68f6425ce40bd03d05c..12d45c372d211b9c60685c82218e130ec3832509 100644
 --- a/chrome/browser/aegis/filter_list_updater.cc
 +++ b/chrome/browser/aegis/filter_list_updater.cc
 @@ -10,15 +10,17 @@
@@ -193,7 +193,7 @@ index 266884ca7a..12d45c372d 100644
    updating_ = false;
    loader_.reset();
 diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
-index a66e8f96cd..1d92d45069 100644
+index a66e8f96cd6b5ca32c6d83dc9a85072fda825996..1d92d45069c3f2881855a28dcda712ca4752882b 100644
 --- a/chrome/browser/aegis/filter_list_updater.h
 +++ b/chrome/browser/aegis/filter_list_updater.h
 @@ -42,7 +42,9 @@ class FilterListUpdater {
@@ -208,10 +208,10 @@ index a66e8f96cd..1d92d45069 100644
    void ApplyList(CompiledFilterList list);
    void Persist(const CompiledFilterList& list);
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 8dd9857db0..0fa40351db 100644
+index bf35530a0f98fc0774eee7bba7ea747b2161523f..b58466931834b15a072efc101413b59304c2556b 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -1001,6 +1001,15 @@ DLLEXPORT void __cdecl RelaunchChromeBrowserWithNewCommandLineIfNeeded() {
+@@ -1005,6 +1005,15 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {
  
  int ChromeBrowserMainParts::PreEarlyInitialization() {
    TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreEarlyInitialization");

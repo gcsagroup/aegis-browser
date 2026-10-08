@@ -1,0 +1,145 @@
+From 0e3194a8523137163ec69034260d8c228add76e5 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 04:31:32 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=AE=8C=E5=96=84=E4=B8=8B=E8=BD=BD=E7=AD=89?=
+ =?UTF-8?q?=E5=BE=85=E6=8F=90=E7=A4=BA=E4=B8=8E=E6=A0=87=E7=AD=BE=E6=9D=A5?=
+ =?UTF-8?q?=E6=BA=90=E5=9B=9E=E5=BD=92=E5=A4=B9=E5=85=B7=20081?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/aegis_ui_handler_unittest.cc           | 6 +++---
+ chrome/browser/resources/aegis/aegis.html                   | 2 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc                   | 5 +++++
+ chrome/browser/ui/webui/help/aegis_github_update.h          | 4 ++--
+ .../aegis_downloads/aegis_download_panel.html.ts            | 2 +-
+ .../cr_components/aegis_downloads/aegis_download_panel.ts   | 5 +++++
+ 6 files changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index d27908ebd258b9a0fd001da3be8b04df175a6979..5989d395640d3e9976463b8baef8c6ad5fb754e5 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -194,14 +194,14 @@ INSTANTIATE_TEST_SUITE_P(AllGroupColors,
+ 
+ TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
+   AddTab(browser(), GURL("https://docs.example/first"));
+-  AddTab(browser(), GURL("https://other.example/second"));
+-  AddTab(browser(), GURL("chrome://aegis/"));
+   auto* list = TabListInterface::From(browser());
+   const int32_t selected = list->GetTab(0)->GetHandle().raw_value();
++  AddTab(browser(), GURL("https://other.example/second"));
++  AddTab(browser(), GURL("chrome://aegis/"));
+   const auto one =
+       agent::WorkspaceRestoreOrigins(profile(), browser(), selected, false);
+   ASSERT_EQ(one.size(), 1u);
+-  EXPECT_EQ(one.front(), url::Origin::Create(list->GetTab(0)->GetURL()));
++  EXPECT_EQ(one.front(), url::Origin::Create(GURL("https://docs.example/")));
+   const auto window =
+       agent::WorkspaceRestoreOrigins(profile(), browser(), selected, true);
+   EXPECT_EQ(window.size(), 2u);
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 221bd4d7f15816967e77b20b77c2f389427e2908..35a00529e8c040a0905d0581006b1835fcfc4a2a 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -142,7 +142,7 @@
+         <h2>$i18n{downloadsTitle}</h2>
+         <p class="meta">$i18n{downloadsMeta}</p>
+         <aegis-download-panel></aegis-download-panel>
+-        <p><a href="chrome://downloads">$i18n{downloadsTitle}</a></p>
++        <p><a href="chrome://downloads">$i18n{downloadsHistory}</a></p>
+         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
+       </section>
+       <section class="privacy" aria-label="$i18n{privacyAiTitle}">
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index c7a51e47f9c2f98dc300eaa0a1db69f88e98d68b..32317d9ebdc338931a130b4ec5a63bd312a19c74 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -46,6 +46,7 @@ struct AegisStrings {
+   const char* filter_list_update_now;
+   const char* filter_list_meta;
+   const char* downloads_title;
++  const char* downloads_history;
+   const char* downloads_meta;
+   const char* metalink_file_label;
+   const char* metalink_inspect;
+@@ -155,6 +156,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_meta =
+             "尚未下載過濾列表。更新後會編譯 EasyList / EasyPrivacy。",
+         .downloads_title = "下載中心",
++        .downloads_history = "查看下載紀錄",
+         .downloads_meta = "管理普通下載、映象下載、種子和磁力連結下載。",
+         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
+         .metalink_inspect = "檢查文件",
+@@ -289,6 +291,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .filter_list_meta =
+             "尚未下载过滤列表。更新后会编译 EasyList / EasyPrivacy。",
+         .downloads_title = "下载中心",
++        .downloads_history = "查看下载记录",
+         .downloads_meta = "管理普通下载、镜像下载、种子和磁力链接下载。",
+         .metalink_file_label = "Metalink 文件（.meta4 / .metalink）",
+         .metalink_inspect = "检查文件",
+@@ -427,6 +430,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+           "No compiled filter list yet. Update to compile EasyList / "
+           "EasyPrivacy.",
+       .downloads_title = "Downloads",
++      .downloads_history = "View download history",
+       .downloads_meta = "Manage regular, mirror, torrent and magnet downloads.",
+       .metalink_file_label = "Metalink file (.meta4 / .metalink)",
+       .metalink_inspect = "Inspect file",
+@@ -597,6 +601,7 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("filterListUpdateNow", strings.filter_list_update_now);
+   source->AddString("filterListMeta", strings.filter_list_meta);
+   source->AddString("downloadsTitle", strings.downloads_title);
++  source->AddString("downloadsHistory", strings.downloads_history);
+   source->AddString("downloadsMeta", strings.downloads_meta);
+   source->AddString("metalinkFileLabel", strings.metalink_file_label);
+   source->AddString("metalinkInspect", strings.metalink_inspect);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 89d7410429e38f3d6e7e81ecc41d5a9a8bee38e7..ca38f77cc0ffc7f5dc9f2e89b8effe689d081aef 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.80";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (080)";
++inline constexpr char kProductVersion[] = "2.0.0.81";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (081)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
+index ee139046932a06e0cffa40e6369af6c6ddd6c6d6..34cc1f396c3339838b989e9eb44bb7f30aebdd9a 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
+@@ -10,7 +10,7 @@ export function getHtml(this: AegisDownloadPanelElement) {
+ <div class="card">
+   <div class="header">
+     <div>
+-      <div class="title">${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載中心' : '下载中心') : 'Aegis downloads'}</div>
++      <div class="title">${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載工具' : '下载工具') : 'Download tools'}</div>
+       <div class="subtitle">${this.isZh_() ?
+           (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? (this.torrentSupported_ ? '映象、種子與磁力連結' : '可校驗的映象下載') : (this.torrentSupported_ ? '镜像、种子与磁力链接' : '可校验的镜像下载')) :
+           (this.torrentSupported_ ? 'Mirrors, torrents and magnet links' : 'Verified mirror downloads')}</div>
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+index 93668af976d88baf015cf113d45a2fb9ccd21c95..ace6866cfe9b2a69a812f7cba8c50824e25d5e3c 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+@@ -395,6 +395,11 @@ export class AegisDownloadPanelElement extends CrLitElement {
+     this.working_ = true;
+     const requestId = this.requestId_;
+     this.requestId_ = '';
++    this.errorDetails_ = '';
++    this.previewText_ = zh ?
++        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ?
++             '正在檢查鏡像並建立下載工作…' : '正在检查镜像并创建下载任务…') :
++        'Checking mirrors and creating the download task…';
+     try {
+       const result: {ok: boolean, error?: string} =
+           await this.request_('startMetalinkDownload', requestId);
+-- 
+2.52.0
+

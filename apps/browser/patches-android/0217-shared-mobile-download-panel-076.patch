@@ -1,0 +1,453 @@
+From c615770901ed0cbbf4610e7df7aa64cfb0279d9b Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 03:34:34 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=A4=8D=E7=94=A8=E4=B8=89=E7=AB=AF=E5=A2=9E?=
+ =?UTF-8?q?=E5=BC=BA=E4=B8=8B=E8=BD=BD=E9=9D=A2=E6=9D=BF=E5=B9=B6=E4=BF=AE?=
+ =?UTF-8?q?=E5=A4=8D=E5=8E=9F=E7=94=9F=E6=B5=8B=E8=AF=95=20076?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/aegis_ui_handler_unittest.cc        |  1 -
+ chrome/browser/resources/aegis/BUILD.gn       |  5 +-
+ chrome/browser/resources/aegis/aegis.html     |  3 +-
+ chrome/browser/resources/aegis/aegis.ts       |  2 +
+ chrome/browser/resources/downloads/BUILD.gn   |  4 +-
+ chrome/browser/resources/downloads/manager.ts |  2 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     | 10 +++
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 12 ++-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ ui/webui/resources/BUILD.gn                   |  2 +
+ .../cr_components/aegis_downloads/BUILD.gn    | 22 ++++++
+ .../aegis_downloads}/aegis_download_panel.css | 75 ++++++++++++++-----
+ .../aegis_download_panel.html.ts              |  6 +-
+ .../aegis_downloads}/aegis_download_panel.ts  |  4 +-
+ 14 files changed, 118 insertions(+), 34 deletions(-)
+ create mode 100644 ui/webui/resources/cr_components/aegis_downloads/BUILD.gn
+ rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.css (60%)
+ rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.html.ts (95%)
+ rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.ts (98%)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 11ee95e32a0b25d910d53212a63d15301ce3c863..b68e3318d40efc4ded713d9eb2eef4288c7b892f 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -60,7 +60,6 @@ TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
+ 
+ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
+   AddTab(browser(), GURL("https://source.example/"));
+-  TabStripModel* model = browser()->tab_strip_model();
+   auto foreign = content::WebContents::Create(
+       content::WebContents::CreateParams(profile()));
+ 
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index 58be490b2103826f6a8adc19614ef16030837f5e..fc36af9137f65dd2722a0e401078bf6e4d34b5e2 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -15,7 +15,10 @@ build_webui("build") {
+     "policy_worker.ts",
+   ]
+ 
+-  ts_deps = [ "//ui/webui/resources/js:build_ts" ]
++  ts_deps = [
++    "//ui/webui/resources/cr_components/aegis_downloads:build_ts",
++    "//ui/webui/resources/js:build_ts",
++  ]
+   ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
+   webui_context_type = "trusted"
+ }
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 7e383cc43aa5832c6de8b01270d3bb6d4c9661fa..221bd4d7f15816967e77b20b77c2f389427e2908 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -138,9 +138,10 @@
+         </label>
+         <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
+       </section>
+-      <section class="downloads" aria-label="$i18n{downloadsTitle}">
++      <section id="downloads" class="downloads" aria-label="$i18n{downloadsTitle}">
+         <h2>$i18n{downloadsTitle}</h2>
+         <p class="meta">$i18n{downloadsMeta}</p>
++        <aegis-download-panel></aegis-download-panel>
+         <p><a href="chrome://downloads">$i18n{downloadsTitle}</a></p>
+         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
+       </section>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 6acd186b1938e528193c11564503a5f5325ef2a9..6b0a72f221d2c2a359acb819e48f82bef2dbf73b 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1,6 +1,8 @@
+ // Copyright 2026 GCSA
+ 
++import '/strings.m.js';
+ import './policy_worker.js';
++import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+ 
+ import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
+ import {getRequiredElement} from 'chrome://resources/js/util.js';
+diff --git a/chrome/browser/resources/downloads/BUILD.gn b/chrome/browser/resources/downloads/BUILD.gn
+index b8bd13809e04c113d7ccd5313240f8972d5855ac..9450110275a684b95d81de133fc7a628a6d6a299 100644
+--- a/chrome/browser/resources/downloads/BUILD.gn
++++ b/chrome/browser/resources/downloads/BUILD.gn
+@@ -17,8 +17,6 @@ build_webui("build") {
+   ]
+ 
+   ts_files = [
+-    "aegis_download_panel.html.ts",
+-    "aegis_download_panel.ts",
+     "bypass_warning_confirmation_dialog.html.ts",
+     "bypass_warning_confirmation_dialog.ts",
+     "data.ts",
+@@ -34,7 +32,6 @@ build_webui("build") {
+   ]
+ 
+   css_files = [
+-    "aegis_download_panel.css",
+     "bypass_warning_confirmation_dialog.css",
+     "item.css",
+     "manager.css",
+@@ -56,6 +53,7 @@ build_webui("build") {
+   ts_composite = true
+   ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
+   ts_deps = [
++    "//ui/webui/resources/cr_components/aegis_downloads:build_ts",
+     "//third_party/lit/v3_0:build_ts",
+     "//ui/webui/resources/cr_components/color_change_listener:build_ts",
+     "//ui/webui/resources/cr_components/managed_footnote:build_ts",
+diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
+index f1d280d1bf3bc2a635657c8a6aeb6916b70aff48..5870a5b463e18ba32fb9bd4322cf6166469d275f 100644
+--- a/chrome/browser/resources/downloads/manager.ts
++++ b/chrome/browser/resources/downloads/manager.ts
+@@ -3,7 +3,7 @@
+ // found in the LICENSE file.
+ 
+ import '/strings.m.js';
+-import './aegis_download_panel.js';
++import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+ import './bypass_warning_confirmation_dialog.js';
+ import './item.js';
+ import './toolbar.js';
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index c190fec7682e67030b0265bb3c5eb123d13d8325..c7a51e47f9c2f98dc300eaa0a1db69f88e98d68b 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -6,6 +6,7 @@
+ #include <string>
+ 
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+@@ -556,6 +557,15 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   Profile* profile = Profile::FromWebUI(web_ui);
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       profile, chrome::kChromeUIAegisHost);
++  const aegis::DownloadSettings downloads =
++      aegis::ReadDownloadSettings(*g_browser_process->local_state());
++  source->AddBoolean("aegisTorrentDhtDefault", downloads.torrent_dht_enabled);
++  source->AddBoolean("aegisTorrentPexDefault", downloads.torrent_pex_enabled);
++  source->AddInteger("aegisTorrentDownloadLimitKibDefault",
++                     downloads.torrent_download_limit_kib);
++  source->AddInteger("aegisTorrentUploadLimitKibDefault",
++                     downloads.torrent_upload_limit_kib);
++
+   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
+   source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 203f11834e155501c83e15e5d861f3c83229c412..12950a01ae37c25739be6f72b34a0896c18ca305 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -848,9 +848,15 @@ void AddStrings(content::WebUIDataSource *source) {
+       "已重新讀取結帳資訊，並在最終購買前停止。請核對目前頁面後自行完成或取消"
+       "。");
+   add("androidPlatformNote",
+-      "Android uses a separate task page. Window management, workspace restore and BitTorrent downloads are not available yet. Scheduled checks require the browser to be running.",
+-      "Android 使用独立任务页。窗口管理、工作区恢复和 BT 下载暂不可用；定时检查需要浏览器保持运行。",
+-      "Android 使用獨立任務頁。視窗管理、工作區還原和 BT 下載暫不可用；定時檢查需要瀏覽器保持執行。" );
++      "Android uses a separate task page. Workspaces can be saved and "
++      "restored; window actions depend on device support. BitTorrent is not "
++      "available yet. Scheduled checks require the browser to be running.",
++      "Android "
++      "使用独立任务页，支持工作区保存与恢复；窗口操作取决于设备支持。BT "
++      "下载暂不可用；定时检查需要浏览器保持运行。",
++      "Android "
++      "使用獨立任務頁，支援工作區儲存與還原；視窗操作取決於裝置支援。BT "
++      "下載暫不可用；定時檢查需要瀏覽器保持執行。");
+   add("merchant", "Merchant", "商家", "商家");
+   add("product", "Product", "商品", "商品");
+   add("quantity", "Quantity", "数量", "數量");
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9c12cebab32dbff2189cbe5df809892cf75a6978..8868dbcbd5f590d4c92d91bb036603dd45243c9e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.75";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (075)";
++inline constexpr char kProductVersion[] = "2.0.0.76";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (076)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
+index 44b39cda6816b726d1414fb0c5490956f7a78909..53a8f4e755dc6933324280aa2c6303c8505f329b 100644
+--- a/ui/webui/resources/BUILD.gn
++++ b/ui/webui/resources/BUILD.gn
+@@ -33,6 +33,7 @@ generate_grd("build_grd") {
+   }
+ 
+   public_deps = [
++    "cr_components/aegis_downloads:build_grdp",
+     "cr_components/commerce:build_grdp",
+     "cr_elements:build_grdp",
+     "css:build_grdp",
+@@ -42,6 +43,7 @@ generate_grd("build_grd") {
+     "//third_party/lit/v3_0:build_grdp",
+   ]
+   grdp_files = [
++    "$target_gen_dir/cr_components/aegis_downloads/resources.grdp",
+     "$root_gen_dir/third_party/lit/v3_0/resources.grdp",
+     "$target_gen_dir/cr_components/commerce/resources.grdp",
+     "$target_gen_dir/cr_elements/resources.grdp",
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/BUILD.gn b/ui/webui/resources/cr_components/aegis_downloads/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..e0932bdf4ab2fcb0ab8488bed8abb6be215910b1
+--- /dev/null
++++ b/ui/webui/resources/cr_components/aegis_downloads/BUILD.gn
+@@ -0,0 +1,22 @@
++# Copyright 2026 GCSA
++# 三端复用同一下载面板；浏览器端仍按资料和协议能力校验每次请求。
++import("//ui/webui/resources/tools/build_webui.gni")
++
++build_webui("build") {
++  grd_prefix = "cr_components_aegis_downloads"
++  ts_files = [
++    "aegis_download_panel.html.ts",
++    "aegis_download_panel.ts",
++  ]
++  css_files = [ "aegis_download_panel.css" ]
++  ts_out_dir = "$root_gen_dir/ui/webui/resources/tsc/cr_components/aegis_downloads"
++  ts_composite = true
++  ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
++  ts_deps = [
++    "//third_party/lit/v3_0:build_ts",
++    "//ui/webui/resources/js:build_ts",
++  ]
++  webui_context_type = "relative"
++  generate_grdp = true
++  grd_resource_path_prefix = rebase_path(".", "//ui/webui/resources")
++}
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.css b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+similarity index 60%
+rename from chrome/browser/resources/downloads/aegis_download_panel.css
+rename to ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+index e29ab8c0ce68ec83b83d7ffe8cdb0182d2c9ee5b..98ceb272b4978b795d61b2b273edaabcc89c071e 100644
+--- a/chrome/browser/resources/downloads/aegis_download_panel.css
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+@@ -6,17 +6,19 @@
+  * #css_wrapper_metadata_end */
+ 
+ :host {
+-  --aegis-card-width: clamp(550px, 80%, 680px);
++  --aegis-card-width: min(100%, 680px);
+   display: block;
+-  margin: 20px auto 0;
++  margin: 16px auto 0;
++  max-width: 100%;
++  overflow-wrap: anywhere;
+   width: var(--aegis-card-width);
+ }
+ 
+ .card {
+-  background: var(--cr-card-background-color);
++  background: var(--cr-card-background-color, var(--bg, #fff));
+   border-radius: 12px;
+   box-shadow: var(--cr-card-shadow);
+-  color: var(--cr-primary-text-color);
++  color: var(--cr-primary-text-color, var(--fg, #202124));
+   overflow: hidden;
+ }
+ 
+@@ -36,14 +38,14 @@
+ 
+ .subtitle,
+ .hint {
+-  color: var(--cr-secondary-text-color);
++  color: var(--cr-secondary-text-color, var(--muted, #5f6368));
+   font-size: 12px;
+   line-height: 18px;
+ }
+ 
+ .composer,
+ .task {
+-  border-top: 1px solid var(--cr-separator-color);
++  border-top: 1px solid var(--cr-separator-color, var(--line, #dadce0));
+   padding: 16px 20px 20px;
+ }
+ 
+@@ -64,9 +66,9 @@ textarea {
+ textarea,
+ input[type='number'] {
+   background: transparent;
+-  border: 1px solid var(--cr-separator-color);
++  border: 1px solid var(--cr-separator-color, var(--line, #dadce0));
+   border-radius: 8px;
+-  color: var(--cr-primary-text-color);
++  color: var(--cr-primary-text-color, var(--fg, #202124));
+   padding: 9px 11px;
+ }
+ 
+@@ -90,7 +92,7 @@ input[type='number'] {
+ }
+ 
+ .preview {
+-  background: var(--cr-fallback-color-surface-variant);
++  background: var(--cr-fallback-color-surface-variant, var(--bg, #f1f3f4));
+   border-radius: 8px;
+   line-height: 20px;
+   margin: 14px 0 0;
+@@ -129,9 +131,9 @@ input[type='number'] {
+ }
+ 
+ .protocol-badge {
+-  background: var(--google-blue-50);
++  background: var(--google-blue-50, #e8f0fe);
+   border-radius: 12px;
+-  color: var(--google-blue-700);
++  color: var(--google-blue-700, #1967d2);
+   font-size: 11px;
+   font-weight: 600;
+   padding: 3px 8px;
+@@ -140,7 +142,7 @@ input[type='number'] {
+ @media (prefers-color-scheme: dark) {
+   .protocol-badge {
+     background: rgba(138, 180, 248, .16);
+-    color: var(--google-blue-300);
++    color: var(--google-blue-300, #8ab4f8);
+   }
+ }
+ 
+@@ -158,9 +160,9 @@ progress {
+ 
+ button {
+   background: transparent;
+-  border: 1px solid var(--cr-separator-color);
++  border: 1px solid var(--cr-separator-color, var(--line, #dadce0));
+   border-radius: 18px;
+-  color: var(--cr-link-color);
++  color: var(--cr-link-color, var(--accent, #1967d2));
+   cursor: pointer;
+   font: inherit;
+   min-height: 34px;
+@@ -168,9 +170,9 @@ button {
+ }
+ 
+ button.primary {
+-  background: var(--cr-button-background-color);
++  background: var(--cr-button-background-color, var(--accent, #1967d2));
+   border-color: transparent;
+-  color: var(--cr-button-text-color);
++  color: var(--cr-button-text-color, #fff);
+ }
+ 
+ button:disabled {
+@@ -180,6 +182,45 @@ button:disabled {
+ 
+ @media (max-width: 700px) {
+   :host {
+-    --aegis-card-width: calc(100% - 32px);
++    --aegis-card-width: 100%;
++  }
++}
++
++@media (max-width: 600px) {
++  .header {
++    align-items: flex-start;
++    flex-direction: column;
++    gap: 12px;
++    padding: 16px;
++  }
++
++  .composer,
++  .task {
++    padding: 16px;
++  }
++
++  .subtitle,
++  .hint {
++    font-size: 14px;
++    line-height: 1.5;
++  }
++}
++
++@media (pointer: coarse) {
++  button,
++  input[type='number'],
++  input[type='file'] {
++    min-height: 44px;
++  }
++
++  input,
++  textarea {
++    font-size: 16px;
++  }
++
++  .files label,
++  .toggle,
++  .disclosure {
++    min-height: 44px;
+   }
+ }
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.html.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
+similarity index 95%
+rename from chrome/browser/resources/downloads/aegis_download_panel.html.ts
+rename to ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
+index 246a93b69c03a98a748aa26b1fcd989ca0035526..ee139046932a06e0cffa40e6369af6c6ddd6c6d6 100644
+--- a/chrome/browser/resources/downloads/aegis_download_panel.html.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
+@@ -12,8 +12,8 @@ export function getHtml(this: AegisDownloadPanelElement) {
+     <div>
+       <div class="title">${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載中心' : '下载中心') : 'Aegis downloads'}</div>
+       <div class="subtitle">${this.isZh_() ?
+-          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '普通下載、映象、種子與磁力連結' : '普通下载、镜像、种子与磁力链接') :
+-          'HTTP downloads, mirrors, torrents and magnet links'}</div>
++          (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? (this.torrentSupported_ ? '映象、種子與磁力連結' : '可校驗的映象下載') : (this.torrentSupported_ ? '镜像、种子与磁力链接' : '可校验的镜像下载')) :
++          (this.torrentSupported_ ? 'Mirrors, torrents and magnet links' : 'Verified mirror downloads')}</div>
+     </div>
+     <button ?disabled="${!this.profileAvailable_}"
+         @click="${this.onToggleClick_}">
+@@ -31,7 +31,7 @@ export function getHtml(this: AegisDownloadPanelElement) {
+                (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '選擇 .meta4 或 .metalink。預覽並確認後開始下載。' : '选择 .meta4 或 .metalink。预览并确认后开始下载。') :
+                'Choose a .meta4 or .metalink file. Nothing starts before inspection.')}</div>
+       <label class="field">
+-        <span>${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '種子或下載描述檔案' : '种子或下载描述文件') : 'Torrent or download description file'}</span>
++        <span>${this.isZh_() ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '下載描述檔案' : '下载描述文件') : 'Download description file'}</span>
+         <input id="descriptor" type="file"
+             accept="${this.torrentSupported_ ?
+                 '.meta4,.metalink,.torrent,application/metalink4+xml,application/x-bittorrent' :
+diff --git a/chrome/browser/resources/downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+similarity index 98%
+rename from chrome/browser/resources/downloads/aegis_download_panel.ts
+rename to ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+index 3e3641857947994ab774cf77fe7ee39560f0a68c..9d23c6e93c8e67695558f51c2f2f828676bd8579 100644
+--- a/chrome/browser/resources/downloads/aegis_download_panel.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+@@ -376,8 +376,8 @@ export class AegisDownloadPanelElement extends CrLitElement {
+           await sendWithPromise('startMetalinkDownload', requestId);
+       this.previewText_ = result.ok ?
+           (zh ?
+-               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已新增到下方原生下載列表；完成後自動校驗雜湊並在需要時切換映象。' : '已添加到下方原生下载列表；完成后自动校验散列并在需要时切换镜像。') :
+-               'Added to the native download list below. Integrity and mirror failover are automatic.') :
++               (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '已新增到瀏覽器下載列表；完成後自動校驗雜湊並在需要時切換映象。' : '已添加到浏览器下载列表；完成后自动校验散列并在需要时切换镜像。') :
++               'Added to the browser download list. Integrity and mirror failover are automatic.') :
+           this.formatPreviewError_(result.error || 'download start failed');
+     } catch (error) {
+       this.previewText_ = this.formatPreviewError_(error);
+-- 
+2.52.0
+

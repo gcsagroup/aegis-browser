@@ -1,4 +1,4 @@
-From 35c55e84aaa88f59b3c6193613f4c93725a48cc1 Mon Sep 17 00:00:00 2001
+From 1c2965f67d3c6bddcd2f4d32389eaf87e5c60af8 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 29 Sep 2026 17:56:18 +0800
 Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Android=20=E8=8F=9C?=
@@ -14,10 +14,10 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 12 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index 3d5da09ed3..a8e673a661 100644
+index 9d6a43a1caf39ae8550aab6bcd60cc2ca2bf51bc..2f1caae456a9ff50434f31398bb1da7a478dc43c 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -1469,23 +1469,29 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -1387,23 +1387,29 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
      private ListItem buildAegisAgentItem() {
          return new ListItem(
                  AppMenuHandler.AppMenuItemType.STANDARD,
@@ -52,7 +52,7 @@ index 3d5da09ed3..a8e673a661 100644
  
      private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index a527299025..382df0b895 100644
+index a5272990254085cfa4d265b0d702d4fa5ad53b96..382df0b89530c2de085d2b0214a6a36fdb1f4759 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

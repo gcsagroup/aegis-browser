@@ -1,4 +1,4 @@
-From 213ccc8b520b6dc4725dd3cc9e24fcba9c023a21 Mon Sep 17 00:00:00 2001
+From c6645b34b224bd872cbcb1082a9b79ce410e84ab Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Thu, 17 Sep 2026 02:55:24 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=87=8D=E8=AF=95=E5=AE=A1?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index fb189eb969..aec0288de3 100644
+index fb189eb9699bab56772c90bbf1667174fdb5f1ab..aec0288de3f9c0f1bb58198b6984674a54da4043 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -1757,7 +1757,7 @@ TEST_F(AegisAgentServiceTest,
@@ -27,7 +27,7 @@ index fb189eb969..aec0288de3 100644
    AgentToolCall call;
    call.action_id = "url-call";
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index d3f6278bcd..0c0f76967e 100644
+index d3f6278bcd303424523fc20eb9d6397596f708d5..0c0f76967e3ec1050ea942552deedf90d0782b22 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

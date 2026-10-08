@@ -1,4 +1,4 @@
-From 00f75e2aa908286c6d6cca5a4ece59f350d37fd8 Mon Sep 17 00:00:00 2001
+From 55b7c30e6a7e1b88366352b6bebdc9fa93aeb1c3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 22:58:45 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E4=B8=8B=E8=BD=BD?=
@@ -21,7 +21,7 @@ Content-Transfer-Encoding: 8bit
  8 files changed, 407 insertions(+), 36 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index ed9bbfecfd..155b25a57f 100644
+index ed9bbfecfd20c6f3b4613d76e6db4ac05dfe0cec..155b25a57f471d1d79ac18cfde784b74659d464d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -572,6 +572,7 @@ struct AegisAgentService::ExecutionRuntime {
@@ -155,7 +155,7 @@ index ed9bbfecfd..155b25a57f 100644
      const std::string& task_id,
      AgentCompletionSummary completion) {
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 9659e75c9e..ed47138ac2 100644
+index 9659e75c9e7bc3a9bf75f21e737c29cb589c7199..ed47138ac2f9164d2d9793fc753f54d556c328d5 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -374,6 +374,8 @@ class AegisAgentService : public KeyedService {
@@ -168,7 +168,7 @@ index 9659e75c9e..ed47138ac2 100644
                                          AgentCompletionSummary completion);
    void FinishRuntime(const std::string& task_id,
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 72601cd62c..144043d1d6 100644
+index 72601cd62c26fc47c7a87462e8f61fff13424250..144043d1d61911246f127d7c1d1bdc4e6baacc65 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -15,6 +15,7 @@
@@ -309,7 +309,7 @@ index 72601cd62c..144043d1d6 100644
  }
  
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 24b7c4a1e2..fae96a3273 100644
+index 24b7c4a1e240493babc6cc65c0c6862b48418cf1..fae96a3273944015fd83227540d493827b492a24 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -47,6 +47,12 @@ struct AgentExecutionEvidence {
@@ -326,7 +326,7 @@ index 24b7c4a1e2..fae96a3273 100644
  bool AgentResearchCompletionClaimsSave(const AgentCompletionSummary& completion);
  // 只规范已知的存储待办和独立状态行；未知或内容未完成事项保持不变。
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 3a5c137209..71f051d776 100644
+index 3a5c13720965cc5425bcef624eb0b5e0c267f491..71f051d7762e5c9eb0fe9c5cc9356a26453740d1 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -518,6 +518,86 @@ TEST(AegisAgentExecutionTest, DownloadSummaryPreservesSourceOnlyTask) {
@@ -417,7 +417,7 @@ index 3a5c137209..71f051d776 100644
    auto scope = ExecutionScope();
    const char* goal = "在当前页面找到 macOS ARM64 的官方下载，先不要下载。";
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 03d944ec4b..3f1c1d7274 100644
+index 03d944ec4bc8283c2f03e13287bee89fab5989c0..3f1c1d7274c82d85ac3c3146123685f06d96ec5b 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -12,6 +12,7 @@
@@ -585,7 +585,7 @@ index 03d944ec4b..3f1c1d7274 100644
  
  AgentWorkflowKind ConstrainWorkflowToUserIntent(
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 1ffb6bd2ce..eb95f4a4af 100644
+index 1ffb6bd2ce904846944259556d1d47253c5a86ec..eb95f4a4affb9b7c36a5ccee2063dafa259e7266 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -448,6 +448,39 @@ TEST(AegisAgentGoalRegressionTest, CurrentPageDownloadRouteKeepsNativeTools) {
@@ -629,7 +629,7 @@ index 1ffb6bd2ce..eb95f4a4af 100644
    AgentTaskScope scope = MaximumScope();
    scope.allowed_origins.clear();
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 784c40a60f..f954688672 100644
+index 784c40a60fc54dfd147c1985d74d4dc02f96f95e..f95468867211ac9377cd6ee91f761e3cce162033 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

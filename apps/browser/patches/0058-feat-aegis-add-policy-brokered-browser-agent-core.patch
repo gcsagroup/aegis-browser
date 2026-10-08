@@ -1,4 +1,4 @@
-From 7111f5b5d7d08dbf811a5ad728c578c9f36e0766 Mon Sep 17 00:00:00 2001
+From 8b095d1db50b992de033ecf0577c548b7e351749 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 18:30:22 +0800
 Subject: [PATCH] feat(aegis): add policy-brokered browser agent core
@@ -110,7 +110,7 @@ Subject: [PATCH] feat(aegis): add policy-brokered browser agent core
  create mode 100644 chrome/browser/aegis/model_provider_policy.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 69006853b4..daf87a9d3b 100644
+index 69006853b4825193588c54ac6badde30ca42bde1..daf87a9d3b3b66aa5e638176f1e5acb2cbaf83bd 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -1,8 +1,74 @@
@@ -367,7 +367,7 @@ index 69006853b4..daf87a9d3b 100644
    }
  }
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index 041c51eed8..89e3003c10 100644
+index 041c51eed89ebfe237ac8abecc62e5f90aec701d..89e3003c106d7ad04094656efef51d9ade9b2d51 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -43,6 +43,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -381,7 +381,7 @@ index 041c51eed8..89e3003c10 100644
    registry->RegisterBooleanPref(prefs::kAwarenessIntroShown, false);
    registry->RegisterBooleanPref(prefs::kTorrentDisclosureAcknowledged, false);
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index c18ce8b681..9cbad2b5db 100644
+index c18ce8b68181bc41611a4504c624393c0216da4d..9cbad2b5db372840116335e6fb120abf7dfc26b3 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -1138,6 +1138,24 @@ bool AegisService::HasModelApiKey(const std::string& provider,
@@ -410,7 +410,7 @@ index c18ce8b681..9cbad2b5db 100644
      const std::string& provider,
      const std::string& base_url) const {
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index bbe9f64e45..74efc0497b 100644
+index bbe9f64e45c8b0802e3d3d20a408af39c4389738..74efc0497bf1de8eb32f7d93a72027978b783e94 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -172,6 +172,12 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
@@ -428,7 +428,7 @@ index bbe9f64e45..74efc0497b 100644
    void SetModelSettings(
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 new file mode 100644
-index 0000000000..6e466860c7
+index 0000000000000000000000000000000000000000..6e466860c788e747bf7abfd48be59d1105742db0
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -0,0 +1,1213 @@
@@ -1647,7 +1647,7 @@ index 0000000000..6e466860c7
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 new file mode 100644
-index 0000000000..c5d79e76df
+index 0000000000000000000000000000000000000000..c5d79e76df077b76fb3b5d55845d1a822e51b661
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 @@ -0,0 +1,118 @@
@@ -1771,7 +1771,7 @@ index 0000000000..c5d79e76df
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AEGIS_ACTOR_BRIDGE_H_
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 new file mode 100644
-index 0000000000..b7e07b087a
+index 0000000000000000000000000000000000000000..b7e07b087abe5afd9e26ba222d5f23f517504388
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -0,0 +1,219 @@
@@ -1996,7 +1996,7 @@ index 0000000000..b7e07b087a
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 new file mode 100644
-index 0000000000..1a580d96d0
+index 0000000000000000000000000000000000000000..1a580d96d0249dad2bb110acc3f376d859440997
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 @@ -0,0 +1,222 @@
@@ -2224,7 +2224,7 @@ index 0000000000..1a580d96d0
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
 new file mode 100644
-index 0000000000..68d2593da9
+index 0000000000000000000000000000000000000000..68d2593da98a6a99399d6eb41b13917a17af4a0b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -0,0 +1,2741 @@
@@ -4971,7 +4971,7 @@ index 0000000000..68d2593da9
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
 new file mode 100644
-index 0000000000..e1477e2a45
+index 0000000000000000000000000000000000000000..e1477e2a45ef2d6a0d5fc05b9209b6c44f4a4077
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -0,0 +1,268 @@
@@ -5245,7 +5245,7 @@ index 0000000000..e1477e2a45
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AEGIS_AGENT_SERVICE_H_
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.cc b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
 new file mode 100644
-index 0000000000..cd775b20d6
+index 0000000000000000000000000000000000000000..cd775b20d667e56f3934dd049bb62307e45d42f4
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
 @@ -0,0 +1,62 @@
@@ -5313,7 +5313,7 @@ index 0000000000..cd775b20d6
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.h b/chrome/browser/aegis/agent/aegis_agent_service_factory.h
 new file mode 100644
-index 0000000000..3ee9e06d11
+index 0000000000000000000000000000000000000000..3ee9e06d11164ae8123b92176f32cf4c1b883641
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_factory.h
 @@ -0,0 +1,35 @@
@@ -5354,7 +5354,7 @@ index 0000000000..3ee9e06d11
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AEGIS_AGENT_SERVICE_FACTORY_H_
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 new file mode 100644
-index 0000000000..618be46422
+index 0000000000000000000000000000000000000000..618be4642261d7331c4ae594588ff42cd1691474
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -0,0 +1,418 @@
@@ -5778,7 +5778,7 @@ index 0000000000..618be46422
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 new file mode 100644
-index 0000000000..085af3ff8b
+index 0000000000000000000000000000000000000000..085af3ff8b22722fd4eadaf1e4ed0af437483c49
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -0,0 +1,2222 @@
@@ -8006,7 +8006,7 @@ index 0000000000..085af3ff8b
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
 new file mode 100644
-index 0000000000..b9359e38df
+index 0000000000000000000000000000000000000000..b9359e38df960af7b30509c0e9aa64cadcb373db
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
 @@ -0,0 +1,147 @@
@@ -8159,7 +8159,7 @@ index 0000000000..b9359e38df
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AEGIS_BROWSER_TOOLS_H_
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
 new file mode 100644
-index 0000000000..9feec1745b
+index 0000000000000000000000000000000000000000..9feec1745b9c86e7fce9ebcb940acce58ea40ae4
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -0,0 +1,642 @@
@@ -8807,7 +8807,7 @@ index 0000000000..9feec1745b
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
 new file mode 100644
-index 0000000000..6f2568e002
+index 0000000000000000000000000000000000000000..6f2568e002b15bf2d4b6175b38e7a3356b42cf8e
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -0,0 +1,575 @@
@@ -9388,7 +9388,7 @@ index 0000000000..6f2568e002
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
 new file mode 100644
-index 0000000000..16c7212305
+index 0000000000000000000000000000000000000000..16c72123053d1d6b9591a053f6052448f57ecad8
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -0,0 +1,71 @@
@@ -9465,7 +9465,7 @@ index 0000000000..16c7212305
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_EXECUTION_H_
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 new file mode 100644
-index 0000000000..fccdb4ded5
+index 0000000000000000000000000000000000000000..fccdb4ded5d79637579ac46a544212be55370426
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -0,0 +1,258 @@
@@ -9729,7 +9729,7 @@ index 0000000000..fccdb4ded5
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_model_client.cc b/chrome/browser/aegis/agent/agent_model_client.cc
 new file mode 100644
-index 0000000000..2f082713c1
+index 0000000000000000000000000000000000000000..2f082713c18bd615607015125ee18bdd0c23a9cf
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_client.cc
 @@ -0,0 +1,308 @@
@@ -10043,7 +10043,7 @@ index 0000000000..2f082713c1
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_model_client.h b/chrome/browser/aegis/agent/agent_model_client.h
 new file mode 100644
-index 0000000000..67e3cd4d12
+index 0000000000000000000000000000000000000000..67e3cd4d1260f4453cf90677997b34fbf53053c5
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_client.h
 @@ -0,0 +1,67 @@
@@ -10116,7 +10116,7 @@ index 0000000000..67e3cd4d12
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_MODEL_CLIENT_H_
 diff --git a/chrome/browser/aegis/agent/agent_model_client_unittest.cc b/chrome/browser/aegis/agent/agent_model_client_unittest.cc
 new file mode 100644
-index 0000000000..849377060e
+index 0000000000000000000000000000000000000000..849377060ecbcf5a00714fa31aa553a9067638a5
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_client_unittest.cc
 @@ -0,0 +1,209 @@
@@ -10331,7 +10331,7 @@ index 0000000000..849377060e
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol.cc b/chrome/browser/aegis/agent/agent_model_protocol.cc
 new file mode 100644
-index 0000000000..dae4845cb2
+index 0000000000000000000000000000000000000000..dae4845cb270c833e9ed5260df50405a983cfbf9
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_protocol.cc
 @@ -0,0 +1,1077 @@
@@ -11414,7 +11414,7 @@ index 0000000000..dae4845cb2
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol.h b/chrome/browser/aegis/agent/agent_model_protocol.h
 new file mode 100644
-index 0000000000..0b6ec10683
+index 0000000000000000000000000000000000000000..0b6ec10683865d6b06160debf48df5779e3f093f
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_protocol.h
 @@ -0,0 +1,107 @@
@@ -11527,7 +11527,7 @@ index 0000000000..0b6ec10683
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_MODEL_PROTOCOL_H_
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc b/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc
 new file mode 100644
-index 0000000000..06a80a3727
+index 0000000000000000000000000000000000000000..06a80a37277bcc511ad238b2c92cce0051ce2470
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc
 @@ -0,0 +1,47 @@
@@ -11580,7 +11580,7 @@ index 0000000000..06a80a3727
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
 new file mode 100644
-index 0000000000..942d7bab29
+index 0000000000000000000000000000000000000000..942d7bab290ad3d0444d1216a6b7485d355b8c20
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
 @@ -0,0 +1,332 @@
@@ -11918,7 +11918,7 @@ index 0000000000..942d7bab29
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.cc b/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
 new file mode 100644
-index 0000000000..9a87c5ddf3
+index 0000000000000000000000000000000000000000..9a87c5ddf3294742c5337e4c3cc7ad243ee90d08
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
 @@ -0,0 +1,117 @@
@@ -12041,7 +12041,7 @@ index 0000000000..9a87c5ddf3
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.h b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
 new file mode 100644
-index 0000000000..8a39c23bbc
+index 0000000000000000000000000000000000000000..8a39c23bbce8b7fb23e1a2730e945edc08597ee0
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
 @@ -0,0 +1,69 @@
@@ -12116,7 +12116,7 @@ index 0000000000..8a39c23bbc
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_MONITOR_SCHEDULER_H_
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
 new file mode 100644
-index 0000000000..5d7e6c21b4
+index 0000000000000000000000000000000000000000..5d7e6c21b47c6faf088b12afc0cd198706ee1832
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -0,0 +1,349 @@
@@ -12471,7 +12471,7 @@ index 0000000000..5d7e6c21b4
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
 new file mode 100644
-index 0000000000..9238d38ffc
+index 0000000000000000000000000000000000000000..9238d38ffc3f3aecaedd21a928ce736ef97a3e1b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -0,0 +1,49 @@
@@ -12526,7 +12526,7 @@ index 0000000000..9238d38ffc
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 new file mode 100644
-index 0000000000..069f50e8b6
+index 0000000000000000000000000000000000000000..069f50e8b68a2d7a5a2bbf030a455e449ae1e52f
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -0,0 +1,183 @@
@@ -12715,7 +12715,7 @@ index 0000000000..069f50e8b6
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
 new file mode 100644
-index 0000000000..527820c2d7
+index 0000000000000000000000000000000000000000..527820c2d74b661b449fc0d72ebfde7df2c743b1
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
 @@ -0,0 +1,291 @@
@@ -13012,7 +13012,7 @@ index 0000000000..527820c2d7
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.h b/chrome/browser/aegis/agent/agent_policy_broker.h
 new file mode 100644
-index 0000000000..8a90b3fa26
+index 0000000000000000000000000000000000000000..8a90b3fa26b2ee3f4e6211dba18ffee84994384e
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.h
 @@ -0,0 +1,78 @@
@@ -13096,7 +13096,7 @@ index 0000000000..8a90b3fa26
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_POLICY_BROKER_H_
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
 new file mode 100644
-index 0000000000..24f7286887
+index 0000000000000000000000000000000000000000..24f72868874eb5a0dc238166181402c9ff3f4dc8
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
 @@ -0,0 +1,336 @@
@@ -13438,7 +13438,7 @@ index 0000000000..24f7286887
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.h b/chrome/browser/aegis/agent/agent_result_verifier.h
 new file mode 100644
-index 0000000000..823b9af633
+index 0000000000000000000000000000000000000000..823b9af633bd7ae8d9602503b69beada116c3813
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.h
 @@ -0,0 +1,37 @@
@@ -13481,7 +13481,7 @@ index 0000000000..823b9af633
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_RESULT_VERIFIER_H_
 diff --git a/chrome/browser/aegis/agent/agent_scope_fuzzer.cc b/chrome/browser/aegis/agent/agent_scope_fuzzer.cc
 new file mode 100644
-index 0000000000..f89866f267
+index 0000000000000000000000000000000000000000..f89866f26753b72c6421e5d548746834e13c6aa5
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_scope_fuzzer.cc
 @@ -0,0 +1,27 @@
@@ -13514,7 +13514,7 @@ index 0000000000..f89866f267
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_service_observer.h b/chrome/browser/aegis/agent/agent_service_observer.h
 new file mode 100644
-index 0000000000..f9be492bf2
+index 0000000000000000000000000000000000000000..f9be492bf2089c1e8b9c217ea88fe9eaec8b221d
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_service_observer.h
 @@ -0,0 +1,18 @@
@@ -13538,7 +13538,7 @@ index 0000000000..f9be492bf2
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_SERVICE_OBSERVER_H_
 diff --git a/chrome/browser/aegis/agent/agent_task.cc b/chrome/browser/aegis/agent/agent_task.cc
 new file mode 100644
-index 0000000000..b50916692b
+index 0000000000000000000000000000000000000000..b50916692b92f35247aa1d71b8579cb94de02cdd
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_task.cc
 @@ -0,0 +1,250 @@
@@ -13794,7 +13794,7 @@ index 0000000000..b50916692b
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_task.h b/chrome/browser/aegis/agent/agent_task.h
 new file mode 100644
-index 0000000000..60979dfc73
+index 0000000000000000000000000000000000000000..60979dfc73821dfd9587edbdd4a6a172a7d8116b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_task.h
 @@ -0,0 +1,125 @@
@@ -13925,7 +13925,7 @@ index 0000000000..60979dfc73
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_TASK_H_
 diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
 new file mode 100644
-index 0000000000..e36e92830d
+index 0000000000000000000000000000000000000000..e36e92830d5c811760de29c638e430977fa0817b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_task_store.cc
 @@ -0,0 +1,744 @@
@@ -14675,7 +14675,7 @@ index 0000000000..e36e92830d
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_task_store.h b/chrome/browser/aegis/agent/agent_task_store.h
 new file mode 100644
-index 0000000000..2af2dcc8a3
+index 0000000000000000000000000000000000000000..2af2dcc8a3d6a1d2e4fd9f8c8340bc1f26d9934b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_task_store.h
 @@ -0,0 +1,106 @@
@@ -14787,7 +14787,7 @@ index 0000000000..2af2dcc8a3
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_TASK_STORE_H_
 diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 new file mode 100644
-index 0000000000..1e27666d16
+index 0000000000000000000000000000000000000000..1e27666d1612f456f3dff2499a104687531328e3
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 @@ -0,0 +1,284 @@
@@ -15077,7 +15077,7 @@ index 0000000000..1e27666d16
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc b/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc
 new file mode 100644
-index 0000000000..96eae15f96
+index 0000000000000000000000000000000000000000..96eae15f9613064b1fd4e2f958b3f6e5336a4c1b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc
 @@ -0,0 +1,38 @@
@@ -15121,7 +15121,7 @@ index 0000000000..96eae15f96
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
 new file mode 100644
-index 0000000000..37a5629688
+index 0000000000000000000000000000000000000000..37a56296883ccd394aa3c33c94904a5f6af49177
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
 @@ -0,0 +1,684 @@
@@ -15811,7 +15811,7 @@ index 0000000000..37a5629688
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.h b/chrome/browser/aegis/agent/agent_tool_registry.h
 new file mode 100644
-index 0000000000..3faa85c7fe
+index 0000000000000000000000000000000000000000..3faa85c7feed38ad135864e278a0585fcbb200ec
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.h
 @@ -0,0 +1,42 @@
@@ -15859,7 +15859,7 @@ index 0000000000..3faa85c7fe
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_TOOL_REGISTRY_H_
 diff --git a/chrome/browser/aegis/agent/agent_types.cc b/chrome/browser/aegis/agent/agent_types.cc
 new file mode 100644
-index 0000000000..2c5deab6d8
+index 0000000000000000000000000000000000000000..2c5deab6d8967b8bcf18069b1e57f44769082a87
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_types.cc
 @@ -0,0 +1,162 @@
@@ -16027,7 +16027,7 @@ index 0000000000..2c5deab6d8
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_types.h b/chrome/browser/aegis/agent/agent_types.h
 new file mode 100644
-index 0000000000..0b8e1f709c
+index 0000000000000000000000000000000000000000..0b8e1f709c9e68f8aa6459ef7b8f9c1b99a54108
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_types.h
 @@ -0,0 +1,152 @@
@@ -16185,7 +16185,7 @@ index 0000000000..0b8e1f709c
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_TYPES_H_
 diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
 new file mode 100644
-index 0000000000..c2b985d34a
+index 0000000000000000000000000000000000000000..c2b985d34a3421d1ec726daee7abc3629dd2540d
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_workflow.cc
 @@ -0,0 +1,148 @@
@@ -16339,7 +16339,7 @@ index 0000000000..c2b985d34a
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_workflow.h b/chrome/browser/aegis/agent/agent_workflow.h
 new file mode 100644
-index 0000000000..7e2ba72d52
+index 0000000000000000000000000000000000000000..7e2ba72d528fe97c63abc1c2a28cea79405613d0
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_workflow.h
 @@ -0,0 +1,48 @@
@@ -16392,7 +16392,7 @@ index 0000000000..7e2ba72d52
 +
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_WORKFLOW_H_
 diff --git a/chrome/browser/aegis/model_provider_client.cc b/chrome/browser/aegis/model_provider_client.cc
-index bc070f7a40..2034d4300a 100644
+index bc070f7a40814e3e64cda4983d31993c854c6e7a..2034d4300a7c0802bd22d7a8500aeb5e51821e87 100644
 --- a/chrome/browser/aegis/model_provider_client.cc
 +++ b/chrome/browser/aegis/model_provider_client.cc
 @@ -19,7 +19,6 @@
@@ -16529,7 +16529,7 @@ index bc070f7a40..2034d4300a 100644
  ModelProviderClient::~ModelProviderClient() = default;
  
 diff --git a/chrome/browser/aegis/model_provider_client.h b/chrome/browser/aegis/model_provider_client.h
-index 87c69915c8..3867b0e4e0 100644
+index 87c69915c812880325b7f0a19f4dbbd29f04ed21..3867b0e4e0d3f6688b45d66aeeb419ac0509791f 100644
 --- a/chrome/browser/aegis/model_provider_client.h
 +++ b/chrome/browser/aegis/model_provider_client.h
 @@ -12,7 +12,7 @@
@@ -16578,7 +16578,7 @@ index 87c69915c8..3867b0e4e0 100644
    using ChatRequestId = std::string;
 diff --git a/chrome/browser/aegis/model_provider_policy.cc b/chrome/browser/aegis/model_provider_policy.cc
 new file mode 100644
-index 0000000000..0d06355d52
+index 0000000000000000000000000000000000000000..0d06355d52865b19160e5f8feaa629012fe8e8b5
 --- /dev/null
 +++ b/chrome/browser/aegis/model_provider_policy.cc
 @@ -0,0 +1,128 @@
@@ -16712,7 +16712,7 @@ index 0000000000..0d06355d52
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/model_provider_policy.h b/chrome/browser/aegis/model_provider_policy.h
 new file mode 100644
-index 0000000000..5a22445035
+index 0000000000000000000000000000000000000000..5a22445035e7ad0905e4d53d4db4cf71fd2a4d58
 --- /dev/null
 +++ b/chrome/browser/aegis/model_provider_policy.h
 @@ -0,0 +1,41 @@
@@ -16758,7 +16758,7 @@ index 0000000000..5a22445035
 +
 +#endif  // CHROME_BROWSER_AEGIS_MODEL_PROVIDER_POLICY_H_
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index b134264097..bfda4caa75 100644
+index b1342640973e447ee8efb1138115175d38bce75f..bfda4caa750be2f65fb681617390ab8a2d7bd2d9 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -21,6 +21,12 @@ BASE_FEATURE(kAegisBounceTracking, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -16775,7 +16775,7 @@ index b134264097..bfda4caa75 100644
  bool IsFingerprintGuardGloballyEnabled(bool pref_enabled) {
    return pref_enabled && base::FeatureList::IsEnabled(kAegisEnabled) &&
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index 41f5a6b8fe..2a633871d2 100644
+index 41f5a6b8feb09d0268a162e4fb77c51d3dba2019..2a633871d223c3bd3f731451a520b5695fcabbe1 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -23,6 +23,17 @@ BASE_DECLARE_FEATURE(kAegisBounceTracking);
@@ -16797,7 +16797,7 @@ index 41f5a6b8fe..2a633871d2 100644
  // 统一计算可发送给 Renderer 的有效开关，避免 UI 与 Blink 状态不一致。
  bool IsFingerprintGuardGloballyEnabled(bool pref_enabled);
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index 5a3e39c567..a3e7fba5b3 100644
+index 5a3e39c56783ea48cc148953746da1822bfb5820..a3e7fba5b34257449b5b39ffd4b692da9db1a06e 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -43,6 +43,10 @@ inline constexpr char kModelApiKeyCiphertexts[] =

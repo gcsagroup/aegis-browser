@@ -1,4 +1,4 @@
-From 920d46ee664aad77440cc6805bcc93ae92c2cda2 Mon Sep 17 00:00:00 2001
+From d51c4ad0dde90ecbb0cf0c545d104078a914c100 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 00:30:07 +0800
 Subject: [PATCH] fix: release Aegis profile state before shutdown
@@ -9,7 +9,7 @@ Subject: [PATCH] fix: release Aegis profile state before shutdown
  2 files changed, 55 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 963323df6e..d8dae036f1 100644
+index 963323df6ef11c1aed4bde9687fb644ecd86e2d1..d8dae036f17386fff3dcc05d4735147cbddc95ce 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -5,10 +5,11 @@
@@ -98,7 +98,7 @@ index 963323df6e..d8dae036f1 100644
  
  std::string NormalizeLocale(const std::string& locale) {
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 5d71c55a85..2ccc9fc511 100644
+index 5d71c55a85c768a404c7f2d0d1928bd91fffd3b4..2ccc9fc511924d7e3ec64476a2d9675f0ddf1734 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -14,7 +14,9 @@

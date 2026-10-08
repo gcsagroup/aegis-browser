@@ -1,4 +1,4 @@
-From 248a346b1a1b03caa4c45db047b251efd21ee592 Mon Sep 17 00:00:00 2001
+From 27f8d2b244e2375b96fd27b2fbc07a7d27347dc4 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 19:29:47 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=E7=89=88=E6=9C=AC=E9=A1=B5?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 6 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 20dadd0051..83d7fe7452 100644
+index 20dadd0051e3c1774a0f3f85faafc9d8e4098d2c..83d7fe74523d6efeb37fd1f2e3b23e0e29b92913 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -29,7 +29,7 @@ index 20dadd0051..83d7fe7452 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/version/BUILD.gn b/chrome/browser/ui/webui/version/BUILD.gn
-index 8c207f69b1..7fa96369f5 100644
+index 8c207f69b19c3c55ce8163d1271f28ab16959669..7fa96369f554919e6db3c13fbdd7da7f3fe9e944 100644
 --- a/chrome/browser/ui/webui/version/BUILD.gn
 +++ b/chrome/browser/ui/webui/version/BUILD.gn
 @@ -34,6 +34,10 @@ source_set("version") {

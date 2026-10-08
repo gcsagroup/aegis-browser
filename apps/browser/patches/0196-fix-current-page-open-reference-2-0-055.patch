@@ -1,4 +1,4 @@
-From 7c1dfcbfabe8d7ca83c86bdc004caf9b336ede62 Mon Sep 17 00:00:00 2001
+From 959b252c4b4899156f7d51cc13d7e4366afd0551 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 21 Sep 2026 18:31:41 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=91=E5=AE=9A?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 30 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 731c4eaa70..e73dcaae0c 100644
+index 731c4eaa702fdd50af805dc887a7096542edee02..e73dcaae0c568092b4522f77e45c6cedf4567534 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -794,6 +794,28 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
@@ -74,7 +74,7 @@ index 731c4eaa70..e73dcaae0c 100644
    }
    return GoalContainsAny(requested,
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 987fd74907..bf9d6a2c21 100644
+index 987fd74907d4012dab6cb5ec911a2e2cc1118b70..bf9d6a2c2189fdbc737997751ccd8af641bebc31 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -511,7 +511,8 @@ TEST(AegisAgentPlannerTest, CurrentPageModifiersCannotRouteToAnotherSite) {
@@ -98,7 +98,7 @@ index 987fd74907..bf9d6a2c21 100644
             "当前版本的官方发布页是什么", "当前时间是多少，搜索官方发布页",
             "总结当前之前打开的页面", "总结过去打开的发布页",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index aa9c7b2be1..d22b8813e4 100644
+index aa9c7b2be1c8b65118db63aded06cd0b8b788c91..d22b8813e443c80e0c83bd18ea1c2d320310c51a 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

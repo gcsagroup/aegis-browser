@@ -1,4 +1,4 @@
-From cb4cc396449d363fabb1eae0a5ce7758f107556c Mon Sep 17 00:00:00 2001
+From 9f100d0c6cf603f739d5da7061e98fdbcc80c3eb Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 03:44:20 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=A0=94=E7=A9=B6?=
@@ -19,7 +19,7 @@ Content-Transfer-Encoding: 8bit
  7 files changed, 184 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index b48d861543..a885cd3370 100644
+index b48d861543ed4dbec393539a0696a40680d3ee75..a885cd3370698999107c0da00a5744dfa924a32d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -2233,6 +2233,13 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
@@ -67,7 +67,7 @@ index b48d861543..a885cd3370 100644
      if (saved_research_.size() >= 20u && !saved_research_.contains(task_id)) {
        std::move(callback).Run("capacity_reached");
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index aec0288de3..b6df6098aa 100644
+index aec0288de3f9c0f1bb58198b6984674a54da4043..b6df6098aa90ae5d6a1f511ea9f4b123f552c8b3 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -90,6 +90,13 @@ class AegisAgentServiceTestPeer {
@@ -125,7 +125,7 @@ index aec0288de3..b6df6098aa 100644
    {
      AegisAgentService service(profile_);
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index f8ef6896a4..c769aa4761 100644
+index f8ef6896a48f71b5ff8e6d6b3c81207ec2cc79d7..c769aa4761160180e94a8d7681155f961e9d1ec8 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -1065,6 +1065,13 @@ std::string BuildAgentExecutionPrompt(
@@ -204,7 +204,7 @@ index f8ef6896a4..c769aa4761 100644
      AgentCompletionSummary* completion,
      std::string_view user_goal,
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index ced85694eb..ceea3f37aa 100644
+index ced85694ebff8fa8fcb0168839e6782fbda8d3f3..ceea3f37aa6f761af6b69202d64f01e68eaa725c 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -34,6 +34,12 @@ struct AgentExecutionEvidence {
@@ -221,7 +221,7 @@ index ced85694eb..ceea3f37aa 100644
  base::DictValue BuildAgentDownloadEvidence(
      base::span<const AgentExecutionEvidence> history);
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 8302e56a7e..e0a2db62a9 100644
+index 8302e56a7ef2fac02467e8e0676b90a32da90abb..e0a2db62a9f266422f21e887e0de74074add38c1 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -260,6 +260,49 @@ TEST(AegisAgentExecutionTest,
@@ -275,7 +275,7 @@ index 8302e56a7e..e0a2db62a9 100644
       DownloadEvidenceKeepsUnknownIdentityAndExcludesSecrets) {
    AgentToolResult result;
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 7e1b1aba27..258d59b70c 100644
+index 7e1b1aba27083205bed532428cf6e8b441344f81..258d59b70c0f03494d74d2a6c6af294235ea3357 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -1080,6 +1080,15 @@ function initializeLabels() {
@@ -295,7 +295,7 @@ index 7e1b1aba27..258d59b70c 100644
            researchMessage(result.error) : loadTimeData.getString('researchSaved');
      } catch {
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 6d76bbb485..144c936a1e 100644
+index 6d76bbb4854f002b618d986c310e32277f888024..144c936a1ebbc115c89ff2fee8e1730478efff26 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

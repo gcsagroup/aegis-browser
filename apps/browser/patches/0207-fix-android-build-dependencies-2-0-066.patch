@@ -1,4 +1,4 @@
-From 86e4e4ee2c1203e57a4fc754d253824d45e8ad5f Mon Sep 17 00:00:00 2001
+From 7712c88fb01814c8cea2a9d7eaca2b37d39cbd7f Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 29 Sep 2026 04:34:35 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Android=20=E6=9E=84?=
@@ -18,19 +18,19 @@ Content-Transfer-Encoding: 8bit
  6 files changed, 10 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 12bcc7d245..1ac092bf33 100644
+index 7166888c29e7e3e06acbe7b0f94d47d72a9153d7..b0d12b5c8e1cc7c98248d166315c810c8d107464 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1669,6 +1669,7 @@ source_set("core") {
+@@ -1677,6 +1677,7 @@ source_set("core") {
        "//chrome/browser/prefetch/android",
        "//chrome/browser/preloading/android",
        "//chrome/browser/ui/page_info",
 +      "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/chrome_finds_internals",
+       "//chrome/browser/ui/webui/chrome_finds_internals:mojo_bindings",
        "//chrome/browser/ui/webui/feed_internals",
-       "//chrome/browser/ui/webui/notifications_internals",
-       "//chrome/browser/util:jni_headers",
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 97472fb47e..bd333bf58d 100644
+index 97472fb47e498b53ab0e46f61c9a6494f0646c30..bd333bf58db57e616174d149355aa3c1ec9a5b5b 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -152,6 +152,7 @@ source_set("aegis") {
@@ -66,7 +66,7 @@ index 97472fb47e..bd333bf58d 100644
        "//components/download/public/common:public",
        "//components/undo",
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index 04e77a74a0..fdc7986171 100644
+index 04e77a74a0b460d04fd3386f8cfa963fdb8b7710..fdc7986171fe78e49cb0cb730e03985ea5d914db 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -39,7 +39,8 @@
@@ -80,10 +80,10 @@ index 04e77a74a0..fdc7986171 100644
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #endif
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index de3687e2ec..80b712a837 100644
+index 8f4d5cf44f700739843cf9ea966d51615108e73f..c38f2124a6ae8301cb8f19b933d987804069f134 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
-@@ -828,6 +828,7 @@ source_set("unit_tests") {
+@@ -835,6 +835,7 @@ source_set("unit_tests") {
      "//chrome/test:test_support",
      "//components/account_id:test_support",
      "//components/enterprise:test_support",
@@ -92,7 +92,7 @@ index de3687e2ec..80b712a837 100644
      "//components/policy/core/browser:test_support",
      "//components/policy/core/common:test_support",
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 333d5473c4..ae0340b4a0 100644
+index 333d5473c4f27c4505d80d049d07c247dc59656f..ae0340b4a07e0204bb3c8eebf12795e21e5023eb 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -36,7 +36,8 @@
@@ -106,7 +106,7 @@ index 333d5473c4..ae0340b4a0 100644
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #endif
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 4a0e8967b4..442e37c0dc 100644
+index 4a0e8967b485a0b018c5c84d094d9f7065821a27..442e37c0dc5f615d5286c4a78761d364a33df03d 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

@@ -1,4 +1,4 @@
-From 43584528a5c580b99edad33a633eab4ce16d63a7 Mon Sep 17 00:00:00 2001
+From 6cd136818ef92510360a64764f9bab27d7885b14 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 06:04:55 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=88=86=E7=A6=BB=20Windows=20=E5=AE=89?=
@@ -24,7 +24,7 @@ Content-Transfer-Encoding: 8bit
  13 files changed, 166 insertions(+), 162 deletions(-)
 
 diff --git a/chrome/elevation_service/BUILD.gn b/chrome/elevation_service/BUILD.gn
-index 0ce72b243f..b3d9f4e447 100644
+index 0ce72b243f2460ef0bbf353b20d5cd8010b17972..b3d9f4e447f3f2d4784adeca92778246238d68c6 100644
 --- a/chrome/elevation_service/BUILD.gn
 +++ b/chrome/elevation_service/BUILD.gn
 @@ -12,6 +12,13 @@ import("//testing/test.gni")
@@ -42,7 +42,7 @@ index 0ce72b243f..b3d9f4e447 100644
  }
  
 diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
-index a6d969df56..01ad783e7a 100644
+index a6d969df56d13d94eaa968934f909d6fd23b5f2f..01ad783e7a9556ae16348cdc33061feb826cc9e4 100644
 --- a/chrome/install_static/chromium_install_modes.h
 +++ b/chrome/install_static/chromium_install_modes.h
 @@ -2,7 +2,7 @@
@@ -174,7 +174,7 @@ index a6d969df56..01ad783e7a 100644
  });
  
 diff --git a/chrome/install_static/install_util_unittest.cc b/chrome/install_static/install_util_unittest.cc
-index 6c68b239c4..39d675f843 100644
+index 6c68b239c46193182068e2883ea32e2ed308ba2b..39d675f843f405a87329350f3d54dbb175d763af 100644
 --- a/chrome/install_static/install_util_unittest.cc
 +++ b/chrome/install_static/install_util_unittest.cc
 @@ -361,7 +361,7 @@ class InstallStaticUtilTest
@@ -205,7 +205,7 @@ index 6c68b239c4..39d675f843 100644
  #endif
    static_assert(std::size(kBaseAppIds) == NUM_INSTALL_MODES,
 diff --git a/chrome/install_static/product_install_details_unittest.cc b/chrome/install_static/product_install_details_unittest.cc
-index 2e5b799d34..524806957c 100644
+index 2e5b799d349d6403f44c151c04380a69f4ea5058..524806957c3d4df57084660cd7029bfd6f02a727 100644
 --- a/chrome/install_static/product_install_details_unittest.cc
 +++ b/chrome/install_static/product_install_details_unittest.cc
 @@ -2,7 +2,6 @@
@@ -233,7 +233,7 @@ index 2e5b799d34..524806957c 100644
          false,
          L"",
 diff --git a/chrome/install_static/user_data_dir_win_unittest.cc b/chrome/install_static/user_data_dir_win_unittest.cc
-index efa4cbb99e..0410d6b5ca 100644
+index efa4cbb99ef6c1d6051f1f5007076ac251400896..0410d6b5caf73d0c0c922bff8c4e59cc35a7eeff 100644
 --- a/chrome/install_static/user_data_dir_win_unittest.cc
 +++ b/chrome/install_static/user_data_dir_win_unittest.cc
 @@ -30,8 +30,8 @@ const wchar_t kPolicyRegistryKey[] = L"SOFTWARE\\Policies\\Chromium";
@@ -248,7 +248,7 @@ index efa4cbb99e..0410d6b5ca 100644
  
  const wchar_t kUserDataDirRegistryKey[] = L"UserDataDir";
 diff --git a/chrome/windows_services/elevated_tracing_service/BUILD.gn b/chrome/windows_services/elevated_tracing_service/BUILD.gn
-index be389aaf7f..5dce8de0ea 100644
+index be389aaf7fe6bb52eca879fbf61ed4400d7c70e2..5dce8de0eaab0c81df0a2d79a6985a6ab8fb4cd5 100644
 --- a/chrome/windows_services/elevated_tracing_service/BUILD.gn
 +++ b/chrome/windows_services/elevated_tracing_service/BUILD.gn
 @@ -10,6 +10,13 @@ import("//testing/test.gni")
@@ -266,7 +266,7 @@ index be389aaf7f..5dce8de0ea 100644
  }
  
 diff --git a/components/policy/tools/generate_policy_source.py b/components/policy/tools/generate_policy_source.py
-index 040c3e2a6d..e899b4f969 100755
+index 040c3e2a6d5c723f5d4e214a8a77c5906ceeb2f8..e899b4f9694aa1b9a18bd2556630801dec64c908 100755
 --- a/components/policy/tools/generate_policy_source.py
 +++ b/components/policy/tools/generate_policy_source.py
 @@ -28,7 +28,7 @@ from xml.sax.saxutils import escape as xml_escape
@@ -279,7 +279,7 @@ index 040c3e2a6d..e899b4f969 100755
      'chrome_frame': ['win'],
      'chrome_os': ['chrome_os'],
 diff --git a/components/policy/tools/generate_policy_source_test_data.py b/components/policy/tools/generate_policy_source_test_data.py
-index afbee74272..4bd85601c2 100644
+index afbee742729a1896d983a6bac9472c9c35b577cb..4bd85601c290767c5cb8b977f5e8eff9fbe6347b 100644
 --- a/components/policy/tools/generate_policy_source_test_data.py
 +++ b/components/policy/tools/generate_policy_source_test_data.py
 @@ -1788,7 +1788,7 @@ const wchar_t kRegistryChromePolicyKey[] = L"SOFTWARE\\\\Policies\\\\Google\\\\C
@@ -292,7 +292,7 @@ index afbee74272..4bd85601c2 100644
  '''
  
 diff --git a/components/policy/tools/template_writers/writer_configuration.py b/components/policy/tools/template_writers/writer_configuration.py
-index 283ea725c5..48541df6ad 100755
+index 283ea725c5a1874923244d716015a394a270281f..48541df6adb829fd4d0b239e625a724f69b075a4 100755
 --- a/components/policy/tools/template_writers/writer_configuration.py
 +++ b/components/policy/tools/template_writers/writer_configuration.py
 @@ -27,23 +27,23 @@ def GetConfigurationForBuild(defines):
@@ -335,7 +335,7 @@ index 283ea725c5..48541df6ad 100755
    elif '_google_chrome' in defines or '_is_chrome_for_testing_branded' in defines:
      if '_google_chrome' in defines:
 diff --git a/components/policy/tools/template_writers/writers/adm_writer_unittest.py b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
-index 569c8733f3..14ac76d212 100755
+index 569c8733f3c6debd7242f5b3e33159da32597d08..14ac76d212b45534eb0fbda6d441608a44e54e0e 100755
 --- a/components/policy/tools/template_writers/writers/adm_writer_unittest.py
 +++ b/components/policy/tools/template_writers/writers/adm_writer_unittest.py
 @@ -91,12 +91,12 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
@@ -790,7 +790,7 @@ index 569c8733f3..14ac76d212 100755
  Policy1_Policy="Caption of policy1."
  Policy1_Explain="This policy is removed. blah blah blah\\n\\n"
 diff --git a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
-index acaf611bb5..01faff6fd3 100755
+index acaf611bb5cf45dacb5aa59c4fe58c730bb96089..01faff6fd3836a56c8de69290427a298150e9235 100755
 --- a/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
 +++ b/components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py
 @@ -26,7 +26,7 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
@@ -894,7 +894,7 @@ index acaf611bb5..01faff6fd3 100755
                         'EnumPolicy.pfm_description = '
                         '"one - Option1\\ntwo - Option2\\n'
 diff --git a/components/policy/tools/template_writers/writers/plist_writer_unittest.py b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
-index c9e6a32c2e..a3f0626c5d 100755
+index c9e6a32c2ea89096bbb2f42a1dc77a5f875eb230..a3f0626c5d94c905231c3ce4898cf515b3829817 100755
 --- a/components/policy/tools/template_writers/writers/plist_writer_unittest.py
 +++ b/components/policy/tools/template_writers/writers/plist_writer_unittest.py
 @@ -23,7 +23,7 @@ class PListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
@@ -1015,7 +1015,7 @@ index c9e6a32c2e..a3f0626c5d 100755
          <key>pfm_name</key>
          <string>ExternalPolicy</string>
 diff --git a/components/policy/tools/template_writers/writers/reg_writer_unittest.py b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
-index d8ee3a9a5d..d1cc9c6a12 100755
+index d8ee3a9a5db1dba08efe69898fc3071250b07ae7..d1cc9c6a129658fa78acd7097492c828faf3a943 100755
 --- a/components/policy/tools/template_writers/writers/reg_writer_unittest.py
 +++ b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
 @@ -143,7 +143,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):

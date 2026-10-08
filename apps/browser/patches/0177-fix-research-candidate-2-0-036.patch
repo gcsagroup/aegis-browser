@@ -1,4 +1,4 @@
-From 581170ee32f543dae171af8dd957f735ad4033cf Mon Sep 17 00:00:00 2001
+From bd6445f8cf3cd8f1b9d9c011e053a68bbed11743 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 23:23:10 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
@@ -22,7 +22,7 @@ Content-Transfer-Encoding: 8bit
  10 files changed, 126 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index ff618495c7..cfab8e29d6 100644
+index ff618495c72d010937e03bdfcc1019d49e7ff4ab..cfab8e29d6912c55ac718a27835dedd485963adf 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -3571,6 +3571,43 @@ bool AegisAgentService::SetMonitorPaused(const std::string& task_id,
@@ -70,7 +70,7 @@ index ff618495c7..cfab8e29d6 100644
                                        const std::string& monitor_id) {
    if (!IsEnabled() ||
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index deeb0805e1..6e752a8226 100644
+index deeb0805e117d2579605a95c524b9efab0a4d949..6e752a8226d04e0f252137570abebe1390ac28e5 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -176,6 +176,8 @@ class AegisAgentService : public KeyedService {
@@ -83,7 +83,7 @@ index deeb0805e1..6e752a8226 100644
    std::vector<AgentMonitorDefinition> ClaimDueMonitors(base::Time now);
    bool MarkMonitorFinished(
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 68932e537b..d37440a0c6 100644
+index 68932e537b1f988f5e57e8351ac047387e0b3104..d37440a0c6f94e060d00c7db786f5df87d0fe945 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -1794,6 +1794,54 @@ TEST_F(AegisAgentServiceTest,
@@ -142,7 +142,7 @@ index 68932e537b..d37440a0c6 100644
    AegisAgentService* service =
        AegisAgentServiceFactory::GetForProfile(profile_);
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 05fd6d03e3..e8dfa80d54 100644
+index 05fd6d03e3dc33e7a0dbbe276061e4eae481102f..e8dfa80d54d2a5046347cfc760855397964a17c7 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -1420,6 +1420,7 @@ TEST(AegisAgentResultVerifierTest, GroupVerificationSurvivesAsyncMinimization) {
@@ -154,7 +154,7 @@ index 05fd6d03e3..e8dfa80d54 100644
    result.value.Set("group_id", "native-group");
    result.value.Set("revision", "native-revision");
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 35aa1e56e2..ae07c080ba 100644
+index 35aa1e56e268255930598bfb89ea84b7c4b1f379..ae07c080baccb63041a3d37d7cfcaa6d2c2dba2c 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -707,7 +707,14 @@ function renderMonitors(monitors: MonitorSummary[]) {
@@ -184,7 +184,7 @@ index 35aa1e56e2..ae07c080ba 100644
      return '';
    }
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index f8bca804ef..428f509e9c 100644
+index f8bca804efe932bc4644b775f7dc815e060e8c01..428f509e9cd3890b5e8120d208c7faf32325b20d 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -209,6 +209,8 @@ interface PageHandler {
@@ -197,7 +197,7 @@ index f8bca804ef..428f509e9c 100644
  };
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 4d047d903a..c56972fdc0 100644
+index 4d047d903a2a523c38d808ec1267f6d552f247d9..c56972fdc0ca7f6913b0faf271bb3e398a0492ba 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -1023,6 +1023,19 @@ void AegisAgentPageHandler::SetMonitorPaused(
@@ -221,7 +221,7 @@ index 4d047d903a..c56972fdc0 100644
                                            const std::string& monitor_id,
                                            DeleteMonitorCallback callback) {
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
-index 4abaa6eba4..92caf90557 100644
+index 4abaa6eba460228d80c2beffb7b95c046da9932c..92caf90557fc55795651c802521f64dcae23ddfb 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 @@ -104,6 +104,9 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
@@ -235,7 +235,7 @@ index 4abaa6eba4..92caf90557 100644
                       const std::string& monitor_id,
                       DeleteMonitorCallback callback) override;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 711e711531..6727608317 100644
+index 711e71153145737a8d677308ee11c0b6814370dc..6727608317d7c32d5308cb2a05680d0e03a901b0 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -243,6 +243,12 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -252,7 +252,7 @@ index 711e711531..6727608317 100644
    add("resumeMonitor", "Resume monitor", "恢复监控", "恢復監控");
    add("deleteMonitor", "Delete monitor", "删除监控", "刪除監控");
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index a631c64e69..1f7da61637 100644
+index a631c64e69843b3ef1f715e36a5388547df7b6e1..1f7da6163751587bd96b99767294b3d589a9dddc 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

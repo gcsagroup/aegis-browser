@@ -1,4 +1,4 @@
-From 81e7b1a0be63b9497317252e36f393a3c7ef5646 Mon Sep 17 00:00:00 2001
+From ca06047e6d0eaaf0b0ccee4924fc5a1d46361524 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 29 Sep 2026 19:20:01 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=89=8B=E6=9C=BA=E4=BF=9D?=
@@ -43,7 +43,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 components/webui/version/resources/product_logo.svg
 
 diff --git a/chrome/android/java/res_chromium_base/values/channel_constants.xml b/chrome/android/java/res_chromium_base/values/channel_constants.xml
-index d5270195b1..77dc41bde5 100644
+index d5270195b1aa9b26c478dec02fa5ad3ed8f89a7d..77dc41bde53681eaaa0bcd765f5886525e07f8a1 100644
 --- a/chrome/android/java/res_chromium_base/values/channel_constants.xml
 +++ b/chrome/android/java/res_chromium_base/values/channel_constants.xml
 @@ -6,8 +6,8 @@ Play / 侧载显示名。不要写成 Chrome。
@@ -60,7 +60,7 @@ index d5270195b1..77dc41bde5 100644
 +    <string name="quick_action_search_widget_title" translatable="false">GCSA Aegis quick action search</string>
  </resources>
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
-index 70db74f9c1..ae026a7273 100644
+index 70db74f9c1eaa89beb77cf5e1fa939b674411d14..ae026a7273b8b18225c0084364b91acec6d6bdd4 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
 @@ -94,6 +94,14 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
@@ -79,7 +79,7 @@ index 70db74f9c1..ae026a7273 100644
              return version;
          }
 diff --git a/chrome/browser/notifications/android/java/res/drawable-ldrtl/notification_permission_rationale_dialog_header.xml b/chrome/browser/notifications/android/java/res/drawable-ldrtl/notification_permission_rationale_dialog_header.xml
-index 8cffdf306e..971abdb14a 100644
+index 8cffdf306ecd10069b3ea147944722d5f430f3d6..971abdb14a3fbc789e0df25bd08b8398602a369e 100644
 --- a/chrome/browser/notifications/android/java/res/drawable-ldrtl/notification_permission_rationale_dialog_header.xml
 +++ b/chrome/browser/notifications/android/java/res/drawable-ldrtl/notification_permission_rationale_dialog_header.xml
 @@ -1,102 +1,68 @@
@@ -250,7 +250,7 @@ index 8cffdf306e..971abdb14a 100644
 -  </group>
  </vector>
 diff --git a/chrome/browser/notifications/android/java/res/drawable/notification_permission_rationale_dialog_header.xml b/chrome/browser/notifications/android/java/res/drawable/notification_permission_rationale_dialog_header.xml
-index b7dc13c360..971abdb14a 100644
+index b7dc13c360d933811ea5ea3b3439d060b3d2e942..971abdb14a3fbc789e0df25bd08b8398602a369e 100644
 --- a/chrome/browser/notifications/android/java/res/drawable/notification_permission_rationale_dialog_header.xml
 +++ b/chrome/browser/notifications/android/java/res/drawable/notification_permission_rationale_dialog_header.xml
 @@ -1,102 +1,68 @@
@@ -421,7 +421,7 @@ index b7dc13c360..971abdb14a 100644
 -  </group>
  </vector>
 diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
-index f55f9a940a..58be490b21 100644
+index f55f9a940a1851bacce7dfdd122c578e582f5e2c..58be490b2103826f6a8adc19614ef16030837f5e 100644
 --- a/chrome/browser/resources/aegis/BUILD.gn
 +++ b/chrome/browser/resources/aegis/BUILD.gn
 @@ -8,6 +8,7 @@ build_webui("build") {
@@ -433,7 +433,7 @@ index f55f9a940a..58be490b21 100644
    ts_files = [
      "aegis.ts",
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index f9e46e3488..d65e019ed4 100644
+index f9e46e348845f87edccc59ac8aae5f08add77fc2..d65e019ed4a5ebd40ff8c4a80c586282a1de48f9 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -480,3 +480,38 @@ button.primary {
@@ -476,7 +476,7 @@ index f9e46e3488..d65e019ed4 100644
 +  .row { min-height: 64px; }
 +}
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index cc30463a4c..7e383cc43a 100644
+index cc30463a4c38ae0f8a0c11d4970f4552539bff79..7e383cc43aa5832c6de8b01270d3bb6d4c9661fa 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -2,13 +2,17 @@
@@ -501,7 +501,7 @@ index cc30463a4c..7e383cc43a 100644
            <span class="health-dot" id="health-dot" aria-hidden="true"></span>
 diff --git a/chrome/browser/resources/aegis/product_logo.svg b/chrome/browser/resources/aegis/product_logo.svg
 new file mode 100644
-index 0000000000..4bb68d7322
+index 0000000000000000000000000000000000000000..4bb68d7322f63c4e274ca3dd8833663f51121a73
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/product_logo.svg
 @@ -0,0 +1,27 @@
@@ -533,7 +533,7 @@ index 0000000000..4bb68d7322
 +  </g>
 +</svg>
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index 76889b5aa6..a430626be1 100644
+index 76889b5aa6efed0ea9d98abb3c194f62e6964f4c..a430626be152a72fd38e2e0da9d0868f9d8fb5f2 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -676,3 +676,19 @@ summary {
@@ -557,7 +557,7 @@ index 76889b5aa6..a430626be1 100644
 +  .status { max-width: 100%; white-space: normal; }
 +}
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index 0b091b37f1..1e35be560f 100644
+index 0b091b37f15f484d50fe5cb25f0ecd74d21b9d70..1e35be560f35c48b6cd2da578d4ac72761c3b338 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -18,6 +18,7 @@
@@ -569,7 +569,7 @@ index 0b091b37f1..1e35be560f 100644
  
        <nav class="workspace-tabs" aria-label="$i18n{workspaceLabel}">
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 62e6845ac6..42cc3a7baf 100644
+index 62e6845ac6c3db9f27e9726136df91db0899eb5e..42cc3a7baf1e265ed953d85b88e642a03825f77d 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -1210,6 +1210,7 @@ async function withBusy(
@@ -581,7 +581,7 @@ index 62e6845ac6..42cc3a7baf 100644
    text('subtitle', 'subtitle');
    text('task-view-button', 'taskCenter');
 diff --git a/chrome/browser/ui/android/signin/java/res/drawable/chrome_sync_logo.xml b/chrome/browser/ui/android/signin/java/res/drawable/chrome_sync_logo.xml
-index 4a7eda0959..971abdb14a 100644
+index 4a7eda0959342d6b79904faf3835ee3a0e04e818..971abdb14a3fbc789e0df25bd08b8398602a369e 100644
 --- a/chrome/browser/ui/android/signin/java/res/drawable/chrome_sync_logo.xml
 +++ b/chrome/browser/ui/android/signin/java/res/drawable/chrome_sync_logo.xml
 @@ -1,65 +1,68 @@
@@ -716,10 +716,10 @@ index 4a7eda0959..971abdb14a 100644
 +    </group>
  </vector>
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index 5ce63800f0..9c16378581 100644
+index 9df664e002a0e9dcfd7364611ddae9a6b691d454..b5efc8558f4818e59de638ba7b352728f54c55d5 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -2150,7 +2150,7 @@ Your Google account may have other forms of browsing history like searches and a
+@@ -2144,7 +2144,7 @@ Your Google account may have other forms of browsing history like searches and a
  
        <!-- About Chrome preferences -->
        <message name="IDS_PREFS_ABOUT_CHROME" desc="Title for the About Chrome page. [CHAR_LIMIT=32]">
@@ -728,7 +728,7 @@ index 5ce63800f0..9c16378581 100644
        </message>
        <message name="IDS_LEGAL_INFORMATION_SUMMARY" desc="Summary for legal information" meaning="Android">
          Copyright <ph name="year">%1$d<ex>2014</ex></ph> Google LLC. All rights reserved.
-@@ -3535,7 +3535,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3551,7 +3551,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Accept &amp; continue
        </message>
        <message name="IDS_FRE_WELCOME" desc="Text for greeting the user on Chrome First Run">
@@ -737,7 +737,7 @@ index 5ce63800f0..9c16378581 100644
        </message>
        <message name="IDS_FRE_BROWSER_MANAGED_BY_ORGANIZATION" desc="Text that indicates the browser is managed by policy">
          Your browser is managed by your organization
-@@ -3576,7 +3576,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3592,7 +3592,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Info is sent to Google about your Chrome usage, but it isn\u2019t tied to you\n\nIf Chrome crashes, details about the crash may include some personal info\n\nIf you sync your history to your Google Account, metrics may also include info about URLs you visit
        </message>
        <message name="IDS_SIGNIN_FRE_TITLE" desc="This string is the the title of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
@@ -746,7 +746,7 @@ index 5ce63800f0..9c16378581 100644
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
          Sign in to get your bookmarks, passwords, and more on all your devices
-@@ -3585,7 +3585,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3601,7 +3601,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Welcome back, <ph name="USER_NAME">%s<ex>Alice</ex></ph>!
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE_WITHOUT_SYNC" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). However, we introduce a caveat, because the user has a managed account (such as Enterprise); this means that, depending on their organization's settings, the user might not be able to save all types of data in their Google Account. We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account.">
@@ -755,7 +755,7 @@ index 5ce63800f0..9c16378581 100644
        </message>
        <message name="IDS_SIGNIN_FRE_TITLE_SIGNIN_FORCED_BY_POLICY" meaning="Title" desc="Title of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
          Sign in to Chrome
-@@ -6774,7 +6774,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -6901,7 +6901,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
  
        <!-- Notification Permission Rationale Dialog Strings-->
        <message name="IDS_NOTIFICATION_PERMISSION_RATIONALE_DIALOG_TITLE" desc="The title of a dialog shown to users before asking for notification permission.">
@@ -765,10 +765,10 @@ index 5ce63800f0..9c16378581 100644
        <message name="IDS_NOTIFICATION_PERMISSION_RATIONALE_DIALOG_MESSAGE" desc="The body text of a dialog explaining the benefits of enabling Chrome notifications.">
          You’ll be able to easily manage media controls, Incognito sessions, downloads and more
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index 228d55ffd8..be4c07e93c 100644
+index 08b63dedd90d1347a1c48ad448f843059a927a9a..0bc9201fc6a154339b17b82063f51c7e7492afbd 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -2125,4 +2125,8 @@
+@@ -2175,4 +2175,8 @@
  <translation id="7514699437829597595">请先告诉 Aegis 你想要什么结果。</translation>
  <translation id="8100004066096796740">使用 Aegis 处理此页面</translation>
  <translation id="9106704778223749968">说出你想要的结果。Aegis 会先理解、制定计划、执行并检查结果。</translation>
@@ -778,10 +778,10 @@ index 228d55ffd8..be4c07e93c 100644
 +<translation id="7491982752760169795">GCSA Aegis 通知</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index 81c98d8dea..897b1222ff 100644
+index 4a1dfdd74e236892f2aebbf30c71fdfb30695c44..e885e61ea09ef51faa7e01827270dae697cb7896 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -2127,4 +2127,8 @@
+@@ -2177,4 +2177,8 @@
  <translation id="7514699437829597595">請先告訴 Aegis 你想要什麼結果。</translation>
  <translation id="8100004066096796740">使用 Aegis 處理此頁面</translation>
  <translation id="9106704778223749968">說出你想要的結果。Aegis 會先理解、制定計畫、執行並檢查結果。</translation>
@@ -791,7 +791,7 @@ index 81c98d8dea..897b1222ff 100644
 +<translation id="7491982752760169795">GCSA Aegis 通知</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index da1e6d385d..a9ad659234 100644
+index da1e6d385de3b5b62fa73dd1cacb66399d7603d8..a9ad659234fcbbd7a6dcd8053e8a5388aef28f68 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -847,6 +847,10 @@ void AddStrings(content::WebUIDataSource *source) {
@@ -814,7 +814,7 @@ index da1e6d385d..a9ad659234 100644
        network::mojom::CSPDirectiveName::ScriptSrc,
        "script-src 'self' chrome-untrusted://resources;");
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 7967608471..77ace210fa 100644
+index 7967608471384a0199d0faecf7409799d235ee20..77ace210fa26ede3dfee895ca9c6a5b6e2d8dd51 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -829,7 +829,7 @@ index 7967608471..77ace210fa 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/version/version_ui.cc b/chrome/browser/ui/webui/version/version_ui.cc
-index 4c523d48d8..ac96419abc 100644
+index 4c523d48d8f8537042a9483e4fd0c6d163c8de52..ac96419abce972375536bb168c864d46ab19a713 100644
 --- a/chrome/browser/ui/webui/version/version_ui.cc
 +++ b/chrome/browser/ui/webui/version/version_ui.cc
 @@ -22,6 +22,7 @@
@@ -3423,7 +3423,7 @@ z4G!>zy1hcOdP%7GG2>1P`Or}=o{p{?6G1~J{`Cl{gUX-*clf=;TVY)N<lVO9k)vG$
 i?Ib$(ofrX17!1R|`h|N%TnD<%35@j2bgPM^i2nno*_EOI
 
 diff --git a/components/webui/version/resources/BUILD.gn b/components/webui/version/resources/BUILD.gn
-index 01dda327d0..c8f4a30039 100644
+index 01dda327d0422b7069bf41669d1ad1618e2bedb9..c8f4a30039078f51a639ad5bb504a2fc6fc76bdd 100644
 --- a/components/webui/version/resources/BUILD.gn
 +++ b/components/webui/version/resources/BUILD.gn
 @@ -10,6 +10,7 @@ build_webui("build") {
@@ -3435,7 +3435,7 @@ index 01dda327d0..c8f4a30039 100644
  
    if (is_android || is_ios) {
 diff --git a/components/webui/version/resources/about_version.css b/components/webui/version/resources/about_version.css
-index 5b7c6b03bf..8f222c3964 100644
+index 5b7c6b03bf496988401e0b0d961f5beed5067563..8f222c3964f75a4dbda2688e95d8d90009da9fc9 100644
 --- a/components/webui/version/resources/about_version.css
 +++ b/components/webui/version/resources/about_version.css
 @@ -135,3 +135,7 @@ html[webui-rounded-icons] #copy-to-clipboard-icon {
@@ -3447,7 +3447,7 @@ index 5b7c6b03bf..8f222c3964 100644
 +.aegis-logo { width: 96px; height: 96px; object-fit: contain; }
 +caption { text-align: start; font-size: 1.35rem; font-weight: 600; padding-block: 0 1rem; }
 diff --git a/components/webui/version/resources/about_version.html b/components/webui/version/resources/about_version.html
-index 950b0a5c48..158d3db248 100644
+index 950b0a5c4895e81eb5c7b3e5736a5d5610b32bd9..158d3db2487159e13fa78f12f2e2fe2a7d64d8e3 100644
 --- a/components/webui/version/resources/about_version.html
 +++ b/components/webui/version/resources/about_version.html
 @@ -29,30 +29,13 @@ about:version template page
@@ -3485,7 +3485,7 @@ index 950b0a5c48..158d3db248 100644
              <span id="copy-content">
                <span>$i18n{version}$i18n{version_suffix}</span>
 diff --git a/components/webui/version/resources/about_version_mobile.css b/components/webui/version/resources/about_version_mobile.css
-index 2687c8f338..0c2611de14 100644
+index 2687c8f338e99b4de17488772ccde8ff9e3d5564..0c2611de14d8a4cac1d44e1a79ecedf2fb0fa99e 100644
 --- a/components/webui/version/resources/about_version_mobile.css
 +++ b/components/webui/version/resources/about_version_mobile.css
 @@ -22,3 +22,15 @@
@@ -3506,7 +3506,7 @@ index 2687c8f338..0c2611de14 100644
 +}
 diff --git a/components/webui/version/resources/product_logo.svg b/components/webui/version/resources/product_logo.svg
 new file mode 100644
-index 0000000000..4bb68d7322
+index 0000000000000000000000000000000000000000..4bb68d7322f63c4e274ca3dd8833663f51121a73
 --- /dev/null
 +++ b/components/webui/version/resources/product_logo.svg
 @@ -0,0 +1,27 @@

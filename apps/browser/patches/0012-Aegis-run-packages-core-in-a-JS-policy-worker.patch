@@ -1,4 +1,4 @@
-From 857278ff2f8593fc1c8f41172a566b7107ceeb50 Mon Sep 17 00:00:00 2001
+From 22270b25107ee9854301a3790f01cc66af8ff74a Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:15:26 +0800
 Subject: [PATCH] Aegis: run packages/core in a JS policy worker
@@ -37,7 +37,7 @@ sidecar and a C++ heuristic fallback if the worker is not ready.
  create mode 100644 third_party/aegis_policy/policy_worker.js
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index a611cbe110..71db5f64f8 100644
+index a611cbe110aa9c75ab8a7295607044bcefabea04..71db5f64f8474732ce9358438a33e4b510df9c9c 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -23,6 +23,10 @@ source_set("aegis") {
@@ -66,7 +66,7 @@ index a611cbe110..71db5f64f8 100644
    ]
  }
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index 2498e7319d..fc5fb366a0 100644
+index 2498e7319dc52601dedd4cb82c5f63c0871505dc..fc5fb366a02f748954c7792ad4c9dc7e96c63fef 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -25,6 +25,11 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -82,7 +82,7 @@ index 2498e7319d..fc5fb366a0 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index bd6f4bb971..fd97df38b0 100644
+index bd6f4bb971580e1b6f8cf77c2395251a5861c281..fd97df38b0dd63d7c8a6154a081e6d8620c995ad 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -6,11 +6,16 @@
@@ -417,7 +417,7 @@ index bd6f4bb971..fd97df38b0 100644
    if (!filter_list_updater_) {
      std::move(done).Run(false);
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 4a5e37acd9..e1b622b6fe 100644
+index 4a5e37acd981748de4ba82ced403fdaf85c5f18c..e1b622b6fe5eb228c8da56b09a64a69237ee8a5e 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -8,6 +8,7 @@
@@ -514,7 +514,7 @@ index 4a5e37acd9..e1b622b6fe 100644
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/generated/policy_worker_source.inc b/chrome/browser/aegis/generated/policy_worker_source.inc
 new file mode 100644
-index 0000000000..0d60b87eed
+index 0000000000000000000000000000000000000000..0d60b87eed7f86162ed10f213bf493bf9ffe5d7e
 --- /dev/null
 +++ b/chrome/browser/aegis/generated/policy_worker_source.inc
 @@ -0,0 +1,8 @@
@@ -528,7 +528,7 @@ index 0000000000..0d60b87eed
 +)AEGISJS";
 diff --git a/chrome/browser/aegis/ollama_sidecar.cc b/chrome/browser/aegis/ollama_sidecar.cc
 new file mode 100644
-index 0000000000..04e024ec9b
+index 0000000000000000000000000000000000000000..04e024ec9b396ea2d66d99a8d4fbdc51d0fe58dc
 --- /dev/null
 +++ b/chrome/browser/aegis/ollama_sidecar.cc
 @@ -0,0 +1,164 @@
@@ -698,7 +698,7 @@ index 0000000000..04e024ec9b
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/ollama_sidecar.h b/chrome/browser/aegis/ollama_sidecar.h
 new file mode 100644
-index 0000000000..e25b396638
+index 0000000000000000000000000000000000000000..e25b3966384e35eb4eb92e91e7ccfc7a7d92e247
 --- /dev/null
 +++ b/chrome/browser/aegis/ollama_sidecar.h
 @@ -0,0 +1,47 @@
@@ -751,7 +751,7 @@ index 0000000000..e25b396638
 +#endif  // CHROME_BROWSER_AEGIS_OLLAMA_SIDECAR_H_
 diff --git a/chrome/browser/aegis/policy_worker.cc b/chrome/browser/aegis/policy_worker.cc
 new file mode 100644
-index 0000000000..a4a7bebcff
+index 0000000000000000000000000000000000000000..a4a7bebcff68281cab741e3cbebaff0cc41635b2
 --- /dev/null
 +++ b/chrome/browser/aegis/policy_worker.cc
 @@ -0,0 +1,197 @@
@@ -954,7 +954,7 @@ index 0000000000..a4a7bebcff
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/policy_worker.h b/chrome/browser/aegis/policy_worker.h
 new file mode 100644
-index 0000000000..bbf73acc04
+index 0000000000000000000000000000000000000000..bbf73acc04d6e02d4bee180513200beb836b2877
 --- /dev/null
 +++ b/chrome/browser/aegis/policy_worker.h
 @@ -0,0 +1,74 @@
@@ -1033,7 +1033,7 @@ index 0000000000..bbf73acc04
 +
 +#endif  // CHROME_BROWSER_AEGIS_POLICY_WORKER_H_
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index f9cd2758eb..c0259622d9 100644
+index f9cd2758ebe693e82280eaf524aafa80cc41c979..c0259622d91872437792c76f238f270df6f179ca 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -77,6 +77,11 @@ h1 {
@@ -1062,7 +1062,7 @@ index f9cd2758eb..c0259622d9 100644
 +  font-size: 0.92rem;
 +}
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 6101ac3377..986b3a6c35 100644
+index 6101ac3377374bbcdf5719d645bd4ae8992962a3..986b3a6c3558d2993ea7279713aff2c19c3d4919 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -38,6 +38,14 @@
@@ -1094,7 +1094,7 @@ index 6101ac3377..986b3a6c35 100644
      </main>
      <script type="module" src="aegis.js"></script>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index d0a93b8980..209d9698b1 100644
+index d0a93b8980b161a19e69e3c6231d9887c67fa50d..209d9698b1956bd49fa284a3847bc554cf800ad0 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -17,9 +17,30 @@ interface AegisStatus {
@@ -1240,7 +1240,7 @@ index d0a93b8980..209d9698b1 100644
  
  document.addEventListener('DOMContentLoaded', () => {
 diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
-index 59d20f368a..45409b9713 100644
+index 59d20f368aecb218606944bde1cb42bd845f79fb..45409b971357164b09efdbb33c7aff4b77842db6 100644
 --- a/chrome/browser/ui/webui/aegis/BUILD.gn
 +++ b/chrome/browser/ui/webui/aegis/BUILD.gn
 @@ -13,8 +13,12 @@ source_set("aegis") {
@@ -1257,7 +1257,7 @@ index 59d20f368a..45409b9713 100644
      "//ui/webui",
    ]
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 43925c81b2..c3d63e1f5b 100644
+index 43925c81b290628df25ec3c4613a062a28915c99..c3d63e1f5b9a2255c69f6183c33324285daaf724 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -31,6 +31,11 @@ struct AegisStrings {
@@ -1321,7 +1321,7 @@ index 43925c81b2..c3d63e1f5b 100644
  
    webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 9ccee830c3..77f5aeb8ad 100644
+index 9ccee830c3e8630ef0d6b49655882fb28a100204..77f5aeb8ad8a45ddfaff97aefee5134f85db93eb 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -3,12 +3,81 @@
@@ -1522,7 +1522,7 @@ index 9ccee830c3..77f5aeb8ad 100644
 +}
 +
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index a4d6f556b6..7e2f2aedbc 100644
+index a4d6f556b69962e866d2ffbb6f7d0402d8fa1082..7e2f2aedbc7e511df38004c4e6f42236d3d915f2 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -4,8 +4,12 @@
@@ -1555,7 +1555,7 @@ index a4d6f556b6..7e2f2aedbc 100644
    base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
  };
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index f89ed56183..9524912ad5 100644
+index f89ed5618353ac5c69f43da6b50ba502d1a62be5..9524912ad50466b5e5fb3898c93e11e88cfae411 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -15,5 +15,7 @@ BASE_FEATURE(kAegisLinkSanitize, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -1567,7 +1567,7 @@ index f89ed56183..9524912ad5 100644
  
  }  // namespace aegis::features
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index 73052c48a9..7c5ea9edc2 100644
+index 73052c48a959f4619c2ae713cfd2a81c84672e09..7c5ea9edc28c12789d5807b18f9884f6c001ff71 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -18,6 +18,8 @@ BASE_DECLARE_FEATURE(kAegisLinkSanitize);
@@ -1580,7 +1580,7 @@ index 73052c48a9..7c5ea9edc2 100644
  }  // namespace aegis::features
  
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index 93b81d0401..78be0b3a4d 100644
+index 93b81d040142f24edaa1eabc18ab709945f7c7b5..78be0b3a4d1b6ec31b15b995eacca3d68ce6bc8b 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -25,6 +25,10 @@ inline constexpr char kCookieJanitorEnabled[] = "aegis.cookie_janitor_enabled";
@@ -1595,7 +1595,7 @@ index 93b81d0401..78be0b3a4d 100644
  }  // namespace aegis::prefs
  
 diff --git a/third_party/aegis_policy/README.md b/third_party/aegis_policy/README.md
-index 5555470acf..5582e377d6 100644
+index 5555470acf3e0d4d38b8b44ef35ea95d7a96636d..5582e377d6580015d2db4166c4bb79bc19867bdc 100644
 --- a/third_party/aegis_policy/README.md
 +++ b/third_party/aegis_policy/README.md
 @@ -5,13 +5,16 @@ Policy snapshot exported from `packages/core`.
@@ -1617,7 +1617,7 @@ index 5555470acf..5582e377d6 100644
  
 diff --git a/third_party/aegis_policy/policy_worker.js b/third_party/aegis_policy/policy_worker.js
 new file mode 100644
-index 0000000000..6909679e16
+index 0000000000000000000000000000000000000000..6909679e168be48b2c58b7bfb8b483b4742b6238
 --- /dev/null
 +++ b/third_party/aegis_policy/policy_worker.js
 @@ -0,0 +1,3 @@

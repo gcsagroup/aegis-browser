@@ -1,4 +1,4 @@
-From d3830d4c06888a3beacde6ac08e321fd599d2d5c Mon Sep 17 00:00:00 2001
+From 7c933c3dc1403735edaae108c013801224d7ae32 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:34:08 +0800
 Subject: [PATCH] Aegis: surface tracker blocks and add loopback CDP
@@ -53,7 +53,7 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  create mode 100644 chrome/common/aegis/aegis_block_reporter.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 01eaeed6bf..534d44c2ab 100644
+index 01eaeed6bff7e4c10ced7215c18bbbdacd54527a..534d44c2ab2fff260440457506c3e101caf3490b 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -3,6 +3,8 @@
@@ -82,7 +82,7 @@ index 01eaeed6bf..534d44c2ab 100644
      "//net",
 diff --git a/chrome/browser/aegis/aegis_ai_control.cc b/chrome/browser/aegis/aegis_ai_control.cc
 new file mode 100644
-index 0000000000..3b624166b9
+index 0000000000000000000000000000000000000000..3b624166b9f9a3eb867f6934f88dc82998b8b04f
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_ai_control.cc
 @@ -0,0 +1,165 @@
@@ -253,7 +253,7 @@ index 0000000000..3b624166b9
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_ai_control.h b/chrome/browser/aegis/aegis_ai_control.h
 new file mode 100644
-index 0000000000..f9c7f6e521
+index 0000000000000000000000000000000000000000..f9c7f6e521164f79d758da780e430b5998e6ccab
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_ai_control.h
 @@ -0,0 +1,39 @@
@@ -297,7 +297,7 @@ index 0000000000..f9c7f6e521
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_AI_CONTROL_H_
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
-index 9d569541b1..0fd214bda8 100644
+index 9d569541b182d82199874bfe3e8f4bfc7f5de560..0fd214bda835da369c0c05520b080c88adc41f24 100644
 --- a/chrome/browser/aegis/aegis_cookie_janitor.cc
 +++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
 @@ -94,7 +94,8 @@ void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
@@ -311,7 +311,7 @@ index 9d569541b1..0fd214bda8 100644
  }
  
 diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
-index 7f5b419e17..1951a79754 100644
+index 7f5b419e17d8016576590919e4d98ed4d3132d26..1951a79754030257f599342570d7214e8e873160 100644
 --- a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 +++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 @@ -5,6 +5,7 @@
@@ -341,7 +341,7 @@ index 7f5b419e17..1951a79754 100644
        std::make_unique<AegisPhishControllerClient>(web_contents, request_url);
    auto blocking_page = std::make_unique<AegisPhishBlockingPage>(
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index b857da29cb..a03e3e4551 100644
+index b857da29cb2f634c8eee45a3690d98dfe1fd19ae..a03e3e45519fa584c60e0b98761841c534205e2f 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -32,6 +32,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -353,7 +353,7 @@ index b857da29cb..a03e3e4551 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index bc4e1e05c6..9c6887281a 100644
+index bc4e1e05c69d1e3dfed58e72abea7cff06a242f6..9c6887281abe883a19fba50e7249a0d810543e09 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -6,18 +6,22 @@
@@ -565,7 +565,7 @@ index bc4e1e05c6..9c6887281a 100644
    return {privacy_events_.begin(), privacy_events_.end()};
  }
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 0afc1143a1..8a64464ded 100644
+index 0afc1143a10cbd9d6feb98785c4621ebbe1c2489..8a64464ded3606fbdd968ebedef9c8c767d3c1e7 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -16,6 +16,9 @@
@@ -673,7 +673,7 @@ index 0afc1143a1..8a64464ded 100644
                            std::string locale,
                            base::OnceCallback<void(SummarizeResult)> done,
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 0bf98e6627..c2361e4b9c 100644
+index 263f3e32737ead685659f417884d8c049368750a..d9854cbbafbaac96c36ad245ad05e4cc88932b83 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -5,6 +5,7 @@
@@ -684,15 +684,15 @@ index 0bf98e6627..c2361e4b9c 100644
  
  #include <algorithm>
  #include <iterator>
-@@ -402,6 +403,7 @@
+@@ -404,6 +405,7 @@
  #include "media/media_buildflags.h"
  #include "media/mojo/buildflags.h"
  #include "media/mojo/mojom/speech_recognizer.mojom.h"
 +#include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "net/base/data_url.h"
- #include "net/base/url_util.h"
-@@ -1880,6 +1882,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
+ #include "net/base/features.h"
+@@ -1871,6 +1873,10 @@ void ChromeContentBrowserClient::RenderProcessWillLaunch(
    if (RendererUpdater* service =
            RendererUpdaterFactory::GetForProfile(profile)) {
      service->InitializeRenderer(host);
@@ -703,7 +703,7 @@ index 0bf98e6627..c2361e4b9c 100644
    }
  
    for (auto& part : extra_parts_) {
-@@ -5970,7 +5976,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -5994,7 +6000,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kFingerprintGuardEnabled),
            profile->GetPrefs()->GetBoolean(
@@ -714,7 +714,7 @@ index 0bf98e6627..c2361e4b9c 100644
    return std::make_unique<GoogleURLLoaderThrottle>(
  #if BUILDFLAG(IS_ANDROID)
        client_data_header,
-@@ -6079,8 +6087,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+@@ -6124,8 +6132,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
        profile->GetPrefs()->GetBoolean(aegis::prefs::kTrackerBlockingEnabled);
    const bool aegis_cname_uncloak =
        profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled);
@@ -727,7 +727,7 @@ index 0bf98e6627..c2361e4b9c 100644
      result.push_back(std::move(aegis_throttle));
    }
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index fc82f8cf70..58ad436c7d 100644
+index fc82f8cf7087afcbf5eeca38e993ceb7f2c6b9a6..58ad436c7d8a18261931c0c93516cbb2b2afa70f 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
 @@ -30,6 +30,7 @@
@@ -783,7 +783,7 @@ index fc82f8cf70..58ad436c7d 100644
 +      aegis_link_sanitize_.GetValue());
  }
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index b8df9968f5..57d1b79519 100644
+index b8df9968f5c7dfdd293f84bd35fef73841628878..57d1b79519af61f2454e0a825962e780b135456b 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
 @@ -17,6 +17,7 @@
@@ -813,7 +813,7 @@ index b8df9968f5..57d1b79519 100644
  
  #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index 1422ce2807..0bc988854e 100644
+index 1422ce2807b9371b97db0999ac8a7321ae35b02a..0bc988854e87f5af934943b05e5091fbb702d79b 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -102,12 +102,17 @@ h1 {
@@ -836,7 +836,7 @@ index 1422ce2807..0bc988854e 100644
    margin-top: 2.4rem;
  }
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 1cc7f61d17..c9dcab2150 100644
+index 1cc7f61d17d4f5c57dfb5f7940f9c773bc0c34d6..c9dcab21506aa270114047c87821d9ef3c675420 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -101,6 +101,7 @@
@@ -868,7 +868,7 @@ index 1cc7f61d17..c9dcab2150 100644
      </main>
      <script type="module" src="aegis.js"></script>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index d1ecddad37..d3e154780c 100644
+index d1ecddad37086b1ccd6666f329f36ab538623ccf..d3e154780ced22f64db8dd291687112a6b17a0d0 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -28,6 +28,11 @@ interface AegisStatus {
@@ -980,7 +980,7 @@ index d1ecddad37..d3e154780c 100644
      })();
    }, 2000);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 7e992a4712..391f974cf6 100644
+index 7e992a4712bc09afda752369f71aab528c746cdb..391f974cf6aa771bf4aed31fc56020542213b1f2 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -52,9 +52,16 @@ struct AegisStrings {
@@ -1142,7 +1142,7 @@ index 7e992a4712..391f974cf6 100644
  
    webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index fcab89c4e6..31e3eda2bd 100644
+index fcab89c4e6f1bcd844edc69af6b38520c54b1af6..31e3eda2bd78347f158fc9083576ebe00a4feb57 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -142,6 +142,11 @@ base::DictValue AegisUIHandler::BuildStatus() const {
@@ -1167,7 +1167,7 @@ index fcab89c4e6..31e3eda2bd 100644
  
    ResolveJavascriptCallback(callback_id, BuildStatus());
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index e7fa5da4ce..15a47fc245 100644
+index e7fa5da4ce15251d07152f43a09069a6044a5231..15a47fc24538d82bf2a8080ae5d96a05aa3577d2 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -3,6 +3,8 @@
@@ -1181,7 +1181,7 @@ index e7fa5da4ce..15a47fc245 100644
      "cname_uncloak.cc",
 diff --git a/chrome/common/aegis/aegis_block_reporter.cc b/chrome/common/aegis/aegis_block_reporter.cc
 new file mode 100644
-index 0000000000..da917040aa
+index 0000000000000000000000000000000000000000..da917040aa96c97b6649907c4b7defddebd26b88
 --- /dev/null
 +++ b/chrome/common/aegis/aegis_block_reporter.cc
 @@ -0,0 +1,92 @@
@@ -1279,7 +1279,7 @@ index 0000000000..da917040aa
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/aegis_block_reporter.h b/chrome/common/aegis/aegis_block_reporter.h
 new file mode 100644
-index 0000000000..9bc3d4d9e2
+index 0000000000000000000000000000000000000000..9bc3d4d9e2135172d2f36c03d52c1da738a737da
 --- /dev/null
 +++ b/chrome/common/aegis/aegis_block_reporter.h
 @@ -0,0 +1,43 @@
@@ -1327,7 +1327,7 @@ index 0000000000..9bc3d4d9e2
 +
 +#endif  // CHROME_COMMON_AEGIS_AEGIS_BLOCK_REPORTER_H_
 diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
-index c748ba2236..8eee3eb7c2 100644
+index c748ba2236ecd9a9eef44e2f512208f44ca9ca1d..8eee3eb7c254a9186fc4a94d2ae401fa8490a2f3 100644
 --- a/chrome/common/aegis/aegis_net_throttle.cc
 +++ b/chrome/common/aegis/aegis_net_throttle.cc
 @@ -3,12 +3,19 @@
@@ -1538,7 +1538,7 @@ index c748ba2236..8eee3eb7c2 100644
  
  }  // namespace aegis
 diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
-index 29f762ef64..b9719b3602 100644
+index 29f762ef64ffd278f21a78b29d6fd5c7b14e0310..b9719b360228f48ac9548678c417caf8b0a9d6e7 100644
 --- a/chrome/common/aegis/aegis_net_throttle.h
 +++ b/chrome/common/aegis/aegis_net_throttle.h
 @@ -14,17 +14,19 @@ namespace aegis {
@@ -1588,7 +1588,7 @@ index 29f762ef64..b9719b3602 100644
    GURL current_url_;
  };
 diff --git a/chrome/common/aegis/cname_uncloak.cc b/chrome/common/aegis/cname_uncloak.cc
-index c8cbcd0b04..cd1a217281 100644
+index c8cbcd0b04b3483f900700ffc297f7892abdd0a4..cd1a217281f35fe8f2d93eda62463937fb7d942c 100644
 --- a/chrome/common/aegis/cname_uncloak.cc
 +++ b/chrome/common/aegis/cname_uncloak.cc
 @@ -38,16 +38,22 @@ CnameUncloakCache* CnameUncloakCache::GetInstance() {
@@ -1650,7 +1650,7 @@ index c8cbcd0b04..cd1a217281 100644
      }
    }
 diff --git a/chrome/common/aegis/cname_uncloak.h b/chrome/common/aegis/cname_uncloak.h
-index 928ff6bd28..34756cf2df 100644
+index 928ff6bd281634a45bf782b6546b30ce8bbc6c3d..34756cf2dfa21a9ece20008e6ebdeda57ea68a2b 100644
 --- a/chrome/common/aegis/cname_uncloak.h
 +++ b/chrome/common/aegis/cname_uncloak.h
 @@ -8,6 +8,7 @@
@@ -1692,7 +1692,7 @@ index 928ff6bd28..34756cf2df 100644
  }  // namespace aegis
  
 diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
-index ff7f8a039c..49fe47b8b6 100644
+index ff7f8a039c601e6b94486b965bc52a03b07955f9..49fe47b8b6b0bc1f8b9566b0d1ca5769fb14e4b7 100644
 --- a/chrome/common/aegis/cookie_classify.cc
 +++ b/chrome/common/aegis/cookie_classify.cc
 @@ -85,6 +85,19 @@ constexpr std::string_view kNecessaryHints[] = {
@@ -1789,7 +1789,7 @@ index ff7f8a039c..49fe47b8b6 100644
 +
  }  // namespace aegis
 diff --git a/chrome/common/aegis/cookie_classify.h b/chrome/common/aegis/cookie_classify.h
-index 0e89a6783c..540f7a8739 100644
+index 0e89a6783cc9750e8a2b06978fb1ff6612c7ca2b..540f7a8739b9bc601333d1a2211e92d7f0f3a9d0 100644
 --- a/chrome/common/aegis/cookie_classify.h
 +++ b/chrome/common/aegis/cookie_classify.h
 @@ -6,6 +6,7 @@
@@ -1818,7 +1818,7 @@ index 0e89a6783c..540f7a8739 100644
  
  #endif  // CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index 9524912ad5..b7e50035cd 100644
+index 9524912ad50466b5e5fb3898c93e11e88cfae411..b7e50035cde43fd4aa6469b73010064d31f20d2c 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -17,5 +17,6 @@ BASE_FEATURE(kAegisCnameUncloak, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -1829,7 +1829,7 @@ index 9524912ad5..b7e50035cd 100644
  
  }  // namespace aegis::features
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index 7c5ea9edc2..e0488418bc 100644
+index 7c5ea9edc28c12789d5807b18f9884f6c001ff71..e0488418bcd77e1fbbe11c627c174a869269f46d 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -20,6 +20,7 @@ BASE_DECLARE_FEATURE(kAegisCnameUncloak);
@@ -1841,7 +1841,7 @@ index 7c5ea9edc2..e0488418bc 100644
  }  // namespace aegis::features
  
 diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
-index 2d64414486..13bf014155 100644
+index 2d644144867db2a5b43ee5c8ad508a851ed6d9b0..13bf01415504b66042464fb373b50481b462e86d 100644
 --- a/chrome/common/aegis/filter_list_matcher.cc
 +++ b/chrome/common/aegis/filter_list_matcher.cc
 @@ -51,22 +51,41 @@ CompiledFilterList FilterListMatcher::CurrentList() const {
@@ -1892,7 +1892,7 @@ index 2d64414486..13bf014155 100644
  
  size_t FilterListMatcher::compiled_host_count() const {
 diff --git a/chrome/common/aegis/filter_list_matcher.h b/chrome/common/aegis/filter_list_matcher.h
-index 7ef0d87e3d..3c6cdb50e2 100644
+index 7ef0d87e3d4873df16886200cf56fbd8a960e77b..3c6cdb50e20d83ff444e1fe161c24f952c7607a3 100644
 --- a/chrome/common/aegis/filter_list_matcher.h
 +++ b/chrome/common/aegis/filter_list_matcher.h
 @@ -18,6 +18,14 @@ class GURL;
@@ -1919,7 +1919,7 @@ index 7ef0d87e3d..3c6cdb50e2 100644
    size_t compiled_host_count() const;
  
 diff --git a/chrome/common/aegis/first_party_collect.cc b/chrome/common/aegis/first_party_collect.cc
-index 03d4458b67..f440b1b3c0 100644
+index 03d4458b6725c7949448184530d170845f80764e..f440b1b3c0f188b6c7ecb2668c4c005d838d5af4 100644
 --- a/chrome/common/aegis/first_party_collect.cc
 +++ b/chrome/common/aegis/first_party_collect.cc
 @@ -29,6 +29,8 @@ bool PathMatchesCollect(std::string_view path, std::string_view rule) {
@@ -1951,7 +1951,7 @@ index 03d4458b67..f440b1b3c0 100644
  
  }  // namespace
 diff --git a/chrome/common/aegis/generated/first_party_collect_paths.inc b/chrome/common/aegis/generated/first_party_collect_paths.inc
-index 1b0c58be02..477c3221e8 100644
+index 1b0c58be0275505f017f0d6ad8efbef096c7f4bd..477c3221e87f8805ab103d7885212759e9ebee14 100644
 --- a/chrome/common/aegis/generated/first_party_collect_paths.inc
 +++ b/chrome/common/aegis/generated/first_party_collect_paths.inc
 @@ -13,4 +13,6 @@ constexpr std::string_view kFirstPartyCollectPaths[] = {
@@ -1962,7 +1962,7 @@ index 1b0c58be02..477c3221e8 100644
 +    "/_sgtm/g/collect",
  };
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index 94972c1f14..88091f3a31 100644
+index 94972c1f14296a68944083a4a7a8395acac23f03..88091f3a31e6146f4738436013f7f5b86c3d038b 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -33,6 +33,7 @@ inline constexpr char kPolicyWorkerEnabled[] = "aegis.policy_worker_enabled";
@@ -1974,7 +1974,7 @@ index 94972c1f14..88091f3a31 100644
  }  // namespace aegis::prefs
  
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index cecaf01ebb..a682cd5fba 100644
+index cecaf01ebbfbe3cf2e596ca92c140389ce7aea05..a682cd5fba84d532958ac5c1b854f917c066a7b4 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
 @@ -33,6 +33,14 @@ struct DynamicParams {
@@ -2003,7 +2003,7 @@ index cecaf01ebb..a682cd5fba 100644
    // change after being set.
    [EnableIfNot=is_android]
 diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
-index dc5442edca..402aaab440 100644
+index dc5442edcaf4f535e8474730c0da5299f991a9fb..402aaab44076e6f74595ff7a3bfafa07deb9ff9a 100644
 --- a/chrome/renderer/chrome_render_thread_observer.cc
 +++ b/chrome/renderer/chrome_render_thread_observer.cc
 @@ -4,6 +4,7 @@
@@ -2083,7 +2083,7 @@ index dc5442edca..402aaab440 100644
  void ChromeRenderThreadObserver::SetConfigurationOnProcessLockUpdate(
      chrome::mojom::StaticParamsPtr params) {
 diff --git a/chrome/renderer/chrome_render_thread_observer.h b/chrome/renderer/chrome_render_thread_observer.h
-index cb3e12ef92..0ece297556 100644
+index cb3e12ef928fbd366f6c37c8e8b8d4fa47194aa7..0ece297556232fb27614c6e07f70db7d2c9d3dd0 100644
 --- a/chrome/renderer/chrome_render_thread_observer.h
 +++ b/chrome/renderer/chrome_render_thread_observer.h
 @@ -22,7 +22,9 @@
@@ -2114,10 +2114,10 @@ index cb3e12ef92..0ece297556 100644
    chrome::mojom::DynamicParamsPtr dynamic_params_
        GUARDED_BY(dynamic_params_lock_);
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 36daa816af..f6bdcbd759 100644
+index 091cdda90f0720a30d8da500f1d8173707308b37..2938d8c5ca3e82b9a9a743bb805526ad55087c9c 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
-@@ -265,14 +265,16 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+@@ -266,14 +266,16 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
  
    bool aegis_tracker_blocking = true;
    bool aegis_cname_uncloak = true;
@@ -2136,7 +2136,7 @@ index 36daa816af..f6bdcbd759 100644
      throttles.emplace_back(std::move(aegis_throttle));
    }
 diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
-index 797ade05d5..931ea08035 100644
+index 797ade05d57835ddca6d18abea099fc02c09acf2..931ea0803523acfc31e0cb8083962afc8ac01a1f 100644
 --- a/third_party/aegis_policy/policy_snapshot.json
 +++ b/third_party/aegis_policy/policy_snapshot.json
 @@ -1,6 +1,6 @@

@@ -107,6 +107,7 @@ std::string RequestedGoalText(std::string_view goal) {
   std::string requested = lower;
   bool denied = false;
   bool clause_start = true;
+  bool enumerated_clause = false;
   auto prefix_size = [](std::string_view text,
                         std::initializer_list<std::string_view> prefixes) {
     size_t length = 0;
@@ -129,6 +130,7 @@ std::string RequestedGoalText(std::string_view goal) {
     if (boundary) {
       denied = false;
       clause_start = true;
+      enumerated_clause = false;
       i += boundary;
       continue;
     }
@@ -138,6 +140,7 @@ std::string RequestedGoalText(std::string_view goal) {
         requested.replace(i, comma, comma, ' ');
       }
       clause_start = true;
+      enumerated_clause = remaining.starts_with("、");
       i += comma;
       continue;
     }
@@ -164,7 +167,10 @@ std::string RequestedGoalText(std::string_view goal) {
                                  "however ", "instead "}) ||
          (clause_start &&
           prefix_size(remaining, {"只", "仅", "僅", "请", "請", "然后", "然後",
-                                  "再", "only ", "please ", "then "})))) {
+                                  "再", "only ", "please ", "then "})) ||
+         (clause_start && !enumerated_clause &&
+          prefix_size(remaining, {"总结", "總結", "翻译", "翻譯",
+                                  "summarize ", "translate "})))) {
       denied = false;
     }
     if (word_start &&
@@ -428,7 +434,8 @@ bool GoalRequestsBrowserData(std::string_view goal) {
       "工作区",     "新建窗口", "创建窗口", "关闭窗口",   "激活窗口",
       "当前窗口",   "新建視窗", "建立視窗", "關閉視窗",   "啟用視窗",
       "目前視窗",   "收藏夾",   "書籤",     "標籤頁",     "瀏覽器標籤",
-      "瀏覽器視窗", "工作區"};
+      "瀏覽器視窗", "工作區",   "当前标签信息", "當前標籤資訊",
+      "目前標籤資訊"};
   if (std::ranges::any_of(kLocalizedBrowserData,
                           [&goal](std::string_view phrase) {
                             return goal.find(phrase) != std::string_view::npos;
@@ -987,7 +994,8 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
                  "搜尋",    "查找",   "总结",   "總結",     "翻译",  "翻譯",
                  "并",      "並",     "然后",   "然後",     "之前",  "以前",
                  "过去",    "過去",   "上次",   "下次",     "版本",  "时间",
-                 "時間",    " and ",  " then ", "previous", "last ", "next ",
+                 "時間",    "任务",     "任務",   "task",
+                 " and ",  " then ", "previous", "last ", "next ",
                  "version", "visit ", "search "})) {
           return true;
         }

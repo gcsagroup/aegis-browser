@@ -1,4 +1,4 @@
-From 6d8cdf8941e3686e13f9b8a5ce1a103c15db9627 Mon Sep 17 00:00:00 2001
+From 8620b0e14a8e7a997f8a29d208f750cc68b47f3a Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:03:12 +0800
 Subject: [PATCH] Aegis: score phishing pages after DOMContentLoaded
@@ -26,10 +26,10 @@ combined score crosses the block threshold.
  create mode 100644 chrome/browser/aegis/aegis_phish_tab_helper.h
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 70f8e10217..86425cf43f 100644
+index 402a33ee0430289cb6a1d96869ecfbf5a40c3313..e17d620b889bafcb8f9003fb86cf7f094658bb1c 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -159,6 +159,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+@@ -165,6 +165,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
        RequestImageForContextNodeCallback callback) override {}
    void ExecuteWebUIJavaScript(const std::u16string& javascript) override {}
    void GetMediaFeedURL(GetMediaFeedURLCallback callback) override {}
@@ -41,7 +41,7 @@ index 70f8e10217..86425cf43f 100644
    void SetShouldDeferMediaLoad(bool should_defer) override {}
  
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index c18d4021e0..a611cbe110 100644
+index c18d4021e0140a39c39a30110eaba69fcf046d77..a611cbe110aa9c75ab8a7295607044bcefabea04 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -9,6 +9,8 @@ source_set("aegis") {
@@ -61,7 +61,7 @@ index c18d4021e0..a611cbe110 100644
    ]
  }
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
-index 73d90e9bea..9cf31add42 100644
+index 73d90e9bea4ce9c5eb1dcde42e289252bc4f4a6e..9cf31add42355a40e4a5b568dae5ca258c4711d5 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 @@ -52,6 +52,18 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
@@ -84,7 +84,7 @@ index 73d90e9bea..9cf31add42 100644
  }
  
 diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
-index a441bef9e4..7f5b419e17 100644
+index a441bef9e4adc8315139dcf486af1c39d429f8f1..7f5b419e17d8016576590919e4d98ed4d3132d26 100644
 --- a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 +++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 @@ -10,6 +10,7 @@
@@ -114,7 +114,7 @@ index a441bef9e4..7f5b419e17 100644
    if (!assessment) {
 diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.cc b/chrome/browser/aegis/aegis_phish_tab_helper.cc
 new file mode 100644
-index 0000000000..447408991e
+index 0000000000000000000000000000000000000000..447408991e4d150b1b6bfff6d0b9e667d6187909
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_tab_helper.cc
 @@ -0,0 +1,138 @@
@@ -258,7 +258,7 @@ index 0000000000..447408991e
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_phish_tab_helper.h b/chrome/browser/aegis/aegis_phish_tab_helper.h
 new file mode 100644
-index 0000000000..1e65f7a86f
+index 0000000000000000000000000000000000000000..1e65f7a86fcaacb8ac7f162795e9a75bb2bf2a4f
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_tab_helper.h
 @@ -0,0 +1,59 @@
@@ -322,10 +322,10 @@ index 0000000000..1e65f7a86f
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_TAB_HELPER_H_
 diff --git a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
-index ac48709dc1..650d160899 100644
+index 71c5c3139b3cb93e7d8eea287f087e0a685f9162..5bc84f0f6aea3e8d3c5a947d275e9025a972f38c 100644
 --- a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
 +++ b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
-@@ -108,6 +108,10 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+@@ -110,6 +110,10 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
                (const std::u16string&),
                (override));
    MOCK_METHOD(void, GetMediaFeedURL, (GetMediaFeedURLCallback), (override));
@@ -337,7 +337,7 @@ index ac48709dc1..650d160899 100644
    MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
    MOCK_METHOD(void,
 diff --git a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
-index d7e92c9c73..8c540d59a5 100644
+index d7e92c9c73ebd8cf09582439a3d63d0feb4bb111..8c540d59a562ff567cceb020888374dfda98d43b 100644
 --- a/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
 +++ b/chrome/browser/password_manager/password_change/password_change_page_stability_waiter_unittest.cc
 @@ -99,6 +99,10 @@ class MockChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
@@ -352,7 +352,7 @@ index d7e92c9c73..8c540d59a5 100644
    MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
    MOCK_METHOD(void,
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 446351a9d0..d9eecb6358 100644
+index 3b1e2e30efad9959ad08252e7f7932276a820f33..02d5bf903388b93b83898fcfb2e746c5a1da2d21 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
 @@ -15,6 +15,7 @@
@@ -363,7 +363,7 @@ index 446351a9d0..d9eecb6358 100644
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
  #include "chrome/browser/browser_process.h"
-@@ -455,6 +456,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -446,6 +447,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
        web_contents,
        std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
    CoreTabHelper::CreateForWebContents(web_contents);
@@ -372,7 +372,7 @@ index 446351a9d0..d9eecb6358 100644
    favicon::CreateContentFaviconDriverForWebContents(web_contents);
    FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
 diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
-index 91c16aa6ed..440a996587 100644
+index 91c16aa6ed09666b895ac20e2d266e0ef35e10ed..440a99658701080e92bac411db96a1bd4c1b3a2b 100644
 --- a/chrome/common/aegis/phish_score.cc
 +++ b/chrome/common/aegis/phish_score.cc
 @@ -5,11 +5,13 @@
@@ -485,7 +485,7 @@ index 91c16aa6ed..440a996587 100644
 +
  }  // namespace aegis
 diff --git a/chrome/common/aegis/phish_score.h b/chrome/common/aegis/phish_score.h
-index c4d97a08ac..8b1891d675 100644
+index c4d97a08ac714807e62c8caf941a906a858672f1..8b1891d6757c6cc83e52ab4e06be9565fabb14e5 100644
 --- a/chrome/common/aegis/phish_score.h
 +++ b/chrome/common/aegis/phish_score.h
 @@ -26,10 +26,22 @@ struct PhishAssessment {
@@ -512,7 +512,7 @@ index c4d97a08ac..8b1891d675 100644
  
  #endif  // CHROME_COMMON_AEGIS_PHISH_SCORE_H_
 diff --git a/chrome/common/chrome_render_frame.mojom b/chrome/common/chrome_render_frame.mojom
-index c5b742e2fe..efaa533860 100644
+index c5b742e2fe1f6b986f85a10286fd638b86e0dc64..efaa533860e755f5ae9e2fc8900cb834dea6163e 100644
 --- a/chrome/common/chrome_render_frame.mojom
 +++ b/chrome/common/chrome_render_frame.mojom
 @@ -91,6 +91,11 @@ interface ChromeRenderFrame {
@@ -528,10 +528,10 @@ index c5b742e2fe..efaa533860 100644
    // identifier (empty string matches all).
    LoadBlockedPlugins(string identifier);
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index 1dc2c646c0..ede7068f7b 100644
+index 6f3034c426214bf36c6ec65ab91e36a8ae0127e5..909291a80953d38f6ee37e69dd5e2ee424533cfc 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
-@@ -69,7 +69,9 @@
+@@ -71,7 +71,9 @@
  #include "third_party/blink/public/web/web_document.h"
  #include "third_party/blink/public/web/web_document_loader.h"
  #include "third_party/blink/public/web/web_element.h"
@@ -541,7 +541,7 @@ index 1dc2c646c0..ede7068f7b 100644
  #include "third_party/blink/public/web/web_local_frame.h"
  #include "third_party/blink/public/web/web_local_frame_client.h"
  #include "third_party/blink/public/web/web_node.h"
-@@ -646,6 +648,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+@@ -656,6 +658,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
    std::move(callback).Run(MediaFeeds::GetMediaFeedURL(render_frame()));
  }
  
@@ -586,7 +586,7 @@ index 1dc2c646c0..ede7068f7b 100644
      const std::string& identifier) {
    // Record that this plugin is temporarily allowed and notify all placeholders.
 diff --git a/chrome/renderer/chrome_render_frame_observer.h b/chrome/renderer/chrome_render_frame_observer.h
-index 80e224f9bc..a829805460 100644
+index 80e224f9bc83636f5b5c80250d0e3e52075f186a..a829805460502bf5b7ca423d9123aab76c245d1f 100644
 --- a/chrome/renderer/chrome_render_frame_observer.h
 +++ b/chrome/renderer/chrome_render_frame_observer.h
 @@ -131,6 +131,8 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver,

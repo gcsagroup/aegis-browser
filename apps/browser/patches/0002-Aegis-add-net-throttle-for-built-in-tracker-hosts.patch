@@ -1,4 +1,4 @@
-From 785b35e89d9f790930e5529a91352650927b29b5 Mon Sep 17 00:00:00 2001
+From 5db0928ceec7885953b46b06dc094e8cc2b8cd25 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 12:21:27 +0800
 Subject: [PATCH] Aegis: add net throttle for built-in tracker hosts
@@ -10,7 +10,7 @@ via URLLoaderThrottle in both browser and renderer paths.
  chrome/browser/aegis/BUILD.gn                 |  1 +
  chrome/browser/aegis/aegis_service.cc         | 20 ++++-
  chrome/browser/aegis/aegis_service.h          |  8 +-
- .../browser/chrome_content_browser_client.cc  |  7 ++
+ .../browser/chrome_content_browser_client.cc  |  6 ++
  chrome/common/aegis/BUILD.gn                  | 12 ++-
  chrome/common/aegis/aegis_net_throttle.cc     | 70 ++++++++++++++++
  chrome/common/aegis/aegis_net_throttle.h      | 42 ++++++++++
@@ -18,17 +18,17 @@ via URLLoaderThrottle in both browser and renderer paths.
  chrome/common/aegis/builtin_tracker_hosts.h   | 18 +++++
  chrome/renderer/BUILD.gn                      |  1 +
  .../url_loader_throttle_provider_impl.cc      |  8 ++
- 12 files changed, 264 insertions(+), 4 deletions(-)
+ 12 files changed, 263 insertions(+), 4 deletions(-)
  create mode 100644 chrome/common/aegis/aegis_net_throttle.cc
  create mode 100644 chrome/common/aegis/aegis_net_throttle.h
  create mode 100644 chrome/common/aegis/builtin_tracker_hosts.cc
  create mode 100644 chrome/common/aegis/builtin_tracker_hosts.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index e7d5317c6b..d280743c44 100644
+index 34959a155979e60aa3c040f4b8a2cc61e8786052..746a1de232b927f042d6e2d8dc6438191f47a5c8 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -927,6 +927,7 @@ source_set("core") {
+@@ -923,6 +923,7 @@ source_set("core") {
      ":universal_web_contents_observers",
      "//base/allocator:buildflags",
      "//build/config/linux/dbus:buildflags",
@@ -37,7 +37,7 @@ index e7d5317c6b..d280743c44 100644
      "//chrome/browser/actor",
      "//chrome/browser/actor:impl",
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index cdc61302ba..7af9ba3664 100644
+index cdc61302baab5e79eff1a8934869a7994c080a9f..7af9ba36640c49a22bc39f73f53cfac7f0860c72 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -9,5 +9,6 @@ source_set("aegis") {
@@ -48,7 +48,7 @@ index cdc61302ba..7af9ba3664 100644
    ]
  }
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 6e2ccb30ce..91cf7c4ddf 100644
+index 6e2ccb30ce4adc445af3f6eda14f0b1ef078e82e..91cf7c4ddf3c1ec6feb64dcaf93b6f0975d658d9 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -5,7 +5,9 @@
@@ -92,7 +92,7 @@ index 6e2ccb30ce..91cf7c4ddf 100644
 +
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index fb76c457df..1cb917885c 100644
+index fb76c457df3ea6db3ee3447c1ebe149fc9d83ef4..1cb917885cbc483fae2d7c8b3c8b54bc28e95492 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -1,12 +1,13 @@
@@ -123,7 +123,7 @@ index fb76c457df..1cb917885c 100644
   private:
    friend struct base::DefaultSingletonTraits<AegisService>;
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index e30528ed87..0215347649 100644
+index 19045777b3d811c15ba6e3f16cff859a05327b88..72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -3,6 +3,7 @@
@@ -134,11 +134,10 @@ index e30528ed87..0215347649 100644
  
  #include <algorithm>
  #include <iterator>
-@@ -6065,6 +6066,12 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
-     result.push_back(std::move(signin_throttle));
+@@ -6111,6 +6112,11 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+     result.push_back(std::move(contextual_tasks_throttle));
    }
  
-+
 +  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate();
 +      aegis_throttle) {
 +    result.push_back(std::move(aegis_throttle));
@@ -148,7 +147,7 @@ index e30528ed87..0215347649 100644
  }
  
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index c79bd53317..c568ce8ade 100644
+index c79bd5331745a8b1179051083aa0cd178d733128..c568ce8ade6caecf0dff4a1a6519a39760fb0320 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -3,8 +3,18 @@
@@ -173,7 +172,7 @@ index c79bd53317..c568ce8ade 100644
  }
 diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
 new file mode 100644
-index 0000000000..d910e6fcc0
+index 0000000000000000000000000000000000000000..d910e6fcc09f9b874da034b898813dbcc55887c2
 --- /dev/null
 +++ b/chrome/common/aegis/aegis_net_throttle.cc
 @@ -0,0 +1,70 @@
@@ -249,7 +248,7 @@ index 0000000000..d910e6fcc0
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
 new file mode 100644
-index 0000000000..1e66344881
+index 0000000000000000000000000000000000000000..1e663448810943c931d620c1f2debe481312bc8f
 --- /dev/null
 +++ b/chrome/common/aegis/aegis_net_throttle.h
 @@ -0,0 +1,42 @@
@@ -297,7 +296,7 @@ index 0000000000..1e66344881
 +#endif  // CHROME_COMMON_AEGIS_AEGIS_NET_THROTTLE_H_
 diff --git a/chrome/common/aegis/builtin_tracker_hosts.cc b/chrome/common/aegis/builtin_tracker_hosts.cc
 new file mode 100644
-index 0000000000..8f6c7cc56e
+index 0000000000000000000000000000000000000000..8f6c7cc56e3aabaf865432d96c5292f656e6e0cc
 --- /dev/null
 +++ b/chrome/common/aegis/builtin_tracker_hosts.cc
 @@ -0,0 +1,80 @@
@@ -383,7 +382,7 @@ index 0000000000..8f6c7cc56e
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/builtin_tracker_hosts.h b/chrome/common/aegis/builtin_tracker_hosts.h
 new file mode 100644
-index 0000000000..4a2c3cca83
+index 0000000000000000000000000000000000000000..4a2c3cca836d03bf236db0b3ab3a0108bddf1e4e
 --- /dev/null
 +++ b/chrome/common/aegis/builtin_tracker_hosts.h
 @@ -0,0 +1,18 @@
@@ -406,10 +405,10 @@ index 0000000000..4a2c3cca83
 +
 +#endif  // CHROME_COMMON_AEGIS_BUILTIN_TRACKER_HOSTS_H_
 diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
-index 94d46c0511..beff1e2191 100644
+index 8ea705840f0ca2fcf23d6249849beb32d12f1da9..d5621de7c799ebd435306ff2758bb493f37caf72 100644
 --- a/chrome/renderer/BUILD.gn
 +++ b/chrome/renderer/BUILD.gn
-@@ -130,6 +130,7 @@ static_library("renderer") {
+@@ -132,6 +132,7 @@ static_library("renderer") {
      "//chrome:resources",
      "//chrome:strings",
      "//chrome/common",
@@ -418,7 +417,7 @@ index 94d46c0511..beff1e2191 100644
      "//chrome/common/net",
      "//chrome/common/request_header_integrity:buildflags",
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 6589346a5c..42d9531110 100644
+index d49edab182ec86cf8af54b5a297c7b199d430e15..4c42c7c195d6252ef7fc31e25a6c3490ad2ff46a 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -15,6 +15,7 @@
@@ -429,7 +428,7 @@ index 6589346a5c..42d9531110 100644
  #include "chrome/common/request_header_integrity/buildflags.h"
  #include "chrome/renderer/chrome_content_renderer_client.h"
  #include "chrome/renderer/chrome_render_frame_observer.h"
-@@ -261,6 +262,13 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+@@ -262,6 +263,13 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
        chrome_content_renderer_client_->GetChromeObserver()
            ->GetDynamicParams()));
  

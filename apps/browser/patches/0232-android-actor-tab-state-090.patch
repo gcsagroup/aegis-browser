@@ -1,4 +1,4 @@
-From 8f43d5f13144bd7bd131fa0d2262919406f197a4 Mon Sep 17 00:00:00 2001
+From ee8e93e3c845333edb88f1f2439adbed14684fb4 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 19:43:44 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E9=A1=B5?=
@@ -14,10 +14,10 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
-index 4da8e3f008..695652bc8c 100644
+index a476210c78b3947e38cc1b7e6e86e1c518a0e0d1..7aeae3b168fd8e5c10877451db3889f764abe302 100644
 --- a/chrome/browser/android/tab_features.cc
 +++ b/chrome/browser/android/tab_features.cc
-@@ -104,12 +104,13 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+@@ -151,12 +151,13 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
      }
    }
  
@@ -34,7 +34,7 @@ index 4da8e3f008..695652bc8c 100644
      actor_ui_tab_controller_ =
          GetUserDataFactory()
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 83d7fe7452..9e9728714c 100644
+index 83d7fe74523d6efeb37fd1f2e3b23e0e29b92913..9e9728714c380620adcc92d0b550382a66ad8b75 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

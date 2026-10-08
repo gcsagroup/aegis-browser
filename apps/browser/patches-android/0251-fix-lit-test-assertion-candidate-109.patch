@@ -1,0 +1,47 @@
+From b64a878cb7f8363aed20a626c49bad1f8246217d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 14:59:02 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Lit=20=E6=B5=8B=E8=AF=95?=
+ =?UTF-8?q?=E7=9A=84=E5=86=97=E4=BD=99=E7=B1=BB=E5=9E=8B=E6=96=AD=E8=A8=80?=
+ =?UTF-8?q?=E5=B9=B6=E9=80=92=E5=A2=9E=E5=80=99=E9=80=89=E8=87=B3=20Ver=20?=
+ =?UTF-8?q?2.0=20(109)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h  | 4 ++--
+ chrome/test/data/webui/settings/people_page_test.ts | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 0e504ed62f2f5f97e23c25d8efbda8bac729c80a..bcec3390f53e8bdbb2520b337fedc014e0a076df 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.108";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (108)";
++inline constexpr char kProductVersion[] = "2.0.0.109";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (109)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/data/webui/settings/people_page_test.ts b/chrome/test/data/webui/settings/people_page_test.ts
+index 16e8000188a7ad494179e67d0662dd1efec48de4..60e9730e3aa5effaa8f07d0c1f55a4a432cb2f9d 100644
+--- a/chrome/test/data/webui/settings/people_page_test.ts
++++ b/chrome/test/data/webui/settings/people_page_test.ts
+@@ -534,7 +534,7 @@ suite('AegisLocalProfileOnly', function() {
+            'settings-sync-account-control', '#account-subpage-row',
+            '#sync-setup', '#google-services', '#manage-google-account',
+          ]) {
+-      assertFalse(!!peoplePage.shadowRoot!.querySelector(selector), selector);
++      assertFalse(!!peoplePage.shadowRoot.querySelector(selector), selector);
+     }
+   });
+ 
+-- 
+2.52.0
+
