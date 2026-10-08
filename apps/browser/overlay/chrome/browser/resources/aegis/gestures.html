@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>鼠标手势 · GCSA Aegis</title>
+  <link rel="stylesheet" href="gestures.css">
+</head>
+<body>
+  <main>
+    <a class="back" href="chrome://settings/">← 返回设置</a>
+    <header>
+      <div class="eyebrow">GCSA AEGIS</div>
+      <h1>鼠标手势</h1>
+      <p>按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。</p>
+    </header>
+    <section aria-labelledby="options-title">
+      <h2 id="options-title">基本设置</h2>
+      <label class="switch-row"><span><strong>启用鼠标手势</strong><small>右键轻点仍打开菜单。按住 Shift 再右键可临时跳过手势。</small></span><input id="enabled" type="checkbox"></label>
+      <label class="switch-row"><span><strong>显示轨迹与动作提示</strong><small>画到哪里、将执行什么，一眼看清。</small></span><input id="showTrail" type="checkbox"></label>
+      <label class="threshold" for="threshold">识别距离 <output id="thresholdValue">16</output> 像素</label>
+      <input id="threshold" type="range" min="8" max="64" value="16">
+      <p class="hint">距离越大，越不容易被小幅抖动触发。斜线方向不明确时不执行；按 Esc 或切换窗口可取消。</p>
+    </section>
+    <section aria-labelledby="practice-title">
+      <div class="section-head"><h2 id="practice-title">先试一试</h2><span class="badge">练习不执行操作</span></div>
+      <div id="practice" tabindex="0" role="group" aria-label="手势练习区：按住右键画方向，松开查看结果">
+        <svg id="practiceSvg" aria-hidden="true"><polyline id="practiceLine"></polyline></svg>
+        <div class="practice-copy"><strong id="practicePattern">按住右键，在这里画一笔</strong><span id="practiceResult" aria-live="polite">上下左右可以组合；松开后查看匹配结果。</span></div>
+      </div>
+    </section>
+    <section aria-labelledby="bindings-title">
+      <div class="section-head"><div><h2 id="bindings-title">手势与动作</h2><p class="hint">输入 L / R / U / D，分别代表 ← → ↑ ↓。最多 8 个方向，同一手势不能重复绑定。</p></div><button id="addBinding" type="button">＋ 添加手势</button></div>
+      <div id="bindings"></div>
+      <p class="hint">PDF 专用动作仅在内置 PDF 阅读器内生效。普通动作在 PDF 中含义不变。</p>
+    </section>
+    <section aria-labelledby="sites-title">
+      <h2 id="sites-title">这些网站不使用手势</h2>
+      <label for="disabledSites" class="hint">每行一个完整域名，例如 example.com。子域名请单独添加。</label>
+      <textarea id="disabledSites" rows="3" spellcheck="false" placeholder="example.com"></textarea>
+    </section>
+    <footer><button id="reset" type="button">恢复默认</button><span id="status" role="status" aria-live="polite">正在加载设置…</span><button id="save" type="button" class="primary" disabled>保存设置</button></footer>
+  </main>
+  <script type="module" src="gestures.js"></script>
+</body>
+</html>

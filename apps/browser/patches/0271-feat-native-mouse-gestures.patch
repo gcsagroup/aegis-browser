@@ -1,0 +1,2808 @@
+From e95df1356a93e95df533d900c96b30eb40c24dd0 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Fri, 9 Oct 2026 02:10:52 +0800
+Subject: [PATCH] =?UTF-8?q?feat:=20=E5=A2=9E=E5=8A=A0=E6=A1=8C=E9=9D=A2?=
+ =?UTF-8?q?=E5=8E=9F=E7=94=9F=E9=BC=A0=E6=A0=87=E6=89=8B=E5=8A=BF=E4=B8=8E?=
+ =?UTF-8?q?=20PDF=20=E5=8A=A8=E4=BD=9C?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  49 +-
+ chrome/browser/aegis/aegis_prefs.cc           |   3 +
+ .../gestures/gesture_interactive_uitest.cc    | 490 +++++++++++++++++
+ .../aegis/gestures/gesture_recognizer.cc      |  57 ++
+ .../aegis/gestures/gesture_recognizer.h       |  31 ++
+ .../aegis/gestures/gesture_settings.cc        | 136 +++++
+ .../browser/aegis/gestures/gesture_settings.h |  54 ++
+ .../aegis/gestures/gesture_unittest.cc        | 116 ++++
+ chrome/browser/resources/aegis/BUILD.gn       |   3 +
+ chrome/browser/resources/aegis/gestures.css   | 346 ++++++++++++
+ chrome/browser/resources/aegis/gestures.html  |  46 ++
+ chrome/browser/resources/aegis/gestures.ts    | 287 ++++++++++
+ chrome/browser/resources/pdf/pdf_viewer.ts    |  20 +-
+ .../settings/settings_menu/settings_menu.html |   7 +-
+ .../settings/settings_menu/settings_menu.ts   |   2 +-
+ chrome/browser/ui/BUILD.gn                    |   3 +
+ .../ui/aegis_mouse_gesture_tab_helper.cc      | 517 ++++++++++++++++++
+ .../ui/aegis_mouse_gesture_tab_helper.h       | 102 ++++
+ chrome/browser/ui/tab_helpers.cc              |   6 +
+ chrome/browser/ui/webui/aegis/BUILD.gn        |  10 +-
+ .../ui/webui/aegis/aegis_gesture_handler.cc   | 126 +++++
+ .../ui/webui/aegis/aegis_gesture_handler.h    |  22 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |   6 +
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 24 files changed, 2429 insertions(+), 14 deletions(-)
+ create mode 100644 chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+ create mode 100644 chrome/browser/aegis/gestures/gesture_recognizer.cc
+ create mode 100644 chrome/browser/aegis/gestures/gesture_recognizer.h
+ create mode 100644 chrome/browser/aegis/gestures/gesture_settings.cc
+ create mode 100644 chrome/browser/aegis/gestures/gesture_settings.h
+ create mode 100644 chrome/browser/aegis/gestures/gesture_unittest.cc
+ create mode 100644 chrome/browser/resources/aegis/gestures.css
+ create mode 100644 chrome/browser/resources/aegis/gestures.html
+ create mode 100644 chrome/browser/resources/aegis/gestures.ts
+ create mode 100644 chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
+ create mode 100644 chrome/browser/ui/aegis_mouse_gesture_tab_helper.h
+ create mode 100644 chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+ create mode 100644 chrome/browser/ui/webui/aegis/aegis_gesture_handler.h
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index c853991eba4a7bb36092d144253e4731c82aa7dd..f3dd8f230c35e911211fda1df1b93e7c2278c519 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -20,14 +20,14 @@ source_set("agent_core") {
+   sources = [
+     "agent/agent_execution.cc",
+     "agent/agent_execution.h",
+-    "agent/agent_model_protocol.cc",
+-    "agent/agent_model_protocol.h",
+-    "agent/agent_model_router.cc",
+-    "agent/agent_model_router.h",
+     "agent/agent_generation_profile.h",
+     "agent/agent_generation_profile_json.h",
+     "agent/agent_model_accounting.h",
+     "agent/agent_model_accounting_json.h",
++    "agent/agent_model_protocol.cc",
++    "agent/agent_model_protocol.h",
++    "agent/agent_model_router.cc",
++    "agent/agent_model_router.h",
+     "agent/agent_monitor_scheduler.cc",
+     "agent/agent_monitor_scheduler.h",
+     "agent/agent_monitor_summary.cc",
+@@ -113,12 +113,35 @@ source_set("download_prefs") {
+   ]
+ }
+ 
++source_set("gesture_core") {
++  sources = [
++    "gestures/gesture_recognizer.cc",
++    "gestures/gesture_recognizer.h",
++    "gestures/gesture_settings.cc",
++    "gestures/gesture_settings.h",
++  ]
++  public_deps = [
++    "//base",
++    "//url",
++  ]
++}
++
++test("aegis_gesture_unittests") {
++  sources = [ "gestures/gesture_unittest.cc" ]
++  deps = [
++    ":gesture_core",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ source_set("prefs") {
+   sources = [
+     "aegis_prefs.cc",
+     "aegis_prefs.h",
+   ]
+   deps = [
++    ":gesture_core",
+     "//chrome/common/aegis",
+     "//components/pref_registry",
+   ]
+@@ -299,9 +322,9 @@ if (!is_android) {
+       "//chrome/browser/bookmarks",
+       "//chrome/browser/net:impl",
+       "//chrome/browser/notifications:test_support",
++      "//chrome/browser/predictors",
+       "//chrome/browser/predictors:config",
+       "//chrome/browser/predictors:impl",
+-      "//chrome/browser/predictors:predictors",
+       "//chrome/browser/prefs",
+       "//chrome/browser/profiles:profile",
+       "//chrome/browser/profiles:profile_manager",
+@@ -330,6 +353,7 @@ if (!is_android) {
+       "//services/network:test_support",
+       "//services/network/public/cpp",
+       "//testing/gtest",
++      "//ui/base",
+       "//ui/message_center/public/cpp",
+       "//url",
+     ]
+@@ -338,12 +362,19 @@ if (!is_android) {
+   source_set("interactive_ui_tests") {
+     testonly = true
+     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
+-    sources = [ "agent/aegis_agent_interactive_uitest.cc" ]
++    sources = [
++      "agent/aegis_agent_interactive_uitest.cc",
++      "gestures/gesture_interactive_uitest.cc",
++    ]
+     deps = [
+       ":aegis",
++      ":gesture_core",
+       "//base",
+       "//base/test:test_support",
+       "//chrome/app:command_ids",
++      "//chrome/browser/pdf:pdf_extension_test_base",
++      "//chrome/browser/profiles:profile",
++      "//chrome/browser/renderer_context_menu:test_support",
+       "//chrome/browser/ui",
+       "//chrome/browser/ui:browser_element_identifiers",
+       "//chrome/browser/ui/side_panel",
+@@ -354,7 +385,11 @@ if (!is_android) {
+       "//chrome/test:test_support_ui",
+       "//components/prefs",
+       "//content/test:test_support",
++      "//net:test_support",
+       "//testing/gtest",
++      "//ui/base",
++      "//ui/base:test_support",
++      "//ui/views",
+       "//url",
+     ]
+   }
+@@ -364,11 +399,11 @@ test("aegis_agent_core_unittests") {
+   sources = [
+     "agent/agent_core_unittest.cc",
+     "agent/agent_execution_unittest.cc",
+-    "agent/agent_research_unittest.cc",
+     "agent/agent_model_protocol_unittest.cc",
+     "agent/agent_model_router_unittest.cc",
+     "agent/agent_monitor_summary_unittest.cc",
+     "agent/agent_planner_unittest.cc",
++    "agent/agent_research_unittest.cc",
+     "agent/agent_task_store_unittest.cc",
+     "agent/v2_runtime_spike_unittest.cc",
+   ]
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index eed93d866133f146ca27798f891e42ba02b5ea5e..f153f1bca41f4b0d0890b3aecc2f83712e9da4d8 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -5,6 +5,7 @@
+ 
+ #include <string>
+ 
++#include "chrome/browser/aegis/gestures/gesture_settings.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/pref_registry/pref_registry_syncable.h"
+@@ -12,6 +13,8 @@
+ namespace aegis {
+ 
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
++  registry->RegisterDictionaryPref(kMouseGesturesPref,
++                                   GestureSettings::Defaults().ToValue());
+   registry->RegisterBooleanPref(prefs::kTrackerBlockingEnabled, true);
+   registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
+   // FingerprintGuard on by default when the feature is enabled.
+diff --git a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..060b69fc2062e8076e3a233417e0c78353e28b8c
+--- /dev/null
++++ b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+@@ -0,0 +1,490 @@
++// Copyright 2026 GCSA
++#include "base/run_loop.h"
++#include "base/test/run_until.h"
++#include "base/time/time.h"
++#include "chrome/browser/aegis/gestures/gesture_settings.h"
++#include "chrome/browser/pdf/pdf_extension_test_base.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/test/base/in_process_browser_test.h"
++#include "chrome/test/base/ui_test_utils.h"
++#include "components/input/native_web_keyboard_event.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/test/browser_test.h"
++#include "content/public/test/browser_test_utils.h"
++#include "content/public/test/context_menu_interceptor.h"
++#include "net/test/embedded_test_server/embedded_test_server.h"
++#include "third_party/blink/public/common/input/web_mouse_event.h"
++#include "ui/base/base_window.h"
++#include "ui/base/test/ui_controls.h"
++#include "ui/events/keycodes/dom/dom_code.h"
++#include "ui/events/keycodes/dom/dom_key.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/geometry/point.h"
++#include "ui/views/widget/widget.h"
++
++namespace aegis {
++namespace {
++using Type = blink::WebInputEvent::Type;
++using Button = blink::WebMouseEvent::Button;
++
++void Mouse(content::RenderWidgetHost* host,
++           Type type,
++           gfx::Point point,
++           Button button = Button::kRight,
++           int extra_modifiers = 0) {
++  const gfx::Rect bounds = host->GetView()->GetViewBounds();
++  auto* widget = views::Widget::GetTopLevelWidgetForNativeView(
++      host->GetView()->GetNativeView());
++  ASSERT_TRUE(widget);
++  const auto window = widget->GetNativeWindow();
++  base::RunLoop move;
++  ASSERT_TRUE(ui_controls::SendMouseMoveNotifyWhenDone(
++      point.x() + bounds.x(), point.y() + bounds.y(), move.QuitClosure(),
++      window));
++  move.Run();
++  if (type == Type::kMouseDown || type == Type::kMouseUp) {
++    base::RunLoop click;
++    ASSERT_TRUE(ui_controls::SendMouseEventsNotifyWhenDone(
++        button == Button::kRight ? ui_controls::RIGHT : ui_controls::LEFT,
++        type == Type::kMouseDown ? ui_controls::DOWN : ui_controls::UP,
++        click.QuitClosure(),
++        extra_modifiers & blink::WebInputEvent::kShiftKey
++            ? ui_controls::kShift
++            : ui_controls::kNoAccelerator));
++    click.Run();
++  }
++  if (type != Type::kMouseUp) {
++    content::RunUntilInputProcessed(host);
++  }
++}
++
++void Gesture(content::RenderWidgetHost* host,
++             const std::string& pattern,
++             gfx::Point start = gfx::Point(250, 180),
++             int modifiers = 0) {
++  gfx::Point point = start;
++  Mouse(host, Type::kMouseDown, point, Button::kRight, modifiers);
++  for (char direction : pattern) {
++    switch (direction) {
++      case 'L':
++        point.Offset(-60, 0);
++        break;
++      case 'R':
++        point.Offset(60, 0);
++        break;
++      case 'U':
++        point.Offset(0, -60);
++        break;
++      case 'D':
++        point.Offset(0, 60);
++        break;
++    }
++    Mouse(host, Type::kMouseMove, point, Button::kRight, modifiers);
++  }
++  Mouse(host, Type::kMouseUp, point, Button::kRight, modifiers);
++  base::RunLoop().RunUntilIdle();
++}
++
++bool Activate(BrowserWindowInterface* browser) {
++  browser->GetWindow()->Activate();
++  return base::test::RunUntil([&] { return browser->GetWindow()->IsActive(); });
++}
++}  // namespace
++
++class AegisGestureBrowserTest : public InProcessBrowserTest {
++ protected:
++  void SetUpOnMainThread() override {
++    InProcessBrowserTest::SetUpOnMainThread();
++    ASSERT_TRUE(embedded_test_server()->Start());
++    ASSERT_TRUE(Activate(browser()));
++  }
++  content::WebContents* contents() {
++    return browser()->GetTabStripModel()->GetActiveWebContents();
++  }
++  content::RenderWidgetHost* host() {
++    return contents()->GetPrimaryMainFrame()->GetRenderWidgetHost();
++  }
++  void Navigate(const char* path) {
++    ASSERT_TRUE(ui_test_utils::NavigateToURL(
++        browser(), embedded_test_server()->GetURL(path)));
++  }
++  void SetSettings(GestureSettings settings) {
++    browser()->GetProfile()->GetPrefs()->SetDict(kMouseGesturesPref,
++                                                 settings.ToValue());
++  }
++};
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, BackForwardOnWebPages) {
++  Navigate("/title1.html");
++  Navigate("/title2.html");
++  Gesture(host(), "L");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents()->GetLastCommittedURL() ==
++           embedded_test_server()->GetURL("/title1.html");
++  }));
++  Gesture(host(), "R");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents()->GetLastCommittedURL() ==
++           embedded_test_server()->GetURL("/title2.html");
++  }));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, RightClickKeepsContextMenu) {
++  Navigate("/title1.html");
++  content::ContextMenuInterceptor menu(
++      contents()->GetPrimaryMainFrame(),
++      content::ContextMenuInterceptor::kPreventShow);
++  Mouse(host(), Type::kMouseDown, {100, 100});
++  Mouse(host(), Type::kMouseMove, {103, 104});
++  Mouse(host(), Type::kMouseUp, {103, 104});
++  menu.Wait();
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
++                       LeftClickAndSelectionUnchanged) {
++  Navigate("/title1.html");
++  ASSERT_TRUE(content::ExecJs(contents(), R"(
++    document.body.innerHTML = '<button id="target" style="position:absolute;left:50px;top:50px;width:150px;height:100px">选择与点击</button>';
++    window.clicks = 0;
++    document.getElementById('target').onclick = () => ++window.clicks;
++  )"));
++  Mouse(host(), Type::kMouseDown, {90, 80}, Button::kLeft);
++  Mouse(host(), Type::kMouseUp, {90, 80}, Button::kLeft);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(contents(), "window.clicks").ExtractInt() == 1;
++  }));
++  ASSERT_TRUE(content::ExecJs(contents(), R"(
++    document.body.innerHTML = '<p style="position:absolute;left:50px;top:80px;margin:0;font:20px monospace">selection remains available</p>';
++  )"));
++  Mouse(host(), Type::kMouseDown, {51, 90}, Button::kLeft);
++  Mouse(host(), Type::kMouseMove, {230, 90}, Button::kLeft);
++  Mouse(host(), Type::kMouseUp, {230, 90}, Button::kLeft);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(contents(), "getSelection().toString().length > 0")
++        .ExtractBool();
++  }));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, ScrollReloadAndTabActions) {
++  Navigate("/title1.html");
++  ASSERT_TRUE(content::ExecJs(
++      contents(),
++      "document.body.style.height='5000px'; window.marker='before reload';"));
++  Gesture(host(), "D");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(contents(), "scrollY > 0").ExtractBool();
++  }));
++  Gesture(host(), "U");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(contents(), "scrollY === 0").ExtractBool();
++  }));
++  Gesture(host(), "UD");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return !contents()->IsLoading() &&
++           content::EvalJs(contents(), "typeof window.marker === 'undefined'")
++               .ExtractBool();
++  }));
++  ui_test_utils::NavigateToURLWithDisposition(
++      browser(), embedded_test_server()->GetURL("/title2.html"),
++      WindowOpenDisposition::NEW_FOREGROUND_TAB,
++      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
++  ASSERT_EQ(2, browser()->GetTabStripModel()->count());
++  Gesture(host(), "UL");
++  ASSERT_EQ(0, browser()->GetTabStripModel()->active_index());
++  Gesture(host(), "UR");
++  ASSERT_EQ(1, browser()->GetTabStripModel()->active_index());
++  Gesture(host(), "DR");
++  ASSERT_TRUE(base::test::RunUntil(
++      [&] { return browser()->GetTabStripModel()->count() == 1; }));
++  Gesture(host(), "DL");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return browser()->GetTabStripModel()->count() == 2 &&
++           contents()->GetLastCommittedURL() ==
++               embedded_test_server()->GetURL("/title2.html");
++  }));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, OutsideAndNavigationCancel) {
++  Navigate("/title1.html");
++  auto settings = GestureSettings::Defaults();
++  settings.show_trail = false;
++  SetSettings(settings);
++  Mouse(host(), Type::kMouseDown, {200, 160});
++  Mouse(host(), Type::kMouseMove, {200, 220});
++  Mouse(host(), Type::kMouseMove, {260, 220});
++  Mouse(host(), Type::kMouseMove, {-10, 220});
++  Mouse(host(), Type::kMouseUp, {260, 220});
++  base::RunLoop().RunUntilIdle();
++  ASSERT_EQ(1, browser()->GetTabStripModel()->count());
++  Mouse(host(), Type::kMouseDown, {200, 160});
++  Mouse(host(), Type::kMouseMove, {200, 220});
++  Navigate("/title2.html");
++  Mouse(host(), Type::kMouseMove, {260, 220});
++  Mouse(host(), Type::kMouseUp, {260, 220});
++  base::RunLoop().RunUntilIdle();
++  ASSERT_EQ(1, browser()->GetTabStripModel()->count());
++  EXPECT_EQ(contents()->GetLastCommittedURL(),
++            embedded_test_server()->GetURL("/title2.html"));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
++                       EscapeCancelsCloseAndNextGestureWorks) {
++  Navigate("/title1.html");
++  const int count = browser()->GetTabStripModel()->count();
++  Mouse(host(), Type::kMouseDown, {200, 160});
++  Mouse(host(), Type::kMouseMove, {200, 220});
++  Mouse(host(), Type::kMouseMove, {260, 220});
++  // 通用 JS 按键助手设置 skip_if_unhandled，会跳过原生监听器。
++  input::NativeWebKeyboardEvent escape(Type::kRawKeyDown, 0,
++                                       base::TimeTicks::Now());
++  escape.windows_key_code = ui::VKEY_ESCAPE;
++  escape.dom_key = ui::DomKey::ESCAPE;
++  escape.dom_code = static_cast<int>(ui::DomCode::ESCAPE);
++  escape.skip_if_unhandled = false;
++  host()->ForwardKeyboardEvent(escape);
++  Mouse(host(), Type::kMouseUp, {260, 220});
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(browser()->GetTabStripModel()->count(), count);
++  Navigate("/title2.html");
++  Gesture(host(), "L");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents()->GetLastCommittedURL() ==
++           embedded_test_server()->GetURL("/title1.html");
++  }));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
++                       SiteExclusionAndModifierBypass) {
++  Navigate("/title1.html");
++  Navigate("/title2.html");
++  ASSERT_TRUE(content::ExecJs(
++      contents(),
++      "window.addEventListener('contextmenu', e => e.preventDefault());"));
++  auto settings = GestureSettings::Defaults();
++  settings.disabled_sites.emplace_back(
++      contents()->GetLastCommittedURL().host());
++  SetSettings(settings);
++  Gesture(host(), "L");
++  EXPECT_EQ(contents()->GetLastCommittedURL(),
++            embedded_test_server()->GetURL("/title2.html"));
++  SetSettings(GestureSettings::Defaults());
++  Gesture(host(), "L", {250, 180}, blink::WebInputEvent::kShiftKey);
++  EXPECT_EQ(contents()->GetLastCommittedURL(),
++            embedded_test_server()->GetURL("/title2.html"));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, SettingsPageAndPracticeSafety) {
++  Navigate("/title1.html");
++  ASSERT_TRUE(
++      ui_test_utils::NavigateToURL(browser(), GURL("chrome://settings/")));
++  Gesture(host(), "L");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents()->GetLastCommittedURL() ==
++           embedded_test_server()->GetURL("/title1.html");
++  }));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("chrome://aegis/gestures.html")));
++  ASSERT_EQ("设置已加载", content::EvalJs(contents(), R"(
++    new Promise(resolve => {
++      const status = document.getElementById('status');
++      if (status.textContent === '设置已加载') { resolve(status.textContent); return; }
++      new MutationObserver(() => {
++        if (status.textContent === '设置已加载') resolve(status.textContent);
++      }).observe(status, {childList:true, subtree:true});
++    })
++  )"));
++  // 练习区里的“关闭标签”必须只显示提示。
++  const auto region = content::EvalJs(contents(), R"(
++    document.getElementById('practice').scrollIntoView({block:'center'});
++    new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
++      const rect = document.getElementById('practice').getBoundingClientRect();
++      resolve([Math.round(rect.left + 130), Math.round(rect.top + 45)]);
++    })));
++  )")
++                          .ExtractList()
++                          .Clone();
++  const int count = browser()->GetTabStripModel()->count();
++  Gesture(host(), "DR", {region[0].GetInt(), region[1].GetInt()});
++  EXPECT_EQ(count, browser()->GetTabStripModel()->count());
++  EXPECT_EQ(GURL("chrome://aegis/gestures.html"),
++            contents()->GetLastCommittedURL());
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(contents(),
++                           "document.getElementById('practiceResult')."
++                           "textContent.includes('练习不执行')")
++        .ExtractBool();
++  }))
++      << content::EvalJs(
++             contents(),
++             "document.getElementById('practiceResult').textContent");
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
++                       WebUiSavesAndRejectsInvalidConfig) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("chrome://aegis/gestures.html")));
++  EXPECT_EQ(false, content::EvalJs(contents(), R"(
++    (async () => {
++      const {sendWithPromise} = await import('chrome://resources/js/cr.js');
++      const data = await sendWithPromise('aegisGetGestureSettings');
++      data.settings.enabled = false;
++      const saved = await sendWithPromise('aegisSaveGestureSettings', data.settings);
++      return saved.settings.enabled;
++    })()
++  )"));
++  EXPECT_FALSE(browser()
++                   ->GetProfile()
++                   ->GetPrefs()
++                   ->GetDict(kMouseGesturesPref)
++                   .FindBool("enabled")
++                   .value_or(true));
++  EXPECT_EQ("rejected", content::EvalJs(contents(), R"(
++    (async () => {
++      const {sendWithPromise} = await import('chrome://resources/js/cr.js');
++      const data = await sendWithPromise('aegisGetGestureSettings');
++      data.settings.bindings.L = 'execute_javascript';
++      try { await sendWithPromise('aegisSaveGestureSettings', data.settings); }
++      catch { return 'rejected'; }
++      return 'incorrectly accepted';
++    })()
++  )"));
++  EXPECT_FALSE(browser()
++                   ->GetProfile()
++                   ->GetPrefs()
++                   ->GetDict(kMouseGesturesPref)
++                   .FindBool("enabled")
++                   .value_or(true));
++}
++
++IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
++                       CrossFrameAndFocusCancellation) {
++  Navigate("/title1.html");
++  Navigate("/title2.html");
++  auto add_frame = [&] {
++    return content::ExecJs(
++        contents(), content::JsReplace(R"(
++      new Promise(resolve => {
++        const frame = document.createElement('iframe');
++        frame.style.cssText = 'position:absolute;left:30px;top:30px;width:480px;height:320px';
++        frame.onload = () => resolve(true);
++        frame.src = $1;
++        document.body.appendChild(frame);
++      });
++    )",
++                                       embedded_test_server()->GetURL(
++                                           "localhost", "/title1.html")));
++  };
++  ASSERT_TRUE(add_frame());
++  auto* frame = content::ChildFrameAt(contents()->GetPrimaryMainFrame(), 0);
++  ASSERT_TRUE(frame);
++  ASSERT_NE(frame->GetProcess(),
++            contents()->GetPrimaryMainFrame()->GetProcess());
++  Gesture(frame->GetRenderWidgetHost(), "L");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents()->GetLastCommittedURL() ==
++           embedded_test_server()->GetURL("/title1.html");
++  }));
++  Navigate("/title2.html");
++  ASSERT_TRUE(add_frame());
++  frame = content::ChildFrameAt(contents()->GetPrimaryMainFrame(), 0);
++  Mouse(host(), Type::kMouseDown, {650, 180});
++  Mouse(host(), Type::kMouseMove, {590, 180});
++  ASSERT_TRUE(content::NavigateToURLFromRenderer(
++      frame, embedded_test_server()->GetURL("localhost", "/title2.html")));
++  Mouse(host(), Type::kMouseUp, {590, 180});
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(contents()->GetLastCommittedURL(),
++            embedded_test_server()->GetURL("/title2.html"));
++  Mouse(host(), Type::kMouseDown, {650, 180});
++  Mouse(host(), Type::kMouseMove, {590, 180});
++  auto* other = CreateBrowser(browser()->GetProfile());
++  ASSERT_TRUE(Activate(other));
++  ASSERT_TRUE(Activate(browser()));
++  Mouse(host(), Type::kMouseUp, {590, 180});
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(contents()->GetLastCommittedURL(),
++            embedded_test_server()->GetURL("/title2.html"));
++  CloseBrowserSynchronously(other);
++}
++
++class AegisGesturePdfTest : public PDFExtensionTestBase,
++                            public testing::WithParamInterface<bool> {
++ protected:
++  bool UseOopif() const override { return GetParam(); }
++};
++INSTANTIATE_TEST_SUITE_P(AllPdfModes, AegisGesturePdfTest, testing::Bool());
++
++IN_PROC_BROWSER_TEST_P(AegisGesturePdfTest, PdfPagesFitAndGenericBack) {
++  ASSERT_TRUE(embedded_test_server()->Start());
++  ASSERT_TRUE(Activate(browser()));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title1.html")));
++  auto* pdf = LoadPdfGetExtensionHost(
++      embedded_test_server()->GetURL("/pdf/accessibility/multi-page.pdf"));
++  ASSERT_TRUE(pdf);
++  ASSERT_GT(
++      content::EvalJs(pdf, "document.querySelector('pdf-viewer').docLength_")
++          .ExtractInt(),
++      1);
++  auto settings = GestureSettings::Defaults();
++  settings.bindings["R"] = "pdf_next";
++  settings.bindings["RL"] = "pdf_previous";
++  settings.bindings["D"] = "pdf_width";
++  settings.bindings["U"] = "pdf_page";
++  browser()->GetProfile()->GetPrefs()->SetDict(kMouseGesturesPref,
++                                               settings.ToValue());
++  ASSERT_TRUE(content::ExecJs(pdf, R"(
++    window.aegisLastGesture = '';
++    window.addEventListener('aegis-pdf-gesture', e => window.aegisLastGesture = e.detail);
++  )"));
++  auto* host = pdf->GetRenderWidgetHost();
++  // 小幅 PDF 可能同时完整显示两页，先以整页模式建立可翻动的视口。
++  Gesture(host, "U");
++  ASSERT_EQ(
++      "fit-to-page",
++      content::EvalJs(
++          pdf, "document.querySelector('pdf-viewer').viewport.fittingType"));
++  ASSERT_TRUE(content::ExecJs(
++      pdf, "document.querySelector('pdf-viewer').viewport.goToPage(0)"));
++  Gesture(host, "R");
++  EXPECT_EQ("pdf_next", content::EvalJs(pdf, "window.aegisLastGesture"));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(pdf,
++                           "document.querySelector('pdf-viewer').viewport."
++                           "getMostVisiblePage()")
++               .ExtractInt() == 1;
++  }));
++  Gesture(host, "R");
++  EXPECT_EQ(1, content::EvalJs(pdf,
++                               "document.querySelector('pdf-viewer').viewport."
++                               "getMostVisiblePage()"));
++  Gesture(host, "RL");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return content::EvalJs(pdf,
++                           "document.querySelector('pdf-viewer').viewport."
++                           "getMostVisiblePage()")
++               .ExtractInt() == 0;
++  }));
++  Gesture(host, "D");
++  EXPECT_EQ(
++      "fit-to-width",
++      content::EvalJs(
++          pdf, "document.querySelector('pdf-viewer').viewport.fittingType"));
++  Gesture(host, "U");
++  EXPECT_EQ(
++      "fit-to-page",
++      content::EvalJs(
++          pdf, "document.querySelector('pdf-viewer').viewport.fittingType"));
++  Gesture(host, "L");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return GetActiveWebContents()->GetLastCommittedURL() ==
++           embedded_test_server()->GetURL("/title1.html");
++  }));
++}
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/gestures/gesture_recognizer.cc b/chrome/browser/aegis/gestures/gesture_recognizer.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d3b8e5dde5e2fe1a7108f411d4da6b74da0b7d9
+--- /dev/null
++++ b/chrome/browser/aegis/gestures/gesture_recognizer.cc
+@@ -0,0 +1,57 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/gestures/gesture_recognizer.h"
++
++#include <algorithm>
++#include <cmath>
++
++namespace aegis {
++
++void GestureRecognizer::Start(float x, float y, int threshold) {
++  anchor_x_ = x;
++  anchor_y_ = y;
++  threshold_ = std::clamp(threshold, 8, 64);
++  moved_ = cancelled_ = ambiguous_ = false;
++  directions_.clear();
++}
++
++void GestureRecognizer::Move(float x, float y) {
++  if (cancelled_) {
++    return;
++  }
++  const float dx = x - anchor_x_;
++  const float dy = y - anchor_y_;
++  if (!std::isfinite(dx) || !std::isfinite(dy)) {
++    Cancel();
++    return;
++  }
++  if (std::hypot(dx, dy) < threshold_) {
++    return;
++  }
++  moved_ = true;
++  const float ax = std::abs(dx);
++  const float ay = std::abs(dy);
++  // 对角线不猜方向；最后一段仍然含糊时，整个手势不执行。
++  ambiguous_ = std::max(ax, ay) < 1.35f * std::min(ax, ay);
++  if (ambiguous_) {
++    return;
++  }
++  const char direction = ax > ay ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U');
++  if (directions_.empty() || directions_.back() != direction) {
++    directions_ += direction;
++  }
++  anchor_x_ = x;
++  anchor_y_ = y;
++  if (directions_.size() > 8) {
++    Cancel();
++  }
++}
++
++void GestureRecognizer::Cancel() {
++  cancelled_ = true;
++}
++
++std::string GestureRecognizer::Match() const {
++  return moved_ && !cancelled_ && !ambiguous_ ? directions_ : std::string();
++}
++
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/gestures/gesture_recognizer.h b/chrome/browser/aegis/gestures/gesture_recognizer.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..caddf4a96a0245d85df5eac26ae1b2ce950409b8
+--- /dev/null
++++ b/chrome/browser/aegis/gestures/gesture_recognizer.h
+@@ -0,0 +1,31 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_GESTURES_GESTURE_RECOGNIZER_H_
++#define CHROME_BROWSER_AEGIS_GESTURES_GESTURE_RECOGNIZER_H_
++
++#include <string>
++
++namespace aegis {
++
++// 坐标统一为 DIP；识别与页面、系统鼠标速度及显示器像素密度无关。
++class GestureRecognizer {
++ public:
++  void Start(float x, float y, int threshold);
++  void Move(float x, float y);
++  void Cancel();
++  bool moved() const { return moved_; }
++  bool cancelled() const { return cancelled_; }
++  const std::string& directions() const { return directions_; }
++  std::string Match() const;
++
++ private:
++  float anchor_x_ = 0;
++  float anchor_y_ = 0;
++  int threshold_ = 16;
++  bool moved_ = false;
++  bool cancelled_ = false;
++  bool ambiguous_ = false;
++  std::string directions_;
++};
++
++}  // namespace aegis
++#endif
+diff --git a/chrome/browser/aegis/gestures/gesture_settings.cc b/chrome/browser/aegis/gestures/gesture_settings.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..342aacaf376e4233c0515b29fdbad62d13e15008
+--- /dev/null
++++ b/chrome/browser/aegis/gestures/gesture_settings.cc
+@@ -0,0 +1,136 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/gestures/gesture_settings.h"
++
++#include <algorithm>
++#include <set>
++
++#include "base/no_destructor.h"
++#include "url/gurl.h"
++
++namespace aegis {
++
++const std::vector<GestureAction>& GestureActions() {
++  static const base::NoDestructor<std::vector<GestureAction>> actions({
++      {"back", "后退", false},
++      {"forward", "前进", false},
++      {"scroll_up", "向上滚动", false},
++      {"scroll_down", "向下滚动", false},
++      {"reload", "刷新", false},
++      {"close_tab", "关闭当前标签", false},
++      {"restore_tab", "恢复关闭的标签", false},
++      {"previous_tab", "左侧标签", false},
++      {"next_tab", "右侧标签", false},
++      {"pdf_previous", "PDF 上一页", true},
++      {"pdf_next", "PDF 下一页", true},
++      {"pdf_width", "PDF 适合宽度", true},
++      {"pdf_page", "PDF 适合整页", true},
++  });
++  return *actions;
++}
++
++const GestureAction* FindGestureAction(std::string_view id) {
++  for (const auto& action : GestureActions()) {
++    if (action.id == id) {
++      return &action;
++    }
++  }
++  return nullptr;
++}
++
++bool IsGesturePattern(std::string_view pattern) {
++  if (pattern.empty() || pattern.size() > 8) {
++    return false;
++  }
++  char previous = 0;
++  for (char direction : pattern) {
++    if (std::string_view("LRUD").find(direction) == std::string_view::npos ||
++        direction == previous) {
++      return false;
++    }
++    previous = direction;
++  }
++  return true;
++}
++
++GestureSettings GestureSettings::Defaults() {
++  GestureSettings settings;
++  settings.bindings = {
++      {"L", "back"},         {"R", "forward"},       {"U", "scroll_up"},
++      {"D", "scroll_down"},  {"UD", "reload"},       {"DR", "close_tab"},
++      {"DL", "restore_tab"}, {"UL", "previous_tab"}, {"UR", "next_tab"}};
++  return settings;
++}
++
++std::optional<GestureSettings> GestureSettings::Parse(
++    const base::DictValue& value) {
++  const auto enabled = value.FindBool("enabled");
++  const auto trail = value.FindBool("showTrail");
++  const auto threshold = value.FindInt("threshold");
++  const auto* bindings = value.FindDict("bindings");
++  const auto* sites = value.FindList("disabledSites");
++  if (value.size() != 5 || !enabled || !trail || !threshold || *threshold < 8 ||
++      *threshold > 64 || !bindings || bindings->size() > 64 || !sites ||
++      sites->size() > 100) {
++    return std::nullopt;
++  }
++  GestureSettings settings;
++  settings.enabled = *enabled;
++  settings.show_trail = *trail;
++  settings.threshold = *threshold;
++  for (const auto [pattern, action] : *bindings) {
++    if (!IsGesturePattern(pattern) || !action.is_string() ||
++        !FindGestureAction(action.GetString())) {
++      return std::nullopt;
++    }
++    settings.bindings.emplace(pattern, action.GetString());
++  }
++  std::set<std::string> seen;
++  for (const auto& site : *sites) {
++    if (!site.is_string() || site.GetString().empty() ||
++        site.GetString().size() > 253) {
++      return std::nullopt;
++    }
++    const auto& name = site.GetString();
++    const GURL url("https://" + name + "/");
++    if (!url.is_valid() || url.host() != name || url.has_port() ||
++        url.has_username() || url.has_password() || url.path() != "/" ||
++        url.has_query() || url.has_ref() || !seen.insert(name).second) {
++      return std::nullopt;
++    }
++    settings.disabled_sites.push_back(name);
++  }
++  return settings;
++}
++
++base::DictValue GestureSettings::ToValue() const {
++  base::DictValue mapping;
++  for (const auto& [pattern, action] : bindings) {
++    mapping.Set(pattern, action);
++  }
++  base::ListValue sites;
++  for (const auto& site : disabled_sites) {
++    sites.Append(site);
++  }
++  return base::DictValue()
++      .Set("enabled", enabled)
++      .Set("showTrail", show_trail)
++      .Set("threshold", threshold)
++      .Set("bindings", std::move(mapping))
++      .Set("disabledSites", std::move(sites));
++}
++
++bool GestureSettings::EnabledFor(const GURL& url) const {
++  return enabled &&
++         std::ranges::find(disabled_sites, url.host()) == disabled_sites.end();
++}
++
++std::string GestureSettings::ActionFor(std::string_view pattern) const {
++  const auto found = bindings.find(std::string(pattern));
++  return found == bindings.end() ? std::string() : found->second;
++}
++
++bool GesturePracticeRegion::Contains(double px, double py) const {
++  return width > 0 && height > 0 && px >= x && px <= x + width && py >= y &&
++         py <= y + height;
++}
++}  // namespace aegis
+diff --git a/chrome/browser/aegis/gestures/gesture_settings.h b/chrome/browser/aegis/gestures/gesture_settings.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d9dfd57362688f4ac023a297bd2e8eb72a11ae71
+--- /dev/null
++++ b/chrome/browser/aegis/gestures/gesture_settings.h
+@@ -0,0 +1,54 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_GESTURES_GESTURE_SETTINGS_H_
++#define CHROME_BROWSER_AEGIS_GESTURES_GESTURE_SETTINGS_H_
++
++#include <map>
++#include <optional>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/supports_user_data.h"
++#include "base/values.h"
++
++class GURL;
++
++namespace aegis {
++inline constexpr char kMouseGesturesPref[] = "aegis.mouse_gestures";
++inline constexpr char kGesturePracticeKey[] = "aegis.gesture_practice";
++
++struct GestureAction {
++  const char* id;
++  const char* label;
++  bool pdf_only;
++};
++const std::vector<GestureAction>& GestureActions();
++const GestureAction* FindGestureAction(std::string_view id);
++bool IsGesturePattern(std::string_view pattern);
++
++struct GestureSettings {
++  bool enabled = true;
++  bool show_trail = true;
++  int threshold = 16;
++  std::map<std::string, std::string> bindings;
++  std::vector<std::string> disabled_sites;
++
++  static GestureSettings Defaults();
++  // 整份校验后再保存，拒绝未知动作和冲突配置，不做部分写入。
++  static std::optional<GestureSettings> Parse(const base::DictValue& value);
++  base::DictValue ToValue() const;
++  bool EnabledFor(const GURL& url) const;
++  std::string ActionFor(std::string_view pattern) const;
++};
++
++// 只由内置设置页提供的练习区域，坐标相对于可视内容区归一化。
++// 数据属于当前标签，导航时清除，不写入 Profile。
++struct GesturePracticeRegion : base::SupportsUserData::Data {
++  double x = 0;
++  double y = 0;
++  double width = 0;
++  double height = 0;
++  bool Contains(double px, double py) const;
++};
++}  // namespace aegis
++#endif
+diff --git a/chrome/browser/aegis/gestures/gesture_unittest.cc b/chrome/browser/aegis/gestures/gesture_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..f90558dbd9b9248fbbdc233b7ee3eece9871d736
+--- /dev/null
++++ b/chrome/browser/aegis/gestures/gesture_unittest.cc
+@@ -0,0 +1,116 @@
++// Copyright 2026 GCSA
++#include <limits>
++
++#include "chrome/browser/aegis/gestures/gesture_recognizer.h"
++#include "chrome/browser/aegis/gestures/gesture_settings.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis {
++TEST(AegisGestureRecognizerTest, ClickAndJitterDoNotBecomeGestures) {
++  GestureRecognizer gesture;
++  gesture.Start(200, 100, 16);
++  gesture.Move(207, 106);
++  gesture.Move(196, 98);
++  EXPECT_FALSE(gesture.moved());
++  EXPECT_TRUE(gesture.Match().empty());
++}
++
++TEST(AegisGestureRecognizerTest, ConsecutiveSegmentsAndNegativeCoordinates) {
++  GestureRecognizer gesture;
++  gesture.Start(-300, 10, 16);
++  gesture.Move(-300, 50);
++  gesture.Move(-300, 90);
++  gesture.Move(-260, 90);
++  EXPECT_EQ(gesture.Match(), "DR");
++}
++
++TEST(AegisGestureRecognizerTest, DiagonalDoesNotGuessDestructiveAction) {
++  GestureRecognizer gesture;
++  gesture.Start(0, 0, 16);
++  gesture.Move(0, 50);
++  gesture.Move(40, 90);
++  EXPECT_TRUE(gesture.moved());
++  EXPECT_EQ(gesture.directions(), "D");
++  EXPECT_TRUE(gesture.Match().empty());
++}
++
++TEST(AegisGestureRecognizerTest, CancelSuppressesActionUntilNewPress) {
++  GestureRecognizer gesture;
++  gesture.Start(100, 100, 16);
++  gesture.Move(0, 100);
++  gesture.Cancel();
++  gesture.Move(200, 100);
++  EXPECT_TRUE(gesture.Match().empty());
++  gesture.Start(0, 0, 16);
++  gesture.Move(80, 0);
++  EXPECT_EQ(gesture.Match(), "R");
++}
++
++TEST(AegisGestureRecognizerTest, RejectsLongAndNonFiniteInput) {
++  GestureRecognizer gesture;
++  gesture.Start(0, 0, 16);
++  for (int i = 0; i < 9; ++i) {
++    gesture.Move(i % 2 == 0 ? 30 : 0, 0);
++  }
++  EXPECT_TRUE(gesture.cancelled());
++  EXPECT_TRUE(gesture.Match().empty());
++  gesture.Start(0, 0, 16);
++  gesture.Move(std::numeric_limits<float>::infinity(), 0);
++  EXPECT_TRUE(gesture.cancelled());
++}
++
++TEST(AegisGestureSettingsTest, DefaultsRoundTripAndKeepPdfOptIn) {
++  auto defaults = GestureSettings::Defaults();
++  auto parsed = GestureSettings::Parse(defaults.ToValue());
++  ASSERT_TRUE(parsed);
++  EXPECT_EQ(parsed->bindings, defaults.bindings);
++  EXPECT_EQ(parsed->ActionFor("DR"), "close_tab");
++  EXPECT_TRUE(parsed->ActionFor("RD").empty());
++  EXPECT_TRUE(FindGestureAction("pdf_next")->pdf_only);
++  for (const auto& [pattern, action] : parsed->bindings) {
++    EXPECT_FALSE(FindGestureAction(action)->pdf_only);
++  }
++}
++
++TEST(AegisGestureSettingsTest, RejectsMalformedConfigAtomically) {
++  auto config = GestureSettings::Defaults().ToValue();
++  config.Set("threshold", 0);
++  EXPECT_FALSE(GestureSettings::Parse(config));
++  config.Set("threshold", 16);
++  config.FindDict("bindings")->Set("RR", "reload");
++  EXPECT_FALSE(GestureSettings::Parse(config));
++  config.FindDict("bindings")->Remove("RR");
++  config.FindDict("bindings")->Set("LR", "execute_javascript");
++  EXPECT_FALSE(GestureSettings::Parse(config));
++  config.FindDict("bindings")->Remove("LR");
++  config.Set("hiddenOption", true);
++  EXPECT_FALSE(GestureSettings::Parse(config));
++}
++
++TEST(AegisGestureSettingsTest, HostExclusionIsExactAndValidated) {
++  auto config = GestureSettings::Defaults().ToValue();
++  config.FindList("disabledSites")->Append("example.com");
++  auto parsed = GestureSettings::Parse(config);
++  ASSERT_TRUE(parsed);
++  EXPECT_FALSE(parsed->EnabledFor(GURL("https://example.com/path")));
++  EXPECT_TRUE(parsed->EnabledFor(GURL("https://sub.example.com/")));
++  EXPECT_TRUE(parsed->EnabledFor(GURL("chrome://settings/")));
++  parsed->enabled = false;
++  EXPECT_FALSE(parsed->EnabledFor(GURL("https://other.test/")));
++  config.FindList("disabledSites")->Append("user@example.com");
++  EXPECT_FALSE(GestureSettings::Parse(config));
++}
++
++TEST(AegisGestureSettingsTest, PracticeBoundsExcludeOutsideArea) {
++  GesturePracticeRegion area;
++  area.x = .2;
++  area.y = .3;
++  area.width = .4;
++  area.height = .2;
++  EXPECT_TRUE(area.Contains(.4, .4));
++  EXPECT_FALSE(area.Contains(.1, .4));
++  EXPECT_FALSE(area.Contains(.4, .6));
++  EXPECT_FALSE(area.Contains(std::numeric_limits<double>::quiet_NaN(), .4));
++}
++}  // namespace aegis
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index fc36af9137f65dd2722a0e401078bf6e4d34b5e2..82866d29fdddd431fa919f8b0b7181ca79d72355 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -8,10 +8,13 @@ build_webui("build") {
+   static_files = [
+     "aegis.css",
+     "aegis.html",
++    "gestures.html",
++    "gestures.css",
+     "product_logo.svg",
+   ]
+   ts_files = [
+     "aegis.ts",
++    "gestures.ts",
+     "policy_worker.ts",
+   ]
+ 
+diff --git a/chrome/browser/resources/aegis/gestures.css b/chrome/browser/resources/aegis/gestures.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..b29317ad37cd66344c399857e2826200ab0563b1
+--- /dev/null
++++ b/chrome/browser/resources/aegis/gestures.css
+@@ -0,0 +1,346 @@
++:root {
++  color-scheme:light dark;
++  --bg:#f5f7fa;
++  --card:#fff;
++  --text:#202736;
++  --muted:#647187;
++  --line:#e0e6ef;
++  --accent:#2669df;
++  --soft:#edf4ff;
++  font-family:system-ui,sans-serif;
++}
++
++* {
++  box-sizing:border-box;
++}
++
++body {
++  margin:0;
++  background:var(--bg);
++  color:var(--text);
++  font-size:14px;
++  line-height:1.6;
++}
++
++main {
++  max-width:960px;
++  margin:36px auto 56px;
++  padding:0 24px;
++}
++
++.back {
++  color:var(--muted);
++  text-decoration:none;
++}
++
++.back:hover {
++  text-decoration:underline;
++}
++
++header {
++  margin:28px 0;
++}
++
++.eyebrow {
++  font-size:11px;
++  letter-spacing:2px;
++  color:var(--accent);
++  font-weight:700;
++}
++
++h1 {
++  font-size:30px;
++  margin:7px 0;
++}
++
++header p,
++.hint,
++small {
++  color:var(--muted);
++}
++
++h2 {
++  font-size:17px;
++  margin:0 0 16px;
++}
++
++.hint {
++  font-size:12px;
++  margin:8px 0;
++  line-height:1.7;
++}
++
++section {
++  background:var(--card);
++  border:1px solid var(--line);
++  border-radius:16px;
++  padding:24px;
++  margin:18px 0;
++}
++
++.switch-row {
++  display:flex;
++  align-items:center;
++  justify-content:space-between;
++  gap:16px;
++  padding:12px 0;
++  border-bottom:1px solid var(--line);
++}
++
++.switch-row small {
++  display:block;
++  font-size:12px;
++  margin-top:3px;
++}
++
++input[type=checkbox] {
++  accent-color:var(--accent);
++  width:19px;
++  height:19px;
++}
++
++.threshold {
++  display:block;
++  margin-top:18px;
++}
++
++output {
++  font-weight:650;
++  color:var(--accent);
++  margin-left:10px;
++}
++
++input[type=range] {
++  width:100%;
++  accent-color:var(--accent);
++  margin-top:12px;
++}
++
++.section-head {
++  display:flex;
++  justify-content:space-between;
++  align-items:flex-start;
++  gap:16px;
++}
++
++.section-head h2 {
++  margin-bottom:8px;
++}
++
++.badge {
++  background:var(--soft);
++  color:var(--accent);
++  font-size:11px;
++  padding:4px 10px;
++  border-radius:12px;
++  white-space:nowrap;
++}
++
++#practice {
++  height:210px;
++  position:relative;
++  overflow:hidden;
++  border:1px dashed #8eafd7;
++  border-radius:12px;
++  background:var(--soft);
++  margin-top:12px;
++  user-select:none;
++  touch-action:none;
++}
++
++.practice-copy {
++  pointer-events:none;
++  position:absolute;
++  inset:0;
++  display:flex;
++  flex-direction:column;
++  align-items:center;
++  justify-content:center;
++  gap:10px;
++  padding:18px;
++  text-align:center;
++}
++
++.practice-copy strong {
++  font-size:19px;
++}
++
++.practice-copy span {
++  font-size:12px;
++  color:var(--muted);
++}
++
++#practiceSvg {
++  position:absolute;
++  inset:0;
++  width:100%;
++  height:100%;
++  pointer-events:none;
++}
++
++polyline {
++  stroke:#3986ec;
++  stroke-width:3;
++  fill:none;
++  stroke-linecap:round;
++  stroke-linejoin:round;
++}
++
++.binding {
++  display:grid;
++  grid-template-columns:150px 80px 1fr auto;
++  align-items:center;
++  gap:12px;
++  padding:10px 0;
++  border-bottom:1px solid var(--line);
++}
++
++.binding input {
++  font-family:ui-monospace,monospace;
++  text-transform:uppercase;
++}
++
++.arrows {
++  color:var(--accent);
++  font-weight:600;
++  overflow-wrap:anywhere;
++  font-size:13px;
++}
++
++button,
++input:not([type=range]):not([type=checkbox]),
++select,
++textarea {
++  font:inherit;
++  border:1px solid var(--line);
++  border-radius:8px;
++  background:var(--card);
++  color:var(--text);
++  padding:9px 12px;
++}
++
++button {
++  cursor:pointer;
++  white-space:nowrap;
++  font-weight:550;
++}
++
++button:hover {
++  background:var(--soft);
++  border-color:#adc8ed;
++}
++
++button:disabled {
++  opacity:.5;
++  cursor:default;
++}
++
++.primary {
++  background:var(--accent);
++  color:white;
++  border-color:var(--accent);
++}
++
++.primary:hover {
++  background:#1f59bd;
++  color:white;
++}
++
++button.remove {
++  color:#a13c46;
++  font-size:12px;
++}
++
++input:focus-visible,
++select:focus-visible,
++button:focus-visible,
++textarea:focus-visible,
++#practice:focus-visible {
++  outline:2px solid var(--accent);
++  outline-offset:3px;
++}
++
++textarea {
++  width:100%;
++  display:block;
++  margin-top:10px;
++  resize:vertical;
++}
++
++footer {
++  display:flex;
++  align-items:center;
++  gap:14px;
++  padding:10px 0;
++  position:sticky;
++  bottom:0;
++  background:var(--bg);
++}
++
++#status {
++  flex:1;
++  color:var(--muted);
++  font-size:12px;
++}
++
++#status.error {
++  color:#ba263b;
++}
++
++#reset {
++  font-size:12px;
++}
++@media(max-width: 650px) {
++  main {
++    padding:0 14px;
++    margin-top:20px;
++  }
++  section {
++    padding:18px;
++  }
++  .binding {
++    grid-template-columns:85px 44px 1fr auto;
++    gap:6px;
++  }
++  .binding select {
++    min-width:0;
++  }
++  .binding input {
++    width:100%;
++  }
++  button,
++input:not([type=range]):not([type=checkbox]),
++select {
++    padding:8px;
++  }
++  .section-head {
++    flex-wrap:wrap;
++  }
++  .badge {
++    font-size:10px;
++  }
++  h1 {
++    font-size:26px;
++  }
++}
++@media(prefers-color-scheme: dark) {
++  :root {
++    --bg:#151b25;
++    --card:#1e2734;
++    --text:#edf2f9;
++    --muted:#a0aec3;
++    --line:#354256;
++    --accent:#82b1ff;
++    --soft:#23354d;
++  }
++  .primary {
++    background:#3878df;
++    color:#fff;
++  }
++  .primary:hover {
++    background:#2964c4;
++  }
++  button.remove {
++    color:#f5a0aa;
++  }
++}
+diff --git a/chrome/browser/resources/aegis/gestures.html b/chrome/browser/resources/aegis/gestures.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..06b14857105dc1039f236c566f2761147a0f39e4
+--- /dev/null
++++ b/chrome/browser/resources/aegis/gestures.html
+@@ -0,0 +1,46 @@
++<!doctype html>
++<html lang="zh-CN">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1">
++  <title>鼠标手势 · GCSA Aegis</title>
++  <link rel="stylesheet" href="gestures.css">
++</head>
++<body>
++  <main>
++    <a class="back" href="chrome://settings/">← 返回设置</a>
++    <header>
++      <div class="eyebrow">GCSA AEGIS</div>
++      <h1>鼠标手势</h1>
++      <p>按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。</p>
++    </header>
++    <section aria-labelledby="options-title">
++      <h2 id="options-title">基本设置</h2>
++      <label class="switch-row"><span><strong>启用鼠标手势</strong><small>右键轻点仍打开菜单。按住 Shift 再右键可临时跳过手势。</small></span><input id="enabled" type="checkbox"></label>
++      <label class="switch-row"><span><strong>显示轨迹与动作提示</strong><small>画到哪里、将执行什么，一眼看清。</small></span><input id="showTrail" type="checkbox"></label>
++      <label class="threshold" for="threshold">识别距离 <output id="thresholdValue">16</output> 像素</label>
++      <input id="threshold" type="range" min="8" max="64" value="16">
++      <p class="hint">距离越大，越不容易被小幅抖动触发。斜线方向不明确时不执行；按 Esc 或切换窗口可取消。</p>
++    </section>
++    <section aria-labelledby="practice-title">
++      <div class="section-head"><h2 id="practice-title">先试一试</h2><span class="badge">练习不执行操作</span></div>
++      <div id="practice" tabindex="0" role="group" aria-label="手势练习区：按住右键画方向，松开查看结果">
++        <svg id="practiceSvg" aria-hidden="true"><polyline id="practiceLine"></polyline></svg>
++        <div class="practice-copy"><strong id="practicePattern">按住右键，在这里画一笔</strong><span id="practiceResult" aria-live="polite">上下左右可以组合；松开后查看匹配结果。</span></div>
++      </div>
++    </section>
++    <section aria-labelledby="bindings-title">
++      <div class="section-head"><div><h2 id="bindings-title">手势与动作</h2><p class="hint">输入 L / R / U / D，分别代表 ← → ↑ ↓。最多 8 个方向，同一手势不能重复绑定。</p></div><button id="addBinding" type="button">＋ 添加手势</button></div>
++      <div id="bindings"></div>
++      <p class="hint">PDF 专用动作仅在内置 PDF 阅读器内生效。普通动作在 PDF 中含义不变。</p>
++    </section>
++    <section aria-labelledby="sites-title">
++      <h2 id="sites-title">这些网站不使用手势</h2>
++      <label for="disabledSites" class="hint">每行一个完整域名，例如 example.com。子域名请单独添加。</label>
++      <textarea id="disabledSites" rows="3" spellcheck="false" placeholder="example.com"></textarea>
++    </section>
++    <footer><button id="reset" type="button">恢复默认</button><span id="status" role="status" aria-live="polite">正在加载设置…</span><button id="save" type="button" class="primary" disabled>保存设置</button></footer>
++  </main>
++  <script type="module" src="gestures.js"></script>
++</body>
++</html>
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e4409d7f55d22d4cf1c0a89884cd9ee2bf67f1b5
+--- /dev/null
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -0,0 +1,287 @@
++// Copyright 2026 GCSA
++import {sendWithPromise} from 'chrome://resources/js/cr.js';
++
++type Settings = {
++  enabled: boolean,
++  showTrail: boolean,
++  threshold: number,
++  bindings: Record<string, string>,
++  disabledSites: string[],
++};
++type Action = {id: string, label: string, pdfOnly: boolean};
++type Snapshot = {settings: Settings, actions: Action[]};
++
++function element<T extends HTMLElement>(id: string): T {
++  const value = document.getElementById(id);
++  if (!value) {
++    throw new Error(`缺少设置元素：${id}`);
++  }
++  return value as T;
++}
++const enabled = element<HTMLInputElement>('enabled');
++const trail = element<HTMLInputElement>('showTrail');
++const threshold = element<HTMLInputElement>('threshold');
++const bindings = element('bindings');
++const sites = element<HTMLTextAreaElement>('disabledSites');
++const save = element<HTMLButtonElement>('save');
++const status = element('status');
++const practice = element('practice');
++const patternLabel = element('practicePattern');
++const resultLabel = element('practiceResult');
++const line = document.querySelector<SVGPolylineElement>('#practiceLine')!;
++let actions: Action[] = [];
++let lastPattern = '';
++let busy = false;
++
++function arrows(pattern: string): string {
++  const map: Record<string, string> = {L: '←', R: '→', U: '↑', D: '↓'};
++  return Array.from(pattern, c => map[c] || c).join(' ');
++}
++function normalize(pattern: string): string {
++  return pattern.trim().toUpperCase().replaceAll('←', 'L').replaceAll('→', 'R')
++      .replaceAll('↑', 'U').replaceAll('↓', 'D').replaceAll(' ', '');
++}
++function message(text: string, error = false) {
++  status.textContent = text;
++  status.classList.toggle('error', error);
++}
++function dirty() {
++  message('有未保存的修改');
++}
++function addBinding(pattern: string, action: string) {
++  const row = document.createElement('div');
++  row.className = 'binding';
++  const input = document.createElement('input');
++  input.value = pattern;
++  input.maxLength = 16;
++  input.placeholder = '例如 DR';
++  input.setAttribute('aria-label', '手势方向');
++  const preview = document.createElement('span');
++  preview.className = 'arrows';
++  preview.textContent = arrows(pattern);
++  input.addEventListener('input', () => {
++    preview.textContent = arrows(normalize(input.value));
++    dirty();
++  });
++  const select = document.createElement('select');
++  select.setAttribute('aria-label', '执行动作');
++  for (const item of actions) {
++    const option = document.createElement('option');
++    option.value = item.id;
++    option.textContent = item.label;
++    select.appendChild(option);
++  }
++  select.value = action;
++  select.addEventListener('change', dirty);
++  const remove = document.createElement('button');
++  remove.type = 'button';
++  remove.className = 'remove';
++  remove.textContent = '移除';
++  remove.setAttribute('aria-label', `移除手势 ${arrows(pattern)}`);
++  remove.addEventListener('click', () => {
++    row.remove();
++    dirty();
++    updateRegion();
++  });
++  row.append(input, preview, select, remove);
++  bindings.appendChild(row);
++}
++function render(snapshot: Snapshot) {
++  const value = snapshot.settings;
++  actions = snapshot.actions;
++  enabled.checked = value.enabled;
++  trail.checked = value.showTrail;
++  threshold.value = String(value.threshold);
++  element('thresholdValue').textContent = threshold.value;
++  bindings.replaceChildren();
++  for (const [pattern, action] of Object.entries(value.bindings)) {
++    addBinding(pattern, action);
++  }
++  sites.value = value.disabledSites.join('\n');
++  updateRegion();
++}
++function readSettings(): Settings {
++  const mapping: Record<string, string> = {};
++  for (const row of bindings.querySelectorAll('.binding')) {
++    const pattern = normalize(row.querySelector('input')!.value);
++    if (!/^[LRUD]{1,8}$/.test(pattern) || /(.)\1/.test(pattern)) {
++      throw new Error('每条手势需包含 1–8 个方向，且相邻方向不能相同。');
++    }
++    if (Object.hasOwn(mapping, pattern)) {
++      throw new Error(`手势 ${arrows(pattern)} 已重复，请为它只保留一个动作。`);
++    }
++    mapping[pattern] = row.querySelector('select')!.value;
++  }
++  const disabledSites = sites.value.split('\n').map(s => s.trim().toLowerCase())
++                            .filter(Boolean);
++  return {
++    enabled: enabled.checked, showTrail: trail.checked,
++    threshold: Number(threshold.value), bindings: mapping, disabledSites,
++  };
++}
++async function persist(reset: boolean) {
++  if (busy) {
++    return;
++  }
++  busy = true;
++  save.disabled = true;
++  try {
++    const snapshot: Snapshot = reset ?
++        await sendWithPromise('aegisResetGestureSettings') :
++        await sendWithPromise('aegisSaveGestureSettings', readSettings());
++    render(snapshot);
++    message(reset ? '已恢复并保存默认设置' : '已保存，下一次手势立即生效');
++  } catch (error) {
++    message(String(error), true);
++  } finally {
++    busy = false;
++    save.disabled = false;
++  }
++}
++save.addEventListener('click', () => void persist(false));
++element('reset').addEventListener('click', () => void persist(true));
++element('addBinding').addEventListener('click', () => {
++  if (bindings.children.length >= 64) {
++    message('最多添加 64 条手势。', true);
++    return;
++  }
++  addBinding(lastPattern, actions[0]?.id || 'back');
++  dirty();
++  updateRegion();
++});
++for (const input of [enabled, trail, sites]) {
++  input.addEventListener('input', dirty);
++}
++threshold.addEventListener('input', () => {
++  element('thresholdValue').textContent = threshold.value;
++  dirty();
++});
++
++// 只在练习区处理页面事件；真实动作由浏览器原生输入层识别和执行。
++let drawing = false;
++let cancelled = false;
++let ambiguous = false;
++let moved = false;
++let pattern = '';
++let anchorX = 0;
++let anchorY = 0;
++let points: string[] = [];
++function updateRegion() {
++  requestAnimationFrame(() => {
++    const bounds = practice.getBoundingClientRect();
++    const x = Math.max(0, bounds.left);
++    const y = Math.max(0, bounds.top);
++    const width = Math.max(0, Math.min(innerWidth, bounds.right) - x);
++    const height = Math.max(0, Math.min(innerHeight, bounds.bottom) - y);
++    chrome.send('aegisGesturePracticeRegion', [
++      Math.min(1, x / innerWidth), Math.min(1, y / innerHeight),
++      width / innerWidth, height / innerHeight,
++    ]);
++  });
++}
++new ResizeObserver(updateRegion).observe(practice);
++window.addEventListener('resize', updateRegion);
++window.addEventListener('scroll', updateRegion, {capture: true, passive: true});
++function cancelPractice() {
++  if (drawing) {
++    cancelled = true;
++    patternLabel.textContent = '已取消';
++    resultLabel.textContent = '没有执行任何操作';
++  }
++}
++practice.addEventListener('contextmenu', event => event.preventDefault());
++practice.addEventListener('pointerdown', event => {
++  if (event.button !== 2) {
++    return;
++  }
++  event.preventDefault();
++  practice.focus({preventScroll: true});
++  practice.setPointerCapture(event.pointerId);
++  drawing = true;
++  cancelled = ambiguous = moved = false;
++  pattern = '';
++  anchorX = event.clientX;
++  anchorY = event.clientY;
++  const bounds = practice.getBoundingClientRect();
++  points = [`${event.clientX - bounds.left},${event.clientY - bounds.top}`];
++  line.setAttribute('points', points.join(' '));
++  patternLabel.textContent = '画出上下左右方向';
++  resultLabel.textContent = '松开查看结果 · Esc 取消';
++});
++function practiceMove(event: PointerEvent) {
++  if (!drawing || cancelled) {
++    return;
++  }
++  const bounds = practice.getBoundingClientRect();
++  if (event.clientX < bounds.left || event.clientX > bounds.right ||
++      event.clientY < bounds.top || event.clientY > bounds.bottom) {
++    cancelPractice();
++    return;
++  }
++  if (points.length >= 256) {
++    points = points.filter((_, i) => i % 2 === 0);
++  }
++  points.push(`${event.clientX - bounds.left},${event.clientY - bounds.top}`);
++  line.setAttribute('points', points.join(' '));
++  const dx = event.clientX - anchorX;
++  const dy = event.clientY - anchorY;
++  if (Math.hypot(dx, dy) < Number(threshold.value)) {
++    return;
++  }
++  moved = true;
++  const ax = Math.abs(dx);
++  const ay = Math.abs(dy);
++  ambiguous = Math.max(ax, ay) < 1.35 * Math.min(ax, ay);
++  if (ambiguous) {
++    return;
++  }
++  const direction = ax > ay ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U');
++  if (!pattern.endsWith(direction)) {
++    pattern += direction;
++  }
++  anchorX = event.clientX;
++  anchorY = event.clientY;
++  if (pattern.length > 8) {
++    cancelPractice();
++  } else {
++    patternLabel.textContent = arrows(pattern);
++  }
++}
++practice.addEventListener('pointermove', practiceMove);
++practice.addEventListener('pointerup', event => {
++  if (event.button !== 2 || !drawing) {
++    return;
++  }
++  practiceMove(event);
++  drawing = false;
++  if (cancelled) {
++    return;
++  }
++  if (!moved || ambiguous) {
++    lastPattern = '';
++    patternLabel.textContent = moved ? '方向不明确' : '未画出手势';
++    resultLabel.textContent = '不执行操作；请画清楚的水平或垂直方向。';
++    return;
++  }
++  lastPattern = pattern;
++  try {
++    const action = actions.find(item => item.id === readSettings().bindings[pattern]);
++    patternLabel.textContent = arrows(pattern);
++    resultLabel.textContent = action ? `匹配：${action.label}（练习不执行）` :
++        '尚未绑定；点击“添加手势”可使用这次方向。';
++  } catch {
++    resultLabel.textContent = '配置有重复或无效方向，请修正后再匹配。';
++  }
++});
++practice.addEventListener('pointercancel', cancelPractice);
++window.addEventListener('blur', cancelPractice);
++window.addEventListener('keydown', event => {
++  if (event.key === 'Escape') {
++    cancelPractice();
++  }
++});
++void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
++  render(snapshot);
++  save.disabled = false;
++  message('设置已加载');
++}).catch(() => message('设置加载失败，请重新打开此页面。', true));
+diff --git a/chrome/browser/resources/pdf/pdf_viewer.ts b/chrome/browser/resources/pdf/pdf_viewer.ts
+index 12510ab27aba20f2a56943f647f2298d5e8e2a3c..cd15af16bf306336b1b27701798fddd8d8c2440a 100644
+--- a/chrome/browser/resources/pdf/pdf_viewer.ts
++++ b/chrome/browser/resources/pdf/pdf_viewer.ts
+@@ -451,9 +451,25 @@ export class PdfViewerElement extends PdfViewerBaseElement {
+     // </if>
+   }
+ 
+-  // <if expr="enable_pdf_ink2 or enable_pdf_save_to_drive">
+   override connectedCallback() {
+     super.connectedCallback();
++    this.tracker.add(window, 'aegis-pdf-gesture', (event: Event) => {
++      const action = (event as CustomEvent<string>).detail;
++      if (action === 'pdf_previous' || action === 'pdf_next') {
++        const offset = action === 'pdf_previous' ? -1 : 1;
++        if (this.docLength_ > 0) {
++          this.viewport.goToPage(Math.max(0, Math.min(
++              this.docLength_ - 1, this.viewport.getMostVisiblePage() + offset)));
++        }
++      } else if (action === 'pdf_width' || action === 'pdf_page') {
++        const fitting = action === 'pdf_width' ? FittingType.FIT_TO_WIDTH :
++                                                FittingType.FIT_TO_PAGE;
++        // forceFit 只更新工具栏；视口也必须显式采用对应缩放模式。
++        this.viewport.setFittingType(fitting);
++        this.forceFit(fitting);
++      }
++    });
++    // <if expr="enable_pdf_ink2 or enable_pdf_save_to_drive">
+     this.tracker.add(window, 'beforeunload', this.onBeforeUnload_.bind(this));
+     // <if expr="enable_pdf_ink2">
+     const mediaQuery = window.matchMedia('(min-width: 960px)');
+@@ -472,13 +488,13 @@ export class PdfViewerElement extends PdfViewerBaseElement {
+         Ink2Manager.getInstance(), 'undo-redo-state-changed',
+         this.handleUndoRedoStateChanged_.bind(this));
+     // </if> enable_pdf_ink2
++    // </if> enable_pdf_ink2 or enable_pdf_save_to_drive
+   }
+ 
+   override disconnectedCallback() {
+     this.tracker.removeAll();
+     super.disconnectedCallback();
+   }
+-  // </if> enable_pdf_ink2 or enable_pdf_save_to_drive
+ 
+   getBackgroundColor(): number {
+     return BACKGROUND_COLOR;
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+index 6db81ec22be55a3fa32fc4611f530903695d8c7f..8752b005f49268703d762fba8a4e07d2a7915f51 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -72,9 +72,14 @@
+     </style>
+ 
+     <div role="navigation">
+-      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
++      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#aegisGesturesLink)"
+           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
+           on-click="onLinkClick_" selected-attribute="selected">
++        <a role="menuitem" id="aegisGesturesLink"
++            class="cr-nav-menu-item" href="chrome://aegis/gestures.html">
++          <cr-icon icon="settings:touchpad-mouse"></cr-icon>
++          鼠标手势
++        </a>
+         <a role="menuitem"
+             id="people" href="/people"
+             hidden="[[!showPeopleMenuItem_(
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.ts b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+index fe7a43eb35c17da999b19e9b0864d5ee07948168..e176c10af29ff9c3a0ce7f50fc66ee42334ed99b 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.ts
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+@@ -140,7 +140,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+    * accessibility purposes, taps are handled separately.
+    */
+   private onLinkClick_(event: Event) {
+-    if ((event.target as HTMLElement).matches('a:not(#extensionsLink)')) {
++    if ((event.target as HTMLElement).closest('a:not(#extensionsLink):not(#aegisGesturesLink)')) {
+       event.preventDefault();
+     }
+   }
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 21838a7e8cb8deb3105128066abd46fc5e4d2709..7b6aa449b46270cbcb60c1d5f58d8021474fde0a 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -1516,7 +1516,10 @@ static_library("ui") {
+     ]
+   } else {
+     # !is_android
++    deps += [ "//chrome/browser/aegis:gesture_core" ]
+     sources += [
++      "aegis_mouse_gesture_tab_helper.cc",
++      "aegis_mouse_gesture_tab_helper.h",
+       # This file physically lives in //chrome/browser but is compiled here so
+       # that //chrome/browser:browser has no remaining sources. It registers
+       # WebUI interface binders for desktop, which need this target's headers.
+diff --git a/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..3286f21c7b5ad4eef07b253d336ec40a008e7be0
+--- /dev/null
++++ b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
+@@ -0,0 +1,517 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/ui/aegis_mouse_gesture_tab_helper.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/auto_reset.h"
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/single_thread_task_runner.h"
++#include "cc/paint/paint_flags.h"
++#include "chrome/app/chrome_command_ids.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
++#include "chrome/common/chrome_isolated_world_ids.h"
++#include "chrome/common/extensions/extension_constants.h"
++#include "components/input/native_web_keyboard_event.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/weak_document_ptr.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
++#include "ui/events/keycodes/keyboard_codes.h"
++#include "ui/gfx/canvas.h"
++#include "ui/gfx/font_list.h"
++#include "ui/gfx/geometry/point_conversions.h"
++#include "ui/views/view.h"
++#include "ui/views/widget/widget.h"
++
++namespace aegis {
++namespace {
++constexpr int kBypassModifiers =
++    blink::WebInputEvent::kAltKey | blink::WebInputEvent::kControlKey |
++    blink::WebInputEvent::kMetaKey | blink::WebInputEvent::kShiftKey;
++
++bool IsPdfViewer(content::RenderFrameHost* frame) {
++  const GURL& url = frame->GetLastCommittedURL();
++  return url.SchemeIs("chrome-extension") &&
++         url.host() == extension_misc::kPdfExtensionId;
++}
++
++std::u16string PatternLabel(const std::string& pattern) {
++  std::u16string result;
++  for (char c : pattern) {
++    switch (c) {
++      case 'L':
++        result += u"← ";
++        break;
++      case 'R':
++        result += u"→ ";
++        break;
++      case 'U':
++        result += u"↑ ";
++        break;
++      case 'D':
++        result += u"↓ ";
++        break;
++    }
++  }
++  return result;
++}
++}  // namespace
++
++// 独立的原生透明层；不进入网页 DOM，也不接收鼠标和键盘输入。
++class GestureTrailView : public views::View {
++ public:
++  void Update(std::vector<gfx::PointF> points, std::u16string label) {
++    points_ = std::move(points);
++    label_ = std::move(label);
++    SchedulePaint();
++  }
++  void OnPaint(gfx::Canvas* canvas) override {
++    cc::PaintFlags flags;
++    flags.setAntiAlias(true);
++    flags.setStrokeWidth(4);
++    flags.setStrokeCap(cc::PaintFlags::kRound_Cap);
++    flags.setColor(SkColorSetRGB(44, 139, 255));
++    for (size_t i = 1; i < points_.size(); ++i) {
++      canvas->DrawLine(points_[i - 1], points_[i], flags);
++    }
++    const int width = std::min(420, std::max(0, this->width() - 24));
++    const gfx::Rect box((this->width() - width) / 2, std::max(8, height() - 72),
++                        width, 48);
++    flags.setColor(SkColorSetARGB(235, 24, 32, 47));
++    flags.setStyle(cc::PaintFlags::kFill_Style);
++    canvas->DrawRoundRect(box, 12, flags);
++    canvas->DrawStringRect(label_, gfx::FontList().DeriveWithSizeDelta(2),
++                           SK_ColorWHITE, box);
++  }
++
++ private:
++  std::vector<gfx::PointF> points_;
++  std::u16string label_;
++};
++
++MouseGestureTabHelper::MouseGestureTabHelper(content::WebContents* contents)
++    : content::WebContentsObserver(contents),
++      content::WebContentsUserData<MouseGestureTabHelper>(*contents) {
++  ObserveFrames();
++}
++
++MouseGestureTabHelper::~MouseGestureTabHelper() {
++  DetachInput();
++}
++
++void MouseGestureTabHelper::DetachInput() {
++  Cancel();
++  pending_ = false;
++  origin_host_ = nullptr;
++  window_observation_.Reset();
++  for (const auto& [host, callbacks] : callbacks_) {
++    host->RemoveMouseEventCallback(callbacks.mouse);
++    host->RemoveKeyPressEventCallback(callbacks.key);
++  }
++  callbacks_.clear();
++  host_observations_.RemoveAllObservations();
++}
++
++MouseGestureTabHelper* MouseGestureTabHelper::RootHelper() {
++  if (!web_contents()) {
++    return this;
++  }
++  auto* root = FromWebContents(web_contents()->GetOutermostWebContents());
++  return root ? root : this;
++}
++
++void MouseGestureTabHelper::ObserveFrames() {
++  web_contents()->ForEachRenderFrameHost([this](
++                                             content::RenderFrameHost* frame) {
++    if (content::WebContents::FromRenderFrameHost(frame) == web_contents()) {
++      Attach(frame->GetRenderWidgetHost());
++    }
++  });
++  for (auto* inner : web_contents()->GetInnerWebContents()) {
++    CreateForWebContents(inner);
++  }
++}
++
++void MouseGestureTabHelper::Attach(content::RenderWidgetHost* host) {
++  if (!host || callbacks_.contains(host)) {
++    return;
++  }
++  Callbacks callbacks{
++      base::BindRepeating(&MouseGestureTabHelper::OnMouse,
++                          base::Unretained(this), host, web_contents()),
++      base::BindRepeating(&MouseGestureTabHelper::OnKey,
++                          base::Unretained(this))};
++  host->AddMouseEventCallback(callbacks.mouse);
++  host->AddKeyPressEventCallback(callbacks.key);
++  callbacks_.emplace(host, std::move(callbacks));
++  host_observations_.AddObservation(host);
++}
++
++void MouseGestureTabHelper::RenderFrameCreated(
++    content::RenderFrameHost* frame) {
++  Attach(frame->GetRenderWidgetHost());
++}
++
++void MouseGestureTabHelper::DidStartNavigation(content::NavigationHandle*) {
++  // 任意框架开始导航都取消，避免同进程子框架复用输入目标。
++  RootHelper()->Cancel();
++}
++
++void MouseGestureTabHelper::PrimaryPageChanged(content::Page&) {
++  RootHelper()->Cancel();
++  web_contents()->RemoveUserData(kGesturePracticeKey);
++  ObserveFrames();
++}
++
++void MouseGestureTabHelper::InnerWebContentsAttached(
++    content::WebContents* inner,
++    content::RenderFrameHost*) {
++  CreateForWebContents(inner);
++}
++
++// WebContents 先于部分 RenderWidget 销毁，必须在观察对象脱离前解除回调。
++void MouseGestureTabHelper::WebContentsDestroyed() {
++  DetachInput();
++}
++
++void MouseGestureTabHelper::OnVisibilityChanged(
++    content::Visibility visibility) {
++  if (visibility != content::Visibility::VISIBLE) {
++    RootHelper()->Cancel();
++  }
++}
++
++void MouseGestureTabHelper::OnWebContentsLostFocus(content::RenderWidgetHost*) {
++  VLOG(1) << "鼠标手势取消：页面失焦";
++  RootHelper()->Cancel();
++}
++
++void MouseGestureTabHelper::RenderWidgetHostDestroyed(
++    content::RenderWidgetHost* host) {
++  auto* root = RootHelper();
++  if (root->origin_host_ == host) {
++    root->Cancel();
++    root->origin_host_ = nullptr;
++  }
++  const auto found = callbacks_.find(host);
++  if (found != callbacks_.end()) {
++    host->RemoveMouseEventCallback(found->second.mouse);
++    host->RemoveKeyPressEventCallback(found->second.key);
++    callbacks_.erase(found);
++  }
++  host_observations_.RemoveObservation(host);
++}
++
++void MouseGestureTabHelper::OnWidgetActivationChanged(views::Widget*,
++                                                      bool active) {
++  if (!active) {
++    VLOG(1) << "鼠标手势取消：窗口失去激活";
++    Cancel();
++  }
++}
++
++void MouseGestureTabHelper::OnWidgetDestroyed(views::Widget*) {
++  window_observation_.Reset();
++  Cancel();
++}
++
++bool MouseGestureTabHelper::InPracticeRegion(
++    const blink::WebMouseEvent& event) const {
++  if (web_contents()->GetLastCommittedURL() !=
++      GURL("chrome://aegis/gestures.html")) {
++    return false;
++  }
++  const auto* region = static_cast<GesturePracticeRegion*>(
++      web_contents()->GetUserData(kGesturePracticeKey));
++  auto* view = web_contents()->GetRenderWidgetHostView();
++  if (!region || !view || view->GetViewBounds().IsEmpty()) {
++    return false;
++  }
++  const auto bounds = view->GetViewBounds();
++  return region->Contains(
++      (event.PositionInScreen().x() - bounds.x()) / bounds.width(),
++      (event.PositionInScreen().y() - bounds.y()) / bounds.height());
++}
++
++bool MouseGestureTabHelper::OnMouse(content::RenderWidgetHost* host,
++                                    content::WebContents* source,
++                                    const blink::WebMouseEvent& event) {
++  auto* root = RootHelper();
++  if (root != this) {
++    return root->OnMouse(host, source, event);
++  }
++  if (replaying_) {
++    return false;
++  }
++  using Type = blink::WebInputEvent::Type;
++  const bool right = event.button == blink::WebMouseEvent::Button::kRight;
++  if (event.GetType() == Type::kMouseDown && right) {
++    Cancel();
++    pending_ = false;
++    origin_host_ = nullptr;
++    auto* prefs =
++        Profile::FromBrowserContext(web_contents()->GetBrowserContext())
++            ->GetPrefs();
++    settings_ = GestureSettings::Parse(prefs->GetDict(kMouseGesturesPref))
++                    .value_or(GestureSettings::Defaults());
++    auto* view = host->GetView();
++    auto* window = views::Widget::GetWidgetForNativeWindow(
++        web_contents()->GetTopLevelNativeWindow());
++    if (!settings_.EnabledFor(web_contents()->GetLastCommittedURL()) ||
++        event.GetModifiers() & kBypassModifiers || !view ||
++        view->IsPointerLocked() || !window || !window->IsActive() ||
++        web_contents()->GetVisibility() != content::Visibility::VISIBLE ||
++        InPracticeRegion(event)) {
++      return false;
++    }
++    if (window_observation_.GetSource() != window) {
++      window_observation_.Reset();
++      window_observation_.Observe(window);
++    }
++    pending_ = true;
++    origin_host_ = host;
++    down_event_ = event;
++    // 把动作绑定到按下时的文档；子框架导航后不能误作用于新页面。
++    content::RenderFrameHost* target = nullptr;
++    source->ForEachRenderFrameHost([&](content::RenderFrameHost* frame) {
++      if (!target && frame->GetRenderWidgetHost() == host) {
++        target = frame;
++      }
++    });
++    origin_document_ =
++        (target ? target : source->GetPrimaryMainFrame())->GetWeakDocumentPtr();
++    recognizer_.Start(event.PositionInScreen().x(),
++                      event.PositionInScreen().y(), settings_.threshold);
++    points_ = {event.PositionInScreen()};
++    timeout_.Start(FROM_HERE, base::Seconds(10), this,
++                   &MouseGestureTabHelper::Cancel);
++    return true;
++  }
++  if (!pending_) {
++    return false;
++  }
++  auto* content_view = web_contents()->GetRenderWidgetHostView();
++  if (!content_view ||
++      !content_view->GetViewBounds().Contains(
++          gfx::ToRoundedPoint(event.PositionInScreen())) ||
++      event.GetModifiers() & kBypassModifiers ||
++      (event.GetType() == Type::kMouseDown && !right)) {
++    Cancel();
++  }
++  if (event.GetType() == Type::kMouseMove) {
++    // 丢失抬键或捕获时，不允许下一次移动继续执行旧手势。
++    if (!(event.GetModifiers() & blink::WebInputEvent::kRightButtonDown)) {
++      VLOG(1) << "鼠标手势取消：没有右键按下状态";
++      Cancel();
++      pending_ = false;
++      origin_host_ = nullptr;
++      return false;
++    }
++    recognizer_.Move(event.PositionInScreen().x(),
++                     event.PositionInScreen().y());
++    if (!recognizer_.cancelled() && recognizer_.moved()) {
++      UpdateTrail(event.PositionInScreen());
++    }
++    return true;
++  }
++  if (event.GetType() != Type::kMouseUp || !right) {
++    return false;
++  }
++
++  recognizer_.Move(event.PositionInScreen().x(), event.PositionInScreen().y());
++  pending_ = false;
++  timeout_.Stop();
++  ClearTrail();
++  auto* origin = origin_host_.get();
++  origin_host_ = nullptr;
++  if (!recognizer_.moved() && !recognizer_.cancelled() && origin) {
++    // Windows 在抬键时、macOS 在按下时打开菜单；补发完整的一对事件。
++    // 保持原始目标和位置，既能显示网页自定义菜单，也能显示 PDF 菜单。
++    base::AutoReset<bool> replay(&replaying_, true);
++    origin->ForwardMouseEvent(down_event_);
++    blink::WebMouseEvent up = down_event_;
++    up.SetType(Type::kMouseUp);
++    up.SetModifiers(event.GetModifiers());
++    up.SetTimeStamp(event.TimeStamp());
++    origin->ForwardMouseEvent(up);
++    return true;
++  }
++  const std::string action = settings_.ActionFor(recognizer_.Match());
++  VLOG(1) << "鼠标手势结束：pattern=" << recognizer_.directions()
++          << " cancelled=" << recognizer_.cancelled() << " action=" << action;
++  if (action.empty() || !origin) {
++    return true;
++  }
++  if (!origin_document_.AsRenderFrameHostIfValid()) {
++    return true;
++  }
++  // 关闭标签和切换窗口延后执行，避免销毁当前事件回调正在遍历的对象。
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE,
++      base::BindOnce(
++          &MouseGestureTabHelper::Execute, weak_factory_.GetWeakPtr(), action,
++          web_contents()->GetPrimaryMainFrame()->GetWeakDocumentPtr(),
++          origin_document_, down_event_));
++  return true;
++}
++
++bool MouseGestureTabHelper::OnKey(const input::NativeWebKeyboardEvent& event) {
++  auto* root = RootHelper();
++  if (event.windows_key_code != ui::VKEY_ESCAPE || !root->pending_) {
++    return false;
++  }
++  root->Cancel();
++  return true;
++}
++
++void MouseGestureTabHelper::Cancel() {
++  recognizer_.Cancel();
++  timeout_.Stop();
++  ClearTrail();
++}
++
++void MouseGestureTabHelper::ClearTrail() {
++  trail_view_ = nullptr;
++  trail_widget_.reset();
++  points_.clear();
++}
++
++void MouseGestureTabHelper::UpdateTrail(const gfx::PointF& point) {
++  if (!settings_.show_trail) {
++    return;
++  }
++  auto* contents_view = web_contents()->GetRenderWidgetHostView();
++  if (!contents_view) {
++    return;
++  }
++  const gfx::Rect bounds = contents_view->GetViewBounds();
++  // 有界采样；长笔画不会持续分配内存。
++  if (points_.size() >= 256) {
++    std::vector<gfx::PointF> reduced;
++    for (size_t i = 0; i < points_.size(); i += 2) {
++      reduced.push_back(points_[i]);
++    }
++    points_ = std::move(reduced);
++  }
++  points_.push_back(point);
++  if (!trail_widget_) {
++    views::Widget::InitParams params(
++        views::Widget::InitParams::CLIENT_OWNS_WIDGET,
++        views::Widget::InitParams::TYPE_POPUP);
++    params.name = "AegisMouseGestureTrail";
++    params.SetParent(web_contents()->GetNativeView());
++    params.accept_events = false;
++    params.activatable = views::Widget::InitParams::Activatable::kNo;
++    params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
++    params.shadow_type = views::Widget::InitParams::ShadowType::kNone;
++    params.bounds = bounds;
++    trail_widget_ = std::make_unique<views::Widget>();
++    trail_widget_->Init(std::move(params));
++    trail_view_ =
++        trail_widget_->SetContentsView(std::make_unique<GestureTrailView>());
++    trail_widget_->ShowInactive();
++  }
++  std::vector<gfx::PointF> local;
++  for (const auto& p : points_) {
++    local.emplace_back(p.x() - bounds.x(), p.y() - bounds.y());
++  }
++  const auto* action =
++      FindGestureAction(settings_.ActionFor(recognizer_.Match()));
++  const std::u16string label =
++      PatternLabel(recognizer_.directions()) +
++      (action ? base::UTF8ToUTF16(action->label) : u"未匹配，不执行") +
++      u"  ·  Esc 取消";
++  trail_view_->Update(std::move(local), label);
++}
++
++void MouseGestureTabHelper::Execute(std::string action,
++                                    content::WeakDocumentPtr document,
++                                    content::WeakDocumentPtr target_document,
++                                    blink::WebMouseEvent start) {
++  auto* browser = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(
++      web_contents());
++  auto* target = target_document.AsRenderFrameHostIfValid();
++  VLOG(1) << "鼠标手势执行检查：browser=" << !!browser << " target=" << !!target
++          << " document=" << !!document.AsRenderFrameHostIfValid();
++  if (!document.AsRenderFrameHostIfValid() || !browser || !target ||
++      browser->GetTabStripModel()->GetActiveWebContents() != web_contents() ||
++      !window_observation_.IsObserving() ||
++      !window_observation_.GetSource()->IsActive()) {
++    return;
++  }
++  int command = 0;
++  if (action == "back") {
++    command = IDC_BACK;
++  } else if (action == "forward") {
++    command = IDC_FORWARD;
++  } else if (action == "reload") {
++    command = IDC_RELOAD;
++  } else if (action == "close_tab") {
++    command = IDC_CLOSE_TAB;
++  } else if (action == "restore_tab") {
++    command = IDC_RESTORE_TAB;
++  } else if (action == "previous_tab") {
++    command = IDC_SELECT_PREVIOUS_TAB;
++  } else if (action == "next_tab") {
++    command = IDC_SELECT_NEXT_TAB;
++  }
++  if (command) {
++    if (chrome::IsCommandEnabled(browser, command)) {
++      chrome::ExecuteCommand(browser, command);
++    }
++    return;
++  }
++  if (action == "scroll_up" || action == "scroll_down") {
++    // 定位手势起点下的滚动容器，兼容设置页 Shadow DOM 与 PDF 阅读区。
++    blink::WebMouseWheelEvent wheel(blink::WebInputEvent::Type::kMouseWheel, 0,
++                                    base::TimeTicks::Now());
++    wheel.SetPositionInWidget(start.PositionInWidget());
++    wheel.SetPositionInScreen(start.PositionInScreen());
++    wheel.delta_y = action == "scroll_up" ? 520 : -520;
++    wheel.wheel_ticks_y = wheel.delta_y / 120;
++    wheel.delta_units = ui::ScrollGranularity::kScrollByPrecisePixel;
++    wheel.phase = blink::WebMouseWheelEvent::kPhaseBegan;
++    target->GetRenderWidgetHost()->ForwardWheelEvent(wheel);
++    wheel.delta_y = wheel.wheel_ticks_y = 0;
++    wheel.phase = blink::WebMouseWheelEvent::kPhaseEnded;
++    target->GetRenderWidgetHost()->ForwardWheelEvent(wheel);
++    return;
++  }
++  const auto* definition = FindGestureAction(action);
++  if (!definition || !definition->pdf_only) {
++    return;
++  }
++  // 只向内置 PDF 查看器发送固定动作，普通页面得不到浏览器命令入口。
++  content::RenderFrameHost* pdf = target;
++  while (pdf && !IsPdfViewer(pdf)) {
++    pdf = pdf->GetParentOrOuterDocument();
++  }
++  if (!pdf) {
++    target->ForEachRenderFrameHost([&](content::RenderFrameHost* frame) {
++      if (!pdf && IsPdfViewer(frame)) {
++        pdf = frame;
++      }
++    });
++  }
++  if (!pdf) {
++    return;
++  }
++  pdf->ExecuteJavaScriptInIsolatedWorld(
++      base::UTF8ToUTF16(
++          "window.dispatchEvent(new CustomEvent('aegis-pdf-gesture',"
++          "{detail:'" +
++          action + "'}));"),
++      base::NullCallback(), ISOLATED_WORLD_ID_CHROME_INTERNAL);
++}
++
++WEB_CONTENTS_USER_DATA_KEY_IMPL(MouseGestureTabHelper);
++}  // namespace aegis
+diff --git a/chrome/browser/ui/aegis_mouse_gesture_tab_helper.h b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..342909d65e7678bacd86b6a4f54c68c341cf38a6
+--- /dev/null
++++ b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.h
+@@ -0,0 +1,102 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_UI_AEGIS_MOUSE_GESTURE_TAB_HELPER_H_
++#define CHROME_BROWSER_UI_AEGIS_MOUSE_GESTURE_TAB_HELPER_H_
++
++#include <map>
++#include <memory>
++#include <vector>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/scoped_multi_source_observation.h"
++#include "base/scoped_observation.h"
++#include "base/timer/timer.h"
++#include "chrome/browser/aegis/gestures/gesture_recognizer.h"
++#include "chrome/browser/aegis/gestures/gesture_settings.h"
++#include "content/public/browser/render_widget_host.h"
++#include "content/public/browser/render_widget_host_observer.h"
++#include "content/public/browser/weak_document_ptr.h"
++#include "content/public/browser/web_contents_observer.h"
++#include "content/public/browser/web_contents_user_data.h"
++#include "third_party/blink/public/common/input/web_mouse_event.h"
++#include "ui/views/widget/widget_observer.h"
++
++namespace content {
++class WeakDocumentPtr;
++}
++namespace views {
++class Widget;
++}
++
++namespace aegis {
++class GestureTrailView;
++
++// 在输入发往渲染进程前识别；同一标签中的子框架与 PDF 共用一次手势。
++class MouseGestureTabHelper
++    : public content::WebContentsObserver,
++      public content::WebContentsUserData<MouseGestureTabHelper>,
++      public content::RenderWidgetHostObserver,
++      public views::WidgetObserver {
++ public:
++  ~MouseGestureTabHelper() override;
++  MouseGestureTabHelper(const MouseGestureTabHelper&) = delete;
++  MouseGestureTabHelper& operator=(const MouseGestureTabHelper&) = delete;
++
++  void RenderFrameCreated(content::RenderFrameHost* frame) override;
++  void DidStartNavigation(content::NavigationHandle* navigation) override;
++  void PrimaryPageChanged(content::Page& page) override;
++  void InnerWebContentsAttached(content::WebContents* inner,
++                                content::RenderFrameHost* frame) override;
++  void WebContentsDestroyed() override;
++  void OnVisibilityChanged(content::Visibility visibility) override;
++  void OnWebContentsLostFocus(content::RenderWidgetHost* host) override;
++  void RenderWidgetHostDestroyed(content::RenderWidgetHost* host) override;
++  void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
++  void OnWidgetDestroyed(views::Widget* widget) override;
++
++ private:
++  friend class content::WebContentsUserData<MouseGestureTabHelper>;
++  explicit MouseGestureTabHelper(content::WebContents* contents);
++  void DetachInput();
++  void ObserveFrames();
++  void Attach(content::RenderWidgetHost* host);
++  MouseGestureTabHelper* RootHelper();
++  bool OnMouse(content::RenderWidgetHost* host,
++               content::WebContents* source,
++               const blink::WebMouseEvent& event);
++  bool OnKey(const input::NativeWebKeyboardEvent& event);
++  void Cancel();
++  void ClearTrail();
++  void UpdateTrail(const gfx::PointF& point);
++  void Execute(std::string action,
++               content::WeakDocumentPtr document,
++               content::WeakDocumentPtr target,
++               blink::WebMouseEvent start);
++  bool InPracticeRegion(const blink::WebMouseEvent& event) const;
++
++  struct Callbacks {
++    content::RenderWidgetHost::MouseEventCallback mouse;
++    content::RenderWidgetHost::KeyPressEventCallback key;
++  };
++  std::map<content::RenderWidgetHost*, Callbacks> callbacks_;
++  base::ScopedMultiSourceObservation<content::RenderWidgetHost,
++                                     content::RenderWidgetHostObserver>
++      host_observations_{this};
++  base::ScopedObservation<views::Widget, views::WidgetObserver>
++      window_observation_{this};
++  GestureRecognizer recognizer_;
++  GestureSettings settings_;
++  bool pending_ = false;
++  bool replaying_ = false;
++  raw_ptr<content::RenderWidgetHost> origin_host_ = nullptr;
++  blink::WebMouseEvent down_event_;
++  content::WeakDocumentPtr origin_document_;
++  base::OneShotTimer timeout_;
++  std::vector<gfx::PointF> points_;
++  std::unique_ptr<views::Widget> trail_widget_;
++  raw_ptr<GestureTrailView> trail_view_ = nullptr;
++  base::WeakPtrFactory<MouseGestureTabHelper> weak_factory_{this};
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++}  // namespace aegis
++#endif
+diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
+index 02d5bf903388b93b83898fcfb2e746c5a1da2d21..61d5a223d93af460ec9e5e26b159df3d7b7a6080 100644
+--- a/chrome/browser/ui/tab_helpers.cc
++++ b/chrome/browser/ui/tab_helpers.cc
+@@ -16,6 +16,9 @@
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_phish_tab_helper.h"
++#if !BUILDFLAG(IS_ANDROID)
++#include "chrome/browser/ui/aegis_mouse_gesture_tab_helper.h"
++#endif
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
+ #include "chrome/browser/browser_process.h"
+@@ -448,6 +451,9 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+       std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
+   CoreTabHelper::CreateForWebContents(web_contents);
+   aegis::PhishTabHelper::CreateForWebContents(web_contents);
++#if !BUILDFLAG(IS_ANDROID)
++  aegis::MouseGestureTabHelper::CreateForWebContents(web_contents);
++#endif
+   ExternalProtocolObserver::CreateForWebContents(web_contents);
+   favicon::CreateContentFaviconDriverForWebContents(web_contents);
+   FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index f96f952415e15cc481659fc8284b9f7340d92e7e..74562852cf7d0b68e995ba0c00ba4a88bbc3560b 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -14,9 +14,9 @@ source_set("aegis") {
+     "//chrome/browser/aegis:agent_core",
+     "//chrome/browser/download",
+     "//chrome/browser/profiles:profile",
++    "//chrome/browser/resources/aegis:resources",
+     "//chrome/browser/tab_list",
+     "//chrome/browser/ui/browser_window",
+-    "//chrome/browser/resources/aegis:resources",
+     "//chrome/browser/ui/side_panel",
+     "//chrome/common",
+     "//chrome/common/aegis",
+@@ -28,6 +28,14 @@ source_set("aegis") {
+     "//ui/webui",
+   ]
+   if (!is_android) {
++    sources += [
++      "aegis_gesture_handler.cc",
++      "aegis_gesture_handler.h",
++    ]
++    deps += [
++      "//chrome/browser/aegis:gesture_core",
++      "//components/prefs",
++    ]
+     deps += [
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+       "//chrome/browser/ui/tabs:tab_strip",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfdf3400f08ef9fbe60e553626601648db90988
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+@@ -0,0 +1,126 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
++
++#include <array>
++#include <cmath>
++#include <memory>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "chrome/browser/aegis/gestures/gesture_settings.h"
++#include "chrome/browser/profiles/profile.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "url/gurl.h"
++
++AegisGestureHandler::AegisGestureHandler() = default;
++AegisGestureHandler::~AegisGestureHandler() = default;
++
++void AegisGestureHandler::RegisterMessages() {
++  web_ui()->RegisterMessageCallback(
++      "aegisGetGestureSettings",
++      base::BindRepeating(&AegisGestureHandler::GetSettings,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "aegisSaveGestureSettings",
++      base::BindRepeating(&AegisGestureHandler::SaveSettings,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "aegisResetGestureSettings",
++      base::BindRepeating(&AegisGestureHandler::ResetSettings,
++                          base::Unretained(this)));
++  web_ui()->RegisterMessageCallback(
++      "aegisGesturePracticeRegion",
++      base::BindRepeating(&AegisGestureHandler::SetPracticeRegion,
++                          base::Unretained(this)));
++}
++
++bool AegisGestureHandler::IsGesturePage() {
++  // 手势配置不向普通网页、PDF 或其他 WebUI 暴露。
++  return web_ui()->GetWebContents()->GetLastCommittedURL() ==
++         GURL("chrome://aegis/gestures.html");
++}
++
++base::DictValue AegisGestureHandler::Snapshot() {
++  const auto& raw = Profile::FromWebUI(web_ui())->GetPrefs()->GetDict(
++      aegis::kMouseGesturesPref);
++  auto settings = aegis::GestureSettings::Parse(raw).value_or(
++      aegis::GestureSettings::Defaults());
++  base::ListValue actions;
++  for (const auto& action : aegis::GestureActions()) {
++    actions.Append(base::DictValue()
++                       .Set("id", action.id)
++                       .Set("label", action.label)
++                       .Set("pdfOnly", action.pdf_only));
++  }
++  return base::DictValue()
++      .Set("settings", settings.ToValue())
++      .Set("actions", std::move(actions));
++}
++
++void AegisGestureHandler::GetSettings(const base::ListValue& args) {
++  if (!IsGesturePage() || args.size() != 1 || !args[0].is_string()) {
++    return;
++  }
++  AllowJavascript();
++  ResolveJavascriptCallback(args[0], Snapshot());
++}
++
++void AegisGestureHandler::SaveSettings(const base::ListValue& args) {
++  if (!IsGesturePage() || args.size() != 2 || !args[0].is_string()) {
++    return;
++  }
++  AllowJavascript();
++  auto settings = args[1].is_dict()
++                      ? aegis::GestureSettings::Parse(args[1].GetDict())
++                      : std::nullopt;
++  if (!settings) {
++    RejectJavascriptCallback(args[0],
++                             base::Value("配置无效，请检查手势和网站名单。"));
++    return;
++  }
++  Profile::FromWebUI(web_ui())->GetPrefs()->SetDict(aegis::kMouseGesturesPref,
++                                                    settings->ToValue());
++  ResolveJavascriptCallback(args[0], Snapshot());
++}
++
++void AegisGestureHandler::ResetSettings(const base::ListValue& args) {
++  if (!IsGesturePage() || args.size() != 1 || !args[0].is_string()) {
++    return;
++  }
++  AllowJavascript();
++  Profile::FromWebUI(web_ui())->GetPrefs()->ClearPref(
++      aegis::kMouseGesturesPref);
++  ResolveJavascriptCallback(args[0], Snapshot());
++}
++
++void AegisGestureHandler::SetPracticeRegion(const base::ListValue& args) {
++  if (!IsGesturePage() || args.size() != 4) {
++    return;
++  }
++  std::array<double, 4> values{};
++  for (size_t i = 0; i < 4; ++i) {
++    if (!args[i].is_double() && !args[i].is_int()) {
++      return;
++    }
++    values[i] = args[i].GetDouble();
++    if (!std::isfinite(values[i]) || values[i] < 0 || values[i] > 1) {
++      return;
++    }
++  }
++  if (values[0] + values[2] > 1.001 || values[1] + values[3] > 1.001) {
++    return;
++  }
++  auto region = std::make_unique<aegis::GesturePracticeRegion>();
++  region->x = values[0];
++  region->y = values[1];
++  region->width = values[2];
++  region->height = values[3];
++  web_ui()->GetWebContents()->SetUserData(aegis::kGesturePracticeKey,
++                                          std::move(region));
++}
++
++void AegisGestureHandler::OnJavascriptDisallowed() {
++  web_ui()->GetWebContents()->RemoveUserData(aegis::kGesturePracticeKey);
++}
+diff --git a/chrome/browser/ui/webui/aegis/aegis_gesture_handler.h b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8d15b4c80e0a19f168592453c99749e4f61b262
+--- /dev/null
++++ b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.h
+@@ -0,0 +1,22 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_GESTURE_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_GESTURE_HANDLER_H_
++
++#include "content/public/browser/web_ui_message_handler.h"
++
++class AegisGestureHandler : public content::WebUIMessageHandler {
++ public:
++  AegisGestureHandler();
++  ~AegisGestureHandler() override;
++  void RegisterMessages() override;
++
++ private:
++  bool IsGesturePage();
++  void GetSettings(const base::ListValue& args);
++  void SaveSettings(const base::ListValue& args);
++  void ResetSettings(const base::ListValue& args);
++  void SetPracticeRegion(const base::ListValue& args);
++  void OnJavascriptDisallowed() override;
++  base::DictValue Snapshot();
++};
++#endif
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 32317d9ebdc338931a130b4ec5a63bd312a19c74..b4e6bdb39e8c85181a341101291cefdbe29a4c6b 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -6,6 +6,9 @@
+ #include <string>
+ 
+ #include "build/build_config.h"
++#if !BUILDFLAG(IS_ANDROID)
++#include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
++#endif
+ #include "chrome/browser/aegis/aegis_download_prefs.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/browser_process.h"
+@@ -678,6 +681,9 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+ 
+   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
+   web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
++#if !BUILDFLAG(IS_ANDROID)
++  web_ui->AddMessageHandler(std::make_unique<AegisGestureHandler>());
++#endif
+ }
+ 
+ AegisUI::~AegisUI() = default;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 89676b71cf33faa84f2af946d4e27e8fce45eca2..e65a9d76a46ccbb15083684f3ee2b94a4c73e765 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.125";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (125)";
++inline constexpr char kProductVersion[] = "2.2.0.139";
++inline constexpr char kProductVersionLabel[] = "Ver 2.2 (139)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

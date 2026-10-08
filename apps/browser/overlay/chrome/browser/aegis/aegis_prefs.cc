@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "chrome/browser/aegis/gestures/gesture_settings.h"
 #include "chrome/common/aegis/features.h"
 #include "chrome/common/aegis/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -12,6 +13,8 @@
 namespace aegis {
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterDictionaryPref(kMouseGesturesPref,
+                                   GestureSettings::Defaults().ToValue());
   registry->RegisterBooleanPref(prefs::kTrackerBlockingEnabled, true);
   registry->RegisterBooleanPref(prefs::kPhishInterstitialEnabled, true);
   // FingerprintGuard on by default when the feature is enabled.

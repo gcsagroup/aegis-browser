@@ -6,6 +6,9 @@
 #include <string>
 
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
+#endif
 #include "chrome/browser/aegis/aegis_download_prefs.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/browser_process.h"
@@ -678,6 +681,9 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
 
   webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
   web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
+#if !BUILDFLAG(IS_ANDROID)
+  web_ui->AddMessageHandler(std::make_unique<AegisGestureHandler>());
+#endif
 }
 
 AegisUI::~AegisUI() = default;
