@@ -1,8 +1,23 @@
 # QUALITY-HANDOFF：W0 固定 Chromium 验证
 
-更新：2026-09-26（Q 新候选增加真实入口回归）。负责人 Q；本页保留各候选失败和旧执行快照。#177 的选定矩阵及 #181 回流同树复验仍按原精确身份解释；新候选的结果须读取本轮独立回执，不沿用旧候选的 PASS。G0 和 131 个验收主行均不因本轮局部回归升级，也不新增 required gate。
+更新：2026-09-28（核对 #187 有界退出和当前 develop）。负责人 Q；本页保留各候选失败和旧执行快照。#177 的选定矩阵及 #181 回流同树复验仍按原精确身份解释；#187 的完成证据见下节，不沿用旧候选的 PASS。G0 和 131 个验收主行均不因 W0 有界退出升级，也不新增 required gate。
 
-## Q 新候选：取消、watchdog、缓存与 MHTML
+## 当前结论：#187 的 W0 有界底座已退出
+
+按[开发计划的 W0 退出条件](development-plan.zh-CN.md)，#187 最终 B=`64b5f605511d199a53da2442f62e8899eb8a8718`、H=`7a1f0699806b9833d16f17c0865d75b0cf54e0d0`、PR 测试 M=`23e62913f1472fabce12ca48ee3f52b0af357863`（父提交为 B/H）、develop 合并后 S=`edd02853f65ab6a089defac29fd5c73c3cbbdeed`；H/M/S 的产品 tree 均为 `5c895cd98d622ea95e2dbfdc941d21b2722f9a98`。在记录的 macOS 26.5 SDK／bundled LLD 参数变体下，该底座的必需 Access unit、既有真实入口矩阵及新增取消、watchdog、缓存 REJECT 和已提交 MHTML 子帧回归已实际通过：
+
+| 关口 | #187 精确结果与证据 |
+| --- | --- |
+| 固定源准入 | `source-rebased-attempt1/result.json` PASS、`sourceStable=true`；Chromium 151 patched tree=`b2f678cca64d7fde719a1a6b0dbaaa25a98c9b94`，V8 tree=`5a6be89cfa0c35d8eb6ee81aec3cb8100780f7e9`，GN args SHA-256=`c5bd7ca95e89d92bb191776115ef840fd8061d5e56b5294c23d0c05a6300e904`。 |
+| 固定 Chromium 运行 | `native-rebased-attempt1/result.json`：17/17 目标、181/181 tests PASS；`browser-rebased-attempt1/result.json`：Chrome Access 65/65 PASS；`content-rebased-attempt1/result.json`：Content 6/6 PASS。均实际非零枚举、exit 0、`sourceStable=true`；原始回执位于 `${LOCAL_WORKSPACE_ROOT}/aegis-chromium-w0-q-20260926/evidence/`。 |
+| 本地质量与独立复审 | H 的本地 full 30/30 PASS、`sourceStable=true`；最终 B/H/M 的独立复审 CLEAR，未发现未关闭的 P1/P2。模型复审不等同 GitHub 人工批准。 |
+| 托管与合并后 | PR M 的 quality/quality-gate [run 36237442182](https://github.com/quinn521/aegis-browser/actions/runs/36237442182) 和 C++ [run 36237442178](https://github.com/quinn521/aegis-browser/actions/runs/36237442178) 成功；实际 S 的 develop push [run 36238830929 attempt 1](https://github.com/quinn521/aegis-browser/actions/runs/36238830929) 报告 31/31 PASS、testedSha=S、`sourceStable=true`，C++ push [run 36238830902](https://github.com/quinn521/aegis-browser/actions/runs/36238830902) 成功。 |
+
+因此 **W0 在上述配置和选定矩阵下完成有界工程退出**，可按计划接续 W1。下文 #177/#181 的缺口和“W0 未完成”只记录当时的状态：caller cancel、watchdog、缓存 REJECT 与真实 MHTML prefetch 入口已由 #187 的新 H 补证。MHTML 回归证明该已提交路径在触及禁网默认 factory 前失败，不证明默认 factory 自身回调或所有归档加载路径。完整 BFCache/prerender、通用预取、WebSocket/preconnect/SW update 等矩阵归 W5；多组并存及最小 HTTP/SOCKS5 Profile 认证归 W1。真实服务、计量、性能、其他平台和分发另行验收；G0 仍 `UNVERIFIED`，131 个 A/PF 主行仍 `NOT_EVALUATED`。
+
+2026-09-28 回读 `origin/develop@5689833c57a292e348c39ac512a223545b80fb1c`：从 #187 S 到该提交的差异未修改 Chromium patch/overlay、Access C++/GN 或固定 Chromium runner；本项仅说明 W0 源码路径未变，**不是当前 develop 精确 SHA 的 Chromium 运行回执**。上游 [#26](https://github.com/gcsagroup/aegis-browser/pull/26) 最终 H=`1c73c5a8c9a14e6da7ebc7cf42d088fce67659f9`、S=`962f80c2b18d23698c16e4759434371ea673312b` 的交付说明仍列 `nativeIntegration=REQUIRED` 且未取得该 H 的固定 Chromium native/browser 运行；后续文档晋升 [#28](https://github.com/gcsagroup/aegis-browser/pull/28) 与回流 [#194](https://github.com/quinn521/aegis-browser/pull/194) 不补造 #26 的精确 H/S 回执。若要关闭该晋升缺口，须在受控槽位上另做目标身份的源准入、适用真实运行和 `sourceStable` 核验。
+
+## 历史：#187 候选的取消、watchdog、缓存与 MHTML 计划
 
 本候选在固定 Chromium 补 0197–0200，相关 Chromium 源码与产品 overlay 保持由有序 patch series 重放：
 
@@ -41,7 +56,7 @@ develop 回流提交 `D=2b23b2c18541b5176d0354dfa128cd6bc21f02ab` 的 tree 为 `
 | 聚焦回归 | policy-first `data:` 导航 2/2 PASS（`published-data-s-attempt1/result.json`，SHA-256 `df92167f77498e5edc5006705bbafbc4061dd00e9038b24e1c8020405f2e2772`）；inline 文档 4/4 PASS（`inline-s-attempt1/result.json`，SHA-256 `0b0c43181e43fe023f0004866042d17aca9bf7998ea64757ae53094125ce0a2a`）；均 `sourceStable=true`。 |
 | develop 托管质量门 | D 的 push run `36089419885` attempt 1 中 `quality` 与 `quality-gate` SUCCESS；artifact `quality-evidence-36089419885-1`（id `10845305960`）报告 `result=PASS`、`testedSha=D`、`testedTree=126e0d3`、`sourceStable=true`、`nativeIntegration=REQUIRED`。独立 C++ push run `36089419763` SUCCESS。 |
 
-这组回执补强了同 tree 下的 W0 选定范围：17/181 Access 原生、62 项 Chrome Access、6 项 Content，以及 `data:`、inline 文档和真实 `PrefetchManager::Start` 入口回归。Content 的 `HttpMhtmlSubframePrefetchKeepsRestrictedDefault` 已实际通过，但使用上述 `TestURLLoaderFactory` 替身；生产 MHTML 默认 factory 的终态回调仍未观察。其他未覆盖项包括 relay watchdog 到期/调用方取消、完整 HTTP 缓存/BFCache/prerender BLOCK、性能和发布矩阵；W0 的这些剩余项须继续单独验收。当前没有固定 Chromium 进程；S/D 对应的新证据根无锁。遗留 PR23 证据根保留旧锁标记，原 owner 进程已不在，所有权未确认前不得清理或复用。
+这组回执补强了同 tree 下的 W0 选定范围：17/181 Access 原生、62 项 Chrome Access、6 项 Content，以及 `data:`、inline 文档和真实 `PrefetchManager::Start` 入口回归。Content 的 `HttpMhtmlSubframePrefetchKeepsRestrictedDefault` 已实际通过，但使用上述 `TestURLLoaderFactory` 替身；生产 MHTML 默认 factory 的终态回调仍未观察。截至 2026-09-25，relay watchdog 到期/调用方取消、完整 HTTP 缓存/BFCache/prerender BLOCK、性能和发布矩阵仍待后续分别验收；其中 #187 后来补齐本页开头所列的有界底座回归。以下进程和锁状态仅为当时快照，不用于判断当前资源所有权：当时没有固定 Chromium 进程，S/D 对应的新证据根无锁；遗留 PR23 证据根保留旧锁标记，原 owner 进程已不在，所有权未确认前不得清理或复用。
 
 G0 仍为 `UNVERIFIED`：同树矩阵不是两 Profile 的真实多策略/双出口、HTTP/SOCKS5 认证或 Network Service 重启与真实服务流量证明。验收追踪表中的 131 个 A/PF 主行仍为 `NOT_EVALUATED`；同 tree 回执只能补充局部测试映射，不能将主行升级为 PASS。要声称 D 的 Chromium 运行通过，仍需在 D 精确提交身份上生成独立准入和运行回执。
 

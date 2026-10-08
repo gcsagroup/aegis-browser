@@ -18,7 +18,7 @@ class CandidateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             def git(*args):
-                return subprocess.check_output(['git', '-C', str(root), *args], text=True)
+                return ci.git(root, *args)
             git('init', '-q'); git('config', 'user.name', 'test')
             git('config', 'user.email', 'test@example.invalid')
             (root / 'source.txt').write_text('产品输入')
