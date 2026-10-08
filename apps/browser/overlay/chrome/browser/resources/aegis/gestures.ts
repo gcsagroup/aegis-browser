@@ -11,12 +11,12 @@ type Settings = {
 type Action = {id: string, label: string, pdfOnly: boolean};
 type Snapshot = {settings: Settings, actions: Action[]};
 
-function element<T extends HTMLElement>(id: string): T {
-  const value = document.getElementById(id);
+function element<T extends Element = HTMLElement>(id: string): T {
+  const value = document.querySelector<T>(`#${id}`);
   if (!value) {
     throw new Error(`缺少设置元素：${id}`);
   }
-  return value as T;
+  return value;
 }
 const enabled = element<HTMLInputElement>('enabled');
 const trail = element<HTMLInputElement>('showTrail');
@@ -28,14 +28,14 @@ const status = element('status');
 const practice = element('practice');
 const patternLabel = element('practicePattern');
 const resultLabel = element('practiceResult');
-const line = document.querySelector<SVGPolylineElement>('#practiceLine')!;
+const line = element<SVGPolylineElement>('practiceLine');
 let actions: Action[] = [];
 let lastPattern = '';
 let busy = false;
 
 function arrows(pattern: string): string {
-  const map: Record<string, string> = {L: '←', R: '→', U: '↑', D: '↓'};
-  return Array.from(pattern, c => map[c] || c).join(' ');
+  const map = new Map([['L', '←'], ['R', '→'], ['U', '↑'], ['D', '↓']]);
+  return Array.from(pattern, c => map.get(c) || c).join(' ');
 }
 function normalize(pattern: string): string {
   return pattern.trim().toUpperCase().replaceAll('←', 'L').replaceAll('→', 'R')
@@ -101,22 +101,28 @@ function render(snapshot: Snapshot) {
   updateRegion();
 }
 function readSettings(): Settings {
-  const mapping: Record<string, string> = {};
+  const mapping = new Map<string, string>();
   for (const row of bindings.querySelectorAll('.binding')) {
-    const pattern = normalize(row.querySelector('input')!.value);
+    const input = row.querySelector('input');
+    const select = row.querySelector('select');
+    if (!input || !select) {
+      throw new Error('手势配置控件缺失，请重新打开此页面。');
+    }
+    const pattern = normalize(input.value);
     if (!/^[LRUD]{1,8}$/.test(pattern) || /(.)\1/.test(pattern)) {
       throw new Error('每条手势需包含 1–8 个方向，且相邻方向不能相同。');
     }
-    if (Object.hasOwn(mapping, pattern)) {
+    if (mapping.has(pattern)) {
       throw new Error(`手势 ${arrows(pattern)} 已重复，请为它只保留一个动作。`);
     }
-    mapping[pattern] = row.querySelector('select')!.value;
+    mapping.set(pattern, select.value);
   }
   const disabledSites = sites.value.split('\n').map(s => s.trim().toLowerCase())
                             .filter(Boolean);
   return {
     enabled: enabled.checked, showTrail: trail.checked,
-    threshold: Number(threshold.value), bindings: mapping, disabledSites,
+    threshold: Number(threshold.value),
+    bindings: Object.fromEntries(mapping), disabledSites,
   };
 }
 async function persist(reset: boolean) {
@@ -189,7 +195,9 @@ function cancelPractice() {
     resultLabel.textContent = '没有执行任何操作';
   }
 }
-practice.addEventListener('contextmenu', event => event.preventDefault());
+practice.addEventListener('contextmenu', event => {
+  event.preventDefault();
+});
 practice.addEventListener('pointerdown', event => {
   if (event.button !== 2) {
     return;
@@ -265,7 +273,8 @@ practice.addEventListener('pointerup', event => {
   }
   lastPattern = pattern;
   try {
-    const action = actions.find(item => item.id === readSettings().bindings[pattern]);
+    const mapping = new Map(Object.entries(readSettings().bindings));
+    const action = actions.find(item => item.id === mapping.get(pattern));
     patternLabel.textContent = arrows(pattern);
     resultLabel.textContent = action ? `匹配：${action.label}（练习不执行）` :
         '尚未绑定；点击“添加手势”可使用这次方向。';
@@ -284,4 +293,6 @@ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
   render(snapshot);
   save.disabled = false;
   message('设置已加载');
-}).catch(() => message('设置加载失败，请重新打开此页面。', true));
+}).catch(() => {
+  message('设置加载失败，请重新打开此页面。', true);
+});

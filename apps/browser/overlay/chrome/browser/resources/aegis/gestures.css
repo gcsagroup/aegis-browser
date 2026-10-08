@@ -208,7 +208,7 @@ polyline {
 }
 
 button,
-input:not([type=range]):not([type=checkbox]),
+input:not([type=range], [type=checkbox]),
 select,
 textarea {
   font:inherit;
@@ -309,7 +309,7 @@ footer {
     width:100%;
   }
   button,
-input:not([type=range]):not([type=checkbox]),
+input:not([type=range], [type=checkbox]),
 select {
     padding:8px;
   }

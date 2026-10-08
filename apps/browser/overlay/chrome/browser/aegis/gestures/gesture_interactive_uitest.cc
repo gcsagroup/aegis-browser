@@ -18,6 +18,7 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/context_menu_interceptor.h"
+#include "content/public/test/hit_test_region_observer.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "ui/base/base_window.h"
@@ -385,6 +386,8 @@ IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
   ASSERT_TRUE(frame);
   ASSERT_NE(frame->GetProcess(),
             contents()->GetPrimaryMainFrame()->GetProcess());
+  // 子框架加载完成时，合成器尚可能未发布它的输入命中区域。
+  content::WaitForHitTestData(frame);
   Gesture(frame->GetRenderWidgetHost(), "L");
   ASSERT_TRUE(base::test::RunUntil([&] {
     return contents()->GetLastCommittedURL() ==
