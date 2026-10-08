@@ -18,7 +18,7 @@
 
 Aegis 正在開發中，尚無通過發布驗收的可散布版本。
 
-> **2026-10-09 · 桌面鼠标手势候选：** Ver 2.2 (141) 基于 Chromium `155.0.8059.40`，支持网页、设置页和内置 PDF 的原生右键手势。Mac ARM64 的 33 项测试及跨框架额外 5 次复测通过；Windows 构建与实机验收尚未完成。[使用指南](apps/browser/docs/mouse-gestures.zh-CN.md) · [验收记录](docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR；记录时 main 尚未升级，未正式发行。
+> **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
 
 > **2026-10-03 · iOS 2.2.0 原始碼預發布：** 網頁助手、過濾、下載、工作區、分頁分組及 iPad 獨立視窗已整合；驗證範圍及使用方式見[發布說明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。尚無可安裝的簽章 IPA。
 

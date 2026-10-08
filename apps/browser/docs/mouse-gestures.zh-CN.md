@@ -1,6 +1,6 @@
 # 桌面鼠标手势
 
-2026-10-09：Mac ARM64 验收版为 Ver 2.2 (141)，Chromium `155.0.8059.40`；Windows 尚待构建与实机验收。此功能位于源码候选分支，尚未正式发布。具体证据见[验收记录](../../../docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。
+2026-10-09：整合 Quinn 改动后的 Mac 候选为 Ver 2.2 (144)，Chromium `155.0.8059.40`；Windows 尚待构建与实机验收，正式发行尚未完成。最新范围见[整合记录](../../../docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，141 的[历史验收](../../../docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)单独保留。
 
 在设置侧栏打开“鼠标手势”，或访问 `chrome://aegis/gestures.html`。按住右键画出方向，松开执行；右键轻点仍然打开菜单。按 Esc、切换标签或窗口可以取消，按住 Shift 再右键可临时跳过手势。
 
