@@ -1,4 +1,4 @@
-From 252b9180bdc2e25cbcc172af4b8297ace02b6ef5 Mon Sep 17 00:00:00 2001
+From 6da60af39d9833f0ba1d0268963d74ee252f9e6a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 03:03:22 +0800
 Subject: [PATCH] fix(aegis): migrate WebUI browser selection for Chromium 153
@@ -10,10 +10,10 @@ Subject: [PATCH] fix(aegis): migrate WebUI browser selection for Chromium 153
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index ca6fbd41f8..9538a69a85 100644
+index ce0e7fefc785014d45768d7d86d963dc085fd22e..bb0c09a7ba5ea1e26660d2808619c5ab97b1dfec 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1298,7 +1298,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1305,7 +1305,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
        break;
      case IDC_SHOW_AEGIS:
        if (IsAegisProfileSupported(profile())) {
@@ -23,7 +23,7 @@ index ca6fbd41f8..9538a69a85 100644
        break;
      case IDC_SHOW_AEGIS_AGENT:
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 82e958224f..ce14883c5b 100644
+index 82e958224f66221b343aab558d3ed38ecc94f578..ce14883c5b99d99fba6074882c9b82c1974c4e7b 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

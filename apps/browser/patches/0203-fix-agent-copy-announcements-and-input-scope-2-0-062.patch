@@ -1,4 +1,4 @@
-From 57817754d6abc8622905efc0586b3a5e7a08c16e Mon Sep 17 00:00:00 2001
+From 78ddf783b26d5e8a500bd1a808d3689be449a5de Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 22 Sep 2026 19:57:29 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B8=85=E7=90=86=E4=BB=BB=E5=8A=A1=E6=96=87?=
@@ -21,7 +21,7 @@ Content-Transfer-Encoding: 8bit
  8 files changed, 1361 insertions(+), 1122 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 9794d37409..6d70c1204d 100644
+index 9794d3740929d0239580ffa6d076d2110c5f68db..6d70c1204d1b990b926d839939e2cd4853c6761c 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -22,7 +22,7 @@ namespace {
@@ -1736,7 +1736,7 @@ index 9794d37409..6d70c1204d 100644
 -}  // namespace aegis::agent
 +} // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index de1f883a95..a4d1570f11 100644
+index de1f883a9526e2d65445dcd67336564ca4c1fe70..a4d1570f11977446735ee0a8de945124af26f746 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -29,7 +29,8 @@ AgentTaskScope ExecutionScope() {
@@ -3288,7 +3288,7 @@ index de1f883a95..a4d1570f11 100644
 +} // namespace
 +} // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index bf643d3295..62f9b5abb5 100644
+index bf643d3295d599552b0fb9fb84567ac88cab331b..62f9b5abb5ca86642a8f802f2b043799d4401561 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -69,20 +69,20 @@ base::DictValue StrictObject(base::DictValue properties,
@@ -4160,7 +4160,7 @@ index bf643d3295..62f9b5abb5 100644
 -}  // namespace aegis::agent
 +} // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 1727d537a3..bf4ab10869 100644
+index 1727d537a36b79edc8110cd3bd4169ec3aca91bb..bf4ab108694d29f3f2ce04f3c06ab8a69422c89a 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -53,8 +53,7 @@ AgentModelEvent ValidPlanEvent() {
@@ -4751,7 +4751,7 @@ index 1727d537a3..bf4ab10869 100644
 +} // namespace
 +} // namespace aegis::agent
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index a8ae01a760..0b091b37f1 100644
+index a8ae01a760eae335619e031a0cf380e32db1d42b..0b091b37f15f484d50fe5cb25f0ecd74d21b9d70 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -15,7 +15,7 @@
@@ -4773,7 +4773,7 @@ index a8ae01a760..0b091b37f1 100644
  
      </main>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 6659fbac75..24d79d12dd 100644
+index 6659fbac75e0a5f2d2667414f08190fdf0775421..24d79d12dde2926e4e622d21837ddc140569033a 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -435,6 +435,12 @@ function renderCheckoutSummary(checkout: CheckoutSummary|null) {
@@ -4915,7 +4915,7 @@ index 6659fbac75..24d79d12dd 100644
      element('approval-data-flow').hidden = !transfer;
      element('approval-data-flow').textContent = transfer ?
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 5da6535641..ec845bc59e 100644
+index 5da65356417590bf3b4f8f7491d817398af590cb..ec845bc59e9076d61977a228c80e879eb5549efb 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -45,25 +45,23 @@ UiLanguage CurrentLanguage() {
@@ -5117,7 +5117,7 @@ index 5da6535641..ec845bc59e 100644
                                             profile, /*serve_untrusted=*/true));
  #endif
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 7887b9e75a..9c40db91d6 100644
+index 7887b9e75a30f8754942ee689261190864257ce3..9c40db91d6ff245d5dfe392c811ff9c740e6fd04 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -17,12 +17,12 @@

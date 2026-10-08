@@ -1,4 +1,4 @@
-From 612462708d39e4648d3ef5f814ad3cdbb6dc5cd9 Mon Sep 17 00:00:00 2001
+From 8b4516a797d82f905313b68ab4baa2f8b7f2bb3c Mon Sep 17 00:00:00 2001
 From: Aegis integration <aegis-integration@users.noreply.github.com>
 Date: Sat, 3 Oct 2026 05:13:41 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=20Mock=20?=
@@ -803,10 +803,10 @@ index d1cc9c6a129658fa78acd7097492c828faf3a943..3b36201e2589f12a7343e340bdbd76ec
    def testDictionaryPolicy(self):
      # Tests a policy group with a single policy of type 'dict'.
 diff --git a/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc b/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
-index b49c469755bcda27e1eebc58c6ab37e356ba4eb7..62216a8c2ebbfc79786ca4d22f5d5fc35589eaac 100644
+index f67c1aa994f9bd11477c773ed509ba9aa4fabec2..156c9ae2edb3d369a954b30aa26f7e0a72e2f432 100644
 --- a/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
 +++ b/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
-@@ -76,7 +76,7 @@ TEST_F(PrefetchNetworkContextTest, CreateIsolatedURLLoaderFactory) {
+@@ -77,7 +77,7 @@ TEST_F(PrefetchNetworkContextTest, CreateIsolatedURLLoaderFactory) {
                    ukm::SourceIdObj::FromInt64(main_rfh()->GetPageUkmSourceId()),
                    testing::_, testing::NotNull(), testing::NotNull(),
                    testing::IsNull(), testing::IsNull(), testing::IsNull(),
@@ -815,7 +815,7 @@ index b49c469755bcda27e1eebc58c6ab37e356ba4eb7..62216a8c2ebbfc79786ca4d22f5d5fc3
  
    // Unused fields are marked as `{}`.
    auto prefetch_request = PrefetchRequest::CreateRendererInitiated(
-@@ -115,7 +115,7 @@ TEST_F(PrefetchNetworkContextTest,
+@@ -116,7 +116,7 @@ TEST_F(PrefetchNetworkContextTest,
                    ukm::SourceIdObj::FromInt64(main_rfh()->GetPageUkmSourceId()),
                    testing::_, testing::NotNull(), testing::NotNull(),
                    testing::IsNull(), testing::IsNull(), testing::IsNull(),
@@ -824,7 +824,7 @@ index b49c469755bcda27e1eebc58c6ab37e356ba4eb7..62216a8c2ebbfc79786ca4d22f5d5fc3
  
    // Unused fields are marked as `{}`.
    auto prefetch_request = PrefetchRequest::CreateRendererInitiated(
-@@ -152,7 +152,7 @@ TEST_F(PrefetchNetworkContextTest,
+@@ -153,7 +153,7 @@ TEST_F(PrefetchNetworkContextTest,
            testing::Eq(std::nullopt), testing::Eq(ukm::kInvalidSourceIdObj),
            testing::_, testing::NotNull(), testing::NotNull(), testing::IsNull(),
            testing::IsNull(), testing::IsNull(),

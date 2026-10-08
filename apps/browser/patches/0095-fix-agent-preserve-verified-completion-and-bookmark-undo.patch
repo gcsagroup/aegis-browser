@@ -1,4 +1,4 @@
-From f743c66550d0a8fa51511ec904dd425731086702 Mon Sep 17 00:00:00 2001
+From 130d31cc7dbfb7a701bb3de37b54f83d82e80ccb Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 02:55:19 +0800
 Subject: [PATCH] fix(agent): preserve verified completion and bookmark undo
@@ -12,7 +12,7 @@ Subject: [PATCH] fix(agent): preserve verified completion and bookmark undo
  5 files changed, 200 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index ba75b1faa7..e6b3660253 100644
+index ba75b1faa7c445b6461e9dfbc307757f41ed7f70..e6b3660253e2391b4505d49d62038162a9551591 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1475,6 +1475,10 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
@@ -117,7 +117,7 @@ index ba75b1faa7..e6b3660253 100644
      const std::string& task_id,
      bool ok,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 552f8a24ae..d109ec61b4 100644
+index 552f8a24ae759fdd82fa6bb106de9f649aaf27ba..d109ec61b45d440598ccef42b09cf9d1abd73200 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -261,6 +261,7 @@ class AegisAgentService : public KeyedService {
@@ -129,7 +129,7 @@ index 552f8a24ae..d109ec61b4 100644
                       bool ok,
                       std::string error,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 0c2e3a5312..8d20ca0103 100644
+index 0c2e3a5312a0eba82ffc7dac0005e24d78c6e8d9..8d20ca0103be665ce1d224c53b54a81b69cfa1b2 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -593,6 +593,78 @@ TEST_F(AegisAgentServiceTest,
@@ -212,7 +212,7 @@ index 0c2e3a5312..8d20ca0103 100644
    AegisAgentService* service =
        AegisAgentServiceFactory::GetForProfile(profile_);
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 119c542607..34bda5e718 100644
+index 119c54260720b12ac040d6d2c06dae9883f1b36b..34bda5e718c8ac9b295453ee6679782a871eed49 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -823,6 +823,21 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
@@ -238,7 +238,7 @@ index 119c542607..34bda5e718 100644
      *error = "browser could not bind the plan to its approved scope";
      return std::nullopt;
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 89ce65e2a7..1665b1fe93 100644
+index 89ce65e2a746ae15d456da92259107672d1a9463..1665b1fe93b81103291423243cfa95fd9a0c5abd 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -310,6 +310,45 @@ TEST(AegisAgentPlannerTest, RejectsModelDeclaredRiskOrUnapprovedStep) {

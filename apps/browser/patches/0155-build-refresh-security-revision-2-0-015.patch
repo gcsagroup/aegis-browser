@@ -1,4 +1,4 @@
-From db36cacbf08c3df7b5ab449af23f11ab72997475 Mon Sep 17 00:00:00 2001
+From 7cb067b22cf5936fc82ba92422694b53732a555c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 09:04:15 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=9E=84=E5=BB=BA=EF=BC=9A=E5=88=B7=E6=96=B0?=
@@ -13,7 +13,7 @@ Content-Transfer-Encoding: 8bit
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index b9ce8c9488..2d895b29b4 100644
+index b9ce8c9488d4ac76fc2b139f279919bbd2b8e687..2d895b29b47781bd3fc438b6d138a47b8bc4b4f8 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

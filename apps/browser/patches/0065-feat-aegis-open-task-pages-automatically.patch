@@ -1,4 +1,4 @@
-From ce494dd9fc57835654dc930a107316581a69f52e Mon Sep 17 00:00:00 2001
+From 9dea626143407c58d72fcc0fcd83e989f5ac0251 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 16:34:59 +0800
 Subject: [PATCH] feat(aegis): open task pages automatically
@@ -12,7 +12,7 @@ Subject: [PATCH] feat(aegis): open task pages automatically
  5 files changed, 250 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 3164a58133..ca2fa97f3d 100644
+index 3164a581339a7091287c932c43a76e8b042c1389..ca2fa97f3d14adbce483a02d2fe7a7fdb262af1a 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -208,7 +208,9 @@ if (!is_android) {
@@ -34,7 +34,7 @@ index 3164a58133..ca2fa97f3d 100644
        "//testing/gtest",
        "//url",
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 354f418e54..480c375410 100644
+index 354f418e54a008319211f38b7b04318e82c4336d..480c375410c86e4185d6c4eb56dc88fc1ef96b03 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -15,6 +15,7 @@
@@ -181,7 +181,7 @@ index 354f418e54..480c375410 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
-index 086ee3dda7..3591d9d3c3 100644
+index 086ee3dda75aecda316efee1a6590b0c408eb265..3591d9d3c324b714f57fb5afdf9f32d8c75c7a1c 100644
 --- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
 +++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
 @@ -36,13 +36,16 @@ source_set("impl") {
@@ -202,7 +202,7 @@ index 086ee3dda7..3591d9d3c3 100644
      "//content/public/browser",
      "//ui/base",
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 59d5a0085b..e8d72426f3 100644
+index 59d5a0085b664280c2e0f8f59ac9a4772918d6fd..e8d72426f363af8cec1da88391f3e1d31563cb23 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -11,16 +11,22 @@
@@ -391,7 +391,7 @@ index 59d5a0085b..e8d72426f3 100644
      if (service_) {
        const aegis::agent::AgentInvocationContext* invocation =
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 0da7b17209..0b03d6a49e 100644
+index 0da7b17209cc8f797a49c67a1b9efa451b07b2e0..0b03d6a49e229f4c82076bc908e182f89c774cea 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -69,22 +69,23 @@ void AddStrings(content::WebUIDataSource* source) {

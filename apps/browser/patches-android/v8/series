@@ -1,0 +1,3 @@
+0001-feat-aegis-add-bytecode-shadow-observation.patch
+0002-fix-aegis-use-bounded-trace-telemetry.patch
+0003-fix-shadow-disabled-tracing-build.patch

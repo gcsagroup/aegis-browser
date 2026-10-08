@@ -16,6 +16,8 @@ run_check 'Windows MIDL 路径' python3 -B ./scripts/midl-dynamic-path_test.py
 run_check '构建容量' python3 -B ./scripts/build_capacity_test.py
 run_check '构建进程' python3 -B ./scripts/build_processes_test.py
 run_check 'Chromium 上游监测' python3 -B ./scripts/check-chromium-upstream_test.py
+run_check '发行资产一致性' python3 -B ./scripts/release-assets_test.py
+run_check 'GitHub发行编排' python3 -B ./scripts/release-github_test.py
 run_check '候选编排' python3 -B -m unittest discover -s ./scripts/ci -p "*_test.py"
 run_check '进程测量' python3 -B ./scripts/measure-browser-processes_test.py
 run_check 'workspace-paths' node --test ./scripts/workspace-paths_test.mjs

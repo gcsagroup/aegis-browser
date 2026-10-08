@@ -1,4 +1,4 @@
-From b655887a127ab1d5ce1eaf2c037453be48c3895d Mon Sep 17 00:00:00 2001
+From 0f0a068822fda1ea5674fbdba272b6e201fe54f4 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:30:27 +0800
 Subject: [PATCH] Aegis: farble Audio fingerprints once per buffer and per site
@@ -15,7 +15,7 @@ by page host, and apply the same pass on copyFromChannel.
  6 files changed, 69 insertions(+), 27 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index f8f6eb21c3..ff1be2266e 100644
+index f8f6eb21c3cf858c305aad151aa7d6515d4d42fc..ff1be2266edc2ad1d0caa1c243357c2c1122c894 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -388,19 +388,9 @@ function probeWebGL(): {line: string, marked: boolean} {
@@ -88,7 +88,7 @@ index f8f6eb21c3..ff1be2266e 100644
      if (webgpu.line) {
        lines.push(webgpu.line);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index a52a292dfe..650951eb57 100644
+index a52a292dfeedd2ca0d5e976e125c8123160dfba0..650951eb5745632862b4634167c642e8a7223304 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -78,7 +78,8 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -121,7 +121,7 @@ index a52a292dfe..650951eb57 100644
        .filter_list_title = "EasyList rules",
        .filter_list_auto_update = "Auto-update filter lists",
 diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
-index 6b89d058e9..23c1976aff 100644
+index 6b89d058e92f19ce29bb3558d783c3179d623c23..23c1976aff346210573a885ea618dd59bffc9485 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.cc
 +++ b/third_party/blink/renderer/core/aegis/farbling.cc
 @@ -118,7 +118,7 @@ void MaybeFarbleAudioChannel(ExecutionContext* context,
@@ -134,7 +134,7 @@ index 6b89d058e9..23c1976aff 100644
    for (size_t i = 0; i < samples.size(); ++i) {
      token = token * 6364136223846793005ULL + 1ULL;
 diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
-index 3bf4619784..e51cf04fe1 100644
+index 3bf461978489443d7900fabea748af8520a3b78c..e51cf04fe1196fbf9056c711b3cae9a8964828a1 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.h
 +++ b/third_party/blink/renderer/core/aegis/farbling.h
 @@ -25,7 +25,8 @@ CORE_EXPORT scoped_refptr<StaticBitmapImage> MaybeFarbleStaticBitmapImage(
@@ -148,11 +148,11 @@ index 3bf4619784..e51cf04fe1 100644
                                           float* data,
                                           size_t length);
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-index 3a683be0da..53b9f17834 100644
+index 425d9442acf164c1f4742b23802a9a5f1a700488..657471c557e4525aef07fc15b09f500ad8e6f8ac 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-@@ -33,13 +33,16 @@
- 
+@@ -34,13 +34,16 @@
+ #include "base/check_op.h"
  #include "base/compiler_specific.h"
  #include "base/containers/span.h"
 +#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -168,7 +168,7 @@ index 3a683be0da..53b9f17834 100644
  
  namespace blink {
  
-@@ -214,21 +217,33 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+@@ -215,21 +218,33 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
      return NotShared<DOMFloat32Array>(nullptr);
    }
  
@@ -209,7 +209,7 @@ index 3a683be0da..53b9f17834 100644
  }
  
  void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
-@@ -258,6 +273,8 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+@@ -259,6 +274,8 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
      return;
    }
  
@@ -219,7 +219,7 @@ index 3a683be0da..53b9f17834 100644
    base::span<float> dst = destination->AsSpan();
  
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
-index 4bbf70b439..bb6e330ff0 100644
+index 0dd11f830ee2829778b6c89ec51edeb1da839f74..0d0d0a857015f45409ff1473c90a2e14fe86d73d 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
 @@ -123,6 +123,10 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {

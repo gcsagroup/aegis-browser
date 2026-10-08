@@ -1,4 +1,4 @@
-From 3bc32b0136c333831f8928b787099bbadf1fd7be Mon Sep 17 00:00:00 2001
+From e480332ed4bb3bab2352132ea92630514f506178 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 04:49:03 +0800
 Subject: [PATCH] feat(aegis): add observe-only MinerGuard
@@ -46,7 +46,7 @@ Subject: [PATCH] feat(aegis): add observe-only MinerGuard
  create mode 100644 chrome/common/aegis/miner_guard_reporter_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index a0f44386ef..39fd2d5b44 100644
+index a0f44386ef68fa674ef1e6f38c538f0ced31c2bb..39fd2d5b441db464dd56e4b73fff2826cf8ee4d0 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -7,12 +7,12 @@ source_set("aegis") {
@@ -94,7 +94,7 @@ index a0f44386ef..39fd2d5b44 100644
      "filter_list_updater_unittest.cc",
      "metalink_parser_unittest.cc",
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index 63a5af117b..baad81d6d8 100644
+index 63a5af117b956d0d2e125e1b86e710ed9e6c7b70..baad81d6d814d7d117059afff92be9eb56b549ab 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -16,6 +16,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -106,7 +106,7 @@ index 63a5af117b..baad81d6d8 100644
    registry->RegisterStringPref(prefs::kFingerprintFarblingSecret,
                                 std::string());
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 1a2484bf2f..c58487eb88 100644
+index 1a2484bf2fa7b3b14918ce6bbaca42de244f8e1d..c58487eb88ed3cc88173df3ad15a0876b574a986 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -24,15 +24,18 @@
@@ -311,7 +311,7 @@ index 1a2484bf2f..c58487eb88 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 57feaab09c..8b8fc01ff3 100644
+index 57feaab09cec75e2402fa1c2b1092d2e81c63d0d..8b8fc01ff37ddd5bbae3385727431c15a84eb5fd 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -6,6 +6,7 @@
@@ -383,7 +383,7 @@ index 57feaab09c..8b8fc01ff3 100644
                       std::string system,
 diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
 new file mode 100644
-index 0000000000..7f7542b237
+index 0000000000000000000000000000000000000000..7f7542b2378454b8af07fad8533af7f2e2d174f2
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_service_unittest.cc
 @@ -0,0 +1,33 @@
@@ -421,7 +421,7 @@ index 0000000000..7f7542b237
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 7a37d6cb62..c89b2c3771 100644
+index 38f0001989e66db2c0ac86ca10bd42cd55b0c4d7..1bfb5169e5327e0ac2497c13136121739a918e62 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -48,6 +48,7 @@
@@ -432,7 +432,7 @@ index 7a37d6cb62..c89b2c3771 100644
  #include "base/types/expected.h"
  #include "base/types/expected_macros.h"
  #include "base/values.h"
-@@ -209,7 +210,10 @@
+@@ -220,7 +221,10 @@
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
  #include "chrome/common/aegis/aegis_net_throttle.h"
  #include "chrome/common/aegis/features.h"
@@ -443,7 +443,7 @@ index 7a37d6cb62..c89b2c3771 100644
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
  #include "chrome/common/chrome_constants.h"
-@@ -6824,6 +6828,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
+@@ -6890,6 +6894,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
  #endif
  }
  
@@ -487,10 +487,10 @@ index 7a37d6cb62..c89b2c3771 100644
  ChromeContentBrowserClient::GetWebSocketOptions(
      content::RenderFrameHost* frame) {
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 34b4e978e8..7f6b6ed51e 100644
+index 4bd6004f722af1c56a6c0ae5e269b2a24cd5baf0..d6a46ff72136d73d93cf6874ff09d69dbb14a77f 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -711,6 +711,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -713,6 +713,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner)
        override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
@@ -500,7 +500,7 @@ index 34b4e978e8..7f6b6ed51e 100644
        content::RenderFrameHost* frame) override;
    void CreateWebSocket(
 diff --git a/chrome/browser/page_load_metrics/BUILD.gn b/chrome/browser/page_load_metrics/BUILD.gn
-index 950bd912cf..83f0e6c20a 100644
+index d84a722dc410b44f86d7825996da0f8575bdef08..07d14715eab06b06b773f6fb2f89e41ba009f700 100644
 --- a/chrome/browser/page_load_metrics/BUILD.gn
 +++ b/chrome/browser/page_load_metrics/BUILD.gn
 @@ -92,6 +92,8 @@ source_set("page_load_metrics") {
@@ -526,7 +526,7 @@ index 950bd912cf..83f0e6c20a 100644
      "//components/ukm",
 diff --git a/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc
 new file mode 100644
-index 0000000000..217e64c1f3
+index 0000000000000000000000000000000000000000..217e64c1f3ad2502036c8485cd953e79c96ac83b
 --- /dev/null
 +++ b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc
 @@ -0,0 +1,309 @@
@@ -841,7 +841,7 @@ index 0000000000..217e64c1f3
 +}  // namespace aegis
 diff --git a/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h
 new file mode 100644
-index 0000000000..97f1d23b4e
+index 0000000000000000000000000000000000000000..97f1d23b4e7beb852eb84c3137a0feceaebdb7fd
 --- /dev/null
 +++ b/chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h
 @@ -0,0 +1,79 @@
@@ -925,10 +925,10 @@ index 0000000000..97f1d23b4e
 +
 +#endif  // CHROME_BROWSER_PAGE_LOAD_METRICS_OBSERVERS_AEGIS_MINER_GUARD_PAGE_LOAD_METRICS_OBSERVER_H_
 diff --git a/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc b/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
-index 49d112c063..77dcc9d7bc 100644
+index 49eed2a6c018f3bbff0e49084a24fac4ac7831e6..b1e0f378470e58643343f935565f1acf93824313 100644
 --- a/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
 +++ b/chrome/browser/page_load_metrics/page_load_metrics_initialize.cc
-@@ -25,6 +25,7 @@
+@@ -26,6 +26,7 @@
  #endif
  #include "chrome/browser/heavy_ad_intervention/heavy_ad_service_factory.h"
  #include "chrome/browser/history/history_service_factory.h"
@@ -936,7 +936,7 @@ index 49d112c063..77dcc9d7bc 100644
  #include "chrome/browser/page_load_metrics/observers/bookmark_bar_page_load_metrics_observer.h"
  #include "chrome/browser/page_load_metrics/observers/captcha_metrics_observer.h"
  #include "chrome/browser/page_load_metrics/observers/chrome_gws_abandoned_page_load_metrics_observer.h"
-@@ -216,6 +217,8 @@ void PageLoadMetricsEmbedder::RegisterObservers(
+@@ -217,6 +218,8 @@ void PageLoadMetricsEmbedder::RegisterObservers(
  
    // Observers for regular web pages.
    RegisterCommonObservers(tracker);
@@ -946,7 +946,7 @@ index 49d112c063..77dcc9d7bc 100644
    if (!IsNoStatePrefetch(web_contents())) {
      tracker->AddObserver(std::make_unique<AMPPageLoadMetricsObserver>());
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index e0bdf773d4..f7c8dd2613 100644
+index e0bdf773d45d3ff28994d1d8e8a8e47babdfc538..f7c8dd261339ab253120e3a1740f86b3456b3be4 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -68,6 +68,13 @@
@@ -964,7 +964,7 @@ index e0bdf773d4..f7c8dd2613 100644
            <span class="copy">
              <span class="name">$i18n{linkSanitizeLabel}</span>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 77dd735c1b..d7d29b1c3f 100644
+index 77dd735c1b5c1c1c898d91b910a5e35e5802c923..d7d29b1c3f2a896659b87d8bf98dcdf311882545 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -21,6 +21,7 @@ interface AegisStatus {
@@ -1025,7 +1025,7 @@ index 77dd735c1b..d7d29b1c3f 100644
    bindToggle('cookie-janitor', 'cookieJanitor');
    bindToggle('cname-uncloak', 'cnameUncloak');
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index 2cbd206a83..8b6b8fa6ec 100644
+index 2cbd206a8317ccc132c483f00cbd498fe92b8f51..8b6b8fa6ece2ee22c4f5dfff9ee103efa7db7239 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 @@ -69,6 +69,9 @@ std::u16string EventKind(const std::string& kind) {
@@ -1068,7 +1068,7 @@ index 2cbd206a83..8b6b8fa6ec 100644
            ? Copy(u"Aegis：本页已处理 ", u"Aegis: handled ") +
                  base::NumberToString16(summary.total) +
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 165e330ec9..06e2c36225 100644
+index 165e330ec93054e1496b12659427a0da792bb168..06e2c362255f890ca6f847f03837b1b68daa9d80 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -33,6 +33,8 @@ struct AegisStrings {
@@ -1126,7 +1126,7 @@ index 165e330ec9..06e2c36225 100644
    source->AddString("filterListAutoUpdate", strings.filter_list_auto_update);
    source->AddString("filterListAutoUpdateHint",
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 63b4746860..ec5884fbc4 100644
+index 63b47468606ebfe25f3602e7447955ea69264caa..ec5884fbc4e4306d9d8303f26269d67f069b44c8 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -364,6 +364,7 @@ base::DictValue AegisUIHandler::BuildStatus() {
@@ -1147,7 +1147,7 @@ index 63b4746860..ec5884fbc4 100644
      service->SetFilterListAutoUpdateEnabled(enabled);
    } else if (module == "linkSanitize") {
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index f8552af355..718dce789e 100644
+index f8552af35506d07dd660967ecb140b6c0515bd80..718dce789eaf10947d0ba2b0d09e9b4a92bb5284 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -31,6 +31,10 @@ source_set("aegis") {
@@ -1176,7 +1176,7 @@ index f8552af355..718dce789e 100644
      "site_control_unittest.cc",
      "threat_feed_index_unittest.cc",
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index a62067274c..cd9248cc7f 100644
+index a62067274c1d99ee801adf009de67223daeb4f1f..cd9248cc7fc046e93a4e76082304669f0bf8ffd1 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -5,11 +5,13 @@
@@ -1205,7 +1205,7 @@ index a62067274c..cd9248cc7f 100644
 +
  }  // namespace aegis::features
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index e22869db4f..81bef9fcd2 100644
+index e22869db4fdfc40f340ba7beab1206ca768fc44f..81bef9fcd23f3abee3b8a4463d5aba06c314e4c5 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -13,6 +13,7 @@ BASE_DECLARE_FEATURE(kAegisEnabled);
@@ -1225,7 +1225,7 @@ index e22869db4f..81bef9fcd2 100644
  }  // namespace aegis::features
  
 diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
-index c0a666028b..f9fa295f44 100644
+index c0a666028b24fb24a6129e821bd83a730bc92987..f9fa295f440500af44fbd48b343c0a45de95cddd 100644
 --- a/chrome/common/aegis/features_unittest.cc
 +++ b/chrome/common/aegis/features_unittest.cc
 @@ -37,5 +37,32 @@ TEST(AegisFeaturesTest, FingerprintGuardRequiresEveryGate) {
@@ -1263,7 +1263,7 @@ index c0a666028b..f9fa295f44 100644
  }  // namespace aegis::features
 diff --git a/chrome/common/aegis/miner_guard_model.cc b/chrome/common/aegis/miner_guard_model.cc
 new file mode 100644
-index 0000000000..78d5df5990
+index 0000000000000000000000000000000000000000..78d5df59905eb4a09900a2824d21599f3d8deb4d
 --- /dev/null
 +++ b/chrome/common/aegis/miner_guard_model.cc
 @@ -0,0 +1,216 @@
@@ -1485,7 +1485,7 @@ index 0000000000..78d5df5990
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/miner_guard_model.h b/chrome/common/aegis/miner_guard_model.h
 new file mode 100644
-index 0000000000..1059621b65
+index 0000000000000000000000000000000000000000..1059621b65d5ed08bfc1f57b753ab715164c39c9
 --- /dev/null
 +++ b/chrome/common/aegis/miner_guard_model.h
 @@ -0,0 +1,84 @@
@@ -1575,7 +1575,7 @@ index 0000000000..1059621b65
 +#endif  // CHROME_COMMON_AEGIS_MINER_GUARD_MODEL_H_
 diff --git a/chrome/common/aegis/miner_guard_model_unittest.cc b/chrome/common/aegis/miner_guard_model_unittest.cc
 new file mode 100644
-index 0000000000..8b25eed38b
+index 0000000000000000000000000000000000000000..8b25eed38b0ebeb7d435a0e4106002eb5755f68c
 --- /dev/null
 +++ b/chrome/common/aegis/miner_guard_model_unittest.cc
 @@ -0,0 +1,198 @@
@@ -1779,7 +1779,7 @@ index 0000000000..8b25eed38b
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/miner_guard_reporter.cc b/chrome/common/aegis/miner_guard_reporter.cc
 new file mode 100644
-index 0000000000..61be26ac47
+index 0000000000000000000000000000000000000000..61be26ac4705210aa1eddd0b605d8b29b75facfb
 --- /dev/null
 +++ b/chrome/common/aegis/miner_guard_reporter.cc
 @@ -0,0 +1,58 @@
@@ -1843,7 +1843,7 @@ index 0000000000..61be26ac47
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/miner_guard_reporter.h b/chrome/common/aegis/miner_guard_reporter.h
 new file mode 100644
-index 0000000000..3ea30bcc42
+index 0000000000000000000000000000000000000000..3ea30bcc42ae74f061cd82bd292e72856b762cc4
 --- /dev/null
 +++ b/chrome/common/aegis/miner_guard_reporter.h
 @@ -0,0 +1,41 @@
@@ -1890,7 +1890,7 @@ index 0000000000..3ea30bcc42
 +#endif  // CHROME_COMMON_AEGIS_MINER_GUARD_REPORTER_H_
 diff --git a/chrome/common/aegis/miner_guard_reporter_unittest.cc b/chrome/common/aegis/miner_guard_reporter_unittest.cc
 new file mode 100644
-index 0000000000..517c8255f2
+index 0000000000000000000000000000000000000000..517c8255f2dde653bee01a7a98b4b7618dec83e3
 --- /dev/null
 +++ b/chrome/common/aegis/miner_guard_reporter_unittest.cc
 @@ -0,0 +1,63 @@
@@ -1958,7 +1958,7 @@ index 0000000000..517c8255f2
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index ada93350b4..e402c6b71d 100644
+index ada93350b47ae2f9503ef20e26ba820d9923a7bb..e402c6b71d4623d09a241cb5e8b7076095452731 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -13,6 +13,7 @@ inline constexpr char kPhishInterstitialEnabled[] =
@@ -1970,7 +1970,7 @@ index ada93350b4..e402c6b71d 100644
      "aegis.fingerprint_farbling_secret";
  inline constexpr char kFilterListAutoUpdateEnabled[] =
 diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
-index c1becd05ae..200a73bccd 100644
+index 0a896672bd7b08bc5a0025881d9c7c3b4af7da43..bbd6c7c3b28fcd48aada02ecdc0a6afc23d0a96d 100644
 --- a/content/browser/websockets/websocket_connector_impl.cc
 +++ b/content/browser/websockets/websocket_connector_impl.cc
 @@ -64,7 +64,7 @@ constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
@@ -1982,7 +1982,7 @@ index c1becd05ae..200a73bccd 100644
  
  WebSocketConnectorImpl::WebSocketConnectorImpl(
      const content::GlobalRenderFrameHostId& frame_id,
-@@ -121,6 +121,7 @@ void WebSocketConnectorImpl::Connect(
+@@ -123,6 +123,7 @@ void WebSocketConnectorImpl::Connect(
    }
  
    RenderFrameHost* frame = RenderFrameHost::FromID(frame_id_);
@@ -1991,10 +1991,10 @@ index c1becd05ae..200a73bccd 100644
        GetContentClient()->browser()->GetWebSocketOptions(frame);
  
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 20bf75c79b..df995fdda8 100644
+index 7fb5b3d963e7b7f17589804a1598720f8bcb2a61..5c129bc0962d5749e4da7d6ac62796ee8ab08a68 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1093,6 +1093,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1099,6 +1099,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -2005,10 +2005,10 @@ index 20bf75c79b..df995fdda8 100644
  ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
  ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 0db044d5ba..40a90ff9f0 100644
+index e2eeec5ab76b9810008e4c1c93e973a7ed93586c..4eb19faf14b31ea0c26ca2a81e83fbda80220c3f 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
-@@ -1971,6 +1971,11 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1978,6 +1978,11 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  

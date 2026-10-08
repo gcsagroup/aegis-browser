@@ -1,4 +1,4 @@
-From e356b6cff90e6b84612383d44b7d2dc97dfd58bf Mon Sep 17 00:00:00 2001
+From a8f88867241ed73ee0587bd68ff547441c73593d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 21:19:06 +0800
 Subject: [PATCH] fix(aegis): isolate summary source tab
@@ -12,7 +12,7 @@ Subject: [PATCH] fix(aegis): isolate summary source tab
  create mode 100644 chrome/browser/aegis/aegis_ui_handler_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 2951ccc0e7..29147e3578 100644
+index 2951ccc0e77aee858e6c7a02ed79800a9ba753ea..29147e357817e47296d5270561d6da703c36f26b 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -65,6 +65,7 @@ test("aegis_browser_unittests") {
@@ -34,7 +34,7 @@ index 2951ccc0e7..29147e3578 100644
      "//content/test:test_support",
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 new file mode 100644
-index 0000000000..51f1a15233
+index 0000000000000000000000000000000000000000..51f1a1523307e1a26c0ea3a2cf755c1c54a016f7
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -0,0 +1,45 @@
@@ -84,7 +84,7 @@ index 0000000000..51f1a15233
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index e136e6597b..f9995c7430 100644
+index e136e6597bb055beb6093aa395cd5fb2de3fe66f..f9995c7430ce9ed983a836b475b4f31895c1f01e 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -112,6 +112,55 @@ std::optional<aegis::PreparedSummary> ParsePreparedSummary(
@@ -170,7 +170,7 @@ index e136e6597b..f9995c7430 100644
        BrowserCollection::Order::kActivation);
    return found;
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index 933f9248d8..484ddb0c2c 100644
+index 933f9248d851b6654a1fa8b697399945cb7d90b6..484ddb0c2c943cf13e177f805ef05061e299f7f3 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -16,6 +16,22 @@
