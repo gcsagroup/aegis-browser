@@ -166,6 +166,7 @@ try {
     'apps/browser/scripts/local-pypi-proxy.py',
     'apps/browser/scripts/measure-browser-processes.py',
     'apps/browser/scripts/release-assets.py',
+    'apps/browser/scripts/release-contract.py',
     'apps/browser/scripts/release-github.py',
     'apps/browser/scripts/verify-build-source.py',
   ];
