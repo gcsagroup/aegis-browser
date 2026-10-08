@@ -1,4 +1,5 @@
 import Combine
+import AegisPolicyKit
 import Foundation
 
 public struct BrowserTabGroup: Codable, Identifiable, Equatable, Sendable {
@@ -11,7 +12,11 @@ public struct SavedBrowserTab: Codable, Equatable, Sendable {
     public let id: UUID
     public let url: URL?
     public let groupID: UUID?
-    public init(id: UUID, url: URL?, groupID: UUID?) { self.id = id; self.url = url; self.groupID = groupID }
+    public let title: String?
+    public let scrollOffset: Double?
+    public init(id: UUID, url: URL?, groupID: UUID?, title: String? = nil, scrollOffset: Double? = nil) {
+        self.id = id; self.url = url; self.groupID = groupID; self.title = title; self.scrollOffset = scrollOffset
+    }
 }
 
 public struct BrowserWindowSnapshot: Codable, Identifiable, Equatable, Sendable {
@@ -115,7 +120,9 @@ public struct BrowserWindowSnapshot: Codable, Identifiable, Equatable, Sendable 
         let groupIDs = Set(value.groups.map(\.id))
         value.tabs = value.tabs.map { tab in
             SavedBrowserTab(id: tab.id, url: tab.url.flatMap { WorkspaceStore.persistableURLs([$0]).first },
-                            groupID: tab.groupID.flatMap { groupIDs.contains($0) ? $0 : nil })
+                            groupID: tab.groupID.flatMap { groupIDs.contains($0) ? $0 : nil },
+                            title: tab.title.map { String(PIIScanner.scan($0).redacted.prefix(200)) },
+                            scrollOffset: tab.scrollOffset.flatMap { $0.isFinite ? min(10_000_000, max(0, $0)) : nil })
         }
         if let group = value.selectedGroupID, !groupIDs.contains(group) { value.selectedGroupID = nil }
         if !value.tabs.contains(where: { $0.id == value.activeTabID }) { value.activeTabID = value.tabs.first?.id }
