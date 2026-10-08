@@ -262,6 +262,9 @@ CompactExecutionEvidence(const AgentExecutionEvidence &evidence) {
   item.Set("ok", evidence.result.ok);
   item.Set("message", evidence.result.message);
   const base::DictValue &value = evidence.result.value;
+  if (evidence.research_source_id > 0) {
+    item.Set("source_id", evidence.research_source_id);
+  }
   if (evidence.tool_name == "bookmark.plan") {
     item.Merge(BookmarkPreviewEvidence(evidence.result));
     // 只保留供下一步引用的凭据，不再混入被截断的原始 moves。
@@ -501,6 +504,15 @@ CollectTranslationSources(const AgentTask &task,
 
 } // namespace
 
+void RetainLatestAgentResearchObservation(
+    std::vector<AgentExecutionEvidence>& history,
+    AgentExecutionEvidence observation) {
+  std::erase_if(history, [&](const AgentExecutionEvidence& prior) {
+    return prior.research_source_id == observation.research_source_id;
+  });
+  history.push_back(std::move(observation));
+}
+
 AgentModelToolDefinition BuildSelectTranslationToolDefinition() {
   AgentModelToolDefinition tool;
   tool.name = "agent.select_translation";
@@ -654,14 +666,18 @@ AgentModelToolDefinition BuildCompleteTaskToolDefinition(bool translation,
   }
   if (research) {
     base::DictValue cell;
-    cell.Set("source_url", StringSchema(4096));
+    base::DictValue source_id;
+    source_id.Set("type", "integer");
+    source_id.Set("minimum", 1);
+    source_id.Set("maximum", 10);
+    cell.Set("source_id", std::move(source_id));
     auto value = StringSchema(256);
     value.Set("minLength", 0);
     cell.Set("value", std::move(value));
     base::DictValue values;
     values.Set("type", "array");
     values.Set("maxItems", 10);
-    values.Set("items", StrictObject(std::move(cell), {"source_url", "value"}));
+    values.Set("items", StrictObject(std::move(cell), {"source_id", "value"}));
     base::DictValue dimension;
     dimension.Set("label", StringSchema(128));
     dimension.Set("prefix", StringSchema(512));
@@ -1181,7 +1197,7 @@ std::string BuildAgentExecutionPrompt(
           "source field name included in prefix. Use the same prefix/suffix for "
           "all sources; prefix+value+suffix must occur verbatim in each source's "
           "read text (inline nodes may join). Preserve full values and units, no "
-          "conversion or partial numbers. Supply exactly one source_url/value "
+          "conversion or partial numbers. Supply exactly one browser source_id/value "
           "per read source; missing fields use an empty value. Example: '延迟：18 ms。' "
           "uses label='延迟', prefix='延迟：', value='18 ms', suffix='。'. Browser "
           "derives groups/counts/differences from verified values, not summary. "
@@ -1538,7 +1554,7 @@ ParseCompletionSummary(const AgentModelEvent &event, std::string *error,
                                          .suffix = *row.FindString("suffix")};
       for (const auto &cell : *row.FindList("values")) {
         comparison.values.push_back(
-            {.source_url = *cell.GetDict().FindString("source_url"),
+            {.source_id = *cell.GetDict().FindInt("source_id"),
              .value = *cell.GetDict().FindString("value")});
       }
       completion.research_comparisons.push_back(std::move(comparison));
