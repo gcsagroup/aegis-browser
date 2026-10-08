@@ -89,10 +89,12 @@
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "crypto/sha2.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_status_code.h"
@@ -5913,8 +5915,21 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
     if (replace_document) {
       auto* changed = tabs::TabHandle(ids.front()).Get();
       ASSERT_TRUE(changed);
-      // Same URL, fresh primary document: URL equality cannot authorize reuse.
-      ASSERT_TRUE(content::NavigateToURL(changed->GetContents(), original.at(ids.front())));
+      // 带片段的同网址导航可能仍是同一文档；明确刷新并核对旧观察失效。
+      const auto observed = service->actor_bridge_for_testing().LastDocument(
+          task_id, ids.front());
+      ASSERT_TRUE(observed);
+      ASSERT_TRUE(service->actor_bridge_for_testing().IsObservedDocumentCurrent(
+          task_id, ids.front(), observed->document_token));
+      content::TestNavigationObserver reloaded(changed->GetContents());
+      changed->GetContents()->GetController().Reload(content::ReloadType::NORMAL,
+                                                     false);
+      reloaded.Wait();
+      ASSERT_TRUE(reloaded.last_navigation_succeeded());
+      EXPECT_EQ(changed->GetContents()->GetLastCommittedURL(),
+                original.at(ids.front()));
+      ASSERT_FALSE(service->actor_bridge_for_testing().IsObservedDocumentCurrent(
+          task_id, ids.front(), observed->document_token));
     }
     base::ListValue cells;
     for (int source = 1; source <= 3; ++source)

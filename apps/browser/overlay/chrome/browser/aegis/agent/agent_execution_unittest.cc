@@ -3100,6 +3100,8 @@ TEST(AegisAgentExecutionTest, ResearchRetriesKeepEveryLatestSourceInPrompt) {
   auto scope = ExecutionScope();
   scope.selected_pages_research = true;
   scope.allowed_tab_ids.clear();
+  // 九个所选来源需要显式的九标签页预算，不能沿用默认上限。
+  scope.budgets.max_tabs = 9;
   std::vector<AgentExecutionEvidence> history;
   for (int source = 1; source <= 9; ++source) {
     scope.allowed_tab_ids.insert(source);
@@ -3117,6 +3119,7 @@ TEST(AegisAgentExecutionTest, ResearchRetriesKeepEveryLatestSourceInPrompt) {
     }
   }
   ASSERT_EQ(history.size(), 9u);
+  ASSERT_TRUE(scope.IsValid());
   AgentTask task("research-retries", "比较所选来源", AgentMode::kAct, scope);
   AgentTaskPlan plan;
   auto envelope = base::JSONReader::ReadDict(
