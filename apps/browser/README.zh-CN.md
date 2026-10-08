@@ -8,7 +8,9 @@ GCSA-aegis Browser 是把隐私与安全能力直接集成到浏览器层和引�
 
 策略逻辑以 `packages/core` 为来源，通过生成的规则快照、内嵌 policy worker、Chromium browser service 以及 Blink/V8 接入点落地。
 
-> **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
+> **2026-10-09 · 桌面鼠标手势候选：** Ver 2.2 (141) 基于 Chromium `155.0.8059.40`，支持网页、设置页和内置 PDF 的原生右键手势。Mac ARM64 的 33 项测试及跨框架额外 5 次复测通过；Windows 构建与实机验收尚未完成。[使用指南](docs/mouse-gestures.zh-CN.md) · [验收记录](../../docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR；记录时 main 尚未升级，未正式发行。
+
+> **2026-09-22 历史本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
 
 > 历史 057 验收记录：当前候选为 Ver 2.0 (057)，Chromium 153.0.8010.53，198 个 Chromium 补丁及 3 个 V8 补丁；固定 macOS App 已安装核验。535 项原生回归通过，集中任务验收为 75/90（另有 2 失败、9 前置阻塞、4 证据不足），未达到 90% 门槛。安全 100 场景、输入与性能、三语及发行限制分别记录，不能合称整体通过。见[四组收尾与统一验收](../../docs/audit/integration-final-batch-2026-09-22.zh-CN.md)。
 
@@ -22,7 +24,7 @@ Ver 1.1 (044)的已验收基线为153.0.8010.37，包含140个Chromium补丁与3
 
 | 文件 | 含义 |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 固定的 Mac Stable 版本，当前为 `153.0.8010.53` |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `155.0.8059.40`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | 补丁所基于的精确 Chromium commit |
 
 该版本是固定快照，不会自动跟随更新的 Stable 版本。
