@@ -1,0 +1,46 @@
+From 51277bd5de192eefffa3101c68abf3462eaee835 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 06:18:52 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=E7=AA=97=E5=8F=A3=E7=89=88?=
+ =?UTF-8?q?=E6=9C=AC=E5=9B=9E=E5=BD=92=E5=A4=B9=E5=85=B7=20087?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/aegis_ui_handler_unittest.cc  | 3 +++
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index b769ecde82..9229d6ea73 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -93,6 +93,9 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
+   scope.allowed_tab_ids = {list->GetTab(0)->GetHandle().raw_value()};
+   scope.allowed_tools = {"window.list"};
+   scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
++  scope.model_destination.provider = "aegis-local";
++  scope.model_destination.model = "fixture";
++  ASSERT_TRUE(scope.IsValid());
+   AgentTask task("window-focus", "核对窗口审批期间的结构", AgentMode::kAct,
+                  scope);
+   AegisBrowserTools tools(profile());
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index da164cdbc6..69173271c2 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.86";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (086)";
++inline constexpr char kProductVersion[] = "2.0.0.87";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (087)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -57,7 +57,7 @@ Node-only AST 分析、有界行為/來源函數、本機聯邦模擬和 V8 Igni
 
 - Chromium API 憑證是可選項，透過作業系統加密儲存，並按 API 格式和正規化端點隔離，介面不回顯。
 - 遠端摘要文字有界且經過遮蔽，但完整 Chromium 出站、遙測、更新、當機報告和錯誤路徑稽核仍待完成。
-- 目前 iOS Agent 工作流程離線執行，不構成生產遠端模型路徑。Safari 存取唯讀並受手勢/租約約束；Share inbox 僅接收 URL，具有大小限制、過期和單次消費約束。
+- iOS 網頁助手支援預覽脫敏內容並確認後請求使用者設定的模型；模型回傳文字，無法呼叫瀏覽器操作工具。合成模型測試不代表外部服務品質。Safari 存取唯讀並受手勢/租約約束；Share inbox 僅接收 URL，具有大小限制、過期和單次消費約束。
 - 本機或 Simulator 簽署與結構檢查不等於產品身分、散布簽署、公證、provisioning、Archive、TestFlight 或已安裝真機驗收。
 - Chromium Android 仍受阻於合格 x86-64 Linux 建置、目前原始碼產物和真機驗收。
 - iOS 真機驗證為 `NOT_RUN`；預設瀏覽器 entitlement 為 `PENDING`；正式簽署、Archive、TestFlight 和 App Store 交付均為 `NOT_RUN`。

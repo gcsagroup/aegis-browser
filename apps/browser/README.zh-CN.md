@@ -8,7 +8,7 @@ GCSA-aegis Browser 将隐私与安全能力直接集成到 Chromium 浏览器及
 
 策略逻辑以 `packages/core` 为来源，通过生成的规则快照、内嵌 policy worker、Chromium browser service 以及 Blink/V8 接入点落地。
 
-## 当前状态
+> **历史证据（2026-09-22）：** macOS Ver 2.0 (061) 的 539 项原生回归等结果，仅属于[原审计记录](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)绑定的候选，不代表当前源码已通过验收。
 
 当前聚焦 macOS，运行、真实网络与分发验收仍待完成。其他平台按[路线图](../../docs/roadmap.zh-CN.md)推进。
 
@@ -18,7 +18,7 @@ GCSA-aegis Browser 将隐私与安全能力直接集成到 Chromium 浏览器及
 
 | 文件 | 含义 |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 固定的 Mac Stable 版本，当前为 `151.0.7922.77` |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 固定的 Mac Stable 版本，当前为 `153.0.8010.53` |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | 补丁所基于的精确 Chromium commit |
 
 该版本是固定快照，不会自动跟随更新的 Stable 版本。
@@ -49,10 +49,12 @@ Chromium 源码放在本仓库之外。典型本地配置为：
 
 ```bash
 export REPO_ROOT="$HOME/Projects/GCSA-aegis"
-export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-chromium"
+export CHROMIUM_ROOT="$HOME/Projects/GCSA-aegis-build/macos"
 ```
 
 也可把 Chromium 根目录写入已被 Git 忽略的 `apps/browser/.chromium-root`。
+
+平台工作区统一放在同级 `GCSA-aegis-build` 中，分别为 `macos`、`android` 和既有共享源码的 `shared/chromium`。下面的命令描述首次搭建；已有的 Mac 链接工作树如果没有独立 `.gclient`，不要重新 fetch。共享依赖更新明确选择 `shared/chromium`，Android 操作明确选择 `android`。固定验收 App 路径与历史证据保留，移动源码目录不等于重新构建或发布。
 
 ## 本地流程
 

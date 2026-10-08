@@ -1,4 +1,4 @@
-From a133f22f313b5d3c685c1620d31aa3f63340d6bd Mon Sep 17 00:00:00 2001
+From 18bae59063ad16517c42ee9f8b30a73f3447b60d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:24:05 +0800
 Subject: [PATCH] Aegis: add phishing interstitial for built-in seed hosts
@@ -608,7 +608,7 @@ index 5d2e3d6bc1..33028ff532 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index ce2651e9aa..3dbd0f1c60 100644
+index 14dbe4670d..bc16e524a1 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 @@ -20,6 +20,7 @@
@@ -619,7 +619,7 @@ index ce2651e9aa..3dbd0f1c60 100644
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -399,6 +400,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -407,6 +408,7 @@ void CreateAndAddChromeThrottlesForNavigation(
    }
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);

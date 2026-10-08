@@ -1,0 +1,54 @@
+From 37278c227d23664aa034ef82080eed25b3cbcf60 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 16 Sep 2026 00:29:40 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=B0=83=E6=95=B4=E6=9C=AC=E6=9C=BA=E9=93=BE?=
+ =?UTF-8?q?=E6=8E=A5=E5=B9=B6=E8=A1=8C=E5=B9=B6=E5=87=86=E5=A4=87044?=
+ =?UTF-8?q?=E5=80=99=E9=80=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/BUILD.gn                                    | 6 +++---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index 4afe7dc5a7..43c6941b1d 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -1390,11 +1390,11 @@ if (is_win) {
+     }
+   }
+ 
+-  # 独立验收目录的链接资源限制，不改变代码优化等级或系统上限。
++  # 本机验收将链接并行限制为4，不改变代码优化等级或系统上限。
+   config("aegis_acceptance_link_limits") {
+     ldflags = [
+-      "-Wl,--thinlto-jobs=1",
+-      "-Wl,--threads=1",
++      "-Wl,--thinlto-jobs=4",
++      "-Wl,--threads=4",
+     ]
+   }
+ 
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 76762cfd2d..3a6e25102e 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.43。
+-inline constexpr char kProductVersion[] = "1.1.0.43";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (043)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.44。
++inline constexpr char kProductVersion[] = "1.1.0.44";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (044)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

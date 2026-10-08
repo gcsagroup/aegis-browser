@@ -1,0 +1,61 @@
+From e05a1182707701b52187d944276c5791e5cf2687 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 29 Sep 2026 19:50:29 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=B8=85=E7=90=86=E5=93=81=E7=89=8C=E6=8F=92?=
+ =?UTF-8?q?=E5=9B=BE=E9=81=97=E7=95=99=E9=A2=9C=E8=89=B2=E8=B5=84=E6=BA=90?=
+ =?UTF-8?q?=E5=B9=B6=E9=80=92=E5=A2=9E=E5=86=85=E9=83=A8=E7=89=88=E6=9C=AC?=
+ =?UTF-8?q?=20073?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../notifications/android/java/res/values-night/colors.xml    | 4 +---
+ .../browser/notifications/android/java/res/values/colors.xml  | 4 +---
+ chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
+ 3 files changed, 4 insertions(+), 8 deletions(-)
+
+diff --git a/chrome/browser/notifications/android/java/res/values-night/colors.xml b/chrome/browser/notifications/android/java/res/values-night/colors.xml
+index 93ba522c1e..25ea4ae39d 100644
+--- a/chrome/browser/notifications/android/java/res/values-night/colors.xml
++++ b/chrome/browser/notifications/android/java/res/values-night/colors.xml
+@@ -5,6 +5,4 @@ Use of this source code is governed by a BSD-style license that can be
+ found in the LICENSE file.
+ -->
+ <resources>
+-  <color name="permission_rationale_illustration_outer_border_baseline">@color/baseline_neutral_variant_60</color>
+-  <color name="permission_rationale_illustration_inner_border_baseline">@color/baseline_neutral_variant_60</color>
+-</resources>
+\ No newline at end of file
++</resources>
+diff --git a/chrome/browser/notifications/android/java/res/values/colors.xml b/chrome/browser/notifications/android/java/res/values/colors.xml
+index 022991aae1..25ea4ae39d 100644
+--- a/chrome/browser/notifications/android/java/res/values/colors.xml
++++ b/chrome/browser/notifications/android/java/res/values/colors.xml
+@@ -5,6 +5,4 @@ Use of this source code is governed by a BSD-style license that can be
+ found in the LICENSE file.
+ -->
+ <resources>
+-  <color name="permission_rationale_illustration_outer_border_baseline">@color/default_bg_color_light_elev_4_baseline</color>
+-  <color name="permission_rationale_illustration_inner_border_baseline">@color/default_bg_color_light_elev_2_baseline</color>
+-</resources>
+\ No newline at end of file
++</resources>
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9ec2c354b1..4c0dd4ee97 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.72";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (072)";
++inline constexpr char kProductVersion[] = "2.0.0.73";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (073)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,0 +1,34 @@
+From c2f90bc808a5cd55c2552e5a7cfd17086fca27fc Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 06:41:42 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=92=E5=A2=9E035=E5=B9=B6=E5=87=86?=
+ =?UTF-8?q?=E5=A4=87=E7=BB=91=E5=AE=9A=E6=9E=84=E5=BB=BA=E8=BE=93=E5=85=A5?=
+ =?UTF-8?q?=E4=B8=8E=E4=BA=A7=E7=89=A9?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7848b31bea..01055db27c 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.34。
+-inline constexpr char kProductVersion[] = "1.1.0.34";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (034)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.35。
++inline constexpr char kProductVersion[] = "1.1.0.35";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (035)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

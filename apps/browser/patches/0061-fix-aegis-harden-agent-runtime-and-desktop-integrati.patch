@@ -1,12 +1,11 @@
-From 9d3e05f83d3d607f750cef619f0dca6df39e624b Mon Sep 17 00:00:00 2001
+From 26293480a6902738a0ccb70fe52a9df0bae7d863 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 21:01:03 +0800
-Subject: [PATCH 61/61] fix(aegis): harden agent runtime and desktop
- integration
+Subject: [PATCH] fix(aegis): harden agent runtime and desktop integration
 
 ---
- chrome/browser/actor/site_policy.cc           |  26 +++-
- chrome/browser/actor/site_policy_unittest.cc  |  11 ++
+ chrome/browser/actor/execution_engine.cc      |  27 ++++
+ .../actor/execution_engine_unittest.cc        |  50 +++++++
  chrome/browser/aegis/BUILD.gn                 |   2 +
  .../browser/aegis/agent/aegis_actor_bridge.cc |  59 +++++++--
  .../aegis/agent/aegis_agent_browsertest.cc    |  19 ++-
@@ -32,79 +31,154 @@ Subject: [PATCH 61/61] fix(aegis): harden agent runtime and desktop
  .../ui/webui/aegis_agent/aegis_agent.mojom    |  55 +++++---
  .../aegis_agent/aegis_agent_page_handler.cc   |  21 +--
  chrome/chrome_paks.gni                        |   1 +
- 27 files changed, 686 insertions(+), 157 deletions(-)
+ 27 files changed, 733 insertions(+), 150 deletions(-)
 
-diff --git a/chrome/browser/actor/site_policy.cc b/chrome/browser/actor/site_policy.cc
-index 6c35ef4c43..35047074f0 100644
---- a/chrome/browser/actor/site_policy.cc
-+++ b/chrome/browser/actor/site_policy.cc
-@@ -142,8 +142,24 @@ void MayActOnUrlInternal(
-     const EnterprisePolicyChecker& policy_checker,
-     bool apply_sensitive_origin_check,
-     std::unique_ptr<DecisionWrapper> decision_wrapper) {
--  if ((net::IsLocalhost(url) && url.SchemeIsHTTPOrHTTPS()) ||
--      url.IsAboutBlank()) {
-+  if (url.IsAboutBlank()) {
-+    decision_wrapper->Accept();
-+    return;
-+  }
-+
-+  // 客户端的显式阻止是授权边界，不是提示性安全信号。必须先执行该检查，
-+  // 再允许 localhost、测试开关或静态白名单提前放行；Aegis 等受限客户端
-+  // 正是通过该检查器约束已批准来源。
-+  const EnterprisePolicyChecker::UrlBlockReason enterprise_reason =
-+      policy_checker.Evaluate(url);
-+  if (enterprise_reason ==
-+      EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked) {
-+    decision_wrapper->Reject("Enterprise policy block",
-+                             MayActOnUrlBlockReason::kEnterprisePolicy);
-+    return;
-+  }
-+
-+  if (net::IsLocalhost(url) && url.SchemeIsHTTPOrHTTPS()) {
-     decision_wrapper->Accept();
-     return;
-   }
-@@ -223,8 +239,6 @@ void MayActOnUrlInternal(
-     }
-   }
+diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
+index 6b59b6c0ae..6097847205 100644
+--- a/chrome/browser/actor/execution_engine.cc
++++ b/chrome/browser/actor/execution_engine.cc
+@@ -114,6 +114,7 @@ namespace actor {
  
--  const EnterprisePolicyChecker::UrlBlockReason enterprise_reason =
--      policy_checker.Evaluate(url);
-   switch (enterprise_reason) {
-     case EnterprisePolicyChecker::UrlBlockReason::kNotBlocked:
-       break;
-@@ -232,9 +246,7 @@ void MayActOnUrlInternal(
-       decision_wrapper->Accept();
-       return;
-     case EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked:
--      decision_wrapper->Reject("Enterprise policy block",
--                               MayActOnUrlBlockReason::kEnterprisePolicy);
--      return;
-+      NOTREACHED();
-   }
+ namespace {
  
-   auto* lookalike_service = LookalikeUrlServiceFactory::GetForProfile(profile);
-diff --git a/chrome/browser/actor/site_policy_unittest.cc b/chrome/browser/actor/site_policy_unittest.cc
-index 7a7ff9096d..ccc3bf041d 100644
---- a/chrome/browser/actor/site_policy_unittest.cc
-+++ b/chrome/browser/actor/site_policy_unittest.cc
-@@ -307,6 +307,17 @@ TEST_F(ActorSitePolicyTest, EnterprisePolicyBlock) {
-                kGlicNavigationGatingUseSiteNotOrigin.Get()));
++constexpr char kExplicitPolicyBlockPredicateName[] = "actor_explicit_policy_block";
+ constexpr char kSafetyListPredicateName[] = "actor_safety_list_check";
+ constexpr char kSensitiveUrlPredicateName[] = "actor_sensitive_url_check";
+ constexpr char kSensitiveUrlPromptsDisabledPredicateName[] =
+@@ -373,6 +374,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
+                                   : origin_gating::Decision::kBlocked;
  }
  
-+TEST_F(ActorSitePolicyTest, EnterprisePolicyBlockOverridesGenericEarlyAllows) {
-+  MockPolicyChecker blocked_checker(
-+      EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
-+  CheckUrl(GURL("http://localhost/"), false, blocked_checker,
-+           origin_gating::OriginGatingCache(
-+               kGlicNavigationGatingUseSiteNotOrigin.Get()));
-+  CheckUrl(GURL("https://a.test/"), false, blocked_checker,
-+           origin_gating::OriginGatingCache(
-+               kGlicNavigationGatingUseSiteNotOrigin.Get()));
++origin_gating::Decision BlockIfExplicitlyDenied(
++    const ActorTask* task,
++    origin_gating::GatingDecisionContext* context,
++    const GURL& source,
++    const GURL& destination) {
++  // 明确拒绝属于授权边界，必须先于 localhost、测试开关、白名单和缓存。
++  // 保留旧流程对 about:blank 初始文档的例外，不提前放行其他安全检查。
++  if (!destination.IsAboutBlank() &&
++      task->policy_checker().Evaluate(destination) ==
++          EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked) {
++    return origin_gating::Decision::kBlocked;
++  }
++  return origin_gating::Decision::kNoDecision;
 +}
 +
- TEST_F(ActorSitePolicyTest, EnterprisePolicyOrder) {
+ origin_gating::Decision AllowIfSafetyChecksDisabled(
+     origin_gating::GatingDecisionContext* context,
+     const GURL& source,
+@@ -444,6 +460,9 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
+           NOTREACHED();
+       }
+     case origin_gating::DecisionAttribution::Type::kCustomPredicate:
++      if (decision.attribution == kExplicitPolicyBlockPredicateName) {
++        return ExecutionEngine::GatingDecision::kBlockByStaticList;
++      }
+       if (decision.attribution == kSafetyListPredicateName) {
+         return decision.is_allowed
+                    ? ExecutionEngine::GatingDecision::kAllowByStaticList
+@@ -487,6 +506,9 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
+                        << static_cast<int>(decision.attribution.Source());
+       }
+     case origin_gating::DecisionAttribution::Type::kCustomPredicate:
++      if (decision.attribution == kExplicitPolicyBlockPredicateName) {
++        return MayActOnUrlBlockReason::kEnterprisePolicy;
++      }
+       if (decision.attribution == kSafetyListPredicateName) {
+         return MayActOnUrlBlockReason::kBlockedByStaticList;
+       }
+@@ -617,6 +639,11 @@ ExecutionEngine::ExecutionEngine(
+           *this,
+           origin_gating::OriginGatingConfiguration(
+               {
++                  {CustomPredicate(
++                       base::BindRepeating(&BlockIfExplicitlyDenied,
++                                           base::Unretained(task_.get())),
++                       kExplicitPolicyBlockPredicateName),
++                   GateableEventSet::All()},
+                   {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
+                                    kTabErrorDocumentPredicateName),
+                    {GateableEvent::kPageAction}},
+diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
+index 1203c0cdc5..51dd97d9fd 100644
+--- a/chrome/browser/actor/execution_engine_unittest.cc
++++ b/chrome/browser/actor/execution_engine_unittest.cc
+@@ -13,6 +13,7 @@
+ #include "base/test/gmock_expected_support.h"
+ #include "base/test/metrics/histogram_tester.h"
+ #include "base/test/scoped_feature_list.h"
++#include "base/test/scoped_command_line.h"
+ #include "base/test/test_future.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+@@ -37,6 +38,7 @@
+ #include "chrome/common/webui_url_constants.h"
+ #include "chrome/test/base/chrome_render_view_host_test_harness.h"
+ #include "components/actor/core/actor_features.h"
++#include "components/actor/core/actor_switches.h"
+ #include "components/actor/core/shared_types.h"
+ #include "components/actor/public/mojom/actor_types.mojom.h"
+ #include "components/autofill/core/browser/integrators/actor/actor_form_filling_types.h"
+@@ -1174,6 +1176,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+   }
+ 
+  protected:
++  void SetPolicyReason(EnterprisePolicyChecker::UrlBlockReason reason) {
++    task_policy_checker_.set_reason(reason);
++  }
++
+   virtual TaskSourceInfo TaskSource() const { return TestTaskSourceInfo(); }
+ 
+   void SetExpectedOptimizationGuideCall(
+@@ -1434,6 +1440,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
+            EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
+ }
+ 
++TEST_F(AegisExecutionEngineUrlGatingTest, ExplicitBlockOverridesLocalhost) {
++  CheckUrl(GURL("http://localhost/"), false,
++           EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
++}
++
++TEST_F(AegisExecutionEngineUrlGatingTest,
++       ExplicitBlockOverridesDisabledChecksAndConfirmedCache) {
++  base::test::ScopedCommandLine command_line;
++  command_line.GetProcessCommandLine()->AppendSwitch(
++      switches::kDisableActorSafetyChecks);
++  const GURL url("https://outside-scope.test/");
++  auto& engine = GetExecutionEngine();
++  engine.origin_gating_checker().AllowNavigationTo(
++      url::Origin::Create(url), /*is_user_confirmed=*/true);
++  SetPolicyReason(EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
++  base::test::TestFuture<MayActOnUrlBlockReason> allowed;
++  engine.IsAcceptableNavigationDestination(url, allowed.GetCallback());
++  EXPECT_EQ(allowed.Get(), MayActOnUrlBlockReason::kEnterprisePolicy);
++  CheckUrl(url, false,
++           EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
++}
++
++TEST_F(AegisExecutionEngineUrlGatingTest,
++       ExplicitBlockRejectsNavigationResponseDespiteConfirmedCache) {
++  base::test::ScopedFeatureList features;
++  features.InitAndEnableFeature(kGlicCrossOriginNavigationGating);
++  const GURL destination("http://localhost/");
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(
++      web_contents(), GURL("https://approved.test/"));
++  auto& engine = GetExecutionEngine();
++  engine.origin_gating_checker().AllowNavigationTo(
++      url::Origin::Create(destination), /*is_user_confirmed=*/true);
++  SetPolicyReason(EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
++  content::MockNavigationHandle navigation(destination, main_rfh());
++  base::test::TestFuture<bool> allowed;
++  EXPECT_EQ(engine.ShouldDeferNavigation(navigation, allowed.GetCallback()),
++            content::NavigationThrottle::DEFER);
++  EXPECT_FALSE(allowed.Get());
++}
++
++TEST_F(AegisExecutionEngineUrlGatingTest, ApprovedScopeStillRejectsFileScheme) {
++  CheckUrl(GURL("file:///outside.txt"), false);
++}
++
+ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyOrder) {
    const GURL https_blocked_url("https://c.test/");
    EXPECT_CALL(
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
@@ -1553,7 +1627,7 @@ index 37a5629688..42f248dbe3 100644
    return {};
  }
 diff --git a/chrome/browser/global_keyboard_shortcuts_mac.mm b/chrome/browser/global_keyboard_shortcuts_mac.mm
-index bc8c1e5d95..f66c90ae5d 100644
+index 1bbe4c5fab..87f53632fa 100644
 --- a/chrome/browser/global_keyboard_shortcuts_mac.mm
 +++ b/chrome/browser/global_keyboard_shortcuts_mac.mm
 @@ -151,6 +151,7 @@ const std::vector<KeyboardShortcutData>& GetShortcutsNotPresentInMainMenu() {
@@ -1713,10 +1787,10 @@ index 6cccfc1ccc..7dc07d318c 100644
    const bool ok = task && task->mode() == AgentMode::kAutomate &&
                    service_->RemoveMonitor(task_id, monitor_id);
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
-index 2bd694fc07..7be1cad9e3 100644
+index 7274b66570..eaf96e4f23 100644
 --- a/chrome/chrome_paks.gni
 +++ b/chrome/chrome_paks.gni
-@@ -215,6 +215,7 @@ template("chrome_extra_paks") {
+@@ -204,6 +204,7 @@ template("chrome_extra_paks") {
          "$root_gen_dir/chrome/about_sys_resources.pak",
          "$root_gen_dir/chrome/access_code_cast_resources.pak",
          "$root_gen_dir/chrome/actor_overlay_resources.pak",

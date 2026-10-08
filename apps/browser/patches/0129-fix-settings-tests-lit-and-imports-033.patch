@@ -1,0 +1,63 @@
+From 59108e28aa517d7b848977642536ee883b92de64 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 15 Sep 2026 05:15:22 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=E8=AE=BE=E7=BD=AE=E9=A1=B5?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=E7=9A=84Lit=E5=85=83=E7=B4=A0=E4=B8=8E?=
+ =?UTF-8?q?=E6=98=BE=E5=BC=8F=E5=AF=BC=E5=85=A5=E5=B9=B6=E9=80=92=E5=A2=9E?=
+ =?UTF-8?q?033?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h          | 6 +++---
+ chrome/test/data/webui/settings/about_page_test.ts          | 2 +-
+ .../webui/settings/settings_menu_interactive_ui_test.ts     | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 60c9496986..b75faad465 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.32。
+-inline constexpr char kProductVersion[] = "1.1.0.32";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (032)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.33。
++inline constexpr char kProductVersion[] = "1.1.0.33";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (033)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
+index 0a469f77da..910c9d3ffe 100644
+--- a/chrome/test/data/webui/settings/about_page_test.ts
++++ b/chrome/test/data/webui/settings/about_page_test.ts
+@@ -176,7 +176,7 @@ suite('AllBuilds', function() {
+     fireStatusChanged(UpdateStatus.DISABLED,
+         {message: '安装包已下载并校验，请退出浏览器后安装。', aegisUpdateReady: true});
+     await microtasksFinished();
+-    assertTrue(page.$.relaunch.hidden);
++    assertTrue(page.shadowRoot.querySelector<HTMLElement>('#relaunch')!.hidden);
+     assertFalse(page.shadowRoot.querySelector<HTMLElement>('#aegisShowUpdate')!.hidden);
+     assertTrue(page.shadowRoot.querySelector<HTMLButtonElement>('#aegisCheckUpdate')!.disabled);
+     assertTrue(page.$.updateStatusMessage.textContent.includes('请退出浏览器后安装'));
+diff --git a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
+index f06e4eb92c..f82c584ab5 100644
+--- a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
++++ b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
+@@ -3,7 +3,7 @@
+ // found in the LICENSE file.
+ 
+ import type {SettingsMenuElement} from 'chrome://settings/settings.js';
+-import {resetPageVisibilityForTesting} from 'chrome://settings/settings.js';
++import {loadTimeData, resetPageVisibilityForTesting} from 'chrome://settings/settings.js';
+ import {assertEquals} from 'chrome://webui-test/chai_assert.js';
+ 
+ suite('SettingsMenuInteractiveUITest', () => {
+-- 
+2.52.0
+

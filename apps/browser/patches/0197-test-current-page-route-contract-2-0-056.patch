@@ -1,0 +1,74 @@
+From 2ba2fc88e2e208d5326b646e113530f1260e956f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 21 Sep 2026 18:40:19 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=91=E5=AE=9A?=
+ =?UTF-8?q?=E5=BD=93=E5=89=8D=E9=A1=B5=E5=85=A5=E5=8F=A3=E5=B9=B6=E7=BA=A6?=
+ =?UTF-8?q?=E6=9D=9F=E6=A8=A1=E5=9E=8B=E6=8D=A2=E7=AB=99=202.0.056?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/agent_planner_unittest.cc     | 23 +++++++++++--------
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 2 files changed, 16 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index bf9d6a2c21..e62ce41f93 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -233,13 +233,16 @@ TEST(AegisAgentGoalRegressionTest, DeniedListsDoNotCreateNativeRequirements) {
+     std::string error;
+     EXPECT_TRUE(ValidateTaskPlanForGoal(plan, goal, &error)) << error;
+   }
+-  for (const char* goal : {
+-           "总结当前页；不要下载、整理书签、提交或购买。",
+-           "總結目前網頁；不要下載、整理書籤、提交或購買。",
+-           "Summarize this page. Do not download, organize bookmarks, or buy.",
+-           "不要官方下载、整理书签、提交或购买。",
+-           "不要官方下载，整理书签。",
+-           "Do not download official installers, organize bookmarks, or buy.",
++  for (const auto& [goal, current_page] :
++       std::initializer_list<std::pair<const char*, bool>>{
++           {"总结当前页；不要下载、整理书签、提交或购买。", true},
++           {"總結目前網頁；不要下載、整理書籤、提交或購買。", true},
++           {"Summarize this page. Do not download, organize bookmarks, or buy.",
++            true},
++           {"不要官方下载、整理书签、提交或购买。", false},
++           {"不要官方下载，整理书签。", false},
++           {"Do not download official installers, organize bookmarks, or buy.",
++            false},
+        }) {
+     SCOPED_TRACE(goal);
+     AgentGoalRoute route;
+@@ -248,8 +251,10 @@ TEST(AegisAgentGoalRegressionTest, DeniedListsDoNotCreateNativeRequirements) {
+     route.target = "https://example.com/";
+     route = ConstrainGoalRouteToUserIntent(goal, std::move(route));
+     EXPECT_EQ(route.workflow, AgentWorkflowKind::kResearch);
+-    EXPECT_EQ(route.entry_kind, AgentGoalEntryKind::kOpenUrl);
+-    EXPECT_EQ(route.target, "https://example.com/");
++    // 否定清单仍不能增加原生操作；当前页任务同时禁止保留猜测的网址。
++    EXPECT_EQ(route.entry_kind, current_page ? AgentGoalEntryKind::kBrowserOnly
++                                            : AgentGoalEntryKind::kOpenUrl);
++    EXPECT_EQ(route.target, current_page ? "" : "https://example.com/");
+   }
+ }
+ 
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d22b8813e4..cb80abba54 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.55";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (055)";
++inline constexpr char kProductVersion[] = "2.0.0.56";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (056)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
