@@ -25,6 +25,12 @@ The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS 
 
 ## [Unreleased]
 
+### 2026-10-09 源码整合：Quinn 功能与 Chromium 155 主线
+
+- 在同一源码整合中保留桌面鼠标手势，纳入 Quinn develop 的双节点租约、双 relay、本地 SM-00 预检与工作流文档，并纳入其 PR #203 的 Agent 接管、监控订阅、研究来源绑定及 iOS 下载持久化/恢复修复。
+- 适配新增研究测试到 Chromium 155；固定租约 SQL 查询并增加非法表名拒绝回归。Mac 候选提升为 Ver 2.2 (144)，276 个补丁和 506 项 overlay 完整重放通过；iOS 下载定向测试在 iPhone/iPad 模拟器各通过 43 项。
+- 合入路径统一为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)；[#33](https://github.com/gcsagroup/aegis-browser/pull/33) 已并入该整合分支。下方 141 记录保留为历史证据；最新范围和验证见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)。本次不创建正式发行，原型与模拟器结果不代表生产接入或实机验收。
+
 ### 2026-10-09 源码更新：桌面鼠标手势与 Chromium 155 适配
 
 - 新增原生右键手势、方向绑定、轨迹提示、识别距离、网站排除及不执行真实动作的练习区；普通网页、设置页和内置 PDF 使用一致的通用动作，PDF 另可绑定翻页、适合宽度和整页。
