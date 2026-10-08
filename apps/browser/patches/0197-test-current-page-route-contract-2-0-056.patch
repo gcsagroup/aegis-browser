@@ -1,4 +1,4 @@
-From 2ba2fc88e2e208d5326b646e113530f1260e956f Mon Sep 17 00:00:00 2001
+From 354908ae201da9ac84330b1eba7ba65229ba4c47 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 21 Sep 2026 18:40:19 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=91=E5=AE=9A?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 16 insertions(+), 11 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index bf9d6a2c21..e62ce41f93 100644
+index bf9d6a2c2189fdbc737997751ccd8af641bebc31..e62ce41f934706f88f9793b2ac7e4ce00b6db1bd 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -233,13 +233,16 @@ TEST(AegisAgentGoalRegressionTest, DeniedListsDoNotCreateNativeRequirements) {
@@ -55,7 +55,7 @@ index bf9d6a2c21..e62ce41f93 100644
  }
  
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index d22b8813e4..cb80abba54 100644
+index d22b8813e443c80e0c83bd18ea1c2d320310c51a..cb80abba5411ab93adacda926221e124c9469a8e 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

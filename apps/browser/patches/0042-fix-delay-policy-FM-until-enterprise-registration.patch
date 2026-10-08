@@ -1,4 +1,4 @@
-From 7064ac8b80fed1f50d333fed09bae98a614a69e3 Mon Sep 17 00:00:00 2001
+From e935bbe694dd9a2694feb0a736f598295e0ae498 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 01:35:43 +0800
 Subject: [PATCH] fix: delay policy FM until enterprise registration
@@ -10,7 +10,7 @@ Subject: [PATCH] fix: delay policy FM until enterprise registration
  3 files changed, 315 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
-index 1ba8638d57..7e5ae56b7a 100644
+index 1ba8638d570d9128ecf3fc9db7464aeacdae5786..7e5ae56b7a825492378e1c8051239b73255f157c 100644
 --- a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 +++ b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 @@ -6,15 +6,30 @@
@@ -250,7 +250,7 @@ index 1ba8638d57..7e5ae56b7a 100644
 +
  }  // namespace policy
 diff --git a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc
-index d2386d277e..329116fd12 100644
+index d2386d277ef454735f0ab65da0bda80d8378de2b..329116fd127561437832189ceb30d2eae9c05448 100644
 --- a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc
 +++ b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.cc
 @@ -50,7 +50,7 @@ namespace policy {
@@ -376,7 +376,7 @@ index d2386d277e..329116fd12 100644
  }
  
 diff --git a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h
-index 8fcf54be08..b4fce1d345 100644
+index 8fcf54be081c72a5dc65c3030ec463d5a1b8f707..b4fce1d345a71693ef6501655720e7ca6ee48526 100644
 --- a/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h
 +++ b/chrome/browser/policy/cloud/user_fm_registration_token_uploader.h
 @@ -8,9 +8,12 @@

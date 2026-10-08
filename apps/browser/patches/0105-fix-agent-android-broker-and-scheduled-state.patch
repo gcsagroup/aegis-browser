@@ -1,4 +1,4 @@
-From 1aa2280b91b5eae6cfebf5709f037cba72807610 Mon Sep 17 00:00:00 2001
+From a5538864bc2d6e9222b86e5e5c5aad9eb957596d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 15:06:02 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BF=AE=E5=A4=8D=20Android=20?=
@@ -26,7 +26,7 @@ Content-Transfer-Encoding: 8bit
  13 files changed, 326 insertions(+), 61 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 8baa30f811..5d4815fb5e 100644
+index 8baa30f81180007d8163e46574d54d93fddff6f8..5d4815fb5e808e27237889815ceba084ac8c2ff5 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -356,6 +356,7 @@ base::DictValue PublicMonitorValue(const AgentMonitorDefinition& monitor) {
@@ -228,7 +228,7 @@ index 8baa30f811..5d4815fb5e 100644
          task->state() == AgentTaskState::kCancelled ||
          task->state() == AgentTaskState::kExpired ||
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index c1f5e8a259..2c08bd2cd6 100644
+index c1f5e8a259296c0b37b11ee2f9eb0f55d72eb735..2c08bd2cd6fa1eb67a9172a49c3946075ae8aec7 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -963,6 +963,7 @@ TEST_F(AegisAgentServiceTest, PersistsAndBoundsBrowserLifetimeMonitors) {
@@ -306,7 +306,7 @@ index c1f5e8a259..2c08bd2cd6 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index 85d16e2a24..58dec9ae0f 100644
+index 85d16e2a2460058f1a1e5730cdef11fa4aa62e58..58dec9ae0fbca81769a5b99e8ef266f236bf6c6d 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -206,6 +206,7 @@ std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
@@ -356,7 +356,7 @@ index 85d16e2a24..58dec9ae0f 100644
  const char* ContentSettingString(ContentSetting setting) {
    switch (setting) {
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 7cf40ec660..91058eb090 100644
+index 7cf40ec660ed8e9e5ff2e10f1143a71728382a8a..91058eb09063b0272462e49dd23ede044fd2de45 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -609,6 +609,44 @@ TEST(AegisAgentResultVerifierTest, AcceptsStructuredBrowserFailure) {
@@ -405,7 +405,7 @@ index 7cf40ec660..91058eb090 100644
    AgentToolRegistry registry;
    AgentResultVerifier verifier;
 diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.h b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
-index 8cd4842b42..f8990a0156 100644
+index 8cd4842b425497d4e79e66899c39ac0b99a51462..f8990a0156c171f17b684d95ae8df235c55d459f 100644
 --- a/chrome/browser/aegis/agent/agent_monitor_scheduler.h
 +++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
 @@ -42,6 +42,10 @@ struct AgentMonitorDefinition {
@@ -420,7 +420,7 @@ index 8cd4842b42..f8990a0156 100644
    bool IsValid() const;
  };
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
-index 0c2abce187..bc21a7ad18 100644
+index 0c2abce187a288f391f7f78033eb19a15f1194e1..bc21a7ad18e7d593b27e477442975b2ec0680b4e 100644
 --- a/chrome/browser/aegis/agent/agent_result_verifier.cc
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
 @@ -273,13 +273,18 @@ AgentVerificationDecision AgentResultVerifier::Verify(
@@ -450,10 +450,10 @@ index 0c2abce187..bc21a7ad18 100644
    if (call.tool_name == "monitor.list") {
      return HasList(value, "monitors") && HasString(value, "revision")
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index 8bc1daffbf..03f88a13bd 100644
+index 449e250679a0734f628849eb65af5def5970eb08..b86893796eb062425bf2669608cc3101a998d5e1 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
-@@ -425,6 +425,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
+@@ -443,6 +443,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
      content::WebUIBrowserInterfaceBrokerRegistry& registry) {
    PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(registry);
  
@@ -465,7 +465,7 @@ index 8bc1daffbf..03f88a13bd 100644
    PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsCros(registry);
  #endif  // BUILDFLAG(IS_CHROMEOS)
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts.h b/chrome/browser/chrome_browser_interface_binders_webui_parts.h
-index 6c398bd593..092d2ff57d 100644
+index 6c398bd59393a611fea4cd6f559a5cba599cd2e4..092d2ff57d48e2ccf043390aafd6072109768ef5 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts.h
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts.h
 @@ -31,6 +31,8 @@ void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(
@@ -478,7 +478,7 @@ index 6c398bd593..092d2ff57d 100644
  // These assumes "Desktop" is non-Android.
  void PopulateChromeWebUIFrameBindersPartsDesktop(
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
-index 8f002e4879..49042ebc8a 100644
+index 0c20a4185017d9966f738ab1cf197f30e959bc60..a753fa0a9d18351984463cfe360fe8cf70c62dfd 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 @@ -4,6 +4,8 @@
@@ -487,10 +487,10 @@ index 8f002e4879..49042ebc8a 100644
  
 +#include "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom.h"
 +#include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals.mojom.h"
+ #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals_ui.h"
  #include "chrome/browser/ui/webui/feed_internals/feed_internals.mojom.h"
- #include "chrome/browser/ui/webui/feed_internals/feed_internals_ui.h"
- #include "chrome/browser/ui/webui/notifications_internals/notifications_internals.mojom.h"
-@@ -11,6 +13,7 @@
+@@ -13,6 +15,7 @@
  #include "components/commerce/core/commerce_feature_list.h"
  #include "components/notebooks/internals/webui/notebooks_internals.mojom.h"
  #include "components/notebooks/internals/webui/notebooks_internals_ui.h"
@@ -498,7 +498,7 @@ index 8f002e4879..49042ebc8a 100644
  #include "content/public/browser/web_ui_controller_interface_binder.h"
  #include "mojo/public/cpp/bindings/binder_map.h"
  
-@@ -31,4 +34,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
+@@ -36,4 +39,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
        notebooks::NotebooksInternalsUI>(map);
  }
  
@@ -510,7 +510,7 @@ index 8f002e4879..49042ebc8a 100644
 +
  }  // namespace chrome::internal
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index b3754a4b9c..77dd38eab6 100644
+index b3754a4b9c0833124cc34b5ee113869eca3b3927..77dd38eab626ef68aba8286baa367c817b0308d1 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -14,7 +14,7 @@ import type {
@@ -717,7 +717,7 @@ index b3754a4b9c..77dd38eab6 100644
 +  showStartupError();
 +}
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index c8145fe775..251541b4bf 100644
+index c8145fe775070708021b8e1b448107b4f4ad296f..251541b4bf6241dc39ea66e84f0ca65892899e39 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -82,6 +82,7 @@ struct MonitorSummary {
@@ -729,7 +729,7 @@ index c8145fe775..251541b4bf 100644
  };
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 5daa9c0068..edea9ecf40 100644
+index 5daa9c00688fc12921c19827502e75926935beee..edea9ecf40abc5e18403f6a5be1a80e9e6a5adaa 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -945,6 +945,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
@@ -741,7 +741,7 @@ index 5daa9c0068..edea9ecf40 100644
        snapshot->monitors.push_back(std::move(value));
      }
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 2de867a0d3..e33c1dfb3f 100644
+index 2de867a0d3762842de8e677fb13a407c0f6f8393..e33c1dfb3fa6b6ea466b48ed7fae91c2914636c3 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -221,6 +221,13 @@ void AddStrings(content::WebUIDataSource* source) {

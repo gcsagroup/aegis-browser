@@ -1,4 +1,4 @@
-From 80054eb4df74cd2734e3c2d131aef89488dbf64b Mon Sep 17 00:00:00 2001
+From bdd7525a8787a188de860bb1eb6ec4c2996d1b45 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 23 Sep 2026 05:21:25 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E7=95=99=E5=85=B3=E9=97=AD=E5=8A=A8?=
@@ -17,7 +17,7 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 18 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index f95de81505..aae8961692 100644
+index f95de81505a68a76ca0dbba3668af5849dd80351..aae8961692e92e5cc2c48f1d10b50e3d1bc33e79 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -1755,6 +1755,7 @@ TEST(AegisAgentResultVerifierTest, CloseRequiresExactPostActionReadback) {
@@ -29,7 +29,7 @@ index f95de81505..aae8961692 100644
    const auto* descriptor = registry.Find("tab.close");
    ASSERT_TRUE(descriptor);
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 9c43249c14..231345b8c8 100644
+index 9c43249c14faa3f39f9dc486fdc54a6b67ba19de..231345b8c8ae1f9b7c21a894e43dd7c610bcdda6 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -703,6 +703,18 @@ bool AgentBrowserGoalNeedsClarification(std::string_view goal,
@@ -52,7 +52,7 @@ index 9c43249c14..231345b8c8 100644
    for (std::string_view separator :
         {"。", "；", "，", ";", ",", "然后", "然後", "并且", "並且", "并", "並",
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index c4afa7caa9..a995e40d9a 100644
+index c4afa7caa99ba884f6576aee244925c25a834a44..a995e40d9ac57024ecc8371593b2146bc6772f62 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -1503,7 +1503,9 @@ TEST(AegisAgentPlannerTest, CloseRequiresExplicitActionNotStatusOrQuestion) {
@@ -67,7 +67,7 @@ index c4afa7caa9..a995e40d9a 100644
    }
    for (const char* goal : {"关闭本任务标签页", "请把当前标签页关掉", "請關閉指定標籤頁",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 2b33199f4b..ec8db1914a 100644
+index 2b33199f4b67eb8046a495ff7714b20f723891d8..ec8db1914a71763a71c69fb3c57caa10c2556ed7 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

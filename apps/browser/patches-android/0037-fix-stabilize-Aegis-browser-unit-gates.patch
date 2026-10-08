@@ -1,0 +1,57 @@
+From 989e562f4a510dc9ea03d387d95f746d31970427 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Mon, 24 Aug 2026 23:35:13 +0800
+Subject: [PATCH] fix: stabilize Aegis browser unit gates
+
+---
+ chrome/browser/aegis/BUILD.gn                              | 2 +-
+ chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc | 5 ++++-
+ chrome/browser/aegis/summary_policy.cc                     | 2 +-
+ 3 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 2c9dc6910bc001839a04fc3c93915efb555305d9..5b0dd4dfe26eebdf98ec5d03a87f641888573bc8 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -69,8 +69,8 @@ test("aegis_browser_unittests") {
+   ]
+   deps = [
+     ":aegis",
+-    "//base/test:run_all_unittests",
+     "//chrome/test:test_support",
++    "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+     "//net",
+     "//testing/gtest",
+diff --git a/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc b/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
+index c57ba29c9378cc00be5129fb64300bd91e371ec8..ae0c3bf6641631408c54d2eb2599a44a9d29b421 100644
+--- a/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
++++ b/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
+@@ -58,7 +58,10 @@ TEST_F(AegisPhishBlockingPageTest, ShowsEnglishReasonsOnFirstScreen) {
+   EXPECT_NE(std::string::npos, primary->find("Page is collecting credentials"));
+   EXPECT_NE(std::string::npos, primary->find("&lt;script&gt;"));
+   EXPECT_EQ(std::string::npos, primary->find("<script>"));
+-  EXPECT_NE(std::string::npos, primary->find("Total 80 / block at 60"));
++  EXPECT_NE(std::string::npos,
++            primary->find("Total 80 / block at " +
++                          std::to_string(kPhishBlockThreshold)))
++      << *primary;
+   const std::string* proceed = load_time_data.FindString("proceedButtonText");
+   const std::string* explanation =
+       load_time_data.FindString("explanationParagraph");
+diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
+index 786c048184db2bc04114b89b635fbff38adef6a4..927e64c7a86a906cfdd237d47307008e5fa83db0 100644
+--- a/chrome/browser/aegis/summary_policy.cc
++++ b/chrome/browser/aegis/summary_policy.cc
+@@ -74,7 +74,7 @@ const re2::RE2& EmailPattern() {
+ 
+ const re2::RE2& BearerPattern() {
+   static const base::NoDestructor<re2::RE2> pattern(
+-      R"re(((?i:bearer)[ \t]+[A-Z0-9._~+/\-]{8,}={0,2}))re");
++      R"re(((?i:bearer[ \t]+[A-Z0-9._~+/\-]{8,}={0,2})))re");
+   return *pattern;
+ }
+ 
+-- 
+2.52.0
+

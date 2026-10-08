@@ -1,4 +1,4 @@
-From 774924b07a2c5655b31448bd63fc4c7c2a8be395 Mon Sep 17 00:00:00 2001
+From 4583c3834bff99abce0ead1c771c94d2b08a7f25 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 22 Sep 2026 01:21:25 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=9F=E4=B8=80?=
@@ -24,7 +24,7 @@ Content-Transfer-Encoding: 8bit
  11 files changed, 259 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 155b25a57f..8397898dda 100644
+index 155b25a57f471d1d79ac18cfde784b74659d464d..8397898ddae9cf47fbac8e3c8e46b6c40a54b5be 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -553,6 +553,30 @@ struct AegisAgentService::MonitorPageCheck : content::WebContentsObserver {
@@ -131,7 +131,7 @@ index 155b25a57f..8397898dda 100644
    }
    auto download_evidence =
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index ed47138ac2..5001a7e4b6 100644
+index ed47138ac2f9164d2d9793fc753f54d556c328d5..5001a7e4b6d02ed5a3b28d9828aa4edb52551e59 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -209,6 +209,7 @@ class AegisAgentService : public KeyedService {
@@ -151,7 +151,7 @@ index ed47138ac2..5001a7e4b6 100644
                      PlanReadyCallback callback,
                      std::string error);
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 7dbd9caf07..bb70afb199 100644
+index 7dbd9caf0738f2aa8ff8b355cf2d027401001591..bb70afb19950535c5bb26281906d1aa7b6fe32a7 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -172,6 +172,9 @@ class AegisAgentServiceTestPeer {
@@ -192,7 +192,7 @@ index 7dbd9caf07..bb70afb199 100644
    network::TestURLLoaderFactory factory;
    base::test::TestFuture<bool, std::string,
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 144043d1d6..73dcf8af4f 100644
+index 144043d1d61911246f127d7c1d1bdc4e6baacc65..73dcf8af4fcc80203a439bb542f40533a31349a4 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -1339,6 +1339,39 @@ std::string BuildAgentExecutionPrompt(
@@ -310,7 +310,7 @@ index 144043d1d6..73dcf8af4f 100644
    completion->summary +=
        "\n发布者、仓库、版本和签名未独立核验；没有安装或运行文件的证据。";
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index fae96a3273..daa0e7488a 100644
+index fae96a3273944015fd83227540d493827b492a24..daa0e7488ae8839307c77881113198a9ea98efc5 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -71,7 +71,8 @@ void NormalizeAgentDownloadCompletion(
@@ -324,7 +324,7 @@ index fae96a3273..daa0e7488a 100644
  // 分组的数量来自原生回读；模型声称“三个”不能替代实际只分组一个的结果。
  void NormalizeAgentTabGroupCompletion(
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 71f051d776..75ab28ebab 100644
+index 71f051d7762e5c9eb0fe9c5cc9356a26453740d1..75ab28ebabf4055551e3a3cee8595b8210f2a6de 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -546,6 +546,36 @@ TEST(AegisAgentExecutionTest, DownloadCompletionSurvivesReadOnlyFallback) {
@@ -408,7 +408,7 @@ index 71f051d776..75ab28ebab 100644
    AgentTask task("prompt-boundary", "总结页面", AgentMode::kAsk,
                   ExecutionScope());
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index e73dcaae0c..9bdd9f0065 100644
+index e73dcaae0c568092b4522f77e45c6cedf4567534..9bdd9f006500ddc434c35ecebbaf18d2a732b08c 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -1471,7 +1471,8 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
@@ -422,7 +422,7 @@ index e73dcaae0c..9bdd9f0065 100644
      *error =
          "download-source goal omitted required download.find_official step";
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index e62ce41f93..a625175c29 100644
+index e62ce41f934706f88f9793b2ac7e4ce00b6db1bd..a625175c29d09bada94f519ad473b0c4160e9d1c 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -1438,5 +1438,23 @@ TEST(AegisAgentPlannerTest, CurrentPagePlanRetainsScopeAndApprovalRisk) {
@@ -450,7 +450,7 @@ index e62ce41f93..a625175c29 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 85193e3b8e..aaaec57206 100644
+index 85193e3b8eda1adfcb85898eeb767b5b73f2207c..aaaec572068b93945f83b6b4de127d9a143713f2 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -595,6 +595,9 @@ function renderTimeline(next: TaskSnapshot) {
@@ -474,7 +474,7 @@ index 85193e3b8e..aaaec57206 100644
      return loadTimeData.getString('checkMonitorNowUnavailable');
    }
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 70e3993c06..9f98b407dd 100644
+index 70e3993c065a6cb5c767d6f4d5956f54241f0da0..9f98b407dd15b8b89f89613325348ce61207fda5 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -548,6 +548,10 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -489,7 +489,7 @@ index 70e3993c06..9f98b407dd 100644
        "The task page was still loading, was closed, or left the approved "
        "site. Aegis stopped without reading other pages. Wait for the page "
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index cb80abba54..7d742f517c 100644
+index cb80abba5411ab93adacda926221e124c9469a8e..7d742f517c800880dfd076105cd476abf6fa83d7 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

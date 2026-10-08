@@ -11,10 +11,9 @@
 #include "chrome/browser/aegis/agent/aegis_agent_service.h"
 #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
 #include "chrome/browser/ui/side_panel/side_panel_ui.h"
@@ -25,6 +24,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/interaction/interactive_browser_test.h"
 #include "components/prefs/pref_service.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -51,8 +51,8 @@ class AegisAgentInteractiveUiTest : public InteractiveBrowserTest {
 
   void SetUpOnMainThread() override {
     InteractiveBrowserTest::SetUpOnMainThread();
-    browser()->profile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
-    SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+    browser()->GetProfile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
+    SidePanelUI* side_panel = SidePanelUI::From(browser());
     ASSERT_TRUE(side_panel);
     side_panel->SetNoDelaysForTesting(true);
     side_panel->DisableAnimationsForTesting();
@@ -68,9 +68,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
   AegisAgentService* service =
-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
+      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
   ASSERT_TRUE(service);
-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+  SidePanelUI* side_panel = SidePanelUI::From(browser());
   ASSERT_TRUE(side_panel);
   const std::string expected_origin = url::Origin::Create(page_url).Serialize();
   std::string monitor_task_id;
@@ -233,7 +233,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
                        SettingsEntryOpensAgentSidePanel) {
   ASSERT_TRUE(
       ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+  SidePanelUI* side_panel = SidePanelUI::From(browser());
   ASSERT_TRUE(side_panel);
   ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));

@@ -1,4 +1,4 @@
-From 4d3a80cf08a4e394e7f642ac10859c1787af529b Mon Sep 17 00:00:00 2001
+From 89c0f77d85318c4505a26dbe04d253fc731ecff9 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Thu, 1 Oct 2026 00:22:38 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Windows=20=E5=9B=BA?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 21 insertions(+), 22 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 129120ba49..55213a3dfd 100644
+index 129120ba49512585ea1d55c73b23c3250c3d5af0..55213a3dfd12c8201e2595bf16a2b05b97bd7aa1 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -29,7 +29,7 @@ index 129120ba49..55213a3dfd 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/install_static/install_util_unittest.cc b/chrome/install_static/install_util_unittest.cc
-index 39d675f843..5276676ca6 100644
+index 39d675f843f405a87329350f3d54dbb175d763af..5276676ca681abf8e85bb30a2c07b358ac5f1e40 100644
 --- a/chrome/install_static/install_util_unittest.cc
 +++ b/chrome/install_static/install_util_unittest.cc
 @@ -445,7 +445,7 @@ TEST_P(InstallStaticUtilTest, GetRegistryPath) {

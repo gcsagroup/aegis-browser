@@ -1,4 +1,4 @@
-From 11f28fd2ebf72da4545d0d118d69f22e0171198a Mon Sep 17 00:00:00 2001
+From f545b5b8f1cd9ef8c4d0cdfc0aa27de0627c79a2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 17:04:01 +0800
 Subject: [PATCH] fix(aegis): bind implicit current-page tasks
@@ -12,7 +12,7 @@ Subject: [PATCH] fix(aegis): bind implicit current-page tasks
  5 files changed, 110 insertions(+), 11 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index eb3e5270f4..bd55a7abef 100644
+index eb3e5270f40d703908e19310d61160a9f1dcd9e4..bd55a7abefe4b1f65a98a5034110592fbd4ecf88 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -439,6 +439,50 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
@@ -67,7 +67,7 @@ index eb3e5270f4..bd55a7abef 100644
                         ChinesePunctuationTerminatesExplicitUrl) {
    ASSERT_TRUE(embedded_test_server()->Start());
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index fc0fef6e29..2152d90bd6 100644
+index fc0fef6e29d95fdd8918aee2fc802871e1293edc..2152d90bd60c0ca7076e584e1be81be157be246d 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -59,6 +59,11 @@ function inferWorkflow(goal: string): Workflow {
@@ -124,7 +124,7 @@ index fc0fef6e29..2152d90bd6 100644
        render(snapshot);
      }
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 590a07db21..a9479dbd27 100644
+index 590a07db21bc6e37a613e10d7943b8c742199d9a..a9479dbd272ebf218618443c6d64863c74599d05 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -134,6 +134,23 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
@@ -219,7 +219,7 @@ index 590a07db21..a9479dbd27 100644
                                         ? std::make_optional(
                                               requested_origins->front().GetURL())
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
-index 40f2223104..cda67f3e8a 100644
+index 40f22231048c87504c4a07d3fa83b49bbc747037..cda67f3e8a61aff6f2c5f9a09df71bb4c63d8159 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 @@ -111,6 +111,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
@@ -231,7 +231,7 @@ index 40f2223104..cda67f3e8a 100644
    void OnPlanReady(const std::string& task_id, bool ok, std::string error);
    void OnModelConfigured(ConfigureModelCallback callback,
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index d9b854fefe..a4f18d6170 100644
+index d9b854fefe20c5b6a892460bd69744c97b4fe2f6..a4f18d61703ddfb00701670416e3da98a6ebd3dd 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -190,9 +190,17 @@ void AddStrings(content::WebUIDataSource* source) {

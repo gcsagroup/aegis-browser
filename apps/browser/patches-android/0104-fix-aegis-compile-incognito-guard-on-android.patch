@@ -1,0 +1,37 @@
+From 5f8efc00c269a99f14fa65fb0937cde572940cb2 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Sat, 5 Sep 2026 04:13:26 +0800
+Subject: [PATCH] fix(aegis): compile incognito guard on Android
+
+---
+ chrome/browser/aegis/aegis_service.cc | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
+index 90ff87fbfcac364598c25785171bae3439891f65..36f242ed25ad17304e75e48c272f7b349024deb0 100644
+--- a/chrome/browser/aegis/aegis_service.cc
++++ b/chrome/browser/aegis/aegis_service.cc
+@@ -274,14 +274,14 @@ AegisService::AegisService(Profile* profile)
+   CHECK(IsAegisProfileSupported(profile));
+   profile_ = profile;
+   profile_observation_.Observe(profile);
+-  if (profile->IsRegularProfile()) {
+-    if (Profile* incognito =
+-            profile->GetPrimaryOTRProfile(/*create_if_needed=*/false)) {
++  if (profile->IsRegularProfile() && profile->HasPrimaryOTRProfile()) {
+ #if !BUILDFLAG(IS_ANDROID)
+-      incognito_profile_observations_.AddObservation(incognito);
++    Profile* incognito =
++        profile->GetPrimaryOTRProfile(/*create_if_needed=*/false);
++    CHECK(incognito);
++    incognito_profile_observations_.AddObservation(incognito);
+ #endif
+-      DisableAiControlForIncognito();
+-    }
++    DisableAiControlForIncognito();
+   }
+   if (!IsEnabled()) {
+     VLOG(1) << "Aegis product disabled; Incognito guard remains active";
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From 4a70b4325335c3847fe0d67df9a503b4f33b146f Mon Sep 17 00:00:00 2001
+From 0c3015fa6c9408a5600c877768f1fbb41ce19c6d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 20:02:01 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
@@ -22,7 +22,7 @@ Content-Transfer-Encoding: 8bit
  10 files changed, 185 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
-index 06e95a511d..2e78cf14ab 100644
+index 06e95a511d57f6cb8dcc28af655c93e7c9a22acc..2e78cf14ab41ab0d385f07facde533f68dd838e4 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -1130,6 +1130,44 @@ std::optional<int> AegisActorBridge::ResolveObservedClickTarget(
@@ -93,7 +93,7 @@ index 06e95a511d..2e78cf14ab 100644
          node.FindInt("click_target_node_id").value_or(0);
      if (const std::string* text = node.FindString("text")) {
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
-index 56fb073065..2776e5e2cb 100644
+index 56fb073065fccc3ac8b7395cd22bea588bc62942..2776e5e2cbc61a5b83e399309fa28d5837406420 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 @@ -72,6 +72,11 @@ class AegisActorBridge {
@@ -117,7 +117,7 @@ index 56fb073065..2776e5e2cb 100644
      bool is_submit_control = false;
      bool is_sensitive_control = false;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index ee9fbef767..c0d2bd61c9 100644
+index ee9fbef767b2367119ac58703a49ab4a8c2426af..c0d2bd61c9656494c682db4b94872d493c3cdf85 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -2427,6 +2427,16 @@ std::optional<AgentToolCall> AegisAgentService::BindExecutionToolCall(
@@ -138,7 +138,7 @@ index ee9fbef767..c0d2bd61c9 100644
      const auto target =
          actor_bridge_.ResolveObservedClickTarget(task.id(), call);
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 9f67ca57a3..98cd21c12f 100644
+index 9f67ca57a3a2ee634856a865a19cb66aa35d5a8d..98cd21c12f0f41685e4dcc854a5b9be2c75ca911 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -90,6 +90,11 @@ class AegisAgentServiceTestPeer {
@@ -195,7 +195,7 @@ index 9f67ca57a3..98cd21c12f 100644
    auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
    auto scope = ServiceTestScope();
 diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
-index 648dc365f6..142e518fdc 100644
+index 648dc365f639a19da45a4b583ffc038e7a34e2c6..142e518fdc5ccd6e89cdb8dd0fd18b27c6e0d758 100644
 --- a/chrome/browser/aegis/agent/agent_observation.cc
 +++ b/chrome/browser/aegis/agent/agent_observation.cc
 @@ -30,6 +30,7 @@ void AppendMainFrameNodes(
@@ -251,7 +251,7 @@ index 648dc365f6..142e518fdc 100644
  }
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_observation.h b/chrome/browser/aegis/agent/agent_observation.h
-index a745068cd8..40b2b113b7 100644
+index a745068cd8c4088edc1862a053b27e391620e1c6..40b2b113b7335e30f2f2633f9fc262eb94d69262 100644
 --- a/chrome/browser/aegis/agent/agent_observation.h
 +++ b/chrome/browser/aegis/agent/agent_observation.h
 @@ -3,9 +3,12 @@
@@ -284,7 +284,7 @@ index a745068cd8..40b2b113b7 100644
  std::string BoundedAgentObservationText(std::string_view text,
                                          size_t remaining);
 diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
-index 5cb6baaa48..f3b79d437e 100644
+index 5cb6baaa4899b6a821a4f74f65ed725cc17c53fa..f3b79d437ea55ddf1cc390248c7ab09adc22fdb9 100644
 --- a/chrome/browser/aegis/agent/agent_observation_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
 @@ -27,6 +27,46 @@ std::string Serialize(const AgentObservationNodes& observation) {
@@ -335,7 +335,7 @@ index 5cb6baaa48..f3b79d437e 100644
    proto::ContentNode root;
    root.mutable_content_attributes()->set_attribute_type(
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 8a6004ead5..4b454ce4b1 100644
+index 8a6004ead5872e88486bb3d55c0156c9104ada32..4b454ce4b1b461caef64d86e204a2bf55303c84c 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -1096,9 +1096,15 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
@@ -357,7 +357,7 @@ index 8a6004ead5..4b454ce4b1 100644
            "task plan uses a browser result before the step that creates "
            "it";
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 58f49440a2..486f738fb8 100644
+index 58f49440a2198b0059a6bd212635290f88b0623b..486f738fb8e350c9aba43f31234199c1e946803c 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -810,7 +810,15 @@ TEST(AegisAgentPlannerTest, BrowserResultDependenciesAreOrdered) {
@@ -378,7 +378,7 @@ index 58f49440a2..486f738fb8 100644
  
  TEST(AegisAgentPlannerTest, ShoppingPlanMustEndInOneUserTakeover) {
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 0ae82679f9..b347f7c7e5 100644
+index 0ae82679f9fd6e7375cf923fd9d1560e03cf0cd6..b347f7c7e50cef636587cd517115393141cccf5f 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

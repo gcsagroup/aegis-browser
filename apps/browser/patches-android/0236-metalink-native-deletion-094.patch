@@ -1,0 +1,98 @@
+From 0d727b1f7ad4f78d611e8178fc6864dabc30db87 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 21:33:35 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=90=8C=E6=AD=A5=E6=A0=A1=E9=AA=8C=E5=A4=B1?=
+ =?UTF-8?q?=E8=B4=A5=E6=96=87=E4=BB=B6=E7=9A=84=E5=8E=9F=E7=94=9F=E5=88=A0?=
+ =?UTF-8?q?=E9=99=A4=E7=8A=B6=E6=80=81=20094?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/metalink_download_verifier.cc       | 24 ++++++++-----------
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 2 files changed, 12 insertions(+), 16 deletions(-)
+
+diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
+index 6243ef6b1286a87c0425325507a17d3b17c10fd6..f26340d4709c5662b9167c05654be05190d68667 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.cc
++++ b/chrome/browser/aegis/metalink_download_verifier.cc
+@@ -13,7 +13,6 @@
+ #include "base/containers/span.h"
+ #include "base/files/file.h"
+ #include "base/files/file_path.h"
+-#include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -73,10 +72,6 @@ std::optional<std::string> HashFile(const base::FilePath& path,
+   return base::ToLowerASCII(base::HexEncode(digest));
+ }
+ 
+-bool DeleteDownloadedFile(const base::FilePath& path) {
+-  return base::DeleteFile(path);
+-}
+-
+ bool AllAddressesArePublic(const net::AddressList& addresses) {
+   return !addresses.empty() &&
+          std::ranges::all_of(addresses, [](const net::IPEndPoint& endpoint) {
+@@ -153,7 +148,7 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+             FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+             base::BindOnce(&HashFile, path, result_.hash_algorithm),
+             base::BindOnce(&MetalinkDownloadVerifier::OnHashReady,
+-                           weak_factory_.GetWeakPtr(), path));
++                           weak_factory_.GetWeakPtr()));
+         return;
+       }
+       case download::DownloadItem::CANCELLED:
+@@ -311,8 +306,7 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+         weak_factory_.GetWeakPtr()));
+   }
+ 
+-  void OnHashReady(const base::FilePath& path,
+-                   std::optional<std::string> actual_hash) {
++  void OnHashReady(std::optional<std::string> actual_hash) {
+     if (actual_hash && *actual_hash == result_.hash_hex) {
+       if (current_item_) {
+         SetMetalinkVerificationStatus(*current_item_,
+@@ -321,14 +315,16 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
+       delete this;
+       return;
+     }
+-    if (current_item_) {
+-      SetMetalinkVerificationStatus(*current_item_,
+-                                    MetalinkVerificationStatus::kFailed);
++    if (!current_item_) {
++      delete this;
++      return;
+     }
++    SetMetalinkVerificationStatus(*current_item_,
++                                  MetalinkVerificationStatus::kFailed);
++    download::DownloadItem* failed = current_item_;
+     StopObserving();
+-    base::ThreadPool::PostTaskAndReplyWithResult(
+-        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+-        base::BindOnce(&DeleteDownloadedFile, path),
++    // 原生删除接口同时标记文件已移除，避免下载列表继续显示为可用文件。
++    failed->DeleteFile(
+         base::BindOnce(&MetalinkDownloadVerifier::OnHashMismatchFileDeleted,
+                        weak_factory_.GetWeakPtr()));
+   }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 5fa057a82c6b82c2cc1d188c2d526c98ef7101c2..9f98bcb40923019c032d2d5e0d792e23df0da589 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.93";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (093)";
++inline constexpr char kProductVersion[] = "2.0.0.94";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (094)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

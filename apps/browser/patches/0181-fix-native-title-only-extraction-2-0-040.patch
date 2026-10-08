@@ -1,4 +1,4 @@
-From 3bc448529ef4edc657016056eb5f6af4c157c087 Mon Sep 17 00:00:00 2001
+From 14e981316905840f9d02a9728ae127d70f81d952 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Thu, 17 Sep 2026 03:20:22 +0800
 Subject: [PATCH] =?UTF-8?q?=E7=94=B1=E5=8E=9F=E7=94=9F=E6=89=A7=E8=A1=8C?=
@@ -17,7 +17,7 @@ Content-Transfer-Encoding: 8bit
  5 files changed, 108 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index db638c4bdb..0629662d7d 100644
+index db638c4bdbf3387335f99cfd6ecf571b9b01bbf1..0629662d7d2ea750d65e8bc62e5fd151651b439e 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1781,6 +1781,22 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
@@ -44,7 +44,7 @@ index db638c4bdb..0629662d7d 100644
    std::optional<AgentModelClientConfig> config = ResolveModelConfig(
        profile_, task->scope().model_destination, &config_error);
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index d64dc09bbb..ddb8871d2c 100644
+index d64dc09bbb29542de196bc8a05a2cb6f2b187c1d..ddb8871d2c3adf156561addda128cbf115ae13c1 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -967,6 +967,41 @@ void ConstrainObservedExtractionTool(AgentModelToolDefinition* tool,
@@ -90,7 +90,7 @@ index d64dc09bbb..ddb8871d2c 100644
      const AgentTask& task,
      const AgentTaskPlan& plan,
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 732c68a584..a4416ea655 100644
+index 732c68a584cf1d8ef0cc149fa6f066f3f5e406f5..a4416ea6553634aa7492d72b40c2d254151afaf2 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -71,6 +71,14 @@ void ConstrainDownloadIntegrityTool(AgentModelToolDefinition* tool,
@@ -109,7 +109,7 @@ index 732c68a584..a4416ea655 100644
  std::string BuildAgentTranslationSelectionSystemContract();
  std::optional<std::string> BuildAgentTranslationSelectionPrompt(
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index d0d3804f7f..c4275e158f 100644
+index d0d3804f7fe5ca16905f36ae0662ef2319231ea2..c4275e158f404a47515736502351e52dea07c354 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -114,6 +114,52 @@ TEST(AegisAgentExecutionTest, RequestedDownloadIntegrityRequiresExpectedHash) {
@@ -166,7 +166,7 @@ index d0d3804f7f..c4275e158f 100644
    AgentModelEvent event;
    event.type = AgentModelEventType::kToolCall;
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 0c0f76967e..2b0427c02e 100644
+index 0c0f76967e3ec1050ea942552deedf90d0782b22..2b0427c02e0c282cf9ce01e4f8baec5176066bf8 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
